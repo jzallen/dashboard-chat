@@ -1,0 +1,21 @@
+{
+  "name": "TypeScript",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      }
+    }
+  },
+  "postCreateCommand": "npm install",
+  "forwardPorts": [3000]
+}
