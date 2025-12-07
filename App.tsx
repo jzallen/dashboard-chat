@@ -182,7 +182,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
 // Custom Filter Function
 // ============================================================================
 
-function customFilterFn(
+export function customFilterFn(
   row: { getValue: (columnId: string) => unknown },
   columnId: string,
   filterValue: { operator: string; value: unknown }
