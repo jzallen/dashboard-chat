@@ -13,6 +13,12 @@ import {
   SortingState,
   ColumnFiltersState,
 } from "@tanstack/react-table";
+import {
+  executeToolCall as executeToolCallFn,
+  customFilterFn,
+  type ToolCall,
+  type TableRow,
+} from "./src/lib/executeToolCall";
 
 // ============================================================================
 // Types
@@ -24,24 +30,6 @@ interface Message {
   content: string;
   tool_calls?: ToolCall[];
   isStreaming?: boolean;
-}
-
-interface ToolCall {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
-
-interface TableRow {
-  id: string;
-  name: string;
-  category: string;
-  amount: number;
-  quantity: number;
-  inStock: boolean;
 }
 
 interface TableSchema {
@@ -179,46 +167,6 @@ const tableSchema: TableSchema = {
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
 
 // ============================================================================
-// Custom Filter Function
-// ============================================================================
-
-export function customFilterFn(
-  row: { getValue: (columnId: string) => unknown },
-  columnId: string,
-  filterValue: { operator: string; value: unknown }
-): boolean {
-  const cellValue = row.getValue(columnId);
-  const { operator, value } = filterValue;
-
-  switch (operator) {
-    case "equals":
-      return (
-        cellValue === value ||
-        String(cellValue).toLowerCase() === String(value).toLowerCase()
-      );
-    case "notEquals":
-      return (
-        cellValue !== value &&
-        String(cellValue).toLowerCase() !== String(value).toLowerCase()
-      );
-    case "contains":
-      return String(cellValue)
-        .toLowerCase()
-        .includes(String(value).toLowerCase());
-    case "gt":
-      return Number(cellValue) > Number(value);
-    case "lt":
-      return Number(cellValue) < Number(value);
-    case "gte":
-      return Number(cellValue) >= Number(value);
-    case "lte":
-      return Number(cellValue) <= Number(value);
-    default:
-      return true;
-  }
-}
-
-// ============================================================================
 // Main App Component
 // ============================================================================
 
@@ -261,74 +209,16 @@ export default function App() {
   // Tool Execution
   // ============================================================================
 
-  const executeToolCall = useCallback((toolCall: ToolCall): string => {
-    const { name, arguments: argsJson } = toolCall.function;
-    let args: Record<string, unknown>;
-
-    try {
-      args = JSON.parse(argsJson);
-    } catch {
-      return `Error: Invalid arguments for ${name}`;
-    }
-
-    switch (name) {
-      case "filterTable": {
-        const { column, operator, value } = args as {
-          column: string;
-          operator: string;
-          value: unknown;
-        };
-        setColumnFilters((prev) => {
-          const filtered = prev.filter((f) => f.id !== column);
-          return [...filtered, { id: column, value: { operator, value } }];
-        });
-        return `Filtered ${column} ${operator} ${value}`;
-      }
-
-      case "sortTable": {
-        const { column, direction } = args as {
-          column: string;
-          direction: "asc" | "desc";
-        };
-        setSorting([{ id: column, desc: direction === "desc" }]);
-        return `Sorted by ${column} ${direction}`;
-      }
-
-      case "addRow": {
-        const { data: rowData } = args as { data: Partial<TableRow> };
-        const newRow: TableRow = {
-          id: String(Date.now()),
-          name: "",
-          category: "",
-          amount: 0,
-          quantity: 0,
-          inStock: true,
-          ...rowData,
-        };
-        setData((prev) => [...prev, newRow]);
-        return `Added new row`;
-      }
-
-      case "deleteRow": {
-        const { rowIndex } = args as { rowIndex: number };
-        setData((prev) => prev.filter((_, i) => i !== rowIndex));
-        return `Deleted row at index ${rowIndex}`;
-      }
-
-      case "clearFilters": {
-        setColumnFilters([]);
-        return "Cleared all filters";
-      }
-
-      case "clearSort": {
-        setSorting([]);
-        return "Cleared sorting";
-      }
-
-      default:
-        return `Unknown tool: ${name}`;
-    }
-  }, []);
+  const executeToolCall = useCallback(
+    (toolCall: ToolCall): string => {
+      return executeToolCallFn(toolCall, {
+        setColumnFilters,
+        setSorting,
+        setData,
+      });
+    },
+    [setColumnFilters, setSorting, setData]
+  );
 
   // ============================================================================
   // Chat Submission

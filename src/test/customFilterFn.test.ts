@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { customFilterFn } from "../../App";
+import { customFilterFn } from "../lib/executeToolCall";
 
 // Helper to create a mock row
 function createMockRow(values: Record<string, unknown>) {
