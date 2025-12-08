@@ -287,9 +287,14 @@ async function streamLLMResponse(
   }
 }
 
+interface HandleChatOptions {
+  corsOrigin: string;
+}
+
 export async function handleChat(
   request: Request,
-  client: ChatClient
+  client: ChatClient,
+  options: HandleChatOptions
 ): Promise<Response> {
   const { messages, tableSchema }: ChatRequest = await request.json();
 
@@ -311,7 +316,7 @@ export async function handleChat(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": options.corsOrigin,
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     },
