@@ -1,7 +1,7 @@
 // Cloudflare Worker - Quill Take Home Project
 // Backend: Tool calling with Groq + SSE streaming
 
-import { createChatHandler } from "./src/lib/chat";
+import { createChatHandler } from "./src/lib/chat/index";
 
 interface Env {
   GROQ_API_KEY: string;

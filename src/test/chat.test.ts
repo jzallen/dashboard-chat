@@ -3,7 +3,7 @@ import {
   handleChat,
   ChatClient,
   ChatCompletionRequest,
-} from "../lib/chat";
+} from "../lib/chat/index";
 
 type StreamChunk =
   | { content: string }
@@ -97,7 +97,7 @@ describe("handleChat", () => {
 
       expect(client.lastRequest!.tools.length).toBeGreaterThan(0);
       expect(
-        client.lastRequest!.tools.some((t) => t.function.name === "filterTable")
+        client.lastRequest!.tools.some((t) => t.name === "filterTable")
       ).toBe(true);
     });
   });
@@ -170,7 +170,7 @@ describe("GroqChatClient", () => {
   });
 
   it("should call Groq API with correct endpoint and auth", async () => {
-    const { createChatHandler } = await import("../lib/chat");
+    const { createChatHandler } = await import("../lib/chat/index");
     const mockFetch = vi.fn();
 
     const mockStream = new ReadableStream({
@@ -202,7 +202,7 @@ describe("GroqChatClient", () => {
   });
 
   it("should stream response chunks from Groq API", async () => {
-    const { createChatHandler } = await import("../lib/chat");
+    const { createChatHandler } = await import("../lib/chat/index");
 
     const mockStream = new ReadableStream({
       start(controller) {
@@ -243,7 +243,7 @@ describe("GroqChatClient", () => {
   });
 
   it("should handle Groq API errors", async () => {
-    const { createChatHandler } = await import("../lib/chat");
+    const { createChatHandler } = await import("../lib/chat/index");
 
     vi.stubGlobal(
       "fetch",
