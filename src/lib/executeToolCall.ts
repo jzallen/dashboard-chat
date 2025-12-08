@@ -2,19 +2,13 @@
 // Pure function with no React dependencies
 
 import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
+import type { ToolCall } from "./types";
+
+export type { ToolCall };
 
 // ============================================================================
 // Types
 // ============================================================================
-
-export interface ToolCall {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
 
 export interface TableRow {
   id: string;
