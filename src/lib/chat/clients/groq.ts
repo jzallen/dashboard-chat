@@ -54,8 +54,8 @@ export class GroqChatClient implements ChatClient {
     if (!response.body) throw new Error("No response body");
 
     const eventStream = response.body
-      .pipeThrough(new TextDecoderStream())
-      .pipeThrough(new EventSourceParserStream());
+      .pipeThrough(new TextDecoderStream()) // bytes → strings
+      .pipeThrough(new EventSourceParserStream()); // strings → parsed SSE events
 
     const reader = eventStream.getReader();
     try {
