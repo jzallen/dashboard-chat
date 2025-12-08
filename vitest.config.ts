@@ -2,7 +2,8 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [react()],
+  // Cast needed due to vitest bundling its own vite with different types
+  plugins: [react() as any],
   test: {
     environment: 'happy-dom',
     globals: true,
