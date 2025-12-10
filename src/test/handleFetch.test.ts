@@ -6,7 +6,7 @@ import { handleFetch, ChatHandlerFactory } from "../../index";
 // I want to communicate with a Cloudflare Worker backend
 // So that chat messages are processed by the AI and streamed back
 
-const mockEnv = { GROQ_API_KEY: "test-key" };
+const mockEnv = { GROQ_API_KEY: "test-key", CORS_ORIGIN: "*" };
 
 describe("Feature: Cloudflare Worker Backend API", () => {
   describe("Scenario: Backend handles CORS", () => {

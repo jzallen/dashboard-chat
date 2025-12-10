@@ -5,6 +5,7 @@ import { createChatHandler } from "./src/lib/chat/index";
 
 interface Env {
   GROQ_API_KEY: string;
+  CORS_ORIGIN: string;
 }
 
 export type ChatHandlerFactory = (env: Env) => (request: Request) => Promise<Response>;
