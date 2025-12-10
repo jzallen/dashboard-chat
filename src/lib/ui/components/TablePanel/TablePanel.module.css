@@ -1,0 +1,69 @@
+/* Panel container */
+.panel {
+  @apply flex-1 p-6 overflow-auto;
+}
+
+/* TableHeader */
+.header {
+  @apply mb-4;
+}
+
+.title {
+  @apply text-2xl font-bold;
+  color: #1f2937;
+}
+
+.subtitle {
+  @apply text-sm mt-1;
+  color: #4b5563;
+}
+
+/* Table container */
+.tableContainer {
+  @apply bg-white rounded-lg shadow overflow-hidden;
+}
+
+.table {
+  @apply min-w-full divide-y divide-gray-200;
+}
+
+/* TableHead */
+.thead {
+  background-color: #f9fafb;
+}
+
+.th {
+  @apply px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer select-none;
+  color: #6b7280;
+}
+
+.th:hover {
+  background-color: #f3f4f6;
+}
+
+.thContent {
+  @apply flex items-center gap-1;
+}
+
+/* TableBody */
+.tbody {
+  @apply bg-white divide-y divide-gray-200;
+}
+
+.tr {
+}
+
+.tr:hover {
+  background-color: #f9fafb;
+}
+
+.td {
+  @apply px-6 py-4 whitespace-nowrap text-sm;
+  color: #111827;
+}
+
+/* Empty state */
+.emptyRow {
+  @apply px-6 py-8 text-center;
+  color: #6b7280;
+}

@@ -9,9 +9,5 @@ export { useChat } from "./hooks/useChat";
 export { useTableConfig } from "./hooks/useTableConfig";
 
 // Components
-export { ActiveFilters } from "./components/ActiveFilters";
-export { Pagination } from "./components/Pagination";
-export { MessageBubble } from "./components/MessageBubble";
-export { ChatEmptyState } from "./components/ChatEmptyState";
-export { TablePanel } from "./components/TablePanel";
-export { ChatPanel } from "./components/ChatPanel";
+export { default as TablePanel } from "./components/TablePanel";
+export { default as ChatPanel } from "./components/ChatPanel";

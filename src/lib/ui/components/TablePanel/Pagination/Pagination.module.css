@@ -1,0 +1,31 @@
+/* Container */
+.container {
+  @apply flex items-center justify-between mt-4;
+}
+
+/* RowCount */
+.rowCount {
+  @apply text-sm;
+  color: #4b5563;
+}
+
+/* PageButton */
+.pageButton {
+  @apply px-3 py-1 border rounded text-sm;
+  @apply disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.pageButton:hover:not(:disabled) {
+  background-color: #f3f4f6;
+}
+
+/* PageIndicator */
+.pageIndicator {
+  @apply text-sm;
+  color: #4b5563;
+}
+
+/* Navigation controls wrapper */
+.controls {
+  @apply flex items-center gap-2;
+}

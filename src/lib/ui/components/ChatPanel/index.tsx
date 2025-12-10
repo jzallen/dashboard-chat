@@ -1,7 +1,8 @@
 import type { RefObject, Dispatch, SetStateAction, FormEvent } from "react";
-import type { Message } from "../types";
+import type { Message } from "../../types";
 import { MessageBubble } from "./MessageBubble";
 import { ChatEmptyState } from "./ChatEmptyState";
+import styles from "./ChatPanel.module.css";
 
 interface ChatPanelProps {
   messages: Message[];
@@ -13,7 +14,7 @@ interface ChatPanelProps {
   chatEndRef: RefObject<HTMLDivElement>;
 }
 
-export function ChatPanel({
+export default function ChatPanel({
   messages,
   input,
   setInput,
@@ -23,15 +24,15 @@ export function ChatPanel({
   chatEndRef,
 }: ChatPanelProps) {
   return (
-    <div className="w-96 border-l border-gray-200 flex flex-col bg-white">
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="font-semibold text-gray-800">Chat</h2>
-        <p className="text-xs text-gray-500 mt-1">
+    <div className={styles.panel}>
+      <div className={styles.header}>
+        <h2 className={styles.headerTitle}>Chat</h2>
+        <p className={styles.headerHint}>
           Try: "Show items with amount greater than 50"
         </p>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-4">
+      <div className={styles.messagesArea}>
         {messages.length === 0 && <ChatEmptyState />}
 
         {messages.map((message) => (
@@ -40,21 +41,21 @@ export function ChatPanel({
         <div ref={chatEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200">
-        <div className="flex gap-2">
+      <form onSubmit={handleSubmit} className={styles.inputForm}>
+        <div className={styles.inputWrapper}>
           <input
             ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type a command..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className={styles.input}
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
+            className={styles.submitButton}
           >
             {isLoading ? "..." : "Send"}
           </button>
