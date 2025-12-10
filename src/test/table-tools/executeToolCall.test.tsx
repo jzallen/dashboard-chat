@@ -14,7 +14,7 @@ import {
   type ToolCall,
   type ToolCallHandlers,
   type TableRow,
-} from "../lib/executeToolCall";
+} from "../../lib/table-tools";
 
 /**
  * Tests for executeToolCall - the public API used by App.tsx.

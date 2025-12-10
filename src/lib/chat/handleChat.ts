@@ -1,4 +1,4 @@
-import type { Message, TableSchema, ToolDefinition } from "../types";
+import type { Message, TableSchema, ToolDefinition } from "./types";
 
 // ============================================================================
 // Types

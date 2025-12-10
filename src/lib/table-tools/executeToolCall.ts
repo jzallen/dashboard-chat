@@ -1,77 +1,7 @@
-// Extracted tool execution logic for testability
-// Pure function with no React dependencies
+import type { ToolCall } from "../types";
+import type { TableRow, ToolCallHandlers } from "./types";
 
-import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
-import type { ToolCall } from "./types";
-
-export type { ToolCall };
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface TableRow {
-  id: string;
-  name: string;
-  category: string;
-  amount: number;
-  quantity: number;
-  inStock: boolean;
-}
-
-export interface ToolCallHandlers {
-  setColumnFilters: (
-    updater: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)
-  ) => void;
-  setSorting: (sorting: SortingState) => void;
-  setData: (updater: (prev: TableRow[]) => TableRow[]) => void;
-}
-
-// ============================================================================
-// Custom Filter Function
-// ============================================================================
-
-export function customFilterFn(
-  row: { getValue: (columnId: string) => unknown },
-  columnId: string,
-  filterValue: { operator: string; value: unknown }
-): boolean {
-  const cellValue = row.getValue(columnId);
-  const { operator, value } = filterValue;
-
-  switch (operator) {
-    case "equals":
-      return (
-        cellValue === value ||
-        String(cellValue).toLowerCase() === String(value).toLowerCase()
-      );
-    case "notEquals":
-      return (
-        cellValue !== value &&
-        String(cellValue).toLowerCase() !== String(value).toLowerCase()
-      );
-    case "contains":
-      return String(cellValue)
-        .toLowerCase()
-        .includes(String(value).toLowerCase());
-    case "gt":
-      return Number(cellValue) > Number(value);
-    case "lt":
-      return Number(cellValue) < Number(value);
-    case "gte":
-      return Number(cellValue) >= Number(value);
-    case "lte":
-      return Number(cellValue) <= Number(value);
-    default:
-      return true;
-  }
-}
-
-// ============================================================================
-// Tool Action Execution
-// ============================================================================
-
-export function performToolAction(
+function performToolAction(
   toolCall: ToolCall,
   handlers: ToolCallHandlers
 ): void {
@@ -137,11 +67,7 @@ export function performToolAction(
   }
 }
 
-// ============================================================================
-// Tool Message Generation
-// ============================================================================
-
-export function generateToolMessage(toolCall: ToolCall): string {
+function generateToolMessage(toolCall: ToolCall): string {
   const { name, arguments: argsJson } = toolCall.function;
 
   let args: Record<string, unknown>;
@@ -187,10 +113,6 @@ export function generateToolMessage(toolCall: ToolCall): string {
       return `Unknown tool: ${name}`;
   }
 }
-
-// ============================================================================
-// Combined Tool Execution (Public API)
-// ============================================================================
 
 export function executeToolCall(
   toolCall: ToolCall,

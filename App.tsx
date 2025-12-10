@@ -18,7 +18,7 @@ import {
   customFilterFn,
   type ToolCall,
   type TableRow,
-} from "./src/lib/executeToolCall";
+} from "./src/lib/table-tools";
 
 // ============================================================================
 // Types
