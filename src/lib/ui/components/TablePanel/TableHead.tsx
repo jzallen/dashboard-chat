@@ -1,5 +1,5 @@
 import { flexRender, type HeaderGroup } from "@tanstack/react-table";
-import type { TableRow } from "../../../table-tools";
+import type { TableRow } from "@/table-tools";
 import styles from "./TablePanel.module.css";
 
 interface TableHeadProps {
@@ -10,7 +10,7 @@ export function TableHead({ headerGroups }: TableHeadProps) {
   return (
     <thead className={styles.thead}>
       {headerGroups.map((headerGroup) => (
-        <tr key={headerGroup.id}>
+        <tr data-testid="table-header-row" key={headerGroup.id}>
           {headerGroup.headers.map((header) => (
             <th
               key={header.id}

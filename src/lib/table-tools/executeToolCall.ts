@@ -27,7 +27,10 @@ function performToolAction(
         column: string;
         direction: "asc" | "desc";
       };
-      handlers.setSorting([{ id: column, desc: direction === "desc" }]);
+      handlers.setSorting((prev) => {
+        const filtered = prev.filter((s) => s.id !== column);
+        return [...filtered, { id: column, desc: direction === "desc" }];
+      });
       break;
     }
 

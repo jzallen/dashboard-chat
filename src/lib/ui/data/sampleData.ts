@@ -1,5 +1,5 @@
 import { ColumnDef } from "@tanstack/react-table";
-import type { TableRow } from "../../table-tools";
+import type { TableRow } from "@/table-tools";
 import type { TableSchema } from "../types";
 
 export const initialData: TableRow[] = [

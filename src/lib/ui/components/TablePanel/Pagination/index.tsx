@@ -1,5 +1,5 @@
 import type { Table } from "@tanstack/react-table";
-import type { TableRow } from "../../../table-tools";
+import type { TableRow } from "@/table-tools";
 import { RowCount } from "./RowCount";
 import { PageButton } from "./PageButton";
 import { PageIndicator } from "./PageIndicator";

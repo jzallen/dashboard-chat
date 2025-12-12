@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { ToolCall } from "../../table-tools";
+import type { ToolCall } from "@/table-tools";
 import type { Message, TableSchema, SSEMessage } from "../types";
 import { API_URL } from "../data/sampleData";
 

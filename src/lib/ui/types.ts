@@ -1,4 +1,4 @@
-import type { ToolCall } from "../table-tools";
+import type { ToolCall } from "@/table-tools";
 
 export interface Message {
   id: string;

@@ -15,7 +15,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["vite/client", "@cloudflare/workers-types"]
+    "types": ["vite/client", "@cloudflare/workers-types"],
+    "baseUrl": ".",
+    "paths": {
+      "@/table-tools": ["src/lib/table-tools"],
+      "@/chat": ["src/lib/chat"]
+    }
   },
-  "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx", "e2e/**/*.ts"]
 }

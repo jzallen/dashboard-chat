@@ -13,6 +13,8 @@ export interface ToolCallHandlers {
   setColumnFilters: (
     updater: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)
   ) => void;
-  setSorting: (sorting: SortingState) => void;
+  setSorting: (
+    updater: SortingState | ((prev: SortingState) => SortingState)
+  ) => void;
   setData: (updater: (prev: TableRow[]) => TableRow[]) => void;
 }

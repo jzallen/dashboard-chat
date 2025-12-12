@@ -14,7 +14,7 @@ import {
   type ToolCall,
   type ToolCallHandlers,
   type TableRow,
-} from "../../lib/table-tools";
+} from "@/table-tools";
 
 /**
  * Tests for executeToolCall - the public API used by App.tsx.
@@ -81,8 +81,8 @@ describe("executeToolCall", () => {
         columnFilters = typeof updater === "function" ? updater(columnFilters) : updater;
         table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnFilters } }));
       },
-      setSorting: (newSorting) => {
-        sorting = newSorting;
+      setSorting: (updater) => {
+        sorting = typeof updater === "function" ? updater(sorting) : updater;
         table.setOptions((prev) => ({ ...prev, state: { ...prev.state, sorting } }));
       },
       setData: (updater) => {
@@ -200,6 +200,53 @@ describe("executeToolCall", () => {
 
         expect(message).toBe("Cleared sorting");
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(testData);
+      });
+    });
+
+    describe("Scenario: Multi-column sort", () => {
+      it("should accumulate multiple sort columns", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        // Sort by category first
+        executeToolCall(
+          createToolCall("sortTable", { column: "category", direction: "asc" }),
+          handlers
+        );
+
+        // Then sort by amount (should add to existing sort)
+        executeToolCall(
+          createToolCall("sortTable", { column: "amount", direction: "desc" }),
+          handlers
+        );
+
+        // Expect: first by category asc (A, A, B), then by amount desc within each category
+        expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
+          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
+        ]);
+      });
+
+      it("should replace existing sort for same column", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        // Sort by amount ascending
+        executeToolCall(
+          createToolCall("sortTable", { column: "amount", direction: "asc" }),
+          handlers
+        );
+
+        // Sort by amount descending (should replace, not duplicate)
+        executeToolCall(
+          createToolCall("sortTable", { column: "amount", direction: "desc" }),
+          handlers
+        );
+
+        expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
+          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
+          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+        ]);
       });
     });
   });

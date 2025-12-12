@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { Table, ColumnFiltersState } from "@tanstack/react-table";
-import type { TableRow } from "../../../table-tools";
+import type { TableRow } from "@/table-tools";
 import ActiveFilters from "./ActiveFilters";
 import Pagination from "./Pagination";
 import { TableHeader } from "./TableHeader";
@@ -32,7 +32,7 @@ export default function TablePanel({
       />
 
       <div className={styles.tableContainer}>
-        <table className={styles.table}>
+        <table data-testid="data-table" className={styles.table}>
           <TableHead headerGroups={table.getHeaderGroups()} />
           <TableBody
             rows={table.getRowModel().rows}

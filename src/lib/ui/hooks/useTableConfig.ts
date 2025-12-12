@@ -8,7 +8,7 @@ import {
   SortingState,
   ColumnFiltersState,
 } from "@tanstack/react-table";
-import { customFilterFn, type TableRow } from "../../table-tools";
+import { customFilterFn, type TableRow } from "@/table-tools";
 import { initialData, columns } from "../data/sampleData";
 
 export function useTableConfig() {
