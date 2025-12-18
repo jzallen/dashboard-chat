@@ -28,14 +28,15 @@ export class ChatHelper {
   }
 
   async sendMessage(message: string): Promise<void> {
+    const messageCountBefore = await this.assistantMessages.count();
+
     await this.input.fill(message);
     await this.sendButton.click();
 
-    // Wait for streaming to start
-    await expect(this.streamingCursor).toBeVisible({ timeout: 15000 });
-
-    // Wait for streaming to complete (cursor disappears)
-    await expect(this.streamingCursor).toBeHidden({ timeout: 45000 });
+    // Wait for a new assistant message to appear (response received)
+    await expect(this.assistantMessages).toHaveCount(messageCountBefore + 1, {
+      timeout: 60000,
+    });
   }
 
   async sendMessageAndWaitForToolExecution(message: string): Promise<void> {
