@@ -9,7 +9,7 @@ test.describe("Sort Operations", () => {
     await page.goto("/");
 
     const tableHelper = await TableHelper.create(page);
-    initialRecords = await tableHelper.tableToRecords();
+    initialRecords = await tableHelper.getPageRecords();
 
     await page.close();
   });
@@ -32,7 +32,7 @@ test.describe("Sort Operations", () => {
       const bAmount = parseFloat(b["Amount"].replace(/[$,]/g, ""));
       return bAmount - aAmount;
     });
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -49,7 +49,7 @@ test.describe("Sort Operations", () => {
       const bAmount = parseFloat(b["Amount"].replace(/[$,]/g, ""));
       return aAmount - bAmount;
     });
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -64,7 +64,7 @@ test.describe("Sort Operations", () => {
     const expectedRecords = [...initialRecords].sort((a, b) => {
       return parseInt(b["Quantity"]) - parseInt(a["Quantity"]);
     });
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -79,7 +79,7 @@ test.describe("Sort Operations", () => {
     const expectedRecords = [...initialRecords].sort((a, b) =>
       a["Name"].localeCompare(b["Name"])
     );
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -89,12 +89,12 @@ test.describe("Sort Operations", () => {
   }) => {
     await chatHelper.sendMessageAndWaitForToolExecution("sort by amount desc");
 
-    const sortedRecords = await tableHelper.tableToRecords();
+    const sortedRecords = await tableHelper.getPageRecords();
     expect(sortedRecords).not.toEqual(initialRecords);
 
     await chatHelper.sendMessageAndWaitForToolExecution("remove sorting");
 
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(initialRecords);
   });
 
@@ -113,7 +113,7 @@ test.describe("Sort Operations", () => {
       const bAmount = parseFloat(b["Amount"].replace(/[$,]/g, ""));
       return bAmount - aAmount;
     });
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 });

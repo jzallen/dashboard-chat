@@ -9,7 +9,7 @@ test.describe("Filter Operations", () => {
     await page.goto("/");
 
     const tableHelper = await TableHelper.create(page);
-    initialRecords = await tableHelper.tableToRecords();
+    initialRecords = await tableHelper.getPageRecords();
 
     await page.close();
   });
@@ -30,7 +30,7 @@ test.describe("Filter Operations", () => {
     const expectedRecords = initialRecords.filter(
       (r) => parseInt(r["Quantity"]) > 50
     );
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -46,7 +46,7 @@ test.describe("Filter Operations", () => {
       const amount = parseFloat(r["Amount"].replace(/[$,]/g, ""));
       return amount < 100;
     });
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -61,7 +61,7 @@ test.describe("Filter Operations", () => {
     const expectedRecords = initialRecords.filter(
       (r) => r["Category"] === "Electronics"
     );
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -76,7 +76,7 @@ test.describe("Filter Operations", () => {
     const expectedRecords = initialRecords.filter((r) =>
       r["Name"].toLowerCase().includes("widget")
     );
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -91,7 +91,7 @@ test.describe("Filter Operations", () => {
     const expectedRecords = initialRecords.filter(
       (r) => r["Category"] === "Electronics" && parseInt(r["Quantity"]) > 50
     );
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(expectedRecords);
   });
 
@@ -103,12 +103,12 @@ test.describe("Filter Operations", () => {
       "filter quantity greater than 100"
     );
 
-    const filteredRecords = await tableHelper.tableToRecords();
+    const filteredRecords = await tableHelper.getPageRecords();
     expect(filteredRecords.length).toBeLessThan(initialRecords.length);
 
     await chatHelper.sendMessageAndWaitForToolExecution("clear all filters");
 
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
     expect(records).toEqual(initialRecords);
   });
 });

@@ -29,9 +29,29 @@ export class TableHelper {
     return this.page.getByTestId("table-empty-state");
   }
 
+  get rowCountText() {
+    return this.page.locator('text=/Showing \\d+ of \\d+ rows/');
+  }
+
+  get nextPageButton() {
+    return this.page.getByRole("button", { name: "Next" });
+  }
+
+  get previousPageButton() {
+    return this.page.getByRole("button", { name: "Previous" });
+  }
+
   async getVisibleRowCount(): Promise<number> {
     await this.page.waitForTimeout(300);
     return await this.bodyRows.count();
+  }
+
+  async goToNextPage(): Promise<void> {
+    await this.nextPageButton.click();
+  }
+
+  async goToPrevPage(): Promise<void> {
+    await this.previousPageButton.click();
   }
 
   async getColumnValues(columnIndex: number): Promise<string[]> {
@@ -158,19 +178,19 @@ export class TableHelper {
   }
 
   async hasRecordMatching(partial: Partial<Record<string, string>>): Promise<boolean> {
-    const records = await this.tableToRecords();
+    const records = await this.getPageRecords();
     return records.some((r) =>
       Object.entries(partial).every(([key, value]) => r[key] === value)
     );
   }
 
   async recordAtIndex(record: Record<string, string>, index: number): Promise<boolean> {
-    const records = await this.tableToRecords();
+    const records = await this.getPageRecords();
     if (index < 0 || index >= records.length) return false;
     return JSON.stringify(records[index]) === JSON.stringify(record);
   }
 
-  async tableToRecords(): Promise<Record<string, string>[]> {
+  async getPageRecords(): Promise<Record<string, string>[]> {
     const headers = this.headerRow.locator("th");
     const headerCount = await headers.count();
     const columnNames: string[] = [];

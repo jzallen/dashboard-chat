@@ -33,7 +33,7 @@ test.describe("Complex Prompts", () => {
       { Name: "Tool Alpha", Category: "Hardware", Amount: "$125.00", Quantity: "30", "In Stock": "✓" },
     ];
 
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
 
     // Compare records excluding ID (new row has generated ID)
     const recordsWithoutId = records.map(({ ID, ...rest }) => rest);
@@ -67,7 +67,7 @@ test.describe("Complex Prompts", () => {
       { Name: "Tool Alpha", Category: "Hardware", Amount: "$125.00", Quantity: "30", "In Stock": "✓" },
     ];
 
-    const records = await tableHelper.tableToRecords();
+    const records = await tableHelper.getPageRecords();
 
     const recordsWithoutId = records.map(({ ID, ...rest }) => rest);
     expect(recordsWithoutId).toEqual(expectedRecords);

@@ -28,13 +28,19 @@ export class ChatHelper {
   }
 
   async sendMessage(message: string): Promise<void> {
-    const messageCountBefore = await this.assistantMessages.count();
+    const assistantCountBefore = await this.assistantMessages.count();
 
     await this.input.fill(message);
     await this.sendButton.click();
 
-    // Wait for a new assistant message to appear (response received)
-    await expect(this.assistantMessages).toHaveCount(messageCountBefore + 1, {
+    // Wait for new assistant message to appear
+    await expect(this.assistantMessages).toHaveCount(assistantCountBefore + 1, {
+      timeout: 60000,
+    });
+
+    // Wait for assistant message to have content (not just empty/loading)
+    const newAssistantMessage = this.assistantMessages.nth(assistantCountBefore);
+    await expect(newAssistantMessage.locator('[class*="messageContent"]')).not.toBeEmpty({
       timeout: 60000,
     });
   }
