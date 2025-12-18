@@ -105,16 +105,17 @@ function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
     {
       name: "deleteRow",
       description:
-        "Delete a row from the table by its index (0-based) or by matching criteria",
+        "Delete a row from the table by searching for matching text across all columns.",
       parameters: {
         type: "object",
         properties: {
-          rowIndex: {
-            type: "number",
-            description: "Zero-based index of the row to delete",
+          search: {
+            type: "string",
+            description:
+              "Text to search for. Matches against any column value in the row.",
           },
         },
-        required: ["rowIndex"],
+        required: ["search"],
       },
     },
     {
@@ -160,10 +161,11 @@ INSTRUCTIONS:
    - Use "gt", "lt", "gte", "lte" for numeric comparisons
 3. For sorting, specify the column and direction ("asc" or "desc").
 4. For adding rows, provide data matching the column schema.
-5. For deleting rows, specify the row index (0-based).
-6. Always confirm what action you're taking in your response.
-7. If the user's request is ambiguous, ask for clarification.
-8. If a request doesn't require a table operation, just respond conversationally.
+5. For deleting rows, provide search text that matches the row (e.g., "Tool Beta" to delete that product).
+6. For multi-step requests, execute data modifications (add/delete) BEFORE view changes (filter/sort).
+7. Always confirm what action you're taking in your response.
+8. If the user's request is ambiguous, ask for clarification.
+9. If a request doesn't require a table operation, just respond conversationally.
 
 Be concise in your responses.`;
 }

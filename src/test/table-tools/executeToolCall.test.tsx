@@ -273,17 +273,38 @@ describe("executeToolCall", () => {
       });
     });
 
-    describe("Scenario: Delete a row by index", () => {
-      it("should delete row and return message", () => {
+    describe("Scenario: Delete a row by search", () => {
+      it("should delete row matching search text and return message", () => {
         const { table, handlers } = createTestTable(testData);
 
-        const message = executeToolCall(createToolCall("deleteRow", { rowIndex: 1 }), handlers);
+        const message = executeToolCall(createToolCall("deleteRow", { search: "Beta Widget" }), handlers);
 
-        expect(message).toBe("Deleted row at index 1");
+        expect(message).toBe('Deleted row matching "Beta Widget"');
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
           { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
           { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
         ]);
+      });
+
+      it("should match case-insensitively", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        const message = executeToolCall(createToolCall("deleteRow", { search: "beta" }), handlers);
+
+        expect(message).toBe('Deleted row matching "beta"');
+        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
+          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+        ]);
+      });
+
+      it("should not modify data if no match found", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        const message = executeToolCall(createToolCall("deleteRow", { search: "Nonexistent" }), handlers);
+
+        expect(message).toBe('Deleted row matching "Nonexistent"');
+        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
       });
     });
   });

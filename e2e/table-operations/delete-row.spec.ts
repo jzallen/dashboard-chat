@@ -19,37 +19,30 @@ test.describe("Delete Row Operations", () => {
     await expect(tableHelper.table).toBeVisible();
   });
 
-  test("should delete the first row", async ({ chatHelper, tableHelper }) => {
-    await chatHelper.sendMessageAndWaitForToolExecution("delete the first row");
+  test("should delete a row by name", async ({ chatHelper, tableHelper }) => {
+    await chatHelper.sendMessageAndWaitForToolExecution("delete Widget A");
 
     const records = await tableHelper.tableToRecords();
     expect(records.length).toBe(initialRecords.length - 1);
-    expect(await tableHelper.hasRecordMatching(initialRecords[0])).toBe(false);
-    expect(await tableHelper.recordAtIndex(initialRecords[1], 0)).toBe(true);
+    expect(await tableHelper.hasRecordMatching({ Name: "Widget A" })).toBe(false);
   });
 
-  test("should delete row at specific index", async ({
+  test("should delete a row by partial match", async ({
     chatHelper,
     tableHelper,
   }) => {
-    await chatHelper.sendMessageAndWaitForToolExecution("delete row at index 2");
+    await chatHelper.sendMessageAndWaitForToolExecution("delete Gadget X");
 
     const records = await tableHelper.tableToRecords();
     expect(records.length).toBe(initialRecords.length - 1);
-    expect(await tableHelper.hasRecordMatching(initialRecords[2])).toBe(false);
-    expect(await tableHelper.recordAtIndex(initialRecords[3], 2)).toBe(true);
+    expect(await tableHelper.hasRecordMatching({ Name: "Gadget X" })).toBe(false);
   });
 
-  test("should delete the last row", async ({ chatHelper, tableHelper }) => {
-    const lastIndex = initialRecords.length - 1;
-
-    await chatHelper.sendMessageAndWaitForToolExecution(
-      `delete row at index ${lastIndex}`
-    );
+  test("should delete a row by product name", async ({ chatHelper, tableHelper }) => {
+    await chatHelper.sendMessageAndWaitForToolExecution("delete Device Lite");
 
     const records = await tableHelper.tableToRecords();
     expect(records.length).toBe(initialRecords.length - 1);
-    expect(await tableHelper.hasRecordMatching(initialRecords[lastIndex])).toBe(false);
-    expect(await tableHelper.recordAtIndex(initialRecords[lastIndex - 1], lastIndex - 1)).toBe(true);
+    expect(await tableHelper.hasRecordMatching({ Name: "Device Lite" })).toBe(false);
   });
 });

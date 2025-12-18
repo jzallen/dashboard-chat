@@ -50,8 +50,17 @@ function performToolAction(
     }
 
     case "deleteRow": {
-      const { rowIndex } = args as { rowIndex: number };
-      handlers.setData((prev) => prev.filter((_, i) => i !== rowIndex));
+      const { search } = args as { search: string };
+      const searchLower = search.toLowerCase();
+      handlers.setData((prev) => {
+        const indexToDelete = prev.findIndex((row) =>
+          Object.values(row).some((value) =>
+            String(value).toLowerCase().includes(searchLower)
+          )
+        );
+        if (indexToDelete === -1) return prev;
+        return prev.filter((_, i) => i !== indexToDelete);
+      });
       break;
     }
 
@@ -102,8 +111,8 @@ function generateToolMessage(toolCall: ToolCall): string {
       return "Added new row";
 
     case "deleteRow": {
-      const { rowIndex } = args as { rowIndex: number };
-      return `Deleted row at index ${rowIndex}`;
+      const { search } = args as { search: string };
+      return `Deleted row matching "${search}"`;
     }
 
     case "clearFilters":
