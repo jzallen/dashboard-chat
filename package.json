@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "dev:worker": "wrangler dev",
     "deploy:worker": "wrangler deploy",
+    "deploy:pages": "wrangler pages deploy dist --project-name=dashboard-chat",
     "test": "vitest",
     "test:run": "vitest run",
     "test:e2e": "playwright test",
