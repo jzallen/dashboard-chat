@@ -11,9 +11,11 @@
     "deploy:pages": "wrangler pages deploy dist --project-name=dashboard-chat",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e": "playwright test --config=e2e/config/local.config.ts",
+    "test:e2e:local": "playwright test --config=e2e/config/local.config.ts",
+    "test:e2e:prod": "playwright test --config=e2e/config/production.config.ts",
+    "test:e2e:ui": "playwright test --ui --config=e2e/config/local.config.ts",
+    "test:e2e:debug": "playwright test --debug --config=e2e/config/local.config.ts"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.20.5",
