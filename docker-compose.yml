@@ -1,0 +1,96 @@
+services:
+  # Frontend - Vite dev server
+  frontend:
+    image: node:20-alpine
+    container_name: dashboard-frontend
+    working_dir: /app
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_CHAT_URL: http://localhost:8787
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+  # Cloudflare Worker - Chat API
+  worker:
+    image: node:20-slim
+    container_name: dashboard-worker
+    working_dir: /app
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+    ports:
+      - "8787:8787"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - api
+    command: bash -c "apt-get update && apt-get install -y ca-certificates && npm install && npx wrangler dev --ip 0.0.0.0 --port 8787"
+
+  # PostgreSQL - for persistent storage (optional for DuckDB-only mode)
+  db:
+    image: postgres:16-alpine
+    container_name: dashboard-postgres
+    profiles: ["full", "postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dashboard_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-dashboard_chat}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashboard}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI backend - works with DuckDB (local) or PostgreSQL (full)
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dashboard-api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/app.db}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      DEBUG: ${DEBUG:-true}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Full stack with PostgreSQL
+  api-full:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dashboard-api-full
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboard_secret}@db:5432/${POSTGRES_DB:-dashboard_chat}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      DEBUG: ${DEBUG:-true}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:

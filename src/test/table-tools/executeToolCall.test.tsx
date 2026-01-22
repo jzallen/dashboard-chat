@@ -309,6 +309,200 @@ describe("executeToolCall", () => {
     });
   });
 
+  describe("Feature: RAQB Filter Generation", () => {
+    describe("Scenario: Apply single rule RAQB filter", () => {
+      it("should apply RAQB filter and return message with condition count", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        const raqbTree = {
+          type: "group",
+          properties: { conjunction: "AND" },
+          children1: {
+            rule1: {
+              type: "rule",
+              properties: {
+                field: "category",
+                operator: "equal",
+                value: ["A"],
+              },
+            },
+          },
+        };
+
+        const message = executeToolCall(
+          createToolCall("generateFilter", {
+            description: "Show items in category A",
+            raqb_tree: raqbTree,
+          }),
+          handlers
+        );
+
+        expect(message).toBe("Applied filter: Show items in category A (1 condition)");
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
+          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+        ]);
+      });
+    });
+
+    describe("Scenario: Apply multi-rule RAQB filter with AND conjunction", () => {
+      it("should apply all conditions with AND logic", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        const raqbTree = {
+          type: "group",
+          properties: { conjunction: "AND" },
+          children1: {
+            rule1: {
+              type: "rule",
+              properties: {
+                field: "category",
+                operator: "equal",
+                value: ["A"],
+              },
+            },
+            rule2: {
+              type: "rule",
+              properties: {
+                field: "amount",
+                operator: "greater",
+                value: [30],
+              },
+            },
+          },
+        };
+
+        const message = executeToolCall(
+          createToolCall("generateFilter", {
+            description: "Category A items over $30",
+            raqb_tree: raqbTree,
+          }),
+          handlers
+        );
+
+        expect(message).toBe("Applied filter: Category A items over $30 (2 conditions)");
+        // Only Alpha matches (category A AND amount > 30)
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
+        ]);
+      });
+    });
+
+    describe("Scenario: Apply RAQB filter with numeric comparison", () => {
+      it("should apply greater_or_equal operator", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        const raqbTree = {
+          type: "group",
+          properties: { conjunction: "AND" },
+          children1: {
+            rule1: {
+              type: "rule",
+              properties: {
+                field: "amount",
+                operator: "greater_or_equal",
+                value: [50],
+              },
+            },
+          },
+        };
+
+        const message = executeToolCall(
+          createToolCall("generateFilter", {
+            description: "Items with amount >= 50",
+            raqb_tree: raqbTree,
+          }),
+          handlers
+        );
+
+        expect(message).toBe("Applied filter: Items with amount >= 50 (1 condition)");
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
+          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
+        ]);
+      });
+    });
+
+    describe("Scenario: RAQB filter replaces existing filters", () => {
+      it("should clear previous filters when applying RAQB filter", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        // Apply initial filter
+        executeToolCall(
+          createToolCall("filterTable", { column: "inStock", operator: "equals", value: true }),
+          handlers
+        );
+        expect(table.getFilteredRowModel().rows).toHaveLength(2);
+
+        // Apply RAQB filter (should replace, not add to existing filters)
+        const raqbTree = {
+          type: "group",
+          properties: { conjunction: "AND" },
+          children1: {
+            rule1: {
+              type: "rule",
+              properties: {
+                field: "category",
+                operator: "equal",
+                value: ["B"],
+              },
+            },
+          },
+        };
+
+        executeToolCall(
+          createToolCall("generateFilter", {
+            description: "Category B only",
+            raqb_tree: raqbTree,
+          }),
+          handlers
+        );
+
+        // Should show Beta Widget (category B) even though inStock is false
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
+        ]);
+      });
+    });
+
+    describe("Scenario: Apply RAQB filter with like operator", () => {
+      it("should apply contains/like filter", () => {
+        const { table, handlers } = createTestTable(testData);
+
+        const raqbTree = {
+          type: "group",
+          properties: { conjunction: "AND" },
+          children1: {
+            rule1: {
+              type: "rule",
+              properties: {
+                field: "name",
+                operator: "like",
+                value: ["a"],
+              },
+            },
+          },
+        };
+
+        const message = executeToolCall(
+          createToolCall("generateFilter", {
+            description: "Names containing 'a'",
+            raqb_tree: raqbTree,
+          }),
+          handlers
+        );
+
+        expect(message).toBe("Applied filter: Names containing 'a' (1 condition)");
+        // Alpha, Beta Widget, Gamma all contain 'a'
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
+          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
+          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
+          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+        ]);
+      });
+    });
+  });
+
   describe("Feature: Error Handling", () => {
     describe("Scenario: Invalid JSON arguments", () => {
       it("should return error message and not modify table", () => {

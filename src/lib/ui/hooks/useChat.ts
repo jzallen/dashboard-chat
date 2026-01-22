@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { ToolCall } from "@/table-tools";
 import type { Message, TableSchema, SSEMessage } from "../types";
-import { API_URL } from "../data/sampleData";
+import { CHAT_URL } from "../data/sampleData";
 
 interface UseChatOptions {
   executeToolCall: (toolCall: ToolCall) => string;
@@ -56,8 +56,10 @@ export function useChat({ executeToolCall, tableSchema }: UseChatOptions) {
           tool_calls: m.tool_calls,
         }));
 
-        const response = await fetch(`${API_URL}/chat`, {
+        console.log("[useChat] Sending request to:", `${CHAT_URL}/chat`);
+        const response = await fetch(`${CHAT_URL}/chat`, {
           method: "POST",
+          mode: "cors",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: apiMessages,
@@ -65,8 +67,12 @@ export function useChat({ executeToolCall, tableSchema }: UseChatOptions) {
           }),
         });
 
+        console.log("[useChat] Response status:", response.status);
+        console.log("[useChat] Response headers:", Object.fromEntries(response.headers.entries()));
+
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         if (!response.body) throw new Error("No response body");
+        console.log("[useChat] Response body exists, starting to read stream");
 
         // Process SSE stream
         const reader = response.body.getReader();
@@ -77,17 +83,21 @@ export function useChat({ executeToolCall, tableSchema }: UseChatOptions) {
 
         while (true) {
           const { done, value } = await reader.read();
+          console.log("[useChat] Read chunk - done:", done, "value length:", value?.length);
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
 
+          console.log("[useChat] Parsed lines:", lines.length, "buffer remaining:", buffer.length);
+
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const jsonStr = line.slice(6).trim();
             if (!jsonStr) continue;
 
+            console.log("[useChat] Processing SSE data:", jsonStr.substring(0, 100));
             try {
               const data: SSEMessage = JSON.parse(jsonStr);
 

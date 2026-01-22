@@ -1,4 +1,5 @@
 import type { Message, TableSchema, ToolDefinition } from "./types";
+import { filterTableToRaqb, generateFilterDescription } from "./tanstackToRaqb";
 
 // ============================================================================
 // Types
@@ -34,38 +35,6 @@ function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
     .join(", ");
 
   return [
-    {
-      name: "filterTable",
-      description: `Filter table rows based on column values. Available columns: ${columnDescriptions}`,
-      parameters: {
-        type: "object",
-        properties: {
-          column: {
-            type: "string",
-            enum: columnNames,
-            description: "Column ID to filter",
-          },
-          operator: {
-            type: "string",
-            enum: [
-              "equals",
-              "notEquals",
-              "contains",
-              "gt",
-              "lt",
-              "gte",
-              "lte",
-            ],
-            description: "Comparison operator",
-          },
-          value: {
-            type: ["string", "number", "boolean"],
-            description: "Value to filter by",
-          },
-        },
-        required: ["column", "operator", "value"],
-      },
-    },
     {
       name: "sortTable",
       description: `Sort table by a column. Available columns: ${columnDescriptions}`,
@@ -134,6 +103,42 @@ function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
         properties: {},
       },
     },
+    {
+      name: "filterTable",
+      description: `Filter the table by a single column. Use this for simple, single-condition filters. Available columns: ${columnDescriptions}`,
+      parameters: {
+        type: "object",
+        properties: {
+          column: {
+            type: "string",
+            enum: columnNames,
+            description: "Column ID to filter by",
+          },
+          operator: {
+            type: "string",
+            enum: [
+              "equals",
+              "notEquals",
+              "contains",
+              "startsWith",
+              "endsWith",
+              "gt",
+              "gte",
+              "lt",
+              "lte",
+              "between",
+            ],
+            description:
+              "Comparison operator. Use gt/gte/lt/lte for numbers, contains/startsWith/endsWith for text.",
+          },
+          value: {
+            description:
+              "Value to compare against. Use number for numeric comparisons, string for text. For 'between', use an array of two numbers.",
+          },
+        },
+        required: ["column", "operator", "value"],
+      },
+    },
   ];
 }
 
@@ -154,20 +159,17 @@ ${columnDescriptions}
 Total rows: ${tableSchema.rowCount}
 
 INSTRUCTIONS:
-1. When the user asks to filter, sort, or modify the table, use the appropriate tool.
-2. For filtering:
-   - Use "equals" for exact matches
-   - Use "contains" for partial string matches
-   - Use "gt", "lt", "gte", "lte" for numeric comparisons
-3. For sorting, specify the column and direction ("asc" or "desc").
-4. For adding rows, provide data matching the column schema.
-5. For deleting rows, provide search text that matches the row (e.g., "Tool Beta" to delete that product).
-6. For multi-step requests, execute data modifications (add/delete) BEFORE view changes (filter/sort).
-7. Always confirm what action you're taking in your response.
-8. If the user's request is ambiguous, ask for clarification.
-9. If a request doesn't require a table operation, just respond conversationally.
+1. For filtering, use "filterTable":
+   - Example: "show items over $50" → filterTable(column="amount", operator="gt", value=50)
+   - Operators: equals, notEquals, contains, startsWith, endsWith, gt, gte, lt, lte, between
+   - For multiple filters, call filterTable multiple times
 
-Be concise in your responses.`;
+2. For sorting, use "sortTable" with column and direction ("asc" or "desc").
+3. For adding rows, use "addRow" with data matching the column schema.
+4. For deleting rows, use "deleteRow" with search text that matches the row.
+5. Use "clearFilters" or "clearSort" to reset the table view.
+
+Be concise. Confirm what action you're taking.`;
 }
 
 // ============================================================================
@@ -257,40 +259,52 @@ class SSEStreamWriter {
 // Chat Handler
 // ============================================================================
 
-async function streamLLMResponse(
-  client: ChatClient,
-  request: ChatCompletionRequest,
-  stream: SSEStreamWriter
-): Promise<void> {
-  try {
-    for await (const chunk of client.streamCompletion(request)) {
-      try {
-        const parsed = JSON.parse(chunk);
-        const delta = parsed.choices?.[0]?.delta;
-        const finishReason = parsed.choices?.[0]?.finish_reason;
-
-        if (!delta) continue;
-
-        await stream.writeContent(delta.content);
-        stream.accumulateToolCalls(delta.tool_calls);
-
-        if (finishReason) {
-          await stream.writeToolCalls();
-          await stream.writeDone();
-        }
-      } catch {
-        // Skip malformed chunks
-      }
-    }
-  } catch (error) {
-    await stream.writeError(error);
-  } finally {
-    await stream.close();
-  }
-}
-
 interface HandleChatOptions {
   corsOrigin: string;
+  apiUrl?: string;
+  datasetId?: string;
+}
+
+/**
+ * Save a filterTable tool call to the backend as a pipeline.
+ * Converts TanStack filter format to RAQB JSON for persistence.
+ */
+async function savePipelineToBackend(
+  toolCall: { function: { name: string; arguments: string } },
+  apiUrl: string,
+  datasetId: string
+): Promise<void> {
+  if (toolCall.function.name !== "filterTable") return;
+
+  try {
+    const args = JSON.parse(toolCall.function.arguments);
+
+    // Convert filterTable args to RAQB format
+    const raqbJson = filterTableToRaqb(args);
+    const description = generateFilterDescription(args);
+
+    console.log("[handleChat] Converted filterTable to RAQB:", JSON.stringify(raqbJson));
+
+    const response = await fetch(`${apiUrl}/api/pipelines`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset_id: datasetId,
+        name: description,
+        description: description,
+        raqb_json: raqbJson,
+        nl_prompt: description,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to save pipeline:", await response.text());
+    } else {
+      console.log("[handleChat] Pipeline saved successfully");
+    }
+  } catch (error) {
+    console.error("Error saving pipeline:", error);
+  }
 }
 
 export async function handleChat(
@@ -299,6 +313,8 @@ export async function handleChat(
   options: HandleChatOptions
 ): Promise<Response> {
   const { messages, tableSchema }: ChatRequest = await request.json();
+  const apiUrl = options.apiUrl || "http://localhost:8000";
+  const datasetId = options.datasetId || "default-dataset-001";
 
   const systemPrompt = getSystemPrompt(tableSchema);
   const chatMessages: Message[] = [
@@ -309,9 +325,14 @@ export async function handleChat(
   const tools = getToolDefinitions(tableSchema);
   const stream = new SSEStreamWriter();
 
-  streamLLMResponse(client, { messages: chatMessages, tools }, stream).catch(
-    console.error
-  );
+  // Stream and persist any generateFilter calls
+  streamLLMResponseWithPersistence(
+    client,
+    { messages: chatMessages, tools },
+    stream,
+    apiUrl,
+    datasetId
+  ).catch(console.error);
 
   return new Response(stream.readable, {
     headers: {
@@ -323,4 +344,80 @@ export async function handleChat(
       "Access-Control-Allow-Headers": "Content-Type",
     },
   });
+}
+
+async function streamLLMResponseWithPersistence(
+  client: ChatClient,
+  request: ChatCompletionRequest,
+  stream: SSEStreamWriter,
+  apiUrl: string,
+  datasetId: string
+): Promise<void> {
+  const accumulatedToolCalls: AccumulatedToolCall[] = [];
+  let streamCompleted = false;
+
+  try {
+    console.log("[handleChat] Starting stream from LLM");
+    for await (const chunk of client.streamCompletion(request)) {
+      console.log("[handleChat] Received chunk:", chunk.substring(0, 200));
+      try {
+        const parsed = JSON.parse(chunk);
+        const delta = parsed.choices?.[0]?.delta;
+        const finishReason = parsed.choices?.[0]?.finish_reason;
+
+        console.log("[handleChat] Parsed - delta:", JSON.stringify(delta), "finishReason:", finishReason);
+
+        if (!delta && !finishReason) continue;
+
+        if (delta) {
+          await stream.writeContent(delta.content);
+          stream.accumulateToolCalls(delta.tool_calls);
+
+          // Track tool calls for persistence
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const index = tc.index;
+              if (!accumulatedToolCalls[index]) {
+                accumulatedToolCalls[index] = {
+                  id: tc.id || "",
+                  function: { name: "", arguments: "" },
+                };
+              }
+              if (tc.id) accumulatedToolCalls[index].id = tc.id;
+              if (tc.function?.name)
+                accumulatedToolCalls[index].function.name += tc.function.name;
+              if (tc.function?.arguments)
+                accumulatedToolCalls[index].function.arguments +=
+                  tc.function.arguments;
+            }
+          }
+        }
+
+        if (finishReason) {
+          // Persist filterTable calls as RAQB pipelines BEFORE sending done
+          for (const toolCall of accumulatedToolCalls) {
+            if (toolCall.function.name === "filterTable") {
+              await savePipelineToBackend(toolCall, apiUrl, datasetId);
+            }
+          }
+
+          await stream.writeToolCalls();
+          await stream.writeDone();
+          streamCompleted = true;
+        }
+      } catch (parseError) {
+        console.error("[handleChat] Parse error for chunk:", parseError, "chunk:", chunk.substring(0, 100));
+      }
+    }
+
+    // Ensure done is sent even if no finishReason was received
+    if (!streamCompleted) {
+      await stream.writeToolCalls();
+      await stream.writeDone();
+    }
+  } catch (error) {
+    await stream.writeError(error);
+  } finally {
+    await stream.close();
+  }
 }
