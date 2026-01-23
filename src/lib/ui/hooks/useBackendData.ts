@@ -35,6 +35,8 @@ interface UseBackendDataOptions {
   dbFile?: string;
   /** Table to query (uses first table if not specified) */
   table?: string;
+  /** Dataset ID to apply enabled transforms */
+  datasetId?: string;
   /** Number of rows to fetch */
   limit?: number;
   /** Offset for pagination */
@@ -50,6 +52,7 @@ export function useBackendData(options: UseBackendDataOptions = {}) {
   const {
     dbFile = "sample.duckdb",
     table,
+    datasetId,
     limit = 1000,
     offset = 0,
     autoFetch = true,
@@ -98,6 +101,10 @@ export function useBackendData(options: UseBackendDataOptions = {}) {
           params.set("table", tableName || table || "");
         }
 
+        if (datasetId) {
+          params.set("dataset_id", datasetId);
+        }
+
         const response = await get<QueryResponse>(
           `/api/data/query?${params.toString()}`
         );
@@ -121,7 +128,7 @@ export function useBackendData(options: UseBackendDataOptions = {}) {
         setLoading(false);
       }
     },
-    [dbFile, table, limit, offset]
+    [dbFile, table, datasetId, limit, offset]
   );
 
   /**
@@ -132,11 +139,13 @@ export function useBackendData(options: UseBackendDataOptions = {}) {
   }, [fetchData, table]);
 
   // Auto-fetch on mount
+  // When datasetId is provided, we defer the initial fetch to allow
+  // pipeline filters to be loaded first (to avoid double-fetch)
   useEffect(() => {
-    if (autoFetch) {
+    if (autoFetch && !datasetId) {
       fetchData();
     }
-  }, [autoFetch, fetchData]);
+  }, [autoFetch, fetchData, datasetId]);
 
   return {
     data,

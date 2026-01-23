@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from ..database import get_db
 from ..models import Dataset, FilterPipeline, PipelineRun
 from ..schemas import (
+    AggregatedSqlResponse,
     PipelineCreate,
     PipelineResponse,
     PipelineUpdate,
@@ -19,6 +20,7 @@ from ..services.pipeline_service import (
     create_pipeline,
     update_pipeline,
     execute_pipeline,
+    get_aggregated_sql,
 )
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
@@ -43,6 +45,28 @@ async def list_pipelines(
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/dataset/{dataset_id}/aggregated-sql", response_model=AggregatedSqlResponse)
+async def get_aggregated_sql_route(
+    dataset_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get combined SQL WHERE clause from all active transforms for a dataset."""
+    result = await db.execute(
+        select(Dataset).where(Dataset.id == dataset_id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    sql_where_clause, pipeline_ids = await get_aggregated_sql(db, dataset_id)
+
+    return AggregatedSqlResponse(
+        dataset_id=dataset_id,
+        enabled_pipeline_count=len(pipeline_ids),
+        sql_where_clause=sql_where_clause,
+        pipeline_ids=pipeline_ids,
+    )
 
 
 @router.get("/{pipeline_id}", response_model=PipelineResponse)
@@ -118,6 +142,7 @@ async def update_pipeline_route(
             name=update_data.name,
             description=update_data.description,
             raqb_json=update_data.raqb_json,
+            is_active=update_data.is_active,
         )
         return updated
     except Exception as e:

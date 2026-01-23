@@ -213,6 +213,7 @@ async def update_pipeline(
     name: str | None = None,
     description: str | None = None,
     raqb_json: dict | None = None,
+    is_active: bool | None = None,
 ) -> FilterPipeline:
     """Update a pipeline, incrementing version if RAQB changes.
 
@@ -222,6 +223,7 @@ async def update_pipeline(
         name: New name (optional)
         description: New description (optional)
         raqb_json: New RAQB tree (optional, triggers version increment)
+        is_active: Whether transform is active (optional)
 
     Returns:
         Updated FilterPipeline
@@ -238,9 +240,36 @@ async def update_pipeline(
         pipeline.cached_sql = raqb_to_sql(raqb_json)
         pipeline.version += 1
 
+    if is_active is not None:
+        pipeline.is_active = is_active
+
     await db.commit()
     await db.refresh(pipeline)
     return pipeline
+
+
+async def get_aggregated_sql(
+    db: AsyncSession,
+    dataset_id: str,
+) -> tuple[str, list[str]]:
+    """Aggregate SQL from all active transforms for a dataset."""
+    result = await db.execute(
+        select(FilterPipeline.id, FilterPipeline.cached_sql)
+        .distinct(FilterPipeline.cached_sql)
+        .where(FilterPipeline.dataset_id == dataset_id)
+        .where(FilterPipeline.is_active == True)
+        .order_by(FilterPipeline.cached_sql, FilterPipeline.created_at)
+    )
+    rows = result.all()
+
+    if not rows:
+        return "1=1", []
+
+    pipeline_ids = [row[0] for row in rows]
+    sql_clauses = [f"({row[1]})" for row in rows]
+    combined_sql = " AND ".join(sql_clauses)
+
+    return combined_sql, pipeline_ids
 
 
 async def execute_pipeline(

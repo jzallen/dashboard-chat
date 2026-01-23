@@ -14,6 +14,7 @@ interface TablePanelProps {
   columnFilters: ColumnFiltersState;
   setColumnFilters: Dispatch<SetStateAction<ColumnFiltersState>>;
   totalRows: number;
+  onSettingsClick?: () => void;
 }
 
 export default function TablePanel({
@@ -21,10 +22,11 @@ export default function TablePanel({
   columnFilters,
   setColumnFilters,
   totalRows,
+  onSettingsClick,
 }: TablePanelProps) {
   return (
     <div className={styles.panel}>
-      <TableHeader />
+      <TableHeader onSettingsClick={onSettingsClick} />
 
       <ActiveFilters
         columnFilters={columnFilters}

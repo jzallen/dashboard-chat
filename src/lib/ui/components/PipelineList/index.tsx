@@ -11,7 +11,7 @@ interface PipelineListProps {
   loading: boolean;
   error: string | null;
   onApply: (pipeline: Pipeline) => void;
-  onDelete: (pipelineId: string) => void;
+  onToggle: (pipelineId: string, isActive: boolean) => void;
   onRefresh: () => void;
 }
 
@@ -20,7 +20,7 @@ export function PipelineList({
   loading,
   error,
   onApply,
-  onDelete,
+  onToggle,
   onRefresh,
 }: PipelineListProps) {
   // Refresh on mount
@@ -61,26 +61,51 @@ export function PipelineList({
     );
   }
 
+  // Separate active and inactive pipelines
+  const activePipelines = pipelines.filter((p) => p.is_active);
+  const inactivePipelines = pipelines.filter((p) => !p.is_active);
+
   return (
-    <div className="p-2 space-y-2 max-h-96 overflow-y-auto">
-      <div className="flex items-center justify-between px-2 py-1">
-        <h2 className="text-sm font-semibold text-gray-700">Saved Filters</h2>
-        <button
-          onClick={onRefresh}
-          className="text-xs text-gray-500 hover:text-gray-700"
-          disabled={loading}
-        >
-          {loading ? "Refreshing..." : "Refresh"}
-        </button>
-      </div>
-      {pipelines.map((pipeline) => (
-        <PipelineCard
-          key={pipeline.id}
-          pipeline={pipeline}
-          onApply={onApply}
-          onDelete={onDelete}
-        />
-      ))}
+    <div className="p-6 space-y-6">
+      {/* Active Filters Section */}
+      {activePipelines.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+            Active Filters ({activePipelines.length})
+          </h3>
+          <div className="space-y-2">
+            {activePipelines.map((pipeline) => (
+              <PipelineCard
+                key={pipeline.id}
+                pipeline={pipeline}
+                onApply={onApply}
+                onToggle={onToggle}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Inactive Filters Section */}
+      {inactivePipelines.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-500 mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+            Inactive Filters ({inactivePipelines.length})
+          </h3>
+          <div className="space-y-2">
+            {inactivePipelines.map((pipeline) => (
+              <PipelineCard
+                key={pipeline.id}
+                pipeline={pipeline}
+                onApply={onApply}
+                onToggle={onToggle}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // Frontend - Quill Take Home Project
 // React + TanStack Table + Chat UI with SSE streaming
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   useTableConfig,
   useChat,
@@ -14,11 +14,14 @@ import {
   type ToolCall,
 } from "./src/lib/table-tools";
 import { usePipelines } from "./src/lib/ui/hooks/usePipelines";
-import { PipelineList } from "./src/lib/ui/components/PipelineList";
+import { FilterSettings } from "./src/lib/ui/components/FilterSettings";
+import { TablePanelSkeleton } from "./src/lib/ui/components/SkeletonLoader";
 
 const DEFAULT_DATASET_ID = "default-dataset-001";
 
 export default function App() {
+  const [showSettings, setShowSettings] = useState(false);
+
   const {
     table,
     data,
@@ -26,19 +29,30 @@ export default function App() {
     setColumnFilters,
     setSorting,
     setData,
-  } = useTableConfig();
+    refresh: refreshData,
+  } = useTableConfig({
+    datasetId: DEFAULT_DATASET_ID,
+  });
 
-  // Pipeline management
+  // Pipeline management (fetch all pipelines, not just active ones for settings view)
   const {
     pipelines,
     loading: pipelinesLoading,
+    initialized: pipelinesInitialized,
     error: pipelinesError,
     fetchPipelines,
     applyPipeline,
-    removePipeline,
+    togglePipeline,
   } = usePipelines({
     datasetId: DEFAULT_DATASET_ID,
     onFilterApply: setColumnFilters,
+    currentFilters: columnFilters,
+    autoApplyActive: true,
+    // Fetch data after pipelines are initialized and filters applied
+    onInitialized: refreshData,
+    // Refetch data when filters change (e.g., toggling active/inactive)
+    onFiltersChanged: refreshData,
+    activeOnly: false, // Fetch all pipelines so we can show inactive ones in settings
   });
 
   // Fetch pipelines on mount and after chat interactions
@@ -70,23 +84,27 @@ export default function App() {
   return (
     <div className="flex h-screen bg-gray-50">
       <div className="flex flex-col flex-1">
-        <TablePanel
-          table={table}
-          columnFilters={columnFilters}
-          setColumnFilters={setColumnFilters}
-          totalRows={data.length}
-        />
-        {/* Saved Pipelines */}
-        <div className="border-t border-gray-200 bg-white p-3">
-          <PipelineList
+        {!pipelinesInitialized ? (
+          <TablePanelSkeleton />
+        ) : showSettings ? (
+          <FilterSettings
             pipelines={pipelines}
             loading={pipelinesLoading}
             error={pipelinesError}
             onApply={applyPipeline}
-            onDelete={removePipeline}
+            onToggle={togglePipeline}
             onRefresh={fetchPipelines}
+            onClose={() => setShowSettings(false)}
           />
-        </div>
+        ) : (
+          <TablePanel
+            table={table}
+            columnFilters={columnFilters}
+            setColumnFilters={setColumnFilters}
+            totalRows={data.length}
+            onSettingsClick={() => setShowSettings(true)}
+          />
+        )}
       </div>
       <ChatPanel {...chat} />
     </div>

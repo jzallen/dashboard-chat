@@ -31,6 +31,7 @@ export interface PipelineUpdate {
   name?: string;
   description?: string;
   raqb_json?: RAQBTree;
+  is_active?: boolean;
 }
 
 export interface PipelineRun {

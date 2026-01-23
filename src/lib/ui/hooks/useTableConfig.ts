@@ -48,10 +48,12 @@ interface UseTableConfigOptions {
   dbFile?: string;
   /** Table name to query */
   table?: string;
+  /** Dataset ID for server-side filtering */
+  datasetId?: string;
 }
 
 export function useTableConfig(options: UseTableConfigOptions = {}) {
-  const { useBackend = true, dbFile, table } = options;
+  const { useBackend = true, dbFile, table, datasetId } = options;
 
   const {
     data: backendData,
@@ -63,6 +65,7 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
   } = useBackendData({
     dbFile,
     table,
+    datasetId,
     autoFetch: useBackend,
   });
 

@@ -3,9 +3,11 @@
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..database import get_db
 from ..services.duckdb_service import (
     query_table,
     list_tables,
@@ -13,6 +15,7 @@ from ..services.duckdb_service import (
     create_sample_database,
     DATA_DIR,
 )
+from ..services.pipeline_service import get_aggregated_sql
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -70,12 +73,14 @@ async def get_tables(
 async def query_data(
     db_file: str = Query(default="sample.duckdb", description="DuckDB file name"),
     table: str = Query(default=None, description="Table to query"),
+    dataset_id: str = Query(default=None, description="Dataset ID to apply active transforms"),
     limit: int = Query(default=100, ge=1, le=10000),
     offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
 ):
     """Query data from a DuckDB table.
 
-    If no table is specified, queries the first available table.
+    If dataset_id is provided, applies aggregated SQL from all active transforms.
     """
     db_path = DATA_DIR / db_file
     if not db_path.exists():
@@ -84,8 +89,16 @@ async def query_data(
         else:
             raise HTTPException(status_code=404, detail=f"Database file not found: {db_file}")
 
+    where_clause = None
+    if dataset_id:
+        where_clause, _ = await get_aggregated_sql(db, dataset_id)
+        if where_clause == "1=1":
+            where_clause = None
+
     try:
-        rows, columns, total = query_table(db_path, table_name=table, limit=limit, offset=offset)
+        rows, columns, total = query_table(
+            db_path, table_name=table, where_clause=where_clause, limit=limit, offset=offset
+        )
         return QueryResponse(
             rows=rows,
             columns=columns,

@@ -27,6 +27,7 @@ class PipelineUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     raqb_json: dict[str, Any] | None = None
+    is_active: bool | None = None
 
 
 class PipelineResponse(PipelineBase):
@@ -60,3 +61,12 @@ class PipelineExecuteResponse(BaseModel):
     output_row_count: int
     execution_time_ms: float
     rows: list[dict[str, Any]]
+
+
+class AggregatedSqlResponse(BaseModel):
+    """Schema for aggregated SQL from active transforms."""
+
+    dataset_id: str
+    enabled_pipeline_count: int
+    sql_where_clause: str
+    pipeline_ids: list[str]

@@ -53,6 +53,7 @@ def query_table(
     db_path: str | Path,
     table_name: str | None = None,
     query: str | None = None,
+    where_clause: str | None = None,
     limit: int = 1000,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], list[str], int]:
@@ -62,6 +63,7 @@ def query_table(
         db_path: Path to DuckDB file
         table_name: Table to query (used if query is None)
         query: Custom SQL query (overrides table_name)
+        where_clause: SQL WHERE clause to apply (without WHERE keyword)
         limit: Maximum rows to return
         offset: Row offset for pagination
 
@@ -70,23 +72,21 @@ def query_table(
     """
     conn = get_connection(db_path)
     try:
-        # Determine the query to run
         if query:
             base_query = query
         elif table_name:
             base_query = f'SELECT * FROM "{table_name}"'
+            if where_clause:
+                base_query = f'{base_query} WHERE {where_clause}'
         else:
-            # Default to first table
             tables = list_tables(db_path)
             if not tables:
                 return [], [], 0
             base_query = f'SELECT * FROM "{tables[0]}"'
 
-        # Get total count
         count_query = f"SELECT COUNT(*) FROM ({base_query}) AS subq"
         total_count = conn.execute(count_query).fetchone()[0]
 
-        # Get paginated results
         paginated_query = f"{base_query} LIMIT {limit} OFFSET {offset}"
         result = conn.execute(paginated_query)
 

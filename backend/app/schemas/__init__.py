@@ -18,6 +18,7 @@ from .project import (
     ProjectWithDatasets,
 )
 from .pipeline import (
+    AggregatedSqlResponse,
     PipelineBase,
     PipelineCreate,
     PipelineUpdate,
@@ -50,6 +51,7 @@ __all__ = [
     "FieldConfig",
     "SchemaConfig",
     # Pipeline
+    "AggregatedSqlResponse",
     "PipelineBase",
     "PipelineCreate",
     "PipelineUpdate",
