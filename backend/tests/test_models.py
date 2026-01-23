@@ -7,7 +7,7 @@ Run with: pytest backend/tests/test_models.py
 import pytest
 from datetime import datetime
 
-from app.models import Project, Dataset, FilterPipeline, PipelineRun, RunStatus
+from app.models import Project, Dataset, Transform, PipelineRun, RunStatus
 
 
 class TestProjectModel:
@@ -66,11 +66,11 @@ class TestDatasetModel:
         assert "test_table" in repr(dataset)
 
 
-class TestFilterPipelineModel:
-    """Tests for FilterPipeline model."""
+class TestTransformModel:
+    """Tests for Transform model."""
 
-    def test_pipeline_creation(self):
-        """Test FilterPipeline model can be instantiated."""
+    def test_transform_creation(self):
+        """Test Transform model can be instantiated."""
         raqb_json = {
             "type": "group",
             "properties": {"conjunction": "AND"},
@@ -85,43 +85,43 @@ class TestFilterPipelineModel:
                 },
             },
         }
-        pipeline = FilterPipeline(
+        transform = Transform(
             dataset_id="dataset-123",
             name="High Value Items",
             raqb_json=raqb_json,
             cached_sql='"amount" > 100',
         )
-        assert pipeline.name == "High Value Items"
-        assert pipeline.raqb_json == raqb_json
-        assert pipeline.cached_sql == '"amount" > 100'
+        assert transform.name == "High Value Items"
+        assert transform.raqb_json == raqb_json
+        assert transform.cached_sql == '"amount" > 100'
 
-    def test_pipeline_version_default(self):
-        """Test FilterPipeline version defaults to 1."""
-        pipeline = FilterPipeline(
+    def test_transform_version_default(self):
+        """Test Transform version defaults to 1."""
+        transform = Transform(
             dataset_id="dataset-123",
             name="Test",
             raqb_json={},
         )
         # Note: default is applied by SQLAlchemy
 
-    def test_pipeline_is_active_default(self):
-        """Test FilterPipeline is_active defaults to True."""
-        pipeline = FilterPipeline(
+    def test_transform_is_active_default(self):
+        """Test Transform is_active defaults to True."""
+        transform = Transform(
             dataset_id="dataset-123",
             name="Test",
             raqb_json={},
         )
         # Note: default is applied by SQLAlchemy
 
-    def test_pipeline_repr(self):
-        """Test FilterPipeline __repr__ method."""
-        pipeline = FilterPipeline(
+    def test_transform_repr(self):
+        """Test Transform __repr__ method."""
+        transform = Transform(
             id="pl-id",
-            name="Test Pipeline",
+            name="Test Transform",
             version=2,
         )
-        assert "Test Pipeline" in repr(pipeline)
-        assert "version=2" in repr(pipeline)
+        assert "Test Transform" in repr(transform)
+        assert "version=2" in repr(transform)
 
 
 class TestPipelineRunModel:
@@ -168,20 +168,20 @@ class TestModelRelationships:
         # Project.datasets should be available (but empty without DB)
         assert hasattr(project, "datasets")
 
-    def test_dataset_has_pipelines_relationship(self):
-        """Document: Dataset should have a pipelines relationship."""
+    def test_dataset_has_transforms_relationship(self):
+        """Document: Dataset should have a transforms relationship."""
         dataset = Dataset(
             project_id="p-1",
             name="Test",
             table_name="test",
         )
-        assert hasattr(dataset, "pipelines")
+        assert hasattr(dataset, "transforms")
 
-    def test_pipeline_has_runs_relationship(self):
-        """Document: FilterPipeline should have a runs relationship."""
-        pipeline = FilterPipeline(
+    def test_transform_has_runs_relationship(self):
+        """Document: Transform should have a runs relationship."""
+        transform = Transform(
             dataset_id="d-1",
             name="Test",
             raqb_json={},
         )
-        assert hasattr(pipeline, "runs")
+        assert hasattr(transform, "runs")

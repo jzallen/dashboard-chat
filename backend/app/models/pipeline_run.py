@@ -1,4 +1,4 @@
-"""Pipeline run model for tracking execution history."""
+"""Run model for tracking transform execution history (tech debt - currently unused)."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -10,11 +10,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
 if TYPE_CHECKING:
-    from .pipeline import FilterPipeline
+    from .transform import Transform
 
 
 class RunStatus:
-    """Pipeline run status constants."""
+    """Transform run status constants (tech debt - currently unused)."""
 
     PENDING = "pending"
     RUNNING = "running"
@@ -23,7 +23,7 @@ class RunStatus:
 
 
 class PipelineRun(Base):
-    """Execution history for filter pipelines."""
+    """Execution history for transforms (tech debt - currently unused)."""
 
     __tablename__ = "pipeline_runs"
 
@@ -34,7 +34,7 @@ class PipelineRun(Base):
     )
     pipeline_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("filter_pipelines.id", ondelete="CASCADE"),
+        ForeignKey("transforms.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -61,8 +61,8 @@ class PipelineRun(Base):
     )
 
     # Relationships
-    pipeline: Mapped["FilterPipeline"] = relationship(
-        "FilterPipeline", back_populates="runs"
+    transform: Mapped["Transform"] = relationship(
+        "Transform", back_populates="runs"
     )
 
     def __repr__(self) -> str:

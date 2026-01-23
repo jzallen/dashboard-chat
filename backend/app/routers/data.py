@@ -15,7 +15,7 @@ from ..services.duckdb_service import (
     create_sample_database,
     DATA_DIR,
 )
-from ..services.pipeline_service import get_aggregated_sql
+from ..services.transform_service import get_aggregated_sql
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 

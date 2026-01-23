@@ -2,6 +2,7 @@
 // React + TanStack Table + Chat UI with SSE streaming
 
 import { useCallback, useEffect, useState } from "react";
+import styles from "./App.module.css";
 import {
   useTableConfig,
   useChat,
@@ -13,8 +14,8 @@ import {
   executeToolCall as executeToolCallFn,
   type ToolCall,
 } from "./src/lib/table-tools";
-import { usePipelines } from "./src/lib/ui/hooks/usePipelines";
-import { FilterSettings } from "./src/lib/ui/components/FilterSettings";
+import { useTransforms } from "./src/lib/ui/hooks/useTransforms";
+import { TransformSettings } from "./src/lib/ui/components/TransformSettings";
 import { TablePanelSkeleton } from "./src/lib/ui/components/SkeletonLoader";
 
 const DEFAULT_DATASET_ID = "default-dataset-001";
@@ -34,31 +35,30 @@ export default function App() {
     datasetId: DEFAULT_DATASET_ID,
   });
 
-  // Pipeline management (fetch all pipelines, not just active ones for settings view)
+  // Transform management (fetch all transforms, not just active ones for settings view)
   const {
-    pipelines,
-    loading: pipelinesLoading,
-    initialized: pipelinesInitialized,
-    error: pipelinesError,
-    fetchPipelines,
-    applyPipeline,
-    togglePipeline,
-  } = usePipelines({
+    transforms,
+    loading: transformsLoading,
+    initialized: transformsInitialized,
+    error: transformsError,
+    fetchTransforms,
+    toggleTransform,
+  } = useTransforms({
     datasetId: DEFAULT_DATASET_ID,
     onFilterApply: setColumnFilters,
     currentFilters: columnFilters,
     autoApplyActive: true,
-    // Fetch data after pipelines are initialized and filters applied
+    // Fetch data after transforms are initialized and applied
     onInitialized: refreshData,
-    // Refetch data when filters change (e.g., toggling active/inactive)
+    // Refetch data when transforms change (e.g., toggling active/inactive)
     onFiltersChanged: refreshData,
-    activeOnly: false, // Fetch all pipelines so we can show inactive ones in settings
+    activeOnly: false, // Fetch all transforms so we can show inactive ones in settings
   });
 
-  // Fetch pipelines on mount and after chat interactions
+  // Fetch transforms on mount and after chat interactions
   useEffect(() => {
-    fetchPipelines();
-  }, [fetchPipelines]);
+    fetchTransforms();
+  }, [fetchTransforms]);
 
   const executeToolCall = useCallback(
     (toolCall: ToolCall): string => {
@@ -67,13 +67,13 @@ export default function App() {
         setSorting,
         setData,
       });
-      // Refresh pipelines after a generateFilter tool call
-      if (toolCall.function.name === "generateFilter") {
-        setTimeout(() => fetchPipelines(), 500);
+      // Refresh transforms after a filterTable tool call
+      if (toolCall.function.name === "filterTable") {
+        setTimeout(() => fetchTransforms(), 500);
       }
       return result;
     },
-    [setColumnFilters, setSorting, setData, fetchPipelines]
+    [setColumnFilters, setSorting, setData, fetchTransforms]
   );
 
   const chat = useChat({
@@ -82,18 +82,17 @@ export default function App() {
   });
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <div className="flex flex-col flex-1">
-        {!pipelinesInitialized ? (
+    <div className={styles.appContainer}>
+      <div className={styles.mainContent}>
+        {!transformsInitialized ? (
           <TablePanelSkeleton />
         ) : showSettings ? (
-          <FilterSettings
-            pipelines={pipelines}
-            loading={pipelinesLoading}
-            error={pipelinesError}
-            onApply={applyPipeline}
-            onToggle={togglePipeline}
-            onRefresh={fetchPipelines}
+          <TransformSettings
+            transforms={transforms}
+            loading={transformsLoading}
+            error={transformsError}
+            onToggle={toggleTransform}
+            onRefresh={fetchTransforms}
             onClose={() => setShowSettings(false)}
           />
         ) : (

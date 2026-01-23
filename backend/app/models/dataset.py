@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
 if TYPE_CHECKING:
-    from .pipeline import FilterPipeline
+    from .transform import Transform
     from .project import Project
 
 
@@ -53,8 +53,8 @@ class Dataset(Base):
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="datasets")
-    pipelines: Mapped[list["FilterPipeline"]] = relationship(
-        "FilterPipeline", back_populates="dataset", cascade="all, delete-orphan"
+    transforms: Mapped[list["Transform"]] = relationship(
+        "Transform", back_populates="dataset", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

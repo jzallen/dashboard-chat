@@ -1,13 +1,9 @@
-"""Pipeline service for filter pipeline management and execution."""
+"""Transform service for transform management."""
 
-import time
-from datetime import datetime
-from typing import Any
-
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Dataset, FilterPipeline, PipelineRun
+from ..models import Transform
 
 
 def raqb_to_sql(raqb_tree: dict, identifier_quote: str = '"') -> str:
@@ -169,31 +165,31 @@ def _operator_to_sql(
             return None
 
 
-async def create_pipeline(
+async def create_transform(
     db: AsyncSession,
     dataset_id: str,
     name: str,
     raqb_json: dict,
     description: str | None = None,
     nl_prompt: str | None = None,
-) -> FilterPipeline:
-    """Create a new filter pipeline with both RAQB JSON and cached SQL.
+) -> Transform:
+    """Create a new transform with both RAQB JSON and cached SQL.
 
     Args:
         db: Database session
         dataset_id: Parent dataset ID
-        name: Pipeline name
+        name: Transform name
         raqb_json: RAQB tree format filter
         description: Optional description
         nl_prompt: Optional original NL prompt
 
     Returns:
-        Created FilterPipeline
+        Created Transform
     """
     # Generate SQL from RAQB tree
     cached_sql = raqb_to_sql(raqb_json)
 
-    pipeline = FilterPipeline(
+    transform = Transform(
         dataset_id=dataset_id,
         name=name,
         description=description,
@@ -201,51 +197,51 @@ async def create_pipeline(
         cached_sql=cached_sql,
         nl_prompt=nl_prompt,
     )
-    db.add(pipeline)
+    db.add(transform)
     await db.commit()
-    await db.refresh(pipeline)
-    return pipeline
+    await db.refresh(transform)
+    return transform
 
 
-async def update_pipeline(
+async def update_transform(
     db: AsyncSession,
-    pipeline: FilterPipeline,
+    transform: Transform,
     name: str | None = None,
     description: str | None = None,
     raqb_json: dict | None = None,
     is_active: bool | None = None,
-) -> FilterPipeline:
-    """Update a pipeline, incrementing version if RAQB changes.
+) -> Transform:
+    """Update a transform, incrementing version if RAQB changes.
 
     Args:
         db: Database session
-        pipeline: Pipeline to update
+        transform: Transform to update
         name: New name (optional)
         description: New description (optional)
         raqb_json: New RAQB tree (optional, triggers version increment)
         is_active: Whether transform is active (optional)
 
     Returns:
-        Updated FilterPipeline
+        Updated Transform
     """
     if name is not None:
-        pipeline.name = name
+        transform.name = name
 
     if description is not None:
-        pipeline.description = description
+        transform.description = description
 
     if raqb_json is not None:
         # RAQB changed - increment version and regenerate SQL
-        pipeline.raqb_json = raqb_json
-        pipeline.cached_sql = raqb_to_sql(raqb_json)
-        pipeline.version += 1
+        transform.raqb_json = raqb_json
+        transform.cached_sql = raqb_to_sql(raqb_json)
+        transform.version += 1
 
     if is_active is not None:
-        pipeline.is_active = is_active
+        transform.is_active = is_active
 
     await db.commit()
-    await db.refresh(pipeline)
-    return pipeline
+    await db.refresh(transform)
+    return transform
 
 
 async def get_aggregated_sql(
@@ -254,100 +250,19 @@ async def get_aggregated_sql(
 ) -> tuple[str, list[str]]:
     """Aggregate SQL from all active transforms for a dataset."""
     result = await db.execute(
-        select(FilterPipeline.id, FilterPipeline.cached_sql)
-        .distinct(FilterPipeline.cached_sql)
-        .where(FilterPipeline.dataset_id == dataset_id)
-        .where(FilterPipeline.is_active == True)
-        .order_by(FilterPipeline.cached_sql, FilterPipeline.created_at)
+        select(Transform.id, Transform.cached_sql)
+        .distinct(Transform.cached_sql)
+        .where(Transform.dataset_id == dataset_id)
+        .where(Transform.is_active == True)
+        .order_by(Transform.cached_sql, Transform.created_at)
     )
     rows = result.all()
 
     if not rows:
         return "1=1", []
 
-    pipeline_ids = [row[0] for row in rows]
+    transform_ids = [row[0] for row in rows]
     sql_clauses = [f"({row[1]})" for row in rows]
     combined_sql = " AND ".join(sql_clauses)
 
-    return combined_sql, pipeline_ids
-
-
-async def execute_pipeline(
-    db: AsyncSession,
-    pipeline: FilterPipeline,
-    limit: int = 100,
-    offset: int = 0,
-) -> tuple[PipelineRun, list[dict[str, Any]]]:
-    """Execute a pipeline against its dataset and record the run.
-
-    Args:
-        db: Database session
-        pipeline: Pipeline to execute
-        limit: Maximum rows to return
-        offset: Offset for pagination
-
-    Returns:
-        Tuple of (PipelineRun record, result rows)
-    """
-    # Get dataset
-    result = await db.execute(
-        select(Dataset).where(Dataset.id == pipeline.dataset_id)
-    )
-    dataset = result.scalar_one()
-
-    # Create run record
-    run = PipelineRun(
-        pipeline_id=pipeline.id,
-        status="running",
-        started_at=datetime.utcnow(),
-    )
-    db.add(run)
-    await db.flush()
-
-    start_time = time.time()
-
-    try:
-        # Build and execute query
-        where_clause = pipeline.cached_sql or "1=1"
-
-        # Count total matching rows
-        count_sql = f'SELECT COUNT(*) FROM "{dataset.table_name}" WHERE {where_clause}'
-        count_result = await db.execute(text(count_sql))
-        total_matching = count_result.scalar()
-
-        # Get paginated results
-        query_sql = f'''
-            SELECT * FROM "{dataset.table_name}"
-            WHERE {where_clause}
-            LIMIT :limit OFFSET :offset
-        '''
-        result = await db.execute(
-            text(query_sql), {"limit": limit, "offset": offset}
-        )
-        rows = result.fetchall()
-        columns = result.keys()
-        result_rows = [dict(zip(columns, row)) for row in rows]
-
-        # Update run with success
-        run.status = "completed"
-        run.input_row_count = dataset.row_count
-        run.output_row_count = total_matching
-        run.execution_time_ms = (time.time() - start_time) * 1000
-        run.completed_at = datetime.utcnow()
-
-        await db.commit()
-        await db.refresh(run)
-
-        return run, result_rows
-
-    except Exception as e:
-        # Update run with failure
-        run.status = "failed"
-        run.error_message = str(e)
-        run.execution_time_ms = (time.time() - start_time) * 1000
-        run.completed_at = datetime.utcnow()
-
-        await db.commit()
-        await db.refresh(run)
-
-        raise
+    return combined_sql, transform_ids

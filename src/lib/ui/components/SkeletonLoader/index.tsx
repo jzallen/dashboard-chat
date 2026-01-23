@@ -2,43 +2,45 @@
  * Skeleton loader for table panel
  */
 
+import styles from "./SkeletonLoader.module.css";
+
 export function TablePanelSkeleton() {
   return (
-    <div className="flex flex-col h-full bg-white animate-pulse">
+    <div className={styles.skeletonContainer}>
       {/* Header skeleton */}
-      <div className="border-b border-gray-200 p-4">
-        <div className="h-6 bg-gray-200 rounded w-32"></div>
+      <div className={styles.headerSkeleton}>
+        <div className={styles.headerTitleBar}></div>
       </div>
 
       {/* Active filters skeleton */}
-      <div className="border-b border-gray-200 p-3">
-        <div className="flex gap-2">
-          <div className="h-7 bg-gray-200 rounded-full w-32"></div>
-          <div className="h-7 bg-gray-200 rounded-full w-40"></div>
+      <div className={styles.filtersSkeleton}>
+        <div className={styles.filterPillsContainer}>
+          <div className={`${styles.filterPill} ${styles.filterPillSmall}`}></div>
+          <div className={`${styles.filterPill} ${styles.filterPillMedium}`}></div>
         </div>
       </div>
 
       {/* Table skeleton */}
-      <div className="flex-1 overflow-hidden p-4">
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div className={styles.tableArea}>
+        <div className={styles.tableContainer}>
           {/* Table header */}
-          <div className="bg-gray-50 border-b border-gray-200">
-            <div className="flex">
+          <div className={styles.tableHeader}>
+            <div className={styles.headerRow}>
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="flex-1 p-3">
-                  <div className="h-4 bg-gray-300 rounded w-20"></div>
+                <div key={i} className={styles.headerCell}>
+                  <div className={styles.headerText}></div>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Table rows */}
-          <div className="divide-y divide-gray-200">
+          <div className={styles.tableBody}>
             {[1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
-              <div key={row} className="flex">
+              <div key={row} className={styles.tableRow}>
                 {[1, 2, 3, 4, 5].map((col) => (
-                  <div key={col} className="flex-1 p-3">
-                    <div className="h-4 bg-gray-200 rounded w-full max-w-[120px]"></div>
+                  <div key={col} className={styles.tableCell}>
+                    <div className={styles.cellContent}></div>
                   </div>
                 ))}
               </div>
@@ -48,14 +50,14 @@ export function TablePanelSkeleton() {
       </div>
 
       {/* Pagination skeleton */}
-      <div className="border-t border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="h-4 bg-gray-200 rounded w-32"></div>
-          <div className="flex gap-2">
-            <div className="h-8 bg-gray-200 rounded w-20"></div>
-            <div className="h-8 bg-gray-200 rounded w-20"></div>
+      <div className={styles.paginationSkeleton}>
+        <div className={styles.paginationLayout}>
+          <div className={`${styles.paginationText} ${styles.paginationTextLeft}`}></div>
+          <div className={styles.paginationButtons}>
+            <div className={styles.paginationButton}></div>
+            <div className={styles.paginationButton}></div>
           </div>
-          <div className="h-4 bg-gray-200 rounded w-24"></div>
+          <div className={`${styles.paginationText} ${styles.paginationTextRight}`}></div>
         </div>
       </div>
     </div>

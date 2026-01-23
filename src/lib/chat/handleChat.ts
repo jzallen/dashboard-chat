@@ -266,10 +266,10 @@ interface HandleChatOptions {
 }
 
 /**
- * Save a filterTable tool call to the backend as a pipeline.
+ * Save a filterTable tool call to the backend as a transform.
  * Converts TanStack filter format to RAQB JSON for persistence.
  */
-async function savePipelineToBackend(
+async function saveTransformToBackend(
   toolCall: { function: { name: string; arguments: string } },
   apiUrl: string,
   datasetId: string
@@ -285,7 +285,7 @@ async function savePipelineToBackend(
 
     console.log("[handleChat] Converted filterTable to RAQB:", JSON.stringify(raqbJson));
 
-    const response = await fetch(`${apiUrl}/api/pipelines`, {
+    const response = await fetch(`${apiUrl}/api/transforms`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -298,12 +298,12 @@ async function savePipelineToBackend(
     });
 
     if (!response.ok) {
-      console.error("Failed to save pipeline:", await response.text());
+      console.error("Failed to save transform:", await response.text());
     } else {
-      console.log("[handleChat] Pipeline saved successfully");
+      console.log("[handleChat] Transform saved successfully");
     }
   } catch (error) {
-    console.error("Error saving pipeline:", error);
+    console.error("Error saving transform:", error);
   }
 }
 
@@ -394,10 +394,10 @@ async function streamLLMResponseWithPersistence(
         }
 
         if (finishReason) {
-          // Persist filterTable calls as RAQB pipelines BEFORE sending done
+          // Persist filterTable calls as RAQB transforms BEFORE sending done
           for (const toolCall of accumulatedToolCalls) {
             if (toolCall.function.name === "filterTable") {
-              await savePipelineToBackend(toolCall, apiUrl, datasetId);
+              await saveTransformToBackend(toolCall, apiUrl, datasetId);
             }
           }
 

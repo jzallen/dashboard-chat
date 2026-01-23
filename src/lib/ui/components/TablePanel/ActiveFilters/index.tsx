@@ -2,6 +2,7 @@ import type { ColumnFiltersState } from "@tanstack/react-table";
 import type { Dispatch, SetStateAction } from "react";
 import { FilterBadge } from "./FilterBadge";
 import { ClearAllButton } from "./ClearAllButton";
+import styles from "./ActiveFilters.module.css";
 
 interface ActiveFiltersProps {
   columnFilters: ColumnFiltersState;
@@ -23,7 +24,7 @@ export default function ActiveFilters({
   };
 
   return (
-    <div className="mb-4 flex flex-wrap gap-2">
+    <div className={styles.filtersContainer}>
       {columnFilters.map((filter) => (
         <FilterBadge
           key={filter.id}

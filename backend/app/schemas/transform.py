@@ -1,4 +1,4 @@
-"""Pydantic schemas for FilterPipeline."""
+"""Pydantic schemas for Transform."""
 
 from datetime import datetime
 from typing import Any
@@ -6,23 +6,23 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
-class PipelineBase(BaseModel):
-    """Base schema for FilterPipeline."""
+class TransformBase(BaseModel):
+    """Base schema for Transform."""
 
     name: str
     description: str | None = None
 
 
-class PipelineCreate(PipelineBase):
-    """Schema for creating a FilterPipeline."""
+class TransformCreate(TransformBase):
+    """Schema for creating a Transform."""
 
     dataset_id: str
     raqb_json: dict[str, Any]
     nl_prompt: str | None = None
 
 
-class PipelineUpdate(BaseModel):
-    """Schema for updating a FilterPipeline."""
+class TransformUpdate(BaseModel):
+    """Schema for updating a Transform."""
 
     name: str | None = None
     description: str | None = None
@@ -30,8 +30,8 @@ class PipelineUpdate(BaseModel):
     is_active: bool | None = None
 
 
-class PipelineResponse(PipelineBase):
-    """Schema for FilterPipeline response."""
+class TransformResponse(TransformBase):
+    """Schema for Transform response."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,27 +46,10 @@ class PipelineResponse(PipelineBase):
     updated_at: datetime
 
 
-class PipelineExecuteRequest(BaseModel):
-    """Schema for executing a pipeline."""
-
-    limit: int | None = 100
-    offset: int | None = 0
-
-
-class PipelineExecuteResponse(BaseModel):
-    """Schema for pipeline execution result."""
-
-    pipeline_id: str
-    input_row_count: int
-    output_row_count: int
-    execution_time_ms: float
-    rows: list[dict[str, Any]]
-
-
 class AggregatedSqlResponse(BaseModel):
     """Schema for aggregated SQL from active transforms."""
 
     dataset_id: str
-    enabled_pipeline_count: int
+    enabled_transform_count: int
     sql_where_clause: str
-    pipeline_ids: list[str]
+    transform_ids: list[str]

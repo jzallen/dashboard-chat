@@ -1,3 +1,8 @@
+/* Active filters container */
+.filtersContainer {
+  @apply mb-4 flex flex-wrap gap-2;
+}
+
 .filterBadge {
   @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm;
   background-color: #dbeafe;

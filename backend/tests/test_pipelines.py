@@ -1,12 +1,12 @@
-"""Tests for pipeline service and RAQB to SQL conversion.
+"""Tests for transform service and RAQB to SQL conversion.
 
-These tests verify the pipeline logic without requiring a database.
+These tests verify the transform logic without requiring a database.
 Run with: pytest backend/tests/test_pipelines.py
 """
 
 import pytest
 
-from app.services.pipeline_service import (
+from app.services.transform_service import (
     raqb_to_sql,
     _convert_rule_to_sql,
     _process_group,
@@ -364,7 +364,7 @@ class TestVersioning:
     def test_version_documented(self):
         """Document: Version should increment when RAQB changes.
 
-        This is implemented in pipeline_service.update_pipeline().
+        This is implemented in transform_service.update_pipeline().
         The service checks if raqb_json changed and increments version.
         """
         pass  # Documentation test
@@ -372,7 +372,7 @@ class TestVersioning:
     def test_cached_sql_regenerated(self):
         """Document: cached_sql should regenerate when RAQB changes.
 
-        This is implemented in pipeline_service.update_pipeline().
+        This is implemented in transform_service.update_pipeline().
         When raqb_json is updated, cached_sql is regenerated from the new tree.
         """
         pass  # Documentation test

@@ -1,0 +1,46 @@
+/* ============================================
+   Transform Settings View Styles
+   ============================================
+
+   Settings panel for managing transforms.
+*/
+
+/* Main settings container - full height panel */
+.settingsContainer {
+  @apply flex flex-col h-full bg-white;
+}
+
+/* Settings header section with title and close button */
+.settingsHeader {
+  @apply border-b border-surface-border p-4;
+}
+
+/* Header content layout */
+.headerContent {
+  @apply flex items-center justify-between;
+}
+
+/* Settings title */
+.settingsTitle {
+  @apply text-xl font-semibold text-gray-800;
+}
+
+/* Settings description text */
+.settingsDescription {
+  @apply text-sm text-surface-muted mt-1;
+}
+
+/* Close button */
+.closeButton {
+  @apply p-2 rounded-lg hover:bg-surface-tertiary transition-colors;
+}
+
+/* Icon within close button */
+.closeIcon {
+  @apply w-6 h-6 text-gray-600;
+}
+
+/* Scrollable content area for transform list */
+.contentArea {
+  @apply flex-1 overflow-y-auto;
+}

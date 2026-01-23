@@ -140,7 +140,7 @@ export function useBackendData(options: UseBackendDataOptions = {}) {
 
   // Auto-fetch on mount
   // When datasetId is provided, we defer the initial fetch to allow
-  // pipeline filters to be loaded first (to avoid double-fetch)
+  // transform filters to be loaded first (to avoid double-fetch)
   useEffect(() => {
     if (autoFetch && !datasetId) {
       fetchData();

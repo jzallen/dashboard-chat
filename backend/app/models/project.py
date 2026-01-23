@@ -1,4 +1,4 @@
-"""Project model for organizing datasets and pipelines."""
+"""Project model for organizing datasets and transforms."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class Project(Base):
-    """Project container for organizing datasets and pipelines."""
+    """Project container for organizing datasets and transforms."""
 
     __tablename__ = "projects"
 

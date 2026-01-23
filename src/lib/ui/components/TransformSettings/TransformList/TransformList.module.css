@@ -1,0 +1,77 @@
+/* ============================================
+   Transform List Styles
+   ============================================
+
+   Display list of transforms with active/inactive sections.
+*/
+
+/* Main container for transform list */
+.listContainer {
+  @apply p-6 space-y-6;
+}
+
+/* Loading state message */
+.loadingState {
+  @apply p-4 text-center text-surface-muted;
+}
+
+/* Empty state container */
+.emptyState {
+  @apply p-4 text-center text-surface-muted;
+}
+
+/* Empty state primary text */
+.emptyStateText {
+  @apply text-sm;
+}
+
+/* Empty state secondary text */
+.emptyStateSubtext {
+  @apply text-xs mt-1 text-gray-400;
+}
+
+/* Error state container */
+.errorState {
+  @apply p-4;
+}
+
+/* Error message text */
+.errorMessage {
+  @apply text-semantic-error text-sm mb-2;
+}
+
+/* Retry action button */
+.retryAction {
+  @apply text-primary text-sm hover:underline transition-colors;
+}
+
+/* Section heading for active transforms */
+.sectionHeading {
+  @apply text-sm font-semibold mb-3 flex items-center gap-2;
+}
+
+.sectionHeadingActive {
+  @apply text-gray-700;
+}
+
+.sectionHeadingInactive {
+  @apply text-surface-muted;
+}
+
+/* Status indicator dot in section heading */
+.statusIndicator {
+  @apply w-2 h-2 rounded-full;
+}
+
+.statusIndicatorActive {
+  @apply bg-accent;
+}
+
+.statusIndicatorInactive {
+  @apply bg-surface-muted;
+}
+
+/* Container for transform cards */
+.transformCards {
+  @apply space-y-2;
+}

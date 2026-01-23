@@ -1,4 +1,4 @@
-"""Filter pipeline model for storing RAQB filters."""
+"""Transform model for storing RAQB-based data transformations."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from .pipeline_run import PipelineRun
 
 
-class FilterPipeline(Base):
-    """Filter pipeline storing both RAQB JSON and cached SQL.
+class Transform(Base):
+    """Data transform storing both RAQB JSON and cached SQL.
 
     The RAQB JSON is the canonical format used for:
     - Frontend TanStack conversion
@@ -23,10 +23,10 @@ class FilterPipeline(Base):
 
     The cached SQL is pre-generated for:
     - Backend execution efficiency
-    - PostgreSQL filtering
+    - Query optimization
     """
 
-    __tablename__ = "filter_pipelines"
+    __tablename__ = "transforms"
 
     id: Mapped[str] = mapped_column(
         String(36),
@@ -62,10 +62,10 @@ class FilterPipeline(Base):
     )
 
     # Relationships
-    dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="pipelines")
+    dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="transforms")
     runs: Mapped[list["PipelineRun"]] = relationship(
-        "PipelineRun", back_populates="pipeline", cascade="all, delete-orphan"
+        "PipelineRun", back_populates="transform", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
-        return f"<FilterPipeline(id={self.id}, name={self.name}, version={self.version})>"
+        return f"<Transform(id={self.id}, name={self.name}, version={self.version})>"

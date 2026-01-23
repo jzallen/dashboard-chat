@@ -17,14 +17,12 @@ from .project import (
     ProjectResponse,
     ProjectWithDatasets,
 )
-from .pipeline import (
+from .transform import (
     AggregatedSqlResponse,
-    PipelineBase,
-    PipelineCreate,
-    PipelineUpdate,
-    PipelineResponse,
-    PipelineExecuteRequest,
-    PipelineExecuteResponse,
+    TransformBase,
+    TransformCreate,
+    TransformUpdate,
+    TransformResponse,
 )
 from .pipeline_run import (
     PipelineRunBase,
@@ -50,15 +48,13 @@ __all__ = [
     "DatasetUploadResponse",
     "FieldConfig",
     "SchemaConfig",
-    # Pipeline
+    # Transform
     "AggregatedSqlResponse",
-    "PipelineBase",
-    "PipelineCreate",
-    "PipelineUpdate",
-    "PipelineResponse",
-    "PipelineExecuteRequest",
-    "PipelineExecuteResponse",
-    # Pipeline Run
+    "TransformBase",
+    "TransformCreate",
+    "TransformUpdate",
+    "TransformResponse",
+    # Pipeline Run (tech debt - unused but kept for future audit trail)
     "PipelineRunBase",
     "PipelineRunCreate",
     "PipelineRunResponse",

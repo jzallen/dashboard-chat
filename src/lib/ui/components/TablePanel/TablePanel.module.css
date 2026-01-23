@@ -8,6 +8,11 @@
   @apply mb-4;
 }
 
+/* Header content layout - title and settings button */
+.headerContent {
+  @apply flex items-center justify-between;
+}
+
 .title {
   @apply text-2xl font-bold;
   color: #1f2937;
@@ -16,6 +21,16 @@
 .subtitle {
   @apply text-sm mt-1;
   color: #4b5563;
+}
+
+/* Settings button */
+.settingsButton {
+  @apply p-2 rounded-lg hover:bg-surface-tertiary transition-colors;
+}
+
+/* Settings icon */
+.settingsIcon {
+  @apply w-6 h-6 text-gray-600;
 }
 
 /* Table container */

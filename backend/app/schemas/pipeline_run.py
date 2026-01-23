@@ -1,4 +1,4 @@
-"""Pydantic schemas for PipelineRun."""
+"""Pydantic schemas for PipelineRun (tech debt - currently unused)."""
 
 from datetime import datetime
 

@@ -1,21 +1,21 @@
 /**
- * Hook for managing filter pipelines
+ * Hook for managing transforms
  */
 
 import { useState, useCallback } from "react";
 import {
-  listPipelines,
-  createPipeline,
-  deletePipeline,
-  updatePipeline,
-  type Pipeline,
-  type PipelineCreate,
+  listTransforms,
+  createTransform,
+  deleteTransform,
+  updateTransform,
+  type Transform,
+  type TransformCreate,
 } from "@/api";
 import { raqbToTanstackFilters } from "@/raqb";
 import type { ColumnFiltersState } from "@tanstack/react-table";
 import { mergeFilters } from "./filterUtils";
 
-interface UsePipelinesOptions {
+interface UseTransformsOptions {
   datasetId?: string;
   onFilterApply?: (filters: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)) => void;
   currentFilters?: ColumnFiltersState;
@@ -25,35 +25,35 @@ interface UsePipelinesOptions {
   onFiltersChanged?: () => void;
 }
 
-interface UsePipelinesReturn {
-  pipelines: Pipeline[];
+interface UseTransformsReturn {
+  transforms: Transform[];
   loading: boolean;
   error: string | null;
   initialized: boolean;
-  fetchPipelines: () => Promise<void>;
-  savePipeline: (data: Omit<PipelineCreate, "dataset_id">) => Promise<Pipeline | null>;
-  removePipeline: (pipelineId: string) => Promise<boolean>;
-  togglePipeline: (pipelineId: string, isActive: boolean) => Promise<boolean>;
-  applyPipeline: (pipeline: Pipeline) => void;
-  applyActivePipelines: () => void;
+  fetchTransforms: () => Promise<void>;
+  saveTransform: (data: Omit<TransformCreate, "dataset_id">) => Promise<Transform | null>;
+  removeTransform: (transformId: string) => Promise<boolean>;
+  toggleTransform: (transformId: string, isActive: boolean) => Promise<boolean>;
+  applyTransform: (transform: Transform) => void;
+  applyActiveTransforms: () => void;
 }
 
-export function usePipelines(options: UsePipelinesOptions = {}): UsePipelinesReturn {
+export function useTransforms(options: UseTransformsOptions = {}): UseTransformsReturn {
   const { datasetId, onFilterApply, currentFilters = [], autoApplyActive = true, activeOnly = true, onInitialized, onFiltersChanged } = options;
 
-  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [transforms, setTransforms] = useState<Transform[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPipelines = useCallback(async () => {
+  const fetchTransforms = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await listPipelines(datasetId, activeOnly);
-      setPipelines(data);
+      const data = await listTransforms(datasetId, activeOnly);
+      setTransforms(data);
 
-      // Auto-apply active pipelines on fetch if enabled
+      // Auto-apply active transforms on fetch if enabled
       if (autoApplyActive && onFilterApply) {
         const activeFilters = computeActiveFilters(data);
         onFilterApply(activeFilters);
@@ -66,7 +66,7 @@ export function usePipelines(options: UsePipelinesOptions = {}): UsePipelinesRet
         onInitialized();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch pipelines");
+      setError(err instanceof Error ? err.message : "Failed to fetch transforms");
       setInitialized(true); // Mark as initialized even on error so we don't block forever
 
       // Notify even on error so we don't block forever
@@ -78,8 +78,8 @@ export function usePipelines(options: UsePipelinesOptions = {}): UsePipelinesRet
     }
   }, [datasetId, autoApplyActive, activeOnly, onFilterApply, onInitialized]);
 
-  const savePipeline = useCallback(
-    async (data: Omit<PipelineCreate, "dataset_id">): Promise<Pipeline | null> => {
+  const saveTransform = useCallback(
+    async (data: Omit<TransformCreate, "dataset_id">): Promise<Transform | null> => {
       if (!datasetId) {
         setError("No dataset selected");
         return null;
@@ -88,14 +88,14 @@ export function usePipelines(options: UsePipelinesOptions = {}): UsePipelinesRet
       setLoading(true);
       setError(null);
       try {
-        const pipeline = await createPipeline({
+        const transform = await createTransform({
           ...data,
           dataset_id: datasetId,
         });
-        setPipelines((prev) => [pipeline, ...prev]);
-        return pipeline;
+        setTransforms((prev) => [transform, ...prev]);
+        return transform;
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to save pipeline");
+        setError(err instanceof Error ? err.message : "Failed to save transform");
         return null;
       } finally {
         setLoading(false);
@@ -104,30 +104,30 @@ export function usePipelines(options: UsePipelinesOptions = {}): UsePipelinesRet
     [datasetId]
   );
 
-  const removePipeline = useCallback(async (pipelineId: string): Promise<boolean> => {
+  const removeTransform = useCallback(async (transformId: string): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
-      await deletePipeline(pipelineId);
-      setPipelines((prev) => prev.filter((p) => p.id !== pipelineId));
+      await deleteTransform(transformId);
+      setTransforms((prev) => prev.filter((t) => t.id !== transformId));
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete pipeline");
+      setError(err instanceof Error ? err.message : "Failed to delete transform");
       return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const togglePipeline = useCallback(async (pipelineId: string, isActive: boolean): Promise<boolean> => {
+  const toggleTransform = useCallback(async (transformId: string, isActive: boolean): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
-      const updatedPipeline = await updatePipeline(pipelineId, { is_active: isActive });
-      setPipelines((prev) => {
-        const updated = prev.map((p) => (p.id === pipelineId ? updatedPipeline : p));
+      const updatedTransform = await updateTransform(transformId, { is_active: isActive });
+      setTransforms((prev) => {
+        const updated = prev.map((t) => (t.id === transformId ? updatedTransform : t));
 
-        // Auto-apply active pipelines after toggle if enabled
+        // Auto-apply active transforms after toggle if enabled
         if (autoApplyActive && onFilterApply) {
           setTimeout(() => {
             const activeFilters = computeActiveFilters(updated);
@@ -144,18 +144,18 @@ export function usePipelines(options: UsePipelinesOptions = {}): UsePipelinesRet
       });
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update pipeline");
+      setError(err instanceof Error ? err.message : "Failed to update transform");
       return false;
     } finally {
       setLoading(false);
     }
   }, [autoApplyActive, onFilterApply, onFiltersChanged]);
 
-  const applyPipeline = useCallback(
-    (pipeline: Pipeline) => {
+  const applyTransform = useCallback(
+    (transform: Transform) => {
       if (!onFilterApply) return;
 
-      const newFilters = raqbToTanstackFilters(pipeline.raqb_json);
+      const newFilters = raqbToTanstackFilters(transform.raqb_json);
 
       // Merge with existing filters instead of replacing
       onFilterApply((prevFilters) => mergeFilters(prevFilters, newFilters));
@@ -163,36 +163,36 @@ export function usePipelines(options: UsePipelinesOptions = {}): UsePipelinesRet
     [onFilterApply]
   );
 
-  const applyActivePipelines = useCallback(() => {
+  const applyActiveTransforms = useCallback(() => {
     if (!onFilterApply) return;
 
-    const activeFilters = computeActiveFilters(pipelines);
+    const activeFilters = computeActiveFilters(transforms);
     onFilterApply(activeFilters);
-  }, [pipelines, onFilterApply]);
+  }, [transforms, onFilterApply]);
 
   return {
-    pipelines,
+    transforms,
     loading,
     initialized,
     error,
-    fetchPipelines,
-    savePipeline,
-    removePipeline,
-    togglePipeline,
-    applyPipeline,
-    applyActivePipelines,
+    fetchTransforms,
+    saveTransform,
+    removeTransform,
+    toggleTransform,
+    applyTransform,
+    applyActiveTransforms,
   };
 }
 
 /**
- * Compute merged filters from all active pipelines
+ * Compute merged filters from all active transforms
  */
-function computeActiveFilters(pipelines: Pipeline[]): ColumnFiltersState {
+function computeActiveFilters(transforms: Transform[]): ColumnFiltersState {
   let activeFilters: ColumnFiltersState = [];
 
-  for (const pipeline of pipelines) {
-    if (pipeline.is_active) {
-      const filters = raqbToTanstackFilters(pipeline.raqb_json);
+  for (const transform of transforms) {
+    if (transform.is_active) {
+      const filters = raqbToTanstackFilters(transform.raqb_json);
       activeFilters = mergeFilters(activeFilters, filters);
     }
   }
