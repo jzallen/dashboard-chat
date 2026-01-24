@@ -54,13 +54,8 @@ async def init_db() -> None:
 
 
 async def _create_defaults() -> None:
-    """Create default project and dataset if they don't exist."""
-    from .models import Project, Dataset
-    from .services.duckdb_service import (
-        create_sample_database,
-        get_table_schema,
-        DATA_DIR,
-    )
+    """Create default project if it doesn't exist."""
+    from .models import Project
 
     async with async_session() as session:
         # Check if default project exists
@@ -74,36 +69,10 @@ async def _create_defaults() -> None:
             project = Project(
                 id=DEFAULT_PROJECT_ID,
                 name="Default Project",
-                description="Auto-created default project for sample data",
+                description="Auto-created default project",
             )
             session.add(project)
-            await session.flush()
-
-        # Check if default dataset exists
-        result = await session.execute(
-            select(Dataset).where(Dataset.id == DEFAULT_DATASET_ID)
-        )
-        dataset = result.scalar_one_or_none()
-
-        if not dataset:
-            # Ensure sample DuckDB exists and get its schema
-            db_path = create_sample_database()
-            schema_config = get_table_schema(db_path, "products")
-
-            # Create default dataset
-            dataset = Dataset(
-                id=DEFAULT_DATASET_ID,
-                project_id=DEFAULT_PROJECT_ID,
-                name="Sample Products",
-                description="Sample product data from DuckDB",
-                table_name="products",
-                schema_config=schema_config,
-                row_count=10,
-                file_name="sample.duckdb",
-            )
-            session.add(dataset)
-
-        await session.commit()
+            await session.commit()
 
 
 async def close_db() -> None:

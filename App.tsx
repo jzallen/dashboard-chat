@@ -31,9 +31,7 @@ export default function App() {
     setSorting,
     setData,
     refresh: refreshData,
-  } = useTableConfig({
-    datasetId: DEFAULT_DATASET_ID,
-  });
+  } = useTableConfig();
 
   // Transform management (fetch all transforms, not just active ones for settings view)
   const {

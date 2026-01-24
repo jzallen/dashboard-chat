@@ -4,10 +4,10 @@
 
 import { useState, useCallback } from "react";
 import {
-  listTransforms,
-  createTransform,
-  deleteTransform,
-  updateTransform,
+  listDatasetTransforms,
+  createDatasetTransform,
+  deleteDatasetTransform,
+  updateDatasetTransform,
   type Transform,
   type TransformCreate,
 } from "@/api";
@@ -31,7 +31,7 @@ interface UseTransformsReturn {
   error: string | null;
   initialized: boolean;
   fetchTransforms: () => Promise<void>;
-  saveTransform: (data: Omit<TransformCreate, "dataset_id">) => Promise<Transform | null>;
+  saveTransform: (data: TransformCreate) => Promise<Transform | null>;
   removeTransform: (transformId: string) => Promise<boolean>;
   toggleTransform: (transformId: string, isActive: boolean) => Promise<boolean>;
   applyTransform: (transform: Transform) => void;
@@ -47,10 +47,16 @@ export function useTransforms(options: UseTransformsOptions = {}): UseTransforms
   const [error, setError] = useState<string | null>(null);
 
   const fetchTransforms = useCallback(async () => {
+    if (!datasetId) {
+      setError("No dataset ID provided");
+      setInitialized(true);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const data = await listTransforms(datasetId, activeOnly);
+      const data = await listDatasetTransforms(datasetId, activeOnly);
       setTransforms(data);
 
       // Auto-apply active transforms on fetch if enabled
@@ -79,7 +85,7 @@ export function useTransforms(options: UseTransformsOptions = {}): UseTransforms
   }, [datasetId, autoApplyActive, activeOnly, onFilterApply, onInitialized]);
 
   const saveTransform = useCallback(
-    async (data: Omit<TransformCreate, "dataset_id">): Promise<Transform | null> => {
+    async (data: TransformCreate): Promise<Transform | null> => {
       if (!datasetId) {
         setError("No dataset selected");
         return null;
@@ -88,10 +94,7 @@ export function useTransforms(options: UseTransformsOptions = {}): UseTransforms
       setLoading(true);
       setError(null);
       try {
-        const transform = await createTransform({
-          ...data,
-          dataset_id: datasetId,
-        });
+        const transform = await createDatasetTransform(datasetId, data);
         setTransforms((prev) => [transform, ...prev]);
         return transform;
       } catch (err) {
@@ -105,10 +108,15 @@ export function useTransforms(options: UseTransformsOptions = {}): UseTransforms
   );
 
   const removeTransform = useCallback(async (transformId: string): Promise<boolean> => {
+    if (!datasetId) {
+      setError("No dataset ID provided");
+      return false;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      await deleteTransform(transformId);
+      await deleteDatasetTransform(datasetId, transformId);
       setTransforms((prev) => prev.filter((t) => t.id !== transformId));
       return true;
     } catch (err) {
@@ -117,13 +125,18 @@ export function useTransforms(options: UseTransformsOptions = {}): UseTransforms
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [datasetId]);
 
   const toggleTransform = useCallback(async (transformId: string, isActive: boolean): Promise<boolean> => {
+    if (!datasetId) {
+      setError("No dataset ID provided");
+      return false;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const updatedTransform = await updateTransform(transformId, { is_active: isActive });
+      const updatedTransform = await updateDatasetTransform(datasetId, transformId, { is_active: isActive });
       setTransforms((prev) => {
         const updated = prev.map((t) => (t.id === transformId ? updatedTransform : t));
 
@@ -149,7 +162,7 @@ export function useTransforms(options: UseTransformsOptions = {}): UseTransforms
     } finally {
       setLoading(false);
     }
-  }, [autoApplyActive, onFilterApply, onFiltersChanged]);
+  }, [datasetId, autoApplyActive, onFilterApply, onFiltersChanged]);
 
   const applyTransform = useCallback(
     (transform: Transform) => {

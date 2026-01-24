@@ -9,6 +9,12 @@ from .dataset import (
     DatasetUploadResponse,
     FieldConfig,
     SchemaConfig,
+    # Transform schemas (now in dataset.py)
+    AggregatedSqlResponse,
+    TransformBase,
+    TransformCreate,
+    TransformUpdate,
+    TransformResponse,
 )
 from .project import (
     ProjectBase,
@@ -16,13 +22,6 @@ from .project import (
     ProjectUpdate,
     ProjectResponse,
     ProjectWithDatasets,
-)
-from .transform import (
-    AggregatedSqlResponse,
-    TransformBase,
-    TransformCreate,
-    TransformUpdate,
-    TransformResponse,
 )
 from .pipeline_run import (
     PipelineRunBase,

@@ -1,4 +1,6 @@
-"""Pydantic schemas for Dataset."""
+"""Pydantic schemas for Dataset and Transform."""
+
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
@@ -43,7 +45,10 @@ class DatasetUpdate(BaseModel):
 
 
 class DatasetResponse(DatasetBase):
-    """Schema for Dataset response."""
+    """Schema for Dataset response.
+
+    Can include transforms and preview_rows when requested.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,8 +62,65 @@ class DatasetResponse(DatasetBase):
     created_at: datetime
     updated_at: datetime
 
+    # Optional nested data
+    transforms: list[TransformResponse] = []
+    preview_rows: list[dict[str, Any]] = []
+
 
 class DatasetUploadResponse(DatasetResponse):
     """Schema for Dataset upload response with preview."""
 
     preview_rows: list[dict[str, Any]] = []
+
+
+# Transform schemas
+
+class TransformBase(BaseModel):
+    """Base schema for Transform."""
+
+    name: str
+    description: str | None = None
+
+
+class TransformCreate(TransformBase):
+    """Schema for creating a Transform.
+
+    dataset_id will come from the URL path, not the request body.
+    """
+
+    raqb_json: dict[str, Any]
+    nl_prompt: str | None = None
+
+
+class TransformUpdate(BaseModel):
+    """Schema for updating a Transform."""
+
+    name: str | None = None
+    description: str | None = None
+    raqb_json: dict[str, Any] | None = None
+    is_active: bool | None = None
+
+
+class TransformResponse(TransformBase):
+    """Schema for Transform response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    dataset_id: str
+    raqb_json: dict[str, Any]
+    cached_sql: str | None = None
+    version: int
+    is_active: bool
+    nl_prompt: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AggregatedSqlResponse(BaseModel):
+    """Schema for aggregated SQL from active transforms."""
+
+    dataset_id: str
+    enabled_transform_count: int
+    sql_where_clause: str
+    transform_ids: list[str]
