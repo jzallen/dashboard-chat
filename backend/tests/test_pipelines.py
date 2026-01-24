@@ -6,7 +6,7 @@ Run with: pytest backend/tests/test_pipelines.py
 
 import pytest
 
-from app.services.transform_service import (
+from app.use_cases.transform import (
     raqb_to_sql,
     _convert_rule_to_sql,
     _process_group,

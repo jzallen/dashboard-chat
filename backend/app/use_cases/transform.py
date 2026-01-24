@@ -1,4 +1,4 @@
-"""Transform service for transform management."""
+"""Transform use cases for transform management."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..controllers.dataset_controller import DatasetController
 from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
+from ..db_context import set_session
 from ..models import Dataset, Transform
 from ..schemas import (
     AggregatedSqlResponse,
@@ -16,22 +17,24 @@ from ..schemas import (
     TransformResponse,
     TransformUpdate,
 )
-from ..services.transform_service import (
-    create_transform,
-    update_transform,
-    get_aggregated_sql,
-)
+from ..use_cases import transform as transform_use_cases
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
+
+
+async def use_db_context(db: AsyncSession = Depends(get_db)) -> AsyncSession:
+    """Dependency that sets the db session in context for use cases."""
+    set_session(db)
+    return db
 
 
 @router.get("")
 async def list_datasets(
     project_id: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """List all datasets, optionally filtered by project."""
-    result = await DatasetController.list_datasets(db, project_id)
+    result = await DatasetController.list_datasets(project_id)
 
     match result:
         case Success(data):
@@ -49,11 +52,11 @@ async def get_dataset(
     include_transforms: bool = Query(default=True, description="Include transforms"),
     include_preview: bool = Query(default=False, description="Include preview rows"),
     preview_limit: int = Query(default=10, ge=1, le=100, description="Preview row limit"),
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """Get a single dataset by ID with optional transforms and preview."""
     result = await DatasetController.get_dataset(
-        db, dataset_id, include_transforms, include_preview, preview_limit
+        dataset_id, include_transforms, include_preview, preview_limit
     )
 
     match result:
@@ -73,7 +76,7 @@ async def upload_dataset(
     project_id: str = Form(...),
     name: str = Form(...),
     description: str | None = Form(None),
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """Upload a CSV file and create a dataset.
 
@@ -95,7 +98,7 @@ async def upload_dataset(
     content = await file.read()
 
     result = await DatasetController.upload_dataset(
-        db, content, file.filename, project_id, name, description
+        content, file.filename, project_id, name, description
     )
 
     match result:
@@ -120,10 +123,10 @@ async def upload_dataset(
 async def update_dataset(
     dataset_id: str,
     update_data: DatasetUpdate,
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """Update a dataset's metadata."""
-    result = await DatasetController.update_dataset(db, dataset_id, update_data)
+    result = await DatasetController.update_dataset(dataset_id, update_data)
 
     match result:
         case Success(data):
@@ -139,10 +142,10 @@ async def update_dataset(
 @router.delete("/{dataset_id}")
 async def delete_dataset(
     dataset_id: str,
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """Delete a dataset and its data table."""
-    result = await DatasetController.delete_dataset(db, dataset_id)
+    result = await DatasetController.delete_dataset(dataset_id)
 
     match result:
         case Success(data):
@@ -197,7 +200,7 @@ async def create_dataset_transform(
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     try:
-        transform = await create_transform(
+        transform = await transform_use_cases.create_transform(
             db=db,
             dataset_id=dataset_id,
             name=transform_data.name,
@@ -254,7 +257,7 @@ async def update_dataset_transform(
         raise HTTPException(status_code=404, detail="Transform not found")
 
     try:
-        updated = await update_transform(
+        updated = await transform_use_cases.update_transform(
             db=db,
             transform=transform,
             name=update_data.name,
@@ -302,7 +305,7 @@ async def get_dataset_aggregated_sql(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    sql_where_clause, transform_ids = await get_aggregated_sql(db, dataset_id)
+    sql_where_clause, transform_ids = await transform_use_cases.get_aggregated_sql(db, dataset_id)
 
     return AggregatedSqlResponse(
         dataset_id=dataset_id,

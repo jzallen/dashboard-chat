@@ -17,7 +17,7 @@ from app.utils.schema_inference import (
     OPERATORS_BY_TYPE,
     SELECT_UNIQUE_THRESHOLD,
 )
-from app.services.dataset_service import sanitize_table_name
+from app.use_cases.dataset import sanitize_table_name
 
 
 class TestFieldTypeInference:
