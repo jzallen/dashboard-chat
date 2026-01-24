@@ -1,25 +1,20 @@
 """API routes for dataset management."""
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from returns.result import Success, Failure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
+from ..controllers.dataset_controller import DatasetController
+from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
-from ..models import Dataset, Project, Transform
+from ..models import Dataset, Transform
 from ..schemas import (
     AggregatedSqlResponse,
-    DatasetResponse,
     DatasetUpdate,
-    DatasetUploadResponse,
     TransformCreate,
     TransformResponse,
     TransformUpdate,
-)
-from ..services.dataset_service import (
-    process_csv_upload,
-    get_dataset_preview,
-    delete_dataset_table,
 )
 from ..services.transform_service import (
     create_transform,
@@ -30,22 +25,25 @@ from ..services.transform_service import (
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
 
-@router.get("", response_model=list[DatasetResponse])
+@router.get("")
 async def list_datasets(
     project_id: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """List all datasets, optionally filtered by project."""
-    query = select(Dataset)
-    if project_id:
-        query = query.where(Dataset.project_id == project_id)
-    query = query.order_by(Dataset.created_at.desc())
+    result = await DatasetController.list_datasets(db, project_id)
 
-    result = await db.execute(query)
-    return result.scalars().all()
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            raise HTTPException(
+                status_code=500,
+                detail=wrap_error(error, "LIST_DATASETS_ERROR")
+            )
 
 
-@router.get("/{dataset_id}", response_model=DatasetResponse)
+@router.get("/{dataset_id}")
 async def get_dataset(
     dataset_id: str,
     include_transforms: bool = Query(default=True, description="Include transforms"),
@@ -54,41 +52,22 @@ async def get_dataset(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single dataset by ID with optional transforms and preview."""
-    query = select(Dataset).where(Dataset.id == dataset_id)
+    result = await DatasetController.get_dataset(
+        db, dataset_id, include_transforms, include_preview, preview_limit
+    )
 
-    if include_transforms:
-        query = query.options(selectinload(Dataset.transforms))
-
-    result = await db.execute(query)
-    dataset = result.scalar_one_or_none()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    # Convert to dict to add preview if needed
-    dataset_dict = {
-        "id": dataset.id,
-        "project_id": dataset.project_id,
-        "name": dataset.name,
-        "description": dataset.description,
-        "table_name": dataset.table_name,
-        "schema_config": dataset.schema_config,
-        "row_count": dataset.row_count,
-        "file_name": dataset.file_name,
-        "file_size": dataset.file_size,
-        "created_at": dataset.created_at,
-        "updated_at": dataset.updated_at,
-        "transforms": dataset.transforms if include_transforms else [],
-        "preview_rows": [],
-    }
-
-    if include_preview:
-        preview_rows = await get_dataset_preview(db, dataset, limit=preview_limit)
-        dataset_dict["preview_rows"] = preview_rows
-
-    return dataset_dict
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            status_code = 404 if error == "Dataset not found" else 500
+            raise HTTPException(
+                status_code=status_code,
+                detail=wrap_error(error, "GET_DATASET_ERROR")
+            )
 
 
-@router.post("/upload", response_model=DatasetUploadResponse)
+@router.post("/upload")
 async def upload_dataset(
     file: UploadFile = File(...),
     project_id: str = Form(...),
@@ -105,77 +84,56 @@ async def upload_dataset(
     4. Insert the data
     5. Create the dataset record
     """
-    # Verify project exists
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    # Validate file type
-    if not file.filename or not file.filename.lower().endswith(".csv"):
+    # Validate filename exists
+    if not file.filename:
         raise HTTPException(
-            status_code=400, detail="Only CSV files are supported"
+            status_code=400,
+            detail=wrap_error("Filename is required", "INVALID_FILE")
         )
 
     # Read file content
     content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="File is empty")
 
-    try:
-        dataset, df = await process_csv_upload(
-            db=db,
-            project_id=project_id,
-            name=name,
-            file_content=content,
-            file_name=file.filename,
-            description=description,
-        )
+    result = await DatasetController.upload_dataset(
+        db, content, file.filename, project_id, name, description
+    )
 
-        # Get preview rows
-        preview_rows = await get_dataset_preview(db, dataset, limit=5)
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            # Determine appropriate status code
+            if error == "Project not found":
+                status_code = 404
+            elif error in ["Only CSV files are supported", "File is empty"]:
+                status_code = 400
+            else:
+                status_code = 500
 
-        return DatasetUploadResponse(
-            **{
-                "id": dataset.id,
-                "project_id": dataset.project_id,
-                "name": dataset.name,
-                "description": dataset.description,
-                "table_name": dataset.table_name,
-                "schema_config": dataset.schema_config,
-                "row_count": dataset.row_count,
-                "file_name": dataset.file_name,
-                "file_size": dataset.file_size,
-                "created_at": dataset.created_at,
-                "updated_at": dataset.updated_at,
-                "preview_rows": preview_rows,
-            }
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to process file: {str(e)}"
-        )
+            raise HTTPException(
+                status_code=status_code,
+                detail=wrap_error(error, "UPLOAD_DATASET_ERROR")
+            )
 
 
-@router.patch("/{dataset_id}", response_model=DatasetResponse)
+@router.patch("/{dataset_id}")
 async def update_dataset(
     dataset_id: str,
     update_data: DatasetUpdate,
     db: AsyncSession = Depends(get_db),
 ):
     """Update a dataset's metadata."""
-    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
-    dataset = result.scalar_one_or_none()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    result = await DatasetController.update_dataset(db, dataset_id, update_data)
 
-    # Update fields
-    update_dict = update_data.model_dump(exclude_unset=True)
-    for key, value in update_dict.items():
-        setattr(dataset, key, value)
-
-    await db.commit()
-    await db.refresh(dataset)
-    return dataset
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            status_code = 404 if error == "Dataset not found" else 500
+            raise HTTPException(
+                status_code=status_code,
+                detail=wrap_error(error, "UPDATE_DATASET_ERROR")
+            )
 
 
 @router.delete("/{dataset_id}")
@@ -184,19 +142,17 @@ async def delete_dataset(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a dataset and its data table."""
-    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
-    dataset = result.scalar_one_or_none()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    result = await DatasetController.delete_dataset(db, dataset_id)
 
-    # Drop the dynamic table
-    await delete_dataset_table(db, dataset.table_name)
-
-    # Delete the dataset record
-    await db.delete(dataset)
-    await db.commit()
-
-    return {"status": "deleted", "id": dataset_id}
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            status_code = 404 if error == "Dataset not found" else 500
+            raise HTTPException(
+                status_code=status_code,
+                detail=wrap_error(error, "DELETE_DATASET_ERROR")
+            )
 
 
 # Transform management routes

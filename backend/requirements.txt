@@ -17,6 +17,9 @@ openpyxl==3.1.2
 pydantic==2.6.0
 pydantic-settings==2.1.0
 
+# Functional programming
+returns==0.22.0
+
 # HTTP client
 httpx==0.26.0
 
