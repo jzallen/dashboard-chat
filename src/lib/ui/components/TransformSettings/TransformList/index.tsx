@@ -2,7 +2,6 @@
  * TransformList component for displaying saved transforms
  */
 
-import { useEffect } from "react";
 import type { Transform } from "@/api";
 import { TransformCard } from "./TransformCard/index";
 import styles from "./TransformList.module.css";
@@ -22,10 +21,8 @@ export function TransformList({
   onToggle,
   onRefresh,
 }: TransformListProps) {
-  // Refresh on mount
-  useEffect(() => {
-    onRefresh();
-  }, [onRefresh]);
+  // No auto-refresh needed - data is already loaded when opening settings
+  // onRefresh is available for user-triggered refresh via retry button
 
   if (loading && transforms.length === 0) {
     return (

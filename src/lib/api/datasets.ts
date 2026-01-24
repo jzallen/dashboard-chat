@@ -151,62 +151,56 @@ export async function deleteDataset(
 }
 
 // Transform management
+// These are low-level API functions - prefer using the dataset-centric operations below
 
 /**
- * List all transforms for a dataset
+ * Create a new transform and return the updated dataset
  */
-export async function listDatasetTransforms(
-  datasetId: string,
-  activeOnly = true
-): Promise<Transform[]> {
-  const params = new URLSearchParams();
-  params.append("active_only", String(activeOnly));
-
-  const query = params.toString() ? `?${params.toString()}` : "";
-  return get<Transform[]>(`/api/datasets/${datasetId}/transforms${query}`);
-}
-
-/**
- * Get a single transform by ID
- */
-export async function getDatasetTransform(
-  datasetId: string,
-  transformId: string
-): Promise<Transform> {
-  return get<Transform>(`/api/datasets/${datasetId}/transforms/${transformId}`);
-}
-
-/**
- * Create a new transform for a dataset
- */
-export async function createDatasetTransform(
+export async function createTransform(
   datasetId: string,
   data: TransformCreate
-): Promise<Transform> {
-  return post<Transform>(`/api/datasets/${datasetId}/transforms`, data);
+): Promise<Dataset> {
+  await post<Transform>(`/api/datasets/${datasetId}/transforms`, data);
+  // Refetch dataset with updated transforms
+  return getDataset(datasetId, { includeTransforms: true });
 }
 
 /**
- * Update a transform
+ * Update a transform and return the updated dataset
  */
-export async function updateDatasetTransform(
+export async function updateTransform(
   datasetId: string,
   transformId: string,
   data: TransformUpdate
-): Promise<Transform> {
-  return patch<Transform>(`/api/datasets/${datasetId}/transforms/${transformId}`, data);
+): Promise<Dataset> {
+  await patch<Transform>(`/api/datasets/${datasetId}/transforms/${transformId}`, data);
+  // Refetch dataset with updated transforms
+  return getDataset(datasetId, { includeTransforms: true });
 }
 
 /**
- * Delete a transform
+ * Delete a transform and return the updated dataset
  */
-export async function deleteDatasetTransform(
+export async function deleteTransform(
   datasetId: string,
   transformId: string
-): Promise<{ status: string; id: string }> {
-  return del<{ status: string; id: string }>(
+): Promise<Dataset> {
+  await del<{ status: string; id: string }>(
     `/api/datasets/${datasetId}/transforms/${transformId}`
   );
+  // Refetch dataset with updated transforms
+  return getDataset(datasetId, { includeTransforms: true });
+}
+
+/**
+ * Toggle a transform's active state and return the updated dataset
+ */
+export async function toggleTransform(
+  datasetId: string,
+  transformId: string,
+  isActive: boolean
+): Promise<Dataset> {
+  return updateTransform(datasetId, transformId, { is_active: isActive });
 }
 
 /**

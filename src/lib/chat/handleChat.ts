@@ -285,11 +285,10 @@ async function saveTransformToBackend(
 
     console.log("[handleChat] Converted filterTable to RAQB:", JSON.stringify(raqbJson));
 
-    const response = await fetch(`${apiUrl}/api/transforms`, {
+    const response = await fetch(`${apiUrl}/api/datasets/${datasetId}/transforms`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        dataset_id: datasetId,
         name: description,
         description: description,
         raqb_json: raqbJson,

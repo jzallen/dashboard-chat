@@ -175,6 +175,10 @@ async def create_transform(
 ) -> Transform:
     """Create a new transform with both RAQB JSON and cached SQL.
 
+    Checks for duplicate SQL - if a transform with the same cached_sql already
+    exists for this dataset, returns the existing transform instead of creating
+    a duplicate.
+
     Args:
         db: Database session
         dataset_id: Parent dataset ID
@@ -184,11 +188,26 @@ async def create_transform(
         nl_prompt: Optional original NL prompt
 
     Returns:
-        Created Transform
+        Created or existing Transform
     """
     # Generate SQL from RAQB tree
     cached_sql = raqb_to_sql(raqb_json)
 
+    # Check if a transform with this SQL already exists for this dataset
+    result = await db.execute(
+        select(Transform)
+        .where(Transform.dataset_id == dataset_id)
+        .where(Transform.cached_sql == cached_sql)
+        .order_by(Transform.created_at.asc())  # Return oldest if multiple exist
+        .limit(1)
+    )
+    existing_transform = result.scalar_one_or_none()
+
+    if existing_transform:
+        # Return existing transform instead of creating duplicate
+        return existing_transform
+
+    # No duplicate found, create new transform
     transform = Transform(
         dataset_id=dataset_id,
         name=name,

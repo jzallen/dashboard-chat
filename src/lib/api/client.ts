@@ -34,7 +34,14 @@ async function handleResponse<T>(response: Response): Promise<T> {
     }
     throw new ApiError(response.status, message);
   }
-  return response.json();
+  const json = await response.json();
+
+  // Unwrap {data: ...} responses from backend
+  if (json && typeof json === 'object' && 'data' in json) {
+    return json.data as T;
+  }
+
+  return json;
 }
 
 /**
