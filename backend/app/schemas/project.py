@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
-    from .dataset import DatasetResponse
+    from .dataset import DatasetSparse
 
 
 class ProjectBase(BaseModel):
@@ -39,9 +39,4 @@ class ProjectResponse(ProjectBase):
     id: str
     created_at: datetime
     updated_at: datetime
-
-
-class ProjectWithDatasets(ProjectResponse):
-    """Schema for Project with datasets."""
-
-    datasets: list[DatasetResponse] = []
+    datasets: list[DatasetSparse] = []

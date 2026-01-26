@@ -238,22 +238,103 @@ async def update_dataset(
     db: AsyncSession,
     dataset_id: str,
     update_dict: dict[str, Any],
-) -> Dataset | None:
-    """Update a dataset's metadata.
+) -> dict[str, Any] | None:
+    """Update a dataset's metadata and transforms.
     
     Returns None if dataset not found.
+    
+    Transform operations via the 'transforms' field:
+    - Create: transform without id (requires name and raqb_json)
+    - Update: transform with id
+    - Delete: transform with id and _delete=True
     """
-    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+    from .transform import create_transform, update_transform, raqb_to_sql
+    from ..models import Transform
+    
+    result = await db.execute(
+        select(Dataset)
+        .options(selectinload(Dataset.transforms))
+        .where(Dataset.id == dataset_id)
+    )
     dataset = result.scalar_one_or_none()
     if not dataset:
         return None
 
+    # Handle transforms separately
+    transforms_input = update_dict.pop("transforms", None)
+    
+    # Update dataset metadata
     for key, value in update_dict.items():
         setattr(dataset, key, value)
 
+    # Process transform operations
+    if transforms_input:
+        existing_transforms = {t.id: t for t in dataset.transforms}
+        
+        for t_input in transforms_input:
+            transform_id = t_input.get("id")
+            should_delete = t_input.get("_delete", False)
+            
+            if transform_id:
+                # Existing transform - update or delete
+                transform = existing_transforms.get(transform_id)
+                if not transform:
+                    continue  # Skip if transform doesn't belong to this dataset
+                
+                if should_delete:
+                    await db.delete(transform)
+                else:
+                    # Update existing transform
+                    if t_input.get("name") is not None:
+                        transform.name = t_input["name"]
+                    if t_input.get("description") is not None:
+                        transform.description = t_input["description"]
+                    if t_input.get("raqb_json") is not None:
+                        transform.raqb_json = t_input["raqb_json"]
+                        transform.cached_sql = raqb_to_sql(t_input["raqb_json"])
+                        transform.version += 1
+                    if t_input.get("is_active") is not None:
+                        transform.is_active = t_input["is_active"]
+            else:
+                # New transform - create
+                if t_input.get("name") and t_input.get("raqb_json"):
+                    new_transform = Transform(
+                        dataset_id=dataset_id,
+                        name=t_input["name"],
+                        description=t_input.get("description"),
+                        raqb_json=t_input["raqb_json"],
+                        cached_sql=raqb_to_sql(t_input["raqb_json"]),
+                        nl_prompt=t_input.get("nl_prompt"),
+                        is_active=t_input.get("is_active", True),
+                    )
+                    db.add(new_transform)
+
     await db.commit()
     await db.refresh(dataset)
-    return dataset
+    
+    # Reload transforms after commit
+    result = await db.execute(
+        select(Dataset)
+        .options(selectinload(Dataset.transforms))
+        .where(Dataset.id == dataset_id)
+    )
+    dataset = result.scalar_one_or_none()
+    
+    return {
+        "id": dataset.id,
+        "project_id": dataset.project_id,
+        "name": dataset.name,
+        "description": dataset.description,
+        "table_name": dataset.table_name,
+        "schema_config": dataset.schema_config,
+        "row_count": dataset.row_count,
+        "file_name": dataset.file_name,
+        "file_size": dataset.file_size,
+        "created_at": dataset.created_at,
+        "updated_at": dataset.updated_at,
+        "transforms": dataset.transforms,
+        "preview_rows": [],
+    }
 
 
 @with_db

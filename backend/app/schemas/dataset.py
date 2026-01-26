@@ -24,6 +24,14 @@ class SchemaConfig(BaseModel):
     fields: dict[str, FieldConfig]
 
 
+class DatasetSparse(BaseModel):
+    """Sparse dataset reference with link to full resource."""
+
+    id: str
+    name: str
+    link: str
+
+
 class DatasetBase(BaseModel):
     """Base schema for Dataset."""
 
@@ -38,10 +46,17 @@ class DatasetCreate(DatasetBase):
 
 
 class DatasetUpdate(BaseModel):
-    """Schema for updating a Dataset."""
+    """Schema for updating a Dataset.
+    
+    Transforms can be managed through the transforms field:
+    - To create: include transform without id
+    - To update: include transform with id
+    - To delete: include transform with id and _delete=True
+    """
 
     name: str | None = None
     description: str | None = None
+    transforms: list["TransformInput"] | None = None
 
 
 class DatasetResponse(DatasetBase):
@@ -99,6 +114,23 @@ class TransformUpdate(BaseModel):
     description: str | None = None
     raqb_json: dict[str, Any] | None = None
     is_active: bool | None = None
+
+
+class TransformInput(BaseModel):
+    """Schema for transform input in dataset update.
+    
+    If id is provided, updates existing transform.
+    If id is None, creates a new transform.
+    If _delete is True, deletes the transform (requires id).
+    """
+
+    id: str | None = None
+    name: str | None = None
+    description: str | None = None
+    raqb_json: dict[str, Any] | None = None
+    nl_prompt: str | None = None
+    is_active: bool | None = None
+    _delete: bool = False
 
 
 class TransformResponse(TransformBase):

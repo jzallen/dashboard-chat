@@ -1,19 +1,21 @@
 import styles from "./TablePanel.module.css";
 
 interface TableHeaderProps {
+  projectName?: string;
+  datasetName?: string;
   onSettingsClick?: () => void;
 }
 
-export function TableHeader({ onSettingsClick }: TableHeaderProps) {
+export function TableHeader({ projectName, datasetName, onSettingsClick }: TableHeaderProps) {
   return (
     <div className={styles.header}>
       <div className={styles.headerContent}>
-        <div>
-          <h1 className={styles.title}>Quill Table Demo</h1>
-          <p className={styles.subtitle}>
-            Chat with the AI to filter, sort, add, or delete rows
-          </p>
-        </div>
+        <nav className={styles.breadcrumb}>
+          <span className={styles.breadcrumbSeparator}>/</span>
+          <span className={styles.breadcrumbItem}>{projectName || "Project"}</span>
+          <span className={styles.breadcrumbSeparator}>/</span>
+          <span className={styles.breadcrumbItemCurrent}>{datasetName || "Dataset"}</span>
+        </nav>
         {onSettingsClick && (
           <button
             onClick={onSettingsClick}

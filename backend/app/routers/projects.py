@@ -1,94 +1,110 @@
 """API routes for project management."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from returns.result import Success, Failure
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
+from ..controllers.project_controller import ProjectController
+from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
-from ..models import Project
-from ..schemas import (
-    ProjectCreate,
-    ProjectResponse,
-    ProjectUpdate,
-    ProjectWithDatasets,
-)
+from ..db_context import set_session
+from ..schemas import ProjectCreate, ProjectUpdate
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
-@router.get("", response_model=list[ProjectResponse])
-async def list_projects(db: AsyncSession = Depends(get_db)):
+async def use_db_context(db: AsyncSession = Depends(get_db)) -> AsyncSession:
+    """Dependency that sets the db session in context for use cases."""
+    set_session(db)
+    return db
+
+
+@router.get("")
+async def list_projects(_: AsyncSession = Depends(use_db_context)):
     """List all projects."""
-    result = await db.execute(
-        select(Project).order_by(Project.created_at.desc())
-    )
-    return result.scalars().all()
+    result = await ProjectController.list_projects()
+
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            raise HTTPException(
+                status_code=500,
+                detail=wrap_error(error, "LIST_PROJECTS_ERROR")
+            )
 
 
-@router.get("/{project_id}", response_model=ProjectWithDatasets)
+@router.get("/{project_id}")
 async def get_project(
     project_id: str,
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
-    """Get a single project by ID with its datasets."""
-    result = await db.execute(
-        select(Project)
-        .where(Project.id == project_id)
-        .options(selectinload(Project.datasets))
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    """Get a single project by ID with sparse dataset references."""
+    result = await ProjectController.get_project(project_id)
+
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            status_code = 404 if error == "Project not found" else 500
+            raise HTTPException(
+                status_code=status_code,
+                detail=wrap_error(error, "GET_PROJECT_ERROR")
+            )
 
 
-@router.post("", response_model=ProjectResponse, status_code=201)
+@router.post("", status_code=201)
 async def create_project(
     project_data: ProjectCreate,
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """Create a new project."""
-    project = Project(**project_data.model_dump())
-    db.add(project)
-    await db.commit()
-    await db.refresh(project)
-    return project
+    result = await ProjectController.create_project(project_data)
+
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            raise HTTPException(
+                status_code=500,
+                detail=wrap_error(error, "CREATE_PROJECT_ERROR")
+            )
 
 
-@router.patch("/{project_id}", response_model=ProjectResponse)
+@router.patch("/{project_id}")
 async def update_project(
     project_id: str,
     update_data: ProjectUpdate,
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """Update a project."""
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    result = await ProjectController.update_project(project_id, update_data)
 
-    update_dict = update_data.model_dump(exclude_unset=True)
-    for key, value in update_dict.items():
-        setattr(project, key, value)
-
-    await db.commit()
-    await db.refresh(project)
-    return project
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            status_code = 404 if error == "Project not found" else 500
+            raise HTTPException(
+                status_code=status_code,
+                detail=wrap_error(error, "UPDATE_PROJECT_ERROR")
+            )
 
 
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: str,
-    db: AsyncSession = Depends(get_db),
+    _: AsyncSession = Depends(use_db_context),
 ):
     """Delete a project and all its datasets."""
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    result = await ProjectController.delete_project(project_id)
 
-    await db.delete(project)
-    await db.commit()
-
-    return {"status": "deleted", "id": project_id}
+    match result:
+        case Success(data):
+            return wrap_success(data)
+        case Failure(error):
+            status_code = 404 if error == "Project not found" else 500
+            raise HTTPException(
+                status_code=status_code,
+                detail=wrap_error(error, "DELETE_PROJECT_ERROR")
+            )

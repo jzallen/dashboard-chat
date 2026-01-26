@@ -4,6 +4,7 @@
 from .dataset import (
     DatasetBase,
     DatasetCreate,
+    DatasetSparse,
     DatasetUpdate,
     DatasetResponse,
     DatasetUploadResponse,
@@ -13,6 +14,7 @@ from .dataset import (
     AggregatedSqlResponse,
     TransformBase,
     TransformCreate,
+    TransformInput,
     TransformUpdate,
     TransformResponse,
 )
@@ -21,7 +23,6 @@ from .project import (
     ProjectCreate,
     ProjectUpdate,
     ProjectResponse,
-    ProjectWithDatasets,
 )
 from .pipeline_run import (
     PipelineRunBase,
@@ -30,7 +31,7 @@ from .pipeline_run import (
 )
 
 # Rebuild models to resolve forward references
-ProjectWithDatasets.model_rebuild()
+ProjectResponse.model_rebuild()
 
 __all__ = [
     # Project
@@ -38,10 +39,10 @@ __all__ = [
     "ProjectCreate",
     "ProjectUpdate",
     "ProjectResponse",
-    "ProjectWithDatasets",
     # Dataset
     "DatasetBase",
     "DatasetCreate",
+    "DatasetSparse",
     "DatasetUpdate",
     "DatasetResponse",
     "DatasetUploadResponse",
@@ -51,6 +52,7 @@ __all__ = [
     "AggregatedSqlResponse",
     "TransformBase",
     "TransformCreate",
+    "TransformInput",
     "TransformUpdate",
     "TransformResponse",
     # Pipeline Run (tech debt - unused but kept for future audit trail)

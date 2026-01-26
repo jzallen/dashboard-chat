@@ -17,13 +17,14 @@ import {
 import { useTransforms } from "./src/lib/ui/hooks/useTransforms";
 import { TransformSettings } from "./src/lib/ui/components/TransformSettings";
 import { TablePanelSkeleton } from "./src/lib/ui/components/SkeletonLoader";
-import { getDataset, type Dataset } from "./src/lib/api";
+import { getDataset, getProject, type Dataset, type Project } from "./src/lib/api";
 
 const DEFAULT_DATASET_ID = "default-dataset-001";
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
   const [datasetError, setDatasetError] = useState<string | null>(null);
 
   const {
@@ -40,10 +41,20 @@ export default function App() {
   const fetchDataset = useCallback(async () => {
     setDatasetError(null);
     try {
-      const data = await getDataset(DEFAULT_DATASET_ID, {
+      const datasetData = await getDataset(DEFAULT_DATASET_ID, {
         includeTransforms: true,
       });
-      setDataset(data);
+      setDataset(datasetData);
+      
+      // Fetch project info if we have a project_id
+      if (datasetData.project_id) {
+        try {
+          const projectData = await getProject(datasetData.project_id);
+          setProject(projectData);
+        } catch {
+          // Project fetch is non-critical, continue without it
+        }
+      }
     } catch (err) {
       setDatasetError(err instanceof Error ? err.message : "Failed to load dataset");
     }
@@ -117,6 +128,8 @@ export default function App() {
             columnFilters={columnFilters}
             setColumnFilters={setColumnFilters}
             totalRows={data.length}
+            projectName={project?.name}
+            datasetName={dataset?.name}
             onSettingsClick={() => setShowSettings(true)}
           />
         )}

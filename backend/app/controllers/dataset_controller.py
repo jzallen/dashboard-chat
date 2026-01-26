@@ -63,8 +63,8 @@ class DatasetController:
     async def update_dataset(
         dataset_id: str,
         update_data: DatasetUpdate,
-    ) -> Result[Dataset, str]:
-        """Update a dataset's metadata."""
+    ) -> Result[dict[str, Any], str]:
+        """Update a dataset's metadata and transforms."""
         try:
             update_dict = update_data.model_dump(exclude_unset=True)
             result = await dataset_use_cases.update_dataset(dataset_id, update_dict)
