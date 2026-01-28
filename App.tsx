@@ -39,12 +39,17 @@ export default function App() {
 
   // Fetch dataset with transforms (silently refreshes after initial load)
   const fetchDataset = useCallback(async () => {
+    console.log("[App] fetchDataset called");
     setDatasetError(null);
     try {
+      console.log("[App] Calling getDataset...");
       const datasetData = await getDataset(DEFAULT_DATASET_ID, {
         includeTransforms: true,
       });
+      console.log("[App] getDataset returned:", datasetData);
+      console.log("[App] Setting dataset state...");
       setDataset(datasetData);
+      console.log("[App] Dataset state set");
       
       // Fetch project info if we have a project_id
       if (datasetData.project_id) {
@@ -56,14 +61,18 @@ export default function App() {
         }
       }
     } catch (err) {
+      console.error("[App] fetchDataset error:", err);
       setDatasetError(err instanceof Error ? err.message : "Failed to load dataset");
     }
   }, []); // No dependencies - stable reference
 
   // Fetch dataset on mount
   useEffect(() => {
+    console.log("[App] useEffect mount triggered");
     const loadInitialData = async () => {
+      console.log("[App] loadInitialData starting");
       await fetchDataset();
+      console.log("[App] fetchDataset completed, calling refreshData");
       // Only refresh data on initial load
       refreshData();
     };
@@ -108,6 +117,8 @@ export default function App() {
     tableSchema: { ...tableSchema, rowCount: data.length },
   });
 
+  console.log("[App] Render - dataset:", dataset, "datasetError:", datasetError);
+
   return (
     <div className={styles.appContainer}>
       <div className={styles.mainContent}>
@@ -115,6 +126,7 @@ export default function App() {
           <TablePanelSkeleton />
         ) : showSettings ? (
           <TransformSettings
+            datasetId={dataset.id}
             transforms={transforms}
             loading={transformsLoading}
             error={transformsError ?? datasetError}

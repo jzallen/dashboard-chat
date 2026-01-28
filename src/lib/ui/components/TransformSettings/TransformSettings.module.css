@@ -44,3 +44,72 @@
 .contentArea {
   @apply flex-1 overflow-y-auto;
 }
+
+/* Tabs container for view toggle */
+.tabsContainer {
+  @apply flex gap-1 mt-4 border-b border-surface-border;
+}
+
+/* Individual tab button */
+.tab {
+  @apply px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800
+         border-b-2 border-transparent transition-all;
+}
+
+/* Active tab */
+.tabActive {
+  @apply text-blue-600 border-blue-600;
+}
+
+/* SQL View Container */
+.sqlViewContainer {
+  @apply p-4;
+}
+
+/* SQL Loading State */
+.sqlLoading {
+  @apply text-center text-gray-500 py-8;
+}
+
+/* SQL Error State */
+.sqlError {
+  @apply bg-red-50 border border-red-200 rounded-lg p-4 text-red-700;
+}
+
+/* SQL Content Wrapper */
+.sqlContent {
+  @apply space-y-4;
+}
+
+/* SQL Info Section */
+.sqlInfo {
+  @apply bg-blue-50 border border-blue-200 rounded-lg p-3;
+}
+
+.sqlInfoText {
+  @apply text-sm text-gray-700;
+}
+
+.sqlInfoLabel {
+  @apply font-semibold text-gray-900;
+}
+
+/* SQL Well - styled container for SQL code */
+.sqlWell {
+  @apply bg-gray-50 border border-gray-200 rounded-lg overflow-hidden;
+}
+
+.sqlWellHeader {
+  @apply bg-gray-100 border-b border-gray-200 px-4 py-2;
+}
+
+.sqlWellTitle {
+  @apply text-xs font-semibold text-gray-600 uppercase tracking-wide;
+}
+
+/* SQL Code Block */
+.sqlCode {
+  @apply p-4 text-sm font-mono text-gray-800 overflow-x-auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

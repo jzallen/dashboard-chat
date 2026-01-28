@@ -2,11 +2,16 @@
  * Transform Settings View Component
  */
 
-import type { Transform } from "@/api";
+import { useState, useEffect } from "react";
+import type { Transform, AggregatedSqlResponse } from "@/api";
+import { getDatasetAggregatedSql } from "@/api";
 import { TransformList } from "./TransformList";
 import styles from "./TransformSettings.module.css";
 
+type ViewMode = "transforms" | "sql";
+
 interface TransformSettingsProps {
+  datasetId: string;
   transforms: Transform[];
   loading: boolean;
   error: string | null;
@@ -16,6 +21,7 @@ interface TransformSettingsProps {
 }
 
 export function TransformSettings({
+  datasetId,
   transforms,
   loading,
   error,
@@ -23,6 +29,30 @@ export function TransformSettings({
   onRefresh,
   onClose,
 }: TransformSettingsProps) {
+  const [viewMode, setViewMode] = useState<ViewMode>("transforms");
+  const [sqlData, setSqlData] = useState<AggregatedSqlResponse | null>(null);
+  const [sqlLoading, setSqlLoading] = useState(false);
+  const [sqlError, setSqlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (viewMode === "sql") {
+      fetchAggregatedSql();
+    }
+  }, [viewMode, datasetId]);
+
+  const fetchAggregatedSql = async () => {
+    setSqlLoading(true);
+    setSqlError(null);
+    try {
+      const data = await getDatasetAggregatedSql(datasetId);
+      setSqlData(data);
+    } catch (err) {
+      setSqlError(err instanceof Error ? err.message : "Failed to load SQL");
+    } finally {
+      setSqlLoading(false);
+    }
+  };
+
   return (
     <div className={styles.settingsContainer}>
       {/* Settings Header */}
@@ -55,16 +85,64 @@ export function TransformSettings({
             </svg>
           </button>
         </div>
+
+        {/* View Toggle Tabs */}
+        <div className={styles.tabsContainer}>
+          <button
+            onClick={() => setViewMode("transforms")}
+            className={`${styles.tab} ${viewMode === "transforms" ? styles.tabActive : ""}`}
+          >
+            Transforms
+          </button>
+          <button
+            onClick={() => setViewMode("sql")}
+            className={`${styles.tab} ${viewMode === "sql" ? styles.tabActive : ""}`}
+          >
+            SQL Preview
+          </button>
+        </div>
       </div>
-      {/* Transform List */}
+
+      {/* Content Area */}
       <div className={styles.contentArea}>
-        <TransformList
-          transforms={transforms}
-          loading={loading}
-          error={error}
-          onToggle={onToggle}
-          onRefresh={onRefresh}
-        />
+        {viewMode === "transforms" ? (
+          <TransformList
+            transforms={transforms}
+            loading={loading}
+            error={error}
+            onToggle={onToggle}
+            onRefresh={onRefresh}
+          />
+        ) : (
+          <div className={styles.sqlViewContainer}>
+            {sqlLoading && (
+              <div className={styles.sqlLoading}>Loading SQL...</div>
+            )}
+            {sqlError && (
+              <div className={styles.sqlError}>
+                <p>Error loading SQL: {sqlError}</p>
+              </div>
+            )}
+            {sqlData && !sqlLoading && !sqlError && (
+              <div className={styles.sqlContent}>
+                <div className={styles.sqlInfo}>
+                  <p className={styles.sqlInfoText}>
+                    <span className={styles.sqlInfoLabel}>Active Transforms:</span>{" "}
+                    {sqlData.enabled_transform_count}
+                  </p>
+                </div>
+                <div className={styles.sqlWell}>
+                  <div className={styles.sqlWellHeader}>
+                    <span className={styles.sqlWellTitle}>WHERE Clause</span>
+                  </div>
+                  <pre className={styles.sqlCode}>
+                    <code>{sqlData.sql_where_clause || "No active transforms"}</code>
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

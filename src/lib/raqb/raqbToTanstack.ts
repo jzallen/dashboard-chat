@@ -54,7 +54,7 @@ export function raqbToTanstackFilters(raqbTree: RAQBTree): ColumnFiltersState {
 export function raqbToExtendedFilters(raqbTree: RAQBTree): ExtendedColumnFilter[] {
   const filters: ExtendedColumnFilter[] = [];
 
-  processGroupExtended(raqbTree, filters, raqbTree.properties.conjunction);
+  processGroupExtended(raqbTree, filters, raqbTree.properties?.conjunction ?? "AND");
 
   return filters;
 }
@@ -92,7 +92,7 @@ function processGroupExtended(
     return;
   }
 
-  const conjunction = group.properties.conjunction;
+  const conjunction = group.properties?.conjunction ?? "AND";
 
   for (const child of Object.values(group.children1)) {
     if (isRAQBRule(child)) {
