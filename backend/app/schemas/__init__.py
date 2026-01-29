@@ -11,7 +11,6 @@ from .dataset import (
     FieldConfig,
     SchemaConfig,
     # Transform schemas (now in dataset.py)
-    AggregatedSqlResponse,
     TransformBase,
     TransformCreate,
     TransformInput,
@@ -49,7 +48,6 @@ __all__ = [
     "FieldConfig",
     "SchemaConfig",
     # Transform
-    "AggregatedSqlResponse",
     "TransformBase",
     "TransformCreate",
     "TransformInput",

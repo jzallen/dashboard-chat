@@ -141,7 +141,7 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
     (transform: Transform) => {
       if (!onFilterApply) return;
 
-      const newFilters = raqbToTanstackFilters(transform.raqb_json);
+      const newFilters = raqbToTanstackFilters(transform.condition_json);
 
       // Merge with existing filters instead of replacing
       onFilterApply((prevFilters) => mergeFilters(prevFilters, newFilters));
@@ -179,7 +179,7 @@ function computeActiveFilters(transforms: Transform[]): ColumnFiltersState {
   for (const transform of transforms) {
     console.log("[computeActiveFilters] Transform:", transform.name, "is_active:", transform.is_active);
     if (transform.is_active) {
-      const filters = raqbToTanstackFilters(transform.raqb_json);
+      const filters = raqbToTanstackFilters(transform.condition_json);
       console.log("[computeActiveFilters] Converted RAQB to filters:", filters);
       activeFilters = mergeFilters(activeFilters, filters);
     }

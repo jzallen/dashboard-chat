@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
 if TYPE_CHECKING:
-    from .transform import Transform
+    from ..repositories.transform_record import TransformRecord
 
 
 class RunStatus:
@@ -61,8 +61,8 @@ class PipelineRun(Base):
     )
 
     # Relationships
-    transform: Mapped["Transform"] = relationship(
-        "Transform", back_populates="runs"
+    transform: Mapped["TransformRecord"] = relationship(
+        "TransformRecord", back_populates="runs"
     )
 
     def __repr__(self) -> str:

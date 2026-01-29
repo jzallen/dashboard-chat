@@ -124,7 +124,7 @@ def infer_schema_from_dataframe(df: pd.DataFrame) -> dict[str, Any]:
             "label": column,
             "type": field_type,
             "operators": OPERATORS_BY_TYPE.get(field_type, OPERATORS_BY_TYPE["text"]),
-            "nullable": series.isnull().any(),
+            "nullable": bool(series.isnull().any()),
         }
 
         # Add list values for select fields

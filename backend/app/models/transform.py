@@ -1,71 +1,34 @@
-"""Transform model for storing RAQB-based data transformations."""
+"""Transform domain model - authoritative business object.
 
-from datetime import datetime
-from typing import TYPE_CHECKING
-from uuid import uuid4
+This module contains the Transform domain model. SQL generation is now handled
+by the backend using Ibis expressions derived from the condition_json.
+"""
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from dataclasses import dataclass
 
-from ..database import Base
-
-if TYPE_CHECKING:
-    from .dataset import Dataset
-    from .pipeline_run import PipelineRun
+from ..types import QueryBuilderJSON
 
 
-class Transform(Base):
-    """Data transform storing both RAQB JSON and cached SQL.
+@dataclass(frozen=True, slots=True)
+class Transform:
+    """Transform domain model (authoritative business object).
 
-    The RAQB JSON is the canonical format used for:
-    - Frontend TanStack conversion
-    - Display and editing
+    The transform stores both the RAQB JSON (for Ibis filter generation and UI
+    rehydration) and the generated SQL (for display/backwards compatibility).
+    SQL generation now happens on the backend via Ibis expressions.
 
-    The cached SQL is pre-generated for:
-    - Backend execution efficiency
-    - Query optimization
+    Attributes:
+        id: Unique identifier (None for unsaved transforms)
+        name: Human-readable name for the transform
+        condition_json: RAQB JSON tree structure as value object
+        condition_sql: SQL WHERE clause (kept for display/backwards compat)
+        description: Optional description
+        is_active: Whether the transform is currently applied
     """
 
-    __tablename__ = "transforms"
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid4()),
-    )
-    dataset_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("datasets.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # RAQB tree format - canonical representation
-    raqb_json: Mapped[dict] = mapped_column(JSON, nullable=False)
-
-    # Pre-generated SQL WHERE clause for backend execution
-    cached_sql: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Versioning
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-    # Metadata from NL generation
-    nl_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
-
-    # Relationships
-    dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="transforms")
-    runs: Mapped[list["PipelineRun"]] = relationship(
-        "PipelineRun", back_populates="transform", cascade="all, delete-orphan"
-    )
-
-    def __repr__(self) -> str:
-        return f"<Transform(id={self.id}, name={self.name}, version={self.version})>"
+    id: str | None
+    name: str
+    condition_json: QueryBuilderJSON | None  # Value object for Ibis conversion
+    condition_sql: str | None = None  # Keep for display/backwards compat
+    description: str | None = None
+    is_active: bool = True

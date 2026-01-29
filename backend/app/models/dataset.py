@@ -1,61 +1,160 @@
-"""Dataset model for uploaded data files."""
+"""Dataset domain model - authoritative business object.
 
-from datetime import datetime
-from typing import TYPE_CHECKING
-from uuid import uuid4
+This module contains the Dataset domain model with business logic for
+generating aggregated SQL queries from transforms using Ibis expressions.
+"""
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from dataclasses import dataclass
+from typing import Any
+import re
 
-from ..database import Base
+import ibis
 
-if TYPE_CHECKING:
-    from .transform import Transform
-    from .project import Project
+from .transform import Transform
+from ..types import SQLQuery
 
 
-class Dataset(Base):
-    """Dataset representing uploaded data with inferred schema."""
+@dataclass(frozen=True, slots=True)
+class Dataset:
+    """Dataset domain model (authoritative business object).
 
-    __tablename__ = "datasets"
+    Business rules:
+    - Aggregates transform filters into SQL queries via Ibis
+    - Manages dataset schema and metadata
+    - No database/persistence concerns (that's the repository's job)
+    """
 
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid4()),
-    )
-    project_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    id: str  # UUID primary key
+    storage_path: str  # Parquet path: "project_id/dataset_uuid.parquet"
+    name: str  # Display name
+    schema_config: dict[str, Any]  # Field definitions for query builder
+    transforms: list[Transform]
 
-    # Dynamic table name for the uploaded data
-    table_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    def _get_connection(self) -> ibis.BaseBackend:
+        """Get Ibis DuckDB connection configured for S3/MinIO access."""
+        from ..config import get_settings
 
-    # JSON schema config for RAQB field definitions
-    # Format: { "fields": { "column_name": { "type": "text|number|boolean|select", ... } } }
-    schema_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+        settings = get_settings()
+        conn = ibis.duckdb.connect()
 
-    # Metadata
-    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+        if settings.storage_type == "minio":
+            conn.raw_sql(f"""
+                INSTALL httpfs;
+                LOAD httpfs;
+                SET s3_endpoint='{settings.minio_endpoint}';
+                SET s3_access_key_id='{settings.minio_access_key}';
+                SET s3_secret_access_key='{settings.minio_secret_key}';
+                SET s3_use_ssl={'true' if settings.minio_secure else 'false'};
+                SET s3_url_style='path';
+            """)
+        else:
+            conn.raw_sql(f"""
+                INSTALL httpfs;
+                LOAD httpfs;
+                SET s3_region='{settings.s3_region}';
+            """)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+        return conn
 
-    # Relationships
-    project: Mapped["Project"] = relationship("Project", back_populates="datasets")
-    transforms: Mapped[list["Transform"]] = relationship(
-        "Transform", back_populates="dataset", cascade="all, delete-orphan"
-    )
+    def _s3_path(self) -> str:
+        """S3 path for the parquet file."""
+        from ..config import get_settings
+        settings = get_settings()
+        return f"s3://{settings.storage_bucket}/{self.storage_path}"
 
-    def __repr__(self) -> str:
-        return f"<Dataset(id={self.id}, name={self.name}, table={self.table_name})>"
+    def _build_table(self, table_name: str | None = None) -> ibis.Table:
+        """Build Ibis table with filters applied.
+
+        Args:
+            table_name: Optional name for FROM clause (used by display_sql)
+        """
+        conn = self._get_connection()
+        table = conn.read_parquet(self._s3_path(), table_name=table_name)
+
+        # Select columns from schema
+        fields = self.schema_config.get("fields", {})
+        if fields:
+            table = table.select(*fields.keys())
+
+        # Apply active transform filters
+        active_filters = [
+            t.condition_json.as_ibis_filter(table)
+            for t in self.transforms
+            if t.is_active and t.condition_json
+        ]
+        if active_filters:
+            table = table.filter(*active_filters)
+
+        return table
+
+    @property
+    def _table(self) -> ibis.Table:
+        """Ibis table for query execution."""
+        return self._build_table()
+
+    def _initials(self) -> str:
+        """Lowercase initials of dataset name for SQL alias."""
+        return "".join(word[0].lower() for word in self.name.split() if word)
+
+    @property
+    def staging_sql(self) -> SQLQuery:
+        """SQL for query execution (compact, with S3 path)."""
+        try:
+            return ibis.to_sql(self._table, dialect="duckdb", pretty=False)
+        except Exception as e:
+            return f"-- Error generating SQL: {str(e)}"
+
+    @property
+    def display_sql(self) -> SQLQuery:
+        """Human-readable SQL with dataset name and alias."""
+        try:
+            table = self._build_table(table_name=self.name)
+            sql = ibis.to_sql(table, dialect="duckdb", pretty=True)
+        except Exception as e:
+            return f"-- Error generating SQL: {str(e)}"
+
+        alias = self._initials() or "t"
+
+        # Replace "t0" with meaningful alias
+        sql = sql.replace('"t0"', alias)
+
+        # Remove quotes around column names: sp."col" -> sp.col
+        sql = re.sub(rf'{alias}\."(\w+)"', rf'{alias}.\1', sql)
+
+        # Expand SELECT * to explicit columns
+        if "SELECT\n  *\n" in sql:
+            fields = self.schema_config.get("fields", {})
+            if fields:
+                col_list = ",\n  ".join(f"{alias}.{col}" for col in fields.keys())
+                sql = sql.replace("SELECT\n  *\n", f"SELECT\n  {col_list}\n")
+
+        return sql
+
+    @staticmethod
+    def generate_parquet_id(project_id: str, dataset_uuid: str) -> str:
+        """Generate parquet storage path: 'project_id/dataset_uuid.parquet'
+
+        Note: This is now used for storage_path, not id.
+
+        Args:
+            project_id: Project UUID
+            dataset_uuid: Dataset UUID
+
+        Returns:
+            Parquet path suitable for S3/MinIO storage
+        """
+        return f"{project_id}/{dataset_uuid}.parquet"
+
+    @staticmethod
+    def display_name_to_filename(display_name: str) -> str:
+        """Convert display name to snake_case filename.
+
+        Args:
+            display_name: Human-readable dataset name
+
+        Returns:
+            Safe filename in snake_case format
+        """
+        # Convert to lowercase and replace non-alphanumeric with underscore
+        safe_name = re.sub(r"[^a-z0-9]+", "_", display_name.lower()).strip("_")
+        return safe_name or "dataset"

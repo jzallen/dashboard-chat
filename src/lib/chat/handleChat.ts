@@ -1,5 +1,6 @@
 import type { Message, TableSchema, ToolDefinition } from "./types";
 import { filterTableToRaqb, generateFilterDescription } from "./tanstackToRaqb";
+import { raqbToSql } from "@/raqb";
 
 // ============================================================================
 // Types
@@ -282,17 +283,24 @@ async function saveTransformToBackend(
     // Convert filterTable args to RAQB format
     const raqbJson = filterTableToRaqb(args);
     const description = generateFilterDescription(args);
+    // Generate SQL from RAQB JSON (frontend handles the translation)
+    const conditionSql = raqbToSql(raqbJson);
 
     console.log("[handleChat] Converted filterTable to RAQB:", JSON.stringify(raqbJson));
+    console.log("[handleChat] Generated SQL:", conditionSql);
 
-    const response = await fetch(`${apiUrl}/api/datasets/${datasetId}/transforms`, {
-      method: "POST",
+    // Create transform via PATCH /datasets/{id} with transforms array
+    const response = await fetch(`${apiUrl}/api/datasets/${datasetId}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: description,
-        description: description,
-        raqb_json: raqbJson,
-        nl_prompt: description,
+        transforms: [{
+          name: description,
+          description: description,
+          condition_json: raqbJson,
+          condition_sql: conditionSql,
+          nl_prompt: description,
+        }],
       }),
     });
 
@@ -313,7 +321,7 @@ export async function handleChat(
 ): Promise<Response> {
   const { messages, tableSchema }: ChatRequest = await request.json();
   const apiUrl = options.apiUrl || "http://localhost:8000";
-  const datasetId = options.datasetId || "default-dataset-001";
+  const datasetId = options.datasetId || "1592ce82-5f22-4da7-b41b-9fd9fd05770e";
 
   const systemPrompt = getSystemPrompt(tableSchema);
   const chatMessages: Message[] = [

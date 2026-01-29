@@ -16,7 +16,7 @@ interface TransformCardProps {
 }
 
 export function TransformCard({ transform, onToggle }: TransformCardProps) {
-  const ruleCount = countRules(transform.raqb_json);
+  const ruleCount = countRules(transform.condition_json);
   const createdDate = new Date(transform.created_at).toLocaleDateString();
 
   return (
@@ -37,8 +37,8 @@ export function TransformCard({ transform, onToggle }: TransformCardProps) {
             version={transform.version}
             createdDate={createdDate}
           />
-          {transform.cached_sql && (
-            <SQLPreview sql={transform.cached_sql} />
+          {transform.condition_sql && (
+            <SQLPreview sql={transform.condition_sql} />
           )}
         </div>
         <div className={styles.actionsColumn}>

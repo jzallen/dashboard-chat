@@ -5,7 +5,6 @@ services:
     container_name: dashboard-frontend
     working_dir: /app
     environment:
-      VITE_API_URL: http://localhost:8000
       VITE_CHAT_URL: http://localhost:8787
     ports:
       - "5173:5173"
@@ -13,6 +12,8 @@ services:
       - .:/app
       - /app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - api
 
   # Cloudflare Worker - Chat API
   worker:
@@ -50,6 +51,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # MinIO - S3-compatible object storage for Parquet files
+  minio:
+    image: minio/minio:latest
+    container_name: dashboard-minio
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
   # FastAPI backend - works with DuckDB (local) or PostgreSQL (full)
   api:
     build:
@@ -58,8 +78,9 @@ services:
     container_name: dashboard-api
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/app.db}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,https://*.gitpod.io}
       DEBUG: ${DEBUG:-true}
+      MINIO_ENDPOINT: minio:9000
     ports:
       - "8000:8000"
     volumes:
@@ -94,3 +115,4 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:

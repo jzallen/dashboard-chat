@@ -16,7 +16,7 @@ export function createChatHandler(env: Env) {
   // Default to "*" for development if CORS_ORIGIN not set
   const corsOrigin = env.CORS_ORIGIN || "*";
   const apiUrl = env.API_URL || "http://localhost:8000";
-  const datasetId = env.DATASET_ID || "default-dataset-001";
+  const datasetId = env.DATASET_ID || "1592ce82-5f22-4da7-b41b-9fd9fd05770e";
   return (request: Request) =>
     handleChat(request, client, { corsOrigin, apiUrl, datasetId });
 }

@@ -9,9 +9,8 @@ from ..controllers.dataset_controller import DatasetController
 from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
 from ..db_context import set_session
-from ..models import Dataset
-from ..schemas import AggregatedSqlResponse, DatasetUpdate
-from ..use_cases import transform as transform_use_cases
+from ..repositories.dataset_record import DatasetRecord
+from ..schemas import DatasetUpdate
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -72,13 +71,13 @@ async def upload_dataset(
     description: str | None = Form(None),
     _: AsyncSession = Depends(use_db_context),
 ):
-    """Upload a CSV file and create a dataset.
+    """Upload a CSV file and create a dataset with Parquet storage.
 
     This will:
     1. Parse the CSV file
     2. Infer the schema (RAQB field types and operators)
-    3. Create a dynamic table in PostgreSQL
-    4. Insert the data
+    3. Convert CSV to Parquet using DuckDB
+    4. Upload Parquet file to MinIO/S3
     5. Create the dataset record
     """
     # Validate filename exists
@@ -138,7 +137,7 @@ async def delete_dataset(
     dataset_id: str,
     _: AsyncSession = Depends(use_db_context),
 ):
-    """Delete a dataset and its data table."""
+    """Delete a dataset and its Parquet file."""
     result = await DatasetController.delete_dataset(dataset_id)
 
     match result:
@@ -152,21 +151,6 @@ async def delete_dataset(
             )
 
 
-@router.get("/{dataset_id}/aggregated-sql", response_model=AggregatedSqlResponse)
-async def get_dataset_aggregated_sql(
-    dataset_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get combined SQL WHERE clause from all active transforms for a dataset."""
-    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    sql_where_clause, transform_ids = await transform_use_cases.get_aggregated_sql(db, dataset_id)
-
-    return AggregatedSqlResponse(
-        dataset_id=dataset_id,
-        enabled_transform_count=len(transform_ids),
-        sql_where_clause=sql_where_clause,
-        transform_ids=transform_ids,
-    )
+# Note: Transforms are created via PATCH /{dataset_id} with transforms array
+# Note: /aggregated-sql endpoint removed - use GET /{dataset_id} with include_transforms=true
+# to get staging_sql property instead

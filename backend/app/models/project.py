@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
 if TYPE_CHECKING:
-    from .dataset import Dataset
+    from ..repositories.dataset_record import DatasetRecord
 
 
 class Project(Base):
@@ -33,8 +33,8 @@ class Project(Base):
     )
 
     # Relationships
-    datasets: Mapped[list["Dataset"]] = relationship(
-        "Dataset", back_populates="project", cascade="all, delete-orphan"
+    datasets: Mapped[list["DatasetRecord"]] = relationship(
+        "DatasetRecord", back_populates="project", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

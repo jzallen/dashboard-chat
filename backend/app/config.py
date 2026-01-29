@@ -1,11 +1,18 @@
 """Application configuration from environment variables."""
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # Database
     database_url: str = "postgresql+asyncpg://dashboard:dashboard_secret@localhost:5432/dashboard_chat"
@@ -16,6 +23,17 @@ class Settings(BaseSettings):
     # Debug mode
     debug: bool = True
 
+    # Storage configuration
+    storage_type: str = "minio"  # or "s3" for production
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_secure: bool = False
+    storage_bucket: str = "datasets"
+
+    # S3 configuration (production)
+    s3_region: str = "us-east-1"
+
     # App info
     app_name: str = "Dashboard Chat API"
     app_version: str = "1.0.0"
@@ -24,10 +42,6 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 @lru_cache

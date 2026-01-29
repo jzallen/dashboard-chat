@@ -19,7 +19,7 @@ import { TransformSettings } from "./src/lib/ui/components/TransformSettings";
 import { TablePanelSkeleton } from "./src/lib/ui/components/SkeletonLoader";
 import { getDataset, getProject, type Dataset, type Project } from "./src/lib/api";
 
-const DEFAULT_DATASET_ID = "default-dataset-001";
+const DEFAULT_DATASET_ID = "1592ce82-5f22-4da7-b41b-9fd9fd05770e";
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);

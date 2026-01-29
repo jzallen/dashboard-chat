@@ -3,8 +3,8 @@
  */
 
 import { useState, useEffect } from "react";
-import type { Transform, AggregatedSqlResponse } from "@/api";
-import { getDatasetAggregatedSql } from "@/api";
+import type { Transform, Dataset } from "@/api";
+import { getDataset } from "@/api";
 import { TransformList } from "./TransformList";
 import styles from "./TransformSettings.module.css";
 
@@ -30,22 +30,23 @@ export function TransformSettings({
   onClose,
 }: TransformSettingsProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("transforms");
-  const [sqlData, setSqlData] = useState<AggregatedSqlResponse | null>(null);
+  const [dataset, setDataset] = useState<Dataset | null>(null);
   const [sqlLoading, setSqlLoading] = useState(false);
   const [sqlError, setSqlError] = useState<string | null>(null);
 
   useEffect(() => {
     if (viewMode === "sql") {
-      fetchAggregatedSql();
+      fetchDatasetWithSql();
     }
   }, [viewMode, datasetId]);
 
-  const fetchAggregatedSql = async () => {
+  const fetchDatasetWithSql = async () => {
     setSqlLoading(true);
     setSqlError(null);
     try {
-      const data = await getDatasetAggregatedSql(datasetId);
-      setSqlData(data);
+      // Fetch dataset with transforms to get staging_sql
+      const data = await getDataset(datasetId, { includeTransforms: true });
+      setDataset(data);
     } catch (err) {
       setSqlError(err instanceof Error ? err.message : "Failed to load SQL");
     } finally {
@@ -123,20 +124,20 @@ export function TransformSettings({
                 <p>Error loading SQL: {sqlError}</p>
               </div>
             )}
-            {sqlData && !sqlLoading && !sqlError && (
+            {dataset && !sqlLoading && !sqlError && (
               <div className={styles.sqlContent}>
                 <div className={styles.sqlInfo}>
                   <p className={styles.sqlInfoText}>
                     <span className={styles.sqlInfoLabel}>Active Transforms:</span>{" "}
-                    {sqlData.enabled_transform_count}
+                    {dataset.transforms.filter(t => t.is_active).length}
                   </p>
                 </div>
                 <div className={styles.sqlWell}>
                   <div className={styles.sqlWellHeader}>
-                    <span className={styles.sqlWellTitle}>WHERE Clause</span>
+                    <span className={styles.sqlWellTitle}>SQL Query</span>
                   </div>
                   <pre className={styles.sqlCode}>
-                    <code>{sqlData.sql_where_clause || "No active transforms"}</code>
+                    <code>{dataset.staging_sql || "No active transforms"}</code>
                   </pre>
                 </div>
               </div>
