@@ -86,6 +86,7 @@ export default function App() {
     loading: transformsLoading,
     error: transformsError,
     toggleTransform,
+    removeTransform,
   } = useTransforms({
     dataset,
     onDatasetChange: setDataset,
@@ -131,6 +132,7 @@ export default function App() {
             loading={transformsLoading}
             error={transformsError ?? datasetError}
             onToggle={toggleTransform}
+            onDelete={removeTransform}
             onRefresh={fetchDataset}
             onClose={() => setShowSettings(false)}
           />
@@ -143,6 +145,7 @@ export default function App() {
             projectName={project?.name}
             datasetName={dataset?.name}
             onSettingsClick={() => setShowSettings(true)}
+            onToggleTransform={toggleTransform}
           />
         )}
       </div>

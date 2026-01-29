@@ -149,7 +149,21 @@ export async function deleteDataset(
 }
 
 // Transform management
-// These are low-level API functions - prefer using the dataset-centric operations below
+// Transforms are managed through the dataset PATCH endpoint with a transforms array
+
+/**
+ * Input for transform operations via dataset update
+ */
+interface TransformInput {
+  id?: string;
+  name?: string;
+  description?: string;
+  condition_json?: unknown;
+  condition_sql?: string;
+  nl_prompt?: string;
+  is_active?: boolean;
+  delete?: boolean;
+}
 
 /**
  * Create a new transform and return the updated dataset
@@ -158,9 +172,9 @@ export async function createTransform(
   datasetId: string,
   data: TransformCreate
 ): Promise<Dataset> {
-  await post<Transform>(`/api/datasets/${datasetId}/transforms`, data);
-  // Refetch dataset with updated transforms
-  return getDataset(datasetId, { includeTransforms: true });
+  return patch<Dataset>(`/api/datasets/${datasetId}`, {
+    transforms: [data],
+  });
 }
 
 /**
@@ -171,9 +185,13 @@ export async function updateTransform(
   transformId: string,
   data: TransformUpdate
 ): Promise<Dataset> {
-  await patch<Transform>(`/api/datasets/${datasetId}/transforms/${transformId}`, data);
-  // Refetch dataset with updated transforms
-  return getDataset(datasetId, { includeTransforms: true });
+  const transformInput: TransformInput = {
+    id: transformId,
+    ...data,
+  };
+  return patch<Dataset>(`/api/datasets/${datasetId}`, {
+    transforms: [transformInput],
+  });
 }
 
 /**
@@ -183,11 +201,9 @@ export async function deleteTransform(
   datasetId: string,
   transformId: string
 ): Promise<Dataset> {
-  await del<{ status: string; id: string }>(
-    `/api/datasets/${datasetId}/transforms/${transformId}`
-  );
-  // Refetch dataset with updated transforms
-  return getDataset(datasetId, { includeTransforms: true });
+  return patch<Dataset>(`/api/datasets/${datasetId}`, {
+    transforms: [{ id: transformId, delete: true }],
+  });
 }
 
 /**

@@ -47,11 +47,11 @@ class DatasetCreate(DatasetBase):
 
 class DatasetUpdate(BaseModel):
     """Schema for updating a Dataset.
-    
+
     Transforms can be managed through the transforms field:
     - To create: include transform without id
     - To update: include transform with id
-    - To delete: include transform with id and _delete=True
+    - To delete: include transform with id and delete=True
     """
 
     name: str | None = None
@@ -128,7 +128,7 @@ class TransformInput(BaseModel):
 
     If id is provided, updates existing transform.
     If id is None, creates a new transform.
-    If _delete is True, deletes the transform (requires id).
+    If delete is True, deletes the transform (requires id).
 
     Frontend generates condition_sql from condition_json using RAQB.
     """
@@ -140,7 +140,7 @@ class TransformInput(BaseModel):
     condition_sql: str | None = None  # SQL WHERE clause from frontend RAQB
     nl_prompt: str | None = None
     is_active: bool | None = None
-    _delete: bool = False
+    delete: bool = False
 
 
 class TransformResponse(TransformBase):

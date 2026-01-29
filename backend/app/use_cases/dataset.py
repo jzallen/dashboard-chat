@@ -287,7 +287,7 @@ async def update_dataset(
     Transform operations via the 'transforms' field:
     - Create: transform without id (requires name, condition_json, and condition_sql)
     - Update: transform with id
-    - Delete: transform with id and _delete=True
+    - Delete: transform with id and delete=True
     """
     result = await db.execute(
         select(DatasetRecord)
@@ -312,7 +312,7 @@ async def update_dataset(
 
         for t_input in transforms_input:
             transform_id = t_input.get("id")
-            should_delete = t_input.get("_delete", False)
+            should_delete = t_input.get("delete", False)
 
             if transform_id:
                 # Existing transform - update or delete

@@ -8,14 +8,16 @@ import { TransformHeader } from "./TransformHeader";
 import { TransformMetadata } from "./TransformMetadata";
 import { SQLPreview } from "./SQLPreview";
 import { TransformToggle } from "./TransformToggle";
+import { DeleteButton } from "./DeleteButton";
 import styles from "./TransformCard.module.css";
 
 interface TransformCardProps {
   transform: Transform;
   onToggle: (transformId: string, isActive: boolean) => void;
+  onDelete?: (transformId: string) => void;
 }
 
-export function TransformCard({ transform, onToggle }: TransformCardProps) {
+export function TransformCard({ transform, onToggle, onDelete }: TransformCardProps) {
   const ruleCount = countRules(transform.condition_json);
   const createdDate = new Date(transform.created_at).toLocaleDateString();
 
@@ -46,6 +48,9 @@ export function TransformCard({ transform, onToggle }: TransformCardProps) {
             isActive={transform.is_active}
             onToggle={() => onToggle(transform.id, !transform.is_active)}
           />
+          {!transform.is_active && onDelete && (
+            <DeleteButton onClick={() => onDelete(transform.id)} />
+          )}
         </div>
       </div>
     </div>

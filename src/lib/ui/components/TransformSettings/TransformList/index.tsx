@@ -11,6 +11,7 @@ interface TransformListProps {
   loading: boolean;
   error: string | null;
   onToggle: (transformId: string, isActive: boolean) => void;
+  onDelete?: (transformId: string) => void;
   onRefresh: () => void;
 }
 
@@ -19,6 +20,7 @@ export function TransformList({
   loading,
   error,
   onToggle,
+  onDelete,
   onRefresh,
 }: TransformListProps) {
   // No auto-refresh needed - data is already loaded when opening settings
@@ -95,6 +97,7 @@ export function TransformList({
                 key={transform.id}
                 transform={transform}
                 onToggle={onToggle}
+                onDelete={onDelete}
               />
             ))}
           </div>

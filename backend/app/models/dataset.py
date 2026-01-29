@@ -87,12 +87,7 @@ class Dataset:
 
         return table
 
-    @property
-    def _table(self) -> ibis.Table:
-        """Ibis table for query execution."""
-        return self._build_table()
-
-    def _initials(self) -> str:
+    def _table_alias(self) -> str:
         """Lowercase initials of dataset name for SQL alias."""
         return "".join(word[0].lower() for word in self.name.split() if word)
 
@@ -100,7 +95,7 @@ class Dataset:
     def staging_sql(self) -> SQLQuery:
         """SQL for query execution (compact, with S3 path)."""
         try:
-            return ibis.to_sql(self._table, dialect="duckdb", pretty=False)
+            return ibis.to_sql(self._build_table(), dialect="duckdb", pretty=False)
         except Exception as e:
             return f"-- Error generating SQL: {str(e)}"
 
@@ -113,7 +108,7 @@ class Dataset:
         except Exception as e:
             return f"-- Error generating SQL: {str(e)}"
 
-        alias = self._initials() or "t"
+        alias = self._table_alias()
 
         # Replace "t0" with meaningful alias
         sql = sql.replace('"t0"', alias)

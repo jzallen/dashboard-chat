@@ -17,6 +17,7 @@ interface TablePanelProps {
   projectName?: string;
   datasetName?: string;
   onSettingsClick?: () => void;
+  onToggleTransform?: (transformId: string, isActive: boolean) => void;
 }
 
 export default function TablePanel({
@@ -27,6 +28,7 @@ export default function TablePanel({
   projectName,
   datasetName,
   onSettingsClick,
+  onToggleTransform,
 }: TablePanelProps) {
   return (
     <div className={styles.panel}>
@@ -39,6 +41,7 @@ export default function TablePanel({
       <ActiveFilters
         columnFilters={columnFilters}
         setColumnFilters={setColumnFilters}
+        onToggleTransform={onToggleTransform}
       />
 
       <div className={styles.tableContainer}>

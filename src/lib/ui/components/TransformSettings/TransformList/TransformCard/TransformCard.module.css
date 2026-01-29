@@ -61,7 +61,7 @@
 
 /* Actions column - toggle and buttons */
 .actionsColumn {
-  @apply flex flex-col items-end gap-2;
+  @apply flex flex-col items-end justify-between self-stretch;
 }
 
 /* Toggle switch base */
@@ -93,4 +93,14 @@
 
 .toggleKnobInactive {
   @apply translate-x-1;
+}
+
+/* Delete button for inactive transforms */
+.deleteButton {
+  @apply p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors;
+  @apply focus:outline-none focus:ring-2 focus:ring-red-300;
+}
+
+.deleteIcon {
+  @apply w-4 h-4;
 }

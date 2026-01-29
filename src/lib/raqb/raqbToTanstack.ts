@@ -16,6 +16,7 @@ import { mapOperator, type TanStackOperator } from "./operators";
 export interface TanStackFilterValue {
   operator: TanStackOperator;
   value: unknown;
+  transformId?: string;
 }
 
 /**
@@ -31,6 +32,14 @@ export interface ExtendedColumnFilter {
 }
 
 /**
+ * Options for converting RAQB tree to TanStack filters
+ */
+export interface RaqbToTanstackOptions {
+  /** Transform ID to embed in each filter value */
+  transformId?: string;
+}
+
+/**
  * Convert a RAQB tree to TanStack columnFilters state
  *
  * Note: TanStack Table applies filters with AND logic by default.
@@ -38,12 +47,16 @@ export interface ExtendedColumnFilter {
  * unless custom filter logic handles it.
  *
  * @param raqbTree - The RAQB JSON tree to convert
+ * @param options - Optional configuration including transformId
  * @returns TanStack columnFilters state array
  */
-export function raqbToTanstackFilters(raqbTree: RAQBTree): ColumnFiltersState {
+export function raqbToTanstackFilters(
+  raqbTree: RAQBTree,
+  options?: RaqbToTanstackOptions
+): ColumnFiltersState {
   const filters: ColumnFiltersState = [];
 
-  processGroup(raqbTree, filters);
+  processGroup(raqbTree, filters, options?.transformId);
 
   return filters;
 }
@@ -62,20 +75,24 @@ export function raqbToExtendedFilters(raqbTree: RAQBTree): ExtendedColumnFilter[
 /**
  * Process a RAQB group and add its rules to the filters array
  */
-function processGroup(group: RAQBGroup, filters: ColumnFiltersState): void {
+function processGroup(
+  group: RAQBGroup,
+  filters: ColumnFiltersState,
+  transformId?: string
+): void {
   if (!group.children1) {
     return;
   }
 
   for (const child of Object.values(group.children1)) {
     if (isRAQBRule(child)) {
-      const converted = convertRule(child);
+      const converted = convertRule(child, transformId);
       if (converted) {
         filters.push(converted);
       }
     } else if (isRAQBGroup(child)) {
       // Recursively process nested groups
-      processGroup(child, filters);
+      processGroup(child, filters, transformId);
     }
   }
 }
@@ -109,11 +126,14 @@ function processGroupExtended(
 /**
  * Convert a single RAQB rule to TanStack filter format
  */
-function convertRule(rule: RAQBRule): { id: string; value: TanStackFilterValue } | null {
+function convertRule(
+  rule: RAQBRule,
+  transformId?: string
+): { id: string; value: TanStackFilterValue } | null {
   const { field, operator, value } = rule.properties;
 
   // Handle special operators that need decomposition
-  const specialResult = handleSpecialOperator(field, operator, value);
+  const specialResult = handleSpecialOperator(field, operator, value, transformId);
   if (specialResult) {
     // For now, return the first filter (special operators may need multiple filters)
     return specialResult[0] || null;
@@ -131,6 +151,7 @@ function convertRule(rule: RAQBRule): { id: string; value: TanStackFilterValue }
     value: {
       operator: tanstackOperator,
       value: value[0],
+      transformId,
     },
   };
 }
@@ -174,7 +195,8 @@ function convertRuleExtended(
 function handleSpecialOperator(
   field: string,
   operator: RAQBOperator,
-  value: RAQBValueType[]
+  value: RAQBValueType[],
+  transformId?: string
 ): Array<{ id: string; value: TanStackFilterValue }> | null {
   switch (operator) {
     case "between":
@@ -182,8 +204,8 @@ function handleSpecialOperator(
       // Note: TanStack will AND these together by default
       if (value.length >= 2) {
         return [
-          { id: field, value: { operator: "gte", value: value[0] } },
-          { id: `${field}_max`, value: { operator: "lte", value: value[1] } },
+          { id: field, value: { operator: "gte", value: value[0], transformId } },
+          { id: `${field}_max`, value: { operator: "lte", value: value[1], transformId } },
         ];
       }
       return null;
@@ -192,29 +214,29 @@ function handleSpecialOperator(
       // This is tricky - would need OR logic (< min OR > max)
       // For now, we approximate with just the first condition
       if (value.length >= 2) {
-        return [{ id: field, value: { operator: "lt", value: value[0] } }];
+        return [{ id: field, value: { operator: "lt", value: value[0], transformId } }];
       }
       return null;
 
     case "is_null":
     case "is_empty":
-      return [{ id: field, value: { operator: "equals", value: "" } }];
+      return [{ id: field, value: { operator: "equals", value: "", transformId } }];
 
     case "is_not_null":
     case "is_not_empty":
-      return [{ id: field, value: { operator: "notEquals", value: "" } }];
+      return [{ id: field, value: { operator: "notEquals", value: "", transformId } }];
 
     case "select_any_in":
       // For multi-select, we'd need custom filter logic
       // For now, match the first value
       if (value.length > 0) {
-        return [{ id: field, value: { operator: "equals", value: value[0] } }];
+        return [{ id: field, value: { operator: "equals", value: value[0], transformId } }];
       }
       return null;
 
     case "select_not_any_in":
       if (value.length > 0) {
-        return [{ id: field, value: { operator: "notEquals", value: value[0] } }];
+        return [{ id: field, value: { operator: "notEquals", value: value[0], transformId } }];
       }
       return null;
 

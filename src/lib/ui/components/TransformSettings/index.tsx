@@ -16,6 +16,7 @@ interface TransformSettingsProps {
   loading: boolean;
   error: string | null;
   onToggle: (transformId: string, isActive: boolean) => void;
+  onDelete?: (transformId: string) => void;
   onRefresh: () => void;
   onClose: () => void;
 }
@@ -26,6 +27,7 @@ export function TransformSettings({
   loading,
   error,
   onToggle,
+  onDelete,
   onRefresh,
   onClose,
 }: TransformSettingsProps) {
@@ -112,6 +114,7 @@ export function TransformSettings({
             loading={loading}
             error={error}
             onToggle={onToggle}
+            onDelete={onDelete}
             onRefresh={onRefresh}
           />
         ) : (
