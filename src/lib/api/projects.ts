@@ -3,6 +3,16 @@
  */
 
 import { get, post, patch, del } from "./client";
+import type { SchemaConfig } from "./datasets";
+
+export interface DatasetSparse {
+  id: string;
+  name: string;
+  link: string;
+  description: string | null;
+  row_count: number;
+  schema_config: SchemaConfig;
+}
 
 export interface Project {
   id: string;
@@ -10,6 +20,7 @@ export interface Project {
   description: string | null;
   created_at: string;
   updated_at: string;
+  datasets: DatasetSparse[];
 }
 
 export interface ProjectCreate {

@@ -1,8 +1,30 @@
 /**
- * Skeleton loader for table panel
+ * Skeleton loaders for various panels
  */
 
 import styles from "./SkeletonLoader.module.css";
+
+export function ProjectViewSkeleton() {
+  return (
+    <div className={styles.skeletonContainer}>
+      {/* Header skeleton */}
+      <div className={styles.headerSkeleton}>
+        <div className={styles.headerTitleBar}></div>
+      </div>
+
+      {/* Dataset cards skeleton */}
+      <div className={styles.cardsContainer}>
+        {[1, 2, 3].map((i) => (
+          <div key={i} className={styles.cardSkeleton}>
+            <div className={styles.cardTitleBar}></div>
+            <div className={styles.cardDescriptionBar}></div>
+            <div className={styles.cardMetaBar}></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function TablePanelSkeleton() {
   return (

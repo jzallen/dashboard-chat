@@ -25,11 +25,14 @@ class SchemaConfig(BaseModel):
 
 
 class DatasetSparse(BaseModel):
-    """Sparse dataset reference with link to full resource."""
+    """Sparse dataset reference with schema summary."""
 
     id: str
     name: str
     link: str
+    description: str | None = None
+    row_count: int
+    schema_config: dict[str, Any]
 
 
 class DatasetBase(BaseModel):

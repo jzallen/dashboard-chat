@@ -4,15 +4,24 @@ interface TableHeaderProps {
   projectName?: string;
   datasetName?: string;
   onSettingsClick?: () => void;
+  onProjectClick?: () => void;
 }
 
-export function TableHeader({ projectName, datasetName, onSettingsClick }: TableHeaderProps) {
+export function TableHeader({ projectName, datasetName, onSettingsClick, onProjectClick }: TableHeaderProps) {
   return (
     <div className={styles.header}>
       <div className={styles.headerContent}>
         <nav className={styles.breadcrumb}>
           <span className={styles.breadcrumbSeparator}>/</span>
-          <span className={styles.breadcrumbItem}>{projectName || "Project"}</span>
+          <span
+            className={styles.breadcrumbItem}
+            onClick={onProjectClick}
+            role={onProjectClick ? "button" : undefined}
+            tabIndex={onProjectClick ? 0 : undefined}
+            onKeyDown={onProjectClick ? (e) => e.key === "Enter" && onProjectClick() : undefined}
+          >
+            {projectName || "Project"}
+          </span>
           <span className={styles.breadcrumbSeparator}>/</span>
           <span className={styles.breadcrumbItemCurrent}>{datasetName || "Dataset"}</span>
         </nav>

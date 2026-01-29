@@ -2,6 +2,7 @@
 // React + TanStack Table + Chat UI with SSE streaming
 
 import { useCallback, useEffect, useState } from "react";
+import { Routes, Route, useParams, useNavigate } from "react-router-dom";
 import styles from "./App.module.css";
 import {
   useTableConfig,
@@ -16,12 +17,68 @@ import {
 } from "./src/lib/table-tools";
 import { useTransforms } from "./src/lib/ui/hooks/useTransforms";
 import { TransformSettings } from "./src/lib/ui/components/TransformSettings";
-import { TablePanelSkeleton } from "./src/lib/ui/components/SkeletonLoader";
+import { TablePanelSkeleton, ProjectViewSkeleton } from "./src/lib/ui/components/SkeletonLoader";
+import { ProjectView } from "./src/lib/ui/components/ProjectView";
 import { getDataset, getProject, type Dataset, type Project } from "./src/lib/api";
 
-const DEFAULT_DATASET_ID = "1592ce82-5f22-4da7-b41b-9fd9fd05770e";
+const DEFAULT_PROJECT_ID = "default-project-001";
 
-export default function App() {
+/**
+ * ProjectRoute - handles "/" route
+ * Shows the project view with list of datasets
+ */
+function ProjectRoute() {
+  const [project, setProject] = useState<Project | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const loadProject = async () => {
+      try {
+        const projectData = await getProject(DEFAULT_PROJECT_ID);
+        setProject(projectData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load project");
+      }
+    };
+    loadProject();
+  }, []);
+
+  const handleSelectDataset = (datasetId: string) => {
+    navigate(`/projects/${DEFAULT_PROJECT_ID}/datasets/${datasetId}`);
+  };
+
+  if (error) {
+    return (
+      <div className={styles.appContainer}>
+        <div className={styles.mainContent}>
+          <div style={{ padding: "2rem", color: "#dc2626" }}>Error: {error}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.appContainer}>
+      <div className={styles.mainContent}>
+        {project ? (
+          <ProjectView project={project} onSelectDataset={handleSelectDataset} />
+        ) : (
+          <ProjectViewSkeleton />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * DatasetRoute - handles "/projects/:projectId/datasets/:datasetId"
+ * Shows the table panel and chat panel for a specific dataset
+ */
+function DatasetRoute() {
+  const { datasetId } = useParams<{ projectId: string; datasetId: string }>();
+  const navigate = useNavigate();
+
   const [showSettings, setShowSettings] = useState(false);
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [project, setProject] = useState<Project | null>(null);
@@ -37,20 +94,17 @@ export default function App() {
     refresh: refreshData,
   } = useTableConfig();
 
-  // Fetch dataset with transforms (silently refreshes after initial load)
+  // Fetch dataset with transforms
   const fetchDataset = useCallback(async () => {
-    console.log("[App] fetchDataset called");
+    if (!datasetId) return;
+
     setDatasetError(null);
     try {
-      console.log("[App] Calling getDataset...");
-      const datasetData = await getDataset(DEFAULT_DATASET_ID, {
+      const datasetData = await getDataset(datasetId, {
         includeTransforms: true,
       });
-      console.log("[App] getDataset returned:", datasetData);
-      console.log("[App] Setting dataset state...");
       setDataset(datasetData);
-      console.log("[App] Dataset state set");
-      
+
       // Fetch project info if we have a project_id
       if (datasetData.project_id) {
         try {
@@ -61,24 +115,19 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error("[App] fetchDataset error:", err);
       setDatasetError(err instanceof Error ? err.message : "Failed to load dataset");
     }
-  }, []); // No dependencies - stable reference
+  }, [datasetId]);
 
-  // Fetch dataset on mount
+  // Fetch dataset on mount or when datasetId changes
   useEffect(() => {
-    console.log("[App] useEffect mount triggered");
     const loadInitialData = async () => {
-      console.log("[App] loadInitialData starting");
       await fetchDataset();
-      console.log("[App] fetchDataset completed, calling refreshData");
-      // Only refresh data on initial load
       refreshData();
     };
     loadInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount
+  }, [datasetId]);
 
   // Transform management
   const {
@@ -93,7 +142,6 @@ export default function App() {
     onFilterApply: setColumnFilters,
     currentFilters: columnFilters,
     autoApplyActive: true,
-    // Refetch data when transforms change (e.g., toggling active/inactive)
     onFiltersChanged: refreshData,
   });
 
@@ -118,7 +166,19 @@ export default function App() {
     tableSchema: { ...tableSchema, rowCount: data.length },
   });
 
-  console.log("[App] Render - dataset:", dataset, "datasetError:", datasetError);
+  const handleProjectClick = () => {
+    navigate("/");
+  };
+
+  if (datasetError) {
+    return (
+      <div className={styles.appContainer}>
+        <div className={styles.mainContent}>
+          <div style={{ padding: "2rem", color: "#dc2626" }}>Error: {datasetError}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.appContainer}>
@@ -146,10 +206,20 @@ export default function App() {
             datasetName={dataset?.name}
             onSettingsClick={() => setShowSettings(true)}
             onToggleTransform={toggleTransform}
+            onProjectClick={handleProjectClick}
           />
         )}
       </div>
       <ChatPanel {...chat} />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<ProjectRoute />} />
+      <Route path="/projects/:projectId/datasets/:datasetId" element={<DatasetRoute />} />
+    </Routes>
   );
 }

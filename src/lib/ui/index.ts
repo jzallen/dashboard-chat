@@ -11,3 +11,4 @@ export { useTableConfig } from "./hooks/useTableConfig";
 // Components
 export { default as TablePanel } from "./components/TablePanel";
 export { default as ChatPanel } from "./components/ChatPanel";
+export { ProjectView } from "./components/ProjectView";
