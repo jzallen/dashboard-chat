@@ -1,9 +1,9 @@
 """Controller for dataset operations."""
 
-from typing import Any
+from typing import Any, Callable, Awaitable
 from returns.result import Result, Success, Failure
 
-from ..models import Dataset
+from ..models.dataset import Dataset
 from ..schemas import DatasetUpdate
 from ..use_cases import dataset as dataset_use_cases
 
@@ -14,10 +14,11 @@ class DatasetController:
     @staticmethod
     async def list_datasets(
         project_id: str | None = None,
+        list_datasets_func: Callable[[str | None], Awaitable[list[Dataset]]] = dataset_use_cases.list_datasets,
     ) -> Result[list[Dataset], str]:
         """List all datasets, optionally filtered by project."""
         try:
-            datasets = await dataset_use_cases.list_datasets(project_id)
+            datasets = await list_datasets_func(project_id)
             return Success(datasets)
         except Exception as e:
             return Failure(f"Failed to list datasets: {str(e)}")

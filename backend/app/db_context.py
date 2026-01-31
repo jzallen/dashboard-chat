@@ -8,7 +8,10 @@ from contextvars import ContextVar
 from functools import wraps
 from typing import Callable, TypeVar, ParamSpec
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from .exceptions import MetadataRepositoryError
 
 # Context variable to hold the current database session
 _db_session: ContextVar[AsyncSession | None] = ContextVar("db_session", default=None)
@@ -37,13 +40,18 @@ R = TypeVar("R")
 
 def with_db(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator that injects the database session from context.
-    
+
     Use cases decorated with @with_db will automatically receive
     the session from the current context, removing the need to
     pass db as an explicit parameter.
+
+    SQLAlchemy errors are caught and re-raised as MetadataRepositoryError.
     """
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         db = get_session()
-        return await func(db, *args, **kwargs)
+        try:
+            return await func(db, *args, **kwargs)
+        except SQLAlchemyError as e:
+            raise MetadataRepositoryError(str(e), cause=e) from e
     return wrapper

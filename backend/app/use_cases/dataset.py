@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy import select, text
+from sqlalchemy import select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,11 +18,7 @@ from ..models.dataset import Dataset as DomainDataset
 from ..models.transform import Transform as DomainTransform
 from ..models import Project
 from ..types import QueryBuilderJSON
-from ..utils.schema_inference import (
-    infer_schema_from_dataframe,
-    generate_create_table_sql,
-    pandas_dtype_to_sql,
-)
+from ..utils.schema_inference import infer_schema_from_dataframe
 
 
 def sanitize_table_name(name: str) -> str:
@@ -78,43 +74,6 @@ async def _process_csv_upload(
 
     return dataset_record, file_content
 
-
-async def _insert_dataframe_to_table(
-    db: AsyncSession,
-    table_name: str,
-    df: pd.DataFrame,
-    batch_size: int = 1000,
-) -> None:
-    """Insert DataFrame rows into a PostgreSQL table."""
-    if df.empty:
-        return
-
-    columns = [f'"{col}"' for col in df.columns]
-    columns_sql = ", ".join(columns)
-
-    for i in range(0, len(df), batch_size):
-        batch = df.iloc[i : i + batch_size]
-
-        values_list = []
-        for _, row in batch.iterrows():
-            values = []
-            for val in row:
-                if pd.isna(val):
-                    values.append("NULL")
-                elif isinstance(val, bool):
-                    values.append("TRUE" if val else "FALSE")
-                elif isinstance(val, (int, float)):
-                    values.append(str(val))
-                else:
-                    escaped = str(val).replace("'", "''")
-                    values.append(f"'{escaped}'")
-            values_list.append(f"({', '.join(values)})")
-
-        values_sql = ",\n".join(values_list)
-        insert_sql = f'INSERT INTO "{table_name}" ({columns_sql}) VALUES {values_sql};'
-        await db.execute(text(insert_sql))
-
-
 async def _get_dataset_preview(
     db: AsyncSession,
     dataset_record: DatasetRecord,
@@ -158,15 +117,32 @@ def _to_domain_dataset(dataset_record: DatasetRecord) -> DomainDataset:
 async def list_datasets(
     db: AsyncSession,
     project_id: str | None = None,
-) -> list[DatasetRecord]:
-    """List all datasets, optionally filtered by project."""
-    query = select(DatasetRecord)
-    if project_id:
-        query = query.where(DatasetRecord.project_id == project_id)
-    query = query.order_by(DatasetRecord.created_at.desc())
+) -> list[DomainDataset]:
+    """List all datasets for a project.
+
+    Raises:
+        ProjectIdRequired: If project_id is not provided.
+    """
+    from ..exceptions import ProjectIdRequired, ProjectNotFound
+
+    if project_id is None:
+        raise ProjectIdRequired()
+    
+    is_existing = (await db.execute(
+        select(exists().where(Project.id == project_id))
+    )).scalar()
+    if not is_existing:
+        raise ProjectNotFound(project_id)
+
+    query = (
+        select(DatasetRecord)
+        .options(selectinload(DatasetRecord.transforms))
+        .where(DatasetRecord.project_id == project_id)
+        .order_by(DatasetRecord.created_at.desc())
+    )
 
     result = await db.execute(query)
-    return list(result.scalars().all())
+    return [_to_domain_dataset(r) for r in result.scalars()]
 
 
 @with_db
