@@ -15,10 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.exceptions import MetadataRepositoryError
 from app.controllers.dataset_controller import DatasetController
 from app.database import Base
-from app.db_context import set_session
+from app.repositories import set_session
 from app.models.dataset import Dataset
-from app.models.project import Project
 from app.repositories.dataset_record import DatasetRecord
+from app.repositories.project_record import ProjectRecord
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ async def db_session():
 @pytest.fixture
 async def seeded_db(db_session: AsyncSession):
     """Seed the database with a project and two datasets."""
-    project = Project(
+    project = ProjectRecord(
         id="project-001",
         name="Test Project",
     )
@@ -136,7 +136,7 @@ class TestListDatasets:
         set_session(db_session)
 
         # Arrange: Add a second project and dataset
-        new_project = Project(
+        new_project = ProjectRecord(
             id="project-002",
             name="Another Project",
         )
@@ -168,7 +168,7 @@ class TestListDatasets:
         """list_datasets should return empty list when project has no datasets."""
         set_session(db_session)
 
-        project = Project(
+        project = ProjectRecord(
             id="empty-project",
             name="Empty Project",
         )

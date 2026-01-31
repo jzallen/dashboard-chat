@@ -6,10 +6,11 @@ This repository uses flush() to persist changes within the transaction.
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, exists
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import SQLAlchemyError
+from functools import wraps
 
-from ..db_context import RestrictedSession
 from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
@@ -24,7 +25,7 @@ class MetadataRepository:
     at the router/controller level to ensure transactional consistency.
     """
 
-    def __init__(self, session: RestrictedSession) -> None:
+    def __init__(self, session: 'RestrictedSession') -> None:
         """Initialize with restricted session.
 
         Args:
@@ -125,6 +126,12 @@ class MetadataRepository:
         await self._session.flush()
         return True
 
+    async def project_exists(self, project_id: str) -> bool:
+        """Check if a project exists."""
+        return (await self._session.execute(
+            select(exists().where(ProjectRecord.id == project_id))
+        )).scalar()
+
     # -------------------------------------------------------------------------
     # Dataset operations
     # -------------------------------------------------------------------------
@@ -134,16 +141,16 @@ class MetadataRepository:
         project_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List datasets, optionally filtered by project."""
-        query = select(DatasetRecord)
-
-        if project_id:
-            query = query.where(DatasetRecord.project_id == project_id)
-
-        query = query.order_by(DatasetRecord.created_at.desc())
+        
+        query = (
+            select(DatasetRecord)
+            .options(selectinload(DatasetRecord.transforms))
+            .where(DatasetRecord.project_id == project_id)
+            .order_by(DatasetRecord.created_at.desc())
+        )
 
         result = await self._session.execute(query)
-        datasets = result.scalars().all()
-        return [self._dataset_to_dict(ds) for ds in datasets]
+        return result.scalars().all()
 
     async def get_dataset(
         self,

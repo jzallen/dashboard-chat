@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..controllers.project_controller import ProjectController
 from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
-from ..db_context import set_session
+from ..repositories import set_session
 from ..schemas import ProjectCreate, ProjectUpdate
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..controllers.dataset_controller import DatasetController
 from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
-from ..db_context import set_session
+from ..repositories import set_session
 from ..repositories.dataset_record import DatasetRecord
 from ..schemas import DatasetUpdate
 

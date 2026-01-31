@@ -29,6 +29,5 @@ class RepositoryError(DomainException):
 class MetadataRepositoryError(RepositoryError):
     """Raised when the application database encounters an error."""
 
-    def __init__(self, message: str, cause: Exception | None = None):
+    def __init__(self, message):
         super().__init__(f"Metadata repository error: {message}")
-        self.__cause__ = cause

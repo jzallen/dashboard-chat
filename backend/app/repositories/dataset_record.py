@@ -14,7 +14,7 @@ from ..database import Base
 
 if TYPE_CHECKING:
     from .transform_record import TransformRecord
-    from ..models.project import Project
+    from .project_record import ProjectRecord
 
 
 class DatasetRecord(Base):
@@ -70,7 +70,7 @@ class DatasetRecord(Base):
     )
 
     # Relationships
-    project: Mapped["Project"] = relationship("Project", back_populates="datasets")
+    project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="datasets")
     transforms: Mapped[list["TransformRecord"]] = relationship(
         "TransformRecord", back_populates="dataset", cascade="all, delete-orphan"
     )

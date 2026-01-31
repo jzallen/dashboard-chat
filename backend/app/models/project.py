@@ -1,41 +1,32 @@
-"""Project model for organizing datasets and transforms."""
+"""Project domain model - authoritative business object.
 
+This module contains the Project domain model for organizing datasets.
+"""
+
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING
-from uuid import uuid4
 
-from sqlalchemy import DateTime, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from ..database import Base
-
-if TYPE_CHECKING:
-    from ..repositories.dataset_record import DatasetRecord
+from .dataset import Dataset
 
 
-class Project(Base):
-    """Project container for organizing datasets and transforms."""
+@dataclass(frozen=True, slots=True)
+class Project:
+    """Project domain model (authoritative business object).
 
-    __tablename__ = "projects"
+    A project is a container for organizing related datasets.
 
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid4()),
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    Attributes:
+        id: Unique identifier (UUID)
+        name: Human-readable project name
+        description: Optional project description
+        datasets: List of datasets belonging to this project
+        created_at: When the project was created
+        updated_at: When the project was last modified
+    """
 
-    # Relationships
-    datasets: Mapped[list["DatasetRecord"]] = relationship(
-        "DatasetRecord", back_populates="project", cascade="all, delete-orphan"
-    )
-
-    def __repr__(self) -> str:
-        return f"<Project(id={self.id}, name={self.name})>"
+    id: str
+    name: str
+    description: str | None = None
+    datasets: list[Dataset] = field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

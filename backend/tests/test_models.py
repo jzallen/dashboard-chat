@@ -59,11 +59,13 @@ class TestDatasetModel:
         """Test Dataset __repr__ method."""
         dataset = Dataset(
             id="ds-id",
+            storage_path="project-1/ds-id.parquet",
             name="Test Dataset",
-            table_name="test_table",
+            schema_config={},
+            transforms=[],
         )
         assert "Test Dataset" in repr(dataset)
-        assert "test_table" in repr(dataset)
+        assert "ds-id" in repr(dataset)
 
 
 class TestTransformModel:
@@ -71,7 +73,7 @@ class TestTransformModel:
 
     def test_transform_creation(self):
         """Test Transform model can be instantiated."""
-        raqb_json = {
+        condition_json = {
             "type": "group",
             "properties": {"conjunction": "AND"},
             "children1": {
@@ -88,19 +90,19 @@ class TestTransformModel:
         transform = Transform(
             dataset_id="dataset-123",
             name="High Value Items",
-            raqb_json=raqb_json,
-            cached_sql='"amount" > 100',
+            condition_json=condition_json,
+            condition_sql='"amount" > 100',
         )
         assert transform.name == "High Value Items"
-        assert transform.raqb_json == raqb_json
-        assert transform.cached_sql == '"amount" > 100'
+        assert transform.condition_json == condition_json
+        assert transform.condition_sql == '"amount" > 100'
 
     def test_transform_version_default(self):
         """Test Transform version defaults to 1."""
         transform = Transform(
             dataset_id="dataset-123",
             name="Test",
-            raqb_json={},
+            condition_json={},
         )
         # Note: default is applied by SQLAlchemy
 
@@ -109,7 +111,7 @@ class TestTransformModel:
         transform = Transform(
             dataset_id="dataset-123",
             name="Test",
-            raqb_json={},
+            condition_json={},
         )
         # Note: default is applied by SQLAlchemy
 
@@ -118,6 +120,7 @@ class TestTransformModel:
         transform = Transform(
             id="pl-id",
             name="Test Transform",
+            condition_json={},
             version=2,
         )
         assert "Test Transform" in repr(transform)

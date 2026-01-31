@@ -6,144 +6,42 @@ from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy import select, exists
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..db_context import with_db
+from ..exceptions import ProjectIdRequired, ProjectNotFound, MetadataRepositoryError
+from ..repositories import with_db, with_repositories
 from ..repositories.dataset_record import DatasetRecord
 from ..repositories.transform_record import TransformRecord
 from ..repositories.lake_repository import lake_repository
-from ..models.dataset import Dataset as DomainDataset
-from ..models.transform import Transform as DomainTransform
+from ..models.dataset import Dataset
+from ..models.transform import Transform
 from ..models import Project
 from ..types import QueryBuilderJSON
 from ..utils.schema_inference import infer_schema_from_dataframe
 
 
-def sanitize_table_name(name: str) -> str:
-    """Create a safe table name from dataset name."""
-    safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name.lower())
-    if safe_name[0].isdigit():
-        safe_name = "t_" + safe_name
-    unique_suffix = uuid4().hex[:8]
-    return f"data_{safe_name}_{unique_suffix}"
-
-
-# Internal helpers that receive db explicitly
-
-async def _process_csv_upload(
-    db: AsyncSession,
-    project_id: str,
-    name: str,
-    file_content: bytes,
-    file_name: str | None = None,
-    description: str | None = None,
-) -> tuple[DatasetRecord, bytes]:
-    """Process a CSV file upload and create dataset with Parquet storage."""
-    # Infer schema from CSV for query builder
-    df = pd.read_csv(io.BytesIO(file_content))
-    schema_config = infer_schema_from_dataframe(df)
-    row_count = len(df)
-
-    # Generate UUID for dataset ID
-    dataset_id = str(uuid4())
-
-    # Generate parquet storage path (includes UUID)
-    storage_path = DomainDataset.generate_parquet_id(project_id, dataset_id)
-
-    # Write CSV as Parquet to MinIO/S3
-    s3_path = lake_repository.write_csv_as_parquet(file_content, storage_path)
-
-    # Create dataset record with UUID ID and separate storage_path
-    dataset_record = DatasetRecord(
-        id=dataset_id,
-        storage_path=storage_path,
-        project_id=project_id,
-        name=name,
-        description=description,
-        schema_config=schema_config,
-        row_count=row_count,
-        file_name=file_name,
-        file_size=len(file_content),
-    )
-
-    db.add(dataset_record)
-    await db.commit()
-    await db.refresh(dataset_record)
-
-    return dataset_record, file_content
-
-async def _get_dataset_preview(
-    db: AsyncSession,
-    dataset_record: DatasetRecord,
-    limit: int = 10,
-) -> list[dict]:
-    """Get preview rows from a dataset's Parquet file."""
-    return lake_repository.read_parquet_preview(dataset_record.storage_path, limit)
-
-
-async def _delete_dataset_table(db: AsyncSession, storage_path: str) -> None:
-    """Delete the Parquet file for a dataset."""
-    lake_repository.delete_parquet(storage_path)
-
-
-def _to_domain_dataset(dataset_record: DatasetRecord) -> DomainDataset:
-    """Convert ORM DatasetRecord to domain Dataset."""
-    transforms = [
-        DomainTransform(
-            id=t.id,
-            name=t.name,
-            condition_json=QueryBuilderJSON.from_dict(t.condition_json),
-            condition_sql=t.condition_sql,
-            description=t.description,
-            is_active=t.is_active,
-        )
-        for t in dataset_record.transforms
-    ]
-
-    return DomainDataset(
-        id=dataset_record.id,
-        storage_path=dataset_record.storage_path,
-        name=dataset_record.name,
-        schema_config=dataset_record.schema_config,
-        transforms=transforms,
-    )
-
-
-# Public use cases with @with_db decorator
-
-@with_db
-async def list_datasets(
-    db: AsyncSession,
-    project_id: str | None = None,
-) -> list[DomainDataset]:
+@with_repositories
+async def list_datasets(project_id: str | None = None, *, repositories: 'RepositoryContainer') -> list[Dataset]:
     """List all datasets for a project.
 
     Raises:
         ProjectIdRequired: If project_id is not provided.
     """
-    from ..exceptions import ProjectIdRequired, ProjectNotFound
 
     if project_id is None:
         raise ProjectIdRequired()
     
-    is_existing = (await db.execute(
-        select(exists().where(Project.id == project_id))
-    )).scalar()
-    if not is_existing:
+    if not await repositories["metadata_repository"].project_exists(project_id=project_id):
         raise ProjectNotFound(project_id)
+    
+    try:
+        result = await repositories["metadata_repository"].list_datasets(project_id=project_id)
+    except Exception as e:
+        raise MetadataRepositoryError(str(e)) from e
 
-    query = (
-        select(DatasetRecord)
-        .options(selectinload(DatasetRecord.transforms))
-        .where(DatasetRecord.project_id == project_id)
-        .order_by(DatasetRecord.created_at.desc())
-    )
-
-    result = await db.execute(query)
-    return [_to_domain_dataset(r) for r in result.scalars()]
-
+    return [_to_domain_dataset(r) for r in result]
 
 @with_db
 async def get_dataset(
@@ -373,3 +271,95 @@ async def delete_dataset(
     await db.commit()
 
     return True
+
+
+
+
+def sanitize_table_name(name: str) -> str:
+    """Create a safe table name from dataset name."""
+    safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name.lower())
+    if safe_name[0].isdigit():
+        safe_name = "t_" + safe_name
+    unique_suffix = uuid4().hex[:8]
+    return f"data_{safe_name}_{unique_suffix}"
+
+
+# Internal helpers that receive db explicitly
+
+async def _process_csv_upload(
+    db: AsyncSession,
+    project_id: str,
+    name: str,
+    file_content: bytes,
+    file_name: str | None = None,
+    description: str | None = None,
+) -> tuple[DatasetRecord, bytes]:
+    """Process a CSV file upload and create dataset with Parquet storage."""
+    # Infer schema from CSV for query builder
+    df = pd.read_csv(io.BytesIO(file_content))
+    schema_config = infer_schema_from_dataframe(df)
+    row_count = len(df)
+
+    # Generate UUID for dataset ID
+    dataset_id = str(uuid4())
+
+    # Generate parquet storage path (includes UUID)
+    storage_path = Dataset.generate_parquet_id(project_id, dataset_id)
+
+    # Write CSV as Parquet to MinIO/S3
+    s3_path = lake_repository.write_csv_as_parquet(file_content, storage_path)
+
+    # Create dataset record with UUID ID and separate storage_path
+    dataset_record = DatasetRecord(
+        id=dataset_id,
+        storage_path=storage_path,
+        project_id=project_id,
+        name=name,
+        description=description,
+        schema_config=schema_config,
+        row_count=row_count,
+        file_name=file_name,
+        file_size=len(file_content),
+    )
+
+    db.add(dataset_record)
+    await db.commit()
+    await db.refresh(dataset_record)
+
+    return dataset_record, file_content
+
+async def _get_dataset_preview(
+    db: AsyncSession,
+    dataset_record: DatasetRecord,
+    limit: int = 10,
+) -> list[dict]:
+    """Get preview rows from a dataset's Parquet file."""
+    return lake_repository.read_parquet_preview(dataset_record.storage_path, limit)
+
+
+async def _delete_dataset_table(db: AsyncSession, storage_path: str) -> None:
+    """Delete the Parquet file for a dataset."""
+    lake_repository.delete_parquet(storage_path)
+
+
+def _to_domain_dataset(dataset_record: DatasetRecord) -> Dataset:
+    """Convert ORM DatasetRecord to domain Dataset."""
+    transforms = [
+        Transform(
+            id=t.id,
+            name=t.name,
+            condition_json=QueryBuilderJSON.from_dict(t.condition_json),
+            condition_sql=t.condition_sql,
+            description=t.description,
+            is_active=t.is_active,
+        )
+        for t in dataset_record.transforms
+    ]
+
+    return Dataset(
+        id=dataset_record.id,
+        storage_path=dataset_record.storage_path,
+        name=dataset_record.name,
+        schema_config=dataset_record.schema_config,
+        transforms=transforms,
+    )
