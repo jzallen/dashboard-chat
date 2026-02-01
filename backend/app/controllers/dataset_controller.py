@@ -1,9 +1,11 @@
 """Controller for dataset operations."""
 
 from typing import Any, Callable, Awaitable
+
 from returns.result import Result, Success, Failure
 
 from ..models.dataset import Dataset
+from ..repositories import LakeRepository
 from ..schemas import DatasetUpdate
 from ..use_cases import dataset as dataset_use_cases
 
@@ -29,17 +31,17 @@ class DatasetController:
         include_transforms: bool = True,
         include_preview: bool = False,
         preview_limit: int = 10,
-    ) -> Result[dict[str, Any], str]:
+        repositories: dict[str, Callable[[], LakeRepository]] | None = None,
+    ) -> Result[Dataset, str]:
         """Get a single dataset by ID with optional transforms and preview."""
         try:
-            result = await dataset_use_cases.get_dataset(
-                dataset_id, include_transforms, include_preview, preview_limit
+            dataset = await dataset_use_cases.get_dataset(
+                dataset_id, include_transforms, include_preview, preview_limit,
+                repositories=repositories,
             )
-            if result is None:
-                return Failure("Dataset not found")
-            return Success(result)
+            return Success(dataset)
         except Exception as e:
-            return Failure(f"Failed to get dataset: {str(e)}")
+            return Failure(str(e))
 
     @staticmethod
     async def upload_dataset(

@@ -20,6 +20,13 @@ class ProjectNotFound(DomainException):
         super().__init__(f"Project with ID '{project_id}' not found")
 
 
+class DatasetNotFound(DomainException):
+    """Raised when a dataset is not found."""
+
+    def __init__(self, dataset_id: str):
+        super().__init__(f"Dataset with ID '{dataset_id}' not found")
+
+
 class RepositoryError(DomainException):
     """Base class for repository errors."""
 
@@ -27,7 +34,14 @@ class RepositoryError(DomainException):
 
 
 class MetadataRepositoryError(RepositoryError):
-    """Raised when the application database encounters an error."""
+    """Raised when the metadata database encounters an error."""
 
-    def __init__(self, message):
+    def __init__(self, message: str):
         super().__init__(f"Metadata repository error: {message}")
+
+
+class LakeRepositoryError(RepositoryError):
+    """Raised when the data lake storage encounters an error."""
+
+    def __init__(self, message: str):
+        super().__init__(f"Lake repository error: {message}")

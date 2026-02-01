@@ -2,7 +2,7 @@
 
 import io
 import re
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import uuid4
 
 import pandas as pd
@@ -10,16 +10,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..exceptions import ProjectIdRequired, ProjectNotFound, MetadataRepositoryError
+from botocore.exceptions import BotoCoreError, ClientError
+from sqlalchemy.exc import SQLAlchemyError
+
+from ..exceptions import DatasetNotFound, LakeRepositoryError, MetadataRepositoryError, ProjectIdRequired, ProjectNotFound
 from ..repositories import with_db, with_repositories
 from ..repositories.dataset_record import DatasetRecord
 from ..repositories.transform_record import TransformRecord
-from ..repositories.lake_repository import lake_repository
 from ..models.dataset import Dataset
 from ..models.transform import Transform
 from ..models import Project
 from ..types import QueryBuilderJSON
 from ..utils.schema_inference import infer_schema_from_dataframe
+
+if TYPE_CHECKING:
+    from ..repositories import RepositoryContainer
 
 
 @with_repositories
@@ -41,60 +46,44 @@ async def list_datasets(project_id: str | None = None, *, repositories: 'Reposit
     except Exception as e:
         raise MetadataRepositoryError(str(e)) from e
 
-    return [_to_domain_dataset(r) for r in result]
+    return [_to_domain_dataset(r, transform_records=r.transforms) for r in result]
 
-@with_db
+@with_repositories
 async def get_dataset(
-    db: AsyncSession,
     dataset_id: str,
     include_transforms: bool = True,
     include_preview: bool = False,
     preview_limit: int = 10,
-) -> dict[str, Any] | None:
-    """Get a single dataset by ID with optional transforms, preview, and staging_sql.
+    *,
+    repositories: 'RepositoryContainer',
+) -> Dataset:
+    """Get a single dataset by ID with optional transforms and preview.
 
-    Returns None if dataset not found.
+    Raises:
+        DatasetNotFound: If dataset with given ID does not exist.
+        MetadataRepositoryError: If database operation fails.
+        LakeRepositoryError: If storage operation fails.
     """
-    query = select(DatasetRecord).where(DatasetRecord.id == dataset_id)
+    metadata_repo = repositories['metadata_repository']
+    lake_repo = repositories['lake_repository']
 
-    if include_transforms:
-        query = query.options(selectinload(DatasetRecord.transforms))
+    try:
+        dataset_record = await metadata_repo.get_dataset_record(dataset_id, include_transforms)
+    except SQLAlchemyError as e:
+        raise MetadataRepositoryError(str(e)) from e
 
-    result = await db.execute(query)
-    dataset_record = result.scalar_one_or_none()
     if not dataset_record:
-        return None
+        raise DatasetNotFound(dataset_id)
 
-    dataset_dict = {
-        "id": dataset_record.id,
-        "storage_path": dataset_record.storage_path,
-        "project_id": dataset_record.project_id,
-        "name": dataset_record.name,
-        "description": dataset_record.description,
-        "schema_config": dataset_record.schema_config,
-        "row_count": dataset_record.row_count,
-        "file_name": dataset_record.file_name,
-        "file_size": dataset_record.file_size,
-        "created_at": dataset_record.created_at,
-        "updated_at": dataset_record.updated_at,
-        "transforms": dataset_record.transforms if include_transforms else [],
-        "preview_rows": [],
-    }
-
-    # Add staging_sql if transforms are included (shows base query even without transforms)
-    # Uses display_sql for human-readable output with dataset name instead of S3 path
-    if include_transforms:
-        try:
-            domain_dataset = _to_domain_dataset(dataset_record)
-            dataset_dict["staging_sql"] = domain_dataset.display_sql
-        except Exception as e:
-            dataset_dict["staging_sql"] = f"-- Error generating SQL: {str(e)}"
-
+    preview_rows: list[dict] = []
     if include_preview:
-        preview_rows = await _get_dataset_preview(db, dataset_record, limit=preview_limit)
-        dataset_dict["preview_rows"] = preview_rows
+        try:
+            preview_rows = lake_repo.read_parquet_preview(dataset_record.storage_path, limit=preview_limit)
+        except (BotoCoreError, ClientError) as e:
+            raise LakeRepositoryError(str(e)) from e
 
-    return dataset_dict
+    transform_records = dataset_record.transforms if include_transforms else []
+    return _to_domain_dataset(dataset_record, transform_records=transform_records, preview_rows=preview_rows)
 
 
 @with_db
@@ -342,24 +331,39 @@ async def _delete_dataset_table(db: AsyncSession, storage_path: str) -> None:
     lake_repository.delete_parquet(storage_path)
 
 
-def _to_domain_dataset(dataset_record: DatasetRecord) -> Dataset:
-    """Convert ORM DatasetRecord to domain Dataset."""
-    transforms = [
-        Transform(
-            id=t.id,
-            name=t.name,
-            condition_json=QueryBuilderJSON.from_dict(t.condition_json),
-            condition_sql=t.condition_sql,
-            description=t.description,
-            is_active=t.is_active,
-        )
-        for t in dataset_record.transforms
-    ]
+def _to_domain_dataset(
+    dataset_record: DatasetRecord,
+    transform_records: list | None = None,
+    preview_rows: list[dict] | None = None,
+) -> Dataset:
+    """Convert ORM DatasetRecord to domain Dataset.
+
+    Args:
+        dataset_record: The ORM dataset record
+        transform_records: List of transform records (None means don't include transforms)
+        preview_rows: Preview data rows
+    """
+    transforms = []
+    if transform_records is not None:
+        transforms = [
+            Transform(
+                id=t.id,
+                name=t.name,
+                condition_json=QueryBuilderJSON.from_dict(t.condition_json),
+                condition_sql=t.condition_sql,
+                description=t.description,
+                is_active=t.is_active,
+            )
+            for t in transform_records
+        ]
 
     return Dataset(
         id=dataset_record.id,
+        project_id=dataset_record.project_id,
         storage_path=dataset_record.storage_path,
         name=dataset_record.name,
+        description=dataset_record.description,
         schema_config=dataset_record.schema_config,
         transforms=transforms,
+        preview_rows=preview_rows or [],
     )

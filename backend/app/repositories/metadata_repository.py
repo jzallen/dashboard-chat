@@ -158,13 +158,7 @@ class MetadataRepository:
         include_transforms: bool = True,
     ) -> dict[str, Any] | None:
         """Get a dataset by ID with optional transforms."""
-        query = select(DatasetRecord).where(DatasetRecord.id == dataset_id)
-
-        if include_transforms:
-            query = query.options(selectinload(DatasetRecord.transforms))
-
-        result = await self._session.execute(query)
-        dataset = result.scalar_one_or_none()
+        dataset = await self.get_dataset_record(dataset_id, include_transforms)
 
         if not dataset:
             return None
@@ -177,6 +171,23 @@ class MetadataRepository:
             ]
 
         return dataset_dict
+
+    async def get_dataset_record(
+        self,
+        dataset_id: str,
+        include_transforms: bool = True,
+    ) -> DatasetRecord | None:
+        """Get a dataset record by ID with optional transforms.
+
+        Returns the ORM record for domain model conversion.
+        """
+        query = select(DatasetRecord).where(DatasetRecord.id == dataset_id)
+
+        if include_transforms:
+            query = query.options(selectinload(DatasetRecord.transforms))
+
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
 
     async def create_dataset(
         self,

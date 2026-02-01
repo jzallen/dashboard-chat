@@ -5,7 +5,7 @@ and repository implementations for metadata persistence.
 """
 
 from contextvars import ContextVar
-from functools import wraps
+from functools import partial, wraps
 from typing import Callable, TypeVar, ParamSpec, Self
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,6 +19,7 @@ from .dataset_record import DatasetRecord  # noqa: F401
 from .transform_record import TransformRecord  # noqa: F401
 
 from .metadata_repository import MetadataRepository
+from .lake_repository import LakeRepository, MinIOLakeRepository, S3LakeRepository
 
 # Context variable to hold the current database session
 _db_session: ContextVar[AsyncSession | None] = ContextVar("db_session", default=None)
@@ -78,30 +79,32 @@ class RestrictedSession:
 
 class RepositoryContainer:
     """Dependency container that lazily instantiates wrapped repositories."""
-    
-    def __init__(self, db: RestrictedSession) -> Self:
-        self._db = db
-        self._cache: dict[str, Callable[[AsyncSession], object]] = {}
-        self._registry: dict[str, type] = {
-            'metadata_repository': MetadataRepository,
+
+    def __init__(self, db: RestrictedSession, overrides: dict[str, Callable[[], object]] | None = None) -> Self:
+        self._registry: dict[str, Callable[[], object]] = {
+            'metadata_repository': partial(MetadataRepository, db),
+            'lake_repository': MinIOLakeRepository,
+            **(overrides or {}),
         }
-    
+
     def __getitem__(self, name: str) -> object:
         if name not in self._registry:
             raise KeyError(f"Unknown repository: {name}")
 
-        return self._registry[name](self._db)
+        return self._registry[name]()
 
 
 def with_repositories(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator that injects a repository container into kwargs.
-    
+
     Repositories are accessed via kwargs['repositories']['repo_name'].
+    Callers can pass 'repositories' kwarg with overrides dict to substitute implementations.
     """
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         db = get_session()
-        kwargs['repositories'] = RepositoryContainer(RestrictedSession(db))
+        overrides = kwargs.pop('repositories', None)
+        kwargs['repositories'] = RepositoryContainer(RestrictedSession(db), overrides)
         result = await func(*args, **kwargs)
         try:
             await db.commit()

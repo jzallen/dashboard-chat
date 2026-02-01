@@ -17,8 +17,11 @@ from app.controllers.dataset_controller import DatasetController
 from app.database import Base
 from app.repositories import set_session
 from app.models.dataset import Dataset
+from app.models.transform import Transform
 from app.repositories.dataset_record import DatasetRecord
 from app.repositories.project_record import ProjectRecord
+from app.repositories.transform_record import TransformRecord
+from app.types import QueryBuilderJSON
 
 
 @pytest.fixture
@@ -56,7 +59,7 @@ async def db_session():
 
 @pytest.fixture
 async def seeded_db(db_session: AsyncSession):
-    """Seed the database with a project and two datasets."""
+    """Seed the database with a project, two datasets, and a transform."""
     project = ProjectRecord(
         id="project-001",
         name="Test Project",
@@ -82,6 +85,17 @@ async def seeded_db(db_session: AsyncSession):
     db_session.add(dataset1)
     db_session.add(dataset2)
 
+    transform1 = TransformRecord(
+        id="transform-001",
+        dataset_id="dataset-001",
+        name="Filter Active",
+        description="Filter for active records",
+        condition_json={"id": "root", "type": "group", "children1": []},
+        condition_sql="col1 = 'active'",
+        is_active=True,
+    )
+    db_session.add(transform1)
+
     await db_session.commit()
 
     return db_session
@@ -90,24 +104,37 @@ async def seeded_db(db_session: AsyncSession):
 class TestListDatasets:
     """Tests for DatasetController.list_datasets workflow."""
 
-    async def test_given_project_id_returns_list_of_dataset(self, db_session: AsyncSession, seeded_db):
+    async def test_given_project_id_returns_list_of_dataset(self, seeded_db: AsyncSession):
         """list_datasets should return Result containing list[Dataset]."""
-        set_session(db_session)
+        set_session(seeded_db)
 
         expected = [
             Dataset(
                 id="dataset-002",
+                project_id="project-001",
                 storage_path="project-001/dataset-002.parquet",
                 name="Dataset Two",
+                description=None,
                 schema_config={"fields": {"col2": {"type": "number"}}},
                 transforms=[],
             ),
             Dataset(
                 id="dataset-001",
+                project_id="project-001",
                 storage_path="project-001/dataset-001.parquet",
                 name="Dataset One",
+                description=None,
                 schema_config={"fields": {"col1": {"type": "text"}}},
-                transforms=[],
+                transforms=[
+                    Transform(
+                        id="transform-001",
+                        name="Filter Active",
+                        condition_json=QueryBuilderJSON.from_dict({"id": "root", "type": "group", "children1": []}),
+                        condition_sql="col1 = 'active'",
+                        description="Filter for active records",
+                        is_active=True,
+                    ),
+                ],
             ),
         ]
 
@@ -131,16 +158,16 @@ class TestListDatasets:
             case Success(_):
                 pytest.fail("list_datasets should fail when project_id is None")
 
-    async def test_when_two_projects_exist_returns_only_datasets_for_specified_project(self, db_session: AsyncSession, seeded_db):
+    async def test_when_two_projects_exist_returns_only_datasets_for_specified_project(self, seeded_db: AsyncSession):
         """list_datasets should return datasets only for the specified project."""
-        set_session(db_session)
+        set_session(seeded_db)
 
         # Arrange: Add a second project and dataset
         new_project = ProjectRecord(
             id="project-002",
             name="Another Project",
         )
-        db_session.add(new_project)
+        seeded_db.add(new_project)
 
         new_dataset = DatasetRecord(
             id="dataset-003",
@@ -150,9 +177,9 @@ class TestListDatasets:
             schema_config={"fields": {"col3": {"type": "boolean"}}},
             row_count=150,
         )
-        db_session.add(new_dataset)
+        seeded_db.add(new_dataset)
 
-        await db_session.commit()
+        await seeded_db.commit()
 
         # Act
         result = await DatasetController.list_datasets(project_id="project-001")
@@ -195,16 +222,16 @@ class TestListDatasets:
             case Success(_):
                 pytest.fail("list_datasets should fail when project does not exist")
 
-    async def test_when_database_error_occurs_returns_failure(self, db_session: AsyncSession, seeded_db):
+    async def test_when_database_error_occurs_returns_failure(self, seeded_db: AsyncSession):
         """list_datasets should return Failure when a database error occurs."""
-        set_session(db_session)
+        set_session(seeded_db)
 
         # Simulate a database error by closing the session
-        await db_session.close()
+        await seeded_db.close()
 
         use_case_with_side_effect = Mock(side_effect=MetadataRepositoryError("Database connection lost"))
         result = await DatasetController.list_datasets(
-            project_id="project-001", 
+            project_id="project-001",
             list_datasets_func=use_case_with_side_effect
         )
 
@@ -213,3 +240,136 @@ class TestListDatasets:
                 assert "Metadata repository error: Database connection lost" in error
             case Success(_):
                 pytest.fail("list_datasets should fail when database error occurs")
+
+
+class TestGetDataset:
+    """Tests for DatasetController.get_dataset workflow."""
+
+    async def test_given_valid_id_returns_dataset_with_transforms(self, seeded_db: AsyncSession):
+        """get_dataset should return Dataset with transforms by default."""
+        set_session(seeded_db)
+
+        expected = Dataset(
+            id="dataset-001",
+            project_id="project-001",
+            storage_path="project-001/dataset-001.parquet",
+            name="Dataset One",
+            description=None,
+            schema_config={"fields": {"col1": {"type": "text"}}},
+            transforms=[
+                Transform(
+                    id="transform-001",
+                    name="Filter Active",
+                    condition_json=QueryBuilderJSON.from_dict({"id": "root", "type": "group", "children1": []}),
+                    condition_sql="col1 = 'active'",
+                    description="Filter for active records",
+                    is_active=True,
+                ),
+            ],
+            preview_rows=[],
+        )
+
+        result = await DatasetController.get_dataset(dataset_id="dataset-001")
+
+        match result:
+            case Success(dataset):
+                assert dataset == expected
+            case Failure(error):
+                pytest.fail(f"get_dataset should return dataset for valid id, got: {error}")
+
+    async def test_with_include_transforms_false_returns_empty_transforms(self, seeded_db: AsyncSession):
+        """get_dataset with include_transforms=False should return empty transforms list."""
+        set_session(seeded_db)
+
+        result = await DatasetController.get_dataset(
+            dataset_id="dataset-001",
+            include_transforms=False,
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.transforms == []
+            case Failure(error):
+                pytest.fail(f"get_dataset should succeed, got: {error}")
+
+    async def test_given_invalid_id_returns_failure(self, seeded_db: AsyncSession):
+        """get_dataset should return Failure when dataset not found."""
+        set_session(seeded_db)
+
+        result = await DatasetController.get_dataset(dataset_id="nonexistent")
+
+        match result:
+            case Failure(error):
+                assert error == "Dataset with ID 'nonexistent' not found"
+            case Success(_):
+                pytest.fail("get_dataset should fail when dataset does not exist")
+
+    async def test_with_include_preview_returns_preview_rows(self, seeded_db: AsyncSession):
+        """get_dataset with include_preview should populate preview_rows."""
+        set_session(seeded_db)
+
+        mock_preview = [{"col1": "value1"}, {"col1": "value2"}]
+
+        class MockLakeRepository:
+            def read_parquet_preview(self, storage_path: str, limit: int = 10):
+                return mock_preview
+
+        result = await DatasetController.get_dataset(
+            dataset_id="dataset-001",
+            include_preview=True,
+            preview_limit=5,
+            repositories={'lake_repository': MockLakeRepository},
+        )
+
+        match result:
+            case Success(dataset):
+                assert isinstance(dataset, Dataset)
+                assert dataset.preview_rows == mock_preview
+            case Failure(error):
+                pytest.fail(f"get_dataset with preview should succeed, got: {error}")
+
+    async def test_when_database_error_returns_metadata_repository_error(self, seeded_db: AsyncSession):
+        """get_dataset should return MetadataRepositoryError when database fails."""
+        set_session(seeded_db)
+
+        from sqlalchemy.exc import SQLAlchemyError
+
+        class FailingMetadataRepository:
+            async def get_dataset_record(self, dataset_id: str, include_transforms: bool = True):
+                raise SQLAlchemyError("Connection lost")
+
+        result = await DatasetController.get_dataset(
+            dataset_id="dataset-001",
+            repositories={'metadata_repository': FailingMetadataRepository},
+        )
+
+        match result:
+            case Failure(error):
+                assert error.startswith("Metadata repository error:")
+            case Success(_):
+                pytest.fail("get_dataset should fail when database error occurs")
+
+    async def test_when_lake_error_returns_lake_repository_error(self, seeded_db: AsyncSession):
+        """get_dataset should return LakeRepositoryError when storage fails."""
+        set_session(seeded_db)
+
+        from botocore.exceptions import ClientError
+
+        class FailingLakeRepository:
+            def read_parquet_preview(self, storage_path: str, limit: int = 10):
+                raise ClientError(
+                    {"Error": {"Code": "NoSuchKey", "Message": "Key not found"}},
+                    "GetObject"
+                )
+
+        result = await DatasetController.get_dataset(
+            dataset_id="dataset-001",
+            include_preview=True,
+            repositories={'lake_repository': FailingLakeRepository},
+        )
+
+        match result:
+            case Failure(error):
+                assert error.startswith("Lake repository error:")
+            case Success(_):
+                pytest.fail("get_dataset should fail when lake error occurs")

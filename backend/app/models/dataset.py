@@ -4,7 +4,7 @@ This module contains the Dataset domain model with business logic for
 generating aggregated SQL queries from transforms using Ibis expressions.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 import re
 
@@ -25,10 +25,13 @@ class Dataset:
     """
 
     id: str  # UUID primary key
-    storage_path: str  # Parquet path: "project_id/dataset_uuid.parquet"
+    project_id: str  # Parent project UUID
+    storage_path: str  # Parquet path prefix or wildcard pattern
     name: str  # Display name
+    description: str | None  # Optional description
     schema_config: dict[str, Any]  # Field definitions for query builder
     transforms: list[Transform]
+    preview_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def _get_connection(self) -> ibis.BaseBackend:
         """Get Ibis DuckDB connection configured for S3/MinIO access."""
