@@ -1,6 +1,9 @@
 """MetadataRepository protocol for database operations."""
 
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..dataset_record import DatasetRecord
 
 
 class MetadataRepositoryProtocol(Protocol):
@@ -151,21 +154,16 @@ class MetadataRepositoryProtocol(Protocol):
     async def update_dataset(
         self,
         dataset_id: str,
-        update_data: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Update a dataset's metadata and transforms.
-
-        Transform operations via 'transforms' field:
-        - Create: transform without id (requires name, condition_json)
-        - Update: transform with id
-        - Delete: transform with id and delete=True
+        **kwargs: Any,
+    ) -> 'DatasetRecord':
+        """Update a dataset's metadata.
 
         Args:
             dataset_id: Dataset UUID
-            update_data: Fields to update
+            **kwargs: Fields to update (name, description, etc.)
 
         Returns:
-            Updated dataset dict with transforms, or None if not found.
+            Updated DatasetRecord with transforms.
         """
         ...
 
@@ -188,6 +186,17 @@ class MetadataRepositoryProtocol(Protocol):
 
         Returns:
             True if project exists.
+        """
+        ...
+
+    async def dataset_exists(self, dataset_id: str) -> bool:
+        """Check if a dataset exists.
+
+        Args:
+            dataset_id: Dataset UUID
+
+        Returns:
+            True if dataset exists.
         """
         ...
 

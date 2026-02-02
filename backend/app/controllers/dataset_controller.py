@@ -6,7 +6,6 @@ from returns.result import Result, Success, Failure
 
 from ..models.dataset import Dataset
 from ..repositories import LakeRepository
-from ..schemas import DatasetUpdate
 from ..use_cases import dataset as dataset_use_cases
 
 
@@ -65,17 +64,17 @@ class DatasetController:
     @staticmethod
     async def update_dataset(
         dataset_id: str,
-        update_data: DatasetUpdate,
-    ) -> Result[dict[str, Any], str]:
+        repositories: dict[str, Any] | None = None,
+        **dataset_kwargs: Any,
+    ) -> Result[Dataset, str]:
         """Update a dataset's metadata and transforms."""
         try:
-            update_dict = update_data.model_dump(exclude_unset=True)
-            result = await dataset_use_cases.update_dataset(dataset_id, update_dict)
-            if result is None:
-                return Failure("Dataset not found")
+            result = await dataset_use_cases.update_dataset(
+                dataset_id, dataset_kwargs, repositories=repositories
+            )
             return Success(result)
         except Exception as e:
-            return Failure(f"Failed to update dataset: {str(e)}")
+            return Failure(str(e))
 
     @staticmethod
     async def delete_dataset(

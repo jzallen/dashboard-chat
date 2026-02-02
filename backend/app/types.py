@@ -4,7 +4,6 @@ These types are implementation-agnostic and represent business concepts.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
 from functools import reduce
 from typing import Any
 
@@ -12,25 +11,23 @@ import ibis
 import ibis.expr.types
 
 
-@dataclass(frozen=True)
-class QueryBuilderJSON:
+class QueryBuilderJSON(dict):
     """Value object for RAQB query builder JSON.
 
-    Encapsulates the JSON structure and provides conversion to Ibis expressions.
+    Extends dict so it serializes naturally with asdict() and JSON serializers.
+    Provides conversion to Ibis expressions.
     """
-
-    data: dict[str, Any]
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None) -> QueryBuilderJSON | None:
         """Create from dictionary, returning None if empty."""
         if not d:
             return None
-        return cls(data=d)
+        return cls(d)
 
     def as_ibis_filter(self, table: ibis.Table) -> ibis.expr.types.BooleanValue:
         """Convert to Ibis filter expression."""
-        return self._process_group(self.data, table)
+        return self._process_group(self, table)
 
     def _process_group(
         self, group: dict, table: ibis.Table

@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -48,7 +48,7 @@ class TransformRecord(Base):
 
     # Versioning
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='enabled')
 
     # Metadata from NL generation
     nl_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -65,6 +65,11 @@ class TransformRecord(Base):
     runs: Mapped[list["PipelineRun"]] = relationship(
         "PipelineRun", back_populates="transform", cascade="all, delete-orphan"
     )
+
+    @property
+    def is_active(self) -> bool:
+        """Backwards-compatible property: True if status is 'enabled'."""
+        return self.status == 'enabled'
 
     def __repr__(self) -> str:
         return f"<TransformRecord(id={self.id}, name={self.name}, version={self.version})>"

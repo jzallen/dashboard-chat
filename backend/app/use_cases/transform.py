@@ -77,7 +77,7 @@ async def update_transform(
     description: str | None = None,
     condition_json: dict | None = None,
     condition_sql: str | None = None,
-    is_active: bool | None = None,
+    status: str | None = None,
 ) -> TransformRecord:
     """Update a transform, incrementing version if condition_json changes.
 
@@ -90,7 +90,7 @@ async def update_transform(
         description: New description (optional)
         condition_json: New RAQB JSON tree (optional, triggers version increment)
         condition_sql: New SQL WHERE clause (required when condition_json changes)
-        is_active: Whether transform is active (optional)
+        status: Transform status ('enabled', 'disabled', 'deleted')
 
     Returns:
         Updated TransformRecord
@@ -106,8 +106,8 @@ async def update_transform(
         transform_record.condition_sql = condition_sql
         transform_record.version += 1
 
-    if is_active is not None:
-        transform_record.is_active = is_active
+    if status is not None:
+        transform_record.status = status
 
     await db.commit()
     await db.refresh(transform_record)

@@ -119,7 +119,8 @@ async def update_dataset(
     _: AsyncSession = Depends(use_db_context),
 ):
     """Update a dataset's metadata."""
-    result = await DatasetController.update_dataset(dataset_id, update_data)
+    dataset_kwargs = update_data.model_dump(exclude_unset=True)
+    result = await DatasetController.update_dataset(dataset_id, **dataset_kwargs)
 
     match result:
         case Success(data):

@@ -144,7 +144,7 @@ class MetadataRepository:
         
         query = (
             select(DatasetRecord)
-            .options(selectinload(DatasetRecord.transforms))
+            .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
             .where(DatasetRecord.project_id == project_id)
             .order_by(DatasetRecord.created_at.desc())
         )
@@ -184,7 +184,7 @@ class MetadataRepository:
         query = select(DatasetRecord).where(DatasetRecord.id == dataset_id)
 
         if include_transforms:
-            query = query.options(selectinload(DatasetRecord.transforms))
+            query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
 
         result = await self._session.execute(query)
         return result.scalar_one_or_none()
@@ -222,83 +222,23 @@ class MetadataRepository:
     async def update_dataset(
         self,
         dataset_id: str,
-        update_data: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Update a dataset's metadata and transforms."""
+        **kwargs: Any,
+    ) -> DatasetRecord:
+        """Update a dataset's metadata."""
         result = await self._session.execute(
             select(DatasetRecord)
-            .options(selectinload(DatasetRecord.transforms))
+            .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
             .where(DatasetRecord.id == dataset_id)
         )
         dataset = result.scalar_one_or_none()
 
-        if not dataset:
-            return None
-
-        # Handle transforms separately
-        transforms_input = update_data.pop("transforms", None)
-
-        # Update dataset metadata
-        for key, value in update_data.items():
+        for key, value in kwargs.items():
             setattr(dataset, key, value)
 
-        # Process transform operations
-        if transforms_input:
-            existing_transforms = {t.id: t for t in dataset.transforms}
-
-            for t_input in transforms_input:
-                transform_id = t_input.get("id")
-                should_delete = t_input.get("delete", False)
-
-                if transform_id:
-                    # Existing transform - update or delete
-                    transform = existing_transforms.get(transform_id)
-                    if not transform:
-                        continue
-
-                    if should_delete:
-                        await self._session.delete(transform)
-                    else:
-                        if t_input.get("name") is not None:
-                            transform.name = t_input["name"]
-                        if t_input.get("description") is not None:
-                            transform.description = t_input["description"]
-                        if t_input.get("condition_json") is not None:
-                            transform.condition_json = t_input["condition_json"]
-                            transform.condition_sql = t_input.get("condition_sql")
-                            transform.version += 1
-                        if t_input.get("is_active") is not None:
-                            transform.is_active = t_input["is_active"]
-                else:
-                    # New transform
-                    if t_input.get("name") and t_input.get("condition_json"):
-                        new_transform = TransformRecord(
-                            dataset_id=dataset_id,
-                            name=t_input["name"],
-                            description=t_input.get("description"),
-                            condition_json=t_input["condition_json"],
-                            condition_sql=t_input.get("condition_sql"),
-                            nl_prompt=t_input.get("nl_prompt"),
-                            is_active=t_input.get("is_active", True),
-                        )
-                        self._session.add(new_transform)
-
         await self._session.flush()
+        await self._session.refresh(dataset)
 
-        # Reload to get updated state
-        result = await self._session.execute(
-            select(DatasetRecord)
-            .options(selectinload(DatasetRecord.transforms))
-            .where(DatasetRecord.id == dataset_id)
-        )
-        dataset = result.scalar_one_or_none()
-
-        dataset_dict = self._dataset_to_dict(dataset)
-        dataset_dict["transforms"] = [
-            self._transform_to_dict(t) for t in dataset.transforms
-        ]
-
-        return dataset_dict
+        return dataset
 
     async def delete_dataset(self, dataset_id: str) -> str | None:
         """Delete a dataset record, returning storage_path for file cleanup."""
@@ -323,6 +263,12 @@ class MetadataRepository:
             select(ProjectRecord.id).where(ProjectRecord.id == project_id)
         )
         return result.scalar_one_or_none() is not None
+
+    async def dataset_exists(self, dataset_id: str) -> bool:
+        """Check if a dataset exists."""
+        return (await self._session.execute(
+            select(exists().where(DatasetRecord.id == dataset_id))
+        )).scalar()
 
     # -------------------------------------------------------------------------
     # Transform operations
@@ -397,12 +343,36 @@ class MetadataRepository:
             transform.condition_sql = update_data.get("condition_sql")
             transform.version += 1
 
-        if update_data.get("is_active") is not None:
-            transform.is_active = update_data["is_active"]
+        if update_data.get("status") is not None:
+            transform.status = update_data["status"]
 
         await self._session.flush()
         await self._session.refresh(transform)
         return self._transform_to_dict(transform)
+
+    async def update_transforms(self, updates: list[dict[str, Any]]) -> None:
+        """Batch update transforms in a single query.
+
+        Args:
+            updates: List of dicts, each containing 'id' and fields to update.
+        """
+        from sqlalchemy import update
+
+        if updates:
+            await self._session.execute(update(TransformRecord), updates)
+            await self._session.flush()
+
+    async def update_transforms(self, transforms: list[object]) -> None:
+        """Batch update transforms in a single query.
+
+        Args:
+            transforms: List of Transform domain objects (must support __getitem__).
+        """
+        from sqlalchemy import update
+
+        if transforms:
+            await self._session.execute(update(TransformRecord), transforms)
+            await self._session.flush()
 
     async def delete_transform(self, transform_id: str) -> bool:
         """Delete a transform."""
@@ -461,7 +431,7 @@ class MetadataRepository:
             "condition_json": transform.condition_json,
             "condition_sql": transform.condition_sql,
             "version": transform.version,
-            "is_active": transform.is_active,
+            "status": transform.status,
             "nl_prompt": transform.nl_prompt,
             "created_at": transform.created_at,
             "updated_at": transform.updated_at,

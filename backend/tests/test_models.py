@@ -106,8 +106,8 @@ class TestTransformModel:
         )
         # Note: default is applied by SQLAlchemy
 
-    def test_transform_is_active_default(self):
-        """Test Transform is_active defaults to True."""
+    def test_transform_status_default(self):
+        """Test Transform status defaults to 'enabled'."""
         transform = Transform(
             dataset_id="dataset-123",
             name="Test",

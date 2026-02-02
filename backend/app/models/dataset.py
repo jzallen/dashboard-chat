@@ -25,13 +25,33 @@ class Dataset:
     """
 
     id: str  # UUID primary key
-    project_id: str  # Parent project UUID
-    storage_path: str  # Parquet path prefix or wildcard pattern
-    name: str  # Display name
-    description: str | None  # Optional description
-    schema_config: dict[str, Any]  # Field definitions for query builder
-    transforms: list[Transform]
+    project_id: str | None = None  # Parent project UUID
+    storage_path: str | None = None  # Parquet path prefix or wildcard pattern
+    name: str | None = None  # Display name
+    description: str | None = None  # Optional description
+    schema_config: dict[str, Any] = field(default_factory=dict)  # Field definitions for query builder
+    transforms: list[Transform] | list[dict[str, Any]] | None = field(default_factory=list)
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Convert transform dicts to Transform domain objects."""
+        from ..types import QueryBuilderJSON
+
+        if self.transforms is None:
+            object.__setattr__(self, 'transforms', [])
+        elif self.transforms and isinstance(self.transforms[0], dict):
+            converted = [
+                Transform(
+                    id=t.get("id"),
+                    name=t["name"],
+                    condition_json=QueryBuilderJSON.from_dict(t["condition_json"]) if t.get("condition_json") else None,
+                    condition_sql=t.get("condition_sql"),
+                    description=t.get("description"),
+                    status=t.get("status", "enabled"),
+                )
+                for t in self.transforms
+            ]
+            object.__setattr__(self, 'transforms', converted)
 
     def _get_connection(self) -> ibis.BaseBackend:
         """Get Ibis DuckDB connection configured for S3/MinIO access."""
@@ -83,7 +103,7 @@ class Dataset:
         active_filters = [
             t.condition_json.as_ibis_filter(table)
             for t in self.transforms
-            if t.is_active and t.condition_json
+            if t.is_enabled and t.condition_json
         ]
         if active_filters:
             table = table.filter(*active_filters)
@@ -127,6 +147,11 @@ class Dataset:
                 sql = sql.replace("SELECT\n  *\n", f"SELECT\n  {col_list}\n")
 
         return sql
+
+    @property
+    def transforms_to_delete(self) -> list[Transform]:
+        """Transforms marked for deletion."""
+        return [t for t in self.transforms if t.status == 'deleted']
 
     @staticmethod
     def generate_parquet_id(project_id: str, dataset_uuid: str) -> str:

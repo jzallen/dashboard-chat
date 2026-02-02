@@ -137,107 +137,40 @@ async def upload_dataset(
     }
 
 
-@with_db
+@with_repositories
 async def update_dataset(
-    db: AsyncSession,
     dataset_id: str,
     update_dict: dict[str, Any],
-) -> dict[str, Any] | None:
+    *,
+    repositories: 'RepositoryContainer',
+) -> Dataset:
     """Update a dataset's metadata and transforms.
 
-    Returns None if dataset not found.
-
-    Transform operations via the 'transforms' field:
-    - Create: transform without id (requires name, condition_json, and condition_sql)
-    - Update: transform with id
-    - Delete: transform with id and delete=True
+    Raises:
+        DatasetNotFound: If dataset with given ID does not exist.
+        MetadataRepositoryError: If database operation fails.
     """
-    result = await db.execute(
-        select(DatasetRecord)
-        .options(selectinload(DatasetRecord.transforms))
-        .where(DatasetRecord.id == dataset_id)
-    )
-    dataset_record = result.scalar_one_or_none()
-    if not dataset_record:
-        return None
+    dataset = Dataset(id=dataset_id, transforms=update_dict.pop('transforms', None), **update_dict)
 
-    # Handle transforms separately
-    transforms_input = update_dict.pop("transforms", None)
+    try:
+        if not await repositories['metadata_repository'].dataset_exists(dataset_id):
+            raise DatasetNotFound(dataset_id)
+    except SQLAlchemyError as e:
+        raise MetadataRepositoryError(str(e)) from e
 
-    # Update dataset metadata
-    for key, value in update_dict.items():
-        setattr(dataset_record, key, value)
+    try:
+        await repositories['metadata_repository'].update_dataset(dataset_id, **update_dict)
+    except SQLAlchemyError as e:
+        raise MetadataRepositoryError(str(e)) from e
 
-    # Process transform operations
-    # Frontend provides both condition_json (for UI) and condition_sql (for backend)
-    if transforms_input:
-        existing_transforms = {t.id: t for t in dataset_record.transforms}
+    # Batch update transforms
+    if dataset.transforms:
+        try:
+            await repositories['metadata_repository'].update_transforms(dataset.transforms)
+        except SQLAlchemyError as e:
+            raise MetadataRepositoryError(str(e)) from e
 
-        for t_input in transforms_input:
-            transform_id = t_input.get("id")
-            should_delete = t_input.get("delete", False)
-
-            if transform_id:
-                # Existing transform - update or delete
-                transform = existing_transforms.get(transform_id)
-                if not transform:
-                    continue  # Skip if transform doesn't belong to this dataset
-
-                if should_delete:
-                    await db.delete(transform)
-                else:
-                    # Update existing transform
-                    if t_input.get("name") is not None:
-                        transform.name = t_input["name"]
-                    if t_input.get("description") is not None:
-                        transform.description = t_input["description"]
-                    # condition_json and condition_sql come from frontend RAQB
-                    if t_input.get("condition_json") is not None:
-                        transform.condition_json = t_input["condition_json"]
-                        transform.condition_sql = t_input.get("condition_sql")
-                        transform.version += 1
-                    if t_input.get("is_active") is not None:
-                        transform.is_active = t_input["is_active"]
-            else:
-                # New transform - create (requires name, condition_json, and condition_sql)
-                if t_input.get("name") and t_input.get("condition_json"):
-                    new_transform = TransformRecord(
-                        dataset_id=dataset_id,
-                        name=t_input["name"],
-                        description=t_input.get("description"),
-                        condition_json=t_input["condition_json"],
-                        condition_sql=t_input.get("condition_sql"),
-                        nl_prompt=t_input.get("nl_prompt"),
-                        is_active=t_input.get("is_active", True),
-                    )
-                    db.add(new_transform)
-
-    await db.commit()
-    await db.refresh(dataset_record)
-
-    # Reload transforms after commit
-    result = await db.execute(
-        select(DatasetRecord)
-        .options(selectinload(DatasetRecord.transforms))
-        .where(DatasetRecord.id == dataset_id)
-    )
-    dataset_record = result.scalar_one_or_none()
-
-    return {
-        "id": dataset_record.id,
-        "storage_path": dataset_record.storage_path,
-        "project_id": dataset_record.project_id,
-        "name": dataset_record.name,
-        "description": dataset_record.description,
-        "schema_config": dataset_record.schema_config,
-        "row_count": dataset_record.row_count,
-        "file_name": dataset_record.file_name,
-        "file_size": dataset_record.file_size,
-        "created_at": dataset_record.created_at,
-        "updated_at": dataset_record.updated_at,
-        "transforms": dataset_record.transforms,
-        "preview_rows": [],
-    }
+    return await get_dataset(dataset_id, repositories=repositories)
 
 
 @with_db
@@ -352,7 +285,7 @@ def _to_domain_dataset(
                 condition_json=QueryBuilderJSON.from_dict(t.condition_json),
                 condition_sql=t.condition_sql,
                 description=t.description,
-                is_active=t.is_active,
+                status=t.status,
             )
             for t in transform_records
         ]

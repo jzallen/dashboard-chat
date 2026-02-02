@@ -98,13 +98,22 @@ def with_repositories(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator that injects a repository container into kwargs.
 
     Repositories are accessed via kwargs['repositories']['repo_name'].
-    Callers can pass 'repositories' kwarg with overrides dict to substitute implementations.
+    Callers can pass 'repositories' kwarg with either:
+    - A RepositoryContainer instance (used directly)
+    - A dict of overrides to substitute implementations
+    - None (creates default container)
     """
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         db = get_session()
         overrides = kwargs.pop('repositories', None)
-        kwargs['repositories'] = RepositoryContainer(RestrictedSession(db), overrides)
+        match overrides:
+            case RepositoryContainer():
+                kwargs['repositories'] = overrides
+            case dict():
+                kwargs['repositories'] = RepositoryContainer(RestrictedSession(db), overrides)
+            case _:
+                kwargs['repositories'] = RepositoryContainer(RestrictedSession(db))
         result = await func(*args, **kwargs)
         try:
             await db.commit()

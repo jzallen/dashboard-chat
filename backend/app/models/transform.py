@@ -5,8 +5,11 @@ by the backend using Ibis expressions derived from the condition_json.
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 from ..types import QueryBuilderJSON
+
+TransformStatus = Literal['enabled', 'disabled', 'deleted']
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,7 +26,7 @@ class Transform:
         condition_json: RAQB JSON tree structure as value object
         condition_sql: SQL WHERE clause (kept for display/backwards compat)
         description: Optional description
-        is_active: Whether the transform is currently applied
+        status: Transform status ('enabled', 'disabled', 'deleted')
     """
 
     id: str | None
@@ -31,4 +34,21 @@ class Transform:
     condition_json: QueryBuilderJSON | None  # Value object for Ibis conversion
     condition_sql: str | None = None  # Keep for display/backwards compat
     description: str | None = None
-    is_active: bool = True
+    status: TransformStatus = 'enabled'
+
+    @property
+    def is_enabled(self) -> bool:
+        """Whether the transform is currently enabled."""
+        return self.status == 'enabled'
+
+    def __getitem__(self, key: str) -> object:
+        """Allow dict-like access for SQLAlchemy bulk operations."""
+        return getattr(self, key)
+
+    def keys(self) -> list[str]:
+        """Return field names for SQLAlchemy bulk operations."""
+        return ['id', 'name', 'condition_json', 'condition_sql', 'description', 'status']
+
+    def __iter__(self):
+        """Iterate over field names for SQLAlchemy bulk operations."""
+        return iter(self.keys())
