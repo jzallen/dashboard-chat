@@ -1,25 +1,35 @@
-"""Dataset use cases for file upload and management."""
+"""Dataset use cases for dataset management.
+
+Uses the outbox pattern for upload events - emits domain events
+for state transitions during dataset creation.
+"""
 
 import io
-import re
+from datetime import datetime
 from typing import Any, TYPE_CHECKING
-from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from uuid_utils import uuid7
 
 from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy.exc import SQLAlchemyError
 
-from ..exceptions import DatasetNotFound, LakeRepositoryError, MetadataRepositoryError, ProjectIdRequired, ProjectNotFound
-from ..repositories import with_db, with_repositories
+from ..exceptions import (
+    DatasetNotFound,
+    LakeRepositoryError,
+    MetadataRepositoryError,
+    OutboxRepositoryError,
+    ProjectIdRequired,
+    ProjectNotFound,
+    UploadAlreadyProcessed,
+    UploadNotFound,
+)
+from ..models import UploadProcessingStarted, UploadCompleted, UploadFailed
+from ..repositories import with_repositories
 from ..repositories.dataset_record import DatasetRecord
-from ..repositories.transform_record import TransformRecord
+from ..repositories.outbox_repository import OutboxRepository
 from ..models.dataset import Dataset
 from ..models.transform import Transform
-from ..models import Project
 from ..types import QueryBuilderJSON
 from ..utils.schema_inference import infer_schema_from_dataframe
 
@@ -37,16 +47,17 @@ async def list_datasets(project_id: str | None = None, *, repositories: 'Reposit
 
     if project_id is None:
         raise ProjectIdRequired()
-    
+
     if not await repositories["metadata_repository"].project_exists(project_id=project_id):
         raise ProjectNotFound(project_id)
-    
+
     try:
         result = await repositories["metadata_repository"].list_datasets(project_id=project_id)
     except Exception as e:
         raise MetadataRepositoryError(str(e)) from e
 
     return [_to_domain_dataset(r, transform_records=r.transforms) for r in result]
+
 
 @with_repositories
 async def get_dataset(
@@ -87,61 +98,6 @@ async def get_dataset(
 
 
 @with_repositories
-async def upload_dataset(
-    file_content: bytes,
-    file_name: str,
-    project_id: str,
-    name: str,
-    description: str | None = None,
-    *,
-    repositories: 'RepositoryContainer',
-) -> dict[str, Any]:
-    """Upload a CSV file and create a dataset with Parquet storage.
-
-    Raises:
-        ValueError: If project not found, invalid file type, or empty file.
-    """
-    metadata_repo = repositories['metadata_repository']
-    lake_repo = repositories['lake_repository']
-
-    if not await metadata_repo.project_exists(project_id):
-        raise ValueError("Project not found")
-
-    if not file_name.lower().endswith(".csv"):
-        raise ValueError("Only CSV files are supported")
-
-    if not file_content:
-        raise ValueError("File is empty")
-
-    dataset_record = await _process_csv_upload(
-        metadata_repo=metadata_repo,
-        lake_repo=lake_repo,
-        project_id=project_id,
-        name=name,
-        file_content=file_content,
-        file_name=file_name,
-        description=description,
-    )
-
-    preview_rows = lake_repo.read_parquet_preview(dataset_record.storage_path, limit=5)
-
-    return {
-        "id": dataset_record.id,
-        "storage_path": dataset_record.storage_path,
-        "project_id": dataset_record.project_id,
-        "name": dataset_record.name,
-        "description": dataset_record.description,
-        "schema_config": dataset_record.schema_config,
-        "row_count": dataset_record.row_count,
-        "file_name": dataset_record.file_name,
-        "file_size": dataset_record.file_size,
-        "created_at": dataset_record.created_at,
-        "updated_at": dataset_record.updated_at,
-        "preview_rows": preview_rows,
-    }
-
-
-@with_repositories
 async def update_dataset(
     dataset_id: str,
     update_dict: dict[str, Any],
@@ -170,55 +126,145 @@ async def update_dataset(
     return await get_dataset(dataset_id, repositories=repositories)
 
 
-
-
-
-
-def sanitize_table_name(name: str) -> str:
-    """Create a safe table name from dataset name."""
-    safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name.lower())
-    if safe_name[0].isdigit():
-        safe_name = "t_" + safe_name
-    unique_suffix = uuid4().hex[:8]
-    return f"data_{safe_name}_{unique_suffix}"
-
-
-async def _process_csv_upload(
-    metadata_repo,
-    lake_repo,
-    project_id: str,
+@with_repositories
+async def create_dataset_from_upload(
+    upload_id: str,
     name: str,
-    file_content: bytes,
-    file_name: str | None = None,
+    partition_fields: list[str] | None = None,
     description: str | None = None,
+    *,
+    repositories: "RepositoryContainer",
 ) -> dict[str, Any]:
-    """Process a CSV file upload and create dataset with Parquet storage."""
-    # Infer schema from CSV for query builder
-    df = pd.read_csv(io.BytesIO(file_content))
-    schema_config = infer_schema_from_dataframe(df)
-    row_count = len(df)
+    """Create a dataset from an upload event.
 
-    # Generate UUID for dataset ID
-    dataset_id = str(uuid4())
+    Step 2 of the upload flow: Process upload into partitioned parquet files.
+    Uses the outbox pattern for event sourcing.
 
-    # Generate parquet storage path (includes UUID)
-    storage_path = Dataset.generate_parquet_id(project_id, dataset_id)
+    Args:
+        upload_id: Upload event UUID
+        name: Dataset display name
+        partition_fields: List of field names to partition by (optional)
+        description: Optional dataset description
+        repositories: Injected repository container
 
-    # Write CSV as Parquet to MinIO/S3
-    lake_repo.write_csv_as_parquet(file_content, storage_path)
+    Returns:
+        Dataset dict with schema and preview
 
-    # Create dataset record
-    return await metadata_repo.create_dataset(
-        project_id=project_id,
-        dataset_id=dataset_id,
-        storage_path=storage_path,
-        name=name,
-        schema_config=schema_config,
-        row_count=row_count,
-        file_name=file_name,
-        file_size=len(file_content),
-        description=description,
-    )
+    Raises:
+        UploadNotFound: If upload not found
+        UploadAlreadyProcessed: If upload already processed
+        MetadataRepositoryError: If database operation fails
+        LakeRepositoryError: If storage operation fails
+    """
+    metadata_repo = repositories["metadata_repository"]
+    lake_repo = repositories["lake_repository"]
+    outbox_repo: OutboxRepository = repositories["outbox_repository"]
+    partition_fields = partition_fields or []
+
+    # Get upload event by reconstructing state from events
+    try:
+        upload_event = await outbox_repo.reconstruct_upload_state(upload_id)
+    except SQLAlchemyError as e:
+        raise OutboxRepositoryError(str(e)) from e
+
+    if not upload_event:
+        raise UploadNotFound(upload_id)
+
+    # Validate upload is pending
+    if upload_event.status != "pending":
+        raise UploadAlreadyProcessed(upload_id, upload_event.status)
+
+    project_id = upload_event.project_id
+
+    # Emit processing started event
+    try:
+        await outbox_repo.append_event(
+            aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
+            aggregate_id=upload_id,
+            event=UploadProcessingStarted(upload_id=upload_id),
+        )
+    except SQLAlchemyError as e:
+        raise OutboxRepositoryError(str(e)) from e
+
+    try:
+        # Generate dataset ID
+        dataset_id = str(uuid7())
+
+        # Compute storage path from domain model
+        storage_path = Dataset.compute_storage_path(project_id, dataset_id)
+
+        try:
+            raw_content = lake_repo.read_raw_file(upload_event.raw_storage_path)
+        except (BotoCoreError, ClientError) as e:
+            raise LakeRepositoryError(str(e)) from e
+
+        df = pd.read_csv(io.BytesIO(raw_content))
+        schema_config = infer_schema_from_dataframe(df)
+
+        try:
+            lake_repo.write_csv_as_partitioned_parquet(
+                csv_content=raw_content,
+                storage_prefix=storage_path,
+                partition_fields=partition_fields,
+            )
+        except (BotoCoreError, ClientError) as e:
+            raise LakeRepositoryError(str(e)) from e
+
+        try:
+            await metadata_repo.create_dataset(
+                project_id=project_id,
+                dataset_id=dataset_id,
+                storage_path=storage_path,
+                name=name,
+                schema_config=schema_config,
+                description=description,
+                partition_fields=partition_fields,
+            )
+        except SQLAlchemyError as e:
+            raise MetadataRepositoryError(str(e)) from e
+
+        # Emit completed event
+        try:
+            await outbox_repo.append_event(
+                aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
+                aggregate_id=upload_id,
+                event=UploadCompleted(upload_id=upload_id, dataset_id=dataset_id),
+            )
+        except SQLAlchemyError as e:
+            raise OutboxRepositoryError(str(e)) from e
+
+        # Read preview rows from partitioned parquet
+        try:
+            preview_rows = lake_repo.read_parquet_preview(storage_path, limit=10)
+        except (BotoCoreError, ClientError) as e:
+            preview_rows = []
+
+        return {
+            "id": dataset_id,
+            "project_id": project_id,
+            "storage_path": storage_path,
+            "name": name,
+            "description": description,
+            "schema_config": schema_config,
+            "partition_fields": partition_fields,
+            "row_count": upload_event.row_count,
+            "file_name": upload_event.original_filename,
+            "file_size": upload_event.file_size,
+            "preview_rows": preview_rows,
+            "upload_id": upload_id,
+        }
+
+    except Exception as e:
+        # Emit failed event on any error
+        try:
+            await outbox_repo.append_event(
+                aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
+                aggregate_id=upload_id,
+                event=UploadFailed(upload_id=upload_id, error_message=str(e)),
+            )
+        except SQLAlchemyError:
+            pass
+        raise
 
 
 def _to_domain_dataset(

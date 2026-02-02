@@ -44,7 +44,6 @@ async def get_project(
             "name": ds.name,
             "link": f"/api/datasets/{ds.id}",
             "description": ds.description,
-            "row_count": ds.row_count,
             "schema_config": ds.schema_config,
         }
         for ds in project.datasets

@@ -18,9 +18,11 @@ from .project_record import ProjectRecord  # noqa: F401
 from .dataset_record import DatasetRecord  # noqa: F401
 from .transform_record import TransformRecord  # noqa: F401
 from .upload_event_record import UploadEventRecord  # noqa: F401
+from .outbox_record import OutboxRecord  # noqa: F401
 
 from .metadata_repository import MetadataRepository
 from .lake_repository import LakeRepository, MinIOLakeRepository, S3LakeRepository
+from .outbox_repository import OutboxRepository
 
 # Context variable to hold the current database session
 _db_session: ContextVar[AsyncSession | None] = ContextVar("db_session", default=None)
@@ -88,6 +90,7 @@ class RepositoryContainer:
         self._registry: dict[str, Callable[[], object]] = {
             'metadata_repository': partial(MetadataRepository, db),
             'lake_repository': MinIOLakeRepository,
+            'outbox_repository': partial(OutboxRepository, db),
             **(overrides or {}),
         }
 
@@ -106,6 +109,10 @@ def with_repositories(func: Callable[P, R]) -> Callable[P, R]:
     - A RepositoryContainer instance (used directly)
     - A dict of overrides to substitute implementations
     - None (creates default container)
+
+    TODO: Invert repository error handling - catch SQLAlchemyError here and wrap
+    as MetadataRepositoryError/OutboxRepositoryError instead of cluttering use cases.
+    The controller's global exception handler can then map these to HTTP responses.
     """
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:

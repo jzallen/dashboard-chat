@@ -17,7 +17,6 @@ from app.utils.schema_inference import (
     OPERATORS_BY_TYPE,
     SELECT_UNIQUE_THRESHOLD,
 )
-from app.use_cases.dataset import sanitize_table_name
 
 
 class TestFieldTypeInference:
@@ -208,39 +207,6 @@ class TestGenerateCreateTableSql:
 
         assert '"id" BIGINT PRIMARY KEY' in sql
         assert "_row_id" not in sql
-
-
-class TestSanitizeTableName:
-    """Tests for table name sanitization."""
-
-    def test_sanitize_simple_name(self):
-        """Simple names should be prefixed and get unique suffix."""
-        name = sanitize_table_name("MyDataset")
-        assert name.startswith("data_mydataset_")
-        assert len(name) > len("data_mydataset_")
-
-    def test_sanitize_with_spaces(self):
-        """Spaces should be replaced with underscores."""
-        name = sanitize_table_name("My Dataset Name")
-        assert " " not in name
-        assert "my_dataset_name" in name
-
-    def test_sanitize_with_special_chars(self):
-        """Special characters should be replaced."""
-        name = sanitize_table_name("Data@2024!Test")
-        assert "@" not in name
-        assert "!" not in name
-
-    def test_sanitize_starting_with_number(self):
-        """Names starting with numbers should be prefixed."""
-        name = sanitize_table_name("2024_data")
-        assert name.startswith("data_t_")
-
-    def test_sanitize_produces_unique_names(self):
-        """Multiple calls should produce unique names."""
-        name1 = sanitize_table_name("Test")
-        name2 = sanitize_table_name("Test")
-        assert name1 != name2
 
 
 class TestOperatorsByType:

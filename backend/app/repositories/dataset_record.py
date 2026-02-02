@@ -62,11 +62,6 @@ class DatasetRecord(Base):
     # Format: ["field1", "field2"] - list of field names to partition by
     partition_fields: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
-    # Metadata
-    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

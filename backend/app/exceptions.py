@@ -27,6 +27,20 @@ class DatasetNotFound(DomainException):
         super().__init__(f"Dataset with ID '{dataset_id}' not found")
 
 
+class UploadNotFound(DomainException):
+    """Raised when an upload event is not found."""
+
+    def __init__(self, upload_id: str):
+        super().__init__(f"Upload with ID '{upload_id}' not found")
+
+
+class UploadAlreadyProcessed(DomainException):
+    """Raised when trying to process an already processed upload."""
+
+    def __init__(self, upload_id: str, status: str):
+        super().__init__(f"Upload '{upload_id}' already has status '{status}'")
+
+
 class RepositoryError(DomainException):
     """Base class for repository errors."""
 
@@ -45,3 +59,10 @@ class LakeRepositoryError(RepositoryError):
 
     def __init__(self, message: str):
         super().__init__(f"Lake repository error: {message}")
+
+
+class OutboxRepositoryError(RepositoryError):
+    """Raised when the outbox repository encounters an error."""
+
+    def __init__(self, message: str):
+        super().__init__(f"Outbox repository error: {message}")

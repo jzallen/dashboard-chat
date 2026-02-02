@@ -125,10 +125,8 @@ class MetadataRepositoryProtocol(Protocol):
         storage_path: str,
         name: str,
         schema_config: dict[str, Any],
-        row_count: int,
-        file_name: str | None = None,
-        file_size: int | None = None,
         description: str | None = None,
+        partition_fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create a new dataset record.
 
@@ -138,10 +136,8 @@ class MetadataRepositoryProtocol(Protocol):
             storage_path: S3/MinIO path for parquet file
             name: Dataset display name
             schema_config: Field definitions for query builder
-            row_count: Number of rows in dataset
-            file_name: Original upload filename
-            file_size: File size in bytes
             description: Optional description
+            partition_fields: List of field names used for partitioning
 
         Returns:
             Created dataset dictionary.

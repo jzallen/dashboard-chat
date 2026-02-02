@@ -1,15 +1,13 @@
 """API routes for dataset management."""
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query
 from returns.result import Success, Failure
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..controllers.dataset_controller import DatasetController
 from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
 from ..repositories import set_session
-from ..repositories.dataset_record import DatasetRecord
 from ..schemas import DatasetCreate, DatasetUpdate
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
@@ -55,7 +53,6 @@ async def create_dataset(
     """
     result = await DatasetController.create_dataset_from_upload(
         upload_id=data.upload_id,
-        project_id=data.project_id,
         name=data.name,
         partition_fields=data.partition_fields,
         description=data.description,
@@ -67,7 +64,7 @@ async def create_dataset(
         case Failure(error):
             if "not found" in error.lower():
                 status_code = 404
-            elif "already" in error.lower() or "mismatch" in error.lower():
+            elif "already" in error.lower():
                 status_code = 400
             else:
                 status_code = 500
@@ -99,55 +96,6 @@ async def get_dataset(
             raise HTTPException(
                 status_code=status_code,
                 detail=wrap_error(error, "GET_DATASET_ERROR")
-            )
-
-
-@router.post("/upload")
-async def upload_dataset(
-    file: UploadFile = File(...),
-    project_id: str = Form(...),
-    name: str = Form(...),
-    description: str | None = Form(None),
-    _: AsyncSession = Depends(use_db_context),
-):
-    """Upload a CSV file and create a dataset with Parquet storage.
-
-    This will:
-    1. Parse the CSV file
-    2. Infer the schema (RAQB field types and operators)
-    3. Convert CSV to Parquet using DuckDB
-    4. Upload Parquet file to MinIO/S3
-    5. Create the dataset record
-    """
-    # Validate filename exists
-    if not file.filename:
-        raise HTTPException(
-            status_code=400,
-            detail=wrap_error("Filename is required", "INVALID_FILE")
-        )
-
-    # Read file content
-    content = await file.read()
-
-    result = await DatasetController.upload_dataset(
-        content, file.filename, project_id, name, description
-    )
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            # Determine appropriate status code
-            if error == "Project not found":
-                status_code = 404
-            elif error in ["Only CSV files are supported", "File is empty"]:
-                status_code = 400
-            else:
-                status_code = 500
-
-            raise HTTPException(
-                status_code=status_code,
-                detail=wrap_error(error, "UPLOAD_DATASET_ERROR")
             )
 
 

@@ -163,20 +163,21 @@ class Dataset:
         """Transforms marked for deletion."""
         return [t for t in self.transforms if t.status == 'deleted']
 
-    @staticmethod
-    def generate_parquet_id(project_id: str, dataset_uuid: str) -> str:
-        """Generate parquet storage path: 'project_id/dataset_uuid.parquet'
+    @classmethod
+    def compute_storage_path(cls, project_id: str, dataset_id: str) -> str:
+        """Compute the storage path for a dataset.
 
-        Note: This is now used for storage_path, not id.
+        Storage path follows the pattern: datasets/{project_id}/{dataset_id}/
+        The trailing slash indicates partitioned parquet storage.
 
         Args:
             project_id: Project UUID
-            dataset_uuid: Dataset UUID
+            dataset_id: Dataset UUID
 
         Returns:
-            Parquet path suitable for S3/MinIO storage
+            Storage path prefix for S3/MinIO (e.g., "datasets/proj-123/ds-456/")
         """
-        return f"{project_id}/{dataset_uuid}.parquet"
+        return f"datasets/{project_id}/{dataset_id}/"
 
     @staticmethod
     def display_name_to_filename(display_name: str) -> str:

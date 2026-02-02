@@ -31,7 +31,6 @@ class DatasetSparse(BaseModel):
     name: str
     link: str
     description: str | None = None
-    row_count: int
     schema_config: dict[str, Any]
 
 
@@ -49,7 +48,6 @@ class DatasetCreate(BaseModel):
     """
 
     upload_id: str
-    project_id: str
     name: str
     description: str | None = None
     partition_fields: list[str] = []
@@ -82,9 +80,6 @@ class DatasetResponse(DatasetBase):
     project_id: str
     schema_config: dict[str, Any]
     partition_fields: list[str] = []  # Hive-style partition field names
-    row_count: int
-    file_name: str | None = None
-    file_size: int | None = None
     created_at: datetime
     updated_at: datetime
 

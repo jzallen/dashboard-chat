@@ -44,25 +44,6 @@ class DatasetController:
             return Failure(str(e))
 
     @staticmethod
-    async def upload_dataset(
-        file_content: bytes,
-        file_name: str,
-        project_id: str,
-        name: str,
-        description: str | None = None,
-    ) -> Result[dict[str, Any], str]:
-        """Upload a CSV file and create a dataset."""
-        try:
-            result = await dataset_use_cases.upload_dataset(
-                file_content, file_name, project_id, name, description
-            )
-            return Success(result)
-        except ValueError as e:
-            return Failure(str(e))
-        except Exception as e:
-            return Failure(f"Failed to process file: {str(e)}")
-
-    @staticmethod
     async def update_dataset(
         dataset_id: str,
         repositories: dict[str, Any] | None = None,
@@ -134,7 +115,6 @@ class DatasetController:
     @staticmethod
     async def create_dataset_from_upload(
         upload_id: str,
-        project_id: str,
         name: str,
         partition_fields: list[str] | None = None,
         description: str | None = None,
@@ -143,16 +123,16 @@ class DatasetController:
 
         Step 2 of the upload flow.
         """
+        from ..exceptions import UploadAlreadyProcessed, UploadNotFound
+
         try:
-            result = await upload_use_cases.create_dataset_from_upload(
-                upload_id, project_id, name, partition_fields, description
+            result = await dataset_use_cases.create_dataset_from_upload(
+                upload_id, name, partition_fields, description
             )
             return Success(result)
-        except upload_use_cases.UploadNotFound as e:
+        except UploadNotFound as e:
             return Failure(str(e))
-        except upload_use_cases.UploadAlreadyProcessed as e:
-            return Failure(str(e))
-        except ValueError as e:
+        except UploadAlreadyProcessed as e:
             return Failure(str(e))
         except Exception as e:
             return Failure(f"Failed to create dataset: {str(e)}")
