@@ -449,10 +449,9 @@ class MetadataRepository:
         raw_storage_path: str,
         original_filename: str,
         file_size: int,
-        schema_config: dict[str, Any],
         row_count: int,
         dataset_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> UploadEventRecord:
         """Create a new upload event record."""
         upload_event = UploadEventRecord(
             id=upload_id,
@@ -461,14 +460,13 @@ class MetadataRepository:
             raw_storage_path=raw_storage_path,
             original_filename=original_filename,
             file_size=file_size,
-            schema_config=schema_config,
             row_count=row_count,
         )
 
         self._session.add(upload_event)
         await self._session.flush()
         await self._session.refresh(upload_event)
-        return self._upload_event_to_dict(upload_event)
+        return upload_event
 
     async def get_upload_event(
         self,
@@ -550,7 +548,6 @@ class MetadataRepository:
             "raw_storage_path": upload_event.raw_storage_path,
             "original_filename": upload_event.original_filename,
             "file_size": upload_event.file_size,
-            "schema_config": upload_event.schema_config,
             "row_count": upload_event.row_count,
             "error_message": upload_event.error_message,
             "created_at": upload_event.created_at,

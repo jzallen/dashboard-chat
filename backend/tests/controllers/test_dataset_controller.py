@@ -616,12 +616,12 @@ class TestUploadFile:
         return b"name,age,active\nAlice,30,true\nBob,25,false\nCharlie,35,true"
 
     async def test_upload_file_creates_upload_event(self, seeded_db: AsyncSession, sample_csv: bytes):
-        """upload_file should create UploadEvent with inferred schema."""
+        """upload_file should create UploadEvent."""
         set_session(seeded_db)
 
+        from app.models import UploadEvent
         from app.use_cases import upload as upload_use_cases
 
-        # Call the use case directly with mock lake repository
         result = await upload_use_cases.upload_file(
             file_content=sample_csv,
             file_name="test_data.csv",
@@ -629,24 +629,29 @@ class TestUploadFile:
             repositories={'lake_repository': MockLakeRepository},
         )
 
-        assert result["project_id"] == "project-001"
-        assert result["dataset_id"] is None
-        assert result["status"] == "pending"
-        assert result["original_filename"] == "test_data.csv"
-        assert result["file_size"] == len(sample_csv)
-        assert result["row_count"] == 3
-        assert "schema_config" in result
-        assert "fields" in result["schema_config"]
-        assert "name" in result["schema_config"]["fields"]
-        assert "age" in result["schema_config"]["fields"]
-        assert "active" in result["schema_config"]["fields"]
-        assert "preview_rows" in result
-        assert len(result["preview_rows"]) == 3
+        expected = UploadEvent(
+            id=result.id,
+            project_id="project-001",
+            dataset_id=None,
+            status="pending",
+            raw_storage_path=f"uploads/project-001/{result.id}.csv",
+            original_filename="test_data.csv",
+            file_size=len(sample_csv),
+            row_count=3,
+            created_at=result.created_at,
+            preview_rows=[
+                {"name": "Alice", "age": 30, "active": True},
+                {"name": "Bob", "age": 25, "active": False},
+                {"name": "Charlie", "age": 35, "active": True},
+            ],
+        )
+        assert result == expected
 
     async def test_upload_file_with_dataset_id_sets_dataset_id(self, seeded_db: AsyncSession, sample_csv: bytes):
         """upload_file with dataset_id should set dataset_id on UploadEvent."""
         set_session(seeded_db)
 
+        from app.models import UploadEvent
         from app.use_cases import upload as upload_use_cases
 
         result = await upload_use_cases.upload_file(
@@ -657,7 +662,23 @@ class TestUploadFile:
             repositories={'lake_repository': MockLakeRepository},
         )
 
-        assert result["dataset_id"] == "dataset-001"
+        expected = UploadEvent(
+            id=result.id,
+            project_id="project-001",
+            dataset_id="dataset-001",
+            status="pending",
+            raw_storage_path=f"uploads/project-001/{result.id}.csv",
+            original_filename="test_data.csv",
+            file_size=len(sample_csv),
+            row_count=3,
+            created_at=result.created_at,
+            preview_rows=[
+                {"name": "Alice", "age": 30, "active": True},
+                {"name": "Bob", "age": 25, "active": False},
+                {"name": "Charlie", "age": 35, "active": True},
+            ],
+        )
+        assert result == expected
 
     async def test_upload_file_rejects_non_csv(self, seeded_db: AsyncSession):
         """upload_file should reject non-CSV files."""
@@ -739,7 +760,6 @@ class TestGetUpload:
             raw_storage_path="uploads/project-001/upload-001.csv",
             original_filename="test_data.csv",
             file_size=100,
-            schema_config={"fields": {"col1": {"type": "text"}}},
             row_count=10,
         )
         seeded_db.add(upload)
@@ -758,7 +778,6 @@ class TestGetUpload:
                 assert upload_event["project_id"] == "project-001"
                 assert upload_event["status"] == "pending"
                 assert upload_event["original_filename"] == "test_data.csv"
-                assert upload_event["schema_config"] == {"fields": {"col1": {"type": "text"}}}
             case Failure(error):
                 pytest.fail(f"get_upload should succeed, got: {error}")
 
@@ -789,7 +808,6 @@ class TestListUploads:
             raw_storage_path="uploads/project-001/upload-001.csv",
             original_filename="file1.csv",
             file_size=100,
-            schema_config={},
             row_count=10,
         )
         upload2 = UploadEventRecord(
@@ -800,7 +818,6 @@ class TestListUploads:
             raw_storage_path="uploads/project-001/upload-002.csv",
             original_filename="file2.csv",
             file_size=200,
-            schema_config={},
             row_count=20,
         )
         seeded_db.add(upload1)
@@ -832,7 +849,6 @@ class TestListUploads:
             raw_storage_path="uploads/project-002/upload-003.csv",
             original_filename="file3.csv",
             file_size=300,
-            schema_config={},
             row_count=30,
         )
         seeded_db.add(upload3)
@@ -875,7 +891,6 @@ class TestCreateDatasetFromUpload:
             raw_storage_path="uploads/project-001/upload-pending.csv",
             original_filename="test_data.csv",
             file_size=100,
-            schema_config={"fields": {"name": {"type": "text"}, "age": {"type": "number"}}},
             row_count=10,
         )
         seeded_db.add(upload)
@@ -906,7 +921,9 @@ class TestCreateDatasetFromUpload:
         assert result["description"] == "Test dataset"
         assert result["project_id"] == "project-001"
         assert result["partition_fields"] == ["name"]
-        assert result["schema_config"] == {"fields": {"name": {"type": "text"}, "age": {"type": "number"}}}
+        assert "fields" in result["schema_config"]
+        assert "name" in result["schema_config"]["fields"]
+        assert "age" in result["schema_config"]["fields"]
         assert result["row_count"] == 10
         assert result["upload_id"] == pending_upload
         assert "id" in result
@@ -961,7 +978,6 @@ class TestCreateDatasetFromUpload:
         """create_dataset_from_upload should fail if upload already processed."""
         set_session(seeded_db)
 
-        # Create a completed upload
         upload = UploadEventRecord(
             id="upload-completed",
             project_id="project-001",
@@ -970,7 +986,6 @@ class TestCreateDatasetFromUpload:
             raw_storage_path="uploads/project-001/upload-completed.csv",
             original_filename="test.csv",
             file_size=100,
-            schema_config={},
             row_count=10,
         )
         seeded_db.add(upload)

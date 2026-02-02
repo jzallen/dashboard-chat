@@ -187,7 +187,6 @@ class UploadEventResponse(BaseModel):
     raw_storage_path: str
     original_filename: str
     file_size: int
-    schema_config: dict[str, Any]
     row_count: int
     error_message: str | None = None
     created_at: datetime

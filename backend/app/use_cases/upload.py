@@ -8,7 +8,7 @@ This module implements the two-step upload flow:
 import io
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
-from uuid import uuid4
+from uuid_utils import uuid7
 
 import pandas as pd
 from botocore.exceptions import BotoCoreError, ClientError
@@ -49,10 +49,10 @@ async def upload_file(
     dataset_id: str | None = None,
     *,
     repositories: "RepositoryContainer",
-) -> dict[str, Any]:
-    """Upload a file and create an UploadEvent with inferred schema.
+) -> "UploadEvent":
+    """Upload a file and create an UploadEvent.
 
-    Step 1 of the upload flow: Store raw file and infer schema.
+    Step 1 of the upload flow: Store raw file for later processing.
 
     Args:
         file_content: Raw file bytes
@@ -62,71 +62,75 @@ async def upload_file(
         repositories: Injected repository container
 
     Returns:
-        UploadEvent dict with schema_config and preview_rows
+        UploadEvent domain model with preview_rows
 
     Raises:
-        ValueError: If project not found, invalid file type, or empty file
+        ProjectNotFound: If project doesn't exist
+        DatasetNotFound: If dataset doesn't exist
+        ValueError: If invalid file type or empty file
         MetadataRepositoryError: If database operation fails
         LakeRepositoryError: If storage operation fails
     """
+    from sqlalchemy.exc import IntegrityError
+
+    from ..models import UploadEvent
+
     metadata_repo = repositories["metadata_repository"]
     lake_repo = repositories["lake_repository"]
 
-    # Validate project exists
-    if not await metadata_repo.project_exists(project_id):
-        raise ProjectNotFound(project_id)
-
-    # Validate dataset exists if provided
-    if dataset_id and not await metadata_repo.dataset_exists(dataset_id):
-        raise DatasetNotFound(dataset_id)
-
-    # Validate file type
     if not file_name.lower().endswith(".csv"):
         raise ValueError("Only CSV files are supported")
 
-    # Validate file content
     if not file_content:
         raise ValueError("File is empty")
 
-    # Generate upload ID
-    upload_id = str(uuid4())
-
-    # Generate raw storage path: uploads/{project_id}/{upload_id}.csv
+    upload_id = str(uuid7())
     raw_storage_path = f"uploads/{project_id}/{upload_id}.csv"
 
-    # Infer schema from CSV
     df = pd.read_csv(io.BytesIO(file_content))
-    schema_config = infer_schema_from_dataframe(df)
     row_count = len(df)
 
-    # Store raw file to S3
+    try:
+        async with metadata_repo._session.begin_nested():
+            record = await metadata_repo.create_upload_event(
+                upload_id=upload_id,
+                project_id=project_id,
+                dataset_id=dataset_id,
+                raw_storage_path=raw_storage_path,
+                original_filename=file_name,
+                file_size=len(file_content),
+                row_count=row_count,
+            )
+    except IntegrityError:
+        if not await metadata_repo.project_exists(project_id):
+            raise ProjectNotFound(project_id)
+        if dataset_id and not await metadata_repo.dataset_exists(dataset_id):
+            raise DatasetNotFound(dataset_id)
+        raise
+    except SQLAlchemyError as e:
+        raise MetadataRepositoryError(str(e)) from e
+
     try:
         lake_repo.write_raw_file(file_content, raw_storage_path)
     except (BotoCoreError, ClientError) as e:
         raise LakeRepositoryError(str(e)) from e
 
-    # Create upload event record
-    try:
-        upload_event = await metadata_repo.create_upload_event(
-            upload_id=upload_id,
-            project_id=project_id,
-            dataset_id=dataset_id,
-            raw_storage_path=raw_storage_path,
-            original_filename=file_name,
-            file_size=len(file_content),
-            schema_config=schema_config,
-            row_count=row_count,
-        )
-    except SQLAlchemyError as e:
-        raise MetadataRepositoryError(str(e)) from e
-
-    # Add preview rows to response
     preview_rows = df.head(10).to_dict(orient="records")
 
-    return {
-        **upload_event,
-        "preview_rows": preview_rows,
-    }
+    return UploadEvent(
+        id=record.id,
+        project_id=record.project_id,
+        dataset_id=record.dataset_id,
+        status=record.status,
+        raw_storage_path=record.raw_storage_path,
+        original_filename=record.original_filename,
+        file_size=record.file_size,
+        row_count=record.row_count,
+        error_message=record.error_message,
+        created_at=record.created_at,
+        processed_at=record.processed_at,
+        preview_rows=preview_rows,
+    )
 
 
 @with_repositories
@@ -269,19 +273,20 @@ async def create_dataset_from_upload(
 
     try:
         # Generate dataset ID
-        dataset_id = str(uuid4())
+        dataset_id = str(uuid7())
 
         # Generate storage path prefix for partitioned data
         # Format: datasets/{project_id}/{dataset_id}/
         storage_path = f"datasets/{project_id}/{dataset_id}/"
 
-        # Read raw file from S3
         try:
             raw_content = lake_repo.read_raw_file(upload_event["raw_storage_path"])
         except (BotoCoreError, ClientError) as e:
             raise LakeRepositoryError(str(e)) from e
 
-        # Process and write partitioned parquet
+        df = pd.read_csv(io.BytesIO(raw_content))
+        schema_config = infer_schema_from_dataframe(df)
+
         try:
             lake_repo.write_csv_as_partitioned_parquet(
                 csv_content=raw_content,
@@ -291,14 +296,13 @@ async def create_dataset_from_upload(
         except (BotoCoreError, ClientError) as e:
             raise LakeRepositoryError(str(e)) from e
 
-        # Create dataset record
         try:
-            dataset_record = await metadata_repo.create_dataset(
+            await metadata_repo.create_dataset(
                 project_id=project_id,
                 dataset_id=dataset_id,
                 storage_path=storage_path,
                 name=name,
-                schema_config=upload_event["schema_config"],
+                schema_config=schema_config,
                 row_count=upload_event["row_count"],
                 file_name=upload_event["original_filename"],
                 file_size=upload_event["file_size"],
@@ -334,7 +338,7 @@ async def create_dataset_from_upload(
             "storage_path": storage_path,
             "name": name,
             "description": description,
-            "schema_config": upload_event["schema_config"],
+            "schema_config": schema_config,
             "partition_fields": partition_fields,
             "row_count": upload_event["row_count"],
             "file_name": upload_event["original_filename"],

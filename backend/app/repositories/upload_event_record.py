@@ -72,12 +72,6 @@ class UploadEventRecord(Base):
         Integer,
         nullable=False,
     )
-    schema_config: Mapped[dict] = mapped_column(
-        JSON,
-        nullable=False,
-        default=dict,
-        comment="Inferred schema for partition field selection",
-    )
     row_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

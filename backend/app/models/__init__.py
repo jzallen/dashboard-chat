@@ -8,5 +8,6 @@ from .project import Project
 from .dataset import Dataset
 from .transform import Transform
 from .pipeline_run import PipelineRun, RunStatus
+from .upload_event import UploadEvent
 
-__all__ = ["Project", "Dataset", "Transform", "PipelineRun", "RunStatus"]
+__all__ = ["Project", "Dataset", "Transform", "PipelineRun", "RunStatus", "UploadEvent"]

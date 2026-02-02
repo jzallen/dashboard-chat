@@ -78,6 +78,7 @@ class RestrictedSession:
         self.refresh = session.refresh
         self.add = session.add
         self.delete = session.delete
+        self.begin_nested = session.begin_nested
 
 
 class RepositoryContainer:
