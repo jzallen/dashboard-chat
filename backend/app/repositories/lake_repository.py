@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 import boto3
 import ibis
-from botocore.client import Config
+from botocore.config import Config
 
 from ..config import get_settings
 
@@ -166,7 +166,12 @@ class MinIOLakeRepository(BaseLakeRepository):
                 endpoint_url=f"http://{settings.minio_endpoint}",
                 aws_access_key_id=settings.minio_access_key,
                 aws_secret_access_key=settings.minio_secret_key,
-                config=Config(signature_version='s3v4'),
+                config=Config(
+                    signature_version='s3v4',
+                    retries={'max_attempts': settings.s3_max_retries, 'mode': 'standard'},
+                    connect_timeout=settings.s3_connect_timeout,
+                    read_timeout=settings.s3_read_timeout,
+                ),
             )
             self._ensure_bucket_exists(s3_client, settings.storage_bucket)
 
@@ -213,6 +218,11 @@ class S3LakeRepository(BaseLakeRepository):
                 aws_access_key_id=settings.minio_access_key,
                 aws_secret_access_key=settings.minio_secret_key,
                 region_name=settings.s3_region,
+                config=Config(
+                    retries={'max_attempts': settings.s3_max_retries, 'mode': 'standard'},
+                    connect_timeout=settings.s3_connect_timeout,
+                    read_timeout=settings.s3_read_timeout,
+                ),
             )
 
         super().__init__(s3_client, settings.storage_bucket)

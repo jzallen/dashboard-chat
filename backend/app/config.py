@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # S3 configuration (production)
     s3_region: str = "us-east-1"
 
+    # S3/MinIO client settings - fast-fail defaults to avoid browser hanging
+    s3_max_retries: int = 1
+    s3_connect_timeout: int = 5
+    s3_read_timeout: int = 10
+
     # App info
     app_name: str = "Dashboard Chat API"
     app_version: str = "1.0.0"
