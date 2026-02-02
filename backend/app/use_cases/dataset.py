@@ -155,20 +155,13 @@ async def update_dataset(
     try:
         if not await repositories['metadata_repository'].dataset_exists(dataset_id):
             raise DatasetNotFound(dataset_id)
-    except SQLAlchemyError as e:
-        raise MetadataRepositoryError(str(e)) from e
 
-    try:
         await repositories['metadata_repository'].update_dataset(dataset_id, **update_dict)
+
+        if dataset.transforms:
+            await repositories['metadata_repository'].update_transforms(dataset.transforms)
     except SQLAlchemyError as e:
         raise MetadataRepositoryError(str(e)) from e
-
-    # Batch update transforms
-    if dataset.transforms:
-        try:
-            await repositories['metadata_repository'].update_transforms(dataset.transforms)
-        except SQLAlchemyError as e:
-            raise MetadataRepositoryError(str(e)) from e
 
     return await get_dataset(dataset_id, repositories=repositories)
 
