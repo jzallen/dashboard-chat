@@ -11,6 +11,7 @@ from ..database import Base
 
 if TYPE_CHECKING:
     from .dataset_record import DatasetRecord
+    from .upload_event_record import UploadEventRecord
 
 
 class ProjectRecord(Base):
@@ -35,6 +36,9 @@ class ProjectRecord(Base):
     # Relationships
     datasets: Mapped[list["DatasetRecord"]] = relationship(
         "DatasetRecord", back_populates="project", cascade="all, delete-orphan"
+    )
+    upload_events: Mapped[list["UploadEventRecord"]] = relationship(
+        "UploadEventRecord", back_populates="project", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

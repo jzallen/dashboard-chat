@@ -30,6 +30,7 @@ class Dataset:
     name: str | None = None  # Display name
     description: str | None = None  # Optional description
     schema_config: dict[str, Any] = field(default_factory=dict)  # Field definitions for query builder
+    partition_fields: list[str] = field(default_factory=list)  # Hive-style partition field names
     transforms: list[Transform] | list[dict[str, Any]] | None = field(default_factory=list)
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
 
@@ -80,10 +81,19 @@ class Dataset:
         return conn
 
     def _s3_path(self) -> str:
-        """S3 path for the parquet file."""
+        """S3 path for the parquet file(s).
+
+        For partitioned data (storage_path ending with /), returns glob pattern.
+        """
         from ..config import get_settings
         settings = get_settings()
-        return f"s3://{settings.storage_bucket}/{self.storage_path}"
+        base_path = f"s3://{settings.storage_bucket}/{self.storage_path}"
+
+        # For partitioned data, use glob pattern to read all parquet files
+        if self.storage_path and self.storage_path.endswith('/'):
+            return f"{base_path}**/*.parquet"
+
+        return base_path
 
     def _build_table(self, table_name: str | None = None) -> ibis.Table:
         """Build Ibis table with filters applied.

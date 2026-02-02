@@ -21,6 +21,7 @@ from app.models.transform import Transform
 from app.repositories.dataset_record import DatasetRecord
 from app.repositories.project_record import ProjectRecord
 from app.repositories.transform_record import TransformRecord
+from app.repositories.upload_event_record import UploadEventRecord
 from app.types import QueryBuilderJSON
 
 
@@ -116,6 +117,7 @@ class TestListDatasets:
                 name="Dataset Two",
                 description=None,
                 schema_config={"fields": {"col2": {"type": "number"}}},
+                partition_fields=[],
                 transforms=[],
             ),
             Dataset(
@@ -125,6 +127,7 @@ class TestListDatasets:
                 name="Dataset One",
                 description=None,
                 schema_config={"fields": {"col1": {"type": "text"}}},
+                partition_fields=[],
                 transforms=[
                     Transform(
                         id="transform-001",
@@ -256,6 +259,7 @@ class TestGetDataset:
             name="Dataset One",
             description=None,
             schema_config={"fields": {"col1": {"type": "text"}}},
+            partition_fields=[],
             transforms=[
                 Transform(
                     id="transform-001",
@@ -394,6 +398,7 @@ class TestUpdateDataset:
             name="Updated Dataset Name",
             description=None,
             schema_config={"fields": {"col1": {"type": "text"}}},
+            partition_fields=[],
             transforms=[
                 Transform(
                     id="transform-001",
@@ -429,6 +434,7 @@ class TestUpdateDataset:
             name="Fully Updated Dataset",
             description="New description",
             schema_config={"fields": {"col1": {"type": "text"}}},
+            partition_fields=[],
             transforms=[
                 Transform(
                     id="transform-001",
@@ -512,6 +518,7 @@ class TestUpdateDataset:
             name="Dataset One",
             description=None,
             schema_config={"fields": {"col1": {"type": "text"}}},
+            partition_fields=[],
             transforms=[],
         )
 
@@ -568,3 +575,438 @@ class TestUpdateDataset:
                 assert final_dataset == expected
             case Failure(error):
                 pytest.fail(f"get_dataset should succeed, got: {error}")
+
+
+# =============================================================================
+# Upload Flow Tests
+# =============================================================================
+
+class MockLakeRepository:
+    """Mock lake repository for testing upload operations."""
+
+    def __init__(self):
+        self.stored_files: dict[str, bytes] = {}
+
+    def write_raw_file(self, content: bytes, storage_path: str) -> str:
+        self.stored_files[storage_path] = content
+        return f"s3://test-bucket/{storage_path}"
+
+    def read_raw_file(self, storage_path: str) -> bytes:
+        return self.stored_files.get(storage_path, b"")
+
+    def write_csv_as_partitioned_parquet(
+        self,
+        csv_content: bytes,
+        storage_prefix: str,
+        partition_fields: list[str],
+    ) -> str:
+        self.stored_files[storage_prefix] = csv_content
+        return f"s3://test-bucket/{storage_prefix}"
+
+    def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict]:
+        return [{"col1": "value1"}, {"col1": "value2"}]
+
+
+class TestUploadFile:
+    """Tests for DatasetController.upload_file workflow."""
+
+    @pytest.fixture
+    def sample_csv(self) -> bytes:
+        """Sample CSV content for testing."""
+        return b"name,age,active\nAlice,30,true\nBob,25,false\nCharlie,35,true"
+
+    async def test_upload_file_creates_upload_event(self, seeded_db: AsyncSession, sample_csv: bytes):
+        """upload_file should create UploadEvent with inferred schema."""
+        set_session(seeded_db)
+
+        from app.use_cases import upload as upload_use_cases
+
+        # Call the use case directly with mock lake repository
+        result = await upload_use_cases.upload_file(
+            file_content=sample_csv,
+            file_name="test_data.csv",
+            project_id="project-001",
+            repositories={'lake_repository': MockLakeRepository},
+        )
+
+        assert result["project_id"] == "project-001"
+        assert result["dataset_id"] is None
+        assert result["status"] == "pending"
+        assert result["original_filename"] == "test_data.csv"
+        assert result["file_size"] == len(sample_csv)
+        assert result["row_count"] == 3
+        assert "schema_config" in result
+        assert "fields" in result["schema_config"]
+        assert "name" in result["schema_config"]["fields"]
+        assert "age" in result["schema_config"]["fields"]
+        assert "active" in result["schema_config"]["fields"]
+        assert "preview_rows" in result
+        assert len(result["preview_rows"]) == 3
+
+    async def test_upload_file_with_dataset_id_sets_dataset_id(self, seeded_db: AsyncSession, sample_csv: bytes):
+        """upload_file with dataset_id should set dataset_id on UploadEvent."""
+        set_session(seeded_db)
+
+        from app.use_cases import upload as upload_use_cases
+
+        result = await upload_use_cases.upload_file(
+            file_content=sample_csv,
+            file_name="test_data.csv",
+            project_id="project-001",
+            dataset_id="dataset-001",
+            repositories={'lake_repository': MockLakeRepository},
+        )
+
+        assert result["dataset_id"] == "dataset-001"
+
+    async def test_upload_file_rejects_non_csv(self, seeded_db: AsyncSession):
+        """upload_file should reject non-CSV files."""
+        set_session(seeded_db)
+
+        result = await DatasetController.upload_file(
+            file_content=b"some content",
+            file_name="data.xlsx",
+            project_id="project-001",
+        )
+
+        match result:
+            case Failure(error):
+                assert "Only CSV files are supported" in error
+            case Success(_):
+                pytest.fail("upload_file should reject non-CSV files")
+
+    async def test_upload_file_rejects_empty_file(self, seeded_db: AsyncSession):
+        """upload_file should reject empty files."""
+        set_session(seeded_db)
+
+        result = await DatasetController.upload_file(
+            file_content=b"",
+            file_name="empty.csv",
+            project_id="project-001",
+        )
+
+        match result:
+            case Failure(error):
+                assert "File is empty" in error
+            case Success(_):
+                pytest.fail("upload_file should reject empty files")
+
+    async def test_upload_file_rejects_nonexistent_project(self, seeded_db: AsyncSession, sample_csv: bytes):
+        """upload_file should fail when project doesn't exist."""
+        set_session(seeded_db)
+
+        result = await DatasetController.upload_file(
+            file_content=sample_csv,
+            file_name="test.csv",
+            project_id="nonexistent-project",
+        )
+
+        match result:
+            case Failure(error):
+                assert "not found" in error.lower()
+            case Success(_):
+                pytest.fail("upload_file should fail for nonexistent project")
+
+    async def test_upload_file_rejects_nonexistent_dataset(self, seeded_db: AsyncSession, sample_csv: bytes):
+        """upload_file should fail when dataset_id doesn't exist."""
+        set_session(seeded_db)
+
+        result = await DatasetController.upload_file(
+            file_content=sample_csv,
+            file_name="test.csv",
+            project_id="project-001",
+            dataset_id="nonexistent-dataset",
+        )
+
+        match result:
+            case Failure(error):
+                assert "not found" in error.lower()
+            case Success(_):
+                pytest.fail("upload_file should fail for nonexistent dataset")
+
+
+class TestGetUpload:
+    """Tests for DatasetController.get_upload workflow."""
+
+    @pytest.fixture
+    async def seeded_upload(self, seeded_db: AsyncSession) -> str:
+        """Seed database with an upload event."""
+        upload = UploadEventRecord(
+            id="upload-001",
+            project_id="project-001",
+            dataset_id=None,
+            status="pending",
+            raw_storage_path="uploads/project-001/upload-001.csv",
+            original_filename="test_data.csv",
+            file_size=100,
+            schema_config={"fields": {"col1": {"type": "text"}}},
+            row_count=10,
+        )
+        seeded_db.add(upload)
+        await seeded_db.commit()
+        return "upload-001"
+
+    async def test_get_upload_returns_upload_event(self, seeded_db: AsyncSession, seeded_upload: str):
+        """get_upload should return UploadEvent for valid ID."""
+        set_session(seeded_db)
+
+        result = await DatasetController.get_upload(upload_id=seeded_upload)
+
+        match result:
+            case Success(upload_event):
+                assert upload_event["id"] == "upload-001"
+                assert upload_event["project_id"] == "project-001"
+                assert upload_event["status"] == "pending"
+                assert upload_event["original_filename"] == "test_data.csv"
+                assert upload_event["schema_config"] == {"fields": {"col1": {"type": "text"}}}
+            case Failure(error):
+                pytest.fail(f"get_upload should succeed, got: {error}")
+
+    async def test_get_upload_returns_failure_for_invalid_id(self, seeded_db: AsyncSession):
+        """get_upload should return Failure for nonexistent upload."""
+        set_session(seeded_db)
+
+        result = await DatasetController.get_upload(upload_id="nonexistent")
+
+        match result:
+            case Failure(error):
+                assert "not found" in error.lower()
+            case Success(_):
+                pytest.fail("get_upload should fail for nonexistent upload")
+
+
+class TestListUploads:
+    """Tests for DatasetController.list_uploads workflow."""
+
+    @pytest.fixture
+    async def seeded_uploads(self, seeded_db: AsyncSession) -> None:
+        """Seed database with multiple upload events."""
+        upload1 = UploadEventRecord(
+            id="upload-001",
+            project_id="project-001",
+            dataset_id=None,
+            status="pending",
+            raw_storage_path="uploads/project-001/upload-001.csv",
+            original_filename="file1.csv",
+            file_size=100,
+            schema_config={},
+            row_count=10,
+        )
+        upload2 = UploadEventRecord(
+            id="upload-002",
+            project_id="project-001",
+            dataset_id="dataset-001",
+            status="completed",
+            raw_storage_path="uploads/project-001/upload-002.csv",
+            original_filename="file2.csv",
+            file_size=200,
+            schema_config={},
+            row_count=20,
+        )
+        seeded_db.add(upload1)
+        seeded_db.add(upload2)
+        await seeded_db.commit()
+
+    async def test_list_uploads_returns_all_uploads(self, seeded_db: AsyncSession, seeded_uploads: None):
+        """list_uploads should return all upload events."""
+        set_session(seeded_db)
+
+        result = await DatasetController.list_uploads()
+
+        match result:
+            case Success(uploads):
+                assert len(uploads) == 2
+            case Failure(error):
+                pytest.fail(f"list_uploads should succeed, got: {error}")
+
+    async def test_list_uploads_filters_by_project_id(self, seeded_db: AsyncSession, seeded_uploads: None):
+        """list_uploads should filter by project_id."""
+        set_session(seeded_db)
+
+        # Add upload to different project
+        project2 = ProjectRecord(id="project-002", name="Project Two")
+        seeded_db.add(project2)
+        upload3 = UploadEventRecord(
+            id="upload-003",
+            project_id="project-002",
+            raw_storage_path="uploads/project-002/upload-003.csv",
+            original_filename="file3.csv",
+            file_size=300,
+            schema_config={},
+            row_count=30,
+        )
+        seeded_db.add(upload3)
+        await seeded_db.commit()
+
+        result = await DatasetController.list_uploads(project_id="project-001")
+
+        match result:
+            case Success(uploads):
+                assert len(uploads) == 2
+                assert all(u["project_id"] == "project-001" for u in uploads)
+            case Failure(error):
+                pytest.fail(f"list_uploads should succeed, got: {error}")
+
+    async def test_list_uploads_filters_by_dataset_id(self, seeded_db: AsyncSession, seeded_uploads: None):
+        """list_uploads should filter by dataset_id."""
+        set_session(seeded_db)
+
+        result = await DatasetController.list_uploads(dataset_id="dataset-001")
+
+        match result:
+            case Success(uploads):
+                assert len(uploads) == 1
+                assert uploads[0]["dataset_id"] == "dataset-001"
+            case Failure(error):
+                pytest.fail(f"list_uploads should succeed, got: {error}")
+
+
+class TestCreateDatasetFromUpload:
+    """Tests for DatasetController.create_dataset_from_upload workflow."""
+
+    @pytest.fixture
+    async def pending_upload(self, seeded_db: AsyncSession) -> str:
+        """Seed database with a pending upload event."""
+        upload = UploadEventRecord(
+            id="upload-pending",
+            project_id="project-001",
+            dataset_id=None,
+            status="pending",
+            raw_storage_path="uploads/project-001/upload-pending.csv",
+            original_filename="test_data.csv",
+            file_size=100,
+            schema_config={"fields": {"name": {"type": "text"}, "age": {"type": "number"}}},
+            row_count=10,
+        )
+        seeded_db.add(upload)
+        await seeded_db.commit()
+        return "upload-pending"
+
+    async def test_create_dataset_from_upload_creates_dataset(
+        self, seeded_db: AsyncSession, pending_upload: str
+    ):
+        """create_dataset_from_upload should create dataset with correct properties."""
+        set_session(seeded_db)
+
+        from app.use_cases import upload as upload_use_cases
+
+        mock_lake = MockLakeRepository()
+        mock_lake.stored_files["uploads/project-001/upload-pending.csv"] = b"name,age\nAlice,30"
+
+        result = await upload_use_cases.create_dataset_from_upload(
+            upload_id=pending_upload,
+            project_id="project-001",
+            name="New Dataset",
+            partition_fields=["name"],
+            description="Test dataset",
+            repositories={'lake_repository': lambda: mock_lake},
+        )
+
+        assert result["name"] == "New Dataset"
+        assert result["description"] == "Test dataset"
+        assert result["project_id"] == "project-001"
+        assert result["partition_fields"] == ["name"]
+        assert result["schema_config"] == {"fields": {"name": {"type": "text"}, "age": {"type": "number"}}}
+        assert result["row_count"] == 10
+        assert result["upload_id"] == pending_upload
+        assert "id" in result
+        assert result["storage_path"].startswith("datasets/project-001/")
+
+    async def test_create_dataset_from_upload_updates_upload_status(
+        self, seeded_db: AsyncSession, pending_upload: str
+    ):
+        """create_dataset_from_upload should update upload status to completed."""
+        set_session(seeded_db)
+
+        from app.use_cases import upload as upload_use_cases
+
+        mock_lake = MockLakeRepository()
+        mock_lake.stored_files["uploads/project-001/upload-pending.csv"] = b"name,age\nAlice,30"
+
+        await upload_use_cases.create_dataset_from_upload(
+            upload_id=pending_upload,
+            project_id="project-001",
+            name="New Dataset",
+            repositories={'lake_repository': lambda: mock_lake},
+        )
+
+        # Check upload status was updated
+        get_result = await DatasetController.get_upload(upload_id=pending_upload)
+        match get_result:
+            case Success(upload):
+                assert upload["status"] == "completed"
+                assert upload["dataset_id"] is not None
+            case Failure(error):
+                pytest.fail(f"get_upload should succeed, got: {error}")
+
+    async def test_create_dataset_from_upload_fails_for_nonexistent_upload(self, seeded_db: AsyncSession):
+        """create_dataset_from_upload should fail for nonexistent upload."""
+        set_session(seeded_db)
+
+        result = await DatasetController.create_dataset_from_upload(
+            upload_id="nonexistent",
+            project_id="project-001",
+            name="New Dataset",
+        )
+
+        match result:
+            case Failure(error):
+                assert "not found" in error.lower()
+            case Success(_):
+                pytest.fail("create_dataset_from_upload should fail for nonexistent upload")
+
+    async def test_create_dataset_from_upload_fails_for_already_processed(
+        self, seeded_db: AsyncSession
+    ):
+        """create_dataset_from_upload should fail if upload already processed."""
+        set_session(seeded_db)
+
+        # Create a completed upload
+        upload = UploadEventRecord(
+            id="upload-completed",
+            project_id="project-001",
+            dataset_id="dataset-001",
+            status="completed",
+            raw_storage_path="uploads/project-001/upload-completed.csv",
+            original_filename="test.csv",
+            file_size=100,
+            schema_config={},
+            row_count=10,
+        )
+        seeded_db.add(upload)
+        await seeded_db.commit()
+
+        result = await DatasetController.create_dataset_from_upload(
+            upload_id="upload-completed",
+            project_id="project-001",
+            name="New Dataset",
+        )
+
+        match result:
+            case Failure(error):
+                assert "already" in error.lower()
+            case Success(_):
+                pytest.fail("create_dataset_from_upload should fail for already processed upload")
+
+    async def test_create_dataset_from_upload_fails_for_project_mismatch(
+        self, seeded_db: AsyncSession, pending_upload: str
+    ):
+        """create_dataset_from_upload should fail if project_id doesn't match."""
+        set_session(seeded_db)
+
+        # Create another project
+        project2 = ProjectRecord(id="project-002", name="Project Two")
+        seeded_db.add(project2)
+        await seeded_db.commit()
+
+        result = await DatasetController.create_dataset_from_upload(
+            upload_id=pending_upload,
+            project_id="project-002",  # Wrong project
+            name="New Dataset",
+        )
+
+        match result:
+            case Failure(error):
+                assert "mismatch" in error.lower()
+            case Success(_):
+                pytest.fail("create_dataset_from_upload should fail for project mismatch")

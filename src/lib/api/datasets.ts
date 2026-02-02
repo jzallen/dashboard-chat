@@ -2,7 +2,7 @@
  * Datasets API
  */
 
-import { get, post, patch, del, uploadFile } from "./client";
+import { get, patch, post, uploadFile } from "./client";
 import type { RAQBTree } from "@/raqb";
 
 export interface FieldConfig {
@@ -38,6 +38,7 @@ export interface Dataset {
   name: string;
   description: string | null;
   schema_config: SchemaConfig;
+  partition_fields: string[];  // Hive-style partition field names
   row_count: number;
   file_name: string | null;
   file_size: number | null;
@@ -50,6 +51,34 @@ export interface Dataset {
 
 export interface DatasetUploadResponse extends Dataset {
   preview_rows: Record<string, unknown>[];
+}
+
+// Upload Event types for the two-step upload flow
+
+export type UploadStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface UploadEvent {
+  id: string;
+  project_id: string;
+  dataset_id: string | null;
+  status: UploadStatus;
+  raw_storage_path: string;
+  original_filename: string;
+  file_size: number;
+  schema_config: SchemaConfig;
+  row_count: number;
+  error_message: string | null;
+  created_at: string;
+  processed_at: string | null;
+  preview_rows: Record<string, unknown>[];
+}
+
+export interface DatasetCreateRequest {
+  upload_id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  partition_fields?: string[];
 }
 
 export interface DatasetUpdate {
@@ -110,7 +139,8 @@ export async function getDataset(
 }
 
 /**
- * Upload a CSV file to create a dataset
+ * Upload a CSV file to create a dataset (legacy - one-step flow)
+ * @deprecated Use uploadFile + createDataset for the two-step flow
  */
 export async function uploadDataset(
   projectId: string,
@@ -129,6 +159,86 @@ export async function uploadDataset(
   return uploadFile<DatasetUploadResponse>("/api/datasets/upload", file, fields);
 }
 
+// ============================================================================
+// Two-step upload flow
+// ============================================================================
+
+/**
+ * Step 1: Upload a file and get an UploadEvent with inferred schema
+ *
+ * @param projectId - Project to upload to
+ * @param file - CSV file to upload
+ * @param datasetId - Optional existing dataset ID (for re-uploads)
+ * @returns UploadEvent with schema_config and preview_rows
+ */
+export async function createUpload(
+  projectId: string,
+  file: File,
+  datasetId?: string
+): Promise<UploadEvent> {
+  const fields: Record<string, string> = {
+    project_id: projectId,
+  };
+  if (datasetId) {
+    fields.dataset_id = datasetId;
+  }
+
+  return uploadFile<UploadEvent>("/api/uploads", file, fields);
+}
+
+/**
+ * Get an upload event by ID
+ */
+export async function getUpload(
+  uploadId: string,
+  options?: {
+    includePreview?: boolean;
+    previewLimit?: number;
+  }
+): Promise<UploadEvent> {
+  const params = new URLSearchParams();
+  if (options?.includePreview) {
+    params.append("include_preview", "true");
+    if (options.previewLimit) {
+      params.append("preview_limit", String(options.previewLimit));
+    }
+  }
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return get<UploadEvent>(`/api/uploads/${uploadId}${query}`);
+}
+
+/**
+ * List upload events for a dataset (upload history)
+ */
+export async function listUploads(options?: {
+  projectId?: string;
+  datasetId?: string;
+}): Promise<UploadEvent[]> {
+  const params = new URLSearchParams();
+  if (options?.projectId) {
+    params.append("project_id", options.projectId);
+  }
+  if (options?.datasetId) {
+    params.append("dataset_id", options.datasetId);
+  }
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return get<UploadEvent[]>(`/api/uploads${query}`);
+}
+
+/**
+ * Step 2: Create a dataset from an upload with partition configuration
+ *
+ * @param request - Dataset creation request with upload_id and partition_fields
+ * @returns Created dataset with preview rows
+ */
+export async function createDatasetFromUpload(
+  request: DatasetCreateRequest
+): Promise<Dataset> {
+  return post<Dataset>("/api/datasets", request);
+}
+
 /**
  * Update a dataset's metadata
  */
@@ -137,15 +247,6 @@ export async function updateDataset(
   data: DatasetUpdate
 ): Promise<Dataset> {
   return patch<Dataset>(`/api/datasets/${datasetId}`, data);
-}
-
-/**
- * Delete a dataset
- */
-export async function deleteDataset(
-  datasetId: string
-): Promise<{ status: string; id: string }> {
-  return del<{ status: string; id: string }>(`/api/datasets/${datasetId}`);
 }
 
 // Transform management

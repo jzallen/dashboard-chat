@@ -42,10 +42,17 @@ class DatasetBase(BaseModel):
     description: str | None = None
 
 
-class DatasetCreate(DatasetBase):
-    """Schema for creating a Dataset (without file upload)."""
+class DatasetCreate(BaseModel):
+    """Schema for creating a Dataset from an upload.
 
+    Step 2 of the upload flow: Create dataset with partition configuration.
+    """
+
+    upload_id: str
     project_id: str
+    name: str
+    description: str | None = None
+    partition_fields: list[str] = []
 
 
 class DatasetUpdate(BaseModel):
@@ -74,6 +81,7 @@ class DatasetResponse(DatasetBase):
     storage_path: str  # Parquet storage path
     project_id: str
     schema_config: dict[str, Any]
+    partition_fields: list[str] = []  # Hive-style partition field names
     row_count: int
     file_name: str | None = None
     file_size: int | None = None
@@ -163,3 +171,25 @@ class TransformResponse(TransformBase):
 
 
 # Note: AggregatedSqlResponse removed - use DatasetResponse.staging_sql instead
+
+
+# Upload Event schemas
+
+class UploadEventResponse(BaseModel):
+    """Schema for UploadEvent response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    dataset_id: str | None = None
+    status: str  # pending | processing | completed | failed
+    raw_storage_path: str
+    original_filename: str
+    file_size: int
+    schema_config: dict[str, Any]
+    row_count: int
+    error_message: str | None = None
+    created_at: datetime
+    processed_at: datetime | None = None
+    preview_rows: list[dict[str, Any]] = []  # Optional, included on request

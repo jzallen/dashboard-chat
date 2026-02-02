@@ -17,6 +17,7 @@ from ..exceptions import MetadataRepositoryError
 from .project_record import ProjectRecord  # noqa: F401
 from .dataset_record import DatasetRecord  # noqa: F401
 from .transform_record import TransformRecord  # noqa: F401
+from .upload_event_record import UploadEventRecord  # noqa: F401
 
 from .metadata_repository import MetadataRepository
 from .lake_repository import LakeRepository, MinIOLakeRepository, S3LakeRepository
@@ -75,6 +76,8 @@ class RestrictedSession:
         self.flush = session.flush
         self.execute = session.execute
         self.refresh = session.refresh
+        self.add = session.add
+        self.delete = session.delete
 
 
 class RepositoryContainer:

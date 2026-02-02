@@ -86,22 +86,25 @@ async def get_dataset(
     return _to_domain_dataset(dataset_record, transform_records=transform_records, preview_rows=preview_rows)
 
 
-@with_db
+@with_repositories
 async def upload_dataset(
-    db: AsyncSession,
     file_content: bytes,
     file_name: str,
     project_id: str,
     name: str,
     description: str | None = None,
+    *,
+    repositories: 'RepositoryContainer',
 ) -> dict[str, Any]:
     """Upload a CSV file and create a dataset with Parquet storage.
 
     Raises:
         ValueError: If project not found, invalid file type, or empty file.
     """
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    if not result.scalar_one_or_none():
+    metadata_repo = repositories['metadata_repository']
+    lake_repo = repositories['lake_repository']
+
+    if not await metadata_repo.project_exists(project_id):
         raise ValueError("Project not found")
 
     if not file_name.lower().endswith(".csv"):
@@ -110,8 +113,9 @@ async def upload_dataset(
     if not file_content:
         raise ValueError("File is empty")
 
-    dataset_record, csv_content = await _process_csv_upload(
-        db=db,
+    dataset_record = await _process_csv_upload(
+        metadata_repo=metadata_repo,
+        lake_repo=lake_repo,
         project_id=project_id,
         name=name,
         file_content=file_content,
@@ -119,7 +123,7 @@ async def upload_dataset(
         description=description,
     )
 
-    preview_rows = await _get_dataset_preview(db, dataset_record, limit=5)
+    preview_rows = lake_repo.read_parquet_preview(dataset_record.storage_path, limit=5)
 
     return {
         "id": dataset_record.id,
@@ -166,26 +170,6 @@ async def update_dataset(
     return await get_dataset(dataset_id, repositories=repositories)
 
 
-@with_db
-async def delete_dataset(
-    db: AsyncSession,
-    dataset_id: str,
-) -> bool:
-    """Delete a dataset and its Parquet file.
-
-    Returns False if dataset not found.
-    """
-    result = await db.execute(select(DatasetRecord).where(DatasetRecord.id == dataset_id))
-    dataset_record = result.scalar_one_or_none()
-    if not dataset_record:
-        return False
-
-    await _delete_dataset_table(db, dataset_record.storage_path)
-
-    await db.delete(dataset_record)
-    await db.commit()
-
-    return True
 
 
 
@@ -199,16 +183,15 @@ def sanitize_table_name(name: str) -> str:
     return f"data_{safe_name}_{unique_suffix}"
 
 
-# Internal helpers that receive db explicitly
-
 async def _process_csv_upload(
-    db: AsyncSession,
+    metadata_repo,
+    lake_repo,
     project_id: str,
     name: str,
     file_content: bytes,
     file_name: str | None = None,
     description: str | None = None,
-) -> tuple[DatasetRecord, bytes]:
+) -> dict[str, Any]:
     """Process a CSV file upload and create dataset with Parquet storage."""
     # Infer schema from CSV for query builder
     df = pd.read_csv(io.BytesIO(file_content))
@@ -222,39 +205,20 @@ async def _process_csv_upload(
     storage_path = Dataset.generate_parquet_id(project_id, dataset_id)
 
     # Write CSV as Parquet to MinIO/S3
-    s3_path = lake_repository.write_csv_as_parquet(file_content, storage_path)
+    lake_repo.write_csv_as_parquet(file_content, storage_path)
 
-    # Create dataset record with UUID ID and separate storage_path
-    dataset_record = DatasetRecord(
-        id=dataset_id,
-        storage_path=storage_path,
+    # Create dataset record
+    return await metadata_repo.create_dataset(
         project_id=project_id,
+        dataset_id=dataset_id,
+        storage_path=storage_path,
         name=name,
-        description=description,
         schema_config=schema_config,
         row_count=row_count,
         file_name=file_name,
         file_size=len(file_content),
+        description=description,
     )
-
-    db.add(dataset_record)
-    await db.commit()
-    await db.refresh(dataset_record)
-
-    return dataset_record, file_content
-
-async def _get_dataset_preview(
-    db: AsyncSession,
-    dataset_record: DatasetRecord,
-    limit: int = 10,
-) -> list[dict]:
-    """Get preview rows from a dataset's Parquet file."""
-    return lake_repository.read_parquet_preview(dataset_record.storage_path, limit)
-
-
-async def _delete_dataset_table(db: AsyncSession, storage_path: str) -> None:
-    """Delete the Parquet file for a dataset."""
-    lake_repository.delete_parquet(storage_path)
 
 
 def _to_domain_dataset(
@@ -290,6 +254,7 @@ def _to_domain_dataset(
         name=dataset_record.name,
         description=dataset_record.description,
         schema_config=dataset_record.schema_config,
+        partition_fields=dataset_record.partition_fields or [],
         transforms=transforms,
         preview_rows=preview_rows or [],
     )

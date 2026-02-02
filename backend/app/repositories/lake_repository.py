@@ -22,6 +22,23 @@ class LakeRepository(Protocol):
         """Convert CSV to Parquet and upload to storage."""
         ...
 
+    def write_raw_file(self, content: bytes, storage_path: str) -> str:
+        """Store raw file to S3 without transformation."""
+        ...
+
+    def read_raw_file(self, storage_path: str) -> bytes:
+        """Read raw file from S3 storage."""
+        ...
+
+    def write_csv_as_partitioned_parquet(
+        self,
+        csv_content: bytes,
+        storage_prefix: str,
+        partition_fields: list[str],
+    ) -> str:
+        """Convert CSV to partitioned Parquet files using hive-style partitioning."""
+        ...
+
     def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict[str, Any]]:
         """Read preview rows from Parquet file."""
         ...
@@ -56,6 +73,39 @@ class BaseLakeRepository(ABC):
     def _configure_duckdb_s3(self, conn: ibis.BaseBackend) -> None:
         """Configure DuckDB for S3 access. Implemented by subclasses."""
         ...
+
+    def write_raw_file(self, content: bytes, storage_path: str) -> str:
+        """Store raw file to S3 without transformation.
+
+        Args:
+            content: Raw file bytes
+            storage_path: Path within bucket (e.g., "uploads/project_id/upload_id.csv")
+
+        Returns:
+            S3 path (s3://bucket/path)
+        """
+        self.s3_client.put_object(
+            Bucket=self.bucket,
+            Key=storage_path,
+            Body=content,
+            ContentType='application/octet-stream'
+        )
+        return f"s3://{self.bucket}/{storage_path}"
+
+    def read_raw_file(self, storage_path: str) -> bytes:
+        """Read raw file from S3 storage.
+
+        Args:
+            storage_path: Path within bucket
+
+        Returns:
+            File content as bytes
+        """
+        response = self.s3_client.get_object(
+            Bucket=self.bucket,
+            Key=storage_path
+        )
+        return response['Body'].read()
 
     def write_csv_as_parquet(self, csv_content: bytes, storage_path: str) -> str:
         """Convert CSV to Parquet using DuckDB, upload to S3/MinIO.
@@ -97,11 +147,67 @@ class BaseLakeRepository(ABC):
             if os.path.exists(temp_parquet_path):
                 os.unlink(temp_parquet_path)
 
+    def write_csv_as_partitioned_parquet(
+        self,
+        csv_content: bytes,
+        storage_prefix: str,
+        partition_fields: list[str],
+    ) -> str:
+        """Convert CSV to partitioned Parquet files using hive-style partitioning.
+
+        Args:
+            csv_content: Raw CSV bytes
+            storage_prefix: Base path within bucket (e.g., "datasets/project_id/dataset_id/")
+            partition_fields: List of field names to partition by (e.g., ["date", "region"])
+
+        Returns:
+            S3 path prefix (s3://bucket/prefix)
+
+        Creates files like:
+            datasets/project_id/dataset_id/date=2024-01-01/region=US/part-0.parquet
+            datasets/project_id/dataset_id/date=2024-01-01/region=EU/part-0.parquet
+        """
+        conn = ibis.duckdb.connect()
+        self._configure_duckdb_s3(conn)
+
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as temp_csv:
+            temp_csv.write(csv_content)
+            temp_csv_path = temp_csv.name
+
+        try:
+            s3_prefix = f"s3://{self.bucket}/{storage_prefix}"
+
+            if partition_fields:
+                # Write partitioned parquet using hive-style partitioning
+                partition_by_clause = ", ".join(f"'{f}'" for f in partition_fields)
+                conn.raw_sql(f"""
+                    COPY (SELECT * FROM read_csv_auto('{temp_csv_path}'))
+                    TO '{s3_prefix}' (
+                        FORMAT PARQUET,
+                        PARTITION_BY ({partition_by_clause}),
+                        OVERWRITE_OR_IGNORE true
+                    );
+                """)
+            else:
+                # Write single parquet file when no partition fields
+                conn.raw_sql(f"""
+                    COPY (SELECT * FROM read_csv_auto('{temp_csv_path}'))
+                    TO '{s3_prefix}data.parquet' (FORMAT PARQUET);
+                """)
+
+            return s3_prefix
+        finally:
+            if os.path.exists(temp_csv_path):
+                os.unlink(temp_csv_path)
+
     def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict[str, Any]]:
         """Read preview rows from Parquet via DuckDB.
 
+        Supports both single parquet files and partitioned datasets.
+        For partitioned data, use storage_path ending with '/' to read all partitions.
+
         Args:
-            storage_path: Path within bucket
+            storage_path: Path within bucket (use trailing '/' for partitioned data)
             limit: Number of rows to return
 
         Returns:
@@ -111,24 +217,36 @@ class BaseLakeRepository(ABC):
         self._configure_duckdb_s3(conn)
 
         s3_path = f"s3://{self.bucket}/{storage_path}"
+
+        # For partitioned data (path ending with /), use glob pattern
+        if storage_path.endswith('/'):
+            s3_path = f"{s3_path}**/*.parquet"
+
         table = conn.read_parquet(s3_path)
         df = table.limit(limit).execute()
 
         return df.to_dict(orient='records')
 
     def get_parquet_row_count(self, storage_path: str) -> int:
-        """Get row count from Parquet file.
+        """Get row count from Parquet file(s).
+
+        Supports both single parquet files and partitioned datasets.
 
         Args:
-            storage_path: Path within bucket
+            storage_path: Path within bucket (use trailing '/' for partitioned data)
 
         Returns:
-            Number of rows in the Parquet file
+            Number of rows in the Parquet file(s)
         """
         conn = ibis.duckdb.connect()
         self._configure_duckdb_s3(conn)
 
         s3_path = f"s3://{self.bucket}/{storage_path}"
+
+        # For partitioned data (path ending with /), use glob pattern
+        if storage_path.endswith('/'):
+            s3_path = f"{s3_path}**/*.parquet"
+
         table = conn.read_parquet(s3_path)
         count = table.count().execute()
 

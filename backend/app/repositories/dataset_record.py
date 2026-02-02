@@ -15,6 +15,7 @@ from ..database import Base
 if TYPE_CHECKING:
     from .transform_record import TransformRecord
     from .project_record import ProjectRecord
+    from .upload_event_record import UploadEventRecord
 
 
 class DatasetRecord(Base):
@@ -57,6 +58,10 @@ class DatasetRecord(Base):
     # Format: { "fields": { "column_name": { "type": "text|number|boolean|select", ... } } }
     schema_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
+    # Partition configuration for hive-style partitioning
+    # Format: ["field1", "field2"] - list of field names to partition by
+    partition_fields: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
     # Metadata
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -73,6 +78,9 @@ class DatasetRecord(Base):
     project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="datasets")
     transforms: Mapped[list["TransformRecord"]] = relationship(
         "TransformRecord", back_populates="dataset", cascade="all, delete-orphan"
+    )
+    upload_events: Mapped[list["UploadEventRecord"]] = relationship(
+        "UploadEventRecord", back_populates="dataset"
     )
 
     def __repr__(self) -> str:

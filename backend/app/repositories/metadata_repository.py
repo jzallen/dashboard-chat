@@ -14,6 +14,7 @@ from functools import wraps
 from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
+from .upload_event_record import UploadEventRecord
 
 
 class MetadataRepository:
@@ -435,4 +436,123 @@ class MetadataRepository:
             "nl_prompt": transform.nl_prompt,
             "created_at": transform.created_at,
             "updated_at": transform.updated_at,
+        }
+
+    # -------------------------------------------------------------------------
+    # Upload Event operations
+    # -------------------------------------------------------------------------
+
+    async def create_upload_event(
+        self,
+        upload_id: str,
+        project_id: str,
+        raw_storage_path: str,
+        original_filename: str,
+        file_size: int,
+        schema_config: dict[str, Any],
+        row_count: int,
+        dataset_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new upload event record."""
+        upload_event = UploadEventRecord(
+            id=upload_id,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            raw_storage_path=raw_storage_path,
+            original_filename=original_filename,
+            file_size=file_size,
+            schema_config=schema_config,
+            row_count=row_count,
+        )
+
+        self._session.add(upload_event)
+        await self._session.flush()
+        await self._session.refresh(upload_event)
+        return self._upload_event_to_dict(upload_event)
+
+    async def get_upload_event(
+        self,
+        upload_id: str,
+    ) -> dict[str, Any] | None:
+        """Get an upload event by ID."""
+        result = await self._session.execute(
+            select(UploadEventRecord).where(UploadEventRecord.id == upload_id)
+        )
+        upload_event = result.scalar_one_or_none()
+
+        if not upload_event:
+            return None
+
+        return self._upload_event_to_dict(upload_event)
+
+    async def get_upload_event_record(
+        self,
+        upload_id: str,
+    ) -> UploadEventRecord | None:
+        """Get an upload event record by ID for domain model conversion."""
+        result = await self._session.execute(
+            select(UploadEventRecord).where(UploadEventRecord.id == upload_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_upload_events(
+        self,
+        project_id: str | None = None,
+        dataset_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List upload events, optionally filtered by project or dataset."""
+        query = select(UploadEventRecord).order_by(UploadEventRecord.created_at.desc())
+
+        if project_id:
+            query = query.where(UploadEventRecord.project_id == project_id)
+        if dataset_id:
+            query = query.where(UploadEventRecord.dataset_id == dataset_id)
+
+        result = await self._session.execute(query)
+        upload_events = result.scalars().all()
+        return [self._upload_event_to_dict(ue) for ue in upload_events]
+
+    async def update_upload_event(
+        self,
+        upload_id: str,
+        **kwargs: Any,
+    ) -> dict[str, Any] | None:
+        """Update an upload event's fields."""
+        result = await self._session.execute(
+            select(UploadEventRecord).where(UploadEventRecord.id == upload_id)
+        )
+        upload_event = result.scalar_one_or_none()
+
+        if not upload_event:
+            return None
+
+        for key, value in kwargs.items():
+            setattr(upload_event, key, value)
+
+        await self._session.flush()
+        await self._session.refresh(upload_event)
+        return self._upload_event_to_dict(upload_event)
+
+    async def upload_event_exists(self, upload_id: str) -> bool:
+        """Check if an upload event exists."""
+        return (await self._session.execute(
+            select(exists().where(UploadEventRecord.id == upload_id))
+        )).scalar()
+
+    @staticmethod
+    def _upload_event_to_dict(upload_event: UploadEventRecord) -> dict[str, Any]:
+        """Convert UploadEventRecord to dictionary."""
+        return {
+            "id": upload_event.id,
+            "project_id": upload_event.project_id,
+            "dataset_id": upload_event.dataset_id,
+            "status": upload_event.status,
+            "raw_storage_path": upload_event.raw_storage_path,
+            "original_filename": upload_event.original_filename,
+            "file_size": upload_event.file_size,
+            "schema_config": upload_event.schema_config,
+            "row_count": upload_event.row_count,
+            "error_message": upload_event.error_message,
+            "created_at": upload_event.created_at,
+            "processed_at": upload_event.processed_at,
         }

@@ -16,6 +16,8 @@ from .dataset import (
     TransformInput,
     TransformUpdate,
     TransformResponse,
+    # Upload event schemas
+    UploadEventResponse,
 )
 from .project import (
     ProjectBase,
@@ -53,6 +55,8 @@ __all__ = [
     "TransformInput",
     "TransformUpdate",
     "TransformResponse",
+    # Upload Event
+    "UploadEventResponse",
     # Pipeline Run (tech debt - unused but kept for future audit trail)
     "PipelineRunBase",
     "PipelineRunCreate",

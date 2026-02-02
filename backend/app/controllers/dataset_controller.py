@@ -7,6 +7,7 @@ from returns.result import Result, Success, Failure
 from ..models.dataset import Dataset
 from ..repositories import LakeRepository
 from ..use_cases import dataset as dataset_use_cases
+from ..use_cases import upload as upload_use_cases
 
 
 class DatasetController:
@@ -76,15 +77,83 @@ class DatasetController:
         except Exception as e:
             return Failure(str(e))
 
+    # -------------------------------------------------------------------------
+    # Upload operations
+    # -------------------------------------------------------------------------
+
     @staticmethod
-    async def delete_dataset(
-        dataset_id: str,
-    ) -> Result[dict[str, str], str]:
-        """Delete a dataset and its data table."""
+    async def upload_file(
+        file_content: bytes,
+        file_name: str,
+        project_id: str,
+        dataset_id: str | None = None,
+    ) -> Result[dict[str, Any], str]:
+        """Upload a file and create an UploadEvent with inferred schema.
+
+        Step 1 of the upload flow.
+        """
         try:
-            deleted = await dataset_use_cases.delete_dataset(dataset_id)
-            if not deleted:
-                return Failure("Dataset not found")
-            return Success({"status": "deleted", "id": dataset_id})
+            result = await upload_use_cases.upload_file(
+                file_content, file_name, project_id, dataset_id
+            )
+            return Success(result)
+        except ValueError as e:
+            return Failure(str(e))
         except Exception as e:
-            return Failure(f"Failed to delete dataset: {str(e)}")
+            return Failure(f"Failed to upload file: {str(e)}")
+
+    @staticmethod
+    async def get_upload(
+        upload_id: str,
+        include_preview: bool = False,
+        preview_limit: int = 10,
+    ) -> Result[dict[str, Any], str]:
+        """Get an upload event by ID with optional preview."""
+        try:
+            result = await upload_use_cases.get_upload(
+                upload_id, include_preview, preview_limit
+            )
+            return Success(result)
+        except upload_use_cases.UploadNotFound as e:
+            return Failure(str(e))
+        except Exception as e:
+            return Failure(str(e))
+
+    @staticmethod
+    async def list_uploads(
+        project_id: str | None = None,
+        dataset_id: str | None = None,
+    ) -> Result[list[dict[str, Any]], str]:
+        """List upload events, optionally filtered by project or dataset."""
+        try:
+            result = await upload_use_cases.list_uploads(project_id, dataset_id)
+            return Success(result)
+        except Exception as e:
+            return Failure(f"Failed to list uploads: {str(e)}")
+
+    @staticmethod
+    async def create_dataset_from_upload(
+        upload_id: str,
+        project_id: str,
+        name: str,
+        partition_fields: list[str] | None = None,
+        description: str | None = None,
+    ) -> Result[dict[str, Any], str]:
+        """Create a dataset from an upload event.
+
+        Step 2 of the upload flow.
+        """
+        try:
+            result = await upload_use_cases.create_dataset_from_upload(
+                upload_id, project_id, name, partition_fields, description
+            )
+            return Success(result)
+        except upload_use_cases.UploadNotFound as e:
+            return Failure(str(e))
+        except upload_use_cases.UploadAlreadyProcessed as e:
+            return Failure(str(e))
+        except ValueError as e:
+            return Failure(str(e))
+        except Exception as e:
+            return Failure(f"Failed to create dataset: {str(e)}")
+
