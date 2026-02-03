@@ -39,30 +39,3 @@ class UploadAlreadyProcessed(DomainException):
 
     def __init__(self, upload_id: str, status: str):
         super().__init__(f"Upload '{upload_id}' already has status '{status}'")
-
-
-class RepositoryError(DomainException):
-    """Base class for repository errors."""
-
-    pass
-
-
-class MetadataRepositoryError(RepositoryError):
-    """Raised when the metadata database encounters an error."""
-
-    def __init__(self, message: str):
-        super().__init__(f"Metadata repository error: {message}")
-
-
-class LakeRepositoryError(RepositoryError):
-    """Raised when the data lake storage encounters an error."""
-
-    def __init__(self, message: str):
-        super().__init__(f"Lake repository error: {message}")
-
-
-class OutboxRepositoryError(RepositoryError):
-    """Raised when the outbox repository encounters an error."""
-
-    def __init__(self, message: str):
-        super().__init__(f"Outbox repository error: {message}")

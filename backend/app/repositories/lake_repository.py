@@ -6,13 +6,30 @@ This repository handles reading and writing Parquet files to MinIO/S3 storage.
 import os
 import tempfile
 from abc import ABC, abstractmethod
-from typing import Any, Protocol
+from functools import wraps
+from typing import Any, Callable, Protocol, TypeVar, ParamSpec
 
 import boto3
 import ibis
 from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 
+from .exceptions import LakeRepositoryError
 from ..config import get_settings
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator that wraps BotoCoreError/ClientError as LakeRepositoryError."""
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return func(*args, **kwargs)
+        except (BotoCoreError, ClientError) as e:
+            raise LakeRepositoryError(str(e)) from e
+    return wrapper
 
 
 class LakeRepository(Protocol):
@@ -74,6 +91,7 @@ class BaseLakeRepository(ABC):
         """Configure DuckDB for S3 access. Implemented by subclasses."""
         ...
 
+    @handle_repository_exceptions
     def write_raw_file(self, content: bytes, storage_path: str) -> str:
         """Store raw file to S3 without transformation.
 
@@ -92,6 +110,7 @@ class BaseLakeRepository(ABC):
         )
         return f"s3://{self.bucket}/{storage_path}"
 
+    @handle_repository_exceptions
     def read_raw_file(self, storage_path: str) -> bytes:
         """Read raw file from S3 storage.
 
@@ -107,6 +126,7 @@ class BaseLakeRepository(ABC):
         )
         return response['Body'].read()
 
+    @handle_repository_exceptions
     def write_csv_as_parquet(self, csv_content: bytes, storage_path: str) -> str:
         """Convert CSV to Parquet using DuckDB, upload to S3/MinIO.
 
@@ -147,6 +167,7 @@ class BaseLakeRepository(ABC):
             if os.path.exists(temp_parquet_path):
                 os.unlink(temp_parquet_path)
 
+    @handle_repository_exceptions
     def write_csv_as_partitioned_parquet(
         self,
         csv_content: bytes,
@@ -200,6 +221,7 @@ class BaseLakeRepository(ABC):
             if os.path.exists(temp_csv_path):
                 os.unlink(temp_csv_path)
 
+    @handle_repository_exceptions
     def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict[str, Any]]:
         """Read preview rows from Parquet via DuckDB.
 
@@ -227,6 +249,7 @@ class BaseLakeRepository(ABC):
 
         return df.to_dict(orient='records')
 
+    @handle_repository_exceptions
     def get_parquet_row_count(self, storage_path: str) -> int:
         """Get row count from Parquet file(s).
 
@@ -252,6 +275,7 @@ class BaseLakeRepository(ABC):
 
         return int(count)
 
+    @handle_repository_exceptions
     def delete_parquet(self, storage_path: str) -> None:
         """Delete Parquet file from storage.
 

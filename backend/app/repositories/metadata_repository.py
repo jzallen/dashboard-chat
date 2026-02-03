@@ -4,16 +4,31 @@ Session lifecycle (commit/rollback) is managed at the edge (routers/controllers)
 This repository uses flush() to persist changes within the transaction.
 """
 
-from typing import Any
+from functools import wraps
+from typing import Any, Callable, TypeVar, ParamSpec
 
 from sqlalchemy import select, exists
-from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
-from functools import wraps
+from sqlalchemy.orm import selectinload
 
+from .exceptions import MetadataRepositoryError
 from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator that wraps SQLAlchemyError as MetadataRepositoryError."""
+    @wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return await func(*args, **kwargs)
+        except SQLAlchemyError as e:
+            raise MetadataRepositoryError(str(e)) from e
+    return wrapper
 
 
 class MetadataRepository:
@@ -37,6 +52,7 @@ class MetadataRepository:
     # Project operations
     # -------------------------------------------------------------------------
 
+    @handle_repository_exceptions
     async def list_projects(self) -> list[dict[str, Any]]:
         """List all projects ordered by creation date (newest first)."""
         result = await self._session.execute(
@@ -45,6 +61,7 @@ class MetadataRepository:
         projects = result.scalars().all()
         return [self._project_to_dict(p) for p in projects]
 
+    @handle_repository_exceptions
     async def get_project(
         self,
         project_id: str,
@@ -79,6 +96,7 @@ class MetadataRepository:
 
         return project_dict
 
+    @handle_repository_exceptions
     async def create_project(
         self,
         name: str,
@@ -91,6 +109,7 @@ class MetadataRepository:
         await self._session.refresh(project)
         return self._project_to_dict(project)
 
+    @handle_repository_exceptions
     async def update_project(
         self,
         project_id: str,
@@ -112,6 +131,7 @@ class MetadataRepository:
         await self._session.refresh(project)
         return self._project_to_dict(project)
 
+    @handle_repository_exceptions
     async def delete_project(self, project_id: str) -> bool:
         """Delete a project and all its datasets."""
         result = await self._session.execute(
@@ -126,6 +146,7 @@ class MetadataRepository:
         await self._session.flush()
         return True
 
+    @handle_repository_exceptions
     async def project_exists(self, project_id: str) -> bool:
         """Check if a project exists."""
         return (await self._session.execute(
@@ -136,6 +157,7 @@ class MetadataRepository:
     # Dataset operations
     # -------------------------------------------------------------------------
 
+    @handle_repository_exceptions
     async def list_datasets(
         self,
         project_id: str | None = None,
@@ -152,6 +174,7 @@ class MetadataRepository:
         result = await self._session.execute(query)
         return result.scalars().all()
 
+    @handle_repository_exceptions
     async def get_dataset(
         self,
         dataset_id: str,
@@ -172,6 +195,7 @@ class MetadataRepository:
 
         return dataset_dict
 
+    @handle_repository_exceptions
     async def get_dataset_record(
         self,
         dataset_id: str,
@@ -189,6 +213,7 @@ class MetadataRepository:
         result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
+    @handle_repository_exceptions
     async def create_dataset(
         self,
         project_id: str,
@@ -215,6 +240,7 @@ class MetadataRepository:
         await self._session.refresh(dataset)
         return self._dataset_to_dict(dataset)
 
+    @handle_repository_exceptions
     async def update_dataset(
         self,
         dataset_id: str,
@@ -236,6 +262,7 @@ class MetadataRepository:
 
         return dataset
 
+    @handle_repository_exceptions
     async def delete_dataset(self, dataset_id: str) -> str | None:
         """Delete a dataset record, returning storage_path for file cleanup."""
         result = await self._session.execute(
@@ -253,6 +280,7 @@ class MetadataRepository:
 
         return storage_path
 
+    @handle_repository_exceptions
     async def project_exists(self, project_id: str) -> bool:
         """Check if a project exists."""
         result = await self._session.execute(
@@ -260,6 +288,7 @@ class MetadataRepository:
         )
         return result.scalar_one_or_none() is not None
 
+    @handle_repository_exceptions
     async def dataset_exists(self, dataset_id: str) -> bool:
         """Check if a dataset exists."""
         return (await self._session.execute(
@@ -270,6 +299,7 @@ class MetadataRepository:
     # Transform operations
     # -------------------------------------------------------------------------
 
+    @handle_repository_exceptions
     async def find_transform_by_sql(
         self,
         dataset_id: str,
@@ -290,6 +320,7 @@ class MetadataRepository:
 
         return self._transform_to_dict(transform)
 
+    @handle_repository_exceptions
     async def create_transform(
         self,
         dataset_id: str,
@@ -314,6 +345,7 @@ class MetadataRepository:
         await self._session.refresh(transform)
         return self._transform_to_dict(transform)
 
+    @handle_repository_exceptions
     async def update_transform(
         self,
         transform_id: str,
@@ -346,6 +378,7 @@ class MetadataRepository:
         await self._session.refresh(transform)
         return self._transform_to_dict(transform)
 
+    @handle_repository_exceptions
     async def update_transforms(self, updates: list[dict[str, Any]]) -> None:
         """Batch update transforms in a single query.
 
@@ -358,6 +391,7 @@ class MetadataRepository:
             await self._session.execute(update(TransformRecord), updates)
             await self._session.flush()
 
+    @handle_repository_exceptions
     async def update_transforms(self, transforms: list[object]) -> None:
         """Batch update transforms in a single query.
 
@@ -370,6 +404,7 @@ class MetadataRepository:
             await self._session.execute(update(TransformRecord), transforms)
             await self._session.flush()
 
+    @handle_repository_exceptions
     async def delete_transform(self, transform_id: str) -> bool:
         """Delete a transform."""
         result = await self._session.execute(

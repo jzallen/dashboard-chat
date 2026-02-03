@@ -11,7 +11,7 @@ from typing import Callable, TypeVar, ParamSpec, Self
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..exceptions import MetadataRepositoryError
+from .exceptions import MetadataRepositoryError
 
 # Import ORM models to ensure SQLAlchemy relationships are resolved
 from .project_record import ProjectRecord  # noqa: F401
@@ -21,7 +21,7 @@ from .upload_event_record import UploadEventRecord  # noqa: F401
 from .outbox_record import OutboxRecord  # noqa: F401
 
 from .metadata_repository import MetadataRepository
-from .lake_repository import LakeRepository, MinIOLakeRepository, S3LakeRepository
+from .lake_repository import LakeRepository, MinIOLakeRepository
 from .outbox_repository import OutboxRepository
 
 # Context variable to hold the current database session
@@ -64,7 +64,7 @@ def with_db(func: Callable[P, R]) -> Callable[P, R]:
         try:
             return await func(db, *args, **kwargs)
         except SQLAlchemyError as e:
-            raise MetadataRepositoryError(str(e), cause=e) from e
+            raise MetadataRepositoryError(str(e)) from e
     return wrapper
 
 
@@ -109,10 +109,6 @@ def with_repositories(func: Callable[P, R]) -> Callable[P, R]:
     - A RepositoryContainer instance (used directly)
     - A dict of overrides to substitute implementations
     - None (creates default container)
-
-    TODO: Invert repository error handling - catch SQLAlchemyError here and wrap
-    as MetadataRepositoryError/OutboxRepositoryError instead of cluttering use cases.
-    The controller's global exception handler can then map these to HTTP responses.
     """
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:

@@ -41,7 +41,7 @@ class DatasetController:
             )
             return Success(dataset)
         except Exception as e:
-            return Failure(str(e))
+            return Failure(f"Failed to get dataset: {str(e)}")
 
     @staticmethod
     async def update_dataset(
@@ -56,7 +56,7 @@ class DatasetController:
             )
             return Success(result)
         except Exception as e:
-            return Failure(str(e))
+            return Failure(f"Failed to update dataset: {str(e)}")
 
     # -------------------------------------------------------------------------
     # Upload operations
@@ -123,7 +123,7 @@ class DatasetController:
 
         Step 2 of the upload flow.
         """
-        from ..exceptions import UploadAlreadyProcessed, UploadNotFound
+        from ..use_cases.exceptions import UploadAlreadyProcessed, UploadNotFound
 
         try:
             result = await dataset_use_cases.create_dataset_from_upload(

@@ -8,11 +8,16 @@ Provides event sourcing capabilities:
 
 from dataclasses import asdict
 from datetime import datetime
-from typing import Any
+from functools import wraps
+from typing import Any, Callable, TypeVar, ParamSpec
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 
+from .exceptions import OutboxRepositoryError
 from .outbox_record import OutboxRecord
+
+
 from ..models.upload_domain_events import (
     UploadDomainEvent,
     UploadFileReceived,
@@ -22,6 +27,20 @@ from ..models.upload_domain_events import (
     to_domain_event,
 )
 from ..models.upload_event import UploadEvent
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator that wraps SQLAlchemyError as OutboxRepositoryError."""
+    @wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return await func(*args, **kwargs)
+        except SQLAlchemyError as e:
+            raise OutboxRepositoryError(str(e)) from e
+    return wrapper
 
 
 class OutboxRepository:
@@ -43,6 +62,7 @@ class OutboxRepository:
         """
         self._session = session
 
+    @handle_repository_exceptions
     async def append_event(
         self,
         aggregate_type: str,
@@ -76,6 +96,7 @@ class OutboxRepository:
         await self._session.refresh(record)
         return record
 
+    @handle_repository_exceptions
     async def get_events_for_aggregate(
         self,
         aggregate_type: str,
@@ -98,6 +119,7 @@ class OutboxRepository:
         )
         return list(result.scalars().all())
 
+    @handle_repository_exceptions
     async def get_unprocessed(
         self,
         limit: int = 100,
@@ -118,6 +140,7 @@ class OutboxRepository:
         )
         return list(result.scalars().all())
 
+    @handle_repository_exceptions
     async def mark_processed(
         self,
         record_ids: list[str],
@@ -137,6 +160,7 @@ class OutboxRepository:
         )
         await self._session.flush()
 
+    @handle_repository_exceptions
     async def reconstruct_upload_state(
         self,
         upload_id: str,
@@ -204,6 +228,7 @@ class OutboxRepository:
 
         return UploadEvent(**state)
 
+    @handle_repository_exceptions
     async def list_uploads(
         self,
         project_id: str | None = None,

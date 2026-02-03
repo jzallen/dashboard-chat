@@ -11,19 +11,14 @@ from typing import Any, TYPE_CHECKING
 import pandas as pd
 from uuid_utils import uuid7
 
-from botocore.exceptions import BotoCoreError, ClientError
-from sqlalchemy.exc import SQLAlchemyError
-
-from ..exceptions import (
+from .exceptions import (
     DatasetNotFound,
-    LakeRepositoryError,
-    MetadataRepositoryError,
-    OutboxRepositoryError,
     ProjectIdRequired,
     ProjectNotFound,
     UploadAlreadyProcessed,
     UploadNotFound,
 )
+from ..repositories.exceptions import LakeRepositoryError
 from ..models import UploadProcessingStarted, UploadCompleted, UploadFailed
 from ..repositories import with_repositories
 from ..repositories.dataset_record import DatasetRecord
@@ -51,10 +46,7 @@ async def list_datasets(project_id: str | None = None, *, repositories: 'Reposit
     if not await repositories["metadata_repository"].project_exists(project_id=project_id):
         raise ProjectNotFound(project_id)
 
-    try:
-        result = await repositories["metadata_repository"].list_datasets(project_id=project_id)
-    except Exception as e:
-        raise MetadataRepositoryError(str(e)) from e
+    result = await repositories["metadata_repository"].list_datasets(project_id=project_id)
 
     return [_to_domain_dataset(r, transform_records=r.transforms) for r in result]
 
@@ -78,20 +70,14 @@ async def get_dataset(
     metadata_repo = repositories['metadata_repository']
     lake_repo = repositories['lake_repository']
 
-    try:
-        dataset_record = await metadata_repo.get_dataset_record(dataset_id, include_transforms)
-    except SQLAlchemyError as e:
-        raise MetadataRepositoryError(str(e)) from e
+    dataset_record = await metadata_repo.get_dataset_record(dataset_id, include_transforms)
 
     if not dataset_record:
         raise DatasetNotFound(dataset_id)
 
     preview_rows: list[dict] = []
     if include_preview:
-        try:
-            preview_rows = lake_repo.read_parquet_preview(dataset_record.storage_path, limit=preview_limit)
-        except (BotoCoreError, ClientError) as e:
-            raise LakeRepositoryError(str(e)) from e
+        preview_rows = lake_repo.read_parquet_preview(dataset_record.storage_path, limit=preview_limit)
 
     transform_records = dataset_record.transforms if include_transforms else []
     return _to_domain_dataset(dataset_record, transform_records=transform_records, preview_rows=preview_rows)
@@ -112,16 +98,13 @@ async def update_dataset(
     """
     dataset = Dataset(id=dataset_id, transforms=update_dict.pop('transforms', None), **update_dict)
 
-    try:
-        if not await repositories['metadata_repository'].dataset_exists(dataset_id):
-            raise DatasetNotFound(dataset_id)
+    if not await repositories['metadata_repository'].dataset_exists(dataset_id):
+        raise DatasetNotFound(dataset_id)
 
-        await repositories['metadata_repository'].update_dataset(dataset_id, **update_dict)
+    await repositories['metadata_repository'].update_dataset(dataset_id, **update_dict)
 
-        if dataset.transforms:
-            await repositories['metadata_repository'].update_transforms(dataset.transforms)
-    except SQLAlchemyError as e:
-        raise MetadataRepositoryError(str(e)) from e
+    if dataset.transforms:
+        await repositories['metadata_repository'].update_transforms(dataset.transforms)
 
     return await get_dataset(dataset_id, repositories=repositories)
 
@@ -162,10 +145,7 @@ async def create_dataset_from_upload(
     partition_fields = partition_fields or []
 
     # Get upload event by reconstructing state from events
-    try:
-        upload_event = await outbox_repo.reconstruct_upload_state(upload_id)
-    except SQLAlchemyError as e:
-        raise OutboxRepositoryError(str(e)) from e
+    upload_event = await outbox_repo.reconstruct_upload_state(upload_id)
 
     if not upload_event:
         raise UploadNotFound(upload_id)
@@ -177,14 +157,11 @@ async def create_dataset_from_upload(
     project_id = upload_event.project_id
 
     # Emit processing started event
-    try:
-        await outbox_repo.append_event(
-            aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
-            aggregate_id=upload_id,
-            event=UploadProcessingStarted(upload_id=upload_id),
-        )
-    except SQLAlchemyError as e:
-        raise OutboxRepositoryError(str(e)) from e
+    await outbox_repo.append_event(
+        aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
+        aggregate_id=upload_id,
+        event=UploadProcessingStarted(upload_id=upload_id),
+    )
 
     try:
         # Generate dataset ID
@@ -193,50 +170,38 @@ async def create_dataset_from_upload(
         # Compute storage path from domain model
         storage_path = Dataset.compute_storage_path(project_id, dataset_id)
 
-        try:
-            raw_content = lake_repo.read_raw_file(upload_event.raw_storage_path)
-        except (BotoCoreError, ClientError) as e:
-            raise LakeRepositoryError(str(e)) from e
+        raw_content = lake_repo.read_raw_file(upload_event.raw_storage_path)
 
         df = pd.read_csv(io.BytesIO(raw_content))
         schema_config = infer_schema_from_dataframe(df)
 
-        try:
-            lake_repo.write_csv_as_partitioned_parquet(
-                csv_content=raw_content,
-                storage_prefix=storage_path,
-                partition_fields=partition_fields,
-            )
-        except (BotoCoreError, ClientError) as e:
-            raise LakeRepositoryError(str(e)) from e
+        lake_repo.write_csv_as_partitioned_parquet(
+            csv_content=raw_content,
+            storage_prefix=storage_path,
+            partition_fields=partition_fields,
+        )
 
-        try:
-            await metadata_repo.create_dataset(
-                project_id=project_id,
-                dataset_id=dataset_id,
-                storage_path=storage_path,
-                name=name,
-                schema_config=schema_config,
-                description=description,
-                partition_fields=partition_fields,
-            )
-        except SQLAlchemyError as e:
-            raise MetadataRepositoryError(str(e)) from e
+        await metadata_repo.create_dataset(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            storage_path=storage_path,
+            name=name,
+            schema_config=schema_config,
+            description=description,
+            partition_fields=partition_fields,
+        )
 
         # Emit completed event
-        try:
-            await outbox_repo.append_event(
-                aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
-                aggregate_id=upload_id,
-                event=UploadCompleted(upload_id=upload_id, dataset_id=dataset_id),
-            )
-        except SQLAlchemyError as e:
-            raise OutboxRepositoryError(str(e)) from e
+        await outbox_repo.append_event(
+            aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
+            aggregate_id=upload_id,
+            event=UploadCompleted(upload_id=upload_id, dataset_id=dataset_id),
+        )
 
         # Read preview rows from partitioned parquet
         try:
             preview_rows = lake_repo.read_parquet_preview(storage_path, limit=10)
-        except (BotoCoreError, ClientError) as e:
+        except LakeRepositoryError:
             preview_rows = []
 
         return {
@@ -262,7 +227,7 @@ async def create_dataset_from_upload(
                 aggregate_id=upload_id,
                 event=UploadFailed(upload_id=upload_id, error_message=str(e)),
             )
-        except SQLAlchemyError:
+        except Exception:
             pass
         raise
 

@@ -11,8 +11,10 @@ from unittest.mock import Mock
 from returns.result import Failure, Success
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.exc import SQLAlchemyError
+from botocore.exceptions import ClientError
 
-from app.exceptions import MetadataRepositoryError
+
 from app.controllers.dataset_controller import DatasetController
 from app.database import Base
 from app.repositories import set_session
@@ -22,7 +24,6 @@ from app.models import UploadFileReceived, UploadCompleted
 from app.repositories.dataset_record import DatasetRecord
 from app.repositories.project_record import ProjectRecord
 from app.repositories.transform_record import TransformRecord
-from app.repositories.upload_event_record import UploadEventRecord
 from app.repositories.outbox_record import OutboxRecord
 from app.types import QueryBuilderJSON
 
@@ -231,7 +232,7 @@ class TestListDatasets:
         # Simulate a database error by closing the session
         await seeded_db.close()
 
-        use_case_with_side_effect = Mock(side_effect=MetadataRepositoryError("Database connection lost"))
+        use_case_with_side_effect = Mock(side_effect=SQLAlchemyError("Database connection lost"))
         result = await DatasetController.list_datasets(
             project_id="project-001",
             list_datasets_func=use_case_with_side_effect
@@ -239,7 +240,7 @@ class TestListDatasets:
 
         match result:
             case Failure(error):
-                assert "Metadata repository error: Database connection lost" in error
+                assert "Failed to list datasets: Database connection lost" in error
             case Success(_):
                 pytest.fail("list_datasets should fail when database error occurs")
 
@@ -303,7 +304,7 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error == "Dataset with ID 'nonexistent' not found"
+                assert error == "Failed to get dataset: Dataset with ID 'nonexistent' not found"
             case Success(_):
                 pytest.fail("get_dataset should fail when dataset does not exist")
 
@@ -335,7 +336,6 @@ class TestGetDataset:
         """get_dataset should return MetadataRepositoryError when database fails."""
         set_session(seeded_db)
 
-        from sqlalchemy.exc import SQLAlchemyError
 
         class FailingMetadataRepository:
             async def get_dataset_record(self, dataset_id: str, include_transforms: bool = True):
@@ -348,15 +348,13 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error.startswith("Metadata repository error:")
+                assert error == "Failed to get dataset: Connection lost"
             case Success(_):
                 pytest.fail("get_dataset should fail when database error occurs")
 
     async def test_when_lake_error_returns_lake_repository_error(self, seeded_db: AsyncSession):
         """get_dataset should return LakeRepositoryError when storage fails."""
         set_session(seeded_db)
-
-        from botocore.exceptions import ClientError
 
         class FailingLakeRepository:
             def read_parquet_preview(self, storage_path: str, limit: int = 10):
@@ -373,7 +371,7 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error.startswith("Lake repository error:")
+                assert error == "Failed to get dataset: An error occurred (NoSuchKey) when calling the GetObject operation: Key not found"
             case Success(_):
                 pytest.fail("get_dataset should fail when lake error occurs")
 
@@ -463,15 +461,13 @@ class TestUpdateDataset:
 
         match result:
             case Failure(error):
-                assert error == "Dataset with ID 'nonexistent' not found"
+                assert error == "Failed to update dataset: Dataset with ID 'nonexistent' not found"
             case Success(_):
                 pytest.fail("update_dataset should fail when dataset does not exist")
 
     async def test_when_database_error_returns_failure(self, seeded_db: AsyncSession):
         """update_dataset should return Failure when database error occurs."""
         set_session(seeded_db)
-
-        from sqlalchemy.exc import SQLAlchemyError
 
         class FailingMetadataRepository:
             async def dataset_exists(self, dataset_id: str) -> bool:
@@ -485,7 +481,7 @@ class TestUpdateDataset:
 
         match result:
             case Failure(error):
-                assert "Metadata repository error:" in error
+                assert error == "Failed to update dataset: Database connection lost"
             case Success(_):
                 pytest.fail("update_dataset should fail when database error occurs")
 

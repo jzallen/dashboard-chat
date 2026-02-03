@@ -12,14 +12,9 @@ from typing import Any, TYPE_CHECKING
 from uuid_utils import uuid7
 
 import pandas as pd
-from botocore.exceptions import BotoCoreError, ClientError
-from sqlalchemy.exc import SQLAlchemyError
 
-from ..exceptions import (
+from .exceptions import (
     DatasetNotFound,
-    LakeRepositoryError,
-    MetadataRepositoryError,
-    OutboxRepositoryError,
     ProjectNotFound,
     UploadNotFound,
 )
@@ -76,19 +71,13 @@ async def upload_file(
         raise ValueError("File is empty")
 
     # Validate project exists
-    try:
-        if not await metadata_repo.project_exists(project_id):
-            raise ProjectNotFound(project_id)
-    except SQLAlchemyError as e:
-        raise MetadataRepositoryError(str(e)) from e
+    if not await metadata_repo.project_exists(project_id):
+        raise ProjectNotFound(project_id)
 
     # Validate dataset exists if provided
     if dataset_id:
-        try:
-            if not await metadata_repo.dataset_exists(dataset_id):
-                raise DatasetNotFound(dataset_id)
-        except SQLAlchemyError as e:
-            raise MetadataRepositoryError(str(e)) from e
+        if not await metadata_repo.dataset_exists(dataset_id):
+            raise DatasetNotFound(dataset_id)
 
     upload_id = str(uuid7())
     raw_storage_path = f"uploads/{project_id}/{upload_id}.csv"
@@ -107,19 +96,13 @@ async def upload_file(
         dataset_id=dataset_id,
     )
 
-    try:
-        await outbox_repo.append_event(
-            aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
-            aggregate_id=upload_id,
-            event=event,
-        )
-    except SQLAlchemyError as e:
-        raise OutboxRepositoryError(str(e)) from e
+    await outbox_repo.append_event(
+        aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
+        aggregate_id=upload_id,
+        event=event,
+    )
 
-    try:
-        lake_repo.write_raw_file(file_content, raw_storage_path)
-    except (BotoCoreError, ClientError) as e:
-        raise LakeRepositoryError(str(e)) from e
+    lake_repo.write_raw_file(file_content, raw_storage_path)
 
     preview_rows = df.head(10).to_dict(orient="records")
 
@@ -168,10 +151,7 @@ async def get_upload(
     lake_repo = repositories["lake_repository"]
     outbox_repo: OutboxRepository = repositories["outbox_repository"]
 
-    try:
-        upload_event = await outbox_repo.reconstruct_upload_state(upload_id)
-    except SQLAlchemyError as e:
-        raise OutboxRepositoryError(str(e)) from e
+    upload_event = await outbox_repo.reconstruct_upload_state(upload_id)
 
     if not upload_event:
         raise UploadNotFound(upload_id)
@@ -192,12 +172,9 @@ async def get_upload(
     }
 
     if include_preview:
-        try:
-            raw_content = lake_repo.read_raw_file(upload_event.raw_storage_path)
-            df = pd.read_csv(io.BytesIO(raw_content))
-            result["preview_rows"] = df.head(preview_limit).to_dict(orient="records")
-        except (BotoCoreError, ClientError) as e:
-            raise LakeRepositoryError(str(e)) from e
+        raw_content = lake_repo.read_raw_file(upload_event.raw_storage_path)
+        df = pd.read_csv(io.BytesIO(raw_content))
+        result["preview_rows"] = df.head(preview_limit).to_dict(orient="records")
     else:
         result["preview_rows"] = []
 
@@ -228,13 +205,10 @@ async def list_uploads(
     """
     outbox_repo: OutboxRepository = repositories["outbox_repository"]
 
-    try:
-        uploads = await outbox_repo.list_uploads(
-            project_id=project_id,
-            dataset_id=dataset_id,
-        )
-    except SQLAlchemyError as e:
-        raise OutboxRepositoryError(str(e)) from e
+    uploads = await outbox_repo.list_uploads(
+        project_id=project_id,
+        dataset_id=dataset_id,
+    )
 
     # Convert to dicts for API response
     return [
