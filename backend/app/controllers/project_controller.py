@@ -4,7 +4,7 @@ from typing import Any
 from returns.result import Result, Success, Failure
 
 from ..models import Project
-from ..schemas import ProjectCreate, ProjectUpdate
+from ..routers.schemas import ProjectCreate, ProjectUpdate
 from ..use_cases import project as project_use_cases
 
 

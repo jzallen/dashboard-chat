@@ -8,7 +8,7 @@ from ..controllers.dataset_controller import DatasetController
 from ..controllers.response_wrapper import wrap_success, wrap_error
 from ..database import get_db
 from ..repositories import set_session
-from ..schemas import DatasetCreate, DatasetUpdate
+from .schemas import DatasetCreate, DatasetUpdate
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
