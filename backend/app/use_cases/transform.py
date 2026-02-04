@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..repositories.transform_record import TransformRecord
-from ..repositories.dataset_record import DatasetRecord
+from ..repositories.metadata import TransformRecord
+from ..repositories.metadata import DatasetRecord
 
 
 async def create_transform(

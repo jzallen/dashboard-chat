@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .exceptions import MetadataRepositoryError
 
-from .metadata_repository import MetadataRepository
-from .lake_repository import LakeRepository, MinIOLakeRepository
+from .metadata import MetadataRepository
+from .lake import LakeRepository, MinIOLakeRepository
 from .outbox import OutboxRepository
 
 # Context variable to hold the current database session

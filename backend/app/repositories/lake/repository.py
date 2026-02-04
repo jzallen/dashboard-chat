@@ -1,6 +1,6 @@
-"""Lake repository for Parquet data lake operations.
+"""Lake repository implementations for Parquet data lake operations.
 
-This repository handles reading and writing Parquet files to MinIO/S3 storage.
+This module handles reading and writing Parquet files to MinIO/S3 storage.
 """
 
 import os
@@ -9,15 +9,15 @@ import tempfile
 from pathlib import Path
 from abc import ABC, abstractmethod
 from functools import wraps
-from typing import Any, Callable, Protocol, TypeVar, ParamSpec
+from typing import Any, Callable, TypeVar, ParamSpec
 
 import boto3
 import ibis
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from .exceptions import LakeRepositoryError
-from ..config import get_settings
+from ..exceptions import LakeRepositoryError
+from ...config import get_settings
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -32,43 +32,6 @@ def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
         except (BotoCoreError, ClientError) as e:
             raise LakeRepositoryError(str(e)) from e
     return wrapper
-
-
-class LakeRepository(Protocol):
-    """Protocol for lake repository operations."""
-
-    def write_csv_as_parquet(self, csv_content: bytes, storage_path: str) -> str:
-        """Convert CSV to Parquet and upload to storage."""
-        ...
-
-    def write_raw_file(self, content: bytes, storage_path: str) -> str:
-        """Store raw file to S3 without transformation."""
-        ...
-
-    def read_raw_file(self, storage_path: str) -> bytes:
-        """Read raw file from S3 storage."""
-        ...
-
-    def write_csv_as_partitioned_parquet(
-        self,
-        csv_content: bytes,
-        storage_prefix: str,
-        partition_fields: list[str],
-    ) -> str:
-        """Convert CSV to partitioned Parquet files using hive-style partitioning."""
-        ...
-
-    def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Read preview rows from Parquet file."""
-        ...
-
-    def get_parquet_row_count(self, storage_path: str) -> int:
-        """Get row count from Parquet file."""
-        ...
-
-    def delete_parquet(self, storage_path: str) -> None:
-        """Delete Parquet file from storage."""
-        ...
 
 
 class BaseLakeRepository(ABC):

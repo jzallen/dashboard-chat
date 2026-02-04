@@ -17,7 +17,7 @@ from .exceptions import (
     UploadNotFound,
 )
 from ..repositories import with_repositories
-from ..repositories.dataset_record import DatasetRecord
+from ..repositories.metadata import DatasetRecord
 from ..repositories.outbox import OutboxRepository
 from ..models.dataset import Dataset
 from ..models.transform import Transform

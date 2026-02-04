@@ -11,11 +11,11 @@ from uuid import uuid4
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ..database import Base
+from ...database import Base
 
 if TYPE_CHECKING:
     from .dataset_record import DatasetRecord
-    from ..models.pipeline_run import PipelineRun
+    from ...models.pipeline_run import PipelineRun
 
 
 class TransformRecord(Base):

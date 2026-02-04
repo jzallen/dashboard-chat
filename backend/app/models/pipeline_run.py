@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
 if TYPE_CHECKING:
-    from ..repositories.transform_record import TransformRecord
+    from ..repositories.metadata import TransformRecord
 
 
 class RunStatus:

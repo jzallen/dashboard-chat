@@ -11,7 +11,7 @@ from sqlalchemy import select, exists
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
-from .exceptions import MetadataRepositoryError
+from ..exceptions import MetadataRepositoryError
 from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
@@ -163,7 +163,7 @@ class MetadataRepository:
         project_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List datasets, optionally filtered by project."""
-        
+
         query = (
             select(DatasetRecord)
             .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
@@ -465,4 +465,3 @@ class MetadataRepository:
             "created_at": transform.created_at,
             "updated_at": transform.updated_at,
         }
-

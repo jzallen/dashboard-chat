@@ -26,10 +26,8 @@ from app.repositories import set_session
 from app.models.dataset import Dataset
 from app.models.transform import Transform
 from app.models.upload import Upload
-from app.repositories.lake_repository import MinIOLakeRepository
-from app.repositories.dataset_record import DatasetRecord
-from app.repositories.project_record import ProjectRecord
-from app.repositories.transform_record import TransformRecord
+from app.repositories.lake import MinIOLakeRepository
+from app.repositories.metadata import DatasetRecord, ProjectRecord, TransformRecord
 from app.repositories.outbox import OutboxRecord
 from app.repositories.outbox.events import UploadFileReceived
 from app.types import QueryBuilderJSON

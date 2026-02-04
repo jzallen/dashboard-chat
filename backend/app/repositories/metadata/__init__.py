@@ -1,9 +1,16 @@
-"""MetadataRepository protocol for database operations."""
+"""Metadata repository package for database persistence.
+
+Provides CRUD operations for projects, datasets, and transforms.
+"""
 
 from typing import Any, Protocol, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..dataset_record import DatasetRecord
+    from .dataset_record import DatasetRecord
+
+from .project_record import ProjectRecord
+from .dataset_record import DatasetRecord
+from .transform_record import TransformRecord
 
 
 class MetadataRepositoryProtocol(Protocol):
@@ -271,3 +278,8 @@ class MetadataRepositoryProtocol(Protocol):
             True if deleted, False if not found.
         """
         ...
+
+
+from .repository import MetadataRepository
+
+__all__ = ["MetadataRepository", "MetadataRepositoryProtocol"]
