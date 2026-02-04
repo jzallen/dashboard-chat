@@ -7,6 +7,7 @@ generating aggregated SQL queries from transforms using Ibis expressions.
 from dataclasses import dataclass, field
 from typing import Any
 import re
+from unittest import case
 
 import ibis
 
@@ -26,7 +27,6 @@ class Dataset:
 
     id: str  # UUID primary key
     project_id: str | None = None  # Parent project UUID
-    storage_path: str | None = None  # Parquet path prefix or wildcard pattern
     name: str | None = None  # Display name
     description: str | None = None  # Optional description
     schema_config: dict[str, Any] = field(default_factory=dict)  # Field definitions for query builder
@@ -34,25 +34,62 @@ class Dataset:
     transforms: list[Transform] | list[dict[str, Any]] | None = field(default_factory=list)
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
 
+    @property
+    def transforms_to_delete(self) -> list[Transform]:
+        """Transforms marked for deletion."""
+        return [t for t in self.transforms if t.status == 'deleted']
+
+    @property
+    def storage_path(self) -> str:
+        """Compute the storage path for a dataset.
+
+        Storage path follows the pattern: datasets/{project_id}/{dataset_id}/
+        The trailing slash indicates partitioned parquet storage.
+
+        Args:
+            project_id: Project UUID
+            dataset_id: Dataset UUID
+
+        Returns:
+            Storage path prefix for S3/MinIO (e.g., "datasets/proj-123/ds-456/")
+        """
+        return f"datasets/{self.project_id}/{self.id}/"
+
     def __post_init__(self) -> None:
         """Convert transform dicts to Transform domain objects."""
         from ..types import QueryBuilderJSON
 
-        if self.transforms is None:
-            object.__setattr__(self, 'transforms', [])
-        elif self.transforms and isinstance(self.transforms[0], dict):
-            converted = [
-                Transform(
-                    id=t.get("id"),
-                    name=t["name"],
-                    condition_json=QueryBuilderJSON.from_dict(t["condition_json"]) if t.get("condition_json") else None,
-                    condition_sql=t.get("condition_sql"),
-                    description=t.get("description"),
-                    status=t.get("status", "enabled"),
-                )
-                for t in self.transforms
-            ]
-            object.__setattr__(self, 'transforms', converted)
+        match self.transforms:
+            case None | []:
+                object.__setattr__(self, 'transforms', [])
+            case [{}, *rest]:
+                converted = [
+                    Transform(
+                        id=t.get("id"),
+                        name=t["name"],
+                        condition_json=QueryBuilderJSON.from_dict(t["condition_json"]) if t.get("condition_json") else None,
+                        condition_sql=t.get("condition_sql"),
+                        description=t.get("description"),
+                        status=t.get("status", "enabled"),
+                    )
+                    for t in self.transforms
+                ]
+                object.__setattr__(self, 'transforms', converted)
+            case [obj, *rest] if hasattr(obj, '_sa_instance_state'):
+                # iterable of TransformRecord ORM objects - convert to Transform domain objects
+                converted = [
+                    Transform(
+                        id=t.id,
+                        name=t.name,
+                        condition_json=QueryBuilderJSON.from_dict(t.condition_json) if t.condition_json else None,
+                        condition_sql=t.condition_sql,
+                        description=t.description,
+                        status=t.status,
+                    )
+                    for t in self.transforms
+                ]
+                object.__setattr__(self, 'transforms', converted)
+
 
     def _get_connection(self) -> ibis.BaseBackend:
         """Get Ibis DuckDB connection configured for S3/MinIO access."""
@@ -157,27 +194,6 @@ class Dataset:
                 sql = sql.replace("SELECT\n  *\n", f"SELECT\n  {col_list}\n")
 
         return sql
-
-    @property
-    def transforms_to_delete(self) -> list[Transform]:
-        """Transforms marked for deletion."""
-        return [t for t in self.transforms if t.status == 'deleted']
-
-    @classmethod
-    def compute_storage_path(cls, project_id: str, dataset_id: str) -> str:
-        """Compute the storage path for a dataset.
-
-        Storage path follows the pattern: datasets/{project_id}/{dataset_id}/
-        The trailing slash indicates partitioned parquet storage.
-
-        Args:
-            project_id: Project UUID
-            dataset_id: Dataset UUID
-
-        Returns:
-            Storage path prefix for S3/MinIO (e.g., "datasets/proj-123/ds-456/")
-        """
-        return f"datasets/{project_id}/{dataset_id}/"
 
     @staticmethod
     def display_name_to_filename(display_name: str) -> str:

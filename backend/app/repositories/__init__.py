@@ -6,26 +6,22 @@ and repository implementations for metadata persistence.
 
 from contextvars import ContextVar
 from functools import partial, wraps
-from typing import Callable, TypeVar, ParamSpec, Self
+from typing import Callable, TypeVar, ParamSpec, Self, Union
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .exceptions import MetadataRepositoryError
 
-# Import ORM models to ensure SQLAlchemy relationships are resolved
-from .project_record import ProjectRecord  # noqa: F401
-from .dataset_record import DatasetRecord  # noqa: F401
-from .transform_record import TransformRecord  # noqa: F401
-from .upload_event_record import UploadEventRecord  # noqa: F401
-from .outbox_record import OutboxRecord  # noqa: F401
-
 from .metadata_repository import MetadataRepository
 from .lake_repository import LakeRepository, MinIOLakeRepository
-from .outbox_repository import OutboxRepository
+from .outbox import OutboxRepository
 
 # Context variable to hold the current database session
 _db_session: ContextVar[AsyncSession | None] = ContextVar("db_session", default=None)
+
+
+Repository = Union[MetadataRepository, LakeRepository, OutboxRepository]
 
 
 def get_session() -> AsyncSession:

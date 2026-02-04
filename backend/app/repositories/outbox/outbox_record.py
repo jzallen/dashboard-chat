@@ -6,12 +6,12 @@ The outbox pattern stores domain events for:
 """
 
 from datetime import datetime
-from uuid import uuid4
+from uuid_utils import uuid7
 
 from sqlalchemy import Boolean, DateTime, Index, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..database import Base
+from ...database import Base
 
 
 class OutboxRecord(Base):
@@ -28,7 +28,7 @@ class OutboxRecord(Base):
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        default=lambda: str(uuid7()),
     )
     aggregate_type: Mapped[str] = mapped_column(
         String(100),

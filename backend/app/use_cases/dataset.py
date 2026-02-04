@@ -5,7 +5,6 @@ for state transitions during dataset creation.
 """
 
 import io
-from datetime import datetime
 from typing import Any, TYPE_CHECKING
 
 import pandas as pd
@@ -15,14 +14,11 @@ from .exceptions import (
     DatasetNotFound,
     ProjectIdRequired,
     ProjectNotFound,
-    UploadAlreadyProcessed,
     UploadNotFound,
 )
-from ..repositories.exceptions import LakeRepositoryError
-from ..models import UploadProcessingStarted, UploadCompleted, UploadFailed
 from ..repositories import with_repositories
 from ..repositories.dataset_record import DatasetRecord
-from ..repositories.outbox_repository import OutboxRepository
+from ..repositories.outbox import OutboxRepository
 from ..models.dataset import Dataset
 from ..models.transform import Transform
 from ..types import QueryBuilderJSON
@@ -117,7 +113,7 @@ async def create_dataset_from_upload(
     description: str | None = None,
     *,
     repositories: "RepositoryContainer",
-) -> dict[str, Any]:
+) -> Dataset:
     """Create a dataset from an upload event.
 
     Step 2 of the upload flow: Process upload into partitioned parquet files.
@@ -131,7 +127,7 @@ async def create_dataset_from_upload(
         repositories: Injected repository container
 
     Returns:
-        Dataset dict with schema and preview
+        Dataset
 
     Raises:
         UploadNotFound: If upload not found
@@ -144,92 +140,46 @@ async def create_dataset_from_upload(
     outbox_repo: OutboxRepository = repositories["outbox_repository"]
     partition_fields = partition_fields or []
 
-    # Get upload event by reconstructing state from events
-    upload_event = await outbox_repo.reconstruct_upload_state(upload_id)
+    file_received_event = await outbox_repo.get_file_received_event_by_id(upload_id)
+    if not metadata_repo.project_exists(file_received_event.project_id):
+        raise ProjectNotFound(file_received_event.project_id)
 
-    if not upload_event:
+    if not lake_repo.raw_file_exists(file_received_event.raw_storage_path):
         raise UploadNotFound(upload_id)
 
-    # Validate upload is pending
-    if upload_event.status != "pending":
-        raise UploadAlreadyProcessed(upload_id, upload_event.status)
 
-    project_id = upload_event.project_id
+    raw_content = lake_repo.read_raw_file(file_received_event.raw_storage_path)
 
-    # Emit processing started event
-    await outbox_repo.append_event(
-        aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
-        aggregate_id=upload_id,
-        event=UploadProcessingStarted(upload_id=upload_id),
+    df = pd.read_csv(io.BytesIO(raw_content))
+    schema_config = infer_schema_from_dataframe(df)
+
+    dataset = Dataset(
+        id=uuid7(),
+        project_id=file_received_event.project_id,
+        name=name,
+        description=description,
+        schema_config=schema_config,
+        partition_fields=partition_fields,
+        preview_rows=df.head(10).to_dict(orient='records')
     )
 
-    try:
-        # Generate dataset ID
-        dataset_id = str(uuid7())
+    await metadata_repo.create_dataset(
+        project_id=dataset.project_id,
+        dataset_id=dataset.id,
+        storage_path=dataset.storage_path,
+        name=dataset.name,
+        schema_config=dataset.schema_config,
+        description=dataset.description,
+        partition_fields=dataset.partition_fields,
+    )
 
-        # Compute storage path from domain model
-        storage_path = Dataset.compute_storage_path(project_id, dataset_id)
+    lake_repo.write_csv_as_partitioned_parquet(
+        csv_content=raw_content,
+        storage_prefix=dataset.storage_path,
+        partition_fields=partition_fields,
+    )
 
-        raw_content = lake_repo.read_raw_file(upload_event.raw_storage_path)
-
-        df = pd.read_csv(io.BytesIO(raw_content))
-        schema_config = infer_schema_from_dataframe(df)
-
-        lake_repo.write_csv_as_partitioned_parquet(
-            csv_content=raw_content,
-            storage_prefix=storage_path,
-            partition_fields=partition_fields,
-        )
-
-        await metadata_repo.create_dataset(
-            project_id=project_id,
-            dataset_id=dataset_id,
-            storage_path=storage_path,
-            name=name,
-            schema_config=schema_config,
-            description=description,
-            partition_fields=partition_fields,
-        )
-
-        # Emit completed event
-        await outbox_repo.append_event(
-            aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
-            aggregate_id=upload_id,
-            event=UploadCompleted(upload_id=upload_id, dataset_id=dataset_id),
-        )
-
-        # Read preview rows from partitioned parquet
-        try:
-            preview_rows = lake_repo.read_parquet_preview(storage_path, limit=10)
-        except LakeRepositoryError:
-            preview_rows = []
-
-        return {
-            "id": dataset_id,
-            "project_id": project_id,
-            "storage_path": storage_path,
-            "name": name,
-            "description": description,
-            "schema_config": schema_config,
-            "partition_fields": partition_fields,
-            "row_count": upload_event.row_count,
-            "file_name": upload_event.original_filename,
-            "file_size": upload_event.file_size,
-            "preview_rows": preview_rows,
-            "upload_id": upload_id,
-        }
-
-    except Exception as e:
-        # Emit failed event on any error
-        try:
-            await outbox_repo.append_event(
-                aggregate_type=OutboxRepository.AGGREGATE_TYPE_UPLOAD,
-                aggregate_id=upload_id,
-                event=UploadFailed(upload_id=upload_id, error_message=str(e)),
-            )
-        except Exception:
-            pass
-        raise
+    return dataset
 
 
 def _to_domain_dataset(
@@ -244,28 +194,14 @@ def _to_domain_dataset(
         transform_records: List of transform records (None means don't include transforms)
         preview_rows: Preview data rows
     """
-    transforms = []
-    if transform_records is not None:
-        transforms = [
-            Transform(
-                id=t.id,
-                name=t.name,
-                condition_json=QueryBuilderJSON.from_dict(t.condition_json),
-                condition_sql=t.condition_sql,
-                description=t.description,
-                status=t.status,
-            )
-            for t in transform_records
-        ]
 
     return Dataset(
         id=dataset_record.id,
         project_id=dataset_record.project_id,
-        storage_path=dataset_record.storage_path,
         name=dataset_record.name,
         description=dataset_record.description,
         schema_config=dataset_record.schema_config,
         partition_fields=dataset_record.partition_fields or [],
-        transforms=transforms,
+        transforms=transform_records,
         preview_rows=preview_rows or [],
     )

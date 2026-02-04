@@ -13,8 +13,8 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
-class UploadEvent:
-    """UploadEvent domain model (authoritative business object).
+class Upload:
+    """Upload domain model (authoritative business object).
 
     Business rules:
     - Tracks file uploads through their lifecycle
@@ -33,3 +33,20 @@ class UploadEvent:
     created_at: datetime | None = None
     processed_at: datetime | None = None
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def from_outbox_record(
+        cls, record: "OutboxRecord", preview_rows: list[dict[str, Any]] | None = None
+    ) -> "Upload":
+        """Create an UploadEvent from an OutboxRecord."""
+        payload = record.payload
+        return cls(
+            id=record.id,
+            project_id=payload["project_id"],
+            dataset_id=payload["dataset_id"],
+            raw_storage_path=payload["raw_storage_path"],
+            original_filename=payload["original_filename"],
+            file_size=payload["file_size"],
+            created_at=record.created_at,
+            preview_rows=preview_rows or [],
+        )

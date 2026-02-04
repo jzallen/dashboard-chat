@@ -97,7 +97,7 @@ class BaseLakeRepository(ABC):
 
         Args:
             content: Raw file bytes
-            storage_path: Path within bucket (e.g., "uploads/project_id/upload_id.csv")
+            storage_path: Path within bucket (e.g., "uploads/project_id/file.csv")
 
         Returns:
             S3 path (s3://bucket/path)

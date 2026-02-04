@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
     minio_secure: bool = False
-    storage_bucket: str = "datasets"
+    storage_bucket: str = "dashboard-chat.datalake"
 
     # S3 configuration (production)
     s3_region: str = "us-east-1"

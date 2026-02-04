@@ -5,7 +5,7 @@ from typing import Any, Callable, Awaitable
 from returns.result import Result, Success, Failure
 
 from ..models.dataset import Dataset
-from ..repositories import LakeRepository
+from ..repositories import Repository
 from ..use_cases import dataset as dataset_use_cases
 from ..use_cases import upload as upload_use_cases
 
@@ -15,12 +15,12 @@ class DatasetController:
 
     @staticmethod
     async def list_datasets(
-        project_id: str | None = None,
-        list_datasets_func: Callable[[str | None], Awaitable[list[Dataset]]] = dataset_use_cases.list_datasets,
+        project_id: str,
+        repositories: dict[str, Callable[[], Repository]] | None = None,
     ) -> Result[list[Dataset], str]:
         """List all datasets, optionally filtered by project."""
         try:
-            datasets = await list_datasets_func(project_id)
+            datasets = await dataset_use_cases.list_datasets(project_id, repositories=repositories)
             return Success(datasets)
         except Exception as e:
             return Failure(f"Failed to list datasets: {str(e)}")
@@ -31,7 +31,7 @@ class DatasetController:
         include_transforms: bool = True,
         include_preview: bool = False,
         preview_limit: int = 10,
-        repositories: dict[str, Callable[[], LakeRepository]] | None = None,
+        repositories: dict[str, Callable[[], Repository]] | None = None,
     ) -> Result[Dataset, str]:
         """Get a single dataset by ID with optional transforms and preview."""
         try:
@@ -68,6 +68,7 @@ class DatasetController:
         file_name: str,
         project_id: str,
         dataset_id: str | None = None,
+        repositories: dict[str, Callable[[], Repository]] | None = None,
     ) -> Result[dict[str, Any], str]:
         """Upload a file and create an UploadEvent with inferred schema.
 
@@ -75,7 +76,11 @@ class DatasetController:
         """
         try:
             result = await upload_use_cases.upload_file(
-                file_content, file_name, project_id, dataset_id
+                file_content=file_content, 
+                file_name=file_name, 
+                project_id=project_id, 
+                dataset_id=dataset_id,
+                repositories=repositories,
             )
             return Success(result)
         except ValueError as e:

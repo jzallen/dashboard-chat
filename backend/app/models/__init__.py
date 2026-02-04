@@ -8,16 +8,8 @@ from .project import Project
 from .dataset import Dataset
 from .transform import Transform
 from .pipeline_run import PipelineRun, RunStatus
-from .upload_event import UploadEvent
-from .upload_domain_events import (
-    UploadFileReceived,
-    UploadProcessingStarted,
-    UploadCompleted,
-    UploadFailed,
-    UploadDomainEvent,
-    EVENT_REGISTRY,
-    to_domain_event,
-)
+from .upload import Upload
+
 
 __all__ = [
     "Project",
@@ -25,12 +17,5 @@ __all__ = [
     "Transform",
     "PipelineRun",
     "RunStatus",
-    "UploadEvent",
-    "UploadFileReceived",
-    "UploadProcessingStarted",
-    "UploadCompleted",
-    "UploadFailed",
-    "UploadDomainEvent",
-    "EVENT_REGISTRY",
-    "to_domain_event",
+    "Upload",
 ]
