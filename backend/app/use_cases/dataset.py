@@ -141,20 +141,21 @@ async def create_dataset_from_upload(
     partition_fields = partition_fields or []
 
     file_received_event = await outbox_repo.get_file_received_event_by_id(upload_id)
-    if not metadata_repo.project_exists(file_received_event.project_id):
+    if file_received_event is None:
+        raise UploadNotFound(upload_id)
+    if not await metadata_repo.project_exists(file_received_event.project_id):
         raise ProjectNotFound(file_received_event.project_id)
 
-    if not lake_repo.raw_file_exists(file_received_event.raw_storage_path):
-        raise UploadNotFound(upload_id)
-
-
     raw_content = lake_repo.read_raw_file(file_received_event.raw_storage_path)
+
+    if not raw_content:
+        raise UploadNotFound(upload_id)
 
     df = pd.read_csv(io.BytesIO(raw_content))
     schema_config = infer_schema_from_dataframe(df)
 
     dataset = Dataset(
-        id=uuid7(),
+        id=str(uuid7()),
         project_id=file_received_event.project_id,
         name=name,
         description=description,
@@ -178,6 +179,8 @@ async def create_dataset_from_upload(
         storage_prefix=dataset.storage_path,
         partition_fields=partition_fields,
     )
+
+    await outbox_repo.mark_processed([upload_id])
 
     return dataset
 

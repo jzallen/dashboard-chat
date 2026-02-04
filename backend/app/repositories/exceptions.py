@@ -14,18 +14,18 @@ class MetadataRepositoryError(RepositoryError):
     """Raised when the metadata database encounters an error."""
 
     def __init__(self, message: str):
-        super().__init__(f"Metadata repository error: {message}")
+        super().__init__(f"[MetadataRepository] {message}")
 
 
 class LakeRepositoryError(RepositoryError):
     """Raised when the data lake storage encounters an error."""
 
     def __init__(self, message: str):
-        super().__init__(f"Lake repository error: {message}")
+        super().__init__(f"[LakeRepository] {message}")
 
 
 class OutboxRepositoryError(RepositoryError):
     """Raised when the outbox repository encounters an error."""
 
     def __init__(self, message: str):
-        super().__init__(f"Outbox repository error: {message}")
+        super().__init__(f"[OutboxRepository] {message}")

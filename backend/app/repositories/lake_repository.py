@@ -4,7 +4,9 @@ This repository handles reading and writing Parquet files to MinIO/S3 storage.
 """
 
 import os
+import shutil
 import tempfile
+from pathlib import Path
 from abc import ABC, abstractmethod
 from functools import wraps
 from typing import Any, Callable, Protocol, TypeVar, ParamSpec
@@ -176,6 +178,8 @@ class BaseLakeRepository(ABC):
     ) -> str:
         """Convert CSV to partitioned Parquet files using hive-style partitioning.
 
+        Writes locally via DuckDB, then uploads to S3 via boto3.
+
         Args:
             csv_content: Raw CSV bytes
             storage_prefix: Base path within bucket (e.g., "datasets/project_id/dataset_id/")
@@ -189,37 +193,46 @@ class BaseLakeRepository(ABC):
             datasets/project_id/dataset_id/date=2024-01-01/region=EU/part-0.parquet
         """
         conn = ibis.duckdb.connect()
-        self._configure_duckdb_s3(conn)
 
         with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as temp_csv:
             temp_csv.write(csv_content)
             temp_csv_path = temp_csv.name
 
-        try:
-            s3_prefix = f"s3://{self.bucket}/{storage_prefix}"
+        temp_out_dir = tempfile.mkdtemp()
 
+        try:
             if partition_fields:
-                # Write partitioned parquet using hive-style partitioning
                 partition_by_clause = ", ".join(f"'{f}'" for f in partition_fields)
                 conn.raw_sql(f"""
                     COPY (SELECT * FROM read_csv_auto('{temp_csv_path}'))
-                    TO '{s3_prefix}' (
+                    TO '{temp_out_dir}' (
                         FORMAT PARQUET,
                         PARTITION_BY ({partition_by_clause}),
                         OVERWRITE_OR_IGNORE true
                     );
                 """)
             else:
-                # Write single parquet file when no partition fields
                 conn.raw_sql(f"""
                     COPY (SELECT * FROM read_csv_auto('{temp_csv_path}'))
-                    TO '{s3_prefix}data.parquet' (FORMAT PARQUET);
+                    TO '{temp_out_dir}/data.parquet' (FORMAT PARQUET);
                 """)
 
-            return s3_prefix
+            # Upload all generated parquet files to S3
+            temp_out_path = Path(temp_out_dir)
+            for local_path in temp_out_path.rglob("*.parquet"):
+                s3_key = f"{storage_prefix}{local_path.relative_to(temp_out_path)}"
+                self.s3_client.put_object(
+                    Bucket=self.bucket,
+                    Key=s3_key,
+                    Body=local_path.read_bytes(),
+                    ContentType='application/octet-stream',
+                )
+
+            return f"s3://{self.bucket}/{storage_prefix}"
         finally:
             if os.path.exists(temp_csv_path):
                 os.unlink(temp_csv_path)
+            shutil.rmtree(temp_out_dir, ignore_errors=True)
 
     @handle_repository_exceptions
     def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict[str, Any]]:

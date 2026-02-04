@@ -123,6 +123,7 @@ class DatasetController:
         name: str,
         partition_fields: list[str] | None = None,
         description: str | None = None,
+        repositories: dict[str, Callable[[], Repository]] | None = None,
     ) -> Result[dict[str, Any], str]:
         """Create a dataset from an upload event.
 
@@ -132,7 +133,11 @@ class DatasetController:
 
         try:
             result = await dataset_use_cases.create_dataset_from_upload(
-                upload_id, name, partition_fields, description
+                upload_id=upload_id, 
+                name=name, 
+                partition_fields=partition_fields, 
+                description=description, 
+                repositories=repositories
             )
             return Success(result)
         except UploadNotFound as e:

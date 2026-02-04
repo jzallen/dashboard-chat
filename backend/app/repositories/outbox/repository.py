@@ -12,7 +12,7 @@ from functools import wraps
 from typing import Callable, TypeVar, ParamSpec, Union
 
 from sqlalchemy import select, update
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
 from ..exceptions import OutboxRepositoryError
 from .outbox_record import OutboxRecord
@@ -24,11 +24,17 @@ R = TypeVar("R")
 
 
 def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator that wraps SQLAlchemyError as OutboxRepositoryError."""
+    """Decorator that wraps SQLAlchemy exceptions for repository methods.
+
+    - NoResultFound → returns None
+    - Other SQLAlchemyError → raises OutboxRepositoryError
+    """
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return await func(*args, **kwargs)
+        except NoResultFound:
+            return None
         except SQLAlchemyError as e:
             raise OutboxRepositoryError(str(e)) from e
     return wrapper
@@ -75,12 +81,12 @@ class OutboxRepository:
         )
     
     @handle_repository_exceptions
-    def get_file_received_event_by_id(self, record_id: str) -> OutboxEvent | None:
+    async def get_file_received_event_by_id(self, record_id: str) -> OutboxEvent | None:
         """Fetch a file received event by its OutboxRecord ID."""
-        record = self._get_event_by_id(record_id, raise_if_processed=True)
-        if not record.envent_type == "UploadFileReceived":
+        record = await self._get_event_by_id(record_id, raise_if_processed=True)
+        if record.event_type != "UploadFileReceived":
             raise OutboxRepositoryError(f"Event {record_id} is not an UploadFileReceived event")
-        return record
+        return to_event(record.event_type, record.payload)
 
     async def _append_event(
         self,
@@ -111,24 +117,28 @@ class OutboxRepository:
         await self._session.refresh(record)
         return record
 
-    async def _get_event_by_id(self, record_id: str, raise_if_processed: bool = False) -> OutboxEvent | None:
+    async def _get_event_by_id(self, record_id: str, raise_if_processed: bool = False) -> OutboxRecord:
         """Fetch a single event by its OutboxRecord ID.
 
         Args:
             record_id: The ID of the OutboxRecord
 
         Returns:
-            Reconstructed domain event or None if not found
+            OutboxRecord
+
+        Raises:
+            NoResultFound: If record not found
+            OutboxRepositoryError: If record already processed
         """
         result = await self._session.execute(
             select(OutboxRecord).where(OutboxRecord.id == record_id)
         )
-        record = result.scalar_one_or_none()
-        if record is None:
-            return None
+        record = result.scalar_one()
+
         if raise_if_processed and record.processed:
             raise OutboxRepositoryError(f"Event {record_id} has already been processed")
-        return to_event(record.event_type, record.payload)
+
+        return record
 
     @handle_repository_exceptions
     async def mark_processed(
