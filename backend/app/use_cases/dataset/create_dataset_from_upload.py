@@ -7,7 +7,7 @@ from uuid_utils import uuid7
 
 from returns.result import Result
 
-from app.use_cases.dataset.dataset_service import handle_returns
+from app.use_cases import handle_returns
 from app.use_cases.exceptions import (
     ProjectNotFound,
     UploadNotFound,

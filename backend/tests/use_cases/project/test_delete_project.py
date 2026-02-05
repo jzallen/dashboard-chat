@@ -1,0 +1,91 @@
+"""Tests for delete_project use case."""
+
+import pytest
+from unittest.mock import Mock
+from returns.result import Failure, Success
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import select
+
+from app.use_cases.project import delete_project
+from app.repositories import set_session
+from app.repositories.metadata import DatasetRecord, ProjectRecord
+
+
+class TestDeleteProject:
+    """Tests for delete_project workflow."""
+
+    async def test_deletes_existing_project_returns_true(self, seeded_db: AsyncSession):
+        """delete_project should delete project and return True."""
+        set_session(seeded_db)
+
+        result = await delete_project(project_id="project-002")
+
+        match result:
+            case Success(deleted):
+                assert deleted is True
+                # Verify project was actually deleted
+                check_result = await seeded_db.execute(
+                    select(ProjectRecord).where(ProjectRecord.id == "project-002")
+                )
+                assert check_result.scalar_one_or_none() is None
+            case Failure(error):
+                pytest.fail(f"delete_project should delete project, got: {error}")
+
+    async def test_given_invalid_id_returns_failure(self, seeded_db: AsyncSession):
+        """delete_project should return Failure when project does not exist."""
+        set_session(seeded_db)
+
+        result = await delete_project(project_id="nonexistent-project")
+
+        match result:
+            case Failure(error):
+                assert "[delete_project]" in error
+                assert "Project with ID 'nonexistent-project' not found" in error
+            case Success(_):
+                pytest.fail("delete_project should fail for nonexistent project")
+
+    async def test_cascades_to_datasets(self, seeded_db: AsyncSession):
+        """delete_project should cascade delete to datasets."""
+        set_session(seeded_db)
+
+        # Verify datasets exist before delete
+        check_before = await seeded_db.execute(
+            select(DatasetRecord).where(DatasetRecord.project_id == "project-001")
+        )
+        assert len(list(check_before.scalars().all())) == 2
+
+        result = await delete_project(project_id="project-001")
+
+        match result:
+            case Success(deleted):
+                assert deleted is True
+                # Verify datasets were cascade deleted
+                check_after = await seeded_db.execute(
+                    select(DatasetRecord).where(DatasetRecord.project_id == "project-001")
+                )
+                assert len(list(check_after.scalars().all())) == 0
+            case Failure(error):
+                pytest.fail(f"delete_project should cascade delete datasets, got: {error}")
+
+    async def test_when_database_error_returns_failure(self, seeded_db: AsyncSession):
+        """delete_project should return Failure when a database error occurs."""
+        set_session(seeded_db)
+
+        # Close the session to simulate a database error
+        await seeded_db.close()
+
+        metadata_repository = Mock()
+        metadata_repository.delete_project = Mock(side_effect=SQLAlchemyError("Database connection lost"))
+
+        result = await delete_project(
+            project_id="project-001",
+            repositories={'metadata_repository': lambda: metadata_repository},
+        )
+
+        match result:
+            case Failure(error):
+                assert "[delete_project]" in error
+                assert "Database connection lost" in error
+            case Success(_):
+                pytest.fail("delete_project should fail when database error occurs")

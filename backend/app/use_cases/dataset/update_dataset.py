@@ -3,7 +3,8 @@ from typing import Any, TYPE_CHECKING
 
 from returns.result import Result
 
-from app.use_cases.dataset.dataset_service import handle_returns, DatasetService
+from app.use_cases import handle_returns
+from app.use_cases.dataset.dataset_service import DatasetService
 from app.use_cases.exceptions import DatasetNotFound
 from app.repositories import with_repositories
 from app.models.dataset import Dataset

@@ -1,38 +1,16 @@
 """Shared logic for dataset use cases.
 
-Provides common utilities (handle_returns decorator) and the DatasetService
-class for operations shared across get_dataset, update_dataset, etc.
+Provides the DatasetService class for operations shared across
+get_dataset, update_dataset, etc.
 """
 
-from functools import wraps
-from logging import getLogger
 from typing import TYPE_CHECKING
-
-from returns.result import Success, Failure
 
 from app.use_cases.exceptions import DatasetNotFound
 from app.models.dataset import Dataset
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
-
-logger = getLogger(__name__)
-
-
-def handle_returns(func):
-    """Decorator that wraps use-case return values in Success/Failure."""
-
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        try:
-            result = await func(*args, **kwargs)
-        except Exception as e:
-            logger.exception("Error in %s: %s", func.__name__, str(e))
-            return Failure(f"[{func.__name__}] {str(e)}")
-        else:
-            return Success(result)
-
-    return wrapper
 
 
 class DatasetService:

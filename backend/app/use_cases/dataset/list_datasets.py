@@ -1,34 +1,17 @@
+from typing import TYPE_CHECKING
 
-from functools import wraps
-from logging import getLogger
-from returns.result import Result, Success, Failure
-from app.repositories import RepositoryContainer, with_repositories
+from returns.result import Result
+
+from app.repositories import with_repositories
+from app.use_cases import handle_returns
 from app.models.dataset import Dataset
 from app.use_cases.exceptions import (
     ProjectIdRequired,
     ProjectNotFound,
 )
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
-
-logger = getLogger(__name__)
-
-def handle_returns(func):
-    """Decorator to handle functions returning Result types."""
-
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        try:
-            result = await func(*args, **kwargs)
-        except Exception as e:
-            logger.exception("Error in %s: %s", func.__name__, str(e))
-            return Failure(f"[list_datasets] {str(e)}")
-        else:
-            return Success(result)
-
-    return wrapper
 
 
 
