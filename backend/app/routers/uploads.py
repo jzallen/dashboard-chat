@@ -5,7 +5,7 @@ Upload flow:
 2. POST /api/datasets - Create dataset from upload with partition config
 """
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from returns.result import Success, Failure
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,53 +68,4 @@ async def upload_file(
             raise HTTPException(
                 status_code=status_code,
                 detail=wrap_error(error, "UPLOAD_FILE_ERROR")
-            )
-
-
-@router.get("")
-async def list_uploads(
-    project_id: str | None = Query(None, description="Filter by project ID"),
-    dataset_id: str | None = Query(None, description="Filter by dataset ID"),
-    _: AsyncSession = Depends(use_db_context),
-):
-    """List upload events, optionally filtered by project or dataset.
-
-    Use dataset_id filter to get upload history for a specific dataset.
-    """
-    result = await DatasetController.list_uploads(project_id, dataset_id)
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            raise HTTPException(
-                status_code=500,
-                detail=wrap_error(error, "LIST_UPLOADS_ERROR")
-            )
-
-
-@router.get("/{upload_id}")
-async def get_upload(
-    upload_id: str,
-    include_preview: bool = Query(default=False, description="Include preview rows"),
-    preview_limit: int = Query(default=10, ge=1, le=100, description="Preview row limit"),
-    _: AsyncSession = Depends(use_db_context),
-):
-    """Get a single upload event by ID with optional preview.
-
-    Returns the upload event with schema_config for partition field selection.
-    Use include_preview=true to get sample rows from the raw file.
-    """
-    result = await DatasetController.get_upload(
-        upload_id, include_preview, preview_limit
-    )
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            status_code = 404 if "not found" in error.lower() else 500
-            raise HTTPException(
-                status_code=status_code,
-                detail=wrap_error(error, "GET_UPLOAD_ERROR")
             )

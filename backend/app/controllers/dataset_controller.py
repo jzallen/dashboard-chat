@@ -63,48 +63,13 @@ class DatasetController:
 
         Step 1 of the upload flow.
         """
-        try:
-            result = await upload_use_cases.upload_file(
-                file_content=file_content, 
-                file_name=file_name, 
-                project_id=project_id, 
-                dataset_id=dataset_id,
-                repositories=repositories,
-            )
-            return Success(result)
-        except ValueError as e:
-            return Failure(str(e))
-        except Exception as e:
-            return Failure(f"Failed to upload file: {str(e)}")
-
-    @staticmethod
-    async def get_upload(
-        upload_id: str,
-        include_preview: bool = False,
-        preview_limit: int = 10,
-    ) -> Result[dict[str, Any], str]:
-        """Get an upload event by ID with optional preview."""
-        try:
-            result = await upload_use_cases.get_upload(
-                upload_id, include_preview, preview_limit
-            )
-            return Success(result)
-        except upload_use_cases.UploadNotFound as e:
-            return Failure(str(e))
-        except Exception as e:
-            return Failure(str(e))
-
-    @staticmethod
-    async def list_uploads(
-        project_id: str | None = None,
-        dataset_id: str | None = None,
-    ) -> Result[list[dict[str, Any]], str]:
-        """List upload events, optionally filtered by project or dataset."""
-        try:
-            result = await upload_use_cases.list_uploads(project_id, dataset_id)
-            return Success(result)
-        except Exception as e:
-            return Failure(f"Failed to list uploads: {str(e)}")
+        return await upload_use_cases.upload_file(
+            file_content=file_content,
+            file_name=file_name,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            repositories=repositories,
+        )
 
     @staticmethod
     async def create_dataset_from_upload(

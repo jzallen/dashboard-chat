@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from .exceptions import (
+from returns.result import Result
+
+from app.use_cases import handle_returns
+from app.use_cases.exceptions import (
     DatasetNotFound,
     ProjectNotFound,
 )
@@ -25,6 +28,7 @@ if TYPE_CHECKING:
 
 
 @with_repositories
+@handle_returns
 async def upload_file(
     file_content: bytes,
     file_name: str,
@@ -32,7 +36,7 @@ async def upload_file(
     dataset_id: str | None = None,
     *,
     repositories: "RepositoryContainer",
-) -> Upload:
+) -> Result[Upload, str]:
     """Upload a file and create an Upload.
 
     Step 1 of the upload flow: Store raw file for later processing.
