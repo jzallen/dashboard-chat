@@ -243,7 +243,7 @@ class TestListDatasets:
 
         match result:
             case Failure(error):
-                assert "Failed to list datasets: Database connection lost" in error
+                assert "[list_datasets] Database connection lost" in error
             case Success(_):
                 pytest.fail("list_datasets should fail when database error occurs")
 
@@ -306,7 +306,7 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error == "Failed to get dataset: Dataset with ID 'nonexistent' not found"
+                assert error == "[get_dataset] Dataset with ID 'nonexistent' not found"
             case Success(_):
                 pytest.fail("get_dataset should fail when dataset does not exist")
 
@@ -350,7 +350,7 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error == "Failed to get dataset: Connection lost"
+                assert error == "[get_dataset] Connection lost"
             case Success(_):
                 pytest.fail("get_dataset should fail when database error occurs")
 
@@ -373,7 +373,7 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error == "Failed to get dataset: An error occurred (NoSuchKey) when calling the GetObject operation: Key not found"
+                assert error == "[get_dataset] An error occurred (NoSuchKey) when calling the GetObject operation: Key not found"
             case Success(_):
                 pytest.fail("get_dataset should fail when lake error occurs")
 
@@ -461,7 +461,7 @@ class TestUpdateDataset:
 
         match result:
             case Failure(error):
-                assert error == "Failed to update dataset: Dataset with ID 'nonexistent' not found"
+                assert error == "[update_dataset] Dataset with ID 'nonexistent' not found"
             case Success(_):
                 pytest.fail("update_dataset should fail when dataset does not exist")
 
@@ -481,7 +481,7 @@ class TestUpdateDataset:
 
         match result:
             case Failure(error):
-                assert error == "Failed to update dataset: Database connection lost"
+                assert error == "[update_dataset] Database connection lost"
             case Success(_):
                 pytest.fail("update_dataset should fail when database error occurs")
 
@@ -820,7 +820,7 @@ class TestCreateDatasetFromUpload:
             partition_fields=[],
             description=None,
         )
-        assert result == Failure("Upload with ID 'nonexistent-upload' not found")
+        assert result == Failure("[create_dataset_from_upload] Upload with ID 'nonexistent-upload' not found")
 
     async def test_create_dataset_from_upload_with_nonexistent_project(self, seeded_db: AsyncSession, sample_csv: bytes):
         """create_dataset_from_upload should fail when project doesn't exist."""
@@ -849,7 +849,7 @@ class TestCreateDatasetFromUpload:
             partition_fields=[],
             description=None,
         )
-        assert result == Failure("Failed to create dataset: Project with ID 'project-gone' not found")
+        assert result == Failure("[create_dataset_from_upload] Project with ID 'project-gone' not found")
 
     async def test_create_dataset_from_already_processed_upload(self, seeded_db: AsyncSession, s3_read_write_stubber: Stubber, sample_csv: bytes):
         """Second call to create_dataset_from_upload should fail — upload already processed."""
@@ -892,7 +892,7 @@ class TestCreateDatasetFromUpload:
             partition_fields=['age'],
             description=None,
         )
-        assert second == Failure("Failed to create dataset: [OutboxRepository] Event upload-002 has already been processed")
+        assert second == Failure("[create_dataset_from_upload] [OutboxRepository] Event upload-002 has already been processed")
 
     async def test_create_dataset_from_upload_with_missing_file(self, seeded_db: AsyncSession, sample_csv: bytes):
         """create_dataset_from_upload should fail when raw file is missing from S3."""
@@ -933,7 +933,7 @@ class TestCreateDatasetFromUpload:
                     'lake_repository': partial(MinIOLakeRepository, s3_client=empty_stubber.client),
                 },
             )
-        assert result == Failure("Upload with ID 'upload-003' not found")
+        assert result == Failure("[create_dataset_from_upload] Upload with ID 'upload-003' not found")
 
     async def test_create_dataset_from_upload_with_invalid_csv(self, seeded_db: AsyncSession):
         """create_dataset_from_upload should fail when file content is not valid CSV."""

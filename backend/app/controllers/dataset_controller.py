@@ -6,7 +6,7 @@ from returns.result import Result, Success, Failure
 
 from ..models.dataset import Dataset
 from ..repositories import Repository
-from ..use_cases import dataset as dataset_use_cases
+from app.use_cases import dataset
 from ..use_cases import upload as upload_use_cases
 
 
@@ -19,11 +19,7 @@ class DatasetController:
         repositories: dict[str, Callable[[], Repository]] | None = None,
     ) -> Result[list[Dataset], str]:
         """List all datasets, optionally filtered by project."""
-        try:
-            datasets = await dataset_use_cases.list_datasets(project_id, repositories=repositories)
-            return Success(datasets)
-        except Exception as e:
-            return Failure(f"Failed to list datasets: {str(e)}")
+        return await dataset.list_datasets(project_id, repositories=repositories)
 
     @staticmethod
     async def get_dataset(
@@ -34,14 +30,11 @@ class DatasetController:
         repositories: dict[str, Callable[[], Repository]] | None = None,
     ) -> Result[Dataset, str]:
         """Get a single dataset by ID with optional transforms and preview."""
-        try:
-            dataset = await dataset_use_cases.get_dataset(
-                dataset_id, include_transforms, include_preview, preview_limit,
-                repositories=repositories,
-            )
-            return Success(dataset)
-        except Exception as e:
-            return Failure(f"Failed to get dataset: {str(e)}")
+    
+        return await dataset.get_dataset(
+            dataset_id, include_transforms, include_preview, preview_limit,
+            repositories=repositories,
+        )
 
     @staticmethod
     async def update_dataset(
@@ -50,13 +43,9 @@ class DatasetController:
         **dataset_kwargs: Any,
     ) -> Result[Dataset, str]:
         """Update a dataset's metadata and transforms."""
-        try:
-            result = await dataset_use_cases.update_dataset(
-                dataset_id, dataset_kwargs, repositories=repositories
-            )
-            return Success(result)
-        except Exception as e:
-            return Failure(f"Failed to update dataset: {str(e)}")
+        return await dataset.update_dataset(
+            dataset_id, dataset_kwargs, repositories=repositories
+        )
 
     # -------------------------------------------------------------------------
     # Upload operations
@@ -124,26 +113,16 @@ class DatasetController:
         partition_fields: list[str] | None = None,
         description: str | None = None,
         repositories: dict[str, Callable[[], Repository]] | None = None,
-    ) -> Result[dict[str, Any], str]:
+    ) -> Result[Dataset, str]:
         """Create a dataset from an upload event.
 
         Step 2 of the upload flow.
         """
-        from ..use_cases.exceptions import UploadAlreadyProcessed, UploadNotFound
-
-        try:
-            result = await dataset_use_cases.create_dataset_from_upload(
-                upload_id=upload_id, 
-                name=name, 
-                partition_fields=partition_fields, 
-                description=description, 
-                repositories=repositories
-            )
-            return Success(result)
-        except UploadNotFound as e:
-            return Failure(str(e))
-        except UploadAlreadyProcessed as e:
-            return Failure(str(e))
-        except Exception as e:
-            return Failure(f"Failed to create dataset: {str(e)}")
+        return await dataset.create_dataset_from_upload(
+            upload_id=upload_id,
+            name=name,
+            partition_fields=partition_fields,
+            description=description,
+            repositories=repositories,
+        )
 

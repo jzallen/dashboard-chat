@@ -34,6 +34,21 @@ class Dataset:
     transforms: list[Transform] | list[dict[str, Any]] | None = field(default_factory=list)
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
 
+    @classmethod
+    def from_record(cls, record: Any, preview_rows: list[dict[str, Any]] | None = None, include_transforms: bool = True) -> 'Dataset':
+        """Create Dataset domain object from ORM record."""
+
+        return cls(
+            id=record.id,
+            project_id=record.project_id,
+            name=record.name,
+            description=record.description,
+            schema_config=record.schema_config or {},
+            partition_fields=record.partition_fields or [],
+            transforms=record.transforms if include_transforms else [],
+            preview_rows=preview_rows or [],
+        )
+
     @property
     def transforms_to_delete(self) -> list[Transform]:
         """Transforms marked for deletion."""
