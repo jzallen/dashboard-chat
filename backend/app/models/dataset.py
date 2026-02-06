@@ -210,6 +210,20 @@ class Dataset:
 
         return sql
 
+    def serialize(self) -> dict[str, Any]:
+        """Serialize to JSON-compatible dict for HTTP responses."""
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'name': self.name,
+            'description': self.description,
+            'schema_config': self.schema_config,
+            'partition_fields': self.partition_fields,
+            'transforms': [t.serialize() for t in self.transforms] if self.transforms else [],
+            'preview_rows': self.preview_rows,
+            'staging_sql': self.staging_sql,
+        }
+
     @staticmethod
     def display_name_to_filename(display_name: str) -> str:
         """Convert display name to snake_case filename.

@@ -60,8 +60,8 @@ export function TransformList({
   }
 
   // Separate active and inactive transforms
-  const activeTransforms = transforms.filter((t) => t.is_active);
-  const inactiveTransforms = transforms.filter((t) => !t.is_active);
+  const activeTransforms = transforms.filter((t) => t.status === 'enabled');
+  const inactiveTransforms = transforms.filter((t) => t.status !== 'enabled');
 
   return (
     <div className={styles.listContainer}>

@@ -50,3 +50,20 @@ class Upload:
             created_at=record.created_at,
             preview_rows=preview_rows or [],
         )
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize to JSON-compatible dict for HTTP responses."""
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'dataset_id': self.dataset_id,
+            'status': self.status,
+            'raw_storage_path': self.raw_storage_path,
+            'original_filename': self.original_filename,
+            'file_size': self.file_size,
+            'row_count': self.row_count,
+            'error_message': self.error_message,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'processed_at': self.processed_at.isoformat() if self.processed_at else None,
+            'preview_rows': self.preview_rows,
+        }

@@ -55,18 +55,18 @@ async def init_db() -> None:
 
 async def _create_defaults() -> None:
     """Create default project if it doesn't exist."""
-    from .models import Project
+    from .repositories.metadata import ProjectRecord
 
     async with async_session() as session:
         # Check if default project exists
         result = await session.execute(
-            select(Project).where(Project.id == DEFAULT_PROJECT_ID)
+            select(ProjectRecord).where(ProjectRecord.id == DEFAULT_PROJECT_ID)
         )
         project = result.scalar_one_or_none()
 
         if not project:
             # Create default project
-            project = Project(
+            project = ProjectRecord(
                 id=DEFAULT_PROJECT_ID,
                 name="Default Project",
                 description="Auto-created default project",

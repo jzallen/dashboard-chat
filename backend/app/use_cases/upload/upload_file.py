@@ -17,6 +17,8 @@ from returns.result import Result
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import (
     DatasetNotFound,
+    EmptyFile,
+    InvalidFileType,
     ProjectNotFound,
 )
 from app.models import Upload
@@ -63,10 +65,10 @@ async def upload_file(
     outbox_repo: "OutboxRepository" = repositories["outbox_repository"]
 
     if not file_name.lower().endswith(".csv"):
-        raise ValueError("Only CSV files are supported")
+        raise InvalidFileType()
 
     if not file_content:
-        raise ValueError("File is empty")
+        raise EmptyFile()
 
     # Validate project exists
     if not await metadata_repo.project_exists(project_id):

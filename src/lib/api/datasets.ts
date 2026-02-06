@@ -19,34 +19,23 @@ export interface SchemaConfig {
 
 export interface Transform {
   id: string;
-  dataset_id: string;
   name: string;
   description: string | null;
-  condition_json: RAQBTree;  // Was: raqb_json
-  condition_sql: string | null;  // Was: cached_sql
-  version: number;
-  is_active: boolean;
-  nl_prompt: string | null;
-  created_at: string;
-  updated_at: string;
+  condition_json: RAQBTree;
+  condition_sql: string | null;
+  status: 'enabled' | 'disabled' | 'deleted';
 }
 
 export interface Dataset {
-  id: string;  // UUID
-  storage_path: string;  // Parquet storage path
+  id: string;
   project_id: string;
   name: string;
   description: string | null;
   schema_config: SchemaConfig;
-  partition_fields: string[];  // Hive-style partition field names
-  row_count: number;
-  file_name: string | null;
-  file_size: number | null;
-  created_at: string;
-  updated_at: string;
+  partition_fields: string[];
   transforms: Transform[];
   preview_rows: Record<string, unknown>[];
-  staging_sql?: string | null;  // Computed SQL from active transforms
+  staging_sql?: string | null;
 }
 
 export interface DatasetUploadResponse extends Dataset {
@@ -65,7 +54,6 @@ export interface UploadEvent {
   raw_storage_path: string;
   original_filename: string;
   file_size: number;
-  schema_config: SchemaConfig;
   row_count: number;
   error_message: string | null;
   created_at: string;
@@ -97,9 +85,9 @@ export interface TransformCreate {
 export interface TransformUpdate {
   name?: string;
   description?: string;
-  condition_json?: RAQBTree;  // RAQB JSON tree
-  condition_sql?: string;     // Must be provided when condition_json changes
-  is_active?: boolean;
+  condition_json?: RAQBTree;
+  condition_sql?: string;
+  status?: 'enabled' | 'disabled' | 'deleted';
 }
 
 // Note: AggregatedSqlResponse removed - use Dataset.staging_sql instead
@@ -261,8 +249,7 @@ interface TransformInput {
   description?: string;
   condition_json?: unknown;
   condition_sql?: string;
-  nl_prompt?: string;
-  is_active?: boolean;
+  status?: 'enabled' | 'disabled' | 'deleted';
   delete?: boolean;
 }
 
@@ -308,14 +295,14 @@ export async function deleteTransform(
 }
 
 /**
- * Toggle a transform's active state and return the updated dataset
+ * Toggle a transform's enabled/disabled state and return the updated dataset
  */
 export async function toggleTransform(
   datasetId: string,
   transformId: string,
-  isActive: boolean
+  enabled: boolean
 ): Promise<Dataset> {
-  return updateTransform(datasetId, transformId, { is_active: isActive });
+  return updateTransform(datasetId, transformId, { status: enabled ? 'enabled' : 'disabled' });
 }
 
 // Note: getDatasetAggregatedSql() removed - use getDataset() with includeTransforms: true

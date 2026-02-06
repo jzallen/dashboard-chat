@@ -5,7 +5,7 @@ by the backend using Ibis expressions derived from the condition_json.
 """
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from ..types import QueryBuilderJSON
 
@@ -52,3 +52,14 @@ class Transform:
     def __iter__(self):
         """Iterate over field names for SQLAlchemy bulk operations."""
         return iter(self.keys())
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize to JSON-compatible dict for HTTP responses."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'condition_json': dict(self.condition_json) if self.condition_json else None,
+            'condition_sql': self.condition_sql,
+            'description': self.description,
+            'status': self.status,
+        }

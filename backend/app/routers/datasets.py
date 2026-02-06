@@ -1,13 +1,12 @@
 """API routes for dataset management."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from returns.result import Success, Failure
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..controllers.dataset_controller import DatasetController
-from ..controllers.response_wrapper import wrap_success, wrap_error
-from ..database import get_db
-from ..repositories import set_session
+from app.controllers import HTTPController
+from app.database import get_db
+from app.repositories import set_session
 from .schemas import DatasetCreate, DatasetUpdate
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
@@ -25,16 +24,8 @@ async def list_datasets(
     _: AsyncSession = Depends(use_db_context),
 ):
     """List all datasets, optionally filtered by project."""
-    result = await DatasetController.list_datasets(project_id)
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            raise HTTPException(
-                status_code=500,
-                detail=wrap_error(error, "LIST_DATASETS_ERROR")
-            )
+    body, status_code = await HTTPController.list_datasets(project_id)
+    return JSONResponse(content=body, status_code=status_code)
 
 
 @router.post("")
@@ -51,28 +42,13 @@ async def create_dataset(
     4. Creates dataset record with partition_fields
     5. Updates upload event with dataset_id and status=completed
     """
-    result = await DatasetController.create_dataset_from_upload(
+    body, status_code = await HTTPController.post_dataset(
         upload_id=data.upload_id,
         name=data.name,
         partition_fields=data.partition_fields,
         description=data.description,
     )
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            if "not found" in error.lower():
-                status_code = 404
-            elif "already" in error.lower():
-                status_code = 400
-            else:
-                status_code = 500
-
-            raise HTTPException(
-                status_code=status_code,
-                detail=wrap_error(error, "CREATE_DATASET_ERROR")
-            )
+    return JSONResponse(content=body, status_code=status_code)
 
 
 @router.get("/{dataset_id}")
@@ -84,19 +60,10 @@ async def get_dataset(
     _: AsyncSession = Depends(use_db_context),
 ):
     """Get a single dataset by ID with optional transforms and preview."""
-    result = await DatasetController.get_dataset(
+    body, status_code = await HTTPController.get_dataset(
         dataset_id, include_transforms, include_preview, preview_limit
     )
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            status_code = 404 if error == "Dataset not found" else 500
-            raise HTTPException(
-                status_code=status_code,
-                detail=wrap_error(error, "GET_DATASET_ERROR")
-            )
+    return JSONResponse(content=body, status_code=status_code)
 
 
 @router.patch("/{dataset_id}")
@@ -107,17 +74,8 @@ async def update_dataset(
 ):
     """Update a dataset's metadata."""
     dataset_kwargs = update_data.model_dump(exclude_unset=True)
-    result = await DatasetController.update_dataset(dataset_id, **dataset_kwargs)
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            status_code = 404 if error == "Dataset not found" else 500
-            raise HTTPException(
-                status_code=status_code,
-                detail=wrap_error(error, "UPDATE_DATASET_ERROR")
-            )
+    body, status_code = await HTTPController.patch_dataset(dataset_id, **dataset_kwargs)
+    return JSONResponse(content=body, status_code=status_code)
 
 
 # Note: Transforms are created via PATCH /{dataset_id} with transforms array

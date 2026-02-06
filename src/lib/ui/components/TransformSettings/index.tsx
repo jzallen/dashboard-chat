@@ -132,7 +132,7 @@ export function TransformSettings({
                 <div className={styles.sqlInfo}>
                   <p className={styles.sqlInfoText}>
                     <span className={styles.sqlInfoLabel}>Active Transforms:</span>{" "}
-                    {dataset.transforms.filter(t => t.is_active).length}
+                    {dataset.transforms.filter(t => t.status === 'enabled').length}
                   </p>
                 </div>
                 <div className={styles.sqlWell}>

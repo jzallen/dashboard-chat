@@ -36,5 +36,8 @@ pytest-asyncio==0.23.4
 # Type hints
 python-dateutil==2.8.2
 
+# UUID generation
+uuid-utils==0.6.1
+
 # DuckDB for local file-based data
 duckdb==1.0.0

@@ -5,14 +5,13 @@ Upload flow:
 2. POST /api/datasets - Create dataset from upload with partition config
 """
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from returns.result import Success, Failure
+from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..controllers.dataset_controller import DatasetController
-from ..controllers.response_wrapper import wrap_success, wrap_error
-from ..database import get_db
-from ..repositories import set_session
+from app.controllers import HTTPController
+from app.database import get_db
+from app.repositories import set_session
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -43,29 +42,14 @@ async def upload_file(
     For re-uploads: Provide both project_id and dataset_id
     """
     if not file.filename:
-        raise HTTPException(
-            status_code=400,
-            detail=wrap_error("Filename is required", "INVALID_FILE")
-        )
+        return JSONResponse(status_code=400, content={
+            "type": "INVALID_REQUEST", "title": "Invalid Request",
+            "status": 400, "detail": "Filename is required",
+        })
 
     content = await file.read()
 
-    result = await DatasetController.upload_file(
+    body, status_code = await HTTPController.post_upload(
         content, file.filename, project_id, dataset_id
     )
-
-    match result:
-        case Success(data):
-            return wrap_success(data)
-        case Failure(error):
-            if "not found" in error.lower():
-                status_code = 404
-            elif error in ["Only CSV files are supported", "File is empty"]:
-                status_code = 400
-            else:
-                status_code = 500
-
-            raise HTTPException(
-                status_code=status_code,
-                detail=wrap_error(error, "UPLOAD_FILE_ERROR")
-            )
+    return JSONResponse(content=body, status_code=status_code)

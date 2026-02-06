@@ -179,8 +179,8 @@ function computeActiveFilters(transforms: Transform[]): ColumnFiltersState {
   console.log("[computeActiveFilters] Processing transforms:", transforms);
 
   for (const transform of transforms) {
-    console.log("[computeActiveFilters] Transform:", transform.name, "is_active:", transform.is_active);
-    if (transform.is_active) {
+    console.log("[computeActiveFilters] Transform:", transform.name, "status:", transform.status);
+    if (transform.status === 'enabled') {
       const filters = raqbToTanstackFilters(transform.condition_json, {
         transformId: transform.id,
       });

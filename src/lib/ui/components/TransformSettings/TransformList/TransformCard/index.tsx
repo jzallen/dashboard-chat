@@ -19,11 +19,11 @@ interface TransformCardProps {
 
 export function TransformCard({ transform, onToggle, onDelete }: TransformCardProps) {
   const ruleCount = countRules(transform.condition_json);
-  const createdDate = new Date(transform.created_at).toLocaleDateString();
+  const isEnabled = transform.status === 'enabled';
 
   return (
     <div className={`${styles.transformCard} ${
-      transform.is_active
+      isEnabled
         ? styles.transformCardActive
         : styles.transformCardInactive
     }`}>
@@ -31,13 +31,11 @@ export function TransformCard({ transform, onToggle, onDelete }: TransformCardPr
         <div>
           <TransformHeader
             name={transform.name}
-            isActive={transform.is_active}
+            isActive={isEnabled}
             description={transform.description ?? undefined}
           />
           <TransformMetadata
             conditionCount={ruleCount}
-            version={transform.version}
-            createdDate={createdDate}
           />
           {transform.condition_sql && (
             <SQLPreview sql={transform.condition_sql} />
@@ -45,10 +43,10 @@ export function TransformCard({ transform, onToggle, onDelete }: TransformCardPr
         </div>
         <div className={styles.actionsColumn}>
           <TransformToggle
-            isActive={transform.is_active}
-            onToggle={() => onToggle(transform.id, !transform.is_active)}
+            isActive={isEnabled}
+            onToggle={() => onToggle(transform.id, !isEnabled)}
           />
-          {!transform.is_active && onDelete && (
+          {!isEnabled && onDelete && (
             <DeleteButton onClick={() => onDelete(transform.id)} />
           )}
         </div>
