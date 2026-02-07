@@ -18,22 +18,28 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install root dependencies
         run: npm ci
 
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
       - name: Build frontend
-        run: npm run build
+        run: npm run build --prefix frontend
         env:
           VITE_API_URL: https://dashboard-chat-api.j-zachary-allen.workers.dev
 
       - name: Deploy Pages (frontend)
-        run: npx wrangler pages deploy dist --project-name=dashboard-chat
+        run: npx wrangler pages deploy frontend/dist --project-name=dashboard-chat
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Deploy Worker (backend)
+      - name: Deploy Worker (chat API)
         run: npm run deploy:worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

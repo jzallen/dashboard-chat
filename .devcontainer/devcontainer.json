@@ -29,6 +29,6 @@
       }
     }
   },
-  "postCreateCommand": "npm install && curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"$HOME/.cargo/bin:$PATH\" && cd backend && uv sync",
-  "forwardPorts": [3000, 8000]
+  "postCreateCommand": "npm install && cd frontend && npm install && cd .. && curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"$HOME/.cargo/bin:$PATH\" && cd backend && uv sync",
+  "forwardPorts": [5173, 8000]
 }

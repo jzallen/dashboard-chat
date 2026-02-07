@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleFetch, ChatHandlerFactory } from "../../index";
+import { handleFetch, ChatHandlerFactory } from "./index";
 
 // Feature: Cloudflare Worker Backend API
 // As a frontend application

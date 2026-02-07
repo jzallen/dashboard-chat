@@ -3,42 +3,20 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
     "dev:worker": "wrangler dev",
     "deploy:worker": "wrangler deploy",
-    "deploy:pages": "wrangler pages deploy dist --project-name=dashboard-chat",
-    "test": "vitest",
-    "test:run": "vitest run",
+    "deploy:pages": "wrangler pages deploy frontend/dist --project-name=dashboard-chat",
     "test:e2e": "playwright test --config=e2e/config/local.config.ts",
     "test:e2e:local": "playwright test --config=e2e/config/local.config.ts",
     "test:e2e:prod": "playwright test --config=e2e/config/production.config.ts",
     "test:e2e:ui": "playwright test --ui --config=e2e/config/local.config.ts",
-    "test:e2e:debug": "playwright test --debug --config=e2e/config/local.config.ts"
-  },
-  "dependencies": {
-    "@tanstack/react-table": "^8.20.5",
-    "eventsource-parser": "^3.0.6",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^7.13.0"
+    "test:e2e:debug": "playwright test --debug --config=e2e/config/local.config.ts",
+    "test:worker": "vitest run --config worker/vitest.config.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
     "@playwright/test": "^1.57.0",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.3",
-    "autoprefixer": "^10.4.20",
-    "happy-dom": "^20.0.11",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11",
     "vitest": "^4.0.15",
     "wrangler": "^4.56.0"
   }
