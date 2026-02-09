@@ -8,9 +8,9 @@ import type { RAQBTree } from "@/raqb";
 export interface FieldConfig {
   label: string;
   type: "text" | "number" | "boolean" | "datetime" | "select";
-  operators: string[];
+  operators?: string[];
   listValues?: Array<{ value: string; title: string }>;
-  nullable: boolean;
+  nullable?: boolean;
 }
 
 export interface SchemaConfig {

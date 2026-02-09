@@ -3,7 +3,6 @@ import type { Table, ColumnFiltersState } from "@tanstack/react-table";
 import type { TableRow } from "@/table-tools";
 import ActiveFilters from "./ActiveFilters";
 import Pagination from "./Pagination";
-import { TableHeader } from "./TableHeader";
 import { TableHead } from "./TableHead";
 import { TableBody } from "./TableBody";
 import { columns } from "../../data/sampleData";
@@ -14,11 +13,7 @@ interface TablePanelProps {
   columnFilters: ColumnFiltersState;
   setColumnFilters: Dispatch<SetStateAction<ColumnFiltersState>>;
   totalRows: number;
-  projectName?: string;
-  datasetName?: string;
-  onSettingsClick?: () => void;
   onToggleTransform?: (transformId: string, isActive: boolean) => void;
-  onProjectClick?: () => void;
 }
 
 export default function TablePanel({
@@ -26,21 +21,10 @@ export default function TablePanel({
   columnFilters,
   setColumnFilters,
   totalRows,
-  projectName,
-  datasetName,
-  onSettingsClick,
   onToggleTransform,
-  onProjectClick,
 }: TablePanelProps) {
   return (
     <div className={styles.panel}>
-      <TableHeader
-        projectName={projectName}
-        datasetName={datasetName}
-        onSettingsClick={onSettingsClick}
-        onProjectClick={onProjectClick}
-      />
-
       <ActiveFilters
         columnFilters={columnFilters}
         setColumnFilters={setColumnFilters}

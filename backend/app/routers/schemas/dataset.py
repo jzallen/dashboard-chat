@@ -11,15 +11,12 @@ from pydantic import BaseModel, ConfigDict
 class FieldConfig(BaseModel):
     """Configuration for a single field in the dataset schema."""
 
-    label: str
-    type: str  # "text", "number", "boolean", "datetime", "select", etc.
-    operators: list[str] | None = None
-    list_values: list[dict[str, str]] | None = None
-    nullable: bool = True
+    label: str | None = None
+    type: str  # "text", "number", "boolean", "datetime", "select"
 
 
 class SchemaConfig(BaseModel):
-    """Dataset schema configuration for RAQB."""
+    """Dataset schema configuration — basic field definitions."""
 
     fields: dict[str, FieldConfig]
 

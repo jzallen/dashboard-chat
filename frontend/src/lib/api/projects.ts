@@ -10,7 +10,7 @@ export interface DatasetSparse {
   name: string;
   link: string;
   description: string | null;
-  row_count: number;
+  row_count?: number;
   schema_config: SchemaConfig;
 }
 

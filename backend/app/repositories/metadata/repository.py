@@ -429,8 +429,8 @@ class MetadataRepository:
             "id": project.id,
             "name": project.name,
             "description": project.description,
-            "created_at": project.created_at,
-            "updated_at": project.updated_at,
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
         }
 
     @staticmethod
@@ -444,8 +444,8 @@ class MetadataRepository:
             "description": dataset.description,
             "schema_config": dataset.schema_config,
             "partition_fields": dataset.partition_fields,
-            "created_at": dataset.created_at,
-            "updated_at": dataset.updated_at,
+            "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
+            "updated_at": dataset.updated_at.isoformat() if dataset.updated_at else None,
         }
 
     @staticmethod
@@ -461,6 +461,6 @@ class MetadataRepository:
             "version": transform.version,
             "status": transform.status,
             "nl_prompt": transform.nl_prompt,
-            "created_at": transform.created_at,
-            "updated_at": transform.updated_at,
+            "created_at": transform.created_at.isoformat() if transform.created_at else None,
+            "updated_at": transform.updated_at.isoformat() if transform.updated_at else None,
         }
