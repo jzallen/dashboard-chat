@@ -14,6 +14,13 @@ import ibis
 from .transform import Transform
 from ..types import SQLQuery
 
+_SCHEMA_TYPE_MAP = {
+    "text": "string",
+    "number": "float64",
+    "boolean": "boolean",
+    "select": "string",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class Dataset:
@@ -150,11 +157,17 @@ class Dataset:
     def _build_table(self, table_name: str | None = None) -> ibis.Table:
         """Build Ibis table with filters applied.
 
+        Reads schema from parquet in S3 when available, otherwise falls back
+        to building a table expression from schema_config.
+
         Args:
             table_name: Optional name for FROM clause (used by display_sql)
         """
-        conn = self._get_connection()
-        table = conn.read_parquet(self._s3_path(), table_name=table_name)
+        try:
+            conn = self._get_connection()
+            table = conn.read_parquet(self._s3_path(), table_name=table_name)
+        except Exception:
+            table = self._build_table_from_schema(table_name)
 
         # Select columns from schema
         fields = self.schema_config.get("fields", {})
@@ -171,6 +184,18 @@ class Dataset:
             table = table.filter(*active_filters)
 
         return table
+
+    def _build_table_from_schema(self, table_name: str | None = None) -> ibis.Table:
+        """Build Ibis table expression from schema_config (no S3 read needed)."""
+        fields = self.schema_config.get("fields", {})
+        if not fields:
+            raise ValueError("No data or schema available for this dataset")
+
+        ibis_schema = {
+            name: _SCHEMA_TYPE_MAP.get(info.get("type", "text"), "string")
+            for name, info in fields.items()
+        }
+        return ibis.table(ibis_schema, name=table_name or self.name)
 
     def _table_alias(self) -> str:
         """Lowercase initials of dataset name for SQL alias."""
@@ -221,7 +246,7 @@ class Dataset:
             'partition_fields': self.partition_fields,
             'transforms': [t.serialize() for t in self.transforms] if self.transforms else [],
             'preview_rows': self.preview_rows,
-            'staging_sql': self.staging_sql,
+            'staging_sql': self.display_sql,
         }
 
     @staticmethod

@@ -291,20 +291,9 @@ class MinIOLakeRepository(BaseLakeRepository):
                     read_timeout=settings.s3_read_timeout,
                 ),
             )
-            self._ensure_bucket_exists(s3_client, settings.storage_bucket)
 
         super().__init__(s3_client, settings.storage_bucket)
         self._settings = settings
-
-    def _ensure_bucket_exists(self, client, bucket: str) -> None:
-        """Create bucket if it doesn't exist."""
-        try:
-            client.head_bucket(Bucket=bucket)
-        except Exception:
-            try:
-                client.create_bucket(Bucket=bucket)
-            except Exception:
-                pass
 
     def _configure_duckdb_s3(self, conn: ibis.BaseBackend) -> None:
         """Configure DuckDB for MinIO access."""

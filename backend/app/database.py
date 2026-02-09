@@ -2,7 +2,6 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import select
 
 from .config import get_settings
 
@@ -45,34 +44,9 @@ DEFAULT_DATASET_ID = "1592ce82-5f22-4da7-b41b-9fd9fd05770e"
 
 
 async def init_db() -> None:
-    """Initialize database tables and create defaults."""
+    """Initialize database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-    # Create default project and dataset
-    await _create_defaults()
-
-
-async def _create_defaults() -> None:
-    """Create default project if it doesn't exist."""
-    from .repositories.metadata import ProjectRecord
-
-    async with async_session() as session:
-        # Check if default project exists
-        result = await session.execute(
-            select(ProjectRecord).where(ProjectRecord.id == DEFAULT_PROJECT_ID)
-        )
-        project = result.scalar_one_or_none()
-
-        if not project:
-            # Create default project
-            project = ProjectRecord(
-                id=DEFAULT_PROJECT_ID,
-                name="Default Project",
-                description="Auto-created default project",
-            )
-            session.add(project)
-            await session.commit()
 
 
 async def close_db() -> None:
