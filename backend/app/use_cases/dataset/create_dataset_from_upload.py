@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 @handle_returns
 async def create_dataset_from_upload(
     upload_id: str,
-    name: str,
     partition_fields: list[str] | None = None,
     description: str | None = None,
     *,
@@ -38,7 +37,6 @@ async def create_dataset_from_upload(
 
     Args:
         upload_id: Upload event UUID
-        name: Dataset display name
         partition_fields: List of field names to partition by (optional)
         description: Optional dataset description
         repositories: Injected repository container
@@ -74,7 +72,6 @@ async def create_dataset_from_upload(
     dataset = Dataset(
         id=str(uuid7()),
         project_id=file_received_event.project_id,
-        name=name,
         description=description,
         schema_config=schema_config,
         partition_fields=partition_fields,

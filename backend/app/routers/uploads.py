@@ -1,8 +1,7 @@
 """API routes for file uploads.
 
-Upload flow:
-1. POST /api/uploads - Upload file, get UploadEvent with schema
-2. POST /api/datasets - Create dataset from upload with partition config
+Upload flow (single step from client perspective):
+POST /api/uploads - Upload file → internally creates dataset → returns Dataset
 """
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -29,14 +28,12 @@ async def upload_file(
     dataset_id: str | None = Form(None),
     _: AsyncSession = Depends(use_db_context),
 ):
-    """Upload a file and create an UploadEvent with inferred schema.
+    """Upload a CSV file and create a dataset in one step.
 
-    Step 1 of the upload flow:
-    1. Validates the file (CSV only, not empty)
-    2. Stores raw file at uploads/{project_id}/{upload_id}.csv
-    3. Infers schema from CSV for query builder
-    4. Creates UploadEvent record with status='pending'
-    5. Returns schema_config and preview_rows for partition field selection
+    Internally chains upload → dataset creation:
+    1. Validates and stores the raw file (POST /uploads logic)
+    2. On success, redirects to dataset creation (POST /datasets logic)
+    3. Returns the created Dataset with default name 'New Dataset'
 
     For new datasets: Only provide project_id
     For re-uploads: Provide both project_id and dataset_id
@@ -49,7 +46,14 @@ async def upload_file(
 
     content = await file.read()
 
-    body, status_code = await HTTPController.post_upload(
+    # Step 1: Upload file
+    upload_body, upload_status = await HTTPController.post_upload(
         content, file.filename, project_id, dataset_id
     )
-    return JSONResponse(content=body, status_code=status_code)
+    if upload_status != 201:
+        return JSONResponse(content=upload_body, status_code=upload_status)
+
+    # Step 2: Redirect — create dataset from upload
+    upload_id = upload_body["data"]["id"]
+    dataset_body, dataset_status = await HTTPController.post_dataset(upload_id=upload_id)
+    return JSONResponse(content=dataset_body, status_code=dataset_status)

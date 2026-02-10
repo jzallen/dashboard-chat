@@ -41,11 +41,11 @@ class DatasetBase(BaseModel):
 class DatasetCreate(BaseModel):
     """Schema for creating a Dataset from an upload.
 
-    Step 2 of the upload flow: Create dataset with partition configuration.
+    Step 2 of the upload flow: Only upload_id is required.
+    Dataset name defaults to 'New Dataset' (business rule on domain model).
     """
 
     upload_id: str
-    name: str
     description: str | None = None
     partition_fields: list[str] = []
 

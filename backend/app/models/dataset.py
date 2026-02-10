@@ -34,7 +34,7 @@ class Dataset:
 
     id: str  # UUID primary key
     project_id: str | None = None  # Parent project UUID
-    name: str | None = None  # Display name
+    name: str = "New Dataset"  # Display name (business default)
     description: str | None = None  # Optional description
     schema_config: dict[str, Any] = field(default_factory=dict)  # Field definitions for query builder
     partition_fields: list[str] = field(default_factory=list)  # Hive-style partition field names

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Outlet, useParams } from "react-router-dom";
-import { getProject, type Project } from "@/api";
+import { useCallback, useEffect, useState } from "react";
+import { Outlet, useParams, useNavigate } from "react-router-dom";
+import { getProject, datasetToSparse, type Project, type Dataset } from "@/api";
 import { ChatProvider } from "../../context/ChatContext";
 import { ProjectNav } from "../ProjectNav";
 import { ChatPanelConnected } from "./ChatPanelConnected";
@@ -10,6 +10,7 @@ const DEFAULT_PROJECT_ID = "default-project-001";
 
 export function AppShell() {
   const { datasetId } = useParams<{ datasetId?: string }>();
+  const navigate = useNavigate();
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [project, setProject] = useState<Project | null>(null);
 
@@ -25,6 +26,23 @@ export function AppShell() {
     loadProject();
   }, []);
 
+  const handleDatasetCreated = useCallback((dataset: Dataset) => {
+    setProject((prev) =>
+      prev
+        ? { ...prev, datasets: [...prev.datasets, datasetToSparse(dataset)] }
+        : prev
+    );
+  }, []);
+
+  const handleNavigateToDataset = useCallback(
+    (id: string) => {
+      if (project) {
+        navigate(`/projects/${project.id}/datasets/${id}`);
+      }
+    },
+    [project, navigate]
+  );
+
   return (
     <ChatProvider>
       <div className={styles.shell}>
@@ -37,7 +55,11 @@ export function AppShell() {
         <main className={styles.viewWindow}>
           <Outlet context={{ project }} />
         </main>
-        <ChatPanelConnected />
+        <ChatPanelConnected
+          projectId={DEFAULT_PROJECT_ID}
+          onDatasetCreated={handleDatasetCreated}
+          onNavigateToDataset={handleNavigateToDataset}
+        />
       </div>
     </ChatProvider>
   );

@@ -1,11 +1,21 @@
 import type { Message } from "../../types";
+import type { Dataset } from "@/api";
+import { UploadWidget } from "./UploadWidget";
 import styles from "./ChatPanel.module.css";
 
 interface MessageBubbleProps {
   message: Message;
+  projectId?: string;
+  onUploadComplete?: (dataset: Dataset) => void;
+  onUploadError?: (error: string) => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  projectId,
+  onUploadComplete,
+  onUploadError,
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   return (
@@ -16,6 +26,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         className={`${styles.messageBubble} ${isUser ? styles.messageBubbleUser : styles.messageBubbleAssistant}`}
       >
         <p className={styles.messageContent}>{message.content}</p>
+        {message.widget?.type === "upload" && projectId && onUploadComplete && (
+          <UploadWidget
+            projectId={projectId}
+            onUploadComplete={onUploadComplete}
+            onUploadError={onUploadError}
+          />
+        )}
         {message.tool_calls && message.tool_calls.length > 0 && (
           <div className={styles.toolCalls}>
             {message.tool_calls.map((tc) => (

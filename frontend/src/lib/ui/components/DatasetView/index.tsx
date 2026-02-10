@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
-import { getDataset, type Dataset, type Project } from "@/api";
+import { getDataset, updateDataset, type Dataset, type Project } from "@/api";
 import { executeToolCall as executeToolCallFn, type ToolCall } from "@/table-tools";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
@@ -184,6 +184,8 @@ export function ProjectView() {
     navigate("/");
   };
 
+  const { addMessage } = useChatContext();
+
   const handleDatasetLoaded = useCallback((dataset: Dataset) => {
     setDatasetName(dataset.name);
   }, []);
@@ -191,6 +193,24 @@ export function ProjectView() {
   const handleDatasetError = useCallback((error: string | null) => {
     setDatasetError(error);
   }, []);
+
+  const handleDatasetRename = useCallback(
+    async (name: string) => {
+      if (!datasetId) return;
+      try {
+        await updateDataset(datasetId, { name });
+        setDatasetName(name);
+        addMessage({
+          id: String(Date.now()),
+          role: "assistant",
+          content: `Dataset renamed to "${name}".`,
+        });
+      } catch (err) {
+        console.error("Failed to rename dataset:", err);
+      }
+    },
+    [datasetId, addMessage]
+  );
 
   if (!project) {
     return <TablePanelSkeleton />;
@@ -214,6 +234,8 @@ export function ProjectView() {
           projectName={project.name}
           datasetName={datasetName}
           onProjectClick={hasSelection ? handleProjectClick : undefined}
+          onDatasetRename={hasSelection ? handleDatasetRename : undefined}
+          focusDatasetName={datasetName === "New Dataset"}
         />
         {hasSelection && (
           <div className={styles.headerActions}>

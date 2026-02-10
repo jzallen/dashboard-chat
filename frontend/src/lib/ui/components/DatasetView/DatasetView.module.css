@@ -31,6 +31,21 @@
   @apply text-gray-900 font-semibold;
 }
 
+.breadcrumbEditable {
+  @apply cursor-text;
+  border-bottom: 1px dashed transparent;
+}
+
+.breadcrumbEditable:hover {
+  border-bottom-color: #9ca3af;
+}
+
+.breadcrumbInput {
+  @apply text-lg font-semibold text-gray-900 bg-transparent border-0 border-b-2 border-blue-500 outline-none;
+  padding: 0;
+  min-width: 8ch;
+}
+
 /* Settings button */
 .settingsButton {
   @apply p-2 rounded-lg hover:bg-surface-tertiary transition-colors;

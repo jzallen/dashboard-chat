@@ -1,5 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
+import { vi, type Mock } from "vitest";
+import type { Dataset } from "@/api";
 
 function TestConsumer() {
   const { isActive, input, setInput, handleSubmit, registerToolHandler } = useChatContext();
@@ -31,6 +33,65 @@ function TestConsumer() {
         onClick={() => registerToolHandler(null)}
       >
         Unregister
+      </button>
+    </div>
+  );
+}
+
+function MessageConsumer() {
+  const { messages, addMessage } = useChatContext();
+  return (
+    <div>
+      <span data-testid="message-count">{messages.length}</span>
+      {messages.map((m) => (
+        <span key={m.id} data-testid={`msg-${m.id}`}>{m.content}</span>
+      ))}
+      <button
+        data-testid="add-message"
+        onClick={() =>
+          addMessage({ id: "test-1", role: "assistant", content: "Hello from addMessage" })
+        }
+      >
+        Add
+      </button>
+      <button
+        data-testid="add-widget-message"
+        onClick={() =>
+          addMessage({
+            id: "upload-1",
+            role: "assistant",
+            content: "Upload a file:",
+            widget: { type: "upload" },
+          })
+        }
+      >
+        Add Widget
+      </button>
+    </div>
+  );
+}
+
+function ProjectUpdaterConsumer({ onUpdated }: { onUpdated: Mock }) {
+  const { registerProjectUpdater, onDatasetCreated } = useChatContext();
+
+  return (
+    <div>
+      <button
+        data-testid="register-updater"
+        onClick={() => registerProjectUpdater(onUpdated)}
+      >
+        Register Updater
+      </button>
+      <button
+        data-testid="create-dataset"
+        onClick={() =>
+          onDatasetCreated({
+            id: "d-new",
+            name: "New Dataset",
+          } as Dataset)
+        }
+      >
+        Create Dataset
       </button>
     </div>
   );
@@ -84,5 +145,52 @@ describe("ChatContext", () => {
     expect(screen.getByTestId("active").textContent).toBe("true");
     fireEvent.click(screen.getByTestId("unregister"));
     expect(screen.getByTestId("active").textContent).toBe("false");
+  });
+
+  it("addMessage inserts a message into the list", () => {
+    render(
+      <ChatProvider>
+        <MessageConsumer />
+      </ChatProvider>
+    );
+    expect(screen.getByTestId("message-count").textContent).toBe("0");
+    fireEvent.click(screen.getByTestId("add-message"));
+    expect(screen.getByTestId("message-count").textContent).toBe("1");
+    expect(screen.getByTestId("msg-test-1").textContent).toBe("Hello from addMessage");
+  });
+
+  it("addMessage supports widget messages", () => {
+    render(
+      <ChatProvider>
+        <MessageConsumer />
+      </ChatProvider>
+    );
+    fireEvent.click(screen.getByTestId("add-widget-message"));
+    expect(screen.getByTestId("message-count").textContent).toBe("1");
+    expect(screen.getByTestId("msg-upload-1").textContent).toBe("Upload a file:");
+  });
+
+  it("onDatasetCreated invokes the registered project updater", () => {
+    const mockUpdater = vi.fn();
+    render(
+      <ChatProvider>
+        <ProjectUpdaterConsumer onUpdated={mockUpdater} />
+      </ChatProvider>
+    );
+    fireEvent.click(screen.getByTestId("register-updater"));
+    fireEvent.click(screen.getByTestId("create-dataset"));
+    expect(mockUpdater).toHaveBeenCalledOnce();
+    expect(mockUpdater).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "d-new", name: "New Dataset" })
+    );
+  });
+
+  it("onDatasetCreated does nothing when no updater registered", () => {
+    render(
+      <ChatProvider>
+        <ProjectUpdaterConsumer onUpdated={vi.fn()} />
+      </ChatProvider>
+    );
+    fireEvent.click(screen.getByTestId("create-dataset"));
   });
 });

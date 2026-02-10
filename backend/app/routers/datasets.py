@@ -44,7 +44,6 @@ async def create_dataset(
     """
     body, status_code = await HTTPController.post_dataset(
         upload_id=data.upload_id,
-        name=data.name,
         partition_fields=data.partition_fields,
         description=data.description,
     )

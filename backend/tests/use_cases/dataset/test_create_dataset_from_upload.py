@@ -68,9 +68,7 @@ class TestCreateDatasetFromUpload:
         with s3_read_write_stubber:
             result = await create_dataset_from_upload(
                 upload_id="upload-001",
-                name="test_data",
                 partition_fields=['age'],
-                description=None,
                 repositories={
                     'lake_repository': partial(MinIOLakeRepository, s3_client=s3_read_write_stubber.client),
                 },
@@ -83,7 +81,7 @@ class TestCreateDatasetFromUpload:
                 expected = Dataset(
                     id=dataset.id,
                     project_id="project-001",
-                    name="test_data",
+                    name="New Dataset",
                     description=None,
                     schema_config={
                         "fields": {
@@ -102,15 +100,51 @@ class TestCreateDatasetFromUpload:
                 )
                 assert dataset == expected
 
+    async def test_create_dataset_without_name_uses_default(
+        self, seeded_db: AsyncSession, s3_read_write_stubber: Stubber, sample_csv: bytes
+    ):
+        """create_dataset_from_upload without name should default to 'New Dataset'."""
+        set_session(seeded_db)
+
+        seeded_db.add(
+            OutboxRecord(
+                id="upload-default-name",
+                aggregate_id="project-001",
+                aggregate_type="project",
+                event_type="UploadFileReceived",
+                payload=asdict(UploadFileReceived(
+                    project_id="project-001",
+                    dataset_id=None,
+                    raw_storage_path="uploads/project-001/test_data.csv",
+                    original_filename="test_data.csv",
+                    file_size=len(sample_csv),
+                )),
+            )
+        )
+        await seeded_db.commit()
+
+        with s3_read_write_stubber:
+            result = await create_dataset_from_upload(
+                upload_id="upload-default-name",
+                partition_fields=['age'],
+                repositories={
+                    'lake_repository': partial(MinIOLakeRepository, s3_client=s3_read_write_stubber.client),
+                },
+            )
+
+        match result:
+            case Failure(error):
+                pytest.fail(f"create_dataset_from_upload should succeed, got: {error}")
+            case Success(dataset):
+                assert dataset.name == "New Dataset"
+
     async def test_given_nonexistent_upload_returns_failure(self, seeded_db: AsyncSession):
         """create_dataset_from_upload should fail when upload_id doesn't exist."""
         set_session(seeded_db)
 
         result = await create_dataset_from_upload(
             upload_id="nonexistent-upload",
-            name="test_data",
             partition_fields=[],
-            description=None,
         )
 
         assert result == Failure("[create_dataset_from_upload] Upload with ID 'nonexistent-upload' not found")
@@ -140,9 +174,7 @@ class TestCreateDatasetFromUpload:
 
         result = await create_dataset_from_upload(
             upload_id="upload-orphan",
-            name="test_data",
             partition_fields=[],
-            description=None,
         )
 
         assert result == Failure("[create_dataset_from_upload] Project with ID 'project-gone' not found")
@@ -174,9 +206,7 @@ class TestCreateDatasetFromUpload:
         with s3_read_write_stubber:
             first = await create_dataset_from_upload(
                 upload_id="upload-002",
-                name="test_data",
                 partition_fields=['age'],
-                description=None,
                 repositories={
                     'lake_repository': partial(MinIOLakeRepository, s3_client=s3_read_write_stubber.client),
                 },
@@ -186,9 +216,7 @@ class TestCreateDatasetFromUpload:
         # Second call fails — upload already processed
         second = await create_dataset_from_upload(
             upload_id="upload-002",
-            name="test_data",
             partition_fields=['age'],
-            description=None,
         )
 
         assert second == Failure(
@@ -229,9 +257,7 @@ class TestCreateDatasetFromUpload:
         with empty_stubber:
             result = await create_dataset_from_upload(
                 upload_id="upload-003",
-                name="test_data",
                 partition_fields=[],
-                description=None,
                 repositories={
                     'lake_repository': partial(MinIOLakeRepository, s3_client=empty_stubber.client),
                 },
@@ -273,9 +299,7 @@ class TestCreateDatasetFromUpload:
         with stubber:
             result = await create_dataset_from_upload(
                 upload_id="upload-004",
-                name="bad_data",
                 partition_fields=[],
-                description=None,
                 repositories={
                     'lake_repository': partial(MinIOLakeRepository, s3_client=stubber.client),
                 },

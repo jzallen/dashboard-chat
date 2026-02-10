@@ -112,3 +112,68 @@
   @apply inline-block w-2 h-4 animate-pulse ml-1;
   background-color: #9ca3af;
 }
+
+/* Action button (+) */
+.actionButton {
+  @apply w-8 h-8 flex items-center justify-center rounded-full text-lg font-medium flex-shrink-0;
+  @apply text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors;
+}
+
+.actionMenuWrapper {
+  @apply relative;
+}
+
+.actionMenu {
+  @apply absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px] z-10;
+}
+
+.actionMenuItem {
+  @apply w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors;
+}
+
+/* Upload widget */
+.uploadWidget {
+  @apply mt-2 flex items-center gap-2;
+}
+
+.uploadInput {
+  @apply hidden;
+}
+
+.uploadButton {
+  @apply px-3 py-1.5 text-sm font-medium text-white rounded-md;
+  background-color: #2563eb;
+}
+
+.uploadButton:hover {
+  background-color: #1d4ed8;
+}
+
+.uploadButtonDone {
+  @apply px-3 py-1.5 text-sm font-medium text-white rounded-md opacity-70 cursor-default;
+  background-color: #16a34a;
+}
+
+.uploadSelected {
+  @apply flex items-center gap-2;
+}
+
+.uploadFilename {
+  @apply text-sm text-gray-700 truncate max-w-[150px];
+}
+
+.uploadRemove {
+  @apply text-gray-400 hover:text-gray-600 text-lg leading-none cursor-pointer;
+}
+
+.uploadUploading {
+  @apply text-sm text-gray-500;
+}
+
+.uploadErrorContainer {
+  @apply flex items-center gap-2;
+}
+
+.uploadError {
+  @apply text-sm text-red-600;
+}

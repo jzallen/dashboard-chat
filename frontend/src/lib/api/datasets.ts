@@ -4,6 +4,7 @@
 
 import { get, patch, post, uploadFile } from "./client";
 import type { RAQBTree } from "@/raqb";
+import type { DatasetSparse } from "./projects";
 
 export interface FieldConfig {
   label: string;
@@ -63,8 +64,6 @@ export interface UploadEvent {
 
 export interface DatasetCreateRequest {
   upload_id: string;
-  project_id: string;
-  name: string;
   description?: string;
   partition_fields?: string[];
 }
@@ -307,3 +306,16 @@ export async function toggleTransform(
 
 // Note: getDatasetAggregatedSql() removed - use getDataset() with includeTransforms: true
 // to get staging_sql property instead
+
+/**
+ * Convert a full Dataset to a DatasetSparse reference for project state
+ */
+export function datasetToSparse(d: Dataset): DatasetSparse {
+  return {
+    id: d.id,
+    name: d.name,
+    link: `/api/datasets/${d.id}`,
+    description: d.description,
+    schema_config: d.schema_config,
+  };
+}

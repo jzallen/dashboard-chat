@@ -79,10 +79,10 @@ class HTTPController:
                 return _error_response(error, DatasetNotFound(dataset_id))
 
     @staticmethod
-    async def post_dataset(upload_id: str, name: str, partition_fields: list[str] | None = None,
+    async def post_dataset(upload_id: str, partition_fields: list[str] | None = None,
                            description: str | None = None) -> tuple[dict, int]:
         result = await dataset_use_cases.create_dataset_from_upload(
-            upload_id=upload_id, name=name, partition_fields=partition_fields,
+            upload_id=upload_id, partition_fields=partition_fields,
             description=description
         )
         match result:

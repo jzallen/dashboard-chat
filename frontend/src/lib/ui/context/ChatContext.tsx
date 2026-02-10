@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from "react";
 import type { ToolCall } from "@/table-tools";
+import type { Dataset } from "@/api";
 import type { Message, TableSchema, SSEMessage } from "../types";
 import { CHAT_URL } from "../data/sampleData";
 
@@ -30,6 +31,9 @@ interface ChatContextValue {
   registerToolHandler: (handler: ToolHandler | null) => void;
   registerTableSchema: (schema: TableSchema | null) => void;
   isActive: boolean;
+  addMessage: (message: Message) => void;
+  onDatasetCreated: (dataset: Dataset) => void;
+  registerProjectUpdater: (updater: ((dataset: Dataset) => void) | null) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -52,6 +56,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const inputRef = useRef<HTMLInputElement>(null!);
   const toolHandlerRef = useRef<ToolHandler | null>(null);
   const tableSchemaRef = useRef<TableSchema | null>(null);
+  const projectUpdaterRef = useRef<((dataset: Dataset) => void) | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -64,6 +69,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const registerTableSchema = useCallback((schema: TableSchema | null) => {
     tableSchemaRef.current = schema;
+  }, []);
+
+  const addMessage = useCallback((message: Message) => {
+    setMessages((prev) => [...prev, message]);
+  }, []);
+
+  const registerProjectUpdater = useCallback((updater: ((dataset: Dataset) => void) | null) => {
+    projectUpdaterRef.current = updater;
+  }, []);
+
+  const onDatasetCreated = useCallback((dataset: Dataset) => {
+    projectUpdaterRef.current?.(dataset);
   }, []);
 
   const handleSubmit = useCallback(
@@ -216,6 +233,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         registerToolHandler,
         registerTableSchema,
         isActive,
+        addMessage,
+        onDatasetCreated,
+        registerProjectUpdater,
       }}
     >
       {children}

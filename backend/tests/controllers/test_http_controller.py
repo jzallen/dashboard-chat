@@ -173,8 +173,8 @@ class TestPostDataset:
 
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_201(self, mock_uc):
-        mock_uc.create_dataset_from_upload = AsyncMock(return_value=Success(FakeModel("d1", "New")))
-        body, status = await HTTPController.post_dataset("u1", "New")
+        mock_uc.create_dataset_from_upload = AsyncMock(return_value=Success(FakeModel("d1", "New Dataset")))
+        body, status = await HTTPController.post_dataset("u1")
         assert status == 201
 
     @patch("app.controllers.http_controller.dataset_use_cases")
@@ -182,7 +182,7 @@ class TestPostDataset:
         mock_uc.create_dataset_from_upload = AsyncMock(
             return_value=Failure("[create_dataset_from_upload] Upload with ID 'u1' not found")
         )
-        body, status = await HTTPController.post_dataset("u1", "New")
+        body, status = await HTTPController.post_dataset("u1")
         assert status == 404
         assert body["type"] == "UPLOAD_NOT_FOUND"
 
@@ -191,7 +191,7 @@ class TestPostDataset:
         mock_uc.create_dataset_from_upload = AsyncMock(
             return_value=Failure("[create_dataset_from_upload] [OutboxRepository] Event u1 has already been processed")
         )
-        body, status = await HTTPController.post_dataset("u1", "New")
+        body, status = await HTTPController.post_dataset("u1")
         assert status == 409
         assert body["type"] == "UPLOAD_ALREADY_PROCESSED"
 
