@@ -9,7 +9,8 @@ import styles from "./AppShell.module.css";
 const DEFAULT_PROJECT_ID = "default-project-001";
 
 export function AppShell() {
-  const { datasetId } = useParams<{ datasetId?: string }>();
+  const { projectId: routeProjectId, datasetId } = useParams<{ projectId?: string; datasetId?: string }>();
+  const projectId = routeProjectId ?? DEFAULT_PROJECT_ID;
   const navigate = useNavigate();
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [project, setProject] = useState<Project | null>(null);
@@ -17,14 +18,14 @@ export function AppShell() {
   useEffect(() => {
     const loadProject = async () => {
       try {
-        const projectData = await getProject(DEFAULT_PROJECT_ID);
+        const projectData = await getProject(projectId);
         setProject(projectData);
       } catch (err) {
         console.error("Failed to load project:", err);
       }
     };
     loadProject();
-  }, []);
+  }, [projectId]);
 
   const handleDatasetCreated = useCallback((dataset: Dataset) => {
     setProject((prev) =>
@@ -36,11 +37,9 @@ export function AppShell() {
 
   const handleNavigateToDataset = useCallback(
     (id: string) => {
-      if (project) {
-        navigate(`/projects/${project.id}/datasets/${id}`);
-      }
+      navigate(`/projects/${projectId}/datasets/${id}`);
     },
-    [project, navigate]
+    [projectId, navigate]
   );
 
   return (
@@ -56,7 +55,7 @@ export function AppShell() {
           <Outlet context={{ project }} />
         </main>
         <ChatPanelConnected
-          projectId={DEFAULT_PROJECT_ID}
+          projectId={projectId}
           onDatasetCreated={handleDatasetCreated}
           onNavigateToDataset={handleNavigateToDataset}
         />

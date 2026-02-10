@@ -22,9 +22,11 @@ export function UploadWidget({
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null!);
+  const hasAutoOpened = useRef(false);
 
   useEffect(() => {
-    if (autoOpen) {
+    if (autoOpen && !hasAutoOpened.current) {
+      hasAutoOpened.current = true;
       inputRef.current?.click();
     }
   }, [autoOpen]);

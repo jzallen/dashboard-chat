@@ -181,7 +181,8 @@ export function ProjectView() {
   };
 
   const handleProjectClick = () => {
-    navigate("/");
+    if (!project) return;
+    navigate(`/projects/${project.id}`);
   };
 
   const { addMessage } = useChatContext();
@@ -197,19 +198,21 @@ export function ProjectView() {
   const handleDatasetRename = useCallback(
     async (name: string) => {
       if (!datasetId) return;
+      const previousName = datasetName;
+      setDatasetName(name);
       try {
         await updateDataset(datasetId, { name });
-        setDatasetName(name);
         addMessage({
           id: String(Date.now()),
           role: "assistant",
-          content: `Dataset renamed to "${name}".`,
+          content: `Dataset renamed to '${name}'.`,
         });
       } catch (err) {
+        setDatasetName(previousName);
         console.error("Failed to rename dataset:", err);
       }
     },
-    [datasetId, addMessage]
+    [datasetId, datasetName, addMessage]
   );
 
   if (!project) {
