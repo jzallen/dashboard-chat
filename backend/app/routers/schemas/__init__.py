@@ -13,8 +13,10 @@ from .dataset import (
     # Transform schemas (now in dataset.py)
     TransformBase,
     TransformCreate,
-    TransformInput,
+    TransformCreateBatch,
     TransformUpdate,
+    TransformUpdateItem,
+    TransformBatchUpdate,
     TransformResponse,
     # Upload event schemas
     UploadEventResponse,
@@ -52,8 +54,10 @@ __all__ = [
     # Transform
     "TransformBase",
     "TransformCreate",
-    "TransformInput",
+    "TransformCreateBatch",
     "TransformUpdate",
+    "TransformUpdateItem",
+    "TransformBatchUpdate",
     "TransformResponse",
     # Upload Event
     "UploadEventResponse",

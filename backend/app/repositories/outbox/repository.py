@@ -16,7 +16,7 @@ from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
 from ..exceptions import OutboxRepositoryError
 from .outbox_record import OutboxRecord
-from .events import to_event, OutboxEvent, UploadFileReceived
+from .events import to_event, OutboxEvent, UploadFileReceived, TransformsCreated, TransformsUpdated
 
 
 P = ParamSpec("P")
@@ -80,6 +80,32 @@ class OutboxRepository:
             event=event,
         )
     
+    @handle_repository_exceptions
+    async def submit_transforms_created_event(
+        self,
+        dataset_id: str,
+        transforms: list[dict],
+    ) -> OutboxRecord:
+        event = TransformsCreated(dataset_id=dataset_id, transforms=transforms)
+        return await self._append_event(
+            aggregate_type="dataset",
+            aggregate_id=dataset_id,
+            event=event,
+        )
+
+    @handle_repository_exceptions
+    async def submit_transforms_updated_event(
+        self,
+        dataset_id: str,
+        changes: list[dict],
+    ) -> OutboxRecord:
+        event = TransformsUpdated(dataset_id=dataset_id, changes=changes)
+        return await self._append_event(
+            aggregate_type="dataset",
+            aggregate_id=dataset_id,
+            event=event,
+        )
+
     @handle_repository_exceptions
     async def get_file_received_event_by_id(self, record_id: str) -> OutboxEvent | None:
         """Fetch a file received event by its OutboxRecord ID."""

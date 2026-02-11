@@ -55,6 +55,46 @@
   @apply w-5 h-5 text-gray-600;
 }
 
+/* Sync button states */
+.syncButton {
+  @apply p-2 rounded-lg hover:bg-surface-tertiary transition-all duration-300;
+}
+
+.syncButton:disabled {
+  @apply cursor-default;
+}
+
+.syncSpinning {
+  @apply pointer-events-none;
+}
+
+.syncSpinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+.syncSuccess {
+  @apply pointer-events-none;
+  color: #16a34a;
+}
+
+.syncSuccess svg {
+  animation: scaleIn 0.3s ease-out;
+}
+
+.syncCooldown {
+  @apply opacity-40 pointer-events-none;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 /* View mode toggle */
 .modeToggle {
   @apply flex items-center gap-1 bg-gray-100 rounded-lg p-0.5;

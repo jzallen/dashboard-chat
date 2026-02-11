@@ -345,6 +345,32 @@ class MetadataRepository:
         return self._transform_to_dict(transform)
 
     @handle_repository_exceptions
+    async def create_transforms_batch(
+        self,
+        dataset_id: str,
+        transforms_input: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Create multiple transforms in a single flush."""
+        records = []
+        for t in transforms_input:
+            record = TransformRecord(
+                dataset_id=dataset_id,
+                name=t['name'],
+                condition_json=t['condition_json'],
+                condition_sql=t.get('condition_sql', ''),
+                description=t.get('description'),
+                nl_prompt=t.get('nl_prompt'),
+            )
+            self._session.add(record)
+            records.append(record)
+
+        await self._session.flush()
+        for record in records:
+            await self._session.refresh(record)
+
+        return [self._transform_to_dict(r) for r in records]
+
+    @handle_repository_exceptions
     async def update_transform(
         self,
         transform_id: str,

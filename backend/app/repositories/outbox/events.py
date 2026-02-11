@@ -21,7 +21,21 @@ class UploadFileReceived:
     dataset_id: str | None = None
 
 
-OutboxEvent = Union[UploadFileReceived]
+@dataclass(frozen=True, slots=True)
+class TransformsCreated:
+    """One or more transforms created on a dataset."""
+    dataset_id: str
+    transforms: list[dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class TransformsUpdated:
+    """One or more transforms updated (including soft-delete via status='deleted')."""
+    dataset_id: str
+    changes: list[dict[str, Any]]
+
+
+OutboxEvent = Union[UploadFileReceived, TransformsCreated, TransformsUpdated]
 
 
 def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:
@@ -39,7 +53,8 @@ def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:
     """
     event_registry = {
         "UploadFileReceived": UploadFileReceived,
-        # Add other event types here as needed
+        "TransformsCreated": TransformsCreated,
+        "TransformsUpdated": TransformsUpdated,
     }
     event_class = event_registry[event_type]
     return event_class(**payload)

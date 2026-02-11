@@ -15,7 +15,7 @@ from ...database import Base
 
 if TYPE_CHECKING:
     from .dataset_record import DatasetRecord
-    from ...models.pipeline_run import PipelineRun
+    from .pipeline_run_record import PipelineRunRecord
 
 
 class TransformRecord(Base):
@@ -62,8 +62,8 @@ class TransformRecord(Base):
 
     # Relationships
     dataset: Mapped["DatasetRecord"] = relationship("DatasetRecord", back_populates="transforms")
-    runs: Mapped[list["PipelineRun"]] = relationship(
-        "PipelineRun", back_populates="transform", cascade="all, delete-orphan"
+    runs: Mapped[list["PipelineRunRecord"]] = relationship(
+        "PipelineRunRecord", back_populates="transform", cascade="all, delete-orphan"
     )
 
     @property

@@ -63,7 +63,7 @@ async def setup_database(settings) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.database import DEFAULT_PROJECT_ID, Base
-    from app.models.pipeline_run import PipelineRun  # noqa: F401 — required for mapper config
+    from app.repositories.metadata import PipelineRunRecord  # noqa: F401 — required for mapper config
     from app.repositories.metadata import ProjectRecord
 
     engine = create_async_engine(settings.database_url)

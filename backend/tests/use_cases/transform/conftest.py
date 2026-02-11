@@ -1,13 +1,10 @@
-"""Test fixtures for project use cases."""
-
 import pytest
 import tempfile
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import event
 from app.database import Base
-from app.repositories.metadata import DatasetRecord, ProjectRecord
-# Import PipelineRunRecord to ensure mapper is configured (TransformRecord has relationship to it)
-from app.repositories.metadata import PipelineRunRecord  # noqa: F401
+from app.repositories.metadata import TransformRecord, DatasetRecord, ProjectRecord
+from app.repositories.outbox.outbox_record import OutboxRecord
 
 
 @pytest.fixture
@@ -21,7 +18,6 @@ async def db_session():
         echo=False,
     )
 
-    # Enable foreign keys for SQLite
     @event.listens_for(engine.sync_engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
@@ -45,36 +41,43 @@ async def db_session():
 
 @pytest.fixture
 async def seeded_db(db_session: AsyncSession):
-    """Seed the database with two projects, one with datasets."""
-    project1 = ProjectRecord(
+    """Seed the database with a project, dataset, and transforms."""
+    project = ProjectRecord(
         id="project-001",
         name="Test Project",
-        description="A test project",
     )
-    project2 = ProjectRecord(
-        id="project-002",
-        name="Another Project",
-        description=None,
-    )
-    db_session.add(project1)
-    db_session.add(project2)
+    db_session.add(project)
 
-    dataset1 = DatasetRecord(
+    dataset = DatasetRecord(
         id="dataset-001",
         storage_path="project-001/dataset-001.parquet",
         project_id="project-001",
         name="Dataset One",
         schema_config={"fields": {"col1": {"type": "text"}}},
     )
-    dataset2 = DatasetRecord(
-        id="dataset-002",
-        storage_path="project-001/dataset-002.parquet",
-        project_id="project-001",
-        name="Dataset Two",
-        schema_config={"fields": {"col2": {"type": "number"}}},
+    db_session.add(dataset)
+
+    transform = TransformRecord(
+        id="transform-001",
+        dataset_id="dataset-001",
+        name="Filter Active",
+        description="Filter for active records",
+        condition_json={"id": "root", "type": "group", "children1": []},
+        condition_sql="col1 = 'active'",
+        status='enabled',
     )
-    db_session.add(dataset1)
-    db_session.add(dataset2)
+    db_session.add(transform)
+
+    transform2 = TransformRecord(
+        id="transform-002",
+        dataset_id="dataset-001",
+        name="Filter Inactive",
+        description="Filter for inactive records",
+        condition_json={"id": "root", "type": "group", "children1": []},
+        condition_sql="col1 = 'inactive'",
+        status='enabled',
+    )
+    db_session.add(transform2)
 
     await db_session.commit()
 

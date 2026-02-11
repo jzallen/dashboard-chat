@@ -4,7 +4,7 @@ import tempfile
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import event
 from app.database import Base
-from app.repositories.metadata import TransformRecord, DatasetRecord, ProjectRecord
+from app.repositories.metadata import TransformRecord, DatasetRecord, ProjectRecord, PipelineRunRecord  # noqa: F401
 
 
 @pytest.fixture

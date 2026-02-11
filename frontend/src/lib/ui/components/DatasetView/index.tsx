@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { type Dataset, type Project } from "@/api";
@@ -174,9 +174,26 @@ export function ProjectView() {
   const { datasetId } = useParams<{ projectId?: string; datasetId?: string }>();
   const { project } = useOutletContext<AppShellContext>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [viewMode, setViewMode] = useState<ViewMode>("catalog");
   const [showSettings, setShowSettings] = useState(false);
+  const [syncState, setSyncState] = useState<"idle" | "spinning" | "success" | "cooldown">("idle");
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const handleSync = useCallback(() => {
+    if (syncState !== "idle" || !datasetId) return;
+    setSyncState("spinning");
+
+    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) })
+      .then(() => {
+        setSyncState("success");
+        syncTimerRef.current = setTimeout(() => {
+          setSyncState("cooldown");
+          syncTimerRef.current = setTimeout(() => setSyncState("idle"), 10_000);
+        }, 1200);
+      });
+  }, [syncState, datasetId, queryClient]);
 
   const prefetchDataset = usePrefetchDataset();
   const { data: fullDataset } = useDatasetQuery(datasetId);
@@ -192,6 +209,8 @@ export function ProjectView() {
   useEffect(() => {
     setViewMode("catalog");
     setShowSettings(false);
+    setSyncState("idle");
+    return () => clearTimeout(syncTimerRef.current);
   }, [datasetId]);
 
   // Prefetch dataset on selection (via URL)
@@ -275,6 +294,46 @@ export function ProjectView() {
                     d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                   />
                 </svg>
+              </button>
+            )}
+            {viewMode === "table" && (
+              <button
+                onClick={handleSync}
+                disabled={syncState !== "idle"}
+                className={`${styles.syncButton} ${syncState === "spinning" ? styles.syncSpinning : ""} ${syncState === "success" ? styles.syncSuccess : ""} ${syncState === "cooldown" ? styles.syncCooldown : ""}`}
+                title="Sync dataset from server"
+              >
+                {syncState === "success" ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                    className={styles.settingsIcon}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4.5 12.75l6 6 9-13.5"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                    className={styles.settingsIcon}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.015 4.356v4.992"
+                    />
+                  </svg>
+                )}
               </button>
             )}
             <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />

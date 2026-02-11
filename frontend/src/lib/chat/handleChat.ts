@@ -143,6 +143,12 @@ function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
 
 // ============================================================================
 // System Prompt
+// TODO: Improve natural language understanding for less direct prompts.
+//   - Include sample column values in schema context so the LLM can infer
+//     intent (e.g. "change east to west" → filter region=east).
+//   - Consider lowering temperature for more deterministic tool selection.
+//   - Add an "updateCell" tool for in-place data edits.
+//   - Instruct the LLM to always reply with text when no tool applies.
 // ============================================================================
 
 function getSystemPrompt(tableSchema: TableSchema): string {

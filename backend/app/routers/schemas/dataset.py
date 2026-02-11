@@ -51,17 +51,10 @@ class DatasetCreate(BaseModel):
 
 
 class DatasetUpdate(BaseModel):
-    """Schema for updating a Dataset.
-
-    Transforms can be managed through the transforms field:
-    - To create: include transform without id
-    - To update: include transform with id
-    - To delete: include transform with id and delete=True
-    """
+    """Schema for updating a Dataset's metadata."""
 
     name: str | None = None
     description: str | None = None
-    transforms: list["TransformInput"] | None = None
 
 
 class DatasetResponse(DatasetBase):
@@ -126,24 +119,27 @@ class TransformUpdate(BaseModel):
     is_active: bool | None = None
 
 
-class TransformInput(BaseModel):
-    """Schema for transform input in dataset update.
+class TransformCreateBatch(BaseModel):
+    """Request body for POST /datasets/:id/transforms — batch create."""
 
-    If id is provided, updates existing transform.
-    If id is None, creates a new transform.
-    If delete is True, deletes the transform (requires id).
+    transforms: list[TransformCreate]
 
-    Frontend generates condition_sql from condition_json using RAQB.
-    """
 
-    id: str | None = None
+class TransformUpdateItem(BaseModel):
+    """A single item in a batch update."""
+
+    id: str
     name: str | None = None
     description: str | None = None
-    condition_json: dict[str, Any] | None = None  # RAQB JSON tree (for UI rehydration)
-    condition_sql: str | None = None  # SQL WHERE clause from frontend RAQB
-    nl_prompt: str | None = None
-    is_active: bool | None = None
-    delete: bool = False
+    condition_json: dict[str, Any] | None = None
+    condition_sql: str | None = None
+    status: str | None = None  # 'enabled' | 'disabled' | 'deleted'
+
+
+class TransformBatchUpdate(BaseModel):
+    """Request body for PATCH /datasets/:id/transforms — batch update."""
+
+    updates: list[TransformUpdateItem]
 
 
 class TransformResponse(TransformBase):

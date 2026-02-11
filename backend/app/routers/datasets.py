@@ -77,6 +77,4 @@ async def update_dataset(
     return JSONResponse(content=body, status_code=status_code)
 
 
-# Note: Transforms are created via PATCH /{dataset_id} with transforms array
-# Note: /aggregated-sql endpoint removed - use GET /{dataset_id} with include_transforms=true
-# to get staging_sql property instead
+# Note: Transforms are managed via /api/datasets/{dataset_id}/transforms endpoints

@@ -1,5 +1,8 @@
 /**
- * Hook for managing transforms on a dataset
+ * Hook for managing transforms on a dataset.
+ *
+ * Uses optimistic updates — mutates the local Dataset cache immediately,
+ * fires the API call in the background, and rolls back on error.
  */
 
 import { useState, useCallback, useEffect } from "react";
@@ -36,7 +39,7 @@ interface UseTransformsReturn {
 }
 
 export function useTransforms(options: UseTransformsOptions): UseTransformsReturn {
-  const { dataset, onDatasetChange, onFilterApply, currentFilters = [], autoApplyActive = true, onFiltersChanged } = options;
+  const { dataset, onDatasetChange, onFilterApply, autoApplyActive = true, onFiltersChanged } = options;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,9 +50,7 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
   // Auto-apply active transforms when dataset changes
   useEffect(() => {
     if (autoApplyActive && onFilterApply && dataset) {
-      console.log("[useTransforms] Auto-applying transforms:", transforms);
       const activeFilters = computeActiveFilters(transforms);
-      console.log("[useTransforms] Computed active filters:", activeFilters);
       onFilterApply(activeFilters);
     }
   }, [dataset, transforms, autoApplyActive, onFilterApply]);
@@ -61,15 +62,31 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
         return false;
       }
 
+      const originalDataset = dataset;
+
+      // Optimistic update — add transform with temp ID
+      const optimisticTransform: Transform = {
+        id: crypto.randomUUID(),
+        name: data.name,
+        description: data.description ?? null,
+        condition_json: data.condition_json,
+        condition_sql: data.condition_sql,
+        status: 'enabled',
+      };
+      const optimisticDataset: Dataset = {
+        ...dataset,
+        transforms: [...dataset.transforms, optimisticTransform],
+      };
+      onDatasetChange?.(optimisticDataset);
+
       setLoading(true);
       setError(null);
       try {
-        const updatedDataset = await createTransform(dataset.id, data);
-        if (onDatasetChange) {
-          onDatasetChange(updatedDataset);
-        }
+        await createTransform(dataset.id, data);
         return true;
       } catch (err) {
+        // Rollback on error
+        onDatasetChange?.(originalDataset);
         setError(err instanceof Error ? err.message : "Failed to save transform");
         return false;
       } finally {
@@ -86,15 +103,22 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
         return false;
       }
 
+      const originalDataset = dataset;
+
+      // Optimistic update — remove transform from list
+      const optimisticDataset: Dataset = {
+        ...dataset,
+        transforms: dataset.transforms.filter((t) => t.id !== transformId),
+      };
+      onDatasetChange?.(optimisticDataset);
+
       setLoading(true);
       setError(null);
       try {
-        const updatedDataset = await deleteTransform(dataset.id, transformId);
-        if (onDatasetChange) {
-          onDatasetChange(updatedDataset);
-        }
+        await deleteTransform(dataset.id, transformId);
         return true;
       } catch (err) {
+        onDatasetChange?.(originalDataset);
         setError(err instanceof Error ? err.message : "Failed to delete transform");
         return false;
       } finally {
@@ -111,13 +135,22 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
         return false;
       }
 
+      const originalDataset = dataset;
+      const newStatus = isActive ? 'enabled' : 'disabled';
+
+      // Optimistic update — flip status on matching transform
+      const optimisticDataset: Dataset = {
+        ...dataset,
+        transforms: dataset.transforms.map((t) =>
+          t.id === transformId ? { ...t, status: newStatus } as Transform : t
+        ),
+      };
+      onDatasetChange?.(optimisticDataset);
+
       setLoading(true);
       setError(null);
       try {
-        const updatedDataset = await toggleTransformApi(dataset.id, transformId, isActive);
-        if (onDatasetChange) {
-          onDatasetChange(updatedDataset);
-        }
+        await toggleTransformApi(dataset.id, transformId, isActive);
 
         // Notify that filters changed (to trigger data refetch)
         if (onFiltersChanged) {
@@ -128,6 +161,7 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
 
         return true;
       } catch (err) {
+        onDatasetChange?.(originalDataset);
         setError(err instanceof Error ? err.message : "Failed to update transform");
         return false;
       } finally {
@@ -176,19 +210,14 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
 function computeActiveFilters(transforms: Transform[]): ColumnFiltersState {
   let activeFilters: ColumnFiltersState = [];
 
-  console.log("[computeActiveFilters] Processing transforms:", transforms);
-
   for (const transform of transforms) {
-    console.log("[computeActiveFilters] Transform:", transform.name, "status:", transform.status);
     if (transform.status === 'enabled') {
       const filters = raqbToTanstackFilters(transform.condition_json, {
         transformId: transform.id,
       });
-      console.log("[computeActiveFilters] Converted RAQB to filters:", filters);
       activeFilters = mergeFilters(activeFilters, filters);
     }
   }
 
-  console.log("[computeActiveFilters] Final merged filters:", activeFilters);
   return activeFilters;
 }

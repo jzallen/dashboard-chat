@@ -236,76 +236,55 @@ export async function updateDataset(
   return patch<Dataset>(`/api/datasets/${datasetId}`, data);
 }
 
-// Transform management
-// Transforms are managed through the dataset PATCH endpoint with a transforms array
+// Transform management — dedicated bulk endpoints, fire-and-forget
 
 /**
- * Input for transform operations via dataset update
- */
-interface TransformInput {
-  id?: string;
-  name?: string;
-  description?: string;
-  condition_json?: unknown;
-  condition_sql?: string;
-  status?: 'enabled' | 'disabled' | 'deleted';
-  delete?: boolean;
-}
-
-/**
- * Create a new transform and return the updated dataset
+ * Batch-create transforms on a dataset
  */
 export async function createTransform(
   datasetId: string,
   data: TransformCreate
-): Promise<Dataset> {
-  return patch<Dataset>(`/api/datasets/${datasetId}`, {
+): Promise<void> {
+  await post(`/api/datasets/${datasetId}/transforms`, {
     transforms: [data],
   });
 }
 
 /**
- * Update a transform and return the updated dataset
+ * Batch-update a transform (name, condition, status)
  */
 export async function updateTransform(
   datasetId: string,
   transformId: string,
   data: TransformUpdate
-): Promise<Dataset> {
-  const transformInput: TransformInput = {
-    id: transformId,
-    ...data,
-  };
-  return patch<Dataset>(`/api/datasets/${datasetId}`, {
-    transforms: [transformInput],
+): Promise<void> {
+  await patch(`/api/datasets/${datasetId}/transforms`, {
+    updates: [{ id: transformId, ...data }],
   });
 }
 
 /**
- * Delete a transform and return the updated dataset
+ * Soft-delete a transform via status='deleted'
  */
 export async function deleteTransform(
   datasetId: string,
   transformId: string
-): Promise<Dataset> {
-  return patch<Dataset>(`/api/datasets/${datasetId}`, {
-    transforms: [{ id: transformId, delete: true }],
+): Promise<void> {
+  await patch(`/api/datasets/${datasetId}/transforms`, {
+    updates: [{ id: transformId, status: 'deleted' }],
   });
 }
 
 /**
- * Toggle a transform's enabled/disabled state and return the updated dataset
+ * Toggle a transform's enabled/disabled state
  */
 export async function toggleTransform(
   datasetId: string,
   transformId: string,
   enabled: boolean
-): Promise<Dataset> {
-  return updateTransform(datasetId, transformId, { status: enabled ? 'enabled' : 'disabled' });
+): Promise<void> {
+  await updateTransform(datasetId, transformId, { status: enabled ? 'enabled' : 'disabled' });
 }
-
-// Note: getDatasetAggregatedSql() removed - use getDataset() with includeTransforms: true
-// to get staging_sql property instead
 
 /**
  * Convert a full Dataset to a DatasetSparse reference for project state

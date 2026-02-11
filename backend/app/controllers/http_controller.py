@@ -8,6 +8,7 @@ from .response_wrapper import wrap_success
 from app.use_cases import dataset as dataset_use_cases
 from app.use_cases import upload as upload_use_cases
 from app.use_cases import project as project_use_cases
+from app.use_cases import transform as transform_use_cases
 from app.use_cases.exceptions import (
     DomainException,
     DatasetNotFound,
@@ -108,6 +109,26 @@ class HTTPController:
                 return wrap_success(_serialize(data)), 201
             case Failure(error):
                 return _error_response(error, InvalidFileType(), EmptyFile(), ProjectNotFound(project_id), DatasetNotFound(dataset_id))
+
+    # Transform methods
+
+    @staticmethod
+    async def post_transforms(dataset_id: str, transforms: list[dict]) -> tuple[dict, int]:
+        result = await transform_use_cases.create_transforms(dataset_id, transforms)
+        match result:
+            case Success():
+                return {"ok": True}, 201
+            case Failure(error):
+                return _error_response(error, DatasetNotFound(dataset_id))
+
+    @staticmethod
+    async def patch_transforms(dataset_id: str, updates: list[dict]) -> tuple[dict, int]:
+        result = await transform_use_cases.update_transforms(dataset_id, updates)
+        match result:
+            case Success():
+                return {"ok": True}, 200
+            case Failure(error):
+                return _error_response(error, DatasetNotFound(dataset_id))
 
     # Project methods
 
