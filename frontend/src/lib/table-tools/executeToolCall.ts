@@ -16,8 +16,20 @@ function performToolAction(
         value: unknown;
       };
       handlers.setColumnFilters((prev) => {
-        const filtered = prev.filter((f) => f.id !== column);
-        return [...filtered, { id: column, value: { operator, value } }];
+        const existing = prev.find((f) => f.id === column);
+        const newCondition = { operator, value };
+
+        if (existing) {
+          // Merge into compound filter (AND logic)
+          const val = existing.value as Record<string, unknown>;
+          const conditions = val.conditions
+            ? [...(val.conditions as Array<Record<string, unknown>>), newCondition]
+            : [{ operator: val.operator, value: val.value, transformId: val.transformId }, newCondition];
+          return prev.map((f) =>
+            f.id === column ? { ...f, value: { conditions } } : f
+          );
+        }
+        return [...prev, { id: column, value: newCondition }];
       });
       break;
     }
@@ -35,14 +47,9 @@ function performToolAction(
     }
 
     case "addRow": {
-      const { data: rowData } = args as { data: Partial<TableRow> };
+      const { data: rowData } = args as { data: Record<string, unknown> };
       const newRow: TableRow = {
         id: String(Date.now()),
-        name: "",
-        category: "",
-        amount: 0,
-        quantity: 0,
-        inStock: true,
         ...rowData,
       };
       handlers.setData((prev) => [...prev, newRow]);

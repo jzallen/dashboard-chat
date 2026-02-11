@@ -5,7 +5,6 @@ import ActiveFilters from "./ActiveFilters";
 import Pagination from "./Pagination";
 import { TableHead } from "./TableHead";
 import { TableBody } from "./TableBody";
-import { columns } from "../../data/sampleData";
 import styles from "./TablePanel.module.css";
 
 interface TablePanelProps {
@@ -36,7 +35,7 @@ export default function TablePanel({
           <TableHead headerGroups={table.getHeaderGroups()} />
           <TableBody
             rows={table.getRowModel().rows}
-            columnCount={columns.length}
+            columnCount={table.getAllColumns().length}
           />
         </table>
       </div>

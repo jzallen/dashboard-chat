@@ -28,7 +28,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
     let message = `Request failed with status ${response.status}`;
     try {
       const parsed = JSON.parse(errorBody);
-      message = parsed.detail || message;
+      // Log full detail to console for debugging
+      if (parsed.detail) {
+        console.error(`[API ${parsed.type || response.status}]`, parsed.detail);
+      }
+      // Show user-friendly title/type, never raw server internals
+      message = parsed.title || parsed.type || message;
     } catch {
       // Use default message
     }

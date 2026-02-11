@@ -1,6 +1,4 @@
 import type { Message, TableSchema, ToolDefinition } from "./types";
-import { filterTableToRaqb, generateFilterDescription } from "./tanstackToRaqb";
-import { raqbToSql } from "@/raqb";
 
 // ============================================================================
 // Types
@@ -262,56 +260,6 @@ class SSEStreamWriter {
 
 interface HandleChatOptions {
   corsOrigin: string;
-  apiUrl?: string;
-  datasetId?: string;
-}
-
-/**
- * Save a filterTable tool call to the backend as a transform.
- * Converts TanStack filter format to RAQB JSON for persistence.
- */
-async function saveTransformToBackend(
-  toolCall: { function: { name: string; arguments: string } },
-  apiUrl: string,
-  datasetId: string
-): Promise<void> {
-  if (toolCall.function.name !== "filterTable") return;
-
-  try {
-    const args = JSON.parse(toolCall.function.arguments);
-
-    // Convert filterTable args to RAQB format
-    const raqbJson = filterTableToRaqb(args);
-    const description = generateFilterDescription(args);
-    // Generate SQL from RAQB JSON (frontend handles the translation)
-    const conditionSql = raqbToSql(raqbJson);
-
-    console.log("[handleChat] Converted filterTable to RAQB:", JSON.stringify(raqbJson));
-    console.log("[handleChat] Generated SQL:", conditionSql);
-
-    // Create transform via PATCH /datasets/{id} with transforms array
-    const response = await fetch(`${apiUrl}/api/datasets/${datasetId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transforms: [{
-          name: description,
-          description: description,
-          condition_json: raqbJson,
-          condition_sql: conditionSql,
-          nl_prompt: description,
-        }],
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("Failed to save transform:", await response.text());
-    } else {
-      console.log("[handleChat] Transform saved successfully");
-    }
-  } catch (error) {
-    console.error("Error saving transform:", error);
-  }
 }
 
 export async function handleChat(
@@ -320,8 +268,6 @@ export async function handleChat(
   options: HandleChatOptions
 ): Promise<Response> {
   const { messages, tableSchema }: ChatRequest = await request.json();
-  const apiUrl = options.apiUrl || "http://localhost:8000";
-  const datasetId = options.datasetId || "1592ce82-5f22-4da7-b41b-9fd9fd05770e";
 
   const systemPrompt = getSystemPrompt(tableSchema);
   const chatMessages: Message[] = [
@@ -332,13 +278,11 @@ export async function handleChat(
   const tools = getToolDefinitions(tableSchema);
   const stream = new SSEStreamWriter();
 
-  // Stream and persist any generateFilter calls
-  streamLLMResponseWithPersistence(
+  // Stream LLM response; transform persistence is handled by the frontend
+  streamLLMResponse(
     client,
     { messages: chatMessages, tools },
-    stream,
-    apiUrl,
-    datasetId
+    stream
   ).catch(console.error);
 
   return new Response(stream.readable, {
@@ -353,67 +297,34 @@ export async function handleChat(
   });
 }
 
-async function streamLLMResponseWithPersistence(
+async function streamLLMResponse(
   client: ChatClient,
   request: ChatCompletionRequest,
-  stream: SSEStreamWriter,
-  apiUrl: string,
-  datasetId: string
+  stream: SSEStreamWriter
 ): Promise<void> {
-  const accumulatedToolCalls: AccumulatedToolCall[] = [];
   let streamCompleted = false;
 
   try {
-    console.log("[handleChat] Starting stream from LLM");
     for await (const chunk of client.streamCompletion(request)) {
-      console.log("[handleChat] Received chunk:", chunk.substring(0, 200));
       try {
         const parsed = JSON.parse(chunk);
         const delta = parsed.choices?.[0]?.delta;
         const finishReason = parsed.choices?.[0]?.finish_reason;
-
-        console.log("[handleChat] Parsed - delta:", JSON.stringify(delta), "finishReason:", finishReason);
 
         if (!delta && !finishReason) continue;
 
         if (delta) {
           await stream.writeContent(delta.content);
           stream.accumulateToolCalls(delta.tool_calls);
-
-          // Track tool calls for persistence
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const index = tc.index;
-              if (!accumulatedToolCalls[index]) {
-                accumulatedToolCalls[index] = {
-                  id: tc.id || "",
-                  function: { name: "", arguments: "" },
-                };
-              }
-              if (tc.id) accumulatedToolCalls[index].id = tc.id;
-              if (tc.function?.name)
-                accumulatedToolCalls[index].function.name += tc.function.name;
-              if (tc.function?.arguments)
-                accumulatedToolCalls[index].function.arguments +=
-                  tc.function.arguments;
-            }
-          }
         }
 
         if (finishReason) {
-          // Persist filterTable calls as RAQB transforms BEFORE sending done
-          for (const toolCall of accumulatedToolCalls) {
-            if (toolCall.function.name === "filterTable") {
-              await saveTransformToBackend(toolCall, apiUrl, datasetId);
-            }
-          }
-
           await stream.writeToolCalls();
           await stream.writeDone();
           streamCompleted = true;
         }
       } catch (parseError) {
-        console.error("[handleChat] Parse error for chunk:", parseError, "chunk:", chunk.substring(0, 100));
+        console.error("[handleChat] Parse error for chunk:", parseError);
       }
     }
 

@@ -1,27 +1,52 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
-  SortingState,
-  ColumnFiltersState,
+  type ColumnDef,
+  type SortingState,
+  type ColumnFiltersState,
 } from "@tanstack/react-table";
 import { customFilterFn, type TableRow } from "@/table-tools";
-import { initialData, columns as sampleColumns } from "../data/sampleData";
+import type { Dataset, SchemaConfig } from "@/api";
 
 interface UseTableConfigOptions {
-  /** Dataset ID for server-side filtering (currently unused, for future implementation) */
-  datasetId?: string;
+  dataset?: Dataset | null;
+}
+
+function buildColumnsFromSchema(schema: SchemaConfig): ColumnDef<TableRow>[] {
+  return Object.entries(schema.fields).map(([key, config]) => ({
+    accessorKey: key,
+    header: config.label || key,
+  }));
 }
 
 export function useTableConfig(options: UseTableConfigOptions = {}) {
-  const [data, setData] = useState<TableRow[]>(initialData);
+  const { dataset } = options;
+
+  const [data, setData] = useState<TableRow[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
-  const columns = useMemo(() => sampleColumns, []);
+  const columns = useMemo<ColumnDef<TableRow>[]>(() => {
+    if (dataset?.schema_config) {
+      return buildColumnsFromSchema(dataset.schema_config);
+    }
+    return [];
+  }, [dataset?.schema_config]);
+
+  // Sync preview_rows into data state when dataset changes
+  const lastDatasetId = useRef<string | undefined>();
+  useEffect(() => {
+    if (dataset && dataset.id !== lastDatasetId.current) {
+      lastDatasetId.current = dataset.id;
+      if (dataset.preview_rows?.length) {
+        setData(dataset.preview_rows as TableRow[]);
+      }
+    }
+  }, [dataset]);
 
   const reactTable = useReactTable({
     data,
@@ -37,7 +62,6 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
     defaultColumn: { filterFn: customFilterFn },
   });
 
-  // Refresh function for compatibility (no-op since we use local data)
   const refresh = () => Promise.resolve(data);
 
   return {

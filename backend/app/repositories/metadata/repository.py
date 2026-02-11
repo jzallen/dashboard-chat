@@ -391,19 +391,6 @@ class MetadataRepository:
             await self._session.flush()
 
     @handle_repository_exceptions
-    async def update_transforms(self, transforms: list[object]) -> None:
-        """Batch update transforms in a single query.
-
-        Args:
-            transforms: List of Transform domain objects (must support __getitem__).
-        """
-        from sqlalchemy import update
-
-        if transforms:
-            await self._session.execute(update(TransformRecord), transforms)
-            await self._session.flush()
-
-    @handle_repository_exceptions
     async def delete_transform(self, transform_id: str) -> bool:
         """Delete a transform."""
         result = await self._session.execute(

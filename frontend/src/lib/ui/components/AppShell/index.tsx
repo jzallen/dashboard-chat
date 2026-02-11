@@ -1,39 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Outlet, useParams, useNavigate } from "react-router-dom";
-import { getProject, datasetToSparse, type Project, type Dataset } from "@/api";
+import { datasetToSparse, type Dataset } from "@/api";
 import { ChatProvider } from "../../context/ChatContext";
+import { QueryProvider } from "../../providers/QueryProvider";
+import { useProjectQuery, useUpdateProjectDatasetCache } from "../../hooks/useProjectQuery";
 import { ProjectNav } from "../ProjectNav";
 import { ChatPanelConnected } from "./ChatPanelConnected";
 import styles from "./AppShell.module.css";
 
 const DEFAULT_PROJECT_ID = "default-project-001";
 
-export function AppShell() {
+function AppShellInner() {
   const { projectId: routeProjectId, datasetId } = useParams<{ projectId?: string; datasetId?: string }>();
   const projectId = routeProjectId ?? DEFAULT_PROJECT_ID;
   const navigate = useNavigate();
   const [navCollapsed, setNavCollapsed] = useState(false);
-  const [project, setProject] = useState<Project | null>(null);
 
-  useEffect(() => {
-    const loadProject = async () => {
-      try {
-        const projectData = await getProject(projectId);
-        setProject(projectData);
-      } catch (err) {
-        console.error("Failed to load project:", err);
-      }
-    };
-    loadProject();
-  }, [projectId]);
+  const { data: project = null } = useProjectQuery(projectId);
+  const { addDatasetToProject } = useUpdateProjectDatasetCache(projectId);
 
   const handleDatasetCreated = useCallback((dataset: Dataset) => {
-    setProject((prev) =>
-      prev
-        ? { ...prev, datasets: [...prev.datasets, datasetToSparse(dataset)] }
-        : prev
-    );
-  }, []);
+    addDatasetToProject(datasetToSparse(dataset));
+  }, [addDatasetToProject]);
 
   const handleNavigateToDataset = useCallback(
     (id: string) => {
@@ -61,5 +49,13 @@ export function AppShell() {
         />
       </div>
     </ChatProvider>
+  );
+}
+
+export function AppShell() {
+  return (
+    <QueryProvider>
+      <AppShellInner />
+    </QueryProvider>
   );
 }

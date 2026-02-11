@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, Outlet } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ProjectView } from "../../../lib/ui/components/DatasetView";
 import { ChatProvider } from "../../../lib/ui/context/ChatContext";
 import { MOCK_PROJECT } from "../../../__mocks__/data";
@@ -15,26 +16,38 @@ vi.mock("@/api", async () => {
   };
 });
 
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+}
+
 /** Layout route that injects outlet context like AppShell does */
 function ContextLayout() {
   return <Outlet context={{ project: MOCK_PROJECT }} />;
 }
 
 function renderProjectView(route = "/") {
+  const queryClient = createTestQueryClient();
   return render(
-    <MemoryRouter initialEntries={[route]}>
-      <ChatProvider>
-        <Routes>
-          <Route element={<ContextLayout />}>
-            <Route path="/" element={<ProjectView />} />
-            <Route
-              path="/projects/:projectId/datasets/:datasetId"
-              element={<ProjectView />}
-            />
-          </Route>
-        </Routes>
-      </ChatProvider>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[route]}>
+        <ChatProvider>
+          <Routes>
+            <Route element={<ContextLayout />}>
+              <Route path="/" element={<ProjectView />} />
+              <Route
+                path="/projects/:projectId/datasets/:datasetId"
+                element={<ProjectView />}
+              />
+            </Route>
+          </Routes>
+        </ChatProvider>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
@@ -77,8 +90,7 @@ describe("ProjectView", () => {
 
     it("renders catalog mode by default with schema table", async () => {
       renderProjectView(datasetRoute);
-      await screen.findByLabelText("Catalog view");
-      expect(screen.getByText("Field Name")).toBeInTheDocument();
+      expect(await screen.findByText("Field Name")).toBeInTheDocument();
       expect(screen.getByText("Type")).toBeInTheDocument();
     });
 

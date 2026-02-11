@@ -1,13 +1,6 @@
 import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
 
-export interface TableRow {
-  id: string;
-  name: string;
-  category: string;
-  amount: number;
-  quantity: number;
-  inStock: boolean;
-}
+export type TableRow = Record<string, unknown>;
 
 export interface ToolCallHandlers {
   setColumnFilters: (

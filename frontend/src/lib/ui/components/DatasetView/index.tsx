@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
-import { getDataset, updateDataset, type Dataset, type Project } from "@/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { type Dataset, type Project } from "@/api";
 import { executeToolCall as executeToolCallFn, type ToolCall } from "@/table-tools";
+import { filterTableToRaqb, generateFilterDescription } from "@/chat/tanstackToRaqb";
+import { raqbToSql } from "@/raqb";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
+import { useDatasetQuery, usePrefetchDataset, datasetKeys } from "../../hooks/useDatasetQuery";
+import { useRenameDataset } from "../../hooks/useDatasetMutations";
 import { useChatContext } from "../../context/ChatContext";
-import { tableSchema } from "../../data/sampleData";
 import TablePanel from "../TablePanel";
 import { TransformSettings } from "../TransformSettings";
 import { TablePanelSkeleton } from "../SkeletonLoader";
@@ -29,8 +33,6 @@ interface DatasetDetailProps {
   viewMode: ViewMode;
   showSettings: boolean;
   onShowSettings: (show: boolean) => void;
-  onDatasetLoaded: (dataset: Dataset) => void;
-  onDatasetError: (error: string | null) => void;
 }
 
 function DatasetDetail({
@@ -38,11 +40,10 @@ function DatasetDetail({
   viewMode,
   showSettings,
   onShowSettings,
-  onDatasetLoaded,
-  onDatasetError,
 }: DatasetDetailProps) {
+  const queryClient = useQueryClient();
   const { registerToolHandler, registerTableSchema } = useChatContext();
-  const [dataset, setDataset] = useState<Dataset | null>(null);
+  const { data: dataset, isLoading } = useDatasetQuery(datasetId);
 
   const {
     table,
@@ -52,42 +53,29 @@ function DatasetDetail({
     setSorting,
     setData,
     refresh: refreshData,
-  } = useTableConfig();
-
-  const fetchDataset = useCallback(async () => {
-    onDatasetError(null);
-    try {
-      const datasetData = await getDataset(datasetId, { includeTransforms: true });
-      setDataset(datasetData);
-      onDatasetLoaded(datasetData);
-    } catch (err) {
-      onDatasetError(err instanceof Error ? err.message : "Failed to load dataset");
-    }
-  }, [datasetId, onDatasetLoaded, onDatasetError]);
-
-  useEffect(() => {
-    const load = async () => {
-      await fetchDataset();
-      refreshData();
-    };
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetId]);
+  } = useTableConfig({ dataset: dataset ?? null });
 
   const {
     transforms,
     loading: transformsLoading,
     error: transformsError,
+    saveTransform,
     toggleTransform,
     removeTransform,
   } = useTransforms({
-    dataset,
-    onDatasetChange: (d) => { setDataset(d); if (d) onDatasetLoaded(d); },
+    dataset: dataset ?? null,
+    onDatasetChange: (d) => {
+      queryClient.setQueryData<Dataset>(datasetKeys.detail(datasetId), d);
+    },
     onFilterApply: setColumnFilters,
     currentFilters: columnFilters,
     autoApplyActive: true,
     onFiltersChanged: refreshData,
   });
+
+  const handleRefreshDataset = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+  }, [queryClient, datasetId]);
 
   const executeToolCall = useCallback(
     (toolCall: ToolCall): string => {
@@ -97,11 +85,25 @@ function DatasetDetail({
         setData,
       });
       if (toolCall.function.name === "filterTable") {
-        setTimeout(() => fetchDataset(), 500);
+        // Persist as a backend transform so it survives mode toggles and page reloads
+        try {
+          const args = JSON.parse(toolCall.function.arguments);
+          const raqbJson = filterTableToRaqb(args);
+          const description = generateFilterDescription(args);
+          const conditionSql = raqbToSql(raqbJson);
+          saveTransform({
+            name: description,
+            condition_json: raqbJson,
+            condition_sql: conditionSql,
+          });
+        } catch (e) {
+          console.error("Failed to persist transform:", e);
+        }
+        setTimeout(() => handleRefreshDataset(), 500);
       }
       return result;
     },
-    [setColumnFilters, setSorting, setData, fetchDataset]
+    [setColumnFilters, setSorting, setData, handleRefreshDataset, saveTransform]
   );
 
   useEffect(() => {
@@ -110,8 +112,18 @@ function DatasetDetail({
   }, [executeToolCall, registerToolHandler]);
 
   useEffect(() => {
-    registerTableSchema({ ...tableSchema, rowCount: data.length });
-  }, [data.length, registerTableSchema]);
+    if (dataset) {
+      const schemaColumns = Object.entries(dataset.schema_config.fields).map(([id, f]) => ({
+        id,
+        type: (f.type === "number" ? "number" : f.type === "boolean" ? "boolean" : "string") as "string" | "number" | "boolean",
+      }));
+      registerTableSchema({ columns: schemaColumns, rowCount: data.length });
+    }
+  }, [dataset, data.length, registerTableSchema]);
+
+  if (isLoading && !dataset) {
+    return <TablePanelSkeleton />;
+  }
 
   if (!dataset) {
     return <TablePanelSkeleton />;
@@ -134,7 +146,7 @@ function DatasetDetail({
         error={transformsError}
         onToggle={toggleTransform}
         onDelete={removeTransform}
-        onRefresh={fetchDataset}
+        onRefresh={handleRefreshDataset}
         onClose={() => onShowSettings(false)}
       />
     );
@@ -165,18 +177,33 @@ export function ProjectView() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("catalog");
   const [showSettings, setShowSettings] = useState(false);
-  const [datasetName, setDatasetName] = useState<string | undefined>();
-  const [datasetError, setDatasetError] = useState<string | null>(null);
 
-  // Reset state when dataset changes
+  const prefetchDataset = usePrefetchDataset();
+  const { data: fullDataset } = useDatasetQuery(datasetId);
+
+  // Derive dataset name: full dataset cache first, fall back to sparse entry
+  const sparseEntry = project?.datasets.find((ds) => ds.id === datasetId);
+  const datasetName = fullDataset?.name ?? sparseEntry?.name;
+
+  const projectId = project?.id ?? "";
+  const renameMutation = useRenameDataset(projectId);
+
+  // Reset view state when dataset changes
   useEffect(() => {
     setViewMode("catalog");
     setShowSettings(false);
-    setDatasetName(undefined);
   }, [datasetId]);
+
+  // Prefetch dataset on selection (via URL)
+  useEffect(() => {
+    if (datasetId) {
+      prefetchDataset(datasetId);
+    }
+  }, [datasetId, prefetchDataset]);
 
   const handleCardSelect = (id: string) => {
     if (!project) return;
+    prefetchDataset(id);
     navigate(`/projects/${project.id}/datasets/${id}`);
   };
 
@@ -187,44 +214,25 @@ export function ProjectView() {
 
   const { addMessage } = useChatContext();
 
-  const handleDatasetLoaded = useCallback((dataset: Dataset) => {
-    setDatasetName(dataset.name);
-  }, []);
-
-  const handleDatasetError = useCallback((error: string | null) => {
-    setDatasetError(error);
-  }, []);
-
   const handleDatasetRename = useCallback(
     async (name: string) => {
       if (!datasetId) return;
-      const previousName = datasetName;
-      setDatasetName(name);
       try {
-        await updateDataset(datasetId, { name });
+        await renameMutation.mutateAsync({ datasetId, name });
         addMessage({
           id: String(Date.now()),
           role: "assistant",
           content: `Dataset renamed to '${name}'.`,
         });
       } catch (err) {
-        setDatasetName(previousName);
         console.error("Failed to rename dataset:", err);
       }
     },
-    [datasetId, datasetName, addMessage]
+    [datasetId, renameMutation, addMessage]
   );
 
   if (!project) {
     return <TablePanelSkeleton />;
-  }
-
-  if (datasetError) {
-    return (
-      <div className={styles.container}>
-        <div style={{ padding: "2rem", color: "#dc2626" }}>Error: {datasetError}</div>
-      </div>
-    );
   }
 
   const hasSelection = Boolean(datasetId);
@@ -275,9 +283,9 @@ export function ProjectView() {
       </div>
 
       {/* Content */}
-      {viewMode === "catalog" || !hasSelection ? (
-        <div className={styles.catalogLayout}>
-          {/* DatasetGrid: wrapping grid or horizontal row */}
+      <div className={styles.catalogLayout}>
+        {/* DatasetGrid: shown in catalog mode or when no dataset selected */}
+        {(viewMode === "catalog" || !hasSelection) && (
           <div className={hasSelection ? styles.gridSection : styles.gridSectionFull}>
             {project.datasets.length === 0 ? (
               <div className={styles.emptyState}>No datasets in this project</div>
@@ -290,32 +298,19 @@ export function ProjectView() {
               />
             )}
           </div>
+        )}
 
-          {/* DatasetDetail: schema table (catalog mode) */}
-          {hasSelection && datasetId && (
-            <DatasetDetail
-              datasetId={datasetId}
-              viewMode={viewMode}
-              showSettings={showSettings}
-              onShowSettings={setShowSettings}
-              onDatasetLoaded={handleDatasetLoaded}
-              onDatasetError={handleDatasetError}
-            />
-          )}
-        </div>
-      ) : (
-        /* Table or settings mode */
-        datasetId && (
+        {/* DatasetDetail: single mount point preserves state across mode switches */}
+        {hasSelection && datasetId && (
           <DatasetDetail
+            key={datasetId}
             datasetId={datasetId}
             viewMode={viewMode}
             showSettings={showSettings}
             onShowSettings={setShowSettings}
-            onDatasetLoaded={handleDatasetLoaded}
-            onDatasetError={handleDatasetError}
           />
-        )
-      )}
+        )}
+      </div>
     </div>
   );
 }

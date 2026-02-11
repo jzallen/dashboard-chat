@@ -36,10 +36,15 @@ def _serialize(data: Any) -> Any:
 
 def _error_response(error: str, *matchers: DomainException) -> tuple[dict, int]:
     """Match an error string against domain exceptions and return RFC 9457 response."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     for m in matchers:
         if m.is_match(error):
             return {"type": m._type, "title": m._title, "status": m._status_code, "detail": m._message}, m._status_code
-    return {"type": "INTERNAL_ERROR", "title": "Internal Server Error", "status": 500, "detail": error}, 500
+
+    logger.error("Unhandled error: %s", error)
+    return {"type": "INTERNAL_SERVER_ERROR", "title": "Internal Server Error", "status": 500, "detail": "An unexpected error occurred. Check server logs for details."}, 500
 
 
 class HTTPController:

@@ -200,13 +200,17 @@ function handleSpecialOperator(
 ): Array<{ id: string; value: TanStackFilterValue }> | null {
   switch (operator) {
     case "between":
-      // Decompose into >= and <= filters
-      // Note: TanStack will AND these together by default
+      // Compound filter: both conditions on the same column (AND)
       if (value.length >= 2) {
-        return [
-          { id: field, value: { operator: "gte", value: value[0], transformId } },
-          { id: `${field}_max`, value: { operator: "lte", value: value[1], transformId } },
-        ];
+        return [{
+          id: field,
+          value: {
+            conditions: [
+              { operator: "gte", value: value[0], transformId },
+              { operator: "lte", value: value[1], transformId },
+            ],
+          } as unknown as TanStackFilterValue,
+        }];
       }
       return null;
 

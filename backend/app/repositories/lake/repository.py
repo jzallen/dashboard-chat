@@ -3,6 +3,7 @@
 This module handles reading and writing Parquet files to MinIO/S3 storage.
 """
 
+import json
 import os
 import shutil
 import tempfile
@@ -223,7 +224,9 @@ class BaseLakeRepository(ABC):
         table = conn.read_parquet(s3_path)
         df = table.limit(limit).execute()
 
-        return df.to_dict(orient='records')
+        # Use pandas JSON serialization to handle date/datetime types,
+        # then parse back to get plain Python dicts
+        return json.loads(df.to_json(orient='records', date_format='iso'))
 
     @handle_repository_exceptions
     def get_parquet_row_count(self, storage_path: str) -> int:
