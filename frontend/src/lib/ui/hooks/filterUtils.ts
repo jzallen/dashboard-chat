@@ -3,6 +3,8 @@
  */
 
 import type { ColumnFiltersState } from "@tanstack/react-table";
+import type { Transform } from "@/api";
+import { isRAQBRule, isRAQBGroup, type RAQBTree } from "@/raqb";
 
 interface FilterCondition {
   operator: string;
@@ -49,4 +51,22 @@ export function mergeFilters(
   }
 
   return merged;
+}
+
+/**
+ * Return IDs of enabled transforms whose RAQB tree targets the given column.
+ */
+export function getTransformIdsForColumn(transforms: Transform[], column: string): string[] {
+  return transforms
+    .filter((t) => t.status === "enabled" && transformTargetsColumn(t.condition_json, column))
+    .map((t) => t.id);
+}
+
+function transformTargetsColumn(tree: RAQBTree, column: string): boolean {
+  if (!tree.children1) return false;
+  for (const child of Object.values(tree.children1)) {
+    if (isRAQBRule(child) && child.properties.field === column) return true;
+    if (isRAQBGroup(child) && transformTargetsColumn(child, column)) return true;
+  }
+  return false;
 }

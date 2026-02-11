@@ -1,6 +1,8 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AppShell } from "./src/lib/ui/components/AppShell";
 import { ProjectView } from "./src/lib/ui/components/DatasetView";
+import { SessionList } from "./src/lib/ui/components/SessionViewer/SessionList";
+import { SessionViewer } from "./src/lib/ui/components/SessionViewer";
 
 const DEFAULT_PROJECT_ID = "default-project-001";
 
@@ -12,6 +14,8 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/projects/:projectId" element={<ProjectView />} />
         <Route path="/projects/:projectId/datasets/:datasetId" element={<ProjectView />} />
+        <Route path="/datasets/:datasetId/sessions" element={<SessionList />} />
+        <Route path="/sessions/:sessionId" element={<SessionViewer />} />
       </Route>
     </Routes>
   );

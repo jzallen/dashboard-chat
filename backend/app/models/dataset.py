@@ -36,10 +36,11 @@ class Dataset:
     project_id: str | None = None  # Parent project UUID
     name: str = "New Dataset"  # Display name (business default)
     description: str | None = None  # Optional description
-    schema_config: dict[str, Any] = field(default_factory=dict)  # Field definitions for query builder
+    schema_config: dict[str, Any] = field(default_factory=dict)  # Column names + types — drives query builder, table UI, and SQL generation
     partition_fields: list[str] = field(default_factory=list)  # Hive-style partition field names
     transforms: list[Transform] | list[dict[str, Any]] | None = field(default_factory=list)
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
+    column_profiles: dict[str, Any] | None = None  # Per-column value stats (sample values, min/max, …) — injected into LLM system prompt
 
     @classmethod
     def from_record(cls, record: Any, preview_rows: list[dict[str, Any]] | None = None, include_transforms: bool = True) -> 'Dataset':
@@ -54,6 +55,7 @@ class Dataset:
             partition_fields=record.partition_fields or [],
             transforms=record.transforms if include_transforms else [],
             preview_rows=preview_rows or [],
+            column_profiles=record.column_profiles,
         )
 
     @property
@@ -246,6 +248,7 @@ class Dataset:
             'partition_fields': self.partition_fields,
             'transforms': [t.serialize() for t in self.transforms] if self.transforms else [],
             'preview_rows': self.preview_rows,
+            'column_profiles': self.column_profiles,
             'staging_sql': self.display_sql,
         }
 

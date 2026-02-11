@@ -27,6 +27,18 @@ export interface Transform {
   status: 'enabled' | 'disabled' | 'deleted';
 }
 
+export interface ColumnProfile {
+  type: string;
+  unique_count?: number;
+  sample_values?: string[];
+  min?: number | string;
+  max?: number | string;
+  mean?: number;
+  true_count?: number;
+  false_count?: number;
+  null_count?: number;
+}
+
 export interface Dataset {
   id: string;
   project_id: string;
@@ -37,6 +49,7 @@ export interface Dataset {
   transforms: Transform[];
   preview_rows: Record<string, unknown>[];
   staging_sql?: string | null;
+  column_profiles: Record<string, ColumnProfile> | null;
 }
 
 export interface DatasetUploadResponse extends Dataset {

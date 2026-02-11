@@ -7,7 +7,7 @@ This repository uses flush() to persist changes within the transaction.
 from functools import wraps
 from typing import Any, Callable, TypeVar, ParamSpec
 
-from sqlalchemy import select, exists
+from sqlalchemy import func, select, exists
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,7 @@ from ..exceptions import MetadataRepositoryError
 from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
+from .chat_session_record import ChatSessionRecord, ChatTurnRecord
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -222,6 +223,7 @@ class MetadataRepository:
         schema_config: dict[str, Any],
         description: str | None = None,
         partition_fields: list[str] | None = None,
+        column_profiles: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a new dataset record."""
         dataset = DatasetRecord(
@@ -232,6 +234,7 @@ class MetadataRepository:
             description=description,
             schema_config=schema_config,
             partition_fields=partition_fields or [],
+            column_profiles=column_profiles,
         )
 
         self._session.add(dataset)
@@ -432,6 +435,69 @@ class MetadataRepository:
         return True
 
     # -------------------------------------------------------------------------
+    # Chat session operations
+    # -------------------------------------------------------------------------
+
+    @handle_repository_exceptions
+    async def create_chat_session(self, dataset_id: str | None = None) -> ChatSessionRecord:
+        """Create a new chat session."""
+        session = ChatSessionRecord(dataset_id=dataset_id)
+        self._session.add(session)
+        await self._session.flush()
+        await self._session.refresh(session)
+        return session
+
+    @handle_repository_exceptions
+    async def get_chat_session(self, session_id: str) -> ChatSessionRecord | None:
+        """Get a chat session by ID with turns ordered by sequence."""
+        result = await self._session.execute(
+            select(ChatSessionRecord)
+            .where(ChatSessionRecord.id == session_id)
+            .options(selectinload(ChatSessionRecord.turns))
+        )
+        return result.scalar_one_or_none()
+
+    @handle_repository_exceptions
+    async def list_chat_sessions(self, dataset_id: str) -> list[ChatSessionRecord]:
+        """List chat sessions for a dataset, ordered by created_at desc."""
+        result = await self._session.execute(
+            select(ChatSessionRecord)
+            .where(ChatSessionRecord.dataset_id == dataset_id)
+            .options(selectinload(ChatSessionRecord.turns))
+            .order_by(ChatSessionRecord.created_at.desc())
+        )
+        return result.scalars().all()
+
+    @handle_repository_exceptions
+    async def append_chat_turn(self, session_id: str, turn_data: dict) -> ChatTurnRecord:
+        """Append a new turn to a chat session.
+
+        Auto-computes sequence number based on existing turn count.
+        """
+        # Count existing turns for this session to determine sequence
+        count_result = await self._session.execute(
+            select(func.count(ChatTurnRecord.id))
+            .where(ChatTurnRecord.session_id == session_id)
+        )
+        sequence = count_result.scalar() + 1
+
+        turn = ChatTurnRecord(
+            session_id=session_id,
+            sequence=sequence,
+            user_message=turn_data['user_message'],
+            system_prompt=turn_data['system_prompt'],
+            tool_definitions=turn_data['tool_definitions'],
+            assistant_content=turn_data.get('assistant_content'),
+            tool_calls=turn_data.get('tool_calls'),
+            tool_results=turn_data.get('tool_results'),
+            table_schema=turn_data['table_schema'],
+        )
+        self._session.add(turn)
+        await self._session.flush()
+        await self._session.refresh(turn)
+        return turn
+
+    # -------------------------------------------------------------------------
     # Conversion helpers
     # -------------------------------------------------------------------------
 
@@ -457,6 +523,7 @@ class MetadataRepository:
             "description": dataset.description,
             "schema_config": dataset.schema_config,
             "partition_fields": dataset.partition_fields,
+            "column_profiles": dataset.column_profiles,
             "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
             "updated_at": dataset.updated_at.isoformat() if dataset.updated_at else None,
         }

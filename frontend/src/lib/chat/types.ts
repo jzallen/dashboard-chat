@@ -29,6 +29,18 @@ export interface TableSchema {
   columns: Array<{
     id: string;
     type: "string" | "number" | "boolean" | "date";
+    profile?: {
+      type: string;
+      unique_count?: number;
+      sample_values?: string[];
+      min?: number | string;
+      max?: number | string;
+      mean?: number;
+      true_count?: number;
+      false_count?: number;
+      null_count?: number;
+    };
   }>;
   rowCount: number;
+  activeFilters?: Array<{ column: string; operator: string; value: unknown }>;
 }

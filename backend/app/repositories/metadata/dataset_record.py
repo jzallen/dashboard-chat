@@ -53,13 +53,18 @@ class DatasetRecord(Base):
         String(255), nullable=True, unique=False
     )
 
-    # JSON schema config for RAQB field definitions
+    # Column names + types for query builder (RAQB), table UI, and SQL generation
     # Format: { "fields": { "column_name": { "type": "text|number|boolean|select", ... } } }
     schema_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     # Partition configuration for hive-style partitioning
     # Format: ["field1", "field2"] - list of field names to partition by
     partition_fields: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    # Per-column value statistics injected into the chat LLM system prompt
+    # so it can map vague user references to actual data values.
+    # Format: { "col_name": { "type": "text", "sample_values": [...], "unique_count": N, ... } }
+    column_profiles: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

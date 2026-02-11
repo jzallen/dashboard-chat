@@ -14,6 +14,7 @@ export interface Message {
 export interface TableSchema {
   columns: Array<{ id: string; type: "string" | "number" | "boolean" }>;
   rowCount: number;
+  activeFilters?: Array<{ column: string; operator: string; value: unknown }>;
 }
 
 export interface SSEMessage {

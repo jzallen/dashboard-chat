@@ -13,6 +13,8 @@ import {
 } from "react";
 import type { ToolCall } from "@/table-tools";
 import type { Dataset } from "@/api";
+import { createSession, logTurn } from "@/api";
+import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
 import type { Message, TableSchema, SSEMessage } from "../types";
 import { CHAT_URL } from "../data/sampleData";
 
@@ -34,6 +36,7 @@ interface ChatContextValue {
   addMessage: (message: Message) => void;
   onDatasetCreated: (dataset: Dataset) => void;
   registerProjectUpdater: (updater: ((dataset: Dataset) => void) | null) => void;
+  registerDatasetId: (datasetId: string | null) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -57,6 +60,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const toolHandlerRef = useRef<ToolHandler | null>(null);
   const tableSchemaRef = useRef<TableSchema | null>(null);
   const projectUpdaterRef = useRef<((dataset: Dataset) => void) | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const datasetIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -77,6 +82,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const registerProjectUpdater = useCallback((updater: ((dataset: Dataset) => void) | null) => {
     projectUpdaterRef.current = updater;
+  }, []);
+
+  const registerDatasetId = useCallback((id: string | null) => {
+    datasetIdRef.current = id;
+    sessionIdRef.current = null;
   }, []);
 
   const onDatasetCreated = useCallback((dataset: Dataset) => {
@@ -167,11 +177,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 case "error":
                   throw new Error(data.error || "Stream error");
 
-                case "done":
+                case "done": {
+                  let toolResults: Array<{ tool_call_id: string; result: string }> | null = null;
                   if (toolCalls.length > 0 && toolHandlerRef.current) {
                     const results = toolCalls.map((tc) =>
                       toolHandlerRef.current!.executeToolCall(tc)
                     );
+                    toolResults = toolCalls.map((tc, i) => ({ tool_call_id: tc.id, result: results[i] }));
                     const toolSummary = results.join(", ");
                     setMessages((prev) =>
                       prev.map((m) =>
@@ -192,7 +204,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                       )
                     );
                   }
+
+                  // Fire-and-forget session logging
+                  (async () => {
+                    try {
+                      if (!sessionIdRef.current && datasetIdRef.current) {
+                        const session = await createSession(datasetIdRef.current);
+                        sessionIdRef.current = session.id;
+                      }
+                      if (sessionIdRef.current && tableSchemaRef.current) {
+                        const systemPrompt = getSystemPrompt(tableSchemaRef.current);
+                        const toolDefs = getToolDefinitions(tableSchemaRef.current);
+                        await logTurn(sessionIdRef.current, {
+                          user_message: userMessage.content as string,
+                          system_prompt: systemPrompt,
+                          tool_definitions: toolDefs,
+                          assistant_content: accumulatedContent,
+                          tool_calls: toolCalls.length > 0 ? toolCalls : null,
+                          tool_results: toolResults,
+                          table_schema: tableSchemaRef.current,
+                        });
+                      }
+                    } catch (err) {
+                      console.error("Failed to log chat turn:", err);
+                    }
+                  })();
+
                   break;
+                }
               }
             } catch (parseError) {
               console.error("Parse error:", parseError);
@@ -236,6 +275,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         addMessage,
         onDatasetCreated,
         registerProjectUpdater,
+        registerDatasetId,
       }}
     >
       {children}

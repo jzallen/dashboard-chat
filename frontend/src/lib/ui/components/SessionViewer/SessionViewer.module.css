@@ -1,0 +1,139 @@
+/* SessionViewer + SessionList styles */
+
+.container {
+  @apply flex-1 flex flex-col overflow-auto p-6;
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.backLink {
+  @apply text-sm text-gray-500 hover:text-gray-700 no-underline mb-4 inline-block;
+}
+
+/* Session detail header */
+.sessionHeader {
+  @apply mb-6 pb-4 border-b border-gray-200;
+}
+
+.sessionTitle {
+  @apply text-lg font-semibold text-gray-900 mb-2;
+  font-family: monospace;
+}
+
+.sessionMeta {
+  @apply flex gap-4 text-sm text-gray-500;
+}
+
+.sessionMeta span {
+  @apply flex items-center gap-1;
+}
+
+/* Turn cards */
+.turnList {
+  @apply flex flex-col gap-4;
+}
+
+.turnCard {
+  @apply border border-gray-200 rounded-lg bg-white;
+}
+
+.turnHeader {
+  @apply px-4 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 bg-gray-50 rounded-t-lg;
+}
+
+.messageBlock {
+  @apply px-4 py-3;
+}
+
+.messageLabel {
+  @apply text-xs font-medium text-gray-400 uppercase tracking-wide mb-1;
+}
+
+.userMessage {
+  @apply text-sm text-gray-900 leading-relaxed;
+}
+
+.assistantMessage {
+  @apply text-sm text-gray-700 leading-relaxed mt-3 pt-3 border-t border-gray-100;
+}
+
+/* Collapsible details */
+.detailsSection {
+  @apply border-t border-gray-100;
+}
+
+.detailsSection summary {
+  @apply px-4 py-2 text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-50 select-none;
+}
+
+.detailsContent {
+  @apply px-4 pb-3;
+}
+
+.preBlock {
+  @apply text-xs bg-gray-50 rounded p-3 overflow-auto;
+  font-family: monospace;
+  max-height: 400px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #374151;
+}
+
+/* Tool call item */
+.toolCallItem {
+  @apply mb-2 last:mb-0;
+}
+
+.toolCallName {
+  @apply text-xs font-semibold text-blue-700 mb-1;
+  font-family: monospace;
+}
+
+/* Session list */
+.listHeader {
+  @apply mb-4;
+}
+
+.listTitle {
+  @apply text-lg font-semibold text-gray-900;
+}
+
+.sessionTable {
+  @apply w-full;
+  border-collapse: collapse;
+}
+
+.sessionTable th {
+  @apply text-left text-xs font-medium text-gray-400 uppercase tracking-wide pb-2 border-b border-gray-200;
+}
+
+.sessionTable td {
+  @apply py-3 text-sm border-b border-gray-100;
+}
+
+.sessionRow {
+  @apply cursor-pointer hover:bg-gray-50 transition-colors;
+}
+
+.sessionId {
+  font-family: monospace;
+  @apply text-sm text-gray-700;
+}
+
+.previewText {
+  @apply text-gray-500 truncate;
+  max-width: 400px;
+}
+
+.emptyState {
+  @apply text-center py-12 text-gray-500;
+}
+
+.loading {
+  @apply text-center py-12 text-gray-400;
+}
+
+.error {
+  @apply text-center py-12 text-red-500 text-sm;
+}

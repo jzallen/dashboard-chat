@@ -71,6 +71,24 @@ function performToolAction(
       break;
     }
 
+    case "replaceColumnFilter": {
+      const { column, filters } = args as {
+        column: string;
+        filters: Array<{ operator: string; value: unknown }>;
+      };
+      handlers.setColumnFilters((prev) => {
+        const withoutColumn = prev.filter((f) => f.id !== column);
+        if (!filters || filters.length === 0) return withoutColumn;
+        if (filters.length === 1)
+          return [...withoutColumn, { id: column, value: filters[0] }];
+        return [
+          ...withoutColumn,
+          { id: column, value: { conditions: filters } },
+        ];
+      });
+      break;
+    }
+
     case "clearFilters": {
       handlers.setColumnFilters([]);
       break;
@@ -120,6 +138,15 @@ function generateToolMessage(toolCall: ToolCall): string {
     case "deleteRow": {
       const { search } = args as { search: string };
       return `Deleted row matching "${search}"`;
+    }
+
+    case "replaceColumnFilter": {
+      const { column, filters } = args as {
+        column: string;
+        filters?: Array<{ operator: string; value: unknown }>;
+      };
+      if (!filters?.length) return `Cleared filters on ${column}`;
+      return `Replaced filter on ${column}: ${filters.map((f) => `${f.operator} ${f.value}`).join(" AND ")}`;
     }
 
     case "clearFilters":

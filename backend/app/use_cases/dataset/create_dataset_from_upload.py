@@ -16,6 +16,7 @@ from app.repositories import with_repositories
 from app.repositories.outbox import OutboxRepository
 from app.models.dataset import Dataset
 from app.utils.schema_inference import infer_schema_from_dataframe
+from app.utils.column_profiler import compute_column_profiles
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -68,6 +69,7 @@ async def create_dataset_from_upload(
 
     df = pd.read_csv(io.BytesIO(raw_content))
     schema_config = infer_schema_from_dataframe(df)
+    column_profiles = compute_column_profiles(df, schema_config)
 
     dataset = Dataset(
         id=str(uuid7()),
@@ -75,7 +77,8 @@ async def create_dataset_from_upload(
         description=description,
         schema_config=schema_config,
         partition_fields=partition_fields,
-        preview_rows=df.head(10).to_dict(orient='records')
+        preview_rows=df.head(10).to_dict(orient='records'),
+        column_profiles=column_profiles,
     )
 
     await metadata_repo.create_dataset(
@@ -86,6 +89,7 @@ async def create_dataset_from_upload(
         schema_config=dataset.schema_config,
         description=dataset.description,
         partition_fields=dataset.partition_fields,
+        column_profiles=dataset.column_profiles,
     )
 
     lake_repo.write_csv_as_partitioned_parquet(

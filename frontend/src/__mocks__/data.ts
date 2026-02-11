@@ -53,6 +53,7 @@ export function createMockDataset(overrides?: Partial<Dataset>): Dataset {
       { id: "1", name: "Widget A", category: "Electronics", amount: 29.99, quantity: 150, inStock: true },
       { id: "2", name: "Widget B", category: "Electronics", amount: 49.99, quantity: 75, inStock: true },
     ],
+    column_profiles: null,
     ...overrides,
   };
 }

@@ -5,6 +5,7 @@ import { type Dataset, type Project } from "@/api";
 import { executeToolCall as executeToolCallFn, type ToolCall } from "@/table-tools";
 import { filterTableToRaqb, generateFilterDescription } from "@/chat/tanstackToRaqb";
 import { raqbToSql } from "@/raqb";
+import { toConditions, getTransformIdsForColumn } from "../../hooks/filterUtils";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
 import { useDatasetQuery, usePrefetchDataset, datasetKeys } from "../../hooks/useDatasetQuery";
@@ -42,7 +43,7 @@ function DatasetDetail({
   onShowSettings,
 }: DatasetDetailProps) {
   const queryClient = useQueryClient();
-  const { registerToolHandler, registerTableSchema } = useChatContext();
+  const { registerToolHandler, registerTableSchema, registerDatasetId } = useChatContext();
   const { data: dataset, isLoading } = useDatasetQuery(datasetId);
 
   const {
@@ -101,9 +102,38 @@ function DatasetDetail({
         }
         setTimeout(() => handleRefreshDataset(), 500);
       }
+      if (toolCall.function.name === "replaceColumnFilter") {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as {
+            column: string;
+            filters: Array<{ operator: string; value: unknown }>;
+          };
+          // Disable existing transforms targeting this column
+          const idsToDisable = getTransformIdsForColumn(transforms, args.column);
+          for (const id of idsToDisable) {
+            toggleTransform(id, false);
+          }
+          // Create new transforms for each replacement filter
+          if (args.filters?.length) {
+            for (const f of args.filters) {
+              const raqbJson = filterTableToRaqb({ column: args.column, operator: f.operator, value: f.value });
+              const description = generateFilterDescription({ column: args.column, operator: f.operator, value: f.value });
+              const conditionSql = raqbToSql(raqbJson);
+              saveTransform({
+                name: description,
+                condition_json: raqbJson,
+                condition_sql: conditionSql,
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Failed to persist replaceColumnFilter transform:", e);
+        }
+        setTimeout(() => handleRefreshDataset(), 500);
+      }
       return result;
     },
-    [setColumnFilters, setSorting, setData, handleRefreshDataset, saveTransform]
+    [setColumnFilters, setSorting, setData, handleRefreshDataset, saveTransform, toggleTransform, transforms]
   );
 
   useEffect(() => {
@@ -112,14 +142,24 @@ function DatasetDetail({
   }, [executeToolCall, registerToolHandler]);
 
   useEffect(() => {
+    registerDatasetId(datasetId);
+    return () => registerDatasetId(null);
+  }, [datasetId, registerDatasetId]);
+
+  useEffect(() => {
     if (dataset) {
       const schemaColumns = Object.entries(dataset.schema_config.fields).map(([id, f]) => ({
         id,
         type: (f.type === "number" ? "number" : f.type === "boolean" ? "boolean" : "string") as "string" | "number" | "boolean",
+        ...(dataset.column_profiles?.[id] && { profile: dataset.column_profiles[id] }),
       }));
-      registerTableSchema({ columns: schemaColumns, rowCount: data.length });
+      const activeFilters = columnFilters.flatMap((f) => {
+        const conditions = toConditions(f.value);
+        return conditions.map((c) => ({ column: f.id, operator: c.operator, value: c.value }));
+      });
+      registerTableSchema({ columns: schemaColumns, rowCount: data.length, activeFilters });
     }
-  }, [dataset, data.length, registerTableSchema]);
+  }, [dataset, data.length, registerTableSchema, columnFilters]);
 
   if (isLoading && !dataset) {
     return <TablePanelSkeleton />;
@@ -269,6 +309,28 @@ export function ProjectView() {
         />
         {hasSelection && (
           <div className={styles.headerActions}>
+            {viewMode === "table" && datasetId && (
+              <button
+                onClick={() => navigate(`/datasets/${datasetId}/sessions`)}
+                className={styles.settingsButton}
+                title="View chat sessions"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                  className={styles.settingsIcon}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </button>
+            )}
             {viewMode === "table" && (
               <button
                 onClick={() => setShowSettings((v) => !v)}

@@ -12,6 +12,7 @@ from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
 from .pipeline_run_record import PipelineRunRecord
+from .chat_session_record import ChatSessionRecord, ChatTurnRecord
 
 
 class MetadataRepositoryProtocol(Protocol):
@@ -135,6 +136,7 @@ class MetadataRepositoryProtocol(Protocol):
         schema_config: dict[str, Any],
         description: str | None = None,
         partition_fields: list[str] | None = None,
+        column_profiles: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a new dataset record.
 

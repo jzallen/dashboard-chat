@@ -20,8 +20,10 @@
     "paths": {
       "@/table-tools": ["src/lib/table-tools"],
       "@/chat": ["src/lib/chat"],
+      "@/chat/*": ["src/lib/chat/*"],
       "@/raqb": ["src/lib/raqb"],
-      "@/api": ["src/lib/api"]
+      "@/api": ["src/lib/api"],
+      "@/api/*": ["src/lib/api/*"]
     }
   },
   "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx"]
