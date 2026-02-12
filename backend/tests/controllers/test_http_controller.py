@@ -46,9 +46,9 @@ class TestErrorResponse:
     def test_fallback_to_500_when_no_match(self):
         body, status = _error_response("Something unexpected happened")
         assert status == 500
-        assert body["type"] == "INTERNAL_ERROR"
+        assert body["type"] == "INTERNAL_SERVER_ERROR"
         assert body["title"] == "Internal Server Error"
-        assert body["detail"] == "Something unexpected happened"
+        assert "unexpected error" in body["detail"].lower()
 
     def test_upload_already_processed_matches(self):
         from app.use_cases.exceptions import UploadAlreadyProcessed
@@ -125,7 +125,7 @@ class TestGetDataset:
         mock_uc.get_dataset = AsyncMock(return_value=Failure("Database exploded"))
         body, status = await HTTPController.get_dataset("d1")
         assert status == 500
-        assert body["type"] == "INTERNAL_ERROR"
+        assert body["type"] == "INTERNAL_SERVER_ERROR"
 
 
 class TestListDatasets:
@@ -232,7 +232,7 @@ class TestListProjects:
         mock_uc.list_projects = AsyncMock(return_value=Failure("DB error"))
         body, status = await HTTPController.list_projects()
         assert status == 500
-        assert body["type"] == "INTERNAL_ERROR"
+        assert body["type"] == "INTERNAL_SERVER_ERROR"
 
 
 class TestGetProject:

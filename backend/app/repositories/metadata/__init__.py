@@ -25,8 +25,11 @@ class MetadataRepositoryProtocol(Protocol):
     # Project operations
     # -------------------------------------------------------------------------
 
-    async def list_projects(self) -> list[dict[str, Any]]:
+    async def list_projects(self, org_id: str | None = None) -> list[dict[str, Any]]:
         """List all projects ordered by creation date (newest first).
+
+        Args:
+            org_id: Optional org ID to filter by.
 
         Returns:
             List of project dictionaries with id, name, description, timestamps.
@@ -53,12 +56,16 @@ class MetadataRepositoryProtocol(Protocol):
         self,
         name: str,
         description: str | None = None,
+        org_id: str | None = None,
+        created_by: str | None = None,
     ) -> dict[str, Any]:
         """Create a new project.
 
         Args:
             name: Project name
             description: Optional description
+            org_id: Organization ID for multi-tenancy
+            created_by: User ID of creator
 
         Returns:
             Created project dictionary.

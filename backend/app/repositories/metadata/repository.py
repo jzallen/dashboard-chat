@@ -52,11 +52,13 @@ class MetadataRepository:
     # -------------------------------------------------------------------------
 
     @handle_repository_exceptions
-    async def list_projects(self) -> list[dict[str, Any]]:
+    async def list_projects(self, org_id: str | None = None) -> list[dict[str, Any]]:
         """List all projects ordered by creation date (newest first)."""
-        result = await self._session.execute(
-            select(ProjectRecord).order_by(ProjectRecord.created_at.desc())
-        )
+        query = select(ProjectRecord)
+        if org_id is not None:
+            query = query.where(ProjectRecord.org_id == org_id)
+        query = query.order_by(ProjectRecord.created_at.desc())
+        result = await self._session.execute(query)
         projects = result.scalars().all()
         return [self._project_to_dict(p) for p in projects]
 
@@ -99,9 +101,11 @@ class MetadataRepository:
         self,
         name: str,
         description: str | None = None,
+        org_id: str | None = None,
+        created_by: str | None = None,
     ) -> dict[str, Any]:
         """Create a new project."""
-        project = ProjectRecord(name=name, description=description)
+        project = ProjectRecord(name=name, description=description, org_id=org_id, created_by=created_by)
         self._session.add(project)
         await self._session.flush()
         await self._session.refresh(project)
@@ -204,6 +208,7 @@ class MetadataRepository:
         Returns the ORM record for domain model conversion.
         """
         query = select(DatasetRecord).where(DatasetRecord.id == dataset_id)
+        query = query.options(selectinload(DatasetRecord.project))
 
         if include_transforms:
             query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
@@ -443,6 +448,8 @@ class MetadataRepository:
             "id": project.id,
             "name": project.name,
             "description": project.description,
+            "org_id": project.org_id,
+            "created_by": project.created_by,
             "created_at": project.created_at.isoformat() if project.created_at else None,
             "updated_at": project.updated_at.isoformat() if project.updated_at else None,
         }

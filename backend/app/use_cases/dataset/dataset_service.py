@@ -7,6 +7,8 @@ get_dataset, update_dataset, etc.
 import asyncio
 from typing import TYPE_CHECKING
 
+from app.auth import get_auth_user
+from app.auth.exceptions import AuthorizationError
 from app.use_cases.exceptions import DatasetNotFound
 from app.models.dataset import Dataset
 
@@ -32,11 +34,17 @@ class DatasetService:
 
         Raises:
             DatasetNotFound: If dataset with given ID does not exist.
+            AuthorizationError: If user's org does not own the parent project.
         """
         dataset_record = await self._metadata_repo.get_dataset_record(dataset_id, include_transforms)
 
         if not dataset_record:
             raise DatasetNotFound(dataset_id)
+
+        user = get_auth_user()
+        if dataset_record.project and hasattr(dataset_record.project, 'org_id'):
+            if dataset_record.project.org_id and dataset_record.project.org_id != user.org_id:
+                raise AuthorizationError(f"Access denied to dataset {dataset_id}")
 
         preview_rows: list[dict] = []
         if include_preview:

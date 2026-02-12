@@ -74,13 +74,36 @@ async def setup_database(settings) -> None:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-    from app.database import DEFAULT_PROJECT_ID, Base
+    from app.database import Base
     from app.repositories.metadata import PipelineRunRecord  # noqa: F401 — required for mapper config
     from app.repositories.metadata import ProjectRecord
+
+    # Seed projects keyed by auth mode
+    SEED_PROJECTS = [
+        # Dev mode — matches dev auth provider user/org
+        {
+            "id": "default-project-001",
+            "name": "Default Project",
+            "description": "Auto-created default project",
+            "org_id": "dev-org-001",
+            "created_by": "dev-user-001",
+        },
+        # TODO: remove hardcoded WorkOS seed once create-project flow exists
+        # WorkOS mode — user without an org gets org_id = user_id
+        {
+            "id": "workos-project-001",
+            "name": "Default Project",
+            "description": "Auto-created default project",
+            "org_id": "user_01KH8FAK2X935TSGM7WP27MAS7",
+            "created_by": "user_01KH8FAK2X935TSGM7WP27MAS7",
+        },
+    ]
 
     engine = create_async_engine(settings.database_url)
 
     async with engine.begin() as conn:
+        # Drop and recreate all tables to pick up schema changes (dev only)
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     print("  Tables created")
 
@@ -88,21 +111,16 @@ async def setup_database(settings) -> None:
         engine, class_=AsyncSession, expire_on_commit=False
     )
     async with session_factory() as session:
-        result = await session.execute(
-            select(ProjectRecord).where(ProjectRecord.id == DEFAULT_PROJECT_ID)
-        )
-        if not result.scalar_one_or_none():
-            session.add(
-                ProjectRecord(
-                    id=DEFAULT_PROJECT_ID,
-                    name="Default Project",
-                    description="Auto-created default project",
-                )
+        for proj in SEED_PROJECTS:
+            result = await session.execute(
+                select(ProjectRecord).where(ProjectRecord.id == proj["id"])
             )
-            await session.commit()
-            print("  Seeded default project")
-        else:
-            print("  Default project already exists")
+            if not result.scalar_one_or_none():
+                session.add(ProjectRecord(**proj))
+                print(f"  Seeded project '{proj['id']}' (org={proj['org_id']})")
+            else:
+                print(f"  Project '{proj['id']}' already exists")
+        await session.commit()
 
     await engine.dispose()
 

@@ -5,6 +5,12 @@
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+const TOKEN_KEY = "auth_token";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 /**
  * API error with status code and message
@@ -23,6 +29,12 @@ export class ApiError extends Error {
  * Generic API response handler
  */
 async function handleResponse<T>(response: Response): Promise<T> {
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem("auth_user");
+    window.location.href = "/login";
+    throw new ApiError(401, "Session expired");
+  }
   if (!response.ok) {
     const errorBody = await response.text();
     let message = `Request failed with status ${response.status}`;
@@ -57,6 +69,7 @@ export async function get<T>(endpoint: string): Promise<T> {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
+      ...getAuthHeaders(),
     },
   });
   return handleResponse<T>(response);
@@ -70,6 +83,7 @@ export async function post<T>(endpoint: string, body: unknown): Promise<T> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...getAuthHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -84,6 +98,7 @@ export async function patch<T>(endpoint: string, body: unknown): Promise<T> {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...getAuthHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -107,6 +122,7 @@ export async function uploadFile<T>(
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: "POST",
+    headers: getAuthHeaders(),
     body: formData,
   });
 

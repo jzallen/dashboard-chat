@@ -24,6 +24,13 @@ export interface Project {
 }
 
 /**
+ * List all projects for the current user's org
+ */
+export async function listProjects(): Promise<Project[]> {
+  return get<Project[]>("/api/projects");
+}
+
+/**
  * Get a single project by ID
  */
 export async function getProject(projectId: string): Promise<Project> {

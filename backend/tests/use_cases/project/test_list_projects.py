@@ -48,15 +48,15 @@ class TestListProjects:
         set_session(db_session)
 
         # Create projects in a specific order
-        p1 = ProjectRecord(id="p1", name="First")
+        p1 = ProjectRecord(id="p1", name="First", org_id="test-org-001")
         db_session.add(p1)
         await db_session.flush()
 
-        p2 = ProjectRecord(id="p2", name="Second")
+        p2 = ProjectRecord(id="p2", name="Second", org_id="test-org-001")
         db_session.add(p2)
         await db_session.flush()
 
-        p3 = ProjectRecord(id="p3", name="Third")
+        p3 = ProjectRecord(id="p3", name="Third", org_id="test-org-001")
         db_session.add(p3)
         await db_session.commit()
 

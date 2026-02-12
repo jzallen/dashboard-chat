@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     s3_connect_timeout: int = 5
     s3_read_timeout: int = 10
 
+    # Auth
+    auth_mode: str = "dev"  # "dev" or "workos"
+    workos_api_key: str = ""
+    workos_client_id: str = ""
+    workos_redirect_uri: str = "http://localhost:5173/auth/callback"
+
     # App info
     app_name: str = "Dashboard Chat API"
     app_version: str = "1.0.0"

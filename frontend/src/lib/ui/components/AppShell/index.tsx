@@ -8,11 +8,9 @@ import { ProjectNav } from "../ProjectNav";
 import { ChatPanelConnected } from "./ChatPanelConnected";
 import styles from "./AppShell.module.css";
 
-const DEFAULT_PROJECT_ID = "default-project-001";
-
 function AppShellInner() {
   const { projectId: routeProjectId, datasetId } = useParams<{ projectId?: string; datasetId?: string }>();
-  const projectId = routeProjectId ?? DEFAULT_PROJECT_ID;
+  const projectId = routeProjectId!;
   const navigate = useNavigate();
   const [navCollapsed, setNavCollapsed] = useState(false);
 

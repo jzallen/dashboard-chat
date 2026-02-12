@@ -5,6 +5,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.metadata import DatasetRecord, ProjectRecord
 # Import PipelineRunRecord to ensure mapper is configured (TransformRecord has relationship to it)
 from app.repositories.metadata import PipelineRunRecord  # noqa: F401
+from app.auth.context import set_auth_user
+from app.auth.types import AuthUser
+
+TEST_USER = AuthUser(id="test-user-001", email="test@example.com", org_id="test-org-001", name="Test User")
+
+
+@pytest.fixture(autouse=True)
+def auth_user():
+    """Set a default auth user for all project tests."""
+    set_auth_user(TEST_USER)
 
 
 @pytest.fixture
@@ -14,11 +24,13 @@ async def seeded_db(db_session: AsyncSession):
         id="project-001",
         name="Test Project",
         description="A test project",
+        org_id="test-org-001",
     )
     project2 = ProjectRecord(
         id="project-002",
         name="Another Project",
         description=None,
+        org_id="test-org-001",
     )
     db_session.add(project1)
     db_session.add(project2)

@@ -7,6 +7,7 @@ import { serve } from "@hono/node-server";
 import { createChatHandler } from "../shared/chat/index";
 import { SessionManager } from "./lib/sessions/index";
 import type { CreateSessionRequest, LogTurnRequest } from "./lib/sessions/types";
+import { authMiddleware } from "./lib/auth";
 
 const app = new Hono();
 
@@ -37,9 +38,11 @@ app.use(
   cors({
     origin: CORS_ORIGIN,
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type"],
+    allowHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+app.use("*", authMiddleware);
 
 // ---------------------------------------------------------------------------
 // Health

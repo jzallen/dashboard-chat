@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
+from app.auth import get_auth_user
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 
@@ -18,5 +19,6 @@ async def list_projects(
     repositories: 'RepositoryContainer',
 ) -> Result[list[dict], str]:
     """List all projects ordered by creation date (newest first)."""
+    user = get_auth_user()
     metadata_repo = repositories['metadata_repository']
-    return await metadata_repo.list_projects()
+    return await metadata_repo.list_projects(org_id=user.org_id)

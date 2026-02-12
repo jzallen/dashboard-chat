@@ -38,11 +38,6 @@ async def get_db() -> AsyncSession:
             await session.close()
 
 
-# Default IDs for the sample project and dataset
-DEFAULT_PROJECT_ID = "default-project-001"
-DEFAULT_DATASET_ID = "1592ce82-5f22-4da7-b41b-9fd9fd05770e"
-
-
 async def init_db() -> None:
     """Initialize database tables."""
     async with engine.begin() as conn:

@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import init_db, close_db
-from .routers import datasets_router, uploads_router, projects_router, transforms_router
+from .auth.middleware import AuthMiddleware
+from .routers import datasets_router, uploads_router, projects_router, transforms_router, auth_router
 
 
 settings = get_settings()
@@ -38,7 +39,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configure auth middleware (added after CORS — Starlette LIFO means CORS runs first)
+app.add_middleware(AuthMiddleware)
+
 # Include routers
+app.include_router(auth_router)
 app.include_router(datasets_router)
 app.include_router(uploads_router)
 app.include_router(projects_router)

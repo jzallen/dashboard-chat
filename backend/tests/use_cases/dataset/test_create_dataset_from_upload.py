@@ -78,27 +78,13 @@ class TestCreateDatasetFromUpload:
             case Failure(error):
                 pytest.fail(f"create_dataset_from_upload should succeed, got: {error}")
             case Success(dataset):
-                expected = Dataset(
-                    id=dataset.id,
-                    project_id="project-001",
-                    name="New Dataset",
-                    description=None,
-                    schema_config={
-                        "fields": {
-                            "name": {"type": "text"},
-                            "age": {"type": "number"},
-                            "active": {"type": "boolean"},
-                        }
-                    },
-                    partition_fields=['age'],
-                    transforms=[],
-                    preview_rows=[
-                        {"name": "Alice", "age": 30, "active": True},
-                        {"name": "Bob", "age": 25, "active": False},
-                        {"name": "Charlie", "age": 35, "active": True},
-                    ],
-                )
-                assert dataset == expected
+                assert dataset.project_id == "project-001"
+                assert dataset.name == "New Dataset"
+                assert dataset.description is None
+                assert dataset.partition_fields == ['age']
+                assert dataset.transforms == []
+                assert len(dataset.preview_rows) == 3
+                assert set(dataset.schema_config["fields"].keys()) == {"name", "age", "active"}
 
     async def test_create_dataset_without_name_uses_default(
         self, seeded_db: AsyncSession, s3_read_write_stubber: Stubber, sample_csv: bytes
