@@ -2,7 +2,7 @@
  * Converts TanStack-style filter operations to RAQB JSON format for persistence.
  */
 
-import type { RAQBTree, RAQBOperator } from "@/raqb";
+import type { RAQBTree, RAQBOperator } from "./types";
 
 interface FilterTableArgs {
   column: string;

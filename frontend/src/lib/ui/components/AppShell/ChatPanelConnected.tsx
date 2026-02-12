@@ -26,7 +26,14 @@ export function ChatPanelConnected({
     addMessage,
     onDatasetCreated: notifyDatasetCreated,
     registerProjectUpdater,
+    registerProjectId,
+    resetSession,
   } = useChatContext();
+
+  useEffect(() => {
+    registerProjectId(projectId);
+    return () => registerProjectId(null);
+  }, [projectId, registerProjectId]);
 
   useEffect(() => {
     if (onDatasetCreated) {
@@ -44,9 +51,11 @@ export function ChatPanelConnected({
           content: "Upload a CSV file to create a new dataset:",
           widget: { type: "upload" },
         });
+      } else if (action === "new-session") {
+        resetSession();
       }
     },
-    [addMessage]
+    [addMessage, resetSession]
   );
 
   const handleUploadComplete = useCallback(

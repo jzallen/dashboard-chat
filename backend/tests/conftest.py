@@ -2,10 +2,15 @@
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 from moto import mock_aws
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+
+from app.database import Base
 
 # Add backend directory to path for imports
 backend_dir = Path(__file__).parent.parent
@@ -34,3 +39,36 @@ def mock_s3():
         s3.create_bucket(Bucket=settings.storage_bucket)
 
         yield s3
+
+
+@pytest.fixture
+async def db_session():
+    """Create a temporary SQLite database and session for testing."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{db_path}",
+        echo=False,
+    )
+
+    # Enable foreign keys for SQLite
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async_session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session_factory() as session:
+        yield session
+
+    await engine.dispose()

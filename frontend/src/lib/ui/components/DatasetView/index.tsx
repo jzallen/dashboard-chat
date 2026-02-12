@@ -3,7 +3,7 @@ import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { type Dataset, type Project } from "@/api";
 import { executeToolCall as executeToolCallFn, type ToolCall } from "@/table-tools";
-import { filterTableToRaqb, generateFilterDescription } from "@/chat/tanstackToRaqb";
+import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
 import { raqbToSql } from "@/raqb";
 import { toConditions, getTransformIdsForColumn } from "../../hooks/filterUtils";
 import { useTableConfig } from "../../hooks/useTableConfig";
@@ -311,7 +311,7 @@ export function ProjectView() {
           <div className={styles.headerActions}>
             {viewMode === "table" && datasetId && (
               <button
-                onClick={() => navigate(`/datasets/${datasetId}/sessions`)}
+                onClick={() => navigate(`/projects/${projectId}/datasets/${datasetId}/sessions`)}
                 className={styles.settingsButton}
                 title="View chat sessions"
               >

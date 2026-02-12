@@ -7,6 +7,7 @@ Uses the outbox pattern for event sourcing - state is reconstructed
 from domain events stored in the outbox_messages table.
 """
 
+import asyncio
 import io
 from typing import TYPE_CHECKING
 
@@ -78,7 +79,7 @@ async def upload_file(
     if dataset_id and not await metadata_repo.dataset_exists(dataset_id):
             raise DatasetNotFound(dataset_id)
 
-    df = pd.read_csv(io.BytesIO(file_content))
+    df = await asyncio.to_thread(pd.read_csv, io.BytesIO(file_content))
 
     outbox_record = await outbox_repo.submit_file_received_event(
         project_id=project_id,
@@ -87,7 +88,7 @@ async def upload_file(
         file_size=len(file_content),
     )
 
-    lake_repo.write_raw_file(file_content, outbox_record.payload["raw_storage_path"])
+    await asyncio.to_thread(lake_repo.write_raw_file, file_content, outbox_record.payload["raw_storage_path"])
 
     preview_rows = df.head(10).to_dict(orient="records")
 

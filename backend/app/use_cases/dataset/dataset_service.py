@@ -4,6 +4,7 @@ Provides the DatasetService class for operations shared across
 get_dataset, update_dataset, etc.
 """
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from app.use_cases.exceptions import DatasetNotFound
@@ -39,8 +40,10 @@ class DatasetService:
 
         preview_rows: list[dict] = []
         if include_preview:
-            preview_rows = self._lake_repo.read_parquet_preview(
-                dataset_record.storage_path, limit=preview_limit
+            preview_rows = await asyncio.to_thread(
+                lambda: self._lake_repo.read_parquet_preview(
+                    dataset_record.storage_path, limit=preview_limit
+                )
             )
 
         return Dataset.from_record(

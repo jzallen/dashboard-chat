@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { GroqChatClient } from "../../../lib/chat/clients/groq";
+import { GroqChatClient } from "@/chat/clients/groq";
 
 // --- Utility Functions ---
 

@@ -1,57 +1,125 @@
-// Cloudflare Worker - Quill Take Home Project
-// Backend: Tool calling with Groq + SSE streaming
+// Chat Worker — Hono server with session management
+// Handles chat streaming (Groq SSE), session lifecycle (Redis + S3)
 
-import { createChatHandler } from "../frontend/src/lib/chat/index";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serve } from "@hono/node-server";
+import { createChatHandler } from "../shared/chat/index";
+import { SessionManager } from "./lib/sessions/index";
+import type { CreateSessionRequest, LogTurnRequest } from "./lib/sessions/types";
 
-interface Env {
-  GROQ_API_KEY: string;
-  CORS_ORIGIN: string;
+const app = new Hono();
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+const PORT = parseInt(process.env.PORT || "8787", 10);
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+
+const sessionManager = new SessionManager({
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  s3: {
+    endpoint: process.env.S3_ENDPOINT || "http://localhost:9000",
+    accessKeyId: process.env.S3_ACCESS_KEY || "minioadmin",
+    secretAccessKey: process.env.S3_SECRET_KEY || "minioadmin",
+    bucket: process.env.S3_BUCKET_LOGS || "dashboard-chat.logs",
+    region: process.env.S3_REGION || "us-east-1",
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Middleware
+// ---------------------------------------------------------------------------
+
+app.use(
+  "*",
+  cors({
+    origin: CORS_ORIGIN,
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Content-Type"],
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+
+app.get("/health", (c) => c.json({ status: "ok" }));
+
+// ---------------------------------------------------------------------------
+// Chat (existing Groq SSE handler — unchanged)
+// ---------------------------------------------------------------------------
+
+app.post("/chat", async (c) => {
+  const env = {
+    GROQ_API_KEY: process.env.GROQ_API_KEY || "",
+    CORS_ORIGIN,
+  };
+  const handleChat = createChatHandler(env);
+  return handleChat(c.req.raw);
+});
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+app.post("/sessions", async (c) => {
+  const body = await c.req.json<CreateSessionRequest>();
+  const session = await sessionManager.createSession(body.project_id, body.dataset_id);
+  return c.json(session, 201);
+});
+
+app.post("/sessions/:id/turns", async (c) => {
+  const sessionId = c.req.param("id");
+  const body = await c.req.json<LogTurnRequest>();
+  try {
+    const turn = await sessionManager.logTurn(sessionId, body);
+    return c.json(turn, 201);
+  } catch (err: any) {
+    if (err.message?.includes("not found")) {
+      return c.json({ error: err.message }, 404);
+    }
+    throw err;
+  }
+});
+
+app.get("/sessions/:id", async (c) => {
+  const sessionId = c.req.param("id");
+  const session = await sessionManager.getSession(sessionId);
+  if (!session) return c.json({ error: "Session not found" }, 404);
+  return c.json(session);
+});
+
+app.get("/sessions", async (c) => {
+  const datasetId = c.req.query("dataset_id");
+  if (!datasetId) return c.json({ error: "dataset_id query param required" }, 400);
+  const sessions = await sessionManager.listSessions(datasetId);
+  return c.json(sessions);
+});
+
+// ---------------------------------------------------------------------------
+// Startup
+// ---------------------------------------------------------------------------
+
+async function start() {
+  await sessionManager.start();
+
+  serve({ fetch: app.fetch, port: PORT }, (info) => {
+    console.log(`[worker] Listening on http://localhost:${info.port}`);
+  });
 }
 
-export type ChatHandlerFactory = (env: Env) => (request: Request) => Promise<Response>;
-
-interface FetchOptions {
-  chatHandlerFactory?: ChatHandlerFactory;
+async function shutdown() {
+  console.log("[worker] Shutting down...");
+  await sessionManager.stop();
+  process.exit(0);
 }
 
-// ============================================================================
-// Worker Entry Point
-// ============================================================================
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
-export async function handleFetch(
-  request: Request,
-  env: Env,
-  { chatHandlerFactory = createChatHandler }: FetchOptions = {}
-): Promise<Response> {
-  // Handle CORS preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": env.CORS_ORIGIN,
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
-  }
-
-  const url = new URL(request.url);
-
-  // Health check
-  if (url.pathname === "/health") {
-    return new Response(JSON.stringify({ status: "ok" }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  // Chat endpoint
-  if (url.pathname === "/chat" && request.method === "POST") {
-    const handleChat = chatHandlerFactory(env);
-    return handleChat(request);
-  }
-
-  return new Response("Not Found", { status: 404 });
-}
-
-export default {
-  fetch: (request: Request, env: Env) => handleFetch(request, env),
-};
+start().catch((err) => {
+  console.error("[worker] Failed to start:", err);
+  process.exit(1);
+});

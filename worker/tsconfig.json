@@ -4,7 +4,7 @@
     "module": "ESNext",
     "lib": ["ES2020"],
     "moduleResolution": "bundler",
-    "types": ["@cloudflare/workers-types"],
+    "types": ["node"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -12,8 +12,9 @@
     "isolatedModules": true,
     "baseUrl": "..",
     "paths": {
-      "@/raqb": ["frontend/src/lib/raqb"]
+      "@/raqb": ["frontend/src/lib/raqb"],
+      "@shared/*": ["shared/*"]
     }
   },
-  "include": ["*.ts", "../frontend/src/lib/chat/**/*.ts"]
+  "include": ["*.ts", "lib/**/*.ts", "../shared/**/*.ts"]
 }

@@ -19,9 +19,10 @@
     "baseUrl": ".",
     "paths": {
       "@/table-tools": ["src/lib/table-tools"],
-      "@/chat": ["src/lib/chat"],
-      "@/chat/*": ["src/lib/chat/*"],
+      "@/chat": ["../shared/chat"],
+      "@/chat/*": ["../shared/chat/*"],
       "@/raqb": ["src/lib/raqb"],
+      "@/raqb/*": ["src/lib/raqb/*"],
       "@/api": ["src/lib/api"],
       "@/api/*": ["src/lib/api/*"]
     }

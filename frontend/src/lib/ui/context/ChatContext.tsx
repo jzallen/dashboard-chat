@@ -16,7 +16,7 @@ import type { Dataset } from "@/api";
 import { createSession, logTurn } from "@/api";
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
 import type { Message, TableSchema, SSEMessage } from "../types";
-import { CHAT_URL } from "../data/sampleData";
+import { CHAT_URL } from "../data/config";
 
 export interface ToolHandler {
   executeToolCall: (toolCall: ToolCall) => string;
@@ -37,6 +37,8 @@ interface ChatContextValue {
   onDatasetCreated: (dataset: Dataset) => void;
   registerProjectUpdater: (updater: ((dataset: Dataset) => void) | null) => void;
   registerDatasetId: (datasetId: string | null) => void;
+  registerProjectId: (projectId: string | null) => void;
+  resetSession: () => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -62,6 +64,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const projectUpdaterRef = useRef<((dataset: Dataset) => void) | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const datasetIdRef = useRef<string | null>(null);
+  const projectIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -87,6 +90,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const registerDatasetId = useCallback((id: string | null) => {
     datasetIdRef.current = id;
     sessionIdRef.current = null;
+  }, []);
+
+  const registerProjectId = useCallback((id: string | null) => {
+    projectIdRef.current = id;
+  }, []);
+
+  const resetSession = useCallback(() => {
+    sessionIdRef.current = null;
+    setMessages([]);
   }, []);
 
   const onDatasetCreated = useCallback((dataset: Dataset) => {
@@ -208,8 +220,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   // Fire-and-forget session logging
                   (async () => {
                     try {
-                      if (!sessionIdRef.current && datasetIdRef.current) {
-                        const session = await createSession(datasetIdRef.current);
+                      if (!sessionIdRef.current && projectIdRef.current && datasetIdRef.current) {
+                        const session = await createSession(projectIdRef.current, datasetIdRef.current);
                         sessionIdRef.current = session.id;
                       }
                       if (sessionIdRef.current && tableSchemaRef.current) {
@@ -276,6 +288,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         onDatasetCreated,
         registerProjectUpdater,
         registerDatasetId,
+        registerProjectId,
+        resetSession,
       }}
     >
       {children}

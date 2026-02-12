@@ -120,7 +120,7 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
 }
 
 export function SessionViewer() {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { projectId, datasetId, sessionId } = useParams<{ projectId: string; datasetId: string; sessionId: string }>();
   const [session, setSession] = useState<ChatSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -147,8 +147,8 @@ export function SessionViewer() {
     return <div className={styles.container}><div className={styles.emptyState}>Session not found</div></div>;
   }
 
-  const backTo = session.dataset_id
-    ? `/datasets/${session.dataset_id}/sessions`
+  const backTo = projectId && datasetId
+    ? `/projects/${projectId}/datasets/${datasetId}/sessions`
     : "/projects";
 
   return (

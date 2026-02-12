@@ -1,8 +1,10 @@
 /**
  * Sessions API — chat session lifecycle and turn logging
+ *
+ * Talks directly to the chat worker (not the backend API).
  */
 
-import { get, post } from "./client";
+const CHAT_URL = import.meta.env.VITE_CHAT_URL || "http://localhost:8787";
 
 export interface ChatTurnPayload {
   user_message: string;
@@ -30,6 +32,7 @@ export interface ChatTurn {
 
 export interface ChatSession {
   id: string;
+  project_id: string;
   dataset_id: string | null;
   turns: ChatTurn[];
   created_at: string;
@@ -38,24 +41,48 @@ export interface ChatSession {
 
 export interface ChatSessionSummary {
   id: string;
+  project_id: string;
   dataset_id: string | null;
   turns: ChatTurn[];
   created_at: string;
   updated_at: string;
 }
 
-export async function createSession(datasetId?: string): Promise<ChatSession> {
-  return post<ChatSession>("/api/sessions", { dataset_id: datasetId ?? null });
+async function handleResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Request failed (${response.status}): ${text}`);
+  }
+  return response.json();
+}
+
+export async function createSession(projectId: string, datasetId?: string): Promise<ChatSession> {
+  const response = await fetch(`${CHAT_URL}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId, dataset_id: datasetId ?? null }),
+  });
+  return handleResponse<ChatSession>(response);
 }
 
 export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise<void> {
-  await post(`/api/sessions/${sessionId}/turns`, turn);
+  const response = await fetch(`${CHAT_URL}/sessions/${sessionId}/turns`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(turn),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to log turn (${response.status}): ${text}`);
+  }
 }
 
 export async function getSession(sessionId: string): Promise<ChatSession> {
-  return get<ChatSession>(`/api/sessions/${sessionId}`);
+  const response = await fetch(`${CHAT_URL}/sessions/${sessionId}`);
+  return handleResponse<ChatSession>(response);
 }
 
 export async function listSessions(datasetId: string): Promise<ChatSessionSummary[]> {
-  return get<ChatSessionSummary[]>(`/api/datasets/${datasetId}/sessions`);
+  const response = await fetch(`${CHAT_URL}/sessions?dataset_id=${encodeURIComponent(datasetId)}`);
+  return handleResponse<ChatSessionSummary[]>(response);
 }

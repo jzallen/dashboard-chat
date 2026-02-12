@@ -14,8 +14,8 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/projects/:projectId" element={<ProjectView />} />
         <Route path="/projects/:projectId/datasets/:datasetId" element={<ProjectView />} />
-        <Route path="/datasets/:datasetId/sessions" element={<SessionList />} />
-        <Route path="/sessions/:sessionId" element={<SessionViewer />} />
+        <Route path="/projects/:projectId/datasets/:datasetId/sessions" element={<SessionList />} />
+        <Route path="/projects/:projectId/datasets/:datasetId/sessions/:sessionId" element={<SessionViewer />} />
       </Route>
     </Routes>
   );

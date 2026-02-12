@@ -5,17 +5,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers import HTTPController
-from app.database import get_db
-from app.repositories import set_session
+from .deps import use_db_context
 from .schemas import TransformCreateBatch, TransformBatchUpdate
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}/transforms", tags=["transforms"])
-
-
-async def use_db_context(db: AsyncSession = Depends(get_db)) -> AsyncSession:
-    """Dependency that sets the db session in context for use cases."""
-    set_session(db)
-    return db
 
 
 @router.post("")

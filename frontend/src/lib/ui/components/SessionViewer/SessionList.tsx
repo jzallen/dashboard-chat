@@ -4,7 +4,7 @@ import { listSessions, type ChatSessionSummary } from "@/api/sessions";
 import styles from "./SessionViewer.module.css";
 
 export function SessionList() {
-  const { datasetId } = useParams<{ datasetId: string }>();
+  const { projectId, datasetId } = useParams<{ projectId: string; datasetId: string }>();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +38,7 @@ export function SessionList() {
 
   return (
     <div className={styles.container}>
-      <Link to=".." relative="path" className={styles.backLink}>
+      <Link to={`/projects/${projectId}/datasets/${datasetId}`} className={styles.backLink}>
         &larr; Back to dataset
       </Link>
 
@@ -68,7 +68,7 @@ export function SessionList() {
               <tr
                 key={s.id}
                 className={styles.sessionRow}
-                onClick={() => navigate(`/sessions/${s.id}`)}
+                onClick={() => navigate(`/projects/${projectId}/datasets/${datasetId}/sessions/${s.id}`)}
               >
                 <td className={styles.sessionId}>{s.id.slice(0, 8)}</td>
                 <td>{formatDate(s.created_at)}</td>

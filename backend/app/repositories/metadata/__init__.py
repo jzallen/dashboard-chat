@@ -12,7 +12,6 @@ from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
 from .pipeline_run_record import PipelineRunRecord
-from .chat_session_record import ChatSessionRecord, ChatTurnRecord
 
 
 class MetadataRepositoryProtocol(Protocol):

@@ -1,4 +1,4 @@
-
+import asyncio
 import io
 from typing import TYPE_CHECKING
 
@@ -62,12 +62,12 @@ async def create_dataset_from_upload(
     if not await metadata_repo.project_exists(file_received_event.project_id):
         raise ProjectNotFound(file_received_event.project_id)
 
-    raw_content = lake_repo.read_raw_file(file_received_event.raw_storage_path)
+    raw_content = await asyncio.to_thread(lake_repo.read_raw_file, file_received_event.raw_storage_path)
 
     if not raw_content:
         raise UploadNotFound(upload_id)
 
-    df = pd.read_csv(io.BytesIO(raw_content))
+    df = await asyncio.to_thread(pd.read_csv, io.BytesIO(raw_content))
     schema_config = infer_schema_from_dataframe(df)
     column_profiles = compute_column_profiles(df, schema_config)
 
@@ -92,10 +92,12 @@ async def create_dataset_from_upload(
         column_profiles=dataset.column_profiles,
     )
 
-    lake_repo.write_csv_as_partitioned_parquet(
-        csv_content=raw_content,
-        storage_prefix=dataset.storage_path,
-        partition_fields=partition_fields,
+    await asyncio.to_thread(
+        lambda: lake_repo.write_csv_as_partitioned_parquet(
+            csv_content=raw_content,
+            storage_prefix=dataset.storage_path,
+            partition_fields=partition_fields,
+        )
     )
 
     await outbox_repo.mark_processed([upload_id])

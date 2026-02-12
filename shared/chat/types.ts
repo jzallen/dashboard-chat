@@ -1,4 +1,11 @@
-import type { ToolCall } from "../types";
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
 
 export interface MessageContent {
   type: "text" | "image" | "input_text" | "input_file";

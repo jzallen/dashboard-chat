@@ -1,4 +1,18 @@
 services:
+  # Redis - session write buffer
+  redis:
+    image: redis:7-alpine
+    container_name: dashboard-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Frontend - Vite dev server
   frontend:
     image: node:20-alpine
@@ -10,27 +24,39 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend:/app
+      - ./shared:/shared
       - /app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:
       - api
 
-  # Cloudflare Worker - Chat API
+  # Hono Worker - Chat API
   worker:
     image: node:20-slim
     container_name: dashboard-worker
     working_dir: /app
+    env_file:
+      - .dev.vars
     environment:
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
       NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET_LOGS: dashboard-chat.logs
+      S3_REGION: us-east-1
+      CORS_ORIGIN: http://localhost:5173
     ports:
       - "8787:8787"
     volumes:
       - .:/app
       - /app/node_modules
     depends_on:
-      - api
-    command: bash -c "apt-get update && apt-get install -y ca-certificates && npm install && npx wrangler dev --ip 0.0.0.0 --port 8787"
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: bash -c "apt-get update && apt-get install -y ca-certificates && npm install && npx tsx --watch worker/index.ts"
 
   # PostgreSQL - for persistent storage (optional for DuckDB-only mode)
   db:
@@ -115,3 +141,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  redis_data:

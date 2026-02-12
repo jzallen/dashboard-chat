@@ -2,10 +2,9 @@
 export type { Message, TableSchema, SSEMessage } from "./types";
 
 // Data
-export { initialData, columns, tableSchema, API_URL, CHAT_URL } from "./data/sampleData";
+export { API_URL, CHAT_URL } from "./data/config";
 
 // Hooks
-export { useChat } from "./hooks/useChat";
 export { useTableConfig } from "./hooks/useTableConfig";
 
 // Context

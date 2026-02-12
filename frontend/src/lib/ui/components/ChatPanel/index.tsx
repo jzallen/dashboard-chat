@@ -76,6 +76,16 @@ export default function ChatPanel({
                     type="button"
                     className={styles.actionMenuItem}
                     onClick={() => {
+                      onAction("new-session");
+                      setMenuOpen(false);
+                    }}
+                  >
+                    New Session
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.actionMenuItem}
+                    onClick={() => {
                       onAction("create-dataset");
                       setMenuOpen(false);
                     }}

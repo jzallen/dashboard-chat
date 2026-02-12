@@ -52,6 +52,18 @@ def setup_minio(settings) -> None:
         except Exception as e:
             print(f"  Failed to create bucket '{bucket}': {e}")
 
+    # Create logs bucket for chat session JSONL files
+    logs_bucket = "dashboard-chat.logs"
+    try:
+        client.head_bucket(Bucket=logs_bucket)
+        print(f"  Bucket '{logs_bucket}' already exists")
+    except Exception:
+        try:
+            client.create_bucket(Bucket=logs_bucket)
+            print(f"  Created bucket '{logs_bucket}'")
+        except Exception as e:
+            print(f"  Failed to create bucket '{logs_bucket}': {e}")
+
 
 async def setup_database(settings) -> None:
     """Create SQLite tables and seed default project."""

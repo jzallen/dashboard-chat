@@ -91,19 +91,6 @@ export async function patch<T>(endpoint: string, body: unknown): Promise<T> {
 }
 
 /**
- * Make a DELETE request
- */
-export async function del<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-  return handleResponse<T>(response);
-}
-
-/**
  * Upload a file with form data
  */
 export async function uploadFile<T>(
