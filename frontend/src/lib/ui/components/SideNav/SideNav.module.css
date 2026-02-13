@@ -1,4 +1,4 @@
-/* ProjectNav styles */
+/* SideNav styles */
 
 .nav {
   @apply flex flex-col bg-white border-r border-gray-200 transition-all duration-200 overflow-hidden;
@@ -17,7 +17,7 @@
   @apply flex items-center justify-between p-3 border-b border-gray-200;
 }
 
-.projectName {
+.orgName {
   @apply text-sm font-semibold text-gray-900 truncate;
 }
 
@@ -29,9 +29,23 @@
   @apply w-4 h-4;
 }
 
-/* Dataset list */
-.datasetList {
+/* Body list */
+.body {
   @apply flex-1 overflow-y-auto py-1;
+}
+
+/* Section label (e.g. "datasets" in project mode) */
+.sectionLabel {
+  @apply px-3 py-1 text-xs font-medium text-gray-400 uppercase tracking-wider;
+}
+
+/* Project heading in project mode tree */
+.projectHeading {
+  @apply flex items-center gap-2 w-full px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 transition-colors text-left cursor-pointer;
+}
+
+.projectHeadingIcon {
+  @apply w-4 h-4 flex-shrink-0 text-gray-500;
 }
 
 /* Nav item */
@@ -49,6 +63,15 @@
 
 .navItemLabel {
   @apply truncate;
+}
+
+.navItemCount {
+  @apply ml-auto text-xs text-gray-400;
+}
+
+/* Indentation for datasets in project mode tree */
+.navItemIndented {
+  padding-left: 2rem;
 }
 
 /* Skeleton loading */

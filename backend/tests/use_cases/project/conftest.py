@@ -3,8 +3,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.metadata import DatasetRecord, ProjectRecord
-# Import PipelineRunRecord to ensure mapper is configured (TransformRecord has relationship to it)
-from app.repositories.metadata import PipelineRunRecord  # noqa: F401
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 

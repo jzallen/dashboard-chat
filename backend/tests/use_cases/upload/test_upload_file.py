@@ -8,6 +8,9 @@ from returns.result import Success, Failure
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.use_cases.upload import upload_file
+from app.use_cases.exceptions import (
+    DatasetNotFound, EmptyFile, InvalidFileType, ProjectNotFound,
+)
 from app.repositories import set_session
 from app.repositories.lake import MinIOLakeRepository
 from app.models import Upload
@@ -88,7 +91,8 @@ class TestUploadFile:
             project_id="project-001",
         )
 
-        assert result == Failure("[upload_file] Only CSV files are supported")
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), InvalidFileType)
 
     async def test_upload_file_rejects_empty_file(self, seeded_db: AsyncSession):
         """upload_file should return Failure for empty files."""
@@ -100,7 +104,8 @@ class TestUploadFile:
             project_id="project-001",
         )
 
-        assert result == Failure("[upload_file] File is empty")
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), EmptyFile)
 
     async def test_upload_file_rejects_nonexistent_project(
         self, seeded_db: AsyncSession, sample_csv: bytes
@@ -114,7 +119,8 @@ class TestUploadFile:
             project_id="nonexistent-project",
         )
 
-        assert result == Failure("[upload_file] Project with ID 'nonexistent-project' not found")
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), ProjectNotFound)
 
     async def test_upload_file_rejects_nonexistent_dataset(
         self, seeded_db: AsyncSession, sample_csv: bytes
@@ -129,4 +135,5 @@ class TestUploadFile:
             dataset_id="nonexistent-dataset",
         )
 
-        assert result == Failure("[upload_file] Dataset with ID 'nonexistent-dataset' not found")
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), DatasetNotFound)

@@ -35,7 +35,7 @@ class TestAuthMiddleware:
     async def test_auth_login_accessible_without_token(self, client: AsyncClient):
         """Public route /auth/login should be accessible without auth."""
         async with client:
-            res = await client.get("/auth/login")
+            res = await client.get("/api/auth/login")
         assert res.status_code == 200
 
     async def test_protected_route_without_token_returns_401(self, client: AsyncClient):

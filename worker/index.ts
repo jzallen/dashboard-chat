@@ -17,6 +17,14 @@ const app = new Hono();
 
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+if (!GROQ_API_KEY) {
+  console.error("[worker] GROQ_API_KEY is required but not set");
+  process.exit(1);
+}
+
+const handleChat = createChatHandler({ GROQ_API_KEY });
 
 const sessionManager = new SessionManager({
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
@@ -55,11 +63,6 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 // ---------------------------------------------------------------------------
 
 app.post("/chat", async (c) => {
-  const env = {
-    GROQ_API_KEY: process.env.GROQ_API_KEY || "",
-    CORS_ORIGIN,
-  };
-  const handleChat = createChatHandler(env);
   return handleChat(c.req.raw);
 });
 

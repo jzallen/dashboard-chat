@@ -9,11 +9,7 @@ class DomainException(Exception):
     _status_code: int = 500
 
     def __init__(self, message: str):
-        self._message = message
         super().__init__(message)
-
-    def is_match(self, error_string: str) -> bool:
-        return self._message in error_string
 
 
 class ProjectIdRequired(DomainException):

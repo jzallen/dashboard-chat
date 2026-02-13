@@ -87,7 +87,6 @@ class TestListProjects:
 
         match result:
             case Failure(error):
-                assert "[list_projects]" in error
-                assert "Database connection lost" in error
+                assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("list_projects should fail when database error occurs")

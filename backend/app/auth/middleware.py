@@ -6,13 +6,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .context import set_auth_user
-from . import get_auth_provider
+from . import get_auth_provider, enrich_org_id
 
 logger = logging.getLogger(__name__)
 
 PUBLIC_PATHS = {
     "/health", "/", "/docs", "/openapi.json", "/redoc",
     "/api/auth/login", "/api/auth/callback", "/api/auth/logout",
+}
+
+# Paths accessible to authenticated users even without an org
+ORG_LESS_PATHS = {
+    "/api/orgs",
+    "/api/orgs/me",
 }
 
 
@@ -39,12 +45,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             provider = get_auth_provider()
             user = await provider.verify_token(token)
-            set_auth_user(user)
         except Exception as e:
             logger.error("Token verification failed for %s: %s", path, e)
             return JSONResponse(
                 {"detail": "Invalid or expired token"},
                 status_code=401,
+            )
+
+        # Enrich org_id from local DB when JWT doesn't include it
+        user = await enrich_org_id(user)
+
+        set_auth_user(user)
+
+        # Authenticated but org-less users can only access org endpoints and auth
+        if user.org_id is None and path not in ORG_LESS_PATHS:
+            return JSONResponse(
+                {"detail": "Organization required"},
+                status_code=403,
             )
 
         return await call_next(request)

@@ -1,4 +1,4 @@
-import styles from "./ProjectNav.module.css";
+import styles from "./SideNav.module.css";
 
 interface DatasetNavItemProps {
   id: string;
@@ -11,7 +11,7 @@ interface DatasetNavItemProps {
 export function DatasetNavItem({ id, name, isActive, collapsed, onClick }: DatasetNavItemProps) {
   return (
     <button
-      className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
+      className={`${styles.navItem} ${styles.navItemIndented} ${isActive ? styles.navItemActive : ""}`}
       onClick={() => onClick(id)}
       title={collapsed ? name : undefined}
     >

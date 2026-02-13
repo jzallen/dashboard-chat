@@ -1,5 +1,6 @@
 """HTTP controller for serializing domain models to JSON responses."""
 
+import logging
 from typing import Any
 
 from returns.result import Success, Failure
@@ -9,16 +10,10 @@ from app.use_cases import dataset as dataset_use_cases
 from app.use_cases import upload as upload_use_cases
 from app.use_cases import project as project_use_cases
 from app.use_cases import transform as transform_use_cases
-from app.use_cases.exceptions import (
-    DomainException,
-    DatasetNotFound,
-    EmptyFile,
-    InvalidFileType,
-    ProjectIdRequired,
-    ProjectNotFound,
-    UploadAlreadyProcessed,
-    UploadNotFound,
-)
+from app.use_cases import organization as organization_use_cases
+from app.use_cases.exceptions import DomainException
+
+logger = logging.getLogger(__name__)
 
 
 def _serialize(data: Any) -> Any:
@@ -35,14 +30,19 @@ def _serialize(data: Any) -> Any:
             return data
 
 
-def _error_response(error: str, *matchers: DomainException) -> tuple[dict, int]:
-    """Match an error string against domain exceptions and return RFC 9457 response."""
-    import logging
-    logger = logging.getLogger(__name__)
+def _error_response(error: Exception) -> tuple[dict, int]:
+    """Build an RFC 9457 error response from an exception.
 
-    for m in matchers:
-        if m.is_match(error):
-            return {"type": m._type, "title": m._title, "status": m._status_code, "detail": m._message}, m._status_code
+    DomainException subclasses carry status_code, type, and title.
+    All other exceptions map to a generic 500.
+    """
+    if isinstance(error, DomainException):
+        return {
+            "type": error._type,
+            "title": error._title,
+            "status": error._status_code,
+            "detail": str(error),
+        }, error._status_code
 
     logger.error("Unhandled error: %s", error)
     return {"type": "INTERNAL_SERVER_ERROR", "title": "Internal Server Error", "status": 500, "detail": "An unexpected error occurred. Check server logs for details."}, 500
@@ -61,7 +61,7 @@ class HTTPController:
             case Success(data):
                 return wrap_success(_serialize(data)), 200
             case Failure(error):
-                return _error_response(error, ProjectIdRequired(), ProjectNotFound(project_id))
+                return _error_response(error)
 
     @staticmethod
     async def get_dataset(dataset_id: str, include_transforms: bool = True,
@@ -73,7 +73,7 @@ class HTTPController:
             case Success(data):
                 return wrap_success(_serialize(data)), 200
             case Failure(error):
-                return _error_response(error, DatasetNotFound(dataset_id))
+                return _error_response(error)
 
     @staticmethod
     async def patch_dataset(dataset_id: str, **kwargs) -> tuple[dict, int]:
@@ -82,7 +82,7 @@ class HTTPController:
             case Success(data):
                 return wrap_success(_serialize(data)), 200
             case Failure(error):
-                return _error_response(error, DatasetNotFound(dataset_id))
+                return _error_response(error)
 
     @staticmethod
     async def post_dataset(upload_id: str, partition_fields: list[str] | None = None,
@@ -95,7 +95,7 @@ class HTTPController:
             case Success(data):
                 return wrap_success(_serialize(data)), 201
             case Failure(error):
-                return _error_response(error, UploadNotFound(upload_id), ProjectNotFound(), UploadAlreadyProcessed(upload_id))
+                return _error_response(error)
 
     @staticmethod
     async def post_upload(file_content: bytes, file_name: str, project_id: str,
@@ -108,7 +108,7 @@ class HTTPController:
             case Success(data):
                 return wrap_success(_serialize(data)), 201
             case Failure(error):
-                return _error_response(error, InvalidFileType(), EmptyFile(), ProjectNotFound(project_id), DatasetNotFound(dataset_id))
+                return _error_response(error)
 
     # Transform methods
 
@@ -119,7 +119,7 @@ class HTTPController:
             case Success():
                 return {"ok": True}, 201
             case Failure(error):
-                return _error_response(error, DatasetNotFound(dataset_id))
+                return _error_response(error)
 
     @staticmethod
     async def patch_transforms(dataset_id: str, updates: list[dict]) -> tuple[dict, int]:
@@ -128,7 +128,7 @@ class HTTPController:
             case Success():
                 return {"ok": True}, 200
             case Failure(error):
-                return _error_response(error, DatasetNotFound(dataset_id))
+                return _error_response(error)
 
     # Project methods
 
@@ -148,7 +148,7 @@ class HTTPController:
             case Success(data):
                 return wrap_success(_serialize(data)), 200
             case Failure(error):
-                return _error_response(error, ProjectNotFound(project_id))
+                return _error_response(error)
 
     @staticmethod
     async def post_project(name: str, description: str | None = None) -> tuple[dict, int]:
@@ -166,7 +166,7 @@ class HTTPController:
             case Success(data):
                 return wrap_success(_serialize(data)), 200
             case Failure(error):
-                return _error_response(error, ProjectNotFound(project_id))
+                return _error_response(error)
 
     @staticmethod
     async def delete_project(project_id: str) -> tuple[dict, int]:
@@ -175,4 +175,24 @@ class HTTPController:
             case Success(data):
                 return wrap_success({"deleted": data}), 200
             case Failure(error):
-                return _error_response(error, ProjectNotFound(project_id))
+                return _error_response(error)
+
+    # Organization methods
+
+    @staticmethod
+    async def post_organization(name: str) -> tuple[dict, int]:
+        result = await organization_use_cases.create_organization(name=name)
+        match result:
+            case Success(data):
+                return wrap_success(_serialize(data)), 201
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def get_my_organization() -> tuple[dict, int]:
+        result = await organization_use_cases.get_organization()
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)

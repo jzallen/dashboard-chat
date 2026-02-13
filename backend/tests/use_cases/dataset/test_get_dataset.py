@@ -72,7 +72,7 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error == "[get_dataset] Dataset with ID 'nonexistent' not found"
+                assert str(error) == "Dataset with ID 'nonexistent' not found"
             case Success(_):
                 pytest.fail("get_dataset should fail when dataset does not exist")
 
@@ -116,7 +116,7 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error == "[get_dataset] Connection lost"
+                assert str(error) == "Connection lost"
             case Success(_):
                 pytest.fail("get_dataset should fail when database error occurs")
 
@@ -139,6 +139,6 @@ class TestGetDataset:
 
         match result:
             case Failure(error):
-                assert error == "[get_dataset] An error occurred (NoSuchKey) when calling the GetObject operation: Key not found"
+                assert str(error) == "An error occurred (NoSuchKey) when calling the GetObject operation: Key not found"
             case Success(_):
                 pytest.fail("get_dataset should fail when lake error occurs")

@@ -8,10 +8,7 @@ from contextvars import ContextVar
 from functools import partial, wraps
 from typing import Callable, TypeVar, ParamSpec, Self, Union
 
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from .exceptions import MetadataRepositoryError
 
 from .metadata import MetadataRepository
 from .lake import LakeRepository, MinIOLakeRepository
@@ -32,7 +29,7 @@ def get_session() -> AsyncSession:
     """
     session = _db_session.get()
     if session is None:
-        raise RuntimeError("No database session in context. Use @with_db or set_session().")
+        raise RuntimeError("No database session in context. Use set_session().")
     return session
 
 
@@ -43,25 +40,6 @@ def set_session(session: AsyncSession) -> None:
 
 P = ParamSpec("P")
 R = TypeVar("R")
-
-
-def with_db(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator that injects the database session from context.
-
-    Use cases decorated with @with_db will automatically receive
-    the session from the current context, removing the need to
-    pass db as an explicit parameter.
-
-    SQLAlchemy errors are caught and re-raised as MetadataRepositoryError.
-    """
-    @wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        db = get_session()
-        try:
-            return await func(db, *args, **kwargs)
-        except SQLAlchemyError as e:
-            raise MetadataRepositoryError(str(e)) from e
-    return wrapper
 
 
 class RestrictedSession:
@@ -89,12 +67,16 @@ class RepositoryContainer:
             'outbox_repository': partial(OutboxRepository, db),
             **(overrides or {}),
         }
+        self._cache: dict[str, object] = {}
 
     def __getitem__(self, name: str) -> object:
         if name not in self._registry:
             raise KeyError(f"Unknown repository: {name}")
 
-        return self._registry[name]()
+        if name not in self._cache:
+            self._cache[name] = self._registry[name]()
+
+        return self._cache[name]
 
 
 def with_repositories(func: Callable[P, R]) -> Callable[P, R]:

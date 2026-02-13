@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { listSessions, type ChatSessionSummary } from "@/api/sessions";
+import { listSessions, type ChatSession } from "@/api/sessions";
 import styles from "./SessionViewer.module.css";
 
 export function SessionList() {
   const { projectId, datasetId } = useParams<{ projectId: string; datasetId: string }>();
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +30,7 @@ export function SessionList() {
     });
   };
 
-  const getPreview = (session: ChatSessionSummary): string => {
+  const getPreview = (session: ChatSession): string => {
     if (!session.turns.length) return "(empty session)";
     const msg = session.turns[0].user_message;
     return msg.length > 80 ? msg.slice(0, 80) + "..." : msg;

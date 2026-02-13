@@ -111,16 +111,25 @@ class SSEStreamWriter {
 // Chat Handler
 // ============================================================================
 
-interface HandleChatOptions {
-  corsOrigin: string;
-}
-
 export async function handleChat(
   request: Request,
   client: ChatClient,
-  options: HandleChatOptions
 ): Promise<Response> {
   const { messages, tableSchema }: ChatRequest = await request.json();
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return new Response(JSON.stringify({ error: "messages must be a non-empty array" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (!tableSchema?.columns) {
+    return new Response(JSON.stringify({ error: "tableSchema with columns is required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const systemPrompt = getSystemPrompt(tableSchema);
   const chatMessages: Message[] = [
@@ -143,9 +152,6 @@ export async function handleChat(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
-      "Access-Control-Allow-Origin": options.corsOrigin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
     },
   });
 }

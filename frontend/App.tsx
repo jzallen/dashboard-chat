@@ -2,7 +2,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./src/lib/auth";
 import { AppShell } from "./src/lib/ui/components/AppShell";
 import { ProjectView } from "./src/lib/ui/components/DatasetView";
-import { ProjectRedirect } from "./src/lib/ui/components/ProjectRedirect";
+import { OrgView } from "./src/lib/ui/components/OrgView";
+import { CreateOrg } from "./src/lib/ui/components/CreateOrg";
 import { SessionList } from "./src/lib/ui/components/SessionViewer/SessionList";
 import { SessionViewer } from "./src/lib/ui/components/SessionViewer";
 import { LoginPage } from "./src/lib/ui/components/LoginPage";
@@ -16,15 +17,22 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   return children;
 }
 
+function RequireOrg({ children }: { children: React.ReactElement }) {
+  const { user } = useAuth();
+  if (!user?.org_id) return <Navigate to="/org/create" replace />;
+  return children;
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/logout" element={<LogoutPage />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/" element={<Navigate to="/projects" replace />} />
-      <Route path="/projects" element={<RequireAuth><ProjectRedirect /></RequireAuth>} />
-      <Route element={<RequireAuth><AppShell /></RequireAuth>}>
+      <Route path="/org/create" element={<RequireAuth><CreateOrg /></RequireAuth>} />
+      <Route path="/projects" element={<Navigate to="/" replace />} />
+      <Route element={<RequireAuth><RequireOrg><AppShell /></RequireOrg></RequireAuth>}>
+        <Route path="/" element={<OrgView />} />
         <Route path="/projects/:projectId" element={<ProjectView />} />
         <Route path="/projects/:projectId/datasets/:datasetId" element={<ProjectView />} />
         <Route path="/projects/:projectId/datasets/:datasetId/sessions" element={<SessionList />} />

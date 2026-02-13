@@ -96,7 +96,7 @@ class TestUpdateDataset:
 
         match result:
             case Failure(error):
-                assert error == "[update_dataset] Dataset with ID 'nonexistent' not found"
+                assert str(error) == "Dataset with ID 'nonexistent' not found"
             case Success(_):
                 pytest.fail("update_dataset should fail when dataset does not exist")
 
@@ -116,7 +116,7 @@ class TestUpdateDataset:
 
         match result:
             case Failure(error):
-                assert error == "[update_dataset] Database connection lost"
+                assert str(error) == "Database connection lost"
             case Success(_):
                 pytest.fail("update_dataset should fail when database error occurs")
 

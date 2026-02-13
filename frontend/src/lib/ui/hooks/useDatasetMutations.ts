@@ -46,6 +46,7 @@ export function useRenameDataset(projectId: string) {
 
     onSettled: (_data, _err, { datasetId }) => {
       queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId) });
     },
   });
 }

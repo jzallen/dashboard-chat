@@ -5,7 +5,7 @@ The outbox pattern stores domain events for:
 2. Reliable messaging - Future event publishing to message queues
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid_utils import uuid7
 
 from sqlalchemy import Boolean, DateTime, Index, JSON, String, Text
@@ -54,7 +54,7 @@ class OutboxRecord(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
     )

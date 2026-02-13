@@ -51,8 +51,6 @@ export class GroqChatClient implements ChatClient {
       console.error("[GroqClient] API error:", response.status, error);
       throw new Error(`Groq API error: ${response.status} - ${error}`);
     }
-    console.log("[GroqClient] Request successful, starting stream");
-
     if (!response.body) throw new Error("No response body");
 
     const eventStream = response.body

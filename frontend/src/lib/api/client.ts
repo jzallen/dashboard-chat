@@ -4,13 +4,9 @@
  * Provides typed fetch wrapper for communicating with the backend.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
-const TOKEN_KEY = "auth_token";
+import { TOKEN_KEY, getAuthHeaders } from "./fetchUtils";
 
-function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem(TOKEN_KEY);
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
 /**
  * API error with status code and message

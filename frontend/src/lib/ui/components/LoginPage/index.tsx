@@ -12,7 +12,7 @@ export function LoginPage() {
   }, [isLoading, isAuthenticated, login]);
 
   if (isAuthenticated) {
-    return <Navigate to="/projects" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return (

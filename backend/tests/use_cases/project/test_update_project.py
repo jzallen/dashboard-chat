@@ -1,7 +1,7 @@
 """Tests for update_project use case."""
 
 import pytest
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
@@ -60,8 +60,7 @@ class TestUpdateProject:
 
         match result:
             case Failure(error):
-                assert "[update_project]" in error
-                assert "Project with ID 'nonexistent-project' not found" in error
+                assert "Project with ID 'nonexistent-project' not found" in str(error)
             case Success(_):
                 pytest.fail("update_project should fail for nonexistent project")
 
@@ -72,8 +71,9 @@ class TestUpdateProject:
         # Close the session to simulate a database error
         await seeded_db.close()
 
-        metadata_repository = Mock()
-        metadata_repository.update_project = Mock(side_effect=SQLAlchemyError("Database connection lost"))
+        metadata_repository = AsyncMock()
+        metadata_repository.get_project = AsyncMock(return_value={"id": "project-001", "org_id": "test-org-001", "name": "Test"})
+        metadata_repository.update_project = AsyncMock(side_effect=SQLAlchemyError("Database connection lost"))
 
         result = await update_project(
             project_id="project-001",
@@ -83,7 +83,6 @@ class TestUpdateProject:
 
         match result:
             case Failure(error):
-                assert "[update_project]" in error
-                assert "Database connection lost" in error
+                assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("update_project should fail when database error occurs")

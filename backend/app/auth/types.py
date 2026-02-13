@@ -5,5 +5,5 @@ from dataclasses import dataclass
 class AuthUser:
     id: str
     email: str
-    org_id: str
+    org_id: str | None = None
     name: str | None = None

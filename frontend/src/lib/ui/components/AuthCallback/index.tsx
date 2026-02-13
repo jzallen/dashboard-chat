@@ -17,7 +17,13 @@ export function AuthCallback() {
     }
     calledRef.current = true;
     handleCallback(code)
-      .then(() => navigate("/projects", { replace: true }))
+      .then((result) => {
+        if (result.org_id) {
+          navigate("/", { replace: true });
+        } else {
+          navigate("/org/create", { replace: true });
+        }
+      })
       .catch(() => navigate("/login", { replace: true }));
   }, [searchParams, handleCallback, navigate]);
 

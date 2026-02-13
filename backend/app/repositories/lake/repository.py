@@ -4,7 +4,9 @@ This module handles reading and writing Parquet files to MinIO/S3 storage.
 """
 
 import json
+import logging
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -19,6 +21,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from ..exceptions import LakeRepositoryError
 from ...config import get_settings
+
+logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -92,46 +96,18 @@ class BaseLakeRepository(ABC):
         )
         return response['Body'].read()
 
-    @handle_repository_exceptions
-    def write_csv_as_parquet(self, csv_content: bytes, storage_path: str) -> str:
-        """Convert CSV to Parquet using DuckDB, upload to S3/MinIO.
+    @staticmethod
+    def _validate_identifier(name: str) -> str:
+        """Validate a SQL identifier (column/field name) to prevent injection.
 
-        Args:
-            csv_content: Raw CSV bytes
-            storage_path: Path within bucket (e.g., "project_id/dataset_uuid.parquet")
+        Only allows alphanumeric characters and underscores.
 
-        Returns:
-            S3 path (s3://bucket/path)
+        Raises:
+            ValueError: If the identifier contains invalid characters.
         """
-        conn = ibis.duckdb.connect()
-
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as temp_csv:
-            temp_csv.write(csv_content)
-            temp_csv_path = temp_csv.name
-
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.parquet', delete=False) as temp_parquet:
-            temp_parquet_path = temp_parquet.name
-
-        try:
-            conn.raw_sql(f"""
-                COPY (SELECT * FROM read_csv_auto('{temp_csv_path}'))
-                TO '{temp_parquet_path}' (FORMAT PARQUET);
-            """)
-
-            with open(temp_parquet_path, 'rb') as parquet_file:
-                self.s3_client.put_object(
-                    Bucket=self.bucket,
-                    Key=storage_path,
-                    Body=parquet_file,
-                    ContentType='application/octet-stream'
-                )
-
-            return f"s3://{self.bucket}/{storage_path}"
-        finally:
-            if os.path.exists(temp_csv_path):
-                os.unlink(temp_csv_path)
-            if os.path.exists(temp_parquet_path):
-                os.unlink(temp_parquet_path)
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+            raise ValueError(f"Invalid identifier: {name!r}")
+        return name
 
     @handle_repository_exceptions
     def write_csv_as_partitioned_parquet(
@@ -166,7 +142,8 @@ class BaseLakeRepository(ABC):
 
         try:
             if partition_fields:
-                partition_by_clause = ", ".join(f"'{f}'" for f in partition_fields)
+                safe_fields = [self._validate_identifier(f) for f in partition_fields]
+                partition_by_clause = ", ".join(safe_fields)
                 conn.raw_sql(f"""
                     COPY (SELECT * FROM read_csv_auto('{temp_csv_path}'))
                     TO '{temp_out_dir}' (
@@ -266,8 +243,13 @@ class BaseLakeRepository(ABC):
                 Bucket=self.bucket,
                 Key=storage_path
             )
-        except Exception:
-            pass
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "404" or error_code == "NoSuchKey":
+                logger.debug("Object already deleted: %s", storage_path)
+            else:
+                logger.error("Failed to delete %s: %s", storage_path, e)
+                raise
 
 
 class MinIOLakeRepository(BaseLakeRepository):
@@ -300,48 +282,16 @@ class MinIOLakeRepository(BaseLakeRepository):
 
     def _configure_duckdb_s3(self, conn: ibis.BaseBackend) -> None:
         """Configure DuckDB for MinIO access."""
+        endpoint = self._settings.minio_endpoint.replace("'", "''")
+        access_key = (self._settings.minio_access_key or "").replace("'", "''")
+        secret_key = (self._settings.minio_secret_key or "").replace("'", "''")
+        use_ssl = 'true' if self._settings.minio_secure else 'false'
         conn.raw_sql(f"""
             INSTALL httpfs;
             LOAD httpfs;
-            SET s3_endpoint='{self._settings.minio_endpoint}';
-            SET s3_access_key_id='{self._settings.minio_access_key}';
-            SET s3_secret_access_key='{self._settings.minio_secret_key}';
-            SET s3_use_ssl={'true' if self._settings.minio_secure else 'false'};
+            SET s3_endpoint='{endpoint}';
+            SET s3_access_key_id='{access_key}';
+            SET s3_secret_access_key='{secret_key}';
+            SET s3_use_ssl={use_ssl};
             SET s3_url_style='path';
-        """)
-
-
-class S3LakeRepository(BaseLakeRepository):
-    """Lake repository for AWS S3 storage."""
-
-    def __init__(self, s3_client=None):
-        """Initialize S3 lake repository.
-
-        Args:
-            s3_client: Optional boto3 S3 client. If not provided, creates one from settings.
-        """
-        settings = get_settings()
-
-        if s3_client is None:
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=settings.minio_access_key,
-                aws_secret_access_key=settings.minio_secret_key,
-                region_name=settings.s3_region,
-                config=Config(
-                    retries={'max_attempts': settings.s3_max_retries, 'mode': 'standard'},
-                    connect_timeout=settings.s3_connect_timeout,
-                    read_timeout=settings.s3_read_timeout,
-                ),
-            )
-
-        super().__init__(s3_client, settings.storage_bucket)
-        self._settings = settings
-
-    def _configure_duckdb_s3(self, conn: ibis.BaseBackend) -> None:
-        """Configure DuckDB for AWS S3 access."""
-        conn.raw_sql(f"""
-            INSTALL httpfs;
-            LOAD httpfs;
-            SET s3_region='{self._settings.s3_region}';
         """)

@@ -116,7 +116,7 @@ class TransformUpdate(BaseModel):
     description: str | None = None
     condition_json: dict[str, Any] | None = None  # RAQB JSON tree
     condition_sql: str | None = None  # Must be provided if condition_json changes
-    is_active: bool | None = None
+    status: str | None = None  # 'enabled' | 'disabled' | 'deleted'
 
 
 class TransformCreateBatch(BaseModel):
@@ -152,7 +152,7 @@ class TransformResponse(TransformBase):
     condition_json: dict[str, Any]  # Was: raqb_json
     condition_sql: str | None = None  # Was: cached_sql
     version: int
-    is_active: bool
+    status: str  # 'enabled' | 'disabled' | 'deleted'
     nl_prompt: str | None = None
     created_at: datetime
     updated_at: datetime

@@ -2,14 +2,14 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import type { AuthUser, AuthState } from "./types";
 import { post, get } from "../api/client";
 
-const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
+const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "workos";
 const TOKEN_KEY = "auth_token";
 const USER_KEY = "auth_user";
 
 interface AuthContextValue extends AuthState {
-  login: () => Promise<void>;
+  login: (organizationId?: string) => Promise<void>;
   logout: () => void;
-  handleCallback: (code: string) => Promise<void>;
+  handleCallback: (code: string) => Promise<AuthUser>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -47,16 +47,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = useCallback(async () => {
-    const { url } = await get<{ url: string }>("/api/auth/login");
+  const login = useCallback(async (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${encodeURIComponent(organizationId)}` : "";
+    const { url } = await get<{ url: string }>(`/api/auth/login${params}`);
     window.location.href = url;
   }, []);
 
-  const handleCallback = useCallback(async (code: string) => {
+  const handleCallback = useCallback(async (code: string): Promise<AuthUser> => {
     const { user, token } = await post<{ user: AuthUser; token: string }>("/api/auth/callback", { code });
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
     setState({ user, token, isAuthenticated: true, isLoading: false });
+    return user;
   }, []);
 
   const logout = useCallback(() => {

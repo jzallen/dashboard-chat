@@ -67,7 +67,7 @@ class TestListDatasets:
 
         match result:
             case Failure(error):
-                assert "project_id is required" in error
+                assert "project_id is required" in str(error)
             case Success(_):
                 pytest.fail("list_datasets should fail when project_id is None")
 
@@ -130,7 +130,7 @@ class TestListDatasets:
 
         match result:
             case Failure(error):
-                assert "Project with ID 'nonexistent-project' not found" in error
+                assert "Project with ID 'nonexistent-project' not found" in str(error)
             case Success(_):
                 pytest.fail("list_datasets should fail when project does not exist")
 
@@ -149,7 +149,7 @@ class TestListDatasets:
 
         match result:
             case Failure(error):
-                assert "[list_datasets] Database connection lost" in error
+                assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("list_datasets should fail when database error occurs")
 

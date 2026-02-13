@@ -1,3 +1,9 @@
+// Force dev auth mode: Vite statically replaces import.meta.env.VITE_AUTH_MODE at transform time,
+// so we must set it in process.env before the module is transformed.
+vi.hoisted(() => {
+  process.env.VITE_AUTH_MODE = "dev";
+});
+
 import { render, screen, act } from "@testing-library/react";
 import { AuthProvider, useAuth } from "../../lib/auth";
 

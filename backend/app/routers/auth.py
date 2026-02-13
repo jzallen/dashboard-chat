@@ -2,31 +2,38 @@
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-from app.auth import get_auth_provider, get_auth_user, AuthenticationError
+from app.auth import get_auth_provider, get_auth_user, enrich_org_id, AuthenticationError
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+class CallbackBody(BaseModel):
+    code: str
+
+
 @router.get("/login")
-async def login(redirect_uri: str | None = None):
+async def login(redirect_uri: str | None = None, organization_id: str | None = None):
     """Get login URL to redirect user to."""
     provider = get_auth_provider()
     from app.config import get_settings
     uri = redirect_uri or get_settings().workos_redirect_uri
-    url = await provider.get_login_url(uri)
+    url = await provider.get_login_url(uri, organization_id=organization_id)
     return {"url": url}
 
 
 @router.post("/callback")
-async def callback(body: dict):
+async def callback(body: CallbackBody):
     """Exchange auth code for user + token."""
-    code = body.get("code", "")
     provider = get_auth_provider()
     try:
-        user, token = await provider.handle_callback(code)
+        user, token = await provider.handle_callback(body.code)
     except AuthenticationError as e:
         return JSONResponse({"detail": str(e)}, status_code=401)
+
+    user = await enrich_org_id(user)
+
     return {
         "user": {
             "id": user.id,

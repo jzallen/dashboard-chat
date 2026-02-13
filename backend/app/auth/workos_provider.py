@@ -1,6 +1,9 @@
 """WorkOS AuthKit provider implementation."""
 
+import asyncio
 import logging
+import urllib.parse
+
 import httpx
 import jwt
 from jwt import PyJWKClient
@@ -25,13 +28,23 @@ class WorkOSAuthProvider:
     async def verify_token(self, token: str) -> AuthUser:
         """Verify a WorkOS access token (JWT) using JWKS."""
         try:
-            signing_key = self._jwks_client.get_signing_key_from_jwt(token)
+            signing_key = await asyncio.to_thread(
+                self._jwks_client.get_signing_key_from_jwt, token
+            )
             payload = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
                 options={"verify_aud": False},
             )
+            # Warn if the token lacks an audience claim so we know when
+            # WorkOS starts including it and we can enforce verification.
+            if "aud" not in payload:
+                logger.warning("WorkOS token missing 'aud' claim — audience verification skipped")
+            elif payload.get("aud") != self.client_id:
+                raise jwt.InvalidTokenError(
+                    f"Audience mismatch: expected {self.client_id}, got {payload.get('aud')}"
+                )
         except jwt.ExpiredSignatureError:
             raise AuthenticationError("Token has expired")
         except jwt.InvalidTokenError as e:
@@ -41,12 +54,11 @@ class WorkOSAuthProvider:
         return AuthUser(
             id=payload.get("sub", ""),
             email=payload.get("email", ""),
-            # TODO: prompt user to create/join an org when org_id is missing
-            org_id=payload.get("org_id") or payload.get("sub", ""),
+            org_id=payload.get("org_id") or None,
             name=payload.get("first_name", ""),
         )
 
-    async def get_login_url(self, redirect_uri: str) -> str:
+    async def get_login_url(self, redirect_uri: str, *, organization_id: str | None = None) -> str:
         """Get WorkOS AuthKit login URL."""
         params = {
             "client_id": self.client_id,
@@ -54,7 +66,9 @@ class WorkOSAuthProvider:
             "response_type": "code",
             "provider": "authkit",
         }
-        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        if organization_id:
+            params["organization"] = organization_id
+        qs = urllib.parse.urlencode(params)
         return f"https://api.workos.com/user_management/authorize?{qs}"
 
     async def handle_callback(self, code: str) -> tuple[AuthUser, str]:
@@ -73,8 +87,7 @@ class WorkOSAuthProvider:
                 raise AuthenticationError(f"WorkOS callback failed: {resp.text}")
             data = resp.json()
             user_data = data.get("user", {})
-            # TODO: prompt user to create/join an org when organization_id is missing
-            org_id = data.get("organization_id") or user_data.get("id", "")
+            org_id = data.get("organization_id") or None
             user = AuthUser(
                 id=user_data["id"],
                 email=user_data["email"],

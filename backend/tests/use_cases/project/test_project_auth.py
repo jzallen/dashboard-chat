@@ -93,7 +93,7 @@ class TestGetProjectAuth:
 
         match result:
             case Failure(error):
-                assert "Access denied" in error
+                assert "Access denied" in str(error)
             case Success(_):
                 pytest.fail("get_project should deny access to project from different org")
 
@@ -126,6 +126,6 @@ class TestGetProjectAuth:
 
         match result:
             case Failure(error):
-                assert "Access denied" in error
+                assert "Access denied" in str(error)
             case Success(_):
                 pytest.fail("get_project should deny access when org doesn't match")

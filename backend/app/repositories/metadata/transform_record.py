@@ -4,7 +4,7 @@ Note: The authoritative Transform is the domain model in app/models/.
 This is just for database persistence.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -15,7 +15,6 @@ from ...database import Base
 
 if TYPE_CHECKING:
     from .dataset_record import DatasetRecord
-    from .pipeline_run_record import PipelineRunRecord
 
 
 class TransformRecord(Base):
@@ -54,17 +53,14 @@ class TransformRecord(Base):
     nl_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relationships
     dataset: Mapped["DatasetRecord"] = relationship("DatasetRecord", back_populates="transforms")
-    runs: Mapped[list["PipelineRunRecord"]] = relationship(
-        "PipelineRunRecord", back_populates="transform", cascade="all, delete-orphan"
-    )
 
     @property
     def is_active(self) -> bool:

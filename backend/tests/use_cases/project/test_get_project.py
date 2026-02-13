@@ -54,8 +54,7 @@ class TestGetProject:
 
         match result:
             case Failure(error):
-                assert "[get_project]" in error
-                assert "Project with ID 'nonexistent-project' not found" in error
+                assert "Project with ID 'nonexistent-project' not found" in str(error)
             case Success(_):
                 pytest.fail("get_project should fail for nonexistent project")
 
@@ -76,7 +75,6 @@ class TestGetProject:
 
         match result:
             case Failure(error):
-                assert "[get_project]" in error
-                assert "Database connection lost" in error
+                assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("get_project should fail when database error occurs")

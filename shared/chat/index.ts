@@ -6,12 +6,9 @@ import { GroqChatClient } from "./clients/groq";
 
 interface Env {
   GROQ_API_KEY: string;
-  CORS_ORIGIN?: string;
 }
 
 export function createChatHandler(env: Env) {
   const client = new GroqChatClient(env.GROQ_API_KEY);
-  const corsOrigin = env.CORS_ORIGIN || "*";
-  return (request: Request) =>
-    handleChat(request, client, { corsOrigin });
+  return (request: Request) => handleChat(request, client);
 }

@@ -4,7 +4,7 @@ import { useChatContext } from "../../context/ChatContext";
 import ChatPanel from "../ChatPanel";
 
 interface ChatPanelConnectedProps {
-  projectId: string;
+  projectId: string | null;
   onDatasetCreated?: (dataset: Dataset) => void;
   onNavigateToDataset?: (datasetId: string) => void;
 }
@@ -92,7 +92,7 @@ export function ChatPanelConnected({
       inputRef={inputRef}
       chatEndRef={chatEndRef}
       onAction={handleAction}
-      projectId={projectId}
+      projectId={projectId ?? undefined}
       onUploadComplete={handleUploadComplete}
       onUploadError={handleUploadError}
     />

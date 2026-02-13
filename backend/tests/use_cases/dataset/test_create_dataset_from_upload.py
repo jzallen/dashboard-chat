@@ -10,6 +10,7 @@ from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.use_cases.dataset import create_dataset_from_upload
+from app.use_cases.exceptions import ProjectNotFound, UploadNotFound
 from app.repositories import set_session
 from app.repositories.lake import MinIOLakeRepository
 from app.repositories.outbox import OutboxRecord
@@ -133,7 +134,8 @@ class TestCreateDatasetFromUpload:
             partition_fields=[],
         )
 
-        assert result == Failure("[create_dataset_from_upload] Upload with ID 'nonexistent-upload' not found")
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), UploadNotFound)
 
     async def test_given_nonexistent_project_returns_failure(
         self, seeded_db: AsyncSession, sample_csv: bytes
@@ -163,7 +165,8 @@ class TestCreateDatasetFromUpload:
             partition_fields=[],
         )
 
-        assert result == Failure("[create_dataset_from_upload] Project with ID 'project-gone' not found")
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), ProjectNotFound)
 
     async def test_given_already_processed_upload_returns_failure(
         self, seeded_db: AsyncSession, s3_read_write_stubber: Stubber, sample_csv: bytes
@@ -205,9 +208,11 @@ class TestCreateDatasetFromUpload:
             partition_fields=['age'],
         )
 
-        assert second == Failure(
-            "[create_dataset_from_upload] [OutboxRepository] Event upload-002 has already been processed"
-        )
+        match second:
+            case Failure(error):
+                assert "Event upload-002 has already been processed" in str(error)
+            case _:
+                pytest.fail("Expected Failure for already-processed upload")
 
     async def test_given_missing_file_returns_failure(
         self, seeded_db: AsyncSession, sample_csv: bytes
@@ -249,7 +254,8 @@ class TestCreateDatasetFromUpload:
                 },
             )
 
-        assert result == Failure("[create_dataset_from_upload] Upload with ID 'upload-003' not found")
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), UploadNotFound)
 
     async def test_given_invalid_csv_returns_failure(self, seeded_db: AsyncSession):
         """create_dataset_from_upload should fail when file content is not valid CSV."""

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Debug mode
-    debug: bool = True
+    debug: bool = False
 
     # Storage configuration
     storage_type: str = "minio"  # or "s3" for production

@@ -9,10 +9,6 @@ from typing import Any, Protocol
 class LakeRepository(Protocol):
     """Protocol for lake repository operations."""
 
-    def write_csv_as_parquet(self, csv_content: bytes, storage_path: str) -> str:
-        """Convert CSV to Parquet and upload to storage."""
-        ...
-
     def write_raw_file(self, content: bytes, storage_path: str) -> str:
         """Store raw file to S3 without transformation."""
         ...
@@ -43,6 +39,6 @@ class LakeRepository(Protocol):
         ...
 
 
-from .repository import BaseLakeRepository, MinIOLakeRepository, S3LakeRepository
+from .repository import BaseLakeRepository, MinIOLakeRepository
 
-__all__ = ["LakeRepository", "BaseLakeRepository", "MinIOLakeRepository", "S3LakeRepository"]
+__all__ = ["LakeRepository", "BaseLakeRepository", "MinIOLakeRepository"]

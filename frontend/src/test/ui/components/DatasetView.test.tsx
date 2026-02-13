@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ProjectView } from "../../../lib/ui/components/DatasetView";
 import { ChatProvider } from "../../../lib/ui/context/ChatContext";
 import { MOCK_PROJECT } from "../../../__mocks__/data";
+import type { AppShellContext } from "../../../lib/ui/components/AppShell";
 
 // Mock API calls — use dynamic import in factory to avoid hoisting issues
 vi.mock("@/api", async () => {
@@ -27,7 +28,12 @@ function createTestQueryClient() {
 
 /** Layout route that injects outlet context like AppShell does */
 function ContextLayout() {
-  return <Outlet context={{ project: MOCK_PROJECT }} />;
+  const context: AppShellContext = {
+    orgName: "Test Org",
+    project: MOCK_PROJECT,
+    projects: [MOCK_PROJECT],
+  };
+  return <Outlet context={context} />;
 }
 
 function renderProjectView(route = "/") {

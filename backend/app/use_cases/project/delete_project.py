@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
+from app.auth import get_auth_user
+from app.auth.exceptions import AuthorizationError
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import ProjectNotFound
@@ -29,8 +31,18 @@ async def delete_project(
 
     Raises:
         ProjectNotFound: If project with given ID does not exist.
+        AuthorizationError: If user's org does not own the project.
     """
     metadata_repo = repositories['metadata_repository']
+    project = await metadata_repo.get_project(project_id, include_datasets=False)
+
+    if project is None:
+        raise ProjectNotFound(project_id)
+
+    user = get_auth_user()
+    if project.get("org_id") and project["org_id"] != user.org_id:
+        raise AuthorizationError(f"Access denied to project {project_id}")
+
     deleted = await metadata_repo.delete_project(project_id)
 
     if not deleted:

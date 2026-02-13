@@ -7,7 +7,7 @@ Provides event sourcing capabilities:
 """
 
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Callable, TypeVar, ParamSpec, Union
 
@@ -182,6 +182,6 @@ class OutboxRepository:
         await self._session.execute(
             update(OutboxRecord)
             .where(OutboxRecord.id.in_(record_ids))
-            .values(processed=True, processed_at=datetime.utcnow())
+            .values(processed=True, processed_at=datetime.now(timezone.utc))
         )
         await self._session.flush()

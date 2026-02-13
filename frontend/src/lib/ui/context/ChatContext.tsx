@@ -14,6 +14,7 @@ import {
 import type { ToolCall } from "@/table-tools";
 import type { Dataset } from "@/api";
 import { createSession, logTurn } from "@/api";
+import { getAuthHeaders } from "@/api/fetchUtils";
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
 import type { Message, TableSchema, SSEMessage } from "../types";
 import { CHAT_URL } from "../data/config";
@@ -136,7 +137,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const response = await fetch(`${CHAT_URL}/chat`, {
           method: "POST",
           mode: "cors",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeaders(),
+          },
           body: JSON.stringify({
             messages: apiMessages,
             tableSchema: tableSchemaRef.current,
@@ -220,6 +224,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   // Fire-and-forget session logging
                   (async () => {
                     try {
+                      // Sessions require both projectId and datasetId — chat turns
+                      // before a dataset is selected are not persisted.
                       if (!sessionIdRef.current && projectIdRef.current && datasetIdRef.current) {
                         const session = await createSession(projectIdRef.current, datasetIdRef.current);
                         sessionIdRef.current = session.id;
@@ -246,7 +252,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 }
               }
             } catch (parseError) {
-              console.error("Parse error:", parseError);
+              if (parseError instanceof SyntaxError) {
+                console.error("Parse error:", parseError);
+              } else {
+                throw parseError;
+              }
             }
           }
         }

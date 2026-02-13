@@ -202,7 +202,7 @@ export function getSystemPrompt(tableSchema: TableSchema): string {
   const columnDescriptions = tableSchema.columns
     .map((c) => {
       const base = `  - "${c.id}" (${c.type})`;
-      const profileStr = formatProfile((c as any).profile);
+      const profileStr = formatProfile(c.profile);
       return profileStr ? `${base} -- ${profileStr}` : base;
     })
     .join("\n");

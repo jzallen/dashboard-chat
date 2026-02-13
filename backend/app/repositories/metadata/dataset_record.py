@@ -4,7 +4,7 @@ Note: The authoritative Dataset is the domain model in app/models/.
 This is just for database persistence.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
@@ -23,7 +23,6 @@ class DatasetRecord(Base):
     Changes from original Dataset model:
     - ID is UUID (String(36))
     - storage_path field added for Parquet file location
-    - table_name made nullable (deprecated field, will be removed)
     - Class name changed to DatasetRecord to distinguish from domain model
     """
 
@@ -48,11 +47,6 @@ class DatasetRecord(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Deprecated field (will be removed in future migration)
-    table_name: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, unique=False
-    )
-
     # Column names + types for query builder (RAQB), table UI, and SQL generation
     # Format: { "fields": { "column_name": { "type": "text|number|boolean|select", ... } } }
     schema_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -67,10 +61,10 @@ class DatasetRecord(Base):
     column_profiles: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relationships

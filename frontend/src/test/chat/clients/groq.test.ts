@@ -51,7 +51,7 @@ function expectedFetchInit(
       tools: apiTools,
       tool_choice: "auto",
       stream: true,
-      temperature: 0.1,
+      temperature: 0.4,
       max_tokens: 1024,
     }),
   };

@@ -26,7 +26,7 @@ describe("AuthCallback", () => {
   });
 
   it("calls handleCallback with code from URL params", async () => {
-    mockHandleCallback.mockResolvedValue(undefined);
+    mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
 
     render(
       <MemoryRouter initialEntries={["/auth/callback?code=test-auth-code"]}>
@@ -39,8 +39,8 @@ describe("AuthCallback", () => {
     });
   });
 
-  it("navigates to /projects on success", async () => {
-    mockHandleCallback.mockResolvedValue(undefined);
+  it("navigates to / when user has org_id", async () => {
+    mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
 
     render(
       <MemoryRouter initialEntries={["/auth/callback?code=valid-code"]}>
@@ -49,7 +49,21 @@ describe("AuthCallback", () => {
     );
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith("/projects", { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
+    });
+  });
+
+  it("navigates to /org/create when user has no org_id", async () => {
+    mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: null, name: null });
+
+    render(
+      <MemoryRouter initialEntries={["/auth/callback?code=valid-code"]}>
+        <AuthCallback />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/org/create", { replace: true });
     });
   });
 
@@ -80,7 +94,7 @@ describe("AuthCallback", () => {
   });
 
   it("shows completing login message", () => {
-    mockHandleCallback.mockResolvedValue(undefined);
+    mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
 
     render(
       <MemoryRouter initialEntries={["/auth/callback?code=test"]}>

@@ -1,0 +1,40 @@
+/* OrgView styles */
+
+.container {
+  @apply flex-1 overflow-y-auto p-6;
+}
+
+.heading {
+  @apply text-lg font-medium text-gray-500 mb-4;
+}
+
+.grid {
+  @apply flex flex-wrap gap-3 py-2 px-1;
+}
+
+.emptyState {
+  @apply text-gray-500 text-sm py-8 text-center;
+}
+
+/* Card — mirrors CompactDatasetCard 120x120 pattern */
+.card {
+  @apply flex flex-col items-center justify-center flex-shrink-0 rounded-lg bg-white border border-gray-200 p-3 cursor-pointer transition-all text-center;
+  width: 120px;
+  height: 120px;
+}
+
+.card:hover {
+  @apply shadow-md border-gray-300;
+}
+
+.cardName {
+  @apply text-sm font-medium text-gray-900 truncate w-full;
+}
+
+.cardDescription {
+  @apply text-xs text-gray-500 truncate w-full;
+}
+
+.cardMeta {
+  @apply text-xs text-gray-400 mt-1;
+}

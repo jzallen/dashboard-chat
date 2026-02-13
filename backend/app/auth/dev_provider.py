@@ -13,7 +13,7 @@ class DevAuthProvider:
         from .exceptions import AuthenticationError
         raise AuthenticationError("Invalid dev token")
 
-    async def get_login_url(self, redirect_uri: str) -> str:
+    async def get_login_url(self, redirect_uri: str, *, organization_id: str | None = None) -> str:
         return f"{redirect_uri}?code=dev-auth-code"
 
     async def handle_callback(self, code: str) -> tuple[AuthUser, str]:

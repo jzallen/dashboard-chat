@@ -116,6 +116,6 @@ class TestUpdateTransforms:
 
         match result:
             case Failure(error):
-                assert "nonexistent" in error
+                assert "nonexistent" in str(error)
             case Success():
                 pytest.fail("Should fail for nonexistent dataset")

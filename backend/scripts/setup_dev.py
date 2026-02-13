@@ -75,8 +75,8 @@ async def setup_database(settings) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.database import Base
-    from app.repositories.metadata import PipelineRunRecord  # noqa: F401 — required for mapper config
     from app.repositories.metadata import ProjectRecord
+    from app.repositories.metadata import OrganizationRecord
 
     # Seed projects keyed by auth mode
     SEED_PROJECTS = [
@@ -87,15 +87,6 @@ async def setup_database(settings) -> None:
             "description": "Auto-created default project",
             "org_id": "dev-org-001",
             "created_by": "dev-user-001",
-        },
-        # TODO: remove hardcoded WorkOS seed once create-project flow exists
-        # WorkOS mode — user without an org gets org_id = user_id
-        {
-            "id": "workos-project-001",
-            "name": "Default Project",
-            "description": "Auto-created default project",
-            "org_id": "user_01KH8FAK2X935TSGM7WP27MAS7",
-            "created_by": "user_01KH8FAK2X935TSGM7WP27MAS7",
         },
     ]
 
@@ -110,7 +101,22 @@ async def setup_database(settings) -> None:
     session_factory = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
+    # Seed organizations
+    SEED_ORGS = [
+        {"id": "dev-org-001", "name": "Development Org"},
+    ]
+
     async with session_factory() as session:
+        for org in SEED_ORGS:
+            result = await session.execute(
+                select(OrganizationRecord).where(OrganizationRecord.id == org["id"])
+            )
+            if not result.scalar_one_or_none():
+                session.add(OrganizationRecord(**org))
+                print(f"  Seeded organization '{org['id']}' (name={org['name']})")
+            else:
+                print(f"  Organization '{org['id']}' already exists")
+
         for proj in SEED_PROJECTS:
             result = await session.execute(
                 select(ProjectRecord).where(ProjectRecord.id == proj["id"])
@@ -139,6 +145,12 @@ def main() -> None:
         return
 
     settings = get_settings()
+
+    if "sqlite" not in settings.database_url:
+        print(f"ERROR: setup_dev.py is only for local SQLite databases.")
+        print(f"  DATABASE_URL={settings.database_url}")
+        print("  Refusing to run against a non-SQLite database to prevent accidental data loss.")
+        sys.exit(1)
 
     print("MinIO setup...")
     setup_minio(settings)

@@ -27,12 +27,6 @@ from .project import (
     ProjectUpdate,
     ProjectResponse,
 )
-from .pipeline_run import (
-    PipelineRunBase,
-    PipelineRunCreate,
-    PipelineRunResponse,
-)
-
 # Rebuild models to resolve forward references
 ProjectResponse.model_rebuild()
 
@@ -61,8 +55,4 @@ __all__ = [
     "TransformResponse",
     # Upload Event
     "UploadEventResponse",
-    # Pipeline Run (tech debt - unused but kept for future audit trail)
-    "PipelineRunBase",
-    "PipelineRunCreate",
-    "PipelineRunResponse",
 ]

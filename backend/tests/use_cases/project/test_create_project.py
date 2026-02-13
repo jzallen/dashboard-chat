@@ -59,7 +59,6 @@ class TestCreateProject:
 
         match result:
             case Failure(error):
-                assert "[create_project]" in error
-                assert "Database connection lost" in error
+                assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("create_project should fail when database error occurs")

@@ -8,6 +8,11 @@ vi.mock("@/api", async () => {
   const { MOCK_PROJECT } = await import("../../../__mocks__/data");
   return {
     ...actual,
+    get: vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/orgs/me") return Promise.resolve({ id: "org-001", name: "Test Org" });
+      return Promise.resolve(null);
+    }),
+    listProjects: vi.fn().mockResolvedValue([MOCK_PROJECT]),
     getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
     getDataset: vi.fn().mockResolvedValue(null),
   };
@@ -18,7 +23,8 @@ function renderShell(route = "/") {
     <MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<div>project-grid-content</div>} />
+          <Route path="/" element={<div>org-content</div>} />
+          <Route path="/projects/:projectId" element={<div>project-grid-content</div>} />
           <Route
             path="/projects/:projectId/datasets/:datasetId"
             element={<div>dataset-view-content</div>}
@@ -30,13 +36,17 @@ function renderShell(route = "/") {
 }
 
 describe("AppShell", () => {
-  it("renders three panels: nav, view window, and chat", async () => {
-    renderShell();
-    // Nav: project name loads
+  it("renders org-level layout with org name in nav", async () => {
+    renderShell("/");
+    expect(await screen.findByText("Test Org")).toBeInTheDocument();
+    expect(screen.getByText("org-content")).toBeInTheDocument();
+    expect(screen.getByText("Chat")).toBeInTheDocument();
+  });
+
+  it("renders project-level layout with project nav", async () => {
+    renderShell("/projects/proj-001");
     expect(await screen.findByText("Inventory Dashboard")).toBeInTheDocument();
-    // View: outlet content renders
     expect(screen.getByText("project-grid-content")).toBeInTheDocument();
-    // Chat: header visible
     expect(screen.getByText("Chat")).toBeInTheDocument();
   });
 
@@ -46,10 +56,15 @@ describe("AppShell", () => {
     expect(screen.getByText("Chat")).toBeInTheDocument();
   });
 
-  it("shows project nav with datasets", async () => {
-    renderShell();
+  it("shows project nav with datasets in project mode", async () => {
+    renderShell("/projects/proj-001");
     expect(await screen.findByText("Sales Data")).toBeInTheDocument();
     expect(screen.getByText("Inventory")).toBeInTheDocument();
     expect(screen.getByText("Returns")).toBeInTheDocument();
+  });
+
+  it("shows project list in org mode sidebar", async () => {
+    renderShell("/");
+    expect(await screen.findByText("Inventory Dashboard")).toBeInTheDocument();
   });
 });

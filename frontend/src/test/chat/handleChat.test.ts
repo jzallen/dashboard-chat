@@ -48,8 +48,6 @@ function createChatRequest(): Request {
   });
 }
 
-const defaultOptions = { corsOrigin: "*" };
-
 describe("handleChat", () => {
   describe("response formatting", () => {
     it("should format content chunks as SSE content events", async () => {
@@ -59,7 +57,7 @@ describe("handleChat", () => {
         { delta: {}, finish_reason: "stop" },
       ]);
 
-      const response = await handleChat(createChatRequest(), client, defaultOptions);
+      const response = await handleChat(createChatRequest(), client);
       const text = await response.text();
 
       expect(text).toBe(
@@ -92,10 +90,9 @@ describe("handleChat", () => {
         { delta: {}, finish_reason: "tool_calls" },
       ]);
 
-      const response = await handleChat(createChatRequest(), client, defaultOptions);
+      const response = await handleChat(createChatRequest(), client);
       const text = await response.text();
 
-      // this variable is not strictly necessary but makes the comparison easier visually
       const expectedToolCalls = {
         type: "tool_calls",
         tool_calls: [
@@ -116,7 +113,7 @@ describe("handleChat", () => {
     it("should emit done event when finish_reason is present", async () => {
       const client = createMockClient([{ delta: {}, finish_reason: "stop" }]);
 
-      const response = await handleChat(createChatRequest(), client, defaultOptions);
+      const response = await handleChat(createChatRequest(), client);
       const text = await response.text();
 
       expect(text).toBe('data: {"type":"done"}\n\n');
@@ -127,29 +124,15 @@ describe("handleChat", () => {
     it("should return SSE content type header", async () => {
       const client = createMockClient([{ delta: {}, finish_reason: "stop" }]);
 
-      const response = await handleChat(createChatRequest(), client, defaultOptions);
+      const response = await handleChat(createChatRequest(), client);
 
       expect(response.headers.get("Content-Type")).toBe("text/event-stream");
-    });
-
-    it("should return CORS headers with configured origin", async () => {
-      const client = createMockClient([{ delta: {}, finish_reason: "stop" }]);
-
-      const response = await handleChat(createChatRequest(), client, defaultOptions);
-
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-      expect(response.headers.get("Access-Control-Allow-Methods")).toContain(
-        "POST"
-      );
-      expect(response.headers.get("Access-Control-Allow-Headers")).toContain(
-        "Content-Type"
-      );
     });
 
     it("should return cache control headers for streaming", async () => {
       const client = createMockClient([{ delta: {}, finish_reason: "stop" }]);
 
-      const response = await handleChat(createChatRequest(), client, defaultOptions);
+      const response = await handleChat(createChatRequest(), client);
 
       expect(response.headers.get("Cache-Control")).toBe("no-cache");
       expect(response.headers.get("Connection")).toBe("keep-alive");

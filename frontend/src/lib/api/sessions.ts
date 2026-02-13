@@ -4,7 +4,8 @@
  * Talks directly to the chat worker (not the backend API).
  */
 
-const CHAT_URL = import.meta.env.VITE_CHAT_URL || "http://localhost:8787";
+import { getAuthHeaders, handleResponse } from "./fetchUtils";
+import { CHAT_URL } from "../ui/data/config";
 
 export interface ChatTurnPayload {
   user_message: string;
@@ -39,27 +40,10 @@ export interface ChatSession {
   updated_at: string;
 }
 
-export interface ChatSessionSummary {
-  id: string;
-  project_id: string;
-  dataset_id: string | null;
-  turns: ChatTurn[];
-  created_at: string;
-  updated_at: string;
-}
-
-async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed (${response.status}): ${text}`);
-  }
-  return response.json();
-}
-
 export async function createSession(projectId: string, datasetId?: string): Promise<ChatSession> {
   const response = await fetch(`${CHAT_URL}/sessions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ project_id: projectId, dataset_id: datasetId ?? null }),
   });
   return handleResponse<ChatSession>(response);
@@ -68,7 +52,7 @@ export async function createSession(projectId: string, datasetId?: string): Prom
 export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise<void> {
   const response = await fetch(`${CHAT_URL}/sessions/${sessionId}/turns`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(turn),
   });
   if (!response.ok) {
@@ -78,11 +62,15 @@ export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise
 }
 
 export async function getSession(sessionId: string): Promise<ChatSession> {
-  const response = await fetch(`${CHAT_URL}/sessions/${sessionId}`);
+  const response = await fetch(`${CHAT_URL}/sessions/${sessionId}`, {
+    headers: getAuthHeaders(),
+  });
   return handleResponse<ChatSession>(response);
 }
 
-export async function listSessions(datasetId: string): Promise<ChatSessionSummary[]> {
-  const response = await fetch(`${CHAT_URL}/sessions?dataset_id=${encodeURIComponent(datasetId)}`);
-  return handleResponse<ChatSessionSummary[]>(response);
+export async function listSessions(datasetId: string): Promise<ChatSession[]> {
+  const response = await fetch(`${CHAT_URL}/sessions?dataset_id=${encodeURIComponent(datasetId)}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<ChatSession[]>(response);
 }

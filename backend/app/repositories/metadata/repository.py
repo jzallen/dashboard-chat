@@ -15,6 +15,7 @@ from ..exceptions import MetadataRepositoryError
 from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
+from .organization_record import OrganizationRecord
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -250,7 +251,7 @@ class MetadataRepository:
         self,
         dataset_id: str,
         **kwargs: Any,
-    ) -> DatasetRecord:
+    ) -> DatasetRecord | None:
         """Update a dataset's metadata."""
         result = await self._session.execute(
             select(DatasetRecord)
@@ -258,6 +259,9 @@ class MetadataRepository:
             .where(DatasetRecord.id == dataset_id)
         )
         dataset = result.scalar_one_or_none()
+
+        if not dataset:
+            return None
 
         for key, value in kwargs.items():
             setattr(dataset, key, value)
@@ -284,14 +288,6 @@ class MetadataRepository:
         await self._session.flush()
 
         return storage_path
-
-    @handle_repository_exceptions
-    async def project_exists(self, project_id: str) -> bool:
-        """Check if a project exists."""
-        result = await self._session.execute(
-            select(ProjectRecord.id).where(ProjectRecord.id == project_id)
-        )
-        return result.scalar_one_or_none() is not None
 
     @handle_repository_exceptions
     async def dataset_exists(self, dataset_id: str) -> bool:
@@ -438,6 +434,34 @@ class MetadataRepository:
         return True
 
     # -------------------------------------------------------------------------
+    # Organization operations
+    # -------------------------------------------------------------------------
+
+    @handle_repository_exceptions
+    async def create_organization(
+        self,
+        id: str,
+        name: str,
+    ) -> dict[str, Any]:
+        """Create a new organization."""
+        org = OrganizationRecord(id=id, name=name)
+        self._session.add(org)
+        await self._session.flush()
+        await self._session.refresh(org)
+        return self._organization_to_dict(org)
+
+    @handle_repository_exceptions
+    async def get_organization(self, org_id: str) -> dict[str, Any] | None:
+        """Get an organization by ID."""
+        result = await self._session.execute(
+            select(OrganizationRecord).where(OrganizationRecord.id == org_id)
+        )
+        org = result.scalar_one_or_none()
+        if not org:
+            return None
+        return self._organization_to_dict(org)
+
+    # -------------------------------------------------------------------------
     # Conversion helpers
     # -------------------------------------------------------------------------
 
@@ -485,4 +509,14 @@ class MetadataRepository:
             "nl_prompt": transform.nl_prompt,
             "created_at": transform.created_at.isoformat() if transform.created_at else None,
             "updated_at": transform.updated_at.isoformat() if transform.updated_at else None,
+        }
+
+    @staticmethod
+    def _organization_to_dict(org: OrganizationRecord) -> dict[str, Any]:
+        """Convert OrganizationRecord to dictionary."""
+        return {
+            "id": org.id,
+            "name": org.name,
+            "created_at": org.created_at.isoformat() if org.created_at else None,
+            "updated_at": org.updated_at.isoformat() if org.updated_at else None,
         }

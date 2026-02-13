@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { type Dataset, type Project } from "@/api";
+import { type Dataset } from "@/api";
 import { executeToolCall as executeToolCallFn, type ToolCall } from "@/table-tools";
 import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
 import { raqbToSql } from "@/raqb";
@@ -20,9 +20,7 @@ import { ViewModeToggle, type ViewMode } from "./ViewModeToggle";
 import { Breadcrumb } from "./Breadcrumb";
 import styles from "./DatasetView.module.css";
 
-interface AppShellContext {
-  project: Project | null;
-}
+import type { AppShellContext } from "../AppShell";
 
 // ---------------------------------------------------------------------------
 // DatasetDetail — inner component that only mounts when a dataset is selected.
@@ -87,49 +85,53 @@ function DatasetDetail({
       });
       if (toolCall.function.name === "filterTable") {
         // Persist as a backend transform so it survives mode toggles and page reloads
-        try {
-          const args = JSON.parse(toolCall.function.arguments);
-          const raqbJson = filterTableToRaqb(args);
-          const description = generateFilterDescription(args);
-          const conditionSql = raqbToSql(raqbJson);
-          saveTransform({
-            name: description,
-            condition_json: raqbJson,
-            condition_sql: conditionSql,
-          });
-        } catch (e) {
-          console.error("Failed to persist transform:", e);
-        }
-        setTimeout(() => handleRefreshDataset(), 500);
+        (async () => {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const raqbJson = filterTableToRaqb(args);
+            const description = generateFilterDescription(args);
+            const conditionSql = raqbToSql(raqbJson);
+            await saveTransform({
+              name: description,
+              condition_json: raqbJson,
+              condition_sql: conditionSql,
+            });
+          } catch (e) {
+            console.error("Failed to persist transform:", e);
+          }
+          handleRefreshDataset();
+        })();
       }
       if (toolCall.function.name === "replaceColumnFilter") {
-        try {
-          const args = JSON.parse(toolCall.function.arguments) as {
-            column: string;
-            filters: Array<{ operator: string; value: unknown }>;
-          };
-          // Disable existing transforms targeting this column
-          const idsToDisable = getTransformIdsForColumn(transforms, args.column);
-          for (const id of idsToDisable) {
-            toggleTransform(id, false);
-          }
-          // Create new transforms for each replacement filter
-          if (args.filters?.length) {
-            for (const f of args.filters) {
-              const raqbJson = filterTableToRaqb({ column: args.column, operator: f.operator, value: f.value });
-              const description = generateFilterDescription({ column: args.column, operator: f.operator, value: f.value });
-              const conditionSql = raqbToSql(raqbJson);
-              saveTransform({
-                name: description,
-                condition_json: raqbJson,
-                condition_sql: conditionSql,
-              });
+        (async () => {
+          try {
+            const args = JSON.parse(toolCall.function.arguments) as {
+              column: string;
+              filters: Array<{ operator: string; value: unknown }>;
+            };
+            // Disable existing transforms targeting this column
+            const idsToDisable = getTransformIdsForColumn(transforms, args.column);
+            for (const id of idsToDisable) {
+              await toggleTransform(id, false);
             }
+            // Create new transforms for each replacement filter
+            if (args.filters?.length) {
+              for (const f of args.filters) {
+                const raqbJson = filterTableToRaqb({ column: args.column, operator: f.operator, value: f.value });
+                const description = generateFilterDescription({ column: args.column, operator: f.operator, value: f.value });
+                const conditionSql = raqbToSql(raqbJson);
+                await saveTransform({
+                  name: description,
+                  condition_json: raqbJson,
+                  condition_sql: conditionSql,
+                });
+              }
+            }
+          } catch (e) {
+            console.error("Failed to persist replaceColumnFilter transform:", e);
           }
-        } catch (e) {
-          console.error("Failed to persist replaceColumnFilter transform:", e);
-        }
-        setTimeout(() => handleRefreshDataset(), 500);
+          handleRefreshDataset();
+        })();
       }
       return result;
     },

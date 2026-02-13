@@ -17,7 +17,7 @@ def handle_returns(func):
             result = await func(*args, **kwargs)
         except Exception as e:
             logger.exception("Error in %s: %s", func.__name__, str(e))
-            return Failure(f"[{func.__name__}] {str(e)}")
+            return Failure(e)
         else:
             return Success(result)
 

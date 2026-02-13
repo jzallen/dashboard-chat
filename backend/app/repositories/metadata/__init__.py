@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
-from .pipeline_run_record import PipelineRunRecord
+from .organization_record import OrganizationRecord
 
 
 class MetadataRepositoryProtocol(Protocol):

@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories.metadata import TransformRecord, DatasetRecord, ProjectRecord, PipelineRunRecord  # noqa: F401
+from app.repositories.metadata import TransformRecord, DatasetRecord, ProjectRecord  # noqa: F401
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 
