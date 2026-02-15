@@ -20,7 +20,7 @@ import type { Message, TableSchema, SSEMessage } from "../types";
 import { CHAT_URL } from "../data/config";
 
 export interface ToolHandler {
-  executeToolCall: (toolCall: ToolCall) => string;
+  executeToolCall: (toolCall: ToolCall) => string | Promise<string>;
 }
 
 interface ChatContextValue {
@@ -196,8 +196,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 case "done": {
                   let toolResults: Array<{ tool_call_id: string; result: string }> | null = null;
                   if (toolCalls.length > 0 && toolHandlerRef.current) {
-                    const results = toolCalls.map((tc) =>
-                      toolHandlerRef.current!.executeToolCall(tc)
+                    const results = await Promise.all(
+                      toolCalls.map(async (tc) =>
+                        toolHandlerRef.current!.executeToolCall(tc)
+                      )
                     );
                     toolResults = toolCalls.map((tc, i) => ({ tool_call_id: tc.id, result: results[i] }));
                     const toolSummary = results.join(", ");

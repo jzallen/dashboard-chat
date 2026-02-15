@@ -36,6 +36,7 @@ export interface TableSchema {
   columns: Array<{
     id: string;
     type: "string" | "number" | "boolean" | "date";
+    alias?: string;
     profile?: {
       type: string;
       unique_count?: number;
@@ -50,4 +51,10 @@ export interface TableSchema {
   }>;
   rowCount: number;
   activeFilters?: Array<{ column: string; operator: string; value: unknown }>;
+  activeCleaningTransforms?: Array<{
+    id: string;
+    column: string;
+    operation: string;
+    details?: string;
+  }>;
 }

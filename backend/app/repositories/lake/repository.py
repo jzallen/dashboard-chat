@@ -252,6 +252,122 @@ class BaseLakeRepository(ABC):
                 raise
 
 
+    def _build_s3_path(self, storage_path: str) -> str:
+        """Build the full S3 path for reading Parquet data."""
+        s3_path = f"s3://{self.bucket}/{storage_path}"
+        if storage_path.endswith('/'):
+            s3_path = f"{s3_path}**/*.parquet"
+        return s3_path
+
+    @handle_repository_exceptions
+    def get_parquet_column_type(self, storage_path: str, column: str) -> str:
+        """Get the DuckDB type name for a column from Parquet schema.
+
+        Args:
+            storage_path: Path within bucket
+            column: Column name
+
+        Returns:
+            String representation of the column's data type (e.g., 'string', 'float64')
+        """
+        conn = ibis.duckdb.connect()
+        self._configure_duckdb_s3(conn)
+
+        s3_path = self._build_s3_path(storage_path)
+        table = conn.read_parquet(s3_path)
+        return str(table.schema()[column])
+
+    @handle_repository_exceptions
+    def preview_cleaning_operation(
+        self,
+        storage_path: str,
+        target_column: str,
+        expression_config: dict,
+        sample_limit: int = 5,
+    ) -> dict:
+        """Preview a cleaning operation against Parquet data via DuckDB.
+
+        Builds per-operation affected-row predicates and before/after samples.
+
+        Args:
+            storage_path: Path within bucket
+            target_column: Column to apply operation on
+            expression_config: Cleaning operation config
+            sample_limit: Max number of sample pairs to return
+
+        Returns:
+            Dict with affected_count, total_count, samples list, and column_type
+        """
+        conn = ibis.duckdb.connect()
+        self._configure_duckdb_s3(conn)
+
+        s3_path = self._build_s3_path(storage_path)
+        table = conn.read_parquet(s3_path)
+        col = table[target_column]
+
+        total_count = int(table.count().execute())
+        column_type = str(table.schema()[target_column])
+
+        operation = expression_config["operation"]
+
+        # Build the "after" expression and affected predicate per operation type
+        if operation == "trim":
+            after_expr = col.strip()
+            affected_pred = col != col.strip()
+        elif operation == "case":
+            mode = expression_config["mode"]
+            if mode == "upper":
+                after_expr = col.upper()
+                affected_pred = col != col.upper()
+            elif mode == "lower":
+                after_expr = col.lower()
+                affected_pred = col != col.lower()
+            elif mode == "title":
+                after_expr = col.capitalize()
+                affected_pred = col != col.capitalize()
+            else:
+                raise ValueError(f"Invalid case mode: {mode}")
+        elif operation == "fill_null":
+            fill_value = expression_config["fill_value"]
+            after_expr = col.fill_null(fill_value)
+            # Affected: NULL or empty string
+            affected_pred = col.isnull() | (col.cast("string") == "")
+        elif operation == "map_values":
+            mappings = expression_config.get("mappings", [])
+            source_values = [m["from"] for m in mappings]
+            case_expr = ibis.case()
+            for m in mappings:
+                case_expr = case_expr.when(col == m["from"], m["to"])
+            after_expr = case_expr.else_(col).end()
+            affected_pred = col.isin(source_values)
+        else:
+            raise ValueError(f"Unsupported preview operation: {operation}")
+
+        # Count affected rows
+        affected_count = int(table.filter(affected_pred).count().execute())
+
+        # Get sample before/after pairs
+        samples = []
+        if affected_count > 0:
+            samples_table = (
+                table.filter(affected_pred)
+                .select(before=col, after=after_expr)
+                .limit(sample_limit)
+            )
+            samples_df = samples_table.execute()
+            samples = [
+                {"before": row["before"], "after": row["after"]}
+                for _, row in samples_df.iterrows()
+            ]
+
+        return {
+            "affected_count": affected_count,
+            "total_count": total_count,
+            "samples": samples,
+            "column_type": column_type,
+        }
+
+
 class MinIOLakeRepository(BaseLakeRepository):
     """Lake repository for MinIO storage."""
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { type Dataset } from "@/api";
-import { executeToolCall as executeToolCallFn, type ToolCall } from "@/table-tools";
+import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallContext } from "@/table-tools";
 import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
 import { raqbToSql } from "@/raqb";
 import { toConditions, getTransformIdsForColumn } from "../../hooks/filterUtils";
@@ -77,12 +77,24 @@ function DatasetDetail({
   }, [queryClient, datasetId]);
 
   const executeToolCall = useCallback(
-    (toolCall: ToolCall): string => {
-      const result = executeToolCallFn(toolCall, {
+    async (toolCall: ToolCall): Promise<string> => {
+      const context: ToolCallContext = {
         setColumnFilters,
         setSorting,
         setData,
-      });
+        datasetId,
+        transforms: (dataset?.transforms ?? []).map((t) => ({
+          id: t.id,
+          name: t.name,
+          status: t.status,
+          transform_type: t.transform_type ?? "filter",
+          target_column: t.target_column,
+          expression_config: t.expression_config,
+          created_at: t.created_at,
+        })),
+        queryClient,
+      };
+      const result = await executeToolCallFn(toolCall, context);
       if (toolCall.function.name === "filterTable") {
         // Persist as a backend transform so it survives mode toggles and page reloads
         (async () => {
@@ -135,7 +147,7 @@ function DatasetDetail({
       }
       return result;
     },
-    [setColumnFilters, setSorting, setData, handleRefreshDataset, saveTransform, toggleTransform, transforms]
+    [setColumnFilters, setSorting, setData, datasetId, dataset, queryClient, handleRefreshDataset, saveTransform, toggleTransform, transforms]
   );
 
   useEffect(() => {
@@ -150,16 +162,50 @@ function DatasetDetail({
 
   useEffect(() => {
     if (dataset) {
+      // Build column aliases from active alias transforms
+      const aliasMap = new Map<string, string>();
+      for (const t of dataset.transforms ?? []) {
+        if (
+          t.status === "enabled" &&
+          t.transform_type === "alias" &&
+          t.target_column &&
+          t.expression_config
+        ) {
+          const alias = (t.expression_config as Record<string, unknown>).alias as string | undefined;
+          if (alias) aliasMap.set(t.target_column, alias);
+        }
+      }
+
       const schemaColumns = Object.entries(dataset.schema_config.fields).map(([id, f]) => ({
         id,
         type: (f.type === "number" ? "number" : f.type === "boolean" ? "boolean" : "string") as "string" | "number" | "boolean",
         ...(dataset.column_profiles?.[id] && { profile: dataset.column_profiles[id] }),
+        ...(aliasMap.has(id) && { alias: aliasMap.get(id) }),
       }));
       const activeFilters = columnFilters.flatMap((f) => {
         const conditions = toConditions(f.value);
         return conditions.map((c) => ({ column: f.id, operator: c.operator, value: c.value }));
       });
-      registerTableSchema({ columns: schemaColumns, rowCount: data.length, activeFilters });
+
+      // Build activeCleaningTransforms from non-filter enabled transforms
+      const activeCleaningTransforms = (dataset.transforms ?? [])
+        .filter((t) => t.status === "enabled" && t.transform_type !== "filter")
+        .map((t) => {
+          const config = t.expression_config as Record<string, unknown> | null;
+          return {
+            id: t.id,
+            column: t.target_column ?? "",
+            operation: (config?.operation as string) ?? t.transform_type,
+            details: t.expression_sql ?? undefined,
+          };
+        });
+
+      registerTableSchema({
+        columns: schemaColumns,
+        rowCount: data.length,
+        activeFilters,
+        activeCleaningTransforms: activeCleaningTransforms.length > 0 ? activeCleaningTransforms : undefined,
+      });
     }
   }, [dataset, data.length, registerTableSchema, columnFilters]);
 

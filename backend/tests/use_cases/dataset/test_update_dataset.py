@@ -1,16 +1,12 @@
 
 import pytest
-from dataclasses import asdict, replace
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 
-from app.use_cases.dataset import update_dataset, get_dataset
+from app.use_cases.dataset import update_dataset
 from app.repositories import set_session
-from app.models.dataset import Dataset
-from app.models.transform import Transform
-from app.types import QueryBuilderJSON
 
 
 
@@ -26,28 +22,14 @@ class TestUpdateDataset:
             update_dict={"name": "Updated Dataset Name"},
         )
 
-        expected = Dataset(
-            id="dataset-001",
-            project_id="project-001",
-            name="Updated Dataset Name",
-            description=None,
-            schema_config={"fields": {"col1": {"type": "text"}}},
-            partition_fields=[],
-            transforms=[
-                Transform(
-                    id="transform-001",
-                    name="Filter Active",
-                    condition_json=QueryBuilderJSON.from_dict({"id": "root", "type": "group", "children1": []}),
-                    condition_sql="col1 = 'active'",
-                    description="Filter for active records",
-                    status='enabled',
-                ),
-            ],
-        )
-
         match result:
             case Success(dataset):
-                assert dataset == expected
+                assert dataset.id == "dataset-001"
+                assert dataset.name == "Updated Dataset Name"
+                assert dataset.description is None
+                assert len(dataset.transforms) == 1
+                assert dataset.transforms[0].id == "transform-001"
+                assert dataset.transforms[0].transform_type == "filter"
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 
@@ -60,28 +42,14 @@ class TestUpdateDataset:
             update_dict={"name": "Fully Updated Dataset", "description": "New description"},
         )
 
-        expected = Dataset(
-            id="dataset-001",
-            project_id="project-001",
-            name="Fully Updated Dataset",
-            description="New description",
-            schema_config={"fields": {"col1": {"type": "text"}}},
-            partition_fields=[],
-            transforms=[
-                Transform(
-                    id="transform-001",
-                    name="Filter Active",
-                    condition_json=QueryBuilderJSON.from_dict({"id": "root", "type": "group", "children1": []}),
-                    condition_sql="col1 = 'active'",
-                    description="Filter for active records",
-                    status='enabled',
-                ),
-            ],
-        )
-
         match result:
             case Success(dataset):
-                assert dataset == expected
+                assert dataset.id == "dataset-001"
+                assert dataset.name == "Fully Updated Dataset"
+                assert dataset.description == "New description"
+                assert len(dataset.transforms) == 1
+                assert dataset.transforms[0].id == "transform-001"
+                assert dataset.transforms[0].transform_type == "filter"
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 

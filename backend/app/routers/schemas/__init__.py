@@ -18,6 +18,10 @@ from .dataset import (
     TransformUpdateItem,
     TransformBatchUpdate,
     TransformResponse,
+    # Preview schemas
+    PreviewRequest,
+    PreviewResponse,
+    PreviewSample,
     # Upload event schemas
     UploadEventResponse,
 )
@@ -53,6 +57,10 @@ __all__ = [
     "TransformUpdateItem",
     "TransformBatchUpdate",
     "TransformResponse",
+    # Preview
+    "PreviewRequest",
+    "PreviewResponse",
+    "PreviewSample",
     # Upload Event
     "UploadEventResponse",
 ]

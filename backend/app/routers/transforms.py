@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers import HTTPController
 from .deps import use_db_context
-from .schemas import TransformCreateBatch, TransformBatchUpdate
+from .schemas import TransformCreateBatch, TransformBatchUpdate, PreviewRequest
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}/transforms", tags=["transforms"])
 
@@ -32,4 +32,17 @@ async def update_transforms(
     """Batch-update transforms (including soft-delete via status='deleted')."""
     updates = [u.model_dump(exclude_unset=True) for u in data.updates]
     body, status_code = await HTTPController.patch_transforms(dataset_id, updates)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.post("/preview")
+async def preview_transform(
+    dataset_id: str,
+    data: PreviewRequest,
+    _: AsyncSession = Depends(use_db_context),
+):
+    """Preview a cleaning transform without persisting anything."""
+    body, status_code = await HTTPController.preview_transform(
+        dataset_id, data.target_column, data.expression_config
+    )
     return JSONResponse(content=body, status_code=status_code)

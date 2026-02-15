@@ -58,7 +58,7 @@ export function mergeFilters(
  */
 export function getTransformIdsForColumn(transforms: Transform[], column: string): string[] {
   return transforms
-    .filter((t) => t.status === "enabled" && transformTargetsColumn(t.condition_json, column))
+    .filter((t) => t.status === "enabled" && t.condition_json && transformTargetsColumn(t.condition_json, column))
     .map((t) => t.id);
 }
 

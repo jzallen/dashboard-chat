@@ -38,6 +38,17 @@ class LakeRepository(Protocol):
         """Delete Parquet file from storage."""
         ...
 
+    def get_parquet_column_type(self, storage_path: str, column: str) -> str:
+        """Get the DuckDB type name for a column from Parquet schema."""
+        ...
+
+    def preview_cleaning_operation(
+        self, storage_path: str, target_column: str,
+        expression_config: dict[str, Any], sample_limit: int = 5,
+    ) -> dict[str, Any]:
+        """Preview a cleaning operation against Parquet data."""
+        ...
+
 
 from .repository import BaseLakeRepository, MinIOLakeRepository
 

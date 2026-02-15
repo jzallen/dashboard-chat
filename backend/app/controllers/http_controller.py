@@ -130,6 +130,19 @@ class HTTPController:
             case Failure(error):
                 return _error_response(error)
 
+    @staticmethod
+    async def preview_transform(
+        dataset_id: str, target_column: str, expression_config: dict
+    ) -> tuple[dict, int]:
+        result = await transform_use_cases.preview_cleaning_transform(
+            dataset_id, target_column, expression_config
+        )
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
     # Project methods
 
     @staticmethod

@@ -6,6 +6,12 @@ import type { TableSchema, ToolDefinition } from "./types";
 
 export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
   const columnNames = tableSchema.columns.map((c) => c.id);
+  const textColumnNames = tableSchema.columns
+    .filter((c) => c.type === "string")
+    .map((c) => c.id);
+  const allColumnNames = columnNames;
+  const activeTransformIds =
+    tableSchema.activeCleaningTransforms?.map((t) => t.id) ?? [];
   const columnDescriptions = tableSchema.columns
     .map((c) => `"${c.id}" (${c.type})`)
     .join(", ");
@@ -159,6 +165,195 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
         required: ["column", "filters"],
       },
     },
+    // ========================================================================
+    // Data Cleaning Tools
+    // ========================================================================
+    {
+      name: "trimWhitespace",
+      description:
+        "Trim leading and trailing whitespace from all values in a text column. This previews the change first — use applyCleaningTransform to make it permanent.",
+      parameters: {
+        type: "object",
+        properties: {
+          column: {
+            type: "string",
+            enum: textColumnNames,
+            description: "Text column to trim whitespace from",
+          },
+        },
+        required: ["column"],
+      },
+    },
+    {
+      name: "standardizeCase",
+      description:
+        "Standardize text casing in a column (upper, lower, or title case). This previews the change first — use applyCleaningTransform to make it permanent.",
+      parameters: {
+        type: "object",
+        properties: {
+          column: {
+            type: "string",
+            enum: textColumnNames,
+            description: "Text column to standardize casing on",
+          },
+          mode: {
+            type: "string",
+            enum: ["upper", "lower", "title"],
+            description:
+              "Case mode: upper (ALL CAPS), lower (all lowercase), title (First Letter Caps)",
+          },
+        },
+        required: ["column", "mode"],
+      },
+    },
+    {
+      name: "renameColumn",
+      description:
+        "Rename a column's display name (creates an alias). This applies immediately without preview.",
+      parameters: {
+        type: "object",
+        properties: {
+          column: {
+            type: "string",
+            enum: allColumnNames,
+            description: "Column to rename",
+          },
+          newName: {
+            type: "string",
+            description: "New display name for the column",
+          },
+        },
+        required: ["column", "newName"],
+      },
+    },
+    {
+      name: "fillNulls",
+      description:
+        "Fill null or empty values in a column with a specified value. This previews the change first — use applyCleaningTransform to make it permanent.",
+      parameters: {
+        type: "object",
+        properties: {
+          column: {
+            type: "string",
+            enum: allColumnNames,
+            description: "Column to fill null values in",
+          },
+          fillValue: {
+            type: "string",
+            description: "Value to replace nulls/empty values with",
+          },
+        },
+        required: ["column", "fillValue"],
+      },
+    },
+    {
+      name: "mapValues",
+      description:
+        "Map specific values in a column to new values (exact match replacement). This previews the change first — use applyCleaningTransform to make it permanent.",
+      parameters: {
+        type: "object",
+        properties: {
+          column: {
+            type: "string",
+            enum: textColumnNames,
+            description: "Text column to map values in",
+          },
+          mappings: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                from: {
+                  type: "string",
+                  description: "Original value to match (exact match)",
+                },
+                to: {
+                  type: "string",
+                  description: "Replacement value",
+                },
+              },
+              required: ["from", "to"],
+            },
+            description: "Array of value mappings (from → to)",
+          },
+        },
+        required: ["column", "mappings"],
+      },
+    },
+    {
+      name: "applyCleaningTransform",
+      description:
+        "Apply a previously previewed cleaning operation permanently to the dataset. Call this after a preview tool (trimWhitespace, standardizeCase, fillNulls, mapValues) when the user confirms.",
+      parameters: {
+        type: "object",
+        properties: {
+          column: {
+            type: "string",
+            enum: allColumnNames,
+            description: "Column the cleaning operation targets",
+          },
+          operation: {
+            type: "string",
+            enum: [
+              "trim",
+              "upper",
+              "lower",
+              "title",
+              "fill_null",
+              "map_values",
+            ],
+            description: "The cleaning operation to apply",
+          },
+          config: {
+            type: "object",
+            description:
+              "Operation configuration (same as the previewed operation)",
+            additionalProperties: true,
+          },
+        },
+        required: ["column", "operation", "config"],
+      },
+    },
+    {
+      name: "undoCleaningTransform",
+      description:
+        "Undo a cleaning transform by disabling (reversible) or deleting (permanent) it. If no transformId is provided, targets the most recently applied cleaning transform.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["disable", "delete"],
+            description:
+              "Whether to disable (reversible, can re-enable later) or permanently delete the transform",
+          },
+          transformId: {
+            type: "string",
+            ...(activeTransformIds.length > 0
+              ? { enum: activeTransformIds }
+              : {}),
+            description:
+              "ID of the cleaning transform to undo. If omitted, undoes the most recent one.",
+          },
+        },
+        required: ["action"],
+      },
+    },
+    {
+      name: "reEnableCleaningTransform",
+      description:
+        "Re-enable a previously disabled cleaning transform.",
+      parameters: {
+        type: "object",
+        properties: {
+          transformId: {
+            type: "string",
+            description:
+              "ID of the disabled cleaning transform to re-enable. If omitted, re-enables the most recently disabled one.",
+          },
+        },
+      },
+    },
   ];
 }
 
@@ -201,7 +396,10 @@ export function formatProfile(profile: { type: string; unique_count?: number; sa
 export function getSystemPrompt(tableSchema: TableSchema): string {
   const columnDescriptions = tableSchema.columns
     .map((c) => {
-      const base = `  - "${c.id}" (${c.type})`;
+      let base = `  - "${c.id}" (${c.type})`;
+      if (c.alias) {
+        base = `  - "${c.alias}" (${c.type}, actual column: ${c.id})`;
+      }
       const profileStr = formatProfile(c.profile);
       return profileStr ? `${base} -- ${profileStr}` : base;
     })
@@ -212,13 +410,24 @@ export function getSystemPrompt(tableSchema: TableSchema): string {
       ? `\nACTIVE FILTERS:\n${tableSchema.activeFilters.map((f) => `  - ${f.column} ${f.operator} ${f.value}`).join("\n")}\n`
       : "\nNo active filters.\n";
 
-  return `You are a helpful assistant that controls a data table. You can filter, sort, add rows, and delete rows using the provided tools.
+  const activeCleaningLines =
+    tableSchema.activeCleaningTransforms &&
+    tableSchema.activeCleaningTransforms.length > 0
+      ? `\nACTIVE CLEANING TRANSFORMS:\n${tableSchema.activeCleaningTransforms
+          .map(
+            (t) =>
+              `  - [${t.id}] ${t.column}: ${t.operation}${t.details ? ` (${t.details})` : ""}`,
+          )
+          .join("\n")}\n`
+      : "\nNo active cleaning transforms.\n";
+
+  return `You are a helpful assistant that controls a data table. You can filter, sort, add rows, delete rows, and clean data using the provided tools.
 
 CURRENT TABLE SCHEMA:
 ${columnDescriptions}
 
 Total rows: ${tableSchema.rowCount}
-${activeFilterLines}
+${activeFilterLines}${activeCleaningLines}
 When the user mentions a value that matches a known column value from the profile above, use it for exact filtering with the "equals" operator.
 
 INSTRUCTIONS:
@@ -239,6 +448,17 @@ INSTRUCTIONS:
 4. For adding rows, use "addRow" with data matching the column schema.
 5. For deleting rows, use "deleteRow" with search text that matches the row.
 6. Use "clearFilters" or "clearSort" to reset the table view.
+
+7. For DATA CLEANING operations (trim, case, fill nulls, map values):
+   - Use "trimWhitespace", "standardizeCase", "fillNulls", or "mapValues" to PREVIEW the change first
+   - After the user confirms the preview, use "applyCleaningTransform" to make it permanent
+   - Use "renameColumn" to change a column's display name (applies immediately, no preview needed)
+
+8. To UNDO a cleaning transform, use "undoCleaningTransform". To re-enable, use "reEnableCleaningTransform".
+
+9. When the user refers to a column by its alias (display name), always use the actual column name (shown as "actual column: X" in the schema) for tool calls.
+
+10. Do NOT guess fill values for null columns — always ask the user what value to use.
 
 Be concise. Confirm what action you're taking.`;
 }

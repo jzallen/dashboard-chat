@@ -117,6 +117,155 @@ class QueryBuilderJSON(dict):
                 return None
 
 
+class CleaningExpression:
+    """Converts expression_config JSON into Ibis column expressions.
+
+    Mirrors QueryBuilderJSON.as_ibis_filter() but produces column expressions
+    (for SELECT/mutate) rather than boolean filters (for WHERE).
+
+    Supported operations:
+    - trim: strip leading/trailing whitespace
+    - case: upper/lower/title case standardization
+    - fill_null: replace NULL values with a fill value
+    - map_values: CASE WHEN value mapping chain
+    - alias: column rename (handled separately in _build_table RENAME stage)
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self._validate()
+
+    def _validate(self) -> None:
+        """Validate expression_config structure."""
+        if not self.config:
+            raise ValueError("expression_config must not be empty")
+
+        operation = self.config.get("operation")
+        if not operation:
+            raise ValueError("expression_config must contain an 'operation' field")
+
+        valid_ops = ("trim", "case", "fill_null", "map_values", "alias")
+        if operation not in valid_ops:
+            raise ValueError(
+                f"Unsupported operation '{operation}'. "
+                f"Valid operations: {', '.join(valid_ops)}"
+            )
+
+        if operation == "case":
+            mode = self.config.get("mode")
+            if not mode:
+                raise ValueError("'mode' field is required for the 'case' operation")
+            valid_modes = ("upper", "lower", "title")
+            if mode not in valid_modes:
+                raise ValueError(
+                    f"Invalid case mode '{mode}'. Valid modes: {', '.join(valid_modes)}"
+                )
+
+        if operation == "fill_null":
+            if "fill_value" not in self.config:
+                raise ValueError("'fill_value' field is required for the 'fill_null' operation")
+
+        if operation == "map_values":
+            if "mappings" not in self.config:
+                raise ValueError("'mappings' field is required for the 'map_values' operation")
+
+        if operation == "alias":
+            if "alias" not in self.config:
+                raise ValueError("'alias' field is required for the 'alias' operation")
+
+    @property
+    def operation(self) -> str:
+        return self.config["operation"]
+
+    @property
+    def alias_name(self) -> str | None:
+        """Return the alias name if this is an alias operation."""
+        if self.operation == "alias":
+            return self.config["alias"]
+        return None
+
+    def as_ibis_expr(self, table: ibis.Table, column: str) -> ibis.Expr:
+        """Convert to an Ibis column expression.
+
+        Args:
+            table: The Ibis table to reference columns from.
+            column: The target column name to transform.
+
+        Returns:
+            An Ibis expression for the transformed column value.
+        """
+        col = table[column]
+
+        match self.operation:
+            case "trim":
+                return col.strip()
+            case "case":
+                mode = self.config["mode"]
+                match mode:
+                    case "upper":
+                        return col.upper()
+                    case "lower":
+                        return col.lower()
+                    case "title":
+                        return col.capitalize()
+            case "fill_null":
+                fill_value = self.config["fill_value"]
+                return col.fill_null(fill_value)
+            case "map_values":
+                mappings = self.config.get("mappings", [])
+                if not mappings:
+                    return col
+                case_expr = ibis.case()
+                for mapping in mappings:
+                    case_expr = case_expr.when(col == mapping["from"], mapping["to"])
+                return case_expr.else_(col).end()
+            case "alias":
+                raise ValueError(
+                    "Alias transforms are handled in the RENAME stage, "
+                    "not via as_ibis_expr()"
+                )
+
+    def to_display_sql(self, column: str) -> str:
+        """Generate a display-friendly SQL expression string.
+
+        Used for storage in expression_sql — human-readable, not for execution.
+        Actual execution uses as_ibis_expr() in _build_table().
+        """
+        match self.operation:
+            case "trim":
+                return f"TRIM({column})"
+            case "case":
+                mode = self.config["mode"]
+                match mode:
+                    case "upper":
+                        return f"UPPER({column})"
+                    case "lower":
+                        return f"LOWER({column})"
+                    case "title":
+                        return f"INITCAP({column})"
+            case "fill_null":
+                fill_value = self.config["fill_value"]
+                if isinstance(fill_value, str):
+                    # Escape single quotes for display
+                    escaped = fill_value.replace("'", "''")
+                    return f"COALESCE({column}, '{escaped}')"
+                return f"COALESCE({column}, {fill_value})"
+            case "map_values":
+                mappings = self.config.get("mappings", [])
+                if not mappings:
+                    return column
+                when_clauses = []
+                for m in mappings:
+                    from_val = m["from"].replace("'", "''")
+                    to_val = m["to"].replace("'", "''")
+                    when_clauses.append(f"WHEN {column} = '{from_val}' THEN '{to_val}'")
+                return f"CASE {' '.join(when_clauses)} ELSE {column} END"
+            case "alias":
+                alias = self.config["alias"]
+                return f'{column} AS "{alias}"'
+        return column
+
+
 # Type aliases for SQL strings
 SQLCondition = str  # SQL WHERE condition (e.g., "age > 18 AND status = 'active'")
 SQLQuery = str  # Full SQL SELECT statement

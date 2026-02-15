@@ -18,8 +18,10 @@ interface TransformCardProps {
 }
 
 export function TransformCard({ transform, onToggle, onDelete }: TransformCardProps) {
-  const ruleCount = countRules(transform.condition_json);
+  const isFilter = (transform.transform_type ?? 'filter') === 'filter';
+  const ruleCount = isFilter && transform.condition_json ? countRules(transform.condition_json) : 0;
   const isEnabled = transform.status === 'enabled';
+  const displaySql = transform.expression_sql ?? transform.condition_sql;
 
   return (
     <div className={`${styles.transformCard} ${
@@ -34,11 +36,13 @@ export function TransformCard({ transform, onToggle, onDelete }: TransformCardPr
             isActive={isEnabled}
             description={transform.description ?? undefined}
           />
-          <TransformMetadata
-            conditionCount={ruleCount}
-          />
-          {transform.condition_sql && (
-            <SQLPreview sql={transform.condition_sql} />
+          {isFilter && (
+            <TransformMetadata
+              conditionCount={ruleCount}
+            />
+          )}
+          {displaySql && (
+            <SQLPreview sql={displaySql} />
           )}
         </div>
         <div className={styles.actionsColumn}>

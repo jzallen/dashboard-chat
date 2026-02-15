@@ -7,12 +7,11 @@ generating aggregated SQL queries from transforms using Ibis expressions.
 from dataclasses import dataclass, field
 from typing import Any
 import re
-from unittest import case
 
 import ibis
 
 from .transform import Transform
-from ..types import SQLQuery
+from ..types import CleaningExpression, SQLQuery
 
 _SCHEMA_TYPE_MAP = {
     "text": "string",
@@ -95,6 +94,11 @@ class Dataset:
                         condition_sql=t.get("condition_sql"),
                         description=t.get("description"),
                         status=t.get("status", "enabled"),
+                        transform_type=t.get("transform_type", "filter"),
+                        target_column=t.get("target_column"),
+                        expression_sql=t.get("expression_sql"),
+                        expression_config=t.get("expression_config"),
+                        created_at=t.get("created_at"),
                     )
                     for t in self.transforms
                 ]
@@ -109,6 +113,11 @@ class Dataset:
                         condition_sql=t.condition_sql,
                         description=t.description,
                         status=t.status,
+                        transform_type=getattr(t, 'transform_type', 'filter'),
+                        target_column=getattr(t, 'target_column', None),
+                        expression_sql=getattr(t, 'expression_sql', None),
+                        expression_config=getattr(t, 'expression_config', None),
+                        created_at=getattr(t, 'created_at', None),
                     )
                     for t in self.transforms
                 ]
@@ -157,7 +166,12 @@ class Dataset:
         return base_path
 
     def _build_table(self, table_name: str | None = None) -> ibis.Table:
-        """Build Ibis table with filters applied.
+        """Build Ibis table with three-stage pipeline.
+
+        Pipeline stages (design D3):
+        1. MUTATE — apply cleaning transforms as column expressions via .mutate()
+        2. FILTER — apply filter transforms as WHERE clauses via .filter()
+        3. RENAME — apply alias transforms as column renames via .rename()
 
         Reads schema from parquet in S3 when available, otherwise falls back
         to building a table expression from schema_config.
@@ -176,14 +190,34 @@ class Dataset:
         if fields:
             table = table.select(*fields.keys())
 
-        # Apply active transform filters
+        # Stage 1: MUTATE — apply cleaning transforms sorted by created_at
+        cleaning_transforms = sorted(
+            [t for t in self.transforms
+             if t.is_enabled and t.transform_type in ('clean', 'map') and t.expression_config],
+            key=lambda t: getattr(t, 'created_at', '') or '',
+        )
+        for t in cleaning_transforms:
+            expr = CleaningExpression(t.expression_config)
+            table = table.mutate(**{t.target_column: expr.as_ibis_expr(table, t.target_column)})
+
+        # Stage 2: FILTER — apply filter transforms as WHERE clauses (existing behavior)
         active_filters = [
             t.condition_json.as_ibis_filter(table)
             for t in self.transforms
-            if t.is_enabled and t.condition_json
+            if t.is_enabled and t.transform_type == 'filter' and t.condition_json
         ]
         if active_filters:
             table = table.filter(*active_filters)
+
+        # Stage 3: RENAME — apply alias transforms as column renames
+        alias_renames = {}
+        for t in self.transforms:
+            if t.is_enabled and t.transform_type == 'alias' and t.expression_config:
+                expr = CleaningExpression(t.expression_config)
+                if expr.alias_name:
+                    alias_renames[expr.alias_name] = t.target_column
+        if alias_renames:
+            table = table.rename(alias_renames)
 
         return table
 

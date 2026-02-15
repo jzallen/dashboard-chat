@@ -49,6 +49,12 @@ class TransformRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default='enabled')
 
+    # Cleaning transform fields
+    transform_type: Mapped[str] = mapped_column(String(20), nullable=False, default='filter')
+    target_column: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expression_sql: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expression_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # Metadata from NL generation
     nl_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 

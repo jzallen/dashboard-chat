@@ -1,7 +1,16 @@
 import type { ToolCall } from "../types";
-import type { TableRow, ToolCallHandlers } from "./types";
+import type { TableRow, ToolCallContext, ToolCallHandlers } from "./types";
+import {
+  previewCleaningTransform,
+  createCleaningTransforms,
+  updateTransform,
+  type PreviewResponse,
+} from "@/api/datasets";
+import { datasetKeys } from "../ui/hooks/useDatasetQuery";
 
-function performToolAction(
+// --- Table tool actions (synchronous) ---
+
+function performTableAction(
   name: string,
   args: Record<string, unknown>,
   handlers: ToolCallHandlers
@@ -172,6 +181,183 @@ function countRaqbRules(tree: RaqbGroup): number {
   return count;
 }
 
+// --- Cleaning tool handlers (async) ---
+
+function formatPreviewResult(preview: PreviewResponse): string {
+  let msg = `Preview: ${preview.operation_description}\n`;
+  msg += `Affected: ${preview.affected_count} of ${preview.total_count} rows\n`;
+  if (preview.samples.length > 0) {
+    msg += "Samples:\n";
+    for (const s of preview.samples) {
+      const before = s.before === null ? "null" : `"${s.before}"`;
+      const after = s.after === null ? "null" : `"${s.after}"`;
+      msg += `  ${before} → ${after}\n`;
+    }
+  }
+  return msg;
+}
+
+async function handleCleaningTool(
+  name: string,
+  args: Record<string, unknown>,
+  context: ToolCallContext
+): Promise<string | null> {
+  const { datasetId, transforms, queryClient } = context;
+
+  switch (name) {
+    case "trimWhitespace": {
+      const { column } = args as { column: string };
+      const preview = await previewCleaningTransform(datasetId, {
+        transform_type: "clean",
+        target_column: column,
+        expression_config: { operation: "trim" },
+      });
+      return formatPreviewResult(preview);
+    }
+
+    case "standardizeCase": {
+      const { column, mode } = args as { column: string; mode: string };
+      const preview = await previewCleaningTransform(datasetId, {
+        transform_type: "clean",
+        target_column: column,
+        expression_config: { operation: "case", mode },
+      });
+      return formatPreviewResult(preview);
+    }
+
+    case "fillNulls": {
+      const { column, fillValue } = args as { column: string; fillValue: unknown };
+      const preview = await previewCleaningTransform(datasetId, {
+        transform_type: "clean",
+        target_column: column,
+        expression_config: { operation: "fill_null", fill_value: fillValue },
+      });
+      return formatPreviewResult(preview);
+    }
+
+    case "mapValues": {
+      const { column, mappings } = args as {
+        column: string;
+        mappings: Array<{ from: string; to: string }>;
+      };
+      const preview = await previewCleaningTransform(datasetId, {
+        transform_type: "map",
+        target_column: column,
+        expression_config: { operation: "map_values", mappings },
+      });
+      return formatPreviewResult(preview);
+    }
+
+    case "renameColumn": {
+      const { column, newName } = args as { column: string; newName: string };
+      await createCleaningTransforms(datasetId, [
+        {
+          name: `Rename ${column} to ${newName}`,
+          transform_type: "alias",
+          target_column: column,
+          expression_config: { operation: "alias", alias: newName },
+        },
+      ]);
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      return `Renamed column: ${column} → ${newName}`;
+    }
+
+    case "applyCleaningTransform": {
+      const { column, operation, config } = args as {
+        column: string;
+        operation: string;
+        config: Record<string, unknown>;
+      };
+      // Map tool-level operation to backend expression_config format
+      const isCase = ["upper", "lower", "title"].includes(operation);
+      const expressionConfig = isCase
+        ? { operation: "case", mode: operation, ...config }
+        : { operation, ...config };
+      const transformType = operation === "map_values" ? "map" : "clean";
+      const transformName = `${operation} on ${column}`;
+      await createCleaningTransforms(datasetId, [
+        {
+          name: transformName,
+          transform_type: transformType,
+          target_column: column,
+          expression_config: expressionConfig,
+        },
+      ]);
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      return `Applied: ${transformName}`;
+    }
+
+    case "undoCleaningTransform": {
+      const { action, transformId } = args as {
+        action: "disable" | "delete";
+        transformId?: string;
+      };
+      // Find the target transform
+      let targetId = transformId;
+      if (!targetId) {
+        // Find most recent active cleaning transform
+        const cleaningTransforms = transforms
+          .filter(
+            (t) =>
+              t.transform_type !== "filter" &&
+              t.status === "enabled"
+          )
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        if (cleaningTransforms.length === 0) {
+          return "No active cleaning transforms to undo.";
+        }
+        targetId = cleaningTransforms[0].id;
+      }
+      const newStatus = action === "delete" ? "deleted" : "disabled";
+      await updateTransform(datasetId, targetId, { status: newStatus });
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      const target = transforms.find((t) => t.id === targetId);
+      const desc = target ? `${target.name}` : targetId;
+      return `${action === "delete" ? "Deleted" : "Disabled"} transform: ${desc}`;
+    }
+
+    case "reEnableCleaningTransform": {
+      const { transformId } = args as { transformId?: string };
+      let targetId = transformId;
+      if (!targetId) {
+        // Find most recently disabled cleaning transform
+        const disabledTransforms = transforms
+          .filter(
+            (t) =>
+              t.transform_type !== "filter" &&
+              t.status === "disabled"
+          )
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        if (disabledTransforms.length === 0) {
+          return "No disabled cleaning transforms to re-enable.";
+        }
+        targetId = disabledTransforms[0].id;
+      }
+      await updateTransform(datasetId, targetId, { status: "enabled" });
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      const target = transforms.find((t) => t.id === targetId);
+      const desc = target ? `${target.name}` : targetId;
+      return `Re-enabled transform: ${desc}`;
+    }
+
+    default:
+      return null;
+  }
+}
+
+// --- Cleaning tool names set ---
+
+const CLEANING_TOOLS = new Set([
+  "trimWhitespace",
+  "standardizeCase",
+  "fillNulls",
+  "mapValues",
+  "renameColumn",
+  "applyCleaningTransform",
+  "undoCleaningTransform",
+  "reEnableCleaningTransform",
+]);
+
 // --- Message generation ---
 
 function generateToolMessage(name: string, args: Record<string, unknown>): string {
@@ -222,15 +408,45 @@ function generateToolMessage(name: string, args: Record<string, unknown>): strin
     case "clearSort":
       return "Cleared sorting";
 
+    // Cleaning tools — messages come from the async handler
+    case "trimWhitespace": {
+      const { column } = args as { column: string };
+      return `Previewing trim whitespace on ${column}...`;
+    }
+    case "standardizeCase": {
+      const { column, mode } = args as { column: string; mode: string };
+      return `Previewing ${mode} case on ${column}...`;
+    }
+    case "fillNulls": {
+      const { column } = args as { column: string };
+      return `Previewing fill nulls on ${column}...`;
+    }
+    case "mapValues": {
+      const { column } = args as { column: string };
+      return `Previewing value mapping on ${column}...`;
+    }
+    case "renameColumn": {
+      const { column, newName } = args as { column: string; newName: string };
+      return `Renaming ${column} to ${newName}...`;
+    }
+    case "applyCleaningTransform": {
+      const { column, operation } = args as { column: string; operation: string };
+      return `Applying ${operation} on ${column}...`;
+    }
+    case "undoCleaningTransform":
+      return "Undoing cleaning transform...";
+    case "reEnableCleaningTransform":
+      return "Re-enabling cleaning transform...";
+
     default:
       return `Unknown tool: ${name}`;
   }
 }
 
-export function executeToolCall(
+export async function executeToolCall(
   toolCall: ToolCall,
-  handlers: ToolCallHandlers
-): string {
+  context: ToolCallContext
+): Promise<string> {
   const { name, arguments: argsJson } = toolCall.function;
 
   let args: Record<string, unknown>;
@@ -240,6 +456,18 @@ export function executeToolCall(
     return `Error: Invalid arguments for ${name}`;
   }
 
-  performToolAction(name, args, handlers);
+  // Cleaning tools are async — handle them first
+  if (CLEANING_TOOLS.has(name)) {
+    try {
+      const result = await handleCleaningTool(name, args, context);
+      return result ?? generateToolMessage(name, args);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return `Error: ${message}`;
+    }
+  }
+
+  // Table tools are synchronous
+  performTableAction(name, args, context);
   return generateToolMessage(name, args);
 }

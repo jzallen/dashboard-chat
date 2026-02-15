@@ -36,6 +36,11 @@ export function createMockTransform(overrides?: Partial<Transform>): Transform {
     condition_json: { id: "root", type: "group", properties: { conjunction: "AND" }, children1: {} },
     condition_sql: "inStock = true",
     status: "enabled",
+    transform_type: "filter",
+    target_column: null,
+    expression_config: null,
+    expression_sql: null,
+    created_at: "2025-01-01T00:00:00Z",
     ...overrides,
   };
 }

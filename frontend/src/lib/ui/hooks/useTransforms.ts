@@ -69,9 +69,14 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
         id: crypto.randomUUID(),
         name: data.name,
         description: data.description ?? null,
-        condition_json: data.condition_json,
-        condition_sql: data.condition_sql,
+        condition_json: data.condition_json ?? null,
+        condition_sql: data.condition_sql ?? null,
         status: 'enabled',
+        transform_type: data.transform_type ?? 'filter',
+        target_column: data.target_column ?? null,
+        expression_config: data.expression_config ?? null,
+        expression_sql: null,
+        created_at: new Date().toISOString(),
       };
       const optimisticDataset: Dataset = {
         ...dataset,
@@ -174,6 +179,8 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
   const applyTransform = useCallback(
     (transform: Transform) => {
       if (!onFilterApply) return;
+      // Only filter transforms have condition_json for TanStack Table
+      if ((transform.transform_type ?? 'filter') !== 'filter' || !transform.condition_json) return;
 
       const newFilters = raqbToTanstackFilters(transform.condition_json, {
         transformId: transform.id,
@@ -211,7 +218,8 @@ function computeActiveFilters(transforms: Transform[]): ColumnFiltersState {
   let activeFilters: ColumnFiltersState = [];
 
   for (const transform of transforms) {
-    if (transform.status === 'enabled') {
+    // Only filter transforms have condition_json for TanStack Table filters
+    if (transform.status === 'enabled' && (transform.transform_type ?? 'filter') === 'filter' && transform.condition_json) {
       const filters = raqbToTanstackFilters(transform.condition_json, {
         transformId: transform.id,
       });

@@ -7,10 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.use_cases.dataset import list_datasets
 from app.repositories import set_session
-from app.models.dataset import Dataset
-from app.models.transform import Transform
 from app.repositories.metadata import DatasetRecord, ProjectRecord
-from app.types import QueryBuilderJSON
 
 
 
@@ -21,41 +18,20 @@ class TestListDatasets:
         """list_datasets should return Result containing list[Dataset]."""
         set_session(seeded_db)
 
-        expected = [
-            Dataset(
-                id="dataset-002",
-                project_id="project-001",
-                name="Dataset Two",
-                description=None,
-                schema_config={"fields": {"col2": {"type": "number"}}},
-                partition_fields=[],
-                transforms=[],
-            ),
-            Dataset(
-                id="dataset-001",
-                project_id="project-001",
-                name="Dataset One",
-                description=None,
-                schema_config={"fields": {"col1": {"type": "text"}}},
-                partition_fields=[],
-                transforms=[
-                    Transform(
-                        id="transform-001",
-                        name="Filter Active",
-                        condition_json=QueryBuilderJSON.from_dict({"id": "root", "type": "group", "children1": []}),
-                        condition_sql="col1 = 'active'",
-                        description="Filter for active records",
-                        status='enabled',
-                    ),
-                ],
-            ),
-        ]
-
         result = await list_datasets(project_id="project-001")
 
         match result:
             case Success(datasets):
-                assert datasets == expected
+                assert len(datasets) == 2
+                # Ordered by created_at desc — dataset-002 first, dataset-001 second
+                assert datasets[0].id == "dataset-002"
+                assert datasets[0].name == "Dataset Two"
+                assert datasets[0].transforms == []
+                assert datasets[1].id == "dataset-001"
+                assert datasets[1].name == "Dataset One"
+                assert len(datasets[1].transforms) == 1
+                assert datasets[1].transforms[0].id == "transform-001"
+                assert datasets[1].transforms[0].transform_type == "filter"
             case Failure(error):
                 pytest.fail(f"list_datasets should return datasets for valid project_id, got: {error}")
 

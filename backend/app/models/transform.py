@@ -5,36 +5,40 @@ by the backend using Ibis expressions derived from the condition_json.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from ..types import QueryBuilderJSON
 
 TransformStatus = Literal['enabled', 'disabled', 'deleted']
+TransformType = Literal['filter', 'clean', 'alias', 'map']
 
 
 @dataclass(frozen=True, slots=True)
 class Transform:
     """Transform domain model (authoritative business object).
 
-    The transform stores both the RAQB JSON (for Ibis filter generation and UI
-    rehydration) and the generated SQL (for display/backwards compatibility).
-    SQL generation now happens on the backend via Ibis expressions.
+    Supports four transform types:
+    - filter: Row-level WHERE predicates (uses condition_json/condition_sql)
+    - clean: Column-level cleaning expressions (trim, case, fill_null)
+    - alias: Column rename operations
+    - map: Value mapping expressions (CASE WHEN chains)
 
-    Attributes:
-        id: Unique identifier (None for unsaved transforms)
-        name: Human-readable name for the transform
-        condition_json: RAQB JSON tree structure as value object
-        condition_sql: SQL WHERE clause (kept for display/backwards compat)
-        description: Optional description
-        status: Transform status ('enabled', 'disabled', 'deleted')
+    Filter transforms use condition_json/condition_sql.
+    Clean/alias/map transforms use target_column/expression_config/expression_sql.
     """
 
     id: str | None
     name: str
-    condition_json: QueryBuilderJSON | None  # Value object for Ibis conversion
-    condition_sql: str | None = None  # Keep for display/backwards compat
+    condition_json: QueryBuilderJSON | None  # Value object for Ibis conversion (filter type)
+    condition_sql: str | None = None  # SQL WHERE clause (filter type)
     description: str | None = None
     status: TransformStatus = 'enabled'
+    transform_type: TransformType = 'filter'
+    target_column: str | None = None  # Column targeted by clean/alias/map transforms
+    expression_sql: str | None = None  # Server-generated SQL for clean/alias/map
+    expression_config: dict[str, Any] | None = None  # Structured JSON config for clean/alias/map
+    created_at: datetime | None = None  # For ordering cleaning transforms
 
     @property
     def is_enabled(self) -> bool:
@@ -47,7 +51,10 @@ class Transform:
 
     def keys(self) -> list[str]:
         """Return field names for SQLAlchemy bulk operations."""
-        return ['id', 'name', 'condition_json', 'condition_sql', 'description', 'status']
+        return [
+            'id', 'name', 'condition_json', 'condition_sql', 'description', 'status',
+            'transform_type', 'target_column', 'expression_sql', 'expression_config',
+        ]
 
     def __iter__(self):
         """Iterate over field names for SQLAlchemy bulk operations."""
@@ -62,4 +69,8 @@ class Transform:
             'condition_sql': self.condition_sql,
             'description': self.description,
             'status': self.status,
+            'transform_type': self.transform_type,
+            'target_column': self.target_column,
+            'expression_sql': self.expression_sql,
+            'expression_config': self.expression_config,
         }

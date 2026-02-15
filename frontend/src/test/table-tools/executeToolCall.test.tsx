@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   createTable,
   getCoreRowModel,
@@ -8,16 +8,37 @@ import {
   type SortingState,
   type ColumnFiltersState,
 } from "@tanstack/table-core";
+import { QueryClient } from "@tanstack/react-query";
 import {
   executeToolCall,
   customFilterFn,
   type ToolCall,
-  type ToolCallHandlers,
+  type ToolCallContext,
   type TableRow,
 } from "@/table-tools";
 
+// Mock the API module
+vi.mock("@/api/datasets", () => ({
+  previewCleaningTransform: vi.fn(),
+  createCleaningTransforms: vi.fn(),
+  updateTransform: vi.fn(),
+}));
+
+// Mock useDatasetQuery keys (used for cache invalidation)
+vi.mock("../../lib/ui/hooks/useDatasetQuery", () => ({
+  datasetKeys: {
+    detail: (id: string) => ["datasets", id],
+  },
+}));
+
+import {
+  previewCleaningTransform,
+  createCleaningTransforms,
+  updateTransform,
+} from "@/api/datasets";
+
 /**
- * Tests for executeToolCall - the public API used by App.tsx.
+ * Tests for executeToolCall - the public API used by DatasetView.
  *
  * These tests verify both the table state changes and the returned message.
  * We use `.rows.map((r) => r.original)` when asserting on table results to extract
@@ -52,10 +73,13 @@ describe("executeToolCall", () => {
     function: { name, arguments: JSON.stringify(args) },
   });
 
-  const createTestTable = (initialData: TableRow[]) => {
-    let data = [...initialData];
+  const createTestTable = () => {
+    let data = [...testData];
     let sorting: SortingState = [];
     let columnFilters: ColumnFiltersState = [];
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
 
     const table = createTable({
       data,
@@ -76,7 +100,7 @@ describe("executeToolCall", () => {
       renderFallbackValue: null,
     });
 
-    const handlers: ToolCallHandlers = {
+    const context: ToolCallContext = {
       setColumnFilters: (updater) => {
         columnFilters = typeof updater === "function" ? updater(columnFilters) : updater;
         table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnFilters } }));
@@ -89,19 +113,26 @@ describe("executeToolCall", () => {
         data = updater(data);
         table.setOptions((prev) => ({ ...prev, data }));
       },
+      datasetId: "ds-test-001",
+      transforms: [],
+      queryClient,
     };
 
-    return { table, handlers };
+    return { table, context, queryClient };
   };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   describe("Feature: Table Filtering", () => {
     describe("Scenario: Filter table by column", () => {
-      it("should filter rows and return message", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should filter rows and return message", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("filterTable", { column: "name", operator: "contains", value: "Widget" }),
-          handlers
+          context
         );
 
         expect(message).toBe("Filtered name contains Widget");
@@ -112,12 +143,12 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Filter by numeric comparison", () => {
-      it("should filter rows where amount is greater than 30", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should filter rows where amount is greater than 30", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("filterTable", { column: "amount", operator: "gt", value: 30 }),
-          handlers
+          context
         );
 
         expect(message).toBe("Filtered amount gt 30");
@@ -129,18 +160,18 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Clear active filters", () => {
-      it("should clear filters and return message", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should clear filters and return message", async () => {
+        const { table, context } = createTestTable();
 
         // Apply filter first
-        executeToolCall(
+        await executeToolCall(
           createToolCall("filterTable", { column: "name", operator: "contains", value: "Widget" }),
-          handlers
+          context
         );
         expect(table.getFilteredRowModel().rows).toHaveLength(1);
 
         // Clear filters
-        const message = executeToolCall(createToolCall("clearFilters", {}), handlers);
+        const message = await executeToolCall(createToolCall("clearFilters", {}), context);
 
         expect(message).toBe("Cleared all filters");
         expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(testData);
@@ -150,12 +181,12 @@ describe("executeToolCall", () => {
 
   describe("Feature: Table Sorting", () => {
     describe("Scenario: Sort by column ascending", () => {
-      it("should sort rows and return message", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should sort rows and return message", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "asc" }),
-          handlers
+          context
         );
 
         expect(message).toBe("Sorted by amount asc");
@@ -168,12 +199,12 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Sort by column descending", () => {
-      it("should sort rows descending and return message", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should sort rows descending and return message", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          handlers
+          context
         );
 
         expect(message).toBe("Sorted by amount desc");
@@ -186,17 +217,17 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Clear sorting", () => {
-      it("should clear sort and return message", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should clear sort and return message", async () => {
+        const { table, context } = createTestTable();
 
         // Apply sort first
-        executeToolCall(
+        await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          handlers
+          context
         );
 
         // Clear sort
-        const message = executeToolCall(createToolCall("clearSort", {}), handlers);
+        const message = await executeToolCall(createToolCall("clearSort", {}), context);
 
         expect(message).toBe("Cleared sorting");
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(testData);
@@ -204,19 +235,19 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Multi-column sort", () => {
-      it("should accumulate multiple sort columns", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should accumulate multiple sort columns", async () => {
+        const { table, context } = createTestTable();
 
         // Sort by category first
-        executeToolCall(
+        await executeToolCall(
           createToolCall("sortTable", { column: "category", direction: "asc" }),
-          handlers
+          context
         );
 
         // Then sort by amount (should add to existing sort)
-        executeToolCall(
+        await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          handlers
+          context
         );
 
         // Expect: first by category asc (A, A, B), then by amount desc within each category
@@ -227,19 +258,19 @@ describe("executeToolCall", () => {
         ]);
       });
 
-      it("should replace existing sort for same column", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should replace existing sort for same column", async () => {
+        const { table, context } = createTestTable();
 
         // Sort by amount ascending
-        executeToolCall(
+        await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "asc" }),
-          handlers
+          context
         );
 
         // Sort by amount descending (should replace, not duplicate)
-        executeToolCall(
+        await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          handlers
+          context
         );
 
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual([
@@ -253,14 +284,14 @@ describe("executeToolCall", () => {
 
   describe("Feature: Table Row Management", () => {
     describe("Scenario: Add a new row", () => {
-      it("should add row and return message", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should add row and return message", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("addRow", {
             data: { id: "4", name: "New Item", category: "C", amount: 75, quantity: 15, inStock: true },
           }),
-          handlers
+          context
         );
 
         expect(message).toBe("Added new row");
@@ -274,10 +305,10 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Delete a row by search", () => {
-      it("should delete row matching search text and return message", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should delete row matching search text and return message", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(createToolCall("deleteRow", { search: "Beta Widget" }), handlers);
+        const message = await executeToolCall(createToolCall("deleteRow", { search: "Beta Widget" }), context);
 
         expect(message).toBe('Deleted row matching "Beta Widget"');
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
@@ -286,10 +317,10 @@ describe("executeToolCall", () => {
         ]);
       });
 
-      it("should match case-insensitively", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should match case-insensitively", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(createToolCall("deleteRow", { search: "beta" }), handlers);
+        const message = await executeToolCall(createToolCall("deleteRow", { search: "beta" }), context);
 
         expect(message).toBe('Deleted row matching "beta"');
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
@@ -298,10 +329,10 @@ describe("executeToolCall", () => {
         ]);
       });
 
-      it("should not modify data if no match found", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should not modify data if no match found", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(createToolCall("deleteRow", { search: "Nonexistent" }), handlers);
+        const message = await executeToolCall(createToolCall("deleteRow", { search: "Nonexistent" }), context);
 
         expect(message).toBe('Deleted row matching "Nonexistent"');
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
@@ -311,8 +342,8 @@ describe("executeToolCall", () => {
 
   describe("Feature: RAQB Filter Generation", () => {
     describe("Scenario: Apply single rule RAQB filter", () => {
-      it("should apply RAQB filter and return message with condition count", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should apply RAQB filter and return message with condition count", async () => {
+        const { table, context } = createTestTable();
 
         const raqbTree = {
           type: "group",
@@ -329,12 +360,12 @@ describe("executeToolCall", () => {
           },
         };
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("generateFilter", {
             description: "Show items in category A",
             raqb_tree: raqbTree,
           }),
-          handlers
+          context
         );
 
         expect(message).toBe("Applied filter: Show items in category A (1 condition)");
@@ -346,8 +377,8 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Apply multi-rule RAQB filter with AND conjunction", () => {
-      it("should apply all conditions with AND logic", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should apply all conditions with AND logic", async () => {
+        const { table, context } = createTestTable();
 
         const raqbTree = {
           type: "group",
@@ -372,12 +403,12 @@ describe("executeToolCall", () => {
           },
         };
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("generateFilter", {
             description: "Category A items over $30",
             raqb_tree: raqbTree,
           }),
-          handlers
+          context
         );
 
         expect(message).toBe("Applied filter: Category A items over $30 (2 conditions)");
@@ -389,8 +420,8 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Apply RAQB filter with numeric comparison", () => {
-      it("should apply greater_or_equal operator", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should apply greater_or_equal operator", async () => {
+        const { table, context } = createTestTable();
 
         const raqbTree = {
           type: "group",
@@ -407,12 +438,12 @@ describe("executeToolCall", () => {
           },
         };
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("generateFilter", {
             description: "Items with amount >= 50",
             raqb_tree: raqbTree,
           }),
-          handlers
+          context
         );
 
         expect(message).toBe("Applied filter: Items with amount >= 50 (1 condition)");
@@ -424,13 +455,13 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: RAQB filter replaces existing filters", () => {
-      it("should clear previous filters when applying RAQB filter", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should clear previous filters when applying RAQB filter", async () => {
+        const { table, context } = createTestTable();
 
         // Apply initial filter
-        executeToolCall(
+        await executeToolCall(
           createToolCall("filterTable", { column: "inStock", operator: "equals", value: true }),
-          handlers
+          context
         );
         expect(table.getFilteredRowModel().rows).toHaveLength(2);
 
@@ -450,12 +481,12 @@ describe("executeToolCall", () => {
           },
         };
 
-        executeToolCall(
+        await executeToolCall(
           createToolCall("generateFilter", {
             description: "Category B only",
             raqb_tree: raqbTree,
           }),
-          handlers
+          context
         );
 
         // Should show Beta Widget (category B) even though inStock is false
@@ -466,8 +497,8 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Apply RAQB filter with like operator", () => {
-      it("should apply contains/like filter", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should apply contains/like filter", async () => {
+        const { table, context } = createTestTable();
 
         const raqbTree = {
           type: "group",
@@ -484,12 +515,12 @@ describe("executeToolCall", () => {
           },
         };
 
-        const message = executeToolCall(
+        const message = await executeToolCall(
           createToolCall("generateFilter", {
             description: "Names containing 'a'",
             raqb_tree: raqbTree,
           }),
-          handlers
+          context
         );
 
         expect(message).toBe("Applied filter: Names containing 'a' (1 condition)");
@@ -505,15 +536,15 @@ describe("executeToolCall", () => {
 
   describe("Feature: Error Handling", () => {
     describe("Scenario: Invalid JSON arguments", () => {
-      it("should return error message and not modify table", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should return error message and not modify table", async () => {
+        const { table, context } = createTestTable();
         const toolCall: ToolCall = {
           id: "test-id",
           type: "function",
           function: { name: "filterTable", arguments: "{ invalid json }" },
         };
 
-        const message = executeToolCall(toolCall, handlers);
+        const message = await executeToolCall(toolCall, context);
 
         expect(message).toBe("Error: Invalid arguments for filterTable");
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
@@ -521,15 +552,419 @@ describe("executeToolCall", () => {
     });
 
     describe("Scenario: Unknown tool name", () => {
-      it("should return unknown tool message and not modify table", () => {
-        const { table, handlers } = createTestTable(testData);
+      it("should return unknown tool message and not modify table", async () => {
+        const { table, context } = createTestTable();
 
-        const message = executeToolCall(createToolCall("unknownTool", { foo: "bar" }), handlers);
+        const message = await executeToolCall(createToolCall("unknownTool", { foo: "bar" }), context);
 
         expect(message).toBe("Unknown tool: unknownTool");
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
         expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(testData);
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(testData);
+      });
+    });
+  });
+
+  describe("Feature: Cleaning Tool Handlers", () => {
+    const mockPreviewResponse = {
+      affected_count: 3,
+      total_count: 10,
+      samples: [
+        { before: "  hello  ", after: "hello" },
+        { before: "  world  ", after: "world" },
+      ],
+      column: "name",
+      operation_description: "Trim whitespace from name",
+    };
+
+    describe("Scenario: Trim whitespace preview", () => {
+      it("should call preview API and return formatted result", async () => {
+        const { context } = createTestTable();
+        vi.mocked(previewCleaningTransform).mockResolvedValue(mockPreviewResponse);
+
+        const message = await executeToolCall(
+          createToolCall("trimWhitespace", { column: "name" }),
+          context
+        );
+
+        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
+          transform_type: "clean",
+          target_column: "name",
+          expression_config: { operation: "trim" },
+        });
+        expect(message).toContain("Preview: Trim whitespace from name");
+        expect(message).toContain("Affected: 3 of 10 rows");
+        expect(message).toContain('"  hello  " → "hello"');
+      });
+    });
+
+    describe("Scenario: Standardize case preview", () => {
+      it("should call preview API with mode and return formatted result", async () => {
+        const { context } = createTestTable();
+        vi.mocked(previewCleaningTransform).mockResolvedValue({
+          ...mockPreviewResponse,
+          operation_description: "Uppercase name",
+          samples: [{ before: "hello", after: "HELLO" }],
+        });
+
+        const message = await executeToolCall(
+          createToolCall("standardizeCase", { column: "name", mode: "upper" }),
+          context
+        );
+
+        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
+          transform_type: "clean",
+          target_column: "name",
+          expression_config: { operation: "case", mode: "upper" },
+        });
+        expect(message).toContain("Preview: Uppercase name");
+        expect(message).toContain('"hello" → "HELLO"');
+      });
+    });
+
+    describe("Scenario: Fill nulls preview", () => {
+      it("should call preview API with fill_value and return formatted result", async () => {
+        const { context } = createTestTable();
+        vi.mocked(previewCleaningTransform).mockResolvedValue({
+          ...mockPreviewResponse,
+          operation_description: "Fill null values in name with N/A",
+          samples: [{ before: null, after: "N/A" }],
+        });
+
+        const message = await executeToolCall(
+          createToolCall("fillNulls", { column: "name", fillValue: "N/A" }),
+          context
+        );
+
+        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
+          transform_type: "clean",
+          target_column: "name",
+          expression_config: { operation: "fill_null", fill_value: "N/A" },
+        });
+        expect(message).toContain("Fill null values in name with N/A");
+        expect(message).toContain("null → \"N/A\"");
+      });
+    });
+
+    describe("Scenario: Map values preview", () => {
+      it("should call preview API with mappings and return formatted result", async () => {
+        const { context } = createTestTable();
+        vi.mocked(previewCleaningTransform).mockResolvedValue({
+          ...mockPreviewResponse,
+          operation_description: "Map values in category",
+          samples: [{ before: "A", after: "Category A" }],
+        });
+
+        const mappings = [{ from: "A", to: "Category A" }, { from: "B", to: "Category B" }];
+        const message = await executeToolCall(
+          createToolCall("mapValues", { column: "category", mappings }),
+          context
+        );
+
+        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
+          transform_type: "map",
+          target_column: "category",
+          expression_config: { operation: "map_values", mappings },
+        });
+        expect(message).toContain("Map values in category");
+        expect(message).toContain('"A" → "Category A"');
+      });
+    });
+
+    describe("Scenario: Rename column", () => {
+      it("should create alias transform and invalidate cache", async () => {
+        const { context, queryClient } = createTestTable();
+        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+        const message = await executeToolCall(
+          createToolCall("renameColumn", {
+            column: "name",
+            newName: "Product Name",
+          }),
+          context
+        );
+
+        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
+          {
+            name: "Rename name to Product Name",
+            transform_type: "alias",
+            target_column: "name",
+            expression_config: { operation: "alias", alias: "Product Name" },
+          },
+        ]);
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["datasets", "ds-test-001"] });
+        expect(message).toBe("Renamed column: name → Product Name");
+      });
+    });
+
+    describe("Scenario: Apply cleaning transform", () => {
+      it("should create trim transform and invalidate cache", async () => {
+        const { context, queryClient } = createTestTable();
+        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+        const message = await executeToolCall(
+          createToolCall("applyCleaningTransform", {
+            column: "name",
+            operation: "trim",
+            config: {},
+          }),
+          context
+        );
+
+        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
+          {
+            name: "trim on name",
+            transform_type: "clean",
+            target_column: "name",
+            expression_config: { operation: "trim" },
+          },
+        ]);
+        expect(invalidateSpy).toHaveBeenCalled();
+        expect(message).toBe("Applied: trim on name");
+      });
+
+      it("should map case operations to correct expression_config", async () => {
+        const { context } = createTestTable();
+        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+
+        await executeToolCall(
+          createToolCall("applyCleaningTransform", {
+            column: "name",
+            operation: "upper",
+            config: {},
+          }),
+          context
+        );
+
+        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
+          {
+            name: "upper on name",
+            transform_type: "clean",
+            target_column: "name",
+            expression_config: { operation: "case", mode: "upper" },
+          },
+        ]);
+      });
+
+      it("should map map_values to transform_type 'map'", async () => {
+        const { context } = createTestTable();
+        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+
+        const mappings = [{ from: "A", to: "Category A" }];
+        await executeToolCall(
+          createToolCall("applyCleaningTransform", {
+            column: "category",
+            operation: "map_values",
+            config: { mappings },
+          }),
+          context
+        );
+
+        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
+          {
+            name: "map_values on category",
+            transform_type: "map",
+            target_column: "category",
+            expression_config: { operation: "map_values", mappings },
+          },
+        ]);
+      });
+    });
+
+    describe("Scenario: Undo cleaning transform", () => {
+      it("should disable most recent active cleaning transform when no ID given", async () => {
+        const { context } = createTestTable();
+        context.transforms = [
+          {
+            id: "tf-1",
+            name: "Old trim",
+            status: "enabled",
+            transform_type: "clean",
+            target_column: "name",
+            created_at: "2025-01-01T00:00:00Z",
+          },
+          {
+            id: "tf-2",
+            name: "New trim",
+            status: "enabled",
+            transform_type: "clean",
+            target_column: "category",
+            created_at: "2025-06-01T00:00:00Z",
+          },
+        ];
+        vi.mocked(updateTransform).mockResolvedValue(undefined);
+
+        const message = await executeToolCall(
+          createToolCall("undoCleaningTransform", { action: "disable" }),
+          context
+        );
+
+        // Should disable the most recent (tf-2)
+        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-2", { status: "disabled" });
+        expect(message).toBe("Disabled transform: New trim");
+      });
+
+      it("should delete a specific transform by ID", async () => {
+        const { context } = createTestTable();
+        context.transforms = [
+          {
+            id: "tf-1",
+            name: "Old trim",
+            status: "enabled",
+            transform_type: "clean",
+            target_column: "name",
+            created_at: "2025-01-01T00:00:00Z",
+          },
+        ];
+        vi.mocked(updateTransform).mockResolvedValue(undefined);
+
+        const message = await executeToolCall(
+          createToolCall("undoCleaningTransform", { action: "delete", transformId: "tf-1" }),
+          context
+        );
+
+        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-1", { status: "deleted" });
+        expect(message).toBe("Deleted transform: Old trim");
+      });
+
+      it("should return message when no active transforms to undo", async () => {
+        const { context } = createTestTable();
+        context.transforms = [];
+
+        const message = await executeToolCall(
+          createToolCall("undoCleaningTransform", { action: "disable" }),
+          context
+        );
+
+        expect(updateTransform).not.toHaveBeenCalled();
+        expect(message).toBe("No active cleaning transforms to undo.");
+      });
+
+      it("should skip filter transforms when finding most recent", async () => {
+        const { context } = createTestTable();
+        context.transforms = [
+          {
+            id: "tf-filter",
+            name: "A filter",
+            status: "enabled",
+            transform_type: "filter",
+            created_at: "2025-06-01T00:00:00Z",
+          },
+          {
+            id: "tf-clean",
+            name: "A cleaning",
+            status: "enabled",
+            transform_type: "clean",
+            target_column: "name",
+            created_at: "2025-01-01T00:00:00Z",
+          },
+        ];
+        vi.mocked(updateTransform).mockResolvedValue(undefined);
+
+        const message = await executeToolCall(
+          createToolCall("undoCleaningTransform", { action: "disable" }),
+          context
+        );
+
+        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-clean", { status: "disabled" });
+        expect(message).toBe("Disabled transform: A cleaning");
+      });
+    });
+
+    describe("Scenario: Re-enable cleaning transform", () => {
+      it("should re-enable most recently disabled cleaning transform", async () => {
+        const { context } = createTestTable();
+        context.transforms = [
+          {
+            id: "tf-1",
+            name: "Disabled trim",
+            status: "disabled",
+            transform_type: "clean",
+            target_column: "name",
+            created_at: "2025-01-01T00:00:00Z",
+          },
+        ];
+        vi.mocked(updateTransform).mockResolvedValue(undefined);
+
+        const message = await executeToolCall(
+          createToolCall("reEnableCleaningTransform", {}),
+          context
+        );
+
+        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-1", { status: "enabled" });
+        expect(message).toBe("Re-enabled transform: Disabled trim");
+      });
+
+      it("should re-enable a specific transform by ID", async () => {
+        const { context } = createTestTable();
+        context.transforms = [
+          {
+            id: "tf-1",
+            name: "Disabled trim",
+            status: "disabled",
+            transform_type: "clean",
+            target_column: "name",
+            created_at: "2025-01-01T00:00:00Z",
+          },
+          {
+            id: "tf-2",
+            name: "Disabled case",
+            status: "disabled",
+            transform_type: "clean",
+            target_column: "category",
+            created_at: "2025-06-01T00:00:00Z",
+          },
+        ];
+        vi.mocked(updateTransform).mockResolvedValue(undefined);
+
+        const message = await executeToolCall(
+          createToolCall("reEnableCleaningTransform", { transformId: "tf-1" }),
+          context
+        );
+
+        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-1", { status: "enabled" });
+        expect(message).toBe("Re-enabled transform: Disabled trim");
+      });
+
+      it("should return message when no disabled transforms to re-enable", async () => {
+        const { context } = createTestTable();
+        context.transforms = [];
+
+        const message = await executeToolCall(
+          createToolCall("reEnableCleaningTransform", {}),
+          context
+        );
+
+        expect(updateTransform).not.toHaveBeenCalled();
+        expect(message).toBe("No disabled cleaning transforms to re-enable.");
+      });
+    });
+
+    describe("Scenario: Cleaning tool API error", () => {
+      it("should return error message when preview API fails", async () => {
+        const { context } = createTestTable();
+        vi.mocked(previewCleaningTransform).mockRejectedValue(new Error("Column type mismatch"));
+
+        const message = await executeToolCall(
+          createToolCall("trimWhitespace", { column: "amount" }),
+          context
+        );
+
+        expect(message).toBe("Error: Column type mismatch");
+      });
+
+      it("should return error message when create API fails", async () => {
+        const { context } = createTestTable();
+        vi.mocked(createCleaningTransforms).mockRejectedValue(new Error("Network error"));
+
+        const message = await executeToolCall(
+          createToolCall("renameColumn", { column: "name", newName: "Product" }),
+          context
+        );
+
+        expect(message).toBe("Error: Network error");
       });
     });
   });

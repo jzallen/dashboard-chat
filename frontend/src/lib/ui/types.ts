@@ -1,4 +1,5 @@
 import type { ToolCall } from "@/table-tools";
+export type { TableSchema } from "@/chat/types";
 
 export type MessageWidget = { type: "upload" };
 
@@ -9,12 +10,6 @@ export interface Message {
   tool_calls?: ToolCall[];
   isStreaming?: boolean;
   widget?: MessageWidget;
-}
-
-export interface TableSchema {
-  columns: Array<{ id: string; type: "string" | "number" | "boolean" }>;
-  rowCount: number;
-  activeFilters?: Array<{ column: string; operator: string; value: unknown }>;
 }
 
 export interface SSEMessage {

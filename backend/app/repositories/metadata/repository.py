@@ -358,10 +358,14 @@ class MetadataRepository:
             record = TransformRecord(
                 dataset_id=dataset_id,
                 name=t['name'],
-                condition_json=t['condition_json'],
+                condition_json=t.get('condition_json', {}),
                 condition_sql=t.get('condition_sql', ''),
                 description=t.get('description'),
                 nl_prompt=t.get('nl_prompt'),
+                transform_type=t.get('transform_type', 'filter'),
+                target_column=t.get('target_column'),
+                expression_sql=t.get('expression_sql'),
+                expression_config=t.get('expression_config'),
             )
             self._session.add(record)
             records.append(record)
@@ -509,6 +513,10 @@ class MetadataRepository:
             "nl_prompt": transform.nl_prompt,
             "created_at": transform.created_at.isoformat() if transform.created_at else None,
             "updated_at": transform.updated_at.isoformat() if transform.updated_at else None,
+            "transform_type": transform.transform_type,
+            "target_column": transform.target_column,
+            "expression_sql": transform.expression_sql,
+            "expression_config": transform.expression_config,
         }
 
     @staticmethod

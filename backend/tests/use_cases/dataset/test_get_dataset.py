@@ -9,8 +9,6 @@ from botocore.exceptions import ClientError
 from app.use_cases.dataset import get_dataset
 from app.repositories import set_session
 from app.models.dataset import Dataset
-from app.models.transform import Transform
-from app.types import QueryBuilderJSON
 
 
 
@@ -21,31 +19,21 @@ class TestGetDataset:
         """get_dataset should return Dataset with transforms by default."""
         set_session(seeded_db)
 
-        expected = Dataset(
-            id="dataset-001",
-            project_id="project-001",
-            name="Dataset One",
-            description=None,
-            schema_config={"fields": {"col1": {"type": "text"}}},
-            partition_fields=[],
-            transforms=[
-                Transform(
-                    id="transform-001",
-                    name="Filter Active",
-                    condition_json=QueryBuilderJSON.from_dict({"id": "root", "type": "group", "children1": []}),
-                    condition_sql="col1 = 'active'",
-                    description="Filter for active records",
-                    status='enabled',
-                ),
-            ],
-            preview_rows=[],
-        )
-
         result = await get_dataset(dataset_id="dataset-001")
 
         match result:
             case Success(dataset):
-                assert dataset == expected
+                assert dataset.id == "dataset-001"
+                assert dataset.project_id == "project-001"
+                assert dataset.name == "Dataset One"
+                assert dataset.schema_config == {"fields": {"col1": {"type": "text"}}}
+                assert len(dataset.transforms) == 1
+                t = dataset.transforms[0]
+                assert t.id == "transform-001"
+                assert t.name == "Filter Active"
+                assert t.condition_sql == "col1 = 'active'"
+                assert t.status == 'enabled'
+                assert t.transform_type == 'filter'
             case Failure(error):
                 pytest.fail(f"get_dataset should return dataset for valid id, got: {error}")
 

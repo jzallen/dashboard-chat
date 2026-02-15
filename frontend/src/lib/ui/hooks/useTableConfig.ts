@@ -16,10 +16,13 @@ interface UseTableConfigOptions {
   dataset?: Dataset | null;
 }
 
-function buildColumnsFromSchema(schema: SchemaConfig): ColumnDef<TableRow>[] {
+function buildColumnsFromSchema(
+  schema: SchemaConfig,
+  aliasMap?: Map<string, string>
+): ColumnDef<TableRow>[] {
   return Object.entries(schema.fields).map(([key, config]) => ({
     accessorKey: key,
-    header: config.label || key,
+    header: aliasMap?.get(key) ?? config.label ?? key,
   }));
 }
 
@@ -30,12 +33,31 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
+  // Build alias map from active alias transforms
+  const aliasMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (dataset?.transforms) {
+      for (const t of dataset.transforms) {
+        if (
+          t.status === "enabled" &&
+          t.transform_type === "alias" &&
+          t.target_column &&
+          t.expression_config
+        ) {
+          const alias = (t.expression_config as Record<string, unknown>).alias as string | undefined;
+          if (alias) map.set(t.target_column, alias);
+        }
+      }
+    }
+    return map;
+  }, [dataset?.transforms]);
+
   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
     if (dataset?.schema_config) {
-      return buildColumnsFromSchema(dataset.schema_config);
+      return buildColumnsFromSchema(dataset.schema_config, aliasMap);
     }
     return [];
-  }, [dataset?.schema_config]);
+  }, [dataset?.schema_config, aliasMap]);
 
   // Sync preview_rows into data state when dataset changes
   const lastDatasetId = useRef<string | undefined>();
