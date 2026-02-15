@@ -1,7 +1,7 @@
 import logging
 
 from .types import AuthUser
-from .context import get_auth_user, set_auth_user
+from .context import clear_auth_user, get_auth_user, set_auth_user
 from .provider import AuthProvider
 from .exceptions import AuthenticationError, AuthorizationError
 

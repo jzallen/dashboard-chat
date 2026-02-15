@@ -12,6 +12,41 @@ Three services + shared code:
 - **Worker** (`worker/`) — Hono (Node.js) chat API with SSE streaming via Groq
 - **Shared** (`shared/chat/`) — Chat handler, prompts, and types used by both frontend and worker
 
+## Monorepo Tooling
+
+### npm Workspaces
+The repo uses npm workspaces with three packages declared in the root `package.json`:
+- `frontend` — React/Vite app
+- `worker` — Hono chat API
+- `shared/chat` — Shared chat handler, prompts, and types
+
+Single `npm install` at root installs all workspace dependencies. Cross-workspace dependencies use `"dashboard-chat-shared": "*"` in each consumer's `package.json`. The root `package-lock.json` is the single lockfile.
+
+### Turborepo
+Task orchestration via `turbo.json`. Key commands:
+```bash
+npm run build              # turbo run build (frontend only — worker has no build step)
+npm run test               # turbo run test:run (frontend + worker in parallel)
+npm run test:all           # JS tests via turbo + backend via uv run pytest
+```
+- `build` tasks are cached by content hash; `test:run` and `dev` are never cached
+- Backend is NOT in the turbo graph — it's a Python project managed separately
+
+### Python Dependencies (uv + pyproject.toml)
+Backend dependencies are managed exclusively through `backend/pyproject.toml` and locked in `backend/uv.lock`. There is no `requirements.txt`.
+
+```bash
+cd backend && uv sync              # install all deps (including dev group)
+cd backend && uv run pytest        # run tests via uv
+cd backend && uv add <package>     # add a new dependency
+cd backend && uv lock              # regenerate lockfile after manual pyproject.toml edits
+```
+
+- **Runtime dependencies** go in `[project] dependencies`
+- **Test/dev dependencies** (`pytest`, `pytest-xdist`, `moto`, etc.) go in `[dependency-groups] dev`
+- `uv sync` installs the dev group by default; production builds use `uv sync --no-dev`
+- Never create or update a `requirements.txt` — `pyproject.toml` is the single source of truth
+
 ## Getting Started
 
 ### Dev Container (recommended)
@@ -40,13 +75,15 @@ cd frontend && npx vitest run        # all tests
 cd frontend && npx vitest run src/path/to/file.test.tsx  # single file
 ```
 
-### Backend (pytest + pytest-asyncio)
+### Backend (pytest + pytest-asyncio + pytest-xdist)
 ```bash
-cd backend && python -m pytest       # all tests
-cd backend && python -m pytest tests/use_cases/dataset/  # directory
-cd backend && python -m pytest tests/path/to/test.py -k test_name  # single test
+cd backend && uv run pytest                              # all tests (parallel via xdist)
+cd backend && uv run pytest tests/use_cases/dataset/     # directory
+cd backend && uv run pytest tests/path/to/test.py -k test_name  # single test
+cd backend && uv run pytest -n0                          # serial fallback (disable xdist)
 ```
 - `asyncio_mode = "auto"` — no need for `@pytest.mark.asyncio`
+- `addopts = "-n auto --dist=loadfile"` — parallel by default, grouped by file
 - S3 is auto-mocked via moto (`mock_s3` fixture in conftest.py)
 
 ### Worker

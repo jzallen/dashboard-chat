@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from app.auth.context import get_auth_user, set_auth_user
+from app.auth.context import clear_auth_user, get_auth_user, set_auth_user
 from app.auth.types import AuthUser
 
 
@@ -11,6 +11,7 @@ class TestAuthContext:
 
     async def test_get_auth_user_raises_when_not_set(self):
         """get_auth_user should raise RuntimeError when no user in context."""
+        clear_auth_user()
         with pytest.raises(RuntimeError, match="No auth user in context"):
             get_auth_user()
 

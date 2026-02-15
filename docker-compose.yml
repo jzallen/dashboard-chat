@@ -17,17 +17,16 @@ services:
   frontend:
     image: node:20-alpine
     container_name: dashboard-frontend
-    working_dir: /app
+    working_dir: /app/frontend
     environment:
       VITE_CHAT_URL: http://localhost:8787
       VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
     ports:
       - "5173:5173"
     volumes:
-      - ./frontend:/app
-      - ./shared:/shared
+      - .:/app
       - /app/node_modules
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    command: sh -c "cd /app && npm install && cd /app/frontend && npm run dev -- --host 0.0.0.0"
     depends_on:
       - api
 

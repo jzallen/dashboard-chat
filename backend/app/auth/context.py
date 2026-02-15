@@ -14,3 +14,7 @@ def get_auth_user() -> AuthUser:
 
 def set_auth_user(user: AuthUser) -> None:
     _auth_user.set(user)
+
+
+def clear_auth_user() -> None:
+    _auth_user.set(None)

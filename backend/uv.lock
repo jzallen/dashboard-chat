@@ -287,19 +287,26 @@ dependencies = [
     { name = "boto3" },
     { name = "duckdb" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "ibis-framework", extra = ["duckdb"] },
-    { name = "moto", extra = ["s3"] },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
     { name = "returns" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uuid-utils" },
     { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "moto", extra = ["s3"] },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-xdist" },
 ]
 
 [package.metadata]
@@ -310,14 +317,13 @@ requires-dist = [
     { name = "boto3", specifier = "==1.34.0" },
     { name = "duckdb", specifier = "==1.0.0" },
     { name = "fastapi", specifier = "==0.109.2" },
+    { name = "httpx", specifier = ">=0.26.0" },
     { name = "ibis-framework", extras = ["duckdb"], specifier = "==9.5.0" },
-    { name = "moto", extras = ["s3"], specifier = ">=5.0.0" },
     { name = "pandas", specifier = "==2.2.0" },
     { name = "pyarrow", specifier = "==17.0.0" },
     { name = "pydantic", specifier = "==2.6.0" },
     { name = "pydantic-settings", specifier = "==2.1.0" },
-    { name = "pytest", specifier = ">=7.0.0,<8.0.0" },
-    { name = "pytest-asyncio", specifier = "==0.23.4" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8.0" },
     { name = "python-multipart", specifier = "==0.0.9" },
     { name = "returns", specifier = "==0.22.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.25" },
@@ -326,7 +332,12 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = []
+dev = [
+    { name = "moto", extras = ["s3"], specifier = ">=5.0.0" },
+    { name = "pytest", specifier = ">=7.0.0,<8.0.0" },
+    { name = "pytest-asyncio", specifier = "==0.23.4" },
+    { name = "pytest-xdist", specifier = ">=3.5.0" },
+]
 
 [[package]]
 name = "duckdb"
@@ -350,6 +361,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a8/95/fda4a0a5b6dbf087785925bfc11c0dc3688cd7ceeb87538df7c42fd65d19/duckdb-1.0.0-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3aadb99d098c5e32d00dc09421bc63a47134a6a0de9d7cd6abf21780b678663c", size = 16750967, upload-time = "2024-06-03T13:10:18.702Z" },
     { url = "https://files.pythonhosted.org/packages/2d/63/59ca942e89d60a1569105d177b814608fbf31d937cf9bbc16e48f408a367/duckdb-1.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:83b7091d4da3e9301c4f9378833f5ffe934fb1ad2b387b439ee067b2c10c8bb0", size = 19971530, upload-time = "2024-06-03T13:10:22.767Z" },
     { url = "https://files.pythonhosted.org/packages/b7/46/74e477f8a20d2da027917fd9e271f0897b54b0af8677b23afa2536a45b31/duckdb-1.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:6a8058d0148b544694cb5ea331db44f6c2a00a7b03776cc4dd1470735c3d5ff7", size = 9931757, upload-time = "2024-06-03T13:10:26.619Z" },
+]
+
+[[package]]
+name = "execnet"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
 ]
 
 [[package]]
@@ -402,6 +422,19 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcore"
+version = "1.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "h11" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/06/94/82699a10bca87a5556c9c59b5963f2d039dbd239f25bc2a63907a05a14cb/httpcore-1.0.9.tar.gz", hash = "sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8", size = 85484, upload-time = "2025-04-24T22:06:22.219Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl", hash = "sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55", size = 78784, upload-time = "2025-04-24T22:06:20.566Z" },
+]
+
+[[package]]
 name = "httptools"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -421,6 +454,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/22/a5/079d216712a4f3ffa24af4a0381b108aa9c45b7a5cc6eb141f81726b1823/httptools-0.7.1-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:f72fdbae2dbc6e68b8239defb48e6a5937b12218e6ffc2c7846cc37befa84362", size = 495186, upload-time = "2025-10-10T03:54:43.937Z" },
     { url = "https://files.pythonhosted.org/packages/e9/9e/025ad7b65278745dee3bd0ebf9314934c4592560878308a6121f7f812084/httptools-0.7.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:e99c7b90a29fd82fea9ef57943d501a16f3404d7b9ee81799d41639bdaae412c", size = 499192, upload-time = "2025-10-10T03:54:45.003Z" },
     { url = "https://files.pythonhosted.org/packages/6d/de/40a8f202b987d43afc4d54689600ff03ce65680ede2f31df348d7f368b8f/httptools-0.7.1-cp312-cp312-win_amd64.whl", hash = "sha256:3e14f530fefa7499334a79b0cf7e7cd2992870eb893526fb097d51b4f2d0f321", size = 86694, upload-time = "2025-10-10T03:54:45.923Z" },
+]
+
+[[package]]
+name = "httpx"
+version = "0.28.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "certifi" },
+    { name = "httpcore" },
+    { name = "idna" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406, upload-time = "2024-12-06T15:37:23.222Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad", size = 73517, upload-time = "2024-12-06T15:37:21.509Z" },
 ]
 
 [[package]]
@@ -785,6 +833,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pyjwt"
+version = "2.11.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/5a/b46fa56bf322901eee5b0454a34343cdbdae202cd421775a8ee4e42fd519/pyjwt-2.11.0.tar.gz", hash = "sha256:35f95c1f0fbe5d5ba6e43f00271c275f7a1a4db1dab27bf708073b75318ea623", size = 98019, upload-time = "2026-01-30T19:59:55.694Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/01/c26ce75ba460d5cd503da9e13b21a33804d38c2165dec7b716d06b13010c/pyjwt-2.11.0-py3-none-any.whl", hash = "sha256:94a6bde30eb5c8e04fee991062b534071fd1439ef58d2adc9ccb823e7bcd0469", size = 28224, upload-time = "2026-01-30T19:59:54.539Z" },
+]
+
+[package.optional-dependencies]
+crypto = [
+    { name = "cryptography" },
+]
+
+[[package]]
 name = "pytest"
 version = "7.4.4"
 source = { registry = "https://pypi.org/simple" }
@@ -809,6 +871,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/84/bb/eb07ca1e79df7da714004fc25ddcffe4a6d9fcb70893eb77de5d504da8e4/pytest-asyncio-0.23.4.tar.gz", hash = "sha256:2143d9d9375bf372a73260e4114541485e84fca350b0b6b92674ca56ff5f7ea2", size = 45162, upload-time = "2024-01-28T19:11:33.045Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/a1/d7ca3b08a36e6b253666eed0cffbf9b9ab476fc66b05618e95db04d44490/pytest_asyncio-0.23.4-py3-none-any.whl", hash = "sha256:b0079dfac14b60cd1ce4691fbfb1748fe939db7d0234b5aba97197d10fbe0fef", size = 17373, upload-time = "2024-01-28T19:11:30.951Z" },
+]
+
+[[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "execnet" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
 ]
 
 [[package]]
