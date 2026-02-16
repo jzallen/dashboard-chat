@@ -6,6 +6,7 @@ generating aggregated SQL queries from transforms using Ibis expressions.
 
 from dataclasses import dataclass, field
 from typing import Any
+import json
 import re
 
 import ibis
@@ -165,7 +166,7 @@ class Dataset:
 
         return base_path
 
-    def _build_table(self, table_name: str | None = None) -> ibis.Table:
+    def _build_table(self, table_name: str | None = None, conn: ibis.BaseBackend | None = None) -> ibis.Table:
         """Build Ibis table with three-stage pipeline.
 
         Pipeline stages (design D3):
@@ -178,9 +179,11 @@ class Dataset:
 
         Args:
             table_name: Optional name for FROM clause (used by display_sql)
+            conn: Optional Ibis backend connection (created if not provided)
         """
         try:
-            conn = self._get_connection()
+            if conn is None:
+                conn = self._get_connection()
             table = conn.read_parquet(self._s3_path(), table_name=table_name)
         except Exception:
             table = self._build_table_from_schema(table_name)
@@ -270,6 +273,13 @@ class Dataset:
                 sql = sql.replace("SELECT\n  *\n", f"SELECT\n  {col_list}\n")
 
         return sql
+
+    def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Execute the staging SQL (with transforms) and return preview rows."""
+        conn = self._get_connection()
+        table = self._build_table(conn=conn)
+        df = conn.execute(table.limit(limit))
+        return json.loads(df.to_json(orient="records", date_format="iso"))
 
     def serialize(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict for HTTP responses."""

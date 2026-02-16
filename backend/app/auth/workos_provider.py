@@ -56,6 +56,7 @@ class WorkOSAuthProvider:
             email=payload.get("email", ""),
             org_id=payload.get("org_id") or None,
             name=payload.get("first_name", ""),
+            org_name=payload.get("org_name") or None,
         )
 
     async def get_login_url(self, redirect_uri: str, *, organization_id: str | None = None) -> str:
@@ -88,11 +89,13 @@ class WorkOSAuthProvider:
             data = resp.json()
             user_data = data.get("user", {})
             org_id = data.get("organization_id") or None
+            org_name = data.get("organization_name") or None
             user = AuthUser(
                 id=user_data["id"],
                 email=user_data["email"],
                 org_id=org_id,
                 name=user_data.get("first_name", ""),
+                org_name=org_name,
             )
             return user, data["access_token"]
 

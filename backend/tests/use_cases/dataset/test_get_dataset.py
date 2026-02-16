@@ -1,4 +1,6 @@
 
+from unittest.mock import patch
+
 import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,16 +72,12 @@ class TestGetDataset:
 
         mock_preview = [{"col1": "value1"}, {"col1": "value2"}]
 
-        class MockLakeRepository:
-            def read_parquet_preview(self, storage_path: str, limit: int = 10):
-                return mock_preview
-
-        result = await get_dataset(
-            dataset_id="dataset-001",
-            include_preview=True,
-            preview_limit=5,
-            repositories={'lake_repository': MockLakeRepository},
-        )
+        with patch.object(Dataset, "query_preview_rows", return_value=mock_preview):
+            result = await get_dataset(
+                dataset_id="dataset-001",
+                include_preview=True,
+                preview_limit=5,
+            )
 
         match result:
             case Success(dataset):
@@ -109,24 +107,23 @@ class TestGetDataset:
                 pytest.fail("get_dataset should fail when database error occurs")
 
     async def test_when_lake_error_returns_lake_repository_error(self, seeded_db: AsyncSession):
-        """get_dataset should return LakeRepositoryError when storage fails."""
+        """get_dataset should return error when preview query fails."""
         set_session(seeded_db)
 
-        class FailingLakeRepository:
-            def read_parquet_preview(self, storage_path: str, limit: int = 10):
-                raise ClientError(
-                    {"Error": {"Code": "NoSuchKey", "Message": "Key not found"}},
-                    "GetObject"
-                )
+        def failing_preview(limit=10):
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "Key not found"}},
+                "GetObject"
+            )
 
-        result = await get_dataset(
-            dataset_id="dataset-001",
-            include_preview=True,
-            repositories={'lake_repository': FailingLakeRepository},
-        )
+        with patch.object(Dataset, "query_preview_rows", side_effect=failing_preview):
+            result = await get_dataset(
+                dataset_id="dataset-001",
+                include_preview=True,
+            )
 
         match result:
             case Failure(error):
-                assert str(error) == "An error occurred (NoSuchKey) when calling the GetObject operation: Key not found"
+                assert "Key not found" in str(error)
             case Success(_):
                 pytest.fail("get_dataset should fail when lake error occurs")

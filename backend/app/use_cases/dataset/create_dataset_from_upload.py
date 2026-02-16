@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -68,6 +69,9 @@ async def create_dataset_from_upload(
         raise UploadNotFound(upload_id)
 
     df = await asyncio.to_thread(pd.read_csv, io.BytesIO(raw_content))
+    df.columns = df.columns.str.strip()
+    str_cols = df.select_dtypes(include="object").columns
+    df[str_cols] = df[str_cols].apply(lambda col: col.str.strip())
     schema_config = infer_schema_from_dataframe(df)
     column_profiles = compute_column_profiles(df, schema_config)
 
@@ -77,7 +81,7 @@ async def create_dataset_from_upload(
         description=description,
         schema_config=schema_config,
         partition_fields=partition_fields,
-        preview_rows=df.head(10).to_dict(orient='records'),
+        preview_rows=json.loads(df.head(10).to_json(orient='records', date_format='iso')),
         column_profiles=column_profiles,
     )
 
@@ -92,9 +96,10 @@ async def create_dataset_from_upload(
         column_profiles=dataset.column_profiles,
     )
 
+    cleaned_csv = df.to_csv(index=False).encode("utf-8")
     await asyncio.to_thread(
         lambda: lake_repo.write_csv_as_partitioned_parquet(
-            csv_content=raw_content,
+            csv_content=cleaned_csv,
             storage_prefix=dataset.storage_path,
             partition_fields=partition_fields,
         )

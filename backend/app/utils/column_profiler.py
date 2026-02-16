@@ -5,7 +5,16 @@ Computes per-column statistics based on schema type for LLM context.
 
 from typing import Any
 
+import math
+
 import pandas as pd
+
+
+def _finite_or_none(value: float) -> float | None:
+    """Return None for NaN/Infinity, otherwise the value."""
+    if math.isfinite(value):
+        return value
+    return None
 
 
 def compute_column_profiles(
@@ -99,9 +108,9 @@ def _profile_number(series: pd.Series, null_count: int) -> dict[str, Any]:
 
     return {
         "type": "number",
-        "min": float(non_null.min()),
-        "max": float(non_null.max()),
-        "mean": float(non_null.mean()),
+        "min": _finite_or_none(float(non_null.min())),
+        "max": _finite_or_none(float(non_null.max())),
+        "mean": _finite_or_none(float(non_null.mean())),
         "null_count": null_count,
     }
 

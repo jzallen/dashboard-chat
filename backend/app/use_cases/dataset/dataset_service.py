@@ -5,6 +5,7 @@ get_dataset, update_dataset, etc.
 """
 
 import asyncio
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from app.auth import get_auth_user
@@ -32,6 +33,9 @@ class DatasetService:
     ) -> Dataset:
         """Fetch a dataset record and convert to domain model.
 
+        Preview rows are queried through the staging SQL (with transforms
+        applied) so the table reflects cleaned/filtered data.
+
         Raises:
             DatasetNotFound: If dataset with given ID does not exist.
             AuthorizationError: If user's org does not own the parent project.
@@ -46,14 +50,14 @@ class DatasetService:
             if dataset_record.project.org_id and dataset_record.project.org_id != user.org_id:
                 raise AuthorizationError(f"Access denied to dataset {dataset_id}")
 
-        preview_rows: list[dict] = []
+        dataset = Dataset.from_record(
+            dataset_record, include_transforms=include_transforms
+        )
+
         if include_preview:
             preview_rows = await asyncio.to_thread(
-                lambda: self._lake_repo.read_parquet_preview(
-                    dataset_record.storage_path, limit=preview_limit
-                )
+                lambda: dataset.query_preview_rows(limit=preview_limit)
             )
+            dataset = replace(dataset, preview_rows=preview_rows)
 
-        return Dataset.from_record(
-            dataset_record, preview_rows=preview_rows, include_transforms=include_transforms
-        )
+        return dataset

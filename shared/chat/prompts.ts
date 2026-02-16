@@ -171,7 +171,7 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
     {
       name: "trimWhitespace",
       description:
-        "Trim leading and trailing whitespace from all values in a text column. This previews the change first — use applyCleaningTransform to make it permanent.",
+        "Trim leading and trailing whitespace from all values in a text column. This previews the change — always pair with applyCleaningTransform in the same response to persist it.",
       parameters: {
         type: "object",
         properties: {
@@ -187,7 +187,7 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
     {
       name: "standardizeCase",
       description:
-        "Standardize text casing in a column (upper, lower, or title case). This previews the change first — use applyCleaningTransform to make it permanent.",
+        "Standardize text casing in a column (upper, lower, or title case). This previews the change — always pair with applyCleaningTransform in the same response to persist it.",
       parameters: {
         type: "object",
         properties: {
@@ -229,7 +229,7 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
     {
       name: "fillNulls",
       description:
-        "Fill null or empty values in a column with a specified value. This previews the change first — use applyCleaningTransform to make it permanent.",
+        "Fill null or empty values in a column with a specified value. This previews the change — always pair with applyCleaningTransform in the same response to persist it.",
       parameters: {
         type: "object",
         properties: {
@@ -249,7 +249,7 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
     {
       name: "mapValues",
       description:
-        "Map specific values in a column to new values (exact match replacement). This previews the change first — use applyCleaningTransform to make it permanent.",
+        "Map specific values in a column to new values (exact match replacement). This previews the change — always pair with applyCleaningTransform in the same response to persist it.",
       parameters: {
         type: "object",
         properties: {
@@ -450,8 +450,10 @@ INSTRUCTIONS:
 6. Use "clearFilters" or "clearSort" to reset the table view.
 
 7. For DATA CLEANING operations (trim, case, fill nulls, map values):
-   - Use "trimWhitespace", "standardizeCase", "fillNulls", or "mapValues" to PREVIEW the change first
-   - After the user confirms the preview, use "applyCleaningTransform" to make it permanent
+   - ALWAYS call BOTH the preview tool AND "applyCleaningTransform" in the SAME response
+   - First call the preview tool ("trimWhitespace", "standardizeCase", "fillNulls", or "mapValues") to show the user what will change
+   - Then call "applyCleaningTransform" with the same column, operation, and config to persist the change
+   - Both tool calls MUST be included together — never call a preview tool without also calling applyCleaningTransform
    - Use "renameColumn" to change a column's display name (applies immediately, no preview needed)
 
 8. To UNDO a cleaning transform, use "undoCleaningTransform". To re-enable, use "reEnableCleaningTransform".

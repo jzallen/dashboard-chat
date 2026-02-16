@@ -109,6 +109,7 @@ services:
       DEBUG: ${DEBUG:-true}
       MINIO_ENDPOINT: minio:9000
       AUTH_MODE: ${AUTH_MODE:-dev}
+      AUTO_PROVISION_ORG: "true"
       WORKOS_API_KEY: ${WORKOS_API_KEY:-}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}

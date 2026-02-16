@@ -41,6 +41,7 @@ class Settings(BaseSettings):
 
     # Auth
     auth_mode: str = "dev"  # "dev" or "workos"
+    auto_provision_org: bool = False  # auto-create org + project on login (dev/SQLite only)
     workos_api_key: str = ""
     workos_client_id: str = ""
     workos_redirect_uri: str = "http://localhost:5173/auth/callback"

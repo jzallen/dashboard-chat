@@ -9,6 +9,7 @@ from domain events stored in the outbox_messages table.
 
 import asyncio
 import io
+import json
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -80,6 +81,9 @@ async def upload_file(
             raise DatasetNotFound(dataset_id)
 
     df = await asyncio.to_thread(pd.read_csv, io.BytesIO(file_content))
+    df.columns = df.columns.str.strip()
+    str_cols = df.select_dtypes(include="object").columns
+    df[str_cols] = df[str_cols].apply(lambda col: col.str.strip())
 
     outbox_record = await outbox_repo.submit_file_received_event(
         project_id=project_id,
@@ -90,6 +94,6 @@ async def upload_file(
 
     await asyncio.to_thread(lake_repo.write_raw_file, file_content, outbox_record.payload["raw_storage_path"])
 
-    preview_rows = df.head(10).to_dict(orient="records")
+    preview_rows = json.loads(df.head(10).to_json(orient="records", date_format="iso"))
 
     return Upload.from_outbox_record(outbox_record, preview_rows=preview_rows)

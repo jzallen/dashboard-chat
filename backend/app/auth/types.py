@@ -7,3 +7,4 @@ class AuthUser:
     email: str
     org_id: str | None = None
     name: str | None = None
+    org_name: str | None = None

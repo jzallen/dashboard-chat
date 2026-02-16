@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -59,16 +59,12 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
     return [];
   }, [dataset?.schema_config, aliasMap]);
 
-  // Sync preview_rows into data state when dataset changes
-  const lastDatasetId = useRef<string | undefined>();
+  // Sync preview_rows into data state when dataset or its rows change
   useEffect(() => {
-    if (dataset && dataset.id !== lastDatasetId.current) {
-      lastDatasetId.current = dataset.id;
-      if (dataset.preview_rows?.length) {
-        setData(dataset.preview_rows as TableRow[]);
-      }
+    if (dataset?.preview_rows) {
+      setData(dataset.preview_rows as TableRow[]);
     }
-  }, [dataset]);
+  }, [dataset?.preview_rows]);
 
   const reactTable = useReactTable({
     data,

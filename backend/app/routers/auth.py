@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.auth import get_auth_provider, get_auth_user, enrich_org_id, AuthenticationError
+from app.auth import get_auth_provider, get_auth_user, enrich_org_id, ensure_org_provisioned, AuthenticationError
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -33,6 +33,7 @@ async def callback(body: CallbackBody):
         return JSONResponse({"detail": str(e)}, status_code=401)
 
     user = await enrich_org_id(user)
+    await ensure_org_provisioned(user)
 
     return {
         "user": {

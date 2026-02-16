@@ -5,7 +5,7 @@
 
 /* Table container */
 .tableContainer {
-  @apply bg-white rounded-lg shadow overflow-hidden;
+  @apply bg-white rounded-lg shadow overflow-x-auto;
 }
 
 .table {
