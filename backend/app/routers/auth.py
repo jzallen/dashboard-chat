@@ -1,16 +1,21 @@
-"""Auth routes for login, callback, logout, and user info."""
+"""Auth routes for login, callback, logout, refresh, and user info."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.auth import get_auth_provider, get_auth_user, enrich_org_id, ensure_org_provisioned, AuthenticationError
+from app.auth.rate_limiter import refresh_limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 class CallbackBody(BaseModel):
     code: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 @router.get("/login")
@@ -25,10 +30,10 @@ async def login(redirect_uri: str | None = None, organization_id: str | None = N
 
 @router.post("/callback")
 async def callback(body: CallbackBody):
-    """Exchange auth code for user + token."""
+    """Exchange auth code for user + tokens."""
     provider = get_auth_provider()
     try:
-        user, token = await provider.handle_callback(body.code)
+        user, token, refresh_token, expires_in = await provider.handle_callback(body.code)
     except AuthenticationError as e:
         return JSONResponse({"detail": str(e)}, status_code=401)
 
@@ -43,6 +48,34 @@ async def callback(body: CallbackBody):
             "name": user.name,
         },
         "token": token,
+        "refresh_token": refresh_token,
+        "expires_in": expires_in,
+    }
+
+
+@router.post("/refresh")
+async def refresh(request: Request, body: RefreshRequest):
+    """Exchange a refresh token for new access and refresh tokens."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not refresh_limiter.check(client_ip):
+        return JSONResponse(
+            {"detail": "Too many refresh requests"},
+            status_code=429,
+        )
+
+    provider = get_auth_provider()
+    try:
+        user, access_token, new_refresh_token, expires_in = await provider.refresh_access_token(body.refresh_token)
+    except AuthenticationError:
+        return JSONResponse(
+            {"detail": "Refresh token invalid or expired"},
+            status_code=401,
+        )
+
+    return {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
+        "expires_in": expires_in,
     }
 
 

@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 PUBLIC_PATHS = {
     "/health", "/", "/docs", "/openapi.json", "/redoc",
     "/api/auth/login", "/api/auth/callback", "/api/auth/logout",
+    "/api/auth/refresh",
 }
 
 # Paths accessible to authenticated users even without an org

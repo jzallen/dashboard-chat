@@ -9,8 +9,13 @@ vi.mock("@/api", () => ({
   logTurn: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockEnsureFreshToken = vi.fn();
+
 vi.mock("@/api/fetchUtils", () => ({
   getAuthHeaders: () => ({ Authorization: "Bearer test-token" }),
+  ensureFreshToken: (...args: unknown[]) => mockEnsureFreshToken(...args),
+  EXPIRES_AT_KEY: "auth_token_expires_at",
+  TOKEN_KEY: "auth_token",
 }));
 
 vi.mock("@/chat/prompts", () => ({
@@ -102,10 +107,13 @@ describe("ChatProvider", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
+    mockEnsureFreshToken.mockReset();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
   it("starts with no messages", () => {
@@ -265,5 +273,105 @@ describe("ChatProvider", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId("message-count").textContent).toBe("0");
+  });
+
+  describe("stream token resilience", () => {
+    it("refreshes token before stream when near expiry", async () => {
+      // Token expires in 30 seconds (< 60s threshold)
+      localStorage.setItem("auth_token_expires_at", String(Date.now() + 30_000));
+
+      mockEnsureFreshToken.mockResolvedValue("refreshed-token");
+
+      const fetchSpy = mockFetchSSE([
+        { type: "content", content: "OK" },
+        { type: "done" },
+      ]);
+
+      renderChat(defaultToolHandler);
+
+      fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      await act(async () => {
+        fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("loading").textContent).toBe("false");
+      });
+
+      // ensureFreshToken should have been called for pre-stream check
+      expect(mockEnsureFreshToken).toHaveBeenCalledTimes(1);
+
+      // The fetch should use the refreshed token
+      const [, init] = fetchSpy.mock.calls[0];
+      expect(init?.headers).toEqual(
+        expect.objectContaining({
+          Authorization: "Bearer refreshed-token",
+        })
+      );
+    });
+
+    it("skips refresh when token is fresh", async () => {
+      // Token expires in 5 minutes (> 60s threshold)
+      localStorage.setItem("auth_token_expires_at", String(Date.now() + 300_000));
+
+      mockFetchSSE([
+        { type: "content", content: "OK" },
+        { type: "done" },
+      ]);
+
+      renderChat(defaultToolHandler);
+
+      fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      await act(async () => {
+        fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("loading").textContent).toBe("false");
+      });
+
+      // No refresh should have been attempted
+      expect(mockEnsureFreshToken).not.toHaveBeenCalled();
+    });
+
+    it("retries stream once on 401 response", async () => {
+      mockEnsureFreshToken.mockResolvedValue("new-token");
+
+      // First call returns 401, second succeeds
+      const fetchSpy = vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce({ ok: false, status: 401 } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          body: sseStream(sseLines([
+            { type: "content", content: "Retried OK" },
+            { type: "done" },
+          ])),
+        } as unknown as Response);
+
+      renderChat(defaultToolHandler);
+
+      fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      await act(async () => {
+        fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("loading").textContent).toBe("false");
+      });
+
+      // Should have called fetch twice (original + retry)
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(mockEnsureFreshToken).toHaveBeenCalledTimes(1);
+
+      // Second call should use the refreshed token
+      const [, retryInit] = fetchSpy.mock.calls[1];
+      expect(retryInit?.headers).toEqual(
+        expect.objectContaining({
+          Authorization: "Bearer new-token",
+        })
+      );
+
+      expect(screen.getByTestId("msg-assistant").textContent).toBe("Retried OK");
+    });
   });
 });

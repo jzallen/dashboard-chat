@@ -55,13 +55,31 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def list_projects(self, org_id: str | None = None) -> list[dict[str, Any]]:
         """List all projects ordered by creation date (newest first)."""
-        query = select(ProjectRecord)
+        query = (
+            select(ProjectRecord)
+            .options(selectinload(ProjectRecord.datasets))
+        )
         if org_id is not None:
             query = query.where(ProjectRecord.org_id == org_id)
         query = query.order_by(ProjectRecord.created_at.desc())
         result = await self._session.execute(query)
         projects = result.scalars().all()
-        return [self._project_to_dict(p) for p in projects]
+        return [
+            {
+                **self._project_to_dict(p),
+                "datasets": [
+                    {
+                        "id": ds.id,
+                        "name": ds.name,
+                        "link": f"/api/datasets/{ds.id}",
+                        "description": ds.description,
+                        "schema_config": ds.schema_config,
+                    }
+                    for ds in p.datasets
+                ],
+            }
+            for p in projects
+        ]
 
     @handle_repository_exceptions
     async def get_project(

@@ -1,5 +1,6 @@
 """Tests for WorkOS auth provider."""
 
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -127,30 +128,54 @@ class TestGetLoginUrl:
         assert "organization=" not in url
 
 
+def _make_workos_response(*, status_code=200, text="error", json_data=None):
+    """Helper to build a mock httpx response."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = text
+    if json_data is not None:
+        resp.json.return_value = json_data
+    return resp
+
+
+def _mock_httpx_client(mock_response):
+    """Context-manager helper that patches httpx.AsyncClient to return mock_response on post()."""
+    mock_client_instance = AsyncMock()
+    mock_client_instance.post.return_value = mock_response
+    return patch("app.auth.workos_provider.httpx.AsyncClient", **{
+        "return_value.__aenter__": AsyncMock(return_value=mock_client_instance),
+        "return_value.__aexit__": AsyncMock(return_value=False),
+    }), mock_client_instance
+
+
+def _workos_auth_json(*, access_token="tok_abc123", refresh_token="rt_xyz789",
+                       user_id="user_01ABC", email="alice@example.com",
+                       first_name="Alice", org_id="org_01XYZ", org_name=None):
+    """Build a realistic WorkOS /authenticate response body."""
+    data = {
+        "user": {"id": user_id, "email": email, "first_name": first_name},
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+    }
+    if org_id is not None:
+        data["organization_id"] = org_id
+    if org_name is not None:
+        data["organization_name"] = org_name
+    return data
+
+
 class TestHandleCallback:
     """Tests for WorkOSAuthProvider.handle_callback."""
 
-    async def test_successful_callback_returns_user_and_token(self, provider):
-        """handle_callback should exchange code for user and access token."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "user": {
-                "id": "user_01ABC",
-                "email": "alice@example.com",
-                "first_name": "Alice",
-            },
-            "organization_id": "org_01XYZ",
-            "access_token": "tok_abc123",
-        }
+    async def test_successful_callback_returns_4_tuple(self, provider):
+        """handle_callback should exchange code for user, access_token, refresh_token, expires_in."""
+        exp_time = int(time.time()) + 3600
+        json_data = _workos_auth_json(access_token="tok_abc123", refresh_token="rt_xyz789")
+        mock_response = _make_workos_response(status_code=200, json_data=json_data)
+        client_patch, _ = _mock_httpx_client(mock_response)
 
-        with patch("app.auth.workos_provider.httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.post.return_value = mock_response
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            user, token = await provider.handle_callback("auth-code-123")
+        with client_patch, patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}):
+            user, token, refresh_token, expires_in = await provider.handle_callback("auth-code-123")
 
         assert isinstance(user, AuthUser)
         assert user.id == "user_01ABC"
@@ -158,43 +183,65 @@ class TestHandleCallback:
         assert user.org_id == "org_01XYZ"
         assert user.name == "Alice"
         assert token == "tok_abc123"
+        assert refresh_token == "rt_xyz789"
+        assert 3590 <= expires_in <= 3600
 
     async def test_failed_callback_raises_authentication_error(self, provider):
         """handle_callback should raise AuthenticationError on non-200 response."""
-        mock_response = MagicMock()
-        mock_response.status_code = 400
-        mock_response.text = "invalid_grant"
+        mock_response = _make_workos_response(status_code=400, text="invalid_grant")
+        client_patch, _ = _mock_httpx_client(mock_response)
 
-        with patch("app.auth.workos_provider.httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.post.return_value = mock_response
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
+        with client_patch:
             with pytest.raises(AuthenticationError, match="WorkOS callback failed"):
                 await provider.handle_callback("bad-code")
 
     async def test_callback_without_org_id_returns_none_org(self, provider):
         """handle_callback should set org_id=None when response has no organization_id."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "user": {
-                "id": "user_01ABC",
-                "email": "alice@example.com",
-            },
-            "access_token": "tok_abc123",
-        }
+        exp_time = int(time.time()) + 3600
+        json_data = _workos_auth_json(org_id=None)
+        mock_response = _make_workos_response(status_code=200, json_data=json_data)
+        client_patch, _ = _mock_httpx_client(mock_response)
 
-        with patch("app.auth.workos_provider.httpx.AsyncClient") as MockClient:
-            mock_client_instance = AsyncMock()
-            mock_client_instance.post.return_value = mock_response
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            user, token = await provider.handle_callback("code-no-org")
+        with client_patch, patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}):
+            user, _, _, _ = await provider.handle_callback("code-no-org")
 
         assert user.org_id is None
+
+
+class TestRefreshAccessToken:
+    """Tests for WorkOSAuthProvider.refresh_access_token."""
+
+    async def test_successful_refresh_returns_4_tuple(self, provider):
+        """refresh_access_token should return new user, access_token, refresh_token, expires_in."""
+        exp_time = int(time.time()) + 1800
+        json_data = _workos_auth_json(
+            access_token="tok_new", refresh_token="rt_new",
+        )
+        mock_response = _make_workos_response(status_code=200, json_data=json_data)
+        client_patch, mock_client = _mock_httpx_client(mock_response)
+
+        with client_patch, patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}):
+            user, token, refresh_token, expires_in = await provider.refresh_access_token("rt_old")
+
+        assert isinstance(user, AuthUser)
+        assert token == "tok_new"
+        assert refresh_token == "rt_new"
+        assert 1790 <= expires_in <= 1800
+
+        # Verify the correct grant_type was used
+        call_kwargs = mock_client.post.call_args
+        body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        assert body["grant_type"] == "urn:workos:oauth:grant-type:refresh-token"
+        assert body["refresh_token"] == "rt_old"
+
+    async def test_failed_refresh_raises_authentication_error(self, provider):
+        """refresh_access_token should raise AuthenticationError on non-200."""
+        mock_response = _make_workos_response(status_code=401, text="invalid_refresh_token")
+        client_patch, _ = _mock_httpx_client(mock_response)
+
+        with client_patch:
+            with pytest.raises(AuthenticationError, match="Token refresh failed"):
+                await provider.refresh_access_token("rt_expired")
 
 
 class TestGetLogoutUrl:

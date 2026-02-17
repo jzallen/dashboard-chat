@@ -14,7 +14,7 @@ import {
 import type { ToolCall } from "@/table-tools";
 import type { Dataset } from "@/api";
 import { createSession, logTurn } from "@/api";
-import { getAuthHeaders } from "@/api/fetchUtils";
+import { getAuthHeaders, ensureFreshToken, EXPIRES_AT_KEY, TOKEN_KEY } from "@/api/fetchUtils";
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
 import type { Message, TableSchema, SSEMessage } from "../types";
 import { CHAT_URL } from "../data/config";
@@ -134,18 +134,58 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           tool_calls: m.tool_calls,
         }));
 
-        const response = await fetch(`${CHAT_URL}/chat`, {
+        // Pre-stream token freshness check: refresh if < 60s remaining
+        let authHeaders = getAuthHeaders();
+        const expiresAtStr = localStorage.getItem(EXPIRES_AT_KEY);
+        if (expiresAtStr) {
+          const expiresAt = Number(expiresAtStr);
+          if (expiresAt - Date.now() < 60_000) {
+            try {
+              const newToken = await ensureFreshToken();
+              if (newToken) {
+                authHeaders = { Authorization: `Bearer ${newToken}` };
+              }
+            } catch {
+              // Proceed with existing token; 401 handler below will catch it
+            }
+          }
+        }
+
+        let response = await fetch(`${CHAT_URL}/chat`, {
           method: "POST",
           mode: "cors",
           headers: {
             "Content-Type": "application/json",
-            ...getAuthHeaders(),
+            ...authHeaders,
           },
           body: JSON.stringify({
             messages: apiMessages,
             tableSchema: tableSchemaRef.current,
           }),
         });
+
+        // 401 retry: refresh token and retry stream once
+        if (response.status === 401) {
+          try {
+            const newToken = await ensureFreshToken();
+            if (newToken) {
+              response = await fetch(`${CHAT_URL}/chat`, {
+                method: "POST",
+                mode: "cors",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${newToken}`,
+                },
+                body: JSON.stringify({
+                  messages: apiMessages,
+                  tableSchema: tableSchemaRef.current,
+                }),
+              });
+            }
+          } catch {
+            // Refresh failed — fall through to error handling below
+          }
+        }
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         if (!response.body) throw new Error("No response body");

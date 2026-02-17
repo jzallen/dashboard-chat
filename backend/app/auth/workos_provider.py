@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 import urllib.parse
 
 import httpx
@@ -72,8 +73,27 @@ class WorkOSAuthProvider:
         qs = urllib.parse.urlencode(params)
         return f"https://api.workos.com/user_management/authorize?{qs}"
 
-    async def handle_callback(self, code: str) -> tuple[AuthUser, str]:
-        """Exchange authorization code for user and token."""
+    def _parse_auth_response(self, data: dict) -> tuple[AuthUser, str, str, int]:
+        """Parse a WorkOS authenticate response into the standard 4-tuple."""
+        user_data = data.get("user", {})
+        org_id = data.get("organization_id") or None
+        org_name = data.get("organization_name") or None
+        user = AuthUser(
+            id=user_data["id"],
+            email=user_data["email"],
+            org_id=org_id,
+            name=user_data.get("first_name", ""),
+            org_name=org_name,
+        )
+        access_token = data["access_token"]
+        refresh_token = data["refresh_token"]
+        # Decode exp claim without signature verification to compute expires_in
+        decoded = jwt.decode(access_token, options={"verify_signature": False})
+        expires_in = decoded["exp"] - int(time.time())
+        return user, access_token, refresh_token, expires_in
+
+    async def handle_callback(self, code: str) -> tuple[AuthUser, str, str, int]:
+        """Exchange authorization code for user and tokens."""
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://api.workos.com/user_management/authenticate",
@@ -86,18 +106,23 @@ class WorkOSAuthProvider:
             )
             if resp.status_code != 200:
                 raise AuthenticationError(f"WorkOS callback failed: {resp.text}")
-            data = resp.json()
-            user_data = data.get("user", {})
-            org_id = data.get("organization_id") or None
-            org_name = data.get("organization_name") or None
-            user = AuthUser(
-                id=user_data["id"],
-                email=user_data["email"],
-                org_id=org_id,
-                name=user_data.get("first_name", ""),
-                org_name=org_name,
+            return self._parse_auth_response(resp.json())
+
+    async def refresh_access_token(self, refresh_token: str) -> tuple[AuthUser, str, str, int]:
+        """Exchange a refresh token for new access and refresh tokens."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.workos.com/user_management/authenticate",
+                json={
+                    "client_id": self.client_id,
+                    "client_secret": self.api_key,
+                    "refresh_token": refresh_token,
+                    "grant_type": "urn:workos:oauth:grant-type:refresh-token",
+                },
             )
-            return user, data["access_token"]
+            if resp.status_code != 200:
+                raise AuthenticationError(f"Token refresh failed: {resp.text}")
+            return self._parse_auth_response(resp.json())
 
     async def get_logout_url(self) -> str:
         return "/"

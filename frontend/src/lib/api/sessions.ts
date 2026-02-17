@@ -41,12 +41,14 @@ export interface ChatSession {
 }
 
 export async function createSession(projectId: string, datasetId?: string): Promise<ChatSession> {
-  const response = await fetch(`${CHAT_URL}/sessions`, {
+  const url = `${CHAT_URL}/sessions`;
+  const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ project_id: projectId, dataset_id: datasetId ?? null }),
-  });
-  return handleResponse<ChatSession>(response);
+  };
+  const response = await fetch(url, init);
+  return handleResponse<ChatSession>(response, url, init);
 }
 
 export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise<void> {
@@ -62,15 +64,19 @@ export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise
 }
 
 export async function getSession(sessionId: string): Promise<ChatSession> {
-  const response = await fetch(`${CHAT_URL}/sessions/${sessionId}`, {
+  const url = `${CHAT_URL}/sessions/${sessionId}`;
+  const init: RequestInit = {
     headers: getAuthHeaders(),
-  });
-  return handleResponse<ChatSession>(response);
+  };
+  const response = await fetch(url, init);
+  return handleResponse<ChatSession>(response, url, init);
 }
 
 export async function listSessions(datasetId: string): Promise<ChatSession[]> {
-  const response = await fetch(`${CHAT_URL}/sessions?dataset_id=${encodeURIComponent(datasetId)}`, {
+  const url = `${CHAT_URL}/sessions?dataset_id=${encodeURIComponent(datasetId)}`;
+  const init: RequestInit = {
     headers: getAuthHeaders(),
-  });
-  return handleResponse<ChatSession[]>(response);
+  };
+  const response = await fetch(url, init);
+  return handleResponse<ChatSession[]>(response, url, init);
 }

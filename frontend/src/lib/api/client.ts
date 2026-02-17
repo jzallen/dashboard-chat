@@ -4,7 +4,7 @@
  * Provides typed fetch wrapper for communicating with the backend.
  */
 
-import { TOKEN_KEY, getAuthHeaders } from "./fetchUtils";
+import { getAuthHeaders, withAuthRetry } from "./fetchUtils";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
@@ -22,32 +22,38 @@ export class ApiError extends Error {
 }
 
 /**
- * Generic API response handler
+ * Generic API response handler with 401 → refresh → replay.
+ * Delegates 401 retry logic to the shared withAuthRetry in fetchUtils.
  */
-async function handleResponse<T>(response: Response): Promise<T> {
-  if (response.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem("auth_user");
-    window.location.href = "/login";
+async function handleResponse<T>(
+  response: Response,
+  url: string,
+  init: RequestInit,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await withAuthRetry(response, url, init);
+  } catch {
+    // withAuthRetry throws plain Error("Session expired") after hardLogout
     throw new ApiError(401, "Session expired");
   }
-  if (!response.ok) {
-    const errorBody = await response.text();
-    let message = `Request failed with status ${response.status}`;
+  if (!res.ok) {
+    const errorBody = await res.text();
+    let message = `Request failed with status ${res.status}`;
     try {
       const parsed = JSON.parse(errorBody);
       // Log full detail to console for debugging
       if (parsed.detail) {
-        console.error(`[API ${parsed.type || response.status}]`, parsed.detail);
+        console.error(`[API ${parsed.type || res.status}]`, parsed.detail);
       }
       // Show user-friendly title/type, never raw server internals
       message = parsed.title || parsed.type || message;
     } catch {
       // Use default message
     }
-    throw new ApiError(response.status, message);
+    throw new ApiError(res.status, message);
   }
-  const json = await response.json();
+  const json = await res.json();
 
   // Unwrap {data: ...} responses from backend
   if (json && typeof json === 'object' && 'data' in json) {
@@ -61,44 +67,50 @@ async function handleResponse<T>(response: Response): Promise<T> {
  * Make a GET request
  */
 export async function get<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const init: RequestInit = {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
       ...getAuthHeaders(),
     },
-  });
-  return handleResponse<T>(response);
+  };
+  const response = await fetch(url, init);
+  return handleResponse<T>(response, url, init);
 }
 
 /**
  * Make a POST request with JSON body
  */
 export async function post<T>(endpoint: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const init: RequestInit = {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...getAuthHeaders(),
     },
     body: JSON.stringify(body),
-  });
-  return handleResponse<T>(response);
+  };
+  const response = await fetch(url, init);
+  return handleResponse<T>(response, url, init);
 }
 
 /**
  * Make a PATCH request with JSON body
  */
 export async function patch<T>(endpoint: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const init: RequestInit = {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
       ...getAuthHeaders(),
     },
     body: JSON.stringify(body),
-  });
-  return handleResponse<T>(response);
+  };
+  const response = await fetch(url, init);
+  return handleResponse<T>(response, url, init);
 }
 
 /**
@@ -116,11 +128,12 @@ export async function uploadFile<T>(
     formData.append(key, value);
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const init: RequestInit = {
     method: "POST",
     headers: getAuthHeaders(),
     body: formData,
-  });
-
-  return handleResponse<T>(response);
+  };
+  const response = await fetch(url, init);
+  return handleResponse<T>(response, url, init);
 }
