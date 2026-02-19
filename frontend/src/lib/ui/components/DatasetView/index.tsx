@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { type Dataset } from "@/api";
+import { type Dataset, exportDbtProject } from "@/api";
 import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallContext } from "@/table-tools";
 import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
 import { raqbToSql } from "@/raqb";
@@ -268,6 +268,8 @@ export function ProjectView() {
   const [showSettings, setShowSettings] = useState(false);
   const [syncState, setSyncState] = useState<"idle" | "spinning" | "success" | "cooldown">("idle");
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const handleSync = useCallback(() => {
     if (syncState !== "idle" || !datasetId) return;
@@ -308,6 +310,12 @@ export function ProjectView() {
     }
   }, [datasetId, prefetchDataset]);
 
+  useEffect(() => {
+    if (!exportError) return;
+    const timer = setTimeout(() => setExportError(null), 5000);
+    return () => clearTimeout(timer);
+  }, [exportError]);
+
   const handleCardSelect = (id: string) => {
     if (!project) return;
     prefetchDataset(id);
@@ -317,6 +325,20 @@ export function ProjectView() {
   const handleProjectClick = () => {
     if (!project) return;
     navigate(`/projects/${project.id}`);
+  };
+
+  const handleExportDbt = async () => {
+    if (!project?.id) return;
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      await exportDbtProject(project.id);
+    } catch (err) {
+      console.error("dbt export failed:", err);
+      setExportError("Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const { addMessage } = useChatContext();
@@ -355,8 +377,36 @@ export function ProjectView() {
           onDatasetRename={hasSelection ? handleDatasetRename : undefined}
           focusDatasetName={datasetName === "New Dataset"}
         />
+        <div className={styles.headerActions}>
+          <button
+            onClick={handleExportDbt}
+            disabled={isExporting}
+            className={styles.settingsButton}
+            title="Export as dbt project"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className={styles.settingsIcon}
+              style={isExporting ? { opacity: 0.5 } : undefined}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+              />
+            </svg>
+          </button>
+          {exportError && (
+            <span style={{ color: "var(--color-danger, #ef4444)", fontSize: "0.75rem" }}>
+              {exportError}
+            </span>
+          )}
         {hasSelection && (
-          <div className={styles.headerActions}>
+          <>
             {viewMode === "table" && datasetId && (
               <button
                 onClick={() => navigate(`/projects/${projectId}/datasets/${datasetId}/sessions`)}
@@ -447,8 +497,9 @@ export function ProjectView() {
               </button>
             )}
             <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       {/* Content */}

@@ -11,7 +11,12 @@ TEST_USER = AuthUser(id="test-user-001", email="test@example.com", org_id="test-
 
 @pytest.fixture(autouse=True)
 def auth_user():
-    """Set a default auth user for all project tests."""
+    """Set a default auth user for all project tests.
+
+    This autouse fixture ensures every test in the project test suite has
+    an authenticated user context. Individual tests may call set_auth_user()
+    explicitly for clarity or to override with a different user.
+    """
     set_auth_user(TEST_USER)
 
 

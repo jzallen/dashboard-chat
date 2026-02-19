@@ -5,6 +5,7 @@ from .get_project import get_project
 from .create_project import create_project
 from .update_project import update_project
 from .delete_project import delete_project
+from .export_dbt_project import export_dbt_project
 
 __all__ = [
     "list_projects",
@@ -12,4 +13,5 @@ __all__ = [
     "create_project",
     "update_project",
     "delete_project",
+    "export_dbt_project",
 ]
