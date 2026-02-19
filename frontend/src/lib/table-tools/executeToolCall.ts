@@ -269,7 +269,7 @@ async function handleCleaningTool(
         config: Record<string, unknown>;
       };
       // Map tool-level operation to backend expression_config format
-      const isCase = ["upper", "lower", "title"].includes(operation);
+      const isCase = ["upper", "lower", "title", "snake", "kebab"].includes(operation);
       const expressionConfig = isCase
         ? { operation: "case", mode: operation, ...config }
         : { operation, ...config };

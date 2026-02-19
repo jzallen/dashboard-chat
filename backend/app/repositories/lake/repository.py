@@ -21,6 +21,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from ..exceptions import LakeRepositoryError
 from ...config import get_settings
+from ...utils.sql_functions import register_duckdb_macros, title_case, snake_case, kebab_case
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +301,7 @@ class BaseLakeRepository(ABC):
         """
         conn = ibis.duckdb.connect()
         self._configure_duckdb_s3(conn)
+        register_duckdb_macros(conn)
 
         s3_path = self._build_s3_path(storage_path)
         table = conn.read_parquet(s3_path)
@@ -323,8 +325,14 @@ class BaseLakeRepository(ABC):
                 after_expr = col.lower()
                 affected_pred = col != col.lower()
             elif mode == "title":
-                after_expr = col.capitalize()
-                affected_pred = col != col.capitalize()
+                after_expr = title_case(col)
+                affected_pred = col != title_case(col)
+            elif mode == "snake":
+                after_expr = snake_case(col)
+                affected_pred = col != snake_case(col)
+            elif mode == "kebab":
+                after_expr = kebab_case(col)
+                affected_pred = col != kebab_case(col)
             else:
                 raise ValueError(f"Invalid case mode: {mode}")
         elif operation == "fill_null":

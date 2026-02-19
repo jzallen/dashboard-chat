@@ -53,12 +53,48 @@ Feature: Data Cleaning via Chat
     Then a case standardization transform is applied with LOWER
     And the table view shows lowercased values
 
+  Scenario: Standardize text to snake case
+    When the user asks to convert the Category column to snake case
+    Then the assistant shows a preview of affected values
+    When the user confirms the operation
+    Then a case standardization transform is applied with SNAKE
+    And the table view shows snake_cased values
+
+  Scenario: Standardize text to kebab case
+    When the user asks to convert the Category column to kebab case
+    Then the assistant shows a preview of affected values
+    When the user confirms the operation
+    Then a case standardization transform is applied with KEBAB
+    And the table view shows kebab-cased values
+
   Scenario: Ambiguous casing request is clarified
     When the user asks to "fix the casing" in the Status column
     Then the assistant asks which case format the user wants
-    And lists title case, UPPER CASE, and lower case as options
+    And lists title case, UPPER CASE, lower case, snake_case, and kebab-case as options
     When the user specifies title case
     Then the assistant shows a preview and proceeds with confirmation
+
+  Scenario: Snake case handles multi-word values correctly
+    When the user asks to convert "Product Name" values to snake case
+    Then the preview shows "Product Name" becoming "product_name"
+    And "FIRST NAME" becoming "first_name"
+    And "already_snake" remaining "already_snake"
+
+  Scenario: Kebab case handles multi-word values correctly
+    When the user asks to convert "Product Name" values to kebab case
+    Then the preview shows "Product Name" becoming "product-name"
+    And "FIRST NAME" becoming "first-name"
+    And "already-kebab" remaining "already-kebab"
+
+  Scenario: Snake case on a numeric column is rejected
+    When the user asks to convert a numeric column to snake case
+    Then the assistant explains that case operations apply only to text columns
+    And no transform is created
+
+  Scenario: User requests snake case using alternate terminology
+    When the user asks to convert the Category column to "underscore case"
+    Then the assistant treats it as a snake case request
+    And shows a preview of affected values
 
   # --- Column Aliasing ---
 

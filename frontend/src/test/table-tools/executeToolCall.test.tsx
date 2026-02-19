@@ -748,6 +748,52 @@ describe("executeToolCall", () => {
         ]);
       });
 
+      it("should map snake case operation to correct expression_config", async () => {
+        const { context } = createTestTable();
+        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+
+        await executeToolCall(
+          createToolCall("applyCleaningTransform", {
+            column: "name",
+            operation: "snake",
+            config: {},
+          }),
+          context
+        );
+
+        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
+          {
+            name: "snake on name",
+            transform_type: "clean",
+            target_column: "name",
+            expression_config: { operation: "case", mode: "snake" },
+          },
+        ]);
+      });
+
+      it("should map kebab case operation to correct expression_config", async () => {
+        const { context } = createTestTable();
+        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+
+        await executeToolCall(
+          createToolCall("applyCleaningTransform", {
+            column: "name",
+            operation: "kebab",
+            config: {},
+          }),
+          context
+        );
+
+        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
+          {
+            name: "kebab on name",
+            transform_type: "clean",
+            target_column: "name",
+            expression_config: { operation: "case", mode: "kebab" },
+          },
+        ]);
+      });
+
       it("should map map_values to transform_type 'map'", async () => {
         const { context } = createTestTable();
         vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);

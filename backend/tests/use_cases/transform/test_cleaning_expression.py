@@ -112,7 +112,37 @@ class TestCaseExpression:
 
     def test_title_display_sql(self):
         expr = CleaningExpression({"operation": "case", "mode": "title"})
-        assert expr.to_display_sql("city") == "INITCAP(city)"
+        assert expr.to_display_sql("city") == "title_case(city)"
+
+    def test_snake_creates_valid_expression(self, text_table):
+        expr = CleaningExpression({"operation": "case", "mode": "snake"})
+        result = expr.as_ibis_expr(text_table, "name")
+        assert result is not None
+
+    def test_snake_display_sql(self):
+        expr = CleaningExpression({"operation": "case", "mode": "snake"})
+        assert expr.to_display_sql("name") == "snake_case(name)"
+
+    def test_kebab_creates_valid_expression(self, text_table):
+        expr = CleaningExpression({"operation": "case", "mode": "kebab"})
+        result = expr.as_ibis_expr(text_table, "name")
+        assert result is not None
+
+    def test_kebab_display_sql(self):
+        expr = CleaningExpression({"operation": "case", "mode": "kebab"})
+        assert expr.to_display_sql("name") == "kebab_case(name)"
+
+    def test_snake_mode_accepted_by_validation(self):
+        expr = CleaningExpression({"operation": "case", "mode": "snake"})
+        assert expr.operation == "case"
+
+    def test_kebab_mode_accepted_by_validation(self):
+        expr = CleaningExpression({"operation": "case", "mode": "kebab"})
+        assert expr.operation == "case"
+
+    def test_invalid_mode_error_lists_all_five_modes(self):
+        with pytest.raises(ValueError, match="upper, lower, title, snake, kebab"):
+            CleaningExpression({"operation": "case", "mode": "camel"})
 
 
 # ============================================================================

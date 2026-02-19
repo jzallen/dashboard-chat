@@ -10,6 +10,8 @@ from typing import Any
 import ibis
 import ibis.expr.types
 
+from app.utils.sql_functions import title_case, snake_case, kebab_case
+
 
 class QueryBuilderJSON(dict):
     """Value object for RAQB query builder JSON.
@@ -155,7 +157,7 @@ class CleaningExpression:
             mode = self.config.get("mode")
             if not mode:
                 raise ValueError("'mode' field is required for the 'case' operation")
-            valid_modes = ("upper", "lower", "title")
+            valid_modes = ("upper", "lower", "title", "snake", "kebab")
             if mode not in valid_modes:
                 raise ValueError(
                     f"Invalid case mode '{mode}'. Valid modes: {', '.join(valid_modes)}"
@@ -207,7 +209,11 @@ class CleaningExpression:
                     case "lower":
                         return col.lower()
                     case "title":
-                        return col.capitalize()
+                        return title_case(col)
+                    case "snake":
+                        return snake_case(col)
+                    case "kebab":
+                        return kebab_case(col)
             case "fill_null":
                 fill_value = self.config["fill_value"]
                 return col.fill_null(fill_value)
@@ -242,7 +248,11 @@ class CleaningExpression:
                     case "lower":
                         return f"LOWER({column})"
                     case "title":
-                        return f"INITCAP({column})"
+                        return f"title_case({column})"
+                    case "snake":
+                        return f"snake_case({column})"
+                    case "kebab":
+                        return f"kebab_case({column})"
             case "fill_null":
                 fill_value = self.config["fill_value"]
                 if isinstance(fill_value, str):

@@ -113,6 +113,10 @@ def _build_operation_description(operation: str, config: dict[str, Any], column:
             return f"Trim whitespace from {column}"
         case "case":
             mode = config.get("mode", "")
+            if mode == "snake":
+                return f"Convert {column} to snake_case"
+            elif mode == "kebab":
+                return f"Convert {column} to kebab-case"
             return f"Convert {column} to {mode} case"
         case "fill_null":
             fill_value = config.get("fill_value", "")

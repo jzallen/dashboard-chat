@@ -198,9 +198,9 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
           },
           mode: {
             type: "string",
-            enum: ["upper", "lower", "title"],
+            enum: ["upper", "lower", "title", "snake", "kebab"],
             description:
-              "Case mode: upper (ALL CAPS), lower (all lowercase), title (First Letter Caps)",
+              "Case mode: upper (ALL CAPS), lower (all lowercase), title (First Letter Caps), snake (snake_case, e.g. Product Name -> product_name; also known as underscore case), kebab (kebab-case, e.g. Product Name -> product-name; also known as hyphen case)",
           },
         },
         required: ["column", "mode"],
@@ -299,6 +299,8 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
               "upper",
               "lower",
               "title",
+              "snake",
+              "kebab",
               "fill_null",
               "map_values",
             ],
@@ -455,6 +457,7 @@ INSTRUCTIONS:
    - Then call "applyCleaningTransform" with the same column, operation, and config to persist the change
    - Both tool calls MUST be included together — never call a preview tool without also calling applyCleaningTransform
    - Use "renameColumn" to change a column's display name (applies immediately, no preview needed)
+   - Case modes: upper, lower, title, snake (underscore case), kebab (hyphen case)
 
 8. To UNDO a cleaning transform, use "undoCleaningTransform". To re-enable, use "reEnableCleaningTransform".
 

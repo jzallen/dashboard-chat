@@ -82,6 +82,42 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
+    async def test_case_snake_preview_returns_correct_description(self, seeded_db: AsyncSession):
+        """Preview snake case operation returns a description mentioning snake_case."""
+        set_session(seeded_db)
+
+        result = await preview_cleaning_transform(
+            dataset_id="dataset-001",
+            target_column="col1",
+            expression_config={"operation": "case", "mode": "snake"},
+            repositories={"lake_repository": MockLakeRepository},
+        )
+
+        match result:
+            case Success(data):
+                assert "snake_case" in data["operation_description"]
+                assert "col1" in data["operation_description"]
+            case Failure(error):
+                pytest.fail(f"Expected success, got: {error}")
+
+    async def test_case_kebab_preview_returns_correct_description(self, seeded_db: AsyncSession):
+        """Preview kebab case operation returns a description mentioning kebab-case."""
+        set_session(seeded_db)
+
+        result = await preview_cleaning_transform(
+            dataset_id="dataset-001",
+            target_column="col1",
+            expression_config={"operation": "case", "mode": "kebab"},
+            repositories={"lake_repository": MockLakeRepository},
+        )
+
+        match result:
+            case Success(data):
+                assert "kebab-case" in data["operation_description"]
+                assert "col1" in data["operation_description"]
+            case Failure(error):
+                pytest.fail(f"Expected success, got: {error}")
+
     async def test_fill_null_preview_returns_correct_description(self, seeded_db: AsyncSession):
         """Preview fill_null operation includes the fill value in the description."""
         set_session(seeded_db)

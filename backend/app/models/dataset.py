@@ -128,6 +128,7 @@ class Dataset:
     def _get_connection(self) -> ibis.BaseBackend:
         """Get Ibis DuckDB connection configured for S3/MinIO access."""
         from ..config import get_settings
+        from ..utils.sql_functions import register_duckdb_macros
 
         settings = get_settings()
         conn = ibis.duckdb.connect()
@@ -149,6 +150,7 @@ class Dataset:
                 SET s3_region='{settings.s3_region}';
             """)
 
+        register_duckdb_macros(conn)
         return conn
 
     def _s3_path(self) -> str:
