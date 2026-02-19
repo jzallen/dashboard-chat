@@ -5,8 +5,17 @@
 export const TOKEN_KEY = "auth_token";
 export const REFRESH_TOKEN_KEY = "auth_refresh_token";
 export const EXPIRES_AT_KEY = "auth_token_expires_at";
+export const ACTIVITY_KEY = "last_activity_ts";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+
+class RefreshError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -21,6 +30,7 @@ export function hardLogout(): void {
   localStorage.removeItem("auth_user");
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(EXPIRES_AT_KEY);
+  localStorage.removeItem(ACTIVITY_KEY);
   window.location.href = "/login";
 }
 
@@ -31,20 +41,36 @@ export function hardLogout(): void {
  */
 let refreshPromise: Promise<string | null> | null = null;
 
+/** @internal Reset module state between tests. */
+export function _resetRefreshState(): void {
+  refreshPromise = null;
+}
+
 export async function ensureFreshToken(): Promise<string | null> {
+  console.debug("[auth] Starting token refresh");
+
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-  if (!refreshToken) return null;
+  if (!refreshToken) {
+    console.warn("[auth] No refresh token available");
+    return null;
+  }
 
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async (): Promise<string | null> => {
-    const doRefresh = async () => {
+    // 1.2 Freshness guard: skip refresh if token is still valid for >60s
+    const expiresAt = Number(localStorage.getItem(EXPIRES_AT_KEY));
+    if (expiresAt && expiresAt - Date.now() > 60_000) {
+      return localStorage.getItem(TOKEN_KEY);
+    }
+
+    const doRefresh = async (token: string) => {
       const response = await fetch(`${API_URL}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: localStorage.getItem(REFRESH_TOKEN_KEY) }),
+        body: JSON.stringify({ refresh_token: token }),
       });
-      if (!response.ok) throw new Error("Refresh failed");
+      if (!response.ok) throw new RefreshError("Refresh failed", response.status);
       return response.json();
     };
 
@@ -52,21 +78,27 @@ export async function ensureFreshToken(): Promise<string | null> {
       localStorage.setItem(TOKEN_KEY, data.access_token);
       localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
       localStorage.setItem(EXPIRES_AT_KEY, String(Date.now() + data.expires_in * 1000));
+      console.debug("[auth] Token refresh successful, expires_in:", data.expires_in);
       return data.access_token;
     };
 
     try {
-      return applyTokens(await doRefresh());
-    } catch {
-      // Single retry after 5s
+      return applyTokens(await doRefresh(refreshToken));
+    } catch (err) {
+      console.warn("[auth] First refresh attempt failed:", err);
+      // Single retry with delay (12s for 429, 5s otherwise)
+      const retryDelay = err instanceof RefreshError && err.status === 429 ? 12_000 : 5_000;
       try {
-        await new Promise(r => setTimeout(r, 5000));
-        return applyTokens(await doRefresh());
-      } catch {
+        await new Promise(r => setTimeout(r, retryDelay));
+        const retryToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+        if (!retryToken) return null;
+        return applyTokens(await doRefresh(retryToken));
+      } catch (err) {
+        console.error("[auth] Token refresh failed after retry:", err);
         return null;
       }
     }
-  })().finally(() => { refreshPromise = null; });
+  })().finally(() => { setTimeout(() => { refreshPromise = null; }, 500); });
 
   return refreshPromise;
 }

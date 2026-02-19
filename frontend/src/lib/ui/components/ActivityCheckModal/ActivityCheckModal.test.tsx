@@ -59,15 +59,15 @@ describe("ActivityCheckModal", () => {
     expect(onLogout).toHaveBeenCalledTimes(1);
   });
 
-  it("auto-logs out after 5 minutes with no interaction", () => {
+  it("auto-logs out after 10 minutes with no interaction", () => {
     render(
       <ActivityCheckModal isOpen={true} onContinue={onContinue} onLogout={onLogout} />
     );
     expect(onLogout).not.toHaveBeenCalled();
 
-    // Advance just under 5 minutes — should NOT have logged out
+    // Advance just under 10 minutes — should NOT have logged out
     act(() => {
-      vi.advanceTimersByTime(4 * 60 * 1000 + 59 * 1000); // 4:59
+      vi.advanceTimersByTime(9 * 60 * 1000 + 59 * 1000); // 9:59
     });
     expect(onLogout).not.toHaveBeenCalled();
 
@@ -106,9 +106,9 @@ describe("ActivityCheckModal", () => {
       <ActivityCheckModal isOpen={false} onContinue={onContinue} onLogout={onLogout} />
     );
 
-    // Advance past 5 minutes — should NOT log out since modal was closed
+    // Advance past 10 minutes — should NOT log out since modal was closed
     act(() => {
-      vi.advanceTimersByTime(6 * 60 * 1000);
+      vi.advanceTimersByTime(11 * 60 * 1000);
     });
     expect(onLogout).not.toHaveBeenCalled();
   });

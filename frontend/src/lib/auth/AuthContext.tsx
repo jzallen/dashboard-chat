@@ -1,11 +1,15 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import type { AuthUser, AuthState } from "./types";
 import { post, get } from "../api/client";
-import { TOKEN_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY, ensureFreshToken } from "../api/fetchUtils";
+import { TOKEN_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY, ACTIVITY_KEY, ensureFreshToken } from "../api/fetchUtils";
 import { ActivityCheckModal } from "../ui/components/ActivityCheckModal";
+import { ActivityDebugBadge } from "../ui/components/ActivityDebugBadge";
 
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "workos";
 const USER_KEY = "auth_user";
+
+const ACTIVITY_DEBOUNCE_MS = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
 
 interface AuthContextValue extends AuthState {
   login: (organizationId?: string) => Promise<void>;
@@ -23,9 +27,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null, token: null, refreshToken: null, tokenExpiresAt: null, isAuthenticated: false, isLoading: true,
   });
-
-  // Ref to latest logout so the refresh timer can call it without stale closure
-  const logoutRef = useRef<() => void>(() => {});
 
   // On mount: restore from localStorage or auto-auth in dev mode
   useEffect(() => {
@@ -85,11 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(EXPIRES_AT_KEY);
+    localStorage.removeItem(ACTIVITY_KEY);
     setState({ user: null, token: null, refreshToken: null, tokenExpiresAt: null, isAuthenticated: false, isLoading: false });
   }, []);
-
-  // Keep logoutRef up to date
-  logoutRef.current = logout;
 
   // Proactive token refresh timer — delegates to the shared ensureFreshToken()
   // so that the timer and the 401 interceptor share a single coalesced refresh promise.
@@ -97,13 +96,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!state.tokenExpiresAt || !state.isAuthenticated) return;
 
     const ttl = state.tokenExpiresAt - Date.now();
-    const delay = Math.max(ttl * 0.8, 0);
+    const delay = Math.max(ttl * 0.8, 10_000);
+
+    let retryTimerId: ReturnType<typeof setTimeout> | null = null;
+    let attemptCount = 0;
 
     const attemptRefresh = async (): Promise<void> => {
+      attemptCount++;
       try {
         const newToken = await ensureFreshToken();
         if (newToken) {
-          // ensureFreshToken already updated localStorage — read the latest values
           const expiresAtStr = localStorage.getItem(EXPIRES_AT_KEY);
           const expiresAt = expiresAtStr ? Number(expiresAtStr) : null;
           setState(prev => ({
@@ -112,29 +114,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY),
             tokenExpiresAt: expiresAt,
           }));
-        } else {
-          // No refresh token available or refresh failed after retry
-          logoutRef.current();
+          return; // success — the effect will re-run with new tokenExpiresAt
         }
       } catch {
-        logoutRef.current();
+        // fall through to retry logic
+      }
+
+      // Refresh failed — retry or give up
+      if (attemptCount < 3) {
+        const retryDelay = attemptCount === 1 ? 30_000 : 60_000;
+        console.warn(`[auth] Proactive refresh failed (attempt ${attemptCount}/3), retrying in ${retryDelay / 1000}s`);
+        retryTimerId = setTimeout(attemptRefresh, retryDelay);
+      } else {
+        console.warn("[auth] Proactive refresh exhausted all retries, stopping");
       }
     };
 
     const timerId = setTimeout(attemptRefresh, delay);
-    return () => clearTimeout(timerId);
+    return () => {
+      clearTimeout(timerId);
+      if (retryTimerId) clearTimeout(retryTimerId);
+    };
   }, [state.tokenExpiresAt, state.isAuthenticated]);
+
+  // --- Cross-tab sync ---
+  useEffect(() => {
+    if (!state.isAuthenticated) return;
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === EXPIRES_AT_KEY && e.newValue) {
+        // Another tab refreshed the token — sync state
+        const token = localStorage.getItem(TOKEN_KEY);
+        const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+        const tokenExpiresAt = Number(e.newValue);
+        if (token) {
+          setState(prev => ({ ...prev, token, refreshToken, tokenExpiresAt }));
+        }
+      } else if (e.key === TOKEN_KEY && !e.newValue) {
+        // Another tab logged out — clear local state
+        setState({
+          user: null, token: null, refreshToken: null, tokenExpiresAt: null,
+          isAuthenticated: false, isLoading: false,
+        });
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [state.isAuthenticated]);
 
   // --- Inactivity tracking ---
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const lastActivityRef = useRef(Date.now());
 
   // Register passive event listeners for user interaction
   useEffect(() => {
     if (!state.isAuthenticated) return;
 
+    if (!localStorage.getItem(ACTIVITY_KEY)) {
+      localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
+    }
+
     const updateActivity = () => {
-      lastActivityRef.current = Date.now();
+      const now = Date.now();
+      const last = Number(localStorage.getItem(ACTIVITY_KEY) || "0");
+      if (now - last > ACTIVITY_DEBOUNCE_MS) {
+        localStorage.setItem(ACTIVITY_KEY, String(now));
+      }
     };
 
     const events: Array<keyof DocumentEventMap> = ["mousedown", "keydown", "scroll", "touchstart"];
@@ -144,8 +189,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Check inactivity every 60 seconds
     const intervalId = setInterval(() => {
-      const inactiveMs = Date.now() - lastActivityRef.current;
-      if (inactiveMs >= 60 * 60 * 1000) {
+      const lastStr = localStorage.getItem(ACTIVITY_KEY);
+      const lastActivity = lastStr ? Number(lastStr) : Date.now();
+      const inactiveMs = Date.now() - lastActivity;
+      if (inactiveMs >= INACTIVITY_THRESHOLD_MS) {
         setShowActivityModal(true);
       }
     }, 60 * 1000);
@@ -159,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.isAuthenticated]);
 
   const handleActivityContinue = useCallback(() => {
-    lastActivityRef.current = Date.now();
+    localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
     setShowActivityModal(false);
   }, []);
 
@@ -176,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         onContinue={handleActivityContinue}
         onLogout={handleActivityLogout}
       />
+      {import.meta.env.VITE_DEBUG_ACTIVITY === "true" && <ActivityDebugBadge />}
     </AuthContext.Provider>
   );
 }

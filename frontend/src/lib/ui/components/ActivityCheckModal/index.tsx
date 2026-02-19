@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import styles from "./ActivityCheckModal.module.css";
 
-const MODAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const MODAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 interface ActivityCheckModalProps {
   isOpen: boolean;
@@ -20,7 +20,7 @@ export function ActivityCheckModal({ isOpen, onContinue, onLogout }: ActivityChe
     }
   }, [isOpen]);
 
-  // 5-minute auto-logout timer
+  // 10-minute auto-logout timer
   useEffect(() => {
     if (!isOpen) return;
 

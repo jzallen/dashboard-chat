@@ -1,4 +1,5 @@
 import { get, ApiError } from "../../lib/api/client";
+import { ensureFreshToken, _resetRefreshState } from "../../lib/api/fetchUtils";
 
 describe("401 interceptor with coalesced refresh", () => {
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -6,6 +7,7 @@ describe("401 interceptor with coalesced refresh", () => {
 
   beforeEach(() => {
     localStorage.clear();
+    _resetRefreshState();
     mockFetch = vi.fn();
     vi.stubGlobal("fetch", mockFetch);
     // Prevent actual navigation
@@ -145,5 +147,49 @@ describe("401 interceptor with coalesced refresh", () => {
 
     // Logged out
     expect(localStorage.getItem("auth_token")).toBeNull();
+  });
+
+  it("skips refresh if token is still fresh", async () => {
+    // Set token with plenty of remaining TTL (> 60s)
+    localStorage.setItem("auth_token", "still-valid-token");
+    localStorage.setItem("auth_refresh_token", "some-refresh");
+    localStorage.setItem("auth_token_expires_at", String(Date.now() + 300_000));
+
+    const result = await ensureFreshToken();
+
+    // Should return current token without making any fetch
+    expect(result).toBe("still-valid-token");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("handles 429 rate-limit with longer retry delay", async () => {
+    vi.useFakeTimers();
+    localStorage.setItem("auth_token", "expired-token");
+    localStorage.setItem("auth_refresh_token", "valid-refresh");
+
+    // First refresh returns 429, second succeeds
+    mockFetch
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
+      .mockResolvedValueOnce(refreshOk("recovered-token", "recovered-refresh", 300));
+
+    const promise = ensureFreshToken();
+
+    // Let the first fetch resolve
+    await vi.advanceTimersByTimeAsync(10);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // After 5s (standard delay), retry should NOT have happened yet (429 uses 12s)
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // After 12s total, retry should fire
+    await vi.advanceTimersByTimeAsync(7_000);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const result = await promise;
+    expect(result).toBe("recovered-token");
+    expect(localStorage.getItem("auth_token")).toBe("recovered-token");
+
+    vi.useRealTimers();
   });
 });

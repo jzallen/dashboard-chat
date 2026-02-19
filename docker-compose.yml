@@ -21,6 +21,7 @@ services:
     environment:
       VITE_CHAT_URL: http://localhost:8787
       VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
+      VITE_DEBUG_ACTIVITY: ${VITE_DEBUG_ACTIVITY:-}
     ports:
       - "5173:5173"
     volumes:
