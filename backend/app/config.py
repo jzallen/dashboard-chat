@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     s3_connect_timeout: int = 5
     s3_read_timeout: int = 10
 
+    # pg_duckdb - external SQL access
+    pg_duckdb_host: str = "localhost"
+    pg_duckdb_port: int = 5433
+    pg_duckdb_admin_user: str = "duckdb_admin"
+    pg_duckdb_admin_password: str = "duckdb_secret"
+    pg_duckdb_database: str = "dashboard_external"
+    pg_duckdb_external_host: str = "localhost"  # Host exposed to end users
+    pg_duckdb_external_port: int = 5433  # Port exposed to end users
+
     # Auth
     auth_mode: str = "dev"  # "dev" or "workos"
     auto_provision_org: bool = False  # auto-create org + project on login (dev/SQLite only)

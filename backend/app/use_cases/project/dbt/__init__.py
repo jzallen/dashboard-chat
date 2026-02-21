@@ -13,6 +13,7 @@ from .sources_yml import generate_sources_yml
 from .schema_yml import generate_schema_yml
 from .model_sql import generate_model_sql
 from .macros_sql import generate_macros_sql
+from .bootstrap_sql import generate_bootstrap_sql
 from .readme import generate_readme
 
 if TYPE_CHECKING:
@@ -43,6 +44,14 @@ def generate_dbt_project_zip(project: Project, project_name_snake: str) -> bytes
         zf.writestr("models/staging/sources.yml", generate_sources_yml(project_name_snake, dataset_pairs))
         zf.writestr("models/schema.yml", generate_schema_yml(dataset_pairs))
         zf.writestr("macros/custom_functions.sql", generate_macros_sql())
+        zf.writestr(
+            "scripts/bootstrap_db.sql",
+            generate_bootstrap_sql(
+                project_name_snake,
+                dataset_pairs,
+                "__S3_BUCKET__",
+            ),
+        )
         zf.writestr("README.md", generate_readme(project.name))
 
         for snake_name, ds in dataset_pairs:

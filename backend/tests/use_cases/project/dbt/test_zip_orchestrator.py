@@ -44,6 +44,7 @@ class TestZipContents:
         assert "models/staging/sources.yml" in names
         assert "models/schema.yml" in names
         assert "macros/custom_functions.sql" in names
+        assert "scripts/bootstrap_db.sql" in names
         assert "README.md" in names
         assert "models/staging/stg_leads.sql" in names
         assert "models/staging/stg_opportunities.sql" in names
@@ -60,6 +61,7 @@ class TestZipContents:
         assert "models/staging/sources.yml" in names
         assert "models/schema.yml" in names
         assert "macros/custom_functions.sql" in names
+        assert "scripts/bootstrap_db.sql" in names
         assert "README.md" in names
         # No stg_ files
         stg_files = [n for n in names if n.startswith("models/staging/stg_")]
@@ -117,6 +119,53 @@ class TestZipContents:
         assert "title_case" in macros
         assert "snake_case" in macros
         assert "kebab_case" in macros
+
+    def test_bootstrap_sql_contains_views(self):
+        ds = _make_dataset(ds_id="ds-1", name="Sales Data")
+        project = _make_project("Test", datasets=[ds])
+
+        zip_bytes = generate_dbt_project_zip(project, "test")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+
+        bootstrap = zf.read("scripts/bootstrap_db.sql").decode("utf-8")
+        assert "CREATE SCHEMA IF NOT EXISTS" in bootstrap
+        assert "CREATE OR REPLACE VIEW" in bootstrap
+        assert "read_parquet(" in bootstrap
+        assert "sales_data" in bootstrap
+
+    def test_bootstrap_sql_uses_parameterized_bucket(self):
+        ds = _make_dataset()
+        project = _make_project("Test", datasets=[ds])
+
+        zip_bytes = generate_dbt_project_zip(project, "test")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+
+        bootstrap = zf.read("scripts/bootstrap_db.sql").decode("utf-8")
+        assert "__S3_BUCKET__" in bootstrap
+
+    def test_readme_includes_postgres_instructions(self):
+        project = _make_project("My Project")
+
+        zip_bytes = generate_dbt_project_zip(project, "my_project")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+
+        readme = zf.read("README.md").decode("utf-8")
+        assert "pg_duckdb" in readme
+        assert "bootstrap_db.sql" in readme
+        assert "dbt run --target postgres" in readme
+        assert "PG_HOST" in readme
+        assert "dbt-postgres" in readme
+
+    def test_profiles_yml_has_both_targets(self):
+        ds = _make_dataset()
+        project = _make_project("Test", datasets=[ds])
+
+        zip_bytes = generate_dbt_project_zip(project, "test")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+
+        profiles = zf.read("profiles.yml").decode("utf-8")
+        assert "duckdb" in profiles
+        assert "postgres" in profiles
 
     def test_dataset_with_transforms_generates_sql(self):
         ds = _make_dataset(

@@ -43,6 +43,42 @@ class TestProfilesYml:
         parsed = yaml.safe_load(generate_profiles_yml("my_project"))
         assert parsed["my_project"]["outputs"]["dev"]["type"] == "duckdb"
 
+    def test_postgres_target_present(self):
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        assert "postgres" in parsed["my_project"]["outputs"]
+
+    def test_postgres_type(self):
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        assert parsed["my_project"]["outputs"]["postgres"]["type"] == "postgres"
+
+    def test_postgres_env_var_placeholders(self):
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        pg = parsed["my_project"]["outputs"]["postgres"]
+        for field in ["host", "port", "user", "password", "dbname", "schema"]:
+            assert "env_var(" in pg[field], f"'{field}' should contain env_var placeholder"
+
+    def test_default_target_is_dev(self):
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        assert parsed["my_project"]["target"] == "dev"
+
+    def test_dev_target_unchanged(self):
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        dev = parsed["my_project"]["outputs"]["dev"]
+        assert dev["type"] == "duckdb"
+        assert dev["path"] == ":memory:"
+        assert dev["extensions"] == ["httpfs"]
+        assert "s3_region" in dev["settings"]
+        assert "s3_access_key_id" in dev["settings"]
+        assert "s3_secret_access_key" in dev["settings"]
+        assert "s3_endpoint" in dev["settings"]
+        assert "s3_url_style" in dev["settings"]
+
+    def test_postgres_no_real_credentials(self):
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        pg = parsed["my_project"]["outputs"]["postgres"]
+        assert "env_var(" in pg["user"]
+        assert "env_var(" in pg["password"]
+
 
 def _make_dataset(
     id: str = "ds-1",

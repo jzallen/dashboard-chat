@@ -98,6 +98,29 @@ services:
       timeout: 20s
       retries: 3
 
+  # pg_duckdb - PostgreSQL 16 with DuckDB extension for external SQL access
+  pg-duckdb:
+    image: pgduckdb/pgduckdb:16-main
+    container_name: dashboard-pg-duckdb
+    profiles: ["duckdb", "full"]
+    environment:
+      POSTGRES_USER: ${PG_DUCKDB_USER:-duckdb_admin}
+      POSTGRES_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
+      POSTGRES_DB: ${PG_DUCKDB_DATABASE:-dashboard_external}
+    volumes:
+      - pg_duckdb_data:/var/lib/postgresql/data
+      - ./backend/scripts/pg_duckdb_init.sql:/docker-entrypoint-initdb.d/01-init-duckdb.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_DUCKDB_USER:-duckdb_admin}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      minio:
+        condition: service_healthy
+
   # FastAPI backend - works with DuckDB (local) or PostgreSQL (full)
   api:
     build:
@@ -114,6 +137,13 @@ services:
       WORKOS_API_KEY: ${WORKOS_API_KEY:-}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      PG_DUCKDB_HOST: pg-duckdb
+      PG_DUCKDB_PORT: "5432"
+      PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
+      PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
+      PG_DUCKDB_DATABASE: ${PG_DUCKDB_DATABASE:-dashboard_external}
+      PG_DUCKDB_EXTERNAL_HOST: ${PG_DUCKDB_EXTERNAL_HOST:-localhost}
+      PG_DUCKDB_EXTERNAL_PORT: ${PG_DUCKDB_EXTERNAL_PORT:-5433}
     ports:
       - "8000:8000"
     volumes:
@@ -138,6 +168,13 @@ services:
       WORKOS_API_KEY: ${WORKOS_API_KEY:-}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      PG_DUCKDB_HOST: pg-duckdb
+      PG_DUCKDB_PORT: "5432"
+      PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
+      PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
+      PG_DUCKDB_DATABASE: ${PG_DUCKDB_DATABASE:-dashboard_external}
+      PG_DUCKDB_EXTERNAL_HOST: ${PG_DUCKDB_EXTERNAL_HOST:-localhost}
+      PG_DUCKDB_EXTERNAL_PORT: ${PG_DUCKDB_EXTERNAL_PORT:-5433}
     ports:
       - "8000:8000"
     depends_on:
@@ -151,5 +188,6 @@ services:
 
 volumes:
   postgres_data:
+  pg_duckdb_data:
   minio_data:
   redis_data:

@@ -2,7 +2,12 @@ import yaml
 
 
 def generate_profiles_yml(project_name_snake: str) -> str:
-    """Generate profiles.yml with DuckDB target and S3 env_var placeholders."""
+    """Generate profiles.yml with DuckDB (dev) and PostgreSQL (postgres) targets.
+
+    The default target is 'dev' (DuckDB in-memory with S3 access via httpfs).
+    The 'postgres' target connects to an external PostgreSQL database.
+    Both targets use env_var Jinja placeholders so no real credentials are embedded.
+    """
     config = {
         project_name_snake: {
             "target": "dev",
@@ -18,7 +23,16 @@ def generate_profiles_yml(project_name_snake: str) -> str:
                         "s3_endpoint": "{{ env_var('S3_ENDPOINT', '') }}",
                         "s3_url_style": "{{ env_var('S3_URL_STYLE', 'vhost') }}",
                     },
-                }
+                },
+                "postgres": {
+                    "type": "postgres",
+                    "host": "{{ env_var('PG_HOST', 'localhost') }}",
+                    "port": "{{ env_var('PG_PORT', '5433') | int }}",
+                    "user": "{{ env_var('PG_USER') }}",
+                    "password": "{{ env_var('PG_PASSWORD') }}",
+                    "dbname": "{{ env_var('PG_DATABASE', 'dashboard_external') }}",
+                    "schema": "{{ env_var('PG_SCHEMA', 'public') }}",
+                },
             },
         }
     }

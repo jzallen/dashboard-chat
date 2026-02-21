@@ -8,8 +8,9 @@ def generate_readme(project_name: str) -> str:
 
 - Python 3.9+
 - [dbt-duckdb](https://github.com/duckdb/dbt-duckdb) (`pip install dbt-duckdb`)
+- [dbt-postgres](https://github.com/dbt-labs/dbt-postgres) (`pip install dbt-postgres`) — for pg_duckdb target
 
-## Setup
+## Setup (DuckDB — standalone)
 
 Set the following environment variables for S3 access:
 
@@ -20,9 +21,59 @@ Set the following environment variables for S3 access:
 - `S3_ENDPOINT` — S3 endpoint URL (for MinIO or custom S3-compatible storage)
 - `S3_URL_STYLE` — URL style: `path` for MinIO, `vhost` for AWS S3 (default: vhost)
 
-## Usage
-
 ```bash
 dbt run
 ```
+
+## Setup (PostgreSQL — pg_duckdb)
+
+Use this target to make your datasets queryable via standard PostgreSQL tools
+(psql, Excel/ODBC, Power BI, Tableau, etc.).
+
+### 1. Start a pg_duckdb instance
+
+You need a PostgreSQL 16 instance with the [pg_duckdb](https://github.com/duckdb/pg_duckdb)
+extension installed. Configure S3 secrets so `read_parquet()` can access your data:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_duckdb;
+
+SELECT duckdb.raw_query($$
+  CREATE OR REPLACE SECRET s3_secret (
+    TYPE S3,
+    KEY_ID '<your-access-key>',
+    SECRET '<your-secret-key>',
+    ENDPOINT '<your-s3-endpoint>',
+    URL_STYLE 'path',
+    USE_SSL false,
+    REGION 'us-east-1'
+  );
+$$);
+```
+
+### 2. Run the bootstrap script
+
+The bootstrap script creates source views that read Parquet data from S3.
+Before running, replace the `__S3_BUCKET__` placeholder with your actual bucket name:
+
+```bash
+sed 's/__S3_BUCKET__/your-bucket-name/g' scripts/bootstrap_db.sql \\
+  | psql -h localhost -p 5433 -U your_user -d your_database
+```
+
+### 3. Set environment variables and run dbt
+
+```bash
+export PG_HOST=localhost
+export PG_PORT=5433
+export PG_USER=your_user
+export PG_PASSWORD=your_password
+export PG_DATABASE=your_database
+export PG_SCHEMA=public
+export S3_BUCKET=your-bucket-name
+
+dbt run --target postgres
+```
+
+After `dbt run`, all staging models are queryable as views through any PostgreSQL client.
 """
