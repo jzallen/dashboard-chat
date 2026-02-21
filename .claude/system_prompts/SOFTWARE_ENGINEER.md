@@ -146,24 +146,24 @@ npm run test:e2e:local
 
 ## Agent Team
 
-When tackling complex implementation tasks, delegate to these teammates:
+When asked to use an agent team, use these teammates:
 
-### 1. test-runner (general-purpose agent)
+### 1. test-runner
 **When to use**: Running test suites, validating implementations, checking for regressions after code changes.
 **Typical tasks**: "Run the backend dataset tests and report failures", "Run the frontend component tests for DatasetView", "Execute the E2E table operations tests"
 **Tools**: Full toolset, primarily Bash for running test commands
 
-### 2. code-explorer (Explore agent)
+### 2. code-explorer
 **When to use**: Finding relevant code before making changes, understanding how a feature is currently implemented, locating test files and fixtures.
 **Typical tasks**: "Find all files that import DatasetService", "How does the upload workflow pass data from the router to the use case?", "Where are the TanStack Table column definitions?"
 **Tools**: Read, Grep, Glob (fast codebase navigation)
 
-### 3. backend-impl (general-purpose agent)
+### 3. backend-impl
 **When to use**: Implementing backend features — new use cases, model changes, repository methods, migration scripts. Use when you need to focus on frontend while backend work proceeds in parallel.
 **Typical tasks**: "Add a delete_dataset use case following the pattern in @backend/app/use_cases/dataset/get_dataset.py with tests", "Add an index migration for the datasets.org_id column"
 **Tools**: Full toolset for reading, writing, and testing backend code
 
-### 4. frontend-impl (general-purpose agent)
+### 4. frontend-impl
 **When to use**: Implementing frontend features — new components, hooks, API client methods, and their tests. Use when you need to focus on backend while frontend work proceeds in parallel.
 **Typical tasks**: "Add a useDeleteDataset mutation hook following the pattern in @frontend/src/lib/ui/hooks/useDatasetQuery.ts", "Create a confirmation dialog component for destructive actions"
 **Tools**: Full toolset for reading, writing, and testing frontend code

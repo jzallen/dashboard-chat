@@ -69,24 +69,24 @@ Always consult these files for current state:
 
 ## Agent Team
 
-When tackling complex business analysis tasks, delegate to these teammates:
+When asked to use an agent team, use these teammates:
 
-### 1. domain-researcher (Explore agent)
+### 1. domain-researcher
 **When to use**: Understanding current system behavior, tracing data flows, finding how a feature currently works.
 **Typical tasks**: "Find all places where dataset names are displayed to understand naming conventions", "Trace the upload workflow from frontend to storage", "What validation rules exist for project creation?"
 **Tools**: Read, Grep, Glob (read-only exploration)
 
-### 2. spec-writer (general-purpose agent)
+### 2. spec-writer
 **When to use**: Drafting Gherkin feature specifications, writing user stories, producing acceptance criteria documents.
 **Typical tasks**: "Write a Gherkin feature spec for bulk dataset deletion following the patterns in @features/table-chat-ops.feature", "Draft user stories for the organization admin workflow"
 **Tools**: Full toolset for reading existing specs and writing new ones
 
-### 3. api-analyzer (Explore agent)
+### 3. api-analyzer
 **When to use**: Analyzing API contracts, checking endpoint coverage, identifying missing routes.
 **Typical tasks**: "List all dataset API endpoints and their request/response schemas", "Compare the project router endpoints against the use cases to find gaps", "What auth checks exist on each endpoint?"
 **Tools**: Read, Grep, Glob (read-only exploration of routers, controllers, and use cases)
 
-### 4. data-modeler (Explore agent)
+### 4. data-modeler
 **When to use**: Analyzing database schema, migration history, model relationships, and data integrity rules.
 **Typical tasks**: "What columns does the dataset model have and which are nullable?", "Review migration history for the organizations feature", "Check if org_id is enforced at the model level or only in use cases"
 **Tools**: Read, Grep, Glob (read-only exploration of models and migrations)

@@ -103,24 +103,24 @@ For every code change, systematically check:
 
 ## Agent Team
 
-When conducting thorough code reviews, delegate to these teammates:
+When asked to use an agent team, use these teammates:
 
-### 1. security-scanner (Explore agent)
+### 1. security-scanner
 **When to use**: Deep security analysis — scanning for injection vulnerabilities, auth bypass, secrets in code, unsafe defaults, missing org_id checks.
 **Typical tasks**: "Find all DuckDB raw_sql calls and check if user input is parameterized", "List all endpoints missing org_id verification", "Search for hardcoded secrets or API keys across the codebase", "Check all auth middleware skip paths for overly broad patterns"
 **Tools**: Read, Grep, Glob (thorough codebase scanning)
 
-### 2. test-auditor (Explore agent)
+### 2. test-auditor
 **When to use**: Evaluating test coverage and quality — checking that tests exist, follow conventions, test the right things, and have proper setup.
 **Typical tasks**: "Check test coverage for the project use cases — which functions lack tests?", "Verify all test files set context vars (set_session, set_auth_user) correctly", "Find test assertions that don't match the handle_returns error format"
 **Tools**: Read, Grep, Glob (test file analysis)
 
-### 3. convention-checker (Explore agent)
+### 3. convention-checker
 **When to use**: Systematic convention compliance checks across the codebase, not just the files being reviewed.
 **Typical tasks**: "Find use cases missing the @with_repositories decorator", "Check if all frontend API calls go through the client.ts wrapper", "Verify all mutation hooks implement optimistic cache updates", "List routers that don't delegate to controllers/use cases"
 **Tools**: Read, Grep, Glob (pattern matching across files)
 
-### 4. regression-runner (general-purpose agent)
+### 4. regression-runner
 **When to use**: Running the full test suite to verify that reviewed changes don't break existing functionality. Run after identifying concerns.
 **Typical tasks**: "Run all backend tests and report any failures", "Run frontend component tests for the affected modules", "Execute E2E tests for the table operations workflow", "Run the worker tests to check chat handler changes"
 **Tools**: Full toolset, primarily Bash for running test commands

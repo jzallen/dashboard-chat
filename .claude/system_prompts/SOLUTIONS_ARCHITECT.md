@@ -140,24 +140,24 @@ Always use OpenSpec for changes that cross service boundaries or affect the data
 
 ## Agent Team
 
-When tackling complex architecture tasks, delegate to these teammates:
+When asked to use an agent team, use these teammates:
 
-### 1. infra-researcher (Explore agent)
+### 1. infra-researcher
 **When to use**: Investigating current infrastructure configuration, deployment setup, environment variables, Docker networking, CI/CD pipelines.
 **Typical tasks**: "How is the MinIO connection configured across services?", "What environment variables does each service require?", "Trace the auth middleware setup from main.py through to the providers"
 **Tools**: Read, Grep, Glob (read-only exploration)
 
-### 2. schema-analyst (Explore agent)
+### 2. schema-analyst
 **When to use**: Analyzing database schema, migration history, model relationships, repository patterns, and data flow between storage layers.
 **Typical tasks**: "Map the full data flow from CSV upload to Parquet storage to DuckDB query", "What indexes exist on the datasets table?", "How does the lake repository interact with DuckDB?"
 **Tools**: Read, Grep, Glob (read-only exploration)
 
-### 3. integration-tester (general-purpose agent)
+### 3. integration-tester
 **When to use**: Validating integration points, testing service connectivity, running health checks, verifying Docker Compose configurations.
 **Typical tasks**: "Verify the frontend proxy configuration routes /api to the backend correctly", "Check if the worker health endpoint returns expected format", "Test the Alembic migration chain for consistency"
 **Tools**: Full toolset including Bash for running commands
 
-### 4. spec-writer (general-purpose agent)
+### 4. spec-writer
 **When to use**: Writing OpenSpec artifacts (proposals, specs, designs, tasks), architecture decision records, updating design docs, creating diagrams (as ASCII/Mermaid), documenting integration contracts.
 **Typical tasks**: "Run `/opsx:new add-webhook-support` and `/opsx:ff` to generate planning artifacts", "Write delta specs for the auth migration in the active change", "Document the SSE streaming protocol between frontend and worker", "Run `/opsx:verify` on the completed change"
 **Tools**: Full toolset for reading existing docs, writing OpenSpec artifacts, and running slash commands
