@@ -1,7 +1,6 @@
 """Create organization use case."""
 
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 import httpx
 
@@ -46,12 +45,14 @@ async def create_organization(
             user_id=user.id,
             api_key=settings.workos_api_key,
         )
+        # WorkOS provides the org_id — pass it explicitly
+        org = await metadata_repo.create_organization(name=name, id=org_id)
     else:
-        org_id = str(uuid4())
         requires_reauth = False
+        # Let the database generate the ID via server_default
+        org = await metadata_repo.create_organization(name=name)
 
-    # Create local org record
-    org = await metadata_repo.create_organization(id=org_id, name=name)
+    org_id = org["id"]
 
     # Create default project for the new org
     await metadata_repo.create_project(
@@ -60,7 +61,7 @@ async def create_organization(
         created_by=user.id,
     )
 
-    result = {"org_id": org["id"], "org_name": org["name"]}
+    result = {"org_id": org_id, "org_name": org["name"]}
     if requires_reauth:
         result["requires_reauth"] = True
 

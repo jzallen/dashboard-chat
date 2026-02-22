@@ -7,6 +7,8 @@ from app.use_cases.transform import create_transforms
 from app.repositories import set_session
 from app.repositories.outbox.outbox_record import OutboxRecord
 
+from tests.uuidv7_fixtures import DATASET_1
+
 
 class TestCreateTransforms:
     """Tests for create_transforms use case."""
@@ -16,7 +18,7 @@ class TestCreateTransforms:
         set_session(seeded_db)
 
         result = await create_transforms(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             transforms_input=[
                 {
                     "name": "New Filter",
@@ -38,7 +40,7 @@ class TestCreateTransforms:
         set_session(seeded_db)
 
         result = await create_transforms(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             transforms_input=[
                 {
                     "name": "Filter A",
@@ -64,7 +66,7 @@ class TestCreateTransforms:
         set_session(seeded_db)
 
         await create_transforms(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             transforms_input=[
                 {
                     "name": "Outbox Test",
@@ -77,14 +79,21 @@ class TestCreateTransforms:
         result = await seeded_db.execute(
             select(OutboxRecord)
             .where(OutboxRecord.aggregate_type == "dataset")
-            .where(OutboxRecord.aggregate_id == "dataset-001")
+            .where(OutboxRecord.aggregate_id == DATASET_1)
         )
         records = result.scalars().all()
         assert len(records) == 1
-        assert records[0].event_type == "TransformsCreated"
-        assert records[0].payload["dataset_id"] == "dataset-001"
-        assert len(records[0].payload["transforms"]) == 1
-        assert records[0].payload["transforms"][0]["name"] == "Outbox Test"
+        record = records[0]
+        assert record.event_type == "TransformsCreated"
+        assert record.payload == {
+            "dataset_id": DATASET_1,
+            "transforms": [
+                {
+                    **record.payload["transforms"][0],
+                    "name": "Outbox Test",
+                },
+            ],
+        }
 
     async def test_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
         """create_transforms should return Failure when dataset doesn't exist."""

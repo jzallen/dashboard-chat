@@ -9,8 +9,10 @@ from app.repositories import set_session
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 
+from tests.uuidv7_fixtures import DATASET_1, ORG_OTHER, USER_3
 
-WRONG_ORG_USER = AuthUser(id="other-user", email="other@example.com", org_id="other-org", name="Other User")
+
+WRONG_ORG_USER = AuthUser(id=USER_3, email="other@example.com", org_id=ORG_OTHER, name="Other User")
 
 
 class MockLakeRepository:
@@ -48,7 +50,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "trim"},
             repositories={"lake_repository": MockLakeRepository},
@@ -56,10 +58,14 @@ class TestPreviewCleaningTransform:
 
         match result:
             case Success(data):
-                assert data["affected_count"] == 3
-                assert data["total_count"] == 10
+                assert data == {
+                    "affected_count": 3,
+                    "total_count": 10,
+                    "samples": data["samples"],
+                    "column": "col1",
+                    "operation_description": data["operation_description"],
+                }
                 assert len(data["samples"]) == 3
-                assert data["column"] == "col1"
                 assert "Trim whitespace" in data["operation_description"]
                 assert "col1" in data["operation_description"]
             case Failure(error):
@@ -70,7 +76,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "case", "mode": "title"},
             repositories={"lake_repository": MockLakeRepository},
@@ -87,7 +93,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "case", "mode": "snake"},
             repositories={"lake_repository": MockLakeRepository},
@@ -105,7 +111,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "case", "mode": "kebab"},
             repositories={"lake_repository": MockLakeRepository},
@@ -123,7 +129,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "fill_null", "fill_value": "Unknown"},
             repositories={"lake_repository": MockLakeRepository},
@@ -141,7 +147,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={
                 "operation": "map_values",
@@ -161,7 +167,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "alias", "alias": "Column One"},
             repositories={"lake_repository": MockLakeRepository},
@@ -178,7 +184,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "unknown_op"},
             repositories={"lake_repository": MockLakeRepository},
@@ -195,7 +201,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={},
             repositories={"lake_repository": MockLakeRepository},
@@ -212,7 +218,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "case"},
             repositories={"lake_repository": MockLakeRepository},
@@ -229,7 +235,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "fill_null"},
             repositories={"lake_repository": MockLakeRepository},
@@ -246,7 +252,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "map_values"},
             repositories={"lake_repository": MockLakeRepository},
@@ -263,7 +269,7 @@ class TestPreviewCleaningTransform:
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="nonexistent_column",
             expression_config={"operation": "trim"},
             repositories={"lake_repository": MockLakeRepository},
@@ -299,7 +305,7 @@ class TestPreviewCleaningTransform:
         set_auth_user(WRONG_ORG_USER)
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "trim"},
             repositories={"lake_repository": MockLakeRepository},
@@ -318,7 +324,7 @@ class TestPreviewCleaningTransform:
         numeric_lake = MockLakeRepository(column_type="float64")
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "trim"},
             repositories={"lake_repository": lambda: numeric_lake},
@@ -337,7 +343,7 @@ class TestPreviewCleaningTransform:
         numeric_lake = MockLakeRepository(column_type="int64")
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "case", "mode": "upper"},
             repositories={"lake_repository": lambda: numeric_lake},
@@ -359,7 +365,7 @@ class TestPreviewCleaningTransform:
         )
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "fill_null", "fill_value": 0},
             repositories={"lake_repository": lambda: numeric_lake},
@@ -378,7 +384,7 @@ class TestPreviewCleaningTransform:
         zero_lake = MockLakeRepository(affected_count=0, total_count=100, samples=[])
 
         result = await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "trim"},
             repositories={"lake_repository": lambda: zero_lake},
@@ -386,9 +392,13 @@ class TestPreviewCleaningTransform:
 
         match result:
             case Success(data):
-                assert data["affected_count"] == 0
-                assert data["total_count"] == 100
-                assert data["samples"] == []
+                assert data == {
+                    "affected_count": 0,
+                    "total_count": 100,
+                    "samples": [],
+                    "column": "col1",
+                    "operation_description": data["operation_description"],
+                }
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
@@ -400,7 +410,7 @@ class TestPreviewCleaningTransform:
         count_before = (await seeded_db.execute(text("SELECT COUNT(*) FROM transforms"))).scalar()
 
         await preview_cleaning_transform(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             target_column="col1",
             expression_config={"operation": "trim"},
             repositories={"lake_repository": MockLakeRepository},

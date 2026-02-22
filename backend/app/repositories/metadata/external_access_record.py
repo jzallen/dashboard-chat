@@ -1,9 +1,8 @@
 """ExternalAccessRecord ORM model for external SQL access persistence."""
 
 from datetime import datetime, timezone
-from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...database import Base
@@ -21,7 +20,7 @@ class ExternalAccessRecord(Base):
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        server_default=text("(uuidv7())"),
     )
     project_id: Mapped[str] = mapped_column(
         String(36),

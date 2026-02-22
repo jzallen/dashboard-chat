@@ -17,8 +17,14 @@ from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord, TransformRecord
 from app.use_cases.exceptions import ProjectNotFound
 
+from tests.uuidv7_fixtures import (
+    PROJECT_ROUTE_1,
+    DATASET_ROUTE_1,
+    USER_ROUTE,
+    ORG_ROUTE,
+)
 
-TEST_USER = AuthUser(id="test-user", email="test@test.com", org_id="test-org", name="Test")
+TEST_USER = AuthUser(id=USER_ROUTE, email="test@test.com", org_id=ORG_ROUTE, name="Test")
 
 
 @pytest.fixture
@@ -33,16 +39,15 @@ async def seeded_db_for_route(db_session: AsyncSession):
     set_auth_user(TEST_USER)
 
     project = ProjectRecord(
-        id="proj-route-1",
+        id=PROJECT_ROUTE_1,
         name="Route Test",
-        org_id="test-org",
+        org_id=ORG_ROUTE,
     )
     db_session.add(project)
 
     ds = DatasetRecord(
-        id="ds-route-1",
-        storage_path="datasets/proj-route-1/ds-route-1/",
-        project_id="proj-route-1",
+        id=DATASET_ROUTE_1,
+        project_id=PROJECT_ROUTE_1,
         name="Test Dataset",
         schema_config={"fields": {"col_a": {"type": "text"}}},
     )

@@ -92,6 +92,14 @@ async def setup_database(settings) -> None:
 
     engine = create_async_engine(settings.database_url)
 
+    # Register uuidv7() for SQLite server_default compatibility
+    from sqlalchemy import event
+    from uuid_utils import uuid7
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _register_sqlite_uuidv7(dbapi_connection, connection_record):
+        dbapi_connection.create_function("uuidv7", 0, lambda: str(uuid7()))
+
     async with engine.begin() as conn:
         # Drop and recreate all tables to pick up schema changes (dev only)
         await conn.run_sync(Base.metadata.drop_all)

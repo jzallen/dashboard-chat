@@ -11,6 +11,8 @@ from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.sql_access import regenerate_sql_credentials
 
+from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
+
 
 class TestRegenerateSqlCredentials:
 
@@ -20,7 +22,7 @@ class TestRegenerateSqlCredentials:
     ):
         set_session(seeded_db_with_access)
 
-        result = await regenerate_sql_credentials(project_id="project-001")
+        result = await regenerate_sql_credentials(project_id=PROJECT_1)
 
         assert isinstance(result, Success)
         data = result.unwrap()
@@ -32,7 +34,7 @@ class TestRegenerateSqlCredentials:
         assert data["username"] is not None
         assert "connection_string" in data
         # Verify correct args passed to pg_duckdb
-        mock_regenerate.assert_called_once_with("project-001", data["password"])
+        mock_regenerate.assert_called_once_with(PROJECT_1, data["password"])
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
     async def test_regenerate_returns_failure_for_nonexistent_project(
@@ -51,7 +53,7 @@ class TestRegenerateSqlCredentials:
     ):
         set_session(seeded_db)
 
-        result = await regenerate_sql_credentials(project_id="project-001")
+        result = await regenerate_sql_credentials(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
@@ -62,7 +64,7 @@ class TestRegenerateSqlCredentials:
     ):
         set_session(seeded_db_other_org)
 
-        result = await regenerate_sql_credentials(project_id="project-other")
+        result = await regenerate_sql_credentials(project_id=PROJECT_OTHER)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), AuthorizationError)
@@ -74,6 +76,6 @@ class TestRegenerateSqlCredentials:
         """pg_duckdb failure should propagate as a Failure via handle_returns."""
         set_session(seeded_db_with_access)
 
-        result = await regenerate_sql_credentials(project_id="project-001")
+        result = await regenerate_sql_credentials(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)

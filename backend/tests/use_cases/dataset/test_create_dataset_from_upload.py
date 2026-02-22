@@ -16,6 +16,7 @@ from app.repositories.lake import MinIOLakeRepository
 from app.repositories.outbox import OutboxRecord
 from app.repositories.outbox.events import UploadFileReceived
 from app.models.dataset import Dataset
+from tests.uuidv7_fixtures import PROJECT_1
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def s3_read_write_stubber(sample_csv: bytes) -> Stubber:
         'Body': io.BytesIO(sample_csv),
     }, {
         'Bucket': 'dashboard-chat.datalake',
-        'Key': 'uploads/project-001/test_data.csv',
+        'Key': f'uploads/{PROJECT_1}/test_data.csv',
     })
     # One put_object per partition value (age: 25, 30, 35)
     for _ in range(3):
@@ -52,13 +53,13 @@ class TestCreateDatasetFromUpload:
         seeded_db.add(
             OutboxRecord(
                 id="upload-001",
-                aggregate_id="project-001",
+                aggregate_id=PROJECT_1,
                 aggregate_type="project",
                 event_type="UploadFileReceived",
                 payload=asdict(UploadFileReceived(
-                    project_id="project-001",
+                    project_id=PROJECT_1,
                     dataset_id=None,
-                    raw_storage_path="uploads/project-001/test_data.csv",
+                    raw_storage_path=f"uploads/{PROJECT_1}/test_data.csv",
                     original_filename="test_data.csv",
                     file_size=len(sample_csv),
                 )),
@@ -79,11 +80,18 @@ class TestCreateDatasetFromUpload:
             case Failure(error):
                 pytest.fail(f"create_dataset_from_upload should succeed, got: {error}")
             case Success(dataset):
-                assert dataset.project_id == "project-001"
-                assert dataset.name == "New Dataset"
-                assert dataset.description is None
-                assert dataset.partition_fields == ['age']
-                assert dataset.transforms == []
+                expected = Dataset(
+                    id=dataset.id,  # dynamic UUID
+                    project_id=PROJECT_1,
+                    name="New Dataset",
+                    description=None,
+                    schema_config=dataset.schema_config,  # field types inferred at runtime
+                    partition_fields=['age'],
+                    transforms=[],
+                    preview_rows=dataset.preview_rows,  # dynamic computed data
+                    column_profiles=dataset.column_profiles,  # dynamic profiling data
+                )
+                assert dataset == expected
                 assert len(dataset.preview_rows) == 3
                 assert set(dataset.schema_config["fields"].keys()) == {"name", "age", "active"}
 
@@ -96,13 +104,13 @@ class TestCreateDatasetFromUpload:
         seeded_db.add(
             OutboxRecord(
                 id="upload-default-name",
-                aggregate_id="project-001",
+                aggregate_id=PROJECT_1,
                 aggregate_type="project",
                 event_type="UploadFileReceived",
                 payload=asdict(UploadFileReceived(
-                    project_id="project-001",
+                    project_id=PROJECT_1,
                     dataset_id=None,
-                    raw_storage_path="uploads/project-001/test_data.csv",
+                    raw_storage_path=f"uploads/{PROJECT_1}/test_data.csv",
                     original_filename="test_data.csv",
                     file_size=len(sample_csv),
                 )),
@@ -177,13 +185,13 @@ class TestCreateDatasetFromUpload:
         seeded_db.add(
             OutboxRecord(
                 id="upload-002",
-                aggregate_id="project-001",
+                aggregate_id=PROJECT_1,
                 aggregate_type="project",
                 event_type="UploadFileReceived",
                 payload=asdict(UploadFileReceived(
-                    project_id="project-001",
+                    project_id=PROJECT_1,
                     dataset_id=None,
-                    raw_storage_path="uploads/project-001/test_data.csv",
+                    raw_storage_path=f"uploads/{PROJECT_1}/test_data.csv",
                     original_filename="test_data.csv",
                     file_size=len(sample_csv),
                 )),
@@ -223,13 +231,13 @@ class TestCreateDatasetFromUpload:
         seeded_db.add(
             OutboxRecord(
                 id="upload-003",
-                aggregate_id="project-001",
+                aggregate_id=PROJECT_1,
                 aggregate_type="project",
                 event_type="UploadFileReceived",
                 payload=asdict(UploadFileReceived(
-                    project_id="project-001",
+                    project_id=PROJECT_1,
                     dataset_id=None,
-                    raw_storage_path="uploads/project-001/gone.csv",
+                    raw_storage_path=f"uploads/{PROJECT_1}/gone.csv",
                     original_filename="gone.csv",
                     file_size=len(sample_csv),
                 )),
@@ -242,7 +250,7 @@ class TestCreateDatasetFromUpload:
             'Body': io.BytesIO(b''),
         }, {
             'Bucket': 'dashboard-chat.datalake',
-            'Key': 'uploads/project-001/gone.csv',
+            'Key': f'uploads/{PROJECT_1}/gone.csv',
         })
 
         with empty_stubber:
@@ -266,13 +274,13 @@ class TestCreateDatasetFromUpload:
         seeded_db.add(
             OutboxRecord(
                 id="upload-004",
-                aggregate_id="project-001",
+                aggregate_id=PROJECT_1,
                 aggregate_type="project",
                 event_type="UploadFileReceived",
                 payload=asdict(UploadFileReceived(
-                    project_id="project-001",
+                    project_id=PROJECT_1,
                     dataset_id=None,
-                    raw_storage_path="uploads/project-001/bad.csv",
+                    raw_storage_path=f"uploads/{PROJECT_1}/bad.csv",
                     original_filename="bad.csv",
                     file_size=len(bad_content),
                 )),
@@ -285,7 +293,7 @@ class TestCreateDatasetFromUpload:
             'Body': io.BytesIO(bad_content),
         }, {
             'Bucket': 'dashboard-chat.datalake',
-            'Key': 'uploads/project-001/bad.csv',
+            'Key': f'uploads/{PROJECT_1}/bad.csv',
         })
 
         with stubber:

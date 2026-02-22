@@ -11,6 +11,8 @@ from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.sql_access import sync_sql_access
 
+from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
+
 
 class TestSyncSqlAccess:
 
@@ -21,15 +23,15 @@ class TestSyncSqlAccess:
     ):
         set_session(seeded_db_with_access)
 
-        result = await sync_sql_access(project_id="project-001")
+        result = await sync_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Success)
         data = result.unwrap()
-        assert data["project_id"] == "project-001"
+        assert data["project_id"] == PROJECT_1
         assert data["last_synced_at"] is not None
         mock_execute_bootstrap.assert_called_once()
-        assert mock_execute_bootstrap.call_args[0][0] == "project-001"
-        mock_grant_usage.assert_called_once_with("project-001")
+        assert mock_execute_bootstrap.call_args[0][0] == PROJECT_1
+        mock_grant_usage.assert_called_once_with(PROJECT_1)
 
     @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
@@ -50,7 +52,7 @@ class TestSyncSqlAccess:
     ):
         set_session(seeded_db)
 
-        result = await sync_sql_access(project_id="project-001")
+        result = await sync_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
@@ -62,7 +64,7 @@ class TestSyncSqlAccess:
     ):
         set_session(seeded_db_other_org)
 
-        result = await sync_sql_access(project_id="project-other")
+        result = await sync_sql_access(project_id=PROJECT_OTHER)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), AuthorizationError)
@@ -75,6 +77,6 @@ class TestSyncSqlAccess:
         """pg_duckdb failure should propagate as a Failure via handle_returns."""
         set_session(seeded_db_with_access)
 
-        result = await sync_sql_access(project_id="project-001")
+        result = await sync_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)

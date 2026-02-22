@@ -9,6 +9,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.use_cases.project import update_project
 from app.repositories import set_session
 
+from tests.uuidv7_fixtures import ORG_1, PROJECT_1
+
 
 class TestUpdateProject:
     """Tests for update_project workflow."""
@@ -18,16 +20,21 @@ class TestUpdateProject:
         set_session(seeded_db)
 
         result = await update_project(
-            project_id="project-001",
+            project_id=PROJECT_1,
             update_data={"name": "Updated Name"},
         )
 
         match result:
             case Success(project):
-                assert project["id"] == "project-001"
-                assert project["name"] == "Updated Name"
-                # Description should remain unchanged
-                assert project["description"] == "A test project"
+                assert project == {
+                    "id": PROJECT_1,
+                    "name": "Updated Name",
+                    "description": "A test project",
+                    "org_id": ORG_1,
+                    "created_by": None,
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                }
             case Failure(error):
                 pytest.fail(f"update_project should update name, got: {error}")
 
@@ -36,16 +43,21 @@ class TestUpdateProject:
         set_session(seeded_db)
 
         result = await update_project(
-            project_id="project-001",
+            project_id=PROJECT_1,
             update_data={"description": "Updated description"},
         )
 
         match result:
             case Success(project):
-                assert project["id"] == "project-001"
-                assert project["description"] == "Updated description"
-                # Name should remain unchanged
-                assert project["name"] == "Test Project"
+                assert project == {
+                    "id": PROJECT_1,
+                    "name": "Test Project",
+                    "description": "Updated description",
+                    "org_id": ORG_1,
+                    "created_by": None,
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                }
             case Failure(error):
                 pytest.fail(f"update_project should update description, got: {error}")
 
@@ -72,11 +84,11 @@ class TestUpdateProject:
         await seeded_db.close()
 
         metadata_repository = AsyncMock()
-        metadata_repository.get_project = AsyncMock(return_value={"id": "project-001", "org_id": "test-org-001", "name": "Test"})
+        metadata_repository.get_project = AsyncMock(return_value={"id": PROJECT_1, "org_id": ORG_1, "name": "Test"})
         metadata_repository.update_project = AsyncMock(side_effect=SQLAlchemyError("Database connection lost"))
 
         result = await update_project(
-            project_id="project-001",
+            project_id=PROJECT_1,
             update_data={"name": "New Name"},
             repositories={'metadata_repository': lambda: metadata_repository},
         )

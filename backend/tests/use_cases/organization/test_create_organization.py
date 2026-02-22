@@ -23,9 +23,10 @@ class TestCreateOrganization:
 
         match result:
             case Success(data):
-                assert data["org_name"] == "Acme Corp"
-                assert "org_id" in data
-                assert "requires_reauth" not in data
+                assert data == {
+                    "org_id": data["org_id"],
+                    "org_name": "Acme Corp",
+                }
             case Failure(error):
                 pytest.fail(f"create_organization should succeed, got: {error}")
 

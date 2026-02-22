@@ -13,30 +13,40 @@ from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord, TransformRecord
 from app.use_cases.project import export_dbt_project
 
+from tests.uuidv7_fixtures import (
+    DATASET_EXPORT_1,
+    ORG_1,
+    ORG_OTHER,
+    PROJECT_EXPORT_1,
+    PROJECT_EXPORT_EMPTY,
+    PROJECT_OTHER,
+    TRANSFORM_EXPORT_1,
+    USER_1,
+)
+
 
 @pytest.fixture
 async def seeded_db_with_transforms(db_session: AsyncSession):
     """Seed DB with a project containing datasets and transforms."""
     project = ProjectRecord(
-        id="proj-export-1",
+        id=PROJECT_EXPORT_1,
         name="Sales Pipeline",
         description="Export test project",
-        org_id="test-org-001",
+        org_id=ORG_1,
     )
     db_session.add(project)
 
     ds = DatasetRecord(
-        id="ds-export-1",
-        storage_path="datasets/proj-export-1/ds-export-1/",
-        project_id="proj-export-1",
+        id=DATASET_EXPORT_1,
+        project_id=PROJECT_EXPORT_1,
         name="Leads",
         schema_config={"fields": {"name": {"type": "text"}, "status": {"type": "text"}}},
     )
     db_session.add(ds)
 
     transform = TransformRecord(
-        id="t-export-1",
-        dataset_id="ds-export-1",
+        id=TRANSFORM_EXPORT_1,
+        dataset_id=DATASET_EXPORT_1,
         name="Trim name",
         condition_json={},
         transform_type="clean",
@@ -54,9 +64,9 @@ async def seeded_db_with_transforms(db_session: AsyncSession):
 async def seeded_db_empty_project(db_session: AsyncSession):
     """Seed DB with a project containing no datasets."""
     project = ProjectRecord(
-        id="proj-export-empty",
+        id=PROJECT_EXPORT_EMPTY,
         name="Empty Project",
-        org_id="test-org-001",
+        org_id=ORG_1,
     )
     db_session.add(project)
     await db_session.commit()
@@ -67,9 +77,9 @@ async def seeded_db_empty_project(db_session: AsyncSession):
 async def seeded_db_other_org(db_session: AsyncSession):
     """Seed DB with a project owned by a different org."""
     project = ProjectRecord(
-        id="proj-other-org",
+        id=PROJECT_OTHER,
         name="Other Org Project",
-        org_id="other-org-999",
+        org_id=ORG_OTHER,
     )
     db_session.add(project)
     await db_session.commit()
@@ -82,9 +92,9 @@ class TestExportDbtProject:
         self, seeded_db_with_transforms: AsyncSession
     ):
         set_session(seeded_db_with_transforms)
-        set_auth_user(AuthUser(id="test-user-001", email="test@example.com", org_id="test-org-001", name="Test User"))
+        set_auth_user(AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User"))
 
-        result = await export_dbt_project("proj-export-1")
+        result = await export_dbt_project(PROJECT_EXPORT_1)
 
         match result:
             case Success(data):
@@ -122,10 +132,10 @@ class TestExportDbtProject:
         self, seeded_db_other_org: AsyncSession
     ):
         set_session(seeded_db_other_org)
-        # Auth user is test-org-001, but project is other-org-999
-        set_auth_user(AuthUser(id="user-1", email="a@b.com", org_id="test-org-001", name="Test"))
+        # Auth user is ORG_1, but project is ORG_OTHER
+        set_auth_user(AuthUser(id=USER_1, email="a@b.com", org_id=ORG_1, name="Test"))
 
-        result = await export_dbt_project("proj-other-org")
+        result = await export_dbt_project(PROJECT_OTHER)
 
         match result:
             case Failure(error):
@@ -137,9 +147,9 @@ class TestExportDbtProject:
         self, seeded_db_empty_project: AsyncSession
     ):
         set_session(seeded_db_empty_project)
-        set_auth_user(AuthUser(id="test-user-001", email="test@example.com", org_id="test-org-001", name="Test User"))
+        set_auth_user(AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User"))
 
-        result = await export_dbt_project("proj-export-empty")
+        result = await export_dbt_project(PROJECT_EXPORT_EMPTY)
 
         match result:
             case Success(data):

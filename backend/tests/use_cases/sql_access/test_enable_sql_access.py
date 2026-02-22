@@ -15,6 +15,8 @@ from app.use_cases.exceptions import (
 )
 from app.use_cases.sql_access import enable_sql_access
 
+from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY, PROJECT_OTHER
+
 
 class TestEnableSqlAccess:
 
@@ -26,7 +28,7 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id="project-001")
+        result = await enable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Success)
         data = result.unwrap()
@@ -42,10 +44,10 @@ class TestEnableSqlAccess:
         assert data["password"] in data["connection_string"]
 
         # Verify correct project_id was forwarded to pg_duckdb operations
-        mock_create_schema.assert_called_once_with("project-001", data["password"])
+        mock_create_schema.assert_called_once_with(PROJECT_1, data["password"])
         mock_execute_bootstrap.assert_called_once()
-        assert mock_execute_bootstrap.call_args[0][0] == "project-001"
-        mock_grant_usage.assert_called_once_with("project-001")
+        assert mock_execute_bootstrap.call_args[0][0] == PROJECT_1
+        mock_grant_usage.assert_called_once_with(PROJECT_1)
 
     @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
@@ -68,7 +70,7 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db_with_access)
 
-        result = await enable_sql_access(project_id="project-001")
+        result = await enable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessAlreadyEnabled)
@@ -81,7 +83,7 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db_no_datasets)
 
-        result = await enable_sql_access(project_id="project-empty")
+        result = await enable_sql_access(project_id=PROJECT_EMPTY)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectHasNoDatasets)
@@ -94,7 +96,7 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db_other_org)
 
-        result = await enable_sql_access(project_id="project-other")
+        result = await enable_sql_access(project_id=PROJECT_OTHER)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), AuthorizationError)
@@ -108,7 +110,7 @@ class TestEnableSqlAccess:
         """Re-enable path: existing disabled record is updated (not created)."""
         set_session(seeded_db_with_disabled_access)
 
-        result = await enable_sql_access(project_id="project-001")
+        result = await enable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Success)
         data = result.unwrap()
@@ -125,8 +127,8 @@ class TestEnableSqlAccess:
         """If bootstrap fails after schema creation, the schema/role should be cleaned up."""
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id="project-001")
+        result = await enable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
         mock_create_schema.assert_called_once()
-        mock_drop_schema.assert_called_once_with("project-001")
+        mock_drop_schema.assert_called_once_with(PROJECT_1)

@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.use_cases.project import get_project
 from app.repositories import set_session
-from app.repositories.metadata import ProjectRecord
+from tests.uuidv7_fixtures import DATASET_1, DATASET_2, ORG_1, PROJECT_1
 
 
 class TestGetProject:
@@ -18,18 +18,36 @@ class TestGetProject:
         """get_project should return project dict with datasets by default."""
         set_session(seeded_db)
 
-        result = await get_project(project_id="project-001")
+        result = await get_project(project_id=PROJECT_1)
 
         match result:
             case Success(project):
-                assert project["id"] == "project-001"
-                assert project["name"] == "Test Project"
-                assert project["description"] == "A test project"
-                assert "datasets" in project
-                assert len(project["datasets"]) == 2
-                # Check sparse dataset info
-                dataset_ids = {ds["id"] for ds in project["datasets"]}
-                assert dataset_ids == {"dataset-001", "dataset-002"}
+                datasets = sorted(project["datasets"], key=lambda d: d["id"])
+                assert {**project, "datasets": datasets} == {
+                    "id": PROJECT_1,
+                    "name": "Test Project",
+                    "description": "A test project",
+                    "org_id": ORG_1,
+                    "created_by": None,
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                    "datasets": [
+                        {
+                            "id": DATASET_1,
+                            "name": "Dataset One",
+                            "link": f"/api/datasets/{DATASET_1}",
+                            "description": None,
+                            "schema_config": {"fields": {"col1": {"type": "text"}}},
+                        },
+                        {
+                            "id": DATASET_2,
+                            "name": "Dataset Two",
+                            "link": f"/api/datasets/{DATASET_2}",
+                            "description": None,
+                            "schema_config": {"fields": {"col2": {"type": "number"}}},
+                        },
+                    ],
+                }
             case Failure(error):
                 pytest.fail(f"get_project should return project, got: {error}")
 
@@ -37,11 +55,19 @@ class TestGetProject:
         """get_project with include_datasets=False should not include datasets."""
         set_session(seeded_db)
 
-        result = await get_project(project_id="project-001", include_datasets=False)
+        result = await get_project(project_id=PROJECT_1, include_datasets=False)
 
         match result:
             case Success(project):
-                assert project["id"] == "project-001"
+                assert project == {
+                    "id": PROJECT_1,
+                    "name": "Test Project",
+                    "description": "A test project",
+                    "org_id": ORG_1,
+                    "created_by": None,
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                }
                 assert "datasets" not in project
             case Failure(error):
                 pytest.fail(f"get_project should return project without datasets, got: {error}")
@@ -69,7 +95,7 @@ class TestGetProject:
         metadata_repository.get_project = Mock(side_effect=SQLAlchemyError("Database connection lost"))
 
         result = await get_project(
-            project_id="project-001",
+            project_id=PROJECT_1,
             repositories={'metadata_repository': lambda: metadata_repository},
         )
 

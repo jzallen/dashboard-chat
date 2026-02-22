@@ -11,6 +11,8 @@ from app.use_cases.project import delete_project
 from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord
 
+from tests.uuidv7_fixtures import ORG_1, PROJECT_1, PROJECT_2
+
 
 class TestDeleteProject:
     """Tests for delete_project workflow."""
@@ -19,14 +21,14 @@ class TestDeleteProject:
         """delete_project should delete project and return True."""
         set_session(seeded_db)
 
-        result = await delete_project(project_id="project-002")
+        result = await delete_project(project_id=PROJECT_2)
 
         match result:
             case Success(deleted):
                 assert deleted is True
                 # Verify project was actually deleted
                 check_result = await seeded_db.execute(
-                    select(ProjectRecord).where(ProjectRecord.id == "project-002")
+                    select(ProjectRecord).where(ProjectRecord.id == PROJECT_2)
                 )
                 assert check_result.scalar_one_or_none() is None
             case Failure(error):
@@ -50,18 +52,18 @@ class TestDeleteProject:
 
         # Verify datasets exist before delete
         check_before = await seeded_db.execute(
-            select(DatasetRecord).where(DatasetRecord.project_id == "project-001")
+            select(DatasetRecord).where(DatasetRecord.project_id == PROJECT_1)
         )
         assert len(list(check_before.scalars().all())) == 2
 
-        result = await delete_project(project_id="project-001")
+        result = await delete_project(project_id=PROJECT_1)
 
         match result:
             case Success(deleted):
                 assert deleted is True
                 # Verify datasets were cascade deleted
                 check_after = await seeded_db.execute(
-                    select(DatasetRecord).where(DatasetRecord.project_id == "project-001")
+                    select(DatasetRecord).where(DatasetRecord.project_id == PROJECT_1)
                 )
                 assert len(list(check_after.scalars().all())) == 0
             case Failure(error):
@@ -75,11 +77,11 @@ class TestDeleteProject:
         await seeded_db.close()
 
         metadata_repository = AsyncMock()
-        metadata_repository.get_project = AsyncMock(return_value={"id": "project-001", "org_id": "test-org-001", "name": "Test"})
+        metadata_repository.get_project = AsyncMock(return_value={"id": PROJECT_1, "org_id": ORG_1, "name": "Test"})
         metadata_repository.delete_project = AsyncMock(side_effect=SQLAlchemyError("Database connection lost"))
 
         result = await delete_project(
-            project_id="project-001",
+            project_id=PROJECT_1,
             repositories={'metadata_repository': lambda: metadata_repository},
         )
 

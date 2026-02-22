@@ -10,6 +10,17 @@ from app.use_cases.project import list_projects
 from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
 
+from tests.uuidv7_fixtures import (
+    DATASET_1,
+    DATASET_2,
+    ORG_1,
+    PROJECT_1,
+    PROJECT_2,
+    PROJECT_SORT_1,
+    PROJECT_SORT_2,
+    PROJECT_SORT_3,
+)
+
 
 class TestListProjects:
     """Tests for list_projects workflow."""
@@ -22,12 +33,46 @@ class TestListProjects:
 
         match result:
             case Success(projects):
-                assert len(projects) == 2
-                # Ordered by created_at desc, so most recent first
-                assert projects[0]["id"] == "project-002"
-                assert projects[0]["name"] == "Another Project"
-                assert projects[1]["id"] == "project-001"
-                assert projects[1]["name"] == "Test Project"
+                # Normalize dataset order within each project for deterministic comparison
+                for p in projects:
+                    p["datasets"] = sorted(p["datasets"], key=lambda d: d["id"])
+                assert projects == [
+                    {
+                        "id": PROJECT_2,
+                        "name": "Another Project",
+                        "description": None,
+                        "org_id": ORG_1,
+                        "created_by": None,
+                        "created_at": projects[0]["created_at"],
+                        "updated_at": projects[0]["updated_at"],
+                        "datasets": [],
+                    },
+                    {
+                        "id": PROJECT_1,
+                        "name": "Test Project",
+                        "description": "A test project",
+                        "org_id": ORG_1,
+                        "created_by": None,
+                        "created_at": projects[1]["created_at"],
+                        "updated_at": projects[1]["updated_at"],
+                        "datasets": [
+                            {
+                                "id": DATASET_1,
+                                "name": "Dataset One",
+                                "link": f"/api/datasets/{DATASET_1}",
+                                "description": None,
+                                "schema_config": {"fields": {"col1": {"type": "text"}}},
+                            },
+                            {
+                                "id": DATASET_2,
+                                "name": "Dataset Two",
+                                "link": f"/api/datasets/{DATASET_2}",
+                                "description": None,
+                                "schema_config": {"fields": {"col2": {"type": "number"}}},
+                            },
+                        ],
+                    },
+                ]
             case Failure(error):
                 pytest.fail(f"list_projects should return projects, got: {error}")
 
@@ -48,15 +93,15 @@ class TestListProjects:
         set_session(db_session)
 
         # Create projects in a specific order
-        p1 = ProjectRecord(id="p1", name="First", org_id="test-org-001")
+        p1 = ProjectRecord(id=PROJECT_SORT_1, name="First", org_id=ORG_1)
         db_session.add(p1)
         await db_session.flush()
 
-        p2 = ProjectRecord(id="p2", name="Second", org_id="test-org-001")
+        p2 = ProjectRecord(id=PROJECT_SORT_2, name="Second", org_id=ORG_1)
         db_session.add(p2)
         await db_session.flush()
 
-        p3 = ProjectRecord(id="p3", name="Third", org_id="test-org-001")
+        p3 = ProjectRecord(id=PROJECT_SORT_3, name="Third", org_id=ORG_1)
         db_session.add(p3)
         await db_session.commit()
 
@@ -65,9 +110,38 @@ class TestListProjects:
         match result:
             case Success(projects):
                 # Most recently created first
-                assert projects[0]["id"] == "p3"
-                assert projects[1]["id"] == "p2"
-                assert projects[2]["id"] == "p1"
+                assert projects == [
+                    {
+                        "id": PROJECT_SORT_3,
+                        "name": "Third",
+                        "description": None,
+                        "org_id": ORG_1,
+                        "created_by": None,
+                        "created_at": projects[0]["created_at"],
+                        "updated_at": projects[0]["updated_at"],
+                        "datasets": [],
+                    },
+                    {
+                        "id": PROJECT_SORT_2,
+                        "name": "Second",
+                        "description": None,
+                        "org_id": ORG_1,
+                        "created_by": None,
+                        "created_at": projects[1]["created_at"],
+                        "updated_at": projects[1]["updated_at"],
+                        "datasets": [],
+                    },
+                    {
+                        "id": PROJECT_SORT_1,
+                        "name": "First",
+                        "description": None,
+                        "org_id": ORG_1,
+                        "created_by": None,
+                        "created_at": projects[2]["created_at"],
+                        "updated_at": projects[2]["updated_at"],
+                        "datasets": [],
+                    },
+                ]
             case Failure(error):
                 pytest.fail(f"list_projects should return ordered projects, got: {error}")
 

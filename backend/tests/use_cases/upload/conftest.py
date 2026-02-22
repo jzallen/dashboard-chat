@@ -3,8 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.metadata import DatasetRecord, ProjectRecord
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
+from tests.uuidv7_fixtures import USER_1, ORG_1, PROJECT_1, DATASET_1
 
-TEST_USER = AuthUser(id="test-user-001", email="test@example.com", org_id="test-org-001", name="Test User")
+TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
 
 @pytest.fixture(autouse=True)
@@ -17,16 +18,15 @@ def auth_user():
 async def seeded_db(db_session: AsyncSession):
     """Seed the database with a project and dataset for upload tests."""
     project = ProjectRecord(
-        id="project-001",
+        id=PROJECT_1,
         name="Test Project",
-        org_id="test-org-001",
+        org_id=ORG_1,
     )
     db_session.add(project)
 
     dataset = DatasetRecord(
-        id="dataset-001",
-        storage_path="project-001/dataset-001.parquet",
-        project_id="project-001",
+        id=DATASET_1,
+        project_id=PROJECT_1,
         name="Existing Dataset",
         schema_config={"fields": {"col1": {"type": "text"}}},
     )

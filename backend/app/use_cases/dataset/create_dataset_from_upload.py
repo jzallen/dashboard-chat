@@ -4,7 +4,6 @@ import json
 from typing import TYPE_CHECKING
 
 import pandas as pd
-from uuid_utils import uuid7
 
 from returns.result import Result
 
@@ -75,25 +74,26 @@ async def create_dataset_from_upload(
     schema_config = infer_schema_from_dataframe(df)
     column_profiles = compute_column_profiles(df, schema_config)
 
-    dataset = Dataset(
-        id=str(uuid7()),
+    preview_rows = json.loads(df.head(10).to_json(orient='records', date_format='iso'))
+
+    dataset_dict = await metadata_repo.create_dataset(
         project_id=file_received_event.project_id,
-        description=description,
+        name="New Dataset",
         schema_config=schema_config,
+        description=description,
         partition_fields=partition_fields,
-        preview_rows=json.loads(df.head(10).to_json(orient='records', date_format='iso')),
         column_profiles=column_profiles,
     )
 
-    await metadata_repo.create_dataset(
-        project_id=dataset.project_id,
-        dataset_id=dataset.id,
-        storage_path=dataset.storage_path,
-        name=dataset.name,
-        schema_config=dataset.schema_config,
-        description=dataset.description,
-        partition_fields=dataset.partition_fields,
-        column_profiles=dataset.column_profiles,
+    dataset = Dataset(
+        id=dataset_dict["id"],
+        project_id=dataset_dict["project_id"],
+        name=dataset_dict["name"],
+        description=dataset_dict["description"],
+        schema_config=dataset_dict["schema_config"],
+        partition_fields=dataset_dict["partition_fields"],
+        preview_rows=preview_rows,
+        column_profiles=dataset_dict["column_profiles"],
     )
 
     cleaned_csv = df.to_csv(index=False).encode("utf-8")

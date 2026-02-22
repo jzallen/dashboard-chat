@@ -1,5 +1,6 @@
 """Async SQLAlchemy database setup."""
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -14,6 +15,14 @@ engine = create_async_engine(
     echo=settings.debug,
     future=True,
 )
+
+# Register uuidv7() SQLite custom function for server_default compatibility
+if "sqlite" in settings.database_url:
+    from uuid_utils import uuid7
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _register_sqlite_uuidv7(dbapi_connection, connection_record):
+        dbapi_connection.create_function("uuidv7", 0, lambda: str(uuid7()))
 
 # Create async session factory
 async_session = async_sessionmaker(

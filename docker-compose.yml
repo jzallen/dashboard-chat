@@ -62,7 +62,7 @@ services:
 
   # PostgreSQL - for persistent storage (optional for DuckDB-only mode)
   db:
-    image: postgres:16-alpine
+    image: postgres:18
     container_name: dashboard-postgres
     profiles: ["full", "postgres"]
     environment:

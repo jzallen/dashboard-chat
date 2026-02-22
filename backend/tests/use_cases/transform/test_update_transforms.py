@@ -8,6 +8,8 @@ from app.repositories import set_session
 from app.repositories.metadata import TransformRecord
 from app.repositories.outbox.outbox_record import OutboxRecord
 
+from tests.uuidv7_fixtures import DATASET_1, TRANSFORM_1, TRANSFORM_2
+
 
 class TestUpdateTransforms:
     """Tests for update_transforms use case."""
@@ -17,9 +19,9 @@ class TestUpdateTransforms:
         set_session(seeded_db)
 
         result = await update_transforms(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             updates=[
-                {"id": "transform-001", "name": "Renamed Filter"},
+                {"id": TRANSFORM_1, "name": "Renamed Filter"},
             ],
         )
 
@@ -34,9 +36,9 @@ class TestUpdateTransforms:
         set_session(seeded_db)
 
         result = await update_transforms(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             updates=[
-                {"id": "transform-001", "status": "deleted"},
+                {"id": TRANSFORM_1, "status": "deleted"},
             ],
         )
 
@@ -48,7 +50,7 @@ class TestUpdateTransforms:
 
         # Verify the transform status is now 'deleted'
         row = await seeded_db.execute(
-            select(TransformRecord).where(TransformRecord.id == "transform-001")
+            select(TransformRecord).where(TransformRecord.id == TRANSFORM_1)
         )
         transform = row.scalar_one()
         assert transform.status == "deleted"
@@ -58,10 +60,10 @@ class TestUpdateTransforms:
         set_session(seeded_db)
 
         result = await update_transforms(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             updates=[
-                {"id": "transform-001", "status": "disabled"},
-                {"id": "transform-002", "status": "disabled"},
+                {"id": TRANSFORM_1, "status": "disabled"},
+                {"id": TRANSFORM_2, "status": "disabled"},
             ],
         )
 
@@ -73,12 +75,12 @@ class TestUpdateTransforms:
 
         # Verify both are disabled
         row1 = await seeded_db.execute(
-            select(TransformRecord).where(TransformRecord.id == "transform-001")
+            select(TransformRecord).where(TransformRecord.id == TRANSFORM_1)
         )
         assert row1.scalar_one().status == "disabled"
 
         row2 = await seeded_db.execute(
-            select(TransformRecord).where(TransformRecord.id == "transform-002")
+            select(TransformRecord).where(TransformRecord.id == TRANSFORM_2)
         )
         assert row2.scalar_one().status == "disabled"
 
@@ -87,23 +89,27 @@ class TestUpdateTransforms:
         set_session(seeded_db)
 
         await update_transforms(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             updates=[
-                {"id": "transform-001", "status": "disabled"},
-                {"id": "transform-002", "status": "deleted"},
+                {"id": TRANSFORM_1, "status": "disabled"},
+                {"id": TRANSFORM_2, "status": "deleted"},
             ],
         )
 
         result = await seeded_db.execute(
             select(OutboxRecord)
             .where(OutboxRecord.aggregate_type == "dataset")
-            .where(OutboxRecord.aggregate_id == "dataset-001")
+            .where(OutboxRecord.aggregate_id == DATASET_1)
         )
         records = result.scalars().all()
         assert len(records) == 1
-        assert records[0].event_type == "TransformsUpdated"
-        assert records[0].payload["dataset_id"] == "dataset-001"
-        assert len(records[0].payload["changes"]) == 2
+        record = records[0]
+        assert record.event_type == "TransformsUpdated"
+        assert record.payload == {
+            "dataset_id": DATASET_1,
+            "changes": record.payload["changes"],
+        }
+        assert len(record.payload["changes"]) == 2
 
     async def test_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
         """update_transforms should return Failure when dataset doesn't exist."""
@@ -111,7 +117,7 @@ class TestUpdateTransforms:
 
         result = await update_transforms(
             dataset_id="nonexistent",
-            updates=[{"id": "transform-001", "status": "disabled"}],
+            updates=[{"id": TRANSFORM_1, "status": "disabled"}],
         )
 
         match result:

@@ -11,6 +11,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.database import Base
+from tests.uuidv7_fixtures import make_test_uuidv7
 
 # Add backend directory to path for imports
 backend_dir = Path(__file__).parent.parent
@@ -52,12 +53,15 @@ async def db_session():
         echo=False,
     )
 
-    # Enable foreign keys for SQLite
+    # Enable foreign keys and register deterministic uuidv7() for SQLite
+    _test_uuidv7 = make_test_uuidv7()
+
     @event.listens_for(engine.sync_engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
+        dbapi_connection.create_function("uuidv7", 0, _test_uuidv7)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

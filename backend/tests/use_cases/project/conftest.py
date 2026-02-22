@@ -6,7 +6,16 @@ from app.repositories.metadata import DatasetRecord, ProjectRecord
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 
-TEST_USER = AuthUser(id="test-user-001", email="test@example.com", org_id="test-org-001", name="Test User")
+from tests.uuidv7_fixtures import (
+    DATASET_1,
+    DATASET_2,
+    ORG_1,
+    PROJECT_1,
+    PROJECT_2,
+    USER_1,
+)
+
+TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
 
 @pytest.fixture(autouse=True)
@@ -24,31 +33,29 @@ def auth_user():
 async def seeded_db(db_session: AsyncSession):
     """Seed the database with two projects, one with datasets."""
     project1 = ProjectRecord(
-        id="project-001",
+        id=PROJECT_1,
         name="Test Project",
         description="A test project",
-        org_id="test-org-001",
+        org_id=ORG_1,
     )
     project2 = ProjectRecord(
-        id="project-002",
+        id=PROJECT_2,
         name="Another Project",
         description=None,
-        org_id="test-org-001",
+        org_id=ORG_1,
     )
     db_session.add(project1)
     db_session.add(project2)
 
     dataset1 = DatasetRecord(
-        id="dataset-001",
-        storage_path="project-001/dataset-001.parquet",
-        project_id="project-001",
+        id=DATASET_1,
+        project_id=PROJECT_1,
         name="Dataset One",
         schema_config={"fields": {"col1": {"type": "text"}}},
     )
     dataset2 = DatasetRecord(
-        id="dataset-002",
-        storage_path="project-001/dataset-002.parquet",
-        project_id="project-001",
+        id=DATASET_2,
+        project_id=PROJECT_1,
         name="Dataset Two",
         schema_config={"fields": {"col2": {"type": "number"}}},
     )

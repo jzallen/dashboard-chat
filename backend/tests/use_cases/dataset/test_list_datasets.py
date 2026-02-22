@@ -4,10 +4,13 @@ from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
-
 from app.use_cases.dataset import list_datasets
 from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord
+from app.models.dataset import Dataset
+from app.models.transform import Transform
+from app.types import QueryBuilderJSON
+from tests.uuidv7_fixtures import PROJECT_1, PROJECT_2, DATASET_1, DATASET_2, DATASET_3, TRANSFORM_1, PROJECT_EMPTY
 
 
 
@@ -18,20 +21,38 @@ class TestListDatasets:
         """list_datasets should return Result containing list[Dataset]."""
         set_session(seeded_db)
 
-        result = await list_datasets(project_id="project-001")
+        result = await list_datasets(project_id=PROJECT_1)
 
         match result:
             case Success(datasets):
                 assert len(datasets) == 2
                 # Ordered by created_at desc — dataset-002 first, dataset-001 second
-                assert datasets[0].id == "dataset-002"
-                assert datasets[0].name == "Dataset Two"
-                assert datasets[0].transforms == []
-                assert datasets[1].id == "dataset-001"
-                assert datasets[1].name == "Dataset One"
-                assert len(datasets[1].transforms) == 1
-                assert datasets[1].transforms[0].id == "transform-001"
-                assert datasets[1].transforms[0].transform_type == "filter"
+                expected_first = Dataset(
+                    id=DATASET_2,
+                    project_id=PROJECT_1,
+                    name="Dataset Two",
+                    schema_config={"fields": {"col2": {"type": "number"}}},
+                    transforms=[],
+                )
+                assert datasets[0] == expected_first
+
+                expected_second = Dataset(
+                    id=DATASET_1,
+                    project_id=PROJECT_1,
+                    name="Dataset One",
+                    schema_config={"fields": {"col1": {"type": "text"}}},
+                    transforms=[Transform(
+                        id=TRANSFORM_1,
+                        name="Filter Active",
+                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                        condition_sql="col1 = 'active'",
+                        description="Filter for active records",
+                        status='enabled',
+                        transform_type='filter',
+                        created_at=datasets[1].transforms[0].created_at,
+                    )],
+                )
+                assert datasets[1] == expected_second
             case Failure(error):
                 pytest.fail(f"list_datasets should return datasets for valid project_id, got: {error}")
 
@@ -53,15 +74,14 @@ class TestListDatasets:
 
         # Arrange: Add a second project and dataset
         new_project = ProjectRecord(
-            id="project-002",
+            id=PROJECT_2,
             name="Another Project",
         )
         seeded_db.add(new_project)
 
         new_dataset = DatasetRecord(
-            id="dataset-003",
-            storage_path="project-002/dataset-003.parquet",
-            project_id="project-002",
+            id=DATASET_3,
+            project_id=PROJECT_2,
             name="Dataset Three",
             schema_config={"fields": {"col3": {"type": "boolean"}}},
         )
@@ -70,7 +90,7 @@ class TestListDatasets:
         await seeded_db.commit()
 
         # Act
-        result = await list_datasets(project_id="project-001")
+        result = await list_datasets(project_id=PROJECT_1)
 
         # Assert
         match result:
@@ -84,13 +104,13 @@ class TestListDatasets:
         set_session(db_session)
 
         project = ProjectRecord(
-            id="empty-project",
+            id=PROJECT_EMPTY,
             name="Empty Project",
         )
         db_session.add(project)
         await db_session.commit()
 
-        result = await list_datasets(project_id="empty-project")
+        result = await list_datasets(project_id=PROJECT_EMPTY)
 
         match result:
             case Success(datasets):
@@ -119,7 +139,7 @@ class TestListDatasets:
 
         metadata_repository = Mock(side_effect=SQLAlchemyError("Database connection lost"))
         result = await list_datasets(
-            project_id="project-001",
+            project_id=PROJECT_1,
             repositories={'metadata_repository': metadata_repository},
         )
 
@@ -128,4 +148,3 @@ class TestListDatasets:
                 assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("list_datasets should fail when database error occurs")
-

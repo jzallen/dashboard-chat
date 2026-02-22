@@ -5,7 +5,16 @@ from app.repositories.outbox.outbox_record import OutboxRecord
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 
-TEST_USER = AuthUser(id="test-user-001", email="test@example.com", org_id="test-org-001", name="Test User")
+from tests.uuidv7_fixtures import (
+    USER_1,
+    ORG_1,
+    PROJECT_1,
+    DATASET_1,
+    TRANSFORM_1,
+    TRANSFORM_2,
+)
+
+TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
 
 @pytest.fixture(autouse=True)
@@ -18,24 +27,23 @@ def auth_user():
 async def seeded_db(db_session: AsyncSession):
     """Seed the database with a project, dataset, and transforms."""
     project = ProjectRecord(
-        id="project-001",
+        id=PROJECT_1,
         name="Test Project",
-        org_id="test-org-001",
+        org_id=ORG_1,
     )
     db_session.add(project)
 
     dataset = DatasetRecord(
-        id="dataset-001",
-        storage_path="project-001/dataset-001.parquet",
-        project_id="project-001",
+        id=DATASET_1,
+        project_id=PROJECT_1,
         name="Dataset One",
         schema_config={"fields": {"col1": {"type": "text"}}},
     )
     db_session.add(dataset)
 
     transform = TransformRecord(
-        id="transform-001",
-        dataset_id="dataset-001",
+        id=TRANSFORM_1,
+        dataset_id=DATASET_1,
         name="Filter Active",
         description="Filter for active records",
         condition_json={"id": "root", "type": "group", "children1": []},
@@ -45,8 +53,8 @@ async def seeded_db(db_session: AsyncSession):
     db_session.add(transform)
 
     transform2 = TransformRecord(
-        id="transform-002",
-        dataset_id="dataset-001",
+        id=TRANSFORM_2,
+        dataset_id=DATASET_1,
         name="Filter Inactive",
         description="Filter for inactive records",
         condition_json={"id": "root", "type": "group", "children1": []},

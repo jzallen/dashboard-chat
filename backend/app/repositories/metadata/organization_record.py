@@ -1,9 +1,8 @@
 """OrganizationRecord ORM model for database persistence."""
 
 from datetime import datetime, timezone
-from uuid import uuid4
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...database import Base
@@ -17,7 +16,7 @@ class OrganizationRecord(Base):
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        server_default=text("(uuidv7())"),
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

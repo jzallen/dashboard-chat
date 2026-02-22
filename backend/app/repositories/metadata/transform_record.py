@@ -6,9 +6,8 @@ This is just for database persistence.
 
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...database import Base
@@ -31,7 +30,7 @@ class TransformRecord(Base):
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        server_default=text("(uuidv7())"),
     )
     dataset_id: Mapped[str] = mapped_column(
         String(36),  # UUID foreign key to DatasetRecord.id

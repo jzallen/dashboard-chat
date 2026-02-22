@@ -3,8 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.metadata import TransformRecord, DatasetRecord, ProjectRecord  # noqa: F401
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
+from tests.uuidv7_fixtures import USER_1, ORG_1, PROJECT_1, DATASET_1, DATASET_2, TRANSFORM_1
 
-TEST_USER = AuthUser(id="test-user-001", email="test@example.com", org_id="test-org-001", name="Test User")
+TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
 
 @pytest.fixture(autouse=True)
@@ -17,32 +18,30 @@ def auth_user():
 async def seeded_db(db_session: AsyncSession):
     """Seed the database with a project, two datasets, and a transform."""
     project = ProjectRecord(
-        id="project-001",
+        id=PROJECT_1,
         name="Test Project",
-        org_id="test-org-001",
+        org_id=ORG_1,
     )
     db_session.add(project)
 
     dataset1 = DatasetRecord(
-        id="dataset-001",
-        storage_path="project-001/dataset-001.parquet",
-        project_id="project-001",
+        id=DATASET_1,
+        project_id=PROJECT_1,
         name="Dataset One",
         schema_config={"fields": {"col1": {"type": "text"}}},
-            )
+    )
     dataset2 = DatasetRecord(
-        id="dataset-002",
-        storage_path="project-001/dataset-002.parquet",
-        project_id="project-001",
+        id=DATASET_2,
+        project_id=PROJECT_1,
         name="Dataset Two",
         schema_config={"fields": {"col2": {"type": "number"}}},
-            )
+    )
     db_session.add(dataset1)
     db_session.add(dataset2)
 
     transform1 = TransformRecord(
-        id="transform-001",
-        dataset_id="dataset-001",
+        id=TRANSFORM_1,
+        dataset_id=DATASET_1,
         name="Filter Active",
         description="Filter for active records",
         condition_json={"id": "root", "type": "group", "children1": []},

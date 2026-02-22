@@ -11,6 +11,8 @@ from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.sql_access import disable_sql_access
 
+from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
+
 
 class TestDisableSqlAccess:
 
@@ -20,13 +22,11 @@ class TestDisableSqlAccess:
     ):
         set_session(seeded_db_with_access)
 
-        result = await disable_sql_access(project_id="project-001")
+        result = await disable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Success)
-        data = result.unwrap()
-        assert data["project_id"] == "project-001"
-        assert data["enabled"] is False
-        mock_drop_schema.assert_called_once_with("project-001")
+        assert result.unwrap() == {"project_id": PROJECT_1, "enabled": False}
+        mock_drop_schema.assert_called_once_with(PROJECT_1)
 
     @patch("app.use_cases.sql_access.disable_sql_access.drop_project_schema", new_callable=AsyncMock)
     async def test_disable_returns_failure_for_nonexistent_project(
@@ -46,7 +46,7 @@ class TestDisableSqlAccess:
         """No external_access record exists at all."""
         set_session(seeded_db)
 
-        result = await disable_sql_access(project_id="project-001")
+        result = await disable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
@@ -58,7 +58,7 @@ class TestDisableSqlAccess:
         """Record exists but enabled=False."""
         set_session(seeded_db_with_disabled_access)
 
-        result = await disable_sql_access(project_id="project-001")
+        result = await disable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
@@ -69,7 +69,7 @@ class TestDisableSqlAccess:
     ):
         set_session(seeded_db_other_org)
 
-        result = await disable_sql_access(project_id="project-other")
+        result = await disable_sql_access(project_id=PROJECT_OTHER)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), AuthorizationError)

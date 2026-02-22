@@ -14,6 +14,7 @@ from app.use_cases.exceptions import (
 from app.repositories import set_session
 from app.repositories.lake import MinIOLakeRepository
 from app.models import Upload
+from tests.uuidv7_fixtures import PROJECT_1, DATASET_1
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ class TestUploadFile:
             result = await upload_file(
                 file_content=sample_csv,
                 file_name="test_data.csv",
-                project_id="project-001",
+                project_id=PROJECT_1,
                 repositories={
                     'lake_repository': partial(MinIOLakeRepository, s3_client=s3_write_stubber.client),
                 },
@@ -54,7 +55,7 @@ class TestUploadFile:
                 pytest.fail(f"upload_file should succeed, got: {error}")
             case Success(upload):
                 assert isinstance(upload, Upload)
-                assert upload.project_id == "project-001"
+                assert upload.project_id == PROJECT_1
                 assert upload.dataset_id is None
                 assert upload.original_filename == "test_data.csv"
                 assert upload.file_size == len(sample_csv)
@@ -71,15 +72,15 @@ class TestUploadFile:
             result = await upload_file(
                 file_content=sample_csv,
                 file_name="test_data.csv",
-                project_id="project-001",
-                dataset_id="dataset-001",
+                project_id=PROJECT_1,
+                dataset_id=DATASET_1,
                 repositories={
                     'lake_repository': partial(MinIOLakeRepository, s3_client=s3_write_stubber.client),
                 },
             )
 
         assert isinstance(result, Success)
-        assert result.unwrap().dataset_id == "dataset-001"
+        assert result.unwrap().dataset_id == DATASET_1
 
     async def test_upload_file_rejects_non_csv(self, seeded_db: AsyncSession, sample_csv: bytes):
         """upload_file should return Failure for non-CSV files."""
@@ -88,7 +89,7 @@ class TestUploadFile:
         result = await upload_file(
             file_content=sample_csv,
             file_name="test_data.xlsx",
-            project_id="project-001",
+            project_id=PROJECT_1,
         )
 
         assert isinstance(result, Failure)
@@ -101,7 +102,7 @@ class TestUploadFile:
         result = await upload_file(
             file_content=b"",
             file_name="empty.csv",
-            project_id="project-001",
+            project_id=PROJECT_1,
         )
 
         assert isinstance(result, Failure)
@@ -131,7 +132,7 @@ class TestUploadFile:
         result = await upload_file(
             file_content=sample_csv,
             file_name="test_data.csv",
-            project_id="project-001",
+            project_id=PROJECT_1,
             dataset_id="nonexistent-dataset",
         )
 

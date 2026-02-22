@@ -9,6 +9,8 @@ from app.repositories import set_session
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 
+from tests.uuidv7_fixtures import ORG_1, USER_3
+
 from .conftest import TEST_USER, TEST_USER_WITH_ORG
 
 
@@ -24,11 +26,12 @@ class TestGetOrganization:
 
         match result:
             case Success(data):
-                assert data is not None
-                assert data["id"] == "test-org-001"
-                assert data["name"] == "Test Organization"
-                assert "created_at" in data
-                assert "updated_at" in data
+                assert data == {
+                    "id": ORG_1,
+                    "name": "Test Organization",
+                    "created_at": data["created_at"],
+                    "updated_at": data["updated_at"],
+                }
             case Failure(error):
                 pytest.fail(f"get_organization should return org, got: {error}")
 
@@ -49,7 +52,7 @@ class TestGetOrganization:
         """get_organization should return None when org_id points to missing org."""
         set_session(seeded_db)
         set_auth_user(AuthUser(
-            id="test-user-003",
+            id=USER_3,
             email="ghost@example.com",
             org_id="nonexistent-org",
             name="Ghost User",

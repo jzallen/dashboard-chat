@@ -10,6 +10,18 @@ from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
 from app.use_cases.project import create_project, get_project, list_projects
 
+from tests.uuidv7_fixtures import (
+    ORG_1,
+    ORG_OTHER,
+    ORG_ROUTE,
+    PROJECT_EMPTY,
+    PROJECT_MINE,
+    PROJECT_OTHER,
+    PROJECT_ROUTE_1,
+    USER_1,
+    USER_2,
+)
+
 
 class TestListProjectsAuth:
     """list_projects should filter by the authenticated user's org_id."""
@@ -18,8 +30,8 @@ class TestListProjectsAuth:
         """Projects from a different org should not appear in results."""
         set_session(db_session)
 
-        db_session.add(ProjectRecord(id="p-mine", name="My Project", org_id="test-org-001"))
-        db_session.add(ProjectRecord(id="p-other", name="Other Org Project", org_id="other-org"))
+        db_session.add(ProjectRecord(id=PROJECT_MINE, name="My Project", org_id=ORG_1))
+        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other Org Project", org_id=ORG_OTHER))
         await db_session.commit()
 
         result = await list_projects()
@@ -27,7 +39,7 @@ class TestListProjectsAuth:
         match result:
             case Success(projects):
                 assert len(projects) == 1
-                assert projects[0]["id"] == "p-mine"
+                assert projects[0]["id"] == PROJECT_MINE
             case Failure(error):
                 pytest.fail(f"list_projects should succeed, got: {error}")
 
@@ -35,7 +47,7 @@ class TestListProjectsAuth:
         """If all projects belong to a different org, should return empty list."""
         set_session(db_session)
 
-        db_session.add(ProjectRecord(id="p-other", name="Other", org_id="other-org"))
+        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other", org_id=ORG_OTHER))
         await db_session.commit()
 
         result = await list_projects()
@@ -58,8 +70,8 @@ class TestCreateProjectAuth:
 
         match result:
             case Success(project):
-                assert project["org_id"] == "test-org-001"
-                assert project["created_by"] == "test-user-001"
+                assert project["org_id"] == ORG_1
+                assert project["created_by"] == USER_1
             case Failure(error):
                 pytest.fail(f"create_project should succeed, got: {error}")
 
@@ -71,14 +83,14 @@ class TestGetProjectAuth:
         """get_project should succeed when org_id matches."""
         set_session(db_session)
 
-        db_session.add(ProjectRecord(id="p-mine", name="My Project", org_id="test-org-001"))
+        db_session.add(ProjectRecord(id=PROJECT_MINE, name="My Project", org_id=ORG_1))
         await db_session.commit()
 
-        result = await get_project(project_id="p-mine")
+        result = await get_project(project_id=PROJECT_MINE)
 
         match result:
             case Success(project):
-                assert project["id"] == "p-mine"
+                assert project["id"] == PROJECT_MINE
             case Failure(error):
                 pytest.fail(f"get_project should succeed, got: {error}")
 
@@ -86,10 +98,10 @@ class TestGetProjectAuth:
         """get_project should return Failure with AuthorizationError for wrong org."""
         set_session(db_session)
 
-        db_session.add(ProjectRecord(id="p-other", name="Other", org_id="other-org"))
+        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other", org_id=ORG_OTHER))
         await db_session.commit()
 
-        result = await get_project(project_id="p-other")
+        result = await get_project(project_id=PROJECT_OTHER)
 
         match result:
             case Failure(error):
@@ -101,14 +113,14 @@ class TestGetProjectAuth:
         """get_project should allow access when project has no org_id (legacy data)."""
         set_session(db_session)
 
-        db_session.add(ProjectRecord(id="p-legacy", name="Legacy Project"))
+        db_session.add(ProjectRecord(id=PROJECT_EMPTY, name="Legacy Project"))
         await db_session.commit()
 
-        result = await get_project(project_id="p-legacy")
+        result = await get_project(project_id=PROJECT_EMPTY)
 
         match result:
             case Success(project):
-                assert project["id"] == "p-legacy"
+                assert project["id"] == PROJECT_EMPTY
             case Failure(error):
                 pytest.fail(f"get_project should allow legacy project access, got: {error}")
 
@@ -116,13 +128,13 @@ class TestGetProjectAuth:
         """Switching auth user should change authorization outcome."""
         set_session(db_session)
 
-        db_session.add(ProjectRecord(id="p-org-a", name="Org A Project", org_id="org-a"))
+        db_session.add(ProjectRecord(id=PROJECT_ROUTE_1, name="Org A Project", org_id=ORG_ROUTE))
         await db_session.commit()
 
         # Set a different user than the default
-        set_auth_user(AuthUser(id="user-b", email="b@test.com", org_id="org-b"))
+        set_auth_user(AuthUser(id=USER_2, email="b@test.com", org_id=ORG_OTHER))
 
-        result = await get_project(project_id="p-org-a")
+        result = await get_project(project_id=PROJECT_ROUTE_1)
 
         match result:
             case Failure(error):

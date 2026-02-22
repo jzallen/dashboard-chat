@@ -7,7 +7,7 @@ This is just for database persistence.
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Computed, DateTime, ForeignKey, Integer, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...database import Base
@@ -31,13 +31,13 @@ class DatasetRecord(Base):
     id: Mapped[str] = mapped_column(
         String(36),  # UUID primary key
         primary_key=True,
+        server_default=text("(uuidv7())"),
     )
     storage_path: Mapped[str] = mapped_column(
-        String(255),
+        Computed("'datasets/' || project_id || '/' || id || '/'"),
         unique=True,
         index=True,
         nullable=False,
-        comment="S3/MinIO storage path for parquet file"
     )
     project_id: Mapped[str] = mapped_column(
         String(36),

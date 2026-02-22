@@ -7,10 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 from botocore.exceptions import ClientError
 
-
 from app.use_cases.dataset import get_dataset
 from app.repositories import set_session
 from app.models.dataset import Dataset
+from app.models.transform import Transform
+from app.types import QueryBuilderJSON
+from tests.uuidv7_fixtures import PROJECT_1, DATASET_1, TRANSFORM_1
 
 
 
@@ -21,21 +23,27 @@ class TestGetDataset:
         """get_dataset should return Dataset with transforms by default."""
         set_session(seeded_db)
 
-        result = await get_dataset(dataset_id="dataset-001")
+        result = await get_dataset(dataset_id=DATASET_1)
 
         match result:
             case Success(dataset):
-                assert dataset.id == "dataset-001"
-                assert dataset.project_id == "project-001"
-                assert dataset.name == "Dataset One"
-                assert dataset.schema_config == {"fields": {"col1": {"type": "text"}}}
-                assert len(dataset.transforms) == 1
-                t = dataset.transforms[0]
-                assert t.id == "transform-001"
-                assert t.name == "Filter Active"
-                assert t.condition_sql == "col1 = 'active'"
-                assert t.status == 'enabled'
-                assert t.transform_type == 'filter'
+                expected = Dataset(
+                    id=DATASET_1,
+                    project_id=PROJECT_1,
+                    name="Dataset One",
+                    schema_config={"fields": {"col1": {"type": "text"}}},
+                    transforms=[Transform(
+                        id=TRANSFORM_1,
+                        name="Filter Active",
+                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                        condition_sql="col1 = 'active'",
+                        description="Filter for active records",
+                        status='enabled',
+                        transform_type='filter',
+                        created_at=dataset.transforms[0].created_at,
+                    )],
+                )
+                assert dataset == expected
             case Failure(error):
                 pytest.fail(f"get_dataset should return dataset for valid id, got: {error}")
 
@@ -44,7 +52,7 @@ class TestGetDataset:
         set_session(seeded_db)
 
         result = await get_dataset(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             include_transforms=False,
         )
 
@@ -74,7 +82,7 @@ class TestGetDataset:
 
         with patch.object(Dataset, "query_preview_rows", return_value=mock_preview):
             result = await get_dataset(
-                dataset_id="dataset-001",
+                dataset_id=DATASET_1,
                 include_preview=True,
                 preview_limit=5,
             )
@@ -96,7 +104,7 @@ class TestGetDataset:
                 raise SQLAlchemyError("Connection lost")
 
         result = await get_dataset(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             repositories={'metadata_repository': FailingMetadataRepository},
         )
 
@@ -118,7 +126,7 @@ class TestGetDataset:
 
         with patch.object(Dataset, "query_preview_rows", side_effect=failing_preview):
             result = await get_dataset(
-                dataset_id="dataset-001",
+                dataset_id=DATASET_1,
                 include_preview=True,
             )
 

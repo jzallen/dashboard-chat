@@ -4,9 +4,12 @@ from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
-
 from app.use_cases.dataset import update_dataset
 from app.repositories import set_session
+from app.models.dataset import Dataset
+from app.models.transform import Transform
+from app.types import QueryBuilderJSON
+from tests.uuidv7_fixtures import PROJECT_1, DATASET_1, TRANSFORM_1
 
 
 
@@ -18,18 +21,29 @@ class TestUpdateDataset:
         set_session(seeded_db)
 
         result = await update_dataset(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             update_dict={"name": "Updated Dataset Name"},
         )
 
         match result:
             case Success(dataset):
-                assert dataset.id == "dataset-001"
-                assert dataset.name == "Updated Dataset Name"
-                assert dataset.description is None
-                assert len(dataset.transforms) == 1
-                assert dataset.transforms[0].id == "transform-001"
-                assert dataset.transforms[0].transform_type == "filter"
+                expected = Dataset(
+                    id=DATASET_1,
+                    project_id=PROJECT_1,
+                    name="Updated Dataset Name",
+                    schema_config={"fields": {"col1": {"type": "text"}}},
+                    transforms=[Transform(
+                        id=TRANSFORM_1,
+                        name="Filter Active",
+                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                        condition_sql="col1 = 'active'",
+                        description="Filter for active records",
+                        status='enabled',
+                        transform_type='filter',
+                        created_at=dataset.transforms[0].created_at,
+                    )],
+                )
+                assert dataset == expected
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 
@@ -38,18 +52,30 @@ class TestUpdateDataset:
         set_session(seeded_db)
 
         result = await update_dataset(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             update_dict={"name": "Fully Updated Dataset", "description": "New description"},
         )
 
         match result:
             case Success(dataset):
-                assert dataset.id == "dataset-001"
-                assert dataset.name == "Fully Updated Dataset"
-                assert dataset.description == "New description"
-                assert len(dataset.transforms) == 1
-                assert dataset.transforms[0].id == "transform-001"
-                assert dataset.transforms[0].transform_type == "filter"
+                expected = Dataset(
+                    id=DATASET_1,
+                    project_id=PROJECT_1,
+                    name="Fully Updated Dataset",
+                    description="New description",
+                    schema_config={"fields": {"col1": {"type": "text"}}},
+                    transforms=[Transform(
+                        id=TRANSFORM_1,
+                        name="Filter Active",
+                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                        condition_sql="col1 = 'active'",
+                        description="Filter for active records",
+                        status='enabled',
+                        transform_type='filter',
+                        created_at=dataset.transforms[0].created_at,
+                    )],
+                )
+                assert dataset == expected
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 
@@ -77,7 +103,7 @@ class TestUpdateDataset:
                 raise SQLAlchemyError("Database connection lost")
 
         result = await update_dataset(
-            dataset_id="dataset-001",
+            dataset_id=DATASET_1,
             update_dict={"name": "New Name"},
             repositories={'metadata_repository': FailingMetadataRepository},
         )
