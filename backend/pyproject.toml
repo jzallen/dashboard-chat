@@ -33,6 +33,8 @@ dependencies = [
     # UUIDs
     "uuid-utils>=0.6.0",
     "pyyaml>=6.0.3",
+    # Password hashing for external SQL access
+    "bcrypt>=4.0.0",
 ]
 
 [build-system]

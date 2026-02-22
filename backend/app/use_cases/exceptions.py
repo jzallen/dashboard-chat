@@ -123,3 +123,36 @@ class PreviewNotSupported(DomainException):
         super().__init__(
             f"Operation '{operation}' does not support preview"
         )
+
+
+class SqlAccessAlreadyEnabled(DomainException):
+    """Raised when SQL access is already enabled for a project."""
+
+    _type = "SQL_ACCESS_ALREADY_ENABLED"
+    _title = "SQL Access Already Enabled"
+    _status_code = 409
+
+    def __init__(self, project_id: str):
+        super().__init__(f"SQL access is already enabled for project '{project_id}'")
+
+
+class SqlAccessNotEnabled(DomainException):
+    """Raised when SQL access is not enabled for a project."""
+
+    _type = "SQL_ACCESS_NOT_ENABLED"
+    _title = "SQL Access Not Enabled"
+    _status_code = 404
+
+    def __init__(self, project_id: str):
+        super().__init__(f"SQL access is not enabled for project '{project_id}'")
+
+
+class ProjectHasNoDatasets(DomainException):
+    """Raised when trying to enable SQL access on a project with no datasets."""
+
+    _type = "PROJECT_HAS_NO_DATASETS"
+    _title = "Project Has No Datasets"
+    _status_code = 400
+
+    def __init__(self, project_id: str):
+        super().__init__(f"Project '{project_id}' has no datasets to expose")

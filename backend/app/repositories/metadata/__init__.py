@@ -12,6 +12,7 @@ from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
 from .transform_record import TransformRecord
 from .organization_record import OrganizationRecord
+from .external_access_record import ExternalAccessRecord
 
 
 class MetadataRepositoryProtocol(Protocol):

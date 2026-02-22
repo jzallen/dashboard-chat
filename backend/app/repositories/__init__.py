@@ -13,12 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .metadata import MetadataRepository
 from .lake import LakeRepository, MinIOLakeRepository
 from .outbox import OutboxRepository
+from .external_access import ExternalAccessRepository
 
 # Context variable to hold the current database session
 _db_session: ContextVar[AsyncSession | None] = ContextVar("db_session", default=None)
 
 
-Repository = Union[MetadataRepository, LakeRepository, OutboxRepository]
+Repository = Union[MetadataRepository, LakeRepository, OutboxRepository, ExternalAccessRepository]
 
 
 def get_session() -> AsyncSession:
@@ -65,6 +66,7 @@ class RepositoryContainer:
             'metadata_repository': partial(MetadataRepository, db),
             'lake_repository': MinIOLakeRepository,
             'outbox_repository': partial(OutboxRepository, db),
+            'external_access_repository': partial(ExternalAccessRepository, db),
             **(overrides or {}),
         }
         self._cache: dict[str, object] = {}

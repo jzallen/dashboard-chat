@@ -29,3 +29,10 @@ class OutboxRepositoryError(RepositoryError):
 
     def __init__(self, message: str):
         super().__init__(f"[OutboxRepository] {message}")
+
+
+class ExternalAccessRepositoryError(RepositoryError):
+    """Raised when the external access repository encounters an error."""
+
+    def __init__(self, message: str):
+        super().__init__(f"[ExternalAccessRepository] {message}")

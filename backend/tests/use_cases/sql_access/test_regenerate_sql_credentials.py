@@ -1,0 +1,79 @@
+"""Tests for regenerate_sql_credentials use case."""
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from returns.result import Failure, Success
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.exceptions import AuthorizationError
+from app.repositories import set_session
+from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
+from app.use_cases.sql_access import regenerate_sql_credentials
+
+
+class TestRegenerateSqlCredentials:
+
+    @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
+    async def test_regenerate_returns_new_credentials(
+        self, mock_regenerate, seeded_db_with_access: AsyncSession
+    ):
+        set_session(seeded_db_with_access)
+
+        result = await regenerate_sql_credentials(project_id="project-001")
+
+        assert isinstance(result, Success)
+        data = result.unwrap()
+        assert data["password"] is not None
+        assert len(data["password"]) == 32
+        assert data["host"] is not None
+        assert data["port"] is not None
+        assert data["database"] is not None
+        assert data["username"] is not None
+        assert "connection_string" in data
+        # Verify correct args passed to pg_duckdb
+        mock_regenerate.assert_called_once_with("project-001", data["password"])
+
+    @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
+    async def test_regenerate_returns_failure_for_nonexistent_project(
+        self, mock_regenerate, seeded_db: AsyncSession
+    ):
+        set_session(seeded_db)
+
+        result = await regenerate_sql_credentials(project_id="nonexistent")
+
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), ProjectNotFound)
+
+    @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
+    async def test_regenerate_returns_failure_when_not_enabled(
+        self, mock_regenerate, seeded_db: AsyncSession
+    ):
+        set_session(seeded_db)
+
+        result = await regenerate_sql_credentials(project_id="project-001")
+
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), SqlAccessNotEnabled)
+
+    @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
+    async def test_regenerate_returns_failure_for_other_org(
+        self, mock_regenerate, seeded_db_other_org: AsyncSession
+    ):
+        set_session(seeded_db_other_org)
+
+        result = await regenerate_sql_credentials(project_id="project-other")
+
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), AuthorizationError)
+
+    @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock, side_effect=RuntimeError("pg_duckdb down"))
+    async def test_regenerate_returns_failure_on_pg_duckdb_error(
+        self, mock_regenerate, seeded_db_with_access: AsyncSession
+    ):
+        """pg_duckdb failure should propagate as a Failure via handle_returns."""
+        set_session(seeded_db_with_access)
+
+        result = await regenerate_sql_credentials(project_id="project-001")
+
+        assert isinstance(result, Failure)

@@ -1,0 +1,78 @@
+"""Tests for get_sql_access use case."""
+
+import pytest
+from returns.result import Failure, Success
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.exceptions import AuthorizationError
+from app.repositories import set_session
+from app.use_cases.exceptions import ProjectNotFound
+from app.use_cases.sql_access import get_sql_access
+
+
+class TestGetSqlAccess:
+
+    async def test_get_returns_connection_details_when_enabled(
+        self, seeded_db_with_access: AsyncSession
+    ):
+        set_session(seeded_db_with_access)
+
+        result = await get_sql_access(project_id="project-001")
+
+        assert isinstance(result, Success)
+        data = result.unwrap()
+        assert data["project_id"] == "project-001"
+        assert data["enabled"] is True
+        assert data["host"] is not None
+        assert data["port"] is not None
+        assert data["database"] is not None
+        assert data["username"] is not None
+        assert data["schema"] is not None
+        # Password must NOT be in get response
+        assert "password" not in data
+
+    async def test_get_returns_disabled_when_no_record_exists(
+        self, seeded_db: AsyncSession
+    ):
+        """No external_access record for this project — enabled=False."""
+        set_session(seeded_db)
+
+        result = await get_sql_access(project_id="project-001")
+
+        assert isinstance(result, Success)
+        data = result.unwrap()
+        assert data["project_id"] == "project-001"
+        assert data["enabled"] is False
+
+    async def test_get_returns_disabled_when_record_is_disabled(
+        self, seeded_db_with_disabled_access: AsyncSession
+    ):
+        """Record exists but enabled=False — distinct code path from no-record."""
+        set_session(seeded_db_with_disabled_access)
+
+        result = await get_sql_access(project_id="project-001")
+
+        assert isinstance(result, Success)
+        data = result.unwrap()
+        assert data["project_id"] == "project-001"
+        assert data["enabled"] is False
+
+    async def test_get_returns_failure_for_nonexistent_project(
+        self, seeded_db: AsyncSession
+    ):
+        set_session(seeded_db)
+
+        result = await get_sql_access(project_id="nonexistent")
+
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), ProjectNotFound)
+
+    async def test_get_returns_failure_for_other_org(
+        self, seeded_db_other_org: AsyncSession
+    ):
+        set_session(seeded_db_other_org)
+
+        result = await get_sql_access(project_id="project-other")
+
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), AuthorizationError)

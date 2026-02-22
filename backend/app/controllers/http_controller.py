@@ -11,6 +11,7 @@ from app.use_cases import upload as upload_use_cases
 from app.use_cases import project as project_use_cases
 from app.use_cases import transform as transform_use_cases
 from app.use_cases import organization as organization_use_cases
+from app.use_cases import sql_access as sql_access_use_cases
 from app.use_cases.exceptions import DomainException
 
 logger = logging.getLogger(__name__)
@@ -204,6 +205,53 @@ class HTTPController:
     @staticmethod
     async def get_my_organization() -> tuple[dict, int]:
         result = await organization_use_cases.get_organization()
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    # SQL access methods
+
+    @staticmethod
+    async def enable_sql_access(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.enable_sql_access(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 201
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def disable_sql_access(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.disable_sql_access(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 204
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def get_sql_access(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.get_sql_access(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def sync_sql_access(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.sync_sql_access(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def regenerate_sql_credentials(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.regenerate_sql_credentials(project_id)
         match result:
             case Success(data):
                 return wrap_success(data), 200
