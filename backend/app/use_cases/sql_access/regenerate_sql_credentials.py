@@ -15,6 +15,7 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     hash_password,
     regenerate_credentials,
 )
+from app.use_cases.sql_access.provisioner import ProjectEnvironment
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -56,29 +57,39 @@ async def regenerate_sql_credentials(
     if not existing or not existing["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
+    # Reconstruct ProjectEnvironment from stored record + settings
+    settings = get_settings()
+    env = ProjectEnvironment(
+        environment_id=existing["environment_id"],
+        host=existing["environment_host"],
+        port=existing["environment_port"],
+        database=settings.pg_duckdb_database,
+        admin_user=settings.pg_duckdb_admin_user,
+        admin_password=settings.pg_duckdb_admin_password,
+    )
+
     # Generate new credentials
     new_password = generate_password()
     new_hash = hash_password(new_password)
 
     # Update pg_duckdb role password
-    await regenerate_credentials(project_id, new_password)
+    await regenerate_credentials(env, project_id, new_password)
 
     # Update stored hash
     await external_access_repo.update(project_id, {
         "pg_password_hash": new_hash,
     })
 
-    settings = get_settings()
     return {
-        "host": settings.pg_duckdb_external_host,
-        "port": settings.pg_duckdb_external_port,
+        "host": existing["environment_host"],
+        "port": existing["environment_port"],
         "database": settings.pg_duckdb_database,
         "username": existing["pg_role"],
         "password": new_password,  # One-time plaintext
         "schema": existing["pg_schema"],
         "connection_string": (
             f"postgresql://{existing['pg_role']}:{new_password}"
-            f"@{settings.pg_duckdb_external_host}:{settings.pg_duckdb_external_port}"
+            f"@{existing['environment_host']}:{existing['environment_port']}"
             f"/{settings.pg_duckdb_database}"
         ),
     }

@@ -18,6 +18,7 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     execute_bootstrap,
     grant_schema_usage,
 )
+from app.use_cases.sql_access.provisioner import ProjectEnvironment
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -57,8 +58,18 @@ async def sync_sql_access(
     if not existing or not existing["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
-    # Build full datasets for bootstrap SQL generation
+    # Reconstruct ProjectEnvironment from stored record + settings
     settings = get_settings()
+    env = ProjectEnvironment(
+        environment_id=existing["environment_id"],
+        host=existing["environment_host"],
+        port=existing["environment_port"],
+        database=settings.pg_duckdb_database,
+        admin_user=settings.pg_duckdb_admin_user,
+        admin_password=settings.pg_duckdb_admin_password,
+    )
+
+    # Build full datasets for bootstrap SQL generation
     sparse_datasets = project_dict.get("datasets", [])
     full_datasets = []
     for ds_info in sparse_datasets:
@@ -72,10 +83,10 @@ async def sync_sql_access(
     # Generate and execute bootstrap SQL (drops and recreates all views)
     pg_schema = existing["pg_schema"]
     bootstrap_sql = generate_bootstrap_sql(pg_schema, dataset_pairs, settings.storage_bucket)
-    await execute_bootstrap(project_id, bootstrap_sql)
+    await execute_bootstrap(env, project_id, bootstrap_sql)
 
     # Re-grant SELECT on refreshed views
-    await grant_schema_usage(project_id)
+    await grant_schema_usage(env, project_id)
 
     # Update last_synced_at
     synced_at = datetime.now(timezone.utc)

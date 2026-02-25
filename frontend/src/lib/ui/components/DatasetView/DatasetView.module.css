@@ -144,6 +144,20 @@
   @apply flex-1 flex flex-col overflow-hidden;
 }
 
+/* SQL Access panel section */
+.sqlAccessSection {
+  @apply flex-1 overflow-auto p-6 bg-white;
+}
+
+/* Active button state (toggled on) */
+.settingsButtonActive {
+  @apply bg-blue-50 text-blue-600;
+}
+
+.settingsButtonActive svg {
+  @apply text-blue-600;
+}
+
 /* Empty state */
 .emptyState {
   @apply text-center py-12 text-gray-500;

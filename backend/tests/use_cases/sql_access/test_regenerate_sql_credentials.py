@@ -10,6 +10,7 @@ from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.sql_access import regenerate_sql_credentials
+from tests.use_cases.sql_access.conftest import MOCK_ENV_HOST, MOCK_ENV_PORT
 
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
@@ -28,13 +29,18 @@ class TestRegenerateSqlCredentials:
         data = result.unwrap()
         assert data["password"] is not None
         assert len(data["password"]) == 32
-        assert data["host"] is not None
-        assert data["port"] is not None
+        assert data["host"] == MOCK_ENV_HOST
+        assert data["port"] == MOCK_ENV_PORT
         assert data["database"] is not None
         assert data["username"] is not None
         assert "connection_string" in data
-        # Verify correct args passed to pg_duckdb
-        mock_regenerate.assert_called_once_with(PROJECT_1, data["password"])
+        # Verify correct args passed to pg_duckdb (env, project_id, password)
+        mock_regenerate.assert_called_once()
+        env_arg = mock_regenerate.call_args[0][0]
+        assert env_arg.host == MOCK_ENV_HOST
+        assert env_arg.port == MOCK_ENV_PORT
+        assert mock_regenerate.call_args[0][1] == PROJECT_1
+        assert mock_regenerate.call_args[0][2] == data["password"]
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
     async def test_regenerate_returns_failure_for_nonexistent_project(

@@ -1,7 +1,7 @@
 """pg_duckdb connection manager for external SQL access.
 
-Manages PostgreSQL schemas, roles, and credentials in the shared pg_duckdb instance.
-All DDL operations use an admin connection via asyncpg.
+Manages PostgreSQL schemas, roles, and credentials in pg_duckdb environments.
+All DDL operations use an admin connection via asyncpg against a ProjectEnvironment.
 """
 
 import logging
@@ -12,7 +12,7 @@ import string
 import asyncpg
 import bcrypt
 
-from app.config import get_settings
+from app.use_cases.sql_access.provisioner import ProjectEnvironment, StorageConfig
 
 logger = logging.getLogger(__name__)
 
@@ -92,19 +92,46 @@ def build_alter_role_password_sql(role: str, password: str) -> str:
     return f"ALTER ROLE {_quote_ident(role)} PASSWORD {_quote_literal(password)}"
 
 
-async def _get_admin_connection() -> asyncpg.Connection:
-    """Get an admin connection to the pg_duckdb instance."""
-    settings = get_settings()
+async def _get_connection(env: ProjectEnvironment) -> asyncpg.Connection:
+    """Get an admin connection to a pg_duckdb environment."""
     return await asyncpg.connect(
-        host=settings.pg_duckdb_host,
-        port=settings.pg_duckdb_port,
-        user=settings.pg_duckdb_admin_user,
-        password=settings.pg_duckdb_admin_password,
-        database=settings.pg_duckdb_database,
+        host=env.host,
+        port=env.port,
+        user=env.admin_user,
+        password=env.admin_password,
+        database=env.database,
     )
 
 
-async def create_project_schema(project_id: str, password: str) -> None:
+async def configure_s3_secrets(env: ProjectEnvironment, storage_config: StorageConfig) -> None:
+    """Configure S3/MinIO access secrets in a pg_duckdb environment.
+
+    Runs CREATE OR REPLACE SECRET via duckdb.raw_query() so that
+    read_parquet('s3://...') calls can access the storage backend.
+    """
+    use_ssl_str = "true" if storage_config.use_ssl else "false"
+    secret_sql = f"""
+SELECT duckdb.raw_query($q$
+  CREATE OR REPLACE SECRET minio_secret (
+    TYPE S3,
+    KEY_ID {_quote_literal(storage_config.access_key)},
+    SECRET {_quote_literal(storage_config.secret_key)},
+    ENDPOINT {_quote_literal(storage_config.endpoint)},
+    URL_STYLE {_quote_literal(storage_config.url_style)},
+    USE_SSL {use_ssl_str},
+    REGION {_quote_literal(storage_config.region)}
+  );
+$q$);
+"""
+    conn = await _get_connection(env)
+    try:
+        await conn.execute(secret_sql)
+        logger.info("Configured S3 secrets for environment %s", env.environment_id)
+    finally:
+        await conn.close()
+
+
+async def create_project_schema(env: ProjectEnvironment, project_id: str, password: str) -> None:
     """Create a schema and read-only role for a project.
 
     Creates:
@@ -113,13 +140,14 @@ async def create_project_schema(project_id: str, password: str) -> None:
     - Revokes public schema access to prevent catalog enumeration
 
     Args:
+        env: ProjectEnvironment to connect to
         project_id: Project UUID
         password: Plaintext password for the role
     """
     schema = _validate_ident(schema_name(project_id))
     role = _validate_ident(role_name(project_id))
 
-    conn = await _get_admin_connection()
+    conn = await _get_connection(env)
     try:
         await conn.execute(f'CREATE SCHEMA IF NOT EXISTS {_quote_ident(schema)}')
         await conn.execute(build_create_role_sql(role, password))
@@ -131,7 +159,7 @@ async def create_project_schema(project_id: str, password: str) -> None:
         await conn.close()
 
 
-async def drop_project_schema(project_id: str) -> None:
+async def drop_project_schema(env: ProjectEnvironment, project_id: str) -> None:
     """Drop a project's schema and role, terminating active connections.
 
     1. Terminate active connections for the role
@@ -141,7 +169,7 @@ async def drop_project_schema(project_id: str) -> None:
     schema = _validate_ident(schema_name(project_id))
     role = _validate_ident(role_name(project_id))
 
-    conn = await _get_admin_connection()
+    conn = await _get_connection(env)
     try:
         # Terminate active connections for this role (parameterized — safe)
         await conn.execute(
@@ -155,16 +183,17 @@ async def drop_project_schema(project_id: str) -> None:
         await conn.close()
 
 
-async def regenerate_credentials(project_id: str, new_password: str) -> None:
+async def regenerate_credentials(env: ProjectEnvironment, project_id: str, new_password: str) -> None:
     """Change the password for a project's reader role.
 
     Args:
+        env: ProjectEnvironment to connect to
         project_id: Project UUID
         new_password: New plaintext password
     """
     role = _validate_ident(role_name(project_id))
 
-    conn = await _get_admin_connection()
+    conn = await _get_connection(env)
     try:
         await conn.execute(build_alter_role_password_sql(role, new_password))
         logger.info("Regenerated credentials for role %s", role)
@@ -172,7 +201,7 @@ async def regenerate_credentials(project_id: str, new_password: str) -> None:
         await conn.close()
 
 
-async def execute_bootstrap(project_id: str, bootstrap_sql: str) -> None:
+async def execute_bootstrap(env: ProjectEnvironment, project_id: str, bootstrap_sql: str) -> None:
     """Execute bootstrap SQL to create/update source views in a project's schema.
 
     The bootstrap SQL is generated by bootstrap_sql.py and contains:
@@ -182,7 +211,7 @@ async def execute_bootstrap(project_id: str, bootstrap_sql: str) -> None:
 
     Executed transactionally via the admin connection.
     """
-    conn = await _get_admin_connection()
+    conn = await _get_connection(env)
     try:
         await conn.execute(bootstrap_sql)
         logger.info("Executed bootstrap SQL for project %s", project_id)
@@ -190,7 +219,7 @@ async def execute_bootstrap(project_id: str, bootstrap_sql: str) -> None:
         await conn.close()
 
 
-async def grant_schema_usage(project_id: str) -> None:
+async def grant_schema_usage(env: ProjectEnvironment, project_id: str) -> None:
     """Grant USAGE and SELECT on all views in a project's schema to the reader role.
 
     Called after bootstrap to ensure the reader role can access newly created views.
@@ -198,7 +227,7 @@ async def grant_schema_usage(project_id: str) -> None:
     schema = _validate_ident(schema_name(project_id))
     role = _validate_ident(role_name(project_id))
 
-    conn = await _get_admin_connection()
+    conn = await _get_connection(env)
     try:
         await conn.execute(f'GRANT USAGE ON SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}')
         await conn.execute(

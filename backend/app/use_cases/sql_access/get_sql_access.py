@@ -27,6 +27,8 @@ async def get_sql_access(
     Returns connection details (without password) if enabled,
     or a minimal response with enabled=False if not enabled.
 
+    Host and port are read from the ExternalAccessRecord (dynamic per-container).
+
     Raises:
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
@@ -52,8 +54,8 @@ async def get_sql_access(
     return {
         "project_id": project_id,
         "enabled": True,
-        "host": settings.pg_duckdb_external_host,
-        "port": settings.pg_duckdb_external_port,
+        "host": existing["environment_host"],
+        "port": existing["environment_port"],
         "database": settings.pg_duckdb_database,
         "username": existing["pg_role"],
         "schema": existing["pg_schema"],

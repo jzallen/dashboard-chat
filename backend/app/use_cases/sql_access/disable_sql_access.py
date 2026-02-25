@@ -1,5 +1,6 @@
 """Disable external SQL access for a project."""
 
+import logging
 from typing import TYPE_CHECKING
 
 from returns.result import Result
@@ -9,10 +10,12 @@ from app.auth.exceptions import AuthorizationError
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
-from app.use_cases.sql_access.pg_duckdb_manager import drop_project_schema
+from app.use_cases.sql_access.provisioner import get_app_provisioner
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
+
+logger = logging.getLogger(__name__)
 
 
 @with_repositories
@@ -24,8 +27,8 @@ async def disable_sql_access(
 ) -> Result[dict, str]:
     """Disable external SQL access for a project.
 
-    Drops the pg_duckdb schema (CASCADE), drops the role, terminates
-    active connections, and soft-disables the metadata record.
+    Deprovisions the pg_duckdb environment (container teardown destroys
+    all schemas, roles, and connections), then soft-disables the metadata record.
 
     Raises:
         ProjectNotFound: If project does not exist.
@@ -49,10 +52,11 @@ async def disable_sql_access(
     if not existing or not existing["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
-    # Drop schema and role in pg_duckdb
-    await drop_project_schema(project_id)
+    # Deprovision environment (container teardown destroys everything)
+    provisioner = get_app_provisioner()
+    await provisioner.deprovision(project_id)
 
-    # Soft-disable the metadata record
+    # Soft-disable the metadata record (clears environment fields)
     await external_access_repo.soft_disable(project_id)
 
     return {"project_id": project_id, "enabled": False}

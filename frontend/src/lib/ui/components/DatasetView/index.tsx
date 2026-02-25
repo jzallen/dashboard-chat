@@ -13,6 +13,7 @@ import { useRenameDataset } from "../../hooks/useDatasetMutations";
 import { useChatContext } from "../../context/ChatContext";
 import TablePanel from "../TablePanel";
 import { TransformSettings } from "../TransformSettings";
+import { SqlAccessPanel } from "../SqlAccessPanel";
 import { TablePanelSkeleton } from "../SkeletonLoader";
 import { DatasetGrid } from "./DatasetCarousel";
 import { SchemaTable } from "./SchemaTable";
@@ -266,6 +267,7 @@ export function ProjectView() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("catalog");
   const [showSettings, setShowSettings] = useState(false);
+  const [showSqlAccess, setShowSqlAccess] = useState(false);
   const [syncState, setSyncState] = useState<"idle" | "spinning" | "success" | "cooldown">("idle");
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const [isExporting, setIsExporting] = useState(false);
@@ -405,6 +407,29 @@ export function ProjectView() {
               {exportError}
             </span>
           )}
+          <button
+            onClick={() => {
+              setShowSqlAccess((v) => !v);
+              if (!showSqlAccess) setShowSettings(false);
+            }}
+            className={`${styles.settingsButton} ${showSqlAccess ? styles.settingsButtonActive : ""}`}
+            title="SQL Access"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className={styles.settingsIcon}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75"
+              />
+            </svg>
+          </button>
         {hasSelection && (
           <>
             {viewMode === "table" && datasetId && (
@@ -504,31 +529,39 @@ export function ProjectView() {
 
       {/* Content */}
       <div className={styles.catalogLayout}>
-        {/* DatasetGrid: shown in catalog mode or when no dataset selected */}
-        {(viewMode === "catalog" || !hasSelection) && (
-          <div className={hasSelection ? styles.gridSection : styles.gridSectionFull}>
-            {project.datasets.length === 0 ? (
-              <div className={styles.emptyState}>No datasets in this project</div>
-            ) : (
-              <DatasetGrid
-                datasets={project.datasets}
-                selectedDatasetId={datasetId ?? null}
-                onSelect={handleCardSelect}
-                hasSelection={hasSelection}
+        {showSqlAccess ? (
+          <div className={styles.sqlAccessSection}>
+            <SqlAccessPanel projectId={projectId} />
+          </div>
+        ) : (
+          <>
+            {/* DatasetGrid: shown in catalog mode or when no dataset selected */}
+            {(viewMode === "catalog" || !hasSelection) && (
+              <div className={hasSelection ? styles.gridSection : styles.gridSectionFull}>
+                {project.datasets.length === 0 ? (
+                  <div className={styles.emptyState}>No datasets in this project</div>
+                ) : (
+                  <DatasetGrid
+                    datasets={project.datasets}
+                    selectedDatasetId={datasetId ?? null}
+                    onSelect={handleCardSelect}
+                    hasSelection={hasSelection}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* DatasetDetail: single mount point preserves state across mode switches */}
+            {hasSelection && datasetId && (
+              <DatasetDetail
+                key={datasetId}
+                datasetId={datasetId}
+                viewMode={viewMode}
+                showSettings={showSettings}
+                onShowSettings={setShowSettings}
               />
             )}
-          </div>
-        )}
-
-        {/* DatasetDetail: single mount point preserves state across mode switches */}
-        {hasSelection && datasetId && (
-          <DatasetDetail
-            key={datasetId}
-            datasetId={datasetId}
-            viewMode={viewMode}
-            showSettings={showSettings}
-            onShowSettings={setShowSettings}
-          />
+          </>
         )}
       </div>
     </div>

@@ -39,6 +39,9 @@ class ExternalAccessRepository:
         pg_schema: str,
         pg_role: str,
         pg_password_hash: str,
+        environment_id: str | None = None,
+        environment_host: str | None = None,
+        environment_port: int | None = None,
     ) -> dict[str, Any]:
         """Create a new external access record."""
         record = ExternalAccessRecord(
@@ -47,6 +50,9 @@ class ExternalAccessRepository:
             pg_schema=pg_schema,
             pg_role=pg_role,
             pg_password_hash=pg_password_hash,
+            environment_id=environment_id,
+            environment_host=environment_host,
+            environment_port=environment_port,
             enabled=True,
         )
         self._session.add(record)
@@ -88,6 +94,16 @@ class ExternalAccessRepository:
         return self._to_dict(record)
 
     @handle_repository_exceptions
+    async def list_enabled(self) -> list[dict[str, Any]]:
+        """List all enabled external access records."""
+        result = await self._session.execute(
+            select(ExternalAccessRecord).where(
+                ExternalAccessRecord.enabled == True  # noqa: E712
+            )
+        )
+        return [self._to_dict(r) for r in result.scalars().all()]
+
+    @handle_repository_exceptions
     async def update(
         self,
         project_id: str,
@@ -123,6 +139,9 @@ class ExternalAccessRepository:
             return None
 
         record.enabled = False
+        record.environment_id = None
+        record.environment_host = None
+        record.environment_port = None
         record.updated_at = datetime.now(timezone.utc)
 
         await self._session.flush()
@@ -142,6 +161,9 @@ class ExternalAccessRepository:
             "org_id": record.org_id,
             "pg_schema": record.pg_schema,
             "pg_role": record.pg_role,
+            "environment_id": record.environment_id,
+            "environment_host": record.environment_host,
+            "environment_port": record.environment_port,
             "enabled": record.enabled,
             "last_synced_at": record.last_synced_at.isoformat() if record.last_synced_at else None,
             "created_at": record.created_at.isoformat() if record.created_at else None,

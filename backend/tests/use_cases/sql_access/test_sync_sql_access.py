@@ -29,9 +29,15 @@ class TestSyncSqlAccess:
         data = result.unwrap()
         assert data["project_id"] == PROJECT_1
         assert data["last_synced_at"] is not None
+
+        # Verify manager functions received a ProjectEnvironment with stored host/port
         mock_execute_bootstrap.assert_called_once()
-        assert mock_execute_bootstrap.call_args[0][0] == PROJECT_1
-        mock_grant_usage.assert_called_once_with(PROJECT_1)
+        env_arg = mock_execute_bootstrap.call_args[0][0]
+        assert env_arg.host == "localhost"
+        assert env_arg.port == 15432
+
+        mock_grant_usage.assert_called_once()
+        assert mock_grant_usage.call_args[0][0] == env_arg
 
     @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)

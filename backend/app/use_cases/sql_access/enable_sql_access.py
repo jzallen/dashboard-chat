@@ -24,9 +24,12 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     generate_password,
     hash_password,
     create_project_schema,
-    drop_project_schema,
     execute_bootstrap,
     grant_schema_usage,
+)
+from app.use_cases.sql_access.provisioner import (
+    StorageConfig,
+    get_app_provisioner,
 )
 
 if TYPE_CHECKING:
@@ -44,8 +47,8 @@ async def enable_sql_access(
 ) -> Result[dict, str]:
     """Enable external SQL access for a project.
 
-    Provisions a pg_duckdb schema and role, runs bootstrap SQL to create
-    source views, and stores credentials.
+    Provisions an ephemeral pg_duckdb container, creates a schema and role,
+    runs bootstrap SQL to create source views, and stores credentials.
 
     Returns connection details including the one-time plaintext password.
 
@@ -77,18 +80,31 @@ async def enable_sql_access(
     if not sparse_datasets:
         raise ProjectHasNoDatasets(project_id)
 
+    # Build storage config from settings
+    settings = get_settings()
+    storage_config = StorageConfig(
+        endpoint=settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        region=settings.s3_region,
+        url_style="path",
+        use_ssl=settings.minio_secure,
+    )
+
+    # Provision ephemeral pg_duckdb environment
+    provisioner = get_app_provisioner()
+    env = await provisioner.provision(project_id, storage_config)
+
     # Generate credentials
     password = generate_password()
     password_hash = hash_password(password)
     pg_schema = schema_name(project_id)
     pg_role = role_name(project_id)
 
-    # Provision pg_duckdb schema and role, with compensation on failure.
-    # DDL commits immediately on the pg_duckdb connection — if bootstrap
-    # or grant fails, the orphaned schema/role must be cleaned up.
-    await create_project_schema(project_id, password)
+    # Create schema/role and bootstrap views, with compensation on failure.
+    # If bootstrap or grant fails, deprovision the environment to clean up.
+    await create_project_schema(env, project_id, password)
     try:
-        settings = get_settings()
         full_datasets = []
         for ds_info in sparse_datasets:
             record = await metadata_repo.get_dataset_record(ds_info["id"], include_transforms=True)
@@ -98,18 +114,18 @@ async def enable_sql_access(
         snake_names = deduplicate_names([to_snake_case(ds.name) for ds in full_datasets])
         dataset_pairs = list(zip(snake_names, full_datasets))
         bootstrap_sql = generate_bootstrap_sql(pg_schema, dataset_pairs, settings.storage_bucket)
-        await execute_bootstrap(project_id, bootstrap_sql)
-        await grant_schema_usage(project_id)
+        await execute_bootstrap(env, project_id, bootstrap_sql)
+        await grant_schema_usage(env, project_id)
     except Exception:
-        # Compensate: drop the schema/role that was already committed
-        logger.warning("Bootstrap failed for project %s, cleaning up pg_duckdb schema", project_id)
+        # Compensate: deprovision the environment (destroys container + all schemas/roles)
+        logger.warning("Bootstrap failed for project %s, deprovisioning environment", project_id)
         try:
-            await drop_project_schema(project_id)
+            await provisioner.deprovision(project_id)
         except Exception:
             logger.error("Cleanup also failed for project %s", project_id, exc_info=True)
         raise
 
-    # Store metadata
+    # Store metadata with environment fields
     if existing:
         # Re-enable a previously disabled record
         await external_access_repo.update(project_id, {
@@ -117,6 +133,9 @@ async def enable_sql_access(
             "pg_password_hash": password_hash,
             "pg_schema": pg_schema,
             "pg_role": pg_role,
+            "environment_id": env.environment_id,
+            "environment_host": env.host,
+            "environment_port": env.port,
         })
     else:
         await external_access_repo.create(
@@ -125,19 +144,22 @@ async def enable_sql_access(
             pg_schema=pg_schema,
             pg_role=pg_role,
             pg_password_hash=password_hash,
+            environment_id=env.environment_id,
+            environment_host=env.host,
+            environment_port=env.port,
         )
 
     return {
-        "host": settings.pg_duckdb_external_host,
-        "port": settings.pg_duckdb_external_port,
-        "database": settings.pg_duckdb_database,
+        "host": env.host,
+        "port": env.port,
+        "database": env.database,
         "username": pg_role,
         "password": password,  # One-time plaintext
         "schema": pg_schema,
         "enabled": True,
         "connection_string": (
             f"postgresql://{pg_role}:{password}"
-            f"@{settings.pg_duckdb_external_host}:{settings.pg_duckdb_external_port}"
-            f"/{settings.pg_duckdb_database}"
+            f"@{env.host}:{env.port}"
+            f"/{env.database}"
         ),
     }

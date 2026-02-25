@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...database import Base
@@ -32,6 +32,9 @@ class ExternalAccessRecord(Base):
     pg_schema: Mapped[str] = mapped_column(String(255), nullable=False)
     pg_role: Mapped[str] = mapped_column(String(255), nullable=False)
     pg_password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    environment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    environment_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    environment_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

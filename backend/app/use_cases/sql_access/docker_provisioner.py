@@ -1,0 +1,206 @@
+"""Docker-based provisioner for ephemeral pg_duckdb project environments.
+
+Uses aiodocker to manage container lifecycle. Each project gets its own
+pg_duckdb container with a dynamic host port mapping.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+import aiodocker
+
+from app.use_cases.sql_access.pg_duckdb_manager import configure_s3_secrets
+from app.use_cases.sql_access.provisioner import (
+    ProjectEnvironment,
+    ProvisioningError,
+    StorageConfig,
+)
+
+logger = logging.getLogger(__name__)
+
+CONTAINER_PREFIX = "dashboard-pgduckdb"
+HEALTH_CHECK_INTERVAL = 1.0  # seconds between polls
+HEALTH_CHECK_TIMEOUT = 30.0  # max wait for container to become healthy
+
+
+def _container_name(project_id: str) -> str:
+    return f"{CONTAINER_PREFIX}-{project_id[:8]}"
+
+
+class DockerPgDuckDbProvisioner:
+    """Manages ephemeral pg_duckdb containers via Docker.
+
+    Each project gets a dedicated container running pgduckdb/pgduckdb.
+    The provisioner handles creation, health checking, S3 secret
+    configuration, and teardown.
+    """
+
+    def __init__(
+        self,
+        image: str,
+        network: str,
+        admin_user: str,
+        admin_password: str,
+        database: str,
+    ) -> None:
+        self._image = image
+        self._network = network
+        self._admin_user = admin_user
+        self._admin_password = admin_password
+        self._database = database
+        self._docker: aiodocker.Docker | None = None
+
+    async def _get_docker(self) -> aiodocker.Docker:
+        if self._docker is None:
+            self._docker = aiodocker.Docker()
+        return self._docker
+
+    async def close(self) -> None:
+        if self._docker is not None:
+            await self._docker.close()
+            self._docker = None
+
+    async def provision(
+        self, project_id: str, storage_config: StorageConfig
+    ) -> ProjectEnvironment:
+        docker = await self._get_docker()
+        name = _container_name(project_id)
+
+        # Remove any existing container with same name (idempotent re-provision)
+        await self._force_remove(name)
+
+        try:
+            config = {
+                "Image": self._image,
+                "Env": [
+                    f"POSTGRES_USER={self._admin_user}",
+                    f"POSTGRES_PASSWORD={self._admin_password}",
+                    f"POSTGRES_DB={self._database}",
+                ],
+                "HostConfig": {
+                    "PortBindings": {
+                        "5432/tcp": [{"HostPort": "0"}],  # auto-assign host port
+                    },
+                    "NetworkMode": self._network,
+                },
+            }
+
+            container = await docker.containers.create_or_replace(name, config=config)
+            await container.start()
+
+            # Wait for PostgreSQL to accept connections
+            host_port = await self._wait_for_healthy(container)
+
+            env = ProjectEnvironment(
+                environment_id=container.id,
+                host="localhost",
+                port=host_port,
+                database=self._database,
+                admin_user=self._admin_user,
+                admin_password=self._admin_password,
+            )
+
+            # Configure S3/MinIO secrets so read_parquet('s3://...') works
+            await configure_s3_secrets(env, storage_config)
+
+            logger.info(
+                "Provisioned pg_duckdb container %s for project %s on port %d",
+                name, project_id, host_port,
+            )
+            return env
+
+        except ProvisioningError:
+            # Clean up on failure
+            await self._force_remove(name)
+            raise
+        except Exception as e:
+            await self._force_remove(name)
+            raise ProvisioningError(
+                f"Failed to provision environment for project {project_id}: {e}"
+            ) from e
+
+    async def deprovision(self, project_id: str) -> None:
+        name = _container_name(project_id)
+        await self._force_remove(name)
+        logger.info("Deprovisioned pg_duckdb container %s for project %s", name, project_id)
+
+    async def health_check(self, project_id: str) -> bool:
+        docker = await self._get_docker()
+        name = _container_name(project_id)
+        try:
+            container = docker.containers.container(name)
+            info = await container.show()
+            return info["State"]["Running"]
+        except Exception:
+            return False
+
+    async def get_environment(self, project_id: str) -> ProjectEnvironment | None:
+        docker = await self._get_docker()
+        name = _container_name(project_id)
+        try:
+            container = docker.containers.container(name)
+            info = await container.show()
+            if not info["State"]["Running"]:
+                return None
+
+            port_bindings = info["NetworkSettings"]["Ports"].get("5432/tcp")
+            if not port_bindings:
+                return None
+            host_port = int(port_bindings[0]["HostPort"])
+
+            return ProjectEnvironment(
+                environment_id=info["Id"],
+                host="localhost",
+                port=host_port,
+                database=self._database,
+                admin_user=self._admin_user,
+                admin_password=self._admin_password,
+            )
+        except Exception:
+            return None
+
+    async def _wait_for_healthy(self, container: aiodocker.containers.DockerContainer) -> int:
+        elapsed = 0.0
+        while elapsed < HEALTH_CHECK_TIMEOUT:
+            info = await container.show()
+            if not info["State"]["Running"]:
+                raise ProvisioningError(
+                    f"Container {info['Name']} exited during health check"
+                )
+
+            port_bindings = info["NetworkSettings"]["Ports"].get("5432/tcp")
+            if port_bindings:
+                host_port = int(port_bindings[0]["HostPort"])
+                # Try a TCP connect to verify PostgreSQL is accepting connections
+                try:
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection("localhost", host_port),
+                        timeout=2.0,
+                    )
+                    writer.close()
+                    await writer.wait_closed()
+                    return host_port
+                except (ConnectionRefusedError, asyncio.TimeoutError, OSError):
+                    pass
+
+            await asyncio.sleep(HEALTH_CHECK_INTERVAL)
+            elapsed += HEALTH_CHECK_INTERVAL
+
+        raise ProvisioningError(
+            f"Container did not become healthy within {HEALTH_CHECK_TIMEOUT}s"
+        )
+
+    async def _force_remove(self, name: str) -> None:
+        docker = await self._get_docker()
+        try:
+            container = docker.containers.container(name)
+            await container.kill()
+        except Exception:
+            pass
+        try:
+            container = docker.containers.container(name)
+            await container.delete(force=True)
+        except Exception:
+            pass

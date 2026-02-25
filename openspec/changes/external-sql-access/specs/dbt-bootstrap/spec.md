@@ -81,19 +81,20 @@ The exported dbt project ZIP SHALL include `scripts/bootstrap_db.sql` when the p
   - Running `dbt run --target postgres`
 
 ### Requirement: dbt execution from backend
-The system SHALL execute `bootstrap_db.sql` via `psql` and `dbt run --target postgres` via subprocess when enabling or syncing SQL access. The backend container SHALL have `dbt-core`, `dbt-postgres`, and `psql` available as CLI tools.
+The system SHALL execute `bootstrap_db.sql` via `psql` and `dbt run --target postgres` via subprocess when enabling or syncing SQL access. The backend container SHALL have `dbt-core`, `dbt-postgres`, and `psql` available as CLI tools. dbt runs against the project's environment using the dynamically-assigned port from `ProjectEnvironment`.
 
 #### Scenario: Enable triggers bootstrap + dbt run
 - **WHEN** SQL access is enabled for a project
 - **THEN** the system generates the dbt project files to a temp directory
-- **AND** executes `psql -f scripts/bootstrap_db.sql` against the pg_duckdb instance
-- **AND** executes `dbt run --target postgres --project-dir {tmpdir} --profiles-dir {tmpdir}`
+- **AND** executes `psql -f scripts/bootstrap_db.sql` against the project's environment using the host and port from `ProjectEnvironment`
+- **AND** executes `dbt run --target postgres --project-dir {tmpdir} --profiles-dir {tmpdir}` with connection details from `ProjectEnvironment`
 - **AND** cleans up the temp directory after completion
 
 #### Scenario: Sync re-executes bootstrap + dbt run
 - **WHEN** the user syncs SQL access
 - **THEN** the system regenerates the dbt project from current metadata
-- **AND** re-executes `psql` + `dbt run` to update all views
+- **AND** reads the environment's host and port from the `ExternalAccessRecord` (or via `provisioner.get_environment()`)
+- **AND** re-executes `psql` + `dbt run` against the project's environment to update all views
 
 #### Scenario: Bootstrap or dbt failure is reported
 - **WHEN** `psql` or `dbt run` exits with a non-zero code
@@ -130,21 +131,24 @@ An engineer receiving the exported dbt project SHALL be able to run it against t
 - **AND** change dbt materializations from `view` to `table`/`incremental`
 - **AND** the staging/mart model SQL requires no changes
 
-### Requirement: pg_duckdb infrastructure service
-The system SHALL include a pg_duckdb Docker Compose service (PostgreSQL 16+ with pg_duckdb extension) that starts alongside existing services. S3 credentials SHALL be configured via an init script so `read_parquet()` can access MinIO/S3.
+### Requirement: Ephemeral pg_duckdb environments via provisioner
+The system SHALL provision ephemeral pg_duckdb environments (PostgreSQL 16+ with pg_duckdb extension) on-demand when SQL access is enabled for a project, managed by a `ProjectEnvironmentProvisioner` abstraction. S3 credentials SHALL be configured post-provisioning so `read_parquet()` can access MinIO/S3.
 
-#### Scenario: Service starts with Docker Compose
-- **WHEN** `docker compose up` is run
-- **THEN** the pg_duckdb service starts on port 5433
-- **AND** the service passes its health check
-- **AND** `read_parquet('s3://dashboard-chat.datalake/...')` queries succeed from within the instance
+#### Scenario: Environment provisioned on enable
+- **WHEN** SQL access is enabled for a project
+- **THEN** the provisioner creates a new pg_duckdb container (`dashboard-pgduckdb-{short_id}`)
+- **AND** the container is attached to the Docker network where MinIO and the backend are reachable
+- **AND** the provisioner configures S3 secrets via admin SQL after the container starts
+- **AND** the container passes its health check (pg_isready polling)
+- **AND** `read_parquet('s3://dashboard-chat.datalake/...')` queries succeed from within the container
 
-#### Scenario: S3 secrets configured on init
-- **WHEN** the pg_duckdb container starts for the first time
-- **THEN** an init script configures DuckDB S3 secrets using `duckdb.create_simple_secret()` or equivalent
-- **AND** credentials match the MinIO/S3 configuration from the backend's `Settings`
+#### Scenario: S3 secrets configured post-provisioning
+- **WHEN** the provisioner provisions a pg_duckdb environment
+- **THEN** the provisioner connects to the container as the admin user
+- **AND** runs S3 secret creation SQL (`duckdb.create_simple_secret()` or equivalent)
+- **AND** credentials match the MinIO/S3 configuration from the backend's `StorageConfig`
 
-#### Scenario: Service depends on MinIO
-- **WHEN** the pg_duckdb service starts
-- **THEN** it waits for MinIO to be healthy before accepting connections
-- **AND** `read_parquet()` calls resolve S3 paths correctly
+#### Scenario: Environment has network access to MinIO
+- **WHEN** the provisioner provisions a pg_duckdb environment
+- **THEN** the container is attached to the same Docker network as MinIO
+- **AND** `read_parquet()` calls resolve S3 paths correctly via the network-internal MinIO endpoint

@@ -5,6 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.metadata import DatasetRecord, ProjectRecord, ExternalAccessRecord
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
+from app.use_cases.sql_access.provisioner import (
+    MockEnvironmentProvisioner,
+    set_app_provisioner,
+)
 
 from tests.uuidv7_fixtures import (
     USER_1,
@@ -22,11 +26,24 @@ from tests.uuidv7_fixtures import (
 
 TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
+# Environment fields matching MockEnvironmentProvisioner defaults
+MOCK_ENV_ID = "mock-container-id"
+MOCK_ENV_HOST = "localhost"
+MOCK_ENV_PORT = 15432
+
 
 @pytest.fixture(autouse=True)
 def auth_user():
     """Set a default auth user for all SQL access tests."""
     set_auth_user(TEST_USER)
+
+
+@pytest.fixture(autouse=True)
+def mock_provisioner():
+    """Set a mock provisioner for all SQL access tests."""
+    provisioner = MockEnvironmentProvisioner()
+    set_app_provisioner(provisioner)
+    return provisioner
 
 
 @pytest.fixture
@@ -69,6 +86,9 @@ async def seeded_db_with_access(seeded_db: AsyncSession):
         pg_schema="project_project_",
         pg_role="reader_project_",
         pg_password_hash="$2b$12$fakehashfortesting",
+        environment_id=MOCK_ENV_ID,
+        environment_host=MOCK_ENV_HOST,
+        environment_port=MOCK_ENV_PORT,
         enabled=True,
     )
     seeded_db.add(record)
@@ -86,6 +106,9 @@ async def seeded_db_with_disabled_access(seeded_db: AsyncSession):
         pg_schema="project_project_",
         pg_role="reader_project_",
         pg_password_hash="$2b$12$fakehashfortesting",
+        environment_id=None,
+        environment_host=None,
+        environment_port=None,
         enabled=False,
     )
     seeded_db.add(record)

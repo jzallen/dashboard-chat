@@ -114,6 +114,23 @@ export async function patch<T>(endpoint: string, body: unknown): Promise<T> {
 }
 
 /**
+ * Make a DELETE request
+ */
+export async function del<T = void>(endpoint: string): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const init: RequestInit = {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+  };
+  const response = await fetch(url, init);
+  if (response.status === 204) return undefined as T;
+  return handleResponse<T>(response, url, init);
+}
+
+/**
  * Upload a file with form data
  */
 export async function uploadFile<T>(

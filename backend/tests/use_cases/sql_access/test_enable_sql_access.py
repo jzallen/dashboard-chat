@@ -14,6 +14,7 @@ from app.use_cases.exceptions import (
     SqlAccessAlreadyEnabled,
 )
 from app.use_cases.sql_access import enable_sql_access
+from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
 
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY, PROJECT_OTHER
 
@@ -24,7 +25,8 @@ class TestEnableSqlAccess:
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
     async def test_enable_returns_connection_details(
-        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage, seeded_db: AsyncSession
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db: AsyncSession,
     ):
         set_session(seeded_db)
 
@@ -33,9 +35,9 @@ class TestEnableSqlAccess:
         assert isinstance(result, Success)
         data = result.unwrap()
         assert data["enabled"] is True
-        assert data["host"] is not None
-        assert data["port"] is not None
-        assert data["database"] is not None
+        assert data["host"] == "localhost"
+        assert data["port"] == 15432
+        assert data["database"] == "dashboard_external"
         assert data["username"].startswith("reader_")
         assert data["password"] is not None
         assert len(data["password"]) == 32
@@ -43,17 +45,29 @@ class TestEnableSqlAccess:
         assert data["username"] in data["connection_string"]
         assert data["password"] in data["connection_string"]
 
-        # Verify correct project_id was forwarded to pg_duckdb operations
-        mock_create_schema.assert_called_once_with(PROJECT_1, data["password"])
+        # Verify provisioner was called
+        assert len(mock_provisioner.provision_calls) == 1
+        assert mock_provisioner.provision_calls[0][0] == PROJECT_1
+
+        # Verify manager functions received the ProjectEnvironment
+        mock_create_schema.assert_called_once()
+        env_arg = mock_create_schema.call_args[0][0]
+        assert env_arg.host == "localhost"
+        assert env_arg.port == 15432
+        assert mock_create_schema.call_args[0][1] == PROJECT_1
+
         mock_execute_bootstrap.assert_called_once()
-        assert mock_execute_bootstrap.call_args[0][0] == PROJECT_1
-        mock_grant_usage.assert_called_once_with(PROJECT_1)
+        assert mock_execute_bootstrap.call_args[0][0] == env_arg
+
+        mock_grant_usage.assert_called_once()
+        assert mock_grant_usage.call_args[0][0] == env_arg
 
     @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
     async def test_enable_returns_failure_for_nonexistent_project(
-        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage, seeded_db: AsyncSession
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db: AsyncSession,
     ):
         set_session(seeded_db)
 
@@ -66,7 +80,8 @@ class TestEnableSqlAccess:
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
     async def test_enable_returns_failure_when_already_enabled(
-        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage, seeded_db_with_access: AsyncSession
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db_with_access: AsyncSession,
     ):
         set_session(seeded_db_with_access)
 
@@ -79,7 +94,8 @@ class TestEnableSqlAccess:
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
     async def test_enable_returns_failure_for_project_with_no_datasets(
-        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage, seeded_db_no_datasets: AsyncSession
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db_no_datasets: AsyncSession,
     ):
         set_session(seeded_db_no_datasets)
 
@@ -92,7 +108,8 @@ class TestEnableSqlAccess:
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
     async def test_enable_returns_failure_for_other_org(
-        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage, seeded_db_other_org: AsyncSession
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db_other_org: AsyncSession,
     ):
         set_session(seeded_db_other_org)
 
@@ -105,7 +122,8 @@ class TestEnableSqlAccess:
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
     async def test_enable_re_enables_previously_disabled_record(
-        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage, seeded_db_with_disabled_access: AsyncSession
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db_with_disabled_access: AsyncSession,
     ):
         """Re-enable path: existing disabled record is updated (not created)."""
         set_session(seeded_db_with_disabled_access)
@@ -116,19 +134,22 @@ class TestEnableSqlAccess:
         data = result.unwrap()
         assert data["enabled"] is True
         assert len(data["password"]) == 32
+        assert data["host"] == "localhost"
+        assert data["port"] == 15432
 
-    @patch("app.use_cases.sql_access.enable_sql_access.drop_project_schema", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock, side_effect=RuntimeError("bootstrap failed"))
     @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
     async def test_enable_cleans_up_on_bootstrap_failure(
-        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage, mock_drop_schema, seeded_db: AsyncSession
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db: AsyncSession,
     ):
-        """If bootstrap fails after schema creation, the schema/role should be cleaned up."""
+        """If bootstrap fails after schema creation, the environment should be deprovisioned."""
         set_session(seeded_db)
 
         result = await enable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
         mock_create_schema.assert_called_once()
-        mock_drop_schema.assert_called_once_with(PROJECT_1)
+        # Verify environment was deprovisioned as compensation
+        assert PROJECT_1 in mock_provisioner.deprovision_calls

@@ -8,6 +8,7 @@ from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound
 from app.use_cases.sql_access import get_sql_access
+from tests.use_cases.sql_access.conftest import MOCK_ENV_HOST, MOCK_ENV_PORT
 
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
@@ -30,8 +31,8 @@ class TestGetSqlAccess:
         }
         assert data["project_id"] == PROJECT_1
         assert data["enabled"] is True
-        assert data["host"] is not None
-        assert data["port"] is not None
+        assert data["host"] == MOCK_ENV_HOST
+        assert data["port"] == MOCK_ENV_PORT
         assert data["database"] is not None
         assert data["username"] is not None
         assert data["schema"] is not None
