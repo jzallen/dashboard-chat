@@ -11,7 +11,7 @@ from .database import init_db, close_db, async_session
 from .auth.middleware import AuthMiddleware
 from .repositories import set_session
 from .routers import datasets_router, uploads_router, projects_router, transforms_router, auth_router, organizations_router, sql_access_router
-from .use_cases.sql_access.provisioner import set_app_provisioner
+from .use_cases.sql_access.provisioner import set_app_provisioner, set_app_pgbouncer_provisioner
 from returns.result import Failure
 from .use_cases.sql_access.reconcile_sql_access import reconcile_sql_access
 
@@ -20,20 +20,28 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-def _create_provisioner():
-    """Create the environment provisioner based on config."""
+def _create_provisioners():
+    """Create the environment provisioners based on config."""
     if settings.environment_provisioner == "mock":
-        from .use_cases.sql_access.provisioner import MockEnvironmentProvisioner
-        return MockEnvironmentProvisioner()
+        from .use_cases.sql_access.provisioner import MockEnvironmentProvisioner, MockPgBouncerProvisioner
+        return MockEnvironmentProvisioner(), MockPgBouncerProvisioner()
 
     from .use_cases.sql_access.docker_provisioner import DockerPgDuckDbProvisioner
-    return DockerPgDuckDbProvisioner(
+    from .use_cases.sql_access.pgbouncer_provisioner import DockerPgBouncerProvisioner
+
+    pgbouncer_provisioner = DockerPgBouncerProvisioner(
+        image=settings.pgbouncer_image,
+        network=settings.pg_duckdb_network,
+    )
+    env_provisioner = DockerPgDuckDbProvisioner(
         image=settings.pg_duckdb_image,
         network=settings.pg_duckdb_network,
         admin_user=settings.pg_duckdb_admin_user,
         admin_password=settings.pg_duckdb_admin_password,
         database=settings.pg_duckdb_database,
+        pgbouncer_provisioner=pgbouncer_provisioner,
     )
+    return env_provisioner, pgbouncer_provisioner
 
 
 @asynccontextmanager
@@ -42,9 +50,11 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_db()
 
-    provisioner = _create_provisioner()
+    provisioner, pgbouncer_provisioner = _create_provisioners()
     set_app_provisioner(provisioner)
+    set_app_pgbouncer_provisioner(pgbouncer_provisioner)
     app.state.provisioner = provisioner
+    app.state.pgbouncer_provisioner = pgbouncer_provisioner
     logger.info("Configured environment provisioner: %s", settings.environment_provisioner)
 
     # Reconcile enabled environments against running containers
@@ -59,6 +69,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if hasattr(pgbouncer_provisioner, 'close'):
+        await pgbouncer_provisioner.close()
     if hasattr(provisioner, 'close'):
         await provisioner.close()
     await close_db()

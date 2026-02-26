@@ -17,6 +17,7 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     ensure_duckdb_role_configured,
 )
 from app.use_cases.sql_access.provisioner import (
+    EnvironmentStatus,
     ProjectEnvironment,
     ProvisioningError,
     StorageConfig,
@@ -48,6 +49,7 @@ class DockerPgDuckDbProvisioner:
         admin_user: str,
         admin_password: str,
         database: str,
+        pgbouncer_provisioner=None,
     ) -> None:
         self._image = image
         self._network = network
@@ -55,6 +57,7 @@ class DockerPgDuckDbProvisioner:
         self._admin_password = admin_password
         self._database = database
         self._docker: aiodocker.Docker | None = None
+        self._pgbouncer = pgbouncer_provisioner
 
     async def _get_docker(self) -> aiodocker.Docker:
         if self._docker is None:
@@ -180,6 +183,47 @@ class DockerPgDuckDbProvisioner:
             )
         except Exception:
             return None
+
+    async def start_environment(
+        self, project_id: str, storage_config: StorageConfig
+    ) -> ProjectEnvironment:
+        """Start a project environment (provisions pg_duckdb only).
+
+        PgBouncer provisioning is orchestrated by use cases, not here.
+        """
+        return await self.provision(project_id, storage_config)
+
+    async def stop_environment(self, project_id: str) -> None:
+        """Stop and remove the project's pg_duckdb environment."""
+        await self.deprovision(project_id)
+
+    async def get_detailed_status(self, project_id: str) -> EnvironmentStatus:
+        """Get detailed status checking both pg_duckdb and PgBouncer components."""
+        pgduckdb_running = await self.health_check(project_id)
+
+        pgbouncer_running = False
+        if self._pgbouncer is not None:
+            pgbouncer_running = await self._pgbouncer.health_check(project_id)
+
+        if pgduckdb_running and pgbouncer_running:
+            status = "running"
+            message = None
+        elif pgduckdb_running and not pgbouncer_running:
+            status = "degraded"
+            message = "pg_duckdb running but PgBouncer is not available"
+        elif not pgduckdb_running and pgbouncer_running:
+            status = "degraded"
+            message = "PgBouncer running but pg_duckdb is not available"
+        else:
+            status = "stopped"
+            message = None
+
+        return EnvironmentStatus(
+            pgduckdb_running=pgduckdb_running,
+            pgbouncer_running=pgbouncer_running,
+            status=status,
+            message=message,
+        )
 
     async def _wait_for_healthy(self, container: aiodocker.containers.DockerContainer, name: str) -> int:
         elapsed = 0.0

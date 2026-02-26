@@ -42,6 +42,8 @@ class ExternalAccessRepository:
         environment_id: str | None = None,
         environment_host: str | None = None,
         environment_port: int | None = None,
+        proxy_container_id: str | None = None,
+        environment_status: str | None = None,
     ) -> dict[str, Any]:
         """Create a new external access record."""
         record = ExternalAccessRecord(
@@ -53,8 +55,11 @@ class ExternalAccessRepository:
             environment_id=environment_id,
             environment_host=environment_host,
             environment_port=environment_port,
+            proxy_container_id=proxy_container_id,
             enabled=True,
         )
+        if environment_status is not None:
+            record.environment_status = environment_status
         self._session.add(record)
         await self._session.flush()
         await self._session.refresh(record)
@@ -142,11 +147,29 @@ class ExternalAccessRepository:
         record.environment_id = None
         record.environment_host = None
         record.environment_port = None
+        record.proxy_container_id = None
+        record.environment_status = "disabled"
         record.updated_at = datetime.now(timezone.utc)
 
         await self._session.flush()
         await self._session.refresh(record)
         return self._to_dict(record)
+
+    @handle_repository_exceptions
+    async def get_by_project_id_with_hash(self, project_id: str) -> dict[str, Any] | None:
+        """Get external access record by project ID, including pg_password_hash.
+
+        Use only when the stored hash is needed (e.g. start_environment, regenerate).
+        """
+        result = await self._session.execute(
+            select(ExternalAccessRecord).where(
+                ExternalAccessRecord.project_id == project_id
+            )
+        )
+        record = result.scalar_one_or_none()
+        if not record:
+            return None
+        return self._to_dict_with_hash(record)
 
     @staticmethod
     def _to_dict(record: ExternalAccessRecord) -> dict[str, Any]:
@@ -164,8 +187,22 @@ class ExternalAccessRepository:
             "environment_id": record.environment_id,
             "environment_host": record.environment_host,
             "environment_port": record.environment_port,
+            "proxy_container_id": record.proxy_container_id,
+            "environment_status": record.environment_status,
+            "status_message": record.status_message,
+            "is_legacy": record.enabled and record.proxy_container_id is None,
             "enabled": record.enabled,
             "last_synced_at": record.last_synced_at.isoformat() if record.last_synced_at else None,
             "created_at": record.created_at.isoformat() if record.created_at else None,
             "updated_at": record.updated_at.isoformat() if record.updated_at else None,
         }
+
+    @staticmethod
+    def _to_dict_with_hash(record: ExternalAccessRecord) -> dict[str, Any]:
+        """Convert ExternalAccessRecord to dictionary, including pg_password_hash.
+
+        Only use when credential verification or environment restart is needed.
+        """
+        d = ExternalAccessRepository._to_dict(record)
+        d["pg_password_hash"] = record.pg_password_hash
+        return d

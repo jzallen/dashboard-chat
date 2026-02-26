@@ -36,14 +36,18 @@ def _error_response(error: Exception) -> tuple[dict, int]:
 
     DomainException subclasses carry status_code, type, and title.
     All other exceptions map to a generic 500.
+    Exceptions with a `retry_after` attribute get that field in the body.
     """
     if isinstance(error, DomainException):
-        return {
+        body = {
             "type": error._type,
             "title": error._title,
             "status": error._status_code,
             "detail": str(error),
-        }, error._status_code
+        }
+        if hasattr(error, "retry_after"):
+            body["retry_after"] = error.retry_after
+        return body, error._status_code
 
     logger.error("Unhandled error: %s", error)
     return {"type": "INTERNAL_SERVER_ERROR", "title": "Internal Server Error", "status": 500, "detail": "An unexpected error occurred. Check server logs for details."}, 500
@@ -252,6 +256,42 @@ class HTTPController:
     @staticmethod
     async def regenerate_sql_credentials(project_id: str) -> tuple[dict, int]:
         result = await sql_access_use_cases.regenerate_sql_credentials(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def start_environment(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.start_environment(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def stop_environment(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.stop_environment(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def restart_environment(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.restart_environment(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def get_environment_status(project_id: str) -> tuple[dict, int]:
+        result = await sql_access_use_cases.get_environment_status(project_id)
         match result:
             case Success(data):
                 return wrap_success(data), 200

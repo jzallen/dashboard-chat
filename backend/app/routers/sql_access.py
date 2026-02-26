@@ -73,7 +73,50 @@ async def regenerate_sql_credentials(
 ):
     """Regenerate SQL access credentials for a project.
 
-    Returns new one-time plaintext password.
+    Returns new one-time plaintext password. Rate-limited with Retry-After header.
     """
     body, status_code = await HTTPController.regenerate_sql_credentials(project_id)
+    headers = {}
+    if status_code == 429 and isinstance(body, dict) and "retry_after" in body:
+        headers["Retry-After"] = str(body["retry_after"])
+    return JSONResponse(content=body, status_code=status_code, headers=headers)
+
+
+@router.post("/{project_id}/sql-access/environment/start")
+async def start_environment(
+    project_id: str,
+    _: AsyncSession = Depends(use_db_context),
+):
+    """Start a stopped SQL access environment."""
+    body, status_code = await HTTPController.start_environment(project_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.post("/{project_id}/sql-access/environment/stop")
+async def stop_environment(
+    project_id: str,
+    _: AsyncSession = Depends(use_db_context),
+):
+    """Stop a running SQL access environment."""
+    body, status_code = await HTTPController.stop_environment(project_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.post("/{project_id}/sql-access/environment/restart")
+async def restart_environment(
+    project_id: str,
+    _: AsyncSession = Depends(use_db_context),
+):
+    """Restart a SQL access environment."""
+    body, status_code = await HTTPController.restart_environment(project_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.get("/{project_id}/sql-access/environment/status")
+async def get_environment_status(
+    project_id: str,
+    _: AsyncSession = Depends(use_db_context),
+):
+    """Get detailed environment status."""
+    body, status_code = await HTTPController.get_environment_status(project_id)
     return JSONResponse(content=body, status_code=status_code)

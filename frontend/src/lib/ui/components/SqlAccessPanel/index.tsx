@@ -5,6 +5,9 @@ import {
   useDisableSqlAccess,
   useSyncSqlAccess,
   useRegenerateSqlCredentials,
+  useStartEnvironment,
+  useStopEnvironment,
+  useRestartEnvironment,
 } from "../../hooks/useSqlAccessQuery";
 import type { SqlAccessStatus } from "@/api";
 import styles from "./SqlAccessPanel.module.css";
@@ -75,6 +78,114 @@ function ConfirmDialog({
   );
 }
 
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { color: string; label: string }> = {
+    running: { color: styles.statusRunning, label: "Running" },
+    stopped: { color: styles.statusStopped, label: "Stopped" },
+    degraded: { color: styles.statusDegraded, label: "Degraded" },
+    provisioning: { color: styles.statusProvisioning, label: "Provisioning" },
+    error: { color: styles.statusError, label: "Error" },
+  };
+  const { color, label } = config[status] ?? config.running;
+  return (
+    <span className={`${styles.statusBadge} ${color}`} data-testid="status-badge">
+      {label}
+    </span>
+  );
+}
+
+function LegacyMigrationBanner({ onDisable }: { onDisable: () => void }) {
+  return (
+    <div className={styles.legacyBanner} data-testid="legacy-banner">
+      <div className={styles.legacyIcon}>&#9888;</div>
+      <div className={styles.legacyContent}>
+        <h3 className={styles.legacyTitle}>SQL Access needs to be reconfigured</h3>
+        <p className={styles.legacyDescription}>
+          We've upgraded SQL Access to use stable credentials that survive
+          environment restarts. Please disable and re-enable SQL Access to get
+          your new stable endpoint.
+        </p>
+        <button className={styles.dangerButton} onClick={onDisable} type="button">
+          Disable SQL Access
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EnvironmentControls({
+  projectId,
+  environmentStatus,
+  statusMessage,
+}: {
+  projectId: string;
+  environmentStatus: string;
+  statusMessage?: string | null;
+}) {
+  const startMutation = useStartEnvironment();
+  const stopMutation = useStopEnvironment();
+  const restartMutation = useRestartEnvironment();
+
+  const isPending = startMutation.isPending || stopMutation.isPending || restartMutation.isPending;
+  const isRunning = environmentStatus === "running";
+  const isStopped = environmentStatus === "stopped";
+  const isDegraded = environmentStatus === "degraded";
+  const isError = environmentStatus === "error";
+  const isProvisioning = environmentStatus === "provisioning";
+
+  return (
+    <div className={styles.environmentSection}>
+      <div className={styles.environmentHeader}>
+        <span className={styles.sectionTitle}>Environment</span>
+        <StatusBadge status={environmentStatus} />
+      </div>
+
+      {statusMessage && (isDegraded || isError) && (
+        <p className={styles.statusMessage}>{statusMessage}</p>
+      )}
+
+      {isStopped && (
+        <p className={styles.stoppedNote}>
+          Environment is stopped. Connection attempts will fail until started.
+        </p>
+      )}
+
+      <div className={styles.environmentActions}>
+        {(isStopped || isError) && (
+          <button
+            className={styles.primaryButton}
+            onClick={() => (isError ? restartMutation : startMutation).mutate(projectId)}
+            disabled={isPending || isProvisioning}
+            type="button"
+          >
+            {isPending ? "Starting..." : isError ? "Retry" : "Start"}
+          </button>
+        )}
+        {(isRunning || isDegraded) && (
+          <>
+            <button
+              className={styles.secondaryButton}
+              onClick={() => stopMutation.mutate(projectId)}
+              disabled={isPending || isProvisioning}
+              type="button"
+            >
+              {stopMutation.isPending ? "Stopping..." : "Stop"}
+            </button>
+            <button
+              className={styles.secondaryButton}
+              onClick={() => restartMutation.mutate(projectId)}
+              disabled={isPending || isProvisioning}
+              type="button"
+            >
+              {restartMutation.isPending ? "Restarting..." : "Restart"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DetailRow({
   label,
   value,
@@ -109,6 +220,8 @@ function ConnectionDetails({
   isRegenerating: boolean;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConnString, setShowConnString] = useState(false);
 
   const connectionString =
     status.connection_string ??
@@ -116,16 +229,15 @@ function ConnectionDetails({
       ? `postgresql://${status.username}@${status.host}:${status.port}/${status.database}`
       : undefined);
 
+  const maskedConnString = connectionString
+    ? connectionString.replace(/\/\/([^@]+)@/, "//****@")
+    : undefined;
+
   return (
     <>
       <div className={styles.header}>
         <span className={styles.title}>SQL Access</span>
-        <span
-          className={`${styles.statusBadge} ${styles.statusRunning}`}
-          data-testid="status-badge"
-        >
-          Running
-        </span>
+        <StatusBadge status={status.environment_status ?? "running"} />
       </div>
 
       <div className={styles.detailsGrid}>
@@ -143,8 +255,16 @@ function ConnectionDetails({
       {connectionString && (
         <div className={styles.connectionString}>
           <span className={styles.connectionStringText}>
-            {connectionString}
+            {showConnString ? connectionString : maskedConnString}
           </span>
+          <button
+            className={styles.eyeButton}
+            onClick={() => setShowConnString(!showConnString)}
+            aria-label={showConnString ? "Hide connection string" : "Show connection string"}
+            type="button"
+          >
+            {showConnString ? "\u25C9" : "\u25CE"}
+          </button>
           <CopyButton text={connectionString} />
         </div>
       )}
@@ -154,7 +274,15 @@ function ConnectionDetails({
           <span className={styles.detailLabel}>Password</span>
           {password ? (
             <span className={styles.passwordValue} data-testid="password-value">
-              {password}
+              {showPassword ? password : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}
+              <button
+                className={styles.eyeButton}
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                type="button"
+              >
+                {showPassword ? "\u25C9" : "\u25CE"}
+              </button>
               <CopyButton text={password} />
             </span>
           ) : (
@@ -175,6 +303,14 @@ function ConnectionDetails({
           </p>
         )}
       </div>
+
+      {status.environment_status && (
+        <EnvironmentControls
+          projectId={status.project_id}
+          environmentStatus={status.environment_status}
+          statusMessage={status.status_message}
+        />
+      )}
 
       <div className={styles.section}>
         <div className={styles.syncRow}>
@@ -293,6 +429,15 @@ export function SqlAccessPanel({ projectId }: SqlAccessPanelProps) {
             Enable SQL Access
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // Legacy migration banner
+  if (status.is_legacy) {
+    return (
+      <div className={styles.container}>
+        <LegacyMigrationBanner onDisable={handleDisable} />
       </div>
     );
   }

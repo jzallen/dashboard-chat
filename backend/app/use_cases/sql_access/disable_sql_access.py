@@ -10,7 +10,10 @@ from app.auth.exceptions import AuthorizationError
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
-from app.use_cases.sql_access.provisioner import get_app_provisioner
+from app.use_cases.sql_access.provisioner import (
+    get_app_provisioner,
+    get_app_pgbouncer_provisioner,
+)
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -27,8 +30,9 @@ async def disable_sql_access(
 ) -> Result[dict, str]:
     """Disable external SQL access for a project.
 
-    Deprovisions the pg_duckdb environment (container teardown destroys
-    all schemas, roles, and connections), then soft-disables the metadata record.
+    Deprovisions PgBouncer proxy first, then the pg_duckdb environment
+    (container teardown destroys all schemas, roles, and connections),
+    then soft-disables the metadata record.
 
     Raises:
         ProjectNotFound: If project does not exist.
@@ -52,7 +56,19 @@ async def disable_sql_access(
     if not existing or not existing["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
-    # Deprovision environment (container teardown destroys everything)
+    # Deprovision PgBouncer proxy first (if not legacy)
+    if existing.get("proxy_container_id"):
+        try:
+            pgbouncer = get_app_pgbouncer_provisioner()
+            await pgbouncer.deprovision(project_id)
+        except Exception:
+            logger.warning(
+                "PgBouncer deprovision failed for project %s, continuing with pg_duckdb teardown",
+                project_id,
+                exc_info=True,
+            )
+
+    # Deprovision pg_duckdb environment (container teardown destroys everything)
     provisioner = get_app_provisioner()
     await provisioner.deprovision(project_id)
 

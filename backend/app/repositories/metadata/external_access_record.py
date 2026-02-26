@@ -35,6 +35,11 @@ class ExternalAccessRecord(Base):
     environment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     environment_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     environment_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proxy_container_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    environment_status: Mapped[str] = mapped_column(
+        String(50), server_default="running", nullable=False
+    )
+    status_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

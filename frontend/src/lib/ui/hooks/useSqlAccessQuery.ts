@@ -5,18 +5,32 @@ import {
   disableSqlAccess,
   syncSqlAccess,
   regenerateSqlCredentials,
+  startEnvironment,
+  stopEnvironment,
+  restartEnvironment,
+  getEnvironmentStatus,
   type SqlAccessStatus,
 } from "@/api";
 
 export const sqlAccessKeys = {
   all: ["sql-access"] as const,
   detail: (projectId: string) => ["sql-access", projectId] as const,
+  status: (projectId: string) => ["sql-access", projectId, "status"] as const,
 };
 
 export function useSqlAccessQuery(projectId: string | undefined) {
   return useQuery({
     queryKey: sqlAccessKeys.detail(projectId!),
     queryFn: () => getSqlAccess(projectId!),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useEnvironmentStatus(projectId: string | undefined) {
+  return useQuery({
+    queryKey: sqlAccessKeys.status(projectId!),
+    queryFn: () => getEnvironmentStatus(projectId!),
+    refetchInterval: 15_000,
     enabled: Boolean(projectId),
   });
 }
@@ -31,6 +45,7 @@ export function useEnableSqlAccess() {
         sqlAccessKeys.detail(data.project_id),
         data
       );
+      queryClient.invalidateQueries({ queryKey: sqlAccessKeys.status(data.project_id) });
     },
   });
 }
@@ -45,6 +60,7 @@ export function useDisableSqlAccess() {
         sqlAccessKeys.detail(projectId),
         { project_id: projectId, enabled: false }
       );
+      queryClient.invalidateQueries({ queryKey: sqlAccessKeys.status(projectId) });
     },
   });
 }
@@ -59,6 +75,7 @@ export function useSyncSqlAccess() {
         sqlAccessKeys.detail(data.project_id),
         data
       );
+      queryClient.invalidateQueries({ queryKey: sqlAccessKeys.status(data.project_id) });
     },
   });
 }
@@ -73,6 +90,49 @@ export function useRegenerateSqlCredentials() {
         sqlAccessKeys.detail(data.project_id),
         data
       );
+      queryClient.invalidateQueries({ queryKey: sqlAccessKeys.status(data.project_id) });
+    },
+  });
+}
+
+export function useStartEnvironment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => startEnvironment(projectId),
+    onSuccess: (data) => {
+      queryClient.setQueryData<SqlAccessStatus>(
+        sqlAccessKeys.detail(data.project_id),
+        (old) => old ? { ...old, environment_status: data.environment_status } : data
+      );
+      queryClient.invalidateQueries({ queryKey: sqlAccessKeys.status(data.project_id) });
+    },
+  });
+}
+
+export function useStopEnvironment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => stopEnvironment(projectId),
+    onSuccess: (data) => {
+      queryClient.setQueryData<SqlAccessStatus>(
+        sqlAccessKeys.detail(data.project_id),
+        (old) => old ? { ...old, environment_status: data.environment_status } : data
+      );
+      queryClient.invalidateQueries({ queryKey: sqlAccessKeys.status(data.project_id) });
+    },
+  });
+}
+
+export function useRestartEnvironment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => restartEnvironment(projectId),
+    onSuccess: (data) => {
+      queryClient.setQueryData<SqlAccessStatus>(
+        sqlAccessKeys.detail(data.project_id),
+        (old) => old ? { ...old, environment_status: data.environment_status } : data
+      );
+      queryClient.invalidateQueries({ queryKey: sqlAccessKeys.status(data.project_id) });
     },
   });
 }

@@ -40,7 +40,7 @@ class TestEnableSqlAccess:
         data = result.unwrap()
         assert data["enabled"] is True
         assert data["host"] == "localhost"
-        assert data["port"] == 15432
+        assert data["port"] == 6432  # PgBouncer proxy port (first in range)
         assert data["database"] == "dashboard_external"
         assert data["username"].startswith("reader_")
         assert data["password"] is not None
@@ -48,6 +48,7 @@ class TestEnableSqlAccess:
         assert data["schema"].startswith("project_")
         assert data["username"] in data["connection_string"]
         assert data["password"] in data["connection_string"]
+        assert data["environment_status"] == "running"
 
         # Verify provisioner was called
         assert len(mock_provisioner.provision_calls) == 1
@@ -139,7 +140,7 @@ class TestEnableSqlAccess:
         assert data["enabled"] is True
         assert len(data["password"]) == 32
         assert data["host"] == "localhost"
-        assert data["port"] == 15432
+        assert data["port"] == 6432  # PgBouncer proxy port
 
     @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock, side_effect=RuntimeError("bootstrap failed"))
@@ -157,6 +158,29 @@ class TestEnableSqlAccess:
         mock_create_schema.assert_called_once()
         # Verify environment was deprovisioned as compensation
         assert PROJECT_1 in mock_provisioner.deprovision_calls
+
+    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
+    async def test_enable_stores_md5_hash_not_bcrypt(
+        self, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db: AsyncSession,
+    ):
+        """pg_password_hash should be stored as md5 format, not bcrypt."""
+        from app.repositories.external_access import ExternalAccessRepository
+
+        set_session(seeded_db)
+
+        result = await enable_sql_access(project_id=PROJECT_1)
+        assert isinstance(result, Success)
+
+        # Verify stored hash is md5 format (starts with "md5")
+        repo = ExternalAccessRepository(seeded_db)
+        record = await repo.get_by_project_id_with_hash(PROJECT_1)
+        assert record is not None
+        assert record["pg_password_hash"].startswith("md5"), (
+            f"Expected md5 hash, got: {record['pg_password_hash'][:10]}..."
+        )
 
     @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)

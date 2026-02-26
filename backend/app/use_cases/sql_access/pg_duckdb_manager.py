@@ -4,6 +4,7 @@ Manages PostgreSQL schemas, roles, and credentials in pg_duckdb environments.
 All DDL operations use an admin connection via asyncpg against a ProjectEnvironment.
 """
 
+import hashlib
 import logging
 import re
 import secrets
@@ -74,6 +75,15 @@ def generate_password() -> str:
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def pg_md5_hash(password: str, username: str) -> str:
+    """Generate PostgreSQL md5 password hash.
+
+    Format: "md5" + md5(password + username) — PostgreSQL's standard md5 password format.
+    """
+    raw = (password + username).encode("utf-8")
+    return "md5" + hashlib.md5(raw).hexdigest()
 
 
 def build_create_role_sql(role: str, password: str, connection_limit: int | None = None) -> str:

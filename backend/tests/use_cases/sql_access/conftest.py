@@ -7,7 +7,9 @@ from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 from app.use_cases.sql_access.provisioner import (
     MockEnvironmentProvisioner,
+    MockPgBouncerProvisioner,
     set_app_provisioner,
+    set_app_pgbouncer_provisioner,
 )
 
 from tests.uuidv7_fixtures import (
@@ -43,6 +45,14 @@ def mock_provisioner():
     """Set a mock provisioner for all SQL access tests."""
     provisioner = MockEnvironmentProvisioner()
     set_app_provisioner(provisioner)
+    return provisioner
+
+
+@pytest.fixture(autouse=True)
+def mock_pgbouncer_provisioner():
+    """Set a mock PgBouncer provisioner for all SQL access tests."""
+    provisioner = MockPgBouncerProvisioner()
+    set_app_pgbouncer_provisioner(provisioner)
     return provisioner
 
 
@@ -85,10 +95,12 @@ async def seeded_db_with_access(seeded_db: AsyncSession):
         org_id=ORG_1,
         pg_schema="project_project_",
         pg_role="reader_project_",
-        pg_password_hash="$2b$12$fakehashfortesting",
+        pg_password_hash="md5abcdef1234567890abcdef12345678",
         environment_id=MOCK_ENV_ID,
         environment_host=MOCK_ENV_HOST,
         environment_port=MOCK_ENV_PORT,
+        proxy_container_id="mock-pgbouncer-container",
+        environment_status="running",
         enabled=True,
     )
     seeded_db.add(record)
@@ -105,11 +117,34 @@ async def seeded_db_with_disabled_access(seeded_db: AsyncSession):
         org_id=ORG_1,
         pg_schema="project_project_",
         pg_role="reader_project_",
-        pg_password_hash="$2b$12$fakehashfortesting",
+        pg_password_hash="md5abcdef1234567890abcdef12345678",
         environment_id=None,
         environment_host=None,
         environment_port=None,
+        environment_status="disabled",
         enabled=False,
+    )
+    seeded_db.add(record)
+    await seeded_db.commit()
+    return seeded_db
+
+
+@pytest.fixture
+async def seeded_db_with_stopped_access(seeded_db: AsyncSession):
+    """Seed the database with a project, datasets, and a stopped external access record."""
+    record = ExternalAccessRecord(
+        id=EA_1,
+        project_id=PROJECT_1,
+        org_id=ORG_1,
+        pg_schema="project_project_",
+        pg_role="reader_project_",
+        pg_password_hash="md5abcdef1234567890abcdef12345678",
+        environment_id=None,
+        environment_host=MOCK_ENV_HOST,
+        environment_port=MOCK_ENV_PORT,
+        proxy_container_id="mock-pgbouncer-container",
+        environment_status="stopped",
+        enabled=True,
     )
     seeded_db.add(record)
     await seeded_db.commit()

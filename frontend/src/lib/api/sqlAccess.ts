@@ -14,7 +14,19 @@ export interface SqlAccessStatus {
   schema?: string;
   password?: string;
   last_synced_at?: string;
+  created_at?: string;
   connection_string?: string;
+  environment_status?: string;
+  status_message?: string | null;
+  is_legacy?: boolean;
+}
+
+export interface EnvironmentStatusResponse {
+  project_id: string;
+  environment_status: string;
+  status_message: string | null;
+  pgduckdb_running: boolean;
+  pgbouncer_running: boolean;
 }
 
 /**
@@ -66,5 +78,52 @@ export async function regenerateSqlCredentials(
   return post<SqlAccessStatus>(
     `/api/projects/${projectId}/sql-access/credentials`,
     {}
+  );
+}
+
+/**
+ * Start the SQL access environment for a project
+ */
+export async function startEnvironment(
+  projectId: string
+): Promise<SqlAccessStatus> {
+  return post<SqlAccessStatus>(
+    `/api/projects/${projectId}/sql-access/environment/start`,
+    {}
+  );
+}
+
+/**
+ * Stop the SQL access environment for a project
+ */
+export async function stopEnvironment(
+  projectId: string
+): Promise<SqlAccessStatus> {
+  return post<SqlAccessStatus>(
+    `/api/projects/${projectId}/sql-access/environment/stop`,
+    {}
+  );
+}
+
+/**
+ * Restart the SQL access environment for a project
+ */
+export async function restartEnvironment(
+  projectId: string
+): Promise<SqlAccessStatus> {
+  return post<SqlAccessStatus>(
+    `/api/projects/${projectId}/sql-access/environment/restart`,
+    {}
+  );
+}
+
+/**
+ * Get the environment status for a project
+ */
+export async function getEnvironmentStatus(
+  projectId: string
+): Promise<EnvironmentStatusResponse> {
+  return get<EnvironmentStatusResponse>(
+    `/api/projects/${projectId}/sql-access/environment/status`
   );
 }

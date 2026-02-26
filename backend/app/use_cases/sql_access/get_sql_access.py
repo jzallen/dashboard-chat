@@ -59,6 +59,9 @@ async def get_sql_access(
         "database": settings.pg_duckdb_database,
         "username": existing["pg_role"],
         "schema": existing["pg_schema"],
+        "environment_status": existing.get("environment_status", "running"),
+        "status_message": existing.get("status_message"),
+        "is_legacy": existing.get("is_legacy", False),
         "last_synced_at": existing["last_synced_at"],
         "created_at": existing["created_at"],
     }

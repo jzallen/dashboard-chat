@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     pg_duckdb_connection_limit: int = 10
     environment_provisioner: str = "docker"  # "docker" or "mock"
 
+    # PgBouncer proxy
+    pgbouncer_image: str = "edoburu/pgbouncer:1.22"
+    pgbouncer_port_range_start: int = 6432
+    pgbouncer_port_range_end: int = 7431
+    pgbouncer_max_client_conn: int = 20
+    pgbouncer_default_pool_size: int = 5
+
+    # Credential management
+    credential_regen_cooldown_seconds: int = 60
+
     # MinIO internal endpoint for pg_duckdb containers (Docker networking)
     minio_internal_endpoint: str = ""
 

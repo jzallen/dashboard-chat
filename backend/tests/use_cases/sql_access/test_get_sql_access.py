@@ -27,6 +27,7 @@ class TestGetSqlAccess:
         assert data.keys() == {
             "project_id", "enabled", "host", "port",
             "database", "username", "schema",
+            "environment_status", "status_message", "is_legacy",
             "last_synced_at", "created_at",
         }
         assert data["project_id"] == PROJECT_1
@@ -36,6 +37,8 @@ class TestGetSqlAccess:
         assert data["database"] is not None
         assert data["username"] is not None
         assert data["schema"] is not None
+        assert data["environment_status"] == "running"
+        assert data["is_legacy"] is False
 
     async def test_get_returns_disabled_when_no_record_exists(
         self, seeded_db: AsyncSession

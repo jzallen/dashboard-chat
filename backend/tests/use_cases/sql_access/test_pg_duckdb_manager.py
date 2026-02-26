@@ -11,6 +11,7 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     role_name,
     generate_password,
     hash_password,
+    pg_md5_hash,
     build_create_role_sql,
     build_alter_role_password_sql,
     ensure_duckdb_role_configured,
@@ -228,3 +229,39 @@ class TestConfigureS3SecretsPersistent:
         executed_sql = conn.execute.await_args_list[0].args[0]
         assert "CREATE OR REPLACE PERSISTENT SECRET" in executed_sql
         conn.close.assert_awaited_once()
+
+
+class TestPgMd5Hash:
+    """Tests for pg_md5_hash — PostgreSQL md5 password format."""
+
+    def test_format_starts_with_md5_followed_by_32_hex_chars(self):
+        result = pg_md5_hash("password", "username")
+        assert result.startswith("md5")
+        hex_part = result[3:]
+        assert len(hex_part) == 32
+        # Verify it's valid hex
+        int(hex_part, 16)
+
+    def test_known_test_vector(self):
+        # md5("password" + "username") is a well-known PostgreSQL test vector
+        result = pg_md5_hash("password", "username")
+        assert result == "md55a231fcdb710d73268c4f44283487ba2"
+
+    def test_matches_postgresql_convention(self):
+        """Verify the hash is "md5" + md5(password + username)."""
+        import hashlib
+
+        password = "s3cret!"
+        username = "myuser"
+        expected = "md5" + hashlib.md5((password + username).encode("utf-8")).hexdigest()
+        assert pg_md5_hash(password, username) == expected
+
+    def test_different_users_produce_different_hashes(self):
+        h1 = pg_md5_hash("password", "alice")
+        h2 = pg_md5_hash("password", "bob")
+        assert h1 != h2
+
+    def test_different_passwords_produce_different_hashes(self):
+        h1 = pg_md5_hash("pass1", "user")
+        h2 = pg_md5_hash("pass2", "user")
+        assert h1 != h2
