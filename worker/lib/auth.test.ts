@@ -92,7 +92,7 @@ describe("authMiddleware (production mode)", () => {
       expect.any(Function),
       {
         audience: "client_test123",
-        issuer: "https://api.workos.com",
+        issuer: "https://api.workos.com/user_management/client_test123",
         algorithms: ["RS256"],
       }
     );

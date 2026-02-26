@@ -119,7 +119,7 @@ class TestVerifyToken:
             "fake-rsa-key",
             algorithms=["RS256"],
             audience="client_test_xyz",
-            issuer="https://api.workos.com",
+            issuer="https://api.workos.com/user_management/client_test_xyz",
         )
 
 

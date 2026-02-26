@@ -45,7 +45,7 @@ export async function authMiddleware(c: Context, next: Next) {
     }
     await jwtVerify(token, keySet, {
       audience: WORKOS_CLIENT_ID,
-      issuer: "https://api.workos.com",
+      issuer: `https://api.workos.com/user_management/${WORKOS_CLIENT_ID}`,
       algorithms: ["RS256"],
     });
     return next();

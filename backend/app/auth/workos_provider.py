@@ -38,7 +38,7 @@ class WorkOSAuthProvider:
                 signing_key.key,
                 algorithms=["RS256"],
                 audience=self.client_id,
-                issuer="https://api.workos.com",
+                issuer=f"https://api.workos.com/user_management/{self.client_id}",
             )
         except jwt.ExpiredSignatureError:
             raise AuthenticationError("Token has expired")
