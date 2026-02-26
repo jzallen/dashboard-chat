@@ -120,8 +120,8 @@ describe("401 interceptor with coalesced refresh", () => {
     // Attach rejection handler before advancing timers to avoid unhandled rejection
     const resultPromise = expect(promise).rejects.toThrow(ApiError);
 
-    // Advance past the 5s retry delay inside ensureFreshToken
-    await vi.advanceTimersByTimeAsync(6000);
+    // Advance past the 12s retry delay inside ensureFreshToken
+    await vi.advanceTimersByTimeAsync(13_000);
 
     await resultPromise;
     expect(localStorage.getItem("auth_token")).toBeNull();

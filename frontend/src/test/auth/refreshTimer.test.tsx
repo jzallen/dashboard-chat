@@ -87,7 +87,7 @@ describe("Proactive refresh timer", () => {
     expect(localStorage.getItem("auth_refresh_token")).toBe("new-refresh");
   });
 
-  it("retries once after 5s on failure, then succeeds", async () => {
+  it("retries once after 12s on failure, then succeeds", async () => {
     const expiresAt = Date.now() + 60_000;
     localStorage.setItem("auth_token", "old-access");
     localStorage.setItem("auth_user", JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }));
@@ -115,9 +115,9 @@ describe("Proactive refresh timer", () => {
     // First attempt failed
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    // Wait 5s for the retry
+    // Wait 12s for the retry (matches backend rate limiter window)
     await act(async () => {
-      vi.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(12_000);
     });
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -154,9 +154,9 @@ describe("Proactive refresh timer", () => {
     // First fetch fired
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    // Wait 5s for ensureFreshToken internal retry
+    // Wait 12s for ensureFreshToken internal retry
     await act(async () => {
-      vi.advanceTimersByTime(5_000);
+      vi.advanceTimersByTime(12_000);
     });
 
     // Internal retry also failed
@@ -186,11 +186,11 @@ describe("Proactive refresh timer", () => {
     // 6 total failures: 3 AuthContext attempts x 2 ensureFreshToken fetches each
     mockFetch
       .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 1, fetch 1
-      .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 1, fetch 2 (5s internal retry)
+      .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 1, fetch 2 (12s internal retry)
       .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 2, fetch 1 (30s AuthContext retry)
-      .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 2, fetch 2 (5s internal retry)
+      .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 2, fetch 2 (12s internal retry)
       .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 3, fetch 1 (60s AuthContext retry)
-      .mockResolvedValueOnce(new Response("fail", { status: 500 })); // attempt 3, fetch 2 (5s internal retry)
+      .mockResolvedValueOnce(new Response("fail", { status: 500 })); // attempt 3, fetch 2 (12s internal retry)
 
     await act(async () => {
       render(
@@ -208,9 +208,9 @@ describe("Proactive refresh timer", () => {
     });
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    // ensureFreshToken internal retry after 5s
+    // ensureFreshToken internal retry after 12s
     await act(async () => {
-      vi.advanceTimersByTime(5_000);
+      vi.advanceTimersByTime(12_000);
     });
     expect(mockFetch).toHaveBeenCalledTimes(2);
 
@@ -220,9 +220,9 @@ describe("Proactive refresh timer", () => {
     });
     expect(mockFetch).toHaveBeenCalledTimes(3);
 
-    // ensureFreshToken internal retry after 5s
+    // ensureFreshToken internal retry after 12s
     await act(async () => {
-      vi.advanceTimersByTime(5_000);
+      vi.advanceTimersByTime(12_000);
     });
     expect(mockFetch).toHaveBeenCalledTimes(4);
 
@@ -232,9 +232,9 @@ describe("Proactive refresh timer", () => {
     });
     expect(mockFetch).toHaveBeenCalledTimes(5);
 
-    // ensureFreshToken internal retry after 5s
+    // ensureFreshToken internal retry after 12s
     await act(async () => {
-      vi.advanceTimersByTime(5_000);
+      vi.advanceTimersByTime(12_000);
     });
     expect(mockFetch).toHaveBeenCalledTimes(6);
 

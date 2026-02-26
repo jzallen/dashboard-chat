@@ -4,7 +4,7 @@
  * Talks directly to the chat worker (not the backend API).
  */
 
-import { getAuthHeaders, handleResponse } from "./fetchUtils";
+import { getAuthHeaders, handleResponse, withAuthRetry } from "./fetchUtils";
 import { CHAT_URL } from "../ui/data/config";
 
 export interface ChatTurnPayload {
@@ -52,11 +52,14 @@ export async function createSession(projectId: string, datasetId?: string): Prom
 }
 
 export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise<void> {
-  const response = await fetch(`${CHAT_URL}/sessions/${sessionId}/turns`, {
+  const url = `${CHAT_URL}/sessions/${sessionId}/turns`;
+  const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(turn),
-  });
+  };
+  let response = await fetch(url, init);
+  response = await withAuthRetry(response, url, init);
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Failed to log turn (${response.status}): ${text}`);

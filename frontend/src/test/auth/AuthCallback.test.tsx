@@ -23,13 +23,15 @@ describe("AuthCallback", () => {
   beforeEach(() => {
     mockHandleCallback.mockReset();
     mockNavigate.mockReset();
+    sessionStorage.clear();
   });
 
-  it("calls handleCallback with code from URL params", async () => {
+  it("calls handleCallback with code from URL params when state matches", async () => {
+    sessionStorage.setItem("oauth_state", "test-state-123");
     mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
 
     render(
-      <MemoryRouter initialEntries={["/auth/callback?code=test-auth-code"]}>
+      <MemoryRouter initialEntries={["/auth/callback?code=test-auth-code&state=test-state-123"]}>
         <AuthCallback />
       </MemoryRouter>
     );
@@ -40,10 +42,11 @@ describe("AuthCallback", () => {
   });
 
   it("navigates to / when user has org_id", async () => {
+    sessionStorage.setItem("oauth_state", "valid-state");
     mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
 
     render(
-      <MemoryRouter initialEntries={["/auth/callback?code=valid-code"]}>
+      <MemoryRouter initialEntries={["/auth/callback?code=valid-code&state=valid-state"]}>
         <AuthCallback />
       </MemoryRouter>
     );
@@ -54,10 +57,11 @@ describe("AuthCallback", () => {
   });
 
   it("navigates to /org/create when user has no org_id", async () => {
+    sessionStorage.setItem("oauth_state", "valid-state");
     mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: null, name: null });
 
     render(
-      <MemoryRouter initialEntries={["/auth/callback?code=valid-code"]}>
+      <MemoryRouter initialEntries={["/auth/callback?code=valid-code&state=valid-state"]}>
         <AuthCallback />
       </MemoryRouter>
     );
@@ -68,10 +72,11 @@ describe("AuthCallback", () => {
   });
 
   it("navigates to /login on failure", async () => {
+    sessionStorage.setItem("oauth_state", "valid-state");
     mockHandleCallback.mockRejectedValue(new Error("Invalid code"));
 
     render(
-      <MemoryRouter initialEntries={["/auth/callback?code=bad-code"]}>
+      <MemoryRouter initialEntries={["/auth/callback?code=bad-code&state=valid-state"]}>
         <AuthCallback />
       </MemoryRouter>
     );
@@ -94,14 +99,96 @@ describe("AuthCallback", () => {
   });
 
   it("shows completing login message", () => {
+    sessionStorage.setItem("oauth_state", "valid-state");
     mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
 
     render(
-      <MemoryRouter initialEntries={["/auth/callback?code=test"]}>
+      <MemoryRouter initialEntries={["/auth/callback?code=test&state=valid-state"]}>
         <AuthCallback />
       </MemoryRouter>
     );
 
     expect(screen.getByText("Completing login...")).toBeInTheDocument();
+  });
+
+  describe("OAuth state verification", () => {
+    it("proceeds with code exchange when state matches sessionStorage", async () => {
+      sessionStorage.setItem("oauth_state", "abc-state-xyz");
+      mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
+
+      render(
+        <MemoryRouter initialEntries={["/auth/callback?code=auth-code&state=abc-state-xyz"]}>
+          <AuthCallback />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(mockHandleCallback).toHaveBeenCalledWith("auth-code");
+      });
+      expect(sessionStorage.getItem("oauth_state")).toBeNull();
+    });
+
+    it("redirects to /login when state param does not match sessionStorage", async () => {
+      sessionStorage.setItem("oauth_state", "expected-state");
+
+      render(
+        <MemoryRouter initialEntries={["/auth/callback?code=auth-code&state=wrong-state"]}>
+          <AuthCallback />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith("/login", { replace: true });
+      });
+      expect(mockHandleCallback).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem("oauth_state")).toBeNull();
+    });
+
+    it("redirects to /login when state query param is missing", async () => {
+      sessionStorage.setItem("oauth_state", "stored-state");
+
+      render(
+        <MemoryRouter initialEntries={["/auth/callback?code=auth-code"]}>
+          <AuthCallback />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith("/login", { replace: true });
+      });
+      expect(mockHandleCallback).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem("oauth_state")).toBeNull();
+    });
+
+    it("redirects to /login when sessionStorage has no oauth_state", async () => {
+      // sessionStorage is empty — no oauth_state set
+
+      render(
+        <MemoryRouter initialEntries={["/auth/callback?code=auth-code&state=some-state"]}>
+          <AuthCallback />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith("/login", { replace: true });
+      });
+      expect(mockHandleCallback).not.toHaveBeenCalled();
+    });
+
+    it("removes oauth_state from sessionStorage after successful verification", async () => {
+      sessionStorage.setItem("oauth_state", "cleanup-state");
+      mockHandleCallback.mockResolvedValue({ id: "u1", email: "a@b.c", org_id: "org-1", name: null });
+
+      render(
+        <MemoryRouter initialEntries={["/auth/callback?code=auth-code&state=cleanup-state"]}>
+          <AuthCallback />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(mockHandleCallback).toHaveBeenCalled();
+      });
+      expect(sessionStorage.getItem("oauth_state")).toBeNull();
+    });
   });
 });

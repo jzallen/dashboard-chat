@@ -142,6 +142,59 @@ class TestRefreshEndpoint:
         assert resp2.status_code == 200
 
 
+class TestLogoutEndpoint:
+    """Tests for POST /api/auth/logout."""
+
+    async def test_logout_with_bearer_token_calls_revoke_session(self, client):
+        """logout with a Bearer token should call revoke_session and return success."""
+        mock_provider = MagicMock()
+        mock_provider.revoke_session = AsyncMock()
+        mock_provider.get_logout_url = AsyncMock(return_value="/")
+        with patch("app.routers.auth.get_auth_provider", return_value=mock_provider):
+            resp = await client.post(
+                "/api/auth/logout",
+                headers={"Authorization": "Bearer my-access-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["url"] == "/"
+        mock_provider.revoke_session.assert_awaited_once_with("my-access-token")
+
+    async def test_logout_without_token_skips_revocation(self, client):
+        """logout without Authorization header should skip revocation and return success."""
+        mock_provider = MagicMock()
+        mock_provider.revoke_session = AsyncMock()
+        mock_provider.get_logout_url = AsyncMock(return_value="/")
+        with patch("app.routers.auth.get_auth_provider", return_value=mock_provider):
+            resp = await client.post("/api/auth/logout")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["url"] == "/"
+        mock_provider.revoke_session.assert_not_awaited()
+
+    async def test_logout_always_returns_url(self, client):
+        """logout should always return a JSON body with 'url' key."""
+        resp = await client.post("/api/auth/logout")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "url" in data
+        assert data["url"] == "/"
+
+
+class TestLoginEndpoint:
+    """Tests for GET /api/auth/login."""
+
+    async def test_login_response_includes_url_and_state(self, client):
+        """login should return both 'url' and 'state' fields."""
+        resp = await client.get("/api/auth/login")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "url" in data
+        assert "state" in data
+        assert len(data["state"]) > 0
+        assert data["url"].startswith("http")
+
+
 class TestRateLimiter:
     """Unit tests for InMemoryRateLimiter."""
 

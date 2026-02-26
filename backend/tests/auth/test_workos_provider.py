@@ -98,23 +98,51 @@ class TestVerifyToken:
 
         assert result.org_id is None
 
+    async def test_verify_token_passes_audience_and_issuer_to_decode(self, provider):
+        """verify_token must pass audience and issuer to jwt.decode for security."""
+        mock_signing_key = MagicMock()
+        mock_signing_key.key = "fake-rsa-key"
+        provider._jwks_client.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+
+        payload = {
+            "sub": "user_01ABC",
+            "email": "alice@example.com",
+            "org_id": "org_01XYZ",
+            "first_name": "Alice",
+        }
+
+        with patch("app.auth.workos_provider.jwt.decode", return_value=payload) as mock_decode:
+            await provider.verify_token("some.jwt.token")
+
+        mock_decode.assert_called_once_with(
+            "some.jwt.token",
+            "fake-rsa-key",
+            algorithms=["RS256"],
+            audience="client_test_xyz",
+            issuer="https://api.workos.com",
+        )
+
 
 class TestGetLoginUrl:
     """Tests for WorkOSAuthProvider.get_login_url."""
 
     async def test_constructs_url_with_required_params(self, provider):
-        """get_login_url should include client_id, redirect_uri, response_type, provider."""
-        url = await provider.get_login_url("http://localhost:5173/auth/callback")
+        """get_login_url should include client_id, redirect_uri, response_type, provider, scope."""
+        url, state = await provider.get_login_url("http://localhost:5173/auth/callback")
 
         assert "client_id=client_test_xyz" in url
         assert "redirect_uri=" in url
         assert "response_type=code" in url
         assert "provider=authkit" in url
+        assert "scope=openid+profile+email" in url
+        assert "nonce=" in url
+        assert f"state={state}" in url
         assert url.startswith("https://api.workos.com/user_management/authorize?")
+        assert len(state) > 0
 
     async def test_includes_organization_when_provided(self, provider):
         """get_login_url should add organization param when organization_id is given."""
-        url = await provider.get_login_url(
+        url, _state = await provider.get_login_url(
             "http://localhost:5173/auth/callback",
             organization_id="org_01XYZ",
         )
@@ -123,7 +151,7 @@ class TestGetLoginUrl:
 
     async def test_omits_organization_when_not_provided(self, provider):
         """get_login_url should not include organization param when omitted."""
-        url = await provider.get_login_url("http://localhost:5173/auth/callback")
+        url, _state = await provider.get_login_url("http://localhost:5173/auth/callback")
 
         assert "organization=" not in url
 
@@ -242,6 +270,67 @@ class TestRefreshAccessToken:
         with client_patch:
             with pytest.raises(AuthenticationError, match="Token refresh failed"):
                 await provider.refresh_access_token("rt_expired")
+
+
+class TestRevokeSession:
+    """Tests for WorkOSAuthProvider.revoke_session."""
+
+    async def test_successful_revocation(self, provider):
+        """revoke_session should extract sid from JWT and send it to WorkOS."""
+        mock_response = _make_workos_response(status_code=200)
+        client_patch, mock_client = _mock_httpx_client(mock_response)
+
+        with client_patch, patch(
+            "app.auth.workos_provider.jwt.decode",
+            return_value={"sid": "session_abc123"},
+        ):
+            await provider.revoke_session("some.access.token")
+
+        mock_client.post.assert_called_once_with(
+            "https://api.workos.com/user_management/sessions/revoke",
+            json={"session_id": "session_abc123"},
+            headers={"Authorization": "Bearer sk_test_abc123"},
+            timeout=5.0,
+        )
+
+    async def test_non_200_response_is_logged_not_raised(self, provider):
+        """revoke_session should not raise on non-200 responses."""
+        mock_response = _make_workos_response(status_code=400, text="bad request")
+        client_patch, _ = _mock_httpx_client(mock_response)
+
+        with client_patch, patch(
+            "app.auth.workos_provider.jwt.decode",
+            return_value={"sid": "session_abc123"},
+        ):
+            # Should not raise
+            await provider.revoke_session("some.access.token")
+
+    async def test_network_error_is_logged_not_raised(self, provider):
+        """revoke_session should swallow network errors."""
+        mock_client_instance = AsyncMock()
+        mock_client_instance.post.side_effect = httpx.ConnectError("connection refused")
+        client_patch = patch("app.auth.workos_provider.httpx.AsyncClient", **{
+            "return_value.__aenter__": AsyncMock(return_value=mock_client_instance),
+            "return_value.__aexit__": AsyncMock(return_value=False),
+        })
+
+        with client_patch, patch(
+            "app.auth.workos_provider.jwt.decode",
+            return_value={"sid": "session_abc123"},
+        ):
+            # Should not raise
+            await provider.revoke_session("some.access.token")
+
+    async def test_missing_sid_claim_skips_revocation(self, provider):
+        """revoke_session should not call WorkOS API when sid is missing from JWT."""
+        with patch(
+            "app.auth.workos_provider.jwt.decode",
+            return_value={},
+        ), patch("app.auth.workos_provider.httpx.AsyncClient") as mock_async_client:
+            await provider.revoke_session("some.access.token")
+
+        # httpx.AsyncClient should never have been used as a context manager
+        mock_async_client.return_value.__aenter__.assert_not_called()
 
 
 class TestGetLogoutUrl:

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import secrets
 import time
 import urllib.parse
 
@@ -36,16 +37,9 @@ class WorkOSAuthProvider:
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
-                options={"verify_aud": False},
+                audience=self.client_id,
+                issuer="https://api.workos.com",
             )
-            # Warn if the token lacks an audience claim so we know when
-            # WorkOS starts including it and we can enforce verification.
-            if "aud" not in payload:
-                logger.warning("WorkOS token missing 'aud' claim — audience verification skipped")
-            elif payload.get("aud") != self.client_id:
-                raise jwt.InvalidTokenError(
-                    f"Audience mismatch: expected {self.client_id}, got {payload.get('aud')}"
-                )
         except jwt.ExpiredSignatureError:
             raise AuthenticationError("Token has expired")
         except jwt.InvalidTokenError as e:
@@ -60,18 +54,22 @@ class WorkOSAuthProvider:
             org_name=payload.get("org_name") or None,
         )
 
-    async def get_login_url(self, redirect_uri: str, *, organization_id: str | None = None) -> str:
-        """Get WorkOS AuthKit login URL."""
+    async def get_login_url(self, redirect_uri: str, *, organization_id: str | None = None) -> tuple[str, str]:
+        """Get WorkOS AuthKit login URL and CSRF state token."""
+        state = secrets.token_urlsafe(32)
         params = {
             "client_id": self.client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "provider": "authkit",
+            "scope": "openid profile email",
+            "nonce": secrets.token_urlsafe(32),
+            "state": state,
         }
         if organization_id:
             params["organization"] = organization_id
         qs = urllib.parse.urlencode(params)
-        return f"https://api.workos.com/user_management/authorize?{qs}"
+        return f"https://api.workos.com/user_management/authorize?{qs}", state
 
     def _parse_auth_response(self, data: dict) -> tuple[AuthUser, str, str, int]:
         """Parse a WorkOS authenticate response into the standard 4-tuple."""
@@ -102,6 +100,7 @@ class WorkOSAuthProvider:
                     "client_secret": self.api_key,
                     "code": code,
                     "grant_type": "authorization_code",
+                    "redirect_uri": self.redirect_uri,
                 },
             )
             if resp.status_code != 200:
@@ -123,6 +122,29 @@ class WorkOSAuthProvider:
             if resp.status_code != 200:
                 raise AuthenticationError(f"Token refresh failed: {resp.text}")
             return self._parse_auth_response(resp.json())
+
+    async def revoke_session(self, access_token: str) -> None:
+        """Revoke a WorkOS session by its access token.
+
+        Best-effort: logs failures but never raises so logout always succeeds.
+        """
+        try:
+            decoded = jwt.decode(access_token, options={"verify_signature": False})
+            sid = decoded.get("sid")
+            if not sid:
+                logger.warning("Access token missing 'sid' claim — cannot revoke session")
+                return
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://api.workos.com/user_management/sessions/revoke",
+                    json={"session_id": sid},
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    timeout=5.0,
+                )
+                if resp.status_code not in (200, 204):
+                    logger.warning("WorkOS session revocation returned %s: %s", resp.status_code, resp.text)
+        except Exception as e:
+            logger.warning("WorkOS session revocation failed: %s", e)
 
     async def get_logout_url(self) -> str:
         return "/"

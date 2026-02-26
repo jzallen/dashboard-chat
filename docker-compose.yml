@@ -48,6 +48,7 @@ services:
       S3_REGION: us-east-1
       CORS_ORIGIN: http://localhost:5173
       AUTH_MODE: ${AUTH_MODE:-dev}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
     ports:
       - "8787:8787"
     volumes:
@@ -128,6 +129,8 @@ services:
       - ./backend/migrations:/app/migrations
       - ./backend/data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "997"
     command: sh -c "uv run python scripts/setup_dev.py && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # Full stack with PostgreSQL
@@ -161,6 +164,8 @@ services:
       - ./backend/migrations:/app/migrations
       - ./backend/data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "997"
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:

@@ -14,7 +14,7 @@ import {
 import type { ToolCall } from "@/table-tools";
 import type { Dataset } from "@/api";
 import { createSession, logTurn } from "@/api";
-import { getAuthHeaders, ensureFreshToken, EXPIRES_AT_KEY, TOKEN_KEY } from "@/api/fetchUtils";
+import { getAuthHeaders, ensureFreshToken, hardLogout, EXPIRES_AT_KEY, TOKEN_KEY } from "@/api/fetchUtils";
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
 import type { Message, TableSchema, SSEMessage } from "../types";
 import { CHAT_URL } from "../data/config";
@@ -184,6 +184,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             }
           } catch {
             // Refresh failed — fall through to error handling below
+          }
+          if (response.status === 401) {
+            hardLogout();
+            return;
           }
         }
 

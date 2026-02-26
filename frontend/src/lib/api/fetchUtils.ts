@@ -86,8 +86,8 @@ export async function ensureFreshToken(): Promise<string | null> {
       return applyTokens(await doRefresh(refreshToken));
     } catch (err) {
       console.warn("[auth] First refresh attempt failed:", err);
-      // Single retry with delay (12s for 429, 5s otherwise)
-      const retryDelay = err instanceof RefreshError && err.status === 429 ? 12_000 : 5_000;
+      // Single retry with delay — always 12s to clear the backend's 10s rate limiter window
+      const retryDelay = 12_000;
       try {
         await new Promise(r => setTimeout(r, retryDelay));
         const retryToken = localStorage.getItem(REFRESH_TOKEN_KEY);

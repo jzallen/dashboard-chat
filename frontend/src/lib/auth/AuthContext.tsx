@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import type { AuthUser, AuthState } from "./types";
-import { post, get } from "../api/client";
+import { post, get, API_BASE_URL } from "../api/client";
 import { TOKEN_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY, ACTIVITY_KEY, ensureFreshToken } from "../api/fetchUtils";
 import { ActivityCheckModal } from "../ui/components/ActivityCheckModal";
 import { ActivityDebugBadge } from "../ui/components/ActivityDebugBadge";
@@ -63,7 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (organizationId?: string) => {
     const params = organizationId ? `?organization_id=${encodeURIComponent(organizationId)}` : "";
-    const { url } = await get<{ url: string }>(`/api/auth/login${params}`);
+    const { url, state } = await get<{ url: string; state: string }>(`/api/auth/login${params}`);
+    if (state) {
+      sessionStorage.setItem("oauth_state", state);
+    }
     window.location.href = url;
   }, []);
 
@@ -82,6 +85,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Best-effort server-side session revocation before clearing local state.
+    // Fire-and-forget: we always clear localStorage regardless of the outcome.
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) {
+      fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }).catch(() => {
+        // Revocation failure is non-fatal — local state is cleared below
+      });
+    }
+
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
@@ -93,6 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Proactive token refresh timer — delegates to the shared ensureFreshToken()
   // so that the timer and the 401 interceptor share a single coalesced refresh promise.
   useEffect(() => {
+    // Dev tokens never expire — skip refresh to avoid unnecessary 401/429 noise
+    if (AUTH_MODE === "dev") return;
     if (!state.tokenExpiresAt || !state.isAuthenticated) return;
 
     const ttl = state.tokenExpiresAt - Date.now();

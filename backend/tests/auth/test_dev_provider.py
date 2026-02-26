@@ -35,9 +35,10 @@ class TestDevAuthProvider:
         assert expires_in == 300
 
     async def test_get_login_url_includes_redirect_uri(self, provider: DevAuthProvider):
-        """get_login_url should return the redirect_uri with a code query param."""
-        url = await provider.get_login_url("http://localhost:3000/callback")
+        """get_login_url should return the redirect_uri with a code query param and state."""
+        url, state = await provider.get_login_url("http://localhost:3000/callback")
         assert url == "http://localhost:3000/callback?code=dev-auth-code"
+        assert state == "dev-state-static"
 
     async def test_get_logout_url_returns_root(self, provider: DevAuthProvider):
         """get_logout_url should return '/'."""

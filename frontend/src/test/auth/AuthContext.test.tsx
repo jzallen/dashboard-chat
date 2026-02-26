@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "../../lib/auth";
 vi.mock("../../lib/api/client", () => ({
   get: vi.fn(),
   post: vi.fn(),
+  API_BASE_URL: "",
 }));
 
 function TestConsumer() {

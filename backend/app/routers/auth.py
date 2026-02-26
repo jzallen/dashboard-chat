@@ -24,8 +24,8 @@ async def login(redirect_uri: str | None = None, organization_id: str | None = N
     provider = get_auth_provider()
     from app.config import get_settings
     uri = redirect_uri or get_settings().workos_redirect_uri
-    url = await provider.get_login_url(uri, organization_id=organization_id)
-    return {"url": url}
+    url, state = await provider.get_login_url(uri, organization_id=organization_id)
+    return {"url": url, "state": state}
 
 
 @router.post("/callback")
@@ -80,9 +80,21 @@ async def refresh(request: Request, body: RefreshRequest):
 
 
 @router.post("/logout")
-async def logout():
-    """Get logout URL."""
+async def logout(request: Request):
+    """Revoke the session and return a logout redirect URL.
+
+    Accepts the access token via the Authorization header (Bearer <token>).
+    Session revocation is best-effort -- the response always succeeds so the
+    frontend can clear local state regardless.
+    """
     provider = get_auth_provider()
+
+    # Attempt server-side session revocation if the provider supports it
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        await provider.revoke_session(token)
+
     url = await provider.get_logout_url()
     return {"url": url}
 
