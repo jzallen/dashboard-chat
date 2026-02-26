@@ -10,8 +10,12 @@ import asyncio
 import logging
 
 import aiodocker
+from aiodocker.exceptions import DockerError
 
-from app.use_cases.sql_access.pg_duckdb_manager import configure_s3_secrets
+from app.use_cases.sql_access.pg_duckdb_manager import (
+    configure_s3_secrets,
+    ensure_duckdb_role_configured,
+)
 from app.use_cases.sql_access.provisioner import (
     ProjectEnvironment,
     ProvisioningError,
@@ -62,6 +66,14 @@ class DockerPgDuckDbProvisioner:
             await self._docker.close()
             self._docker = None
 
+    async def _ensure_image(self, docker: aiodocker.Docker) -> None:
+        """Pull the image if it isn't already available locally."""
+        try:
+            await docker.images.inspect(self._image)
+        except DockerError:
+            logger.info("Pulling image %s (this may take a moment)...", self._image)
+            await docker.images.pull(self._image)
+
     async def provision(
         self, project_id: str, storage_config: StorageConfig
     ) -> ProjectEnvironment:
@@ -72,6 +84,9 @@ class DockerPgDuckDbProvisioner:
         await self._force_remove(name)
 
         try:
+            # Ensure image is available locally (pull if missing)
+            await self._ensure_image(docker)
+
             config = {
                 "Image": self._image,
                 "Env": [
@@ -91,7 +106,7 @@ class DockerPgDuckDbProvisioner:
             await container.start()
 
             # Wait for PostgreSQL to accept connections
-            host_port = await self._wait_for_healthy(container)
+            host_port = await self._wait_for_healthy(container, name)
 
             env = ProjectEnvironment(
                 environment_id=container.id,
@@ -100,9 +115,12 @@ class DockerPgDuckDbProvisioner:
                 database=self._database,
                 admin_user=self._admin_user,
                 admin_password=self._admin_password,
+                internal_host=name,
+                internal_port=5432,
             )
 
-            # Configure S3/MinIO secrets so read_parquet('s3://...') works
+            # Configure DuckDB group role GUC, then S3/MinIO secrets
+            await ensure_duckdb_role_configured(env)
             await configure_s3_secrets(env, storage_config)
 
             logger.info(
@@ -157,11 +175,13 @@ class DockerPgDuckDbProvisioner:
                 database=self._database,
                 admin_user=self._admin_user,
                 admin_password=self._admin_password,
+                internal_host=name,
+                internal_port=5432,
             )
         except Exception:
             return None
 
-    async def _wait_for_healthy(self, container: aiodocker.containers.DockerContainer) -> int:
+    async def _wait_for_healthy(self, container: aiodocker.containers.DockerContainer, name: str) -> int:
         elapsed = 0.0
         while elapsed < HEALTH_CHECK_TIMEOUT:
             info = await container.show()
@@ -173,10 +193,11 @@ class DockerPgDuckDbProvisioner:
             port_bindings = info["NetworkSettings"]["Ports"].get("5432/tcp")
             if port_bindings:
                 host_port = int(port_bindings[0]["HostPort"])
-                # Try a TCP connect to verify PostgreSQL is accepting connections
+                # Health-check via the Docker network (container name on
+                # internal port) so this works from inside another container.
                 try:
                     reader, writer = await asyncio.wait_for(
-                        asyncio.open_connection("localhost", host_port),
+                        asyncio.open_connection(name, 5432),
                         timeout=2.0,
                     )
                     writer.close()

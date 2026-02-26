@@ -121,6 +121,7 @@ services:
       PG_DUCKDB_IMAGE: ${PG_DUCKDB_IMAGE:-pgduckdb/pgduckdb:16-main}
       PG_DUCKDB_NETWORK: ${PG_DUCKDB_NETWORK:-dashboard-chat_default}
       ENVIRONMENT_PROVISIONER: ${ENVIRONMENT_PROVISIONER:-docker}
+      MINIO_INTERNAL_ENDPOINT: "minio:9000"
     ports:
       - "8000:8000"
     volumes:
@@ -154,6 +155,7 @@ services:
       PG_DUCKDB_IMAGE: ${PG_DUCKDB_IMAGE:-pgduckdb/pgduckdb:16-main}
       PG_DUCKDB_NETWORK: ${PG_DUCKDB_NETWORK:-dashboard-chat_default}
       ENVIRONMENT_PROVISIONER: ${ENVIRONMENT_PROVISIONER:-docker}
+      MINIO_INTERNAL_ENDPOINT: "minio:9000"
     ports:
       - "8000:8000"
     depends_on:

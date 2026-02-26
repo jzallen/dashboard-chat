@@ -12,6 +12,7 @@ import string
 import asyncpg
 import bcrypt
 
+from app.config import get_settings
 from app.use_cases.sql_access.provisioner import ProjectEnvironment, StorageConfig
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,9 @@ logger = logging.getLogger(__name__)
 SCHEMA_PREFIX = "project_"
 ROLE_PREFIX = "reader_"
 PASSWORD_LENGTH = 32
-CONNECTION_LIMIT = 3
+
+# Group role for duckdb.postgres_role GUC — shared across all reader roles
+DUCKDB_READERS_GROUP = "duckdb_readers"
 
 # Strict pattern for identifiers derived from project UUIDs (hex prefix).
 # schema_name and role_name must match this — rejects anything unexpected.
@@ -73,16 +76,18 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
-def build_create_role_sql(role: str, password: str) -> str:
+def build_create_role_sql(role: str, password: str, connection_limit: int | None = None) -> str:
     """Build a CREATE ROLE statement with proper escaping.
 
     PostgreSQL DDL (CREATE ROLE) does not support $1 parameter placeholders,
     so we must escape the password literal manually.
     """
+    if connection_limit is None:
+        connection_limit = get_settings().pg_duckdb_connection_limit
     _validate_ident(role)
     return (
         f"CREATE ROLE {_quote_ident(role)} LOGIN PASSWORD {_quote_literal(password)}"
-        f" CONNECTION LIMIT {CONNECTION_LIMIT}"
+        f" CONNECTION LIMIT {connection_limit}"
     )
 
 
@@ -94,9 +99,11 @@ def build_alter_role_password_sql(role: str, password: str) -> str:
 
 async def _get_connection(env: ProjectEnvironment) -> asyncpg.Connection:
     """Get an admin connection to a pg_duckdb environment."""
+    host = env.internal_host or env.host
+    port = env.internal_port if env.internal_host else env.port
     return await asyncpg.connect(
-        host=env.host,
-        port=env.port,
+        host=host,
+        port=port,
         user=env.admin_user,
         password=env.admin_password,
         database=env.database,
@@ -112,7 +119,7 @@ async def configure_s3_secrets(env: ProjectEnvironment, storage_config: StorageC
     use_ssl_str = "true" if storage_config.use_ssl else "false"
     secret_sql = f"""
 SELECT duckdb.raw_query($q$
-  CREATE OR REPLACE SECRET minio_secret (
+  CREATE OR REPLACE PERSISTENT SECRET minio_secret (
     TYPE S3,
     KEY_ID {_quote_literal(storage_config.access_key)},
     SECRET {_quote_literal(storage_config.secret_key)},
@@ -131,12 +138,37 @@ $q$);
         await conn.close()
 
 
+async def ensure_duckdb_role_configured(env: ProjectEnvironment) -> None:
+    """Ensure the duckdb_readers group role exists and duckdb.postgres_role GUC is set.
+
+    Idempotent: safe to call on every provision. Creates the group role if it
+    doesn't exist, sets the GUC via ALTER SYSTEM, and reloads the config.
+    """
+    conn = await _get_connection(env)
+    try:
+        # Create group role if not exists (NOLOGIN — not a real user)
+        await conn.execute(
+            f"DO $$ BEGIN"
+            f"  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = {_quote_literal(DUCKDB_READERS_GROUP)}) THEN"
+            f"    EXECUTE 'CREATE ROLE {_quote_ident(DUCKDB_READERS_GROUP)} NOLOGIN';"
+            f"  END IF;"
+            f" END $$"
+        )
+        await conn.execute(
+            f"ALTER SYSTEM SET duckdb.postgres_role = {_quote_literal(DUCKDB_READERS_GROUP)}"
+        )
+        await conn.execute("SELECT pg_reload_conf()")
+        logger.info("Ensured duckdb_readers role and GUC configured for environment %s", env.environment_id)
+    finally:
+        await conn.close()
+
+
 async def create_project_schema(env: ProjectEnvironment, project_id: str, password: str) -> None:
     """Create a schema and read-only role for a project.
 
     Creates:
     - Schema: project_{short_id}
-    - Role: reader_{short_id} with LOGIN, CONNECTION LIMIT 3, search_path set
+    - Role: reader_{short_id} with LOGIN, configurable CONNECTION LIMIT, search_path set
     - Revokes public schema access to prevent catalog enumeration
 
     Args:
@@ -152,8 +184,10 @@ async def create_project_schema(env: ProjectEnvironment, project_id: str, passwo
         await conn.execute(f'CREATE SCHEMA IF NOT EXISTS {_quote_ident(schema)}')
         await conn.execute(build_create_role_sql(role, password))
         await conn.execute(f'GRANT USAGE ON SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}')
+        await conn.execute(f'GRANT {_quote_ident(DUCKDB_READERS_GROUP)} TO {_quote_ident(role)}')
         await conn.execute(f'REVOKE ALL ON SCHEMA public FROM {_quote_ident(role)}')
         await conn.execute(f'ALTER ROLE {_quote_ident(role)} SET search_path TO {_quote_ident(schema)}')
+        await conn.execute(f"ALTER ROLE {_quote_ident(role)} SET idle_session_timeout = '5min'")
         logger.info("Created schema %s and role %s for project %s", schema, role, project_id)
     finally:
         await conn.close()

@@ -18,6 +18,10 @@ from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
 
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY, PROJECT_OTHER
 
+# Default settings values used by most tests (match get_settings() defaults)
+_DEFAULT_MINIO_ENDPOINT = "localhost:9000"
+_INTERNAL_MINIO_ENDPOINT = "minio:9000"
+
 
 class TestEnableSqlAccess:
 
@@ -153,3 +157,47 @@ class TestEnableSqlAccess:
         mock_create_schema.assert_called_once()
         # Verify environment was deprovisioned as compensation
         assert PROJECT_1 in mock_provisioner.deprovision_calls
+
+    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.get_settings")
+    async def test_enable_uses_internal_endpoint_when_set(
+        self, mock_get_settings, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db: AsyncSession,
+    ):
+        """StorageConfig should prefer minio_internal_endpoint when it is non-empty."""
+        from app.config import Settings
+
+        mock_get_settings.return_value = Settings(
+            minio_internal_endpoint=_INTERNAL_MINIO_ENDPOINT,
+        )
+        set_session(seeded_db)
+
+        result = await enable_sql_access(project_id=PROJECT_1)
+
+        assert isinstance(result, Success)
+        storage_config = mock_provisioner.provision_calls[0][1]
+        assert storage_config.endpoint == _INTERNAL_MINIO_ENDPOINT
+
+    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.enable_sql_access.get_settings")
+    async def test_enable_falls_back_to_minio_endpoint_when_internal_empty(
+        self, mock_get_settings, mock_create_schema, mock_execute_bootstrap, mock_grant_usage,
+        mock_provisioner: MockEnvironmentProvisioner, seeded_db: AsyncSession,
+    ):
+        """StorageConfig should fall back to minio_endpoint when minio_internal_endpoint is empty."""
+        from app.config import Settings
+
+        mock_get_settings.return_value = Settings(
+            minio_internal_endpoint="",
+        )
+        set_session(seeded_db)
+
+        result = await enable_sql_access(project_id=PROJECT_1)
+
+        assert isinstance(result, Success)
+        storage_config = mock_provisioner.provision_calls[0][1]
+        assert storage_config.endpoint == _DEFAULT_MINIO_ENDPOINT

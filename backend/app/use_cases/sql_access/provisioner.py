@@ -11,11 +11,13 @@ class ProjectEnvironment:
     """Connection info for a provisioned project SQL environment."""
 
     environment_id: str  # Opaque infra ID (Docker container ID, ECS task ARN, etc.)
-    host: str  # Connection host (localhost for Docker, hostname for cloud)
-    port: int  # Mapped port for connections
+    host: str  # External connection host (localhost for Docker, hostname for cloud)
+    port: int  # External mapped port for connections
     database: str  # Database name ("dashboard_external")
     admin_user: str  # Admin role for DDL operations
-    admin_password: str  # Admin password
+    admin_password: str
+    internal_host: str = ""  # Docker-network reachable host (container name)
+    internal_port: int = 5432  # Internal container port
 
 
 @dataclass(frozen=True)

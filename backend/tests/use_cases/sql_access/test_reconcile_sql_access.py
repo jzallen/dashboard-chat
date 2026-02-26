@@ -1,5 +1,7 @@
 """Tests for reconcile_sql_access startup use case."""
 
+from unittest.mock import AsyncMock, patch
+
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,8 +27,14 @@ class TestReconcileSqlAccess:
         assert data["healthy"] == 0
         assert data["degraded"] == 0
 
+    @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
     async def test_healthy_environment_counted(
-        self, mock_provisioner: MockEnvironmentProvisioner, seeded_db_with_access: AsyncSession,
+        self,
+        mock_ensure_role,
+        mock_configure_s3,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db_with_access: AsyncSession,
     ):
         set_session(seeded_db_with_access)
 
@@ -41,6 +49,31 @@ class TestReconcileSqlAccess:
         assert data["healthy"] == 1
         assert data["degraded"] == 0
         assert len(mock_provisioner.health_check_calls) == 1
+
+    @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    async def test_healthy_environment_gets_runtime_config_reapplied(
+        self,
+        mock_ensure_role,
+        mock_configure_s3,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db_with_access: AsyncSession,
+    ):
+        set_session(seeded_db_with_access)
+
+        mock_provisioner._environments[PROJECT_1] = mock_provisioner._default_env
+
+        result = await reconcile_sql_access()
+
+        assert isinstance(result, Success)
+        # Runtime config should be re-applied on healthy environments
+        mock_ensure_role.assert_awaited_once()
+        mock_configure_s3.assert_awaited_once()
+        # Verify configure_s3_secrets was called with a StorageConfig
+        args = mock_configure_s3.await_args
+        assert args is not None
+        env_arg, storage_config_arg = args.args
+        assert storage_config_arg.access_key  # Sanity: StorageConfig was passed
 
     async def test_degraded_environment_counted(
         self, mock_provisioner: MockEnvironmentProvisioner, seeded_db_with_access: AsyncSession,
@@ -58,8 +91,35 @@ class TestReconcileSqlAccess:
         assert data["healthy"] == 0
         assert data["degraded"] == 1
 
+    @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    async def test_degraded_environment_skips_runtime_config(
+        self,
+        mock_ensure_role,
+        mock_configure_s3,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db_with_access: AsyncSession,
+    ):
+        set_session(seeded_db_with_access)
+
+        # Environment is enabled but provisioner doesn't know about it → degraded
+        result = await reconcile_sql_access()
+
+        assert isinstance(result, Success)
+        data = result.unwrap()
+        assert data["degraded"] == 1
+        # Runtime config should NOT be re-applied on degraded environments
+        mock_ensure_role.assert_not_awaited()
+        mock_configure_s3.assert_not_awaited()
+
+    @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
     async def test_unhealthy_provisioner_marks_degraded(
-        self, mock_provisioner: MockEnvironmentProvisioner, seeded_db_with_access: AsyncSession,
+        self,
+        mock_ensure_role,
+        mock_configure_s3,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db_with_access: AsyncSession,
     ):
         set_session(seeded_db_with_access)
 
@@ -85,3 +145,28 @@ class TestReconcileSqlAccess:
         data = result.unwrap()
         assert data["total"] == 0
         assert len(mock_provisioner.health_check_calls) == 0
+
+    @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    async def test_runtime_config_failure_is_non_fatal(
+        self,
+        mock_ensure_role,
+        mock_configure_s3,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db_with_access: AsyncSession,
+    ):
+        """Failures in re-applying runtime config are logged as warnings, not fatal."""
+        set_session(seeded_db_with_access)
+
+        mock_provisioner._environments[PROJECT_1] = mock_provisioner._default_env
+        mock_ensure_role.side_effect = Exception("GUC apply failed")
+        mock_configure_s3.side_effect = Exception("S3 secret failed")
+
+        result = await reconcile_sql_access()
+
+        # Still counts as healthy despite config re-apply failures
+        assert isinstance(result, Success)
+        data = result.unwrap()
+        assert data["total"] == 1
+        assert data["healthy"] == 1
+        assert data["degraded"] == 0

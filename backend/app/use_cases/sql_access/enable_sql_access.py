@@ -83,7 +83,7 @@ async def enable_sql_access(
     # Build storage config from settings
     settings = get_settings()
     storage_config = StorageConfig(
-        endpoint=settings.minio_endpoint,
+        endpoint=settings.minio_internal_endpoint or settings.minio_endpoint,
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         region=settings.s3_region,

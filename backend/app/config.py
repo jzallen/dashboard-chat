@@ -45,7 +45,11 @@ class Settings(BaseSettings):
     pg_duckdb_database: str = "dashboard_external"
     pg_duckdb_image: str = "pgduckdb/pgduckdb:16-main"
     pg_duckdb_network: str = "dashboard-chat_default"
+    pg_duckdb_connection_limit: int = 10
     environment_provisioner: str = "docker"  # "docker" or "mock"
+
+    # MinIO internal endpoint for pg_duckdb containers (Docker networking)
+    minio_internal_endpoint: str = ""
 
     # Auth
     auth_mode: str = "dev"  # "dev" or "workos"

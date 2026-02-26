@@ -18,7 +18,10 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     execute_bootstrap,
     grant_schema_usage,
 )
-from app.use_cases.sql_access.provisioner import ProjectEnvironment
+from app.use_cases.sql_access.provisioner import (
+    ProjectEnvironment,
+    get_app_provisioner,
+)
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -58,16 +61,20 @@ async def sync_sql_access(
     if not existing or not existing["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
-    # Reconstruct ProjectEnvironment from stored record + settings
+    # Get live environment from provisioner (includes internal_host/internal_port),
+    # falling back to stored record + settings if provisioner can't reach it.
     settings = get_settings()
-    env = ProjectEnvironment(
-        environment_id=existing["environment_id"],
-        host=existing["environment_host"],
-        port=existing["environment_port"],
-        database=settings.pg_duckdb_database,
-        admin_user=settings.pg_duckdb_admin_user,
-        admin_password=settings.pg_duckdb_admin_password,
-    )
+    provisioner = get_app_provisioner()
+    env = await provisioner.get_environment(project_id)
+    if env is None:
+        env = ProjectEnvironment(
+            environment_id=existing["environment_id"],
+            host=existing["environment_host"],
+            port=existing["environment_port"],
+            database=settings.pg_duckdb_database,
+            admin_user=settings.pg_duckdb_admin_user,
+            admin_password=settings.pg_duckdb_admin_password,
+        )
 
     # Build full datasets for bootstrap SQL generation
     sparse_datasets = project_dict.get("datasets", [])

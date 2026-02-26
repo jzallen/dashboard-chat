@@ -84,6 +84,8 @@ def _mock_docker(container: MagicMock | None = None) -> MagicMock:
     docker.containers.create_or_replace = AsyncMock(return_value=container)
     # containers.container() returns the container mock for name-based access
     docker.containers.container = MagicMock(return_value=container)
+    # images.inspect succeeds → _ensure_image treats the image as already pulled
+    docker.images.inspect = AsyncMock()
 
     return docker
 
@@ -112,9 +114,10 @@ class TestProvision:
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
     @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_creates_container_and_returns_environment(
-        self, mock_docker_cls, mock_configure_s3, mock_open_conn, mock_sleep
+        self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
         mock_open_conn.side_effect = _mock_open_connection().side_effect
         mock_open_conn.return_value = _mock_open_connection().return_value
@@ -146,9 +149,10 @@ class TestProvision:
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
     @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_configures_s3_secrets(
-        self, mock_docker_cls, mock_configure_s3, mock_open_conn, mock_sleep
+        self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
         writer = MagicMock()
         writer.close = MagicMock()
@@ -167,9 +171,40 @@ class TestProvision:
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
     @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    async def test_ensure_duckdb_role_called_before_s3_secrets(
+        self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
+    ):
+        """ensure_duckdb_role_configured is called after health check, before configure_s3_secrets."""
+        writer = MagicMock()
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+        mock_open_conn.return_value = (MagicMock(), writer)
+
+        container = _mock_container()
+        docker = _mock_docker(container)
+        mock_docker_cls.return_value = docker
+
+        # Track call order
+        call_order = []
+        mock_ensure_role.side_effect = lambda env: call_order.append("ensure_role")
+        mock_configure_s3.side_effect = lambda env, sc: call_order.append("configure_s3")
+
+        provisioner = _make_provisioner()
+        await provisioner.provision(PROJECT_ID, STORAGE_CONFIG)
+
+        mock_ensure_role.assert_awaited_once()
+        mock_configure_s3.assert_awaited_once()
+        assert call_order == ["ensure_role", "configure_s3"]
+
+    @patch("asyncio.sleep", new_callable=AsyncMock)
+    @patch("asyncio.open_connection")
+    @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_removes_old_container_before_creating(
-        self, mock_docker_cls, mock_configure_s3, mock_open_conn, mock_sleep
+        self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
         """Provision is idempotent: removes existing container first."""
         writer = MagicMock()
@@ -191,9 +226,10 @@ class TestProvision:
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
     @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_cleans_up_on_failure(
-        self, mock_docker_cls, mock_configure_s3, mock_open_conn, mock_sleep
+        self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
         """If configure_s3_secrets fails, container is force-removed."""
         writer = MagicMock()
@@ -218,9 +254,10 @@ class TestProvision:
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
     @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_propagates_provisioning_error(
-        self, mock_docker_cls, mock_configure_s3, mock_open_conn, mock_sleep
+        self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
         """ProvisioningError from health check is re-raised directly."""
         container = _mock_container(running=False)
