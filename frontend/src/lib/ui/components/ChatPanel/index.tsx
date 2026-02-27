@@ -1,9 +1,11 @@
-import { useState, type RefObject, type Dispatch, type SetStateAction, type FormEvent } from "react";
-import type { Message } from "../../types";
+import { type Dispatch, type FormEvent,type RefObject, type SetStateAction, useState } from "react";
+
 import type { Dataset } from "@/api";
-import { MessageBubble } from "./MessageBubble";
+
+import type { Message } from "../../types";
 import { ChatEmptyState } from "./ChatEmptyState";
 import styles from "./ChatPanel.module.css";
+import { MessageBubble } from "./MessageBubble";
 
 interface ChatPanelProps {
   messages: Message[];

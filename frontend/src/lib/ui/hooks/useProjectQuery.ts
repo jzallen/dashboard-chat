@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getProject, type Project, type DatasetSparse } from "@/api";
+
+import { type DatasetSparse,getProject, type Project } from "@/api";
 
 export const projectKeys = {
   all: ["projects"] as const,

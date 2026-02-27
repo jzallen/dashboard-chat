@@ -3,9 +3,10 @@ vi.hoisted(() => {
   process.env.VITE_AUTH_MODE = "workos";
 });
 
-import { render, screen, act } from "@testing-library/react";
-import { AuthProvider, useAuth } from "../../lib/auth";
+import { act,render, screen } from "@testing-library/react";
+
 import { _resetRefreshState } from "../../lib/api/fetchUtils";
+import { AuthProvider, useAuth } from "../../lib/auth";
 
 // Mock the API client used by login/handleCallback
 vi.mock("../../lib/api/client", () => ({
@@ -56,6 +57,7 @@ describe("Proactive refresh timer", () => {
 
     mockFetch.mockResolvedValueOnce(makeRefreshResponse("new-access", "new-refresh", 60));
 
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       render(
         <AuthProvider>
@@ -99,6 +101,7 @@ describe("Proactive refresh timer", () => {
       .mockResolvedValueOnce(new Response("fail", { status: 500 }))
       .mockResolvedValueOnce(makeRefreshResponse("retry-access", "retry-refresh", 60));
 
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       render(
         <AuthProvider>
@@ -138,6 +141,7 @@ describe("Proactive refresh timer", () => {
       .mockResolvedValueOnce(new Response("fail", { status: 500 }))
       .mockResolvedValueOnce(makeRefreshResponse("recovered-access", "recovered-refresh", 60));
 
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       render(
         <AuthProvider>
@@ -192,6 +196,7 @@ describe("Proactive refresh timer", () => {
       .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 3, fetch 1 (60s AuthContext retry)
       .mockResolvedValueOnce(new Response("fail", { status: 500 })); // attempt 3, fetch 2 (12s internal retry)
 
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       render(
         <AuthProvider>
@@ -252,6 +257,7 @@ describe("Proactive refresh timer", () => {
     localStorage.setItem("auth_refresh_token", "some-refresh");
     localStorage.setItem("auth_token_expires_at", String(expiresAt));
 
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       render(
         <AuthProvider>
@@ -275,6 +281,7 @@ describe("Proactive refresh timer", () => {
 
   it("does not schedule timer when not authenticated", async () => {
     // No pre-seeded data — user is not authenticated
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       render(
         <AuthProvider>

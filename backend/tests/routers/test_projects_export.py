@@ -1,7 +1,5 @@
 """Tests for the dbt export API route handler."""
 
-import zipfile
-from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,15 +11,13 @@ from app.auth.context import set_auth_user
 from app.auth.exceptions import AuthorizationError
 from app.auth.types import AuthUser
 from app.main import app
-from app.repositories import set_session
-from app.repositories.metadata import DatasetRecord, ProjectRecord, TransformRecord
+from app.repositories.metadata import DatasetRecord, ProjectRecord
 from app.use_cases.exceptions import ProjectNotFound
-
 from tests.uuidv7_fixtures import (
-    PROJECT_ROUTE_1,
     DATASET_ROUTE_1,
-    USER_ROUTE,
     ORG_ROUTE,
+    PROJECT_ROUTE_1,
+    USER_ROUTE,
 )
 
 TEST_USER = AuthUser(id=USER_ROUTE, email="test@test.com", org_id=ORG_ROUTE, name="Test")
@@ -58,7 +54,6 @@ async def seeded_db_for_route(db_session: AsyncSession):
 
 
 class TestExportDbtRoute:
-
     async def test_success_returns_zip_with_correct_headers(self):
         """Successful export returns 200 with application/zip and Content-Disposition."""
         zip_bytes = b"PK\x03\x04fake-zip-content"

@@ -1,27 +1,26 @@
 """Tests for pg_duckdb_manager utility functions and SQL construction."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import bcrypt
 import pytest
 
 from app.use_cases.sql_access.pg_duckdb_manager import (
     DUCKDB_READERS_GROUP,
-    schema_name,
-    role_name,
+    PASSWORD_LENGTH,
+    _quote_ident,
+    _quote_literal,
+    _validate_ident,
+    build_alter_role_password_sql,
+    build_create_role_sql,
+    ensure_duckdb_role_configured,
     generate_password,
     hash_password,
     pg_md5_hash,
-    build_create_role_sql,
-    build_alter_role_password_sql,
-    ensure_duckdb_role_configured,
-    _validate_ident,
-    _quote_ident,
-    _quote_literal,
-    PASSWORD_LENGTH,
+    role_name,
+    schema_name,
 )
 from app.use_cases.sql_access.provisioner import ProjectEnvironment
-
 
 MOCK_ENV = ProjectEnvironment(
     environment_id="test-env-id",
@@ -34,7 +33,6 @@ MOCK_ENV = ProjectEnvironment(
 
 
 class TestNamingConventions:
-
     def test_schema_name_uses_first_8_chars(self):
         assert schema_name("abcdef12-3456-7890-abcd-ef1234567890") == "project_abcdef12"
 
@@ -50,7 +48,6 @@ class TestNamingConventions:
 
 
 class TestPasswordGeneration:
-
     def test_generate_password_correct_length(self):
         pw = generate_password()
         assert len(pw) == PASSWORD_LENGTH
@@ -77,7 +74,6 @@ class TestPasswordGeneration:
 
 
 class TestIdentifierValidation:
-
     def test_validate_ident_accepts_safe_names(self):
         assert _validate_ident("project_abcdef12") == "project_abcdef12"
         assert _validate_ident("reader_12345678") == "reader_12345678"
@@ -100,7 +96,6 @@ class TestIdentifierValidation:
 
 
 class TestSqlEscaping:
-
     def test_quote_ident_basic(self):
         assert _quote_ident("project_abc") == '"project_abc"'
 
@@ -122,10 +117,7 @@ class TestSqlConstruction:
 
     def test_build_create_role_sql_default_connection_limit(self):
         sql = build_create_role_sql("reader_abcdef12", "mypassword123", connection_limit=10)
-        assert sql == (
-            'CREATE ROLE "reader_abcdef12" LOGIN PASSWORD \'mypassword123\''
-            ' CONNECTION LIMIT 10'
-        )
+        assert sql == ("CREATE ROLE \"reader_abcdef12\" LOGIN PASSWORD 'mypassword123' CONNECTION LIMIT 10")
 
     def test_build_create_role_sql_custom_connection_limit(self):
         sql = build_create_role_sql("reader_abcdef12", "mypassword123", connection_limit=20)
@@ -143,7 +135,7 @@ class TestSqlConstruction:
 
     def test_build_alter_role_password_sql_basic(self):
         sql = build_alter_role_password_sql("reader_abcdef12", "newpass123")
-        assert sql == 'ALTER ROLE "reader_abcdef12" PASSWORD \'newpass123\''
+        assert sql == "ALTER ROLE \"reader_abcdef12\" PASSWORD 'newpass123'"
 
     def test_build_alter_role_password_sql_escapes_password(self):
         sql = build_alter_role_password_sql("reader_abcdef12", "new'pass")

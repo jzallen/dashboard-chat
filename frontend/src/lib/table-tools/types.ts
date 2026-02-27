@@ -1,5 +1,5 @@
-import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
 import type { QueryClient } from "@tanstack/react-query";
+import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
 
 export type TableRow = Record<string, unknown>;
 

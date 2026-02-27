@@ -10,6 +10,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Lint (ESLint + Ruff) ────────────────────────────────────────────
+  # Runs both JS/TS and Python linting in a single job since both are fast
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v4
+      # --legacy-peer-deps needed for eslint-plugin-react-hooks peer conflict
+      - run: npm ci --legacy-peer-deps
+      - run: cd backend && uv sync
+      - name: ESLint (TypeScript/React)
+        run: npx eslint .
+      - name: Ruff check (Python)
+        run: cd backend && uv run ruff check .
+      - name: Ruff format check (Python)
+        run: cd backend && uv run ruff format --check .
+
+  # ── Tests ────────────────────────────────────────────────────────────
   frontend-test:
     runs-on: ubuntu-latest
     steps:

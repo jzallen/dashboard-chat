@@ -1,7 +1,7 @@
 """Regenerate SQL access credentials for a project."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from returns.result import Result
@@ -20,7 +20,6 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     generate_password,
     pg_md5_hash,
     regenerate_credentials,
-    role_name,
 )
 from app.use_cases.sql_access.provisioner import (
     ProjectEnvironment,
@@ -38,7 +37,7 @@ logger = logging.getLogger(__name__)
 async def regenerate_sql_credentials(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Regenerate the password for a project's external SQL access.
 
@@ -54,8 +53,8 @@ async def regenerate_sql_credentials(
         SqlAccessNotEnabled: If SQL access is not currently enabled.
         CredentialCooldown: If regeneration is attempted too soon.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=False)
@@ -76,8 +75,8 @@ async def regenerate_sql_credentials(
     if existing.get("updated_at"):
         updated_at = datetime.fromisoformat(existing["updated_at"])
         if updated_at.tzinfo is None:
-            updated_at = updated_at.replace(tzinfo=timezone.utc)
-        elapsed = (datetime.now(timezone.utc) - updated_at).total_seconds()
+            updated_at = updated_at.replace(tzinfo=UTC)
+        elapsed = (datetime.now(UTC) - updated_at).total_seconds()
         if elapsed < settings.credential_regen_cooldown_seconds:
             remaining = int(settings.credential_regen_cooldown_seconds - elapsed) + 1
             raise CredentialCooldown(remaining)

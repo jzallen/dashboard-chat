@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+
 import { AuthCallback } from "../../lib/ui/components/AuthCallback";
 
 const mockHandleCallback = vi.fn();

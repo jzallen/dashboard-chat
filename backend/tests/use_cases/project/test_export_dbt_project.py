@@ -12,7 +12,6 @@ from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord, TransformRecord
 from app.use_cases.project import export_dbt_project
-
 from tests.uuidv7_fixtures import (
     DATASET_EXPORT_1,
     ORG_1,
@@ -87,10 +86,7 @@ async def seeded_db_other_org(db_session: AsyncSession):
 
 
 class TestExportDbtProject:
-
-    async def test_successful_export_returns_zip_and_project_name(
-        self, seeded_db_with_transforms: AsyncSession
-    ):
+    async def test_successful_export_returns_zip_and_project_name(self, seeded_db_with_transforms: AsyncSession):
         set_session(seeded_db_with_transforms)
         set_auth_user(AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User"))
 
@@ -115,9 +111,7 @@ class TestExportDbtProject:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_missing_project_returns_failure(
-        self, seeded_db_with_transforms: AsyncSession
-    ):
+    async def test_missing_project_returns_failure(self, seeded_db_with_transforms: AsyncSession):
         set_session(seeded_db_with_transforms)
 
         result = await export_dbt_project("nonexistent-project")
@@ -128,9 +122,7 @@ class TestExportDbtProject:
             case Success(_):
                 pytest.fail("Expected failure for nonexistent project")
 
-    async def test_wrong_org_returns_failure(
-        self, seeded_db_other_org: AsyncSession
-    ):
+    async def test_wrong_org_returns_failure(self, seeded_db_other_org: AsyncSession):
         set_session(seeded_db_other_org)
         # Auth user is ORG_1, but project is ORG_OTHER
         set_auth_user(AuthUser(id=USER_1, email="a@b.com", org_id=ORG_1, name="Test"))
@@ -143,9 +135,7 @@ class TestExportDbtProject:
             case Success(_):
                 pytest.fail("Expected failure for wrong org_id")
 
-    async def test_empty_project_returns_valid_zip(
-        self, seeded_db_empty_project: AsyncSession
-    ):
+    async def test_empty_project_returns_valid_zip(self, seeded_db_empty_project: AsyncSession):
         set_session(seeded_db_empty_project)
         set_auth_user(AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User"))
 

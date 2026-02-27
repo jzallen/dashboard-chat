@@ -2,10 +2,10 @@
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories.metadata import ProjectRecord, OrganizationRecord
+
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
-
+from app.repositories.metadata import OrganizationRecord, ProjectRecord
 from tests.uuidv7_fixtures import ORG_1, PROJECT_1, USER_1, USER_2
 
 TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=None, name="Test User")

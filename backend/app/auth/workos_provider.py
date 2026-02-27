@@ -10,8 +10,8 @@ import httpx
 import jwt
 from jwt import PyJWKClient
 
-from .types import AuthUser
 from .exceptions import AuthenticationError
+from .types import AuthUser
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +23,12 @@ class WorkOSAuthProvider:
         self.api_key = settings.workos_api_key
         self.client_id = settings.workos_client_id
         self.redirect_uri = settings.workos_redirect_uri
-        self._jwks_client = PyJWKClient(
-            f"https://api.workos.com/sso/jwks/{self.client_id}"
-        )
+        self._jwks_client = PyJWKClient(f"https://api.workos.com/sso/jwks/{self.client_id}")
 
     async def verify_token(self, token: str) -> AuthUser:
         """Verify a WorkOS access token (JWT) using JWKS."""
         try:
-            signing_key = await asyncio.to_thread(
-                self._jwks_client.get_signing_key_from_jwt, token
-            )
+            signing_key = await asyncio.to_thread(self._jwks_client.get_signing_key_from_jwt, token)
             payload = jwt.decode(
                 token,
                 signing_key.key,
@@ -40,11 +36,11 @@ class WorkOSAuthProvider:
                 audience=self.client_id,
                 issuer=f"https://api.workos.com/user_management/{self.client_id}",
             )
-        except jwt.ExpiredSignatureError:
-            raise AuthenticationError("Token has expired")
+        except jwt.ExpiredSignatureError as err:
+            raise AuthenticationError("Token has expired") from err
         except jwt.InvalidTokenError as e:
             logger.error("JWT verification failed: %s", e)
-            raise AuthenticationError(f"Invalid token: {e}")
+            raise AuthenticationError(f"Invalid token: {e}") from e
 
         return AuthUser(
             id=payload.get("sub", ""),

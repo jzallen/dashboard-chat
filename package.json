@@ -4,7 +4,11 @@
   "type": "module",
   "private": true,
   "packageManager": "npm@10.8.2",
-  "workspaces": ["frontend", "worker", "shared/chat"],
+  "workspaces": [
+    "frontend",
+    "worker",
+    "shared/chat"
+  ],
   "scripts": {
     "dev:worker": "npm run dev -w worker",
     "deploy:pages": "wrangler pages deploy frontend/dist --project-name=dashboard-chat",
@@ -18,14 +22,32 @@
     "build": "turbo run build",
     "test": "turbo run test:run",
     "test:all": "turbo run test:run && cd backend && uv run pytest",
-    "test:backend": "cd backend && uv run pytest"
+    "test:backend": "cd backend && uv run pytest",
+    "lint": "eslint . && cd backend && uv run ruff check .",
+    "lint:fix": "eslint . --fix && cd backend && uv run ruff check --fix . && uv run ruff format .",
+    "lint:frontend": "eslint frontend/",
+    "lint:worker": "eslint worker/",
+    "lint:backend": "cd backend && uv run ruff check . && uv run ruff format --check .",
+    "format:backend": "cd backend && uv run ruff format .",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.3",
     "@playwright/test": "^1.57.0",
+    "@tanstack/eslint-plugin-query": "^5.91.4",
     "@types/node": "^25.2.3",
+    "eslint": "^9.39.3",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-testing-library": "^7.16.0",
+    "globals": "^17.3.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "tsx": "^4.19.0",
     "turbo": "^2.4.0",
     "typescript": "^5.6.3",
+    "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.15"
   }
 }

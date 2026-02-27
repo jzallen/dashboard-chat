@@ -2,7 +2,7 @@
  * SQL Access API
  */
 
-import { get, post, del } from "./client";
+import { del,get, post } from "./client";
 
 export interface SqlAccessStatus {
   project_id: string;

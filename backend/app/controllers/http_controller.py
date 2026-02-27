@@ -3,16 +3,17 @@
 import logging
 from typing import Any
 
-from returns.result import Success, Failure
+from returns.result import Failure, Success
+
+from app.use_cases import dataset as dataset_use_cases
+from app.use_cases import organization as organization_use_cases
+from app.use_cases import project as project_use_cases
+from app.use_cases import sql_access as sql_access_use_cases
+from app.use_cases import transform as transform_use_cases
+from app.use_cases import upload as upload_use_cases
+from app.use_cases.exceptions import DomainException
 
 from .response_wrapper import wrap_success
-from app.use_cases import dataset as dataset_use_cases
-from app.use_cases import upload as upload_use_cases
-from app.use_cases import project as project_use_cases
-from app.use_cases import transform as transform_use_cases
-from app.use_cases import organization as organization_use_cases
-from app.use_cases import sql_access as sql_access_use_cases
-from app.use_cases.exceptions import DomainException
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def _serialize(data: Any) -> Any:
     Handles single models and iterables by calling model.serialize().
     """
     match data:
-        case _ if hasattr(data, 'serialize'):
+        case _ if hasattr(data, "serialize"):
             return data.serialize()
         case list() | tuple():
             return [_serialize(item) for item in data]
@@ -50,7 +51,12 @@ def _error_response(error: Exception) -> tuple[dict, int]:
         return body, error._status_code
 
     logger.error("Unhandled error: %s", error)
-    return {"type": "INTERNAL_SERVER_ERROR", "title": "Internal Server Error", "status": 500, "detail": "An unexpected error occurred. Check server logs for details."}, 500
+    return {
+        "type": "INTERNAL_SERVER_ERROR",
+        "title": "Internal Server Error",
+        "status": 500,
+        "detail": "An unexpected error occurred. Check server logs for details.",
+    }, 500
 
 
 class HTTPController:
@@ -69,11 +75,10 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_dataset(dataset_id: str, include_transforms: bool = True,
-                          include_preview: bool = False, preview_limit: int = 10) -> tuple[dict, int]:
-        result = await dataset_use_cases.get_dataset(
-            dataset_id, include_transforms, include_preview, preview_limit
-        )
+    async def get_dataset(
+        dataset_id: str, include_transforms: bool = True, include_preview: bool = False, preview_limit: int = 10
+    ) -> tuple[dict, int]:
+        result = await dataset_use_cases.get_dataset(dataset_id, include_transforms, include_preview, preview_limit)
         match result:
             case Success(data):
                 return wrap_success(_serialize(data)), 200
@@ -90,11 +95,11 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def post_dataset(upload_id: str, partition_fields: list[str] | None = None,
-                           description: str | None = None) -> tuple[dict, int]:
+    async def post_dataset(
+        upload_id: str, partition_fields: list[str] | None = None, description: str | None = None
+    ) -> tuple[dict, int]:
         result = await dataset_use_cases.create_dataset_from_upload(
-            upload_id=upload_id, partition_fields=partition_fields,
-            description=description
+            upload_id=upload_id, partition_fields=partition_fields, description=description
         )
         match result:
             case Success(data):
@@ -103,11 +108,11 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def post_upload(file_content: bytes, file_name: str, project_id: str,
-                          dataset_id: str | None = None) -> tuple[dict, int]:
+    async def post_upload(
+        file_content: bytes, file_name: str, project_id: str, dataset_id: str | None = None
+    ) -> tuple[dict, int]:
         result = await upload_use_cases.upload_file(
-            file_content=file_content, file_name=file_name,
-            project_id=project_id, dataset_id=dataset_id
+            file_content=file_content, file_name=file_name, project_id=project_id, dataset_id=dataset_id
         )
         match result:
             case Success(data):
@@ -136,12 +141,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def preview_transform(
-        dataset_id: str, target_column: str, expression_config: dict
-    ) -> tuple[dict, int]:
-        result = await transform_use_cases.preview_cleaning_transform(
-            dataset_id, target_column, expression_config
-        )
+    async def preview_transform(dataset_id: str, target_column: str, expression_config: dict) -> tuple[dict, int]:
+        result = await transform_use_cases.preview_cleaning_transform(dataset_id, target_column, expression_config)
         match result:
             case Success(data):
                 return wrap_success(data), 200

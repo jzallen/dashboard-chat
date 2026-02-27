@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,12 +10,10 @@ from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.sql_access import sync_sql_access
 from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
-
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestSyncSqlAccess:
-
     @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
     async def test_sync_returns_success_with_timestamp(
@@ -79,7 +76,9 @@ class TestSyncSqlAccess:
     @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
     async def test_sync_uses_live_environment_with_internal_host(
-        self, mock_execute_bootstrap, mock_grant_usage,
+        self,
+        mock_execute_bootstrap,
+        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
@@ -99,7 +98,9 @@ class TestSyncSqlAccess:
     @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
     async def test_sync_falls_back_to_stored_record_when_provisioner_returns_none(
-        self, mock_execute_bootstrap, mock_grant_usage,
+        self,
+        mock_execute_bootstrap,
+        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
@@ -116,7 +117,11 @@ class TestSyncSqlAccess:
         assert env_arg.port == 15432
 
     @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock, side_effect=RuntimeError("pg_duckdb down"))
+    @patch(
+        "app.use_cases.sql_access.sync_sql_access.execute_bootstrap",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("pg_duckdb down"),
+    )
     async def test_sync_returns_failure_on_pg_duckdb_error(
         self, mock_execute_bootstrap, mock_grant_usage, seeded_db_with_access: AsyncSession
     ):

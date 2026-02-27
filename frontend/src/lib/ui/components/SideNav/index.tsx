@@ -1,7 +1,9 @@
 import { useNavigate } from "react-router-dom";
+
 import type { Project } from "@/api";
-import { ProjectNavItem } from "./ProjectNavItem";
+
 import { DatasetNavItem } from "./DatasetNavItem";
+import { ProjectNavItem } from "./ProjectNavItem";
 import styles from "./SideNav.module.css";
 
 type SideNavProps = {

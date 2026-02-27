@@ -4,15 +4,14 @@ Domain models are frozen dataclasses in this module.
 ORM models (ProjectRecord, DatasetRecord, TransformRecord) are in repositories/.
 """
 
-from .project import Project
 from .dataset import Dataset
+from .project import Project
 from .transform import Transform
 from .upload import Upload
 
-
 __all__ = [
-    "Project",
     "Dataset",
+    "Project",
     "Transform",
     "Upload",
 ]

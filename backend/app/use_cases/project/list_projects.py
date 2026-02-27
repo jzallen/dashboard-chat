@@ -16,9 +16,9 @@ if TYPE_CHECKING:
 @handle_returns
 async def list_projects(
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[list[dict], str]:
     """List all projects ordered by creation date (newest first)."""
     user = get_auth_user()
-    metadata_repo = repositories['metadata_repository']
+    metadata_repo = repositories["metadata_repository"]
     return await metadata_repo.list_projects(org_id=user.org_id)

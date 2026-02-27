@@ -4,30 +4,37 @@ Session lifecycle (commit/rollback) is managed at the edge (routers/controllers)
 This repository uses flush() to persist changes within the transaction.
 """
 
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, TypeVar, ParamSpec
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
-from sqlalchemy import select, exists
+from sqlalchemy import exists, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from ..exceptions import MetadataRepositoryError
-from .project_record import ProjectRecord
 from .dataset_record import DatasetRecord
-from .transform_record import TransformRecord
 from .organization_record import OrganizationRecord
+from .project_record import ProjectRecord
+from .transform_record import TransformRecord
+
+if TYPE_CHECKING:
+    from app.repositories import RestrictedSession
+
 P = ParamSpec("P")
 R = TypeVar("R")
 
 
 def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator that wraps SQLAlchemyError as MetadataRepositoryError."""
+
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return await func(*args, **kwargs)
         except SQLAlchemyError as e:
             raise MetadataRepositoryError(str(e)) from e
+
     return wrapper
 
 
@@ -40,7 +47,7 @@ class MetadataRepository:
     at the router/controller level to ensure transactional consistency.
     """
 
-    def __init__(self, session: 'RestrictedSession') -> None:
+    def __init__(self, session: "RestrictedSession") -> None:
         """Initialize with restricted session.
 
         Args:
@@ -55,10 +62,7 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def list_projects(self, org_id: str | None = None) -> list[dict[str, Any]]:
         """List all projects ordered by creation date (newest first)."""
-        query = (
-            select(ProjectRecord)
-            .options(selectinload(ProjectRecord.datasets))
-        )
+        query = select(ProjectRecord).options(selectinload(ProjectRecord.datasets))
         if org_id is not None:
             query = query.where(ProjectRecord.org_id == org_id)
         query = query.order_by(ProjectRecord.created_at.desc())
@@ -137,9 +141,7 @@ class MetadataRepository:
         update_data: dict[str, Any],
     ) -> dict[str, Any] | None:
         """Update a project."""
-        result = await self._session.execute(
-            select(ProjectRecord).where(ProjectRecord.id == project_id)
-        )
+        result = await self._session.execute(select(ProjectRecord).where(ProjectRecord.id == project_id))
         project = result.scalar_one_or_none()
 
         if not project:
@@ -155,9 +157,7 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def delete_project(self, project_id: str) -> bool:
         """Delete a project and all its datasets."""
-        result = await self._session.execute(
-            select(ProjectRecord).where(ProjectRecord.id == project_id)
-        )
+        result = await self._session.execute(select(ProjectRecord).where(ProjectRecord.id == project_id))
         project = result.scalar_one_or_none()
 
         if not project:
@@ -170,9 +170,7 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def project_exists(self, project_id: str) -> bool:
         """Check if a project exists."""
-        return (await self._session.execute(
-            select(exists().where(ProjectRecord.id == project_id))
-        )).scalar()
+        return (await self._session.execute(select(exists().where(ProjectRecord.id == project_id)))).scalar()
 
     # -------------------------------------------------------------------------
     # Dataset operations
@@ -187,7 +185,7 @@ class MetadataRepository:
 
         query = (
             select(DatasetRecord)
-            .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
+            .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
             .where(DatasetRecord.project_id == project_id)
             .order_by(DatasetRecord.created_at.desc())
         )
@@ -210,9 +208,7 @@ class MetadataRepository:
         dataset_dict = self._dataset_to_dict(dataset)
 
         if include_transforms:
-            dataset_dict["transforms"] = [
-                self._transform_to_dict(t) for t in dataset.transforms
-            ]
+            dataset_dict["transforms"] = [self._transform_to_dict(t) for t in dataset.transforms]
 
         return dataset_dict
 
@@ -230,7 +226,7 @@ class MetadataRepository:
         query = query.options(selectinload(DatasetRecord.project))
 
         if include_transforms:
-            query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
+            query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
 
         result = await self._session.execute(query)
         return result.scalar_one_or_none()
@@ -272,7 +268,7 @@ class MetadataRepository:
         """Update a dataset's metadata."""
         result = await self._session.execute(
             select(DatasetRecord)
-            .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != 'deleted')))
+            .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
             .where(DatasetRecord.id == dataset_id)
         )
         dataset = result.scalar_one_or_none()
@@ -291,9 +287,7 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def delete_dataset(self, dataset_id: str) -> str | None:
         """Delete a dataset record, returning storage_path for file cleanup."""
-        result = await self._session.execute(
-            select(DatasetRecord).where(DatasetRecord.id == dataset_id)
-        )
+        result = await self._session.execute(select(DatasetRecord).where(DatasetRecord.id == dataset_id))
         dataset = result.scalar_one_or_none()
 
         if not dataset:
@@ -309,9 +303,7 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def dataset_exists(self, dataset_id: str) -> bool:
         """Check if a dataset exists."""
-        return (await self._session.execute(
-            select(exists().where(DatasetRecord.id == dataset_id))
-        )).scalar()
+        return (await self._session.execute(select(exists().where(DatasetRecord.id == dataset_id)))).scalar()
 
     # -------------------------------------------------------------------------
     # Transform operations
@@ -374,15 +366,15 @@ class MetadataRepository:
         for t in transforms_input:
             record = TransformRecord(
                 dataset_id=dataset_id,
-                name=t['name'],
-                condition_json=t.get('condition_json', {}),
-                condition_sql=t.get('condition_sql', ''),
-                description=t.get('description'),
-                nl_prompt=t.get('nl_prompt'),
-                transform_type=t.get('transform_type', 'filter'),
-                target_column=t.get('target_column'),
-                expression_sql=t.get('expression_sql'),
-                expression_config=t.get('expression_config'),
+                name=t["name"],
+                condition_json=t.get("condition_json", {}),
+                condition_sql=t.get("condition_sql", ""),
+                description=t.get("description"),
+                nl_prompt=t.get("nl_prompt"),
+                transform_type=t.get("transform_type", "filter"),
+                target_column=t.get("target_column"),
+                expression_sql=t.get("expression_sql"),
+                expression_config=t.get("expression_config"),
             )
             self._session.add(record)
             records.append(record)
@@ -400,9 +392,7 @@ class MetadataRepository:
         update_data: dict[str, Any],
     ) -> dict[str, Any] | None:
         """Update a transform."""
-        result = await self._session.execute(
-            select(TransformRecord).where(TransformRecord.id == transform_id)
-        )
+        result = await self._session.execute(select(TransformRecord).where(TransformRecord.id == transform_id))
         transform = result.scalar_one_or_none()
 
         if not transform:
@@ -442,9 +432,7 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def delete_transform(self, transform_id: str) -> bool:
         """Delete a transform."""
-        result = await self._session.execute(
-            select(TransformRecord).where(TransformRecord.id == transform_id)
-        )
+        result = await self._session.execute(select(TransformRecord).where(TransformRecord.id == transform_id))
         transform = result.scalar_one_or_none()
 
         if not transform:
@@ -477,9 +465,7 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def get_organization(self, org_id: str) -> dict[str, Any] | None:
         """Get an organization by ID."""
-        result = await self._session.execute(
-            select(OrganizationRecord).where(OrganizationRecord.id == org_id)
-        )
+        result = await self._session.execute(select(OrganizationRecord).where(OrganizationRecord.id == org_id))
         org = result.scalar_one_or_none()
         if not org:
             return None

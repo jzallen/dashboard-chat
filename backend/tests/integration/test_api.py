@@ -9,16 +9,20 @@ Run with: RUN_INTEGRATION_TESTS=1 pytest tests/integration/
 import os
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
+from app.auth.dev_provider import DEV_TOKEN
+from app.main import app
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("RUN_INTEGRATION_TESTS"),
     reason="Set RUN_INTEGRATION_TESTS=1 to run integration tests (requires PostgreSQL)",
 )
 
-from httpx import ASGITransport, AsyncClient
 
-from app.main import app
-from app.auth.dev_provider import DEV_TOKEN
+def _get_dev_token() -> str:
+    """Return the dev auth token for integration tests."""
+    return DEV_TOKEN
 
 
 @pytest.fixture

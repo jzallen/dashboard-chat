@@ -22,19 +22,14 @@ async def allocate_proxy_port(session: AsyncSession) -> int:
     settings = get_settings()
 
     result = await session.execute(
-        select(ExternalAccessRecord.environment_port).where(
-            ExternalAccessRecord.environment_port.isnot(None)
-        )
+        select(ExternalAccessRecord.environment_port).where(ExternalAccessRecord.environment_port.isnot(None))
     )
     used_ports = {row[0] for row in result}
 
-    for port in range(
-        settings.pgbouncer_port_range_start, settings.pgbouncer_port_range_end + 1
-    ):
+    for port in range(settings.pgbouncer_port_range_start, settings.pgbouncer_port_range_end + 1):
         if port not in used_ports:
             return port
 
     raise PortRangeExhausted(
-        f"No available ports in range "
-        f"{settings.pgbouncer_port_range_start}-{settings.pgbouncer_port_range_end}"
+        f"No available ports in range {settings.pgbouncer_port_range_start}-{settings.pgbouncer_port_range_end}"
     )

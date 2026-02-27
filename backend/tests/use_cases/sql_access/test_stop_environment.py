@@ -1,6 +1,5 @@
 """Tests for stop_environment use case."""
 
-import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,25 +10,32 @@ from app.use_cases.exceptions import (
     ProjectNotFound,
     SqlAccessNotEnabled,
 )
-from app.use_cases.sql_access.stop_environment import stop_environment
 from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
-
+from app.use_cases.sql_access.stop_environment import stop_environment
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestStopEnvironment:
-
     async def test_stop_running_environment(
-        self, mock_provisioner: MockEnvironmentProvisioner,
+        self,
+        mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
         set_session(seeded_db_with_access)
         # The mock provisioner needs the environment registered
         from app.use_cases.sql_access.provisioner import StorageConfig
-        await mock_provisioner.provision(PROJECT_1, StorageConfig(
-            endpoint="", access_key="", secret_key="",
-            region="", url_style="", use_ssl=False,
-        ))
+
+        await mock_provisioner.provision(
+            PROJECT_1,
+            StorageConfig(
+                endpoint="",
+                access_key="",
+                secret_key="",
+                region="",
+                url_style="",
+                use_ssl=False,
+            ),
+        )
 
         result = await stop_environment(project_id=PROJECT_1)
 
@@ -42,7 +48,8 @@ class TestStopEnvironment:
         assert len(mock_provisioner.stop_environment_calls) == 1
 
     async def test_stop_fails_when_already_stopped(
-        self, seeded_db_with_stopped_access: AsyncSession,
+        self,
+        seeded_db_with_stopped_access: AsyncSession,
     ):
         """Cannot stop an already stopped environment."""
         set_session(seeded_db_with_stopped_access)

@@ -1,6 +1,6 @@
 import pytest
 
-from app.auth.dev_provider import DevAuthProvider, DEV_USER, DEV_TOKEN
+from app.auth.dev_provider import DEV_TOKEN, DEV_USER, DevAuthProvider
 from app.auth.exceptions import AuthenticationError
 
 

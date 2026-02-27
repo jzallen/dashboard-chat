@@ -18,7 +18,7 @@ async def create_project(
     name: str,
     description: str | None = None,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Create a new project.
 
@@ -30,5 +30,7 @@ async def create_project(
         Success with created project dict, or Failure with error message.
     """
     user = get_auth_user()
-    metadata_repo = repositories['metadata_repository']
-    return await metadata_repo.create_project(name=name, description=description, org_id=user.org_id, created_by=user.id)
+    metadata_repo = repositories["metadata_repository"]
+    return await metadata_repo.create_project(
+        name=name, description=description, org_id=user.org_id, created_by=user.id
+    )

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers import HTTPController
+
 from .deps import use_db_context
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -32,17 +33,20 @@ async def upload_file(
     For re-uploads: Provide both project_id and dataset_id
     """
     if not file.filename:
-        return JSONResponse(status_code=400, content={
-            "type": "INVALID_REQUEST", "title": "Invalid Request",
-            "status": 400, "detail": "Filename is required",
-        })
+        return JSONResponse(
+            status_code=400,
+            content={
+                "type": "INVALID_REQUEST",
+                "title": "Invalid Request",
+                "status": 400,
+                "detail": "Filename is required",
+            },
+        )
 
     content = await file.read()
 
     # Step 1: Upload file
-    upload_body, upload_status = await HTTPController.post_upload(
-        content, file.filename, project_id, dataset_id
-    )
+    upload_body, upload_status = await HTTPController.post_upload(content, file.filename, project_id, dataset_id)
     if upload_status != 201:
         return JSONResponse(content=upload_body, status_code=upload_status)
 

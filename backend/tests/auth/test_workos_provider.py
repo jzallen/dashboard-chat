@@ -60,12 +60,14 @@ class TestVerifyToken:
         mock_signing_key.key = "fake-rsa-key"
         provider._jwks_client.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
 
-        with patch(
-            "app.auth.workos_provider.jwt.decode",
-            side_effect=pyjwt.ExpiredSignatureError("Signature has expired"),
+        with (
+            patch(
+                "app.auth.workos_provider.jwt.decode",
+                side_effect=pyjwt.ExpiredSignatureError("Signature has expired"),
+            ),
+            pytest.raises(AuthenticationError, match="Token has expired"),
         ):
-            with pytest.raises(AuthenticationError, match="Token has expired"):
-                await provider.verify_token("expired.jwt.token")
+            await provider.verify_token("expired.jwt.token")
 
     async def test_invalid_jwt_raises_authentication_error(self, provider):
         """verify_token should raise AuthenticationError for malformed JWTs."""
@@ -73,12 +75,14 @@ class TestVerifyToken:
         mock_signing_key.key = "fake-rsa-key"
         provider._jwks_client.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
 
-        with patch(
-            "app.auth.workos_provider.jwt.decode",
-            side_effect=pyjwt.InvalidTokenError("Invalid token"),
+        with (
+            patch(
+                "app.auth.workos_provider.jwt.decode",
+                side_effect=pyjwt.InvalidTokenError("Invalid token"),
+            ),
+            pytest.raises(AuthenticationError, match="Invalid token"),
         ):
-            with pytest.raises(AuthenticationError, match="Invalid token"):
-                await provider.verify_token("garbage.token")
+            await provider.verify_token("garbage.token")
 
     async def test_missing_org_id_returns_none_org(self, provider):
         """verify_token should return org_id=None when JWT has no org_id."""
@@ -170,15 +174,25 @@ def _mock_httpx_client(mock_response):
     """Context-manager helper that patches httpx.AsyncClient to return mock_response on post()."""
     mock_client_instance = AsyncMock()
     mock_client_instance.post.return_value = mock_response
-    return patch("app.auth.workos_provider.httpx.AsyncClient", **{
-        "return_value.__aenter__": AsyncMock(return_value=mock_client_instance),
-        "return_value.__aexit__": AsyncMock(return_value=False),
-    }), mock_client_instance
+    return patch(
+        "app.auth.workos_provider.httpx.AsyncClient",
+        **{
+            "return_value.__aenter__": AsyncMock(return_value=mock_client_instance),
+            "return_value.__aexit__": AsyncMock(return_value=False),
+        },
+    ), mock_client_instance
 
 
-def _workos_auth_json(*, access_token="tok_abc123", refresh_token="rt_xyz789",
-                       user_id="user_01ABC", email="alice@example.com",
-                       first_name="Alice", org_id="org_01XYZ", org_name=None):
+def _workos_auth_json(
+    *,
+    access_token="tok_abc123",
+    refresh_token="rt_xyz789",
+    user_id="user_01ABC",
+    email="alice@example.com",
+    first_name="Alice",
+    org_id="org_01XYZ",
+    org_name=None,
+):
     """Build a realistic WorkOS /authenticate response body."""
     data = {
         "user": {"id": user_id, "email": email, "first_name": first_name},
@@ -219,9 +233,8 @@ class TestHandleCallback:
         mock_response = _make_workos_response(status_code=400, text="invalid_grant")
         client_patch, _ = _mock_httpx_client(mock_response)
 
-        with client_patch:
-            with pytest.raises(AuthenticationError, match="WorkOS callback failed"):
-                await provider.handle_callback("bad-code")
+        with client_patch, pytest.raises(AuthenticationError, match="WorkOS callback failed"):
+            await provider.handle_callback("bad-code")
 
     async def test_callback_without_org_id_returns_none_org(self, provider):
         """handle_callback should set org_id=None when response has no organization_id."""
@@ -243,7 +256,8 @@ class TestRefreshAccessToken:
         """refresh_access_token should return new user, access_token, refresh_token, expires_in."""
         exp_time = int(time.time()) + 1800
         json_data = _workos_auth_json(
-            access_token="tok_new", refresh_token="rt_new",
+            access_token="tok_new",
+            refresh_token="rt_new",
         )
         mock_response = _make_workos_response(status_code=200, json_data=json_data)
         client_patch, mock_client = _mock_httpx_client(mock_response)
@@ -267,9 +281,8 @@ class TestRefreshAccessToken:
         mock_response = _make_workos_response(status_code=401, text="invalid_refresh_token")
         client_patch, _ = _mock_httpx_client(mock_response)
 
-        with client_patch:
-            with pytest.raises(AuthenticationError, match="Token refresh failed"):
-                await provider.refresh_access_token("rt_expired")
+        with client_patch, pytest.raises(AuthenticationError, match="Token refresh failed"):
+            await provider.refresh_access_token("rt_expired")
 
 
 class TestRevokeSession:
@@ -280,9 +293,12 @@ class TestRevokeSession:
         mock_response = _make_workos_response(status_code=200)
         client_patch, mock_client = _mock_httpx_client(mock_response)
 
-        with client_patch, patch(
-            "app.auth.workos_provider.jwt.decode",
-            return_value={"sid": "session_abc123"},
+        with (
+            client_patch,
+            patch(
+                "app.auth.workos_provider.jwt.decode",
+                return_value={"sid": "session_abc123"},
+            ),
         ):
             await provider.revoke_session("some.access.token")
 
@@ -298,9 +314,12 @@ class TestRevokeSession:
         mock_response = _make_workos_response(status_code=400, text="bad request")
         client_patch, _ = _mock_httpx_client(mock_response)
 
-        with client_patch, patch(
-            "app.auth.workos_provider.jwt.decode",
-            return_value={"sid": "session_abc123"},
+        with (
+            client_patch,
+            patch(
+                "app.auth.workos_provider.jwt.decode",
+                return_value={"sid": "session_abc123"},
+            ),
         ):
             # Should not raise
             await provider.revoke_session("some.access.token")
@@ -309,24 +328,33 @@ class TestRevokeSession:
         """revoke_session should swallow network errors."""
         mock_client_instance = AsyncMock()
         mock_client_instance.post.side_effect = httpx.ConnectError("connection refused")
-        client_patch = patch("app.auth.workos_provider.httpx.AsyncClient", **{
-            "return_value.__aenter__": AsyncMock(return_value=mock_client_instance),
-            "return_value.__aexit__": AsyncMock(return_value=False),
-        })
+        client_patch = patch(
+            "app.auth.workos_provider.httpx.AsyncClient",
+            **{
+                "return_value.__aenter__": AsyncMock(return_value=mock_client_instance),
+                "return_value.__aexit__": AsyncMock(return_value=False),
+            },
+        )
 
-        with client_patch, patch(
-            "app.auth.workos_provider.jwt.decode",
-            return_value={"sid": "session_abc123"},
+        with (
+            client_patch,
+            patch(
+                "app.auth.workos_provider.jwt.decode",
+                return_value={"sid": "session_abc123"},
+            ),
         ):
             # Should not raise
             await provider.revoke_session("some.access.token")
 
     async def test_missing_sid_claim_skips_revocation(self, provider):
         """revoke_session should not call WorkOS API when sid is missing from JWT."""
-        with patch(
-            "app.auth.workos_provider.jwt.decode",
-            return_value={},
-        ), patch("app.auth.workos_provider.httpx.AsyncClient") as mock_async_client:
+        with (
+            patch(
+                "app.auth.workos_provider.jwt.decode",
+                return_value={},
+            ),
+            patch("app.auth.workos_provider.httpx.AsyncClient") as mock_async_client,
+        ):
             await provider.revoke_session("some.access.token")
 
         # httpx.AsyncClient should never have been used as a context manager

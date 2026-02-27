@@ -4,12 +4,13 @@
 
 import type { Transform } from "@/api";
 import { countRules } from "@/raqb";
+
+import { DeleteButton } from "./DeleteButton";
+import { SQLPreview } from "./SQLPreview";
+import styles from "./TransformCard.module.css";
 import { TransformHeader } from "./TransformHeader";
 import { TransformMetadata } from "./TransformMetadata";
-import { SQLPreview } from "./SQLPreview";
 import { TransformToggle } from "./TransformToggle";
-import { DeleteButton } from "./DeleteButton";
-import styles from "./TransformCard.module.css";
 
 interface TransformCardProps {
   transform: Transform;

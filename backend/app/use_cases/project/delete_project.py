@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 async def delete_project(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[bool, str]:
     """Delete a project and all its datasets.
 
@@ -33,7 +33,7 @@ async def delete_project(
         ProjectNotFound: If project with given ID does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories['metadata_repository']
+    metadata_repo = repositories["metadata_repository"]
     project = await metadata_repo.get_project(project_id, include_datasets=False)
 
     if project is None:

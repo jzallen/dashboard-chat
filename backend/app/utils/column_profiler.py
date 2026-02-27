@@ -3,9 +3,8 @@
 Computes per-column statistics based on schema type for LLM context.
 """
 
-from typing import Any
-
 import math
+from typing import Any
 
 import pandas as pd
 
@@ -33,10 +32,7 @@ def compute_column_profiles(
         Dict mapping column names to their profile dicts.
     """
     if df.empty:
-        return {
-            col: _empty_profile(info.get("type", "text"))
-            for col, info in schema_config.get("fields", {}).items()
-        }
+        return {col: _empty_profile(info.get("type", "text")) for col, info in schema_config.get("fields", {}).items()}
 
     # Sample large DataFrames to keep profiling fast
     if len(df) > 100_000:

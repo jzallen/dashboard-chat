@@ -2,9 +2,11 @@
  * Transform Settings View Component
  */
 
-import { useState, useEffect } from "react";
-import type { Transform, Dataset } from "@/api";
+import { useEffect,useState } from "react";
+
+import type { Dataset,Transform } from "@/api";
 import { getDataset } from "@/api";
+
 import { TransformList } from "./TransformList";
 import styles from "./TransformSettings.module.css";
 
@@ -40,6 +42,7 @@ export function TransformSettings({
     if (viewMode === "sql") {
       fetchDatasetWithSql();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchDatasetWithSql only depends on datasetId, which is already in deps
   }, [viewMode, datasetId]);
 
   const fetchDatasetWithSql = async () => {

@@ -13,9 +13,10 @@ import json
 from typing import TYPE_CHECKING
 
 import pandas as pd
-
 from returns.result import Result
 
+from app.models import Upload
+from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import (
     DatasetNotFound,
@@ -23,12 +24,9 @@ from app.use_cases.exceptions import (
     InvalidFileType,
     ProjectNotFound,
 )
-from app.models import Upload
-from app.repositories import with_repositories
 
 if TYPE_CHECKING:
-    from app.repositories import RepositoryContainer, OutboxRepository, LakeRepository, MetadataRepository
-
+    from app.repositories import LakeRepository, MetadataRepository, OutboxRepository, RepositoryContainer
 
 
 @with_repositories
@@ -62,9 +60,9 @@ async def upload_file(
         MetadataRepositoryError: If database operation fails
         LakeRepositoryError: If storage operation fails
     """
-    metadata_repo: "MetadataRepository" = repositories["metadata_repository"]
-    lake_repo: "LakeRepository" = repositories["lake_repository"]
-    outbox_repo: "OutboxRepository" = repositories["outbox_repository"]
+    metadata_repo: MetadataRepository = repositories["metadata_repository"]
+    lake_repo: LakeRepository = repositories["lake_repository"]
+    outbox_repo: OutboxRepository = repositories["outbox_repository"]
 
     if not file_name.lower().endswith(".csv"):
         raise InvalidFileType()
@@ -78,7 +76,7 @@ async def upload_file(
 
     # Validate dataset exists if provided
     if dataset_id and not await metadata_repo.dataset_exists(dataset_id):
-            raise DatasetNotFound(dataset_id)
+        raise DatasetNotFound(dataset_id)
 
     df = await asyncio.to_thread(pd.read_csv, io.BytesIO(file_content))
     df.columns = df.columns.str.strip()

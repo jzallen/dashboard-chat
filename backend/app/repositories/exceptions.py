@@ -7,6 +7,7 @@ domain-specific repository errors for cleaner error handling in use cases.
 
 class RepositoryError(Exception):
     """Base class for repository errors."""
+
     pass
 
 

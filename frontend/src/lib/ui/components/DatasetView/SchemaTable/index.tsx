@@ -1,4 +1,5 @@
 import type { SchemaConfig } from "@/api";
+
 import { FieldRow } from "./FieldRow";
 import styles from "./SchemaTable.module.css";
 

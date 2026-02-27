@@ -1,18 +1,25 @@
 """Auth middleware for FastAPI/Starlette."""
 
 import logging
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from . import enrich_org_id, get_auth_provider
 from .context import set_auth_user
-from . import get_auth_provider, enrich_org_id
 
 logger = logging.getLogger(__name__)
 
 PUBLIC_PATHS = {
-    "/health", "/", "/docs", "/openapi.json", "/redoc",
-    "/api/auth/login", "/api/auth/callback", "/api/auth/logout",
+    "/health",
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/api/auth/login",
+    "/api/auth/callback",
+    "/api/auth/logout",
     "/api/auth/refresh",
 }
 

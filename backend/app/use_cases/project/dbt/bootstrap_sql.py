@@ -39,7 +39,7 @@ def _validate_s3_path(path: str) -> str:
     return path
 
 
-def _build_typed_select(dataset: "Dataset", s3_uri: str) -> str:
+def _build_typed_select(dataset: Dataset, s3_uri: str) -> str:
     """Build a SELECT expression with typed columns from schema_config.
 
     If the dataset has schema_config with fields, generates:
@@ -92,13 +92,11 @@ def generate_bootstrap_sql(
     lines.append("DECLARE r RECORD;")
     lines.append("BEGIN")
     lines.append(
-        f"  FOR r IN SELECT table_name FROM information_schema.views"
-        f" WHERE table_schema = {_quote_literal(schema_name)}"
+        f"  FOR r IN SELECT table_name FROM information_schema.views WHERE table_schema = {_quote_literal(schema_name)}"
     )
     lines.append("  LOOP")
     lines.append(
-        f"    EXECUTE format('DROP VIEW IF EXISTS %I.%I CASCADE',"
-        f" {_quote_literal(schema_name)}, r.table_name);"
+        f"    EXECUTE format('DROP VIEW IF EXISTS %I.%I CASCADE', {_quote_literal(schema_name)}, r.table_name);"
     )
     lines.append("  END LOOP;")
     lines.append("END $$;")
@@ -110,9 +108,7 @@ def generate_bootstrap_sql(
         _validate_s3_path(dataset.storage_path)
         s3_uri = f"s3://{bucket}/{dataset.storage_path}**/*.parquet"
         lines.append("")
-        lines.append(
-            f"CREATE OR REPLACE VIEW {qs}.{qv} AS"
-        )
+        lines.append(f"CREATE OR REPLACE VIEW {qs}.{qv} AS")
         select_expr = _build_typed_select(dataset, s3_uri)
         lines.append(f"  {select_expr};")
 

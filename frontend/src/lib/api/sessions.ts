@@ -4,8 +4,8 @@
  * Talks directly to the chat worker (not the backend API).
  */
 
-import { getAuthHeaders, handleResponse, withAuthRetry } from "./fetchUtils";
 import { CHAT_URL } from "../ui/data/config";
+import { getAuthHeaders, handleResponse, withAuthRetry } from "./fetchUtils";
 
 export interface ChatTurnPayload {
   user_message: string;

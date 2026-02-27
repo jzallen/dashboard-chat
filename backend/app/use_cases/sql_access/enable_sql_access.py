@@ -12,26 +12,26 @@ from app.models.dataset import Dataset
 from app.repositories import get_session, with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import (
-    ProjectNotFound,
     ProjectHasNoDatasets,
+    ProjectNotFound,
     SqlAccessAlreadyEnabled,
 )
 from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
-from app.use_cases.project.dbt.naming import to_snake_case, deduplicate_names
+from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
 from app.use_cases.sql_access.pg_duckdb_manager import (
-    schema_name,
-    role_name,
-    generate_password,
-    pg_md5_hash,
     create_project_schema,
     execute_bootstrap,
+    generate_password,
     grant_schema_usage,
+    pg_md5_hash,
+    role_name,
+    schema_name,
 )
 from app.use_cases.sql_access.port_allocation import allocate_proxy_port
 from app.use_cases.sql_access.provisioner import (
     StorageConfig,
-    get_app_provisioner,
     get_app_pgbouncer_provisioner,
+    get_app_provisioner,
 )
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 async def enable_sql_access(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Enable external SQL access for a project.
 
@@ -61,8 +61,8 @@ async def enable_sql_access(
         SqlAccessAlreadyEnabled: If SQL access is already enabled.
         ProjectHasNoDatasets: If project has no datasets.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=True)
@@ -115,7 +115,7 @@ async def enable_sql_access(
                 full_datasets.append(Dataset.from_record(record, include_transforms=True))
 
         snake_names = deduplicate_names([to_snake_case(ds.name) for ds in full_datasets])
-        dataset_pairs = list(zip(snake_names, full_datasets))
+        dataset_pairs = list(zip(snake_names, full_datasets, strict=False))
         bootstrap_sql = generate_bootstrap_sql(pg_schema, dataset_pairs, settings.storage_bucket)
         await execute_bootstrap(env, project_id, bootstrap_sql)
         await grant_schema_usage(env, project_id)
@@ -195,9 +195,5 @@ async def enable_sql_access(
         "schema": pg_schema,
         "enabled": True,
         "environment_status": "running",
-        "connection_string": (
-            f"postgresql://{pg_role}:{password}"
-            f"@{env.host}:{proxy_port}"
-            f"/{env.database}"
-        ),
+        "connection_string": (f"postgresql://{pg_role}:{password}@{env.host}:{proxy_port}/{env.database}"),
     }

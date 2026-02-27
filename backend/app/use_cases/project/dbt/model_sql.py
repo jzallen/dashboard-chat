@@ -8,9 +8,7 @@ if TYPE_CHECKING:
     from app.models.transform import Transform
 
 
-def generate_model_sql(
-    project_name_snake: str, dataset_name_snake: str, dataset: Dataset
-) -> str:
+def generate_model_sql(project_name_snake: str, dataset_name_snake: str, dataset: Dataset) -> str:
     """Generate CTE-based dbt SQL for a dataset's transforms.
 
     Builds a pipeline of CTEs: source -> cleaned -> filtered -> final
@@ -22,12 +20,8 @@ def generate_model_sql(
         [t for t in enabled if t.transform_type in ("clean", "map") and t.expression_config],
         key=lambda t: getattr(t, "created_at", "") or "",
     )
-    filter_transforms = [
-        t for t in enabled if t.transform_type == "filter" and t.condition_sql
-    ]
-    alias_transforms = [
-        t for t in enabled if t.transform_type == "alias" and t.expression_config
-    ]
+    filter_transforms = [t for t in enabled if t.transform_type == "filter" and t.condition_sql]
+    alias_transforms = [t for t in enabled if t.transform_type == "alias" and t.expression_config]
 
     source_ref = f"{{{{ source('{project_name_snake}', '{dataset_name_snake}') }}}}"
 
@@ -52,13 +46,7 @@ def generate_model_sql(
     if filter_transforms:
         where_clauses = [t.condition_sql for t in filter_transforms]
         where_sql = "\n      AND ".join(where_clauses)
-        ctes.append(
-            f"filtered AS (\n"
-            f"    SELECT *\n"
-            f"    FROM {last_cte}\n"
-            f"    WHERE {where_sql}\n"
-            f")"
-        )
+        ctes.append(f"filtered AS (\n    SELECT *\n    FROM {last_cte}\n    WHERE {where_sql}\n)")
         last_cte = "filtered"
 
     # final SELECT
@@ -162,20 +150,21 @@ def _transform_to_sql(t: Transform) -> str | None:
         return f"-- unsupported operation: {operation} for column {col}"
 
 
+_CASE_MODE_SQL = {
+    "upper": "UPPER",
+    "lower": "LOWER",
+    "title": "title_case",
+    "snake": "snake_case",
+    "kebab": "kebab_case",
+}
+
+
 def _case_to_sql(config: dict, col: str) -> str:
     mode = config.get("mode", "")
-    if mode == "upper":
-        return f"UPPER({col}) AS {col}"
-    elif mode == "lower":
-        return f"LOWER({col}) AS {col}"
-    elif mode == "title":
-        return f"title_case({col}) AS {col}"
-    elif mode == "snake":
-        return f"snake_case({col}) AS {col}"
-    elif mode == "kebab":
-        return f"kebab_case({col}) AS {col}"
-    else:
-        return f"-- unsupported case mode: {mode} for column {col}"
+    func = _CASE_MODE_SQL.get(mode)
+    if func:
+        return f"{func}({col}) AS {col}"
+    return f"-- unsupported case mode: {mode} for column {col}"
 
 
 def _is_numeric(value: str) -> bool:

@@ -1,7 +1,9 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { UploadWidget } from "../../../lib/ui/components/ChatPanel/UploadWidget";
+
 import type { Dataset } from "@/api";
+
+import { UploadWidget } from "../../../lib/ui/components/ChatPanel/UploadWidget";
 
 // Mock the API client
 vi.mock("../../../lib/api/client", () => ({

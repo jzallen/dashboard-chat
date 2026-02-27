@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { raqbToSql, raqbToParameterizedSql } from "@/raqb";
+import { describe, expect,it } from "vitest";
+
 import type { RAQBTree } from "@/raqb";
+import { raqbToParameterizedSql,raqbToSql } from "@/raqb";
 
 describe("toSql", () => {
   describe("Feature: Convert RAQB JSON to SQL WHERE clause", () => {

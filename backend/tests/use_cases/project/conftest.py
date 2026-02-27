@@ -2,10 +2,10 @@
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories.metadata import DatasetRecord, ProjectRecord
+
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
-
+from app.repositories.metadata import DatasetRecord, ProjectRecord
 from tests.uuidv7_fixtures import (
     DATASET_1,
     DATASET_2,

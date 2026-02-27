@@ -1,16 +1,16 @@
 """Tests for delete_project use case."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock
-from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import select
+from unittest.mock import AsyncMock
 
-from app.use_cases.project import delete_project
+import pytest
+from returns.result import Failure, Success
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord
-
+from app.use_cases.project import delete_project
 from tests.uuidv7_fixtures import ORG_1, PROJECT_1, PROJECT_2
 
 
@@ -27,9 +27,7 @@ class TestDeleteProject:
             case Success(deleted):
                 assert deleted is True
                 # Verify project was actually deleted
-                check_result = await seeded_db.execute(
-                    select(ProjectRecord).where(ProjectRecord.id == PROJECT_2)
-                )
+                check_result = await seeded_db.execute(select(ProjectRecord).where(ProjectRecord.id == PROJECT_2))
                 assert check_result.scalar_one_or_none() is None
             case Failure(error):
                 pytest.fail(f"delete_project should delete project, got: {error}")
@@ -51,9 +49,7 @@ class TestDeleteProject:
         set_session(seeded_db)
 
         # Verify datasets exist before delete
-        check_before = await seeded_db.execute(
-            select(DatasetRecord).where(DatasetRecord.project_id == PROJECT_1)
-        )
+        check_before = await seeded_db.execute(select(DatasetRecord).where(DatasetRecord.project_id == PROJECT_1))
         assert len(list(check_before.scalars().all())) == 2
 
         result = await delete_project(project_id=PROJECT_1)
@@ -82,7 +78,7 @@ class TestDeleteProject:
 
         result = await delete_project(
             project_id=PROJECT_1,
-            repositories={'metadata_repository': lambda: metadata_repository},
+            repositories={"metadata_repository": lambda: metadata_repository},
         )
 
         match result:

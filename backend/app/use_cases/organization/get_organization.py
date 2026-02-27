@@ -3,8 +3,8 @@
 from typing import TYPE_CHECKING
 
 from app.auth import get_auth_user
-from app.use_cases import handle_returns
 from app.repositories import with_repositories
+from app.use_cases import handle_returns
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 @handle_returns
 async def get_organization(
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> dict | None:
     """Get the current user's organization from the local database.
 
@@ -25,5 +25,5 @@ async def get_organization(
     if user.org_id is None:
         return None
 
-    metadata_repo = repositories['metadata_repository']
+    metadata_repo = repositories["metadata_repository"]
     return await metadata_repo.get_organization(user.org_id)

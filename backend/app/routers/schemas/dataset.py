@@ -87,6 +87,7 @@ class DatasetUploadResponse(DatasetResponse):
 
 # Transform schemas
 
+
 class TransformBase(BaseModel):
     """Base schema for Transform."""
 
@@ -112,14 +113,14 @@ class TransformCreate(TransformBase):
     expression_config: dict[str, Any] | None = None
     expression_sql: str | None = None  # Ignored on create — server-generated
 
-    @model_validator(mode='after')
-    def validate_cross_fields(self) -> 'TransformCreate':
+    @model_validator(mode="after")
+    def validate_cross_fields(self) -> TransformCreate:
         tt = self.transform_type
 
-        if tt not in ('filter', 'clean', 'alias', 'map'):
+        if tt not in ("filter", "clean", "alias", "map"):
             raise ValueError(f"transform_type must be one of 'filter', 'clean', 'alias', 'map', got '{tt}'")
 
-        if tt == 'filter':
+        if tt == "filter":
             if self.condition_json is None:
                 raise ValueError("condition_json is required for transform_type 'filter'")
             if self.condition_sql is None:
@@ -197,7 +198,7 @@ class TransformResponse(TransformBase):
     nl_prompt: str | None = None
     created_at: datetime
     updated_at: datetime
-    transform_type: str = 'filter'
+    transform_type: str = "filter"
     target_column: str | None = None
     expression_config: dict[str, Any] | None = None
     expression_sql: str | None = None
@@ -207,6 +208,7 @@ class TransformResponse(TransformBase):
 
 
 # Preview schemas
+
 
 class PreviewRequest(BaseModel):
     """Request body for POST /datasets/:id/transforms/preview."""
@@ -234,6 +236,7 @@ class PreviewResponse(BaseModel):
 
 
 # Upload Event schemas
+
 
 class UploadEventResponse(BaseModel):
     """Schema for UploadEvent response."""

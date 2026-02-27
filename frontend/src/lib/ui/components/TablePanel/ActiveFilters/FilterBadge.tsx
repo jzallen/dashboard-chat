@@ -1,4 +1,5 @@
 import type { ColumnFilter } from "@tanstack/react-table";
+
 import styles from "./ActiveFilters.module.css";
 
 interface FilterCondition {

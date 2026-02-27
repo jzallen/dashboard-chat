@@ -1,27 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useOutletContext,useParams } from "react-router-dom";
+
 import { type Dataset, exportDbtProject } from "@/api";
-import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallContext } from "@/table-tools";
-import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
 import { raqbToSql } from "@/raqb";
-import { toConditions, getTransformIdsForColumn } from "../../hooks/filterUtils";
+import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
+import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallContext } from "@/table-tools";
+
+import { useChatContext } from "../../context/ChatContext";
+import { getTransformIdsForColumn,toConditions } from "../../hooks/filterUtils";
+import { useRenameDataset } from "../../hooks/useDatasetMutations";
+import { datasetKeys,useDatasetQuery, usePrefetchDataset } from "../../hooks/useDatasetQuery";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
-import { useDatasetQuery, usePrefetchDataset, datasetKeys } from "../../hooks/useDatasetQuery";
-import { useRenameDataset } from "../../hooks/useDatasetMutations";
-import { useChatContext } from "../../context/ChatContext";
+import type { AppShellContext } from "../AppShell";
+import { TablePanelSkeleton } from "../SkeletonLoader";
+import { SqlAccessPanel } from "../SqlAccessPanel";
 import TablePanel from "../TablePanel";
 import { TransformSettings } from "../TransformSettings";
-import { SqlAccessPanel } from "../SqlAccessPanel";
-import { TablePanelSkeleton } from "../SkeletonLoader";
-import { DatasetGrid } from "./DatasetCarousel";
-import { SchemaTable } from "./SchemaTable";
-import { ViewModeToggle, type ViewMode } from "./ViewModeToggle";
 import { Breadcrumb } from "./Breadcrumb";
+import { DatasetGrid } from "./DatasetCarousel";
 import styles from "./DatasetView.module.css";
-
-import type { AppShellContext } from "../AppShell";
+import { SchemaTable } from "./SchemaTable";
+import { type ViewMode,ViewModeToggle } from "./ViewModeToggle";
 
 // ---------------------------------------------------------------------------
 // DatasetDetail — inner component that only mounts when a dataset is selected.

@@ -16,6 +16,8 @@ from app.use_cases.exceptions import (
     ProjectNotFound,
     SqlAccessNotEnabled,
 )
+from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
+from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
 from app.use_cases.sql_access.pg_duckdb_manager import (
     create_project_schema,
     execute_bootstrap,
@@ -24,11 +26,9 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
 )
 from app.use_cases.sql_access.provisioner import (
     StorageConfig,
-    get_app_provisioner,
     get_app_pgbouncer_provisioner,
+    get_app_provisioner,
 )
-from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
-from app.use_cases.project.dbt.naming import to_snake_case, deduplicate_names
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 async def restart_environment(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Restart a running SQL access environment.
 
@@ -54,8 +54,8 @@ async def restart_environment(
         SqlAccessNotEnabled: If SQL access is not enabled.
         EnvironmentNotRunning: If environment is not running.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=True)
@@ -75,10 +75,13 @@ async def restart_environment(
         raise EnvironmentNotRunning(project_id)
 
     # Set restarting status
-    await external_access_repo.update(project_id, {
-        "environment_status": "provisioning",
-        "status_message": "Restarting environment...",
-    })
+    await external_access_repo.update(
+        project_id,
+        {
+            "environment_status": "provisioning",
+            "status_message": "Restarting environment...",
+        },
+    )
 
     settings = get_settings()
     storage_config = StorageConfig(
@@ -114,7 +117,7 @@ async def restart_environment(
         if full_datasets:
             pg_schema = existing["pg_schema"]
             snake_names = deduplicate_names([to_snake_case(ds.name) for ds in full_datasets])
-            dataset_pairs = list(zip(snake_names, full_datasets))
+            dataset_pairs = list(zip(snake_names, full_datasets, strict=False))
             bootstrap_sql = generate_bootstrap_sql(pg_schema, dataset_pairs, settings.storage_bucket)
             await execute_bootstrap(env, project_id, bootstrap_sql)
             await grant_schema_usage(env, project_id)
@@ -162,8 +165,11 @@ async def restart_environment(
             e,
             exc_info=True,
         )
-        await external_access_repo.update(project_id, {
-            "environment_status": "error",
-            "status_message": str(e),
-        })
+        await external_access_repo.update(
+            project_id,
+            {
+                "environment_status": "error",
+                "status_message": str(e),
+            },
+        )
         raise

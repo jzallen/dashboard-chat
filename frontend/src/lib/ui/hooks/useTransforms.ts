@@ -5,17 +5,19 @@
  * fires the API call in the background, and rolls back on error.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import type { ColumnFiltersState } from "@tanstack/react-table";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import {
   createTransform,
+  type Dataset,
   deleteTransform,
   toggleTransform as toggleTransformApi,
-  type Dataset,
   type Transform,
   type TransformCreate,
 } from "@/api";
 import { raqbToTanstackFilters } from "@/raqb";
-import type { ColumnFiltersState } from "@tanstack/react-table";
+
 import { mergeFilters } from "./filterUtils";
 
 interface UseTransformsOptions {
@@ -44,8 +46,8 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Transforms come from the dataset
-  const transforms = dataset?.transforms ?? [];
+  // Transforms come from the dataset — memoize to stabilize the reference
+  const transforms = useMemo(() => dataset?.transforms ?? [], [dataset?.transforms]);
 
   // Auto-apply active transforms when dataset changes
   useEffect(() => {

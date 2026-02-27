@@ -6,15 +6,16 @@ import zipfile
 from io import BytesIO
 from typing import TYPE_CHECKING
 
-from .naming import to_snake_case, deduplicate_names
-from .project_yml import generate_project_yml
-from .profiles_yml import generate_profiles_yml
-from .sources_yml import generate_sources_yml
-from .schema_yml import generate_schema_yml
-from .model_sql import generate_model_sql
-from .macros_sql import generate_macros_sql
 from .bootstrap_sql import generate_bootstrap_sql
+from .macros_sql import generate_macros_sql
+from .model_sql import generate_model_sql
+from .naming import deduplicate_names
+from .naming import to_snake_case as to_snake_case
+from .profiles_yml import generate_profiles_yml
+from .project_yml import generate_project_yml
 from .readme import generate_readme
+from .schema_yml import generate_schema_yml
+from .sources_yml import generate_sources_yml
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -35,7 +36,7 @@ def generate_dbt_project_zip(project: Project, project_name_snake: str) -> bytes
     # Compute deduplicated snake_case names
     raw_names = [ds.name for ds in datasets]
     snake_names = deduplicate_names(raw_names)
-    dataset_pairs = list(zip(snake_names, datasets))
+    dataset_pairs = list(zip(snake_names, datasets, strict=False))
 
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:

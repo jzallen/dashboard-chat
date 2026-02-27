@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,20 +12,22 @@ from app.use_cases.exceptions import (
     ProjectNotFound,
     SqlAccessNotEnabled,
 )
-from app.use_cases.sql_access.start_environment import start_environment
 from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
-
+from app.use_cases.sql_access.start_environment import start_environment
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestStartEnvironment:
-
     @patch("app.use_cases.sql_access.start_environment.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.start_environment.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.start_environment.regenerate_credentials", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.start_environment.create_project_schema", new_callable=AsyncMock)
     async def test_start_stopped_environment(
-        self, mock_create_schema, mock_regen_creds, mock_execute_bootstrap, mock_grant_usage,
+        self,
+        mock_create_schema,
+        mock_regen_creds,
+        mock_execute_bootstrap,
+        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_stopped_access: AsyncSession,
     ):
@@ -54,7 +55,11 @@ class TestStartEnvironment:
     @patch("app.use_cases.sql_access.start_environment.regenerate_credentials", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.start_environment.create_project_schema", new_callable=AsyncMock)
     async def test_start_fails_when_running(
-        self, mock_create_schema, mock_regen_creds, mock_execute_bootstrap, mock_grant_usage,
+        self,
+        mock_create_schema,
+        mock_regen_creds,
+        mock_execute_bootstrap,
+        mock_grant_usage,
         seeded_db_with_access: AsyncSession,
     ):
         """Cannot start an already running environment."""

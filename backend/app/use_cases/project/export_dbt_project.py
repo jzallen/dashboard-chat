@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 async def export_dbt_project(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[tuple[bytes, str], str]:
     """Export a project as a dbt project zip archive.
 
@@ -37,7 +37,7 @@ async def export_dbt_project(
         ProjectNotFound: If project with given ID does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories['metadata_repository']
+    metadata_repo = repositories["metadata_repository"]
 
     # Fetch project with sparse dataset references
     project_dict = await metadata_repo.get_project(project_id, include_datasets=True)

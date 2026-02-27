@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 async def stop_environment(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Stop a running SQL access environment.
 
@@ -40,8 +40,8 @@ async def stop_environment(
         SqlAccessNotEnabled: If SQL access is not enabled.
         EnvironmentNotRunning: If environment is not running.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=False)
@@ -65,11 +65,14 @@ async def stop_environment(
     await provisioner.stop_environment(project_id)
 
     # Update status
-    await external_access_repo.update(project_id, {
-        "environment_status": "stopped",
-        "status_message": None,
-        "environment_id": None,
-    })
+    await external_access_repo.update(
+        project_id,
+        {
+            "environment_status": "stopped",
+            "status_message": None,
+            "environment_id": None,
+        },
+    )
 
     return {
         "project_id": project_id,

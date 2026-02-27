@@ -2,28 +2,28 @@
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories.metadata import DatasetRecord, ProjectRecord, ExternalAccessRecord
+
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
+from app.repositories.metadata import DatasetRecord, ExternalAccessRecord, ProjectRecord
 from app.use_cases.sql_access.provisioner import (
     MockEnvironmentProvisioner,
     MockPgBouncerProvisioner,
-    set_app_provisioner,
     set_app_pgbouncer_provisioner,
+    set_app_provisioner,
 )
-
 from tests.uuidv7_fixtures import (
-    USER_1,
-    ORG_1,
-    ORG_OTHER,
-    PROJECT_1,
-    PROJECT_EMPTY,
-    PROJECT_OTHER,
     DATASET_1,
     DATASET_2,
     DATASET_OTHER,
     EA_1,
     EA_DISABLED,
+    ORG_1,
+    ORG_OTHER,
+    PROJECT_1,
+    PROJECT_EMPTY,
+    PROJECT_OTHER,
+    USER_1,
 )
 
 TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")

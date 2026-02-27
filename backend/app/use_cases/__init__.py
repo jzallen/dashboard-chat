@@ -3,7 +3,7 @@
 from functools import wraps
 from logging import getLogger
 
-from returns.result import Success, Failure
+from returns.result import Failure, Success
 
 logger = getLogger(__name__)
 

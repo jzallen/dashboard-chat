@@ -1,6 +1,6 @@
 """ProjectRecord ORM model for database persistence."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, Text, text
@@ -26,11 +26,9 @@ class ProjectRecord(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
     )
 
     # Relationships

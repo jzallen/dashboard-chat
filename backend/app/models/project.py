@@ -35,10 +35,10 @@ class Project:
     def serialize(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict for HTTP responses."""
         return {
-            'id': self.id,
-            'name': self.name,
-            'description': self.description,
-            'datasets': [d.serialize() for d in self.datasets] if self.datasets else [],
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "datasets": [d.serialize() for d in self.datasets] if self.datasets else [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

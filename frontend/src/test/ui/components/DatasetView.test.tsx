@@ -1,10 +1,11 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, Outlet } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ProjectView } from "../../../lib/ui/components/DatasetView";
-import { ChatProvider } from "../../../lib/ui/context/ChatContext";
+import { fireEvent,render, screen } from "@testing-library/react";
+import { MemoryRouter, Outlet,Route, Routes } from "react-router-dom";
+
 import { MOCK_PROJECT } from "../../../__mocks__/data";
 import type { AppShellContext } from "../../../lib/ui/components/AppShell";
+import { ProjectView } from "../../../lib/ui/components/DatasetView";
+import { ChatProvider } from "../../../lib/ui/context/ChatContext";
 
 // Mock API calls — use dynamic import in factory to avoid hoisting issues
 vi.mock("@/api", async () => {

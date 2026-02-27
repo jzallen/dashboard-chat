@@ -1,6 +1,7 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { DatasetGrid } from "../../../lib/ui/components/DatasetView/DatasetCarousel";
+import { fireEvent,render, screen } from "@testing-library/react";
+
 import { MOCK_DATASETS } from "../../../__mocks__/data";
+import { DatasetGrid } from "../../../lib/ui/components/DatasetView/DatasetCarousel";
 
 describe("DatasetGrid", () => {
   it("renders all datasets as cards", () => {

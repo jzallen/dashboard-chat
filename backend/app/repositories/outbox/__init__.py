@@ -8,8 +8,8 @@ Provides event sourcing capabilities:
 
 from typing import Protocol
 
-from .outbox_record import OutboxRecord
 from .events import OutboxEvent
+from .outbox_record import OutboxRecord
 
 
 class OutboxRepositoryProtocol(Protocol):
@@ -56,6 +56,6 @@ class OutboxRepositoryProtocol(Protocol):
         ...
 
 
-from .repository import OutboxRepository
+from .repository import OutboxRepository  # noqa: E402
 
 __all__ = ["OutboxRepository", "OutboxRepositoryProtocol"]

@@ -77,9 +77,7 @@ class DockerPgDuckDbProvisioner:
             logger.info("Pulling image %s (this may take a moment)...", self._image)
             await docker.images.pull(self._image)
 
-    async def provision(
-        self, project_id: str, storage_config: StorageConfig
-    ) -> ProjectEnvironment:
+    async def provision(self, project_id: str, storage_config: StorageConfig) -> ProjectEnvironment:
         docker = await self._get_docker()
         name = _container_name(project_id)
 
@@ -128,7 +126,9 @@ class DockerPgDuckDbProvisioner:
 
             logger.info(
                 "Provisioned pg_duckdb container %s for project %s on port %d",
-                name, project_id, host_port,
+                name,
+                project_id,
+                host_port,
             )
             return env
 
@@ -138,9 +138,7 @@ class DockerPgDuckDbProvisioner:
             raise
         except Exception as e:
             await self._force_remove(name)
-            raise ProvisioningError(
-                f"Failed to provision environment for project {project_id}: {e}"
-            ) from e
+            raise ProvisioningError(f"Failed to provision environment for project {project_id}: {e}") from e
 
     async def deprovision(self, project_id: str) -> None:
         name = _container_name(project_id)
@@ -184,9 +182,7 @@ class DockerPgDuckDbProvisioner:
         except Exception:
             return None
 
-    async def start_environment(
-        self, project_id: str, storage_config: StorageConfig
-    ) -> ProjectEnvironment:
+    async def start_environment(self, project_id: str, storage_config: StorageConfig) -> ProjectEnvironment:
         """Start a project environment (provisions pg_duckdb only).
 
         PgBouncer provisioning is orchestrated by use cases, not here.
@@ -230,9 +226,7 @@ class DockerPgDuckDbProvisioner:
         while elapsed < HEALTH_CHECK_TIMEOUT:
             info = await container.show()
             if not info["State"]["Running"]:
-                raise ProvisioningError(
-                    f"Container {info['Name']} exited during health check"
-                )
+                raise ProvisioningError(f"Container {info['Name']} exited during health check")
 
             port_bindings = info["NetworkSettings"]["Ports"].get("5432/tcp")
             if port_bindings:
@@ -240,22 +234,20 @@ class DockerPgDuckDbProvisioner:
                 # Health-check via the Docker network (container name on
                 # internal port) so this works from inside another container.
                 try:
-                    reader, writer = await asyncio.wait_for(
+                    _reader, writer = await asyncio.wait_for(
                         asyncio.open_connection(name, 5432),
                         timeout=2.0,
                     )
                     writer.close()
                     await writer.wait_closed()
                     return host_port
-                except (ConnectionRefusedError, asyncio.TimeoutError, OSError):
+                except (TimeoutError, ConnectionRefusedError, OSError):
                     pass
 
             await asyncio.sleep(HEALTH_CHECK_INTERVAL)
             elapsed += HEALTH_CHECK_INTERVAL
 
-        raise ProvisioningError(
-            f"Container did not become healthy within {HEALTH_CHECK_TIMEOUT}s"
-        )
+        raise ProvisioningError(f"Container did not become healthy within {HEALTH_CHECK_TIMEOUT}s")
 
     async def _force_remove(self, name: str) -> None:
         docker = await self._get_docker()

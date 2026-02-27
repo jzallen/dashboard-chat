@@ -52,7 +52,37 @@ dev = [
     "pytest-asyncio==0.23.4",
     "pytest-xdist>=3.5.0",
     "moto[s3]>=5.0.0",
+    "ruff>=0.15.4",
+    "detect-secrets>=1.5.0",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+# Alembic auto-generates migration files with its own style — don't lint them
+exclude = ["migrations/versions/*"]
+
+[tool.ruff.lint]
+select = [
+    "F",    # Pyflakes — unused imports, undefined names, redefined-unused
+    "E",    # pycodestyle errors — syntax errors, whitespace issues
+    "W",    # pycodestyle warnings — trailing whitespace, blank lines
+    "I",    # isort — import ordering and grouping
+    "B",    # flake8-bugbear — common pitfalls (e.g., mutable default args, `raise e` re-raise bug)
+    "UP",   # pyupgrade — modernize syntax for Python 3.11+ (f-strings, type unions, etc.)
+    "SIM",  # flake8-simplify — simplifiable if/else, context managers, boolean expressions
+    "RUF",  # Ruff-specific rules — implicit Optional, mutable class defaults, etc.
+]
+# E712: "comparison to True/False" — SQLAlchemy filters use `== True` intentionally
+ignore = ["E712"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic migrations: auto-generated imports and star-imports are normal
+"migrations/*" = ["F401", "F403", "UP", "E", "I"]
+# Tests: assert statements (S101) are expected in test code
+"tests/*" = ["S101"]
+# FastAPI's Depends() in argument defaults is idiomatic — B008 is a false positive for routers
+"app/routers/*" = ["B008"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

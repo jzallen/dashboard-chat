@@ -1,15 +1,15 @@
 """Tests for list_projects use case."""
 
-import pytest
 from unittest.mock import Mock
-from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.use_cases.project import list_projects
+import pytest
+from returns.result import Failure, Success
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
-
+from app.use_cases.project import list_projects
 from tests.uuidv7_fixtures import (
     DATASET_1,
     DATASET_2,
@@ -156,7 +156,7 @@ class TestListProjects:
         metadata_repository.list_projects = Mock(side_effect=SQLAlchemyError("Database connection lost"))
 
         result = await list_projects(
-            repositories={'metadata_repository': lambda: metadata_repository},
+            repositories={"metadata_repository": lambda: metadata_repository},
         )
 
         match result:

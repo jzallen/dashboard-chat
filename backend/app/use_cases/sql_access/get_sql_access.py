@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 async def get_sql_access(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Get SQL access connection details for a project.
 
@@ -33,8 +33,8 @@ async def get_sql_access(
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=False)

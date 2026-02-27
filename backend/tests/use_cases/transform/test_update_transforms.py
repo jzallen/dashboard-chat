@@ -3,11 +3,10 @@ from returns.result import Failure, Success
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.use_cases.transform import update_transforms
 from app.repositories import set_session
 from app.repositories.metadata import TransformRecord
 from app.repositories.outbox.outbox_record import OutboxRecord
-
+from app.use_cases.transform import update_transforms
 from tests.uuidv7_fixtures import DATASET_1, TRANSFORM_1, TRANSFORM_2
 
 
@@ -49,9 +48,7 @@ class TestUpdateTransforms:
                 pytest.fail(f"update_transforms should succeed, got: {error}")
 
         # Verify the transform status is now 'deleted'
-        row = await seeded_db.execute(
-            select(TransformRecord).where(TransformRecord.id == TRANSFORM_1)
-        )
+        row = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_1))
         transform = row.scalar_one()
         assert transform.status == "deleted"
 
@@ -74,14 +71,10 @@ class TestUpdateTransforms:
                 pytest.fail(f"update_transforms should succeed, got: {error}")
 
         # Verify both are disabled
-        row1 = await seeded_db.execute(
-            select(TransformRecord).where(TransformRecord.id == TRANSFORM_1)
-        )
+        row1 = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_1))
         assert row1.scalar_one().status == "disabled"
 
-        row2 = await seeded_db.execute(
-            select(TransformRecord).where(TransformRecord.id == TRANSFORM_2)
-        )
+        row2 = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_2))
         assert row2.scalar_one().status == "disabled"
 
     async def test_emits_outbox_event(self, seeded_db: AsyncSession):

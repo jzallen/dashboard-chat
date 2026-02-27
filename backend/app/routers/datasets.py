@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers import HTTPController
+
 from .deps import use_db_context
 from .schemas import DatasetCreate, DatasetUpdate
 
@@ -52,9 +53,7 @@ async def get_dataset(
     _: AsyncSession = Depends(use_db_context),
 ):
     """Get a single dataset by ID with optional transforms and preview."""
-    body, status_code = await HTTPController.get_dataset(
-        dataset_id, include_transforms, include_preview, preview_limit
-    )
+    body, status_code = await HTTPController.get_dataset(dataset_id, include_transforms, include_preview, preview_limit)
     return JSONResponse(content=body, status_code=status_code)
 
 

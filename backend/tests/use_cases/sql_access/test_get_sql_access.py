@@ -1,6 +1,5 @@
 """Tests for get_sql_access use case."""
 
-import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,15 +8,11 @@ from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound
 from app.use_cases.sql_access import get_sql_access
 from tests.use_cases.sql_access.conftest import MOCK_ENV_HOST, MOCK_ENV_PORT
-
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestGetSqlAccess:
-
-    async def test_get_returns_connection_details_when_enabled(
-        self, seeded_db_with_access: AsyncSession
-    ):
+    async def test_get_returns_connection_details_when_enabled(self, seeded_db_with_access: AsyncSession):
         set_session(seeded_db_with_access)
 
         result = await get_sql_access(project_id=PROJECT_1)
@@ -25,10 +20,18 @@ class TestGetSqlAccess:
         assert isinstance(result, Success)
         data = result.unwrap()
         assert data.keys() == {
-            "project_id", "enabled", "host", "port",
-            "database", "username", "schema",
-            "environment_status", "status_message", "is_legacy",
-            "last_synced_at", "created_at",
+            "project_id",
+            "enabled",
+            "host",
+            "port",
+            "database",
+            "username",
+            "schema",
+            "environment_status",
+            "status_message",
+            "is_legacy",
+            "last_synced_at",
+            "created_at",
         }
         assert data["project_id"] == PROJECT_1
         assert data["enabled"] is True
@@ -40,9 +43,7 @@ class TestGetSqlAccess:
         assert data["environment_status"] == "running"
         assert data["is_legacy"] is False
 
-    async def test_get_returns_disabled_when_no_record_exists(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_get_returns_disabled_when_no_record_exists(self, seeded_db: AsyncSession):
         """No external_access record for this project — enabled=False."""
         set_session(seeded_db)
 
@@ -51,9 +52,7 @@ class TestGetSqlAccess:
         assert isinstance(result, Success)
         assert result.unwrap() == {"project_id": PROJECT_1, "enabled": False}
 
-    async def test_get_returns_disabled_when_record_is_disabled(
-        self, seeded_db_with_disabled_access: AsyncSession
-    ):
+    async def test_get_returns_disabled_when_record_is_disabled(self, seeded_db_with_disabled_access: AsyncSession):
         """Record exists but enabled=False — distinct code path from no-record."""
         set_session(seeded_db_with_disabled_access)
 
@@ -62,9 +61,7 @@ class TestGetSqlAccess:
         assert isinstance(result, Success)
         assert result.unwrap() == {"project_id": PROJECT_1, "enabled": False}
 
-    async def test_get_returns_failure_for_nonexistent_project(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_get_returns_failure_for_nonexistent_project(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await get_sql_access(project_id="nonexistent")
@@ -72,9 +69,7 @@ class TestGetSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_get_returns_failure_for_other_org(
-        self, seeded_db_other_org: AsyncSession
-    ):
+    async def test_get_returns_failure_for_other_org(self, seeded_db_other_org: AsyncSession):
         set_session(seeded_db_other_org)
 
         result = await get_sql_access(project_id=PROJECT_OTHER)

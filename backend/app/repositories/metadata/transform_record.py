@@ -4,10 +4,10 @@ Note: The authoritative Transform is the domain model in app/models/.
 This is just for database persistence.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...database import Base
@@ -46,10 +46,10 @@ class TransformRecord(Base):
 
     # Versioning
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default='enabled')
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="enabled")
 
     # Cleaning transform fields
-    transform_type: Mapped[str] = mapped_column(String(20), nullable=False, default='filter')
+    transform_type: Mapped[str] = mapped_column(String(20), nullable=False, default="filter")
     target_column: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expression_sql: Mapped[str | None] = mapped_column(Text, nullable=True)
     expression_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -57,11 +57,9 @@ class TransformRecord(Base):
     # Metadata from NL generation
     nl_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
     )
 
     # Relationships
@@ -70,7 +68,7 @@ class TransformRecord(Base):
     @property
     def is_active(self) -> bool:
         """Backwards-compatible property: True if status is 'enabled'."""
-        return self.status == 'enabled'
+        return self.status == "enabled"
 
     def __repr__(self) -> str:
         return f"<TransformRecord(id={self.id}, name={self.name}, version={self.version})>"

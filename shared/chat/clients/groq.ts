@@ -1,4 +1,5 @@
 import { EventSourceParserStream } from "eventsource-parser/stream";
+
 import type { ChatClient, ChatCompletionRequest } from "../handleChat";
 
 export class GroqChatClient implements ChatClient {

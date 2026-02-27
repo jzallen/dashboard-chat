@@ -265,10 +265,13 @@ class TestMapValues:
     def test_map_values(self):
         ds = _make_dataset(
             transforms=[
-                _map_values("status", [
-                    {"from": "A", "to": "Active"},
-                    {"from": "I", "to": "Inactive"},
-                ])
+                _map_values(
+                    "status",
+                    [
+                        {"from": "A", "to": "Active"},
+                        {"from": "I", "to": "Inactive"},
+                    ],
+                )
             ],
             schema_fields=["status"],
         )
@@ -281,9 +284,12 @@ class TestMapValues:
     def test_map_values_with_quotes(self):
         ds = _make_dataset(
             transforms=[
-                _map_values("status", [
-                    {"from": "O'Brien", "to": "O'Malley"},
-                ])
+                _map_values(
+                    "status",
+                    [
+                        {"from": "O'Brien", "to": "O'Malley"},
+                    ],
+                )
             ],
             schema_fields=["status"],
         )

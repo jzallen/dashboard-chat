@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 
@@ -52,9 +52,7 @@ class ProvisioningError(Exception):
 class ProjectEnvironmentProvisioner(Protocol):
     """Protocol for managing ephemeral project SQL environments."""
 
-    async def provision(
-        self, project_id: str, storage_config: StorageConfig
-    ) -> ProjectEnvironment:
+    async def provision(self, project_id: str, storage_config: StorageConfig) -> ProjectEnvironment:
         """Provision a project SQL environment.
 
         Waits for health check. Configures storage secrets.
@@ -77,9 +75,7 @@ class ProjectEnvironmentProvisioner(Protocol):
         """Get connection info for a running environment. None if not running."""
         ...
 
-    async def start_environment(
-        self, project_id: str, storage_config: StorageConfig
-    ) -> ProjectEnvironment:
+    async def start_environment(self, project_id: str, storage_config: StorageConfig) -> ProjectEnvironment:
         """Start (provision) an environment. Alias for provision with lifecycle semantics."""
         ...
 
@@ -106,9 +102,7 @@ def set_app_provisioner(provisioner: ProjectEnvironmentProvisioner) -> None:
 
 def get_app_provisioner() -> ProjectEnvironmentProvisioner:
     if _app_provisioner is None:
-        raise RuntimeError(
-            "Provisioner not configured. Call set_app_provisioner() during startup."
-        )
+        raise RuntimeError("Provisioner not configured. Call set_app_provisioner() during startup.")
     return _app_provisioner
 
 
@@ -158,9 +152,7 @@ class MockEnvironmentProvisioner:
         self._environments: dict[str, ProjectEnvironment] = {}
         self._healthy: bool = True
 
-    async def provision(
-        self, project_id: str, storage_config: StorageConfig
-    ) -> ProjectEnvironment:
+    async def provision(self, project_id: str, storage_config: StorageConfig) -> ProjectEnvironment:
         self.provision_calls.append((project_id, storage_config))
         env = ProjectEnvironment(
             environment_id=f"mock-{project_id[:8]}",
@@ -184,9 +176,7 @@ class MockEnvironmentProvisioner:
     async def get_environment(self, project_id: str) -> ProjectEnvironment | None:
         return self._environments.get(project_id)
 
-    async def start_environment(
-        self, project_id: str, storage_config: StorageConfig
-    ) -> ProjectEnvironment:
+    async def start_environment(self, project_id: str, storage_config: StorageConfig) -> ProjectEnvironment:
         self.start_environment_calls.append((project_id, storage_config))
         env = await self.provision(project_id, storage_config)
         return env

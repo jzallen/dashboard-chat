@@ -9,8 +9,7 @@ Verifies that HTTPController returns correct tuple[dict, int] responses:
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from returns.result import Success, Failure
+from returns.result import Failure, Success
 
 from app.controllers.http_controller import HTTPController, _error_response
 from app.use_cases.exceptions import (
@@ -23,13 +22,12 @@ from app.use_cases.exceptions import (
     UploadNotFound,
 )
 
-
 # ---------------------------------------------------------------------------
 # _error_response unit tests
 # ---------------------------------------------------------------------------
 
-class TestErrorResponse:
 
+class TestErrorResponse:
     def test_dataset_not_found(self):
         body, status = _error_response(DatasetNotFound("abc"))
         assert status == 404
@@ -75,6 +73,7 @@ class TestErrorResponse:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FakeModel:
     id: str
@@ -88,8 +87,8 @@ class FakeModel:
 # HTTPController method tests
 # ---------------------------------------------------------------------------
 
-class TestGetDataset:
 
+class TestGetDataset:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.get_dataset = AsyncMock(return_value=Success(FakeModel("d1", "My Dataset")))
@@ -113,7 +112,6 @@ class TestGetDataset:
 
 
 class TestListDatasets:
-
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.list_datasets = AsyncMock(return_value=Success([FakeModel("d1", "DS")]))
@@ -137,7 +135,6 @@ class TestListDatasets:
 
 
 class TestPatchDataset:
-
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.update_dataset = AsyncMock(return_value=Success(FakeModel("d1", "Updated")))
@@ -154,38 +151,32 @@ class TestPatchDataset:
 
 
 class TestPostDataset:
-
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_201(self, mock_uc):
         mock_uc.create_dataset_from_upload = AsyncMock(return_value=Success(FakeModel("d1", "New Dataset")))
-        body, status = await HTTPController.post_dataset("u1")
+        _body, status = await HTTPController.post_dataset("u1")
         assert status == 201
 
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_upload_not_found_returns_404(self, mock_uc):
-        mock_uc.create_dataset_from_upload = AsyncMock(
-            return_value=Failure(UploadNotFound("u1"))
-        )
+        mock_uc.create_dataset_from_upload = AsyncMock(return_value=Failure(UploadNotFound("u1")))
         body, status = await HTTPController.post_dataset("u1")
         assert status == 404
         assert body["type"] == "UPLOAD_NOT_FOUND"
 
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_already_processed_returns_409(self, mock_uc):
-        mock_uc.create_dataset_from_upload = AsyncMock(
-            return_value=Failure(UploadAlreadyProcessed("u1"))
-        )
+        mock_uc.create_dataset_from_upload = AsyncMock(return_value=Failure(UploadAlreadyProcessed("u1")))
         body, status = await HTTPController.post_dataset("u1")
         assert status == 409
         assert body["type"] == "UPLOAD_ALREADY_PROCESSED"
 
 
 class TestPostUpload:
-
     @patch("app.controllers.http_controller.upload_use_cases")
     async def test_success_returns_201(self, mock_uc):
         mock_uc.upload_file = AsyncMock(return_value=Success(FakeModel("u1", "upload")))
-        body, status = await HTTPController.post_upload(b"csv", "f.csv", "p1")
+        _body, status = await HTTPController.post_upload(b"csv", "f.csv", "p1")
         assert status == 201
 
     @patch("app.controllers.http_controller.upload_use_cases")
@@ -204,11 +195,10 @@ class TestPostUpload:
 
 
 class TestListProjects:
-
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.list_projects = AsyncMock(return_value=Success([FakeModel("p1", "Proj")]))
-        body, status = await HTTPController.list_projects()
+        _body, status = await HTTPController.list_projects()
         assert status == 200
 
     @patch("app.controllers.http_controller.project_use_cases")
@@ -220,11 +210,10 @@ class TestListProjects:
 
 
 class TestGetProject:
-
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.get_project = AsyncMock(return_value=Success(FakeModel("p1", "Proj")))
-        body, status = await HTTPController.get_project("p1")
+        _body, status = await HTTPController.get_project("p1")
         assert status == 200
 
     @patch("app.controllers.http_controller.project_use_cases")
@@ -236,20 +225,18 @@ class TestGetProject:
 
 
 class TestPostProject:
-
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_success_returns_201(self, mock_uc):
         mock_uc.create_project = AsyncMock(return_value=Success(FakeModel("p1", "New")))
-        body, status = await HTTPController.post_project("New")
+        _body, status = await HTTPController.post_project("New")
         assert status == 201
 
 
 class TestPatchProject:
-
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.update_project = AsyncMock(return_value=Success(FakeModel("p1", "Updated")))
-        body, status = await HTTPController.patch_project("p1", name="Updated")
+        _body, status = await HTTPController.patch_project("p1", name="Updated")
         assert status == 200
 
     @patch("app.controllers.http_controller.project_use_cases")
@@ -261,7 +248,6 @@ class TestPatchProject:
 
 
 class TestDeleteProject:
-
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_success_returns_200_with_deleted(self, mock_uc):
         mock_uc.delete_project = AsyncMock(return_value=Success(True))

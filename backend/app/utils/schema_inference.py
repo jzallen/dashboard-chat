@@ -28,12 +28,7 @@ def infer_schema_from_dataframe(df: pd.DataFrame) -> dict[str, Any]:
     Returns:
         Schema config: {"fields": {"col_name": {"type": "text|number|boolean|datetime"}, ...}}
     """
-    return {
-        "fields": {
-            column: {"type": _infer_field_type(df[column].dtype)}
-            for column in df.columns
-        }
-    }
+    return {"fields": {column: {"type": _infer_field_type(df[column].dtype)} for column in df.columns}}
 
 
 def pandas_dtype_to_sql(dtype) -> str:

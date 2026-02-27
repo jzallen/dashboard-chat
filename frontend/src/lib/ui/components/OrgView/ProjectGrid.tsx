@@ -1,6 +1,7 @@
 import type { Project } from "@/api";
-import { ProjectCard } from "./ProjectCard";
+
 import styles from "./OrgView.module.css";
+import { ProjectCard } from "./ProjectCard";
 
 interface ProjectGridProps {
   projects: Project[];

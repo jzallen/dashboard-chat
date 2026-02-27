@@ -1,20 +1,22 @@
-
 from functools import partial
 
 import boto3
 import pytest
 from botocore.stub import Stubber
-from returns.result import Success, Failure
+from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.use_cases.upload import upload_file
-from app.use_cases.exceptions import (
-    DatasetNotFound, EmptyFile, InvalidFileType, ProjectNotFound,
-)
+from app.models import Upload
 from app.repositories import set_session
 from app.repositories.lake import MinIOLakeRepository
-from app.models import Upload
-from tests.uuidv7_fixtures import PROJECT_1, DATASET_1
+from app.use_cases.exceptions import (
+    DatasetNotFound,
+    EmptyFile,
+    InvalidFileType,
+    ProjectNotFound,
+)
+from app.use_cases.upload import upload_file
+from tests.uuidv7_fixtures import DATASET_1, PROJECT_1
 
 
 @pytest.fixture
@@ -27,7 +29,7 @@ def sample_csv() -> bytes:
 def s3_write_stubber() -> Stubber:
     """Stubber for S3 write operations used by upload_file."""
     stubber = Stubber(boto3.client("s3"))
-    stubber.add_response('put_object', {})
+    stubber.add_response("put_object", {})
     return stubber
 
 
@@ -46,7 +48,7 @@ class TestUploadFile:
                 file_name="test_data.csv",
                 project_id=PROJECT_1,
                 repositories={
-                    'lake_repository': partial(MinIOLakeRepository, s3_client=s3_write_stubber.client),
+                    "lake_repository": partial(MinIOLakeRepository, s3_client=s3_write_stubber.client),
                 },
             )
 
@@ -75,7 +77,7 @@ class TestUploadFile:
                 project_id=PROJECT_1,
                 dataset_id=DATASET_1,
                 repositories={
-                    'lake_repository': partial(MinIOLakeRepository, s3_client=s3_write_stubber.client),
+                    "lake_repository": partial(MinIOLakeRepository, s3_client=s3_write_stubber.client),
                 },
             )
 
@@ -108,9 +110,7 @@ class TestUploadFile:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), EmptyFile)
 
-    async def test_upload_file_rejects_nonexistent_project(
-        self, seeded_db: AsyncSession, sample_csv: bytes
-    ):
+    async def test_upload_file_rejects_nonexistent_project(self, seeded_db: AsyncSession, sample_csv: bytes):
         """upload_file should return Failure for nonexistent project."""
         set_session(seeded_db)
 
@@ -123,9 +123,7 @@ class TestUploadFile:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_upload_file_rejects_nonexistent_dataset(
-        self, seeded_db: AsyncSession, sample_csv: bytes
-    ):
+    async def test_upload_file_rejects_nonexistent_dataset(self, seeded_db: AsyncSession, sample_csv: bytes):
         """upload_file should return Failure for nonexistent dataset."""
         set_session(seeded_db)
 

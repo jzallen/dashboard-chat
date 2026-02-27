@@ -1,14 +1,14 @@
 """Tests for update_project use case."""
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, Mock
 from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.use_cases.project import update_project
 from app.repositories import set_session
-
+from app.use_cases.project import update_project
 from tests.uuidv7_fixtures import ORG_1, PROJECT_1
 
 
@@ -90,7 +90,7 @@ class TestUpdateProject:
         result = await update_project(
             project_id=PROJECT_1,
             update_data={"name": "New Name"},
-            repositories={'metadata_repository': lambda: metadata_repository},
+            repositories={"metadata_repository": lambda: metadata_repository},
         )
 
         match result:

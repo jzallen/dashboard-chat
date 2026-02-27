@@ -1,17 +1,17 @@
 """Project use cases package."""
 
-from .list_projects import list_projects
-from .get_project import get_project
 from .create_project import create_project
-from .update_project import update_project
 from .delete_project import delete_project
 from .export_dbt_project import export_dbt_project
+from .get_project import get_project
+from .list_projects import list_projects
+from .update_project import update_project
 
 __all__ = [
-    "list_projects",
-    "get_project",
     "create_project",
-    "update_project",
     "delete_project",
     "export_dbt_project",
+    "get_project",
+    "list_projects",
+    "update_project",
 ]

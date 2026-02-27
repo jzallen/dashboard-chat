@@ -4,17 +4,17 @@ Note: The authoritative Dataset is the domain model in app/models/.
 This is just for database persistence.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Computed, DateTime, ForeignKey, Integer, JSON, String, Text, text
+from sqlalchemy import JSON, Computed, DateTime, ForeignKey, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...database import Base
 
 if TYPE_CHECKING:
-    from .transform_record import TransformRecord
     from .project_record import ProjectRecord
+    from .transform_record import TransformRecord
 
 
 class DatasetRecord(Base):
@@ -60,11 +60,9 @@ class DatasetRecord(Base):
     # Format: { "col_name": { "type": "text", "sample_values": [...], "unique_count": N, ... } }
     column_profiles: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
     )
 
     # Relationships

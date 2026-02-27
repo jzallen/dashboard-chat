@@ -1,23 +1,25 @@
 import {
   createContext,
-  useContext,
-  useState,
-  useRef,
-  useCallback,
-  useEffect,
-  type ReactNode,
-  type FormEvent,
   type Dispatch,
-  type SetStateAction,
+  type FormEvent,
+  type ReactNode,
   type RefObject,
+  type SetStateAction,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
-import type { ToolCall } from "@/table-tools";
+
 import type { Dataset } from "@/api";
 import { createSession, logTurn } from "@/api";
-import { getAuthHeaders, ensureFreshToken, hardLogout, EXPIRES_AT_KEY, TOKEN_KEY } from "@/api/fetchUtils";
+import { ensureFreshToken, EXPIRES_AT_KEY, getAuthHeaders, hardLogout } from "@/api/fetchUtils";
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
-import type { Message, TableSchema, SSEMessage } from "../types";
+import type { ToolCall } from "@/table-tools";
+
 import { CHAT_URL } from "../data/config";
+import type { Message, SSEMessage,TableSchema } from "../types";
 
 export interface ToolHandler {
   executeToolCall: (toolCall: ToolCall) => string | Promise<string>;
@@ -44,6 +46,7 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useChatContext(): ChatContextValue {
   const ctx = useContext(ChatContext);
   if (!ctx) {

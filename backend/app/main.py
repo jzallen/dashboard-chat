@@ -5,14 +5,22 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from .config import get_settings
-from .database import init_db, close_db, async_session
-from .auth.middleware import AuthMiddleware
-from .repositories import set_session
-from .routers import datasets_router, uploads_router, projects_router, transforms_router, auth_router, organizations_router, sql_access_router
-from .use_cases.sql_access.provisioner import set_app_provisioner, set_app_pgbouncer_provisioner
 from returns.result import Failure
+
+from .auth.middleware import AuthMiddleware
+from .config import get_settings
+from .database import async_session, close_db, init_db
+from .repositories import set_session
+from .routers import (
+    auth_router,
+    datasets_router,
+    organizations_router,
+    projects_router,
+    sql_access_router,
+    transforms_router,
+    uploads_router,
+)
+from .use_cases.sql_access.provisioner import set_app_pgbouncer_provisioner, set_app_provisioner
 from .use_cases.sql_access.reconcile_sql_access import reconcile_sql_access
 
 logger = logging.getLogger(__name__)
@@ -24,6 +32,7 @@ def _create_provisioners():
     """Create the environment provisioners based on config."""
     if settings.environment_provisioner == "mock":
         from .use_cases.sql_access.provisioner import MockEnvironmentProvisioner, MockPgBouncerProvisioner
+
         return MockEnvironmentProvisioner(), MockPgBouncerProvisioner()
 
     from .use_cases.sql_access.docker_provisioner import DockerPgDuckDbProvisioner
@@ -69,9 +78,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    if hasattr(pgbouncer_provisioner, 'close'):
+    if hasattr(pgbouncer_provisioner, "close"):
         await pgbouncer_provisioner.close()
-    if hasattr(provisioner, 'close'):
+    if hasattr(provisioner, "close"):
         await provisioner.close()
     await close_db()
 

@@ -4,10 +4,9 @@ import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.use_cases.organization import create_organization
-from app.repositories import set_session
 from app.auth.context import set_auth_user
-from app.auth.types import AuthUser
+from app.repositories import set_session
+from app.use_cases.organization import create_organization
 
 from .conftest import TEST_USER, TEST_USER_WITH_ORG
 
@@ -41,10 +40,14 @@ class TestCreateOrganization:
                 org_id = data["org_id"]
                 # Verify a project was created for this org
                 from sqlalchemy import select
+
                 from app.repositories.metadata import ProjectRecord
-                projects = (await db_session.execute(
-                    select(ProjectRecord).where(ProjectRecord.org_id == org_id)
-                )).scalars().all()
+
+                projects = (
+                    (await db_session.execute(select(ProjectRecord).where(ProjectRecord.org_id == org_id)))
+                    .scalars()
+                    .all()
+                )
                 assert len(projects) == 1
                 assert projects[0].name == "My First Project"
                 assert projects[0].created_by == TEST_USER.id
@@ -77,10 +80,12 @@ class TestCreateOrganization:
                 assert len(org_id) > 0
                 # Verify the org exists in DB
                 from sqlalchemy import select
+
                 from app.repositories.metadata import OrganizationRecord
-                org = (await db_session.execute(
-                    select(OrganizationRecord).where(OrganizationRecord.id == org_id)
-                )).scalar_one_or_none()
+
+                org = (
+                    await db_session.execute(select(OrganizationRecord).where(OrganizationRecord.id == org_id))
+                ).scalar_one_or_none()
                 assert org is not None
                 assert org.name == "Test Org"
             case Failure(error):

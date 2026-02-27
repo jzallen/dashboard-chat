@@ -4,10 +4,10 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import RestrictedSession
+from app.repositories.exceptions import ExternalAccessRepositoryError
 from app.repositories.external_access import ExternalAccessRepository
 from app.repositories.metadata import ProjectRecord
-
-from tests.uuidv7_fixtures import PROJECT_1, ORG_1
+from tests.uuidv7_fixtures import ORG_1, PROJECT_1
 
 
 @pytest.fixture
@@ -26,7 +26,6 @@ async def repo(db_session: AsyncSession):
 
 
 class TestExternalAccessRepository:
-
     async def test_create_returns_dict_with_all_fields(self, repo):
         result = await repo.create(
             project_id=PROJECT_1,
@@ -91,9 +90,12 @@ class TestExternalAccessRepository:
             pg_password_hash="$2b$12$oldhash",
         )
 
-        result = await repo.update(PROJECT_1, {
-            "pg_role": "reader_updated_",
-        })
+        result = await repo.update(
+            PROJECT_1,
+            {
+                "pg_role": "reader_updated_",
+            },
+        )
 
         assert result is not None
         assert result["pg_role"] == "reader_updated_"
@@ -134,7 +136,7 @@ class TestExternalAccessRepository:
             pg_password_hash="$2b$12$hash1",
         )
 
-        with pytest.raises(Exception):
+        with pytest.raises(ExternalAccessRepositoryError):
             await repo.create(
                 project_id=PROJECT_1,
                 org_id=ORG_1,

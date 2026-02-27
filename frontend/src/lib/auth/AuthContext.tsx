@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import type { AuthUser, AuthState } from "./types";
-import { post, get, API_BASE_URL } from "../api/client";
-import { TOKEN_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY, ACTIVITY_KEY, ensureFreshToken } from "../api/fetchUtils";
+import { createContext, type ReactNode,useCallback, useContext, useEffect, useState } from "react";
+
+import { API_BASE_URL,get, post } from "../api/client";
+import { ACTIVITY_KEY, ensureFreshToken,EXPIRES_AT_KEY, REFRESH_TOKEN_KEY, TOKEN_KEY } from "../api/fetchUtils";
 import { ActivityCheckModal } from "../ui/components/ActivityCheckModal";
 import { ActivityDebugBadge } from "../ui/components/ActivityDebugBadge";
+import type { AuthState,AuthUser } from "./types";
 
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "workos";
 const USER_KEY = "auth_user";
@@ -248,6 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

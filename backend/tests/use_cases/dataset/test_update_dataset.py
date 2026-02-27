@@ -1,16 +1,14 @@
-
 import pytest
 from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.use_cases.dataset import update_dataset
-from app.repositories import set_session
 from app.models.dataset import Dataset
 from app.models.transform import Transform
+from app.repositories import set_session
 from app.types import QueryBuilderJSON
-from tests.uuidv7_fixtures import PROJECT_1, DATASET_1, TRANSFORM_1
-
+from app.use_cases.dataset import update_dataset
+from tests.uuidv7_fixtures import DATASET_1, PROJECT_1, TRANSFORM_1
 
 
 class TestUpdateDataset:
@@ -32,16 +30,18 @@ class TestUpdateDataset:
                     project_id=PROJECT_1,
                     name="Updated Dataset Name",
                     schema_config={"fields": {"col1": {"type": "text"}}},
-                    transforms=[Transform(
-                        id=TRANSFORM_1,
-                        name="Filter Active",
-                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
-                        condition_sql="col1 = 'active'",
-                        description="Filter for active records",
-                        status='enabled',
-                        transform_type='filter',
-                        created_at=dataset.transforms[0].created_at,
-                    )],
+                    transforms=[
+                        Transform(
+                            id=TRANSFORM_1,
+                            name="Filter Active",
+                            condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                            condition_sql="col1 = 'active'",
+                            description="Filter for active records",
+                            status="enabled",
+                            transform_type="filter",
+                            created_at=dataset.transforms[0].created_at,
+                        )
+                    ],
                 )
                 assert dataset == expected
             case Failure(error):
@@ -64,16 +64,18 @@ class TestUpdateDataset:
                     name="Fully Updated Dataset",
                     description="New description",
                     schema_config={"fields": {"col1": {"type": "text"}}},
-                    transforms=[Transform(
-                        id=TRANSFORM_1,
-                        name="Filter Active",
-                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
-                        condition_sql="col1 = 'active'",
-                        description="Filter for active records",
-                        status='enabled',
-                        transform_type='filter',
-                        created_at=dataset.transforms[0].created_at,
-                    )],
+                    transforms=[
+                        Transform(
+                            id=TRANSFORM_1,
+                            name="Filter Active",
+                            condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                            condition_sql="col1 = 'active'",
+                            description="Filter for active records",
+                            status="enabled",
+                            transform_type="filter",
+                            created_at=dataset.transforms[0].created_at,
+                        )
+                    ],
                 )
                 assert dataset == expected
             case Failure(error):
@@ -105,7 +107,7 @@ class TestUpdateDataset:
         result = await update_dataset(
             dataset_id=DATASET_1,
             update_dict={"name": "New Name"},
-            repositories={'metadata_repository': FailingMetadataRepository},
+            repositories={"metadata_repository": FailingMetadataRepository},
         )
 
         match result:

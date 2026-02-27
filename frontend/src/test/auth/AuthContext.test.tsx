@@ -4,7 +4,8 @@ vi.hoisted(() => {
   process.env.VITE_AUTH_MODE = "dev";
 });
 
-import { render, screen, act } from "@testing-library/react";
+import { act,render, screen } from "@testing-library/react";
+
 import { AuthProvider, useAuth } from "../../lib/auth";
 
 // Mock the API client

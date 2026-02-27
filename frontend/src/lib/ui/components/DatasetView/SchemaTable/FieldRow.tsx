@@ -1,4 +1,5 @@
 import type { FieldConfig } from "@/api";
+
 import styles from "./SchemaTable.module.css";
 
 interface FieldRowProps {

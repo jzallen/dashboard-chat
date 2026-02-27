@@ -1,13 +1,15 @@
 import { useCallback, useState } from "react";
-import { Outlet, useParams, useNavigate } from "react-router-dom";
-import { datasetToSparse, type Dataset } from "@/api";
+import { Outlet, useNavigate,useParams } from "react-router-dom";
+
+import { type Dataset,datasetToSparse } from "@/api";
+
 import { ChatProvider } from "../../context/ChatContext";
-import { QueryProvider } from "../../providers/QueryProvider";
+import { useOrgProjectsQuery,useOrgQuery } from "../../hooks/useOrgQuery";
 import { useProjectQuery, useUpdateProjectDatasetCache } from "../../hooks/useProjectQuery";
-import { useOrgQuery, useOrgProjectsQuery } from "../../hooks/useOrgQuery";
+import { QueryProvider } from "../../providers/QueryProvider";
 import { SideNav } from "../SideNav";
-import { ChatPanelConnected } from "./ChatPanelConnected";
 import styles from "./AppShell.module.css";
+import { ChatPanelConnected } from "./ChatPanelConnected";
 
 export interface AppShellContext {
   orgName: string | null;

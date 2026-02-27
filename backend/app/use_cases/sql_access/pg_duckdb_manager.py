@@ -69,7 +69,7 @@ def role_name(project_id: str) -> str:
 def generate_password() -> str:
     """Generate a cryptographically random password."""
     alphabet = string.ascii_letters + string.digits
-    return ''.join(secrets.choice(alphabet) for _ in range(PASSWORD_LENGTH))
+    return "".join(secrets.choice(alphabet) for _ in range(PASSWORD_LENGTH))
 
 
 def hash_password(password: str) -> str:
@@ -164,9 +164,7 @@ async def ensure_duckdb_role_configured(env: ProjectEnvironment) -> None:
             f"  END IF;"
             f" END $$"
         )
-        await conn.execute(
-            f"ALTER SYSTEM SET duckdb.postgres_role = {_quote_literal(DUCKDB_READERS_GROUP)}"
-        )
+        await conn.execute(f"ALTER SYSTEM SET duckdb.postgres_role = {_quote_literal(DUCKDB_READERS_GROUP)}")
         await conn.execute("SELECT pg_reload_conf()")
         logger.info("Ensured duckdb_readers role and GUC configured for environment %s", env.environment_id)
     finally:
@@ -191,12 +189,12 @@ async def create_project_schema(env: ProjectEnvironment, project_id: str, passwo
 
     conn = await _get_connection(env)
     try:
-        await conn.execute(f'CREATE SCHEMA IF NOT EXISTS {_quote_ident(schema)}')
+        await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {_quote_ident(schema)}")
         await conn.execute(build_create_role_sql(role, password))
-        await conn.execute(f'GRANT USAGE ON SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}')
-        await conn.execute(f'GRANT {_quote_ident(DUCKDB_READERS_GROUP)} TO {_quote_ident(role)}')
-        await conn.execute(f'REVOKE ALL ON SCHEMA public FROM {_quote_ident(role)}')
-        await conn.execute(f'ALTER ROLE {_quote_ident(role)} SET search_path TO {_quote_ident(schema)}')
+        await conn.execute(f"GRANT USAGE ON SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}")
+        await conn.execute(f"GRANT {_quote_ident(DUCKDB_READERS_GROUP)} TO {_quote_ident(role)}")
+        await conn.execute(f"REVOKE ALL ON SCHEMA public FROM {_quote_ident(role)}")
+        await conn.execute(f"ALTER ROLE {_quote_ident(role)} SET search_path TO {_quote_ident(schema)}")
         await conn.execute(f"ALTER ROLE {_quote_ident(role)} SET idle_session_timeout = '5min'")
         logger.info("Created schema %s and role %s for project %s", schema, role, project_id)
     finally:
@@ -220,8 +218,8 @@ async def drop_project_schema(env: ProjectEnvironment, project_id: str) -> None:
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1",
             role,
         )
-        await conn.execute(f'DROP SCHEMA IF EXISTS {_quote_ident(schema)} CASCADE')
-        await conn.execute(f'DROP ROLE IF EXISTS {_quote_ident(role)}')
+        await conn.execute(f"DROP SCHEMA IF EXISTS {_quote_ident(schema)} CASCADE")
+        await conn.execute(f"DROP ROLE IF EXISTS {_quote_ident(role)}")
         logger.info("Dropped schema %s and role %s for project %s", schema, role, project_id)
     finally:
         await conn.close()
@@ -273,10 +271,8 @@ async def grant_schema_usage(env: ProjectEnvironment, project_id: str) -> None:
 
     conn = await _get_connection(env)
     try:
-        await conn.execute(f'GRANT USAGE ON SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}')
-        await conn.execute(
-            f'GRANT SELECT ON ALL TABLES IN SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}'
-        )
+        await conn.execute(f"GRANT USAGE ON SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}")
+        await conn.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}")
         logger.info("Granted schema usage to role %s on schema %s", role, schema)
     finally:
         await conn.close()

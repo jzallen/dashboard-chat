@@ -1,4 +1,5 @@
 import type { Redis } from "ioredis";
+
 import type { SessionMetadata, TurnRecord } from "./types";
 
 const TTL_SECONDS = 2 * 60 * 60; // 2 hours

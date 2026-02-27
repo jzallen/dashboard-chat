@@ -3,14 +3,14 @@
 Tests register macros on a real DuckDB connection and verify edge case behavior.
 """
 
-import pytest
 import ibis
+import pytest
 
 from app.utils.sql_functions import (
-    register_duckdb_macros,
-    title_case,
-    snake_case,
     kebab_case,
+    register_duckdb_macros,
+    snake_case,
+    title_case,
 )
 
 

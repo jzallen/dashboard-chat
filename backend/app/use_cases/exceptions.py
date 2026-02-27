@@ -107,9 +107,7 @@ class ColumnTypeMismatch(DomainException):
     _status_code = 422
 
     def __init__(self, column: str, column_type: str, operation: str):
-        super().__init__(
-            f"Operation '{operation}' requires a text column, but '{column}' is of type '{column_type}'"
-        )
+        super().__init__(f"Operation '{operation}' requires a text column, but '{column}' is of type '{column_type}'")
 
 
 class PreviewNotSupported(DomainException):
@@ -120,9 +118,7 @@ class PreviewNotSupported(DomainException):
     _status_code = 400
 
     def __init__(self, operation: str):
-        super().__init__(
-            f"Operation '{operation}' does not support preview"
-        )
+        super().__init__(f"Operation '{operation}' does not support preview")
 
 
 class SqlAccessAlreadyEnabled(DomainException):
@@ -167,9 +163,7 @@ class CredentialCooldown(DomainException):
 
     def __init__(self, seconds_remaining: int):
         self.retry_after = seconds_remaining
-        super().__init__(
-            f"Credential regeneration is rate-limited. Try again in {seconds_remaining} seconds."
-        )
+        super().__init__(f"Credential regeneration is rate-limited. Try again in {seconds_remaining} seconds.")
 
 
 class EnvironmentNotRunning(DomainException):
@@ -192,5 +186,3 @@ class EnvironmentNotStopped(DomainException):
 
     def __init__(self, project_id: str):
         super().__init__(f"Environment for project '{project_id}' is not stopped")
-
-

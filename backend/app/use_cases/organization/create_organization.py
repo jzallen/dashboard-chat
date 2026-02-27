@@ -7,8 +7,8 @@ import httpx
 from app.auth import get_auth_user
 from app.auth.exceptions import AuthorizationError
 from app.config import get_settings
-from app.use_cases import handle_returns
 from app.repositories import with_repositories
+from app.use_cases import handle_returns
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 async def create_organization(
     name: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> dict:
     """Create a new organization and a default project.
 
@@ -36,7 +36,7 @@ async def create_organization(
     if user.org_id is not None:
         raise AuthorizationError("User already belongs to an organization")
 
-    metadata_repo = repositories['metadata_repository']
+    metadata_repo = repositories["metadata_repository"]
     settings = get_settings()
 
     if settings.auth_mode == "workos":

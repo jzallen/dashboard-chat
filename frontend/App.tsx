@@ -1,14 +1,15 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Navigate,Route, Routes } from "react-router-dom";
+
 import { AuthProvider, useAuth } from "./src/lib/auth";
 import { AppShell } from "./src/lib/ui/components/AppShell";
-import { ProjectView } from "./src/lib/ui/components/DatasetView";
-import { OrgView } from "./src/lib/ui/components/OrgView";
-import { CreateOrg } from "./src/lib/ui/components/CreateOrg";
-import { SessionList } from "./src/lib/ui/components/SessionViewer/SessionList";
-import { SessionViewer } from "./src/lib/ui/components/SessionViewer";
-import { LoginPage } from "./src/lib/ui/components/LoginPage";
 import { AuthCallback } from "./src/lib/ui/components/AuthCallback";
+import { CreateOrg } from "./src/lib/ui/components/CreateOrg";
+import { ProjectView } from "./src/lib/ui/components/DatasetView";
+import { LoginPage } from "./src/lib/ui/components/LoginPage";
 import { LogoutPage } from "./src/lib/ui/components/LogoutPage";
+import { OrgView } from "./src/lib/ui/components/OrgView";
+import { SessionViewer } from "./src/lib/ui/components/SessionViewer";
+import { SessionList } from "./src/lib/ui/components/SessionViewer/SessionList";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { isAuthenticated, isLoading } = useAuth();

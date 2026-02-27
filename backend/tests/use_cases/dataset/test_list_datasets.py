@@ -1,17 +1,17 @@
-import pytest
 from unittest.mock import Mock
-from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.use_cases.dataset import list_datasets
-from app.repositories import set_session
-from app.repositories.metadata import DatasetRecord, ProjectRecord
+import pytest
+from returns.result import Failure, Success
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.dataset import Dataset
 from app.models.transform import Transform
+from app.repositories import set_session
+from app.repositories.metadata import DatasetRecord, ProjectRecord
 from app.types import QueryBuilderJSON
-from tests.uuidv7_fixtures import PROJECT_1, PROJECT_2, DATASET_1, DATASET_2, DATASET_3, TRANSFORM_1, PROJECT_EMPTY
-
+from app.use_cases.dataset import list_datasets
+from tests.uuidv7_fixtures import DATASET_1, DATASET_2, DATASET_3, PROJECT_1, PROJECT_2, PROJECT_EMPTY, TRANSFORM_1
 
 
 class TestListDatasets:
@@ -41,16 +41,18 @@ class TestListDatasets:
                     project_id=PROJECT_1,
                     name="Dataset One",
                     schema_config={"fields": {"col1": {"type": "text"}}},
-                    transforms=[Transform(
-                        id=TRANSFORM_1,
-                        name="Filter Active",
-                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
-                        condition_sql="col1 = 'active'",
-                        description="Filter for active records",
-                        status='enabled',
-                        transform_type='filter',
-                        created_at=datasets[1].transforms[0].created_at,
-                    )],
+                    transforms=[
+                        Transform(
+                            id=TRANSFORM_1,
+                            name="Filter Active",
+                            condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                            condition_sql="col1 = 'active'",
+                            description="Filter for active records",
+                            status="enabled",
+                            transform_type="filter",
+                            created_at=datasets[1].transforms[0].created_at,
+                        )
+                    ],
                 )
                 assert datasets[1] == expected_second
             case Failure(error):
@@ -140,7 +142,7 @@ class TestListDatasets:
         metadata_repository = Mock(side_effect=SQLAlchemyError("Database connection lost"))
         result = await list_datasets(
             project_id=PROJECT_1,
-            repositories={'metadata_repository': metadata_repository},
+            repositories={"metadata_repository": metadata_repository},
         )
 
         match result:

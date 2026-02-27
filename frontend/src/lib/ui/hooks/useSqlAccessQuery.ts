@@ -1,15 +1,16 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import {
-  getSqlAccess,
-  enableSqlAccess,
   disableSqlAccess,
-  syncSqlAccess,
+  enableSqlAccess,
+  getEnvironmentStatus,
+  getSqlAccess,
   regenerateSqlCredentials,
+  restartEnvironment,
+  type SqlAccessStatus,
   startEnvironment,
   stopEnvironment,
-  restartEnvironment,
-  getEnvironmentStatus,
-  type SqlAccessStatus,
+  syncSqlAccess,
 } from "@/api";
 
 export const sqlAccessKeys = {

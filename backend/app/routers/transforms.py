@@ -5,8 +5,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers import HTTPController
+
 from .deps import use_db_context
-from .schemas import TransformCreateBatch, TransformBatchUpdate, PreviewRequest
+from .schemas import PreviewRequest, TransformBatchUpdate, TransformCreateBatch
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}/transforms", tags=["transforms"])
 
@@ -42,7 +43,5 @@ async def preview_transform(
     _: AsyncSession = Depends(use_db_context),
 ):
     """Preview a cleaning transform without persisting anything."""
-    body, status_code = await HTTPController.preview_transform(
-        dataset_id, data.target_column, data.expression_config
-    )
+    body, status_code = await HTTPController.preview_transform(dataset_id, data.target_column, data.expression_config)
     return JSONResponse(content=body, status_code=status_code)

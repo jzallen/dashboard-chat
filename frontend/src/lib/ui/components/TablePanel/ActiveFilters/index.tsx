@@ -1,8 +1,9 @@
 import type { ColumnFiltersState } from "@tanstack/react-table";
 import type { Dispatch, SetStateAction } from "react";
-import { FilterBadge } from "./FilterBadge";
+
 import { toConditions } from "../../../hooks/filterUtils";
 import styles from "./ActiveFilters.module.css";
+import { FilterBadge } from "./FilterBadge";
 
 interface ActiveFiltersProps {
   columnFilters: ColumnFiltersState;

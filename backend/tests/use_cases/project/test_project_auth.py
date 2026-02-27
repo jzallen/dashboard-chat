@@ -9,7 +9,6 @@ from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
 from app.use_cases.project import create_project, get_project, list_projects
-
 from tests.uuidv7_fixtures import (
     ORG_1,
     ORG_OTHER,

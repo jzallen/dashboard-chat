@@ -1,13 +1,14 @@
 """Tests for get_project use case."""
 
-import pytest
 from unittest.mock import Mock
-from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.use_cases.project import get_project
+import pytest
+from returns.result import Failure, Success
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.repositories import set_session
+from app.use_cases.project import get_project
 from tests.uuidv7_fixtures import DATASET_1, DATASET_2, ORG_1, PROJECT_1
 
 
@@ -96,7 +97,7 @@ class TestGetProject:
 
         result = await get_project(
             project_id=PROJECT_1,
-            repositories={'metadata_repository': lambda: metadata_repository},
+            repositories={"metadata_repository": lambda: metadata_repository},
         )
 
         match result:

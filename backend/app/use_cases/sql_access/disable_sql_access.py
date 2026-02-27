@@ -11,8 +11,8 @@ from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.sql_access.provisioner import (
-    get_app_provisioner,
     get_app_pgbouncer_provisioner,
+    get_app_provisioner,
 )
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 async def disable_sql_access(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Disable external SQL access for a project.
 
@@ -39,8 +39,8 @@ async def disable_sql_access(
         AuthorizationError: If user's org does not own the project.
         SqlAccessNotEnabled: If SQL access is not currently enabled.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=False)

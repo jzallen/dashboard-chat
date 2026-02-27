@@ -5,8 +5,8 @@
  * Includes SQL injection prevention through proper escaping.
  */
 
-import type { RAQBTree, RAQBGroup, RAQBRule, RAQBOperator, RAQBValueType } from "./types";
-import { isRAQBRule, isRAQBGroup } from "./types";
+import type { RAQBGroup, RAQBOperator, RAQBRule, RAQBTree, RAQBValueType } from "./types";
+import { isRAQBGroup,isRAQBRule } from "./types";
 
 /**
  * Options for SQL generation

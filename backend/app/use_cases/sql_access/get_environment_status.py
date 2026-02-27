@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 async def get_environment_status(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Get detailed status of all environment components.
 
@@ -31,8 +31,8 @@ async def get_environment_status(
         AuthorizationError: If user's org does not own the project.
         SqlAccessNotEnabled: If SQL access is not enabled.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=False)

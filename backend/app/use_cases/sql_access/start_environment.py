@@ -8,6 +8,7 @@ from returns.result import Result
 from app.auth import get_auth_user
 from app.auth.exceptions import AuthorizationError
 from app.config import get_settings
+from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import (
@@ -15,21 +16,19 @@ from app.use_cases.exceptions import (
     ProjectNotFound,
     SqlAccessNotEnabled,
 )
+from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
+from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
 from app.use_cases.sql_access.pg_duckdb_manager import (
     create_project_schema,
     execute_bootstrap,
     grant_schema_usage,
     regenerate_credentials,
-    role_name,
 )
 from app.use_cases.sql_access.provisioner import (
     StorageConfig,
-    get_app_provisioner,
     get_app_pgbouncer_provisioner,
+    get_app_provisioner,
 )
-from app.models.dataset import Dataset
-from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
-from app.use_cases.project.dbt.naming import to_snake_case, deduplicate_names
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -42,7 +41,7 @@ logger = logging.getLogger(__name__)
 async def start_environment(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Start a stopped SQL access environment.
 
@@ -56,8 +55,8 @@ async def start_environment(
         SqlAccessNotEnabled: If SQL access is not enabled.
         EnvironmentNotStopped: If environment is not in stopped state.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=True)
@@ -77,10 +76,13 @@ async def start_environment(
         raise EnvironmentNotStopped(project_id)
 
     # Set provisioning status
-    await external_access_repo.update(project_id, {
-        "environment_status": "provisioning",
-        "status_message": "Starting environment...",
-    })
+    await external_access_repo.update(
+        project_id,
+        {
+            "environment_status": "provisioning",
+            "status_message": "Starting environment...",
+        },
+    )
 
     settings = get_settings()
     storage_config = StorageConfig(
@@ -114,7 +116,7 @@ async def start_environment(
         if full_datasets:
             pg_schema = existing["pg_schema"]
             snake_names = deduplicate_names([to_snake_case(ds.name) for ds in full_datasets])
-            dataset_pairs = list(zip(snake_names, full_datasets))
+            dataset_pairs = list(zip(snake_names, full_datasets, strict=False))
             bootstrap_sql = generate_bootstrap_sql(pg_schema, dataset_pairs, settings.storage_bucket)
             await execute_bootstrap(env, project_id, bootstrap_sql)
             await grant_schema_usage(env, project_id)
@@ -162,8 +164,11 @@ async def start_environment(
             e,
             exc_info=True,
         )
-        await external_access_repo.update(project_id, {
-            "environment_status": "error",
-            "status_message": str(e),
-        })
+        await external_access_repo.update(
+            project_id,
+            {
+                "environment_status": "error",
+                "status_message": str(e),
+            },
+        )
         raise

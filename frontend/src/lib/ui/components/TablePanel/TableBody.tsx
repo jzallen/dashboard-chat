@@ -1,5 +1,7 @@
 import { flexRender, type Row } from "@tanstack/react-table";
+
 import type { TableRow } from "@/table-tools";
+
 import styles from "./TablePanel.module.css";
 
 interface TableBodyProps {

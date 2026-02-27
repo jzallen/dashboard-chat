@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.auth import get_auth_provider, get_auth_user, enrich_org_id, ensure_org_provisioned, AuthenticationError
+from app.auth import AuthenticationError, enrich_org_id, ensure_org_provisioned, get_auth_provider, get_auth_user
 from app.auth.rate_limiter import refresh_limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -23,6 +23,7 @@ async def login(redirect_uri: str | None = None, organization_id: str | None = N
     """Get login URL to redirect user to."""
     provider = get_auth_provider()
     from app.config import get_settings
+
     uri = redirect_uri or get_settings().workos_redirect_uri
     url, state = await provider.get_login_url(uri, organization_id=organization_id)
     return {"url": url, "state": state}
@@ -65,7 +66,7 @@ async def refresh(request: Request, body: RefreshRequest):
 
     provider = get_auth_provider()
     try:
-        user, access_token, new_refresh_token, expires_in = await provider.refresh_access_token(body.refresh_token)
+        _user, access_token, new_refresh_token, expires_in = await provider.refresh_access_token(body.refresh_token)
     except AuthenticationError:
         return JSONResponse(
             {"detail": "Refresh token invalid or expired"},

@@ -1,7 +1,9 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
-import { vi, type Mock } from "vitest";
+import { fireEvent,render, screen } from "@testing-library/react";
+import { type Mock,vi } from "vitest";
+
 import type { Dataset } from "@/api";
+
+import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
 
 function TestConsumer() {
   const { isActive, input, setInput, handleSubmit, registerToolHandler } = useChatContext();

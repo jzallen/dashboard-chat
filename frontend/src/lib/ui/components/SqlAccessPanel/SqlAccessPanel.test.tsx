@@ -1,8 +1,10 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach,describe, expect, it, vi } from "vitest";
+
+import type { EnvironmentStatusResponse,SqlAccessStatus } from "@/api";
+
 import { SqlAccessPanel } from "./index";
-import type { SqlAccessStatus, EnvironmentStatusResponse } from "@/api";
 
 // Mock the API module
 const mockGetSqlAccess = vi.fn<(id: string) => Promise<SqlAccessStatus>>();

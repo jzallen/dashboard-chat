@@ -6,9 +6,10 @@
  */
 
 import type { ColumnFiltersState } from "@tanstack/react-table";
-import type { RAQBTree, RAQBGroup, RAQBRule, RAQBOperator, RAQBValueType } from "./types";
-import { isRAQBRule, isRAQBGroup } from "./types";
+
 import { mapOperator, type TanStackOperator } from "./operators";
+import type { RAQBGroup, RAQBOperator, RAQBRule, RAQBTree, RAQBValueType } from "./types";
+import { isRAQBGroup,isRAQBRule } from "./types";
 
 /**
  * TanStack filter value structure used by customFilterFn
@@ -103,7 +104,7 @@ function processGroup(
 function processGroupExtended(
   group: RAQBGroup,
   filters: ExtendedColumnFilter[],
-  parentConjunction: "AND" | "OR"
+  _parentConjunction: "AND" | "OR"
 ): void {
   if (!group.children1) {
     return;

@@ -20,7 +20,7 @@ async def get_project(
     project_id: str,
     *,
     include_datasets: bool = True,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Get a single project by ID with optional dataset references.
 
@@ -35,7 +35,7 @@ async def get_project(
         ProjectNotFound: If project with given ID does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories['metadata_repository']
+    metadata_repo = repositories["metadata_repository"]
     project = await metadata_repo.get_project(project_id, include_datasets=include_datasets)
 
     if project is None:

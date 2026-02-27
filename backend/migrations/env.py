@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.database import Base
 
 # Import all ORM records to ensure they're registered with Base.metadata
-from app.repositories import *  # noqa: F401, F403
+from app.repositories import *
 
 
 # Alembic Config object

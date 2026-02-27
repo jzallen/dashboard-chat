@@ -1,13 +1,13 @@
 """Tests for auth route endpoints (callback, refresh)."""
 
 import time
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from fastapi import FastAPI
 
-from app.auth.dev_provider import DevAuthProvider, DEV_USER, DEV_TOKEN
+from app.auth.dev_provider import DEV_TOKEN, DEV_USER, DevAuthProvider
 from app.auth.exceptions import AuthenticationError
 from app.auth.rate_limiter import InMemoryRateLimiter
 from app.routers.auth import router
@@ -38,14 +38,17 @@ def _use_dev_provider():
 @pytest.fixture(autouse=True)
 def _stub_org_helpers():
     """Stub out enrich_org_id and ensure_org_provisioned (they need DB)."""
+
     async def passthrough(user):
         return user
 
     async def noop(user):
         pass
 
-    with patch("app.routers.auth.enrich_org_id", side_effect=passthrough), \
-         patch("app.routers.auth.ensure_org_provisioned", side_effect=noop):
+    with (
+        patch("app.routers.auth.enrich_org_id", side_effect=passthrough),
+        patch("app.routers.auth.ensure_org_provisioned", side_effect=noop),
+    ):
         yield
 
 
@@ -74,9 +77,7 @@ class TestCallbackResponse:
     async def test_callback_auth_error_returns_401(self, client):
         """callback should return 401 when provider raises AuthenticationError."""
         failing_provider = MagicMock()
-        failing_provider.handle_callback = AsyncMock(
-            side_effect=AuthenticationError("bad code")
-        )
+        failing_provider.handle_callback = AsyncMock(side_effect=AuthenticationError("bad code"))
         with patch("app.routers.auth.get_auth_provider", return_value=failing_provider):
             resp = await client.post("/api/auth/callback", json={"code": "bad"})
         assert resp.status_code == 401

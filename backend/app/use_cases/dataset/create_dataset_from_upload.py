@@ -4,19 +4,18 @@ import json
 from typing import TYPE_CHECKING
 
 import pandas as pd
-
 from returns.result import Result
 
+from app.models.dataset import Dataset
+from app.repositories import with_repositories
+from app.repositories.outbox import OutboxRepository
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import (
     ProjectNotFound,
     UploadNotFound,
 )
-from app.repositories import with_repositories
-from app.repositories.outbox import OutboxRepository
-from app.models.dataset import Dataset
-from app.utils.schema_inference import infer_schema_from_dataframe
 from app.utils.column_profiler import compute_column_profiles
+from app.utils.schema_inference import infer_schema_from_dataframe
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -74,7 +73,7 @@ async def create_dataset_from_upload(
     schema_config = infer_schema_from_dataframe(df)
     column_profiles = compute_column_profiles(df, schema_config)
 
-    preview_rows = json.loads(df.head(10).to_json(orient='records', date_format='iso'))
+    preview_rows = json.loads(df.head(10).to_json(orient="records", date_format="iso"))
 
     dataset_dict = await metadata_repo.create_dataset(
         project_id=file_received_event.project_id,

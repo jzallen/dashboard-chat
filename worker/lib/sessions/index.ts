@@ -1,11 +1,12 @@
-import Redis from "ioredis";
 import { S3Client } from "@aws-sdk/client-s3";
+import { randomUUID } from "crypto";
+import Redis from "ioredis";
+
 import { createS3Client, type S3Config } from "../s3";
+import { SessionFlusher } from "./flusher";
 import { RedisSessionStore } from "./redis-store";
 import { S3SessionStore } from "./s3-store";
-import { SessionFlusher } from "./flusher";
 import type { ChatSession, ChatTurn, LogTurnRequest, TurnRecord } from "./types";
-import { randomUUID } from "crypto";
 
 export interface SessionManagerConfig {
   redisUrl: string;
@@ -31,15 +32,15 @@ export class SessionManager {
     this.flusher = new SessionFlusher(this.redisStore, this.s3Store);
     this.flusher.start();
 
-    console.log("[sessions] Session manager started");
+    console.debug("[sessions] Session manager started");
   }
 
   async stop(): Promise<void> {
-    console.log("[sessions] Shutting down — flushing all active sessions...");
+    console.debug("[sessions] Shutting down — flushing all active sessions...");
     this.flusher.stop();
     await this.flusher.flushAll();
     this.redis.disconnect();
-    console.log("[sessions] Session manager stopped");
+    console.debug("[sessions] Session manager stopped");
   }
 
   async createSession(projectId: string, datasetId: string): Promise<ChatSession> {
@@ -146,4 +147,4 @@ export class SessionManager {
   }
 }
 
-export type { ChatSession, ChatTurn, LogTurnRequest, CreateSessionRequest } from "./types";
+export type { ChatSession, ChatTurn, CreateSessionRequest,LogTurnRequest } from "./types";

@@ -1,13 +1,14 @@
 // Chat Worker — Hono server with session management
 // Handles chat streaming (Groq SSE), session lifecycle (Redis + S3)
 
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { serve } from "@hono/node-server";
+
 import { createChatHandler } from "../shared/chat/index";
+import { authMiddleware } from "./lib/auth";
 import { SessionManager } from "./lib/sessions/index";
 import type { CreateSessionRequest, LogTurnRequest } from "./lib/sessions/types";
-import { authMiddleware } from "./lib/auth";
 
 const app = new Hono();
 
@@ -82,8 +83,8 @@ app.post("/sessions/:id/turns", async (c) => {
   try {
     const turn = await sessionManager.logTurn(sessionId, body);
     return c.json(turn, 201);
-  } catch (err: any) {
-    if (err.message?.includes("not found")) {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message?.includes("not found")) {
       return c.json({ error: err.message }, 404);
     }
     throw err;
@@ -112,12 +113,12 @@ async function start() {
   await sessionManager.start();
 
   serve({ fetch: app.fetch, port: PORT }, (info) => {
-    console.log(`[worker] Listening on http://localhost:${info.port}`);
+    console.debug(`[worker] Listening on http://localhost:${info.port}`);
   });
 }
 
 async function shutdown() {
-  console.log("[worker] Shutting down...");
+  console.debug("[worker] Shutting down...");
   await sessionManager.stop();
   process.exit(0);
 }

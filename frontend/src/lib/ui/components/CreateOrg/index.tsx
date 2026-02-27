@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useAuth } from "../../../auth";
+
 import { post } from "../../../api/client";
+import { useAuth } from "../../../auth";
 
 interface CreateOrgResponse {
   org_id: string;

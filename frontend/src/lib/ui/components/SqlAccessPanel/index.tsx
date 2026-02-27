@@ -1,15 +1,17 @@
-import { useState, useCallback } from "react";
+import { useCallback,useState } from "react";
+
+import type { SqlAccessStatus } from "@/api";
+
 import {
-  useSqlAccessQuery,
-  useEnableSqlAccess,
   useDisableSqlAccess,
-  useSyncSqlAccess,
+  useEnableSqlAccess,
   useRegenerateSqlCredentials,
+  useRestartEnvironment,
+  useSqlAccessQuery,
   useStartEnvironment,
   useStopEnvironment,
-  useRestartEnvironment,
+  useSyncSqlAccess,
 } from "../../hooks/useSqlAccessQuery";
-import type { SqlAccessStatus } from "@/api";
 import styles from "./SqlAccessPanel.module.css";
 
 interface SqlAccessPanelProps {

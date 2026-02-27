@@ -20,8 +20,8 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
 )
 from app.use_cases.sql_access.provisioner import (
     StorageConfig,
-    get_app_provisioner,
     get_app_pgbouncer_provisioner,
+    get_app_provisioner,
 )
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 @handle_returns
 async def reconcile_sql_access(
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Check all enabled environments and log warnings for unhealthy ones.
 
@@ -46,7 +46,7 @@ async def reconcile_sql_access(
     Returns a summary dict with counts of total, healthy, and degraded environments.
     """
     provisioner = get_app_provisioner()
-    external_access_repo = repositories['external_access_repository']
+    external_access_repo = repositories["external_access_repository"]
 
     # Build storage config for re-applying secrets on healthy environments
     settings = get_settings()
@@ -78,10 +78,13 @@ async def reconcile_sql_access(
                 project_id,
                 record.get("environment_id"),
             )
-            await external_access_repo.update(project_id, {
-                "environment_status": "degraded",
-                "status_message": "pg_duckdb health check failed",
-            })
+            await external_access_repo.update(
+                project_id,
+                {
+                    "environment_status": "degraded",
+                    "status_message": "pg_duckdb health check failed",
+                },
+            )
             degraded += 1
             continue
 
@@ -121,10 +124,7 @@ async def reconcile_sql_access(
                         stored_md5 = record_with_hash["pg_password_hash"] if record_with_hash else ""
 
                         # Recreate PgBouncer using stored md5 hash
-                        upstream_host = (
-                            (env.internal_host if env else None)
-                            or f"dashboard-pgduckdb-{project_id[:8]}"
-                        )
+                        upstream_host = (env.internal_host if env else None) or f"dashboard-pgduckdb-{project_id[:8]}"
                         new_container_id = await pgbouncer.recreate(
                             project_id=project_id,
                             proxy_port=record["environment_port"],
@@ -132,29 +132,38 @@ async def reconcile_sql_access(
                             upstream_host=upstream_host,
                             auth_user=record["pg_role"],
                         )
-                        await external_access_repo.update(project_id, {
-                            "proxy_container_id": new_container_id,
-                            "environment_status": "running",
-                            "status_message": None,
-                        })
+                        await external_access_repo.update(
+                            project_id,
+                            {
+                                "proxy_container_id": new_container_id,
+                                "environment_status": "running",
+                                "status_message": None,
+                            },
+                        )
                 except Exception:
                     logger.warning(
                         "PgBouncer reconciliation failed for project %s",
                         project_id,
                         exc_info=True,
                     )
-                    await external_access_repo.update(project_id, {
-                        "environment_status": "degraded",
-                        "status_message": "PgBouncer reconciliation failed",
-                    })
+                    await external_access_repo.update(
+                        project_id,
+                        {
+                            "environment_status": "degraded",
+                            "status_message": "PgBouncer reconciliation failed",
+                        },
+                    )
                     degraded += 1
                     continue
 
             # Update status to running if all checks pass
-            await external_access_repo.update(project_id, {
-                "environment_status": "running",
-                "status_message": None,
-            })
+            await external_access_repo.update(
+                project_id,
+                {
+                    "environment_status": "running",
+                    "status_message": None,
+                },
+            )
             healthy += 1
         else:
             logger.warning(
@@ -164,15 +173,20 @@ async def reconcile_sql_access(
                 record.get("environment_host"),
                 record.get("environment_port"),
             )
-            await external_access_repo.update(project_id, {
-                "environment_status": "degraded",
-                "status_message": "pg_duckdb environment not healthy",
-            })
+            await external_access_repo.update(
+                project_id,
+                {
+                    "environment_status": "degraded",
+                    "status_message": "pg_duckdb environment not healthy",
+                },
+            )
             degraded += 1
 
     logger.info(
         "SQL access reconciliation complete: %d total, %d healthy, %d degraded",
-        total, healthy, degraded,
+        total,
+        healthy,
+        degraded,
     )
 
     return {

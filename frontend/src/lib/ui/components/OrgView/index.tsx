@@ -1,7 +1,8 @@
 import { useNavigate, useOutletContext } from "react-router-dom";
+
 import type { AppShellContext } from "../AppShell";
-import { ProjectGrid } from "./ProjectGrid";
 import styles from "./OrgView.module.css";
+import { ProjectGrid } from "./ProjectGrid";
 
 export function OrgView() {
   const { projects } = useOutletContext<AppShellContext>();

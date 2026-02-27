@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { getSession, type ChatSession, type ChatTurn } from "@/api/sessions";
+import { Link,useParams } from "react-router-dom";
+
+import { type ChatSession, type ChatTurn,getSession } from "@/api/sessions";
+
 import styles from "./SessionViewer.module.css";
 
 function formatDate(iso: string) {

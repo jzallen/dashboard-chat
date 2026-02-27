@@ -2,9 +2,9 @@
  * Projects API
  */
 
-import { get, API_BASE_URL } from "./client";
-import { getAuthHeaders, withAuthRetry } from "./fetchUtils";
+import { API_BASE_URL,get } from "./client";
 import type { SchemaConfig } from "./datasets";
+import { getAuthHeaders, withAuthRetry } from "./fetchUtils";
 
 export interface DatasetSparse {
   id: string;

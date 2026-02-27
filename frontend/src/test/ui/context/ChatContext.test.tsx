@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
+
 import type { ToolHandler } from "../../../lib/ui/context/ChatContext";
+import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
 
 // Mock session API (fire-and-forget, not critical to chat flow)
 vi.mock("@/api", () => ({
@@ -124,6 +125,7 @@ describe("ChatProvider", () => {
   it("ignores submit with empty input", async () => {
     renderChat(defaultToolHandler);
 
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
@@ -142,6 +144,7 @@ describe("ChatProvider", () => {
 
     // Type and submit
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Hi" } });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
@@ -187,6 +190,7 @@ describe("ChatProvider", () => {
     renderChat(toolHandler);
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Filter col a" } });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
@@ -209,6 +213,7 @@ describe("ChatProvider", () => {
     renderChat(defaultToolHandler);
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
@@ -229,6 +234,7 @@ describe("ChatProvider", () => {
     renderChat(defaultToolHandler);
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Offline test" } });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
@@ -249,6 +255,7 @@ describe("ChatProvider", () => {
     renderChat(defaultToolHandler);
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Server error" } });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
@@ -267,6 +274,7 @@ describe("ChatProvider", () => {
     renderChat();
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "No handler" } });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
@@ -290,6 +298,7 @@ describe("ChatProvider", () => {
       renderChat(defaultToolHandler);
 
       fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      // eslint-disable-next-line testing-library/no-unnecessary-act
       await act(async () => {
         fireEvent.submit(screen.getByTestId("submit").closest("form")!);
       });
@@ -322,6 +331,7 @@ describe("ChatProvider", () => {
       renderChat(defaultToolHandler);
 
       fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      // eslint-disable-next-line testing-library/no-unnecessary-act
       await act(async () => {
         fireEvent.submit(screen.getByTestId("submit").closest("form")!);
       });
@@ -351,6 +361,7 @@ describe("ChatProvider", () => {
       renderChat(defaultToolHandler);
 
       fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      // eslint-disable-next-line testing-library/no-unnecessary-act
       await act(async () => {
         fireEvent.submit(screen.getByTestId("submit").closest("form")!);
       });

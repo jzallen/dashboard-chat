@@ -1,5 +1,5 @@
+import { getSystemPrompt,getToolDefinitions } from "./prompts";
 import type { Message, TableSchema, ToolDefinition } from "./types";
-import { getToolDefinitions, getSystemPrompt } from "./prompts";
 
 // ============================================================================
 // Types

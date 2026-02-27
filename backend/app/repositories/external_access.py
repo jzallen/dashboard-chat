@@ -1,8 +1,10 @@
 """ExternalAccessRepository - CRUD for external SQL access records."""
 
-from datetime import datetime, timezone
+import contextlib
+from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import wraps
-from typing import Any, Callable, TypeVar, ParamSpec
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,25 +12,30 @@ from sqlalchemy.exc import SQLAlchemyError
 from .exceptions import ExternalAccessRepositoryError
 from .metadata.external_access_record import ExternalAccessRecord
 
+if TYPE_CHECKING:
+    from app.repositories import RestrictedSession
+
 P = ParamSpec("P")
 R = TypeVar("R")
 
 
 def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator that wraps SQLAlchemyError as ExternalAccessRepositoryError."""
+
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return await func(*args, **kwargs)
         except SQLAlchemyError as e:
             raise ExternalAccessRepositoryError(str(e)) from e
+
     return wrapper
 
 
 class ExternalAccessRepository:
     """CRUD operations for ExternalAccessRecord."""
 
-    def __init__(self, session: 'RestrictedSession') -> None:
+    def __init__(self, session: "RestrictedSession") -> None:
         self._session = session
 
     @handle_repository_exceptions
@@ -69,9 +76,7 @@ class ExternalAccessRepository:
     async def get_by_project_id(self, project_id: str) -> dict[str, Any] | None:
         """Get external access record by project ID."""
         result = await self._session.execute(
-            select(ExternalAccessRecord).where(
-                ExternalAccessRecord.project_id == project_id
-            )
+            select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
         )
         record = result.scalar_one_or_none()
         if not record:
@@ -85,13 +90,9 @@ class ExternalAccessRepository:
         Use this in enable/disable flows to prevent concurrent modifications.
         Falls back to a regular SELECT on SQLite (no FOR UPDATE support).
         """
-        query = select(ExternalAccessRecord).where(
-            ExternalAccessRecord.project_id == project_id
-        )
-        try:
+        query = select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
+        with contextlib.suppress(Exception):
             query = query.with_for_update()
-        except Exception:
-            pass  # SQLite doesn't support FOR UPDATE; proceed without lock
         result = await self._session.execute(query)
         record = result.scalar_one_or_none()
         if not record:
@@ -101,11 +102,7 @@ class ExternalAccessRepository:
     @handle_repository_exceptions
     async def list_enabled(self) -> list[dict[str, Any]]:
         """List all enabled external access records."""
-        result = await self._session.execute(
-            select(ExternalAccessRecord).where(
-                ExternalAccessRecord.enabled == True  # noqa: E712
-            )
-        )
+        result = await self._session.execute(select(ExternalAccessRecord).where(ExternalAccessRecord.enabled == True))
         return [self._to_dict(r) for r in result.scalars().all()]
 
     @handle_repository_exceptions
@@ -116,9 +113,7 @@ class ExternalAccessRepository:
     ) -> dict[str, Any] | None:
         """Update an external access record by project ID."""
         result = await self._session.execute(
-            select(ExternalAccessRecord).where(
-                ExternalAccessRecord.project_id == project_id
-            )
+            select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
         )
         record = result.scalar_one_or_none()
         if not record:
@@ -135,9 +130,7 @@ class ExternalAccessRepository:
     async def soft_disable(self, project_id: str) -> dict[str, Any] | None:
         """Soft-disable external access for a project (set enabled=False)."""
         result = await self._session.execute(
-            select(ExternalAccessRecord).where(
-                ExternalAccessRecord.project_id == project_id
-            )
+            select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
         )
         record = result.scalar_one_or_none()
         if not record:
@@ -149,7 +142,7 @@ class ExternalAccessRepository:
         record.environment_port = None
         record.proxy_container_id = None
         record.environment_status = "disabled"
-        record.updated_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.now(UTC)
 
         await self._session.flush()
         await self._session.refresh(record)
@@ -162,9 +155,7 @@ class ExternalAccessRepository:
         Use only when the stored hash is needed (e.g. start_environment, regenerate).
         """
         result = await self._session.execute(
-            select(ExternalAccessRecord).where(
-                ExternalAccessRecord.project_id == project_id
-            )
+            select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
         )
         record = result.scalar_one_or_none()
         if not record:

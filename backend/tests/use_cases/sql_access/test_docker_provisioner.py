@@ -1,6 +1,5 @@
 """Tests for DockerPgDuckDbProvisioner using mocked aiodocker."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -62,11 +61,7 @@ def _mock_container(
             "Name": f"/{CONTAINER_NAME}",
             "State": {"Running": running},
             "NetworkSettings": {
-                "Ports": {
-                    "5432/tcp": [{"HostIp": "0.0.0.0", "HostPort": host_port}]
-                    if host_port
-                    else None
-                }
+                "Ports": {"5432/tcp": [{"HostIp": "0.0.0.0", "HostPort": host_port}] if host_port else None}
             },
         }
     )
@@ -91,7 +86,6 @@ def _mock_docker(container: MagicMock | None = None) -> MagicMock:
 
 
 class TestContainerName:
-
     def test_uses_prefix_and_truncated_project_id(self):
         assert _container_name(PROJECT_ID) == CONTAINER_NAME
 
@@ -110,7 +104,6 @@ def _mock_open_connection():
 
 
 class TestProvision:
-
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
     @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
@@ -271,7 +264,6 @@ class TestProvision:
 
 
 class TestDeprovision:
-
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_stops_and_removes_container(self, mock_docker_cls):
         container = _mock_container()
@@ -301,7 +293,6 @@ class TestDeprovision:
 
 
 class TestHealthCheck:
-
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_returns_true_when_running(self, mock_docker_cls):
         container = _mock_container(running=True)
@@ -337,7 +328,6 @@ class TestHealthCheck:
 
 
 class TestGetEnvironment:
-
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_returns_environment_when_running(self, mock_docker_cls):
         container = _mock_container(container_id="real-id-123", host_port="25432")
@@ -397,7 +387,6 @@ class TestGetEnvironment:
 
 
 class TestClose:
-
     @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
     async def test_closes_docker_session(self, mock_docker_cls):
         docker = _mock_docker()

@@ -8,9 +8,7 @@ if TYPE_CHECKING:
     from app.models.dataset import Dataset
 
 
-def generate_sources_yml(
-    project_name_snake: str, datasets: list[tuple[str, Dataset]]
-) -> str:
+def generate_sources_yml(project_name_snake: str, datasets: list[tuple[str, Dataset]]) -> str:
     """Generate sources.yml from project name and dataset tuples.
 
     Each source table includes an external_location in meta so dbt-duckdb
@@ -24,11 +22,7 @@ def generate_sources_yml(
                 "name": snake_name,
                 "description": f"Source table: {dataset.name}",
                 "meta": {
-                    "external_location": (
-                        "s3://{{ env_var('S3_BUCKET') }}/"
-                        + dataset.storage_path
-                        + "**/*.parquet"
-                    ),
+                    "external_location": ("s3://{{ env_var('S3_BUCKET') }}/" + dataset.storage_path + "**/*.parquet"),
                     "dataset_id": dataset.id,
                 },
             }

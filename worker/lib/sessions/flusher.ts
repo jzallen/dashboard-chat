@@ -65,7 +65,7 @@ export class SessionFlusher {
     // Skip empty sessions — no S3 write, just clean up Redis
     if (turns.length === 0) {
       await this.redisStore.deleteSession(sessionId);
-      console.log(`[flusher] Discarded empty session ${sessionId}`);
+      console.debug(`[flusher] Discarded empty session ${sessionId}`);
       return;
     }
 
@@ -78,6 +78,6 @@ export class SessionFlusher {
     );
 
     await this.redisStore.markFlushed(sessionId);
-    console.log(`[flusher] Flushed session ${sessionId} to S3 (${turns.length} turns)`);
+    console.debug(`[flusher] Flushed session ${sessionId} to S3 (${turns.length} turns)`);
   }
 }

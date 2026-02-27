@@ -1,5 +1,5 @@
-from .types import AuthUser
 from .exceptions import AuthenticationError
+from .types import AuthUser
 
 DEV_USER = AuthUser(id="dev-user-001", email="dev@localhost", org_id="dev-org-001", name="Dev User")
 DEV_TOKEN = "dev-token-static"
@@ -23,11 +23,11 @@ class DevAuthProvider:
     async def refresh_access_token(self, refresh_token: str) -> tuple[AuthUser, str, str, int]:
         if not refresh_token.startswith(DEV_REFRESH_PREFIX):
             raise AuthenticationError("Invalid refresh token")
-        suffix = refresh_token[len(DEV_REFRESH_PREFIX):]
+        suffix = refresh_token[len(DEV_REFRESH_PREFIX) :]
         try:
             n = int(suffix)
-        except ValueError:
-            raise AuthenticationError("Invalid refresh token")
+        except ValueError as err:
+            raise AuthenticationError("Invalid refresh token") from err
         return DEV_USER, DEV_TOKEN, f"dev-refresh-token-{n + 1:03d}", 300
 
     async def revoke_session(self, access_token: str) -> None:

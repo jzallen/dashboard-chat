@@ -6,18 +6,21 @@ Provides event sourcing capabilities:
 - Support for future event publishing
 """
 
+from collections.abc import Callable
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import wraps
-from typing import Callable, TypeVar, ParamSpec, Union
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
 from ..exceptions import OutboxRepositoryError
+from .events import OutboxEvent, TransformsCreated, TransformsUpdated, UploadFileReceived, to_event
 from .outbox_record import OutboxRecord
-from .events import to_event, OutboxEvent, UploadFileReceived, TransformsCreated, TransformsUpdated
 
+if TYPE_CHECKING:
+    from app.repositories import RestrictedSession
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -29,6 +32,7 @@ def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
     - NoResultFound → returns None
     - Other SQLAlchemyError → raises OutboxRepositoryError
     """
+
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
@@ -37,6 +41,7 @@ def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
             return None
         except SQLAlchemyError as e:
             raise OutboxRepositoryError(str(e)) from e
+
     return wrapper
 
 
@@ -79,7 +84,7 @@ class OutboxRepository:
             aggregate_id=project_id,
             event=event,
         )
-    
+
     @handle_repository_exceptions
     async def submit_transforms_created_event(
         self,
@@ -156,9 +161,7 @@ class OutboxRepository:
             NoResultFound: If record not found
             OutboxRepositoryError: If record already processed
         """
-        result = await self._session.execute(
-            select(OutboxRecord).where(OutboxRecord.id == record_id)
-        )
+        result = await self._session.execute(select(OutboxRecord).where(OutboxRecord.id == record_id))
         record = result.scalar_one()
 
         if raise_if_processed and record.processed:
@@ -182,6 +185,6 @@ class OutboxRepository:
         await self._session.execute(
             update(OutboxRecord)
             .where(OutboxRecord.id.in_(record_ids))
-            .values(processed=True, processed_at=datetime.now(timezone.utc))
+            .values(processed=True, processed_at=datetime.now(UTC))
         )
         await self._session.flush()

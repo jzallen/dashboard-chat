@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent,render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { SideNav } from "../../../lib/ui/components/SideNav";
+
 import { MOCK_PROJECT } from "../../../__mocks__/data";
 import { createMockProject } from "../../../__mocks__/data";
+import { SideNav } from "../../../lib/ui/components/SideNav";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {

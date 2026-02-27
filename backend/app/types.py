@@ -4,13 +4,14 @@ These types are implementation-agnostic and represent business concepts.
 """
 
 from __future__ import annotations
+
 from functools import reduce
 from typing import Any
 
 import ibis
 import ibis.expr.types
 
-from app.utils.sql_functions import title_case, snake_case, kebab_case
+from app.utils.sql_functions import kebab_case, snake_case, title_case
 
 
 class QueryBuilderJSON(dict):
@@ -31,9 +32,7 @@ class QueryBuilderJSON(dict):
         """Convert to Ibis filter expression."""
         return self._process_group(self, table)
 
-    def _process_group(
-        self, group: dict, table: ibis.Table
-    ) -> ibis.expr.types.BooleanValue:
+    def _process_group(self, group: dict, table: ibis.Table) -> ibis.expr.types.BooleanValue:
         children = group.get("children1", {})
         props = group.get("properties", {})
         conjunction = props.get("conjunction", "AND")
@@ -49,25 +48,19 @@ class QueryBuilderJSON(dict):
             return ibis.literal(True)
 
         # Reduce with conjunction
-        combine = (
-            (lambda a, b: a | b) if conjunction == "OR" else (lambda a, b: a & b)
-        )
+        combine = (lambda a, b: a | b) if conjunction == "OR" else (lambda a, b: a & b)
         result = reduce(combine, filters)
 
         return ~result if is_negated else result
 
-    def _process_node(
-        self, node: dict, table: ibis.Table
-    ) -> ibis.expr.types.BooleanValue | None:
+    def _process_node(self, node: dict, table: ibis.Table) -> ibis.expr.types.BooleanValue | None:
         if node.get("type") == "rule":
             return self._process_rule(node, table)
         elif node.get("type") == "group":
             return self._process_group(node, table)
         return None
 
-    def _process_rule(
-        self, rule: dict, table: ibis.Table
-    ) -> ibis.expr.types.BooleanValue | None:
+    def _process_rule(self, rule: dict, table: ibis.Table) -> ibis.expr.types.BooleanValue | None:
         props = rule.get("properties", {})
         field, operator = props.get("field"), props.get("operator")
         values = props.get("value", [])
@@ -148,10 +141,7 @@ class CleaningExpression:
 
         valid_ops = ("trim", "case", "fill_null", "map_values", "alias")
         if operation not in valid_ops:
-            raise ValueError(
-                f"Unsupported operation '{operation}'. "
-                f"Valid operations: {', '.join(valid_ops)}"
-            )
+            raise ValueError(f"Unsupported operation '{operation}'. Valid operations: {', '.join(valid_ops)}")
 
         if operation == "case":
             mode = self.config.get("mode")
@@ -159,21 +149,16 @@ class CleaningExpression:
                 raise ValueError("'mode' field is required for the 'case' operation")
             valid_modes = ("upper", "lower", "title", "snake", "kebab")
             if mode not in valid_modes:
-                raise ValueError(
-                    f"Invalid case mode '{mode}'. Valid modes: {', '.join(valid_modes)}"
-                )
+                raise ValueError(f"Invalid case mode '{mode}'. Valid modes: {', '.join(valid_modes)}")
 
-        if operation == "fill_null":
-            if "fill_value" not in self.config:
-                raise ValueError("'fill_value' field is required for the 'fill_null' operation")
+        if operation == "fill_null" and "fill_value" not in self.config:
+            raise ValueError("'fill_value' field is required for the 'fill_null' operation")
 
-        if operation == "map_values":
-            if "mappings" not in self.config:
-                raise ValueError("'mappings' field is required for the 'map_values' operation")
+        if operation == "map_values" and "mappings" not in self.config:
+            raise ValueError("'mappings' field is required for the 'map_values' operation")
 
-        if operation == "alias":
-            if "alias" not in self.config:
-                raise ValueError("'alias' field is required for the 'alias' operation")
+        if operation == "alias" and "alias" not in self.config:
+            raise ValueError("'alias' field is required for the 'alias' operation")
 
     @property
     def operation(self) -> str:
@@ -226,10 +211,7 @@ class CleaningExpression:
                     case_expr = case_expr.when(col == mapping["from"], mapping["to"])
                 return case_expr.else_(col).end()
             case "alias":
-                raise ValueError(
-                    "Alias transforms are handled in the RENAME stage, "
-                    "not via as_ibis_expr()"
-                )
+                raise ValueError("Alias transforms are handled in the RENAME stage, not via as_ibis_expr()")
 
     def to_display_sql(self, column: str) -> str:
         """Generate a display-friendly SQL expression string.

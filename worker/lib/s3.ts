@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { GetObjectCommand, ListObjectsV2Command,PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 export interface S3Config {
   endpoint: string;
@@ -53,8 +53,8 @@ export async function getSessionLog(
       Key: sessionKey(projectId, datasetId, sessionId),
     }));
     return await response.Body?.transformToString() ?? null;
-  } catch (err: any) {
-    if (err.name === "NoSuchKey") return null;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "NoSuchKey") return null;
     throw err;
   }
 }

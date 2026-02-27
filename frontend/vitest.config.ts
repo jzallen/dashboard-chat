@@ -1,9 +1,10 @@
-import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   // Cast needed due to vitest bundling its own vite with different types
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vitest bundles its own vite with different types
   plugins: [react() as any],
   resolve: {
     alias: {

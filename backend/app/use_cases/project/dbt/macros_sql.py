@@ -5,7 +5,7 @@ uses the same title_case, snake_case, and kebab_case functions as the live
 SQL Preview.
 """
 
-from app.utils.sql_functions import TITLE_CASE_MACRO, SNAKE_CASE_MACRO, KEBAB_CASE_MACRO
+from app.utils.sql_functions import KEBAB_CASE_MACRO, SNAKE_CASE_MACRO, TITLE_CASE_MACRO
 
 
 def generate_macros_sql() -> str:

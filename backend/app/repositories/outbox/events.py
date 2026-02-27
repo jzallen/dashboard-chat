@@ -5,7 +5,7 @@ for reconstructing domain events from OutboxRecords.
 """
 
 from dataclasses import dataclass
-from typing import Union, Any
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +14,7 @@ class UploadFileReceived:
 
     Transitions upload to: pending
     """
+
     project_id: str
     raw_storage_path: str
     original_filename: str
@@ -24,6 +25,7 @@ class UploadFileReceived:
 @dataclass(frozen=True, slots=True)
 class TransformsCreated:
     """One or more transforms created on a dataset."""
+
     dataset_id: str
     transforms: list[dict[str, Any]]
 
@@ -31,11 +33,12 @@ class TransformsCreated:
 @dataclass(frozen=True, slots=True)
 class TransformsUpdated:
     """One or more transforms updated (including soft-delete via status='deleted')."""
+
     dataset_id: str
     changes: list[dict[str, Any]]
 
 
-OutboxEvent = Union[UploadFileReceived, TransformsCreated, TransformsUpdated]
+OutboxEvent = UploadFileReceived | TransformsCreated | TransformsUpdated
 
 
 def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:

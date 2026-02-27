@@ -20,7 +20,7 @@ async def update_project(
     project_id: str,
     update_data: dict[str, Any],
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Update a project.
 
@@ -35,7 +35,7 @@ async def update_project(
         ProjectNotFound: If project with given ID does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories['metadata_repository']
+    metadata_repo = repositories["metadata_repository"]
     project = await metadata_repo.get_project(project_id, include_datasets=False)
 
     if project is None:

@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,29 +12,38 @@ from app.use_cases.exceptions import (
     ProjectNotFound,
     SqlAccessNotEnabled,
 )
-from app.use_cases.sql_access.restart_environment import restart_environment
 from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner, StorageConfig
-
+from app.use_cases.sql_access.restart_environment import restart_environment
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestRestartEnvironment:
-
     @patch("app.use_cases.sql_access.restart_environment.grant_schema_usage", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.restart_environment.execute_bootstrap", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.restart_environment.regenerate_credentials", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.restart_environment.create_project_schema", new_callable=AsyncMock)
     async def test_restart_running_environment(
-        self, mock_create_schema, mock_regen_creds, mock_execute_bootstrap, mock_grant_usage,
+        self,
+        mock_create_schema,
+        mock_regen_creds,
+        mock_execute_bootstrap,
+        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
         set_session(seeded_db_with_access)
         # Register environment so stop_environment can find it
-        await mock_provisioner.provision(PROJECT_1, StorageConfig(
-            endpoint="", access_key="", secret_key="",
-            region="", url_style="", use_ssl=False,
-        ))
+        await mock_provisioner.provision(
+            PROJECT_1,
+            StorageConfig(
+                endpoint="",
+                access_key="",
+                secret_key="",
+                region="",
+                url_style="",
+                use_ssl=False,
+            ),
+        )
 
         result = await restart_environment(project_id=PROJECT_1)
 
@@ -59,7 +67,11 @@ class TestRestartEnvironment:
     @patch("app.use_cases.sql_access.restart_environment.regenerate_credentials", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.restart_environment.create_project_schema", new_callable=AsyncMock)
     async def test_restart_fails_when_stopped(
-        self, mock_create_schema, mock_regen_creds, mock_execute_bootstrap, mock_grant_usage,
+        self,
+        mock_create_schema,
+        mock_regen_creds,
+        mock_execute_bootstrap,
+        mock_grant_usage,
         seeded_db_with_stopped_access: AsyncSession,
     ):
         """Cannot restart a stopped environment; must start it instead."""
@@ -91,7 +103,11 @@ class TestRestartEnvironment:
     @patch("app.use_cases.sql_access.restart_environment.regenerate_credentials", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.restart_environment.create_project_schema", new_callable=AsyncMock)
     async def test_restart_from_degraded_state(
-        self, mock_create_schema, mock_regen_creds, mock_execute_bootstrap, mock_grant_usage,
+        self,
+        mock_create_schema,
+        mock_regen_creds,
+        mock_execute_bootstrap,
+        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
@@ -106,10 +122,17 @@ class TestRestartEnvironment:
         await seeded_db_with_access.commit()
 
         # Register environment so stop_environment can find it
-        await mock_provisioner.provision(PROJECT_1, StorageConfig(
-            endpoint="", access_key="", secret_key="",
-            region="", url_style="", use_ssl=False,
-        ))
+        await mock_provisioner.provision(
+            PROJECT_1,
+            StorageConfig(
+                endpoint="",
+                access_key="",
+                secret_key="",
+                region="",
+                url_style="",
+                use_ssl=False,
+            ),
+        )
 
         result = await restart_environment(project_id=PROJECT_1)
 

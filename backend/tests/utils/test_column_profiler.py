@@ -8,47 +8,57 @@ import pytest
 
 from app.utils.column_profiler import compute_column_profiles
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def text_df():
-    return pd.DataFrame({
-        "city": ["NYC", "LA", "NYC", "NYC", "LA", "Chicago", None],
-    })
+    return pd.DataFrame(
+        {
+            "city": ["NYC", "LA", "NYC", "NYC", "LA", "Chicago", None],
+        }
+    )
 
 
 @pytest.fixture
 def number_df():
-    return pd.DataFrame({
-        "price": [10.5, 20.0, 30.5, None, 50.0],
-    })
+    return pd.DataFrame(
+        {
+            "price": [10.5, 20.0, 30.5, None, 50.0],
+        }
+    )
 
 
 @pytest.fixture
 def datetime_df():
-    return pd.DataFrame({
-        "created": pd.to_datetime(["2024-01-01", "2024-06-15", "2024-12-31", None]),
-    })
+    return pd.DataFrame(
+        {
+            "created": pd.to_datetime(["2024-01-01", "2024-06-15", "2024-12-31", None]),
+        }
+    )
 
 
 @pytest.fixture
 def boolean_df():
-    return pd.DataFrame({
-        "active": [True, False, True, True, None],
-    })
+    return pd.DataFrame(
+        {
+            "active": [True, False, True, True, None],
+        }
+    )
 
 
 @pytest.fixture
 def mixed_df():
-    return pd.DataFrame({
-        "name": ["Alice", "Bob", "Alice", None],
-        "age": [30, 25, 30, None],
-        "joined": pd.to_datetime(["2024-01-01", "2024-06-01", None, None]),
-        "verified": [True, False, True, None],
-    })
+    return pd.DataFrame(
+        {
+            "name": ["Alice", "Bob", "Alice", None],
+            "age": [30, 25, 30, None],
+            "joined": pd.to_datetime(["2024-01-01", "2024-06-01", None, None]),
+            "verified": [True, False, True, None],
+        }
+    )
 
 
 @pytest.fixture
@@ -66,6 +76,7 @@ def mixed_schema():
 # ---------------------------------------------------------------------------
 # Text column tests
 # ---------------------------------------------------------------------------
+
 
 class TestTextProfile:
     def test_basic_text(self, text_df):
@@ -101,6 +112,7 @@ class TestTextProfile:
 # Number column tests
 # ---------------------------------------------------------------------------
 
+
 class TestNumberProfile:
     def test_basic_number(self, number_df):
         schema = {"fields": {"price": {"type": "number"}}}
@@ -126,6 +138,7 @@ class TestNumberProfile:
 # Datetime column tests
 # ---------------------------------------------------------------------------
 
+
 class TestDatetimeProfile:
     def test_basic_datetime(self, datetime_df):
         schema = {"fields": {"created": {"type": "datetime"}}}
@@ -140,6 +153,7 @@ class TestDatetimeProfile:
 # ---------------------------------------------------------------------------
 # Boolean column tests
 # ---------------------------------------------------------------------------
+
 
 class TestBooleanProfile:
     def test_basic_boolean(self, boolean_df):
@@ -156,6 +170,7 @@ class TestBooleanProfile:
 # Edge case tests
 # ---------------------------------------------------------------------------
 
+
 class TestEdgeCases:
     def test_empty_dataframe(self):
         df = pd.DataFrame({"a": pd.Series(dtype="object"), "b": pd.Series(dtype="float64")})
@@ -169,12 +184,14 @@ class TestEdgeCases:
         assert result["b"]["min"] is None
 
     def test_all_null_columns(self):
-        df = pd.DataFrame({
-            "t": [None, None],
-            "n": [None, None],
-            "d": pd.Series([pd.NaT, pd.NaT]),
-            "b": pd.Series([None, None], dtype="object"),
-        })
+        df = pd.DataFrame(
+            {
+                "t": [None, None],
+                "n": [None, None],
+                "d": pd.Series([pd.NaT, pd.NaT]),
+                "b": pd.Series([None, None], dtype="object"),
+            }
+        )
         schema = {
             "fields": {
                 "t": {"type": "text"},
@@ -215,10 +232,12 @@ class TestEdgeCases:
     def test_large_dataframe_sampling(self):
         """Verify profiling works on DataFrames larger than 100k rows."""
         n = 200_000
-        df = pd.DataFrame({
-            "val": np.random.choice(["a", "b", "c"], size=n),
-            "num": np.random.randn(n),
-        })
+        df = pd.DataFrame(
+            {
+                "val": np.random.choice(["a", "b", "c"], size=n),
+                "num": np.random.randn(n),
+            }
+        )
         schema = {
             "fields": {
                 "val": {"type": "text"},
@@ -235,6 +254,7 @@ class TestEdgeCases:
 # ---------------------------------------------------------------------------
 # Mixed column test
 # ---------------------------------------------------------------------------
+
 
 class TestMixedProfile:
     def test_all_types_together(self, mixed_df, mixed_schema):

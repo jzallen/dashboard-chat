@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
+import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
 // Shared mock state that tests configure before importing auth module
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- test mock needs flexible signature
 let mockJwtVerifyImpl: (...args: any[]) => any = vi.fn();
 
 vi.mock("jose", () => ({
   createRemoteJWKSet: vi.fn(() => vi.fn()),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test mock needs flexible signature
   jwtVerify: vi.fn((...args: any[]) => mockJwtVerifyImpl(...args)),
 }));
 

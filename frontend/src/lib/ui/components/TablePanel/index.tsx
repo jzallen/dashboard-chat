@@ -1,10 +1,12 @@
+import type { ColumnFiltersState,Table } from "@tanstack/react-table";
 import type { Dispatch, SetStateAction } from "react";
-import type { Table, ColumnFiltersState } from "@tanstack/react-table";
+
 import type { TableRow } from "@/table-tools";
+
 import ActiveFilters from "./ActiveFilters";
 import Pagination from "./Pagination";
-import { TableHead } from "./TableHead";
 import { TableBody } from "./TableBody";
+import { TableHead } from "./TableHead";
 import styles from "./TablePanel.module.css";
 
 interface TablePanelProps {

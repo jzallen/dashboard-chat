@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom';
+
 import { vi } from 'vitest';
 
 // Mock scrollIntoView since happy-dom doesn't support it

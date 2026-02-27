@@ -119,9 +119,7 @@ class DockerPgBouncerProvisioner:
 
         except Exception as e:
             await self._force_remove(name)
-            raise RuntimeError(
-                f"Failed to provision PgBouncer for project {project_id}: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to provision PgBouncer for project {project_id}: {e}") from e
 
     async def deprovision(self, project_id: str) -> None:
         name = _container_name(project_id)
@@ -151,29 +149,24 @@ class DockerPgBouncerProvisioner:
         Used for credential rotation and upstream changes.
         """
         await self.deprovision(project_id)
-        return await self.provision(
-            project_id, proxy_port, md5_hash, upstream_host, auth_user
-        )
+        return await self.provision(project_id, proxy_port, md5_hash, upstream_host, auth_user)
 
     async def _wait_for_healthy(self, name: str) -> None:
         elapsed = 0.0
         while elapsed < HEALTH_CHECK_TIMEOUT:
             try:
-                reader, writer = await asyncio.wait_for(
+                _reader, writer = await asyncio.wait_for(
                     asyncio.open_connection(name, 6432),
                     timeout=2.0,
                 )
                 writer.close()
                 await writer.wait_closed()
                 return
-            except (ConnectionRefusedError, asyncio.TimeoutError, OSError):
+            except (TimeoutError, ConnectionRefusedError, OSError):
                 pass
             await asyncio.sleep(HEALTH_CHECK_INTERVAL)
             elapsed += HEALTH_CHECK_INTERVAL
-        raise RuntimeError(
-            f"PgBouncer container {name} did not become healthy "
-            f"within {HEALTH_CHECK_TIMEOUT}s"
-        )
+        raise RuntimeError(f"PgBouncer container {name} did not become healthy within {HEALTH_CHECK_TIMEOUT}s")
 
     async def _force_remove(self, name: str) -> None:
         docker = await self._get_docker()

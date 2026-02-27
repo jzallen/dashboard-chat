@@ -68,15 +68,14 @@ def setup_minio(settings) -> None:
 async def setup_database(settings) -> None:
     """Create SQLite tables and seed default project."""
     if not settings.database_url.startswith("sqlite"):
-        print(f"  Skipped (not SQLite)")
+        print("  Skipped (not SQLite)")
         return
 
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.database import Base
-    from app.repositories.metadata import ProjectRecord
-    from app.repositories.metadata import OrganizationRecord
+    from app.repositories.metadata import OrganizationRecord, ProjectRecord
 
     # Seed projects keyed by auth mode
     SEED_PROJECTS = [
@@ -106,9 +105,7 @@ async def setup_database(settings) -> None:
         await conn.run_sync(Base.metadata.create_all)
     print("  Tables created")
 
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     # Seed organizations
     SEED_ORGS = [
         {"id": "dev-org-001", "name": "Development Org"},
@@ -116,9 +113,7 @@ async def setup_database(settings) -> None:
 
     async with session_factory() as session:
         for org in SEED_ORGS:
-            result = await session.execute(
-                select(OrganizationRecord).where(OrganizationRecord.id == org["id"])
-            )
+            result = await session.execute(select(OrganizationRecord).where(OrganizationRecord.id == org["id"]))
             if not result.scalar_one_or_none():
                 session.add(OrganizationRecord(**org))
                 print(f"  Seeded organization '{org['id']}' (name={org['name']})")
@@ -126,9 +121,7 @@ async def setup_database(settings) -> None:
                 print(f"  Organization '{org['id']}' already exists")
 
         for proj in SEED_PROJECTS:
-            result = await session.execute(
-                select(ProjectRecord).where(ProjectRecord.id == proj["id"])
-            )
+            result = await session.execute(select(ProjectRecord).where(ProjectRecord.id == proj["id"]))
             if not result.scalar_one_or_none():
                 session.add(ProjectRecord(**proj))
                 print(f"  Seeded project '{proj['id']}' (org={proj['org_id']})")
@@ -155,7 +148,7 @@ def main() -> None:
     settings = get_settings()
 
     if "sqlite" not in settings.database_url:
-        print(f"ERROR: setup_dev.py is only for local SQLite databases.")
+        print("ERROR: setup_dev.py is only for local SQLite databases.")
         print(f"  DATABASE_URL={settings.database_url}")
         print("  Refusing to run against a non-SQLite database to prevent accidental data loss.")
         sys.exit(1)

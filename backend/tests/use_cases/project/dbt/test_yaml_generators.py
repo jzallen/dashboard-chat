@@ -1,10 +1,10 @@
 import yaml
 
 from app.models.dataset import Dataset
-from app.use_cases.project.dbt.project_yml import generate_project_yml
 from app.use_cases.project.dbt.profiles_yml import generate_profiles_yml
-from app.use_cases.project.dbt.sources_yml import generate_sources_yml
+from app.use_cases.project.dbt.project_yml import generate_project_yml
 from app.use_cases.project.dbt.schema_yml import generate_schema_yml
+from app.use_cases.project.dbt.sources_yml import generate_sources_yml
 
 
 class TestProjectYml:

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useCallback,useEffect, useRef } from "react";
+
 import styles from "./ActivityCheckModal.module.css";
 
 const MODAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes

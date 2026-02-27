@@ -1,10 +1,9 @@
 """Unit tests for CleaningExpression — expression_config → Ibis expression conversion."""
 
-import pytest
 import ibis
+import pytest
 
 from app.types import CleaningExpression
-
 
 # ============================================================================
 # Fixtures
@@ -189,42 +188,50 @@ class TestFillNullExpression:
 
 class TestMapValuesExpression:
     def test_single_mapping(self, text_table):
-        expr = CleaningExpression({
-            "operation": "map_values",
-            "mappings": [{"from": "NY", "to": "New York"}],
-        })
+        expr = CleaningExpression(
+            {
+                "operation": "map_values",
+                "mappings": [{"from": "NY", "to": "New York"}],
+            }
+        )
         result = expr.as_ibis_expr(text_table, "name")
         assert result is not None
 
     def test_single_mapping_display_sql(self):
-        expr = CleaningExpression({
-            "operation": "map_values",
-            "mappings": [{"from": "NY", "to": "New York"}],
-        })
+        expr = CleaningExpression(
+            {
+                "operation": "map_values",
+                "mappings": [{"from": "NY", "to": "New York"}],
+            }
+        )
         sql = expr.to_display_sql("state")
         assert "CASE" in sql
         assert "WHEN state = 'NY' THEN 'New York'" in sql
         assert "ELSE state END" in sql
 
     def test_multiple_mappings(self, text_table):
-        expr = CleaningExpression({
-            "operation": "map_values",
-            "mappings": [
-                {"from": "NY", "to": "New York"},
-                {"from": "CA", "to": "California"},
-            ],
-        })
+        expr = CleaningExpression(
+            {
+                "operation": "map_values",
+                "mappings": [
+                    {"from": "NY", "to": "New York"},
+                    {"from": "CA", "to": "California"},
+                ],
+            }
+        )
         result = expr.as_ibis_expr(text_table, "name")
         assert result is not None
 
     def test_multiple_mappings_display_sql(self):
-        expr = CleaningExpression({
-            "operation": "map_values",
-            "mappings": [
-                {"from": "NY", "to": "New York"},
-                {"from": "CA", "to": "California"},
-            ],
-        })
+        expr = CleaningExpression(
+            {
+                "operation": "map_values",
+                "mappings": [
+                    {"from": "NY", "to": "New York"},
+                    {"from": "CA", "to": "California"},
+                ],
+            }
+        )
         sql = expr.to_display_sql("state")
         assert "WHEN state = 'NY' THEN 'New York'" in sql
         assert "WHEN state = 'CA' THEN 'California'" in sql

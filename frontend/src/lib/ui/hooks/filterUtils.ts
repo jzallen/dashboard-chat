@@ -3,8 +3,9 @@
  */
 
 import type { ColumnFiltersState } from "@tanstack/react-table";
+
 import type { Transform } from "@/api";
-import { isRAQBRule, isRAQBGroup, type RAQBTree } from "@/raqb";
+import { isRAQBGroup, isRAQBRule, type RAQBTree } from "@/raqb";
 
 interface FilterCondition {
   operator: string;

@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from "react";
-import { uploadFile } from "@/api";
+import { useEffect,useRef, useState } from "react";
+
 import type { Dataset } from "@/api";
+import { uploadFile } from "@/api";
+
 import styles from "./ChatPanel.module.css";
 
 type UploadState = "browse" | "selected" | "uploading" | "uploaded" | "error";

@@ -1,6 +1,5 @@
 """Pytest configuration and fixtures."""
 
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -8,7 +7,7 @@ from pathlib import Path
 import pytest
 from moto import mock_aws
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base
 from tests.uuidv7_fixtures import make_test_uuidv7
@@ -28,14 +27,15 @@ def mock_s3():
     with mock_aws():
         # Create the test bucket that MinIOLakeRepository expects
         import boto3
+
         from app.config import get_settings
 
         settings = get_settings()
         s3 = boto3.client(
-            's3',
-            region_name='us-east-1',
-            aws_access_key_id='testing',
-            aws_secret_access_key='testing',
+            "s3",
+            region_name="us-east-1",
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
         )
         s3.create_bucket(Bucket=settings.storage_bucket)
 

@@ -1,4 +1,4 @@
-import type { Project, DatasetSparse } from "@/api";
+import type { DatasetSparse,Project } from "@/api";
 import type { Dataset, SchemaConfig, Transform } from "@/api";
 
 const SAMPLE_SCHEMA_CONFIG: SchemaConfig = {

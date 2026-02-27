@@ -4,14 +4,13 @@ import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.use_cases.organization import get_organization
-from app.repositories import set_session
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
-
+from app.repositories import set_session
+from app.use_cases.organization import get_organization
 from tests.uuidv7_fixtures import ORG_1, USER_3
 
-from .conftest import TEST_USER, TEST_USER_WITH_ORG
+from .conftest import TEST_USER_WITH_ORG
 
 
 class TestGetOrganization:
@@ -51,12 +50,14 @@ class TestGetOrganization:
     async def test_returns_none_for_nonexistent_org(self, seeded_db: AsyncSession):
         """get_organization should return None when org_id points to missing org."""
         set_session(seeded_db)
-        set_auth_user(AuthUser(
-            id=USER_3,
-            email="ghost@example.com",
-            org_id="nonexistent-org",
-            name="Ghost User",
-        ))
+        set_auth_user(
+            AuthUser(
+                id=USER_3,
+                email="ghost@example.com",
+                org_id="nonexistent-org",
+                name="Ghost User",
+            )
+        )
 
         result = await get_organization()
 

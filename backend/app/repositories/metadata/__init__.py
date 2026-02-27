@@ -3,16 +3,13 @@
 Provides CRUD operations for projects, datasets, and transforms.
 """
 
-from typing import Any, Protocol, TYPE_CHECKING
+from typing import Any, Protocol
 
-if TYPE_CHECKING:
-    from .dataset_record import DatasetRecord
-
-from .project_record import ProjectRecord
-from .dataset_record import DatasetRecord
-from .transform_record import TransformRecord
-from .organization_record import OrganizationRecord
-from .external_access_record import ExternalAccessRecord
+from .dataset_record import DatasetRecord as DatasetRecord
+from .external_access_record import ExternalAccessRecord as ExternalAccessRecord
+from .organization_record import OrganizationRecord as OrganizationRecord
+from .project_record import ProjectRecord as ProjectRecord
+from .transform_record import TransformRecord as TransformRecord
 
 
 class MetadataRepositoryProtocol(Protocol):
@@ -167,7 +164,7 @@ class MetadataRepositoryProtocol(Protocol):
         self,
         dataset_id: str,
         **kwargs: Any,
-    ) -> 'DatasetRecord':
+    ) -> "DatasetRecord":
         """Update a dataset's metadata.
 
         Args:
@@ -289,6 +286,6 @@ class MetadataRepositoryProtocol(Protocol):
         ...
 
 
-from .repository import MetadataRepository
+from .repository import MetadataRepository as MetadataRepository  # noqa: E402
 
 __all__ = ["MetadataRepository", "MetadataRepositoryProtocol"]

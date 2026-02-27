@@ -87,9 +87,7 @@ class TestBootstrapSqlEdgeCases:
 
     def test_schema_name_in_view_path(self):
         ds = _make_dataset()
-        sql = generate_bootstrap_sql(
-            "project_abc", [("sales_data", ds)], "my-bucket"
-        )
+        sql = generate_bootstrap_sql("project_abc", [("sales_data", ds)], "my-bucket")
         assert '"project_abc"."sales_data"' in sql
 
     def test_bucket_in_s3_path(self):
@@ -136,11 +134,7 @@ class TestBootstrapSqlTypedColumns:
     """Tests for typed view column generation from schema_config."""
 
     def test_dataset_with_schema_produces_typed_columns(self):
-        ds = _make_dataset(
-            schema_config={
-                "fields": {"name": {"type": "text"}, "salary": {"type": "number"}}
-            }
-        )
+        ds = _make_dataset(schema_config={"fields": {"name": {"type": "text"}, "salary": {"type": "number"}}})
         sql = generate_bootstrap_sql("project_abc", [("employees", ds)], "my-bucket")
         assert "r['name']::text AS \"name\"" in sql
         assert "r['salary']::double precision AS \"salary\"" in sql
@@ -149,23 +143,17 @@ class TestBootstrapSqlTypedColumns:
 
     def test_dataset_without_schema_falls_back_to_select_star(self):
         ds = _make_dataset(schema_config={})
-        sql = generate_bootstrap_sql(
-            "project_abc", [("test_data", ds)], "my-bucket"
-        )
+        sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "SELECT * FROM read_parquet(" in sql
 
     def test_dataset_with_empty_fields_falls_back(self):
         ds = _make_dataset(schema_config={"fields": {}})
-        sql = generate_bootstrap_sql(
-            "project_abc", [("test_data", ds)], "my-bucket"
-        )
+        sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "SELECT * FROM read_parquet(" in sql
 
     def test_dataset_with_none_schema_falls_back(self):
         ds = _make_dataset(schema_config=None)
-        sql = generate_bootstrap_sql(
-            "project_abc", [("test_data", ds)], "my-bucket"
-        )
+        sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "SELECT * FROM read_parquet(" in sql
 
     def test_all_type_mappings(self):
@@ -188,27 +176,19 @@ class TestBootstrapSqlTypedColumns:
         assert '::bigint AS "i"' in sql
 
     def test_unknown_type_falls_back_to_text(self):
-        ds = _make_dataset(
-            schema_config={"fields": {"weird_col": {"type": "unknown_type"}}}
-        )
+        ds = _make_dataset(schema_config={"fields": {"weird_col": {"type": "unknown_type"}}})
         sql = generate_bootstrap_sql("project_abc", [("test", ds)], "my-bucket")
         assert '::text AS "weird_col"' in sql
 
     def test_reserved_word_column_names_are_quoted(self):
-        ds = _make_dataset(
-            schema_config={
-                "fields": {"select": {"type": "text"}, "order": {"type": "text"}}
-            }
-        )
+        ds = _make_dataset(schema_config={"fields": {"select": {"type": "text"}, "order": {"type": "text"}}})
         sql = generate_bootstrap_sql("project_abc", [("test", ds)], "my-bucket")
         assert 'AS "select"' in sql
         assert 'AS "order"' in sql
 
     def test_typed_view_uses_alias_r(self):
         """Typed views use 'r' alias on read_parquet for column access."""
-        ds = _make_dataset(
-            schema_config={"fields": {"col1": {"type": "text"}}}
-        )
+        ds = _make_dataset(schema_config={"fields": {"col1": {"type": "text"}}})
         sql = generate_bootstrap_sql("project_abc", [("test", ds)], "my-bucket")
         assert "FROM read_parquet(" in sql
         assert ") r;" in sql

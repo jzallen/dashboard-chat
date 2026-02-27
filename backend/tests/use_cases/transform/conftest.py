@@ -1,17 +1,16 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories.metadata import TransformRecord, DatasetRecord, ProjectRecord
-from app.repositories.outbox.outbox_record import OutboxRecord
+
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
-
+from app.repositories.metadata import DatasetRecord, ProjectRecord, TransformRecord
 from tests.uuidv7_fixtures import (
-    USER_1,
+    DATASET_1,
     ORG_1,
     PROJECT_1,
-    DATASET_1,
     TRANSFORM_1,
     TRANSFORM_2,
+    USER_1,
 )
 
 TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
@@ -48,7 +47,7 @@ async def seeded_db(db_session: AsyncSession):
         description="Filter for active records",
         condition_json={"id": "root", "type": "group", "children1": []},
         condition_sql="col1 = 'active'",
-        status='enabled',
+        status="enabled",
     )
     db_session.add(transform)
 
@@ -59,7 +58,7 @@ async def seeded_db(db_session: AsyncSession):
         description="Filter for inactive records",
         condition_json={"id": "root", "type": "group", "children1": []},
         condition_sql="col1 = 'inactive'",
-        status='enabled',
+        status="enabled",
     )
     db_session.add(transform2)
 

@@ -1,8 +1,8 @@
-export { handleChat, type ChatClient, type ChatCompletionRequest } from "./handleChat";
 export { GroqChatClient } from "./clients/groq";
+export { type ChatClient, type ChatCompletionRequest,handleChat } from "./handleChat";
 
-import { handleChat } from "./handleChat";
 import { GroqChatClient } from "./clients/groq";
+import { handleChat } from "./handleChat";
 
 interface Env {
   GROQ_API_KEY: string;

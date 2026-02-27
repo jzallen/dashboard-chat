@@ -20,7 +20,6 @@ PROJECT_ID = "proj-abc12345-def6-7890"
 
 
 class TestProjectEnvironment:
-
     def test_is_frozen(self):
         env = ProjectEnvironment(
             environment_id="test",
@@ -32,13 +31,12 @@ class TestProjectEnvironment:
         )
         try:
             env.host = "other"  # type: ignore[misc]
-            assert False, "Should have raised FrozenInstanceError"
+            raise AssertionError("Should have raised FrozenInstanceError")
         except AttributeError:
             pass
 
 
 class TestStorageConfig:
-
     def test_is_frozen(self):
         config = StorageConfig(
             endpoint="minio:9000",
@@ -50,13 +48,12 @@ class TestStorageConfig:
         )
         try:
             config.endpoint = "other"  # type: ignore[misc]
-            assert False, "Should have raised FrozenInstanceError"
+            raise AssertionError("Should have raised FrozenInstanceError")
         except AttributeError:
             pass
 
 
 class TestProvisioningError:
-
     def test_is_exception_subclass(self):
         assert issubclass(ProvisioningError, Exception)
         error = ProvisioningError("container failed to start")
@@ -65,7 +62,6 @@ class TestProvisioningError:
 
 
 class TestMockEnvironmentProvisioner:
-
     async def test_provision_returns_project_environment(self):
         provisioner = MockEnvironmentProvisioner()
         env = await provisioner.provision(PROJECT_ID, STORAGE_CONFIG)

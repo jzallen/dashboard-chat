@@ -2,20 +2,20 @@
 
 from unittest.mock import AsyncMock, patch
 
-from returns.result import Failure, Success
+from returns.result import Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import set_session
 from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
 from app.use_cases.sql_access.reconcile_sql_access import reconcile_sql_access
-
 from tests.uuidv7_fixtures import PROJECT_1
 
 
 class TestReconcileSqlAccess:
-
     async def test_no_enabled_records_returns_zero_counts(
-        self, mock_provisioner: MockEnvironmentProvisioner, seeded_db: AsyncSession,
+        self,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db: AsyncSession,
     ):
         set_session(seeded_db)
 
@@ -72,11 +72,13 @@ class TestReconcileSqlAccess:
         # Verify configure_s3_secrets was called with a StorageConfig
         args = mock_configure_s3.await_args
         assert args is not None
-        env_arg, storage_config_arg = args.args
+        _env_arg, storage_config_arg = args.args
         assert storage_config_arg.access_key  # Sanity: StorageConfig was passed
 
     async def test_degraded_environment_counted(
-        self, mock_provisioner: MockEnvironmentProvisioner, seeded_db_with_access: AsyncSession,
+        self,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db_with_access: AsyncSession,
     ):
         set_session(seeded_db_with_access)
 
@@ -135,7 +137,9 @@ class TestReconcileSqlAccess:
         assert data["degraded"] == 1
 
     async def test_disabled_records_not_checked(
-        self, mock_provisioner: MockEnvironmentProvisioner, seeded_db_with_disabled_access: AsyncSession,
+        self,
+        mock_provisioner: MockEnvironmentProvisioner,
+        seeded_db_with_disabled_access: AsyncSession,
     ):
         set_session(seeded_db_with_disabled_access)
 

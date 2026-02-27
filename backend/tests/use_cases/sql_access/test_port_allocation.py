@@ -11,7 +11,6 @@ from app.use_cases.sql_access.port_allocation import (
     PortRangeExhausted,
     allocate_proxy_port,
 )
-
 from tests.uuidv7_fixtures import ORG_1, PROJECT_1, PROJECT_EMPTY
 
 
@@ -59,18 +58,14 @@ class TestAllocateProxyPort:
         port = await allocate_proxy_port(db_session)
         assert port == 6432
 
-    async def test_skips_used_ports(
-        self, seeded_db_with_ports: AsyncSession
-    ):
+    async def test_skips_used_ports(self, seeded_db_with_ports: AsyncSession):
         """With port 6432 used, returns the next available (6433)."""
         set_session(seeded_db_with_ports)
         port = await allocate_proxy_port(seeded_db_with_ports)
         assert port == 6433
 
     @patch("app.use_cases.sql_access.port_allocation.get_settings")
-    async def test_port_range_exhaustion(
-        self, mock_settings, seeded_db_with_ports: AsyncSession
-    ):
+    async def test_port_range_exhaustion(self, mock_settings, seeded_db_with_ports: AsyncSession):
         """When all ports in range are used, raises PortRangeExhausted."""
         settings = mock_settings.return_value
         # Tiny range: only port 6432, which is already used
@@ -81,9 +76,7 @@ class TestAllocateProxyPort:
         with pytest.raises(PortRangeExhausted, match="No available ports in range"):
             await allocate_proxy_port(seeded_db_with_ports)
 
-    async def test_reclaimed_port_becomes_available(
-        self, seeded_db_with_ports: AsyncSession
-    ):
+    async def test_reclaimed_port_becomes_available(self, seeded_db_with_ports: AsyncSession):
         """After clearing environment_port (soft_disable), the port is reusable."""
         set_session(seeded_db_with_ports)
 
@@ -91,9 +84,7 @@ class TestAllocateProxyPort:
         from sqlalchemy import select
 
         result = await seeded_db_with_ports.execute(
-            select(ExternalAccessRecord).where(
-                ExternalAccessRecord.project_id == PROJECT_1
-            )
+            select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == PROJECT_1)
         )
         record = result.scalar_one()
         record.environment_port = None

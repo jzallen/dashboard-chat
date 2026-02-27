@@ -43,13 +43,16 @@ class LakeRepository(Protocol):
         ...
 
     def preview_cleaning_operation(
-        self, storage_path: str, target_column: str,
-        expression_config: dict[str, Any], sample_limit: int = 5,
+        self,
+        storage_path: str,
+        target_column: str,
+        expression_config: dict[str, Any],
+        sample_limit: int = 5,
     ) -> dict[str, Any]:
         """Preview a cleaning operation against Parquet data."""
         ...
 
 
-from .repository import BaseLakeRepository, MinIOLakeRepository
+from .repository import BaseLakeRepository, MinIOLakeRepository  # noqa: E402
 
-__all__ = ["LakeRepository", "BaseLakeRepository", "MinIOLakeRepository"]
+__all__ = ["BaseLakeRepository", "LakeRepository", "MinIOLakeRepository"]

@@ -1,20 +1,20 @@
 """Transform use cases — batch create, batch update, and preview with outbox audit trail."""
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from returns.result import Result
 
 from app.auth import get_auth_user
 from app.auth.exceptions import AuthorizationError
+from app.repositories import with_repositories
 from app.types import CleaningExpression
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import (
+    ColumnTypeMismatch,
     DatasetNotFound,
     InvalidExpressionConfig,
-    ColumnTypeMismatch,
     PreviewNotSupported,
 )
-from app.repositories import with_repositories
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -32,9 +32,13 @@ async def _verify_dataset_access(metadata_repo, dataset_id: str) -> None:
         raise DatasetNotFound(dataset_id)
 
     user = get_auth_user()
-    if record.project and hasattr(record.project, 'org_id'):
-        if record.project.org_id and record.project.org_id != user.org_id:
-            raise AuthorizationError(f"Access denied to dataset {dataset_id}")
+    if (
+        record.project
+        and hasattr(record.project, "org_id")
+        and record.project.org_id
+        and record.project.org_id != user.org_id
+    ):
+        raise AuthorizationError(f"Access denied to dataset {dataset_id}")
 
 
 @with_repositories
@@ -43,7 +47,7 @@ async def create_transforms(
     dataset_id: str,
     transforms_input: list[dict[str, Any]],
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[None, str]:
     """Batch-create transforms on a dataset.
 
@@ -51,19 +55,19 @@ async def create_transforms(
         DatasetNotFound: If dataset with given ID does not exist.
         AuthorizationError: If user's org does not own the parent project.
     """
-    metadata_repo = repositories['metadata_repository']
-    outbox_repo = repositories['outbox_repository']
+    metadata_repo = repositories["metadata_repository"]
+    outbox_repo = repositories["outbox_repository"]
 
     await _verify_dataset_access(metadata_repo, dataset_id)
 
     # Server-side expression_sql generation for non-filter transforms (design D1)
     for t in transforms_input:
-        transform_type = t.get('transform_type', 'filter')
-        if transform_type != 'filter' and t.get('expression_config'):
-            expr = CleaningExpression(t['expression_config'])
-            column = t.get('target_column', '')
+        transform_type = t.get("transform_type", "filter")
+        if transform_type != "filter" and t.get("expression_config"):
+            expr = CleaningExpression(t["expression_config"])
+            column = t.get("target_column", "")
             # Always overwrite client-provided expression_sql with server-generated value
-            t['expression_sql'] = expr.to_display_sql(column)
+            t["expression_sql"] = expr.to_display_sql(column)
 
     created = await metadata_repo.create_transforms_batch(dataset_id, transforms_input)
 
@@ -79,7 +83,7 @@ async def update_transforms(
     dataset_id: str,
     updates: list[dict[str, Any]],
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[None, str]:
     """Batch-update transforms (including soft-delete via status='deleted').
 
@@ -87,8 +91,8 @@ async def update_transforms(
         DatasetNotFound: If dataset with given ID does not exist.
         AuthorizationError: If user's org does not own the parent project.
     """
-    metadata_repo = repositories['metadata_repository']
-    outbox_repo = repositories['outbox_repository']
+    metadata_repo = repositories["metadata_repository"]
+    outbox_repo = repositories["outbox_repository"]
 
     await _verify_dataset_access(metadata_repo, dataset_id)
 
@@ -140,7 +144,7 @@ async def preview_cleaning_transform(
     target_column: str,
     expression_config: dict[str, Any],
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Preview a cleaning transform without persisting anything.
 
@@ -153,14 +157,14 @@ async def preview_cleaning_transform(
         PreviewNotSupported: If operation does not support preview (e.g., alias).
         ColumnTypeMismatch: If text-only operation targets a non-text column.
     """
-    metadata_repo = repositories['metadata_repository']
-    lake_repo = repositories['lake_repository']
+    metadata_repo = repositories["metadata_repository"]
+    lake_repo = repositories["lake_repository"]
 
     # 1. Validate expression_config structure
     try:
         expr = CleaningExpression(expression_config)
     except ValueError as e:
-        raise InvalidExpressionConfig(str(e))
+        raise InvalidExpressionConfig(str(e)) from e
 
     # 2. Reject alias operations (no preview needed)
     if expr.operation == "alias":
@@ -175,9 +179,7 @@ async def preview_cleaning_transform(
     # 5. Check column exists in schema
     fields = (record.schema_config or {}).get("fields", {})
     if target_column not in fields:
-        raise InvalidExpressionConfig(
-            f"Column '{target_column}' not found in dataset schema"
-        )
+        raise InvalidExpressionConfig(f"Column '{target_column}' not found in dataset schema")
 
     # 6. Get column type from Parquet schema (DuckDB) and check type compatibility
     column_type = lake_repo.get_parquet_column_type(record.storage_path, target_column)
@@ -198,7 +200,5 @@ async def preview_cleaning_transform(
         "total_count": preview["total_count"],
         "samples": preview["samples"],
         "column": target_column,
-        "operation_description": _build_operation_description(
-            expr.operation, expression_config, target_column
-        ),
+        "operation_description": _build_operation_description(expr.operation, expression_config, target_column),
     }

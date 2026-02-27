@@ -1,13 +1,14 @@
 """Tests for create_project use case."""
 
-import pytest
 from unittest.mock import Mock
-from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.use_cases.project import create_project
+import pytest
+from returns.result import Failure, Success
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.repositories import set_session
+from app.use_cases.project import create_project
 
 
 class TestCreateProject:
@@ -54,7 +55,7 @@ class TestCreateProject:
 
         result = await create_project(
             name="New Project",
-            repositories={'metadata_repository': lambda: metadata_repository},
+            repositories={"metadata_repository": lambda: metadata_repository},
         )
 
         match result:

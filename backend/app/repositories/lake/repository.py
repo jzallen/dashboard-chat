@@ -9,19 +9,20 @@ import os
 import re
 import shutil
 import tempfile
-from pathlib import Path
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, TypeVar, ParamSpec
+from pathlib import Path
+from typing import Any, ParamSpec, TypeVar
 
 import boto3
 import ibis
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from ..exceptions import LakeRepositoryError
 from ...config import get_settings
-from ...utils.sql_functions import register_duckdb_macros, title_case, snake_case, kebab_case
+from ...utils.sql_functions import kebab_case, register_duckdb_macros, snake_case, title_case
+from ..exceptions import LakeRepositoryError
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,14 @@ R = TypeVar("R")
 
 def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator that wraps BotoCoreError/ClientError as LakeRepositoryError."""
+
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return func(*args, **kwargs)
         except (BotoCoreError, ClientError) as e:
             raise LakeRepositoryError(str(e)) from e
+
     return wrapper
 
 
@@ -74,10 +77,7 @@ class BaseLakeRepository(ABC):
             S3 path (s3://bucket/path)
         """
         self.s3_client.put_object(
-            Bucket=self.bucket,
-            Key=storage_path,
-            Body=content,
-            ContentType='application/octet-stream'
+            Bucket=self.bucket, Key=storage_path, Body=content, ContentType="application/octet-stream"
         )
         return f"s3://{self.bucket}/{storage_path}"
 
@@ -91,11 +91,8 @@ class BaseLakeRepository(ABC):
         Returns:
             File content as bytes
         """
-        response = self.s3_client.get_object(
-            Bucket=self.bucket,
-            Key=storage_path
-        )
-        return response['Body'].read()
+        response = self.s3_client.get_object(Bucket=self.bucket, Key=storage_path)
+        return response["Body"].read()
 
     @staticmethod
     def _validate_identifier(name: str) -> str:
@@ -106,7 +103,7 @@ class BaseLakeRepository(ABC):
         Raises:
             ValueError: If the identifier contains invalid characters.
         """
-        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
             raise ValueError(f"Invalid identifier: {name!r}")
         return name
 
@@ -135,7 +132,7 @@ class BaseLakeRepository(ABC):
         """
         conn = ibis.duckdb.connect()
 
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as temp_csv:
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".csv", delete=False) as temp_csv:
             temp_csv.write(csv_content)
             temp_csv_path = temp_csv.name
 
@@ -167,7 +164,7 @@ class BaseLakeRepository(ABC):
                     Bucket=self.bucket,
                     Key=s3_key,
                     Body=local_path.read_bytes(),
-                    ContentType='application/octet-stream',
+                    ContentType="application/octet-stream",
                 )
 
             return f"s3://{self.bucket}/{storage_prefix}"
@@ -196,7 +193,7 @@ class BaseLakeRepository(ABC):
         s3_path = f"s3://{self.bucket}/{storage_path}"
 
         # For partitioned data (path ending with /), use glob pattern
-        if storage_path.endswith('/'):
+        if storage_path.endswith("/"):
             s3_path = f"{s3_path}**/*.parquet"
 
         table = conn.read_parquet(s3_path)
@@ -204,7 +201,7 @@ class BaseLakeRepository(ABC):
 
         # Use pandas JSON serialization to handle date/datetime types,
         # then parse back to get plain Python dicts
-        return json.loads(df.to_json(orient='records', date_format='iso'))
+        return json.loads(df.to_json(orient="records", date_format="iso"))
 
     @handle_repository_exceptions
     def get_parquet_row_count(self, storage_path: str) -> int:
@@ -224,7 +221,7 @@ class BaseLakeRepository(ABC):
         s3_path = f"s3://{self.bucket}/{storage_path}"
 
         # For partitioned data (path ending with /), use glob pattern
-        if storage_path.endswith('/'):
+        if storage_path.endswith("/"):
             s3_path = f"{s3_path}**/*.parquet"
 
         table = conn.read_parquet(s3_path)
@@ -240,10 +237,7 @@ class BaseLakeRepository(ABC):
             storage_path: Path within bucket
         """
         try:
-            self.s3_client.delete_object(
-                Bucket=self.bucket,
-                Key=storage_path
-            )
+            self.s3_client.delete_object(Bucket=self.bucket, Key=storage_path)
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
             if error_code == "404" or error_code == "NoSuchKey":
@@ -252,11 +246,10 @@ class BaseLakeRepository(ABC):
                 logger.error("Failed to delete %s: %s", storage_path, e)
                 raise
 
-
     def _build_s3_path(self, storage_path: str) -> str:
         """Build the full S3 path for reading Parquet data."""
         s3_path = f"s3://{self.bucket}/{storage_path}"
-        if storage_path.endswith('/'):
+        if storage_path.endswith("/"):
             s3_path = f"{s3_path}**/*.parquet"
         return s3_path
 
@@ -357,16 +350,9 @@ class BaseLakeRepository(ABC):
         # Get sample before/after pairs
         samples = []
         if affected_count > 0:
-            samples_table = (
-                table.filter(affected_pred)
-                .select(before=col, after=after_expr)
-                .limit(sample_limit)
-            )
+            samples_table = table.filter(affected_pred).select(before=col, after=after_expr).limit(sample_limit)
             samples_df = samples_table.execute()
-            samples = [
-                {"before": row["before"], "after": row["after"]}
-                for _, row in samples_df.iterrows()
-            ]
+            samples = [{"before": row["before"], "after": row["after"]} for _, row in samples_df.iterrows()]
 
         return {
             "affected_count": affected_count,
@@ -389,13 +375,13 @@ class MinIOLakeRepository(BaseLakeRepository):
 
         if s3_client is None:
             s3_client = boto3.client(
-                's3',
+                "s3",
                 endpoint_url=f"http://{settings.minio_endpoint}",
                 aws_access_key_id=settings.minio_access_key,
                 aws_secret_access_key=settings.minio_secret_key,
                 config=Config(
-                    signature_version='s3v4',
-                    retries={'max_attempts': settings.s3_max_retries, 'mode': 'standard'},
+                    signature_version="s3v4",
+                    retries={"max_attempts": settings.s3_max_retries, "mode": "standard"},
                     connect_timeout=settings.s3_connect_timeout,
                     read_timeout=settings.s3_read_timeout,
                 ),
@@ -409,7 +395,7 @@ class MinIOLakeRepository(BaseLakeRepository):
         endpoint = self._settings.minio_endpoint.replace("'", "''")
         access_key = (self._settings.minio_access_key or "").replace("'", "''")
         secret_key = (self._settings.minio_secret_key or "").replace("'", "''")
-        use_ssl = 'true' if self._settings.minio_secure else 'false'
+        use_ssl = "true" if self._settings.minio_secure else "false"
         conn.raw_sql(f"""
             INSTALL httpfs;
             LOAD httpfs;

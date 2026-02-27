@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateDataset, type Dataset, type Project } from "@/api";
-import { projectKeys } from "./useProjectQuery";
+
+import { type Dataset, type Project,updateDataset } from "@/api";
+
 import { datasetKeys } from "./useDatasetQuery";
+import { projectKeys } from "./useProjectQuery";
 
 export function useRenameDataset(projectId: string) {
   const queryClient = useQueryClient();

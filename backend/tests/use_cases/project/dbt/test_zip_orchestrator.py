@@ -29,7 +29,6 @@ def _make_dataset(
 
 
 class TestZipContents:
-
     def test_project_with_datasets_contains_expected_files(self):
         ds1 = _make_dataset(ds_id="ds-1", name="Leads")
         ds2 = _make_dataset(ds_id="ds-2", name="Opportunities")

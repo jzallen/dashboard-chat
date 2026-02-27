@@ -1,9 +1,11 @@
 import type { Table } from "@tanstack/react-table";
+
 import type { TableRow } from "@/table-tools";
-import { RowCount } from "./RowCount";
+
 import { PageButton } from "./PageButton";
 import { PageIndicator } from "./PageIndicator";
 import styles from "./Pagination.module.css";
+import { RowCount } from "./RowCount";
 
 interface PaginationProps {
   table: Table<TableRow>;

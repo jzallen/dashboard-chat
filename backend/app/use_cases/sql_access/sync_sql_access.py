@@ -1,6 +1,6 @@
 """Sync external SQL access views for a project."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from returns.result import Result
@@ -13,7 +13,7 @@ from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
-from app.use_cases.project.dbt.naming import to_snake_case, deduplicate_names
+from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
 from app.use_cases.sql_access.pg_duckdb_manager import (
     execute_bootstrap,
     grant_schema_usage,
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 async def sync_sql_access(
     project_id: str,
     *,
-    repositories: 'RepositoryContainer',
+    repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """Sync external SQL access views with current dataset state.
 
@@ -44,8 +44,8 @@ async def sync_sql_access(
         AuthorizationError: If user's org does not own the project.
         SqlAccessNotEnabled: If SQL access is not currently enabled.
     """
-    metadata_repo = repositories['metadata_repository']
-    external_access_repo = repositories['external_access_repository']
+    metadata_repo = repositories["metadata_repository"]
+    external_access_repo = repositories["external_access_repository"]
 
     # Fetch and authorize project
     project_dict = await metadata_repo.get_project(project_id, include_datasets=True)
@@ -85,7 +85,7 @@ async def sync_sql_access(
             full_datasets.append(Dataset.from_record(record, include_transforms=True))
 
     snake_names = deduplicate_names([to_snake_case(ds.name) for ds in full_datasets])
-    dataset_pairs = list(zip(snake_names, full_datasets))
+    dataset_pairs = list(zip(snake_names, full_datasets, strict=False))
 
     # Generate and execute bootstrap SQL (drops and recreates all views)
     pg_schema = existing["pg_schema"]
@@ -96,10 +96,13 @@ async def sync_sql_access(
     await grant_schema_usage(env, project_id)
 
     # Update last_synced_at
-    synced_at = datetime.now(timezone.utc)
-    await external_access_repo.update(project_id, {
-        "last_synced_at": synced_at,
-    })
+    synced_at = datetime.now(UTC)
+    await external_access_repo.update(
+        project_id,
+        {
+            "last_synced_at": synced_at,
+        },
+    )
 
     return {
         "project_id": project_id,

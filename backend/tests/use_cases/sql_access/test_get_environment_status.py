@@ -1,6 +1,5 @@
 """Tests for get_environment_status use case."""
 
-import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,22 +11,28 @@ from app.use_cases.sql_access.provisioner import (
     MockEnvironmentProvisioner,
     StorageConfig,
 )
-
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestGetEnvironmentStatus:
-
     async def test_returns_status_for_running_environment(
-        self, mock_provisioner: MockEnvironmentProvisioner,
+        self,
+        mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
         set_session(seeded_db_with_access)
         # Register environment so detailed_status returns meaningful data
-        await mock_provisioner.provision(PROJECT_1, StorageConfig(
-            endpoint="", access_key="", secret_key="",
-            region="", url_style="", use_ssl=False,
-        ))
+        await mock_provisioner.provision(
+            PROJECT_1,
+            StorageConfig(
+                endpoint="",
+                access_key="",
+                secret_key="",
+                region="",
+                url_style="",
+                use_ssl=False,
+            ),
+        )
 
         result = await get_environment_status(project_id=PROJECT_1)
 
@@ -41,7 +46,8 @@ class TestGetEnvironmentStatus:
         assert data["is_legacy"] is False
 
     async def test_returns_status_for_stopped_environment(
-        self, mock_provisioner: MockEnvironmentProvisioner,
+        self,
+        mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_stopped_access: AsyncSession,
     ):
         set_session(seeded_db_with_stopped_access)

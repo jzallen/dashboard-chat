@@ -1,9 +1,7 @@
 """Tests for regenerate_sql_credentials use case."""
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,18 +14,17 @@ from app.use_cases.exceptions import (
 )
 from app.use_cases.sql_access import regenerate_sql_credentials
 from tests.use_cases.sql_access.conftest import MOCK_ENV_HOST, MOCK_ENV_PORT
-
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestRegenerateSqlCredentials:
-
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.get_settings")
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
     async def test_regenerate_returns_new_credentials(
         self, mock_regenerate, mock_get_settings, seeded_db_with_access: AsyncSession
     ):
         from app.config import Settings
+
         mock_get_settings.return_value = Settings(credential_regen_cooldown_seconds=0)
         set_session(seeded_db_with_access)
 
@@ -50,9 +47,7 @@ class TestRegenerateSqlCredentials:
         assert mock_regenerate.call_args[0][2] == data["password"]
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
-    async def test_regenerate_returns_failure_for_nonexistent_project(
-        self, mock_regenerate, seeded_db: AsyncSession
-    ):
+    async def test_regenerate_returns_failure_for_nonexistent_project(self, mock_regenerate, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await regenerate_sql_credentials(project_id="nonexistent")
@@ -61,9 +56,7 @@ class TestRegenerateSqlCredentials:
         assert isinstance(result.failure(), ProjectNotFound)
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
-    async def test_regenerate_returns_failure_when_not_enabled(
-        self, mock_regenerate, seeded_db: AsyncSession
-    ):
+    async def test_regenerate_returns_failure_when_not_enabled(self, mock_regenerate, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await regenerate_sql_credentials(project_id=PROJECT_1)
@@ -72,9 +65,7 @@ class TestRegenerateSqlCredentials:
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
-    async def test_regenerate_returns_failure_for_other_org(
-        self, mock_regenerate, seeded_db_other_org: AsyncSession
-    ):
+    async def test_regenerate_returns_failure_for_other_org(self, mock_regenerate, seeded_db_other_org: AsyncSession):
         set_session(seeded_db_other_org)
 
         result = await regenerate_sql_credentials(project_id=PROJECT_OTHER)
@@ -83,12 +74,17 @@ class TestRegenerateSqlCredentials:
         assert isinstance(result.failure(), AuthorizationError)
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.get_settings")
-    @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock, side_effect=RuntimeError("pg_duckdb down"))
+    @patch(
+        "app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("pg_duckdb down"),
+    )
     async def test_regenerate_returns_failure_on_pg_duckdb_error(
         self, mock_regenerate, mock_get_settings, seeded_db_with_access: AsyncSession
     ):
         """pg_duckdb failure should propagate as a Failure via handle_returns."""
         from app.config import Settings
+
         mock_get_settings.return_value = Settings(credential_regen_cooldown_seconds=0)
         set_session(seeded_db_with_access)
 
@@ -97,9 +93,7 @@ class TestRegenerateSqlCredentials:
         assert isinstance(result, Failure)
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
-    async def test_regenerate_rate_limited_within_cooldown(
-        self, mock_regenerate, seeded_db_with_access: AsyncSession
-    ):
+    async def test_regenerate_rate_limited_within_cooldown(self, mock_regenerate, seeded_db_with_access: AsyncSession):
         """Should reject regeneration when updated_at is within cooldown period."""
         set_session(seeded_db_with_access)
 

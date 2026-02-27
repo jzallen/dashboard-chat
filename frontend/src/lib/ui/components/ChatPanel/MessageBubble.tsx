@@ -1,7 +1,8 @@
-import type { Message } from "../../types";
 import type { Dataset } from "@/api";
-import { UploadWidget } from "./UploadWidget";
+
+import type { Message } from "../../types";
 import styles from "./ChatPanel.module.css";
+import { UploadWidget } from "./UploadWidget";
 
 interface MessageBubbleProps {
   message: Message;

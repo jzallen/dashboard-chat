@@ -17,18 +17,19 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "ms-python.python",
-        "ms-python.vscode-pylance"
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
       ],
       "settings": {
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode",
         "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true
         }
       }
     }
   },
-  "postCreateCommand": "npm install && curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"$HOME/.cargo/bin:$PATH\" && cd backend && uv sync",
+  "postCreateCommand": "npm install && curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"$HOME/.cargo/bin:$PATH\" && cd backend && uv sync && cd .. && npx husky init",
   "forwardPorts": [5173, 8000]
 }

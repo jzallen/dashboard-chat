@@ -1,19 +1,17 @@
-
 from unittest.mock import patch
 
 import pytest
-from returns.result import Failure, Success
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
 from botocore.exceptions import ClientError
+from returns.result import Failure, Success
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.use_cases.dataset import get_dataset
-from app.repositories import set_session
 from app.models.dataset import Dataset
 from app.models.transform import Transform
+from app.repositories import set_session
 from app.types import QueryBuilderJSON
-from tests.uuidv7_fixtures import PROJECT_1, DATASET_1, TRANSFORM_1
-
+from app.use_cases.dataset import get_dataset
+from tests.uuidv7_fixtures import DATASET_1, PROJECT_1, TRANSFORM_1
 
 
 class TestGetDataset:
@@ -32,16 +30,18 @@ class TestGetDataset:
                     project_id=PROJECT_1,
                     name="Dataset One",
                     schema_config={"fields": {"col1": {"type": "text"}}},
-                    transforms=[Transform(
-                        id=TRANSFORM_1,
-                        name="Filter Active",
-                        condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
-                        condition_sql="col1 = 'active'",
-                        description="Filter for active records",
-                        status='enabled',
-                        transform_type='filter',
-                        created_at=dataset.transforms[0].created_at,
-                    )],
+                    transforms=[
+                        Transform(
+                            id=TRANSFORM_1,
+                            name="Filter Active",
+                            condition_json=QueryBuilderJSON({"id": "root", "type": "group", "children1": []}),
+                            condition_sql="col1 = 'active'",
+                            description="Filter for active records",
+                            status="enabled",
+                            transform_type="filter",
+                            created_at=dataset.transforms[0].created_at,
+                        )
+                    ],
                 )
                 assert dataset == expected
             case Failure(error):
@@ -98,14 +98,13 @@ class TestGetDataset:
         """get_dataset should return MetadataRepositoryError when database fails."""
         set_session(seeded_db)
 
-
         class FailingMetadataRepository:
             async def get_dataset_record(self, dataset_id: str, include_transforms: bool = True):
                 raise SQLAlchemyError("Connection lost")
 
         result = await get_dataset(
             dataset_id=DATASET_1,
-            repositories={'metadata_repository': FailingMetadataRepository},
+            repositories={"metadata_repository": FailingMetadataRepository},
         )
 
         match result:
@@ -119,10 +118,7 @@ class TestGetDataset:
         set_session(seeded_db)
 
         def failing_preview(limit=10):
-            raise ClientError(
-                {"Error": {"Code": "NoSuchKey", "Message": "Key not found"}},
-                "GetObject"
-            )
+            raise ClientError({"Error": {"Code": "NoSuchKey", "Message": "Key not found"}}, "GetObject")
 
         with patch.object(Dataset, "query_preview_rows", side_effect=failing_preview):
             result = await get_dataset(

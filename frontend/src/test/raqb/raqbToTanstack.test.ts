@@ -1,11 +1,12 @@
-import { describe, it, expect } from "vitest";
-import {
-  raqbToTanstackFilters,
-  raqbToExtendedFilters,
-  isEmptyTree,
-  countRules,
-} from "@/raqb";
+import { describe, expect,it } from "vitest";
+
 import type { RAQBTree } from "@/raqb";
+import {
+  countRules,
+  isEmptyTree,
+  raqbToExtendedFilters,
+  raqbToTanstackFilters,
+} from "@/raqb";
 
 describe("raqbToTanstack", () => {
   describe("Feature: Convert RAQB JSON to TanStack filters", () => {
