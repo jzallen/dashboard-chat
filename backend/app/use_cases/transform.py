@@ -20,8 +20,11 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-async def _verify_dataset_access(metadata_repo, dataset_id: str) -> None:
-    """Verify the dataset exists and the current user's org owns its parent project.
+async def _fetch_and_authorize_dataset(metadata_repo, dataset_id: str):
+    """Fetch a dataset record and verify the current user's org owns its parent project.
+
+    Returns:
+        The dataset record if found and authorized.
 
     Raises:
         DatasetNotFound: If dataset with given ID does not exist.
@@ -31,14 +34,12 @@ async def _verify_dataset_access(metadata_repo, dataset_id: str) -> None:
     if not record:
         raise DatasetNotFound(dataset_id)
 
+    project = record.project
     user = get_auth_user()
-    if (
-        record.project
-        and hasattr(record.project, "org_id")
-        and record.project.org_id
-        and record.project.org_id != user.org_id
-    ):
+    if project and project.org_id and project.org_id != user.org_id:
         raise AuthorizationError(f"Access denied to dataset {dataset_id}")
+
+    return record
 
 
 @with_repositories
@@ -58,7 +59,7 @@ async def create_transforms(
     metadata_repo = repositories["metadata_repository"]
     outbox_repo = repositories["outbox_repository"]
 
-    await _verify_dataset_access(metadata_repo, dataset_id)
+    await _fetch_and_authorize_dataset(metadata_repo, dataset_id)
 
     # Server-side expression_sql generation for non-filter transforms (design D1)
     for t in transforms_input:
@@ -94,7 +95,7 @@ async def update_transforms(
     metadata_repo = repositories["metadata_repository"]
     outbox_repo = repositories["outbox_repository"]
 
-    await _verify_dataset_access(metadata_repo, dataset_id)
+    await _fetch_and_authorize_dataset(metadata_repo, dataset_id)
 
     await metadata_repo.update_transforms(updates)
 
@@ -137,6 +138,45 @@ def _build_operation_description(operation: str, config: dict[str, Any], column:
 TEXT_ONLY_OPERATIONS = {"trim", "case"}
 
 
+def _parse_expression(expression_config: dict[str, Any]) -> CleaningExpression:
+    """Parse and validate a cleaning expression config.
+
+    Raises:
+        InvalidExpressionConfig: If expression_config is invalid.
+        PreviewNotSupported: If the operation does not support preview (e.g., alias).
+    """
+    try:
+        expr = CleaningExpression(expression_config)
+    except ValueError as e:
+        raise InvalidExpressionConfig(str(e)) from e
+
+    if expr.operation == "alias":
+        raise PreviewNotSupported("alias")
+
+    return expr
+
+
+def _validate_column_for_operation(
+    lake_repo,
+    storage_path: str,
+    target_column: str,
+    schema_fields: dict,
+    operation: str,
+) -> None:
+    """Validate the target column exists and is compatible with the operation.
+
+    Raises:
+        InvalidExpressionConfig: If column not found in dataset schema.
+        ColumnTypeMismatch: If text-only operation targets a non-text column.
+    """
+    if target_column not in schema_fields:
+        raise InvalidExpressionConfig(f"Column '{target_column}' not found in dataset schema")
+
+    column_type = lake_repo.get_parquet_column_type(storage_path, target_column)
+    if operation in TEXT_ONLY_OPERATIONS and not _is_text_type(column_type):
+        raise ColumnTypeMismatch(target_column, column_type, operation)
+
+
 @with_repositories
 @handle_returns
 async def preview_cleaning_transform(
@@ -160,41 +200,21 @@ async def preview_cleaning_transform(
     metadata_repo = repositories["metadata_repository"]
     lake_repo = repositories["lake_repository"]
 
-    # 1. Validate expression_config structure
-    try:
-        expr = CleaningExpression(expression_config)
-    except ValueError as e:
-        raise InvalidExpressionConfig(str(e)) from e
+    expr = _parse_expression(expression_config)
 
-    # 2. Reject alias operations (no preview needed)
-    if expr.operation == "alias":
-        raise PreviewNotSupported("alias")
+    record = await _fetch_and_authorize_dataset(metadata_repo, dataset_id)
 
-    # 3. Verify dataset exists and user has access
-    await _verify_dataset_access(metadata_repo, dataset_id)
+    schema_fields = (record.schema_config or {}).get("fields", {})
+    _validate_column_for_operation(
+        lake_repo, record.storage_path, target_column, schema_fields, expr.operation,
+    )
 
-    # 4. Get the dataset record for storage_path and schema
-    record = await metadata_repo.get_dataset_record(dataset_id, include_transforms=False)
-
-    # 5. Check column exists in schema
-    fields = (record.schema_config or {}).get("fields", {})
-    if target_column not in fields:
-        raise InvalidExpressionConfig(f"Column '{target_column}' not found in dataset schema")
-
-    # 6. Get column type from Parquet schema (DuckDB) and check type compatibility
-    column_type = lake_repo.get_parquet_column_type(record.storage_path, target_column)
-
-    if expr.operation in TEXT_ONLY_OPERATIONS and not _is_text_type(column_type):
-        raise ColumnTypeMismatch(target_column, column_type, expr.operation)
-
-    # 7. Run preview query against Parquet data
     preview = lake_repo.preview_cleaning_operation(
         storage_path=record.storage_path,
         target_column=target_column,
         expression_config=expression_config,
     )
 
-    # 8. Build response
     return {
         "affected_count": preview["affected_count"],
         "total_count": preview["total_count"],

@@ -15,7 +15,7 @@ from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestGetEnvironmentStatus:
-    async def test_returns_status_for_running_environment(
+    async def test_get_status_when_running_returns_component_details(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
@@ -45,7 +45,7 @@ class TestGetEnvironmentStatus:
         assert data["environment_status"] == "running"
         assert data["is_legacy"] is False
 
-    async def test_returns_status_for_stopped_environment(
+    async def test_get_status_when_stopped_returns_not_running(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_stopped_access: AsyncSession,
@@ -61,7 +61,7 @@ class TestGetEnvironmentStatus:
         assert data["status"] == "stopped"
         assert data["environment_status"] == "stopped"
 
-    async def test_fails_when_not_enabled(self, seeded_db: AsyncSession):
+    async def test_get_status_when_not_enabled_returns_failure(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await get_environment_status(project_id=PROJECT_1)
@@ -69,7 +69,7 @@ class TestGetEnvironmentStatus:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    async def test_fails_for_nonexistent_project(self, seeded_db: AsyncSession):
+    async def test_get_status_when_project_nonexistent_returns_failure(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await get_environment_status(project_id="nonexistent")
@@ -77,7 +77,7 @@ class TestGetEnvironmentStatus:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_fails_for_other_org(self, seeded_db_other_org: AsyncSession):
+    async def test_get_status_when_different_org_returns_failure(self, seeded_db_other_org: AsyncSession):
         set_session(seeded_db_other_org)
 
         result = await get_environment_status(project_id=PROJECT_OTHER)

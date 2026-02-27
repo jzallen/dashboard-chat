@@ -15,7 +15,7 @@ from tests.uuidv7_fixtures import DATASET_1, DATASET_2, ORG_1, PROJECT_1
 class TestGetProject:
     """Tests for get_project workflow."""
 
-    async def test_given_valid_id_returns_project_with_datasets(self, seeded_db: AsyncSession):
+    async def test_get_project_when_valid_id_returns_project_with_datasets(self, seeded_db: AsyncSession):
         """get_project should return project dict with datasets by default."""
         set_session(seeded_db)
 
@@ -52,7 +52,7 @@ class TestGetProject:
             case Failure(error):
                 pytest.fail(f"get_project should return project, got: {error}")
 
-    async def test_given_valid_id_without_datasets_flag_excludes_datasets(self, seeded_db: AsyncSession):
+    async def test_get_project_when_include_datasets_false_excludes_datasets(self, seeded_db: AsyncSession):
         """get_project with include_datasets=False should not include datasets."""
         set_session(seeded_db)
 
@@ -73,7 +73,7 @@ class TestGetProject:
             case Failure(error):
                 pytest.fail(f"get_project should return project without datasets, got: {error}")
 
-    async def test_given_invalid_id_returns_failure(self, seeded_db: AsyncSession):
+    async def test_get_project_when_project_not_found_returns_failure(self, seeded_db: AsyncSession):
         """get_project should return Failure when project does not exist."""
         set_session(seeded_db)
 
@@ -85,7 +85,7 @@ class TestGetProject:
             case Success(_):
                 pytest.fail("get_project should fail for nonexistent project")
 
-    async def test_when_database_error_returns_failure(self, seeded_db: AsyncSession):
+    async def test_get_project_when_database_error_returns_failure(self, seeded_db: AsyncSession):
         """get_project should return Failure when a database error occurs."""
         set_session(seeded_db)
 

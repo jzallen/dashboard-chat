@@ -12,7 +12,7 @@ from tests.uuidv7_fixtures import DATASET_1
 class TestCreateTransforms:
     """Tests for create_transforms use case."""
 
-    async def test_batch_create_succeeds(self, seeded_db: AsyncSession):
+    async def test_create_transforms_when_valid_input_returns_success(self, seeded_db: AsyncSession):
         """create_transforms should create transforms and return Success."""
         set_session(seeded_db)
 
@@ -34,7 +34,7 @@ class TestCreateTransforms:
             case Failure(error):
                 pytest.fail(f"create_transforms should succeed, got: {error}")
 
-    async def test_batch_create_multiple(self, seeded_db: AsyncSession):
+    async def test_create_transforms_when_multiple_transforms_returns_success(self, seeded_db: AsyncSession):
         """create_transforms should handle multiple transforms at once."""
         set_session(seeded_db)
 
@@ -60,7 +60,7 @@ class TestCreateTransforms:
             case Failure(error):
                 pytest.fail(f"create_transforms should succeed, got: {error}")
 
-    async def test_emits_outbox_event(self, seeded_db: AsyncSession):
+    async def test_create_transforms_when_successful_emits_outbox_event(self, seeded_db: AsyncSession):
         """create_transforms should write a TransformsCreated outbox record."""
         set_session(seeded_db)
 
@@ -94,7 +94,7 @@ class TestCreateTransforms:
             ],
         }
 
-    async def test_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
+    async def test_create_transforms_when_dataset_missing_returns_failure(self, seeded_db: AsyncSession):
         """create_transforms should return Failure when dataset doesn't exist."""
         set_session(seeded_db)
 

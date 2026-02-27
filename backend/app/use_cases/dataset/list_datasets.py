@@ -21,14 +21,16 @@ async def list_datasets(project_id: str, *, repositories: "RepositoryContainer")
 
     Raises:
         ProjectIdRequired: If project_id is not provided.
+        ProjectNotFound: If project does not exist.
     """
-
     if project_id is None:
         raise ProjectIdRequired()
 
-    if not await repositories["metadata_repository"].project_exists(project_id=project_id):
+    metadata_repo = repositories["metadata_repository"]
+
+    if not await metadata_repo.project_exists(project_id=project_id):
         raise ProjectNotFound(project_id)
 
-    result = await repositories["metadata_repository"].list_datasets(project_id=project_id)
+    dataset_records = await metadata_repo.list_datasets(project_id=project_id)
 
-    return [Dataset.from_record(r) for r in result]
+    return [Dataset.from_record(r) for r in dataset_records]

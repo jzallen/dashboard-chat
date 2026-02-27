@@ -16,13 +16,13 @@ def _make_dataset(
     )
 
 
-class TestBootstrapSqlBasic:
-    def test_creates_schema(self):
+class TestBootstrapSqlStructure:
+    def test_generate_bootstrap_sql_creates_schema(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert 'CREATE SCHEMA IF NOT EXISTS "project_abc";' in sql
 
-    def test_creates_view_per_dataset(self):
+    def test_generate_bootstrap_sql_creates_view_per_dataset(self):
         ds1 = _make_dataset(id="ds-1", name="Sales")
         ds2 = _make_dataset(id="ds-2", name="Orders")
         sql = generate_bootstrap_sql(
@@ -33,12 +33,12 @@ class TestBootstrapSqlBasic:
         assert 'CREATE OR REPLACE VIEW "project_abc"."sales" AS' in sql
         assert 'CREATE OR REPLACE VIEW "project_abc"."orders" AS' in sql
 
-    def test_uses_read_parquet_with_s3_path(self):
+    def test_generate_bootstrap_sql_uses_read_parquet_with_s3_path(self):
         ds = _make_dataset(id="ds-1", project_id="proj-1")
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "read_parquet('s3://my-bucket/datasets/proj-1/ds-1/**/*.parquet')" in sql
 
-    def test_wraps_in_transaction(self):
+    def test_generate_bootstrap_sql_wraps_in_transaction(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert sql.startswith("BEGIN;")
@@ -46,19 +46,19 @@ class TestBootstrapSqlBasic:
 
 
 class TestBootstrapSqlCleanup:
-    def test_drops_existing_views(self):
+    def test_generate_bootstrap_sql_drops_existing_views(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "DO $$" in sql
         assert "DROP VIEW IF EXISTS %I.%I CASCADE" in sql
         assert "information_schema.views" in sql
 
-    def test_cleanup_uses_quoted_filter(self):
+    def test_generate_bootstrap_sql_cleanup_uses_quoted_schema_filter(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "table_schema = 'project_abc'" in sql
 
-    def test_cleanup_before_create(self):
+    def test_generate_bootstrap_sql_drops_views_before_creating(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         drop_pos = sql.index("DROP VIEW IF EXISTS")
@@ -67,14 +67,14 @@ class TestBootstrapSqlCleanup:
 
 
 class TestBootstrapSqlEdgeCases:
-    def test_empty_datasets(self):
+    def test_generate_bootstrap_sql_when_no_datasets_omits_views(self):
         sql = generate_bootstrap_sql("project_abc", [], "my-bucket")
         assert 'CREATE SCHEMA IF NOT EXISTS "project_abc";' in sql
         assert "CREATE OR REPLACE VIEW" not in sql
         assert sql.startswith("BEGIN;")
         assert sql.endswith("COMMIT;")
 
-    def test_multiple_datasets(self):
+    def test_generate_bootstrap_sql_when_multiple_datasets_creates_all_views(self):
         ds1 = _make_dataset(id="ds-1", name="Sales")
         ds2 = _make_dataset(id="ds-2", name="Orders")
         ds3 = _make_dataset(id="ds-3", name="Products")
@@ -85,79 +85,70 @@ class TestBootstrapSqlEdgeCases:
         )
         assert sql.count("CREATE OR REPLACE VIEW") == 3
 
-    def test_schema_name_in_view_path(self):
+    def test_generate_bootstrap_sql_includes_schema_in_view_path(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("sales_data", ds)], "my-bucket")
         assert '"project_abc"."sales_data"' in sql
 
-    def test_bucket_in_s3_path(self):
+    def test_generate_bootstrap_sql_includes_bucket_in_s3_path(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "acme-lake")
         assert "s3://acme-lake/" in sql
 
 
 class TestBootstrapSqlIdentifierQuoting:
-    """Verify identifiers are quoted to handle reserved words and special cases."""
-
-    def test_reserved_word_schema_name(self):
+    def test_generate_bootstrap_sql_when_reserved_word_schema_quotes_it(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("select", [("order", ds)], "my-bucket")
         assert 'CREATE SCHEMA IF NOT EXISTS "select";' in sql
         assert '"select"."order"' in sql
 
-    def test_reserved_word_view_name(self):
+    def test_generate_bootstrap_sql_when_reserved_word_view_quotes_it(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("my_schema", [("table", ds)], "my-bucket")
         assert '"my_schema"."table"' in sql
 
-    def test_schema_with_embedded_quote(self):
+    def test_generate_bootstrap_sql_when_schema_has_embedded_quote_escapes_it(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql('my"schema', [("test", ds)], "my-bucket")
-        # Double-quotes are escaped by doubling them
         assert '"my""schema"' in sql
 
-    def test_cleanup_filter_uses_literal_quoting(self):
+    def test_generate_bootstrap_sql_cleanup_filter_uses_literal_quoting(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("project_abc", [("test", ds)], "my-bucket")
-        # WHERE clause should use single-quoted literal, not raw interpolation
         assert "table_schema = 'project_abc'" in sql
 
-    def test_cleanup_format_uses_literal_quoting(self):
+    def test_generate_bootstrap_sql_when_schema_has_single_quote_escapes_literal(self):
         ds = _make_dataset()
         sql = generate_bootstrap_sql("it's_weird", [("test", ds)], "my-bucket")
-        # Single quotes in schema name must be escaped in literals
         assert "table_schema = 'it''s_weird'" in sql
         assert "'it''s_weird', r.table_name" in sql
 
 
 class TestBootstrapSqlTypedColumns:
-    """Tests for typed view column generation from schema_config."""
-
-    def test_dataset_with_schema_produces_typed_columns(self):
+    def test_generate_bootstrap_sql_when_schema_present_produces_typed_columns(self):
         ds = _make_dataset(schema_config={"fields": {"name": {"type": "text"}, "salary": {"type": "number"}}})
         sql = generate_bootstrap_sql("project_abc", [("employees", ds)], "my-bucket")
         assert "r['name']::text AS \"name\"" in sql
         assert "r['salary']::double precision AS \"salary\"" in sql
-        # Should NOT have SELECT *
         assert "SELECT *" not in sql
 
-    def test_dataset_without_schema_falls_back_to_select_star(self):
+    def test_generate_bootstrap_sql_when_empty_schema_falls_back_to_select_star(self):
         ds = _make_dataset(schema_config={})
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "SELECT * FROM read_parquet(" in sql
 
-    def test_dataset_with_empty_fields_falls_back(self):
+    def test_generate_bootstrap_sql_when_empty_fields_falls_back_to_select_star(self):
         ds = _make_dataset(schema_config={"fields": {}})
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "SELECT * FROM read_parquet(" in sql
 
-    def test_dataset_with_none_schema_falls_back(self):
+    def test_generate_bootstrap_sql_when_none_schema_falls_back_to_select_star(self):
         ds = _make_dataset(schema_config=None)
         sql = generate_bootstrap_sql("project_abc", [("test_data", ds)], "my-bucket")
         assert "SELECT * FROM read_parquet(" in sql
 
-    def test_all_type_mappings(self):
-        """Verify all standard app types map to correct PostgreSQL types."""
+    def test_generate_bootstrap_sql_maps_all_app_types_to_pg_types(self):
         fields = {
             "t": {"type": "text"},
             "n": {"type": "number"},
@@ -175,26 +166,24 @@ class TestBootstrapSqlTypedColumns:
         assert '::timestamptz AS "d"' in sql
         assert '::bigint AS "i"' in sql
 
-    def test_unknown_type_falls_back_to_text(self):
+    def test_generate_bootstrap_sql_when_unknown_type_falls_back_to_text(self):
         ds = _make_dataset(schema_config={"fields": {"weird_col": {"type": "unknown_type"}}})
         sql = generate_bootstrap_sql("project_abc", [("test", ds)], "my-bucket")
         assert '::text AS "weird_col"' in sql
 
-    def test_reserved_word_column_names_are_quoted(self):
+    def test_generate_bootstrap_sql_when_reserved_word_columns_quotes_them(self):
         ds = _make_dataset(schema_config={"fields": {"select": {"type": "text"}, "order": {"type": "text"}}})
         sql = generate_bootstrap_sql("project_abc", [("test", ds)], "my-bucket")
         assert 'AS "select"' in sql
         assert 'AS "order"' in sql
 
-    def test_typed_view_uses_alias_r(self):
-        """Typed views use 'r' alias on read_parquet for column access."""
+    def test_generate_bootstrap_sql_when_typed_view_uses_r_alias(self):
         ds = _make_dataset(schema_config={"fields": {"col1": {"type": "text"}}})
         sql = generate_bootstrap_sql("project_abc", [("test", ds)], "my-bucket")
         assert "FROM read_parquet(" in sql
         assert ") r;" in sql
 
-    def test_mixed_typed_and_untyped_datasets(self):
-        """When some datasets have schema and some don't, each uses appropriate SQL."""
+    def test_generate_bootstrap_sql_when_mixed_typed_and_untyped_uses_appropriate_sql(self):
         ds_typed = _make_dataset(
             id="ds-1",
             schema_config={"fields": {"name": {"type": "text"}}},
@@ -205,7 +194,5 @@ class TestBootstrapSqlTypedColumns:
             [("typed", ds_typed), ("untyped", ds_untyped)],
             "my-bucket",
         )
-        # First view is typed
         assert "r['name']::text AS \"name\"" in sql
-        # Second view uses SELECT *
         assert "SELECT * FROM read_parquet(" in sql

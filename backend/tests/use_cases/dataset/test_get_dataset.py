@@ -17,7 +17,7 @@ from tests.uuidv7_fixtures import DATASET_1, PROJECT_1, TRANSFORM_1
 class TestGetDataset:
     """Tests for get_dataset workflow."""
 
-    async def test_given_valid_id_returns_dataset_with_transforms(self, seeded_db: AsyncSession):
+    async def test_get_dataset_when_valid_id_returns_dataset_with_transforms(self, seeded_db: AsyncSession):
         """get_dataset should return Dataset with transforms by default."""
         set_session(seeded_db)
 
@@ -47,7 +47,7 @@ class TestGetDataset:
             case Failure(error):
                 pytest.fail(f"get_dataset should return dataset for valid id, got: {error}")
 
-    async def test_with_include_transforms_false_returns_empty_transforms(self, seeded_db: AsyncSession):
+    async def test_get_dataset_when_include_transforms_false_returns_empty_transforms(self, seeded_db: AsyncSession):
         """get_dataset with include_transforms=False should return empty transforms list."""
         set_session(seeded_db)
 
@@ -62,7 +62,7 @@ class TestGetDataset:
             case Failure(error):
                 pytest.fail(f"get_dataset should succeed, got: {error}")
 
-    async def test_given_invalid_id_returns_failure(self, seeded_db: AsyncSession):
+    async def test_get_dataset_when_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
         """get_dataset should return Failure when dataset not found."""
         set_session(seeded_db)
 
@@ -74,7 +74,7 @@ class TestGetDataset:
             case Success(_):
                 pytest.fail("get_dataset should fail when dataset does not exist")
 
-    async def test_with_include_preview_returns_preview_rows(self, seeded_db: AsyncSession):
+    async def test_get_dataset_when_include_preview_true_returns_preview_rows(self, seeded_db: AsyncSession):
         """get_dataset with include_preview should populate preview_rows."""
         set_session(seeded_db)
 
@@ -94,8 +94,8 @@ class TestGetDataset:
             case Failure(error):
                 pytest.fail(f"get_dataset with preview should succeed, got: {error}")
 
-    async def test_when_database_error_returns_metadata_repository_error(self, seeded_db: AsyncSession):
-        """get_dataset should return MetadataRepositoryError when database fails."""
+    async def test_get_dataset_when_database_error_occurs_returns_failure(self, seeded_db: AsyncSession):
+        """get_dataset should return Failure when database error occurs."""
         set_session(seeded_db)
 
         class FailingMetadataRepository:
@@ -113,8 +113,8 @@ class TestGetDataset:
             case Success(_):
                 pytest.fail("get_dataset should fail when database error occurs")
 
-    async def test_when_lake_error_returns_lake_repository_error(self, seeded_db: AsyncSession):
-        """get_dataset should return error when preview query fails."""
+    async def test_get_dataset_when_lake_error_occurs_returns_failure(self, seeded_db: AsyncSession):
+        """get_dataset should return Failure when preview query fails."""
         set_session(seeded_db)
 
         def failing_preview(limit=10):

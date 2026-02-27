@@ -12,7 +12,7 @@ from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestGetSqlAccess:
-    async def test_get_returns_connection_details_when_enabled(self, seeded_db_with_access: AsyncSession):
+    async def test_get_sql_access_when_enabled_returns_connection_details(self, seeded_db_with_access: AsyncSession):
         set_session(seeded_db_with_access)
 
         result = await get_sql_access(project_id=PROJECT_1)
@@ -43,7 +43,7 @@ class TestGetSqlAccess:
         assert data["environment_status"] == "running"
         assert data["is_legacy"] is False
 
-    async def test_get_returns_disabled_when_no_record_exists(self, seeded_db: AsyncSession):
+    async def test_get_sql_access_when_no_record_exists_returns_disabled(self, seeded_db: AsyncSession):
         """No external_access record for this project — enabled=False."""
         set_session(seeded_db)
 
@@ -52,7 +52,7 @@ class TestGetSqlAccess:
         assert isinstance(result, Success)
         assert result.unwrap() == {"project_id": PROJECT_1, "enabled": False}
 
-    async def test_get_returns_disabled_when_record_is_disabled(self, seeded_db_with_disabled_access: AsyncSession):
+    async def test_get_sql_access_when_disabled_returns_disabled(self, seeded_db_with_disabled_access: AsyncSession):
         """Record exists but enabled=False — distinct code path from no-record."""
         set_session(seeded_db_with_disabled_access)
 
@@ -61,7 +61,7 @@ class TestGetSqlAccess:
         assert isinstance(result, Success)
         assert result.unwrap() == {"project_id": PROJECT_1, "enabled": False}
 
-    async def test_get_returns_failure_for_nonexistent_project(self, seeded_db: AsyncSession):
+    async def test_get_sql_access_when_project_not_found_returns_failure(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await get_sql_access(project_id="nonexistent")
@@ -69,7 +69,7 @@ class TestGetSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_get_returns_failure_for_other_org(self, seeded_db_other_org: AsyncSession):
+    async def test_get_sql_access_when_other_org_returns_authorization_error(self, seeded_db_other_org: AsyncSession):
         set_session(seeded_db_other_org)
 
         result = await get_sql_access(project_id=PROJECT_OTHER)

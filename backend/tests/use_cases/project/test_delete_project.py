@@ -17,7 +17,7 @@ from tests.uuidv7_fixtures import ORG_1, PROJECT_1, PROJECT_2
 class TestDeleteProject:
     """Tests for delete_project workflow."""
 
-    async def test_deletes_existing_project_returns_true(self, seeded_db: AsyncSession):
+    async def test_delete_project_when_project_exists_returns_true(self, seeded_db: AsyncSession):
         """delete_project should delete project and return True."""
         set_session(seeded_db)
 
@@ -32,7 +32,7 @@ class TestDeleteProject:
             case Failure(error):
                 pytest.fail(f"delete_project should delete project, got: {error}")
 
-    async def test_given_invalid_id_returns_failure(self, seeded_db: AsyncSession):
+    async def test_delete_project_when_project_not_found_returns_failure(self, seeded_db: AsyncSession):
         """delete_project should return Failure when project does not exist."""
         set_session(seeded_db)
 
@@ -44,7 +44,7 @@ class TestDeleteProject:
             case Success(_):
                 pytest.fail("delete_project should fail for nonexistent project")
 
-    async def test_cascades_to_datasets(self, seeded_db: AsyncSession):
+    async def test_delete_project_when_project_has_datasets_cascades_deletion(self, seeded_db: AsyncSession):
         """delete_project should cascade delete to datasets."""
         set_session(seeded_db)
 
@@ -65,7 +65,7 @@ class TestDeleteProject:
             case Failure(error):
                 pytest.fail(f"delete_project should cascade delete datasets, got: {error}")
 
-    async def test_when_database_error_returns_failure(self, seeded_db: AsyncSession):
+    async def test_delete_project_when_database_error_returns_failure(self, seeded_db: AsyncSession):
         """delete_project should return Failure when a database error occurs."""
         set_session(seeded_db)
 

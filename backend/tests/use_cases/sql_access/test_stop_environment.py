@@ -16,7 +16,7 @@ from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestStopEnvironment:
-    async def test_stop_running_environment(
+    async def test_stop_when_running_returns_stopped_status(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
@@ -47,7 +47,7 @@ class TestStopEnvironment:
         # Verify stop was called
         assert len(mock_provisioner.stop_environment_calls) == 1
 
-    async def test_stop_fails_when_already_stopped(
+    async def test_stop_when_already_stopped_returns_failure(
         self,
         seeded_db_with_stopped_access: AsyncSession,
     ):
@@ -59,7 +59,7 @@ class TestStopEnvironment:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), EnvironmentNotRunning)
 
-    async def test_stop_fails_when_not_enabled(self, seeded_db: AsyncSession):
+    async def test_stop_when_not_enabled_returns_failure(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await stop_environment(project_id=PROJECT_1)
@@ -67,7 +67,7 @@ class TestStopEnvironment:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    async def test_stop_fails_for_nonexistent_project(self, seeded_db: AsyncSession):
+    async def test_stop_when_project_nonexistent_returns_failure(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await stop_environment(project_id="nonexistent")
@@ -75,7 +75,7 @@ class TestStopEnvironment:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_stop_fails_for_other_org(self, seeded_db_other_org: AsyncSession):
+    async def test_stop_when_different_org_returns_failure(self, seeded_db_other_org: AsyncSession):
         set_session(seeded_db_other_org)
 
         result = await stop_environment(project_id=PROJECT_OTHER)

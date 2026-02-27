@@ -29,7 +29,7 @@ def _make_dataset(
 
 
 class TestZipContents:
-    def test_project_with_datasets_contains_expected_files(self):
+    def test_generate_zip_when_datasets_present_contains_all_expected_files(self):
         ds1 = _make_dataset(ds_id="ds-1", name="Leads")
         ds2 = _make_dataset(ds_id="ds-2", name="Opportunities")
         project = _make_project("Sales Pipeline", datasets=[ds1, ds2])
@@ -48,7 +48,7 @@ class TestZipContents:
         assert "models/staging/stg_leads.sql" in names
         assert "models/staging/stg_opportunities.sql" in names
 
-    def test_empty_project_contains_skeleton_files(self):
+    def test_generate_zip_when_no_datasets_contains_skeleton_files(self):
         project = _make_project("Empty Project")
 
         zip_bytes = generate_dbt_project_zip(project, "empty_project")
@@ -62,11 +62,10 @@ class TestZipContents:
         assert "macros/custom_functions.sql" in names
         assert "scripts/bootstrap_db.sql" in names
         assert "README.md" in names
-        # No stg_ files
         stg_files = [n for n in names if n.startswith("models/staging/stg_")]
         assert stg_files == []
 
-    def test_deduplicated_names_used_consistently(self):
+    def test_generate_zip_when_duplicate_names_deduplicates_consistently(self):
         ds1 = _make_dataset(ds_id="ds-1", name="Sales Data")
         ds2 = _make_dataset(ds_id="ds-2", name="Sales-Data")
         project = _make_project("Test", datasets=[ds1, ds2])
@@ -78,17 +77,15 @@ class TestZipContents:
         assert "models/staging/stg_sales_data.sql" in names
         assert "models/staging/stg_sales_data_1.sql" in names
 
-        # Verify sources.yml references both names
         sources_content = zf.read("models/staging/sources.yml").decode("utf-8")
         assert "sales_data" in sources_content
         assert "sales_data_1" in sources_content
 
-        # Verify schema.yml references both names
         schema_content = zf.read("models/schema.yml").decode("utf-8")
         assert "stg_sales_data" in schema_content
         assert "stg_sales_data_1" in schema_content
 
-    def test_all_files_are_valid_utf8(self):
+    def test_generate_zip_produces_valid_utf8_files(self):
         ds = _make_dataset()
         project = _make_project("Test", datasets=[ds])
 
@@ -99,7 +96,7 @@ class TestZipContents:
             content = zf.read(name)
             content.decode("utf-8")  # Raises if not valid UTF-8
 
-    def test_project_name_appears_in_readme(self):
+    def test_generate_zip_includes_project_name_in_readme(self):
         project = _make_project("My Project")
 
         zip_bytes = generate_dbt_project_zip(project, "my_project")
@@ -108,7 +105,7 @@ class TestZipContents:
         readme = zf.read("README.md").decode("utf-8")
         assert "My Project" in readme
 
-    def test_macros_file_contains_custom_functions(self):
+    def test_generate_zip_macros_file_contains_custom_functions(self):
         project = _make_project("Test")
 
         zip_bytes = generate_dbt_project_zip(project, "test")
@@ -119,7 +116,7 @@ class TestZipContents:
         assert "snake_case" in macros
         assert "kebab_case" in macros
 
-    def test_bootstrap_sql_contains_views(self):
+    def test_generate_zip_bootstrap_sql_contains_views(self):
         ds = _make_dataset(ds_id="ds-1", name="Sales Data")
         project = _make_project("Test", datasets=[ds])
 
@@ -132,7 +129,7 @@ class TestZipContents:
         assert "read_parquet(" in bootstrap
         assert "sales_data" in bootstrap
 
-    def test_bootstrap_sql_uses_parameterized_bucket(self):
+    def test_generate_zip_bootstrap_sql_uses_parameterized_bucket(self):
         ds = _make_dataset()
         project = _make_project("Test", datasets=[ds])
 
@@ -142,7 +139,7 @@ class TestZipContents:
         bootstrap = zf.read("scripts/bootstrap_db.sql").decode("utf-8")
         assert "__S3_BUCKET__" in bootstrap
 
-    def test_readme_includes_postgres_instructions(self):
+    def test_generate_zip_readme_includes_postgres_instructions(self):
         project = _make_project("My Project")
 
         zip_bytes = generate_dbt_project_zip(project, "my_project")
@@ -155,7 +152,7 @@ class TestZipContents:
         assert "PG_HOST" in readme
         assert "dbt-postgres" in readme
 
-    def test_profiles_yml_has_both_targets(self):
+    def test_generate_zip_profiles_yml_has_both_targets(self):
         ds = _make_dataset()
         project = _make_project("Test", datasets=[ds])
 
@@ -166,7 +163,7 @@ class TestZipContents:
         assert "duckdb" in profiles
         assert "postgres" in profiles
 
-    def test_dataset_with_transforms_generates_sql(self):
+    def test_generate_zip_when_dataset_has_transforms_generates_sql(self):
         ds = _make_dataset(
             transforms=[
                 Transform(

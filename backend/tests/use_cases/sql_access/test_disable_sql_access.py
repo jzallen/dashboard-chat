@@ -12,7 +12,7 @@ from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 
 class TestDisableSqlAccess:
-    async def test_disable_returns_success(
+    async def test_disable_sql_access_when_enabled_returns_success(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
@@ -26,7 +26,7 @@ class TestDisableSqlAccess:
         # Verify provisioner deprovisioned the environment
         assert PROJECT_1 in mock_provisioner.deprovision_calls
 
-    async def test_disable_returns_failure_for_nonexistent_project(
+    async def test_disable_sql_access_when_project_not_found_returns_failure(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
@@ -38,7 +38,7 @@ class TestDisableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_disable_returns_failure_when_not_enabled(
+    async def test_disable_sql_access_when_no_record_exists_returns_failure(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
@@ -51,7 +51,7 @@ class TestDisableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    async def test_disable_returns_failure_when_already_disabled(
+    async def test_disable_sql_access_when_already_disabled_returns_failure(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_disabled_access: AsyncSession,
@@ -64,7 +64,7 @@ class TestDisableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    async def test_disable_returns_failure_for_other_org(
+    async def test_disable_sql_access_when_other_org_returns_authorization_error(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_other_org: AsyncSession,

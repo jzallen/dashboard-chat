@@ -45,7 +45,7 @@ class MockLakeRepository:
 class TestPreviewCleaningTransform:
     """Tests for the preview_cleaning_transform use case."""
 
-    async def test_trim_preview_returns_complete_response(self, seeded_db: AsyncSession):
+    async def test_preview_when_trim_operation_returns_complete_response(self, seeded_db: AsyncSession):
         """Preview trim operation returns affected_count, total_count, samples, column, and description."""
         set_session(seeded_db)
 
@@ -71,7 +71,7 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_case_preview_returns_correct_description(self, seeded_db: AsyncSession):
+    async def test_preview_when_case_title_returns_title_case_description(self, seeded_db: AsyncSession):
         """Preview case operation returns a description with the case mode."""
         set_session(seeded_db)
 
@@ -88,7 +88,7 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_case_snake_preview_returns_correct_description(self, seeded_db: AsyncSession):
+    async def test_preview_when_case_snake_returns_snake_case_description(self, seeded_db: AsyncSession):
         """Preview snake case operation returns a description mentioning snake_case."""
         set_session(seeded_db)
 
@@ -106,7 +106,7 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_case_kebab_preview_returns_correct_description(self, seeded_db: AsyncSession):
+    async def test_preview_when_case_kebab_returns_kebab_case_description(self, seeded_db: AsyncSession):
         """Preview kebab case operation returns a description mentioning kebab-case."""
         set_session(seeded_db)
 
@@ -124,7 +124,7 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_fill_null_preview_returns_correct_description(self, seeded_db: AsyncSession):
+    async def test_preview_when_fill_null_returns_description_with_fill_value(self, seeded_db: AsyncSession):
         """Preview fill_null operation includes the fill value in the description."""
         set_session(seeded_db)
 
@@ -142,7 +142,7 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_map_values_preview_returns_correct_description(self, seeded_db: AsyncSession):
+    async def test_preview_when_map_values_returns_description_with_mappings(self, seeded_db: AsyncSession):
         """Preview map_values operation includes mapping info in the description."""
         set_session(seeded_db)
 
@@ -162,8 +162,8 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_alias_operation_returns_failure(self, seeded_db: AsyncSession):
-        """Preview of alias operations should fail with 400."""
+    async def test_preview_when_alias_operation_returns_not_supported(self, seeded_db: AsyncSession):
+        """Preview of alias operations should fail because alias does not support preview."""
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
@@ -179,8 +179,8 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for alias preview")
 
-    async def test_invalid_expression_config_returns_failure(self, seeded_db: AsyncSession):
-        """Preview with invalid expression_config should fail with 400."""
+    async def test_preview_when_unknown_operation_returns_failure(self, seeded_db: AsyncSession):
+        """Preview with unknown operation in expression_config should fail."""
         set_session(seeded_db)
 
         result = await preview_cleaning_transform(
@@ -196,7 +196,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for invalid expression config")
 
-    async def test_missing_operation_returns_failure(self, seeded_db: AsyncSession):
+    async def test_preview_when_missing_operation_returns_failure(self, seeded_db: AsyncSession):
         """Preview with missing operation field should fail."""
         set_session(seeded_db)
 
@@ -213,7 +213,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for missing operation")
 
-    async def test_case_without_mode_returns_failure(self, seeded_db: AsyncSession):
+    async def test_preview_when_case_without_mode_returns_failure(self, seeded_db: AsyncSession):
         """Preview case operation without mode should fail."""
         set_session(seeded_db)
 
@@ -230,7 +230,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for case without mode")
 
-    async def test_fill_null_without_fill_value_returns_failure(self, seeded_db: AsyncSession):
+    async def test_preview_when_fill_null_without_fill_value_returns_failure(self, seeded_db: AsyncSession):
         """Preview fill_null without fill_value should fail."""
         set_session(seeded_db)
 
@@ -247,7 +247,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for fill_null without fill_value")
 
-    async def test_map_values_without_mappings_returns_failure(self, seeded_db: AsyncSession):
+    async def test_preview_when_map_values_without_mappings_returns_failure(self, seeded_db: AsyncSession):
         """Preview map_values without mappings should fail."""
         set_session(seeded_db)
 
@@ -264,7 +264,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for map_values without mappings")
 
-    async def test_nonexistent_column_returns_failure(self, seeded_db: AsyncSession):
+    async def test_preview_when_column_not_in_schema_returns_failure(self, seeded_db: AsyncSession):
         """Preview targeting a column not in the schema should fail."""
         set_session(seeded_db)
 
@@ -282,7 +282,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for nonexistent column")
 
-    async def test_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
+    async def test_preview_when_dataset_missing_returns_failure(self, seeded_db: AsyncSession):
         """Preview on nonexistent dataset should fail."""
         set_session(seeded_db)
 
@@ -299,7 +299,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for nonexistent dataset")
 
-    async def test_wrong_org_returns_failure(self, seeded_db: AsyncSession):
+    async def test_preview_when_wrong_org_returns_authorization_failure(self, seeded_db: AsyncSession):
         """Preview by user in wrong org should fail with authorization error."""
         set_session(seeded_db)
         set_auth_user(WRONG_ORG_USER)
@@ -317,8 +317,8 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for wrong org")
 
-    async def test_trim_on_numeric_column_returns_type_mismatch(self, seeded_db: AsyncSession):
-        """Trim on a numeric column should fail with 422 type mismatch."""
+    async def test_preview_when_trim_on_numeric_column_returns_type_mismatch(self, seeded_db: AsyncSession):
+        """Trim on a numeric column should fail with type mismatch."""
         set_session(seeded_db)
 
         numeric_lake = MockLakeRepository(column_type="float64")
@@ -336,7 +336,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for trim on numeric column")
 
-    async def test_case_on_numeric_column_returns_type_mismatch(self, seeded_db: AsyncSession):
+    async def test_preview_when_case_on_numeric_column_returns_type_mismatch(self, seeded_db: AsyncSession):
         """Case standardization on a numeric column should fail with type mismatch."""
         set_session(seeded_db)
 
@@ -355,7 +355,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for case on numeric column")
 
-    async def test_fill_null_on_numeric_column_succeeds(self, seeded_db: AsyncSession):
+    async def test_preview_when_fill_null_on_numeric_column_returns_success(self, seeded_db: AsyncSession):
         """fill_null on a numeric column should succeed (not text-only)."""
         set_session(seeded_db)
 
@@ -377,7 +377,7 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"fill_null on numeric should succeed, got: {error}")
 
-    async def test_zero_affected_returns_empty_samples(self, seeded_db: AsyncSession):
+    async def test_preview_when_zero_rows_affected_returns_empty_samples(self, seeded_db: AsyncSession):
         """Preview with no affected rows returns 0 count and empty samples."""
         set_session(seeded_db)
 
@@ -402,7 +402,7 @@ class TestPreviewCleaningTransform:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_preview_is_read_only(self, seeded_db: AsyncSession):
+    async def test_preview_when_executed_does_not_create_transform_records(self, seeded_db: AsyncSession):
         """Preview should not create any transform records."""
         set_session(seeded_db)
 

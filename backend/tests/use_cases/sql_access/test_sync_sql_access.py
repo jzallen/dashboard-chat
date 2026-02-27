@@ -1,5 +1,6 @@
 """Tests for sync_sql_access use case."""
 
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from returns.result import Failure, Success
@@ -12,12 +13,27 @@ from app.use_cases.sql_access import sync_sql_access
 from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
+# Patch targets for pg_duckdb manager functions (called from sql_access_service)
+_PATCH_EXECUTE_BOOTSTRAP = "app.use_cases.sql_access.sql_access_service.execute_bootstrap"
+_PATCH_GRANT_USAGE = "app.use_cases.sql_access.sql_access_service.grant_schema_usage"
+
+
+@pytest.fixture(autouse=True)
+def pg_manager_mocks():
+    """Patch pg_duckdb manager functions for all tests in this module."""
+    with (
+        patch(_PATCH_EXECUTE_BOOTSTRAP, new_callable=AsyncMock) as mock_execute_bootstrap,
+        patch(_PATCH_GRANT_USAGE, new_callable=AsyncMock) as mock_grant_usage,
+    ):
+        yield {
+            "execute_bootstrap": mock_execute_bootstrap,
+            "grant_usage": mock_grant_usage,
+        }
+
 
 class TestSyncSqlAccess:
-    @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    async def test_sync_returns_success_with_timestamp(
-        self, mock_execute_bootstrap, mock_grant_usage, seeded_db_with_access: AsyncSession
+    async def test_sync_when_enabled_returns_success_with_timestamp(
+        self, pg_manager_mocks, seeded_db_with_access: AsyncSession
     ):
         set_session(seeded_db_with_access)
 
@@ -29,18 +45,16 @@ class TestSyncSqlAccess:
         assert data["last_synced_at"] is not None
 
         # Verify manager functions received a ProjectEnvironment with stored host/port
-        mock_execute_bootstrap.assert_called_once()
-        env_arg = mock_execute_bootstrap.call_args[0][0]
+        pg_manager_mocks["execute_bootstrap"].assert_called_once()
+        env_arg = pg_manager_mocks["execute_bootstrap"].call_args[0][0]
         assert env_arg.host == "localhost"
         assert env_arg.port == 15432
 
-        mock_grant_usage.assert_called_once()
-        assert mock_grant_usage.call_args[0][0] == env_arg
+        pg_manager_mocks["grant_usage"].assert_called_once()
+        assert pg_manager_mocks["grant_usage"].call_args[0][0] == env_arg
 
-    @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    async def test_sync_returns_failure_for_nonexistent_project(
-        self, mock_execute_bootstrap, mock_grant_usage, seeded_db: AsyncSession
+    async def test_sync_when_project_not_found_returns_failure(
+        self, seeded_db: AsyncSession
     ):
         set_session(seeded_db)
 
@@ -49,10 +63,8 @@ class TestSyncSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    async def test_sync_returns_failure_when_not_enabled(
-        self, mock_execute_bootstrap, mock_grant_usage, seeded_db: AsyncSession
+    async def test_sync_when_not_enabled_returns_failure(
+        self, seeded_db: AsyncSession
     ):
         set_session(seeded_db)
 
@@ -61,10 +73,8 @@ class TestSyncSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    async def test_sync_returns_failure_for_other_org(
-        self, mock_execute_bootstrap, mock_grant_usage, seeded_db_other_org: AsyncSession
+    async def test_sync_when_other_org_returns_authorization_error(
+        self, seeded_db_other_org: AsyncSession
     ):
         set_session(seeded_db_other_org)
 
@@ -73,12 +83,9 @@ class TestSyncSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), AuthorizationError)
 
-    @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    async def test_sync_uses_live_environment_with_internal_host(
+    async def test_sync_when_provisioner_has_environment_uses_live_env(
         self,
-        mock_execute_bootstrap,
-        mock_grant_usage,
+        pg_manager_mocks,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
@@ -91,16 +98,13 @@ class TestSyncSqlAccess:
         result = await sync_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Success)
-        env_arg = mock_execute_bootstrap.call_args[0][0]
+        env_arg = pg_manager_mocks["execute_bootstrap"].call_args[0][0]
         # Live environment from MockEnvironmentProvisioner includes full fields
         assert env_arg.environment_id == mock_provisioner._default_env.environment_id
 
-    @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.sync_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    async def test_sync_falls_back_to_stored_record_when_provisioner_returns_none(
+    async def test_sync_when_provisioner_returns_none_falls_back_to_stored_record(
         self,
-        mock_execute_bootstrap,
-        mock_grant_usage,
+        pg_manager_mocks,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
@@ -111,21 +115,16 @@ class TestSyncSqlAccess:
         result = await sync_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Success)
-        env_arg = mock_execute_bootstrap.call_args[0][0]
+        env_arg = pg_manager_mocks["execute_bootstrap"].call_args[0][0]
         # Falls back to stored values from the external access record
         assert env_arg.host == "localhost"
         assert env_arg.port == 15432
 
-    @patch("app.use_cases.sql_access.sync_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch(
-        "app.use_cases.sql_access.sync_sql_access.execute_bootstrap",
-        new_callable=AsyncMock,
-        side_effect=RuntimeError("pg_duckdb down"),
-    )
-    async def test_sync_returns_failure_on_pg_duckdb_error(
-        self, mock_execute_bootstrap, mock_grant_usage, seeded_db_with_access: AsyncSession
+    async def test_sync_when_pg_duckdb_fails_returns_failure(
+        self, pg_manager_mocks, seeded_db_with_access: AsyncSession
     ):
         """pg_duckdb failure should propagate as a Failure via handle_returns."""
+        pg_manager_mocks["execute_bootstrap"].side_effect = RuntimeError("pg_duckdb down")
         set_session(seeded_db_with_access)
 
         result = await sync_sql_access(project_id=PROJECT_1)

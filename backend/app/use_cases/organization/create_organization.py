@@ -28,33 +28,16 @@ async def create_organization(
     can re-trigger login for a fresh token with org_id.
 
     For dev mode: creates local records only.
-
-    Raises:
-        AuthorizationError: If user already has an org.
     """
     user = get_auth_user()
-    if user.org_id is not None:
-        raise AuthorizationError("User already belongs to an organization")
+    _ensure_user_has_no_org(user)
 
     metadata_repo = repositories["metadata_repository"]
     settings = get_settings()
 
-    if settings.auth_mode == "workos":
-        org_id, requires_reauth = await _create_workos_org(
-            name=name,
-            user_id=user.id,
-            api_key=settings.workos_api_key,
-        )
-        # WorkOS provides the org_id — pass it explicitly
-        org = await metadata_repo.create_organization(name=name, id=org_id)
-    else:
-        requires_reauth = False
-        # Let the database generate the ID via server_default
-        org = await metadata_repo.create_organization(name=name)
-
+    org, requires_reauth = await _create_org_record(name, user.id, metadata_repo, settings)
     org_id = org["id"]
 
-    # Create default project for the new org
     await metadata_repo.create_project(
         name="My First Project",
         org_id=org_id,
@@ -66,6 +49,30 @@ async def create_organization(
         result["requires_reauth"] = True
 
     return result
+
+
+def _ensure_user_has_no_org(user) -> None:
+    if user.org_id is not None:
+        raise AuthorizationError("User already belongs to an organization")
+
+
+async def _create_org_record(name, user_id, metadata_repo, settings):
+    """Create org via WorkOS or locally depending on auth mode.
+
+    Returns:
+        Tuple of (org_dict, requires_reauth).
+    """
+    if settings.auth_mode == "workos":
+        org_id, requires_reauth = await _create_workos_org(
+            name=name,
+            user_id=user_id,
+            api_key=settings.workos_api_key,
+        )
+        org = await metadata_repo.create_organization(name=name, id=org_id)
+    else:
+        requires_reauth = False
+        org = await metadata_repo.create_organization(name=name)
+    return org, requires_reauth
 
 
 async def _create_workos_org(
@@ -81,7 +88,6 @@ async def _create_workos_org(
     headers = {"Authorization": f"Bearer {api_key}"}
 
     async with httpx.AsyncClient() as client:
-        # Create the organization
         resp = await client.post(
             "https://api.workos.com/organizations",
             json={"name": name},
@@ -91,7 +97,6 @@ async def _create_workos_org(
         org_data = resp.json()
         org_id = org_data["id"]
 
-        # Create organization membership for the user
         membership_resp = await client.post(
             "https://api.workos.com/user_management/organization_memberships",
             json={"user_id": user_id, "organization_id": org_id},

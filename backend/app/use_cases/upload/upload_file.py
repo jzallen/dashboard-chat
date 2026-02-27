@@ -1,18 +1,16 @@
 """Upload use cases for file upload flow.
 
 This module implements step 1 of the two-step upload flow:
-Upload file → Creates Upload with raw file storage
+Upload file -> Creates Upload with raw file storage
 
 Uses the outbox pattern for event sourcing - state is reconstructed
 from domain events stored in the outbox_messages table.
 """
 
 import asyncio
-import io
 import json
 from typing import TYPE_CHECKING
 
-import pandas as pd
 from returns.result import Result
 
 from app.models import Upload
@@ -24,9 +22,28 @@ from app.use_cases.exceptions import (
     InvalidFileType,
     ProjectNotFound,
 )
+from app.utils.csv_parser import parse_and_clean_csv
 
 if TYPE_CHECKING:
     from app.repositories import LakeRepository, MetadataRepository, OutboxRepository, RepositoryContainer
+
+
+def _validate_upload(file_content: bytes, file_name: str) -> None:
+    if not file_name.lower().endswith(".csv"):
+        raise InvalidFileType()
+    if not file_content:
+        raise EmptyFile()
+
+
+async def _validate_references(
+    metadata_repo: "MetadataRepository",
+    project_id: str,
+    dataset_id: str | None,
+) -> None:
+    if not await metadata_repo.project_exists(project_id):
+        raise ProjectNotFound(project_id)
+    if dataset_id and not await metadata_repo.dataset_exists(dataset_id):
+        raise DatasetNotFound(dataset_id)
 
 
 @with_repositories
@@ -41,47 +58,17 @@ async def upload_file(
 ) -> Result[Upload, str]:
     """Upload a file and create an Upload.
 
-    Step 1 of the upload flow: Store raw file for later processing.
-
-    Args:
-        file_content: Raw file bytes
-        file_name: Original filename
-        project_id: Project UUID (required)
-        dataset_id: Optional dataset UUID (for re-uploads to existing dataset)
-        repositories: Injected repository container
-
-    Returns:
-        Upload domain model with preview_rows
-
-    Raises:
-        ProjectNotFound: If project doesn't exist
-        DatasetNotFound: If dataset doesn't exist
-        ValueError: If invalid file type or empty file
-        MetadataRepositoryError: If database operation fails
-        LakeRepositoryError: If storage operation fails
+    Step 1 of the upload flow: validate input, parse CSV, store raw file,
+    and return an Upload with preview rows.
     """
     metadata_repo: MetadataRepository = repositories["metadata_repository"]
     lake_repo: LakeRepository = repositories["lake_repository"]
     outbox_repo: OutboxRepository = repositories["outbox_repository"]
 
-    if not file_name.lower().endswith(".csv"):
-        raise InvalidFileType()
+    _validate_upload(file_content, file_name)
+    await _validate_references(metadata_repo, project_id, dataset_id)
 
-    if not file_content:
-        raise EmptyFile()
-
-    # Validate project exists
-    if not await metadata_repo.project_exists(project_id):
-        raise ProjectNotFound(project_id)
-
-    # Validate dataset exists if provided
-    if dataset_id and not await metadata_repo.dataset_exists(dataset_id):
-        raise DatasetNotFound(dataset_id)
-
-    df = await asyncio.to_thread(pd.read_csv, io.BytesIO(file_content))
-    df.columns = df.columns.str.strip()
-    str_cols = df.select_dtypes(include="object").columns
-    df[str_cols] = df[str_cols].apply(lambda col: col.str.strip())
+    df = await asyncio.to_thread(parse_and_clean_csv, file_content)
 
     outbox_record = await outbox_repo.submit_file_received_event(
         project_id=project_id,

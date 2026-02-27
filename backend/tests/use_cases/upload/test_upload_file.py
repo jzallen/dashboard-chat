@@ -21,13 +21,11 @@ from tests.uuidv7_fixtures import DATASET_1, PROJECT_1
 
 @pytest.fixture
 def sample_csv() -> bytes:
-    """Sample CSV content for testing."""
     return b"name,age,active\nAlice,30,true\nBob,25,false\nCharlie,35,true"
 
 
 @pytest.fixture
 def s3_write_stubber() -> Stubber:
-    """Stubber for S3 write operations used by upload_file."""
     stubber = Stubber(boto3.client("s3"))
     stubber.add_response("put_object", {})
     return stubber
@@ -36,10 +34,9 @@ def s3_write_stubber() -> Stubber:
 class TestUploadFile:
     """Tests for upload_file use case."""
 
-    async def test_upload_file_creates_upload(
+    async def test_upload_when_valid_csv_creates_upload_with_preview(
         self, seeded_db: AsyncSession, s3_write_stubber: Stubber, sample_csv: bytes
     ):
-        """upload_file should create an Upload with preview_rows."""
         set_session(seeded_db)
 
         with s3_write_stubber:
@@ -54,7 +51,7 @@ class TestUploadFile:
 
         match result:
             case Failure(error):
-                pytest.fail(f"upload_file should succeed, got: {error}")
+                pytest.fail(f"Expected success, got: {error}")
             case Success(upload):
                 assert isinstance(upload, Upload)
                 assert upload.project_id == PROJECT_1
@@ -64,10 +61,9 @@ class TestUploadFile:
                 assert len(upload.preview_rows) == 3
                 assert upload.preview_rows[0] == {"name": "Alice", "age": 30, "active": True}
 
-    async def test_upload_file_with_dataset_id(
+    async def test_upload_when_dataset_id_provided_associates_dataset(
         self, seeded_db: AsyncSession, s3_write_stubber: Stubber, sample_csv: bytes
     ):
-        """upload_file should set dataset_id when provided."""
         set_session(seeded_db)
 
         with s3_write_stubber:
@@ -84,8 +80,9 @@ class TestUploadFile:
         assert isinstance(result, Success)
         assert result.unwrap().dataset_id == DATASET_1
 
-    async def test_upload_file_rejects_non_csv(self, seeded_db: AsyncSession, sample_csv: bytes):
-        """upload_file should return Failure for non-CSV files."""
+    async def test_upload_when_non_csv_file_raises_invalid_file_type(
+        self, seeded_db: AsyncSession, sample_csv: bytes
+    ):
         set_session(seeded_db)
 
         result = await upload_file(
@@ -97,8 +94,7 @@ class TestUploadFile:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), InvalidFileType)
 
-    async def test_upload_file_rejects_empty_file(self, seeded_db: AsyncSession):
-        """upload_file should return Failure for empty files."""
+    async def test_upload_when_empty_file_raises_empty_file(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await upload_file(
@@ -110,8 +106,9 @@ class TestUploadFile:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), EmptyFile)
 
-    async def test_upload_file_rejects_nonexistent_project(self, seeded_db: AsyncSession, sample_csv: bytes):
-        """upload_file should return Failure for nonexistent project."""
+    async def test_upload_when_project_missing_raises_project_not_found(
+        self, seeded_db: AsyncSession, sample_csv: bytes
+    ):
         set_session(seeded_db)
 
         result = await upload_file(
@@ -123,8 +120,9 @@ class TestUploadFile:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_upload_file_rejects_nonexistent_dataset(self, seeded_db: AsyncSession, sample_csv: bytes):
-        """upload_file should return Failure for nonexistent dataset."""
+    async def test_upload_when_dataset_missing_raises_dataset_not_found(
+        self, seeded_db: AsyncSession, sample_csv: bytes
+    ):
         set_session(seeded_db)
 
         result = await upload_file(

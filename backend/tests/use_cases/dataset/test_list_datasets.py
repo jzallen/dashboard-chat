@@ -17,8 +17,8 @@ from tests.uuidv7_fixtures import DATASET_1, DATASET_2, DATASET_3, PROJECT_1, PR
 class TestListDatasets:
     """Tests for list_datasets workflow."""
 
-    async def test_given_project_id_returns_list_of_dataset(self, seeded_db: AsyncSession):
-        """list_datasets should return Result containing list[Dataset]."""
+    async def test_list_datasets_when_project_has_datasets_returns_all_datasets(self, seeded_db: AsyncSession):
+        """list_datasets should return all datasets belonging to the project."""
         set_session(seeded_db)
 
         result = await list_datasets(project_id=PROJECT_1)
@@ -58,7 +58,7 @@ class TestListDatasets:
             case Failure(error):
                 pytest.fail(f"list_datasets should return datasets for valid project_id, got: {error}")
 
-    async def test_given_no_project_id_returns_failure(self, db_session: AsyncSession):
+    async def test_list_datasets_when_project_id_is_none_returns_failure(self, db_session: AsyncSession):
         """list_datasets should return Failure when project_id is None."""
         set_session(db_session)
 
@@ -70,8 +70,8 @@ class TestListDatasets:
             case Success(_):
                 pytest.fail("list_datasets should fail when project_id is None")
 
-    async def test_when_two_projects_exist_returns_only_datasets_for_specified_project(self, seeded_db: AsyncSession):
-        """list_datasets should return datasets only for the specified project."""
+    async def test_list_datasets_when_multiple_projects_returns_only_specified(self, seeded_db: AsyncSession):
+        """list_datasets should return only datasets belonging to the specified project."""
         set_session(seeded_db)
 
         # Arrange: Add a second project and dataset
@@ -101,7 +101,7 @@ class TestListDatasets:
             case Failure(error):
                 pytest.fail(f"list_datasets should filter by project_id, got: {error}")
 
-    async def test_given_project_with_no_datasets_returns_empty_list(self, db_session: AsyncSession):
+    async def test_list_datasets_when_project_has_no_datasets_returns_empty_list(self, db_session: AsyncSession):
         """list_datasets should return empty list when project has no datasets."""
         set_session(db_session)
 
@@ -120,7 +120,7 @@ class TestListDatasets:
             case Failure(error):
                 pytest.fail(f"list_datasets should return empty list for project with no datasets, got: {error}")
 
-    async def test_when_project_does_not_exist_returns_failure(self, db_session: AsyncSession):
+    async def test_list_datasets_when_project_does_not_exist_returns_failure(self, db_session: AsyncSession):
         """list_datasets should return Failure when project does not exist."""
         set_session(db_session)
 
@@ -132,7 +132,7 @@ class TestListDatasets:
             case Success(_):
                 pytest.fail("list_datasets should fail when project does not exist")
 
-    async def test_when_database_error_occurs_returns_failure(self, seeded_db: AsyncSession):
+    async def test_list_datasets_when_database_error_occurs_returns_failure(self, seeded_db: AsyncSession):
         """list_datasets should return Failure when a database error occurs."""
         set_session(seeded_db)
 

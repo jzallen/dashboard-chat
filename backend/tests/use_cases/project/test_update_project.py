@@ -15,7 +15,7 @@ from tests.uuidv7_fixtures import ORG_1, PROJECT_1
 class TestUpdateProject:
     """Tests for update_project workflow."""
 
-    async def test_updates_project_name(self, seeded_db: AsyncSession):
+    async def test_update_project_when_name_provided_updates_name(self, seeded_db: AsyncSession):
         """update_project should update project name."""
         set_session(seeded_db)
 
@@ -38,7 +38,7 @@ class TestUpdateProject:
             case Failure(error):
                 pytest.fail(f"update_project should update name, got: {error}")
 
-    async def test_updates_project_description(self, seeded_db: AsyncSession):
+    async def test_update_project_when_description_provided_updates_description(self, seeded_db: AsyncSession):
         """update_project should update project description."""
         set_session(seeded_db)
 
@@ -61,7 +61,7 @@ class TestUpdateProject:
             case Failure(error):
                 pytest.fail(f"update_project should update description, got: {error}")
 
-    async def test_given_invalid_id_returns_failure(self, seeded_db: AsyncSession):
+    async def test_update_project_when_project_not_found_returns_failure(self, seeded_db: AsyncSession):
         """update_project should return Failure when project does not exist."""
         set_session(seeded_db)
 
@@ -76,7 +76,7 @@ class TestUpdateProject:
             case Success(_):
                 pytest.fail("update_project should fail for nonexistent project")
 
-    async def test_when_database_error_returns_failure(self, seeded_db: AsyncSession):
+    async def test_update_project_when_database_error_returns_failure(self, seeded_db: AsyncSession):
         """update_project should return Failure when a database error occurs."""
         set_session(seeded_db)
 

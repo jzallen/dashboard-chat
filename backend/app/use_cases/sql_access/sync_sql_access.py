@@ -5,22 +5,18 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
-from app.auth import get_auth_user
-from app.auth.exceptions import AuthorizationError
 from app.config import get_settings
-from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
-from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
-from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
-from app.use_cases.sql_access.pg_duckdb_manager import (
-    execute_bootstrap,
-    grant_schema_usage,
-)
+from app.use_cases.exceptions import SqlAccessNotEnabled
+from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access.provisioner import (
     ProjectEnvironment,
     get_app_provisioner,
+)
+from app.use_cases.sql_access.sql_access_service import (
+    bootstrap_sql_views,
+    fetch_full_datasets,
 )
 
 if TYPE_CHECKING:
@@ -47,18 +43,14 @@ async def sync_sql_access(
     metadata_repo = repositories["metadata_repository"]
     external_access_repo = repositories["external_access_repository"]
 
-    # Fetch and authorize project
-    project_dict = await metadata_repo.get_project(project_id, include_datasets=True)
-    if project_dict is None:
-        raise ProjectNotFound(project_id)
-
-    user = get_auth_user()
-    if project_dict.get("org_id") != user.org_id:
-        raise AuthorizationError(f"Access denied to project {project_id}")
+    project_service = ProjectService(repositories)
+    project_dict = await project_service.fetch_and_authorize_project(
+        project_id, include_datasets=True
+    )
 
     # Check that SQL access is enabled
-    existing = await external_access_repo.get_by_project_id(project_id)
-    if not existing or not existing["enabled"]:
+    access_record = await external_access_repo.get_by_project_id(project_id)
+    if not access_record or not access_record["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
     # Get live environment from provisioner (includes internal_host/internal_port),
@@ -68,40 +60,27 @@ async def sync_sql_access(
     env = await provisioner.get_environment(project_id)
     if env is None:
         env = ProjectEnvironment(
-            environment_id=existing["environment_id"],
-            host=existing["environment_host"],
-            port=existing["environment_port"],
+            environment_id=access_record["environment_id"],
+            host=access_record["environment_host"],
+            port=access_record["environment_port"],
             database=settings.pg_duckdb_database,
             admin_user=settings.pg_duckdb_admin_user,
             admin_password=settings.pg_duckdb_admin_password,
         )
 
-    # Build full datasets for bootstrap SQL generation
+    # Build full datasets and bootstrap SQL views
     sparse_datasets = project_dict.get("datasets", [])
-    full_datasets = []
-    for ds_info in sparse_datasets:
-        record = await metadata_repo.get_dataset_record(ds_info["id"], include_transforms=True)
-        if record:
-            full_datasets.append(Dataset.from_record(record, include_transforms=True))
+    full_datasets = await fetch_full_datasets(sparse_datasets, metadata_repo)
 
-    snake_names = deduplicate_names([to_snake_case(ds.name) for ds in full_datasets])
-    dataset_pairs = list(zip(snake_names, full_datasets, strict=False))
-
-    # Generate and execute bootstrap SQL (drops and recreates all views)
-    pg_schema = existing["pg_schema"]
-    bootstrap_sql = generate_bootstrap_sql(pg_schema, dataset_pairs, settings.storage_bucket)
-    await execute_bootstrap(env, project_id, bootstrap_sql)
-
-    # Re-grant SELECT on refreshed views
-    await grant_schema_usage(env, project_id)
+    await bootstrap_sql_views(
+        env, project_id, access_record["pg_schema"], full_datasets, settings.storage_bucket
+    )
 
     # Update last_synced_at
     synced_at = datetime.now(UTC)
     await external_access_repo.update(
         project_id,
-        {
-            "last_synced_at": synced_at,
-        },
+        {"last_synced_at": synced_at},
     )
 
     return {

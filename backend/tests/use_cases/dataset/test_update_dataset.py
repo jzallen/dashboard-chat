@@ -12,9 +12,9 @@ from tests.uuidv7_fixtures import DATASET_1, PROJECT_1, TRANSFORM_1
 
 
 class TestUpdateDataset:
-    """Tests for DatasetController.update_dataset workflow."""
+    """Tests for update_dataset use case."""
 
-    async def test_partial_update_changes_only_specified_fields(self, seeded_db: AsyncSession):
+    async def test_update_dataset_when_partial_fields_changes_only_specified(self, seeded_db: AsyncSession):
         """update_dataset with partial data should only change specified fields."""
         set_session(seeded_db)
 
@@ -47,7 +47,7 @@ class TestUpdateDataset:
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 
-    async def test_full_update_changes_all_specified_fields(self, seeded_db: AsyncSession):
+    async def test_update_dataset_when_all_fields_provided_changes_all_fields(self, seeded_db: AsyncSession):
         """update_dataset with multiple fields should update all specified fields."""
         set_session(seeded_db)
 
@@ -81,7 +81,7 @@ class TestUpdateDataset:
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 
-    async def test_given_invalid_id_returns_failure(self, seeded_db: AsyncSession):
+    async def test_update_dataset_when_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
         """update_dataset should return Failure when dataset not found."""
         set_session(seeded_db)
 
@@ -96,7 +96,7 @@ class TestUpdateDataset:
             case Success(_):
                 pytest.fail("update_dataset should fail when dataset does not exist")
 
-    async def test_when_database_error_returns_failure(self, seeded_db: AsyncSession):
+    async def test_update_dataset_when_database_error_occurs_returns_failure(self, seeded_db: AsyncSession):
         """update_dataset should return Failure when database error occurs."""
         set_session(seeded_db)
 

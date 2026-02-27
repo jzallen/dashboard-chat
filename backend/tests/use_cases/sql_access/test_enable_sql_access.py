@@ -1,5 +1,6 @@
 """Tests for enable_sql_access use case."""
 
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from returns.result import Failure, Success
@@ -20,16 +21,31 @@ from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY, PROJECT_OTHER
 _DEFAULT_MINIO_ENDPOINT = "localhost:9000"
 _INTERNAL_MINIO_ENDPOINT = "minio:9000"
 
+# Patch targets for pg_duckdb manager functions
+_PATCH_CREATE_SCHEMA = "app.use_cases.sql_access.enable_sql_access.create_project_schema"
+_PATCH_EXECUTE_BOOTSTRAP = "app.use_cases.sql_access.sql_access_service.execute_bootstrap"
+_PATCH_GRANT_USAGE = "app.use_cases.sql_access.sql_access_service.grant_schema_usage"
+
+
+@pytest.fixture(autouse=True)
+def pg_manager_mocks():
+    """Patch pg_duckdb manager functions for all tests in this module."""
+    with (
+        patch(_PATCH_CREATE_SCHEMA, new_callable=AsyncMock) as mock_create_schema,
+        patch(_PATCH_EXECUTE_BOOTSTRAP, new_callable=AsyncMock) as mock_execute_bootstrap,
+        patch(_PATCH_GRANT_USAGE, new_callable=AsyncMock) as mock_grant_usage,
+    ):
+        yield {
+            "create_schema": mock_create_schema,
+            "execute_bootstrap": mock_execute_bootstrap,
+            "grant_usage": mock_grant_usage,
+        }
+
 
 class TestEnableSqlAccess:
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_returns_connection_details(
+    async def test_enable_when_valid_project_returns_connection_details(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
+        pg_manager_mocks,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
     ):
@@ -56,26 +72,21 @@ class TestEnableSqlAccess:
         assert mock_provisioner.provision_calls[0][0] == PROJECT_1
 
         # Verify manager functions received the ProjectEnvironment
+        mock_create_schema = pg_manager_mocks["create_schema"]
         mock_create_schema.assert_called_once()
         env_arg = mock_create_schema.call_args[0][0]
         assert env_arg.host == "localhost"
         assert env_arg.port == 15432
         assert mock_create_schema.call_args[0][1] == PROJECT_1
 
-        mock_execute_bootstrap.assert_called_once()
-        assert mock_execute_bootstrap.call_args[0][0] == env_arg
+        pg_manager_mocks["execute_bootstrap"].assert_called_once()
+        assert pg_manager_mocks["execute_bootstrap"].call_args[0][0] == env_arg
 
-        mock_grant_usage.assert_called_once()
-        assert mock_grant_usage.call_args[0][0] == env_arg
+        pg_manager_mocks["grant_usage"].assert_called_once()
+        assert pg_manager_mocks["grant_usage"].call_args[0][0] == env_arg
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_returns_failure_for_nonexistent_project(
+    async def test_enable_when_project_not_found_returns_failure(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
     ):
@@ -86,14 +97,8 @@ class TestEnableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_returns_failure_when_already_enabled(
+    async def test_enable_when_already_enabled_returns_failure(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
     ):
@@ -104,14 +109,8 @@ class TestEnableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessAlreadyEnabled)
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_returns_failure_for_project_with_no_datasets(
+    async def test_enable_when_project_has_no_datasets_returns_failure(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_no_datasets: AsyncSession,
     ):
@@ -122,14 +121,8 @@ class TestEnableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectHasNoDatasets)
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_returns_failure_for_other_org(
+    async def test_enable_when_other_org_returns_authorization_error(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_other_org: AsyncSession,
     ):
@@ -140,14 +133,8 @@ class TestEnableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), AuthorizationError)
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_re_enables_previously_disabled_record(
+    async def test_enable_when_previously_disabled_re_enables_record(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_disabled_access: AsyncSession,
     ):
@@ -163,39 +150,25 @@ class TestEnableSqlAccess:
         assert data["host"] == "localhost"
         assert data["port"] == 6432  # PgBouncer proxy port
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch(
-        "app.use_cases.sql_access.enable_sql_access.execute_bootstrap",
-        new_callable=AsyncMock,
-        side_effect=RuntimeError("bootstrap failed"),
-    )
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_cleans_up_on_bootstrap_failure(
+    async def test_enable_when_bootstrap_fails_deprovisions_environment(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
+        pg_manager_mocks,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
     ):
         """If bootstrap fails after schema creation, the environment should be deprovisioned."""
+        pg_manager_mocks["execute_bootstrap"].side_effect = RuntimeError("bootstrap failed")
         set_session(seeded_db)
 
         result = await enable_sql_access(project_id=PROJECT_1)
 
         assert isinstance(result, Failure)
-        mock_create_schema.assert_called_once()
+        pg_manager_mocks["create_schema"].assert_called_once()
         # Verify environment was deprovisioned as compensation
         assert PROJECT_1 in mock_provisioner.deprovision_calls
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    async def test_enable_stores_md5_hash_not_bcrypt(
+    async def test_enable_when_successful_stores_md5_hash(
         self,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
     ):
@@ -215,16 +188,10 @@ class TestEnableSqlAccess:
             f"Expected md5 hash, got: {record['pg_password_hash'][:10]}..."
         )
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.get_settings")
-    async def test_enable_uses_internal_endpoint_when_set(
+    @patch("app.use_cases.sql_access.sql_access_service.get_settings")
+    async def test_enable_when_internal_endpoint_set_uses_it(
         self,
         mock_get_settings,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
     ):
@@ -242,16 +209,10 @@ class TestEnableSqlAccess:
         storage_config = mock_provisioner.provision_calls[0][1]
         assert storage_config.endpoint == _INTERNAL_MINIO_ENDPOINT
 
-    @patch("app.use_cases.sql_access.enable_sql_access.grant_schema_usage", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.execute_bootstrap", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.create_project_schema", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.enable_sql_access.get_settings")
-    async def test_enable_falls_back_to_minio_endpoint_when_internal_empty(
+    @patch("app.use_cases.sql_access.sql_access_service.get_settings")
+    async def test_enable_when_internal_endpoint_empty_falls_back_to_minio(
         self,
         mock_get_settings,
-        mock_create_schema,
-        mock_execute_bootstrap,
-        mock_grant_usage,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
     ):

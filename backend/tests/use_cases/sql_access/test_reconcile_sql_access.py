@@ -12,7 +12,7 @@ from tests.uuidv7_fixtures import PROJECT_1
 
 
 class TestReconcileSqlAccess:
-    async def test_no_enabled_records_returns_zero_counts(
+    async def test_reconcile_when_no_enabled_records_returns_zero_counts(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db: AsyncSession,
@@ -29,7 +29,7 @@ class TestReconcileSqlAccess:
 
     @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    async def test_healthy_environment_counted(
+    async def test_reconcile_when_environment_healthy_increments_healthy_count(
         self,
         mock_ensure_role,
         mock_configure_s3,
@@ -52,7 +52,7 @@ class TestReconcileSqlAccess:
 
     @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    async def test_healthy_environment_gets_runtime_config_reapplied(
+    async def test_reconcile_when_environment_healthy_reapplies_runtime_config(
         self,
         mock_ensure_role,
         mock_configure_s3,
@@ -75,7 +75,7 @@ class TestReconcileSqlAccess:
         _env_arg, storage_config_arg = args.args
         assert storage_config_arg.access_key  # Sanity: StorageConfig was passed
 
-    async def test_degraded_environment_counted(
+    async def test_reconcile_when_environment_not_provisioned_increments_degraded_count(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_access: AsyncSession,
@@ -95,7 +95,7 @@ class TestReconcileSqlAccess:
 
     @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    async def test_degraded_environment_skips_runtime_config(
+    async def test_reconcile_when_environment_degraded_skips_runtime_config(
         self,
         mock_ensure_role,
         mock_configure_s3,
@@ -116,7 +116,7 @@ class TestReconcileSqlAccess:
 
     @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    async def test_unhealthy_provisioner_marks_degraded(
+    async def test_reconcile_when_health_check_fails_marks_degraded(
         self,
         mock_ensure_role,
         mock_configure_s3,
@@ -136,7 +136,7 @@ class TestReconcileSqlAccess:
         assert data["healthy"] == 0
         assert data["degraded"] == 1
 
-    async def test_disabled_records_not_checked(
+    async def test_reconcile_when_record_disabled_skips_health_check(
         self,
         mock_provisioner: MockEnvironmentProvisioner,
         seeded_db_with_disabled_access: AsyncSession,
@@ -152,7 +152,7 @@ class TestReconcileSqlAccess:
 
     @patch("app.use_cases.sql_access.reconcile_sql_access.configure_s3_secrets", new_callable=AsyncMock)
     @patch("app.use_cases.sql_access.reconcile_sql_access.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    async def test_runtime_config_failure_is_non_fatal(
+    async def test_reconcile_when_runtime_config_fails_still_counts_healthy(
         self,
         mock_ensure_role,
         mock_configure_s3,

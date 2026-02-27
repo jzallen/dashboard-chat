@@ -25,7 +25,7 @@ from tests.uuidv7_fixtures import (
 class TestListProjectsAuth:
     """list_projects should filter by the authenticated user's org_id."""
 
-    async def test_returns_only_projects_matching_org_id(self, db_session: AsyncSession):
+    async def test_list_projects_when_mixed_orgs_returns_only_matching_org(self, db_session: AsyncSession):
         """Projects from a different org should not appear in results."""
         set_session(db_session)
 
@@ -42,7 +42,7 @@ class TestListProjectsAuth:
             case Failure(error):
                 pytest.fail(f"list_projects should succeed, got: {error}")
 
-    async def test_returns_empty_when_no_matching_org(self, db_session: AsyncSession):
+    async def test_list_projects_when_no_matching_org_returns_empty_list(self, db_session: AsyncSession):
         """If all projects belong to a different org, should return empty list."""
         set_session(db_session)
 
@@ -61,7 +61,7 @@ class TestListProjectsAuth:
 class TestCreateProjectAuth:
     """create_project should set org_id and created_by from auth context."""
 
-    async def test_sets_org_id_and_created_by_from_auth_user(self, db_session: AsyncSession):
+    async def test_create_project_when_authenticated_sets_org_id_and_created_by(self, db_session: AsyncSession):
         """Created project should have the authenticated user's org_id and user id."""
         set_session(db_session)
 
@@ -78,7 +78,7 @@ class TestCreateProjectAuth:
 class TestGetProjectAuth:
     """get_project should enforce org-based authorization."""
 
-    async def test_allows_access_to_own_org_project(self, db_session: AsyncSession):
+    async def test_get_project_when_org_matches_allows_access(self, db_session: AsyncSession):
         """get_project should succeed when org_id matches."""
         set_session(db_session)
 
@@ -93,7 +93,7 @@ class TestGetProjectAuth:
             case Failure(error):
                 pytest.fail(f"get_project should succeed, got: {error}")
 
-    async def test_denies_access_to_different_org_project(self, db_session: AsyncSession):
+    async def test_get_project_when_org_mismatch_denies_access(self, db_session: AsyncSession):
         """get_project should return Failure with AuthorizationError for wrong org."""
         set_session(db_session)
 
@@ -108,7 +108,7 @@ class TestGetProjectAuth:
             case Success(_):
                 pytest.fail("get_project should deny access to project from different org")
 
-    async def test_allows_access_to_project_without_org_id(self, db_session: AsyncSession):
+    async def test_get_project_when_no_org_id_allows_access(self, db_session: AsyncSession):
         """get_project should allow access when project has no org_id (legacy data)."""
         set_session(db_session)
 
@@ -123,7 +123,7 @@ class TestGetProjectAuth:
             case Failure(error):
                 pytest.fail(f"get_project should allow legacy project access, got: {error}")
 
-    async def test_with_different_auth_user_denies_access(self, db_session: AsyncSession):
+    async def test_get_project_when_different_auth_user_denies_access(self, db_session: AsyncSession):
         """Switching auth user should change authorization outcome."""
         set_session(db_session)
 

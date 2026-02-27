@@ -13,7 +13,7 @@ from tests.uuidv7_fixtures import DATASET_1, TRANSFORM_1, TRANSFORM_2
 class TestUpdateTransforms:
     """Tests for update_transforms use case."""
 
-    async def test_batch_update_succeeds(self, seeded_db: AsyncSession):
+    async def test_update_transforms_when_valid_input_returns_success(self, seeded_db: AsyncSession):
         """update_transforms should update transforms and return Success."""
         set_session(seeded_db)
 
@@ -30,7 +30,7 @@ class TestUpdateTransforms:
             case Failure(error):
                 pytest.fail(f"update_transforms should succeed, got: {error}")
 
-    async def test_soft_delete_via_status(self, seeded_db: AsyncSession):
+    async def test_update_transforms_when_status_deleted_soft_deletes_record(self, seeded_db: AsyncSession):
         """update_transforms with status='deleted' should soft-delete."""
         set_session(seeded_db)
 
@@ -52,7 +52,7 @@ class TestUpdateTransforms:
         transform = row.scalar_one()
         assert transform.status == "deleted"
 
-    async def test_batch_toggle_multiple(self, seeded_db: AsyncSession):
+    async def test_update_transforms_when_multiple_updates_disables_all(self, seeded_db: AsyncSession):
         """update_transforms should toggle multiple transforms at once."""
         set_session(seeded_db)
 
@@ -77,7 +77,7 @@ class TestUpdateTransforms:
         row2 = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_2))
         assert row2.scalar_one().status == "disabled"
 
-    async def test_emits_outbox_event(self, seeded_db: AsyncSession):
+    async def test_update_transforms_when_successful_emits_outbox_event(self, seeded_db: AsyncSession):
         """update_transforms should write a TransformsUpdated outbox record."""
         set_session(seeded_db)
 
@@ -104,7 +104,7 @@ class TestUpdateTransforms:
         }
         assert len(record.payload["changes"]) == 2
 
-    async def test_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
+    async def test_update_transforms_when_dataset_missing_returns_failure(self, seeded_db: AsyncSession):
         """update_transforms should return Failure when dataset doesn't exist."""
         set_session(seeded_db)
 

@@ -33,9 +33,6 @@ class DatasetService:
     ) -> Dataset:
         """Fetch a dataset record and convert to domain model.
 
-        Preview rows are queried through the staging SQL (with transforms
-        applied) so the table reflects cleaned/filtered data.
-
         Raises:
             DatasetNotFound: If dataset with given ID does not exist.
             AuthorizationError: If user's org does not own the parent project.
@@ -45,14 +42,7 @@ class DatasetService:
         if not dataset_record:
             raise DatasetNotFound(dataset_id)
 
-        user = get_auth_user()
-        if (
-            dataset_record.project
-            and hasattr(dataset_record.project, "org_id")
-            and dataset_record.project.org_id
-            and dataset_record.project.org_id != user.org_id
-        ):
-            raise AuthorizationError(f"Access denied to dataset {dataset_id}")
+        self._verify_org_access(dataset_record, dataset_id)
 
         dataset = Dataset.from_record(dataset_record, include_transforms=include_transforms)
 
@@ -61,3 +51,13 @@ class DatasetService:
             dataset = replace(dataset, preview_rows=preview_rows)
 
         return dataset
+
+    @staticmethod
+    def _verify_org_access(dataset_record, dataset_id: str) -> None:
+        """Verify the current user's org owns the dataset's parent project."""
+        project = dataset_record.project
+        if project is None:
+            return
+        project_org_id = getattr(project, "org_id", None)
+        if project_org_id and project_org_id != get_auth_user().org_id:
+            raise AuthorizationError(f"Access denied to dataset {dataset_id}")

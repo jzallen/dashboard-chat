@@ -94,20 +94,20 @@ def _alias(col, alias_name, status="enabled"):
     )
 
 
-class TestPassthrough:
-    def test_no_transforms(self):
+class TestModelSqlPassthrough:
+    def test_generate_model_sql_when_no_transforms_returns_select_star(self):
         ds = _make_dataset()
         sql = generate_model_sql("my_project", "my_dataset", ds)
         assert sql == "SELECT * FROM {{ source('my_project', 'my_dataset') }}"
 
-    def test_empty_transforms_list(self):
+    def test_generate_model_sql_when_empty_transforms_list_returns_select_star(self):
         ds = _make_dataset(transforms=[])
         sql = generate_model_sql("my_project", "my_dataset", ds)
         assert sql == "SELECT * FROM {{ source('my_project', 'my_dataset') }}"
 
 
-class TestOnlyCleaning:
-    def test_single_trim(self):
+class TestModelSqlCleaning:
+    def test_generate_model_sql_when_single_trim_includes_cleaned_cte(self):
         ds = _make_dataset(
             transforms=[_trim("name")],
             schema_fields=["name", "salary", "status"],
@@ -121,15 +121,15 @@ class TestOnlyCleaning:
         assert "SELECT * FROM cleaned" in sql
         assert "filtered" not in sql
 
-    def test_no_schema_uses_star(self):
+    def test_generate_model_sql_when_no_schema_uses_star_fallback(self):
         ds = _make_dataset(transforms=[_trim("name")])
         sql = generate_model_sql("proj", "ds", ds)
         assert "TRIM(name) AS name" in sql
         assert ",\n    *" in sql
 
 
-class TestOnlyFilters:
-    def test_single_filter(self):
+class TestModelSqlFilters:
+    def test_generate_model_sql_when_single_filter_includes_filtered_cte(self):
         ds = _make_dataset(transforms=[_filter("status = 'active'")])
         sql = generate_model_sql("proj", "ds", ds)
         assert "WITH source AS" in sql
@@ -139,7 +139,7 @@ class TestOnlyFilters:
         assert "SELECT * FROM filtered" in sql
         assert "cleaned" not in sql
 
-    def test_multiple_filters(self):
+    def test_generate_model_sql_when_multiple_filters_joins_with_and(self):
         ds = _make_dataset(
             transforms=[
                 _filter("status = 'active'"),
@@ -151,8 +151,8 @@ class TestOnlyFilters:
         assert "AND salary > 50000" in sql
 
 
-class TestOnlyAliases:
-    def test_single_alias(self):
+class TestModelSqlAliases:
+    def test_generate_model_sql_when_alias_present_renames_column(self):
         ds = _make_dataset(
             transforms=[_alias("department", "Dept")],
             schema_fields=["name", "department"],
@@ -165,7 +165,7 @@ class TestOnlyAliases:
         assert "cleaned" not in sql
         assert "filtered" not in sql
 
-    def test_alias_name_to_snake_case(self):
+    def test_generate_model_sql_when_alias_has_spaces_converts_to_snake_case(self):
         ds = _make_dataset(
             transforms=[_alias("full_name", "Full Display Name")],
             schema_fields=["full_name", "email"],
@@ -174,8 +174,8 @@ class TestOnlyAliases:
         assert "full_name AS full_display_name" in sql
 
 
-class TestAllCombined:
-    def test_clean_filter_alias(self):
+class TestModelSqlCombined:
+    def test_generate_model_sql_when_clean_filter_alias_chains_all_ctes(self):
         ds = _make_dataset(
             transforms=[
                 _trim("name"),
@@ -185,23 +185,18 @@ class TestAllCombined:
             schema_fields=["name", "salary", "status", "department"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        # All CTEs present
         assert "WITH source AS" in sql
         assert "cleaned AS" in sql
         assert "filtered AS" in sql
-        # cleaned sources from source
         assert "FROM source" in sql
-        # filtered sources from cleaned
         assert "FROM cleaned" in sql
-        # WHERE clause
         assert "WHERE salary > 50000" in sql
-        # final SELECT with alias
         assert "department AS dept" in sql
         assert "FROM filtered" in sql
 
 
-class TestDisabledTransforms:
-    def test_disabled_transform_excluded(self):
+class TestModelSqlDisabledTransforms:
+    def test_generate_model_sql_when_transform_disabled_excludes_it(self):
         ds = _make_dataset(
             transforms=[
                 _trim("name", status="enabled"),
@@ -213,7 +208,7 @@ class TestDisabledTransforms:
         assert "TRIM(name) AS name" in sql
         assert "TRIM(city)" not in sql
 
-    def test_disabled_filter_excluded(self):
+    def test_generate_model_sql_when_filter_disabled_excludes_it(self):
         ds = _make_dataset(
             transforms=[
                 _filter("status = 'active'", status="enabled"),
@@ -224,7 +219,7 @@ class TestDisabledTransforms:
         assert "status = 'active'" in sql
         assert "salary > 100000" not in sql
 
-    def test_all_disabled_produces_passthrough(self):
+    def test_generate_model_sql_when_all_disabled_returns_passthrough(self):
         ds = _make_dataset(
             transforms=[
                 _trim("name", status="disabled"),
@@ -235,8 +230,8 @@ class TestDisabledTransforms:
         assert sql == "SELECT * FROM {{ source('proj', 'ds') }}"
 
 
-class TestFillNull:
-    def test_fill_null_text(self):
+class TestModelSqlFillNull:
+    def test_generate_model_sql_when_fill_null_text_uses_coalesce_with_string(self):
         ds = _make_dataset(
             transforms=[_fill_null("city", "Unknown")],
             schema_fields=["city"],
@@ -244,7 +239,7 @@ class TestFillNull:
         sql = generate_model_sql("proj", "ds", ds)
         assert "COALESCE(city, 'Unknown') AS city" in sql
 
-    def test_fill_null_numeric(self):
+    def test_generate_model_sql_when_fill_null_numeric_uses_coalesce_without_quotes(self):
         ds = _make_dataset(
             transforms=[_fill_null("salary", "0")],
             schema_fields=["salary"],
@@ -252,7 +247,7 @@ class TestFillNull:
         sql = generate_model_sql("proj", "ds", ds)
         assert "COALESCE(salary, 0) AS salary" in sql
 
-    def test_fill_null_text_with_quotes(self):
+    def test_generate_model_sql_when_fill_null_value_has_quotes_escapes_them(self):
         ds = _make_dataset(
             transforms=[_fill_null("city", "O'Brien")],
             schema_fields=["city"],
@@ -261,8 +256,8 @@ class TestFillNull:
         assert "COALESCE(city, 'O''Brien') AS city" in sql
 
 
-class TestMapValues:
-    def test_map_values(self):
+class TestModelSqlMapValues:
+    def test_generate_model_sql_when_map_values_generates_case_expression(self):
         ds = _make_dataset(
             transforms=[
                 _map_values(
@@ -281,7 +276,7 @@ class TestMapValues:
         assert "WHEN status = 'I' THEN 'Inactive'" in sql
         assert "ELSE status END AS status" in sql
 
-    def test_map_values_with_quotes(self):
+    def test_generate_model_sql_when_map_values_with_quotes_escapes_them(self):
         ds = _make_dataset(
             transforms=[
                 _map_values(
@@ -297,8 +292,8 @@ class TestMapValues:
         assert "WHEN status = 'O''Brien' THEN 'O''Malley'" in sql
 
 
-class TestUnknownOperation:
-    def test_unknown_operation_produces_comment(self):
+class TestModelSqlUnknownOperation:
+    def test_generate_model_sql_when_unknown_operation_produces_comment(self):
         ds = _make_dataset(
             transforms=[
                 Transform(
@@ -317,8 +312,8 @@ class TestUnknownOperation:
         assert "-- unsupported operation: frobnicate for column col" in sql
 
 
-class TestCaseOperations:
-    def test_upper(self):
+class TestModelSqlCaseOperations:
+    def test_generate_model_sql_when_case_upper_uses_upper_function(self):
         ds = _make_dataset(
             transforms=[_case("name", "upper")],
             schema_fields=["name"],
@@ -326,7 +321,7 @@ class TestCaseOperations:
         sql = generate_model_sql("proj", "ds", ds)
         assert "UPPER(name) AS name" in sql
 
-    def test_lower(self):
+    def test_generate_model_sql_when_case_lower_uses_lower_function(self):
         ds = _make_dataset(
             transforms=[_case("name", "lower")],
             schema_fields=["name"],
@@ -334,7 +329,7 @@ class TestCaseOperations:
         sql = generate_model_sql("proj", "ds", ds)
         assert "LOWER(name) AS name" in sql
 
-    def test_title(self):
+    def test_generate_model_sql_when_case_title_uses_title_case_macro(self):
         ds = _make_dataset(
             transforms=[_case("name", "title")],
             schema_fields=["name"],
@@ -342,7 +337,7 @@ class TestCaseOperations:
         sql = generate_model_sql("proj", "ds", ds)
         assert "title_case(name) AS name" in sql
 
-    def test_snake(self):
+    def test_generate_model_sql_when_case_snake_uses_snake_case_macro(self):
         ds = _make_dataset(
             transforms=[_case("name", "snake")],
             schema_fields=["name"],
@@ -350,7 +345,7 @@ class TestCaseOperations:
         sql = generate_model_sql("proj", "ds", ds)
         assert "snake_case(name) AS name" in sql
 
-    def test_kebab(self):
+    def test_generate_model_sql_when_case_kebab_uses_kebab_case_macro(self):
         ds = _make_dataset(
             transforms=[_case("name", "kebab")],
             schema_fields=["name"],
@@ -359,8 +354,8 @@ class TestCaseOperations:
         assert "kebab_case(name) AS name" in sql
 
 
-class TestCleaningOrder:
-    def test_transforms_sorted_by_created_at(self):
+class TestModelSqlCleaningOrder:
+    def test_generate_model_sql_when_multiple_cleans_sorts_by_created_at(self):
         ds = _make_dataset(
             transforms=[
                 _case("city", "upper", created_at=datetime(2024, 1, 2)),
@@ -369,7 +364,6 @@ class TestCleaningOrder:
             schema_fields=["name", "city"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        # TRIM(name) should come before UPPER(city) since created_at is earlier
         trim_pos = sql.index("TRIM(name)")
         upper_pos = sql.index("UPPER(city)")
         assert trim_pos < upper_pos

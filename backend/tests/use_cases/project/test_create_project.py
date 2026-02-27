@@ -14,7 +14,7 @@ from app.use_cases.project import create_project
 class TestCreateProject:
     """Tests for create_project workflow."""
 
-    async def test_creates_project_with_name_only(self, db_session: AsyncSession):
+    async def test_create_project_when_name_only_returns_project(self, db_session: AsyncSession):
         """create_project should create a project with just a name."""
         set_session(db_session)
 
@@ -30,7 +30,7 @@ class TestCreateProject:
             case Failure(error):
                 pytest.fail(f"create_project should create project, got: {error}")
 
-    async def test_creates_project_with_name_and_description(self, db_session: AsyncSession):
+    async def test_create_project_when_name_and_description_returns_project(self, db_session: AsyncSession):
         """create_project should create a project with name and description."""
         set_session(db_session)
 
@@ -43,7 +43,7 @@ class TestCreateProject:
             case Failure(error):
                 pytest.fail(f"create_project should create project with description, got: {error}")
 
-    async def test_when_database_error_returns_failure(self, db_session: AsyncSession):
+    async def test_create_project_when_database_error_returns_failure(self, db_session: AsyncSession):
         """create_project should return Failure when a database error occurs."""
         set_session(db_session)
 

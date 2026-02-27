@@ -25,7 +25,7 @@ from tests.uuidv7_fixtures import (
 class TestListProjects:
     """Tests for list_projects workflow."""
 
-    async def test_returns_list_of_projects(self, seeded_db: AsyncSession):
+    async def test_list_projects_when_projects_exist_returns_all(self, seeded_db: AsyncSession):
         """list_projects should return Result containing list[dict]."""
         set_session(seeded_db)
 
@@ -76,7 +76,7 @@ class TestListProjects:
             case Failure(error):
                 pytest.fail(f"list_projects should return projects, got: {error}")
 
-    async def test_returns_empty_list_when_no_projects(self, db_session: AsyncSession):
+    async def test_list_projects_when_no_projects_exist_returns_empty_list(self, db_session: AsyncSession):
         """list_projects should return empty list when no projects exist."""
         set_session(db_session)
 
@@ -88,7 +88,7 @@ class TestListProjects:
             case Failure(error):
                 pytest.fail(f"list_projects should return empty list, got: {error}")
 
-    async def test_orders_by_created_at_desc(self, db_session: AsyncSession):
+    async def test_list_projects_when_multiple_projects_orders_by_created_at_desc(self, db_session: AsyncSession):
         """list_projects should order projects by created_at descending."""
         set_session(db_session)
 
@@ -145,7 +145,7 @@ class TestListProjects:
             case Failure(error):
                 pytest.fail(f"list_projects should return ordered projects, got: {error}")
 
-    async def test_when_database_error_returns_failure(self, seeded_db: AsyncSession):
+    async def test_list_projects_when_database_error_returns_failure(self, seeded_db: AsyncSession):
         """list_projects should return Failure when a database error occurs."""
         set_session(seeded_db)
 

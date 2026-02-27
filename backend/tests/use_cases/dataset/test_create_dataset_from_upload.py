@@ -47,10 +47,10 @@ def s3_read_write_stubber(sample_csv: bytes) -> Stubber:
 class TestCreateDatasetFromUpload:
     """Tests for create_dataset_from_upload use case."""
 
-    async def test_create_dataset_from_valid_upload(
+    async def test_create_dataset_when_upload_is_valid_returns_dataset(
         self, seeded_db: AsyncSession, s3_read_write_stubber: Stubber, sample_csv: bytes
     ):
-        """create_dataset_from_upload should create Dataset from valid Upload."""
+        """create_dataset_from_upload should return a Dataset with correct schema and preview rows."""
         set_session(seeded_db)
 
         seeded_db.add(
@@ -100,7 +100,7 @@ class TestCreateDatasetFromUpload:
                 assert len(dataset.preview_rows) == 3
                 assert set(dataset.schema_config["fields"].keys()) == {"name", "age", "active"}
 
-    async def test_create_dataset_without_name_uses_default(
+    async def test_create_dataset_when_no_name_provided_defaults_to_new_dataset(
         self, seeded_db: AsyncSession, s3_read_write_stubber: Stubber, sample_csv: bytes
     ):
         """create_dataset_from_upload without name should default to 'New Dataset'."""
@@ -140,7 +140,7 @@ class TestCreateDatasetFromUpload:
             case Success(dataset):
                 assert dataset.name == "New Dataset"
 
-    async def test_given_nonexistent_upload_returns_failure(self, seeded_db: AsyncSession):
+    async def test_create_dataset_when_upload_not_found_returns_failure(self, seeded_db: AsyncSession):
         """create_dataset_from_upload should fail when upload_id doesn't exist."""
         set_session(seeded_db)
 
@@ -152,7 +152,7 @@ class TestCreateDatasetFromUpload:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), UploadNotFound)
 
-    async def test_given_nonexistent_project_returns_failure(self, seeded_db: AsyncSession, sample_csv: bytes):
+    async def test_create_dataset_when_no_project_returns_failure(self, seeded_db: AsyncSession, sample_csv: bytes):
         """create_dataset_from_upload should fail when project doesn't exist."""
         set_session(seeded_db)
 
@@ -183,10 +183,10 @@ class TestCreateDatasetFromUpload:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_given_already_processed_upload_returns_failure(
+    async def test_create_dataset_when_upload_already_processed_returns_failure(
         self, seeded_db: AsyncSession, s3_read_write_stubber: Stubber, sample_csv: bytes
     ):
-        """Second call to create_dataset_from_upload should fail — upload already processed."""
+        """Second call to create_dataset_from_upload should fail because upload is already processed."""
         set_session(seeded_db)
 
         seeded_db.add(
@@ -231,7 +231,7 @@ class TestCreateDatasetFromUpload:
             case _:
                 pytest.fail("Expected Failure for already-processed upload")
 
-    async def test_given_missing_file_returns_failure(self, seeded_db: AsyncSession, sample_csv: bytes):
+    async def test_create_dataset_when_file_missing_returns_failure(self, seeded_db: AsyncSession, sample_csv: bytes):
         """create_dataset_from_upload should fail when raw file is missing from S3."""
         set_session(seeded_db)
 
@@ -278,7 +278,7 @@ class TestCreateDatasetFromUpload:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), UploadNotFound)
 
-    async def test_given_invalid_csv_returns_failure(self, seeded_db: AsyncSession):
+    async def test_create_dataset_when_csv_is_invalid_returns_failure(self, seeded_db: AsyncSession):
         """create_dataset_from_upload should fail when file content is not valid CSV."""
         set_session(seeded_db)
 

@@ -4,12 +4,10 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
-from app.auth import get_auth_user
-from app.auth.exceptions import AuthorizationError
 from app.config import get_settings
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import ProjectNotFound
+from app.use_cases.project.project_service import ProjectService
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -33,35 +31,28 @@ async def get_sql_access(
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories["metadata_repository"]
     external_access_repo = repositories["external_access_repository"]
 
-    # Fetch and authorize project
-    project_dict = await metadata_repo.get_project(project_id, include_datasets=False)
-    if project_dict is None:
-        raise ProjectNotFound(project_id)
-
-    user = get_auth_user()
-    if project_dict.get("org_id") != user.org_id:
-        raise AuthorizationError(f"Access denied to project {project_id}")
+    project_service = ProjectService(repositories)
+    await project_service.fetch_and_authorize_project(project_id, include_datasets=False)
 
     # Get SQL access record
-    existing = await external_access_repo.get_by_project_id(project_id)
-    if not existing or not existing["enabled"]:
+    access_record = await external_access_repo.get_by_project_id(project_id)
+    if not access_record or not access_record["enabled"]:
         return {"project_id": project_id, "enabled": False}
 
     settings = get_settings()
     return {
         "project_id": project_id,
         "enabled": True,
-        "host": existing["environment_host"],
-        "port": existing["environment_port"],
+        "host": access_record["environment_host"],
+        "port": access_record["environment_port"],
         "database": settings.pg_duckdb_database,
-        "username": existing["pg_role"],
-        "schema": existing["pg_schema"],
-        "environment_status": existing.get("environment_status", "running"),
-        "status_message": existing.get("status_message"),
-        "is_legacy": existing.get("is_legacy", False),
-        "last_synced_at": existing["last_synced_at"],
-        "created_at": existing["created_at"],
+        "username": access_record["pg_role"],
+        "schema": access_record["pg_schema"],
+        "environment_status": access_record.get("environment_status", "running"),
+        "status_message": access_record.get("status_message"),
+        "is_legacy": access_record.get("is_legacy", False),
+        "last_synced_at": access_record["last_synced_at"],
+        "created_at": access_record["created_at"],
     }

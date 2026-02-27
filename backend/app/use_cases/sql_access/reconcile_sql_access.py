@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
-from app.config import get_settings
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.sql_access.pg_duckdb_manager import (
@@ -23,6 +22,7 @@ from app.use_cases.sql_access.provisioner import (
     get_app_pgbouncer_provisioner,
     get_app_provisioner,
 )
+from app.use_cases.sql_access.sql_access_service import build_storage_config
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -47,17 +47,7 @@ async def reconcile_sql_access(
     """
     provisioner = get_app_provisioner()
     external_access_repo = repositories["external_access_repository"]
-
-    # Build storage config for re-applying secrets on healthy environments
-    settings = get_settings()
-    storage_config = StorageConfig(
-        endpoint=settings.minio_internal_endpoint or settings.minio_endpoint,
-        access_key=settings.minio_access_key,
-        secret_key=settings.minio_secret_key,
-        region=settings.s3_region,
-        url_style="path",
-        use_ssl=settings.minio_secure,
-    )
+    storage_config = build_storage_config()
 
     enabled_records = await external_access_repo.list_enabled()
 
@@ -67,102 +57,27 @@ async def reconcile_sql_access(
 
     for record in enabled_records:
         project_id = record["project_id"]
-        is_legacy = record.get("is_legacy", True)
 
-        # Check pg_duckdb health
-        try:
-            is_healthy = await provisioner.health_check(project_id)
-        except Exception:
-            logger.warning(
-                "Health check failed for project %s (environment_id=%s)",
-                project_id,
-                record.get("environment_id"),
-            )
-            await external_access_repo.update(
-                project_id,
-                {
-                    "environment_status": "degraded",
-                    "status_message": "pg_duckdb health check failed",
-                },
-            )
+        is_healthy = await _check_pgduckdb_health(
+            provisioner, project_id, record, external_access_repo
+        )
+        if is_healthy is None:
             degraded += 1
             continue
 
         if is_healthy:
-            # Re-apply runtime config on healthy environments
-            env = await provisioner.get_environment(project_id)
-            if env is not None:
-                try:
-                    await ensure_duckdb_role_configured(env)
-                except Exception:
-                    logger.warning(
-                        "Failed to re-apply duckdb role config for project %s",
-                        project_id,
-                        exc_info=True,
-                    )
-                try:
-                    await configure_s3_secrets(env, storage_config)
-                except Exception:
-                    logger.warning(
-                        "Failed to re-apply S3 secrets for project %s",
-                        project_id,
-                        exc_info=True,
-                    )
+            await _reapply_runtime_config(provisioner, project_id, storage_config)
 
-            # Check PgBouncer health for non-legacy records
-            if not is_legacy and record.get("proxy_container_id"):
-                try:
-                    pgbouncer = get_app_pgbouncer_provisioner()
-                    pgb_healthy = await pgbouncer.health_check(project_id)
-                    if not pgb_healthy:
-                        logger.warning(
-                            "PgBouncer exited for project %s, attempting recreate",
-                            project_id,
-                        )
-                        # Fetch stored md5 hash for PgBouncer auth_file
-                        record_with_hash = await external_access_repo.get_by_project_id_with_hash(project_id)
-                        stored_md5 = record_with_hash["pg_password_hash"] if record_with_hash else ""
+            pgbouncer_ok = await _reconcile_pgbouncer(
+                record, project_id, provisioner, external_access_repo
+            )
+            if not pgbouncer_ok:
+                degraded += 1
+                continue
 
-                        # Recreate PgBouncer using stored md5 hash
-                        upstream_host = (env.internal_host if env else None) or f"dashboard-pgduckdb-{project_id[:8]}"
-                        new_container_id = await pgbouncer.recreate(
-                            project_id=project_id,
-                            proxy_port=record["environment_port"],
-                            md5_hash=stored_md5,
-                            upstream_host=upstream_host,
-                            auth_user=record["pg_role"],
-                        )
-                        await external_access_repo.update(
-                            project_id,
-                            {
-                                "proxy_container_id": new_container_id,
-                                "environment_status": "running",
-                                "status_message": None,
-                            },
-                        )
-                except Exception:
-                    logger.warning(
-                        "PgBouncer reconciliation failed for project %s",
-                        project_id,
-                        exc_info=True,
-                    )
-                    await external_access_repo.update(
-                        project_id,
-                        {
-                            "environment_status": "degraded",
-                            "status_message": "PgBouncer reconciliation failed",
-                        },
-                    )
-                    degraded += 1
-                    continue
-
-            # Update status to running if all checks pass
             await external_access_repo.update(
                 project_id,
-                {
-                    "environment_status": "running",
-                    "status_message": None,
-                },
+                {"environment_status": "running", "status_message": None},
             )
             healthy += 1
         else:
@@ -189,8 +104,119 @@ async def reconcile_sql_access(
         degraded,
     )
 
-    return {
-        "total": total,
-        "healthy": healthy,
-        "degraded": degraded,
-    }
+    return {"total": total, "healthy": healthy, "degraded": degraded}
+
+
+async def _check_pgduckdb_health(
+    provisioner, project_id: str, record: dict, external_access_repo
+) -> bool | None:
+    """Check pg_duckdb health. Returns True/False, or None if the check itself failed."""
+    try:
+        return await provisioner.health_check(project_id)
+    except Exception:
+        logger.warning(
+            "Health check failed for project %s (environment_id=%s)",
+            project_id,
+            record.get("environment_id"),
+        )
+        await external_access_repo.update(
+            project_id,
+            {
+                "environment_status": "degraded",
+                "status_message": "pg_duckdb health check failed",
+            },
+        )
+        return None
+
+
+async def _reapply_runtime_config(
+    provisioner, project_id: str, storage_config: StorageConfig
+) -> None:
+    """Re-apply duckdb role GUC and S3 secrets on a healthy environment."""
+    env = await provisioner.get_environment(project_id)
+    if env is None:
+        return
+
+    try:
+        await ensure_duckdb_role_configured(env)
+    except Exception:
+        logger.warning(
+            "Failed to re-apply duckdb role config for project %s",
+            project_id,
+            exc_info=True,
+        )
+    try:
+        await configure_s3_secrets(env, storage_config)
+    except Exception:
+        logger.warning(
+            "Failed to re-apply S3 secrets for project %s",
+            project_id,
+            exc_info=True,
+        )
+
+
+async def _reconcile_pgbouncer(
+    record: dict, project_id: str, provisioner, external_access_repo
+) -> bool:
+    """Check and reconcile PgBouncer for non-legacy records.
+
+    Returns True if PgBouncer is healthy or not applicable, False if reconciliation failed.
+    """
+    is_legacy = record.get("is_legacy", True)
+    if is_legacy or not record.get("proxy_container_id"):
+        return True
+
+    try:
+        pgbouncer = get_app_pgbouncer_provisioner()
+        pgb_healthy = await pgbouncer.health_check(project_id)
+        if not pgb_healthy:
+            logger.warning(
+                "PgBouncer exited for project %s, attempting recreate",
+                project_id,
+            )
+            await _recreate_pgbouncer(
+                record, project_id, provisioner, pgbouncer, external_access_repo
+            )
+    except Exception:
+        logger.warning(
+            "PgBouncer reconciliation failed for project %s",
+            project_id,
+            exc_info=True,
+        )
+        await external_access_repo.update(
+            project_id,
+            {
+                "environment_status": "degraded",
+                "status_message": "PgBouncer reconciliation failed",
+            },
+        )
+        return False
+
+    return True
+
+
+async def _recreate_pgbouncer(
+    record: dict, project_id: str, provisioner, pgbouncer, external_access_repo
+) -> None:
+    """Recreate a PgBouncer proxy using stored credentials."""
+    record_with_hash = await external_access_repo.get_by_project_id_with_hash(project_id)
+    stored_md5 = record_with_hash["pg_password_hash"] if record_with_hash else ""
+
+    env = await provisioner.get_environment(project_id)
+    upstream_host = (env.internal_host if env else None) or f"dashboard-pgduckdb-{project_id[:8]}"
+
+    new_container_id = await pgbouncer.recreate(
+        project_id=project_id,
+        proxy_port=record["environment_port"],
+        md5_hash=stored_md5,
+        upstream_host=upstream_host,
+        auth_user=record["pg_role"],
+    )
+    await external_access_repo.update(
+        project_id,
+        {
+            "proxy_container_id": new_container_id,
+            "environment_status": "running",
+            "status_message": None,
+        },
+    )
