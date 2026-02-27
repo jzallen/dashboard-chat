@@ -13,18 +13,17 @@ from app.use_cases.exceptions import (
     SqlAccessAlreadyEnabled,
 )
 from app.use_cases.project.project_service import ProjectService
-from app.use_cases.sql_access.pg_duckdb_manager import (
+from app.use_cases.sql_access._infra import (
+    allocate_proxy_port,
     create_project_schema,
     generate_password,
+    get_app_pgbouncer_provisioner,
+    get_app_provisioner,
     pg_md5_hash,
     role_name,
     schema_name,
 )
-from app.use_cases.sql_access.port_allocation import allocate_proxy_port
-from app.use_cases.sql_access.provisioner import (
-    get_app_pgbouncer_provisioner,
-    get_app_provisioner,
-)
+from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
 from app.use_cases.sql_access.sql_access_service import (
     bootstrap_sql_views,
     build_storage_config,
@@ -111,7 +110,7 @@ async def enable_sql_access(
         "password": password,  # One-time plaintext
         "schema": pg_schema,
         "enabled": True,
-        "environment_status": "running",
+        "environment_status": Status.RUNNING,
         "connection_string": (f"postgresql://{pg_role}:{password}@{env.host}:{proxy_port}/{env.database}"),
     }
 
@@ -185,7 +184,7 @@ async def _store_access_record(
         "environment_host": env.host,
         "environment_port": proxy_port,
         "proxy_container_id": proxy_container_id,
-        "environment_status": "running",
+        "environment_status": Status.RUNNING,
     }
 
     if access_record:

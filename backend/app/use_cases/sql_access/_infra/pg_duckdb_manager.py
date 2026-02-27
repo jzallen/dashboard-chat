@@ -14,7 +14,7 @@ import asyncpg
 import bcrypt
 
 from app.config import get_settings
-from app.use_cases.sql_access.provisioner import ProjectEnvironment, StorageConfig
+from .provisioner import ProjectEnvironment, StorageConfig
 
 logger = logging.getLogger(__name__)
 

@@ -14,14 +14,12 @@ from app.use_cases.exceptions import (
     SqlAccessNotEnabled,
 )
 from app.use_cases.project.project_service import ProjectService
-from app.use_cases.sql_access.pg_duckdb_manager import (
+from app.use_cases.sql_access._infra import (
+    ProjectEnvironment,
     generate_password,
+    get_app_pgbouncer_provisioner,
     pg_md5_hash,
     regenerate_credentials,
-)
-from app.use_cases.sql_access.provisioner import (
-    ProjectEnvironment,
-    get_app_pgbouncer_provisioner,
 )
 
 if TYPE_CHECKING:

@@ -14,7 +14,7 @@ from app.use_cases.exceptions import (
     SqlAccessAlreadyEnabled,
 )
 from app.use_cases.sql_access import enable_sql_access
-from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
+from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY, PROJECT_OTHER
 
 # Default settings values used by most tests (match get_settings() defaults)

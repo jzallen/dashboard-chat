@@ -5,26 +5,21 @@ and environment provisioning patterns shared across multiple sql_access use case
 """
 
 import logging
-from typing import TYPE_CHECKING
 
 from app.config import get_settings
 from app.models.dataset import Dataset
 from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
 from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
-from app.use_cases.sql_access.pg_duckdb_manager import (
+from app.use_cases.sql_access._infra import (
+    ProjectEnvironment,
+    StorageConfig,
     create_project_schema,
     execute_bootstrap,
+    get_app_pgbouncer_provisioner,
+    get_app_provisioner,
     grant_schema_usage,
     regenerate_credentials,
 )
-from app.use_cases.sql_access.provisioner import (
-    StorageConfig,
-    get_app_pgbouncer_provisioner,
-    get_app_provisioner,
-)
-
-if TYPE_CHECKING:
-    from app.use_cases.sql_access.provisioner import ProjectEnvironment
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +51,7 @@ async def fetch_full_datasets(sparse_datasets: list[dict], metadata_repo) -> lis
 
 
 async def bootstrap_sql_views(
-    env: "ProjectEnvironment",
+    env: ProjectEnvironment,
     project_id: str,
     pg_schema: str,
     full_datasets: list[Dataset],
@@ -78,7 +73,7 @@ async def provision_and_bootstrap_environment(
     access_record: dict,
     sparse_datasets: list[dict],
     metadata_repo,
-) -> tuple[str | None, "ProjectEnvironment"]:
+) -> tuple[str | None, ProjectEnvironment]:
     """Provision a pg_duckdb environment and bootstrap SQL views.
 
     Shared by start_environment and restart_environment. Handles:

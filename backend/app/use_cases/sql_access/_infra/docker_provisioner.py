@@ -12,11 +12,11 @@ import logging
 import aiodocker
 from aiodocker.exceptions import DockerError
 
-from app.use_cases.sql_access.pg_duckdb_manager import (
+from .pg_duckdb_manager import (
     configure_s3_secrets,
     ensure_duckdb_role_configured,
 )
-from app.use_cases.sql_access.provisioner import (
+from .provisioner import (
     EnvironmentStatus,
     ProjectEnvironment,
     ProvisioningError,

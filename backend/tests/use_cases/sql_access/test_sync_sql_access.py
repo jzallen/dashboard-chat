@@ -10,7 +10,7 @@ from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
 from app.use_cases.sql_access import sync_sql_access
-from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
+from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 # Patch targets for pg_duckdb manager functions (called from sql_access_service)

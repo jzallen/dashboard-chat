@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 from app.repositories.metadata import DatasetRecord, ExternalAccessRecord, ProjectRecord
-from app.use_cases.sql_access.provisioner import (
+from app.use_cases.sql_access._infra import (
     MockEnvironmentProvisioner,
     MockPgBouncerProvisioner,
     set_app_pgbouncer_provisioner,

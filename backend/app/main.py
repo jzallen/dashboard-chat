@@ -20,7 +20,7 @@ from .routers import (
     transforms_router,
     uploads_router,
 )
-from .use_cases.sql_access.provisioner import set_app_pgbouncer_provisioner, set_app_provisioner
+from .use_cases.sql_access._infra import set_app_pgbouncer_provisioner, set_app_provisioner
 from .use_cases.sql_access.reconcile_sql_access import reconcile_sql_access
 
 logger = logging.getLogger(__name__)
@@ -31,12 +31,12 @@ settings = get_settings()
 def _create_provisioners():
     """Create the environment provisioners based on config."""
     if settings.environment_provisioner == "mock":
-        from .use_cases.sql_access.provisioner import MockEnvironmentProvisioner, MockPgBouncerProvisioner
+        from .use_cases.sql_access._infra import MockEnvironmentProvisioner, MockPgBouncerProvisioner
 
         return MockEnvironmentProvisioner(), MockPgBouncerProvisioner()
 
-    from .use_cases.sql_access.docker_provisioner import DockerPgDuckDbProvisioner
-    from .use_cases.sql_access.pgbouncer_provisioner import DockerPgBouncerProvisioner
+    from .use_cases.sql_access._infra.docker_provisioner import DockerPgDuckDbProvisioner
+    from .use_cases.sql_access._infra.pgbouncer_provisioner import DockerPgBouncerProvisioner
 
     pgbouncer_provisioner = DockerPgBouncerProvisioner(
         image=settings.pgbouncer_image,

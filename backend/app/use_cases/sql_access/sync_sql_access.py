@@ -10,7 +10,7 @@ from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import SqlAccessNotEnabled
 from app.use_cases.project.project_service import ProjectService
-from app.use_cases.sql_access.provisioner import (
+from app.use_cases.sql_access._infra import (
     ProjectEnvironment,
     get_app_provisioner,
 )

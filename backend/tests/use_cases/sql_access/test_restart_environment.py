@@ -13,7 +13,7 @@ from app.use_cases.exceptions import (
     ProjectNotFound,
     SqlAccessNotEnabled,
 )
-from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner, StorageConfig
+from app.use_cases.sql_access._infra import MockEnvironmentProvisioner, StorageConfig
 from app.use_cases.sql_access.restart_environment import restart_environment
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 

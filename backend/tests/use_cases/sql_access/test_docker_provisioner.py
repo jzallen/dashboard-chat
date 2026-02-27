@@ -4,15 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.use_cases.sql_access.docker_provisioner import (
-    CONTAINER_PREFIX,
-    DockerPgDuckDbProvisioner,
-    _container_name,
-)
-from app.use_cases.sql_access.provisioner import (
+from app.use_cases.sql_access._infra import (
     ProjectEnvironment,
     ProvisioningError,
     StorageConfig,
+)
+from app.use_cases.sql_access._infra.docker_provisioner import (
+    CONTAINER_PREFIX,
+    DockerPgDuckDbProvisioner,
+    _container_name,
 )
 
 PROJECT_ID = "proj-abc12345-def6-7890"
@@ -106,9 +106,9 @@ def _mock_open_connection():
 class TestProvision:
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
-    @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_creates_container_and_returns_environment(
         self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
@@ -141,9 +141,9 @@ class TestProvision:
 
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
-    @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_configures_s3_secrets(
         self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
@@ -163,9 +163,9 @@ class TestProvision:
 
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
-    @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_ensure_duckdb_role_called_before_s3_secrets(
         self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
@@ -193,9 +193,9 @@ class TestProvision:
 
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
-    @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_removes_old_container_before_creating(
         self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
@@ -218,9 +218,9 @@ class TestProvision:
 
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
-    @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_cleans_up_on_failure(
         self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
@@ -246,9 +246,9 @@ class TestProvision:
 
     @patch("asyncio.sleep", new_callable=AsyncMock)
     @patch("asyncio.open_connection")
-    @patch("app.use_cases.sql_access.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.configure_s3_secrets", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.ensure_duckdb_role_configured", new_callable=AsyncMock)
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_propagates_provisioning_error(
         self, mock_docker_cls, mock_ensure_role, mock_configure_s3, mock_open_conn, mock_sleep
     ):
@@ -264,7 +264,7 @@ class TestProvision:
 
 
 class TestDeprovision:
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_stops_and_removes_container(self, mock_docker_cls):
         container = _mock_container()
         docker = _mock_docker(container)
@@ -276,7 +276,7 @@ class TestDeprovision:
         container.kill.assert_awaited()
         container.delete.assert_awaited()
 
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_idempotent_when_container_missing(self, mock_docker_cls):
         """Deprovision does not raise if container doesn't exist."""
         docker = MagicMock()
@@ -293,7 +293,7 @@ class TestDeprovision:
 
 
 class TestHealthCheck:
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_returns_true_when_running(self, mock_docker_cls):
         container = _mock_container(running=True)
         docker = _mock_docker(container)
@@ -303,7 +303,7 @@ class TestHealthCheck:
         result = await provisioner.health_check(PROJECT_ID)
         assert result is True
 
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_returns_false_when_not_running(self, mock_docker_cls):
         container = _mock_container(running=False)
         docker = _mock_docker(container)
@@ -313,7 +313,7 @@ class TestHealthCheck:
         result = await provisioner.health_check(PROJECT_ID)
         assert result is False
 
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_returns_false_when_container_missing(self, mock_docker_cls):
         docker = MagicMock()
         docker.close = AsyncMock()
@@ -328,7 +328,7 @@ class TestHealthCheck:
 
 
 class TestGetEnvironment:
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_returns_environment_when_running(self, mock_docker_cls):
         container = _mock_container(container_id="real-id-123", host_port="25432")
         docker = _mock_docker(container)
@@ -344,7 +344,7 @@ class TestGetEnvironment:
         assert env.database == DATABASE
         assert env.admin_user == ADMIN_USER
 
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_returns_none_when_not_running(self, mock_docker_cls):
         container = _mock_container(running=False)
         docker = _mock_docker(container)
@@ -354,7 +354,7 @@ class TestGetEnvironment:
         env = await provisioner.get_environment(PROJECT_ID)
         assert env is None
 
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_returns_none_when_container_missing(self, mock_docker_cls):
         docker = MagicMock()
         docker.close = AsyncMock()
@@ -367,7 +367,7 @@ class TestGetEnvironment:
         env = await provisioner.get_environment(PROJECT_ID)
         assert env is None
 
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_returns_none_when_no_port_bindings(self, mock_docker_cls):
         container = _mock_container(host_port="")
         # Override show to return no port bindings
@@ -387,7 +387,7 @@ class TestGetEnvironment:
 
 
 class TestClose:
-    @patch("app.use_cases.sql_access.docker_provisioner.aiodocker.Docker")
+    @patch("app.use_cases.sql_access._infra.docker_provisioner.aiodocker.Docker")
     async def test_closes_docker_session(self, mock_docker_cls):
         docker = _mock_docker()
         mock_docker_cls.return_value = docker

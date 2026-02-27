@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 import bcrypt
 import pytest
 
-from app.use_cases.sql_access.pg_duckdb_manager import (
+from app.use_cases.sql_access._infra import ProjectEnvironment
+from app.use_cases.sql_access._infra.pg_duckdb_manager import (
     DUCKDB_READERS_GROUP,
     PASSWORD_LENGTH,
     _quote_ident,
@@ -20,7 +21,6 @@ from app.use_cases.sql_access.pg_duckdb_manager import (
     role_name,
     schema_name,
 )
-from app.use_cases.sql_access.provisioner import ProjectEnvironment
 
 MOCK_ENV = ProjectEnvironment(
     environment_id="test-env-id",
@@ -149,7 +149,7 @@ class TestSqlConstruction:
 class TestEnsureDuckdbRoleConfigured:
     """Tests for ensure_duckdb_role_configured — idempotent GUC setup."""
 
-    @patch("app.use_cases.sql_access.pg_duckdb_manager._get_connection")
+    @patch("app.use_cases.sql_access._infra.pg_duckdb_manager._get_connection")
     async def test_creates_group_role_and_sets_guc(self, mock_get_conn):
         conn = AsyncMock()
         mock_get_conn.return_value = conn
@@ -172,7 +172,7 @@ class TestEnsureDuckdbRoleConfigured:
         # Connection closed
         conn.close.assert_awaited_once()
 
-    @patch("app.use_cases.sql_access.pg_duckdb_manager._get_connection")
+    @patch("app.use_cases.sql_access._infra.pg_duckdb_manager._get_connection")
     async def test_idempotent_no_error_on_second_call(self, mock_get_conn):
         """Calling ensure_duckdb_role_configured twice should not raise."""
         conn = AsyncMock()
@@ -184,7 +184,7 @@ class TestEnsureDuckdbRoleConfigured:
         # Each call makes 3 executions
         assert conn.execute.await_count == 6
 
-    @patch("app.use_cases.sql_access.pg_duckdb_manager._get_connection")
+    @patch("app.use_cases.sql_access._infra.pg_duckdb_manager._get_connection")
     async def test_closes_connection_on_error(self, mock_get_conn):
         conn = AsyncMock()
         conn.execute = AsyncMock(side_effect=Exception("DB error"))
@@ -199,10 +199,9 @@ class TestEnsureDuckdbRoleConfigured:
 class TestConfigureS3SecretsPersistent:
     """Test that configure_s3_secrets uses PERSISTENT keyword."""
 
-    @patch("app.use_cases.sql_access.pg_duckdb_manager._get_connection")
+    @patch("app.use_cases.sql_access._infra.pg_duckdb_manager._get_connection")
     async def test_secret_sql_contains_persistent(self, mock_get_conn):
-        from app.use_cases.sql_access.pg_duckdb_manager import configure_s3_secrets
-        from app.use_cases.sql_access.provisioner import StorageConfig
+        from app.use_cases.sql_access._infra import StorageConfig, configure_s3_secrets
 
         conn = AsyncMock()
         mock_get_conn.return_value = conn

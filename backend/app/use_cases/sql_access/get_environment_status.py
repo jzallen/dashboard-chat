@@ -8,7 +8,7 @@ from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.exceptions import SqlAccessNotEnabled
 from app.use_cases.project.project_service import ProjectService
-from app.use_cases.sql_access.provisioner import get_app_provisioner
+from app.use_cases.sql_access._infra import get_app_provisioner
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer

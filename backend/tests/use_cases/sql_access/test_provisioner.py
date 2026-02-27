@@ -1,6 +1,6 @@
 """Tests for provisioner abstraction types and MockEnvironmentProvisioner."""
 
-from app.use_cases.sql_access.provisioner import (
+from app.use_cases.sql_access._infra import (
     MockEnvironmentProvisioner,
     ProjectEnvironment,
     ProvisioningError,

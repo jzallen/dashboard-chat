@@ -10,7 +10,7 @@ from app.use_cases.exceptions import (
     ProjectNotFound,
     SqlAccessNotEnabled,
 )
-from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
+from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
 from app.use_cases.sql_access.stop_environment import stop_environment
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
@@ -23,7 +23,7 @@ class TestStopEnvironment:
     ):
         set_session(seeded_db_with_access)
         # The mock provisioner needs the environment registered
-        from app.use_cases.sql_access.provisioner import StorageConfig
+        from app.use_cases.sql_access._infra import StorageConfig
 
         await mock_provisioner.provision(
             PROJECT_1,

@@ -6,7 +6,7 @@ from returns.result import Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import set_session
-from app.use_cases.sql_access.provisioner import MockEnvironmentProvisioner
+from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
 from app.use_cases.sql_access.reconcile_sql_access import reconcile_sql_access
 from tests.uuidv7_fixtures import PROJECT_1
 

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import set_session
 from app.repositories.metadata import ExternalAccessRecord
-from app.use_cases.sql_access.port_allocation import (
+from app.use_cases.sql_access._infra import (
     PortRangeExhausted,
     allocate_proxy_port,
 )
@@ -64,7 +64,7 @@ class TestAllocateProxyPort:
         port = await allocate_proxy_port(seeded_db_with_ports)
         assert port == 6433
 
-    @patch("app.use_cases.sql_access.port_allocation.get_settings")
+    @patch("app.use_cases.sql_access._infra.port_allocation.get_settings")
     async def test_port_range_exhaustion(self, mock_settings, seeded_db_with_ports: AsyncSession):
         """When all ports in range are used, raises PortRangeExhausted."""
         settings = mock_settings.return_value

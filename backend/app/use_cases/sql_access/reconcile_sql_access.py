@@ -13,15 +13,14 @@ from returns.result import Result
 
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.sql_access.pg_duckdb_manager import (
+from app.use_cases.sql_access._infra import (
+    StorageConfig,
     configure_s3_secrets,
     ensure_duckdb_role_configured,
-)
-from app.use_cases.sql_access.provisioner import (
-    StorageConfig,
     get_app_pgbouncer_provisioner,
     get_app_provisioner,
 )
+from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
 from app.use_cases.sql_access.sql_access_service import build_storage_config
 
 if TYPE_CHECKING:
@@ -77,7 +76,7 @@ async def reconcile_sql_access(
 
             await external_access_repo.update(
                 project_id,
-                {"environment_status": "running", "status_message": None},
+                {"environment_status": Status.RUNNING, "status_message": None},
             )
             healthy += 1
         else:
@@ -91,7 +90,7 @@ async def reconcile_sql_access(
             await external_access_repo.update(
                 project_id,
                 {
-                    "environment_status": "degraded",
+                    "environment_status": Status.DEGRADED,
                     "status_message": "pg_duckdb environment not healthy",
                 },
             )
@@ -122,7 +121,7 @@ async def _check_pgduckdb_health(
         await external_access_repo.update(
             project_id,
             {
-                "environment_status": "degraded",
+                "environment_status": Status.DEGRADED,
                 "status_message": "pg_duckdb health check failed",
             },
         )
@@ -186,7 +185,7 @@ async def _reconcile_pgbouncer(
         await external_access_repo.update(
             project_id,
             {
-                "environment_status": "degraded",
+                "environment_status": Status.DEGRADED,
                 "status_message": "PgBouncer reconciliation failed",
             },
         )
@@ -216,7 +215,7 @@ async def _recreate_pgbouncer(
         project_id,
         {
             "proxy_container_id": new_container_id,
-            "environment_status": "running",
+            "environment_status": Status.RUNNING,
             "status_message": None,
         },
     )

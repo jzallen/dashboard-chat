@@ -12,7 +12,8 @@ from app.use_cases.exceptions import (
     SqlAccessNotEnabled,
 )
 from app.use_cases.project.project_service import ProjectService
-from app.use_cases.sql_access.provisioner import get_app_provisioner
+from app.use_cases.sql_access._infra import get_app_provisioner
+from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -48,7 +49,7 @@ async def stop_environment(
     if not access_record or not access_record["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
-    if access_record.get("environment_status") != "running":
+    if access_record.get("environment_status") != Status.RUNNING:
         raise EnvironmentNotRunning(project_id)
 
     # Deprovision pg_duckdb only (keeps metadata and PgBouncer config)
@@ -59,7 +60,7 @@ async def stop_environment(
     await external_access_repo.update(
         project_id,
         {
-            "environment_status": "stopped",
+            "environment_status": Status.STOPPED,
             "status_message": None,
             "environment_id": None,
         },
@@ -67,5 +68,5 @@ async def stop_environment(
 
     return {
         "project_id": project_id,
-        "environment_status": "stopped",
+        "environment_status": Status.STOPPED,
     }

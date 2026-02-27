@@ -12,6 +12,7 @@ from app.use_cases.exceptions import (
     SqlAccessNotEnabled,
 )
 from app.use_cases.project.project_service import ProjectService
+from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
 from app.use_cases.sql_access.sql_access_service import provision_and_bootstrap_environment
 
 if TYPE_CHECKING:
@@ -52,14 +53,14 @@ async def start_environment(
     if not access_record or not access_record["enabled"]:
         raise SqlAccessNotEnabled(project_id)
 
-    if access_record.get("environment_status") not in ("stopped", "error"):
+    if access_record.get("environment_status") not in (Status.STOPPED, Status.ERROR):
         raise EnvironmentNotStopped(project_id)
 
     # Set provisioning status
     await external_access_repo.update(
         project_id,
         {
-            "environment_status": "provisioning",
+            "environment_status": Status.PROVISIONING,
             "status_message": "Starting environment...",
         },
     )
@@ -75,7 +76,7 @@ async def start_environment(
         update_data = {
             "environment_id": env.environment_id,
             "environment_host": env.host,
-            "environment_status": "running",
+            "environment_status": Status.RUNNING,
             "status_message": None,
         }
         if proxy_container_id:
@@ -84,7 +85,7 @@ async def start_environment(
 
         return {
             "project_id": project_id,
-            "environment_status": "running",
+            "environment_status": Status.RUNNING,
         }
 
     except Exception as e:
@@ -97,7 +98,7 @@ async def start_environment(
         await external_access_repo.update(
             project_id,
             {
-                "environment_status": "error",
+                "environment_status": Status.ERROR,
                 "status_message": str(e),
             },
         )
