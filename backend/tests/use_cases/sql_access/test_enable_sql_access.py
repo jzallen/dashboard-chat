@@ -181,9 +181,7 @@ class TestEnableSqlAccess:
         repo = ExternalAccessRepository(seeded_db)
         record = await repo.get_by_project_id_with_hash(PROJECT_1)
         assert record is not None
-        assert record["pg_password_hash"].startswith("md5"), (
-            f"Expected md5 hash, got: {record['pg_password_hash'][:10]}..."
-        )
+        assert record.pg_password_hash.startswith("md5"), f"Expected md5 hash, got: {record.pg_password_hash[:10]}..."
 
     @patch("app.use_cases.sql_access.sql_access_service.get_settings")
     async def test_enable_when_internal_endpoint_set_uses_it(

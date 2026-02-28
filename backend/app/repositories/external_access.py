@@ -2,6 +2,7 @@
 
 import contextlib
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
@@ -17,6 +18,35 @@ if TYPE_CHECKING:
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+@dataclass(frozen=True)
+class AccessRecordView:
+    """Read-only view of an ExternalAccessRecord (excludes pg_password_hash)."""
+
+    id: str
+    project_id: str
+    org_id: str
+    pg_schema: str
+    pg_role: str
+    environment_id: str | None
+    environment_host: str | None
+    environment_port: int | None
+    proxy_container_id: str | None
+    environment_status: str | None
+    status_message: str | None
+    is_legacy: bool
+    enabled: bool
+    last_synced_at: str | None
+    created_at: str | None
+    updated_at: str | None
+
+
+@dataclass(frozen=True)
+class AccessRecordWithHash(AccessRecordView):
+    """AccessRecordView that also includes the pg_password_hash."""
+
+    pg_password_hash: str = ""
 
 
 def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
@@ -51,7 +81,7 @@ class ExternalAccessRepository:
         environment_port: int | None = None,
         proxy_container_id: str | None = None,
         environment_status: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> AccessRecordView:
         """Create a new external access record."""
         record = ExternalAccessRecord(
             project_id=project_id,
@@ -73,7 +103,7 @@ class ExternalAccessRepository:
         return self._to_dict(record)
 
     @handle_repository_exceptions
-    async def get_by_project_id(self, project_id: str) -> dict[str, Any] | None:
+    async def get_by_project_id(self, project_id: str) -> AccessRecordView | None:
         """Get external access record by project ID."""
         result = await self._session.execute(
             select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
@@ -84,7 +114,7 @@ class ExternalAccessRepository:
         return self._to_dict(record)
 
     @handle_repository_exceptions
-    async def get_by_project_id_for_update(self, project_id: str) -> dict[str, Any] | None:
+    async def get_by_project_id_for_update(self, project_id: str) -> AccessRecordView | None:
         """Get external access record with a row-level lock (SELECT ... FOR UPDATE).
 
         Use this in enable/disable flows to prevent concurrent modifications.
@@ -100,7 +130,7 @@ class ExternalAccessRepository:
         return self._to_dict(record)
 
     @handle_repository_exceptions
-    async def list_enabled(self) -> list[dict[str, Any]]:
+    async def list_enabled(self) -> list[AccessRecordView]:
         """List all enabled external access records."""
         result = await self._session.execute(select(ExternalAccessRecord).where(ExternalAccessRecord.enabled == True))
         return [self._to_dict(r) for r in result.scalars().all()]
@@ -110,7 +140,7 @@ class ExternalAccessRepository:
         self,
         project_id: str,
         update_data: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> AccessRecordView | None:
         """Update an external access record by project ID."""
         result = await self._session.execute(
             select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
@@ -127,7 +157,7 @@ class ExternalAccessRepository:
         return self._to_dict(record)
 
     @handle_repository_exceptions
-    async def soft_disable(self, project_id: str) -> dict[str, Any] | None:
+    async def soft_disable(self, project_id: str) -> AccessRecordView | None:
         """Soft-disable external access for a project (set enabled=False)."""
         result = await self._session.execute(
             select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
@@ -149,7 +179,7 @@ class ExternalAccessRepository:
         return self._to_dict(record)
 
     @handle_repository_exceptions
-    async def get_by_project_id_with_hash(self, project_id: str) -> dict[str, Any] | None:
+    async def get_by_project_id_with_hash(self, project_id: str) -> AccessRecordWithHash | None:
         """Get external access record by project ID, including pg_password_hash.
 
         Use only when the stored hash is needed (e.g. start_environment, regenerate).
@@ -163,37 +193,53 @@ class ExternalAccessRepository:
         return self._to_dict_with_hash(record)
 
     @staticmethod
-    def _to_dict(record: ExternalAccessRecord) -> dict[str, Any]:
-        """Convert ExternalAccessRecord to dictionary.
+    def _to_dict(record: ExternalAccessRecord) -> AccessRecordView:
+        """Convert ExternalAccessRecord to AccessRecordView.
 
         Deliberately excludes pg_password_hash — use _to_dict_with_hash()
         only when credential verification is needed.
         """
-        return {
-            "id": record.id,
-            "project_id": record.project_id,
-            "org_id": record.org_id,
-            "pg_schema": record.pg_schema,
-            "pg_role": record.pg_role,
-            "environment_id": record.environment_id,
-            "environment_host": record.environment_host,
-            "environment_port": record.environment_port,
-            "proxy_container_id": record.proxy_container_id,
-            "environment_status": record.environment_status,
-            "status_message": record.status_message,
-            "is_legacy": record.enabled and record.proxy_container_id is None,
-            "enabled": record.enabled,
-            "last_synced_at": record.last_synced_at.isoformat() if record.last_synced_at else None,
-            "created_at": record.created_at.isoformat() if record.created_at else None,
-            "updated_at": record.updated_at.isoformat() if record.updated_at else None,
-        }
+        return AccessRecordView(
+            id=record.id,
+            project_id=record.project_id,
+            org_id=record.org_id,
+            pg_schema=record.pg_schema,
+            pg_role=record.pg_role,
+            environment_id=record.environment_id,
+            environment_host=record.environment_host,
+            environment_port=record.environment_port,
+            proxy_container_id=record.proxy_container_id,
+            environment_status=record.environment_status,
+            status_message=record.status_message,
+            is_legacy=record.enabled and record.proxy_container_id is None,
+            enabled=record.enabled,
+            last_synced_at=record.last_synced_at.isoformat() if record.last_synced_at else None,
+            created_at=record.created_at.isoformat() if record.created_at else None,
+            updated_at=record.updated_at.isoformat() if record.updated_at else None,
+        )
 
     @staticmethod
-    def _to_dict_with_hash(record: ExternalAccessRecord) -> dict[str, Any]:
-        """Convert ExternalAccessRecord to dictionary, including pg_password_hash.
+    def _to_dict_with_hash(record: ExternalAccessRecord) -> AccessRecordWithHash:
+        """Convert ExternalAccessRecord to AccessRecordWithHash.
 
         Only use when credential verification or environment restart is needed.
         """
-        d = ExternalAccessRepository._to_dict(record)
-        d["pg_password_hash"] = record.pg_password_hash
-        return d
+        return AccessRecordWithHash(
+            id=record.id,
+            project_id=record.project_id,
+            org_id=record.org_id,
+            pg_schema=record.pg_schema,
+            pg_role=record.pg_role,
+            environment_id=record.environment_id,
+            environment_host=record.environment_host,
+            environment_port=record.environment_port,
+            proxy_container_id=record.proxy_container_id,
+            environment_status=record.environment_status,
+            status_message=record.status_message,
+            is_legacy=record.enabled and record.proxy_container_id is None,
+            enabled=record.enabled,
+            last_synced_at=record.last_synced_at.isoformat() if record.last_synced_at else None,
+            created_at=record.created_at.isoformat() if record.created_at else None,
+            updated_at=record.updated_at.isoformat() if record.updated_at else None,
+            pg_password_hash=record.pg_password_hash,
+        )

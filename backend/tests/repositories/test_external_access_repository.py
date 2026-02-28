@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import RestrictedSession
 from app.repositories.exceptions import ExternalAccessRepositoryError
-from app.repositories.external_access import ExternalAccessRepository
+from app.repositories.external_access import AccessRecordView, ExternalAccessRepository
 from app.repositories.metadata import ProjectRecord
 from tests.uuidv7_fixtures import ORG_1, PROJECT_1
 
@@ -26,7 +26,7 @@ async def repo(db_session: AsyncSession):
 
 
 class TestExternalAccessRepository:
-    async def test_create_returns_dict_with_all_fields(self, repo):
+    async def test_create_returns_access_record_view_with_all_fields(self, repo):
         result = await repo.create(
             project_id=PROJECT_1,
             org_id=ORG_1,
@@ -35,29 +35,25 @@ class TestExternalAccessRepository:
             pg_password_hash="$2b$12$hashvalue",
         )
 
-        assert result == {
-            "project_id": PROJECT_1,
-            "org_id": ORG_1,
-            "pg_schema": "project_project_",
-            "pg_role": "reader_project_",
-            "environment_id": None,
-            "environment_host": None,
-            "environment_port": None,
-            "proxy_container_id": None,
-            "environment_status": "running",
-            "status_message": None,
-            "is_legacy": True,
-            "enabled": True,
-            "last_synced_at": None,
-            "id": result["id"],
-            "created_at": result["created_at"],
-            "updated_at": result["updated_at"],
-        }
-        assert result["id"] is not None
-        assert result["created_at"] is not None
-        assert result["updated_at"] is not None
-        # pg_password_hash is intentionally excluded from _to_dict
-        assert "pg_password_hash" not in result
+        assert isinstance(result, AccessRecordView)
+        assert result.project_id == PROJECT_1
+        assert result.org_id == ORG_1
+        assert result.pg_schema == "project_project_"
+        assert result.pg_role == "reader_project_"
+        assert result.environment_id is None
+        assert result.environment_host is None
+        assert result.environment_port is None
+        assert result.proxy_container_id is None
+        assert result.environment_status == "running"
+        assert result.status_message is None
+        assert result.is_legacy is True
+        assert result.enabled is True
+        assert result.last_synced_at is None
+        assert result.id is not None
+        assert result.created_at is not None
+        assert result.updated_at is not None
+        # pg_password_hash is intentionally excluded from AccessRecordView
+        assert not hasattr(result, "pg_password_hash") or type(result) is AccessRecordView
 
     async def test_get_by_project_id_returns_record(self, repo):
         await repo.create(
@@ -71,11 +67,8 @@ class TestExternalAccessRepository:
         result = await repo.get_by_project_id(PROJECT_1)
 
         assert result is not None
-        assert result == {
-            **result,
-            "project_id": PROJECT_1,
-            "enabled": True,
-        }
+        assert result.project_id == PROJECT_1
+        assert result.enabled is True
 
     async def test_get_by_project_id_returns_none_for_nonexistent(self, repo):
         result = await repo.get_by_project_id("nonexistent")
@@ -98,7 +91,7 @@ class TestExternalAccessRepository:
         )
 
         assert result is not None
-        assert result["pg_role"] == "reader_updated_"
+        assert result.pg_role == "reader_updated_"
 
     async def test_update_returns_none_for_nonexistent(self, repo):
         result = await repo.update("nonexistent", {"enabled": False})
@@ -116,11 +109,8 @@ class TestExternalAccessRepository:
         result = await repo.soft_disable(PROJECT_1)
 
         assert result is not None
-        assert result == {
-            **result,
-            "project_id": PROJECT_1,
-            "enabled": False,
-        }
+        assert result.project_id == PROJECT_1
+        assert result.enabled is False
 
     async def test_soft_disable_returns_none_for_nonexistent(self, repo):
         result = await repo.soft_disable("nonexistent")

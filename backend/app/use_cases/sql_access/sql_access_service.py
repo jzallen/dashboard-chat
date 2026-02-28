@@ -8,6 +8,7 @@ import logging
 
 from app.config import get_settings
 from app.models.dataset import Dataset
+from app.repositories.external_access import AccessRecordWithHash
 from app.use_cases.project._dbt.bootstrap_sql import generate_bootstrap_sql
 from app.use_cases.project._dbt.naming import deduplicate_names, to_snake_case
 from app.use_cases.sql_access._infra import (
@@ -70,7 +71,7 @@ async def bootstrap_sql_views(
 
 async def provision_and_bootstrap_environment(
     project_id: str,
-    access_record: dict,
+    access_record: AccessRecordWithHash,
     sparse_datasets: list[dict],
     metadata_repo,
 ) -> tuple[str | None, ProjectEnvironment]:
@@ -93,7 +94,7 @@ async def provision_and_bootstrap_environment(
     # Re-create schema and role on the fresh container, then set the stored
     # md5 hash as the role password so it matches what PgBouncer expects.
     await create_project_schema(env, project_id, "temporary")
-    await regenerate_credentials(env, project_id, access_record["pg_password_hash"])
+    await regenerate_credentials(env, project_id, access_record.pg_password_hash)
 
     # Bootstrap views
     full_datasets = await fetch_full_datasets(sparse_datasets, metadata_repo)
@@ -101,23 +102,23 @@ async def provision_and_bootstrap_environment(
         await bootstrap_sql_views(
             env,
             project_id,
-            access_record["pg_schema"],
+            access_record.pg_schema,
             full_datasets,
             settings.storage_bucket,
         )
 
     # Recreate PgBouncer if non-legacy
-    proxy_container_id = access_record.get("proxy_container_id")
-    if proxy_container_id or not access_record.get("is_legacy"):
+    proxy_container_id = access_record.proxy_container_id
+    if proxy_container_id or not access_record.is_legacy:
         upstream_host = env.internal_host or f"dashboard-pgduckdb-{project_id[:8]}"
         try:
             pgbouncer = get_app_pgbouncer_provisioner()
             proxy_container_id = await pgbouncer.recreate(
                 project_id=project_id,
-                proxy_port=access_record["environment_port"],
-                md5_hash=access_record["pg_password_hash"],
+                proxy_port=access_record.environment_port,
+                md5_hash=access_record.pg_password_hash,
                 upstream_host=upstream_host,
-                auth_user=access_record["pg_role"],
+                auth_user=access_record.pg_role,
             )
         except Exception:
             logger.warning(
