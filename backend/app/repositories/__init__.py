@@ -11,7 +11,9 @@ from typing import ParamSpec, Self, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .external_access import AccessRecordView, AccessRecordWithHash, ExternalAccessRepository
+from .external_access import AccessRecordView as AccessRecordView
+from .external_access import AccessRecordWithHash as AccessRecordWithHash
+from .external_access import ExternalAccessRepository
 from .lake import LakeRepository, MinIOLakeRepository
 from .metadata import MetadataRepository
 from .outbox import OutboxRepository
