@@ -13,18 +13,16 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
-from app.auth import get_auth_user
-from app.auth.exceptions import AuthorizationError
 from app.models import Upload
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.dataset.exceptions import DatasetNotFound
-from app.use_cases.project.exceptions import ProjectNotFound
+from app.use_cases.project.project_service import ProjectService
 from app.use_cases.upload.exceptions import EmptyFile, InvalidFileType
 from app.utils.csv_parser import parse_and_clean_csv
 
 if TYPE_CHECKING:
-    from app.repositories import LakeRepository, MetadataRepository, OutboxRepository, RepositoryContainer
+    from app.repositories import MetadataRepository, RepositoryContainer
 
 
 def _validate_upload(file_content: bytes, file_name: str) -> None:
@@ -34,13 +32,10 @@ def _validate_upload(file_content: bytes, file_name: str) -> None:
         raise EmptyFile()
 
 
-async def _validate_references(
+async def _validate_dataset_exists(
     metadata_repo: "MetadataRepository",
-    project_id: str,
     dataset_id: str | None,
 ) -> None:
-    if not await metadata_repo.project_exists(project_id):
-        raise ProjectNotFound(project_id)
     if dataset_id and not await metadata_repo.dataset_exists(dataset_id):
         raise DatasetNotFound(dataset_id)
 
@@ -60,17 +55,16 @@ async def upload_file(
     Step 1 of the upload flow: validate input, parse CSV, store raw file,
     and return an Upload with preview rows.
     """
-    metadata_repo: MetadataRepository = repositories["metadata_repository"]
-    lake_repo: LakeRepository = repositories["lake_repository"]
-    outbox_repo: OutboxRepository = repositories["outbox_repository"]
+    metadata_repo = repositories.metadata
+    lake_repo = repositories.lake
+    outbox_repo = repositories.outbox
 
     _validate_upload(file_content, file_name)
-    await _validate_references(metadata_repo, project_id, dataset_id)
 
-    project = await metadata_repo.get_project(project_id, include_datasets=False)
-    user = get_auth_user()
-    if project and project.get("org_id") and project["org_id"] != user.org_id:
-        raise AuthorizationError(f"Access denied to project {project_id}")
+    project_service = ProjectService(repositories)
+    await project_service.fetch_and_authorize_project(project_id)
+
+    await _validate_dataset_exists(metadata_repo, dataset_id)
 
     df = await asyncio.to_thread(parse_and_clean_csv, file_content)
 
