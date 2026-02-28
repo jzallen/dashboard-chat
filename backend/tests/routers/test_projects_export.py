@@ -12,7 +12,7 @@ from app.auth.exceptions import AuthorizationError
 from app.auth.types import AuthUser
 from app.main import app
 from app.repositories.metadata import DatasetRecord, ProjectRecord
-from app.use_cases.exceptions import ProjectNotFound
+from app.use_cases.project.exceptions import ProjectNotFound
 from tests.uuidv7_fixtures import (
     DATASET_ROUTE_1,
     ORG_ROUTE,

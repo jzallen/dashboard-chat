@@ -9,10 +9,6 @@ from returns.result import Result
 from app.config import get_settings
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import (
-    CredentialCooldown,
-    SqlAccessNotEnabled,
-)
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import (
     ProjectEnvironment,
@@ -21,6 +17,7 @@ from app.use_cases.sql_access._infra import (
     pg_md5_hash,
     regenerate_credentials,
 )
+from app.use_cases.sql_access.exceptions import CredentialCooldown, SqlAccessNotEnabled
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -82,9 +79,7 @@ async def regenerate_sql_credentials(
     await regenerate_credentials(env, project_id, new_password)
 
     # Recreate PgBouncer with new md5 hash (if not legacy)
-    proxy_container_id = await _rotate_pgbouncer(
-        access_record, project_id, env, md5_hash, pg_role
-    )
+    proxy_container_id = await _rotate_pgbouncer(access_record, project_id, env, md5_hash, pg_role)
 
     # Update stored hash and proxy container
     update_data = {"pg_password_hash": md5_hash}
@@ -119,9 +114,7 @@ def _enforce_cooldown(access_record: dict, cooldown_seconds: int) -> None:
             raise CredentialCooldown(remaining)
 
 
-async def _rotate_pgbouncer(
-    access_record: dict, project_id: str, env, md5_hash: str, pg_role: str
-) -> str | None:
+async def _rotate_pgbouncer(access_record: dict, project_id: str, env, md5_hash: str, pg_role: str) -> str | None:
     """Recreate PgBouncer with new credentials, compensating on failure."""
     old_md5_hash = access_record["pg_password_hash"]
     proxy_container_id = access_record.get("proxy_container_id")

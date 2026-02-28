@@ -14,7 +14,8 @@ from app.repositories.lake import MinIOLakeRepository
 from app.repositories.outbox import OutboxRecord
 from app.repositories.outbox.events import UploadFileReceived
 from app.use_cases.dataset import create_dataset_from_upload
-from app.use_cases.exceptions import ProjectNotFound, UploadNotFound
+from app.use_cases.project.exceptions import ProjectNotFound
+from app.use_cases.upload.exceptions import UploadNotFound
 from tests.uuidv7_fixtures import PROJECT_1
 
 

@@ -9,7 +9,6 @@ from app.use_cases import dataset as dataset_use_cases
 from app.use_cases import organization as organization_use_cases
 from app.use_cases import project as project_use_cases
 from app.use_cases import sql_access as sql_access_use_cases
-from app.use_cases import transform as transform_use_cases
 from app.use_cases import upload as upload_use_cases
 from app.use_cases.exceptions import DomainException
 
@@ -124,7 +123,7 @@ class HTTPController:
 
     @staticmethod
     async def post_transforms(dataset_id: str, transforms: list[dict]) -> tuple[dict, int]:
-        result = await transform_use_cases.create_transforms(dataset_id, transforms)
+        result = await dataset_use_cases.create_transforms(dataset_id, transforms)
         match result:
             case Success():
                 return {"ok": True}, 201
@@ -133,7 +132,7 @@ class HTTPController:
 
     @staticmethod
     async def patch_transforms(dataset_id: str, updates: list[dict]) -> tuple[dict, int]:
-        result = await transform_use_cases.update_transforms(dataset_id, updates)
+        result = await dataset_use_cases.update_transforms(dataset_id, updates)
         match result:
             case Success():
                 return {"ok": True}, 200
@@ -142,7 +141,7 @@ class HTTPController:
 
     @staticmethod
     async def preview_transform(dataset_id: str, target_column: str, expression_config: dict) -> tuple[dict, int]:
-        result = await transform_use_cases.preview_cleaning_transform(dataset_id, target_column, expression_config)
+        result = await dataset_use_cases.preview_cleaning_transform(dataset_id, target_column, expression_config)
         match result:
             case Success(data):
                 return wrap_success(data), 200

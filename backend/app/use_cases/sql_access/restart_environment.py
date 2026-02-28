@@ -7,13 +7,10 @@ from returns.result import Result
 
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import (
-    EnvironmentNotRunning,
-    SqlAccessNotEnabled,
-)
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import get_app_provisioner
 from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
+from app.use_cases.sql_access.exceptions import EnvironmentNotRunning, SqlAccessNotEnabled
 from app.use_cases.sql_access.sql_access_service import provision_and_bootstrap_environment
 
 if TYPE_CHECKING:
@@ -44,9 +41,7 @@ async def restart_environment(
     external_access_repo = repositories["external_access_repository"]
 
     project_service = ProjectService(repositories)
-    project_dict = await project_service.fetch_and_authorize_project(
-        project_id, include_datasets=True
-    )
+    project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
 
     # Check that SQL access is enabled and running/degraded (fetch with hash for PgBouncer recreation)
     access_record = await external_access_repo.get_by_project_id_with_hash(project_id)

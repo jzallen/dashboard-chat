@@ -1,16 +1,17 @@
 """Tests for sync_sql_access use case."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
-from app.use_cases.exceptions import ProjectNotFound, SqlAccessNotEnabled
+from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.sql_access import sync_sql_access
 from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
+from app.use_cases.sql_access.exceptions import SqlAccessNotEnabled
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 
 # Patch targets for pg_duckdb manager functions (called from sql_access_service)
@@ -53,9 +54,7 @@ class TestSyncSqlAccess:
         pg_manager_mocks["grant_usage"].assert_called_once()
         assert pg_manager_mocks["grant_usage"].call_args[0][0] == env_arg
 
-    async def test_sync_when_project_not_found_returns_failure(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_sync_when_project_not_found_returns_failure(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await sync_sql_access(project_id="nonexistent")
@@ -63,9 +62,7 @@ class TestSyncSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_sync_when_not_enabled_returns_failure(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_sync_when_not_enabled_returns_failure(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
         result = await sync_sql_access(project_id=PROJECT_1)
@@ -73,9 +70,7 @@ class TestSyncSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    async def test_sync_when_other_org_returns_authorization_error(
-        self, seeded_db_other_org: AsyncSession
-    ):
+    async def test_sync_when_other_org_returns_authorization_error(self, seeded_db_other_org: AsyncSession):
         set_session(seeded_db_other_org)
 
         result = await sync_sql_access(project_id=PROJECT_OTHER)

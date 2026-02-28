@@ -8,8 +8,8 @@ import logging
 
 from app.config import get_settings
 from app.models.dataset import Dataset
-from app.use_cases.project.dbt.bootstrap_sql import generate_bootstrap_sql
-from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
+from app.use_cases.project._dbt.bootstrap_sql import generate_bootstrap_sql
+from app.use_cases.project._dbt.naming import deduplicate_names, to_snake_case
 from app.use_cases.sql_access._infra import (
     ProjectEnvironment,
     StorageConfig,

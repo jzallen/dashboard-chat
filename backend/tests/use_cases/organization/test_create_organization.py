@@ -1,5 +1,8 @@
 """Tests for create_organization use case."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 import pytest
 from returns.result import Failure, Success
 from sqlalchemy import select
@@ -9,6 +12,7 @@ from app.auth.context import set_auth_user
 from app.repositories import set_session
 from app.repositories.metadata import OrganizationRecord, ProjectRecord
 from app.use_cases.organization import create_organization
+from app.use_cases.organization.exceptions import ExternalServiceError
 
 from .conftest import TEST_USER, TEST_USER_WITH_ORG
 
@@ -78,3 +82,96 @@ class TestCreateOrganization:
                 assert org.name == "Test Org"
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
+
+
+class TestCreateOrganizationWorkosErrors:
+    """Tests for WorkOS HTTP error handling in create_organization."""
+
+    @patch("app.use_cases.organization.create_organization.get_settings")
+    async def test_workos_http_400_error_returns_failure(self, mock_get_settings, db_session: AsyncSession):
+        set_session(db_session)
+
+        mock_settings = MagicMock()
+        mock_settings.auth_mode = "workos"
+        mock_settings.workos_api_key = "test-key"
+        mock_settings.workos_api_url = "https://api.workos.com"
+        mock_get_settings.return_value = mock_settings
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {"message": "Bad request"}
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Bad Request", request=MagicMock(), response=mock_response
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.use_cases.organization.create_organization.httpx.AsyncClient", return_value=mock_client):
+            result = await create_organization(name="Bad Org")
+
+        match result:
+            case Failure(error):
+                assert isinstance(error, ExternalServiceError)
+                assert "WorkOS API error: 400" in str(error)
+            case Success(_):
+                pytest.fail("Expected failure for HTTP 400 error")
+
+    @patch("app.use_cases.organization.create_organization.get_settings")
+    async def test_workos_http_500_error_returns_failure(self, mock_get_settings, db_session: AsyncSession):
+        set_session(db_session)
+
+        mock_settings = MagicMock()
+        mock_settings.auth_mode = "workos"
+        mock_settings.workos_api_key = "test-key"
+        mock_settings.workos_api_url = "https://api.workos.com"
+        mock_get_settings.return_value = mock_settings
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.json.return_value = {"message": "Internal server error"}
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Internal Server Error", request=MagicMock(), response=mock_response
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.use_cases.organization.create_organization.httpx.AsyncClient", return_value=mock_client):
+            result = await create_organization(name="Server Error Org")
+
+        match result:
+            case Failure(error):
+                assert isinstance(error, ExternalServiceError)
+                assert "WorkOS API error: 500" in str(error)
+            case Success(_):
+                pytest.fail("Expected failure for HTTP 500 error")
+
+    @patch("app.use_cases.organization.create_organization.get_settings")
+    async def test_workos_network_error_returns_failure(self, mock_get_settings, db_session: AsyncSession):
+        set_session(db_session)
+
+        mock_settings = MagicMock()
+        mock_settings.auth_mode = "workos"
+        mock_settings.workos_api_key = "test-key"
+        mock_settings.workos_api_url = "https://api.workos.com"
+        mock_get_settings.return_value = mock_settings
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = httpx.ConnectError("Connection refused")
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.use_cases.organization.create_organization.httpx.AsyncClient", return_value=mock_client):
+            result = await create_organization(name="Network Error Org")
+
+        match result:
+            case Failure(error):
+                assert isinstance(error, ExternalServiceError)
+                assert "WorkOS API request failed" in str(error)
+            case Success(_):
+                pytest.fail("Expected failure for network error")

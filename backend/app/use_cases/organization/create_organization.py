@@ -9,6 +9,7 @@ from app.auth.exceptions import AuthorizationError
 from app.config import get_settings
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
+from app.use_cases.organization.exceptions import ExternalServiceError
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -67,6 +68,7 @@ async def _create_org_record(name, user_id, metadata_repo, settings):
             name=name,
             user_id=user_id,
             api_key=settings.workos_api_key,
+            api_url=settings.workos_api_url,
         )
         org = await metadata_repo.create_organization(name=name, id=org_id)
     else:
@@ -79,6 +81,7 @@ async def _create_workos_org(
     name: str,
     user_id: str,
     api_key: str,
+    api_url: str,
 ) -> tuple[str, bool]:
     """Create an org in WorkOS and link the user to it.
 
@@ -87,21 +90,25 @@ async def _create_workos_org(
     """
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://api.workos.com/organizations",
-            json={"name": name},
-            headers=headers,
-        )
-        resp.raise_for_status()
-        org_data = resp.json()
-        org_id = org_data["id"]
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{api_url}/organizations",
+                json={"name": name},
+                headers=headers,
+            )
+            resp.raise_for_status()
+            org_data = resp.json()
+            org_id = org_data["id"]
 
-        membership_resp = await client.post(
-            "https://api.workos.com/user_management/organization_memberships",
-            json={"user_id": user_id, "organization_id": org_id},
-            headers=headers,
-        )
-        membership_resp.raise_for_status()
-
-    return org_id, True
+            membership_resp = await client.post(
+                f"{api_url}/user_management/organization_memberships",
+                json={"user_id": user_id, "organization_id": org_id},
+                headers=headers,
+            )
+            membership_resp.raise_for_status()
+        return org_id, True
+    except httpx.HTTPStatusError as e:
+        raise ExternalServiceError(f"WorkOS API error: {e.response.status_code}") from e
+    except httpx.RequestError as e:
+        raise ExternalServiceError(f"WorkOS API request failed: {e!s}") from e

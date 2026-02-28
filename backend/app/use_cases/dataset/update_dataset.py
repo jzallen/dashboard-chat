@@ -6,7 +6,7 @@ from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.dataset.dataset_service import DatasetService
-from app.use_cases.exceptions import DatasetNotFound
+from app.use_cases.dataset.exceptions import DatasetNotFound
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer

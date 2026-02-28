@@ -1,20 +1,17 @@
 """Tests for enable_sql_access use case."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
-from app.use_cases.exceptions import (
-    ProjectHasNoDatasets,
-    ProjectNotFound,
-    SqlAccessAlreadyEnabled,
-)
+from app.use_cases.project.exceptions import ProjectHasNoDatasets, ProjectNotFound
 from app.use_cases.sql_access import enable_sql_access
 from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
+from app.use_cases.sql_access.exceptions import SqlAccessAlreadyEnabled
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY, PROJECT_OTHER
 
 # Default settings values used by most tests (match get_settings() defaults)

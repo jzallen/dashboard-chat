@@ -1,4 +1,4 @@
-from app.use_cases.project.dbt.naming import deduplicate_names, to_snake_case
+from app.use_cases.project._dbt.naming import deduplicate_names, to_snake_case
 
 
 class TestToSnakeCase:

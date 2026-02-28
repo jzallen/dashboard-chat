@@ -13,15 +13,14 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
+from app.auth import get_auth_user
+from app.auth.exceptions import AuthorizationError
 from app.models import Upload
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import (
-    DatasetNotFound,
-    EmptyFile,
-    InvalidFileType,
-    ProjectNotFound,
-)
+from app.use_cases.dataset.exceptions import DatasetNotFound
+from app.use_cases.project.exceptions import ProjectNotFound
+from app.use_cases.upload.exceptions import EmptyFile, InvalidFileType
 from app.utils.csv_parser import parse_and_clean_csv
 
 if TYPE_CHECKING:
@@ -67,6 +66,11 @@ async def upload_file(
 
     _validate_upload(file_content, file_name)
     await _validate_references(metadata_repo, project_id, dataset_id)
+
+    project = await metadata_repo.get_project(project_id, include_datasets=False)
+    user = get_auth_user()
+    if project and project.get("org_id") and project["org_id"] != user.org_id:
+        raise AuthorizationError(f"Access denied to project {project_id}")
 
     df = await asyncio.to_thread(parse_and_clean_csv, file_content)
 

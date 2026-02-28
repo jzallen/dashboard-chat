@@ -1,4 +1,4 @@
-from app.use_cases.project.dbt.readme import generate_readme
+from app.use_cases.project._dbt.readme import generate_readme
 
 
 class TestReadme:

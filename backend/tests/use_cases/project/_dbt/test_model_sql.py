@@ -2,7 +2,7 @@ from datetime import datetime
 
 from app.models.dataset import Dataset
 from app.models.transform import Transform
-from app.use_cases.project.dbt.model_sql import generate_model_sql
+from app.use_cases.project._dbt.model_sql import generate_model_sql
 
 
 def _make_dataset(

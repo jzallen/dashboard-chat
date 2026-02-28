@@ -1,11 +1,17 @@
 from .create_dataset_from_upload import create_dataset_from_upload
+from .create_transforms import create_transforms
 from .get_dataset import get_dataset
 from .list_datasets import list_datasets
+from .preview_cleaning import preview_cleaning_transform
 from .update_dataset import update_dataset
+from .update_transforms import update_transforms
 
 __all__ = [
     "create_dataset_from_upload",
+    "create_transforms",
     "get_dataset",
     "list_datasets",
+    "preview_cleaning_transform",
     "update_dataset",
+    "update_transforms",
 ]

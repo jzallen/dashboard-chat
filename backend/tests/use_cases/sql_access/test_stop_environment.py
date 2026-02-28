@@ -5,12 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
-from app.use_cases.exceptions import (
-    EnvironmentNotRunning,
-    ProjectNotFound,
-    SqlAccessNotEnabled,
-)
+from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
+from app.use_cases.sql_access.exceptions import EnvironmentNotRunning, SqlAccessNotEnabled
 from app.use_cases.sql_access.stop_environment import stop_environment
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 

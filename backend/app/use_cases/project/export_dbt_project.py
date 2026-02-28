@@ -4,15 +4,12 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
-from app.auth import get_auth_user
-from app.auth.exceptions import AuthorizationError
-from app.models.dataset import Dataset
 from app.models.project import Project
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import ProjectNotFound
-from app.use_cases.project.dbt import generate_dbt_project_zip
-from app.use_cases.project.dbt.naming import to_snake_case
+from app.use_cases.project._dbt import generate_dbt_project_zip
+from app.use_cases.project._dbt.naming import to_snake_case
+from app.use_cases.project.project_service import ProjectService
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -37,25 +34,9 @@ async def export_dbt_project(
         ProjectNotFound: If project with given ID does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories["metadata_repository"]
-
-    # Fetch project with sparse dataset references
-    project_dict = await metadata_repo.get_project(project_id, include_datasets=True)
-    if project_dict is None:
-        raise ProjectNotFound(project_id)
-
-    # Verify org_id
-    user = get_auth_user()
-    if project_dict.get("org_id") and project_dict["org_id"] != user.org_id:
-        raise AuthorizationError(f"Access denied to project {project_id}")
-
-    # Fetch full datasets with transforms
-    sparse_datasets = project_dict.get("datasets", [])
-    full_datasets = []
-    for ds_info in sparse_datasets:
-        record = await metadata_repo.get_dataset_record(ds_info["id"], include_transforms=True)
-        if record:
-            full_datasets.append(Dataset.from_record(record, include_transforms=True))
+    svc = ProjectService(repositories)
+    project_dict = await svc.fetch_and_authorize_project(project_id, include_datasets=True)
+    full_datasets = await svc.fetch_full_datasets(project_dict)
 
     # Build Project domain object
     project = Project(

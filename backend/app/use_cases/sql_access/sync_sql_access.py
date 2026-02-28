@@ -8,12 +8,12 @@ from returns.result import Result
 from app.config import get_settings
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import SqlAccessNotEnabled
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import (
     ProjectEnvironment,
     get_app_provisioner,
 )
+from app.use_cases.sql_access.exceptions import SqlAccessNotEnabled
 from app.use_cases.sql_access.sql_access_service import (
     bootstrap_sql_views,
     fetch_full_datasets,
@@ -44,9 +44,7 @@ async def sync_sql_access(
     external_access_repo = repositories["external_access_repository"]
 
     project_service = ProjectService(repositories)
-    project_dict = await project_service.fetch_and_authorize_project(
-        project_id, include_datasets=True
-    )
+    project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
 
     # Check that SQL access is enabled
     access_record = await external_access_repo.get_by_project_id(project_id)
@@ -72,9 +70,7 @@ async def sync_sql_access(
     sparse_datasets = project_dict.get("datasets", [])
     full_datasets = await fetch_full_datasets(sparse_datasets, metadata_repo)
 
-    await bootstrap_sql_views(
-        env, project_id, access_record["pg_schema"], full_datasets, settings.storage_bucket
-    )
+    await bootstrap_sql_views(env, project_id, access_record["pg_schema"], full_datasets, settings.storage_bucket)
 
     # Update last_synced_at
     synced_at = datetime.now(UTC)

@@ -4,11 +4,9 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
-from app.auth import get_auth_user
-from app.auth.exceptions import AuthorizationError
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import ProjectNotFound
+from app.use_cases.project.project_service import ProjectService
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -35,14 +33,5 @@ async def get_project(
         ProjectNotFound: If project with given ID does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories["metadata_repository"]
-    project = await metadata_repo.get_project(project_id, include_datasets=include_datasets)
-
-    if project is None:
-        raise ProjectNotFound(project_id)
-
-    user = get_auth_user()
-    if project.get("org_id") and project["org_id"] != user.org_id:
-        raise AuthorizationError(f"Access denied to project {project_id}")
-
-    return project
+    svc = ProjectService(repositories)
+    return await svc.fetch_and_authorize_project(project_id, include_datasets=include_datasets)

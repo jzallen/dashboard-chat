@@ -1,4 +1,4 @@
-from app.use_cases.project.dbt.macros_sql import generate_macros_sql
+from app.use_cases.project._dbt.macros_sql import generate_macros_sql
 
 
 class TestMacrosSql:

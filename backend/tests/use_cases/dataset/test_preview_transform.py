@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 from app.repositories import set_session
-from app.use_cases.transform import preview_cleaning_transform
+from app.use_cases.dataset import preview_cleaning_transform
 from tests.uuidv7_fixtures import DATASET_1, ORG_OTHER, USER_3
 
 WRONG_ORG_USER = AuthUser(id=USER_3, email="other@example.com", org_id=ORG_OTHER, name="Other User")

@@ -8,10 +8,7 @@ from returns.result import Result
 from app.config import get_settings
 from app.repositories import get_session, with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import (
-    ProjectHasNoDatasets,
-    SqlAccessAlreadyEnabled,
-)
+from app.use_cases.project.exceptions import ProjectHasNoDatasets
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import (
     allocate_proxy_port,
@@ -24,6 +21,7 @@ from app.use_cases.sql_access._infra import (
     schema_name,
 )
 from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
+from app.use_cases.sql_access.exceptions import SqlAccessAlreadyEnabled
 from app.use_cases.sql_access.sql_access_service import (
     bootstrap_sql_views,
     build_storage_config,
@@ -61,9 +59,7 @@ async def enable_sql_access(
     external_access_repo = repositories["external_access_repository"]
 
     project_service = ProjectService(repositories)
-    project_dict = await project_service.fetch_and_authorize_project(
-        project_id, include_datasets=True
-    )
+    project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
 
     # Check for existing enabled access (with row lock to prevent races)
     access_record = await external_access_repo.get_by_project_id_for_update(project_id)
@@ -87,19 +83,22 @@ async def enable_sql_access(
     md5_hash = pg_md5_hash(password, pg_role)
 
     # Create schema/role and bootstrap views, with compensation on failure
-    await _setup_schema_and_views(
-        env, project_id, password, pg_schema, sparse_datasets, metadata_repo, provisioner
-    )
+    await _setup_schema_and_views(env, project_id, password, pg_schema, sparse_datasets, metadata_repo, provisioner)
 
     # Allocate proxy port and provision PgBouncer
-    proxy_port, proxy_container_id = await _provision_pgbouncer(
-        project_id, env, md5_hash, pg_role, provisioner
-    )
+    proxy_port, proxy_container_id = await _provision_pgbouncer(project_id, env, md5_hash, pg_role, provisioner)
 
     # Store metadata
     await _store_access_record(
-        external_access_repo, project_id, access_record,
-        md5_hash, pg_schema, pg_role, env, proxy_port, proxy_container_id,
+        external_access_repo,
+        project_id,
+        access_record,
+        md5_hash,
+        pg_schema,
+        pg_role,
+        env,
+        proxy_port,
+        proxy_container_id,
     )
 
     return {
@@ -169,8 +168,15 @@ async def _compensate_deprovision(provisioner, project_id: str) -> None:
 
 
 async def _store_access_record(
-    external_access_repo, project_id, access_record,
-    md5_hash, pg_schema, pg_role, env, proxy_port, proxy_container_id,
+    external_access_repo,
+    project_id,
+    access_record,
+    md5_hash,
+    pg_schema,
+    pg_role,
+    env,
+    proxy_port,
+    proxy_container_id,
 ):
     """Store or update the external access metadata record."""
     from app.auth import get_auth_user

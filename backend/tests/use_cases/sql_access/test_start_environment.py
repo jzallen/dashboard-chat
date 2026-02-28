@@ -1,19 +1,16 @@
 """Tests for start_environment use case."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
-from app.use_cases.exceptions import (
-    EnvironmentNotStopped,
-    ProjectNotFound,
-    SqlAccessNotEnabled,
-)
+from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
+from app.use_cases.sql_access.exceptions import EnvironmentNotStopped, SqlAccessNotEnabled
 from app.use_cases.sql_access.start_environment import start_environment
 from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
 

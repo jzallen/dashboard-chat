@@ -5,13 +5,27 @@ from returns.result import Failure, Success
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.context import set_auth_user
+from app.auth.types import AuthUser
 from app.models.dataset import Dataset
 from app.models.transform import Transform
 from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord
 from app.types import QueryBuilderJSON
 from app.use_cases.dataset import list_datasets
-from tests.uuidv7_fixtures import DATASET_1, DATASET_2, DATASET_3, PROJECT_1, PROJECT_2, PROJECT_EMPTY, TRANSFORM_1
+from tests.uuidv7_fixtures import (
+    DATASET_1,
+    DATASET_2,
+    DATASET_3,
+    ORG_OTHER,
+    PROJECT_1,
+    PROJECT_2,
+    PROJECT_EMPTY,
+    TRANSFORM_1,
+    USER_3,
+)
+
+WRONG_ORG_USER = AuthUser(id=USER_3, email="other@example.com", org_id=ORG_OTHER, name="Other User")
 
 
 class TestListDatasets:
@@ -150,3 +164,16 @@ class TestListDatasets:
                 assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("list_datasets should fail when database error occurs")
+
+    async def test_list_datasets_when_wrong_org_returns_failure(self, seeded_db: AsyncSession):
+        """list_datasets should return Failure when user's org doesn't match project org."""
+        set_session(seeded_db)
+        set_auth_user(WRONG_ORG_USER)
+
+        result = await list_datasets(project_id=PROJECT_1)
+
+        match result:
+            case Failure(error):
+                assert "Access denied" in str(error)
+            case Success(_):
+                pytest.fail("list_datasets should fail for cross-org access")

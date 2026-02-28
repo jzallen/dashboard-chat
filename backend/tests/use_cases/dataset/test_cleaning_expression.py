@@ -1,4 +1,4 @@
-"""Unit tests for CleaningExpression — expression_config → Ibis expression conversion."""
+"""Unit tests for CleaningExpression — expression_config -> Ibis expression conversion."""
 
 import ibis
 import pytest

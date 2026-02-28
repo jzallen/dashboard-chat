@@ -6,7 +6,7 @@ from io import BytesIO
 from app.models.dataset import Dataset
 from app.models.project import Project
 from app.models.transform import Transform
-from app.use_cases.project.dbt import generate_dbt_project_zip
+from app.use_cases.project._dbt import generate_dbt_project_zip
 
 
 def _make_project(name: str, datasets: list[Dataset] | None = None) -> Project:

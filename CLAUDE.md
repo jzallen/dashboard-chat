@@ -110,7 +110,7 @@ npm run test:e2e:ui                  # interactive UI
 async def my_use_case(...):
 ```
 
-**Error format**: `handle_returns` produces `f"[{func.__name__}] {str(e)}"` — tests must match this pattern.
+**Error format**: `handle_returns` wraps exceptions as `Failure(e)` (the exception object itself). Tests should use `isinstance(result.failure(), SomeDomainException)` to assert on error type.
 
 **Context vars**: `set_session(db)` and `set_auth_user(user)` must be called before invoking use cases in tests.
 

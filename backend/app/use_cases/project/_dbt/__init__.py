@@ -20,6 +20,10 @@ from .sources_yml import generate_sources_yml
 if TYPE_CHECKING:
     from app.models.project import Project
 
+__all__ = ["generate_dbt_project_zip", "to_snake_case"]
+
+_BUCKET_PLACEHOLDER = "__S3_BUCKET__"
+
 
 def generate_dbt_project_zip(project: Project, project_name_snake: str) -> bytes:
     """Generate a complete dbt project as an in-memory zip archive.
@@ -50,7 +54,7 @@ def generate_dbt_project_zip(project: Project, project_name_snake: str) -> bytes
             generate_bootstrap_sql(
                 project_name_snake,
                 dataset_pairs,
-                "__S3_BUCKET__",
+                _BUCKET_PLACEHOLDER,
             ),
         )
         zf.writestr("README.md", generate_readme(project.name))

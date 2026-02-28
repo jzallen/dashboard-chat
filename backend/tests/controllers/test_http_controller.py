@@ -12,12 +12,11 @@ from unittest.mock import AsyncMock, patch
 from returns.result import Failure, Success
 
 from app.controllers.http_controller import HTTPController, _error_response
-from app.use_cases.exceptions import (
-    DatasetNotFound,
+from app.use_cases.dataset.exceptions import DatasetNotFound
+from app.use_cases.project.exceptions import ProjectIdRequired, ProjectNotFound
+from app.use_cases.upload.exceptions import (
     EmptyFile,
     InvalidFileType,
-    ProjectIdRequired,
-    ProjectNotFound,
     UploadAlreadyProcessed,
     UploadNotFound,
 )

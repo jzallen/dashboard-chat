@@ -6,8 +6,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import set_session
 from app.repositories.metadata import TransformRecord
 from app.repositories.outbox.outbox_record import OutboxRecord
-from app.use_cases.transform import update_transforms
+from app.use_cases.dataset import update_transforms
 from tests.uuidv7_fixtures import DATASET_1, TRANSFORM_1, TRANSFORM_2
+
+
+@pytest.fixture
+async def seeded_db_two_transforms(seeded_db: AsyncSession):
+    """Extend seeded_db with a second transform."""
+    transform2 = TransformRecord(
+        id=TRANSFORM_2,
+        dataset_id=DATASET_1,
+        name="Filter Inactive",
+        description="Filter for inactive records",
+        condition_json={"id": "root", "type": "group", "children1": []},
+        condition_sql="col1 = 'inactive'",
+        status="enabled",
+    )
+    seeded_db.add(transform2)
+    await seeded_db.commit()
+    return seeded_db
 
 
 class TestUpdateTransforms:
@@ -52,9 +69,9 @@ class TestUpdateTransforms:
         transform = row.scalar_one()
         assert transform.status == "deleted"
 
-    async def test_update_transforms_when_multiple_updates_disables_all(self, seeded_db: AsyncSession):
+    async def test_update_transforms_when_multiple_updates_disables_all(self, seeded_db_two_transforms: AsyncSession):
         """update_transforms should toggle multiple transforms at once."""
-        set_session(seeded_db)
+        set_session(seeded_db_two_transforms)
 
         result = await update_transforms(
             dataset_id=DATASET_1,
@@ -71,15 +88,15 @@ class TestUpdateTransforms:
                 pytest.fail(f"update_transforms should succeed, got: {error}")
 
         # Verify both are disabled
-        row1 = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_1))
+        row1 = await seeded_db_two_transforms.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_1))
         assert row1.scalar_one().status == "disabled"
 
-        row2 = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_2))
+        row2 = await seeded_db_two_transforms.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_2))
         assert row2.scalar_one().status == "disabled"
 
-    async def test_update_transforms_when_successful_emits_outbox_event(self, seeded_db: AsyncSession):
+    async def test_update_transforms_when_successful_emits_outbox_event(self, seeded_db_two_transforms: AsyncSession):
         """update_transforms should write a TransformsUpdated outbox record."""
-        set_session(seeded_db)
+        set_session(seeded_db_two_transforms)
 
         await update_transforms(
             dataset_id=DATASET_1,
@@ -89,7 +106,7 @@ class TestUpdateTransforms:
             ],
         )
 
-        result = await seeded_db.execute(
+        result = await seeded_db_two_transforms.execute(
             select(OutboxRecord)
             .where(OutboxRecord.aggregate_type == "dataset")
             .where(OutboxRecord.aggregate_id == DATASET_1)

@@ -7,13 +7,10 @@ from returns.result import Result
 
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.exceptions import (
-    EnvironmentNotRunning,
-    SqlAccessNotEnabled,
-)
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import get_app_provisioner
 from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
+from app.use_cases.sql_access.exceptions import EnvironmentNotRunning, SqlAccessNotEnabled
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer

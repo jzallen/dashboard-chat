@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from app.auth import get_auth_user
 from app.auth.exceptions import AuthorizationError
 from app.models.dataset import Dataset
-from app.use_cases.exceptions import ProjectNotFound
+from app.use_cases.project.exceptions import ProjectNotFound
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -32,9 +32,7 @@ class ProjectService:
             ProjectNotFound: If project with given ID does not exist.
             AuthorizationError: If user's org does not own the project.
         """
-        project_dict = await self._metadata_repo.get_project(
-            project_id, include_datasets=include_datasets
-        )
+        project_dict = await self._metadata_repo.get_project(project_id, include_datasets=include_datasets)
 
         if project_dict is None:
             raise ProjectNotFound(project_id)
@@ -52,13 +50,9 @@ class ProjectService:
         sparse_datasets = project_dict.get("datasets", [])
         full_datasets = []
         for ds_info in sparse_datasets:
-            record = await self._metadata_repo.get_dataset_record(
-                ds_info["id"], include_transforms=True
-            )
+            record = await self._metadata_repo.get_dataset_record(ds_info["id"], include_transforms=True)
             if record:
-                full_datasets.append(
-                    Dataset.from_record(record, include_transforms=True)
-                )
+                full_datasets.append(Dataset.from_record(record, include_transforms=True))
         return full_datasets
 
     @staticmethod

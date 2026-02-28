@@ -11,10 +11,12 @@ from typing import TYPE_CHECKING
 from app.auth import get_auth_user
 from app.auth.exceptions import AuthorizationError
 from app.models.dataset import Dataset
-from app.use_cases.exceptions import DatasetNotFound
+from app.use_cases.dataset.exceptions import DatasetNotFound
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
+
+DEFAULT_PREVIEW_LIMIT = 10
 
 
 class DatasetService:
@@ -24,12 +26,28 @@ class DatasetService:
         self._metadata_repo = repositories["metadata_repository"]
         self._lake_repo = repositories["lake_repository"]
 
+    async def fetch_and_authorize_dataset(self, dataset_id: str):
+        """Fetch a dataset record and verify the current user's org owns its parent project.
+
+        Returns:
+            The dataset record if found and authorized.
+
+        Raises:
+            DatasetNotFound: If dataset with given ID does not exist.
+            AuthorizationError: If user's org does not own the parent project.
+        """
+        record = await self._metadata_repo.get_dataset_record(dataset_id, include_transforms=False)
+        if not record:
+            raise DatasetNotFound(dataset_id)
+        self._verify_org_access(record, dataset_id)
+        return record
+
     async def fetch_dataset(
         self,
         dataset_id: str,
         include_transforms: bool = True,
         include_preview: bool = False,
-        preview_limit: int = 10,
+        preview_limit: int = DEFAULT_PREVIEW_LIMIT,
     ) -> Dataset:
         """Fetch a dataset record and convert to domain model.
 
