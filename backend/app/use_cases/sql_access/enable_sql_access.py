@@ -55,15 +55,15 @@ async def enable_sql_access(
         SqlAccessAlreadyEnabled: If SQL access is already enabled.
         ProjectHasNoDatasets: If project has no datasets.
     """
-    metadata_repo = repositories["metadata_repository"]
-    external_access_repo = repositories["external_access_repository"]
+    metadata_repo = repositories.metadata
+    external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
     project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
 
     # Check for existing enabled access (with row lock to prevent races)
     access_record = await external_access_repo.get_by_project_id_for_update(project_id)
-    if access_record and access_record["enabled"]:
+    if access_record and access_record.enabled:
         raise SqlAccessAlreadyEnabled(project_id)
 
     # Verify project has datasets
@@ -208,5 +208,5 @@ async def _store_access_record(
             environment_host=env.host,
             environment_port=proxy_port,
             proxy_container_id=proxy_container_id,
-            environment_status="running",
+            environment_status=Status.RUNNING,
         )
