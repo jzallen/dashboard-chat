@@ -33,7 +33,7 @@ async def create_organization(
     user = get_auth_user()
     _ensure_user_has_no_org(user)
 
-    metadata_repo = repositories["metadata_repository"]
+    metadata_repo = repositories.metadata
     settings = get_settings()
 
     org, requires_reauth = await _create_org_record(name, user.id, metadata_repo, settings)

@@ -109,7 +109,7 @@ async def preview_cleaning_transform(
         PreviewNotSupported: If operation does not support preview (e.g., alias).
         ColumnTypeMismatch: If text-only operation targets a non-text column.
     """
-    lake_repo = repositories["lake_repository"]
+    lake_repo = repositories.lake
 
     expr = _parse_expression(expression_config)
 

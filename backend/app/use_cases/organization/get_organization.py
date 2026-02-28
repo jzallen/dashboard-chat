@@ -25,5 +25,5 @@ async def get_organization(
     if user.org_id is None:
         return None
 
-    metadata_repo = repositories["metadata_repository"]
+    metadata_repo = repositories.metadata
     return await metadata_repo.get_organization(user.org_id)

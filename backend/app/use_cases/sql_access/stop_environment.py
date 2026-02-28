@@ -36,17 +36,17 @@ async def stop_environment(
         SqlAccessNotEnabled: If SQL access is not enabled.
         EnvironmentNotRunning: If environment is not running.
     """
-    external_access_repo = repositories["external_access_repository"]
+    external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
     await project_service.fetch_and_authorize_project(project_id, include_datasets=False)
 
     # Check that SQL access is enabled and running
     access_record = await external_access_repo.get_by_project_id_for_update(project_id)
-    if not access_record or not access_record["enabled"]:
+    if not access_record or not access_record.enabled:
         raise SqlAccessNotEnabled(project_id)
 
-    if access_record.get("environment_status") != Status.RUNNING:
+    if access_record.environment_status != Status.RUNNING:
         raise EnvironmentNotRunning(project_id)
 
     # Deprovision pg_duckdb only (keeps metadata and PgBouncer config)

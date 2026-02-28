@@ -26,7 +26,7 @@ async def update_dataset(
         DatasetNotFound: If dataset with given ID does not exist.
         MetadataRepositoryError: If database operation fails.
     """
-    metadata_repo = repositories["metadata_repository"]
+    metadata_repo = repositories.metadata
 
     if not await metadata_repo.dataset_exists(dataset_id):
         raise DatasetNotFound(dataset_id)

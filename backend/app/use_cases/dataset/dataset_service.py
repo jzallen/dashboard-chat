@@ -23,8 +23,8 @@ class DatasetService:
     """Shared dataset operations used by multiple use cases."""
 
     def __init__(self, repositories: "RepositoryContainer"):
-        self._metadata_repo = repositories["metadata_repository"]
-        self._lake_repo = repositories["lake_repository"]
+        self._metadata_repo = repositories.metadata
+        self._lake_repo = repositories.lake
 
     async def fetch_and_authorize_dataset(self, dataset_id: str):
         """Fetch a dataset record and verify the current user's org owns its parent project.

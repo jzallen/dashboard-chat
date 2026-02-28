@@ -37,18 +37,18 @@ async def restart_environment(
         SqlAccessNotEnabled: If SQL access is not enabled.
         EnvironmentNotRunning: If environment is not running.
     """
-    metadata_repo = repositories["metadata_repository"]
-    external_access_repo = repositories["external_access_repository"]
+    metadata_repo = repositories.metadata
+    external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
     project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
 
     # Check that SQL access is enabled and running/degraded (fetch with hash for PgBouncer recreation)
     access_record = await external_access_repo.get_by_project_id_with_hash(project_id)
-    if not access_record or not access_record["enabled"]:
+    if not access_record or not access_record.enabled:
         raise SqlAccessNotEnabled(project_id)
 
-    if access_record.get("environment_status") not in (Status.RUNNING, Status.DEGRADED):
+    if access_record.environment_status not in (Status.RUNNING, Status.DEGRADED):
         raise EnvironmentNotRunning(project_id)
 
     # Set restarting status

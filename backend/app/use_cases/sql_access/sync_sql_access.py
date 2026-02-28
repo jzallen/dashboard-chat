@@ -40,15 +40,15 @@ async def sync_sql_access(
         AuthorizationError: If user's org does not own the project.
         SqlAccessNotEnabled: If SQL access is not currently enabled.
     """
-    metadata_repo = repositories["metadata_repository"]
-    external_access_repo = repositories["external_access_repository"]
+    metadata_repo = repositories.metadata
+    external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
     project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
 
     # Check that SQL access is enabled
     access_record = await external_access_repo.get_by_project_id(project_id)
-    if not access_record or not access_record["enabled"]:
+    if not access_record or not access_record.enabled:
         raise SqlAccessNotEnabled(project_id)
 
     # Get live environment from provisioner (includes internal_host/internal_port),
@@ -58,9 +58,9 @@ async def sync_sql_access(
     env = await provisioner.get_environment(project_id)
     if env is None:
         env = ProjectEnvironment(
-            environment_id=access_record["environment_id"],
-            host=access_record["environment_host"],
-            port=access_record["environment_port"],
+            environment_id=access_record.environment_id,
+            host=access_record.environment_host,
+            port=access_record.environment_port,
             database=settings.pg_duckdb_database,
             admin_user=settings.pg_duckdb_admin_user,
             admin_password=settings.pg_duckdb_admin_password,
@@ -70,7 +70,7 @@ async def sync_sql_access(
     sparse_datasets = project_dict.get("datasets", [])
     full_datasets = await fetch_full_datasets(sparse_datasets, metadata_repo)
 
-    await bootstrap_sql_views(env, project_id, access_record["pg_schema"], full_datasets, settings.storage_bucket)
+    await bootstrap_sql_views(env, project_id, access_record.pg_schema, full_datasets, settings.storage_bucket)
 
     # Update last_synced_at
     synced_at = datetime.now(UTC)

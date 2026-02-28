@@ -35,7 +35,7 @@ async def delete_project(
     svc = ProjectService(repositories)
     await svc.fetch_and_authorize_project(project_id)
 
-    metadata_repo = repositories["metadata_repository"]
+    metadata_repo = repositories.metadata
     deleted = await metadata_repo.delete_project(project_id)
 
     if not deleted:

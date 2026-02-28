@@ -38,18 +38,18 @@ async def disable_sql_access(
         AuthorizationError: If user's org does not own the project.
         SqlAccessNotEnabled: If SQL access is not currently enabled.
     """
-    external_access_repo = repositories["external_access_repository"]
+    external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
     await project_service.fetch_and_authorize_project(project_id, include_datasets=False)
 
     # Check that SQL access is enabled (with row lock to prevent races)
     access_record = await external_access_repo.get_by_project_id_for_update(project_id)
-    if not access_record or not access_record["enabled"]:
+    if not access_record or not access_record.enabled:
         raise SqlAccessNotEnabled(project_id)
 
     # Deprovision PgBouncer proxy first (if not legacy)
-    if access_record.get("proxy_container_id"):
+    if access_record.proxy_container_id:
         try:
             pgbouncer = get_app_pgbouncer_provisioner()
             await pgbouncer.deprovision(project_id)

@@ -1,5 +1,6 @@
 """Tests for ProjectService shared logic."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,7 +14,7 @@ from tests.uuidv7_fixtures import ORG_1, ORG_OTHER, PROJECT_1, USER_1
 
 
 def _make_repositories(metadata_repo):
-    return {"metadata_repository": metadata_repo}
+    return SimpleNamespace(metadata=metadata_repo)
 
 
 class TestFetchAndAuthorizeProject:

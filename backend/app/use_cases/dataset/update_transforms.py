@@ -26,8 +26,8 @@ async def update_transforms(
         DatasetNotFound: If dataset with given ID does not exist.
         AuthorizationError: If user's org does not own the parent project.
     """
-    metadata_repo = repositories["metadata_repository"]
-    outbox_repo = repositories["outbox_repository"]
+    metadata_repo = repositories.metadata
+    outbox_repo = repositories.outbox
 
     service = DatasetService(repositories)
     await service.fetch_and_authorize_dataset(dataset_id)

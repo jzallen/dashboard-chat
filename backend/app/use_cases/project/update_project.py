@@ -37,7 +37,7 @@ async def update_project(
     svc = ProjectService(repositories)
     await svc.fetch_and_authorize_project(project_id)
 
-    metadata_repo = repositories["metadata_repository"]
+    metadata_repo = repositories.metadata
     updated = await metadata_repo.update_project(project_id, update_data)
 
     if updated is None:

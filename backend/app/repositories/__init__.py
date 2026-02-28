@@ -11,7 +11,7 @@ from typing import ParamSpec, Self, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .external_access import ExternalAccessRepository
+from .external_access import AccessRecordView, AccessRecordWithHash, ExternalAccessRepository
 from .lake import LakeRepository, MinIOLakeRepository
 from .metadata import MetadataRepository
 from .outbox import OutboxRepository
@@ -81,6 +81,22 @@ class RepositoryContainer:
             self._cache[name] = self._registry[name]()
 
         return self._cache[name]
+
+    @property
+    def metadata(self) -> MetadataRepository:
+        return self["metadata_repository"]  # type: ignore[return-value]
+
+    @property
+    def lake(self) -> LakeRepository:
+        return self["lake_repository"]  # type: ignore[return-value]
+
+    @property
+    def outbox(self) -> OutboxRepository:
+        return self["outbox_repository"]  # type: ignore[return-value]
+
+    @property
+    def external_access(self) -> ExternalAccessRepository:
+        return self["external_access_repository"]  # type: ignore[return-value]
 
 
 def with_repositories(func: Callable[P, R]) -> Callable[P, R]:

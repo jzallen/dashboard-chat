@@ -19,7 +19,7 @@ class ProjectService:
     """Shared project operations used by multiple use cases."""
 
     def __init__(self, repositories: "RepositoryContainer"):
-        self._metadata_repo = repositories["metadata_repository"]
+        self._metadata_repo = repositories.metadata
 
     async def fetch_and_authorize_project(
         self,

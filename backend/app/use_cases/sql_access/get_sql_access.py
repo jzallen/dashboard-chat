@@ -31,28 +31,28 @@ async def get_sql_access(
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    external_access_repo = repositories["external_access_repository"]
+    external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
     await project_service.fetch_and_authorize_project(project_id, include_datasets=False)
 
     # Get SQL access record
     access_record = await external_access_repo.get_by_project_id(project_id)
-    if not access_record or not access_record["enabled"]:
+    if not access_record or not access_record.enabled:
         return {"project_id": project_id, "enabled": False}
 
     settings = get_settings()
     return {
         "project_id": project_id,
         "enabled": True,
-        "host": access_record["environment_host"],
-        "port": access_record["environment_port"],
+        "host": access_record.environment_host,
+        "port": access_record.environment_port,
         "database": settings.pg_duckdb_database,
-        "username": access_record["pg_role"],
-        "schema": access_record["pg_schema"],
-        "environment_status": access_record.get("environment_status", "running"),
-        "status_message": access_record.get("status_message"),
-        "is_legacy": access_record.get("is_legacy", False),
-        "last_synced_at": access_record["last_synced_at"],
-        "created_at": access_record["created_at"],
+        "username": access_record.pg_role,
+        "schema": access_record.pg_schema,
+        "environment_status": access_record.environment_status or "running",
+        "status_message": access_record.status_message,
+        "is_legacy": access_record.is_legacy,
+        "last_synced_at": access_record.last_synced_at,
+        "created_at": access_record.created_at,
     }

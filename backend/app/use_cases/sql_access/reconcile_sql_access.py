@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from returns.result import Result
 
 from app.repositories import with_repositories
+from app.repositories.external_access import AccessRecordView
 from app.use_cases import handle_returns
 from app.use_cases.sql_access._infra import (
     StorageConfig,
@@ -45,7 +46,7 @@ async def reconcile_sql_access(
     Returns a summary dict with counts of total, healthy, and degraded environments.
     """
     provisioner = get_app_provisioner()
-    external_access_repo = repositories["external_access_repository"]
+    external_access_repo = repositories.external_access
     storage_config = build_storage_config()
 
     enabled_records = await external_access_repo.list_enabled()
@@ -55,7 +56,7 @@ async def reconcile_sql_access(
     degraded = 0
 
     for record in enabled_records:
-        project_id = record["project_id"]
+        project_id = record.project_id
 
         is_healthy = await _check_pgduckdb_health(
             provisioner, project_id, record, external_access_repo
@@ -83,9 +84,9 @@ async def reconcile_sql_access(
             logger.warning(
                 "Degraded environment for project %s: environment_id=%s, host=%s, port=%s",
                 project_id,
-                record.get("environment_id"),
-                record.get("environment_host"),
-                record.get("environment_port"),
+                record.environment_id,
+                record.environment_host,
+                record.environment_port,
             )
             await external_access_repo.update(
                 project_id,
@@ -107,7 +108,7 @@ async def reconcile_sql_access(
 
 
 async def _check_pgduckdb_health(
-    provisioner, project_id: str, record: dict, external_access_repo
+    provisioner, project_id: str, record: AccessRecordView, external_access_repo
 ) -> bool | None:
     """Check pg_duckdb health. Returns True/False, or None if the check itself failed."""
     try:
@@ -116,7 +117,7 @@ async def _check_pgduckdb_health(
         logger.warning(
             "Health check failed for project %s (environment_id=%s)",
             project_id,
-            record.get("environment_id"),
+            record.environment_id,
         )
         await external_access_repo.update(
             project_id,
@@ -155,14 +156,13 @@ async def _reapply_runtime_config(
 
 
 async def _reconcile_pgbouncer(
-    record: dict, project_id: str, provisioner, external_access_repo
+    record: AccessRecordView, project_id: str, provisioner, external_access_repo
 ) -> bool:
     """Check and reconcile PgBouncer for non-legacy records.
 
     Returns True if PgBouncer is healthy or not applicable, False if reconciliation failed.
     """
-    is_legacy = record.get("is_legacy", True)
-    if is_legacy or not record.get("proxy_container_id"):
+    if record.is_legacy or not record.proxy_container_id:
         return True
 
     try:
@@ -195,21 +195,21 @@ async def _reconcile_pgbouncer(
 
 
 async def _recreate_pgbouncer(
-    record: dict, project_id: str, provisioner, pgbouncer, external_access_repo
+    record: AccessRecordView, project_id: str, provisioner, pgbouncer, external_access_repo
 ) -> None:
     """Recreate a PgBouncer proxy using stored credentials."""
     record_with_hash = await external_access_repo.get_by_project_id_with_hash(project_id)
-    stored_md5 = record_with_hash["pg_password_hash"] if record_with_hash else ""
+    stored_md5 = record_with_hash.pg_password_hash if record_with_hash else ""
 
     env = await provisioner.get_environment(project_id)
     upstream_host = (env.internal_host if env else None) or f"dashboard-pgduckdb-{project_id[:8]}"
 
     new_container_id = await pgbouncer.recreate(
         project_id=project_id,
-        proxy_port=record["environment_port"],
+        proxy_port=record.environment_port,
         md5_hash=stored_md5,
         upstream_host=upstream_host,
-        auth_user=record["pg_role"],
+        auth_user=record.pg_role,
     )
     await external_access_repo.update(
         project_id,

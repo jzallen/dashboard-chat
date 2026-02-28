@@ -5,7 +5,6 @@ from returns.result import Result
 
 from app.models.dataset import Dataset
 from app.repositories import with_repositories
-from app.repositories.outbox import OutboxRepository
 from app.use_cases import handle_returns
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.utils.csv_parser import parse_and_clean_csv
@@ -51,9 +50,9 @@ async def create_dataset_from_upload(
         MetadataRepositoryError: If database operation fails
         LakeRepositoryError: If storage operation fails
     """
-    metadata_repo = repositories["metadata_repository"]
-    lake_repo = repositories["lake_repository"]
-    outbox_repo: OutboxRepository = repositories["outbox_repository"]
+    metadata_repo = repositories.metadata
+    lake_repo = repositories.lake
+    outbox_repo = repositories.outbox
     partition_fields = partition_fields or []
 
     file_received_event = await fetch_upload_event(outbox_repo, upload_id)

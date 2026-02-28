@@ -19,6 +19,8 @@ from app.use_cases.sql_access._infra import (
 )
 from app.use_cases.sql_access.exceptions import CredentialCooldown, SqlAccessNotEnabled
 
+from app.repositories.external_access import AccessRecordWithHash
+
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
@@ -46,14 +48,14 @@ async def regenerate_sql_credentials(
         SqlAccessNotEnabled: If SQL access is not currently enabled.
         CredentialCooldown: If regeneration is attempted too soon.
     """
-    external_access_repo = repositories["external_access_repository"]
+    external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
     await project_service.fetch_and_authorize_project(project_id, include_datasets=False)
 
     # Check that SQL access is enabled (fetch with hash for compensation rollback)
     access_record = await external_access_repo.get_by_project_id_with_hash(project_id)
-    if not access_record or not access_record["enabled"]:
+    if not access_record or not access_record.enabled:
         raise SqlAccessNotEnabled(project_id)
 
     # Rate limiting: check cooldown
@@ -62,9 +64,9 @@ async def regenerate_sql_credentials(
 
     # Reconstruct ProjectEnvironment from stored record + settings
     env = ProjectEnvironment(
-        environment_id=access_record["environment_id"],
-        host=access_record["environment_host"],
-        port=access_record["environment_port"],
+        environment_id=access_record.environment_id,
+        host=access_record.environment_host,
+        port=access_record.environment_port,
         database=settings.pg_duckdb_database,
         admin_user=settings.pg_duckdb_admin_user,
         admin_password=settings.pg_duckdb_admin_password,
@@ -72,7 +74,7 @@ async def regenerate_sql_credentials(
 
     # Generate new credentials
     new_password = generate_password()
-    pg_role = access_record["pg_role"]
+    pg_role = access_record.pg_role
     md5_hash = pg_md5_hash(new_password, pg_role)
 
     # Update pg_duckdb role password
@@ -88,24 +90,24 @@ async def regenerate_sql_credentials(
     await external_access_repo.update(project_id, update_data)
 
     return {
-        "host": access_record["environment_host"],
-        "port": access_record["environment_port"],
+        "host": access_record.environment_host,
+        "port": access_record.environment_port,
         "database": settings.pg_duckdb_database,
         "username": pg_role,
         "password": new_password,  # One-time plaintext
-        "schema": access_record["pg_schema"],
+        "schema": access_record.pg_schema,
         "connection_string": (
             f"postgresql://{pg_role}:{new_password}"
-            f"@{access_record['environment_host']}:{access_record['environment_port']}"
+            f"@{access_record.environment_host}:{access_record.environment_port}"
             f"/{settings.pg_duckdb_database}"
         ),
     }
 
 
-def _enforce_cooldown(access_record: dict, cooldown_seconds: int) -> None:
+def _enforce_cooldown(access_record: AccessRecordWithHash, cooldown_seconds: int) -> None:
     """Raise CredentialCooldown if the last update was too recent."""
-    if access_record.get("updated_at"):
-        updated_at = datetime.fromisoformat(access_record["updated_at"])
+    if access_record.updated_at:
+        updated_at = datetime.fromisoformat(access_record.updated_at)
         if updated_at.tzinfo is None:
             updated_at = updated_at.replace(tzinfo=UTC)
         elapsed = (datetime.now(UTC) - updated_at).total_seconds()
@@ -114,10 +116,12 @@ def _enforce_cooldown(access_record: dict, cooldown_seconds: int) -> None:
             raise CredentialCooldown(remaining)
 
 
-async def _rotate_pgbouncer(access_record: dict, project_id: str, env, md5_hash: str, pg_role: str) -> str | None:
+async def _rotate_pgbouncer(
+    access_record: AccessRecordWithHash, project_id: str, env, md5_hash: str, pg_role: str
+) -> str | None:
     """Recreate PgBouncer with new credentials, compensating on failure."""
-    old_md5_hash = access_record["pg_password_hash"]
-    proxy_container_id = access_record.get("proxy_container_id")
+    old_md5_hash = access_record.pg_password_hash
+    proxy_container_id = access_record.proxy_container_id
 
     if not proxy_container_id:
         return None
@@ -127,7 +131,7 @@ async def _rotate_pgbouncer(access_record: dict, project_id: str, env, md5_hash:
         pgbouncer = get_app_pgbouncer_provisioner()
         return await pgbouncer.recreate(
             project_id=project_id,
-            proxy_port=access_record["environment_port"],
+            proxy_port=access_record.environment_port,
             md5_hash=md5_hash,
             upstream_host=upstream_host,
             auth_user=pg_role,
