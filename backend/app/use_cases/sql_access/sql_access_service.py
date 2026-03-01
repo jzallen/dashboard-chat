@@ -41,16 +41,6 @@ def build_storage_config() -> StorageConfig:
     )
 
 
-async def fetch_full_datasets(sparse_datasets: list[dict], metadata_repo) -> list[Dataset]:
-    """Fetch full dataset records (with transforms) from sparse dataset references."""
-    full_datasets = []
-    for ds_info in sparse_datasets:
-        record = await metadata_repo.get_dataset_record(ds_info["id"], include_transforms=True)
-        if record:
-            full_datasets.append(Dataset.from_record(record, include_transforms=True))
-    return full_datasets
-
-
 async def bootstrap_sql_views(
     env: ProjectEnvironment,
     project_id: str,
@@ -72,7 +62,6 @@ async def bootstrap_sql_views(
 async def provision_and_bootstrap_environment(
     project_id: str,
     access_record: AccessRecordWithHash,
-    sparse_datasets: list[dict],
     metadata_repo,
 ) -> tuple[str | None, ProjectEnvironment]:
     """Provision a pg_duckdb environment and bootstrap SQL views.
@@ -97,7 +86,8 @@ async def provision_and_bootstrap_environment(
     await regenerate_credentials(env, project_id, access_record.pg_password_hash)
 
     # Bootstrap views
-    full_datasets = await fetch_full_datasets(sparse_datasets, metadata_repo)
+    records = await metadata_repo.list_datasets(project_id, include_transforms=True)
+    full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
     if full_datasets:
         await bootstrap_sql_views(
             env,

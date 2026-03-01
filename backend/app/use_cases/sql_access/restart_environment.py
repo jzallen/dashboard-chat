@@ -41,7 +41,7 @@ async def restart_environment(
     external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
-    project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
+    await project_service.fetch_and_authorize_project(project_id)
 
     # Check that SQL access is enabled and running/degraded (fetch with hash for PgBouncer recreation)
     access_record = await external_access_repo.get_by_project_id_with_hash(project_id)
@@ -60,17 +60,13 @@ async def restart_environment(
         },
     )
 
-    sparse_datasets = project_dict.get("datasets", [])
-
     try:
         # Stop existing environment first
         provisioner = get_app_provisioner()
         await provisioner.stop_environment(project_id)
 
         # Re-provision and bootstrap (shared with start_environment)
-        proxy_container_id, env = await provision_and_bootstrap_environment(
-            project_id, access_record, sparse_datasets, metadata_repo
-        )
+        proxy_container_id, env = await provision_and_bootstrap_environment(project_id, access_record, metadata_repo)
 
         # Update record
         update_data = {

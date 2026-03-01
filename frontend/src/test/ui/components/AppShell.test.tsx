@@ -6,7 +6,7 @@ import { AppShell } from "../../../lib/ui/components/AppShell";
 // Mock API calls
 vi.mock("@/api", async () => {
   const actual = await vi.importActual<typeof import("@/api")>("@/api");
-  const { MOCK_PROJECT } = await import("../../../__mocks__/data");
+  const { MOCK_DATASETS, MOCK_PROJECT } = await import("../../../__mocks__/data");
   return {
     ...actual,
     get: vi.fn().mockImplementation((url: string) => {
@@ -16,6 +16,7 @@ vi.mock("@/api", async () => {
     listProjects: vi.fn().mockResolvedValue([MOCK_PROJECT]),
     getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
     getDataset: vi.fn().mockResolvedValue(null),
+    listDatasetsForProject: vi.fn().mockResolvedValue(MOCK_DATASETS),
   };
 });
 

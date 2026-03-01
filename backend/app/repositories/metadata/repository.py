@@ -89,13 +89,9 @@ class MetadataRepository:
     async def get_project(
         self,
         project_id: str,
-        include_datasets: bool = True,
     ) -> dict[str, Any] | None:
-        """Get a project by ID with optional dataset references."""
+        """Get a project by ID (metadata only, no datasets)."""
         query = select(ProjectRecord).where(ProjectRecord.id == project_id)
-
-        if include_datasets:
-            query = query.options(selectinload(ProjectRecord.datasets))
 
         result = await self._session.execute(query)
         project = result.scalar_one_or_none()
@@ -103,21 +99,7 @@ class MetadataRepository:
         if not project:
             return None
 
-        project_dict = self._project_to_dict(project)
-
-        if include_datasets:
-            project_dict["datasets"] = [
-                {
-                    "id": ds.id,
-                    "name": ds.name,
-                    "link": f"/api/datasets/{ds.id}",
-                    "description": ds.description,
-                    "schema_config": ds.schema_config,
-                }
-                for ds in project.datasets
-            ]
-
-        return project_dict
+        return self._project_to_dict(project)
 
     @handle_repository_exceptions
     async def create_project(
@@ -180,15 +162,16 @@ class MetadataRepository:
     async def list_datasets(
         self,
         project_id: str | None = None,
-    ) -> list[dict[str, Any]]:
+        include_transforms: bool = True,
+    ) -> list[DatasetRecord]:
         """List datasets, optionally filtered by project."""
 
-        query = (
-            select(DatasetRecord)
-            .options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
-            .where(DatasetRecord.project_id == project_id)
-            .order_by(DatasetRecord.created_at.desc())
-        )
+        query = select(DatasetRecord).where(DatasetRecord.project_id == project_id)
+
+        if include_transforms:
+            query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
+
+        query = query.order_by(DatasetRecord.created_at.desc())
 
         result = await self._session.execute(query)
         return result.scalars().all()

@@ -26,11 +26,20 @@ async def list_projects(_: AsyncSession = Depends(use_db_context)):
 @router.get("/{project_id}")
 async def get_project(
     project_id: str,
-    include_datasets: bool = True,
     _: AsyncSession = Depends(use_db_context),
 ):
-    """Get a single project by ID with optional datasets."""
-    body, status_code = await HTTPController.get_project(project_id, include_datasets)
+    """Get a single project by ID (metadata only)."""
+    body, status_code = await HTTPController.get_project(project_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.get("/{project_id}/datasets")
+async def list_project_datasets(
+    project_id: str,
+    _: AsyncSession = Depends(use_db_context),
+):
+    """List sparse datasets for a project."""
+    body, status_code = await HTTPController.list_project_datasets(project_id)
     return JSONResponse(content=body, status_code=status_code)
 
 

@@ -214,11 +214,28 @@ class TestGetProject:
         mock_uc.get_project = AsyncMock(return_value=Success(FakeModel("p1", "Proj")))
         _body, status = await HTTPController.get_project("p1")
         assert status == 200
+        mock_uc.get_project.assert_called_once_with("p1")
 
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_not_found_returns_404(self, mock_uc):
         mock_uc.get_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
         body, status = await HTTPController.get_project("p1")
+        assert status == 404
+        assert body["type"] == "PROJECT_NOT_FOUND"
+
+
+class TestListProjectDatasets:
+    @patch("app.controllers.http_controller.dataset_use_cases")
+    async def test_success_returns_200(self, mock_uc):
+        mock_uc.list_datasets_for_project = AsyncMock(return_value=Success([{"id": "d1", "name": "DS"}]))
+        body, status = await HTTPController.list_project_datasets("p1")
+        assert status == 200
+        assert body == {"success": True, "data": [{"id": "d1", "name": "DS"}]}
+
+    @patch("app.controllers.http_controller.dataset_use_cases")
+    async def test_project_not_found_returns_404(self, mock_uc):
+        mock_uc.list_datasets_for_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
+        body, status = await HTTPController.list_project_datasets("p1")
         assert status == 404
         assert body["type"] == "PROJECT_NOT_FOUND"
 

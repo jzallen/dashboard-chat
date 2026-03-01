@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from returns.result import Result
 
 from app.config import get_settings
+from app.models.dataset import Dataset
 from app.repositories import get_session, with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project.exceptions import ProjectHasNoDatasets
@@ -25,7 +26,6 @@ from app.use_cases.sql_access.exceptions import SqlAccessAlreadyEnabled
 from app.use_cases.sql_access.sql_access_service import (
     bootstrap_sql_views,
     build_storage_config,
-    fetch_full_datasets,
 )
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ async def enable_sql_access(
     external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
-    project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
+    await project_service.fetch_and_authorize_project(project_id)
 
     # Check for existing enabled access (with row lock to prevent races)
     access_record = await external_access_repo.get_by_project_id_for_update(project_id)
@@ -67,8 +67,8 @@ async def enable_sql_access(
         raise SqlAccessAlreadyEnabled(project_id)
 
     # Verify project has datasets
-    sparse_datasets = project_dict.get("datasets", [])
-    if not sparse_datasets:
+    dataset_records = await metadata_repo.list_datasets(project_id, include_transforms=False)
+    if not dataset_records:
         raise ProjectHasNoDatasets(project_id)
 
     # Provision ephemeral pg_duckdb environment
@@ -83,7 +83,7 @@ async def enable_sql_access(
     md5_hash = pg_md5_hash(password, pg_role)
 
     # Create schema/role and bootstrap views, with compensation on failure
-    await _setup_schema_and_views(env, project_id, password, pg_schema, sparse_datasets, metadata_repo, provisioner)
+    await _setup_schema_and_views(env, project_id, password, pg_schema, metadata_repo, provisioner)
 
     # Allocate proxy port and provision PgBouncer
     proxy_port, proxy_container_id = await _provision_pgbouncer(project_id, env, md5_hash, pg_role, provisioner)
@@ -114,7 +114,7 @@ async def enable_sql_access(
     }
 
 
-async def _setup_schema_and_views(env, project_id, password, pg_schema, sparse_datasets, metadata_repo, provisioner):
+async def _setup_schema_and_views(env, project_id, password, pg_schema, metadata_repo, provisioner):
     """Create schema/role, bootstrap SQL views, and grant usage.
 
     Compensates by deprovisioning the environment if bootstrap fails.
@@ -122,7 +122,8 @@ async def _setup_schema_and_views(env, project_id, password, pg_schema, sparse_d
     await create_project_schema(env, project_id, password)
     try:
         settings = get_settings()
-        full_datasets = await fetch_full_datasets(sparse_datasets, metadata_repo)
+        records = await metadata_repo.list_datasets(project_id, include_transforms=True)
+        full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
         await bootstrap_sql_views(env, project_id, pg_schema, full_datasets, settings.storage_bucket)
     except Exception:
         logger.warning("Bootstrap failed for project %s, deprovisioning environment", project_id)

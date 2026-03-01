@@ -8,6 +8,7 @@ from returns.result import Result
 
 from app.config import get_settings
 from app.repositories import with_repositories
+from app.repositories.external_access import AccessRecordWithHash
 from app.use_cases import handle_returns
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import (
@@ -18,8 +19,6 @@ from app.use_cases.sql_access._infra import (
     regenerate_credentials,
 )
 from app.use_cases.sql_access.exceptions import CredentialCooldown, SqlAccessNotEnabled
-
-from app.repositories.external_access import AccessRecordWithHash
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -51,7 +50,7 @@ async def regenerate_sql_credentials(
     external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
-    await project_service.fetch_and_authorize_project(project_id, include_datasets=False)
+    await project_service.fetch_and_authorize_project(project_id)
 
     # Check that SQL access is enabled (fetch with hash for compensation rollback)
     access_record = await external_access_repo.get_by_project_id_with_hash(project_id)

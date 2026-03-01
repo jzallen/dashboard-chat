@@ -74,6 +74,15 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
+    async def list_project_datasets(project_id: str) -> tuple[dict, int]:
+        result = await dataset_use_cases.list_datasets_for_project(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
     async def get_dataset(
         dataset_id: str, include_transforms: bool = True, include_preview: bool = False, preview_limit: int = 10
     ) -> tuple[dict, int]:
@@ -160,8 +169,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_project(project_id: str, include_datasets: bool = True) -> tuple[dict, int]:
-        result = await project_use_cases.get_project(project_id, include_datasets=include_datasets)
+    async def get_project(project_id: str) -> tuple[dict, int]:
+        result = await project_use_cases.get_project(project_id)
         match result:
             case Success(data):
                 return wrap_success(_serialize(data)), 200

@@ -10,7 +10,7 @@ import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallConte
 import { useChatContext } from "../../context/ChatContext";
 import { getTransformIdsForColumn,toConditions } from "../../hooks/filterUtils";
 import { useRenameDataset } from "../../hooks/useDatasetMutations";
-import { datasetKeys,useDatasetQuery, usePrefetchDataset } from "../../hooks/useDatasetQuery";
+import { datasetKeys, useDatasetQuery, useDatasets, usePrefetchDataset } from "../../hooks/useDatasetQuery";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
 import type { AppShellContext } from "../AppShell";
@@ -290,9 +290,10 @@ export function ProjectView() {
 
   const prefetchDataset = usePrefetchDataset();
   const { data: fullDataset } = useDatasetQuery(datasetId);
+  const { data: datasets = [] } = useDatasets(project?.id);
 
   // Derive dataset name: full dataset cache first, fall back to sparse entry
-  const sparseEntry = project?.datasets.find((ds) => ds.id === datasetId);
+  const sparseEntry = datasets.find((ds) => ds.id === datasetId);
   const datasetName = fullDataset?.name ?? sparseEntry?.name;
 
   const projectId = project?.id ?? "";
@@ -539,11 +540,11 @@ export function ProjectView() {
             {/* DatasetGrid: shown in catalog mode or when no dataset selected */}
             {(viewMode === "catalog" || !hasSelection) && (
               <div className={hasSelection ? styles.gridSection : styles.gridSectionFull}>
-                {project.datasets.length === 0 ? (
+                {datasets.length === 0 ? (
                   <div className={styles.emptyState}>No datasets in this project</div>
                 ) : (
                   <DatasetGrid
-                    datasets={project.datasets}
+                    datasets={datasets}
                     selectedDatasetId={datasetId ?? null}
                     onSelect={handleCardSelect}
                     hasSelection={hasSelection}

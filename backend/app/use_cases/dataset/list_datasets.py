@@ -31,7 +31,7 @@ async def list_datasets(project_id: str, *, repositories: "RepositoryContainer")
     if not await metadata_repo.project_exists(project_id=project_id):
         raise ProjectNotFound(project_id)
 
-    project = await metadata_repo.get_project(project_id, include_datasets=False)
+    project = await metadata_repo.get_project(project_id)
     user = get_auth_user()
     if project and project.get("org_id") and project["org_id"] != user.org_id:
         raise AuthorizationError(f"Access denied to project {project_id}")

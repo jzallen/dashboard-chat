@@ -3,17 +3,10 @@
  */
 
 import { API_BASE_URL,get } from "./client";
-import type { SchemaConfig } from "./datasets";
+import type { DatasetSparse } from "./datasets";
 import { getAuthHeaders, withAuthRetry } from "./fetchUtils";
 
-export interface DatasetSparse {
-  id: string;
-  name: string;
-  link: string;
-  description: string | null;
-  row_count?: number;
-  schema_config: SchemaConfig;
-}
+export type { DatasetSparse } from "./datasets";
 
 export interface Project {
   id: string;
@@ -21,7 +14,7 @@ export interface Project {
   description: string | null;
   created_at: string;
   updated_at: string;
-  datasets: DatasetSparse[];
+  datasets?: DatasetSparse[];
 }
 
 /**

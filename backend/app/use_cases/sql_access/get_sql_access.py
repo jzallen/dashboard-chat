@@ -34,7 +34,7 @@ async def get_sql_access(
     external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
-    await project_service.fetch_and_authorize_project(project_id, include_datasets=False)
+    await project_service.fetch_and_authorize_project(project_id)
 
     # Get SQL access record
     access_record = await external_access_repo.get_by_project_id(project_id)

@@ -22,7 +22,6 @@ export function createMockDatasetSparse(overrides?: Partial<DatasetSparse>): Dat
     name: "Sales Data",
     link: "/api/datasets/ds-001",
     description: "Monthly sales records",
-    row_count: 1500,
     schema_config: createMockSchemaConfig(),
     ...overrides,
   };
@@ -76,9 +75,9 @@ export function createMockProject(overrides?: Partial<Project>): Project {
 }
 
 export const MOCK_DATASETS: DatasetSparse[] = [
-  createMockDatasetSparse({ id: "ds-001", name: "Sales Data", description: "Monthly sales records", row_count: 1500 }),
-  createMockDatasetSparse({ id: "ds-002", name: "Inventory", description: "Current stock levels", row_count: 850 }),
-  createMockDatasetSparse({ id: "ds-003", name: "Returns", description: "Product return history", row_count: 320 }),
+  createMockDatasetSparse({ id: "ds-001", name: "Sales Data", description: "Monthly sales records" }),
+  createMockDatasetSparse({ id: "ds-002", name: "Inventory", description: "Current stock levels" }),
+  createMockDatasetSparse({ id: "ds-003", name: "Returns", description: "Product return history" }),
 ];
 
 export const MOCK_PROJECT: Project = createMockProject();

@@ -1,11 +1,11 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { Outlet, useNavigate,useParams } from "react-router-dom";
 
-import { type Dataset,datasetToSparse } from "@/api";
-
 import { ChatProvider } from "../../context/ChatContext";
+import { datasetKeys, useDatasets } from "../../hooks/useDatasetQuery";
 import { useOrgProjectsQuery,useOrgQuery } from "../../hooks/useOrgQuery";
-import { useProjectQuery, useUpdateProjectDatasetCache } from "../../hooks/useProjectQuery";
+import { useProjectQuery } from "../../hooks/useProjectQuery";
 import { QueryProvider } from "../../providers/QueryProvider";
 import { SideNav } from "../SideNav";
 import styles from "./AppShell.module.css";
@@ -30,14 +30,17 @@ function AppShellInner() {
 
   // Project-mode data
   const { data: project = null } = useProjectQuery(projectId ?? "");
-  const { addDatasetToProject } = useUpdateProjectDatasetCache(projectId ?? "");
+  const { data: datasets } = useDatasets(projectId);
+  const queryClient = useQueryClient();
 
   // Org-mode data
   const { data: projects = null } = useOrgProjectsQuery();
 
-  const handleDatasetCreated = useCallback((dataset: Dataset) => {
-    addDatasetToProject(datasetToSparse(dataset));
-  }, [addDatasetToProject]);
+  const handleDatasetCreated = useCallback(() => {
+    if (projectId) {
+      queryClient.invalidateQueries({ queryKey: datasetKeys.list(projectId) });
+    }
+  }, [projectId, queryClient]);
 
   const handleNavigateToDataset = useCallback(
     (id: string) => {
@@ -56,6 +59,7 @@ function AppShellInner() {
             mode="project"
             orgName={orgName}
             project={project}
+            datasets={datasets ?? []}
             activeDatasetId={datasetId ?? null}
             collapsed={navCollapsed}
             onToggleCollapse={() => setNavCollapsed((v) => !v)}

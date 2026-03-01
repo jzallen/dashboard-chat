@@ -17,14 +17,12 @@ if TYPE_CHECKING:
 async def get_project(
     project_id: str,
     *,
-    include_datasets: bool = True,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
-    """Get a single project by ID with optional dataset references.
+    """Get a single project by ID (metadata only).
 
     Args:
         project_id: The UUID of the project to retrieve.
-        include_datasets: Whether to include sparse dataset references (default True).
 
     Returns:
         Success with project dict, or Failure with error message.
@@ -34,4 +32,4 @@ async def get_project(
         AuthorizationError: If user's org does not own the project.
     """
     svc = ProjectService(repositories)
-    return await svc.fetch_and_authorize_project(project_id, include_datasets=include_datasets)
+    return await svc.fetch_and_authorize_project(project_id)

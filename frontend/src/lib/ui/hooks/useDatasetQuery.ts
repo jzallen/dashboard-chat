@@ -1,9 +1,11 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getDataset } from "@/api";
+import { getDataset, listDatasetsForProject } from "@/api";
 
 export const datasetKeys = {
   all: ["datasets"] as const,
+  lists: () => [...datasetKeys.all, "list"] as const,
+  list: (projectId: string) => [...datasetKeys.lists(), projectId] as const,
   detail: (id: string) => ["datasets", id] as const,
 };
 
@@ -12,6 +14,16 @@ export function useDatasetQuery(datasetId: string | undefined) {
     queryKey: datasetKeys.detail(datasetId!),
     queryFn: () => getDataset(datasetId!, { includeTransforms: true, includePreview: true, previewLimit: 100 }),
     enabled: Boolean(datasetId),
+  });
+}
+
+export function useDatasets(projectId: string | undefined) {
+  return useQuery({
+    queryKey: datasetKeys.list(projectId!),
+    queryFn: () => listDatasetsForProject(projectId!),
+    enabled: Boolean(projectId),
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
   });
 }
 

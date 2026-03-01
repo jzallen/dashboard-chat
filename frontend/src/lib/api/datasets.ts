@@ -5,7 +5,14 @@
 import type { RAQBTree } from "@/raqb";
 
 import { get, patch, post } from "./client";
-import type { DatasetSparse } from "./projects";
+
+export interface DatasetSparse {
+  id: string;
+  name: string;
+  link: string;
+  description: string | null;
+  schema_config: SchemaConfig;
+}
 
 export interface FieldConfig {
   label: string;
@@ -225,14 +232,8 @@ export async function createCleaningTransforms(
 }
 
 /**
- * Convert a full Dataset to a DatasetSparse reference for project state
+ * List sparse datasets for a project
  */
-export function datasetToSparse(d: Dataset): DatasetSparse {
-  return {
-    id: d.id,
-    name: d.name,
-    link: `/api/datasets/${d.id}`,
-    description: d.description,
-    schema_config: d.schema_config,
-  };
+export async function listDatasetsForProject(projectId: string): Promise<DatasetSparse[]> {
+  return get<DatasetSparse[]>(`/api/projects/${projectId}/datasets`);
 }

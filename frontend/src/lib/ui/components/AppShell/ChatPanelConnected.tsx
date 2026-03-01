@@ -7,7 +7,7 @@ import ChatPanel from "../ChatPanel";
 
 interface ChatPanelConnectedProps {
   projectId: string | null;
-  onDatasetCreated?: (dataset: Dataset) => void;
+  onDatasetCreated?: () => void;
   onNavigateToDataset?: (datasetId: string) => void;
 }
 
@@ -39,7 +39,7 @@ export function ChatPanelConnected({
 
   useEffect(() => {
     if (onDatasetCreated) {
-      registerProjectUpdater(onDatasetCreated);
+      registerProjectUpdater((_dataset: Dataset) => onDatasetCreated());
       return () => registerProjectUpdater(null);
     }
   }, [onDatasetCreated, registerProjectUpdater]);

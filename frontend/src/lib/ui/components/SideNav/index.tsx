@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 
-import type { Project } from "@/api";
+import type { DatasetSparse, Project } from "@/api";
 
 import { DatasetNavItem } from "./DatasetNavItem";
 import { ProjectNavItem } from "./ProjectNavItem";
@@ -12,7 +12,7 @@ type SideNavProps = {
   onToggleCollapse: () => void;
 } & (
   | { mode: "org"; projects: Project[]; activeProjectId: string | null }
-  | { mode: "project"; project: Project; activeDatasetId: string | null }
+  | { mode: "project"; project: Project; datasets: DatasetSparse[]; activeDatasetId: string | null }
 );
 
 export function SideNav(props: SideNavProps) {
@@ -66,6 +66,7 @@ export function SideNav(props: SideNavProps) {
         ) : (
           <ProjectBody
             project={props.project}
+            datasets={props.datasets}
             activeDatasetId={props.activeDatasetId}
             collapsed={collapsed}
             onSelectProject={() => navigate(`/projects/${props.project.id}`)}
@@ -119,12 +120,14 @@ function OrgBody({
 
 function ProjectBody({
   project,
+  datasets,
   activeDatasetId,
   collapsed,
   onSelectProject,
   onSelectDataset,
 }: {
   project: Project;
+  datasets: DatasetSparse[];
   activeDatasetId: string | null;
   collapsed: boolean;
   onSelectProject: () => void;
@@ -148,7 +151,7 @@ function ProjectBody({
       {/* Datasets section */}
       {!collapsed && <div className={styles.sectionLabel}>datasets</div>}
 
-      {project.datasets.map((ds) => (
+      {datasets.map((ds) => (
         <DatasetNavItem
           key={ds.id}
           id={ds.id}

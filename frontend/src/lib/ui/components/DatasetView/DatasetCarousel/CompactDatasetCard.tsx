@@ -17,11 +17,6 @@ export function CompactDatasetCard({ dataset, isSelected, onClick }: CompactData
       onClick={onClick}
     >
       <span className={styles.cardName}>{dataset.name}</span>
-      {dataset.row_count != null && (
-        <span className={styles.cardMeta}>
-          {dataset.row_count.toLocaleString()} rows
-        </span>
-      )}
       <span className={styles.cardMeta}>{fieldCount} fields</span>
     </button>
   );

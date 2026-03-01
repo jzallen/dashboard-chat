@@ -1,7 +1,7 @@
 import { fireEvent,render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-import { MOCK_PROJECT } from "../../../__mocks__/data";
+import { MOCK_DATASETS, MOCK_PROJECT } from "../../../__mocks__/data";
 import { createMockProject } from "../../../__mocks__/data";
 import { SideNav } from "../../../lib/ui/components/SideNav";
 
@@ -39,6 +39,7 @@ function renderProjectNav(overrides: Partial<Parameters<typeof SideNav>[0]> = {}
         mode="project"
         orgName="Test Org"
         project={MOCK_PROJECT}
+        datasets={MOCK_DATASETS}
         activeDatasetId={null}
         collapsed={false}
         onToggleCollapse={vi.fn()}

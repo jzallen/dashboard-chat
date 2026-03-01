@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from returns.result import Result
 
 from app.config import get_settings
+from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project.project_service import ProjectService
@@ -14,10 +15,7 @@ from app.use_cases.sql_access._infra import (
     get_app_provisioner,
 )
 from app.use_cases.sql_access.exceptions import SqlAccessNotEnabled
-from app.use_cases.sql_access.sql_access_service import (
-    bootstrap_sql_views,
-    fetch_full_datasets,
-)
+from app.use_cases.sql_access.sql_access_service import bootstrap_sql_views
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -44,7 +42,7 @@ async def sync_sql_access(
     external_access_repo = repositories.external_access
 
     project_service = ProjectService(repositories)
-    project_dict = await project_service.fetch_and_authorize_project(project_id, include_datasets=True)
+    await project_service.fetch_and_authorize_project(project_id)
 
     # Check that SQL access is enabled
     access_record = await external_access_repo.get_by_project_id(project_id)
@@ -66,9 +64,9 @@ async def sync_sql_access(
             admin_password=settings.pg_duckdb_admin_password,
         )
 
-    # Build full datasets and bootstrap SQL views
-    sparse_datasets = project_dict.get("datasets", [])
-    full_datasets = await fetch_full_datasets(sparse_datasets, metadata_repo)
+    # Load full datasets directly from repo and bootstrap SQL views
+    records = await metadata_repo.list_datasets(project_id, include_transforms=True)
+    full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
 
     await bootstrap_sql_views(env, project_id, access_record.pg_schema, full_datasets, settings.storage_bucket)
 

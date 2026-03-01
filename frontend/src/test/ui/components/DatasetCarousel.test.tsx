@@ -45,7 +45,7 @@ describe("DatasetGrid", () => {
     expect(onSelect).toHaveBeenCalledWith("ds-003");
   });
 
-  it("renders row count and field count", () => {
+  it("renders field count for each card", () => {
     render(
       <DatasetGrid
         datasets={MOCK_DATASETS}
@@ -54,7 +54,6 @@ describe("DatasetGrid", () => {
         hasSelection={false}
       />
     );
-    expect(screen.getByText("1,500 rows")).toBeInTheDocument();
     expect(screen.getAllByText("6 fields")).toHaveLength(3);
   });
 

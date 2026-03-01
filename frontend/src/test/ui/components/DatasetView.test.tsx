@@ -10,11 +10,12 @@ import { ChatProvider } from "../../../lib/ui/context/ChatContext";
 // Mock API calls — use dynamic import in factory to avoid hoisting issues
 vi.mock("@/api", async () => {
   const actual = await vi.importActual<typeof import("@/api")>("@/api");
-  const { MOCK_DATASET_FULL, MOCK_PROJECT } = await import("../../../__mocks__/data");
+  const { MOCK_DATASETS, MOCK_DATASET_FULL, MOCK_PROJECT } = await import("../../../__mocks__/data");
   return {
     ...actual,
     getDataset: vi.fn().mockResolvedValue(MOCK_DATASET_FULL),
     getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
+    listDatasetsForProject: vi.fn().mockResolvedValue(MOCK_DATASETS),
   };
 });
 
@@ -65,9 +66,10 @@ describe("ProjectView", () => {
       expect(screen.getByText("Inventory Dashboard")).toBeInTheDocument();
     });
 
-    it("renders all dataset cards in wrapping grid", () => {
+    it("renders all dataset cards in wrapping grid", async () => {
       renderProjectView("/");
-      expect(screen.getByText("Sales Data")).toBeInTheDocument();
+      // Datasets now come from useDatasets async hook, wait for them
+      expect(await screen.findByText("Sales Data")).toBeInTheDocument();
       expect(screen.getByText("Inventory")).toBeInTheDocument();
       expect(screen.getByText("Returns")).toBeInTheDocument();
     });
@@ -84,8 +86,8 @@ describe("ProjectView", () => {
 
     it("renders dataset name in breadcrumb after loading", async () => {
       renderProjectView(datasetRoute);
-      await screen.findByLabelText("Catalog view");
-      const allSalesData = screen.getAllByText("Sales Data");
+      // Wait for both the dataset detail and dataset list queries to resolve
+      const allSalesData = await screen.findAllByText("Sales Data");
       expect(allSalesData.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -110,8 +112,9 @@ describe("ProjectView", () => {
 
     it("shows dataset cards in horizontal row", async () => {
       renderProjectView(datasetRoute);
+      // Wait for both dataset query and datasets list query to resolve
       await screen.findByLabelText("Catalog view");
-      expect(screen.getByText("Inventory")).toBeInTheDocument();
+      expect(await screen.findByText("Inventory")).toBeInTheDocument();
       expect(screen.getByText("Returns")).toBeInTheDocument();
     });
   });

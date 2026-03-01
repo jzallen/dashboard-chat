@@ -37,16 +37,14 @@ class MetadataRepositoryProtocol(Protocol):
     async def get_project(
         self,
         project_id: str,
-        include_datasets: bool = True,
     ) -> dict[str, Any] | None:
-        """Get a project by ID with optional dataset references.
+        """Get a project by ID (metadata only, no datasets).
 
         Args:
             project_id: Project UUID
-            include_datasets: Whether to include sparse dataset info
 
         Returns:
-            Project dict with datasets list, or None if not found.
+            Project dict, or None if not found.
         """
         ...
 
@@ -104,14 +102,16 @@ class MetadataRepositoryProtocol(Protocol):
     async def list_datasets(
         self,
         project_id: str | None = None,
-    ) -> list[dict[str, Any]]:
+        include_transforms: bool = True,
+    ) -> "list[DatasetRecord]":
         """List datasets, optionally filtered by project.
 
         Args:
             project_id: Optional project UUID to filter by
+            include_transforms: Whether to eagerly load transforms (default True)
 
         Returns:
-            List of dataset dictionaries.
+            List of DatasetRecord ORM objects.
         """
         ...
 

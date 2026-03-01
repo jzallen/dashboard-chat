@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
+from app.models.dataset import Dataset
 from app.models.project import Project
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
@@ -35,8 +36,10 @@ async def export_dbt_project(
         AuthorizationError: If user's org does not own the project.
     """
     svc = ProjectService(repositories)
-    project_dict = await svc.fetch_and_authorize_project(project_id, include_datasets=True)
-    full_datasets = await svc.fetch_full_datasets(project_dict)
+    project_dict = await svc.fetch_and_authorize_project(project_id)
+
+    records = await repositories.metadata.list_datasets(project_id, include_transforms=True)
+    full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
 
     # Build Project domain object
     project = Project(
