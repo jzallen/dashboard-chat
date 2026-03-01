@@ -2,6 +2,7 @@
  * Transform Settings View Component
  */
 
+import { XMarkIcon } from "@heroicons/react/24/outline";
 import { useEffect,useState } from "react";
 
 import type { Dataset,Transform } from "@/api";
@@ -75,20 +76,7 @@ export function TransformSettings({
             className={styles.closeButton}
             title="Back to table"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-              stroke="currentColor"
-              className={styles.closeIcon}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <XMarkIcon className={styles.closeIcon} />
           </button>
         </div>
 

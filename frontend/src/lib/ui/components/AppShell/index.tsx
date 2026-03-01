@@ -8,6 +8,8 @@ import { useOrgProjectsQuery,useOrgQuery } from "../../hooks/useOrgQuery";
 import { useProjectQuery } from "../../hooks/useProjectQuery";
 import { QueryProvider } from "../../providers/QueryProvider";
 import { SideNav } from "../SideNav";
+import { OrgNav } from "../SideNav/OrgNav";
+import { ProjectNav } from "../SideNav/ProjectNav";
 import styles from "./AppShell.module.css";
 import { ChatPanelConnected } from "./ChatPanelConnected";
 
@@ -55,24 +57,25 @@ function AppShellInner() {
     <ChatProvider>
       <div className={styles.shell}>
         {isProjectMode && project ? (
-          <SideNav
-            mode="project"
-            orgName={orgName}
-            project={project}
-            datasets={datasets ?? []}
-            activeDatasetId={datasetId ?? null}
-            collapsed={navCollapsed}
-            onToggleCollapse={() => setNavCollapsed((v) => !v)}
-          />
+          <SideNav orgName={orgName} collapsed={navCollapsed} onToggleCollapse={() => setNavCollapsed((v) => !v)}>
+            <ProjectNav
+              project={project}
+              datasets={datasets ?? []}
+              activeDatasetId={datasetId ?? null}
+              collapsed={navCollapsed}
+              onSelectProject={() => navigate(`/projects/${project.id}`)}
+              onSelectDataset={(dsId) => navigate(`/projects/${project.id}/datasets/${dsId}`)}
+            />
+          </SideNav>
         ) : (
-          <SideNav
-            mode="org"
-            orgName={orgName}
-            projects={projects ?? []}
-            activeProjectId={null}
-            collapsed={navCollapsed}
-            onToggleCollapse={() => setNavCollapsed((v) => !v)}
-          />
+          <SideNav orgName={orgName} collapsed={navCollapsed} onToggleCollapse={() => setNavCollapsed((v) => !v)}>
+            <OrgNav
+              projects={projects ?? []}
+              activeProjectId={null}
+              collapsed={navCollapsed}
+              onSelectProject={(id) => navigate(`/projects/${id}`)}
+            />
+          </SideNav>
         )}
         <main className={styles.viewWindow}>
           <Outlet context={outletContext} />

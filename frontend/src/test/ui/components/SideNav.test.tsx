@@ -4,6 +4,8 @@ import { MemoryRouter } from "react-router-dom";
 import { MOCK_DATASETS, MOCK_PROJECT } from "../../../__mocks__/data";
 import { createMockProject } from "../../../__mocks__/data";
 import { SideNav } from "../../../lib/ui/components/SideNav";
+import { OrgNav } from "../../../lib/ui/components/SideNav/OrgNav";
+import { ProjectNav } from "../../../lib/ui/components/SideNav/ProjectNav";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
@@ -16,35 +18,42 @@ const MOCK_PROJECTS = [
   createMockProject({ id: "proj-002", name: "Analytics", datasets: [] }),
 ];
 
-function renderOrgNav(overrides: Partial<Parameters<typeof SideNav>[0]> = {}) {
+function renderOrgNav(overrides: { collapsed?: boolean; onToggleCollapse?: () => void } = {}) {
   return render(
     <MemoryRouter>
       <SideNav
-        mode="org"
         orgName="Test Org"
-        projects={MOCK_PROJECTS}
-        activeProjectId={null}
-        collapsed={false}
-        onToggleCollapse={vi.fn()}
-        {...overrides}
-      />
+        collapsed={overrides.collapsed ?? false}
+        onToggleCollapse={overrides.onToggleCollapse ?? vi.fn()}
+      >
+        <OrgNav
+          projects={MOCK_PROJECTS}
+          activeProjectId={null}
+          collapsed={overrides.collapsed ?? false}
+          onSelectProject={(id) => mockNavigate(`/projects/${id}`)}
+        />
+      </SideNav>
     </MemoryRouter>
   );
 }
 
-function renderProjectNav(overrides: Partial<Parameters<typeof SideNav>[0]> = {}) {
+function renderProjectNav(overrides: { collapsed?: boolean; onToggleCollapse?: () => void; activeDatasetId?: string | null } = {}) {
   return render(
     <MemoryRouter>
       <SideNav
-        mode="project"
         orgName="Test Org"
-        project={MOCK_PROJECT}
-        datasets={MOCK_DATASETS}
-        activeDatasetId={null}
-        collapsed={false}
-        onToggleCollapse={vi.fn()}
-        {...overrides}
-      />
+        collapsed={overrides.collapsed ?? false}
+        onToggleCollapse={overrides.onToggleCollapse ?? vi.fn()}
+      >
+        <ProjectNav
+          project={MOCK_PROJECT}
+          datasets={MOCK_DATASETS}
+          activeDatasetId={overrides.activeDatasetId ?? null}
+          collapsed={overrides.collapsed ?? false}
+          onSelectProject={() => mockNavigate(`/projects/${MOCK_PROJECT.id}`)}
+          onSelectDataset={(dsId) => mockNavigate(`/projects/${MOCK_PROJECT.id}/datasets/${dsId}`)}
+        />
+      </SideNav>
     </MemoryRouter>
   );
 }
@@ -91,7 +100,7 @@ describe("SideNav", () => {
     });
 
     it("highlights active dataset", () => {
-      renderProjectNav({ activeDatasetId: "ds-002" } as any);
+      renderProjectNav({ activeDatasetId: "ds-002" });
       const activeButton = screen.getByText("Inventory").closest("button");
       expect(activeButton?.className).toContain("navItemActive");
     });
@@ -109,7 +118,7 @@ describe("SideNav", () => {
     });
 
     it("hides labels when collapsed", () => {
-      renderProjectNav({ collapsed: true } as any);
+      renderProjectNav({ collapsed: true });
       expect(screen.queryByText("Sales Data")).not.toBeInTheDocument();
       expect(screen.queryByText("Test Org")).not.toBeInTheDocument();
     });
