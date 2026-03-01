@@ -11,6 +11,7 @@ interface CreateOrgResponse {
   requires_reauth?: boolean;
 }
 
+/** Form for creating a new organization, with automatic re-authentication on success. */
 export function CreateOrg() {
   const { login } = useAuth();
   const [name, setName] = useState("");

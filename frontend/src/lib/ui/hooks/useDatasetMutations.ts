@@ -4,6 +4,7 @@ import { type Dataset, type DatasetSparse, updateDataset } from "@/api";
 
 import { datasetKeys } from "./useDatasetQuery";
 
+/** Renames a dataset with optimistic updates to both detail and list caches. */
 export function useRenameDataset(projectId: string) {
   const queryClient = useQueryClient();
 

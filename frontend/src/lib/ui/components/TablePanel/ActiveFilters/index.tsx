@@ -11,6 +11,7 @@ interface ActiveFiltersProps {
   onToggleTransform?: (transformId: string, isActive: boolean) => void;
 }
 
+/** Displays active column filters as removable badges above the table. */
 export default function ActiveFilters({
   columnFilters,
   setColumnFilters,

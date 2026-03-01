@@ -1,7 +1,3 @@
-/**
- * Transform Settings View Component
- */
-
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { useEffect,useState } from "react";
 
@@ -24,6 +20,7 @@ interface TransformSettingsProps {
   onClose: () => void;
 }
 
+/** Settings panel for managing saved transforms (filters, aliases, cleaning) with toggle/delete and SQL preview. */
 export function TransformSettings({
   datasetId,
   transforms,

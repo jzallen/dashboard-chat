@@ -12,6 +12,7 @@ const USER_KEY = "auth_user";
 const ACTIVITY_DEBOUNCE_MS = 5 * 60 * 1000; // 5 minutes
 const INACTIVITY_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
 
+/** Values exposed by AuthContext, combining state with login/logout actions. */
 interface AuthContextValue extends AuthState {
   login: (organizationId?: string) => Promise<void>;
   logout: () => void;
@@ -24,6 +25,10 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const DEV_USER: AuthUser = { id: "dev-user-001", email: "dev@localhost", org_id: "dev-org-001", name: "Dev User" };
 const DEV_TOKEN = "dev-token-static";
 
+/**
+ * Provides authentication state and actions (login, logout, callback handling).
+ * Supports dev mode (hardcoded user) and WorkOS mode (JWT with proactive refresh).
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null, token: null, refreshToken: null, tokenExpiresAt: null, isAuthenticated: false, isLoading: true,
@@ -249,6 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Consumes the AuthContext. Must be used within an AuthProvider. */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);

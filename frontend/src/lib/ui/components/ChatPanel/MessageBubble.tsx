@@ -11,6 +11,7 @@ interface MessageBubbleProps {
   onUploadError?: (error: string) => void;
 }
 
+/** Renders a single chat message with role-based styling and optional upload widget for assistant messages. */
 export function MessageBubble({
   message,
   projectId,

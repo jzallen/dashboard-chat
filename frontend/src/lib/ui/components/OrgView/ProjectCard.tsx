@@ -7,6 +7,7 @@ interface ProjectCardProps {
   onClick: () => void;
 }
 
+/** Card displaying a project's name, description, and dataset count. */
 export function ProjectCard({ project, onClick }: ProjectCardProps) {
   const datasetCount = project.datasets?.length ?? 0;
 

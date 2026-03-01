@@ -230,11 +230,12 @@ function ConnectionDetails({
   const [showPassword, setShowPassword] = useState(false);
   const [showConnString, setShowConnString] = useState(false);
 
-  const connectionString =
-    status.connection_string ??
-    (status.host
-      ? `postgresql://${status.username}@${status.host}:${status.port}/${status.database}`
-      : undefined);
+  const buildConnectionString = () => {
+    if (status.connection_string) return status.connection_string;
+    if (status.host) return `postgresql://${status.username}@${status.host}:${status.port}/${status.database}`;
+    return undefined;
+  };
+  const connectionString = buildConnectionString();
 
   const maskedConnString = connectionString
     ? connectionString.replace(/\/\/([^@]+)@/, "//****@")
@@ -360,6 +361,7 @@ function ConnectionDetails({
   );
 }
 
+/** Manages SQL access lifecycle (enable, disable, sync, credentials) for a project. */
 export function SqlAccessPanel({ projectId }: SqlAccessPanelProps) {
   const { data: status, isLoading } = useSqlAccessQuery(projectId);
   const enableMutation = useEnableSqlAccess();

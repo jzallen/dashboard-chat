@@ -1,5 +1,6 @@
 import { ArrowDownTrayIcon, ArrowPathIcon, CheckIcon, CircleStackIcon, ClockIcon, Cog6ToothIcon } from "@heroicons/react/24/outline";
 import { useQueryClient } from "@tanstack/react-query";
+import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext,useParams } from "react-router-dom";
 
@@ -25,11 +26,7 @@ import styles from "./DatasetView.module.css";
 import { SchemaTable } from "./SchemaTable";
 import { type ViewMode,ViewModeToggle } from "./ViewModeToggle";
 
-// ---------------------------------------------------------------------------
-// DatasetDetail — inner component that only mounts when a dataset is selected.
-// Contains all hooks that require a datasetId.
-// ---------------------------------------------------------------------------
-
+/** Inner component that mounts only when a dataset is selected. Contains all hooks requiring a datasetId. */
 interface DatasetDetailProps {
   datasetId: string;
   viewMode: ViewMode;
@@ -186,8 +183,11 @@ function DatasetDetail({
         ...(aliasMap.has(id) && { alias: aliasMap.get(id) }),
       }));
 
+      const isActiveCleaningTransform = (t: { status: string; transform_type: string | null }) =>
+        t.status === "enabled" && t.transform_type !== "filter";
+
       const activeCleaningTransforms = (dataset.transforms ?? [])
-        .filter((t) => t.status === "enabled" && t.transform_type !== "filter")
+        .filter(isActiveCleaningTransform)
         .map((t) => {
           const config = t.expression_config as Record<string, unknown> | null;
           return {
@@ -251,11 +251,11 @@ function DatasetDetail({
   );
 }
 
-// ---------------------------------------------------------------------------
-// ProjectView — orchestrator component. Renders header, DatasetGrid, and
-// conditionally mounts DatasetDetail when a dataset is selected.
-// ---------------------------------------------------------------------------
-
+/**
+ * Orchestrator component for the dataset workspace.
+ * Renders header with breadcrumb and actions, DatasetGrid for catalog browsing,
+ * and conditionally mounts DatasetDetail when a dataset is selected.
+ */
 export function ProjectView() {
   const { datasetId } = useParams<{ projectId?: string; datasetId?: string }>();
   const { project } = useOutletContext<AppShellContext>();
@@ -270,19 +270,28 @@ export function ProjectView() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  const scheduleSyncTransition = useCallback((from: "success" | "cooldown") => {
+    if (from === "success") {
+      syncTimerRef.current = setTimeout(() => {
+        setSyncState("cooldown");
+        scheduleSyncTransition("cooldown");
+      }, 1200);
+    } else {
+      syncTimerRef.current = setTimeout(() => setSyncState("idle"), 10_000);
+    }
+  }, []);
+
   const handleSync = useCallback(() => {
     if (syncState !== "idle" || !datasetId) return;
     setSyncState("spinning");
 
-    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true })
+    queryClient
+      .invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true })
       .then(() => {
         setSyncState("success");
-        syncTimerRef.current = setTimeout(() => {
-          setSyncState("cooldown");
-          syncTimerRef.current = setTimeout(() => setSyncState("idle"), 10_000);
-        }, 1200);
+        scheduleSyncTransition("success");
       });
-  }, [syncState, datasetId, queryClient]);
+  }, [syncState, datasetId, queryClient, scheduleSyncTransition]);
 
   const prefetchDataset = usePrefetchDataset();
   const { data: fullDataset } = useDatasetQuery(datasetId);
@@ -406,37 +415,41 @@ export function ProjectView() {
           </button>
         {hasSelection && (
           <>
-            {viewMode === "table" && datasetId && (
-              <button
-                onClick={() => navigate(`/projects/${projectId}/datasets/${datasetId}/sessions`)}
-                className={styles.settingsButton}
-                title="View chat sessions"
-              >
-                <ClockIcon className={styles.settingsIcon} />
-              </button>
-            )}
             {viewMode === "table" && (
-              <button
-                onClick={() => setShowSettings((v) => !v)}
-                className={styles.settingsButton}
-                title="Manage saved transforms"
-              >
-                <Cog6ToothIcon className={styles.settingsIcon} />
-              </button>
-            )}
-            {viewMode === "table" && (
-              <button
-                onClick={handleSync}
-                disabled={syncState !== "idle"}
-                className={`${styles.syncButton} ${syncState === "spinning" ? styles.syncSpinning : ""} ${syncState === "success" ? styles.syncSuccess : ""} ${syncState === "cooldown" ? styles.syncCooldown : ""}`}
-                title="Sync dataset from server"
-              >
-                {syncState === "success" ? (
-                  <CheckIcon className={styles.settingsIcon} strokeWidth={2} />
-                ) : (
-                  <ArrowPathIcon className={styles.settingsIcon} />
+              <>
+                {datasetId && (
+                  <button
+                    onClick={() => navigate(`/projects/${projectId}/datasets/${datasetId}/sessions`)}
+                    className={styles.settingsButton}
+                    title="View chat sessions"
+                  >
+                    <ClockIcon className={styles.settingsIcon} />
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={() => setShowSettings((v) => !v)}
+                  className={styles.settingsButton}
+                  title="Manage saved transforms"
+                >
+                  <Cog6ToothIcon className={styles.settingsIcon} />
+                </button>
+                <button
+                  onClick={handleSync}
+                  disabled={syncState !== "idle"}
+                  className={clsx(styles.syncButton, {
+                    [styles.syncSpinning]: syncState === "spinning",
+                    [styles.syncSuccess]: syncState === "success",
+                    [styles.syncCooldown]: syncState === "cooldown",
+                  })}
+                  title="Sync dataset from server"
+                >
+                  {syncState === "success" ? (
+                    <CheckIcon className={styles.settingsIcon} strokeWidth={2} />
+                  ) : (
+                    <ArrowPathIcon className={styles.settingsIcon} />
+                  )}
+                </button>
+              </>
             )}
             <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
           </>

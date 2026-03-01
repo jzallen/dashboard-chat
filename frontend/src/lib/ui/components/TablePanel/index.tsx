@@ -17,6 +17,7 @@ interface TablePanelProps {
   onToggleTransform?: (transformId: string, isActive: boolean) => void;
 }
 
+/** Renders the data table with active filters, sortable columns, and pagination. */
 export default function TablePanel({
   table,
   columnFilters,

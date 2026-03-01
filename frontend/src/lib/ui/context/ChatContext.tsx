@@ -22,10 +22,12 @@ import { getErrorMessage } from "../../errors";
 import { CHAT_URL } from "../data/config";
 import type { Message, SSEMessage,TableSchema } from "../types";
 
+/** Handler registered by DatasetDetail to execute AI tool calls against the table. */
 export interface ToolHandler {
   executeToolCall: (toolCall: ToolCall) => string | Promise<string>;
 }
 
+/** Values exposed by ChatContext to consumers via useChatContext. */
 interface ChatContextValue {
   messages: Message[];
   input: string;
@@ -47,6 +49,45 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
+async function refreshAuthHeadersIfExpiring(): Promise<Record<string, string>> {
+  const headers = getAuthHeaders();
+  const expiresAtStr = localStorage.getItem(EXPIRES_AT_KEY);
+  if (!expiresAtStr) return headers;
+
+  const expiresAt = Number(expiresAtStr);
+  if (expiresAt - Date.now() >= 60_000) return headers;
+
+  try {
+    const newToken = await ensureFreshToken();
+    if (newToken) return { Authorization: `Bearer ${newToken}` };
+  } catch {
+    // Proceed with existing token; 401 handler below will catch it
+  }
+  return headers;
+}
+
+async function retryOn401(
+  response: Response,
+  fetchChat: (headers: Record<string, string>) => Promise<Response>,
+): Promise<Response> {
+  if (response.status !== 401) return response;
+
+  try {
+    const newToken = await ensureFreshToken();
+    if (newToken) {
+      const retried = await fetchChat({ Authorization: `Bearer ${newToken}` });
+      if (retried.status !== 401) return retried;
+    }
+  } catch {
+    // Refresh failed — fall through to logout
+  }
+
+  hardLogout();
+  // Return original response; hardLogout navigates away
+  return response;
+}
+
+/** Consumes the ChatContext. Must be used within a ChatProvider. */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useChatContext(): ChatContextValue {
   const ctx = useContext(ChatContext);
@@ -56,6 +97,10 @@ export function useChatContext(): ChatContextValue {
   return ctx;
 }
 
+/**
+ * Provides SSE-based chat streaming, tool call execution, and session management.
+ * Manages message state, auth token refresh for streams, and audit logging.
+ */
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -141,62 +186,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           tool_calls: m.tool_calls,
         }));
 
-        // Pre-stream token freshness check: refresh if < 60s remaining
-        let authHeaders = getAuthHeaders();
-        const expiresAtStr = localStorage.getItem(EXPIRES_AT_KEY);
-        if (expiresAtStr) {
-          const expiresAt = Number(expiresAtStr);
-          if (expiresAt - Date.now() < 60_000) {
-            try {
-              const newToken = await ensureFreshToken();
-              if (newToken) {
-                authHeaders = { Authorization: `Bearer ${newToken}` };
-              }
-            } catch {
-              // Proceed with existing token; 401 handler below will catch it
-            }
-          }
-        }
+        const authHeaders = await refreshAuthHeadersIfExpiring();
 
-        let response = await fetch(`${CHAT_URL}/chat`, {
-          method: "POST",
-          mode: "cors",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
-          body: JSON.stringify({
-            messages: apiMessages,
-            tableSchema,
-          }),
-        });
+        const fetchChat = (headers: Record<string, string>) =>
+          fetch(`${CHAT_URL}/chat`, {
+            method: "POST",
+            mode: "cors",
+            headers: { "Content-Type": "application/json", ...headers },
+            body: JSON.stringify({ messages: apiMessages, tableSchema }),
+          });
 
-        // 401 retry: refresh token and retry stream once
-        if (response.status === 401) {
-          try {
-            const newToken = await ensureFreshToken();
-            if (newToken) {
-              response = await fetch(`${CHAT_URL}/chat`, {
-                method: "POST",
-                mode: "cors",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${newToken}`,
-                },
-                body: JSON.stringify({
-                  messages: apiMessages,
-                  tableSchema,
-                }),
-              });
-            }
-          } catch {
-            // Refresh failed — fall through to error handling below
-          }
-          if (response.status === 401) {
-            hardLogout();
-            return;
-          }
-        }
+        let response = await fetchChat(authHeaders);
+        response = await retryOn401(response, fetchChat);
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         if (!response.body) throw new Error("No response body");

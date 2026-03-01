@@ -4,6 +4,7 @@ import { type ApiError, type Dataset, type DatasetSparse, getDataset, listDatase
 
 import { QUERY_STALE_TIMES } from "./queryConfig";
 
+/** TanStack Query key factory for dataset queries (list and detail). */
 export const datasetKeys = {
   all: ["datasets"] as const,
   lists: () => [...datasetKeys.all, "list"] as const,
@@ -11,6 +12,7 @@ export const datasetKeys = {
   detail: (id: string) => ["datasets", id] as const,
 };
 
+/** Fetches a full dataset by ID, including transforms and preview rows. */
 export function useDatasetQuery(datasetId: string | undefined) {
   return useQuery<Dataset, ApiError>({
     queryKey: datasetKeys.detail(datasetId ?? ""),
@@ -19,6 +21,7 @@ export function useDatasetQuery(datasetId: string | undefined) {
   });
 }
 
+/** Fetches the sparse dataset list for a project (names and IDs only). */
 export function useDatasets(projectId: string | undefined) {
   return useQuery<DatasetSparse[], ApiError>({
     queryKey: datasetKeys.list(projectId ?? ""),

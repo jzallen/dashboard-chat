@@ -8,6 +8,7 @@ interface ProjectGridProps {
   onSelect: (projectId: string) => void;
 }
 
+/** Renders a responsive grid of project cards with empty state handling. */
 export function ProjectGrid({ projects, onSelect }: ProjectGridProps) {
   if (projects.length === 0) {
     return <div className={styles.emptyState}>No projects yet.</div>;

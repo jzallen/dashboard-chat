@@ -2,6 +2,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 
 import styles from "./SideNav.module.css";
 
+/** Props for the SideNav shell component. */
 interface SideNavProps {
   orgName: string | null;
   collapsed: boolean;
@@ -9,6 +10,7 @@ interface SideNavProps {
   children: React.ReactNode;
 }
 
+/** Collapsible side navigation shell with org name header and child navigation items. */
 export function SideNav({ orgName, collapsed, onToggleCollapse, children }: SideNavProps) {
   return (
     <nav className={`${styles.nav} ${collapsed ? styles.navCollapsed : styles.navExpanded}`}>

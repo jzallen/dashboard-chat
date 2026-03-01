@@ -13,7 +13,9 @@ import { useEffect,useMemo, useState } from "react";
 import type { Dataset, SchemaConfig } from "@/api";
 import { customFilterFn, type TableRow } from "@/table-tools";
 
+/** Options for configuring the table instance. */
 interface UseTableConfigOptions {
+  /** The dataset whose schema and preview rows drive the table. Null while loading. */
   dataset?: Dataset | null;
 }
 
@@ -27,6 +29,10 @@ function buildColumnsFromSchema(
   }));
 }
 
+/**
+ * Configures a TanStack Table instance from a dataset's schema and preview rows.
+ * Handles column generation (with alias support), sorting, filtering, and pagination.
+ */
 export function useTableConfig(options: UseTableConfigOptions = {}) {
   const { dataset } = options;
 

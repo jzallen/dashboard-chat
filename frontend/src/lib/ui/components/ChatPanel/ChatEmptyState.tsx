@@ -1,5 +1,6 @@
 import styles from "./ChatPanel.module.css";
 
+/** Placeholder shown when the chat has no messages, with example prompts. */
 export function ChatEmptyState() {
   return (
     <div className={styles.emptyState}>

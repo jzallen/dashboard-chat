@@ -1,5 +1,6 @@
 import { isCompoundFilter, type TanStackFilterValue } from "@/raqb";
 
+/** Evaluates a single filter condition against a cell value using the specified operator. */
 function evaluateCondition(
   cellValue: unknown,
   condition: { operator: string; value: unknown }
@@ -34,6 +35,7 @@ function evaluateCondition(
   }
 }
 
+/** TanStack Table filter function that supports compound filters (multiple conditions ANDed together). */
 export function customFilterFn(
   row: { getValue: (columnId: string) => unknown },
   columnId: string,

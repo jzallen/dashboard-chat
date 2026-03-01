@@ -15,6 +15,7 @@ import { raqbToTanstackFilters } from "@/raqb";
 import { mergeFilters } from "./filterUtils";
 import { datasetKeys } from "./useDatasetQuery";
 
+/** Saves a new transform with optimistic cache update. Invalidates dataset on settle. */
 export function useSaveTransform(datasetId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -52,6 +53,7 @@ export function useSaveTransform(datasetId: string) {
   });
 }
 
+/** Deletes a transform with optimistic cache removal. Invalidates dataset on settle. */
 export function useDeleteTransform(datasetId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -76,6 +78,7 @@ export function useDeleteTransform(datasetId: string) {
   });
 }
 
+/** Toggles a transform's enabled/disabled status with optimistic cache update. */
 export function useToggleTransform(datasetId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -107,13 +110,19 @@ export function useToggleTransform(datasetId: string) {
   });
 }
 
+/** Options for the {@link useTransforms} hook. */
 interface UseTransformsOptions {
+  /** The dataset whose transforms to manage (null during loading). */
   dataset: Dataset | null;
+  /** Callback to push filter state to TanStack Table's column filters. */
   onFilterApply?: (filters: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)) => void;
+  /** Whether to auto-apply saved filters on mount (default: true). */
   autoApplyActive?: boolean;
+  /** Called after a transform toggle so the table can refresh data. */
   onFiltersChanged?: () => void;
 }
 
+/** Return value of the {@link useTransforms} hook. */
 interface UseTransformsReturn {
   transforms: Transform[];
   loading: boolean;
@@ -125,6 +134,14 @@ interface UseTransformsReturn {
   applyActiveTransforms: () => void;
 }
 
+/**
+ * Manages transform lifecycle (save, delete, toggle) for a dataset.
+ * Automatically applies active filter transforms when the dataset loads.
+ *
+ * @param options.dataset - The dataset whose transforms to manage (null during loading)
+ * @param options.onFilterApply - Callback to push filter state to TanStack Table
+ * @param options.autoApplyActive - Whether to auto-apply saved filters on mount (default: true)
+ */
 export function useTransforms(options: UseTransformsOptions): UseTransformsReturn {
   const { dataset, onFilterApply, autoApplyActive = true, onFiltersChanged } = options;
   const datasetId = dataset?.id ?? "";
@@ -187,9 +204,11 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
   const applyTransform = useCallback(
     (transform: Transform) => {
       if (!onFilterApply) return;
-      if ((transform.transform_type ?? "filter") !== "filter" || !transform.condition_json) return;
+      const isFilterWithCondition =
+        (transform.transform_type ?? "filter") === "filter" && transform.condition_json;
+      if (!isFilterWithCondition) return;
 
-      const { filters: newFilters } = raqbToTanstackFilters(transform.condition_json, {
+      const { filters: newFilters } = raqbToTanstackFilters(transform.condition_json!, {
         transformId: transform.id,
       });
       onFilterApply((prevFilters) => mergeFilters(prevFilters, newFilters));
@@ -222,8 +241,13 @@ function computeActiveFilters(transforms: Transform[]): ColumnFiltersState {
   let activeFilters: ColumnFiltersState = [];
 
   for (const transform of transforms) {
-    if (transform.status === "enabled" && (transform.transform_type ?? "filter") === "filter" && transform.condition_json) {
-      const { filters } = raqbToTanstackFilters(transform.condition_json, {
+    const isApplicableFilter =
+      transform.status === "enabled" &&
+      (transform.transform_type ?? "filter") === "filter" &&
+      transform.condition_json;
+
+    if (isApplicableFilter) {
+      const { filters } = raqbToTanstackFilters(transform.condition_json!, {
         transformId: transform.id,
       });
       activeFilters = mergeFilters(activeFilters, filters);

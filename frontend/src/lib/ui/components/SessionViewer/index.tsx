@@ -114,6 +114,7 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
   );
 }
 
+/** Displays a read-only view of a past chat session with its turns and tool calls. */
 export function SessionViewer() {
   const { projectId, datasetId, sessionId } = useParams<{ projectId: string; datasetId: string; sessionId: string }>();
   const [session, setSession] = useState<ChatSession | null>(null);

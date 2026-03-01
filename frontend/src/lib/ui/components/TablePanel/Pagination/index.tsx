@@ -12,6 +12,7 @@ interface PaginationProps {
   totalRows: number;
 }
 
+/** Table pagination controls with page navigation and row count display. */
 export default function Pagination({ table, totalRows }: PaginationProps) {
   const currentPage = table.getState().pagination.pageIndex + 1;
   const totalPages = table.getPageCount() || 1;

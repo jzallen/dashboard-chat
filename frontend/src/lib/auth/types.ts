@@ -1,3 +1,4 @@
+/** The authenticated user's identity, sourced from WorkOS JWT or dev defaults. */
 export interface AuthUser {
   id: string;
   email: string;
@@ -5,6 +6,7 @@ export interface AuthUser {
   name: string | null;
 }
 
+/** Current authentication state held in AuthContext. */
 export interface AuthState {
   user: AuthUser | null;
   token: string | null;

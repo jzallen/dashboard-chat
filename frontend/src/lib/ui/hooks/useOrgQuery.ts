@@ -7,11 +7,13 @@ interface OrgInfo {
   name: string;
 }
 
+/** TanStack Query key factory for org-level queries. */
 export const orgKeys = {
   me: ["org", "me"] as const,
   projects: ["org", "projects"] as const,
 };
 
+/** Fetches the current user's organization info. */
 export function useOrgQuery() {
   return useQuery<OrgInfo, ApiError>({
     queryKey: orgKeys.me,
@@ -19,6 +21,7 @@ export function useOrgQuery() {
   });
 }
 
+/** Fetches all projects belonging to the current org. */
 export function useOrgProjectsQuery() {
   return useQuery<Project[], ApiError>({
     queryKey: orgKeys.projects,

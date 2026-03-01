@@ -1,8 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
 
+/** A single row of table data, keyed by column name. */
 export type TableRow = Record<string, unknown>;
 
+/** Discriminated union of all validated tool call argument shapes. The `tool` field is the discriminant. */
 export type ToolCallArgs =
   | { tool: "filterTable"; column: string; operator: string; value: unknown }
   | { tool: "sortTable"; column: string; direction: "asc" | "desc" }
@@ -21,6 +23,7 @@ export type ToolCallArgs =
   | { tool: "undoCleaningTransform"; action: "disable" | "delete"; transformId?: string }
   | { tool: "reEnableCleaningTransform"; transformId?: string };
 
+/** Callbacks for mutating table state (filters, sorting, data) in response to tool calls. */
 export interface ToolCallHandlers {
   setColumnFilters: (
     updater: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)
@@ -31,6 +34,7 @@ export interface ToolCallHandlers {
   setData: (updater: (prev: TableRow[]) => TableRow[]) => void;
 }
 
+/** Minimal transform metadata passed to tool call handlers for undo/re-enable operations. */
 export interface TransformInfo {
   id: string;
   name: string;
@@ -41,6 +45,7 @@ export interface TransformInfo {
   created_at?: string;
 }
 
+/** Full context needed to execute a tool call, combining table handlers with dataset info. */
 export interface ToolCallContext extends ToolCallHandlers {
   datasetId: string;
   transforms: TransformInfo[];

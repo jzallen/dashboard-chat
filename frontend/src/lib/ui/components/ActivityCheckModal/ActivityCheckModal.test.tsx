@@ -4,8 +4,8 @@ import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivityCheckModal } from "./index";
 
 describe("ActivityCheckModal", () => {
-  let onContinue: ReturnType<typeof vi.fn>;
-  let onLogout: ReturnType<typeof vi.fn>;
+  let onContinue: ReturnType<typeof vi.fn<() => void>>;
+  let onLogout: ReturnType<typeof vi.fn<() => void>>;
 
   beforeEach(() => {
     vi.useFakeTimers();

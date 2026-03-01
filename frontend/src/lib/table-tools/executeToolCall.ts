@@ -11,68 +11,83 @@ import type { ToolCall } from "../types";
 import { datasetKeys } from "../ui/hooks/useDatasetQuery";
 import type { TableRow, ToolCallArgs, ToolCallContext, ToolCallHandlers } from "./types";
 
+const validators: Record<string, (raw: Record<string, unknown>) => ToolCallArgs> = {
+  filterTable: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("filterTable: missing column");
+    if (typeof raw.operator !== "string") throw new Error("filterTable: missing operator");
+    if (raw.value === undefined) throw new Error("filterTable: missing value");
+    return { tool: "filterTable", column: raw.column, operator: raw.operator, value: raw.value };
+  },
+  sortTable: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("sortTable: missing column");
+    if (raw.direction !== "asc" && raw.direction !== "desc") throw new Error("sortTable: invalid direction");
+    return { tool: "sortTable", column: raw.column, direction: raw.direction };
+  },
+  addRow: (raw) => {
+    if (typeof raw.data !== "object" || raw.data === null) throw new Error("addRow: missing data");
+    return { tool: "addRow", data: raw.data as Record<string, unknown> };
+  },
+  deleteRow: (raw) => {
+    if (typeof raw.search !== "string") throw new Error("deleteRow: missing search");
+    return { tool: "deleteRow", search: raw.search };
+  },
+  replaceColumnFilter: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("replaceColumnFilter: missing column");
+    return { tool: "replaceColumnFilter", column: raw.column, filters: raw.filters as Array<{ operator: string; value: unknown }> };
+  },
+  generateFilter: (raw) => {
+    if (typeof raw.description !== "string") throw new Error("generateFilter: missing description");
+    if (!raw.raqb_tree) throw new Error("generateFilter: missing raqb_tree");
+    return { tool: "generateFilter", description: raw.description, raqb_tree: raw.raqb_tree };
+  },
+  clearFilters: () => ({ tool: "clearFilters" }),
+  clearSort: () => ({ tool: "clearSort" }),
+  trimWhitespace: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("trimWhitespace: missing column");
+    return { tool: "trimWhitespace", column: raw.column };
+  },
+  standardizeCase: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("standardizeCase: missing column");
+    if (typeof raw.mode !== "string") throw new Error("standardizeCase: missing mode");
+    return { tool: "standardizeCase", column: raw.column, mode: raw.mode };
+  },
+  fillNulls: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("fillNulls: missing column");
+    if (raw.fillValue === undefined) throw new Error("fillNulls: missing fillValue");
+    return { tool: "fillNulls", column: raw.column, fillValue: raw.fillValue };
+  },
+  mapValues: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("mapValues: missing column");
+    return { tool: "mapValues", column: raw.column, mappings: raw.mappings as Array<{ from: string; to: string }> };
+  },
+  renameColumn: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("renameColumn: missing column");
+    if (typeof raw.newName !== "string") throw new Error("renameColumn: missing newName");
+    return { tool: "renameColumn", column: raw.column, newName: raw.newName };
+  },
+  applyCleaningTransform: (raw) => {
+    if (typeof raw.column !== "string") throw new Error("applyCleaningTransform: missing column");
+    if (typeof raw.operation !== "string") throw new Error("applyCleaningTransform: missing operation");
+    return { tool: "applyCleaningTransform", column: raw.column, operation: raw.operation, config: (raw.config ?? {}) as Record<string, unknown> };
+  },
+  undoCleaningTransform: (raw) => {
+    if (raw.action !== "disable" && raw.action !== "delete") throw new Error("undoCleaningTransform: invalid action");
+    return { tool: "undoCleaningTransform", action: raw.action, transformId: raw.transformId as string | undefined };
+  },
+  reEnableCleaningTransform: (raw) => ({
+    tool: "reEnableCleaningTransform",
+    transformId: raw.transformId as string | undefined,
+  }),
+};
+
+/** Validates raw tool call arguments against the validator map and returns a typed ToolCallArgs union member. */
 function validateToolCallArgs(name: string, raw: Record<string, unknown>): ToolCallArgs {
-  switch (name) {
-    case "filterTable":
-      if (typeof raw.column !== "string") throw new Error("filterTable: missing column");
-      if (typeof raw.operator !== "string") throw new Error("filterTable: missing operator");
-      if (raw.value === undefined) throw new Error("filterTable: missing value");
-      return { tool: "filterTable", column: raw.column, operator: raw.operator, value: raw.value };
-    case "sortTable":
-      if (typeof raw.column !== "string") throw new Error("sortTable: missing column");
-      if (raw.direction !== "asc" && raw.direction !== "desc") throw new Error("sortTable: invalid direction");
-      return { tool: "sortTable", column: raw.column, direction: raw.direction };
-    case "addRow":
-      if (typeof raw.data !== "object" || raw.data === null) throw new Error("addRow: missing data");
-      return { tool: "addRow", data: raw.data as Record<string, unknown> };
-    case "deleteRow":
-      if (typeof raw.search !== "string") throw new Error("deleteRow: missing search");
-      return { tool: "deleteRow", search: raw.search };
-    case "replaceColumnFilter":
-      if (typeof raw.column !== "string") throw new Error("replaceColumnFilter: missing column");
-      return { tool: "replaceColumnFilter", column: raw.column, filters: raw.filters as Array<{ operator: string; value: unknown }> };
-    case "generateFilter":
-      if (typeof raw.description !== "string") throw new Error("generateFilter: missing description");
-      if (!raw.raqb_tree) throw new Error("generateFilter: missing raqb_tree");
-      return { tool: "generateFilter", description: raw.description, raqb_tree: raw.raqb_tree };
-    case "clearFilters":
-      return { tool: "clearFilters" };
-    case "clearSort":
-      return { tool: "clearSort" };
-    case "trimWhitespace":
-      if (typeof raw.column !== "string") throw new Error("trimWhitespace: missing column");
-      return { tool: "trimWhitespace", column: raw.column };
-    case "standardizeCase":
-      if (typeof raw.column !== "string") throw new Error("standardizeCase: missing column");
-      if (typeof raw.mode !== "string") throw new Error("standardizeCase: missing mode");
-      return { tool: "standardizeCase", column: raw.column, mode: raw.mode };
-    case "fillNulls":
-      if (typeof raw.column !== "string") throw new Error("fillNulls: missing column");
-      if (raw.fillValue === undefined) throw new Error("fillNulls: missing fillValue");
-      return { tool: "fillNulls", column: raw.column, fillValue: raw.fillValue };
-    case "mapValues":
-      if (typeof raw.column !== "string") throw new Error("mapValues: missing column");
-      return { tool: "mapValues", column: raw.column, mappings: raw.mappings as Array<{ from: string; to: string }> };
-    case "renameColumn":
-      if (typeof raw.column !== "string") throw new Error("renameColumn: missing column");
-      if (typeof raw.newName !== "string") throw new Error("renameColumn: missing newName");
-      return { tool: "renameColumn", column: raw.column, newName: raw.newName };
-    case "applyCleaningTransform":
-      if (typeof raw.column !== "string") throw new Error("applyCleaningTransform: missing column");
-      if (typeof raw.operation !== "string") throw new Error("applyCleaningTransform: missing operation");
-      return { tool: "applyCleaningTransform", column: raw.column, operation: raw.operation, config: (raw.config ?? {}) as Record<string, unknown> };
-    case "undoCleaningTransform":
-      if (raw.action !== "disable" && raw.action !== "delete") throw new Error("undoCleaningTransform: invalid action");
-      return { tool: "undoCleaningTransform", action: raw.action, transformId: raw.transformId as string | undefined };
-    case "reEnableCleaningTransform":
-      return { tool: "reEnableCleaningTransform", transformId: raw.transformId as string | undefined };
-    default:
-      throw new Error(`Unknown tool: ${name}`);
-  }
+  const validator = validators[name];
+  if (!validator) throw new Error(`Unknown tool: ${name}`);
+  return validator(raw);
 }
 
-// --- Table tool actions (synchronous) ---
-
+/** Executes synchronous table actions (filter, sort, add/delete rows) against in-memory table state. */
 function performTableAction(
   validated: ToolCallArgs,
   handlers: ToolCallHandlers
@@ -166,7 +181,7 @@ function performTableAction(
   }
 }
 
-// --- RAQB tree → column filters ---
+// RAQB tree → column filters
 
 interface RaqbRule {
   type: "rule";
@@ -227,8 +242,7 @@ function countRaqbRules(tree: RaqbGroup): number {
   return count;
 }
 
-// --- Cleaning tool handlers (async) ---
-
+/** Formats a cleaning transform preview into a human-readable summary with before/after samples. */
 function formatPreviewResult(preview: PreviewResponse): string {
   let msg = `Preview: ${preview.operation_description}\n`;
   msg += `Affected: ${preview.affected_count} of ${preview.total_count} rows\n`;
@@ -243,6 +257,7 @@ function formatPreviewResult(preview: PreviewResponse): string {
   return msg;
 }
 
+/** Handles async cleaning tool calls (preview, apply, undo) against the backend API. */
 async function handleCleaningTool(
   validated: ToolCallArgs,
   context: ToolCallContext
@@ -369,8 +384,6 @@ async function handleCleaningTool(
   }
 }
 
-// --- Cleaning tool names set ---
-
 const CLEANING_TOOLS = new Set([
   "trimWhitespace",
   "standardizeCase",
@@ -382,8 +395,7 @@ const CLEANING_TOOLS = new Set([
   "reEnableCleaningTransform",
 ]);
 
-// --- Message generation ---
-
+/** Generates a human-readable summary message for a completed tool call. */
 function generateToolMessage(validated: ToolCallArgs): string {
   switch (validated.tool) {
     case "filterTable":
@@ -426,6 +438,10 @@ function generateToolMessage(validated: ToolCallArgs): string {
   }
 }
 
+/**
+ * Dispatches a validated tool call to the appropriate handler (table action or cleaning tool).
+ * Parses and validates arguments, then returns a human-readable result message.
+ */
 export async function executeToolCall(
   toolCall: ToolCall,
   context: ToolCallContext

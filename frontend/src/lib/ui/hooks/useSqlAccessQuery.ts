@@ -17,12 +17,14 @@ import {
 
 import { QUERY_STALE_TIMES } from "./queryConfig";
 
+/** TanStack Query key factory for SQL access queries. */
 export const sqlAccessKeys = {
   all: ["sql-access"] as const,
   detail: (projectId: string) => ["sql-access", projectId] as const,
   status: (projectId: string) => ["sql-access", projectId, "status"] as const,
 };
 
+/** Fetches the SQL access status (credentials, connection info) for a project. */
 export function useSqlAccessQuery(projectId: string | undefined) {
   return useQuery<SqlAccessStatus, ApiError>({
     queryKey: sqlAccessKeys.detail(projectId ?? ""),
@@ -32,6 +34,7 @@ export function useSqlAccessQuery(projectId: string | undefined) {
   });
 }
 
+/** Polls the SQL environment status (running, stopped, error) every 15 seconds. */
 export function useEnvironmentStatus(projectId: string | undefined) {
   return useQuery<EnvironmentStatusResponse, ApiError>({
     queryKey: sqlAccessKeys.status(projectId ?? ""),
@@ -41,6 +44,7 @@ export function useEnvironmentStatus(projectId: string | undefined) {
   });
 }
 
+/** Enables SQL access for a project and updates the query cache on success. */
 export function useEnableSqlAccess() {
   const queryClient = useQueryClient();
 
@@ -56,6 +60,7 @@ export function useEnableSqlAccess() {
   });
 }
 
+/** Disables SQL access for a project and clears cached credentials. */
 export function useDisableSqlAccess() {
   const queryClient = useQueryClient();
 
@@ -71,6 +76,7 @@ export function useDisableSqlAccess() {
   });
 }
 
+/** Syncs dataset schemas to the SQL environment and refreshes cached status. */
 export function useSyncSqlAccess() {
   const queryClient = useQueryClient();
 
@@ -86,6 +92,7 @@ export function useSyncSqlAccess() {
   });
 }
 
+/** Regenerates SQL credentials (new password) and updates cached status. */
 export function useRegenerateSqlCredentials() {
   const queryClient = useQueryClient();
 
@@ -101,6 +108,7 @@ export function useRegenerateSqlCredentials() {
   });
 }
 
+/** Starts the SQL environment and updates the environment status in cache. */
 export function useStartEnvironment() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -115,6 +123,7 @@ export function useStartEnvironment() {
   });
 }
 
+/** Stops the SQL environment and updates the environment status in cache. */
 export function useStopEnvironment() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -129,6 +138,7 @@ export function useStopEnvironment() {
   });
 }
 
+/** Restarts the SQL environment and updates the environment status in cache. */
 export function useRestartEnvironment() {
   const queryClient = useQueryClient();
   return useMutation({

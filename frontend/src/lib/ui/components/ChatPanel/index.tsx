@@ -7,6 +7,7 @@ import { ChatEmptyState } from "./ChatEmptyState";
 import styles from "./ChatPanel.module.css";
 import { MessageBubble } from "./MessageBubble";
 
+/** Props for the ChatPanel component. */
 interface ChatPanelProps {
   messages: Message[];
   input: string;
@@ -21,6 +22,7 @@ interface ChatPanelProps {
   onUploadError?: (error: string) => void;
 }
 
+/** Chat interface with message history, input field, and upload support. */
 function ChatPanel({
   messages,
   input,
