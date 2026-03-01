@@ -1,3 +1,5 @@
+export const CASE_OPERATIONS = ["upper", "lower", "title", "snake", "kebab"] as const;
+
 export interface ToolCall {
   id: string;
   type: "function";

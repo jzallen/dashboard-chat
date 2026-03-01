@@ -71,15 +71,18 @@ export function Breadcrumb({
   return (
     <nav className={styles.breadcrumb}>
       <span className={styles.breadcrumbSeparator}>/</span>
-      <span
-        className={datasetName ? styles.breadcrumbItem : styles.breadcrumbItemCurrent}
-        onClick={onProjectClick}
-        role={onProjectClick ? "button" : undefined}
-        tabIndex={onProjectClick ? 0 : undefined}
-        onKeyDown={onProjectClick ? (e) => e.key === "Enter" && onProjectClick() : undefined}
-      >
-        {projectName}
-      </span>
+      {onProjectClick ? (
+        <button
+          className={styles.breadcrumbButton}
+          onClick={onProjectClick}
+        >
+          {projectName}
+        </button>
+      ) : (
+        <span className={styles.breadcrumbItemCurrent}>
+          {projectName}
+        </span>
+      )}
       {datasetName && (
         <>
           <span className={styles.breadcrumbSeparator}>/</span>

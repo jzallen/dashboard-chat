@@ -26,6 +26,13 @@ export interface SchemaConfig {
   fields: Record<string, FieldConfig>;
 }
 
+export type ExpressionConfig =
+  | { operation: "trim" }
+  | { operation: "case"; mode: string }
+  | { operation: "fill_null"; fill_value: unknown }
+  | { operation: "map_values"; mappings: Array<{ from: string; to: string }> }
+  | { operation: "alias"; alias: string };
+
 export interface Transform {
   id: string;
   name: string;
@@ -35,7 +42,7 @@ export interface Transform {
   status: 'enabled' | 'disabled' | 'deleted';
   transform_type: string;
   target_column: string | null;
-  expression_config: Record<string, unknown> | null;
+  expression_config: ExpressionConfig | null;
   expression_sql: string | null;
   created_at: string;
 }

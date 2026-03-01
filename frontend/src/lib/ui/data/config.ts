@@ -1,2 +1,1 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-export const CHAT_URL = import.meta.env.VITE_CHAT_URL || "http://localhost:8787";
+export { API_BASE_URL as API_URL, CHAT_URL } from "../../api/config";

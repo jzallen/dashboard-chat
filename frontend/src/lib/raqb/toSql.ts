@@ -185,9 +185,9 @@ function processGroupParameterized(
 /**
  * Convert a single RAQB rule to SQL
  */
-function convertRuleToSql(rule: RAQBRule, identifierQuote: string): string | null {
+function convertRuleToSql(rule: RAQBRule, _identifierQuote: string): string | null {
   const { field, operator, value } = rule.properties;
-  const quotedField = `${identifierQuote}${escapeIdentifier(field)}${identifierQuote}`;
+  const quotedField = escapeIdentifier(field);
 
   return operatorToSql(quotedField, operator, value);
 }
@@ -197,12 +197,12 @@ function convertRuleToSql(rule: RAQBRule, identifierQuote: string): string | nul
  */
 function convertRuleToParameterizedSql(
   rule: RAQBRule,
-  identifierQuote: string,
+  _identifierQuote: string,
   params: RAQBValueType[],
   getNextParamIndex: () => number
 ): string | null {
   const { field, operator, value } = rule.properties;
-  const quotedField = `${identifierQuote}${escapeIdentifier(field)}${identifierQuote}`;
+  const quotedField = escapeIdentifier(field);
 
   return operatorToParameterizedSql(quotedField, operator, value, params, getNextParamIndex);
 }
@@ -421,14 +421,8 @@ function operatorToParameterizedSql(
   }
 }
 
-/**
- * Escape a SQL identifier (table/column name)
- * Prevents SQL injection through identifier manipulation
- */
 function escapeIdentifier(identifier: string): string {
-  // Only allow alphanumeric characters and underscores
-  // This is the safest approach for SQL identifiers
-  return identifier.replace(/[^a-zA-Z0-9_]/g, "");
+  return '"' + identifier.replace(/"/g, '""') + '"';
 }
 
 /**

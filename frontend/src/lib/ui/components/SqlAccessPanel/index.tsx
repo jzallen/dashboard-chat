@@ -1,4 +1,4 @@
-import { useCallback,useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { SqlAccessStatus } from "@/api";
 
@@ -21,10 +21,15 @@ interface SqlAccessPanelProps {
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }, [text]);
 
   return (

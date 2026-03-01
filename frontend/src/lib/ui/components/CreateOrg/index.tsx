@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import { post } from "../../../api/client";
 import { useAuth } from "../../../auth";
+import { getErrorMessage } from "../../../errors";
+import styles from "./CreateOrg.module.css";
 
 interface CreateOrgResponse {
   org_id: string;
@@ -35,15 +37,15 @@ export function CreateOrg() {
         window.location.href = "/";
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create organization");
+      setError(getErrorMessage(err));
       setIsSubmitting(false);
     }
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem", width: "320px" }}>
-        <h2 style={{ margin: 0 }}>Create Organization</h2>
+    <div className={styles.container}>
+      <form onSubmit={handleSubmit} className={styles.form}>
+        <h2 className={styles.title}>Create Organization</h2>
         <input
           type="text"
           placeholder="Organization name"
@@ -51,10 +53,10 @@ export function CreateOrg() {
           onChange={(e) => setName(e.target.value)}
           disabled={isSubmitting}
           autoFocus
-          style={{ padding: "0.5rem", fontSize: "1rem" }}
+          className={styles.input}
         />
-        {error && <p style={{ color: "red", margin: 0 }}>{error}</p>}
-        <button type="submit" disabled={isSubmitting || !name.trim()} style={{ padding: "0.5rem", fontSize: "1rem" }}>
+        {error && <p className={styles.error}>{error}</p>}
+        <button type="submit" disabled={isSubmitting || !name.trim()} className={styles.submitButton}>
           {isSubmitting ? "Creating..." : "Create Organization"}
         </button>
       </form>

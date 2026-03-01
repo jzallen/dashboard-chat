@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getProject } from "@/api";
+import { type ApiError, getProject, type Project } from "@/api";
+
+import { QUERY_STALE_TIMES } from "./queryConfig";
 
 export const projectKeys = {
   all: ["projects"] as const,
@@ -8,10 +10,10 @@ export const projectKeys = {
 };
 
 export function useProjectQuery(projectId: string) {
-  return useQuery({
+  return useQuery<Project, ApiError>({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => getProject(projectId),
     enabled: Boolean(projectId),
-    staleTime: 30_000,
+    staleTime: QUERY_STALE_TIMES.PROJECT,
   });
 }

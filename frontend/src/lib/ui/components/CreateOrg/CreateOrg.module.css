@@ -1,0 +1,32 @@
+.container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 320px;
+}
+
+.title {
+  margin: 0;
+}
+
+.input {
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+
+.error {
+  color: red;
+  margin: 0;
+}
+
+.submitButton {
+  padding: 0.5rem;
+  font-size: 1rem;
+}

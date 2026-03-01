@@ -558,7 +558,7 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(createToolCall("unknownTool", { foo: "bar" }), context);
 
-        expect(message).toBe("Unknown tool: unknownTool");
+        expect(message).toBe("Error: Unknown tool: unknownTool");
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
         expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(testData);
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(testData);
@@ -694,7 +694,7 @@ describe("executeToolCall", () => {
             expression_config: { operation: "alias", alias: "Product Name" },
           },
         ]);
-        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["datasets", "ds-test-001"] });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["datasets", "ds-test-001"], exact: true });
         expect(message).toBe("Renamed column: name → Product Name");
       });
     });

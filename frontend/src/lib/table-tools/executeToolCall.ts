@@ -4,32 +4,87 @@ import {
   type PreviewResponse,
   updateTransform,
 } from "@/api/datasets";
+import { CASE_OPERATIONS } from "@/chat/types";
 
+import { getErrorMessage } from "../errors";
 import type { ToolCall } from "../types";
 import { datasetKeys } from "../ui/hooks/useDatasetQuery";
-import type { TableRow, ToolCallContext, ToolCallHandlers } from "./types";
+import type { TableRow, ToolCallArgs, ToolCallContext, ToolCallHandlers } from "./types";
+
+function validateToolCallArgs(name: string, raw: Record<string, unknown>): ToolCallArgs {
+  switch (name) {
+    case "filterTable":
+      if (typeof raw.column !== "string") throw new Error("filterTable: missing column");
+      if (typeof raw.operator !== "string") throw new Error("filterTable: missing operator");
+      if (raw.value === undefined) throw new Error("filterTable: missing value");
+      return { tool: "filterTable", column: raw.column, operator: raw.operator, value: raw.value };
+    case "sortTable":
+      if (typeof raw.column !== "string") throw new Error("sortTable: missing column");
+      if (raw.direction !== "asc" && raw.direction !== "desc") throw new Error("sortTable: invalid direction");
+      return { tool: "sortTable", column: raw.column, direction: raw.direction };
+    case "addRow":
+      if (typeof raw.data !== "object" || raw.data === null) throw new Error("addRow: missing data");
+      return { tool: "addRow", data: raw.data as Record<string, unknown> };
+    case "deleteRow":
+      if (typeof raw.search !== "string") throw new Error("deleteRow: missing search");
+      return { tool: "deleteRow", search: raw.search };
+    case "replaceColumnFilter":
+      if (typeof raw.column !== "string") throw new Error("replaceColumnFilter: missing column");
+      return { tool: "replaceColumnFilter", column: raw.column, filters: raw.filters as Array<{ operator: string; value: unknown }> };
+    case "generateFilter":
+      if (typeof raw.description !== "string") throw new Error("generateFilter: missing description");
+      if (!raw.raqb_tree) throw new Error("generateFilter: missing raqb_tree");
+      return { tool: "generateFilter", description: raw.description, raqb_tree: raw.raqb_tree };
+    case "clearFilters":
+      return { tool: "clearFilters" };
+    case "clearSort":
+      return { tool: "clearSort" };
+    case "trimWhitespace":
+      if (typeof raw.column !== "string") throw new Error("trimWhitespace: missing column");
+      return { tool: "trimWhitespace", column: raw.column };
+    case "standardizeCase":
+      if (typeof raw.column !== "string") throw new Error("standardizeCase: missing column");
+      if (typeof raw.mode !== "string") throw new Error("standardizeCase: missing mode");
+      return { tool: "standardizeCase", column: raw.column, mode: raw.mode };
+    case "fillNulls":
+      if (typeof raw.column !== "string") throw new Error("fillNulls: missing column");
+      if (raw.fillValue === undefined) throw new Error("fillNulls: missing fillValue");
+      return { tool: "fillNulls", column: raw.column, fillValue: raw.fillValue };
+    case "mapValues":
+      if (typeof raw.column !== "string") throw new Error("mapValues: missing column");
+      return { tool: "mapValues", column: raw.column, mappings: raw.mappings as Array<{ from: string; to: string }> };
+    case "renameColumn":
+      if (typeof raw.column !== "string") throw new Error("renameColumn: missing column");
+      if (typeof raw.newName !== "string") throw new Error("renameColumn: missing newName");
+      return { tool: "renameColumn", column: raw.column, newName: raw.newName };
+    case "applyCleaningTransform":
+      if (typeof raw.column !== "string") throw new Error("applyCleaningTransform: missing column");
+      if (typeof raw.operation !== "string") throw new Error("applyCleaningTransform: missing operation");
+      return { tool: "applyCleaningTransform", column: raw.column, operation: raw.operation, config: (raw.config ?? {}) as Record<string, unknown> };
+    case "undoCleaningTransform":
+      if (raw.action !== "disable" && raw.action !== "delete") throw new Error("undoCleaningTransform: invalid action");
+      return { tool: "undoCleaningTransform", action: raw.action, transformId: raw.transformId as string | undefined };
+    case "reEnableCleaningTransform":
+      return { tool: "reEnableCleaningTransform", transformId: raw.transformId as string | undefined };
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
+}
 
 // --- Table tool actions (synchronous) ---
 
 function performTableAction(
-  name: string,
-  args: Record<string, unknown>,
+  validated: ToolCallArgs,
   handlers: ToolCallHandlers
 ): void {
-
-  switch (name) {
+  switch (validated.tool) {
     case "filterTable": {
-      const { column, operator, value } = args as {
-        column: string;
-        operator: string;
-        value: unknown;
-      };
+      const { column, operator, value } = validated;
       handlers.setColumnFilters((prev) => {
         const existing = prev.find((f) => f.id === column);
         const newCondition = { operator, value };
 
         if (existing) {
-          // Merge into compound filter (AND logic)
           const val = existing.value as Record<string, unknown>;
           const conditions = val.conditions
             ? [...(val.conditions as Array<Record<string, unknown>>), newCondition]
@@ -44,10 +99,7 @@ function performTableAction(
     }
 
     case "sortTable": {
-      const { column, direction } = args as {
-        column: string;
-        direction: "asc" | "desc";
-      };
+      const { column, direction } = validated;
       handlers.setSorting((prev) => {
         const filtered = prev.filter((s) => s.id !== column);
         return [...filtered, { id: column, desc: direction === "desc" }];
@@ -56,18 +108,16 @@ function performTableAction(
     }
 
     case "addRow": {
-      const { data: rowData } = args as { data: Record<string, unknown> };
       const newRow: TableRow = {
         id: String(Date.now()),
-        ...rowData,
+        ...validated.data,
       };
       handlers.setData((prev) => [...prev, newRow]);
       break;
     }
 
     case "deleteRow": {
-      const { search } = args as { search: string };
-      const searchLower = search.toLowerCase();
+      const searchLower = validated.search.toLowerCase();
       handlers.setData((prev) => {
         const indexToDelete = prev.findIndex((row) =>
           Object.values(row).some((value) =>
@@ -81,10 +131,7 @@ function performTableAction(
     }
 
     case "replaceColumnFilter": {
-      const { column, filters } = args as {
-        column: string;
-        filters: Array<{ operator: string; value: unknown }>;
-      };
+      const { column, filters } = validated;
       handlers.setColumnFilters((prev) => {
         const withoutColumn = prev.filter((f) => f.id !== column);
         if (!filters || filters.length === 0) return withoutColumn;
@@ -99,9 +146,7 @@ function performTableAction(
     }
 
     case "generateFilter": {
-      const { raqb_tree } = args as { description: string; raqb_tree: RaqbGroup };
-      const filters = raqbTreeToFilters(raqb_tree);
-      // Replace all existing filters
+      const filters = raqbTreeToFilters(validated.raqb_tree as RaqbGroup);
       handlers.setColumnFilters(filters);
       break;
     }
@@ -199,78 +244,64 @@ function formatPreviewResult(preview: PreviewResponse): string {
 }
 
 async function handleCleaningTool(
-  name: string,
-  args: Record<string, unknown>,
+  validated: ToolCallArgs,
   context: ToolCallContext
 ): Promise<string | null> {
   const { datasetId, transforms, queryClient } = context;
 
-  switch (name) {
+  switch (validated.tool) {
     case "trimWhitespace": {
-      const { column } = args as { column: string };
       const preview = await previewCleaningTransform(datasetId, {
         transform_type: "clean",
-        target_column: column,
+        target_column: validated.column,
         expression_config: { operation: "trim" },
       });
       return formatPreviewResult(preview);
     }
 
     case "standardizeCase": {
-      const { column, mode } = args as { column: string; mode: string };
       const preview = await previewCleaningTransform(datasetId, {
         transform_type: "clean",
-        target_column: column,
-        expression_config: { operation: "case", mode },
+        target_column: validated.column,
+        expression_config: { operation: "case", mode: validated.mode },
       });
       return formatPreviewResult(preview);
     }
 
     case "fillNulls": {
-      const { column, fillValue } = args as { column: string; fillValue: unknown };
       const preview = await previewCleaningTransform(datasetId, {
         transform_type: "clean",
-        target_column: column,
-        expression_config: { operation: "fill_null", fill_value: fillValue },
+        target_column: validated.column,
+        expression_config: { operation: "fill_null", fill_value: validated.fillValue },
       });
       return formatPreviewResult(preview);
     }
 
     case "mapValues": {
-      const { column, mappings } = args as {
-        column: string;
-        mappings: Array<{ from: string; to: string }>;
-      };
       const preview = await previewCleaningTransform(datasetId, {
         transform_type: "map",
-        target_column: column,
-        expression_config: { operation: "map_values", mappings },
+        target_column: validated.column,
+        expression_config: { operation: "map_values", mappings: validated.mappings },
       });
       return formatPreviewResult(preview);
     }
 
     case "renameColumn": {
-      const { column, newName } = args as { column: string; newName: string };
       await createCleaningTransforms(datasetId, [
         {
-          name: `Rename ${column} to ${newName}`,
+          name: `Rename ${validated.column} to ${validated.newName}`,
           transform_type: "alias",
-          target_column: column,
-          expression_config: { operation: "alias", alias: newName },
+          target_column: validated.column,
+          expression_config: { operation: "alias", alias: validated.newName },
         },
       ]);
-      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
-      return `Renamed column: ${column} → ${newName}`;
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
+      return `Renamed column: ${validated.column} → ${validated.newName}`;
     }
 
     case "applyCleaningTransform": {
-      const { column, operation, config } = args as {
-        column: string;
-        operation: string;
-        config: Record<string, unknown>;
-      };
-      // Map tool-level operation to backend expression_config format
-      const isCase = ["upper", "lower", "title", "snake", "kebab"].includes(operation);
+      const { column, operation, config } = validated;
+      const isCase = (CASE_OPERATIONS as readonly string[]).includes(operation);
       const expressionConfig = isCase
         ? { operation: "case", mode: operation, ...config }
         : { operation, ...config };
@@ -284,19 +315,13 @@ async function handleCleaningTool(
           expression_config: expressionConfig,
         },
       ]);
-      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
       return `Applied: ${transformName}`;
     }
 
     case "undoCleaningTransform": {
-      const { action, transformId } = args as {
-        action: "disable" | "delete";
-        transformId?: string;
-      };
-      // Find the target transform
-      let targetId = transformId;
+      let targetId = validated.transformId;
       if (!targetId) {
-        // Find most recent active cleaning transform
         const cleaningTransforms = transforms
           .filter(
             (t) =>
@@ -309,19 +334,17 @@ async function handleCleaningTool(
         }
         targetId = cleaningTransforms[0].id;
       }
-      const newStatus = action === "delete" ? "deleted" : "disabled";
+      const newStatus = validated.action === "delete" ? "deleted" : "disabled";
       await updateTransform(datasetId, targetId, { status: newStatus });
-      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
       const target = transforms.find((t) => t.id === targetId);
       const desc = target ? `${target.name}` : targetId;
-      return `${action === "delete" ? "Deleted" : "Disabled"} transform: ${desc}`;
+      return `${validated.action === "delete" ? "Deleted" : "Disabled"} transform: ${desc}`;
     }
 
     case "reEnableCleaningTransform": {
-      const { transformId } = args as { transformId?: string };
-      let targetId = transformId;
+      let targetId = validated.transformId;
       if (!targetId) {
-        // Find most recently disabled cleaning transform
         const disabledTransforms = transforms
           .filter(
             (t) =>
@@ -335,7 +358,7 @@ async function handleCleaningTool(
         targetId = disabledTransforms[0].id;
       }
       await updateTransform(datasetId, targetId, { status: "enabled" });
-      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
       const target = transforms.find((t) => t.id === targetId);
       const desc = target ? `${target.name}` : targetId;
       return `Re-enabled transform: ${desc}`;
@@ -361,86 +384,45 @@ const CLEANING_TOOLS = new Set([
 
 // --- Message generation ---
 
-function generateToolMessage(name: string, args: Record<string, unknown>): string {
-  switch (name) {
-    case "filterTable": {
-      const { column, operator, value } = args as {
-        column: string;
-        operator: string;
-        value: unknown;
-      };
-      return `Filtered ${column} ${operator} ${value}`;
-    }
-
-    case "sortTable": {
-      const { column, direction } = args as {
-        column: string;
-        direction: "asc" | "desc";
-      };
-      return `Sorted by ${column} ${direction}`;
-    }
-
+function generateToolMessage(validated: ToolCallArgs): string {
+  switch (validated.tool) {
+    case "filterTable":
+      return `Filtered ${validated.column} ${validated.operator} ${validated.value}`;
+    case "sortTable":
+      return `Sorted by ${validated.column} ${validated.direction}`;
     case "addRow":
       return "Added new row";
-
-    case "deleteRow": {
-      const { search } = args as { search: string };
-      return `Deleted row matching "${search}"`;
-    }
-
+    case "deleteRow":
+      return `Deleted row matching "${validated.search}"`;
     case "replaceColumnFilter": {
-      const { column, filters } = args as {
-        column: string;
-        filters?: Array<{ operator: string; value: unknown }>;
-      };
+      const { column, filters } = validated;
       if (!filters?.length) return `Cleared filters on ${column}`;
       return `Replaced filter on ${column}: ${filters.map((f) => `${f.operator} ${f.value}`).join(" AND ")}`;
     }
-
     case "generateFilter": {
-      const { description, raqb_tree } = args as { description: string; raqb_tree: RaqbGroup };
-      const count = countRaqbRules(raqb_tree);
-      return `Applied filter: ${description} (${count} condition${count !== 1 ? "s" : ""})`;
+      const count = countRaqbRules(validated.raqb_tree as RaqbGroup);
+      return `Applied filter: ${validated.description} (${count} condition${count !== 1 ? "s" : ""})`;
     }
-
     case "clearFilters":
       return "Cleared all filters";
-
     case "clearSort":
       return "Cleared sorting";
-
-    // Cleaning tools — messages come from the async handler
-    case "trimWhitespace": {
-      const { column } = args as { column: string };
-      return `Previewing trim whitespace on ${column}...`;
-    }
-    case "standardizeCase": {
-      const { column, mode } = args as { column: string; mode: string };
-      return `Previewing ${mode} case on ${column}...`;
-    }
-    case "fillNulls": {
-      const { column } = args as { column: string };
-      return `Previewing fill nulls on ${column}...`;
-    }
-    case "mapValues": {
-      const { column } = args as { column: string };
-      return `Previewing value mapping on ${column}...`;
-    }
-    case "renameColumn": {
-      const { column, newName } = args as { column: string; newName: string };
-      return `Renaming ${column} to ${newName}...`;
-    }
-    case "applyCleaningTransform": {
-      const { column, operation } = args as { column: string; operation: string };
-      return `Applying ${operation} on ${column}...`;
-    }
+    case "trimWhitespace":
+      return `Previewing trim whitespace on ${validated.column}...`;
+    case "standardizeCase":
+      return `Previewing ${validated.mode} case on ${validated.column}...`;
+    case "fillNulls":
+      return `Previewing fill nulls on ${validated.column}...`;
+    case "mapValues":
+      return `Previewing value mapping on ${validated.column}...`;
+    case "renameColumn":
+      return `Renaming ${validated.column} to ${validated.newName}...`;
+    case "applyCleaningTransform":
+      return `Applying ${validated.operation} on ${validated.column}...`;
     case "undoCleaningTransform":
       return "Undoing cleaning transform...";
     case "reEnableCleaningTransform":
       return "Re-enabling cleaning transform...";
-
-    default:
-      return `Unknown tool: ${name}`;
   }
 }
 
@@ -457,18 +439,24 @@ export async function executeToolCall(
     return `Error: Invalid arguments for ${name}`;
   }
 
+  let validated: ToolCallArgs;
+  try {
+    validated = validateToolCallArgs(name, args);
+  } catch (error) {
+    return `Error: ${getErrorMessage(error)}`;
+  }
+
   // Cleaning tools are async — handle them first
   if (CLEANING_TOOLS.has(name)) {
     try {
-      const result = await handleCleaningTool(name, args, context);
-      return result ?? generateToolMessage(name, args);
+      const result = await handleCleaningTool(validated, context);
+      return result ?? generateToolMessage(validated);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return `Error: ${message}`;
+      return `Error: ${getErrorMessage(error)}`;
     }
   }
 
   // Table tools are synchronous
-  performTableAction(name, args, context);
-  return generateToolMessage(name, args);
+  performTableAction(validated, context);
+  return generateToolMessage(validated);
 }

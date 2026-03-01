@@ -4,9 +4,10 @@
  * Provides typed fetch wrapper for communicating with the backend.
  */
 
+import { API_BASE_URL } from "./config";
 import { getAuthHeaders, withAuthRetry } from "./fetchUtils";
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+export { API_BASE_URL };
 
 /**
  * API error with status code and message

@@ -27,7 +27,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
@@ -52,7 +52,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
@@ -77,7 +77,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
@@ -102,7 +102,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
@@ -137,7 +137,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters, warnings } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(2);
         expect(filters).toContainEqual({
@@ -148,11 +148,12 @@ describe("raqbToTanstack", () => {
           id: "amount",
           value: { operator: "gt", value: 100 },
         });
+        expect(warnings).toHaveLength(0);
       });
     });
 
     describe("Scenario: Convert OR group", () => {
-      it("should convert rules in an OR group (flattened)", () => {
+      it("should convert rules in an OR group (flattened) and emit warning", () => {
         const tree: RAQBTree = {
           type: "group",
           properties: { conjunction: "OR" },
@@ -176,11 +177,13 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters, warnings } = raqbToTanstackFilters(tree);
 
-        // Note: OR semantics are lost in basic TanStack conversion
-        // Both rules are extracted but TanStack applies AND logic
         expect(filters).toHaveLength(2);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toBe(
+          "OR group flattened to AND — filter results may be broader than expected"
+        );
       });
     });
 
@@ -223,13 +226,17 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters, warnings } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(3);
         expect(filters).toContainEqual({
           id: "inStock",
           value: { operator: "equals", value: true },
         });
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toBe(
+          "OR group flattened to AND — filter results may be broader than expected"
+        );
       });
 
       it("should handle deeply nested groups", () => {
@@ -260,13 +267,14 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters, warnings } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
           id: "amount",
           value: { operator: "gt", value: 50 },
         });
+        expect(warnings).toHaveLength(0);
       });
     });
 
@@ -287,7 +295,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
@@ -312,7 +320,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
@@ -337,7 +345,7 @@ describe("raqbToTanstack", () => {
           },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(1);
         expect(filters[0]).toEqual({
@@ -348,27 +356,29 @@ describe("raqbToTanstack", () => {
     });
 
     describe("Scenario: Handle empty trees", () => {
-      it("should return empty array for empty tree", () => {
+      it("should return empty filters for empty tree", () => {
         const tree: RAQBTree = {
           type: "group",
           properties: { conjunction: "AND" },
           children1: {},
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters, warnings } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(0);
+        expect(warnings).toHaveLength(0);
       });
 
-      it("should return empty array for tree with undefined children", () => {
+      it("should return empty filters for tree with undefined children", () => {
         const tree: RAQBTree = {
           type: "group",
           properties: { conjunction: "AND" },
         };
 
-        const filters = raqbToTanstackFilters(tree);
+        const { filters, warnings } = raqbToTanstackFilters(tree);
 
         expect(filters).toHaveLength(0);
+        expect(warnings).toHaveLength(0);
       });
     });
   });

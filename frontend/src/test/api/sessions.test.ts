@@ -126,7 +126,7 @@ describe("Sessions API", () => {
       assistant_content: "Hi there!",
       tool_calls: null,
       tool_results: null,
-      table_schema: { columns: [] },
+      table_schema: { columns: [], rowCount: 0 },
     };
 
     it("sends POST to correct session turns endpoint", async () => {

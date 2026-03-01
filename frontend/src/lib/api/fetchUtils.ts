@@ -2,12 +2,12 @@
  * Shared fetch utilities for API and chat worker clients.
  */
 
+import { API_BASE_URL } from "./config";
+
 export const TOKEN_KEY = "auth_token";
 export const REFRESH_TOKEN_KEY = "auth_refresh_token";
 export const EXPIRES_AT_KEY = "auth_token_expires_at";
 export const ACTIVITY_KEY = "last_activity_ts";
-
-const API_URL = import.meta.env.VITE_API_URL || "";
 
 class RefreshError extends Error {
   status: number;
@@ -65,7 +65,7 @@ export async function ensureFreshToken(): Promise<string | null> {
     }
 
     const doRefresh = async (token: string) => {
-      const response = await fetch(`${API_URL}/api/auth/refresh`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: token }),
@@ -98,7 +98,7 @@ export async function ensureFreshToken(): Promise<string | null> {
         return null;
       }
     }
-  })().finally(() => { setTimeout(() => { refreshPromise = null; }, 500); });
+  })().finally(() => { refreshPromise = null; });
 
   return refreshPromise;
 }

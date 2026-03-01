@@ -1,12 +1,6 @@
-/**
- * Hook for managing transforms on a dataset.
- *
- * Uses optimistic updates — mutates the local Dataset cache immediately,
- * fires the API call in the background, and rolls back on error.
- */
-
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnFiltersState } from "@tanstack/react-table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import {
   createTransform,
@@ -19,12 +13,103 @@ import {
 import { raqbToTanstackFilters } from "@/raqb";
 
 import { mergeFilters } from "./filterUtils";
+import { datasetKeys } from "./useDatasetQuery";
+
+export function useSaveTransform(datasetId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: TransformCreate) => createTransform(datasetId, data),
+    onMutate: async (newTransform) => {
+      await queryClient.cancelQueries({ queryKey: datasetKeys.detail(datasetId) });
+      const previous = queryClient.getQueryData<Dataset>(datasetKeys.detail(datasetId));
+      queryClient.setQueryData<Dataset>(datasetKeys.detail(datasetId), (old) => {
+        if (!old) return old;
+        const optimistic: Transform = {
+          id: crypto.randomUUID(),
+          name: newTransform.name,
+          description: newTransform.description ?? null,
+          condition_json: newTransform.condition_json ?? null,
+          condition_sql: newTransform.condition_sql ?? null,
+          status: "enabled",
+          transform_type: newTransform.transform_type ?? "filter",
+          target_column: newTransform.target_column ?? null,
+          expression_config: (newTransform.expression_config ?? null) as Transform["expression_config"],
+          expression_sql: null,
+          created_at: new Date().toISOString(),
+        };
+        return { ...old, transforms: [...old.transforms, optimistic] };
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(datasetKeys.detail(datasetId), context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
+    },
+  });
+}
+
+export function useDeleteTransform(datasetId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (transformId: string) => deleteTransform(datasetId, transformId),
+    onMutate: async (transformId) => {
+      await queryClient.cancelQueries({ queryKey: datasetKeys.detail(datasetId) });
+      const previous = queryClient.getQueryData<Dataset>(datasetKeys.detail(datasetId));
+      queryClient.setQueryData<Dataset>(datasetKeys.detail(datasetId), (old) => {
+        if (!old) return old;
+        return { ...old, transforms: old.transforms.filter((t) => t.id !== transformId) };
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(datasetKeys.detail(datasetId), context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
+    },
+  });
+}
+
+export function useToggleTransform(datasetId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ transformId, isActive }: { transformId: string; isActive: boolean }) =>
+      toggleTransformApi(datasetId, transformId, isActive),
+    onMutate: async ({ transformId, isActive }) => {
+      await queryClient.cancelQueries({ queryKey: datasetKeys.detail(datasetId) });
+      const previous = queryClient.getQueryData<Dataset>(datasetKeys.detail(datasetId));
+      const newStatus = isActive ? "enabled" : "disabled";
+      queryClient.setQueryData<Dataset>(datasetKeys.detail(datasetId), (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          transforms: old.transforms.map((t) =>
+            t.id === transformId ? { ...t, status: newStatus } as Transform : t
+          ),
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(datasetKeys.detail(datasetId), context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
+    },
+  });
+}
 
 interface UseTransformsOptions {
   dataset: Dataset | null;
-  onDatasetChange?: (dataset: Dataset) => void;
   onFilterApply?: (filters: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)) => void;
-  currentFilters?: ColumnFiltersState;
   autoApplyActive?: boolean;
   onFiltersChanged?: () => void;
 }
@@ -41,15 +126,15 @@ interface UseTransformsReturn {
 }
 
 export function useTransforms(options: UseTransformsOptions): UseTransformsReturn {
-  const { dataset, onDatasetChange, onFilterApply, autoApplyActive = true, onFiltersChanged } = options;
+  const { dataset, onFilterApply, autoApplyActive = true, onFiltersChanged } = options;
+  const datasetId = dataset?.id ?? "";
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const saveMutation = useSaveTransform(datasetId);
+  const deleteMutation = useDeleteTransform(datasetId);
+  const toggleMutation = useToggleTransform(datasetId);
 
-  // Transforms come from the dataset — memoize to stabilize the reference
   const transforms = useMemo(() => dataset?.transforms ?? [], [dataset?.transforms]);
 
-  // Auto-apply active transforms when dataset changes
   useEffect(() => {
     if (autoApplyActive && onFilterApply && dataset) {
       const activeFilters = computeActiveFilters(transforms);
@@ -59,136 +144,54 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
 
   const saveTransform = useCallback(
     async (data: TransformCreate): Promise<boolean> => {
-      if (!dataset) {
-        setError("No dataset selected");
-        return false;
-      }
-
-      const originalDataset = dataset;
-
-      // Optimistic update — add transform with temp ID
-      const optimisticTransform: Transform = {
-        id: crypto.randomUUID(),
-        name: data.name,
-        description: data.description ?? null,
-        condition_json: data.condition_json ?? null,
-        condition_sql: data.condition_sql ?? null,
-        status: 'enabled',
-        transform_type: data.transform_type ?? 'filter',
-        target_column: data.target_column ?? null,
-        expression_config: data.expression_config ?? null,
-        expression_sql: null,
-        created_at: new Date().toISOString(),
-      };
-      const optimisticDataset: Dataset = {
-        ...dataset,
-        transforms: [...dataset.transforms, optimisticTransform],
-      };
-      onDatasetChange?.(optimisticDataset);
-
-      setLoading(true);
-      setError(null);
+      if (!dataset) return false;
       try {
-        await createTransform(dataset.id, data);
+        await saveMutation.mutateAsync(data);
         return true;
-      } catch (err) {
-        // Rollback on error
-        onDatasetChange?.(originalDataset);
-        setError(err instanceof Error ? err.message : "Failed to save transform");
+      } catch {
         return false;
-      } finally {
-        setLoading(false);
       }
     },
-    [dataset, onDatasetChange]
+    [dataset, saveMutation]
   );
 
   const removeTransform = useCallback(
     async (transformId: string): Promise<boolean> => {
-      if (!dataset) {
-        setError("No dataset ID provided");
-        return false;
-      }
-
-      const originalDataset = dataset;
-
-      // Optimistic update — remove transform from list
-      const optimisticDataset: Dataset = {
-        ...dataset,
-        transforms: dataset.transforms.filter((t) => t.id !== transformId),
-      };
-      onDatasetChange?.(optimisticDataset);
-
-      setLoading(true);
-      setError(null);
+      if (!dataset) return false;
       try {
-        await deleteTransform(dataset.id, transformId);
+        await deleteMutation.mutateAsync(transformId);
         return true;
-      } catch (err) {
-        onDatasetChange?.(originalDataset);
-        setError(err instanceof Error ? err.message : "Failed to delete transform");
+      } catch {
         return false;
-      } finally {
-        setLoading(false);
       }
     },
-    [dataset, onDatasetChange]
+    [dataset, deleteMutation]
   );
 
   const toggleTransform = useCallback(
     async (transformId: string, isActive: boolean): Promise<boolean> => {
-      if (!dataset) {
-        setError("No dataset ID provided");
-        return false;
-      }
-
-      const originalDataset = dataset;
-      const newStatus = isActive ? 'enabled' : 'disabled';
-
-      // Optimistic update — flip status on matching transform
-      const optimisticDataset: Dataset = {
-        ...dataset,
-        transforms: dataset.transforms.map((t) =>
-          t.id === transformId ? { ...t, status: newStatus } as Transform : t
-        ),
-      };
-      onDatasetChange?.(optimisticDataset);
-
-      setLoading(true);
-      setError(null);
+      if (!dataset) return false;
       try {
-        await toggleTransformApi(dataset.id, transformId, isActive);
-
-        // Notify that filters changed (to trigger data refetch)
+        await toggleMutation.mutateAsync({ transformId, isActive });
         if (onFiltersChanged) {
-          setTimeout(() => {
-            onFiltersChanged();
-          }, 0);
+          setTimeout(() => onFiltersChanged(), 0);
         }
-
         return true;
-      } catch (err) {
-        onDatasetChange?.(originalDataset);
-        setError(err instanceof Error ? err.message : "Failed to update transform");
+      } catch {
         return false;
-      } finally {
-        setLoading(false);
       }
     },
-    [dataset, onDatasetChange, onFiltersChanged]
+    [dataset, toggleMutation, onFiltersChanged]
   );
 
   const applyTransform = useCallback(
     (transform: Transform) => {
       if (!onFilterApply) return;
-      // Only filter transforms have condition_json for TanStack Table
-      if ((transform.transform_type ?? 'filter') !== 'filter' || !transform.condition_json) return;
+      if ((transform.transform_type ?? "filter") !== "filter" || !transform.condition_json) return;
 
-      const newFilters = raqbToTanstackFilters(transform.condition_json, {
+      const { filters: newFilters } = raqbToTanstackFilters(transform.condition_json, {
         transformId: transform.id,
       });
-
-      // Merge with existing filters instead of replacing
       onFilterApply((prevFilters) => mergeFilters(prevFilters, newFilters));
     },
     [onFilterApply]
@@ -196,10 +199,12 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
 
   const applyActiveTransforms = useCallback(() => {
     if (!onFilterApply) return;
-
     const activeFilters = computeActiveFilters(transforms);
     onFilterApply(activeFilters);
   }, [transforms, onFilterApply]);
+
+  const loading = saveMutation.isPending || deleteMutation.isPending || toggleMutation.isPending;
+  const error = saveMutation.error?.message ?? deleteMutation.error?.message ?? toggleMutation.error?.message ?? null;
 
   return {
     transforms,
@@ -213,16 +218,12 @@ export function useTransforms(options: UseTransformsOptions): UseTransformsRetur
   };
 }
 
-/**
- * Compute merged filters from all active transforms
- */
 function computeActiveFilters(transforms: Transform[]): ColumnFiltersState {
   let activeFilters: ColumnFiltersState = [];
 
   for (const transform of transforms) {
-    // Only filter transforms have condition_json for TanStack Table filters
-    if (transform.status === 'enabled' && (transform.transform_type ?? 'filter') === 'filter' && transform.condition_json) {
-      const filters = raqbToTanstackFilters(transform.condition_json, {
+    if (transform.status === "enabled" && (transform.transform_type ?? "filter") === "filter" && transform.condition_json) {
+      const { filters } = raqbToTanstackFilters(transform.condition_json, {
         transformId: transform.id,
       });
       activeFilters = mergeFilters(activeFilters, filters);

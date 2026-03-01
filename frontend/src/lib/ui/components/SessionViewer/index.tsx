@@ -56,21 +56,16 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
             Tool Calls ({turn.tool_calls.length})
           </summary>
           <div className={styles.detailsContent}>
-            {(turn.tool_calls as Array<Record<string, unknown>>).map((tc, i) => {
-              const fn = tc.function as
-                | { name: string; arguments: string }
-                | undefined;
-              return (
-                <div key={i} className={styles.toolCallItem}>
-                  <div className={styles.toolCallName}>
-                    {fn?.name ?? "unknown"}
-                  </div>
-                  <pre className={styles.preBlock}>
-                    {fn?.arguments ? formatJson(fn.arguments) : "{}"}
-                  </pre>
+            {turn.tool_calls.map((tc, i) => (
+              <div key={i} className={styles.toolCallItem}>
+                <div className={styles.toolCallName}>
+                  {tc.function.name}
                 </div>
-              );
-            })}
+                <pre className={styles.preBlock}>
+                  {formatJson(tc.function.arguments)}
+                </pre>
+              </div>
+            ))}
           </div>
         </details>
       )}
@@ -81,13 +76,11 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
             Tool Results ({turn.tool_results.length})
           </summary>
           <div className={styles.detailsContent}>
-            {(turn.tool_results as Array<Record<string, unknown>>).map(
-              (tr, i) => (
-                <pre key={i} className={styles.preBlock}>
-                  {formatJson((tr as { result?: string }).result ?? tr)}
-                </pre>
-              )
-            )}
+            {turn.tool_results.map((tr, i) => (
+              <pre key={i} className={styles.preBlock}>
+                {formatJson(tr.result)}
+              </pre>
+            ))}
           </div>
         </details>
       )}

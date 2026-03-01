@@ -18,6 +18,7 @@ import { ensureFreshToken, EXPIRES_AT_KEY, getAuthHeaders, hardLogout } from "@/
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
 import type { ToolCall } from "@/table-tools";
 
+import { getErrorMessage } from "../../errors";
 import { CHAT_URL } from "../data/config";
 import type { Message, SSEMessage,TableSchema } from "../types";
 
@@ -130,6 +131,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         { id: assistantId, role: "assistant", content: "", isStreaming: true },
       ]);
 
+      const toolHandler = toolHandlerRef.current;
+      const tableSchema = tableSchemaRef.current;
+
       try {
         const apiMessages = [...messages, userMessage].map((m) => ({
           role: m.role,
@@ -163,7 +167,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           },
           body: JSON.stringify({
             messages: apiMessages,
-            tableSchema: tableSchemaRef.current,
+            tableSchema,
           }),
         });
 
@@ -181,7 +185,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 },
                 body: JSON.stringify({
                   messages: apiMessages,
-                  tableSchema: tableSchemaRef.current,
+                  tableSchema,
                 }),
               });
             }
@@ -242,10 +246,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
                 case "done": {
                   let toolResults: Array<{ tool_call_id: string; result: string }> | null = null;
-                  if (toolCalls.length > 0 && toolHandlerRef.current) {
+                  if (toolCalls.length > 0 && toolHandler) {
                     const results = await Promise.all(
                       toolCalls.map(async (tc) =>
-                        toolHandlerRef.current!.executeToolCall(tc)
+                        toolHandler.executeToolCall(tc)
                       )
                     );
                     toolResults = toolCalls.map((tc, i) => ({ tool_call_id: tc.id, result: results[i] }));
@@ -273,15 +277,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   // Fire-and-forget session logging
                   (async () => {
                     try {
-                      // Sessions require both projectId and datasetId — chat turns
-                      // before a dataset is selected are not persisted.
                       if (!sessionIdRef.current && projectIdRef.current && datasetIdRef.current) {
                         const session = await createSession(projectIdRef.current, datasetIdRef.current);
                         sessionIdRef.current = session.id;
                       }
-                      if (sessionIdRef.current && tableSchemaRef.current) {
-                        const systemPrompt = getSystemPrompt(tableSchemaRef.current);
-                        const toolDefs = getToolDefinitions(tableSchemaRef.current);
+                      if (sessionIdRef.current && tableSchema) {
+                        const systemPrompt = getSystemPrompt(tableSchema);
+                        const toolDefs = getToolDefinitions(tableSchema);
                         await logTurn(sessionIdRef.current, {
                           user_message: userMessage.content as string,
                           system_prompt: systemPrompt,
@@ -289,7 +291,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                           assistant_content: accumulatedContent,
                           tool_calls: toolCalls.length > 0 ? toolCalls : null,
                           tool_results: toolResults,
-                          table_schema: tableSchemaRef.current,
+                          table_schema: tableSchema,
                         });
                       }
                     } catch (err) {
@@ -311,12 +313,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Chat error:", error);
+        sessionIdRef.current = null;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
               ? {
                   ...m,
-                  content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+                  content: `Error: ${getErrorMessage(error)}`,
                   isStreaming: false,
                 }
               : m

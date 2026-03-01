@@ -5,19 +5,20 @@
  * Handles nested groups by flattening into individual filter entries.
  */
 
-import type { ColumnFiltersState } from "@tanstack/react-table";
-
 import { mapOperator, type TanStackOperator } from "./operators";
 import type { RAQBGroup, RAQBOperator, RAQBRule, RAQBTree, RAQBValueType } from "./types";
 import { isRAQBGroup,isRAQBRule } from "./types";
 
 /**
- * TanStack filter value structure used by customFilterFn
+ * TanStack filter value structure used by customFilterFn.
+ * Single-condition or compound (multiple conditions on the same column).
  */
-export interface TanStackFilterValue {
-  operator: TanStackOperator;
-  value: unknown;
-  transformId?: string;
+export type TanStackFilterValue =
+  | { operator: TanStackOperator; value: unknown; transformId?: string }
+  | { conditions: Array<{ operator: string; value: unknown; transformId?: string }> };
+
+export function isCompoundFilter(v: TanStackFilterValue): v is Extract<TanStackFilterValue, { conditions: unknown }> {
+  return "conditions" in v;
 }
 
 /**
@@ -40,6 +41,11 @@ export interface RaqbToTanstackOptions {
   transformId?: string;
 }
 
+export interface RaqbToTanstackResult {
+  filters: Array<{ id: string; value: TanStackFilterValue }>;
+  warnings: string[];
+}
+
 /**
  * Convert a RAQB tree to TanStack columnFilters state
  *
@@ -49,17 +55,18 @@ export interface RaqbToTanstackOptions {
  *
  * @param raqbTree - The RAQB JSON tree to convert
  * @param options - Optional configuration including transformId
- * @returns TanStack columnFilters state array
+ * @returns Object with filters array and warnings
  */
 export function raqbToTanstackFilters(
   raqbTree: RAQBTree,
   options?: RaqbToTanstackOptions
-): ColumnFiltersState {
-  const filters: ColumnFiltersState = [];
+): RaqbToTanstackResult {
+  const filters: Array<{ id: string; value: TanStackFilterValue }> = [];
+  const warnings: string[] = [];
 
-  processGroup(raqbTree, filters, options?.transformId);
+  processGroup(raqbTree, filters, options?.transformId, warnings);
 
-  return filters;
+  return { filters, warnings };
 }
 
 /**
@@ -78,11 +85,19 @@ export function raqbToExtendedFilters(raqbTree: RAQBTree): ExtendedColumnFilter[
  */
 function processGroup(
   group: RAQBGroup,
-  filters: ColumnFiltersState,
-  transformId?: string
+  filters: Array<{ id: string; value: TanStackFilterValue }>,
+  transformId?: string,
+  warnings?: string[]
 ): void {
   if (!group.children1) {
     return;
+  }
+
+  if (group.properties?.conjunction === "OR" && warnings) {
+    const msg = "OR group flattened to AND — filter results may be broader than expected";
+    if (!warnings.includes(msg)) {
+      warnings.push(msg);
+    }
   }
 
   for (const child of Object.values(group.children1)) {
@@ -92,8 +107,7 @@ function processGroup(
         filters.push(converted);
       }
     } else if (isRAQBGroup(child)) {
-      // Recursively process nested groups
-      processGroup(child, filters, transformId);
+      processGroup(child, filters, transformId, warnings);
     }
   }
 }
@@ -210,7 +224,7 @@ function handleSpecialOperator(
               { operator: "gte", value: value[0], transformId },
               { operator: "lte", value: value[1], transformId },
             ],
-          } as unknown as TanStackFilterValue,
+          },
         }];
       }
       return null;

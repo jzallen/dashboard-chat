@@ -1,22 +1,10 @@
-interface FilterCondition {
-  operator: string;
-  value: unknown;
-}
-
-interface CompoundFilterValue {
-  conditions: FilterCondition[];
-}
-
-type FilterValue = FilterCondition | CompoundFilterValue;
-
-function isCompound(value: FilterValue): value is CompoundFilterValue {
-  return 'conditions' in value;
-}
+import { isCompoundFilter, type TanStackFilterValue } from "@/raqb";
 
 function evaluateCondition(
   cellValue: unknown,
-  { operator, value }: FilterCondition
+  condition: { operator: string; value: unknown }
 ): boolean {
+  const { operator, value } = condition;
   switch (operator) {
     case "equals":
       return (
@@ -41,24 +29,23 @@ function evaluateCondition(
     case "lte":
       return Number(cellValue) <= Number(value);
     default:
-      return true;
+      console.warn(`customFilterFn: unknown operator "${operator}"`);
+      return false;
   }
 }
 
 export function customFilterFn(
   row: { getValue: (columnId: string) => unknown },
   columnId: string,
-  filterValue: FilterValue
+  filterValue: TanStackFilterValue
 ): boolean {
   const cellValue = row.getValue(columnId);
 
-  // Compound filter: all conditions must pass (AND)
-  if (isCompound(filterValue)) {
+  if (isCompoundFilter(filterValue)) {
     return filterValue.conditions.every((condition) =>
       evaluateCondition(cellValue, condition)
     );
   }
 
-  // Single filter (backward compat)
   return evaluateCondition(cellValue, filterValue);
 }

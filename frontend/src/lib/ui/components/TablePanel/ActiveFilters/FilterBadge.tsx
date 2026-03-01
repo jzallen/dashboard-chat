@@ -25,7 +25,7 @@ export function FilterBadge({ filter, onRemove }: FilterBadgeProps) {
   return (
     <span className={styles.filterBadge}>
       {filter.id} {label}
-      <button onClick={onRemove} className={styles.removeButton}>
+      <button onClick={onRemove} className={styles.removeButton} aria-label="Remove filter">
         ×
       </button>
     </span>

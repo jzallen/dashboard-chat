@@ -4,17 +4,24 @@
  * Talks directly to the chat worker (not the backend API).
  */
 
+import type { TableSchema, ToolCall, ToolDefinition } from "@/chat/types";
+
 import { CHAT_URL } from "../ui/data/config";
 import { getAuthHeaders, handleResponse, withAuthRetry } from "./fetchUtils";
+
+export interface ToolResult {
+  tool_call_id: string;
+  result: string;
+}
 
 export interface ChatTurnPayload {
   user_message: string;
   system_prompt: string;
-  tool_definitions: object[];
+  tool_definitions: ToolDefinition[];
   assistant_content: string;
-  tool_calls: Array<{ id: string; type: string; function: { name: string; arguments: string } }> | null;
-  tool_results: Array<{ tool_call_id: string; result: string }> | null;
-  table_schema: object;
+  tool_calls: ToolCall[] | null;
+  tool_results: ToolResult[] | null;
+  table_schema: TableSchema;
 }
 
 export interface ChatTurn {
@@ -23,11 +30,11 @@ export interface ChatTurn {
   sequence: number;
   user_message: string;
   system_prompt: string;
-  tool_definitions: object[];
+  tool_definitions: ToolDefinition[];
   assistant_content: string | null;
-  tool_calls: object[] | null;
-  tool_results: object[] | null;
-  table_schema: object;
+  tool_calls: ToolCall[] | null;
+  tool_results: ToolResult[] | null;
+  table_schema: TableSchema;
   created_at: string;
 }
 

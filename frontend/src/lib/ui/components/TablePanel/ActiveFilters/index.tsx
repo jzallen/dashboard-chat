@@ -1,5 +1,5 @@
 import type { ColumnFiltersState } from "@tanstack/react-table";
-import type { Dispatch, SetStateAction } from "react";
+import { type Dispatch, type SetStateAction, useCallback } from "react";
 
 import { toConditions } from "../../../hooks/filterUtils";
 import styles from "./ActiveFilters.module.css";
@@ -16,24 +16,26 @@ export default function ActiveFilters({
   setColumnFilters,
   onToggleTransform,
 }: ActiveFiltersProps) {
-  if (columnFilters.length === 0) return null;
+  const removeFilter = useCallback(
+    (filterId: string, filterValue: unknown) => {
+      const conditions = toConditions(filterValue);
 
-  const removeFilter = (filterId: string, filterValue: unknown) => {
-    const conditions = toConditions(filterValue);
+      const transformIds = conditions
+        .map((c) => c.transformId)
+        .filter((id): id is string => Boolean(id));
 
-    // Deactivate any transforms linked to conditions in this filter
-    const transformIds = conditions
-      .map((c) => c.transformId)
-      .filter((id): id is string => Boolean(id));
-
-    if (transformIds.length > 0 && onToggleTransform) {
-      for (const id of transformIds) {
-        onToggleTransform(id, false);
+      if (transformIds.length > 0 && onToggleTransform) {
+        for (const id of transformIds) {
+          onToggleTransform(id, false);
+        }
+      } else {
+        setColumnFilters((prev) => prev.filter((f) => f.id !== filterId));
       }
-    } else {
-      setColumnFilters((prev) => prev.filter((f) => f.id !== filterId));
-    }
-  };
+    },
+    [onToggleTransform, setColumnFilters]
+  );
+
+  if (columnFilters.length === 0) return null;
 
   return (
     <div className={styles.filtersContainer}>

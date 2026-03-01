@@ -499,7 +499,7 @@ describe("toSql", () => {
       expect(sql).not.toContain("O'Brien");
     });
 
-    it("should sanitize field names", () => {
+    it("should escape double quotes in field names", () => {
       const tree: RAQBTree = {
         type: "group",
         properties: { conjunction: "AND" },
@@ -507,7 +507,7 @@ describe("toSql", () => {
           rule1: {
             type: "rule",
             properties: {
-              field: 'name"; DROP TABLE users; --',
+              field: 'col"name',
               operator: "equal",
               value: ["test"],
             },
@@ -517,8 +517,28 @@ describe("toSql", () => {
 
       const sql = raqbToSql(tree);
 
-      expect(sql).not.toContain("DROP TABLE");
-      expect(sql).not.toContain(";");
+      expect(sql).toBe(`"col""name" = 'test'`);
+    });
+
+    it("should properly quote field names with special characters", () => {
+      const tree: RAQBTree = {
+        type: "group",
+        properties: { conjunction: "AND" },
+        children1: {
+          rule1: {
+            type: "rule",
+            properties: {
+              field: "user-id",
+              operator: "equal",
+              value: ["test"],
+            },
+          },
+        },
+      };
+
+      const sql = raqbToSql(tree);
+
+      expect(sql).toBe(`"user-id" = 'test'`);
     });
 
     it("should reject NaN values", () => {
@@ -662,7 +682,7 @@ describe("toSql", () => {
   });
 
   describe("Feature: Custom identifier quoting", () => {
-    it("should use custom identifier quote character", () => {
+    it("should always use double-quote SQL escaping for identifiers", () => {
       const tree: RAQBTree = {
         type: "group",
         properties: { conjunction: "AND" },
@@ -680,7 +700,7 @@ describe("toSql", () => {
 
       const sql = raqbToSql(tree, { identifierQuote: "`" });
 
-      expect(sql).toBe("`amount` > 100");
+      expect(sql).toBe(`"amount" > 100`);
     });
   });
 });

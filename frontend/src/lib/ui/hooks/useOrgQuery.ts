@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { get, listProjects, type Project } from "@/api";
+import { type ApiError, get, listProjects, type Project } from "@/api";
 
 interface OrgInfo {
   id: string;
@@ -13,14 +13,14 @@ export const orgKeys = {
 };
 
 export function useOrgQuery() {
-  return useQuery({
+  return useQuery<OrgInfo, ApiError>({
     queryKey: orgKeys.me,
     queryFn: () => get<OrgInfo>("/api/orgs/me"),
   });
 }
 
 export function useOrgProjectsQuery() {
-  return useQuery<Project[]>({
+  return useQuery<Project[], ApiError>({
     queryKey: orgKeys.projects,
     queryFn: () => listProjects(),
   });

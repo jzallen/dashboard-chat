@@ -1,6 +1,8 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getDataset, listDatasetsForProject } from "@/api";
+import { type ApiError, type Dataset, type DatasetSparse, getDataset, listDatasetsForProject } from "@/api";
+
+import { QUERY_STALE_TIMES } from "./queryConfig";
 
 export const datasetKeys = {
   all: ["datasets"] as const,
@@ -10,19 +12,19 @@ export const datasetKeys = {
 };
 
 export function useDatasetQuery(datasetId: string | undefined) {
-  return useQuery({
-    queryKey: datasetKeys.detail(datasetId!),
+  return useQuery<Dataset, ApiError>({
+    queryKey: datasetKeys.detail(datasetId ?? ""),
     queryFn: () => getDataset(datasetId!, { includeTransforms: true, includePreview: true, previewLimit: 100 }),
     enabled: Boolean(datasetId),
   });
 }
 
 export function useDatasets(projectId: string | undefined) {
-  return useQuery({
-    queryKey: datasetKeys.list(projectId!),
+  return useQuery<DatasetSparse[], ApiError>({
+    queryKey: datasetKeys.list(projectId ?? ""),
     queryFn: () => listDatasetsForProject(projectId!),
     enabled: Boolean(projectId),
-    staleTime: 10_000,
+    staleTime: QUERY_STALE_TIMES.DATASET_LIST,
     placeholderData: keepPreviousData,
   });
 }
@@ -38,7 +40,7 @@ export function usePrefetchDataset() {
     queryClient.prefetchQuery({
       queryKey: datasetKeys.detail(datasetId),
       queryFn: () => getDataset(datasetId, { includeTransforms: true, includePreview: true, previewLimit: 100 }),
-      staleTime: 5 * 60 * 1000,
+      staleTime: QUERY_STALE_TIMES.DATASET_DETAIL,
     });
   };
 }

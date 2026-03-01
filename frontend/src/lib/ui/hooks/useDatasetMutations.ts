@@ -41,8 +41,8 @@ export function useRenameDataset(projectId: string) {
     },
 
     onSettled: (_data, _err, { datasetId }) => {
-      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
-      queryClient.invalidateQueries({ queryKey: datasetKeys.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
+      queryClient.invalidateQueries({ queryKey: datasetKeys.list(projectId), exact: true });
     },
   });
 }

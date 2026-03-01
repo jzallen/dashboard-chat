@@ -45,8 +45,10 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
           t.target_column &&
           t.expression_config
         ) {
-          const alias = (t.expression_config as Record<string, unknown>).alias as string | undefined;
-          if (alias) map.set(t.target_column, alias);
+          const config = t.expression_config;
+          if (config && config.operation === "alias") {
+            if (config.alias) map.set(t.target_column, config.alias);
+          }
         }
       }
     }
@@ -91,8 +93,6 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
     setSorting,
     columnFilters,
     setColumnFilters,
-    loading: false,
-    error: null,
     refresh,
   };
 }

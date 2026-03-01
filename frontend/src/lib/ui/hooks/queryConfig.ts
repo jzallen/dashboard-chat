@@ -1,0 +1,7 @@
+export const QUERY_STALE_TIMES = {
+  PROJECT: 30_000,
+  DATASET_LIST: 10_000,
+  DATASET_DETAIL: 5 * 60 * 1000,
+  TRANSFORMS: 10_000,
+  SQL_ACCESS: 5 * 60 * 1000,
+} as const;

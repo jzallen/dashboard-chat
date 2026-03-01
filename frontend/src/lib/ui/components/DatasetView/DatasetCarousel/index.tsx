@@ -37,12 +37,12 @@ export function DatasetGrid({ datasets, selectedDatasetId, onSelect, hasSelectio
     };
   }, [checkScroll, datasets.length, hasSelection]);
 
-  const scroll = (direction: "left" | "right") => {
+  const scroll = useCallback((direction: "left" | "right") => {
     scrollRef.current?.scrollBy({
       left: direction === "left" ? -300 : 300,
       behavior: "smooth",
     });
-  };
+  }, []);
 
   const scrollAreaClass = `${styles.scrollArea} ${hasSelection ? styles.scrollAreaRow : styles.scrollAreaGrid}`;
 

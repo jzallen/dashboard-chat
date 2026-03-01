@@ -1,4 +1,4 @@
-import type { TableSchema, ToolDefinition } from "./types";
+import { CASE_OPERATIONS, type TableSchema, type ToolDefinition } from "./types";
 
 // ============================================================================
 // Tool Definitions
@@ -198,7 +198,7 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
           },
           mode: {
             type: "string",
-            enum: ["upper", "lower", "title", "snake", "kebab"],
+            enum: [...CASE_OPERATIONS],
             description:
               "Case mode: upper (ALL CAPS), lower (all lowercase), title (First Letter Caps), snake (snake_case, e.g. Product Name -> product_name; also known as underscore case), kebab (kebab-case, e.g. Product Name -> product-name; also known as hyphen case)",
           },

@@ -1,8 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext,useParams } from "react-router-dom";
 
-import { type Dataset, exportDbtProject } from "@/api";
+import { exportDbtProject } from "@/api";
 import { raqbToSql } from "@/raqb";
 import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
 import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallContext } from "@/table-tools";
@@ -65,17 +65,13 @@ function DatasetDetail({
     removeTransform,
   } = useTransforms({
     dataset: dataset ?? null,
-    onDatasetChange: (d) => {
-      queryClient.setQueryData<Dataset>(datasetKeys.detail(datasetId), d);
-    },
     onFilterApply: setColumnFilters,
-    currentFilters: columnFilters,
     autoApplyActive: true,
     onFiltersChanged: refreshData,
   });
 
   const handleRefreshDataset = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) });
+    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
   }, [queryClient, datasetId]);
 
   const executeToolCall = useCallback(
@@ -98,54 +94,47 @@ function DatasetDetail({
       };
       const result = await executeToolCallFn(toolCall, context);
       if (toolCall.function.name === "filterTable") {
-        // Persist as a backend transform so it survives mode toggles and page reloads
-        (async () => {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const raqbJson = filterTableToRaqb(args);
-            const description = generateFilterDescription(args);
-            const conditionSql = raqbToSql(raqbJson);
-            await saveTransform({
-              name: description,
-              condition_json: raqbJson,
-              condition_sql: conditionSql,
-            });
-          } catch (e) {
-            console.error("Failed to persist transform:", e);
-          }
-          handleRefreshDataset();
-        })();
+        try {
+          const args = JSON.parse(toolCall.function.arguments);
+          const raqbJson = filterTableToRaqb(args);
+          const description = generateFilterDescription(args);
+          const conditionSql = raqbToSql(raqbJson);
+          await saveTransform({
+            name: description,
+            condition_json: raqbJson,
+            condition_sql: conditionSql,
+          });
+        } catch (e) {
+          console.error("Failed to persist transform:", e);
+        }
+        handleRefreshDataset();
       }
       if (toolCall.function.name === "replaceColumnFilter") {
-        (async () => {
-          try {
-            const args = JSON.parse(toolCall.function.arguments) as {
-              column: string;
-              filters: Array<{ operator: string; value: unknown }>;
-            };
-            // Disable existing transforms targeting this column
-            const idsToDisable = getTransformIdsForColumn(transforms, args.column);
-            for (const id of idsToDisable) {
-              await toggleTransform(id, false);
-            }
-            // Create new transforms for each replacement filter
-            if (args.filters?.length) {
-              for (const f of args.filters) {
-                const raqbJson = filterTableToRaqb({ column: args.column, operator: f.operator, value: f.value });
-                const description = generateFilterDescription({ column: args.column, operator: f.operator, value: f.value });
-                const conditionSql = raqbToSql(raqbJson);
-                await saveTransform({
-                  name: description,
-                  condition_json: raqbJson,
-                  condition_sql: conditionSql,
-                });
-              }
-            }
-          } catch (e) {
-            console.error("Failed to persist replaceColumnFilter transform:", e);
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as {
+            column: string;
+            filters: Array<{ operator: string; value: unknown }>;
+          };
+          const idsToDisable = getTransformIdsForColumn(transforms, args.column);
+          for (const id of idsToDisable) {
+            await toggleTransform(id, false);
           }
-          handleRefreshDataset();
-        })();
+          if (args.filters?.length) {
+            for (const f of args.filters) {
+              const raqbJson = filterTableToRaqb({ column: args.column, operator: f.operator, value: f.value });
+              const description = generateFilterDescription({ column: args.column, operator: f.operator, value: f.value });
+              const conditionSql = raqbToSql(raqbJson);
+              await saveTransform({
+                name: description,
+                condition_json: raqbJson,
+                condition_sql: conditionSql,
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Failed to persist replaceColumnFilter transform:", e);
+        }
+        handleRefreshDataset();
       }
       return result;
     },
@@ -162,34 +151,40 @@ function DatasetDetail({
     return () => registerDatasetId(null);
   }, [datasetId, registerDatasetId]);
 
+  const aliasMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of dataset?.transforms ?? []) {
+      if (
+        t.status === "enabled" &&
+        t.transform_type === "alias" &&
+        t.target_column &&
+        t.expression_config
+      ) {
+        const alias = (t.expression_config as Record<string, unknown>).alias as string | undefined;
+        if (alias) map.set(t.target_column, alias);
+      }
+    }
+    return map;
+  }, [dataset?.transforms]);
+
+  const activeFilters = useMemo(
+    () =>
+      columnFilters.flatMap((f) => {
+        const conditions = toConditions(f.value);
+        return conditions.map((c) => ({ column: f.id, operator: c.operator, value: c.value }));
+      }),
+    [columnFilters]
+  );
+
   useEffect(() => {
     if (dataset) {
-      // Build column aliases from active alias transforms
-      const aliasMap = new Map<string, string>();
-      for (const t of dataset.transforms ?? []) {
-        if (
-          t.status === "enabled" &&
-          t.transform_type === "alias" &&
-          t.target_column &&
-          t.expression_config
-        ) {
-          const alias = (t.expression_config as Record<string, unknown>).alias as string | undefined;
-          if (alias) aliasMap.set(t.target_column, alias);
-        }
-      }
-
       const schemaColumns = Object.entries(dataset.schema_config.fields).map(([id, f]) => ({
         id,
         type: (f.type === "number" ? "number" : f.type === "boolean" ? "boolean" : "string") as "string" | "number" | "boolean",
         ...(dataset.column_profiles?.[id] && { profile: dataset.column_profiles[id] }),
         ...(aliasMap.has(id) && { alias: aliasMap.get(id) }),
       }));
-      const activeFilters = columnFilters.flatMap((f) => {
-        const conditions = toConditions(f.value);
-        return conditions.map((c) => ({ column: f.id, operator: c.operator, value: c.value }));
-      });
 
-      // Build activeCleaningTransforms from non-filter enabled transforms
       const activeCleaningTransforms = (dataset.transforms ?? [])
         .filter((t) => t.status === "enabled" && t.transform_type !== "filter")
         .map((t) => {
@@ -209,7 +204,7 @@ function DatasetDetail({
         activeCleaningTransforms: activeCleaningTransforms.length > 0 ? activeCleaningTransforms : undefined,
       });
     }
-  }, [dataset, data.length, registerTableSchema, columnFilters]);
+  }, [dataset, data.length, registerTableSchema, aliasMap, activeFilters]);
 
   if (isLoading && !dataset) {
     return <TablePanelSkeleton />;
@@ -278,7 +273,7 @@ export function ProjectView() {
     if (syncState !== "idle" || !datasetId) return;
     setSyncState("spinning");
 
-    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId) })
+    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true })
       .then(() => {
         setSyncState("success");
         syncTimerRef.current = setTimeout(() => {

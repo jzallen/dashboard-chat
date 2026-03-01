@@ -1,4 +1,4 @@
-import { type Dispatch, type FormEvent,type RefObject, type SetStateAction, useState } from "react";
+import { type Dispatch, type FormEvent, memo, type RefObject, type SetStateAction, useState } from "react";
 
 import type { Dataset } from "@/api";
 
@@ -21,7 +21,7 @@ interface ChatPanelProps {
   onUploadError?: (error: string) => void;
 }
 
-export default function ChatPanel({
+function ChatPanel({
   messages,
   input,
   setInput,
@@ -119,3 +119,5 @@ export default function ChatPanel({
     </div>
   );
 }
+
+export default memo(ChatPanel);
