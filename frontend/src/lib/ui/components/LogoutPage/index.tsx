@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Navigate } from "react-router-dom";
 
-import { useAuth } from "../../../auth";
+import { useAuth } from "../../context/AuthContext";
 
 /** Triggers logout on mount and redirects to login when complete. */
 export function LogoutPage() {

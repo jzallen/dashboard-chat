@@ -6,7 +6,7 @@ import { AuthCallback } from "../../lib/ui/components/AuthCallback";
 const mockHandleCallback = vi.fn();
 const mockNavigate = vi.fn();
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/ui/context/AuthContext", () => ({
   useAuth: () => ({
     handleCallback: mockHandleCallback,
   }),

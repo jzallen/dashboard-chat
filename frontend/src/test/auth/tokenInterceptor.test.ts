@@ -1,5 +1,5 @@
 import { ApiError,get } from "../../lib/api/client";
-import { _resetRefreshState,ensureFreshToken } from "../../lib/api/fetchUtils";
+import { createTokenRefresher } from "../../lib/auth/tokenRefresh";
 
 describe("401 interceptor with coalesced refresh", () => {
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -7,7 +7,6 @@ describe("401 interceptor with coalesced refresh", () => {
 
   beforeEach(() => {
     localStorage.clear();
-    _resetRefreshState();
     mockFetch = vi.fn();
     vi.stubGlobal("fetch", mockFetch);
     // Prevent actual navigation
@@ -105,27 +104,17 @@ describe("401 interceptor with coalesced refresh", () => {
     expect(localStorage.getItem("auth_refresh_token")).toBeNull();
   });
 
-  it("hard-logs out when refresh endpoint returns error (after retry)", async () => {
-    vi.useFakeTimers();
+  it("hard-logs out when refresh endpoint returns error", async () => {
+    // Non-429 errors now fail immediately without retry
     localStorage.setItem("auth_token", "expired-token");
     localStorage.setItem("auth_refresh_token", "bad-refresh");
 
     mockFetch
       .mockResolvedValueOnce(unauthorized())                          // original request → 401
-      .mockResolvedValueOnce(new Response("fail", { status: 400 }))   // refresh attempt 1 → fail
-      .mockResolvedValueOnce(new Response("fail", { status: 400 }));  // refresh retry → fail
+      .mockResolvedValueOnce(new Response("fail", { status: 400 }));  // refresh → fail (no retry)
 
-    const promise = get("/test");
-
-    // Attach rejection handler before advancing timers to avoid unhandled rejection
-    const resultPromise = expect(promise).rejects.toThrow(ApiError);
-
-    // Advance past the 12s retry delay inside ensureFreshToken
-    await vi.advanceTimersByTimeAsync(13_000);
-
-    await resultPromise;
+    await expect(get("/test")).rejects.toThrow(ApiError);
     expect(localStorage.getItem("auth_token")).toBeNull();
-    vi.useRealTimers();
   });
 
   it("does not infinitely retry — replayed 401 causes immediate logout", async () => {
@@ -155,6 +144,7 @@ describe("401 interceptor with coalesced refresh", () => {
     localStorage.setItem("auth_refresh_token", "some-refresh");
     localStorage.setItem("auth_token_expires_at", String(Date.now() + 300_000));
 
+    const ensureFreshToken = createTokenRefresher();
     const result = await ensureFreshToken();
 
     // Should return current token without making any fetch
@@ -172,6 +162,7 @@ describe("401 interceptor with coalesced refresh", () => {
       .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
       .mockResolvedValueOnce(refreshOk("recovered-token", "recovered-refresh", 300));
 
+    const ensureFreshToken = createTokenRefresher();
     const promise = ensureFreshToken();
 
     // Let the first fetch resolve

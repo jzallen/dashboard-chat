@@ -5,7 +5,7 @@ import { LoginPage } from "../../lib/ui/components/LoginPage";
 
 const mockLogin = vi.fn();
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/ui/context/AuthContext", () => ({
   useAuth: () => ({
     login: mockLogin,
     isAuthenticated: false,

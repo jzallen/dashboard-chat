@@ -12,11 +12,31 @@ vi.mock("@/api", () => ({
 
 const mockEnsureFreshToken = vi.fn();
 
-vi.mock("@/api/fetchUtils", () => ({
-  getAuthHeaders: () => ({ Authorization: "Bearer test-token" }),
+vi.mock("../../../lib/auth/tokenStorage", () => ({
+  getAuthHeaders: () => ({ Authorization: `Bearer ${localStorage.getItem("auth_token") ?? "test-token"}` }),
+  hardLogout: vi.fn(),
+  getToken: () => localStorage.getItem("auth_token") ?? "test-token",
+  getRefreshToken: () => localStorage.getItem("auth_refresh_token"),
+  getTokenExpiry: () => {
+    const val = localStorage.getItem("auth_token_expires_at");
+    return val ? Number(val) : null;
+  },
+  getLastActivity: () => {
+    const val = localStorage.getItem("last_activity_ts");
+    return val ? Number(val) : null;
+  },
+  setToken: (v: string) => localStorage.setItem("auth_token", v),
+  setRefreshToken: (v: string) => localStorage.setItem("auth_refresh_token", v),
+  setTokenExpiry: (v: number) => localStorage.setItem("auth_token_expires_at", String(v)),
+  setLastActivity: (v: number) => localStorage.setItem("last_activity_ts", String(v)),
+  clearAll: vi.fn(),
+  isTokenKey: (key: string | null) => key === "auth_token",
+  isExpiryKey: (key: string | null) => key === "auth_token_expires_at",
+}));
+
+vi.mock("../../../lib/auth/tokenRefresh", () => ({
   ensureFreshToken: (...args: unknown[]) => mockEnsureFreshToken(...args),
-  EXPIRES_AT_KEY: "auth_token_expires_at",
-  TOKEN_KEY: "auth_token",
+  createTokenRefresher: () => (...args: unknown[]) => mockEnsureFreshToken(...args),
 }));
 
 vi.mock("@/chat/prompts", () => ({
@@ -288,7 +308,10 @@ describe("ChatProvider", () => {
       // Token expires in 30 seconds (< 60s threshold)
       localStorage.setItem("auth_token_expires_at", String(Date.now() + 30_000));
 
-      mockEnsureFreshToken.mockResolvedValue("refreshed-token");
+      mockEnsureFreshToken.mockImplementation(async () => {
+        localStorage.setItem("auth_token", "refreshed-token");
+        return "refreshed-token";
+      });
 
       const fetchSpy = mockFetchSSE([
         { type: "content", content: "OK" },

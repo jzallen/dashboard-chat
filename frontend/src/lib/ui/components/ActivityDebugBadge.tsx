@@ -1,6 +1,6 @@
 import { useEffect,useState } from "react";
 
-import { ACTIVITY_KEY } from "../../api/fetchUtils";
+import { getLastActivity } from "../../auth/tokenStorage";
 
 /**
  * Debug-only badge that displays minutes since last user activity.
@@ -11,9 +11,9 @@ export function ActivityDebugBadge() {
 
   useEffect(() => {
     const update = () => {
-      const lastStr = localStorage.getItem(ACTIVITY_KEY);
-      if (lastStr) {
-        const elapsed = Date.now() - Number(lastStr);
+      const lastActivity = getLastActivity();
+      if (lastActivity) {
+        const elapsed = Date.now() - lastActivity;
         setIdleMinutes(Math.floor(elapsed / 60_000));
       }
     };

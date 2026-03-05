@@ -1,8 +1,8 @@
 import { useState } from "react";
 
 import { post } from "../../../api/client";
-import { useAuth } from "../../../auth";
 import { getErrorMessage } from "../../../errors";
+import { useAuth } from "../../context/AuthContext";
 import styles from "./CreateOrg.module.css";
 
 interface CreateOrgResponse {

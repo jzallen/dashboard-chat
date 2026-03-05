@@ -2,9 +2,8 @@
  * Projects API
  */
 
-import { API_BASE_URL,get } from "./client";
-import type { DatasetSparse } from "./datasets";
-import { getAuthHeaders, withAuthRetry } from "./fetchUtils";
+import { withAuth } from "../auth/withAuth";
+import { API_BASE_URL, get } from "./client";
 
 export type { DatasetSparse } from "./datasets";
 
@@ -14,8 +13,10 @@ export interface Project {
   description: string | null;
   created_at: string;
   updated_at: string;
-  datasets?: DatasetSparse[];
+  datasets?: import("./datasets").DatasetSparse[];
 }
+
+const authedFetch = withAuth((...args: Parameters<typeof fetch>) => fetch(...args));
 
 /**
  * List all projects for the current user's org
@@ -36,12 +37,7 @@ export async function getProject(projectId: string): Promise<Project> {
  */
 export async function exportDbtProject(projectId: string): Promise<void> {
   const url = `${API_BASE_URL}/api/projects/${projectId}/export/dbt`;
-  const init: RequestInit = {
-    method: "GET",
-    headers: getAuthHeaders(),
-  };
-  let response = await fetch(url, init);
-  response = await withAuthRetry(response, url, init);
+  const response = await authedFetch(url, { method: "GET" });
 
   if (!response.ok) {
     const errorText = await response.text();

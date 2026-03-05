@@ -4,10 +4,12 @@
  * Provides typed fetch wrapper for communicating with the backend.
  */
 
+import { withAuth } from "../auth/withAuth";
 import { API_BASE_URL } from "./config";
-import { getAuthHeaders, withAuthRetry } from "./fetchUtils";
 
 export { API_BASE_URL };
+
+const authedFetch = withAuth((...args: Parameters<typeof fetch>) => fetch(...args));
 
 /**
  * API error with status code and message
@@ -23,38 +25,27 @@ export class ApiError extends Error {
 }
 
 /**
- * Generic API response handler with 401 → refresh → replay.
- * Delegates 401 retry logic to the shared withAuthRetry in fetchUtils.
+ * Generic API response handler.
+ * Auth retry is handled by the authedFetch decorator.
  */
-async function handleResponse<T>(
-  response: Response,
-  url: string,
-  init: RequestInit,
-): Promise<T> {
-  let res: Response;
-  try {
-    res = await withAuthRetry(response, url, init);
-  } catch {
-    // withAuthRetry throws plain Error("Session expired") after hardLogout
-    throw new ApiError(401, "Session expired");
-  }
-  if (!res.ok) {
-    const errorBody = await res.text();
-    let message = `Request failed with status ${res.status}`;
+async function handleResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const errorBody = await response.text();
+    let message = `Request failed with status ${response.status}`;
     try {
       const parsed = JSON.parse(errorBody);
       // Log full detail to console for debugging
       if (parsed.detail) {
-        console.error(`[API ${parsed.type || res.status}]`, parsed.detail);
+        console.error(`[API ${parsed.type || response.status}]`, parsed.detail);
       }
       // Show user-friendly title/type, never raw server internals
       message = parsed.title || parsed.type || message;
     } catch {
       // Use default message
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(response.status, message);
   }
-  const json = await res.json();
+  const json = await response.json();
 
   // Unwrap {data: ...} responses from backend
   if (json && typeof json === 'object' && 'data' in json) {
@@ -69,15 +60,18 @@ async function handleResponse<T>(
  */
 export async function get<T>(endpoint: string): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const init: RequestInit = {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-  };
-  const response = await fetch(url, init);
-  return handleResponse<T>(response, url, init);
+  try {
+    const response = await authedFetch(url, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+    return handleResponse<T>(response);
+  } catch (e) {
+    if (e instanceof Error && e.message === "Session expired") {
+      throw new ApiError(401, "Session expired");
+    }
+    throw e;
+  }
 }
 
 /**
@@ -85,16 +79,19 @@ export async function get<T>(endpoint: string): Promise<T> {
  */
 export async function post<T>(endpoint: string, body: unknown): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const init: RequestInit = {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify(body),
-  };
-  const response = await fetch(url, init);
-  return handleResponse<T>(response, url, init);
+  try {
+    const response = await authedFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<T>(response);
+  } catch (e) {
+    if (e instanceof Error && e.message === "Session expired") {
+      throw new ApiError(401, "Session expired");
+    }
+    throw e;
+  }
 }
 
 /**
@@ -102,16 +99,19 @@ export async function post<T>(endpoint: string, body: unknown): Promise<T> {
  */
 export async function patch<T>(endpoint: string, body: unknown): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const init: RequestInit = {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify(body),
-  };
-  const response = await fetch(url, init);
-  return handleResponse<T>(response, url, init);
+  try {
+    const response = await authedFetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<T>(response);
+  } catch (e) {
+    if (e instanceof Error && e.message === "Session expired") {
+      throw new ApiError(401, "Session expired");
+    }
+    throw e;
+  }
 }
 
 /**
@@ -119,16 +119,19 @@ export async function patch<T>(endpoint: string, body: unknown): Promise<T> {
  */
 export async function del<T = void>(endpoint: string): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const init: RequestInit = {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-  };
-  const response = await fetch(url, init);
-  if (response.status === 204) return undefined as T;
-  return handleResponse<T>(response, url, init);
+  try {
+    const response = await authedFetch(url, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (response.status === 204) return undefined as T;
+    return handleResponse<T>(response);
+  } catch (e) {
+    if (e instanceof Error && e.message === "Session expired") {
+      throw new ApiError(401, "Session expired");
+    }
+    throw e;
+  }
 }
 
 /**
@@ -147,11 +150,16 @@ export async function uploadFile<T>(
   }
 
   const url = `${API_BASE_URL}${endpoint}`;
-  const init: RequestInit = {
-    method: "POST",
-    headers: getAuthHeaders(),
-    body: formData,
-  };
-  const response = await fetch(url, init);
-  return handleResponse<T>(response, url, init);
+  try {
+    const response = await authedFetch(url, {
+      method: "POST",
+      body: formData,
+    });
+    return handleResponse<T>(response);
+  } catch (e) {
+    if (e instanceof Error && e.message === "Session expired") {
+      throw new ApiError(401, "Session expired");
+    }
+    throw e;
+  }
 }

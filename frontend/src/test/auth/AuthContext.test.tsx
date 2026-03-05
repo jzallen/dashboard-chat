@@ -6,7 +6,7 @@ vi.hoisted(() => {
 
 import { act,render, screen } from "@testing-library/react";
 
-import { AuthProvider, useAuth } from "../../lib/auth";
+import { AuthProvider, useAuth } from "../../lib/ui/context/AuthContext";
 
 // Mock the API client
 vi.mock("../../lib/api/client", () => ({

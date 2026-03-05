@@ -15,3 +15,9 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
 }
+
+/** Return type for useTokenState hooks (dev and workos variants). */
+export interface TokenStateResult {
+  state: AuthState;
+  setState: React.Dispatch<React.SetStateAction<AuthState>>;
+}

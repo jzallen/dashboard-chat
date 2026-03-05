@@ -1,6 +1,5 @@
 import { Navigate,Route, Routes } from "react-router-dom";
 
-import { AuthProvider, useAuth } from "./src/lib/auth";
 import { AppShell } from "./src/lib/ui/components/AppShell";
 import { AuthCallback } from "./src/lib/ui/components/AuthCallback";
 import { CreateOrg } from "./src/lib/ui/components/CreateOrg";
@@ -10,6 +9,7 @@ import { LogoutPage } from "./src/lib/ui/components/LogoutPage";
 import { OrgView } from "./src/lib/ui/components/OrgView";
 import { SessionViewer } from "./src/lib/ui/components/SessionViewer";
 import { SessionList } from "./src/lib/ui/components/SessionViewer/SessionList";
+import { AuthProvider, useAuth } from "./src/lib/ui/context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { isAuthenticated, isLoading } = useAuth();
