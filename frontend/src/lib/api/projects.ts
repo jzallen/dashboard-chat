@@ -2,8 +2,7 @@
  * Projects API
  */
 
-import { withAuth } from "../auth/withAuth";
-import { API_BASE_URL, get } from "./client";
+import { backendClient, get } from "./client";
 
 export type { DatasetSparse } from "./datasets";
 
@@ -15,8 +14,6 @@ export interface Project {
   updated_at: string;
   datasets?: import("./datasets").DatasetSparse[];
 }
-
-const authedFetch = withAuth((...args: Parameters<typeof fetch>) => fetch(...args));
 
 /**
  * List all projects for the current user's org
@@ -36,8 +33,9 @@ export async function getProject(projectId: string): Promise<Project> {
  * Download a dbt project export as a zip file
  */
 export async function exportDbtProject(projectId: string): Promise<void> {
-  const url = `${API_BASE_URL}/api/projects/${projectId}/export/dbt`;
-  const response = await authedFetch(url, { method: "GET" });
+  const response = await backendClient.fetch(`/api/projects/${projectId}/export/dbt`, {
+    method: "GET",
+  });
 
   if (!response.ok) {
     const errorText = await response.text();

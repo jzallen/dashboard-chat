@@ -6,9 +6,13 @@ import type { Dataset } from "@/api";
 import { UploadWidget } from "../../../lib/ui/components/ChatPanel/UploadWidget";
 
 // Mock the API client
-vi.mock("../../../lib/api/client", () => ({
-  uploadFile: vi.fn(),
-}));
+vi.mock("../../../lib/api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/api/client")>();
+  return {
+    ...actual,
+    uploadFile: vi.fn(),
+  };
+});
 
 import { uploadFile } from "../../../lib/api/client";
 

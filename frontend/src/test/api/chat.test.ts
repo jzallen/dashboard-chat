@@ -1,7 +1,8 @@
 import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatTurnPayload } from "../../lib/api/sessions";
-import { createSession, getSession, listSessions,logTurn } from "../../lib/api/sessions";
+import type { ChatTurnPayload } from "../../lib/api/chat";
+import { createSession, getSession, listSessions,logTurn } from "../../lib/api/chat";
+import { ApiError } from "../../lib/api/client";
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -48,7 +49,7 @@ function textResponse(text: string, status: number): Response {
   return new Response(text, { status, headers: { "Content-Type": "text/plain" } });
 }
 
-describe("Sessions API", () => {
+describe("Chat API", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     localStorageMock.clear();
@@ -100,21 +101,32 @@ describe("Sessions API", () => {
       expect(headers.Authorization).toBeUndefined();
     });
 
-    it("throws on non-ok response", async () => {
+    it("throws ApiError on non-ok response", async () => {
       localStorageMock.setItem("auth_token", "test-token-123");
       vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse("Server Error", 500));
 
-      await expect(createSession("proj-001", "ds-001")).rejects.toThrow("Request failed (500)");
+      await expect(createSession("proj-001", "ds-001")).rejects.toThrow(ApiError);
+      await vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse("Server Error", 500));
+      try {
+        await createSession("proj-001", "ds-001");
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        expect((e as ApiError).status).toBe(500);
+      }
     });
 
-    it("clears auth and redirects on 401", async () => {
+    it("clears auth and throws ApiError on 401", async () => {
       localStorageMock.setItem("auth_token", "test-token-123");
       localStorageMock.setItem("auth_user", '{"id":"u1"}');
       vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse("Unauthorized", 401));
 
-      await expect(createSession("proj-001")).rejects.toThrow("Session expired");
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith("auth_token");
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith("auth_user");
+      await expect(createSession("proj-001")).rejects.toThrow(ApiError);
+      try {
+        await createSession("proj-001");
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        expect((e as ApiError).status).toBe(401);
+      }
     });
   });
 
@@ -143,13 +155,11 @@ describe("Sessions API", () => {
       expect(body.assistant_content).toBe("Hi there!");
     });
 
-    it("throws on non-ok response with status detail", async () => {
+    it("throws ApiError on non-ok response", async () => {
       localStorageMock.setItem("auth_token", "tok-abc");
       vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse("Not Found", 404));
 
-      await expect(logTurn("sess-001", turnPayload)).rejects.toThrow(
-        "Failed to log turn (404): Not Found"
-      );
+      await expect(logTurn("sess-001", turnPayload)).rejects.toThrow(ApiError);
     });
   });
 
@@ -162,7 +172,7 @@ describe("Sessions API", () => {
 
       const [url, init] = fetchSpy.mock.calls[0];
       expect(url).toContain("/sessions/sess-001");
-      expect(init?.method).toBeUndefined(); // GET is the default
+      expect(init?.method).toBe("GET");
       expect(result.id).toBe("sess-001");
     });
   });

@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import type { Dataset } from "@/api";
-import { fetchChatStream } from "@/api/chatClient";
+import { fetchChatStream } from "@/api/chat";
 import type { ToolCall } from "@/table-tools";
 
 import { getErrorMessage } from "../../../../errors";

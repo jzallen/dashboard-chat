@@ -2,16 +2,16 @@
  * Chat Worker API Client
  *
  * Dedicated client for all communication with the chat worker service.
- * Session CRUD uses withAuth, SSE streaming uses withEagerAuth.
+ * Session CRUD uses ApiClient, SSE streaming uses withEagerAuth directly.
  */
 
 import type { TableSchema, ToolCall, ToolDefinition } from "@/chat/types";
 
-import { withAuth, withEagerAuth } from "../auth/withAuth";
+import { withEagerAuth } from "../auth/withAuth";
+import { ApiClient } from "./client";
 import { CHAT_URL } from "./config";
 
-const authedFetch = withAuth((...args: Parameters<typeof fetch>) => fetch(...args));
-const eagerAuthedFetch = withEagerAuth((...args: Parameters<typeof fetch>) => fetch(...args));
+const chatClient = new ApiClient(CHAT_URL, { unwrapData: false });
 
 export interface ToolResult {
   tool_call_id: string;
@@ -52,53 +52,22 @@ export interface ChatSession {
 }
 
 export async function createSession(projectId: string, datasetId?: string): Promise<ChatSession> {
-  const url = `${CHAT_URL}/sessions`;
-  const response = await authedFetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId, dataset_id: datasetId ?? null }),
+  return chatClient.post<ChatSession>("/sessions", {
+    project_id: projectId,
+    dataset_id: datasetId ?? null,
   });
-  if (response.status === 401) throw new Error("Session expired");
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed (${response.status}): ${text}`);
-  }
-  return response.json();
 }
 
 export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise<void> {
-  const url = `${CHAT_URL}/sessions/${sessionId}/turns`;
-  const response = await authedFetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(turn),
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to log turn (${response.status}): ${text}`);
-  }
+  await chatClient.post<void>(`/sessions/${sessionId}/turns`, turn);
 }
 
 export async function getSession(sessionId: string): Promise<ChatSession> {
-  const url = `${CHAT_URL}/sessions/${sessionId}`;
-  const response = await authedFetch(url, {});
-  if (response.status === 401) throw new Error("Session expired");
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed (${response.status}): ${text}`);
-  }
-  return response.json();
+  return chatClient.get<ChatSession>(`/sessions/${sessionId}`);
 }
 
 export async function listSessions(datasetId: string): Promise<ChatSession[]> {
-  const url = `${CHAT_URL}/sessions?dataset_id=${encodeURIComponent(datasetId)}`;
-  const response = await authedFetch(url, {});
-  if (response.status === 401) throw new Error("Session expired");
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed (${response.status}): ${text}`);
-  }
-  return response.json();
+  return chatClient.get<ChatSession[]>(`/sessions?dataset_id=${encodeURIComponent(datasetId)}`);
 }
 
 /** Builds and sends the chat SSE request with eager auth refresh. */
@@ -106,6 +75,7 @@ export async function fetchChatStream(
   apiMessages: Array<{ role: string; content: string; tool_calls?: ToolCall[] }>,
   tableSchema: TableSchema | null,
 ): Promise<Response> {
+  const eagerAuthedFetch = withEagerAuth((...args: Parameters<typeof fetch>) => fetch(...args));
   const response = await eagerAuthedFetch(`${CHAT_URL}/chat`, {
     method: "POST",
     mode: "cors",
