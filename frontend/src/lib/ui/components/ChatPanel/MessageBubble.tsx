@@ -1,4 +1,4 @@
-import type { Dataset } from "@/api";
+import type { Dataset } from "@/dataCatalog";
 
 import type { Message } from "../../types";
 import styles from "./ChatPanel.module.css";

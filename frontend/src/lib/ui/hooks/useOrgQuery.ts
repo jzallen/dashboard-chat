@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { type ApiError, get, listProjects, type Project } from "@/api";
+import { type ApiError, listProjects, type Project } from "@/dataCatalog";
+import { get } from "@/dataCatalog/client";
 
 interface OrgInfo {
   id: string;

@@ -1,4 +1,4 @@
-import type { Project } from "@/api";
+import type { Project } from "@/dataCatalog";
 
 import styles from "./OrgView.module.css";
 import { ProjectCard } from "./ProjectCard";

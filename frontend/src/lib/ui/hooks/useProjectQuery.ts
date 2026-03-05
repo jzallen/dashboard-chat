@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { type ApiError, getProject, type Project } from "@/api";
+import { type ApiError, getProject, type Project } from "@/dataCatalog";
 
 import { QUERY_STALE_TIMES } from "./queryConfig";
 

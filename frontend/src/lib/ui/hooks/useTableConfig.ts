@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-table";
 import { useEffect,useMemo, useState } from "react";
 
-import type { Dataset, SchemaConfig } from "@/api";
+import type { Dataset, SchemaConfig } from "@/dataCatalog";
 import { customFilterFn, type TableRow } from "@/table-tools";
 
 /** Options for configuring the table instance. */

@@ -1,6 +1,6 @@
 import type { MutableRefObject, RefObject } from "react";
 
-import { createSession, logTurn } from "@/api";
+import { createSession, logTurn } from "@/chat/client";
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
 import type { ToolCall } from "@/table-tools";
 

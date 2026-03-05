@@ -1,5 +1,6 @@
-import { ApiError,get } from "../../lib/api/client";
 import { createTokenRefresher } from "../../lib/auth/tokenRefresh";
+import { get } from "../../lib/dataCatalog/client";
+import { ApiError } from "../../lib/shared/apiClient";
 
 describe("401 interceptor with coalesced refresh", () => {
   let mockFetch: ReturnType<typeof vi.fn>;

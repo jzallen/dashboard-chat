@@ -12,8 +12,8 @@ import {
   useState,
 } from "react";
 
-import type { Dataset } from "@/api";
-import { fetchChatStream } from "@/api/chat";
+import { fetchChatStream } from "@/chat/client";
+import type { Dataset } from "@/dataCatalog";
 import type { ToolCall } from "@/table-tools";
 
 import { getErrorMessage } from "../../../../errors";

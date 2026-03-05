@@ -15,8 +15,8 @@ import { ChatPanelConnected } from "./ChatPanelConnected";
 
 export interface AppShellContext {
   orgName: string | null;
-  project: import("@/api").Project | null;
-  projects: import("@/api").Project[] | null;
+  project: import("@/dataCatalog").Project | null;
+  projects: import("@/dataCatalog").Project[] | null;
 }
 
 function AppShellInner() {

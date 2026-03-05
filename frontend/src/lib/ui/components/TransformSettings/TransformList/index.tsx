@@ -2,7 +2,7 @@
  * TransformList component for displaying saved transforms
  */
 
-import type { Transform } from "@/api";
+import type { Transform } from "@/dataCatalog";
 
 import { TransformCard } from "./TransformCard/index";
 import styles from "./TransformList.module.css";

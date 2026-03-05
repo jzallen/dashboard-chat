@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
 
-import type { Dataset } from "@/api";
+import type { Dataset } from "@/dataCatalog";
 
 import { useChatContext } from "../../context/ChatContext";
 import ChatPanel from "../ChatPanel";

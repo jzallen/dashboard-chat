@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "../api/config";
+import { API_BASE_URL } from "../shared/config";
 import { getRefreshToken, getToken, getTokenExpiry, setRefreshToken, setToken, setTokenExpiry } from "./tokenStorage";
 
 const FRESHNESS_THRESHOLD_MS = 60_000;

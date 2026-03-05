@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { type ApiError, type Dataset, type DatasetSparse, getDataset, listDatasetsForProject } from "@/api";
+import { type ApiError, type Dataset, type DatasetSparse, getDataset, listDatasetsForProject } from "@/dataCatalog";
 
 import { QUERY_STALE_TIMES } from "./queryConfig";
 

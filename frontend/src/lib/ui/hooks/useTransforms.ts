@@ -9,7 +9,7 @@ import {
   toggleTransform as toggleTransformApi,
   type Transform,
   type TransformCreate,
-} from "@/api";
+} from "@/dataCatalog";
 import { raqbToTanstackFilters } from "@/raqb";
 
 import { mergeFilters } from "./filterUtils";

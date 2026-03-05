@@ -1,7 +1,7 @@
 import { fireEvent,render, screen } from "@testing-library/react";
 import { type Mock,vi } from "vitest";
 
-import type { Dataset } from "@/api";
+import type { Dataset } from "@/dataCatalog";
 
 import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
 

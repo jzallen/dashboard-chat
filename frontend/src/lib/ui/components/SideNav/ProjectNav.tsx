@@ -1,6 +1,6 @@
 import { FolderIcon } from "@heroicons/react/20/solid";
 
-import type { DatasetSparse, Project } from "@/api";
+import type { DatasetSparse, Project } from "@/dataCatalog";
 
 import { DatasetNavItem } from "./DatasetNavItem";
 import styles from "./SideNav.module.css";

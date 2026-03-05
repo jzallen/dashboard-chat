@@ -5,10 +5,14 @@ import type { ToolHandler } from "../../../lib/ui/context/ChatContext";
 import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
 
 // Mock session API (fire-and-forget, not critical to chat flow)
-vi.mock("@/api", () => ({
-  createSession: vi.fn().mockResolvedValue({ id: "sess-001" }),
-  logTurn: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("@/chat/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/chat/client")>();
+  return {
+    ...actual,
+    createSession: vi.fn().mockResolvedValue({ id: "sess-001" }),
+    logTurn: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 const mockEnsureFreshToken = vi.fn();
 

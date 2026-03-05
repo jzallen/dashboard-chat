@@ -2,7 +2,7 @@
  * Transform card component - displays a saved transform with controls
  */
 
-import type { Transform } from "@/api";
+import type { Transform } from "@/dataCatalog";
 import { countRules } from "@/raqb";
 
 import { DeleteButton } from "./DeleteButton";

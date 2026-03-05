@@ -6,8 +6,7 @@
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "frontend",
-    "worker",
-    "shared/chat"
+    "worker"
   ],
   "scripts": {
     "dev:worker": "npm run dev -w worker",

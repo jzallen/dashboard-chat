@@ -1,9 +1,0 @@
-{
-  "name": "dashboard-chat-shared",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "eventsource-parser": "^3.0.6"
-  }
-}

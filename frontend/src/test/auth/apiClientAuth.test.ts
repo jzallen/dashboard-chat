@@ -1,4 +1,5 @@
-import { ApiError,get } from "../../lib/api/client";
+import { get } from "../../lib/dataCatalog/client";
+import { ApiError } from "../../lib/shared/apiClient";
 
 describe("API client auth headers", () => {
   beforeEach(() => {

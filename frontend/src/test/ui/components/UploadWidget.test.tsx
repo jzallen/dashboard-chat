@@ -1,20 +1,20 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
-import type { Dataset } from "@/api";
+import type { Dataset } from "@/dataCatalog";
 
 import { UploadWidget } from "../../../lib/ui/components/ChatPanel/UploadWidget";
 
 // Mock the API client
-vi.mock("../../../lib/api/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../lib/api/client")>();
+vi.mock("../../../lib/dataCatalog/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/dataCatalog/client")>();
   return {
     ...actual,
     uploadFile: vi.fn(),
   };
 });
 
-import { uploadFile } from "../../../lib/api/client";
+import { uploadFile } from "../../../lib/dataCatalog/client";
 
 const mockUploadFile = vi.mocked(uploadFile);
 

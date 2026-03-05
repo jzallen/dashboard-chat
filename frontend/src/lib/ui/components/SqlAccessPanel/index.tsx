@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { SqlAccessStatus } from "@/api";
+import type { SqlAccessStatus } from "@/dataCatalog";
 
 import {
   useDisableSqlAccess,

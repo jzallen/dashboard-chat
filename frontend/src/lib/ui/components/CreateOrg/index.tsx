@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { post } from "../../../api/client";
+import { backendClient } from "../../../dataCatalog/client";
 import { getErrorMessage } from "../../../errors";
 import { useAuth } from "../../context/AuthContext";
 import styles from "./CreateOrg.module.css";
@@ -24,7 +24,7 @@ export function CreateOrg() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await post<CreateOrgResponse>("/api/orgs", { name: name.trim() });
+      const result = await backendClient.post<CreateOrgResponse>("/api/orgs", { name: name.trim() });
       if (result.requires_reauth) {
         await login(result.org_id);
       } else {

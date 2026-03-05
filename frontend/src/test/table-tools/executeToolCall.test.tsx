@@ -19,7 +19,7 @@ import {
 } from "@/table-tools";
 
 // Mock the API module
-vi.mock("@/api/datasets", () => ({
+vi.mock("@/dataCatalog/datasets", () => ({
   previewCleaningTransform: vi.fn(),
   createCleaningTransforms: vi.fn(),
   updateTransform: vi.fn(),
@@ -36,7 +36,7 @@ import {
   createCleaningTransforms,
   previewCleaningTransform,
   updateTransform,
-} from "@/api/datasets";
+} from "@/dataCatalog/datasets";
 
 /**
  * Tests for executeToolCall - the public API used by DatasetView.

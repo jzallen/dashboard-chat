@@ -1,7 +1,7 @@
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import { useCallback,useEffect, useRef, useState } from "react";
 
-import type { DatasetSparse } from "@/api";
+import type { DatasetSparse } from "@/dataCatalog";
 
 import { CompactDatasetCard } from "./CompactDatasetCard";
 import styles from "./DatasetGrid.module.css";

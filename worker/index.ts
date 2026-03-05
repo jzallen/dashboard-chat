@@ -5,8 +5,8 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import { createChatHandler } from "../shared/chat/index";
 import { authMiddleware } from "./lib/auth";
+import { createChatHandler } from "./lib/chat";
 import { SessionManager } from "./lib/sessions/index";
 import type { CreateSessionRequest, LogTurnRequest } from "./lib/sessions/types";
 

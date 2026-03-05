@@ -13,7 +13,7 @@ import {
   startEnvironment,
   stopEnvironment,
   syncSqlAccess,
-} from "@/api";
+} from "@/dataCatalog";
 
 import { QUERY_STALE_TIMES } from "./queryConfig";
 

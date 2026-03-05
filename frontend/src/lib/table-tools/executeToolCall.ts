@@ -1,10 +1,10 @@
+import { CASE_OPERATIONS } from "@/chat/types";
 import {
   createCleaningTransforms,
   previewCleaningTransform,
   type PreviewResponse,
   updateTransform,
-} from "@/api/datasets";
-import { CASE_OPERATIONS } from "@/chat/types";
+} from "@/dataCatalog/datasets";
 
 import { getErrorMessage } from "../errors";
 import type { ToolCall } from "../types";

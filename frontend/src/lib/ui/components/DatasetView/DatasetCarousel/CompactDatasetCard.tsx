@@ -1,4 +1,4 @@
-import type { DatasetSparse } from "@/api";
+import type { DatasetSparse } from "@/dataCatalog";
 
 import styles from "./DatasetGrid.module.css";
 

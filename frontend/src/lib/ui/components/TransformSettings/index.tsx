@@ -1,8 +1,8 @@
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { useEffect,useState } from "react";
 
-import type { Dataset,Transform } from "@/api";
-import { getDataset } from "@/api";
+import type { Dataset,Transform } from "@/dataCatalog";
+import { getDataset } from "@/dataCatalog";
 
 import { TransformList } from "./TransformList";
 import styles from "./TransformSettings.module.css";

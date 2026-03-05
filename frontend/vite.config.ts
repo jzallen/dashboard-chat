@@ -27,9 +27,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@/table-tools': path.resolve(__dirname, 'src/lib/table-tools'),
-      '@/chat': path.resolve(__dirname, '../shared/chat'),
+      '@/chat': path.resolve(__dirname, 'src/lib/chat'),
       '@/raqb': path.resolve(__dirname, 'src/lib/raqb'),
-      '@/api': path.resolve(__dirname, 'src/lib/api'),
+      '@/dataCatalog': path.resolve(__dirname, 'src/lib/dataCatalog'),
+      '@/shared': path.resolve(__dirname, 'src/lib/shared'),
     },
   },
 })

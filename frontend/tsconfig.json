@@ -19,12 +19,14 @@
     "baseUrl": ".",
     "paths": {
       "@/table-tools": ["src/lib/table-tools"],
-      "@/chat": ["../shared/chat"],
-      "@/chat/*": ["../shared/chat/*"],
+      "@/chat": ["src/lib/chat"],
+      "@/chat/*": ["src/lib/chat/*"],
       "@/raqb": ["src/lib/raqb"],
       "@/raqb/*": ["src/lib/raqb/*"],
-      "@/api": ["src/lib/api"],
-      "@/api/*": ["src/lib/api/*"]
+      "@/dataCatalog": ["src/lib/dataCatalog"],
+      "@/dataCatalog/*": ["src/lib/dataCatalog/*"],
+      "@/shared": ["src/lib/shared"],
+      "@/shared/*": ["src/lib/shared/*"]
     }
   },
   "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx"]

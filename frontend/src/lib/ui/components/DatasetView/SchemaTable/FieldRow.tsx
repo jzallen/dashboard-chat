@@ -1,4 +1,4 @@
-import type { FieldConfig } from "@/api";
+import type { FieldConfig } from "@/dataCatalog";
 
 import styles from "./SchemaTable.module.css";
 

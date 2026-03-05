@@ -5,11 +5,11 @@
  * Session CRUD uses ApiClient, SSE streaming uses withEagerAuth directly.
  */
 
-import type { TableSchema, ToolCall, ToolDefinition } from "@/chat/types";
+import { ApiClient } from "@/shared/apiClient";
+import { CHAT_URL } from "@/shared/config";
 
 import { withEagerAuth } from "../auth/withAuth";
-import { ApiClient } from "./client";
-import { CHAT_URL } from "./config";
+import type { TableSchema, ToolCall, ToolDefinition } from "./types";
 
 const chatClient = new ApiClient(CHAT_URL, { unwrapData: false });
 

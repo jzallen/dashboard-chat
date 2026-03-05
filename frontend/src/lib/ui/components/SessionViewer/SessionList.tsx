@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link,useNavigate, useParams } from "react-router-dom";
 
-import { type ChatSession,listSessions } from "@/api/chat";
+import { type ChatSession,listSessions } from "@/chat/client";
 
 import styles from "./SessionViewer.module.css";
 

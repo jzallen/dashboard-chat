@@ -4,7 +4,7 @@
 
 import type { ColumnFiltersState } from "@tanstack/react-table";
 
-import type { Transform } from "@/api";
+import type { Transform } from "@/dataCatalog";
 import { isRAQBGroup, isRAQBRule, type RAQBTree } from "@/raqb";
 
 interface FilterCondition {

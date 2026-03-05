@@ -1,8 +1,8 @@
 import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatTurnPayload } from "../../lib/api/chat";
-import { createSession, getSession, listSessions,logTurn } from "../../lib/api/chat";
-import { ApiError } from "../../lib/api/client";
+import type { ChatTurnPayload } from "../../lib/chat/client";
+import { createSession, getSession, listSessions,logTurn } from "../../lib/chat/client";
+import { ApiError } from "../../lib/shared/apiClient";
 
 // Mock localStorage
 const localStorageMock = (() => {

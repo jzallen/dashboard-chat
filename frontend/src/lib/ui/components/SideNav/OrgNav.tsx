@@ -1,4 +1,4 @@
-import type { Project } from "@/api";
+import type { Project } from "@/dataCatalog";
 
 import { ProjectNavItem } from "./ProjectNavItem";
 import styles from "./SideNav.module.css";

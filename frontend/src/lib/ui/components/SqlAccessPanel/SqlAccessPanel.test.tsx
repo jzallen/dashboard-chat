@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach,describe, expect, it, vi } from "vitest";
 
-import type { EnvironmentStatusResponse,SqlAccessStatus } from "@/api";
+import type { EnvironmentStatusResponse,SqlAccessStatus } from "@/dataCatalog";
 
 import { SqlAccessPanel } from "./index";
 
@@ -17,8 +17,8 @@ const mockStopEnvironment = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
 const mockRestartEnvironment = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
 const mockGetEnvironmentStatus = vi.fn<(id: string) => Promise<EnvironmentStatusResponse>>();
 
-vi.mock("@/api", async () => {
-  const actual = await vi.importActual<typeof import("@/api")>("@/api");
+vi.mock("@/dataCatalog", async () => {
+  const actual = await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
   return {
     ...actual,
     getSqlAccess: (...args: [string]) => mockGetSqlAccess(...args),

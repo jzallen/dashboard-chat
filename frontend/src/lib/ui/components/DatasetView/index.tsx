@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext,useParams } from "react-router-dom";
 
-import { exportDbtProject } from "@/api";
+import { exportDbtProject } from "@/dataCatalog";
 import { raqbToSql } from "@/raqb";
 import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
 import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallContext } from "@/table-tools";

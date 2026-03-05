@@ -1,7 +1,7 @@
 import { useEffect,useRef, useState } from "react";
 
-import type { Dataset } from "@/api";
-import { uploadFile } from "@/api";
+import type { Dataset } from "@/dataCatalog";
+import { uploadFile } from "@/dataCatalog/client";
 
 import styles from "./ChatPanel.module.css";
 

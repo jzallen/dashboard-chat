@@ -1,6 +1,6 @@
 import { type Dispatch, type FormEvent, memo, type RefObject, type SetStateAction, useState } from "react";
 
-import type { Dataset } from "@/api";
+import type { Dataset } from "@/dataCatalog";
 
 import type { Message } from "../../types";
 import { ChatEmptyState } from "./ChatEmptyState";

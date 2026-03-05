@@ -1,8 +1,9 @@
 import { createContext, type ReactNode, useCallback, useContext } from "react";
 
-import { API_BASE_URL, get, post } from "../../../api/client";
 import { clearAll, getToken, setRefreshToken, setToken, setTokenExpiry, setUser } from "../../../auth/tokenStorage";
 import type { AuthState, AuthUser } from "../../../auth/types";
+import { backendClient } from "../../../dataCatalog/client";
+import { API_BASE_URL } from "../../../shared/config";
 import { ActivityCheckModal } from "../../components/ActivityCheckModal";
 import { ActivityDebugBadge } from "../../components/ActivityDebugBadge";
 import { useInactivity } from "./hooks/useInactivity";
@@ -21,7 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (organizationId?: string) => {
     const params = organizationId ? `?organization_id=${encodeURIComponent(organizationId)}` : "";
-    const { url, state } = await get<{ url: string; state: string }>(`/api/auth/login${params}`);
+    const { url, state } = await backendClient.get<{ url: string; state: string }>(`/api/auth/login${params}`);
     if (state) {
       sessionStorage.setItem("oauth_state", state);
     }
@@ -29,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleCallback = useCallback(async (code: string): Promise<AuthUser> => {
-    const data = await post<{ user: AuthUser; token: string; refresh_token: string; expires_in: number }>("/api/auth/callback", { code });
+    const data = await backendClient.post<{ user: AuthUser; token: string; refresh_token: string; expires_in: number }>("/api/auth/callback", { code });
     setToken(data.token);
     setUser(data.user);
     setRefreshToken(data.refresh_token);

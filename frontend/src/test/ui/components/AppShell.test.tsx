@@ -3,16 +3,24 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../../../lib/ui/components/AppShell";
 
-// Mock API calls
-vi.mock("@/api", async () => {
-  const actual = await vi.importActual<typeof import("@/api")>("@/api");
-  const { MOCK_DATASETS, MOCK_PROJECT } = await import("../../../__mocks__/data");
+// Mock API client (for useOrgQuery's get call)
+vi.mock("@/dataCatalog/client", async () => {
+  const actual = await vi.importActual<typeof import("@/dataCatalog/client")>("@/dataCatalog/client");
   return {
     ...actual,
     get: vi.fn().mockImplementation((url: string) => {
       if (url === "/api/orgs/me") return Promise.resolve({ id: "org-001", name: "Test Org" });
       return Promise.resolve(null);
     }),
+  };
+});
+
+// Mock domain API calls
+vi.mock("@/dataCatalog", async () => {
+  const actual = await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
+  const { MOCK_DATASETS, MOCK_PROJECT } = await import("../../../__mocks__/data");
+  return {
+    ...actual,
     listProjects: vi.fn().mockResolvedValue([MOCK_PROJECT]),
     getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
     getDataset: vi.fn().mockResolvedValue(null),

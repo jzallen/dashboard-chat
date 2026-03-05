@@ -8,9 +8,8 @@ import { act,render, screen } from "@testing-library/react";
 import { AuthProvider, useAuth } from "../../lib/ui/context/AuthContext";
 
 // Mock the API client used by login/handleCallback
-vi.mock("../../lib/api/client", () => ({
-  get: vi.fn(),
-  post: vi.fn(),
+vi.mock("../../lib/dataCatalog/client", () => ({
+  backendClient: { get: vi.fn(), post: vi.fn() },
 }));
 
 const mockFetch = vi.fn();

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { type Dataset, type DatasetSparse, updateDataset } from "@/api";
+import { type Dataset, type DatasetSparse, updateDataset } from "@/dataCatalog";
 
 import { datasetKeys } from "./useDatasetQuery";
 

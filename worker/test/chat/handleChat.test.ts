@@ -4,7 +4,7 @@ import {
   ChatClient,
   ChatCompletionRequest,
   handleChat,
-} from "@/chat/index";
+} from "../../lib/chat";
 
 interface StreamChunk {
   delta?: {

@@ -8,8 +8,8 @@ import { ProjectView } from "../../../lib/ui/components/DatasetView";
 import { ChatProvider } from "../../../lib/ui/context/ChatContext";
 
 // Mock API calls — use dynamic import in factory to avoid hoisting issues
-vi.mock("@/api", async () => {
-  const actual = await vi.importActual<typeof import("@/api")>("@/api");
+vi.mock("@/dataCatalog", async () => {
+  const actual = await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
   const { MOCK_DATASETS, MOCK_DATASET_FULL, MOCK_PROJECT } = await import("../../../__mocks__/data");
   return {
     ...actual,
