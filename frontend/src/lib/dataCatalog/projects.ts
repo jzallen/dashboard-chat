@@ -1,8 +1,9 @@
 /**
- * Projects API
+ * Projects API — Types
+ *
+ * Domain functions are provided by createDataCatalog() in ./client.ts.
+ * This file exports only types used by the factory and consumers.
  */
-
-import { backendClient, get } from "./client";
 
 export type { DatasetSparse } from "./datasets";
 
@@ -13,52 +14,4 @@ export interface Project {
   created_at: string;
   updated_at: string;
   datasets?: import("./datasets").DatasetSparse[];
-}
-
-/**
- * List all projects for the current user's org
- */
-export async function listProjects(): Promise<Project[]> {
-  return get<Project[]>("/api/projects");
-}
-
-/**
- * Get a single project by ID
- */
-export async function getProject(projectId: string): Promise<Project> {
-  return get<Project>(`/api/projects/${projectId}`);
-}
-
-/**
- * Download a dbt project export as a zip file
- */
-export async function exportDbtProject(projectId: string): Promise<void> {
-  const response = await backendClient.fetch(`/api/projects/${projectId}/export/dbt`, {
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Export failed: ${response.status} ${errorText}`);
-  }
-
-  const blob = await response.blob();
-
-  // Extract filename from Content-Disposition header, fallback to "export.zip"
-  const disposition = response.headers.get("Content-Disposition");
-  let filename = "export.zip";
-  if (disposition) {
-    const match = disposition.match(/filename="?([^";\s]+)"?/);
-    if (match) filename = match[1];
-  }
-
-  // Trigger browser download
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(objectUrl);
 }

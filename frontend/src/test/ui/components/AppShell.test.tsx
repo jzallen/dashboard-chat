@@ -3,30 +3,54 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../../../lib/ui/components/AppShell";
 
-// Mock API client (for useOrgQuery's get call)
-vi.mock("@/dataCatalog/client", async () => {
-  const actual = await vi.importActual<typeof import("@/dataCatalog/client")>("@/dataCatalog/client");
+// Mock @/auth to avoid real auth
+vi.mock("@/auth", () => ({
+  withAuth: (fn: typeof fetch) => fn,
+  withEagerAuth: (fn: typeof fetch) => fn,
+}));
+
+// Mock the dataCatalog factory
+vi.mock("@/dataCatalog", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
+  const { MOCK_DATASETS, MOCK_PROJECT } =
+    await import("../../../__mocks__/data");
   return {
     ...actual,
-    get: vi.fn().mockImplementation((url: string) => {
-      if (url === "/api/orgs/me") return Promise.resolve({ id: "org-001", name: "Test Org" });
-      return Promise.resolve(null);
+    createDataCatalog: () => ({
+      listProjects: vi.fn().mockResolvedValue([MOCK_PROJECT]),
+      getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
+      getDataset: vi.fn().mockResolvedValue(null),
+      listDatasetsForProject: vi.fn().mockResolvedValue(MOCK_DATASETS),
+      getOrgInfo: vi
+        .fn()
+        .mockResolvedValue({ id: "org-001", name: "Test Org" }),
+      exportDbtProject: vi.fn(),
+      uploadFile: vi.fn(),
     }),
   };
 });
 
-// Mock domain API calls
-vi.mock("@/dataCatalog", async () => {
-  const actual = await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
-  const { MOCK_DATASETS, MOCK_PROJECT } = await import("../../../__mocks__/data");
+// Mock @/chat factory
+vi.mock("@/chat", async () => {
+  const actual = await vi.importActual<typeof import("@/chat")>("@/chat");
   return {
     ...actual,
-    listProjects: vi.fn().mockResolvedValue([MOCK_PROJECT]),
-    getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
-    getDataset: vi.fn().mockResolvedValue(null),
-    listDatasetsForProject: vi.fn().mockResolvedValue(MOCK_DATASETS),
+    createChatClient: () => ({
+      createSession: vi.fn(),
+      logTurn: vi.fn(),
+      getSession: vi.fn(),
+      listSessions: vi.fn(),
+      fetchChatStream: vi.fn(),
+    }),
   };
 });
+
+// Mock shared config
+vi.mock("@/shared/config", () => ({
+  DATA_CATALOG_BASE_URL: "",
+  CHAT_BASE_URL: "",
+}));
 
 function renderShell(route = "/") {
   return render(
@@ -34,14 +58,17 @@ function renderShell(route = "/") {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<div>org-content</div>} />
-          <Route path="/projects/:projectId" element={<div>project-grid-content</div>} />
+          <Route
+            path="/projects/:projectId"
+            element={<div>project-grid-content</div>}
+          />
           <Route
             path="/projects/:projectId/datasets/:datasetId"
             element={<div>dataset-view-content</div>}
           />
         </Route>
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 

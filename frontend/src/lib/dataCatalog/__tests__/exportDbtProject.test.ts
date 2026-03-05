@@ -1,6 +1,6 @@
-import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { exportDbtProject } from "../projects";
+import { createDataCatalog } from "../client";
 
 describe("exportDbtProject", () => {
   const mockFetch = vi.fn();
@@ -19,10 +19,15 @@ describe("exportDbtProject", () => {
     global.URL.revokeObjectURL = mockRevokeObjectURL;
 
     mockAnchor = { href: "", download: "", click: mockClick };
-    vi.spyOn(document, "createElement").mockReturnValue(mockAnchor as unknown as HTMLElement);
-    vi.spyOn(document.body, "appendChild").mockImplementation(() => mockAnchor as unknown as HTMLElement);
-    vi.spyOn(document.body, "removeChild").mockImplementation(() => mockAnchor as unknown as HTMLElement);
-    vi.spyOn(Storage.prototype, "getItem").mockReturnValue("test-token");
+    vi.spyOn(document, "createElement").mockReturnValue(
+      mockAnchor as unknown as HTMLElement,
+    );
+    vi.spyOn(document.body, "appendChild").mockImplementation(
+      () => mockAnchor as unknown as HTMLElement,
+    );
+    vi.spyOn(document.body, "removeChild").mockImplementation(
+      () => mockAnchor as unknown as HTMLElement,
+    );
   });
 
   afterEach(() => {
@@ -40,13 +45,13 @@ describe("exportDbtProject", () => {
       }),
     });
 
-    await exportDbtProject("proj-123");
+    const catalog = createDataCatalog(mockFetch);
+    await catalog.exportDbtProject("proj-123");
 
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/projects/proj-123/export/dbt"),
       expect.objectContaining({
         method: "GET",
-        headers: { Authorization: "Bearer test-token" },
       }),
     );
     expect(mockCreateObjectURL).toHaveBeenCalledWith(mockBlob);
@@ -64,7 +69,8 @@ describe("exportDbtProject", () => {
       headers: new Headers(),
     });
 
-    await exportDbtProject("proj-456");
+    const catalog = createDataCatalog(mockFetch);
+    await catalog.exportDbtProject("proj-456");
 
     expect(mockAnchor.download).toBe("export.zip");
     expect(mockClick).toHaveBeenCalled();
@@ -77,58 +83,10 @@ describe("exportDbtProject", () => {
       text: () => Promise.resolve("Not Found"),
     });
 
-    await expect(exportDbtProject("proj-789")).rejects.toThrow(
+    const catalog = createDataCatalog(mockFetch);
+    await expect(catalog.exportDbtProject("proj-789")).rejects.toThrow(
       "Export failed: 404 Not Found",
     );
     expect(mockCreateObjectURL).not.toHaveBeenCalled();
-  });
-
-  it("retries with refreshed token on 401", async () => {
-    // First call returns 401
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-      })
-      // Refresh token call
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            access_token: "new-token",
-            refresh_token: "new-refresh",
-            expires_in: 3600,
-          }),
-      })
-      // Retry with new token succeeds
-      .mockResolvedValueOnce({
-        ok: true,
-        blob: () => Promise.resolve(new Blob(["zip-content"], { type: "application/zip" })),
-        headers: new Headers({
-          "Content-Disposition": 'attachment; filename="project.zip"',
-        }),
-      });
-
-    // Override getItem to provide both token and refresh token
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation((key: string) => {
-      if (key === "auth_token") return "expired-token";
-      if (key === "auth_refresh_token") return "valid-refresh-token";
-      return null;
-    });
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {});
-
-    await exportDbtProject("proj-401");
-
-    // Should have made 3 fetch calls: initial + refresh + retry
-    expect(mockFetch).toHaveBeenCalledTimes(3);
-    // The retry call should use the new token
-    expect(mockFetch).toHaveBeenLastCalledWith(
-      expect.stringContaining("/api/projects/proj-401/export/dbt"),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer new-token",
-        }),
-      }),
-    );
   });
 });

@@ -1,8 +1,20 @@
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
-import { type ApiError, type Dataset, type DatasetSparse, getDataset, listDatasetsForProject } from "@/dataCatalog";
+import { withAuth } from "@/auth";
+import {
+  type ApiError,
+  createDataCatalog,
+  type Dataset,
+  type DatasetSparse,
+} from "@/dataCatalog";
 
 import { QUERY_STALE_TIMES } from "./queryConfig";
+
+const catalog = createDataCatalog(withAuth(fetch));
 
 /** TanStack Query key factory for dataset queries (list and detail). */
 export const datasetKeys = {
@@ -16,7 +28,12 @@ export const datasetKeys = {
 export function useDatasetQuery(datasetId: string | undefined) {
   return useQuery<Dataset, ApiError>({
     queryKey: datasetKeys.detail(datasetId ?? ""),
-    queryFn: () => getDataset(datasetId!, { includeTransforms: true, includePreview: true, previewLimit: 100 }),
+    queryFn: () =>
+      catalog.getDataset(datasetId!, {
+        includeTransforms: true,
+        includePreview: true,
+        previewLimit: 100,
+      }),
     enabled: Boolean(datasetId),
   });
 }
@@ -25,7 +42,7 @@ export function useDatasetQuery(datasetId: string | undefined) {
 export function useDatasets(projectId: string | undefined) {
   return useQuery<DatasetSparse[], ApiError>({
     queryKey: datasetKeys.list(projectId ?? ""),
-    queryFn: () => listDatasetsForProject(projectId!),
+    queryFn: () => catalog.listDatasetsForProject(projectId!),
     enabled: Boolean(projectId),
     staleTime: QUERY_STALE_TIMES.DATASET_LIST,
     placeholderData: keepPreviousData,
@@ -42,7 +59,12 @@ export function usePrefetchDataset() {
   return (datasetId: string) => {
     queryClient.prefetchQuery({
       queryKey: datasetKeys.detail(datasetId),
-      queryFn: () => getDataset(datasetId, { includeTransforms: true, includePreview: true, previewLimit: 100 }),
+      queryFn: () =>
+        catalog.getDataset(datasetId, {
+          includeTransforms: true,
+          includePreview: true,
+          previewLimit: 100,
+        }),
       staleTime: QUERY_STALE_TIMES.DATASET_DETAIL,
     });
   };

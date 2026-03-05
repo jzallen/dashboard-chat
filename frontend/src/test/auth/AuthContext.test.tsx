@@ -4,16 +4,13 @@ vi.hoisted(() => {
   process.env.VITE_AUTH_MODE = "dev";
 });
 
-import { act,render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
 import { AuthProvider, useAuth } from "../../lib/ui/context/AuthContext";
 
-// Mock the API client
-vi.mock("../../lib/dataCatalog/client", () => ({
-  backendClient: { get: vi.fn(), post: vi.fn() },
-}));
+// Mock the shared config (AuthProvider uses ApiClient directly now)
 vi.mock("../../lib/shared/config", () => ({
-  API_BASE_URL: "",
+  DATA_CATALOG_BASE_URL: "",
 }));
 
 function TestConsumer() {
@@ -24,7 +21,9 @@ function TestConsumer() {
       <span data-testid="authenticated">{String(isAuthenticated)}</span>
       <span data-testid="user">{user ? user.email : "null"}</span>
       <span data-testid="token">{token ?? "null"}</span>
-      <button data-testid="logout" onClick={logout}>Logout</button>
+      <button data-testid="logout" onClick={logout}>
+        Logout
+      </button>
     </div>
   );
 }
@@ -38,11 +37,15 @@ describe("AuthContext", () => {
     render(
       <AuthProvider>
         <TestConsumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     // Dev mode (default in tests) auto-sets authenticated state
-    expect(await screen.findByText("true", { selector: '[data-testid="authenticated"]' })).toBeInTheDocument();
+    expect(
+      await screen.findByText("true", {
+        selector: '[data-testid="authenticated"]',
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("user").textContent).toBe("dev@localhost");
     expect(screen.getByTestId("token").textContent).toBe("dev-token-static");
     expect(screen.getByTestId("loading").textContent).toBe("false");
@@ -52,13 +55,18 @@ describe("AuthContext", () => {
     render(
       <AuthProvider>
         <TestConsumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
-    await screen.findByText("true", { selector: '[data-testid="authenticated"]' });
+    await screen.findByText("true", {
+      selector: '[data-testid="authenticated"]',
+    });
     expect(localStorage.getItem("auth_token")).toBe("dev-token-static");
     expect(JSON.parse(localStorage.getItem("auth_user")!)).toEqual(
-      expect.objectContaining({ email: "dev@localhost", org_id: "dev-org-001" })
+      expect.objectContaining({
+        email: "dev@localhost",
+        org_id: "dev-org-001",
+      }),
     );
   });
 
@@ -66,7 +74,7 @@ describe("AuthContext", () => {
     render(
       <AuthProvider>
         <div>child content</div>
-      </AuthProvider>
+      </AuthProvider>,
     );
     expect(screen.getByText("child content")).toBeInTheDocument();
   });
@@ -75,10 +83,12 @@ describe("AuthContext", () => {
     render(
       <AuthProvider>
         <TestConsumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
-    await screen.findByText("true", { selector: '[data-testid="authenticated"]' });
+    await screen.findByText("true", {
+      selector: '[data-testid="authenticated"]',
+    });
 
     act(() => {
       screen.getByTestId("logout").click();
@@ -99,7 +109,9 @@ describe("AuthContext", () => {
 
     // Suppress console.error from React's error boundary
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(() => render(<Orphan />)).toThrow("useAuth must be used within AuthProvider");
+    expect(() => render(<Orphan />)).toThrow(
+      "useAuth must be used within AuthProvider",
+    );
     spy.mockRestore();
   });
 });

@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link,useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
-import { type ChatSession, type ChatTurn,getSession } from "@/chat/client";
+import { withAuth } from "@/auth";
+import { type ChatSession, type ChatTurn, createChatClient } from "@/chat";
+
+const chatClient = createChatClient(withAuth(fetch));
 
 import styles from "./SessionViewer.module.css";
 
@@ -52,15 +55,11 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
 
       {turn.tool_calls && turn.tool_calls.length > 0 && (
         <details className={styles.detailsSection}>
-          <summary>
-            Tool Calls ({turn.tool_calls.length})
-          </summary>
+          <summary>Tool Calls ({turn.tool_calls.length})</summary>
           <div className={styles.detailsContent}>
             {turn.tool_calls.map((tc, i) => (
               <div key={i} className={styles.toolCallItem}>
-                <div className={styles.toolCallName}>
-                  {tc.function.name}
-                </div>
+                <div className={styles.toolCallName}>{tc.function.name}</div>
                 <pre className={styles.preBlock}>
                   {formatJson(tc.function.arguments)}
                 </pre>
@@ -72,9 +71,7 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
 
       {turn.tool_results && turn.tool_results.length > 0 && (
         <details className={styles.detailsSection}>
-          <summary>
-            Tool Results ({turn.tool_results.length})
-          </summary>
+          <summary>Tool Results ({turn.tool_results.length})</summary>
           <div className={styles.detailsContent}>
             {turn.tool_results.map((tr, i) => (
               <pre key={i} className={styles.preBlock}>
@@ -105,9 +102,7 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
           <div className={styles.messageLabel} style={{ marginTop: 8 }}>
             Table Schema
           </div>
-          <pre className={styles.preBlock}>
-            {formatJson(turn.table_schema)}
-          </pre>
+          <pre className={styles.preBlock}>{formatJson(turn.table_schema)}</pre>
         </div>
       </details>
     </div>
@@ -116,7 +111,11 @@ function TurnCard({ turn, index }: { turn: ChatTurn; index: number }) {
 
 /** Displays a read-only view of a past chat session with its turns and tool calls. */
 export function SessionViewer() {
-  const { projectId, datasetId, sessionId } = useParams<{ projectId: string; datasetId: string; sessionId: string }>();
+  const { projectId, datasetId, sessionId } = useParams<{
+    projectId: string;
+    datasetId: string;
+    sessionId: string;
+  }>();
   const [session, setSession] = useState<ChatSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,27 +124,41 @@ export function SessionViewer() {
     if (!sessionId) return;
     setLoading(true);
     setError(null);
-    getSession(sessionId)
+    chatClient
+      .getSession(sessionId)
       .then(setSession)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, [sessionId]);
 
   if (loading) {
-    return <div className={styles.container}><div className={styles.loading}>Loading session...</div></div>;
+    return (
+      <div className={styles.container}>
+        <div className={styles.loading}>Loading session...</div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className={styles.container}><div className={styles.error}>{error}</div></div>;
+    return (
+      <div className={styles.container}>
+        <div className={styles.error}>{error}</div>
+      </div>
+    );
   }
 
   if (!session) {
-    return <div className={styles.container}><div className={styles.emptyState}>Session not found</div></div>;
+    return (
+      <div className={styles.container}>
+        <div className={styles.emptyState}>Session not found</div>
+      </div>
+    );
   }
 
-  const backTo = projectId && datasetId
-    ? `/projects/${projectId}/datasets/${datasetId}/sessions`
-    : "/projects";
+  const backTo =
+    projectId && datasetId
+      ? `/projects/${projectId}/datasets/${datasetId}/sessions`
+      : "/projects";
 
   return (
     <div className={styles.container}>
@@ -158,7 +171,9 @@ export function SessionViewer() {
         <div className={styles.sessionMeta}>
           <span>Created: {formatDate(session.created_at)}</span>
           {session.dataset_id && <span>Dataset: {session.dataset_id}</span>}
-          <span>{session.turns.length} turn{session.turns.length !== 1 ? "s" : ""}</span>
+          <span>
+            {session.turns.length} turn{session.turns.length !== 1 ? "s" : ""}
+          </span>
         </div>
       </div>
 

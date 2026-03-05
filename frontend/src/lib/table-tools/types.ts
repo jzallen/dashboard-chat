@@ -1,6 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
 
+import type { DataCatalog } from "@/dataCatalog";
+
 /** A single row of table data, keyed by column name. */
 export type TableRow = Record<string, unknown>;
 
@@ -10,26 +12,45 @@ export type ToolCallArgs =
   | { tool: "sortTable"; column: string; direction: "asc" | "desc" }
   | { tool: "addRow"; data: Record<string, unknown> }
   | { tool: "deleteRow"; search: string }
-  | { tool: "replaceColumnFilter"; column: string; filters: Array<{ operator: string; value: unknown }> }
+  | {
+      tool: "replaceColumnFilter";
+      column: string;
+      filters: Array<{ operator: string; value: unknown }>;
+    }
   | { tool: "generateFilter"; description: string; raqb_tree: unknown }
   | { tool: "clearFilters" }
   | { tool: "clearSort" }
   | { tool: "trimWhitespace"; column: string }
   | { tool: "standardizeCase"; column: string; mode: string }
   | { tool: "fillNulls"; column: string; fillValue: unknown }
-  | { tool: "mapValues"; column: string; mappings: Array<{ from: string; to: string }> }
+  | {
+      tool: "mapValues";
+      column: string;
+      mappings: Array<{ from: string; to: string }>;
+    }
   | { tool: "renameColumn"; column: string; newName: string }
-  | { tool: "applyCleaningTransform"; column: string; operation: string; config: Record<string, unknown> }
-  | { tool: "undoCleaningTransform"; action: "disable" | "delete"; transformId?: string }
+  | {
+      tool: "applyCleaningTransform";
+      column: string;
+      operation: string;
+      config: Record<string, unknown>;
+    }
+  | {
+      tool: "undoCleaningTransform";
+      action: "disable" | "delete";
+      transformId?: string;
+    }
   | { tool: "reEnableCleaningTransform"; transformId?: string };
 
 /** Callbacks for mutating table state (filters, sorting, data) in response to tool calls. */
 export interface ToolCallHandlers {
   setColumnFilters: (
-    updater: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)
+    updater:
+      | ColumnFiltersState
+      | ((prev: ColumnFiltersState) => ColumnFiltersState),
   ) => void;
   setSorting: (
-    updater: SortingState | ((prev: SortingState) => SortingState)
+    updater: SortingState | ((prev: SortingState) => SortingState),
   ) => void;
   setData: (updater: (prev: TableRow[]) => TableRow[]) => void;
 }
@@ -50,4 +71,5 @@ export interface ToolCallContext extends ToolCallHandlers {
   datasetId: string;
   transforms: TransformInfo[];
   queryClient: QueryClient;
+  catalog: DataCatalog;
 }

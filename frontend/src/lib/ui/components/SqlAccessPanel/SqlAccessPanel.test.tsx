@@ -1,37 +1,55 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach,describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { EnvironmentStatusResponse,SqlAccessStatus } from "@/dataCatalog";
+import type { EnvironmentStatusResponse, SqlAccessStatus } from "@/dataCatalog";
 
 import { SqlAccessPanel } from "./index";
 
 // Mock the API module
-const mockGetSqlAccess = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
-const mockEnableSqlAccess = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
-const mockDisableSqlAccess = vi.fn<(id: string) => Promise<void>>();
-const mockSyncSqlAccess = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
-const mockRegenerateSqlCredentials = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
-const mockStartEnvironment = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
-const mockStopEnvironment = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
-const mockRestartEnvironment = vi.fn<(id: string) => Promise<SqlAccessStatus>>();
-const mockGetEnvironmentStatus = vi.fn<(id: string) => Promise<EnvironmentStatusResponse>>();
+const {
+  mockGetSqlAccess,
+  mockEnableSqlAccess,
+  mockDisableSqlAccess,
+  mockSyncSqlAccess,
+  mockRegenerateSqlCredentials,
+  mockStartEnvironment,
+  mockStopEnvironment,
+  mockRestartEnvironment,
+  mockGetEnvironmentStatus,
+} = vi.hoisted(() => ({
+  mockGetSqlAccess: vi.fn(),
+  mockEnableSqlAccess: vi.fn(),
+  mockDisableSqlAccess: vi.fn(),
+  mockSyncSqlAccess: vi.fn(),
+  mockRegenerateSqlCredentials: vi.fn(),
+  mockStartEnvironment: vi.fn(),
+  mockStopEnvironment: vi.fn(),
+  mockRestartEnvironment: vi.fn(),
+  mockGetEnvironmentStatus: vi.fn(),
+}));
 
-vi.mock("@/dataCatalog", async () => {
-  const actual = await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
+vi.mock("@/dataCatalog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/dataCatalog")>();
   return {
     ...actual,
-    getSqlAccess: (...args: [string]) => mockGetSqlAccess(...args),
-    enableSqlAccess: (...args: [string]) => mockEnableSqlAccess(...args),
-    disableSqlAccess: (...args: [string]) => mockDisableSqlAccess(...args),
-    syncSqlAccess: (...args: [string]) => mockSyncSqlAccess(...args),
-    regenerateSqlCredentials: (...args: [string]) => mockRegenerateSqlCredentials(...args),
-    startEnvironment: (...args: [string]) => mockStartEnvironment(...args),
-    stopEnvironment: (...args: [string]) => mockStopEnvironment(...args),
-    restartEnvironment: (...args: [string]) => mockRestartEnvironment(...args),
-    getEnvironmentStatus: (...args: [string]) => mockGetEnvironmentStatus(...args),
+    createDataCatalog: () => ({
+      getSqlAccess: mockGetSqlAccess,
+      enableSqlAccess: mockEnableSqlAccess,
+      disableSqlAccess: mockDisableSqlAccess,
+      syncSqlAccess: mockSyncSqlAccess,
+      regenerateSqlCredentials: mockRegenerateSqlCredentials,
+      startEnvironment: mockStartEnvironment,
+      stopEnvironment: mockStopEnvironment,
+      restartEnvironment: mockRestartEnvironment,
+      getEnvironmentStatus: mockGetEnvironmentStatus,
+    }),
   };
 });
+
+vi.mock("@/auth", () => ({
+  withAuth: (fn: typeof fetch) => fn,
+}));
 
 const DISABLED_STATUS: SqlAccessStatus = {
   project_id: "proj-001",
@@ -100,7 +118,7 @@ function renderPanel(projectId = "proj-001") {
   return render(
     <QueryClientProvider client={queryClient}>
       <SqlAccessPanel projectId={projectId} />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -123,7 +141,7 @@ describe("SqlAccessPanel", () => {
       mockGetSqlAccess.mockResolvedValue(DISABLED_STATUS);
       renderPanel();
       expect(
-        await screen.findByRole("button", { name: "Enable SQL Access" })
+        await screen.findByRole("button", { name: "Enable SQL Access" }),
       ).toBeInTheDocument();
     });
 
@@ -132,8 +150,8 @@ describe("SqlAccessPanel", () => {
       renderPanel();
       expect(
         await screen.findByText(
-          "Connect to your project data with any PostgreSQL client."
-        )
+          "Connect to your project data with any PostgreSQL client.",
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -155,9 +173,7 @@ describe("SqlAccessPanel", () => {
       renderPanel();
 
       expect(
-        await screen.findByText(
-          "postgresql://****@localhost:5432/proj_001_db"
-        )
+        await screen.findByText("postgresql://****@localhost:5432/proj_001_db"),
       ).toBeInTheDocument();
     });
 
@@ -228,13 +244,9 @@ describe("SqlAccessPanel", () => {
       });
       fireEvent.click(disableBtn);
 
+      expect(screen.getByText("Disable SQL Access?")).toBeInTheDocument();
       expect(
-        screen.getByText("Disable SQL Access?")
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /terminate all active connections/
-        )
+        screen.getByText(/terminate all active connections/),
       ).toBeInTheDocument();
     });
 
@@ -270,9 +282,7 @@ describe("SqlAccessPanel", () => {
       const cancelBtn = screen.getByRole("button", { name: "Cancel" });
       fireEvent.click(cancelBtn);
 
-      expect(
-        screen.queryByText("Disable SQL Access?")
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Disable SQL Access?")).not.toBeInTheDocument();
     });
   });
 
@@ -313,11 +323,9 @@ describe("SqlAccessPanel", () => {
       mockGetSqlAccess.mockResolvedValue(LEGACY_STATUS);
       renderPanel();
 
+      expect(await screen.findByTestId("legacy-banner")).toBeInTheDocument();
       expect(
-        await screen.findByTestId("legacy-banner")
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("SQL Access needs to be reconfigured")
+        screen.getByText("SQL Access needs to be reconfigured"),
       ).toBeInTheDocument();
     });
 
@@ -343,10 +351,10 @@ describe("SqlAccessPanel", () => {
       renderPanel();
 
       expect(
-        await screen.findByRole("button", { name: "Stop" })
+        await screen.findByRole("button", { name: "Stop" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: "Restart" })
+        screen.getByRole("button", { name: "Restart" }),
       ).toBeInTheDocument();
     });
 
@@ -355,10 +363,12 @@ describe("SqlAccessPanel", () => {
       renderPanel();
 
       expect(
-        await screen.findByRole("button", { name: "Start" })
+        await screen.findByRole("button", { name: "Start" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByText("Environment is stopped. Connection attempts will fail until started.")
+        screen.getByText(
+          "Environment is stopped. Connection attempts will fail until started.",
+        ),
       ).toBeInTheDocument();
     });
 
@@ -367,11 +377,9 @@ describe("SqlAccessPanel", () => {
       renderPanel();
 
       expect(
-        await screen.findByRole("button", { name: "Retry" })
+        await screen.findByRole("button", { name: "Retry" }),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText("Failed to start database")
-      ).toBeInTheDocument();
+      expect(screen.getByText("Failed to start database")).toBeInTheDocument();
     });
 
     it("shows degraded status with stop and restart buttons", async () => {
@@ -381,19 +389,20 @@ describe("SqlAccessPanel", () => {
       const degradedBadges = await screen.findAllByText("Degraded");
       expect(degradedBadges.length).toBeGreaterThanOrEqual(1);
       expect(
-        screen.getByText("PgBouncer is not responding")
+        screen.getByText("PgBouncer is not responding"),
       ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: "Stop" })
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: "Restart" })
+        screen.getByRole("button", { name: "Restart" }),
       ).toBeInTheDocument();
     });
 
     it("calls start when start button is clicked", async () => {
       mockGetSqlAccess.mockResolvedValue(STOPPED_STATUS);
-      mockStartEnvironment.mockResolvedValue({ ...ENABLED_STATUS, environment_status: "running" });
+      mockStartEnvironment.mockResolvedValue({
+        ...ENABLED_STATUS,
+        environment_status: "running",
+      });
       renderPanel();
 
       const startBtn = await screen.findByRole("button", { name: "Start" });
@@ -406,7 +415,10 @@ describe("SqlAccessPanel", () => {
 
     it("calls stop when stop button is clicked", async () => {
       mockGetSqlAccess.mockResolvedValue(ENABLED_STATUS);
-      mockStopEnvironment.mockResolvedValue({ ...ENABLED_STATUS, environment_status: "stopped" });
+      mockStopEnvironment.mockResolvedValue({
+        ...ENABLED_STATUS,
+        environment_status: "stopped",
+      });
       renderPanel();
 
       const stopBtn = await screen.findByRole("button", { name: "Stop" });
@@ -419,7 +431,10 @@ describe("SqlAccessPanel", () => {
 
     it("calls restart when restart button is clicked", async () => {
       mockGetSqlAccess.mockResolvedValue(ENABLED_STATUS);
-      mockRestartEnvironment.mockResolvedValue({ ...ENABLED_STATUS, environment_status: "running" });
+      mockRestartEnvironment.mockResolvedValue({
+        ...ENABLED_STATUS,
+        environment_status: "running",
+      });
       renderPanel();
 
       const restartBtn = await screen.findByRole("button", { name: "Restart" });
@@ -432,7 +447,10 @@ describe("SqlAccessPanel", () => {
 
     it("calls restart for error state retry", async () => {
       mockGetSqlAccess.mockResolvedValue(ERROR_STATUS);
-      mockRestartEnvironment.mockResolvedValue({ ...ENABLED_STATUS, environment_status: "running" });
+      mockRestartEnvironment.mockResolvedValue({
+        ...ENABLED_STATUS,
+        environment_status: "running",
+      });
       renderPanel();
 
       const retryBtn = await screen.findByRole("button", { name: "Retry" });

@@ -1,9 +1,7 @@
-import { withAuth } from "../auth/withAuth";
-
 export class ApiError extends Error {
   constructor(
     public status: number,
-    message: string
+    message: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -12,20 +10,19 @@ export class ApiError extends Error {
 
 interface ApiClientOptions {
   unwrapData?: boolean;
+  fetchFn?: typeof fetch;
 }
 
 export class ApiClient {
   private unwrapData: boolean;
+  private fetchFn: typeof fetch;
 
   constructor(
     private baseUrl: string,
-    options?: ApiClientOptions
+    options?: ApiClientOptions,
   ) {
     this.unwrapData = options?.unwrapData ?? true;
-  }
-
-  private get authedFetch() {
-    return withAuth((...args: Parameters<typeof fetch>) => fetch(...args));
+    this.fetchFn = options?.fetchFn ?? fetch;
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {
@@ -35,7 +32,10 @@ export class ApiClient {
       try {
         const parsed = JSON.parse(errorBody);
         if (parsed.detail) {
-          console.error(`[API ${parsed.type || response.status}]`, parsed.detail);
+          console.error(
+            `[API ${parsed.type || response.status}]`,
+            parsed.detail,
+          );
         }
         message = parsed.title || parsed.type || message;
       } catch {
@@ -45,7 +45,7 @@ export class ApiClient {
     }
     const json = await response.json();
 
-    if (this.unwrapData && json && typeof json === 'object' && 'data' in json) {
+    if (this.unwrapData && json && typeof json === "object" && "data" in json) {
       return json.data as T;
     }
 
@@ -55,7 +55,7 @@ export class ApiClient {
   private async request<T>(endpoint: string, init: RequestInit): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     try {
-      const response = await this.authedFetch(url, init);
+      const response = await this.fetchFn(url, init);
       return this.handleResponse<T>(response);
     } catch (e) {
       if (e instanceof Error && e.message === "Session expired") {
@@ -91,7 +91,7 @@ export class ApiClient {
   async del<T = void>(endpoint: string): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     try {
-      const response = await this.authedFetch(url, {
+      const response = await this.fetchFn(url, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
       });
@@ -108,7 +108,7 @@ export class ApiClient {
   async uploadFile<T>(
     endpoint: string,
     file: File,
-    additionalFields: Record<string, string>
+    additionalFields: Record<string, string>,
   ): Promise<T> {
     const formData = new FormData();
     formData.append("file", file);
@@ -119,7 +119,7 @@ export class ApiClient {
 
     const url = `${this.baseUrl}${endpoint}`;
     try {
-      const response = await this.authedFetch(url, {
+      const response = await this.fetchFn(url, {
         method: "POST",
         body: formData,
       });
@@ -135,7 +135,7 @@ export class ApiClient {
   async fetch(endpoint: string, init?: RequestInit): Promise<Response> {
     const url = `${this.baseUrl}${endpoint}`;
     try {
-      return await this.authedFetch(url, init ?? {});
+      return await this.fetchFn(url, init ?? {});
     } catch (e) {
       if (e instanceof Error && e.message === "Session expired") {
         throw new ApiError(401, "Session expired");

@@ -3,13 +3,13 @@ vi.hoisted(() => {
   process.env.VITE_AUTH_MODE = "workos";
 });
 
-import { act,render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
 import { AuthProvider, useAuth } from "../../lib/ui/context/AuthContext";
 
-// Mock the API client used by login/handleCallback
-vi.mock("../../lib/dataCatalog/client", () => ({
-  backendClient: { get: vi.fn(), post: vi.fn() },
+// Mock the shared config (AuthProvider uses ApiClient directly now)
+vi.mock("../../lib/shared/config", () => ({
+  DATA_CATALOG_BASE_URL: "",
 }));
 
 const mockFetch = vi.fn();
@@ -21,14 +21,24 @@ function TestConsumer() {
     <div>
       <span data-testid="authenticated">{String(isAuthenticated)}</span>
       <span data-testid="token">{token ?? "null"}</span>
-      <button data-testid="logout" onClick={logout}>Logout</button>
+      <button data-testid="logout" onClick={logout}>
+        Logout
+      </button>
     </div>
   );
 }
 
-function makeRefreshResponse(accessToken: string, refreshToken: string, expiresIn: number) {
+function makeRefreshResponse(
+  accessToken: string,
+  refreshToken: string,
+  expiresIn: number,
+) {
   return new Response(
-    JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, expires_in: expiresIn }),
+    JSON.stringify({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: expiresIn,
+    }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
 }
@@ -48,11 +58,16 @@ describe("Proactive refresh timer", () => {
     // Pre-seed localStorage with an authenticated session (60s TTL)
     const expiresAt = Date.now() + 60_000;
     localStorage.setItem("auth_token", "old-access");
-    localStorage.setItem("auth_user", JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }));
+    localStorage.setItem(
+      "auth_user",
+      JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }),
+    );
     localStorage.setItem("auth_refresh_token", "old-refresh");
     localStorage.setItem("auth_token_expires_at", String(expiresAt));
 
-    mockFetch.mockResolvedValueOnce(makeRefreshResponse("new-access", "new-refresh", 60));
+    mockFetch.mockResolvedValueOnce(
+      makeRefreshResponse("new-access", "new-refresh", 60),
+    );
 
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
@@ -89,13 +104,15 @@ describe("Proactive refresh timer", () => {
   it("fails immediately on non-429 error (no internal retry)", async () => {
     const expiresAt = Date.now() + 60_000;
     localStorage.setItem("auth_token", "old-access");
-    localStorage.setItem("auth_user", JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }));
+    localStorage.setItem(
+      "auth_user",
+      JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }),
+    );
     localStorage.setItem("auth_refresh_token", "old-refresh");
     localStorage.setItem("auth_token_expires_at", String(expiresAt));
 
     // 500 error — should fail immediately without retry
-    mockFetch
-      .mockResolvedValueOnce(new Response("fail", { status: 500 }));
+    mockFetch.mockResolvedValueOnce(new Response("fail", { status: 500 }));
 
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
@@ -121,7 +138,10 @@ describe("Proactive refresh timer", () => {
   it("schedules a 30-second retry when proactive refresh fails", async () => {
     const expiresAt = Date.now() + 60_000;
     localStorage.setItem("auth_token", "old-access");
-    localStorage.setItem("auth_user", JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }));
+    localStorage.setItem(
+      "auth_user",
+      JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }),
+    );
     localStorage.setItem("auth_refresh_token", "old-refresh");
     localStorage.setItem("auth_token_expires_at", String(expiresAt));
 
@@ -129,7 +149,9 @@ describe("Proactive refresh timer", () => {
     // then after 30s AuthContext retry succeeds
     mockFetch
       .mockResolvedValueOnce(new Response("fail", { status: 500 }))
-      .mockResolvedValueOnce(makeRefreshResponse("recovered-access", "recovered-refresh", 60));
+      .mockResolvedValueOnce(
+        makeRefreshResponse("recovered-access", "recovered-refresh", 60),
+      );
 
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
@@ -165,14 +187,17 @@ describe("Proactive refresh timer", () => {
   it("remains authenticated after all refresh retries are exhausted", async () => {
     const expiresAt = Date.now() + 60_000;
     localStorage.setItem("auth_token", "old-access");
-    localStorage.setItem("auth_user", JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }));
+    localStorage.setItem(
+      "auth_user",
+      JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }),
+    );
     localStorage.setItem("auth_refresh_token", "old-refresh");
     localStorage.setItem("auth_token_expires_at", String(expiresAt));
 
     // 3 total failures: 3 AuthContext attempts x 1 ensureFreshToken fetch each (no internal retry for non-429)
     mockFetch
-      .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 1
-      .mockResolvedValueOnce(new Response("fail", { status: 500 }))  // attempt 2 (30s AuthContext retry)
+      .mockResolvedValueOnce(new Response("fail", { status: 500 })) // attempt 1
+      .mockResolvedValueOnce(new Response("fail", { status: 500 })) // attempt 2 (30s AuthContext retry)
       .mockResolvedValueOnce(new Response("fail", { status: 500 })); // attempt 3 (60s AuthContext retry)
 
     // eslint-disable-next-line testing-library/no-unnecessary-act
@@ -214,7 +239,10 @@ describe("Proactive refresh timer", () => {
     // Use 600s TTL so that at 80% (480s), remaining = 120s > 60s → freshness guard skips
     const expiresAt = Date.now() + 600_000;
     localStorage.setItem("auth_token", "fresh-access");
-    localStorage.setItem("auth_user", JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }));
+    localStorage.setItem(
+      "auth_user",
+      JSON.stringify({ id: "u1", email: "a@b.c", org_id: "org-1", name: null }),
+    );
     localStorage.setItem("auth_refresh_token", "some-refresh");
     localStorage.setItem("auth_token_expires_at", String(expiresAt));
 

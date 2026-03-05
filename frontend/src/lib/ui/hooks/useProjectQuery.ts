@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { type ApiError, getProject, type Project } from "@/dataCatalog";
+import { withAuth } from "@/auth";
+import { type ApiError, createDataCatalog, type Project } from "@/dataCatalog";
 
 import { QUERY_STALE_TIMES } from "./queryConfig";
+
+const catalog = createDataCatalog(withAuth(fetch));
 
 /** TanStack Query key factory for project queries. */
 export const projectKeys = {
@@ -14,7 +17,7 @@ export const projectKeys = {
 export function useProjectQuery(projectId: string) {
   return useQuery<Project, ApiError>({
     queryKey: projectKeys.detail(projectId),
-    queryFn: () => getProject(projectId),
+    queryFn: () => catalog.getProject(projectId),
     enabled: Boolean(projectId),
     staleTime: QUERY_STALE_TIMES.PROJECT,
   });

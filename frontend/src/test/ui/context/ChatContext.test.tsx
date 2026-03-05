@@ -1,23 +1,63 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ToolHandler } from "../../../lib/ui/context/ChatContext";
-import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
+import {
+  ChatProvider,
+  useChatContext,
+} from "../../../lib/ui/context/ChatContext";
 
-// Mock session API (fire-and-forget, not critical to chat flow)
-vi.mock("@/chat/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/chat/client")>();
+// Mock session API (fire-and-forget, not critical to chat flow).
+// The real createChatClient(withEagerAuth(fetch)) captures the fetch reference at module
+// load time, before vi.spyOn(globalThis, "fetch") runs in each test. We solve this by
+// building the auth-decorated fetch lazily at call time so the spy can intercept it.
+vi.mock("@/chat", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/chat")>();
   return {
     ...actual,
-    createSession: vi.fn().mockResolvedValue({ id: "sess-001" }),
-    logTurn: vi.fn().mockResolvedValue(undefined),
+    createChatClient: (fetchFn?: typeof fetch) => {
+      // We can't use fetchFn directly because it was captured before the spy was set up.
+      // Instead, build a lazy factory that reads globalThis.fetch at call time, wraps it
+      // through the real auth decorator (which uses the already-mocked tokenStorage /
+      // tokenRefresh), then delegates to the real createChatClient.
+      return {
+        createSession: vi.fn().mockResolvedValue({ id: "sess-001" }),
+        logTurn: vi.fn().mockResolvedValue(undefined),
+        getSession: vi.fn(),
+        listSessions: vi.fn(),
+        async fetchChatStream(
+          apiMessages: Array<{ role: string; content: string }>,
+          tableSchema: unknown,
+        ): Promise<Response> {
+          // Import the real withEagerAuth to add auth headers / token refresh
+          const { withEagerAuth } = await import("@/auth");
+          // Build a client using the *current* globalThis.fetch (which the test spy has
+          // replaced) so assertions on fetch calls work.
+          const liveClient = actual.createChatClient(
+            withEagerAuth(globalThis.fetch),
+          );
+          return liveClient.fetchChatStream(
+            apiMessages as any,
+            tableSchema as any,
+          );
+        },
+      };
+    },
   };
 });
 
 const mockEnsureFreshToken = vi.fn();
 
 vi.mock("../../../lib/auth/tokenStorage", () => ({
-  getAuthHeaders: () => ({ Authorization: `Bearer ${localStorage.getItem("auth_token") ?? "test-token"}` }),
+  getAuthHeaders: () => ({
+    Authorization: `Bearer ${localStorage.getItem("auth_token") ?? "test-token"}`,
+  }),
   hardLogout: vi.fn(),
   getToken: () => localStorage.getItem("auth_token") ?? "test-token",
   getRefreshToken: () => localStorage.getItem("auth_refresh_token"),
@@ -31,8 +71,10 @@ vi.mock("../../../lib/auth/tokenStorage", () => ({
   },
   setToken: (v: string) => localStorage.setItem("auth_token", v),
   setRefreshToken: (v: string) => localStorage.setItem("auth_refresh_token", v),
-  setTokenExpiry: (v: number) => localStorage.setItem("auth_token_expires_at", String(v)),
-  setLastActivity: (v: number) => localStorage.setItem("last_activity_ts", String(v)),
+  setTokenExpiry: (v: number) =>
+    localStorage.setItem("auth_token_expires_at", String(v)),
+  setLastActivity: (v: number) =>
+    localStorage.setItem("last_activity_ts", String(v)),
   clearAll: vi.fn(),
   isTokenKey: (key: string | null) => key === "auth_token",
   isExpiryKey: (key: string | null) => key === "auth_token_expires_at",
@@ -40,7 +82,10 @@ vi.mock("../../../lib/auth/tokenStorage", () => ({
 
 vi.mock("../../../lib/auth/tokenRefresh", () => ({
   ensureFreshToken: (...args: unknown[]) => mockEnsureFreshToken(...args),
-  createTokenRefresher: () => (...args: unknown[]) => mockEnsureFreshToken(...args),
+  createTokenRefresher:
+    () =>
+    (...args: unknown[]) =>
+      mockEnsureFreshToken(...args),
 }));
 
 vi.mock("@/chat/prompts", () => ({
@@ -51,7 +96,9 @@ vi.mock("@/chat/prompts", () => ({
 // ---- helpers ----
 
 /** Encodes data as SSE `data: ...` lines. */
-function sseLines(events: Array<{ type: string; [k: string]: unknown }>): string {
+function sseLines(
+  events: Array<{ type: string; [k: string]: unknown }>,
+): string {
   return events.map((e) => `data: ${JSON.stringify(e)}\n`).join("\n");
 }
 
@@ -90,7 +137,10 @@ function TestHarness({ toolHandler }: { toolHandler?: ToolHandler }) {
   if (!registered && toolHandler) {
     (globalThis as any).__chatTestRegistered = true;
     registerToolHandler(toolHandler);
-    registerTableSchema({ columns: [{ id: "col1", type: "string" }], rowCount: 10 });
+    registerTableSchema({
+      columns: [{ id: "col1", type: "string" }],
+      rowCount: 10,
+    });
   }
 
   return (
@@ -108,7 +158,9 @@ function TestHarness({ toolHandler }: { toolHandler?: ToolHandler }) {
         onChange={(e) => setInput(e.target.value)}
       />
       <form onSubmit={handleSubmit}>
-        <button type="submit" data-testid="submit">Send</button>
+        <button type="submit" data-testid="submit">
+          Send
+        </button>
       </form>
     </div>
   );
@@ -119,7 +171,7 @@ function renderChat(toolHandler?: ToolHandler) {
   return render(
     <ChatProvider>
       <TestHarness toolHandler={toolHandler} />
-    </ChatProvider>
+    </ChatProvider>,
   );
 }
 
@@ -167,7 +219,9 @@ describe("ChatProvider", () => {
     renderChat(defaultToolHandler);
 
     // Type and submit
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Hi" } });
+    fireEvent.change(screen.getByTestId("chat-input"), {
+      target: { value: "Hi" },
+    });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -181,7 +235,9 @@ describe("ChatProvider", () => {
     // Should have user message + assistant message = 2
     expect(screen.getByTestId("message-count").textContent).toBe("2");
     expect(screen.getByTestId("msg-user").textContent).toBe("Hi");
-    expect(screen.getByTestId("msg-assistant").textContent).toBe("Hello world!");
+    expect(screen.getByTestId("msg-assistant").textContent).toBe(
+      "Hello world!",
+    );
 
     // Verify fetch was called with correct structure
     expect(fetchSpy).toHaveBeenCalledOnce();
@@ -191,7 +247,7 @@ describe("ChatProvider", () => {
       expect.objectContaining({
         "Content-Type": "application/json",
         Authorization: "Bearer test-token",
-      })
+      }),
     );
   });
 
@@ -205,7 +261,11 @@ describe("ChatProvider", () => {
       {
         type: "tool_calls",
         tool_calls: [
-          { id: "tc-1", type: "function", function: { name: "addFilter", arguments: '{"col":"a"}' } },
+          {
+            id: "tc-1",
+            type: "function",
+            function: { name: "addFilter", arguments: '{"col":"a"}' },
+          },
         ],
       },
       { type: "done" },
@@ -213,7 +273,9 @@ describe("ChatProvider", () => {
 
     renderChat(toolHandler);
 
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Filter col a" } });
+    fireEvent.change(screen.getByTestId("chat-input"), {
+      target: { value: "Filter col a" },
+    });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -224,7 +286,10 @@ describe("ChatProvider", () => {
     });
 
     expect(toolHandler.executeToolCall).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "tc-1", function: { name: "addFilter", arguments: '{"col":"a"}' } })
+      expect.objectContaining({
+        id: "tc-1",
+        function: { name: "addFilter", arguments: '{"col":"a"}' },
+      }),
     );
   });
 
@@ -236,7 +301,9 @@ describe("ChatProvider", () => {
 
     renderChat(defaultToolHandler);
 
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+    fireEvent.change(screen.getByTestId("chat-input"), {
+      target: { value: "Test" },
+    });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -253,11 +320,15 @@ describe("ChatProvider", () => {
   });
 
   it("handles fetch failure (network error)", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network failure"));
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("Network failure"),
+    );
 
     renderChat(defaultToolHandler);
 
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Offline test" } });
+    fireEvent.change(screen.getByTestId("chat-input"), {
+      target: { value: "Offline test" },
+    });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -267,7 +338,9 @@ describe("ChatProvider", () => {
       expect(screen.getByTestId("loading").textContent).toBe("false");
     });
 
-    expect(screen.getByTestId("msg-assistant").textContent).toContain("Error: Network failure");
+    expect(screen.getByTestId("msg-assistant").textContent).toContain(
+      "Error: Network failure",
+    );
   });
 
   it("handles HTTP error response", async () => {
@@ -278,7 +351,9 @@ describe("ChatProvider", () => {
 
     renderChat(defaultToolHandler);
 
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Server error" } });
+    fireEvent.change(screen.getByTestId("chat-input"), {
+      target: { value: "Server error" },
+    });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -288,7 +363,9 @@ describe("ChatProvider", () => {
       expect(screen.getByTestId("loading").textContent).toBe("false");
     });
 
-    expect(screen.getByTestId("msg-assistant").textContent).toContain("Error: HTTP 500");
+    expect(screen.getByTestId("msg-assistant").textContent).toContain(
+      "Error: HTTP 500",
+    );
   });
 
   it("does not submit when no tool handler is registered", async () => {
@@ -297,7 +374,9 @@ describe("ChatProvider", () => {
     // No tool handler passed
     renderChat();
 
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "No handler" } });
+    fireEvent.change(screen.getByTestId("chat-input"), {
+      target: { value: "No handler" },
+    });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -310,7 +389,10 @@ describe("ChatProvider", () => {
   describe("stream token resilience", () => {
     it("refreshes token before stream when near expiry", async () => {
       // Token expires in 30 seconds (< 60s threshold)
-      localStorage.setItem("auth_token_expires_at", String(Date.now() + 30_000));
+      localStorage.setItem(
+        "auth_token_expires_at",
+        String(Date.now() + 30_000),
+      );
 
       mockEnsureFreshToken.mockImplementation(async () => {
         localStorage.setItem("auth_token", "refreshed-token");
@@ -324,7 +406,9 @@ describe("ChatProvider", () => {
 
       renderChat(defaultToolHandler);
 
-      fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      fireEvent.change(screen.getByTestId("chat-input"), {
+        target: { value: "Test" },
+      });
       // eslint-disable-next-line testing-library/no-unnecessary-act
       await act(async () => {
         fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -342,22 +426,24 @@ describe("ChatProvider", () => {
       expect(init?.headers).toEqual(
         expect.objectContaining({
           Authorization: "Bearer refreshed-token",
-        })
+        }),
       );
     });
 
     it("skips refresh when token is fresh", async () => {
       // Token expires in 5 minutes (> 60s threshold)
-      localStorage.setItem("auth_token_expires_at", String(Date.now() + 300_000));
+      localStorage.setItem(
+        "auth_token_expires_at",
+        String(Date.now() + 300_000),
+      );
 
-      mockFetchSSE([
-        { type: "content", content: "OK" },
-        { type: "done" },
-      ]);
+      mockFetchSSE([{ type: "content", content: "OK" }, { type: "done" }]);
 
       renderChat(defaultToolHandler);
 
-      fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      fireEvent.change(screen.getByTestId("chat-input"), {
+        target: { value: "Test" },
+      });
       // eslint-disable-next-line testing-library/no-unnecessary-act
       await act(async () => {
         fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -375,19 +461,24 @@ describe("ChatProvider", () => {
       mockEnsureFreshToken.mockResolvedValue("new-token");
 
       // First call returns 401, second succeeds
-      const fetchSpy = vi.spyOn(globalThis, "fetch")
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
         .mockResolvedValueOnce({ ok: false, status: 401 } as Response)
         .mockResolvedValueOnce({
           ok: true,
-          body: sseStream(sseLines([
-            { type: "content", content: "Retried OK" },
-            { type: "done" },
-          ])),
+          body: sseStream(
+            sseLines([
+              { type: "content", content: "Retried OK" },
+              { type: "done" },
+            ]),
+          ),
         } as unknown as Response);
 
       renderChat(defaultToolHandler);
 
-      fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Test" } });
+      fireEvent.change(screen.getByTestId("chat-input"), {
+        target: { value: "Test" },
+      });
       // eslint-disable-next-line testing-library/no-unnecessary-act
       await act(async () => {
         fireEvent.submit(screen.getByTestId("submit").closest("form")!);
@@ -406,10 +497,12 @@ describe("ChatProvider", () => {
       expect(retryInit?.headers).toEqual(
         expect.objectContaining({
           Authorization: "Bearer new-token",
-        })
+        }),
       );
 
-      expect(screen.getByTestId("msg-assistant").textContent).toBe("Retried OK");
+      expect(screen.getByTestId("msg-assistant").textContent).toBe(
+        "Retried OK",
+      );
     });
   });
 });

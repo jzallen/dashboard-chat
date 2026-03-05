@@ -1,18 +1,43 @@
-import { ArrowDownTrayIcon, ArrowPathIcon, CheckIcon, CircleStackIcon, ClockIcon, Cog6ToothIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowDownTrayIcon,
+  ArrowPathIcon,
+  CheckIcon,
+  CircleStackIcon,
+  ClockIcon,
+  Cog6ToothIcon,
+} from "@heroicons/react/24/outline";
 import { useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useOutletContext,useParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 
-import { exportDbtProject } from "@/dataCatalog";
+import { withAuth } from "@/auth";
+import { createDataCatalog } from "@/dataCatalog";
+
+const catalog = createDataCatalog(withAuth(fetch));
 import { raqbToSql } from "@/raqb";
-import { filterTableToRaqb, generateFilterDescription } from "@/raqb/tanstackToRaqb";
-import { executeToolCall as executeToolCallFn, type ToolCall, type ToolCallContext } from "@/table-tools";
+import {
+  filterTableToRaqb,
+  generateFilterDescription,
+} from "@/raqb/tanstackToRaqb";
+import {
+  executeToolCall as executeToolCallFn,
+  type ToolCall,
+  type ToolCallContext,
+} from "@/table-tools";
 
 import { useChatContext } from "../../context/ChatContext";
-import { getTransformIdsForColumn,toConditions } from "../../hooks/filterUtils";
+import {
+  getTransformIdsForColumn,
+  toConditions,
+} from "../../hooks/filterUtils";
 import { useRenameDataset } from "../../hooks/useDatasetMutations";
-import { datasetKeys, useDatasetQuery, useDatasets, usePrefetchDataset } from "../../hooks/useDatasetQuery";
+import {
+  datasetKeys,
+  useDatasetQuery,
+  useDatasets,
+  usePrefetchDataset,
+} from "../../hooks/useDatasetQuery";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
 import type { AppShellContext } from "../AppShell";
@@ -24,7 +49,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { DatasetGrid } from "./DatasetCarousel";
 import styles from "./DatasetView.module.css";
 import { SchemaTable } from "./SchemaTable";
-import { type ViewMode,ViewModeToggle } from "./ViewModeToggle";
+import { type ViewMode, ViewModeToggle } from "./ViewModeToggle";
 
 /** Inner component that mounts only when a dataset is selected. Contains all hooks requiring a datasetId. */
 interface DatasetDetailProps {
@@ -41,7 +66,8 @@ function DatasetDetail({
   onShowSettings,
 }: DatasetDetailProps) {
   const queryClient = useQueryClient();
-  const { registerToolHandler, registerTableSchema, registerDatasetId } = useChatContext();
+  const { registerToolHandler, registerTableSchema, registerDatasetId } =
+    useChatContext();
   const { data: dataset, isLoading } = useDatasetQuery(datasetId);
 
   const {
@@ -69,7 +95,10 @@ function DatasetDetail({
   });
 
   const handleRefreshDataset = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true });
+    queryClient.invalidateQueries({
+      queryKey: datasetKeys.detail(datasetId),
+      exact: true,
+    });
   }, [queryClient, datasetId]);
 
   const executeToolCall = useCallback(
@@ -89,6 +118,7 @@ function DatasetDetail({
           created_at: t.created_at,
         })),
         queryClient,
+        catalog,
       };
       const result = await executeToolCallFn(toolCall, context);
       if (toolCall.function.name === "filterTable") {
@@ -113,14 +143,25 @@ function DatasetDetail({
             column: string;
             filters: Array<{ operator: string; value: unknown }>;
           };
-          const idsToDisable = getTransformIdsForColumn(transforms, args.column);
+          const idsToDisable = getTransformIdsForColumn(
+            transforms,
+            args.column,
+          );
           for (const id of idsToDisable) {
             await toggleTransform(id, false);
           }
           if (args.filters?.length) {
             for (const f of args.filters) {
-              const raqbJson = filterTableToRaqb({ column: args.column, operator: f.operator, value: f.value });
-              const description = generateFilterDescription({ column: args.column, operator: f.operator, value: f.value });
+              const raqbJson = filterTableToRaqb({
+                column: args.column,
+                operator: f.operator,
+                value: f.value,
+              });
+              const description = generateFilterDescription({
+                column: args.column,
+                operator: f.operator,
+                value: f.value,
+              });
               const conditionSql = raqbToSql(raqbJson);
               await saveTransform({
                 name: description,
@@ -136,7 +177,18 @@ function DatasetDetail({
       }
       return result;
     },
-    [setColumnFilters, setSorting, setData, datasetId, dataset, queryClient, handleRefreshDataset, saveTransform, toggleTransform, transforms]
+    [
+      setColumnFilters,
+      setSorting,
+      setData,
+      datasetId,
+      dataset,
+      queryClient,
+      handleRefreshDataset,
+      saveTransform,
+      toggleTransform,
+      transforms,
+    ],
   );
 
   useEffect(() => {
@@ -158,7 +210,9 @@ function DatasetDetail({
         t.target_column &&
         t.expression_config
       ) {
-        const alias = (t.expression_config as Record<string, unknown>).alias as string | undefined;
+        const alias = (t.expression_config as Record<string, unknown>).alias as
+          | string
+          | undefined;
         if (alias) map.set(t.target_column, alias);
       }
     }
@@ -169,22 +223,36 @@ function DatasetDetail({
     () =>
       columnFilters.flatMap((f) => {
         const conditions = toConditions(f.value);
-        return conditions.map((c) => ({ column: f.id, operator: c.operator, value: c.value }));
+        return conditions.map((c) => ({
+          column: f.id,
+          operator: c.operator,
+          value: c.value,
+        }));
       }),
-    [columnFilters]
+    [columnFilters],
   );
 
   useEffect(() => {
     if (dataset) {
-      const schemaColumns = Object.entries(dataset.schema_config.fields).map(([id, f]) => ({
-        id,
-        type: (f.type === "number" ? "number" : f.type === "boolean" ? "boolean" : "string") as "string" | "number" | "boolean",
-        ...(dataset.column_profiles?.[id] && { profile: dataset.column_profiles[id] }),
-        ...(aliasMap.has(id) && { alias: aliasMap.get(id) }),
-      }));
+      const schemaColumns = Object.entries(dataset.schema_config.fields).map(
+        ([id, f]) => ({
+          id,
+          type: (f.type === "number"
+            ? "number"
+            : f.type === "boolean"
+              ? "boolean"
+              : "string") as "string" | "number" | "boolean",
+          ...(dataset.column_profiles?.[id] && {
+            profile: dataset.column_profiles[id],
+          }),
+          ...(aliasMap.has(id) && { alias: aliasMap.get(id) }),
+        }),
+      );
 
-      const isActiveCleaningTransform = (t: { status: string; transform_type: string | null }) =>
-        t.status === "enabled" && t.transform_type !== "filter";
+      const isActiveCleaningTransform = (t: {
+        status: string;
+        transform_type: string | null;
+      }) => t.status === "enabled" && t.transform_type !== "filter";
 
       const activeCleaningTransforms = (dataset.transforms ?? [])
         .filter(isActiveCleaningTransform)
@@ -202,7 +270,10 @@ function DatasetDetail({
         columns: schemaColumns,
         rowCount: data.length,
         activeFilters,
-        activeCleaningTransforms: activeCleaningTransforms.length > 0 ? activeCleaningTransforms : undefined,
+        activeCleaningTransforms:
+          activeCleaningTransforms.length > 0
+            ? activeCleaningTransforms
+            : undefined,
       });
     }
   }, [dataset, data.length, registerTableSchema, aliasMap, activeFilters]);
@@ -265,7 +336,9 @@ export function ProjectView() {
   const [viewMode, setViewMode] = useState<ViewMode>("catalog");
   const [showSettings, setShowSettings] = useState(false);
   const [showSqlAccess, setShowSqlAccess] = useState(false);
-  const [syncState, setSyncState] = useState<"idle" | "spinning" | "success" | "cooldown">("idle");
+  const [syncState, setSyncState] = useState<
+    "idle" | "spinning" | "success" | "cooldown"
+  >("idle");
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -286,7 +359,10 @@ export function ProjectView() {
     setSyncState("spinning");
 
     queryClient
-      .invalidateQueries({ queryKey: datasetKeys.detail(datasetId), exact: true })
+      .invalidateQueries({
+        queryKey: datasetKeys.detail(datasetId),
+        exact: true,
+      })
       .then(() => {
         setSyncState("success");
         scheduleSyncTransition("success");
@@ -341,7 +417,7 @@ export function ProjectView() {
     setIsExporting(true);
     setExportError(null);
     try {
-      await exportDbtProject(project.id);
+      await catalog.exportDbtProject(project.id);
     } catch (err) {
       console.error("dbt export failed:", err);
       setExportError("Export failed. Please try again.");
@@ -366,7 +442,7 @@ export function ProjectView() {
         console.error("Failed to rename dataset:", err);
       }
     },
-    [datasetId, renameMutation, addMessage]
+    [datasetId, renameMutation, addMessage],
   );
 
   if (!project) {
@@ -399,7 +475,12 @@ export function ProjectView() {
             />
           </button>
           {exportError && (
-            <span style={{ color: "var(--color-danger, #ef4444)", fontSize: "0.75rem" }}>
+            <span
+              style={{
+                color: "var(--color-danger, #ef4444)",
+                fontSize: "0.75rem",
+              }}
+            >
               {exportError}
             </span>
           )}
@@ -413,47 +494,54 @@ export function ProjectView() {
           >
             <CircleStackIcon className={styles.settingsIcon} />
           </button>
-        {hasSelection && (
-          <>
-            {viewMode === "table" && (
-              <>
-                {datasetId && (
-                  <button
-                    onClick={() => navigate(`/projects/${projectId}/datasets/${datasetId}/sessions`)}
-                    className={styles.settingsButton}
-                    title="View chat sessions"
-                  >
-                    <ClockIcon className={styles.settingsIcon} />
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowSettings((v) => !v)}
-                  className={styles.settingsButton}
-                  title="Manage saved transforms"
-                >
-                  <Cog6ToothIcon className={styles.settingsIcon} />
-                </button>
-                <button
-                  onClick={handleSync}
-                  disabled={syncState !== "idle"}
-                  className={clsx(styles.syncButton, {
-                    [styles.syncSpinning]: syncState === "spinning",
-                    [styles.syncSuccess]: syncState === "success",
-                    [styles.syncCooldown]: syncState === "cooldown",
-                  })}
-                  title="Sync dataset from server"
-                >
-                  {syncState === "success" ? (
-                    <CheckIcon className={styles.settingsIcon} strokeWidth={2} />
-                  ) : (
-                    <ArrowPathIcon className={styles.settingsIcon} />
+          {hasSelection && (
+            <>
+              {viewMode === "table" && (
+                <>
+                  {datasetId && (
+                    <button
+                      onClick={() =>
+                        navigate(
+                          `/projects/${projectId}/datasets/${datasetId}/sessions`,
+                        )
+                      }
+                      className={styles.settingsButton}
+                      title="View chat sessions"
+                    >
+                      <ClockIcon className={styles.settingsIcon} />
+                    </button>
                   )}
-                </button>
-              </>
-            )}
-            <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
-          </>
-        )}
+                  <button
+                    onClick={() => setShowSettings((v) => !v)}
+                    className={styles.settingsButton}
+                    title="Manage saved transforms"
+                  >
+                    <Cog6ToothIcon className={styles.settingsIcon} />
+                  </button>
+                  <button
+                    onClick={handleSync}
+                    disabled={syncState !== "idle"}
+                    className={clsx(styles.syncButton, {
+                      [styles.syncSpinning]: syncState === "spinning",
+                      [styles.syncSuccess]: syncState === "success",
+                      [styles.syncCooldown]: syncState === "cooldown",
+                    })}
+                    title="Sync dataset from server"
+                  >
+                    {syncState === "success" ? (
+                      <CheckIcon
+                        className={styles.settingsIcon}
+                        strokeWidth={2}
+                      />
+                    ) : (
+                      <ArrowPathIcon className={styles.settingsIcon} />
+                    )}
+                  </button>
+                </>
+              )}
+              <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
+            </>
+          )}
         </div>
       </div>
 
@@ -467,9 +555,15 @@ export function ProjectView() {
           <>
             {/* DatasetGrid: shown in catalog mode or when no dataset selected */}
             {(viewMode === "catalog" || !hasSelection) && (
-              <div className={hasSelection ? styles.gridSection : styles.gridSectionFull}>
+              <div
+                className={
+                  hasSelection ? styles.gridSection : styles.gridSectionFull
+                }
+              >
                 {datasets.length === 0 ? (
-                  <div className={styles.emptyState}>No datasets in this project</div>
+                  <div className={styles.emptyState}>
+                    No datasets in this project
+                  </div>
                 ) : (
                   <DatasetGrid
                     datasets={datasets}

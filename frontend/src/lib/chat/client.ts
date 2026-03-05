@@ -1,17 +1,14 @@
 /**
  * Chat Worker API Client
  *
- * Dedicated client for all communication with the chat worker service.
- * Session CRUD uses ApiClient, SSE streaming uses withEagerAuth directly.
+ * Factory-based client for all communication with the chat worker service.
+ * Callers inject auth via fetchFn: createChatClient(withAuth(fetch)).
  */
 
 import { ApiClient } from "@/shared/apiClient";
-import { CHAT_URL } from "@/shared/config";
+import { CHAT_BASE_URL } from "@/shared/config";
 
-import { withEagerAuth } from "../auth/withAuth";
 import type { TableSchema, ToolCall, ToolDefinition } from "./types";
-
-const chatClient = new ApiClient(CHAT_URL, { unwrapData: false });
 
 export interface ToolResult {
   tool_call_id: string;
@@ -51,39 +48,51 @@ export interface ChatSession {
   updated_at: string;
 }
 
-export async function createSession(projectId: string, datasetId?: string): Promise<ChatSession> {
-  return chatClient.post<ChatSession>("/sessions", {
-    project_id: projectId,
-    dataset_id: datasetId ?? null,
-  });
+export function createChatClient(fetchFn: typeof fetch = fetch) {
+  const client = new ApiClient(CHAT_BASE_URL, { fetchFn, unwrapData: false });
+
+  return {
+    createSession(projectId: string, datasetId?: string): Promise<ChatSession> {
+      return client.post<ChatSession>("/sessions", {
+        project_id: projectId,
+        dataset_id: datasetId ?? null,
+      });
+    },
+
+    logTurn(sessionId: string, turn: ChatTurnPayload): Promise<void> {
+      return client.post<void>(`/sessions/${sessionId}/turns`, turn);
+    },
+
+    getSession(sessionId: string): Promise<ChatSession> {
+      return client.get<ChatSession>(`/sessions/${sessionId}`);
+    },
+
+    listSessions(datasetId: string): Promise<ChatSession[]> {
+      return client.get<ChatSession[]>(
+        `/sessions?dataset_id=${encodeURIComponent(datasetId)}`,
+      );
+    },
+
+    async fetchChatStream(
+      apiMessages: Array<{
+        role: string;
+        content: string;
+        tool_calls?: ToolCall[];
+      }>,
+      tableSchema: TableSchema | null,
+    ): Promise<Response> {
+      const response = await fetchFn(`${CHAT_BASE_URL}/chat`, {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages, tableSchema }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.body) throw new Error("No response body");
+      return response;
+    },
+  };
 }
 
-export async function logTurn(sessionId: string, turn: ChatTurnPayload): Promise<void> {
-  await chatClient.post<void>(`/sessions/${sessionId}/turns`, turn);
-}
-
-export async function getSession(sessionId: string): Promise<ChatSession> {
-  return chatClient.get<ChatSession>(`/sessions/${sessionId}`);
-}
-
-export async function listSessions(datasetId: string): Promise<ChatSession[]> {
-  return chatClient.get<ChatSession[]>(`/sessions?dataset_id=${encodeURIComponent(datasetId)}`);
-}
-
-/** Builds and sends the chat SSE request with eager auth refresh. */
-export async function fetchChatStream(
-  apiMessages: Array<{ role: string; content: string; tool_calls?: ToolCall[] }>,
-  tableSchema: TableSchema | null,
-): Promise<Response> {
-  const eagerAuthedFetch = withEagerAuth((...args: Parameters<typeof fetch>) => fetch(...args));
-  const response = await eagerAuthedFetch(`${CHAT_URL}/chat`, {
-    method: "POST",
-    mode: "cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: apiMessages, tableSchema }),
-  });
-
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  if (!response.body) throw new Error("No response body");
-  return response;
-}
+export type ChatClient = ReturnType<typeof createChatClient>;

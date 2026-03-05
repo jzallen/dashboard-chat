@@ -1,9 +1,13 @@
 import { useState } from "react";
 
-import { backendClient } from "../../../dataCatalog/client";
+import { withAuth } from "@/auth";
+import { createDataCatalog } from "@/dataCatalog";
+
 import { getErrorMessage } from "../../../errors";
 import { useAuth } from "../../context/AuthContext";
 import styles from "./CreateOrg.module.css";
+
+const catalog = createDataCatalog(withAuth(fetch));
 
 interface CreateOrgResponse {
   org_id: string;
@@ -24,7 +28,9 @@ export function CreateOrg() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await backendClient.post<CreateOrgResponse>("/api/orgs", { name: name.trim() });
+      const result = (await catalog.createOrg(
+        name.trim(),
+      )) as unknown as CreateOrgResponse;
       if (result.requires_reauth) {
         await login(result.org_id);
       } else {
@@ -57,7 +63,11 @@ export function CreateOrg() {
           className={styles.input}
         />
         {error && <p className={styles.error}>{error}</p>}
-        <button type="submit" disabled={isSubmitting || !name.trim()} className={styles.submitButton}>
+        <button
+          type="submit"
+          disabled={isSubmitting || !name.trim()}
+          className={styles.submitButton}
+        >
           {isSubmitting ? "Creating..." : "Create Organization"}
         </button>
       </form>

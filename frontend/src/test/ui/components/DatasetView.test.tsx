@@ -1,21 +1,50 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent,render, screen } from "@testing-library/react";
-import { MemoryRouter, Outlet,Route, Routes } from "react-router-dom";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 
 import { MOCK_PROJECT } from "../../../__mocks__/data";
 import type { AppShellContext } from "../../../lib/ui/components/AppShell";
 import { ProjectView } from "../../../lib/ui/components/DatasetView";
 import { ChatProvider } from "../../../lib/ui/context/ChatContext";
 
+vi.mock("@/auth", () => ({
+  withAuth: (fn: typeof fetch) => fn,
+  withEagerAuth: (fn: typeof fetch) => fn,
+}));
+
 // Mock API calls — use dynamic import in factory to avoid hoisting issues
 vi.mock("@/dataCatalog", async () => {
-  const actual = await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
-  const { MOCK_DATASETS, MOCK_DATASET_FULL, MOCK_PROJECT } = await import("../../../__mocks__/data");
+  const actual =
+    await vi.importActual<typeof import("@/dataCatalog")>("@/dataCatalog");
+  const { MOCK_DATASETS, MOCK_DATASET_FULL, MOCK_PROJECT } =
+    await import("../../../__mocks__/data");
   return {
     ...actual,
-    getDataset: vi.fn().mockResolvedValue(MOCK_DATASET_FULL),
-    getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
-    listDatasetsForProject: vi.fn().mockResolvedValue(MOCK_DATASETS),
+    createDataCatalog: () => ({
+      getDataset: vi.fn().mockResolvedValue(MOCK_DATASET_FULL),
+      getProject: vi.fn().mockResolvedValue(MOCK_PROJECT),
+      listDatasetsForProject: vi.fn().mockResolvedValue(MOCK_DATASETS),
+      listProjects: vi.fn().mockResolvedValue([MOCK_PROJECT]),
+      getOrgInfo: vi
+        .fn()
+        .mockResolvedValue({ id: "org-001", name: "Test Org" }),
+      exportDbtProject: vi.fn(),
+      uploadFile: vi.fn(),
+    }),
+  };
+});
+
+vi.mock("@/chat", async () => {
+  const actual = await vi.importActual<typeof import("@/chat")>("@/chat");
+  return {
+    ...actual,
+    createChatClient: () => ({
+      createSession: vi.fn(),
+      logTurn: vi.fn(),
+      getSession: vi.fn(),
+      listSessions: vi.fn(),
+      fetchChatStream: vi.fn(),
+    }),
   };
 });
 
@@ -55,7 +84,7 @@ function renderProjectView(route = "/") {
           </Routes>
         </ChatProvider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 

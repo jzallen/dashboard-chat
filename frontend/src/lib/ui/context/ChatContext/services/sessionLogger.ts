@@ -1,7 +1,10 @@
 import type { MutableRefObject, RefObject } from "react";
 
-import { createSession, logTurn } from "@/chat/client";
+import { withAuth } from "@/auth";
+import { createChatClient } from "@/chat";
 import { getSystemPrompt, getToolDefinitions } from "@/chat/prompts";
+
+const chatClient = createChatClient(withAuth(fetch));
 import type { ToolCall } from "@/table-tools";
 
 import type { TableSchema } from "../../../types";
@@ -19,13 +22,16 @@ export async function logChatTurn(
 ): Promise<void> {
   try {
     if (!sessionIdRef.current && projectIdRef.current && datasetIdRef.current) {
-      const session = await createSession(projectIdRef.current, datasetIdRef.current);
+      const session = await chatClient.createSession(
+        projectIdRef.current,
+        datasetIdRef.current,
+      );
       sessionIdRef.current = session.id;
     }
     if (sessionIdRef.current && tableSchema) {
       const systemPrompt = getSystemPrompt(tableSchema);
       const toolDefs = getToolDefinitions(tableSchema);
-      await logTurn(sessionIdRef.current, {
+      await chatClient.logTurn(sessionIdRef.current, {
         user_message: userContent,
         system_prompt: systemPrompt,
         tool_definitions: toolDefs,

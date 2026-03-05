@@ -1,8 +1,9 @@
 /**
- * SQL Access API
+ * SQL Access API — Types
+ *
+ * Domain functions are provided by createDataCatalog() in ./client.ts.
+ * This file exports only types used by the factory and consumers.
  */
-
-import { del,get, post } from "./client";
 
 export interface SqlAccessStatus {
   project_id: string;
@@ -27,103 +28,4 @@ export interface EnvironmentStatusResponse {
   status_message: string | null;
   pgduckdb_running: boolean;
   pgbouncer_running: boolean;
-}
-
-/**
- * Enable SQL access for a project
- */
-export async function enableSqlAccess(
-  projectId: string
-): Promise<SqlAccessStatus> {
-  return post<SqlAccessStatus>(
-    `/api/projects/${projectId}/sql-access`,
-    {}
-  );
-}
-
-/**
- * Disable SQL access for a project
- */
-export async function disableSqlAccess(projectId: string): Promise<void> {
-  return del(`/api/projects/${projectId}/sql-access`);
-}
-
-/**
- * Get SQL access status for a project
- */
-export async function getSqlAccess(
-  projectId: string
-): Promise<SqlAccessStatus> {
-  return get<SqlAccessStatus>(`/api/projects/${projectId}/sql-access`);
-}
-
-/**
- * Sync SQL access data for a project
- */
-export async function syncSqlAccess(
-  projectId: string
-): Promise<SqlAccessStatus> {
-  return post<SqlAccessStatus>(
-    `/api/projects/${projectId}/sql-access/sync`,
-    {}
-  );
-}
-
-/**
- * Regenerate SQL access credentials for a project
- */
-export async function regenerateSqlCredentials(
-  projectId: string
-): Promise<SqlAccessStatus> {
-  return post<SqlAccessStatus>(
-    `/api/projects/${projectId}/sql-access/credentials`,
-    {}
-  );
-}
-
-/**
- * Start the SQL access environment for a project
- */
-export async function startEnvironment(
-  projectId: string
-): Promise<SqlAccessStatus> {
-  return post<SqlAccessStatus>(
-    `/api/projects/${projectId}/sql-access/environment/start`,
-    {}
-  );
-}
-
-/**
- * Stop the SQL access environment for a project
- */
-export async function stopEnvironment(
-  projectId: string
-): Promise<SqlAccessStatus> {
-  return post<SqlAccessStatus>(
-    `/api/projects/${projectId}/sql-access/environment/stop`,
-    {}
-  );
-}
-
-/**
- * Restart the SQL access environment for a project
- */
-export async function restartEnvironment(
-  projectId: string
-): Promise<SqlAccessStatus> {
-  return post<SqlAccessStatus>(
-    `/api/projects/${projectId}/sql-access/environment/restart`,
-    {}
-  );
-}
-
-/**
- * Get the environment status for a project
- */
-export async function getEnvironmentStatus(
-  projectId: string
-): Promise<EnvironmentStatusResponse> {
-  return get<EnvironmentStatusResponse>(
-    `/api/projects/${projectId}/sql-access/environment/status`
-  );
 }

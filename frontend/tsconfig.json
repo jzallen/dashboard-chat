@@ -26,7 +26,9 @@
       "@/dataCatalog": ["src/lib/dataCatalog"],
       "@/dataCatalog/*": ["src/lib/dataCatalog/*"],
       "@/shared": ["src/lib/shared"],
-      "@/shared/*": ["src/lib/shared/*"]
+      "@/shared/*": ["src/lib/shared/*"],
+      "@/auth": ["src/lib/auth"],
+      "@/auth/*": ["src/lib/auth/*"]
     }
   },
   "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx"]

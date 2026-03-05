@@ -12,8 +12,11 @@ import {
   useState,
 } from "react";
 
-import { fetchChatStream } from "@/chat/client";
+import { withEagerAuth } from "@/auth";
+import { createChatClient } from "@/chat";
 import type { Dataset } from "@/dataCatalog";
+
+const chatClient = createChatClient(withEagerAuth(fetch));
 import type { ToolCall } from "@/table-tools";
 
 import { getErrorMessage } from "../../../../errors";
@@ -41,7 +44,9 @@ interface ChatContextValue {
   isActive: boolean;
   addMessage: (message: Message) => void;
   onDatasetCreated: (dataset: Dataset) => void;
-  registerProjectUpdater: (updater: ((dataset: Dataset) => void) | null) => void;
+  registerProjectUpdater: (
+    updater: ((dataset: Dataset) => void) | null,
+  ) => void;
   registerDatasetId: (datasetId: string | null) => void;
   registerProjectId: (projectId: string | null) => void;
   resetSession: () => void;
@@ -55,7 +60,9 @@ function updateAssistantMessage(
   id: string,
 ): (patch: Partial<Message>) => void {
   return (patch) =>
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -94,9 +101,12 @@ function useChatEngine(): ChatContextValue {
     setMessages((prev) => [...prev, message]);
   }, []);
 
-  const registerProjectUpdater = useCallback((updater: ((dataset: Dataset) => void) | null) => {
-    projectUpdaterRef.current = updater;
-  }, []);
+  const registerProjectUpdater = useCallback(
+    (updater: ((dataset: Dataset) => void) | null) => {
+      projectUpdaterRef.current = updater;
+    },
+    [],
+  );
 
   const registerDatasetId = useCallback((id: string | null) => {
     datasetIdRef.current = id;
@@ -124,7 +134,11 @@ function useChatEngine(): ChatContextValue {
       const hasToolHandler = toolHandlerRef.current !== null;
       if (!hasInput || isLoading || !hasToolHandler) return;
 
-      const userMessage: Message = { id: String(Date.now()), role: "user", content: input.trim() };
+      const userMessage: Message = {
+        id: String(Date.now()),
+        role: "user",
+        content: input.trim(),
+      };
       setMessages((prev) => [...prev, userMessage]);
       setInput("");
       setIsLoading(true);
@@ -146,15 +160,24 @@ function useChatEngine(): ChatContextValue {
           tool_calls: m.tool_calls,
         }));
 
-        const response = await fetchChatStream(apiMessages, tableSchema);
+        const response = await chatClient.fetchChatStream(
+          apiMessages,
+          tableSchema,
+        );
 
         await readSSEStream(response.body!, {
           onContent: (content) => patchAssistant({ content }),
           onDone: async (accumulatedContent, toolCalls) => {
-            let toolResults: Array<{ tool_call_id: string; result: string }> | null = null;
+            let toolResults: Array<{
+              tool_call_id: string;
+              result: string;
+            }> | null = null;
 
             if (toolCalls.length > 0 && toolHandler) {
-              const { results, toolResults: tr } = await executeToolCalls(toolCalls, toolHandler);
+              const { results, toolResults: tr } = await executeToolCalls(
+                toolCalls,
+                toolHandler,
+              );
               toolResults = tr;
               const toolSummary = results.join(", ");
               patchAssistant({
@@ -168,16 +191,24 @@ function useChatEngine(): ChatContextValue {
 
             // Fire-and-forget session logging
             logChatTurn(
-              sessionIdRef, projectIdRef, datasetIdRef,
-              tableSchema, userMessage.content, accumulatedContent,
-              toolCalls, toolResults,
+              sessionIdRef,
+              projectIdRef,
+              datasetIdRef,
+              tableSchema,
+              userMessage.content,
+              accumulatedContent,
+              toolCalls,
+              toolResults,
             );
           },
         });
       } catch (error) {
         console.error("Chat error:", error);
         sessionIdRef.current = null;
-        patchAssistant({ content: `Error: ${getErrorMessage(error)}`, isStreaming: false });
+        patchAssistant({
+          content: `Error: ${getErrorMessage(error)}`,
+          isStreaming: false,
+        });
       } finally {
         setIsLoading(false);
         inputRef.current?.focus();
@@ -224,9 +255,5 @@ export function useChatContext(): ChatContextValue {
 export function ChatProvider({ children }: { children: ReactNode }) {
   const value = useChatEngine();
 
-  return (
-    <ChatContext.Provider value={value}>
-      {children}
-    </ChatContext.Provider>
-  );
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }

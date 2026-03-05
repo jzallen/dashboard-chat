@@ -1,7 +1,9 @@
-import { useEffect,useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import type { Dataset } from "@/dataCatalog";
-import { uploadFile } from "@/dataCatalog/client";
+import { withAuth } from "@/auth";
+import { createDataCatalog, type Dataset } from "@/dataCatalog";
+
+const catalog = createDataCatalog(withAuth(fetch));
 
 import styles from "./ChatPanel.module.css";
 
@@ -52,7 +54,7 @@ export function UploadWidget({
     if (!file) return;
     setState("uploading");
     try {
-      const dataset = await uploadFile<Dataset>("/api/uploads", file, {
+      const dataset = await catalog.uploadFile<Dataset>("/api/uploads", file, {
         project_id: projectId,
       });
       setState("uploaded");
@@ -95,7 +97,11 @@ export function UploadWidget({
           >
             &times;
           </button>
-          <button onClick={handleUpload} className={styles.uploadButton} type="button">
+          <button
+            onClick={handleUpload}
+            className={styles.uploadButton}
+            type="button"
+          >
             Send
           </button>
         </div>

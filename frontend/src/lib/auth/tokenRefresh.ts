@@ -1,5 +1,12 @@
-import { API_BASE_URL } from "../shared/config";
-import { getRefreshToken, getToken, getTokenExpiry, setRefreshToken, setToken, setTokenExpiry } from "./tokenStorage";
+import { DATA_CATALOG_BASE_URL } from "../shared/config";
+import {
+  getRefreshToken,
+  getToken,
+  getTokenExpiry,
+  setRefreshToken,
+  setToken,
+  setTokenExpiry,
+} from "./tokenStorage";
 
 const FRESHNESS_THRESHOLD_MS = 60_000;
 const RATE_LIMIT_RETRY_DELAY_MS = 12_000;
@@ -16,7 +23,7 @@ type RefreshResult =
 
 async function doRefresh(token: string): Promise<RefreshResult> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+    const response = await fetch(`${DATA_CATALOG_BASE_URL}/api/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: token }),
@@ -32,7 +39,10 @@ function applyTokens(data: RefreshResponse): string {
   setToken(data.access_token);
   setRefreshToken(data.refresh_token);
   setTokenExpiry(Date.now() + data.expires_in * 1000);
-  console.debug("[auth] Token refresh successful, expires_in:", data.expires_in);
+  console.debug(
+    "[auth] Token refresh successful, expires_in:",
+    data.expires_in,
+  );
   return data.access_token;
 }
 
@@ -54,14 +64,17 @@ async function performRefresh(refreshToken: string): Promise<string | null> {
   }
 
   console.warn("[auth] Rate-limited (429), retrying after delay");
-  await new Promise(r => setTimeout(r, RATE_LIMIT_RETRY_DELAY_MS));
+  await new Promise((r) => setTimeout(r, RATE_LIMIT_RETRY_DELAY_MS));
   const retryToken = getRefreshToken();
   if (!retryToken) return null;
 
   const retryResult = await doRefresh(retryToken);
   if (retryResult.ok) return applyTokens(retryResult.data);
 
-  console.error("[auth] Token refresh failed after 429 retry:", retryResult.status);
+  console.error(
+    "[auth] Token refresh failed after 429 retry:",
+    retryResult.status,
+  );
   return null;
 }
 
@@ -83,7 +96,9 @@ export function createTokenRefresher() {
 
     if (refreshPromise) return refreshPromise;
 
-    refreshPromise = performRefresh(refreshToken).finally(() => { refreshPromise = null; });
+    refreshPromise = performRefresh(refreshToken).finally(() => {
+      refreshPromise = null;
+    });
 
     return refreshPromise;
   };

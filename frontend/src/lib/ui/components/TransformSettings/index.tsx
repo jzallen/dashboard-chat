@@ -1,8 +1,10 @@
 import { XMarkIcon } from "@heroicons/react/24/outline";
-import { useEffect,useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { Dataset,Transform } from "@/dataCatalog";
-import { getDataset } from "@/dataCatalog";
+import { withAuth } from "@/auth";
+import { createDataCatalog, type Dataset, type Transform } from "@/dataCatalog";
+
+const catalog = createDataCatalog(withAuth(fetch));
 
 import { TransformList } from "./TransformList";
 import styles from "./TransformSettings.module.css";
@@ -48,7 +50,9 @@ export function TransformSettings({
     setSqlError(null);
     try {
       // Fetch dataset with transforms to get staging_sql
-      const data = await getDataset(datasetId, { includeTransforms: true });
+      const data = await catalog.getDataset(datasetId, {
+        includeTransforms: true,
+      });
       setDataset(data);
     } catch (err) {
       setSqlError(err instanceof Error ? err.message : "Failed to load SQL");
@@ -119,8 +123,13 @@ export function TransformSettings({
               <div className={styles.sqlContent}>
                 <div className={styles.sqlInfo}>
                   <p className={styles.sqlInfoText}>
-                    <span className={styles.sqlInfoLabel}>Active Transforms:</span>{" "}
-                    {dataset.transforms.filter(t => t.status === 'enabled').length}
+                    <span className={styles.sqlInfoLabel}>
+                      Active Transforms:
+                    </span>{" "}
+                    {
+                      dataset.transforms.filter((t) => t.status === "enabled")
+                        .length
+                    }
                   </p>
                 </div>
                 <div className={styles.sqlWell}>

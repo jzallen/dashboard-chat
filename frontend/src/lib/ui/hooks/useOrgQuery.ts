@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { type ApiError, listProjects, type Project } from "@/dataCatalog";
-import { get } from "@/dataCatalog/client";
+import { withAuth } from "@/auth";
+import {
+  type ApiError,
+  createDataCatalog,
+  type OrgInfo,
+  type Project,
+} from "@/dataCatalog";
 
-interface OrgInfo {
-  id: string;
-  name: string;
-}
+const catalog = createDataCatalog(withAuth(fetch));
 
 /** TanStack Query key factory for org-level queries. */
 export const orgKeys = {
@@ -18,7 +20,7 @@ export const orgKeys = {
 export function useOrgQuery() {
   return useQuery<OrgInfo, ApiError>({
     queryKey: orgKeys.me,
-    queryFn: () => get<OrgInfo>("/api/orgs/me"),
+    queryFn: () => catalog.getOrgInfo(),
   });
 }
 
@@ -26,6 +28,6 @@ export function useOrgQuery() {
 export function useOrgProjectsQuery() {
   return useQuery<Project[], ApiError>({
     queryKey: orgKeys.projects,
-    queryFn: () => listProjects(),
+    queryFn: () => catalog.listProjects(),
   });
 }

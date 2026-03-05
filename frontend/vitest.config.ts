@@ -1,6 +1,6 @@
-import react from '@vitejs/plugin-react';
-import path from 'path';
-import { defineConfig } from 'vitest/config';
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   // Cast needed due to vitest bundling its own vite with different types
@@ -8,17 +8,18 @@ export default defineConfig({
   plugins: [react() as any],
   resolve: {
     alias: {
-      '@/table-tools': path.resolve(__dirname, 'src/lib/table-tools'),
-      '@/chat': path.resolve(__dirname, 'src/lib/chat'),
-      '@/raqb': path.resolve(__dirname, 'src/lib/raqb'),
-      '@/dataCatalog': path.resolve(__dirname, 'src/lib/dataCatalog'),
-      '@/shared': path.resolve(__dirname, 'src/lib/shared'),
+      "@/table-tools": path.resolve(__dirname, "src/lib/table-tools"),
+      "@/chat": path.resolve(__dirname, "src/lib/chat"),
+      "@/raqb": path.resolve(__dirname, "src/lib/raqb"),
+      "@/dataCatalog": path.resolve(__dirname, "src/lib/dataCatalog"),
+      "@/shared": path.resolve(__dirname, "src/lib/shared"),
+      "@/auth": path.resolve(__dirname, "src/lib/auth"),
     },
   },
   test: {
-    environment: 'happy-dom',
+    environment: "happy-dom",
     globals: true,
-    setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });

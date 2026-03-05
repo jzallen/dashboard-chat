@@ -5,18 +5,25 @@ import type { Dataset } from "@/dataCatalog";
 
 import { UploadWidget } from "../../../lib/ui/components/ChatPanel/UploadWidget";
 
-// Mock the API client
-vi.mock("../../../lib/dataCatalog/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../lib/dataCatalog/client")>();
+const { mockUploadFile } = vi.hoisted(() => ({
+  mockUploadFile: vi.fn(),
+}));
+
+// Mock the dataCatalog factory to return a catalog with a mock uploadFile
+vi.mock("@/dataCatalog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/dataCatalog")>();
   return {
     ...actual,
-    uploadFile: vi.fn(),
+    createDataCatalog: () => ({
+      uploadFile: mockUploadFile,
+    }),
   };
 });
 
-import { uploadFile } from "../../../lib/dataCatalog/client";
-
-const mockUploadFile = vi.mocked(uploadFile);
+// Mock @/auth to avoid real auth
+vi.mock("@/auth", () => ({
+  withAuth: (fn: typeof fetch) => fn,
+}));
 
 const mockDataset: Dataset = {
   id: "d-1",
@@ -27,6 +34,7 @@ const mockDataset: Dataset = {
   partition_fields: [],
   transforms: [],
   preview_rows: [],
+  column_profiles: null,
 };
 
 function createFile(name = "test.csv"): File {
@@ -40,14 +48,22 @@ describe("UploadWidget", () => {
 
   it("renders Browse button in initial state", () => {
     render(
-      <UploadWidget projectId="p-1" onUploadComplete={vi.fn()} autoOpen={false} />
+      <UploadWidget
+        projectId="p-1"
+        onUploadComplete={vi.fn()}
+        autoOpen={false}
+      />,
     );
     expect(screen.getByRole("button", { name: /browse/i })).toBeInTheDocument();
   });
 
   it("shows filename and Send button after file selection", async () => {
     render(
-      <UploadWidget projectId="p-1" onUploadComplete={vi.fn()} autoOpen={false} />
+      <UploadWidget
+        projectId="p-1"
+        onUploadComplete={vi.fn()}
+        autoOpen={false}
+      />,
     );
     const input = screen.getByTestId("upload-file-input") as HTMLInputElement;
     const file = createFile("data.csv");
@@ -60,7 +76,11 @@ describe("UploadWidget", () => {
 
   it("removes file and resets to Browse when X is clicked", async () => {
     render(
-      <UploadWidget projectId="p-1" onUploadComplete={vi.fn()} autoOpen={false} />
+      <UploadWidget
+        projectId="p-1"
+        onUploadComplete={vi.fn()}
+        autoOpen={false}
+      />,
     );
     const input = screen.getByTestId("upload-file-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [createFile()] } });
@@ -76,7 +96,11 @@ describe("UploadWidget", () => {
     const onComplete = vi.fn();
 
     render(
-      <UploadWidget projectId="p-1" onUploadComplete={onComplete} autoOpen={false} />
+      <UploadWidget
+        projectId="p-1"
+        onUploadComplete={onComplete}
+        autoOpen={false}
+      />,
     );
     const input = screen.getByTestId("upload-file-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [createFile()] } });
@@ -86,14 +110,20 @@ describe("UploadWidget", () => {
       expect(screen.getByRole("button", { name: /uploaded/i })).toBeDisabled();
     });
 
-    expect(mockUploadFile).toHaveBeenCalledWith("/api/uploads", expect.any(File), {
-      project_id: "p-1",
-    });
+    expect(mockUploadFile).toHaveBeenCalledWith(
+      "/api/uploads",
+      expect.any(File),
+      {
+        project_id: "p-1",
+      },
+    );
     expect(onComplete).toHaveBeenCalledWith(mockDataset);
   });
 
   it("shows error and calls onUploadError on failure", async () => {
-    mockUploadFile.mockRejectedValueOnce(new Error("Only CSV files are supported"));
+    mockUploadFile.mockRejectedValueOnce(
+      new Error("Only CSV files are supported"),
+    );
     const onError = vi.fn();
 
     render(
@@ -102,14 +132,16 @@ describe("UploadWidget", () => {
         onUploadComplete={vi.fn()}
         onUploadError={onError}
         autoOpen={false}
-      />
+      />,
     );
     const input = screen.getByTestId("upload-file-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [createFile()] } });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Only CSV files are supported")).toBeInTheDocument();
+      expect(
+        screen.getByText("Only CSV files are supported"),
+      ).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
     expect(onError).toHaveBeenCalledWith("Only CSV files are supported");
@@ -119,14 +151,20 @@ describe("UploadWidget", () => {
     mockUploadFile.mockRejectedValueOnce(new Error("fail"));
 
     render(
-      <UploadWidget projectId="p-1" onUploadComplete={vi.fn()} autoOpen={false} />
+      <UploadWidget
+        projectId="p-1"
+        onUploadComplete={vi.fn()}
+        autoOpen={false}
+      />,
     );
     const input = screen.getByTestId("upload-file-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [createFile()] } });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /retry/i }),
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));

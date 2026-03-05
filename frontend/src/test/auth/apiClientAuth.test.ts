@@ -1,58 +1,69 @@
-import { get } from "../../lib/dataCatalog/client";
-import { ApiError } from "../../lib/shared/apiClient";
+import { ApiClient, ApiError } from "../../lib/shared/apiClient";
 
 describe("API client auth headers", () => {
-  beforeEach(() => {
-    localStorage.clear();
-    vi.restoreAllMocks();
+  it("uses the provided fetchFn for requests", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ data: "ok" }), { status: 200 }),
+      );
+
+    const client = new ApiClient("http://test", { fetchFn: mockFetch });
+    await client.get("/test");
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://test/test");
+    expect(init.method).toBe("GET");
   });
 
-  it("sends no Authorization header when no token in localStorage", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: "ok" }), { status: 200 })
-    );
-    vi.stubGlobal("fetch", mockFetch);
+  it("throws ApiError on non-ok response", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response("Server Error", { status: 500 }));
 
-    await get("/test");
-
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init.headers).not.toHaveProperty("Authorization");
+    const client = new ApiClient("http://test", { fetchFn: mockFetch });
+    await expect(client.get("/test")).rejects.toThrow(ApiError);
   });
 
-  it("sends Bearer header when token is present in localStorage", async () => {
-    localStorage.setItem("auth_token", "my-test-token");
+  it("throws ApiError with status 401 on Session expired error", async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error("Session expired"));
 
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: "ok" }), { status: 200 })
-    );
-    vi.stubGlobal("fetch", mockFetch);
-
-    await get("/test");
-
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init.headers.Authorization).toBe("Bearer my-test-token");
+    const client = new ApiClient("http://test", { fetchFn: mockFetch });
+    try {
+      await client.get("/test");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError);
+      expect((e as ApiError).status).toBe(401);
+    }
   });
 
-  it("clears localStorage and redirects on 401 response", async () => {
-    localStorage.setItem("auth_token", "expired-token");
-    localStorage.setItem("auth_user", '{"id":"u1"}');
+  it("unwraps data field by default", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ data: { id: "123" } }), { status: 200 }),
+      );
 
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response("Unauthorized", { status: 401 })
-    );
-    vi.stubGlobal("fetch", mockFetch);
+    const client = new ApiClient("http://test", { fetchFn: mockFetch });
+    const result = await client.get<{ id: string }>("/test");
+    expect(result).toEqual({ id: "123" });
+  });
 
-    // Mock window.location.href
-    const locationSpy = vi.spyOn(window, "location", "get").mockReturnValue({
-      ...window.location,
-      href: "",
-    } as Location);
+  it("returns full response when unwrapData is false", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ id: "123", extra: true }), {
+          status: 200,
+        }),
+      );
 
-    await expect(get("/test")).rejects.toThrow(ApiError);
-
-    expect(localStorage.getItem("auth_token")).toBeNull();
-    expect(localStorage.getItem("auth_user")).toBeNull();
-
-    locationSpy.mockRestore();
+    const client = new ApiClient("http://test", {
+      fetchFn: mockFetch,
+      unwrapData: false,
+    });
+    const result = await client.get<{ id: string; extra: boolean }>("/test");
+    expect(result).toEqual({ id: "123", extra: true });
   });
 });

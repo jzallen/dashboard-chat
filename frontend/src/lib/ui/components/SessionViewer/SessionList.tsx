@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
-import { Link,useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { type ChatSession,listSessions } from "@/chat/client";
+import { withAuth } from "@/auth";
+import { type ChatSession, createChatClient } from "@/chat";
+
+const chatClient = createChatClient(withAuth(fetch));
 
 import styles from "./SessionViewer.module.css";
 
 export function SessionList() {
-  const { projectId, datasetId } = useParams<{ projectId: string; datasetId: string }>();
+  const { projectId, datasetId } = useParams<{
+    projectId: string;
+    datasetId: string;
+  }>();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,7 +22,8 @@ export function SessionList() {
     if (!datasetId) return;
     setLoading(true);
     setError(null);
-    listSessions(datasetId)
+    chatClient
+      .listSessions(datasetId)
       .then(setSessions)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -40,7 +47,10 @@ export function SessionList() {
 
   return (
     <div className={styles.container}>
-      <Link to={`/projects/${projectId}/datasets/${datasetId}`} className={styles.backLink}>
+      <Link
+        to={`/projects/${projectId}/datasets/${datasetId}`}
+        className={styles.backLink}
+      >
         &larr; Back to dataset
       </Link>
 
@@ -70,7 +80,11 @@ export function SessionList() {
               <tr
                 key={s.id}
                 className={styles.sessionRow}
-                onClick={() => navigate(`/projects/${projectId}/datasets/${datasetId}/sessions/${s.id}`)}
+                onClick={() =>
+                  navigate(
+                    `/projects/${projectId}/datasets/${datasetId}/sessions/${s.id}`,
+                  )
+                }
               >
                 <td className={styles.sessionId}>{s.id.slice(0, 8)}</td>
                 <td>{formatDate(s.created_at)}</td>

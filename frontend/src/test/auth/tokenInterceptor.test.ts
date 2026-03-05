@@ -1,6 +1,6 @@
 import { createTokenRefresher } from "../../lib/auth/tokenRefresh";
-import { get } from "../../lib/dataCatalog/client";
-import { ApiError } from "../../lib/shared/apiClient";
+import { withAuth } from "../../lib/auth/withAuth";
+import { ApiClient, ApiError } from "../../lib/shared/apiClient";
 
 describe("401 interceptor with coalesced refresh", () => {
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -22,6 +22,13 @@ describe("401 interceptor with coalesced refresh", () => {
     vi.restoreAllMocks();
   });
 
+  /** Create a client with auth-wrapped fetch, like production code does. */
+  function createAuthedClient() {
+    return new ApiClient("", {
+      fetchFn: withAuth((...args: Parameters<typeof fetch>) => fetch(...args)),
+    });
+  }
+
   function ok(data: unknown) {
     return new Response(JSON.stringify({ data }), {
       status: 200,
@@ -33,9 +40,17 @@ describe("401 interceptor with coalesced refresh", () => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  function refreshOk(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 300) {
+  function refreshOk(
+    accessToken = "new-access",
+    refreshToken = "new-refresh",
+    expiresIn = 300,
+  ) {
     return new Response(
-      JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, expires_in: expiresIn }),
+      JSON.stringify({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: expiresIn,
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -45,23 +60,19 @@ describe("401 interceptor with coalesced refresh", () => {
     localStorage.setItem("auth_refresh_token", "valid-refresh");
 
     mockFetch
-      // 1st call: original request → 401
       .mockResolvedValueOnce(unauthorized())
-      // 2nd call: refresh → success
       .mockResolvedValueOnce(refreshOk())
-      // 3rd call: replayed request → success
       .mockResolvedValueOnce(ok("hello"));
 
-    const result = await get<string>("/test");
+    const client = createAuthedClient();
+    const result = await client.get<string>("/test");
 
     expect(result).toBe("hello");
     expect(mockFetch).toHaveBeenCalledTimes(3);
 
-    // Verify the replayed request used the new token
     const replayCall = mockFetch.mock.calls[2];
     expect(replayCall[1].headers.Authorization).toBe("Bearer new-access");
 
-    // localStorage updated
     expect(localStorage.getItem("auth_token")).toBe("new-access");
     expect(localStorage.getItem("auth_refresh_token")).toBe("new-refresh");
   });
@@ -70,51 +81,50 @@ describe("401 interceptor with coalesced refresh", () => {
     localStorage.setItem("auth_token", "expired-token");
     localStorage.setItem("auth_refresh_token", "valid-refresh");
 
-    // Both initial requests return 401, refresh succeeds, both replays succeed
     mockFetch
-      .mockResolvedValueOnce(unauthorized()) // request A → 401
-      .mockResolvedValueOnce(unauthorized()) // request B → 401
-      .mockResolvedValueOnce(refreshOk())    // single refresh
-      .mockResolvedValueOnce(ok("A"))        // replay A
-      .mockResolvedValueOnce(ok("B"));       // replay B
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(refreshOk())
+      .mockResolvedValueOnce(ok("A"))
+      .mockResolvedValueOnce(ok("B"));
 
+    const client = createAuthedClient();
     const [a, b] = await Promise.all([
-      get<string>("/a"),
-      get<string>("/b"),
+      client.get<string>("/a"),
+      client.get<string>("/b"),
     ]);
 
     expect(a).toBe("A");
     expect(b).toBe("B");
 
-    // Refresh endpoint called exactly once (coalesced)
-    const refreshCalls = mockFetch.mock.calls.filter(
-      ([url]: [string]) => url.includes("/api/auth/refresh"),
+    const refreshCalls = mockFetch.mock.calls.filter(([url]: [string]) =>
+      url.includes("/api/auth/refresh"),
     );
     expect(refreshCalls).toHaveLength(1);
   });
 
   it("hard-logs out when no refresh token is available", async () => {
     localStorage.setItem("auth_token", "expired-token");
-    // No refresh token → immediate hard logout
 
     mockFetch.mockResolvedValueOnce(unauthorized());
 
-    await expect(get("/test")).rejects.toThrow(ApiError);
+    const client = createAuthedClient();
+    await expect(client.get("/test")).rejects.toThrow(ApiError);
 
     expect(localStorage.getItem("auth_token")).toBeNull();
     expect(localStorage.getItem("auth_refresh_token")).toBeNull();
   });
 
   it("hard-logs out when refresh endpoint returns error", async () => {
-    // Non-429 errors now fail immediately without retry
     localStorage.setItem("auth_token", "expired-token");
     localStorage.setItem("auth_refresh_token", "bad-refresh");
 
     mockFetch
-      .mockResolvedValueOnce(unauthorized())                          // original request → 401
-      .mockResolvedValueOnce(new Response("fail", { status: 400 }));  // refresh → fail (no retry)
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(new Response("fail", { status: 400 }));
 
-    await expect(get("/test")).rejects.toThrow(ApiError);
+    const client = createAuthedClient();
+    await expect(client.get("/test")).rejects.toThrow(ApiError);
     expect(localStorage.getItem("auth_token")).toBeNull();
   });
 
@@ -123,24 +133,22 @@ describe("401 interceptor with coalesced refresh", () => {
     localStorage.setItem("auth_refresh_token", "valid-refresh");
 
     mockFetch
-      .mockResolvedValueOnce(unauthorized()) // original → 401
-      .mockResolvedValueOnce(refreshOk())    // refresh → ok
-      .mockResolvedValueOnce(unauthorized()); // replayed request → still 401
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(refreshOk())
+      .mockResolvedValueOnce(unauthorized());
 
-    await expect(get("/test")).rejects.toThrow(ApiError);
+    const client = createAuthedClient();
+    await expect(client.get("/test")).rejects.toThrow(ApiError);
 
-    // Only one refresh call, no infinite loop
-    const refreshCalls = mockFetch.mock.calls.filter(
-      ([url]: [string]) => url.includes("/api/auth/refresh"),
+    const refreshCalls = mockFetch.mock.calls.filter(([url]: [string]) =>
+      url.includes("/api/auth/refresh"),
     );
     expect(refreshCalls).toHaveLength(1);
 
-    // Logged out
     expect(localStorage.getItem("auth_token")).toBeNull();
   });
 
   it("skips refresh if token is still fresh", async () => {
-    // Set token with plenty of remaining TTL (> 60s)
     localStorage.setItem("auth_token", "still-valid-token");
     localStorage.setItem("auth_refresh_token", "some-refresh");
     localStorage.setItem("auth_token_expires_at", String(Date.now() + 300_000));
@@ -148,7 +156,6 @@ describe("401 interceptor with coalesced refresh", () => {
     const ensureFreshToken = createTokenRefresher();
     const result = await ensureFreshToken();
 
-    // Should return current token without making any fetch
     expect(result).toBe("still-valid-token");
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -158,23 +165,21 @@ describe("401 interceptor with coalesced refresh", () => {
     localStorage.setItem("auth_token", "expired-token");
     localStorage.setItem("auth_refresh_token", "valid-refresh");
 
-    // First refresh returns 429, second succeeds
     mockFetch
       .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
-      .mockResolvedValueOnce(refreshOk("recovered-token", "recovered-refresh", 300));
+      .mockResolvedValueOnce(
+        refreshOk("recovered-token", "recovered-refresh", 300),
+      );
 
     const ensureFreshToken = createTokenRefresher();
     const promise = ensureFreshToken();
 
-    // Let the first fetch resolve
     await vi.advanceTimersByTimeAsync(10);
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    // After 5s (standard delay), retry should NOT have happened yet (429 uses 12s)
     await vi.advanceTimersByTimeAsync(5_000);
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    // After 12s total, retry should fire
     await vi.advanceTimersByTimeAsync(7_000);
     expect(mockFetch).toHaveBeenCalledTimes(2);
 

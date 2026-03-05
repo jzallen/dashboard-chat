@@ -8,7 +8,7 @@ import {
   getSortedRowModel,
   type SortingState,
 } from "@tanstack/table-core";
-import { beforeEach,describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   customFilterFn,
@@ -18,13 +18,6 @@ import {
   type ToolCallContext,
 } from "@/table-tools";
 
-// Mock the API module
-vi.mock("@/dataCatalog/datasets", () => ({
-  previewCleaningTransform: vi.fn(),
-  createCleaningTransforms: vi.fn(),
-  updateTransform: vi.fn(),
-}));
-
 // Mock useDatasetQuery keys (used for cache invalidation)
 vi.mock("../../lib/ui/hooks/useDatasetQuery", () => ({
   datasetKeys: {
@@ -32,11 +25,15 @@ vi.mock("../../lib/ui/hooks/useDatasetQuery", () => ({
   },
 }));
 
-import {
-  createCleaningTransforms,
-  previewCleaningTransform,
-  updateTransform,
-} from "@/dataCatalog/datasets";
+const mockPreviewCleaningTransform = vi.fn();
+const mockCreateCleaningTransforms = vi.fn();
+const mockUpdateTransform = vi.fn();
+
+const mockCatalog = {
+  previewCleaningTransform: mockPreviewCleaningTransform,
+  createCleaningTransforms: mockCreateCleaningTransforms,
+  updateTransform: mockUpdateTransform,
+};
 
 /**
  * Tests for executeToolCall - the public API used by DatasetView.
@@ -51,9 +48,30 @@ import {
  */
 describe("executeToolCall", () => {
   const testData: TableRow[] = [
-    { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-    { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-    { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+    {
+      id: "1",
+      name: "Alpha",
+      category: "A",
+      amount: 50,
+      quantity: 10,
+      inStock: true,
+    },
+    {
+      id: "2",
+      name: "Beta Widget",
+      category: "B",
+      amount: 100,
+      quantity: 5,
+      inStock: false,
+    },
+    {
+      id: "3",
+      name: "Gamma",
+      category: "A",
+      amount: 25,
+      quantity: 20,
+      inStock: true,
+    },
   ];
 
   const columns: ColumnDef<TableRow>[] = [
@@ -67,7 +85,7 @@ describe("executeToolCall", () => {
 
   const createToolCall = (
     name: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
   ): ToolCall => ({
     id: "test-id",
     type: "function",
@@ -90,7 +108,8 @@ describe("executeToolCall", () => {
         sorting = typeof updater === "function" ? updater(sorting) : updater;
       },
       onColumnFiltersChange: (updater) => {
-        columnFilters = typeof updater === "function" ? updater(columnFilters) : updater;
+        columnFilters =
+          typeof updater === "function" ? updater(columnFilters) : updater;
       },
       onStateChange: () => {},
       getCoreRowModel: getCoreRowModel(),
@@ -103,12 +122,19 @@ describe("executeToolCall", () => {
 
     const context: ToolCallContext = {
       setColumnFilters: (updater) => {
-        columnFilters = typeof updater === "function" ? updater(columnFilters) : updater;
-        table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnFilters } }));
+        columnFilters =
+          typeof updater === "function" ? updater(columnFilters) : updater;
+        table.setOptions((prev) => ({
+          ...prev,
+          state: { ...prev.state, columnFilters },
+        }));
       },
       setSorting: (updater) => {
         sorting = typeof updater === "function" ? updater(sorting) : updater;
-        table.setOptions((prev) => ({ ...prev, state: { ...prev.state, sorting } }));
+        table.setOptions((prev) => ({
+          ...prev,
+          state: { ...prev.state, sorting },
+        }));
       },
       setData: (updater) => {
         data = updater(data);
@@ -117,6 +143,7 @@ describe("executeToolCall", () => {
       datasetId: "ds-test-001",
       transforms: [],
       queryClient,
+      catalog: mockCatalog as any,
     };
 
     return { table, context, queryClient };
@@ -132,14 +159,27 @@ describe("executeToolCall", () => {
         const { table, context } = createTestTable();
 
         const message = await executeToolCall(
-          createToolCall("filterTable", { column: "name", operator: "contains", value: "Widget" }),
-          context
+          createToolCall("filterTable", {
+            column: "name",
+            operator: "contains",
+            value: "Widget",
+          }),
+          context,
         );
 
         expect(message).toBe("Filtered name contains Widget");
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-        ]);
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          [
+            {
+              id: "2",
+              name: "Beta Widget",
+              category: "B",
+              amount: 100,
+              quantity: 5,
+              inStock: false,
+            },
+          ],
+        );
       });
     });
 
@@ -148,15 +188,35 @@ describe("executeToolCall", () => {
         const { table, context } = createTestTable();
 
         const message = await executeToolCall(
-          createToolCall("filterTable", { column: "amount", operator: "gt", value: 30 }),
-          context
+          createToolCall("filterTable", {
+            column: "amount",
+            operator: "gt",
+            value: 30,
+          }),
+          context,
         );
 
         expect(message).toBe("Filtered amount gt 30");
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-        ]);
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          [
+            {
+              id: "1",
+              name: "Alpha",
+              category: "A",
+              amount: 50,
+              quantity: 10,
+              inStock: true,
+            },
+            {
+              id: "2",
+              name: "Beta Widget",
+              category: "B",
+              amount: 100,
+              quantity: 5,
+              inStock: false,
+            },
+          ],
+        );
       });
     });
 
@@ -166,16 +226,25 @@ describe("executeToolCall", () => {
 
         // Apply filter first
         await executeToolCall(
-          createToolCall("filterTable", { column: "name", operator: "contains", value: "Widget" }),
-          context
+          createToolCall("filterTable", {
+            column: "name",
+            operator: "contains",
+            value: "Widget",
+          }),
+          context,
         );
         expect(table.getFilteredRowModel().rows).toHaveLength(1);
 
         // Clear filters
-        const message = await executeToolCall(createToolCall("clearFilters", {}), context);
+        const message = await executeToolCall(
+          createToolCall("clearFilters", {}),
+          context,
+        );
 
         expect(message).toBe("Cleared all filters");
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(testData);
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          testData,
+        );
       });
     });
   });
@@ -187,14 +256,35 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "asc" }),
-          context
+          context,
         );
 
         expect(message).toBe("Sorted by amount asc");
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
+          {
+            id: "3",
+            name: "Gamma",
+            category: "A",
+            amount: 25,
+            quantity: 20,
+            inStock: true,
+          },
+          {
+            id: "1",
+            name: "Alpha",
+            category: "A",
+            amount: 50,
+            quantity: 10,
+            inStock: true,
+          },
+          {
+            id: "2",
+            name: "Beta Widget",
+            category: "B",
+            amount: 100,
+            quantity: 5,
+            inStock: false,
+          },
         ]);
       });
     });
@@ -205,14 +295,35 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          context
+          context,
         );
 
         expect(message).toBe("Sorted by amount desc");
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+          {
+            id: "2",
+            name: "Beta Widget",
+            category: "B",
+            amount: 100,
+            quantity: 5,
+            inStock: false,
+          },
+          {
+            id: "1",
+            name: "Alpha",
+            category: "A",
+            amount: 50,
+            quantity: 10,
+            inStock: true,
+          },
+          {
+            id: "3",
+            name: "Gamma",
+            category: "A",
+            amount: 25,
+            quantity: 20,
+            inStock: true,
+          },
         ]);
       });
     });
@@ -224,14 +335,19 @@ describe("executeToolCall", () => {
         // Apply sort first
         await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          context
+          context,
         );
 
         // Clear sort
-        const message = await executeToolCall(createToolCall("clearSort", {}), context);
+        const message = await executeToolCall(
+          createToolCall("clearSort", {}),
+          context,
+        );
 
         expect(message).toBe("Cleared sorting");
-        expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(testData);
+        expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(
+          testData,
+        );
       });
     });
 
@@ -242,20 +358,41 @@ describe("executeToolCall", () => {
         // Sort by category first
         await executeToolCall(
           createToolCall("sortTable", { column: "category", direction: "asc" }),
-          context
+          context,
         );
 
         // Then sort by amount (should add to existing sort)
         await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          context
+          context,
         );
 
         // Expect: first by category asc (A, A, B), then by amount desc within each category
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
+          {
+            id: "1",
+            name: "Alpha",
+            category: "A",
+            amount: 50,
+            quantity: 10,
+            inStock: true,
+          },
+          {
+            id: "3",
+            name: "Gamma",
+            category: "A",
+            amount: 25,
+            quantity: 20,
+            inStock: true,
+          },
+          {
+            id: "2",
+            name: "Beta Widget",
+            category: "B",
+            amount: 100,
+            quantity: 5,
+            inStock: false,
+          },
         ]);
       });
 
@@ -265,19 +402,40 @@ describe("executeToolCall", () => {
         // Sort by amount ascending
         await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "asc" }),
-          context
+          context,
         );
 
         // Sort by amount descending (should replace, not duplicate)
         await executeToolCall(
           createToolCall("sortTable", { column: "amount", direction: "desc" }),
-          context
+          context,
         );
 
         expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+          {
+            id: "2",
+            name: "Beta Widget",
+            category: "B",
+            amount: 100,
+            quantity: 5,
+            inStock: false,
+          },
+          {
+            id: "1",
+            name: "Alpha",
+            category: "A",
+            amount: 50,
+            quantity: 10,
+            inStock: true,
+          },
+          {
+            id: "3",
+            name: "Gamma",
+            category: "A",
+            amount: 25,
+            quantity: 20,
+            inStock: true,
+          },
         ]);
       });
     });
@@ -290,17 +448,52 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(
           createToolCall("addRow", {
-            data: { id: "4", name: "New Item", category: "C", amount: 75, quantity: 15, inStock: true },
+            data: {
+              id: "4",
+              name: "New Item",
+              category: "C",
+              amount: 75,
+              quantity: 15,
+              inStock: true,
+            },
           }),
-          context
+          context,
         );
 
         expect(message).toBe("Added new row");
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
-          { id: "4", name: "New Item", category: "C", amount: 75, quantity: 15, inStock: true },
+          {
+            id: "1",
+            name: "Alpha",
+            category: "A",
+            amount: 50,
+            quantity: 10,
+            inStock: true,
+          },
+          {
+            id: "2",
+            name: "Beta Widget",
+            category: "B",
+            amount: 100,
+            quantity: 5,
+            inStock: false,
+          },
+          {
+            id: "3",
+            name: "Gamma",
+            category: "A",
+            amount: 25,
+            quantity: 20,
+            inStock: true,
+          },
+          {
+            id: "4",
+            name: "New Item",
+            category: "C",
+            amount: 75,
+            quantity: 15,
+            inStock: true,
+          },
         ]);
       });
     });
@@ -309,34 +502,73 @@ describe("executeToolCall", () => {
       it("should delete row matching search text and return message", async () => {
         const { table, context } = createTestTable();
 
-        const message = await executeToolCall(createToolCall("deleteRow", { search: "Beta Widget" }), context);
+        const message = await executeToolCall(
+          createToolCall("deleteRow", { search: "Beta Widget" }),
+          context,
+        );
 
         expect(message).toBe('Deleted row matching "Beta Widget"');
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+          {
+            id: "1",
+            name: "Alpha",
+            category: "A",
+            amount: 50,
+            quantity: 10,
+            inStock: true,
+          },
+          {
+            id: "3",
+            name: "Gamma",
+            category: "A",
+            amount: 25,
+            quantity: 20,
+            inStock: true,
+          },
         ]);
       });
 
       it("should match case-insensitively", async () => {
         const { table, context } = createTestTable();
 
-        const message = await executeToolCall(createToolCall("deleteRow", { search: "beta" }), context);
+        const message = await executeToolCall(
+          createToolCall("deleteRow", { search: "beta" }),
+          context,
+        );
 
         expect(message).toBe('Deleted row matching "beta"');
         expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
+          {
+            id: "1",
+            name: "Alpha",
+            category: "A",
+            amount: 50,
+            quantity: 10,
+            inStock: true,
+          },
+          {
+            id: "3",
+            name: "Gamma",
+            category: "A",
+            amount: 25,
+            quantity: 20,
+            inStock: true,
+          },
         ]);
       });
 
       it("should not modify data if no match found", async () => {
         const { table, context } = createTestTable();
 
-        const message = await executeToolCall(createToolCall("deleteRow", { search: "Nonexistent" }), context);
+        const message = await executeToolCall(
+          createToolCall("deleteRow", { search: "Nonexistent" }),
+          context,
+        );
 
         expect(message).toBe('Deleted row matching "Nonexistent"');
-        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
+        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(
+          testData,
+        );
       });
     });
   });
@@ -366,14 +598,32 @@ describe("executeToolCall", () => {
             description: "Show items in category A",
             raqb_tree: raqbTree,
           }),
-          context
+          context,
         );
 
-        expect(message).toBe("Applied filter: Show items in category A (1 condition)");
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
-        ]);
+        expect(message).toBe(
+          "Applied filter: Show items in category A (1 condition)",
+        );
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          [
+            {
+              id: "1",
+              name: "Alpha",
+              category: "A",
+              amount: 50,
+              quantity: 10,
+              inStock: true,
+            },
+            {
+              id: "3",
+              name: "Gamma",
+              category: "A",
+              amount: 25,
+              quantity: 20,
+              inStock: true,
+            },
+          ],
+        );
       });
     });
 
@@ -409,14 +659,25 @@ describe("executeToolCall", () => {
             description: "Category A items over $30",
             raqb_tree: raqbTree,
           }),
-          context
+          context,
         );
 
-        expect(message).toBe("Applied filter: Category A items over $30 (2 conditions)");
+        expect(message).toBe(
+          "Applied filter: Category A items over $30 (2 conditions)",
+        );
         // Only Alpha matches (category A AND amount > 30)
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-        ]);
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          [
+            {
+              id: "1",
+              name: "Alpha",
+              category: "A",
+              amount: 50,
+              quantity: 10,
+              inStock: true,
+            },
+          ],
+        );
       });
     });
 
@@ -444,14 +705,32 @@ describe("executeToolCall", () => {
             description: "Items with amount >= 50",
             raqb_tree: raqbTree,
           }),
-          context
+          context,
         );
 
-        expect(message).toBe("Applied filter: Items with amount >= 50 (1 condition)");
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-        ]);
+        expect(message).toBe(
+          "Applied filter: Items with amount >= 50 (1 condition)",
+        );
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          [
+            {
+              id: "1",
+              name: "Alpha",
+              category: "A",
+              amount: 50,
+              quantity: 10,
+              inStock: true,
+            },
+            {
+              id: "2",
+              name: "Beta Widget",
+              category: "B",
+              amount: 100,
+              quantity: 5,
+              inStock: false,
+            },
+          ],
+        );
       });
     });
 
@@ -461,8 +740,12 @@ describe("executeToolCall", () => {
 
         // Apply initial filter
         await executeToolCall(
-          createToolCall("filterTable", { column: "inStock", operator: "equals", value: true }),
-          context
+          createToolCall("filterTable", {
+            column: "inStock",
+            operator: "equals",
+            value: true,
+          }),
+          context,
         );
         expect(table.getFilteredRowModel().rows).toHaveLength(2);
 
@@ -487,13 +770,22 @@ describe("executeToolCall", () => {
             description: "Category B only",
             raqb_tree: raqbTree,
           }),
-          context
+          context,
         );
 
         // Should show Beta Widget (category B) even though inStock is false
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-        ]);
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          [
+            {
+              id: "2",
+              name: "Beta Widget",
+              category: "B",
+              amount: 100,
+              quantity: 5,
+              inStock: false,
+            },
+          ],
+        );
       });
     });
 
@@ -521,16 +813,41 @@ describe("executeToolCall", () => {
             description: "Names containing 'a'",
             raqb_tree: raqbTree,
           }),
-          context
+          context,
         );
 
-        expect(message).toBe("Applied filter: Names containing 'a' (1 condition)");
+        expect(message).toBe(
+          "Applied filter: Names containing 'a' (1 condition)",
+        );
         // Alpha, Beta Widget, Gamma all contain 'a'
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual([
-          { id: "1", name: "Alpha", category: "A", amount: 50, quantity: 10, inStock: true },
-          { id: "2", name: "Beta Widget", category: "B", amount: 100, quantity: 5, inStock: false },
-          { id: "3", name: "Gamma", category: "A", amount: 25, quantity: 20, inStock: true },
-        ]);
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          [
+            {
+              id: "1",
+              name: "Alpha",
+              category: "A",
+              amount: 50,
+              quantity: 10,
+              inStock: true,
+            },
+            {
+              id: "2",
+              name: "Beta Widget",
+              category: "B",
+              amount: 100,
+              quantity: 5,
+              inStock: false,
+            },
+            {
+              id: "3",
+              name: "Gamma",
+              category: "A",
+              amount: 25,
+              quantity: 20,
+              inStock: true,
+            },
+          ],
+        );
       });
     });
   });
@@ -548,7 +865,9 @@ describe("executeToolCall", () => {
         const message = await executeToolCall(toolCall, context);
 
         expect(message).toBe("Error: Invalid arguments for filterTable");
-        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
+        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(
+          testData,
+        );
       });
     });
 
@@ -556,12 +875,21 @@ describe("executeToolCall", () => {
       it("should return unknown tool message and not modify table", async () => {
         const { table, context } = createTestTable();
 
-        const message = await executeToolCall(createToolCall("unknownTool", { foo: "bar" }), context);
+        const message = await executeToolCall(
+          createToolCall("unknownTool", { foo: "bar" }),
+          context,
+        );
 
         expect(message).toBe("Error: Unknown tool: unknownTool");
-        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(testData);
-        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(testData);
-        expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(testData);
+        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(
+          testData,
+        );
+        expect(table.getFilteredRowModel().rows.map((r) => r.original)).toEqual(
+          testData,
+        );
+        expect(table.getSortedRowModel().rows.map((r) => r.original)).toEqual(
+          testData,
+        );
       });
     });
   });
@@ -581,18 +909,21 @@ describe("executeToolCall", () => {
     describe("Scenario: Trim whitespace preview", () => {
       it("should call preview API and return formatted result", async () => {
         const { context } = createTestTable();
-        vi.mocked(previewCleaningTransform).mockResolvedValue(mockPreviewResponse);
+        mockPreviewCleaningTransform.mockResolvedValue(mockPreviewResponse);
 
         const message = await executeToolCall(
           createToolCall("trimWhitespace", { column: "name" }),
-          context
+          context,
         );
 
-        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
-          transform_type: "clean",
-          target_column: "name",
-          expression_config: { operation: "trim" },
-        });
+        expect(mockPreviewCleaningTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          {
+            transform_type: "clean",
+            target_column: "name",
+            expression_config: { operation: "trim" },
+          },
+        );
         expect(message).toContain("Preview: Trim whitespace from name");
         expect(message).toContain("Affected: 3 of 10 rows");
         expect(message).toContain('"  hello  " → "hello"');
@@ -602,7 +933,7 @@ describe("executeToolCall", () => {
     describe("Scenario: Standardize case preview", () => {
       it("should call preview API with mode and return formatted result", async () => {
         const { context } = createTestTable();
-        vi.mocked(previewCleaningTransform).mockResolvedValue({
+        mockPreviewCleaningTransform.mockResolvedValue({
           ...mockPreviewResponse,
           operation_description: "Uppercase name",
           samples: [{ before: "hello", after: "HELLO" }],
@@ -610,14 +941,17 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(
           createToolCall("standardizeCase", { column: "name", mode: "upper" }),
-          context
+          context,
         );
 
-        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
-          transform_type: "clean",
-          target_column: "name",
-          expression_config: { operation: "case", mode: "upper" },
-        });
+        expect(mockPreviewCleaningTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          {
+            transform_type: "clean",
+            target_column: "name",
+            expression_config: { operation: "case", mode: "upper" },
+          },
+        );
         expect(message).toContain("Preview: Uppercase name");
         expect(message).toContain('"hello" → "HELLO"');
       });
@@ -626,7 +960,7 @@ describe("executeToolCall", () => {
     describe("Scenario: Fill nulls preview", () => {
       it("should call preview API with fill_value and return formatted result", async () => {
         const { context } = createTestTable();
-        vi.mocked(previewCleaningTransform).mockResolvedValue({
+        mockPreviewCleaningTransform.mockResolvedValue({
           ...mockPreviewResponse,
           operation_description: "Fill null values in name with N/A",
           samples: [{ before: null, after: "N/A" }],
@@ -634,39 +968,48 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(
           createToolCall("fillNulls", { column: "name", fillValue: "N/A" }),
-          context
+          context,
         );
 
-        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
-          transform_type: "clean",
-          target_column: "name",
-          expression_config: { operation: "fill_null", fill_value: "N/A" },
-        });
+        expect(mockPreviewCleaningTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          {
+            transform_type: "clean",
+            target_column: "name",
+            expression_config: { operation: "fill_null", fill_value: "N/A" },
+          },
+        );
         expect(message).toContain("Fill null values in name with N/A");
-        expect(message).toContain("null → \"N/A\"");
+        expect(message).toContain('null → "N/A"');
       });
     });
 
     describe("Scenario: Map values preview", () => {
       it("should call preview API with mappings and return formatted result", async () => {
         const { context } = createTestTable();
-        vi.mocked(previewCleaningTransform).mockResolvedValue({
+        mockPreviewCleaningTransform.mockResolvedValue({
           ...mockPreviewResponse,
           operation_description: "Map values in category",
           samples: [{ before: "A", after: "Category A" }],
         });
 
-        const mappings = [{ from: "A", to: "Category A" }, { from: "B", to: "Category B" }];
+        const mappings = [
+          { from: "A", to: "Category A" },
+          { from: "B", to: "Category B" },
+        ];
         const message = await executeToolCall(
           createToolCall("mapValues", { column: "category", mappings }),
-          context
+          context,
         );
 
-        expect(previewCleaningTransform).toHaveBeenCalledWith("ds-test-001", {
-          transform_type: "map",
-          target_column: "category",
-          expression_config: { operation: "map_values", mappings },
-        });
+        expect(mockPreviewCleaningTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          {
+            transform_type: "map",
+            target_column: "category",
+            expression_config: { operation: "map_values", mappings },
+          },
+        );
         expect(message).toContain("Map values in category");
         expect(message).toContain('"A" → "Category A"');
       });
@@ -675,7 +1018,7 @@ describe("executeToolCall", () => {
     describe("Scenario: Rename column", () => {
       it("should create alias transform and invalidate cache", async () => {
         const { context, queryClient } = createTestTable();
-        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        mockCreateCleaningTransforms.mockResolvedValue(undefined);
         const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
         const message = await executeToolCall(
@@ -683,18 +1026,24 @@ describe("executeToolCall", () => {
             column: "name",
             newName: "Product Name",
           }),
-          context
+          context,
         );
 
-        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
-          {
-            name: "Rename name to Product Name",
-            transform_type: "alias",
-            target_column: "name",
-            expression_config: { operation: "alias", alias: "Product Name" },
-          },
-        ]);
-        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["datasets", "ds-test-001"], exact: true });
+        expect(mockCreateCleaningTransforms).toHaveBeenCalledWith(
+          "ds-test-001",
+          [
+            {
+              name: "Rename name to Product Name",
+              transform_type: "alias",
+              target_column: "name",
+              expression_config: { operation: "alias", alias: "Product Name" },
+            },
+          ],
+        );
+        expect(invalidateSpy).toHaveBeenCalledWith({
+          queryKey: ["datasets", "ds-test-001"],
+          exact: true,
+        });
         expect(message).toBe("Renamed column: name → Product Name");
       });
     });
@@ -702,7 +1051,7 @@ describe("executeToolCall", () => {
     describe("Scenario: Apply cleaning transform", () => {
       it("should create trim transform and invalidate cache", async () => {
         const { context, queryClient } = createTestTable();
-        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        mockCreateCleaningTransforms.mockResolvedValue(undefined);
         const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
         const message = await executeToolCall(
@@ -711,24 +1060,27 @@ describe("executeToolCall", () => {
             operation: "trim",
             config: {},
           }),
-          context
+          context,
         );
 
-        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
-          {
-            name: "trim on name",
-            transform_type: "clean",
-            target_column: "name",
-            expression_config: { operation: "trim" },
-          },
-        ]);
+        expect(mockCreateCleaningTransforms).toHaveBeenCalledWith(
+          "ds-test-001",
+          [
+            {
+              name: "trim on name",
+              transform_type: "clean",
+              target_column: "name",
+              expression_config: { operation: "trim" },
+            },
+          ],
+        );
         expect(invalidateSpy).toHaveBeenCalled();
         expect(message).toBe("Applied: trim on name");
       });
 
       it("should map case operations to correct expression_config", async () => {
         const { context } = createTestTable();
-        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        mockCreateCleaningTransforms.mockResolvedValue(undefined);
 
         await executeToolCall(
           createToolCall("applyCleaningTransform", {
@@ -736,22 +1088,25 @@ describe("executeToolCall", () => {
             operation: "upper",
             config: {},
           }),
-          context
+          context,
         );
 
-        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
-          {
-            name: "upper on name",
-            transform_type: "clean",
-            target_column: "name",
-            expression_config: { operation: "case", mode: "upper" },
-          },
-        ]);
+        expect(mockCreateCleaningTransforms).toHaveBeenCalledWith(
+          "ds-test-001",
+          [
+            {
+              name: "upper on name",
+              transform_type: "clean",
+              target_column: "name",
+              expression_config: { operation: "case", mode: "upper" },
+            },
+          ],
+        );
       });
 
       it("should map snake case operation to correct expression_config", async () => {
         const { context } = createTestTable();
-        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        mockCreateCleaningTransforms.mockResolvedValue(undefined);
 
         await executeToolCall(
           createToolCall("applyCleaningTransform", {
@@ -759,22 +1114,25 @@ describe("executeToolCall", () => {
             operation: "snake",
             config: {},
           }),
-          context
+          context,
         );
 
-        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
-          {
-            name: "snake on name",
-            transform_type: "clean",
-            target_column: "name",
-            expression_config: { operation: "case", mode: "snake" },
-          },
-        ]);
+        expect(mockCreateCleaningTransforms).toHaveBeenCalledWith(
+          "ds-test-001",
+          [
+            {
+              name: "snake on name",
+              transform_type: "clean",
+              target_column: "name",
+              expression_config: { operation: "case", mode: "snake" },
+            },
+          ],
+        );
       });
 
       it("should map kebab case operation to correct expression_config", async () => {
         const { context } = createTestTable();
-        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        mockCreateCleaningTransforms.mockResolvedValue(undefined);
 
         await executeToolCall(
           createToolCall("applyCleaningTransform", {
@@ -782,22 +1140,25 @@ describe("executeToolCall", () => {
             operation: "kebab",
             config: {},
           }),
-          context
+          context,
         );
 
-        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
-          {
-            name: "kebab on name",
-            transform_type: "clean",
-            target_column: "name",
-            expression_config: { operation: "case", mode: "kebab" },
-          },
-        ]);
+        expect(mockCreateCleaningTransforms).toHaveBeenCalledWith(
+          "ds-test-001",
+          [
+            {
+              name: "kebab on name",
+              transform_type: "clean",
+              target_column: "name",
+              expression_config: { operation: "case", mode: "kebab" },
+            },
+          ],
+        );
       });
 
       it("should map map_values to transform_type 'map'", async () => {
         const { context } = createTestTable();
-        vi.mocked(createCleaningTransforms).mockResolvedValue(undefined);
+        mockCreateCleaningTransforms.mockResolvedValue(undefined);
 
         const mappings = [{ from: "A", to: "Category A" }];
         await executeToolCall(
@@ -806,17 +1167,20 @@ describe("executeToolCall", () => {
             operation: "map_values",
             config: { mappings },
           }),
-          context
+          context,
         );
 
-        expect(createCleaningTransforms).toHaveBeenCalledWith("ds-test-001", [
-          {
-            name: "map_values on category",
-            transform_type: "map",
-            target_column: "category",
-            expression_config: { operation: "map_values", mappings },
-          },
-        ]);
+        expect(mockCreateCleaningTransforms).toHaveBeenCalledWith(
+          "ds-test-001",
+          [
+            {
+              name: "map_values on category",
+              transform_type: "map",
+              target_column: "category",
+              expression_config: { operation: "map_values", mappings },
+            },
+          ],
+        );
       });
     });
 
@@ -841,15 +1205,19 @@ describe("executeToolCall", () => {
             created_at: "2025-06-01T00:00:00Z",
           },
         ];
-        vi.mocked(updateTransform).mockResolvedValue(undefined);
+        mockUpdateTransform.mockResolvedValue(undefined);
 
         const message = await executeToolCall(
           createToolCall("undoCleaningTransform", { action: "disable" }),
-          context
+          context,
         );
 
         // Should disable the most recent (tf-2)
-        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-2", { status: "disabled" });
+        expect(mockUpdateTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          "tf-2",
+          { status: "disabled" },
+        );
         expect(message).toBe("Disabled transform: New trim");
       });
 
@@ -865,14 +1233,21 @@ describe("executeToolCall", () => {
             created_at: "2025-01-01T00:00:00Z",
           },
         ];
-        vi.mocked(updateTransform).mockResolvedValue(undefined);
+        mockUpdateTransform.mockResolvedValue(undefined);
 
         const message = await executeToolCall(
-          createToolCall("undoCleaningTransform", { action: "delete", transformId: "tf-1" }),
-          context
+          createToolCall("undoCleaningTransform", {
+            action: "delete",
+            transformId: "tf-1",
+          }),
+          context,
         );
 
-        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-1", { status: "deleted" });
+        expect(mockUpdateTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          "tf-1",
+          { status: "deleted" },
+        );
         expect(message).toBe("Deleted transform: Old trim");
       });
 
@@ -882,10 +1257,10 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(
           createToolCall("undoCleaningTransform", { action: "disable" }),
-          context
+          context,
         );
 
-        expect(updateTransform).not.toHaveBeenCalled();
+        expect(mockUpdateTransform).not.toHaveBeenCalled();
         expect(message).toBe("No active cleaning transforms to undo.");
       });
 
@@ -908,14 +1283,18 @@ describe("executeToolCall", () => {
             created_at: "2025-01-01T00:00:00Z",
           },
         ];
-        vi.mocked(updateTransform).mockResolvedValue(undefined);
+        mockUpdateTransform.mockResolvedValue(undefined);
 
         const message = await executeToolCall(
           createToolCall("undoCleaningTransform", { action: "disable" }),
-          context
+          context,
         );
 
-        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-clean", { status: "disabled" });
+        expect(mockUpdateTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          "tf-clean",
+          { status: "disabled" },
+        );
         expect(message).toBe("Disabled transform: A cleaning");
       });
     });
@@ -933,14 +1312,18 @@ describe("executeToolCall", () => {
             created_at: "2025-01-01T00:00:00Z",
           },
         ];
-        vi.mocked(updateTransform).mockResolvedValue(undefined);
+        mockUpdateTransform.mockResolvedValue(undefined);
 
         const message = await executeToolCall(
           createToolCall("reEnableCleaningTransform", {}),
-          context
+          context,
         );
 
-        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-1", { status: "enabled" });
+        expect(mockUpdateTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          "tf-1",
+          { status: "enabled" },
+        );
         expect(message).toBe("Re-enabled transform: Disabled trim");
       });
 
@@ -964,14 +1347,18 @@ describe("executeToolCall", () => {
             created_at: "2025-06-01T00:00:00Z",
           },
         ];
-        vi.mocked(updateTransform).mockResolvedValue(undefined);
+        mockUpdateTransform.mockResolvedValue(undefined);
 
         const message = await executeToolCall(
           createToolCall("reEnableCleaningTransform", { transformId: "tf-1" }),
-          context
+          context,
         );
 
-        expect(updateTransform).toHaveBeenCalledWith("ds-test-001", "tf-1", { status: "enabled" });
+        expect(mockUpdateTransform).toHaveBeenCalledWith(
+          "ds-test-001",
+          "tf-1",
+          { status: "enabled" },
+        );
         expect(message).toBe("Re-enabled transform: Disabled trim");
       });
 
@@ -981,10 +1368,10 @@ describe("executeToolCall", () => {
 
         const message = await executeToolCall(
           createToolCall("reEnableCleaningTransform", {}),
-          context
+          context,
         );
 
-        expect(updateTransform).not.toHaveBeenCalled();
+        expect(mockUpdateTransform).not.toHaveBeenCalled();
         expect(message).toBe("No disabled cleaning transforms to re-enable.");
       });
     });
@@ -992,11 +1379,13 @@ describe("executeToolCall", () => {
     describe("Scenario: Cleaning tool API error", () => {
       it("should return error message when preview API fails", async () => {
         const { context } = createTestTable();
-        vi.mocked(previewCleaningTransform).mockRejectedValue(new Error("Column type mismatch"));
+        mockPreviewCleaningTransform.mockRejectedValue(
+          new Error("Column type mismatch"),
+        );
 
         const message = await executeToolCall(
           createToolCall("trimWhitespace", { column: "amount" }),
-          context
+          context,
         );
 
         expect(message).toBe("Error: Column type mismatch");
@@ -1004,11 +1393,16 @@ describe("executeToolCall", () => {
 
       it("should return error message when create API fails", async () => {
         const { context } = createTestTable();
-        vi.mocked(createCleaningTransforms).mockRejectedValue(new Error("Network error"));
+        mockCreateCleaningTransforms.mockRejectedValue(
+          new Error("Network error"),
+        );
 
         const message = await executeToolCall(
-          createToolCall("renameColumn", { column: "name", newName: "Product" }),
-          context
+          createToolCall("renameColumn", {
+            column: "name",
+            newName: "Product",
+          }),
+          context,
         );
 
         expect(message).toBe("Error: Network error");
