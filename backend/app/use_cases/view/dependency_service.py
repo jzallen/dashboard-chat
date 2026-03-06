@@ -30,9 +30,8 @@ class DependencyService:
             if ref_type == "dataset":
                 if not await self._repo.dataset_exists(ref_id):
                     missing.append(ref_id)
-            elif ref_type == "view":
-                if not await self._repo.view_exists(ref_id):
-                    missing.append(ref_id)
+            elif ref_type == "view" and not await self._repo.view_exists(ref_id):
+                missing.append(ref_id)
         if missing:
             raise InvalidSourceReference(missing)
 

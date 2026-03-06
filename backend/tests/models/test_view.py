@@ -1,7 +1,9 @@
 """Tests for View domain model."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from types import SimpleNamespace
+
+import pytest
 
 from app.models.view import View
 
@@ -60,11 +62,8 @@ class TestViewConstruction:
             name="My View",
             sql_definition="SELECT 1",
         )
-        try:
+        with pytest.raises(AttributeError):
             view.name = "Changed"
-            assert False, "Should have raised FrozenInstanceError"
-        except AttributeError:
-            pass
 
 
 class TestViewSerialization:
