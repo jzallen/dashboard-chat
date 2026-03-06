@@ -6,6 +6,7 @@ from io import BytesIO
 from app.models.dataset import Dataset
 from app.models.project import Project
 from app.models.transform import Transform
+from app.plugins.registry import PluginRegistry
 from app.use_cases.project._dbt import generate_dbt_project_zip
 
 
@@ -185,3 +186,41 @@ class TestZipContents:
         sql = zf.read("models/staging/stg_test_dataset.sql").decode("utf-8")
         assert "TRIM(col_a)" in sql
         assert "source(" in sql
+
+    def test_generate_zip_without_plugin_registry_has_no_plugin_macros(self):
+        project = _make_project("Test")
+
+        zip_bytes = generate_dbt_project_zip(project, "test")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+        names = zf.namelist()
+
+        plugin_macro_files = [n for n in names if n.startswith("macros/plugin_")]
+        assert plugin_macro_files == []
+
+    def test_generate_zip_with_plugin_macros_includes_macro_files(self):
+        class FakePlugin:
+            name = "test_plugin"
+            extensions = [".fake"]
+            label = "Fake Format"
+            dbt_macros = {"parse_date": "CREATE OR REPLACE FUNCTION ..."}
+
+            def validate(self, file_content, filename):
+                pass
+
+            def detect_choices(self, file_content, filename):
+                return None
+
+            def process(self, file_content, filename, choices=None):
+                pass
+
+        plugin = FakePlugin()
+        registry = PluginRegistry([plugin])
+        project = _make_project("Test")
+
+        zip_bytes = generate_dbt_project_zip(project, "test", plugin_registry=registry)
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+        names = set(zf.namelist())
+
+        assert "macros/plugin_test_plugin.sql" in names
+        content = zf.read("macros/plugin_test_plugin.sql").decode("utf-8")
+        assert "CREATE OR REPLACE FUNCTION ..." in content

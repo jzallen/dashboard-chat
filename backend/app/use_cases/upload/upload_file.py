@@ -77,15 +77,22 @@ async def upload_file(
     ext = os.path.splitext(file_name)[1].lower()
     plugin = plugin_registry.get_for_extension(ext)
 
-    # Validate with plugin
-    await asyncio.to_thread(plugin.validate, file_content, file_name)
+    # Validate with plugin (with timeout)
+    try:
+        await asyncio.wait_for(asyncio.to_thread(plugin.validate, file_content, file_name), timeout=120)
+    except asyncio.TimeoutError:
+        raise PluginValidationError(f"Plugin '{plugin.name}' validation timed out")
 
     # Check if plugin needs user choices
-    choices = await asyncio.to_thread(plugin.detect_choices, file_content, file_name)
+    choices = await asyncio.wait_for(
+        asyncio.to_thread(plugin.detect_choices, file_content, file_name), timeout=120
+    )
 
     # Process directly if no choices needed
     if choices is None:
-        result = await asyncio.to_thread(plugin.process, file_content, file_name)
+        result = await asyncio.wait_for(
+            asyncio.to_thread(plugin.process, file_content, file_name), timeout=120
+        )
         preview_rows = json.loads(result.df.head(10).to_json(orient="records", date_format="iso"))
     else:
         preview_rows = []

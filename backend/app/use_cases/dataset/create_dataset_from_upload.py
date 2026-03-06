@@ -60,8 +60,9 @@ async def create_dataset_from_upload(
             plugin = plugin_registry.get_for_extension(ext)
 
     if plugin:
-        result = await asyncio.to_thread(
-            plugin.process, raw_content, file_received_event.original_filename, choices
+        result = await asyncio.wait_for(
+            asyncio.to_thread(plugin.process, raw_content, file_received_event.original_filename, choices),
+            timeout=120,
         )
         df = result.df
         schema_hints = result.schema_hints
