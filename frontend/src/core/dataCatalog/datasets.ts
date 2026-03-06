@@ -71,6 +71,7 @@ export interface Dataset {
   preview_rows: Record<string, unknown>[];
   staging_sql?: string | null;
   column_profiles: Record<string, ColumnProfile> | null;
+  format_context?: string | null;
 }
 
 export interface DatasetUpdate {

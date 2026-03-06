@@ -1,6 +1,7 @@
 """CSV file format plugin — reference implementation."""
 
 import io
+from typing import ClassVar
 
 import pandas as pd
 
@@ -13,10 +14,10 @@ class CsvPlugin:
     Extracted from the original parse_and_clean_csv() utility.
     """
 
-    name = "csv"
-    extensions = [".csv"]
-    label = "CSV"
-    dbt_macros = None
+    name: ClassVar[str] = "csv"
+    extensions: ClassVar[list[str]] = [".csv"]
+    label: ClassVar[str] = "CSV"
+    dbt_macros: ClassVar[dict[str, str] | None] = None
 
     def validate(self, file_content: bytes, filename: str) -> None:
         if not file_content:

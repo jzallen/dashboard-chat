@@ -412,6 +412,10 @@ export function getSystemPrompt(tableSchema: TableSchema): string {
       ? `\nACTIVE FILTERS:\n${tableSchema.activeFilters.map((f) => `  - ${f.column} ${f.operator} ${f.value}`).join("\n")}\n`
       : "\nNo active filters.\n";
 
+  const formatContextLines = tableSchema.formatContext
+    ? `\nFORMAT CONTEXT:\n${tableSchema.formatContext}\n`
+    : "";
+
   const activeCleaningLines =
     tableSchema.activeCleaningTransforms &&
     tableSchema.activeCleaningTransforms.length > 0
@@ -429,7 +433,7 @@ CURRENT TABLE SCHEMA:
 ${columnDescriptions}
 
 Total rows: ${tableSchema.rowCount}
-${activeFilterLines}${activeCleaningLines}
+${formatContextLines}${activeFilterLines}${activeCleaningLines}
 When the user mentions a value that matches a known column value from the profile above, use it for exact filtering with the "equals" operator.
 
 INSTRUCTIONS:

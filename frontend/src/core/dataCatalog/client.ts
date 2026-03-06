@@ -18,6 +18,12 @@ export interface OrgInfo {
   name: string;
 }
 
+export interface FormatInfo {
+  name: string;
+  extensions: string[];
+  label: string;
+}
+
 export function createDataCatalog(fetchFn: typeof fetch = fetch) {
   const client = new ApiClient(DATA_CATALOG_BASE_URL, {
     fetchFn,
@@ -221,6 +227,14 @@ export function createDataCatalog(fetchFn: typeof fetch = fetch) {
       return client.get<OrgInfo>("/api/orgs/me");
     },
 
+    // Formats
+    async getFormats(): Promise<FormatInfo[]> {
+      const response = await client.fetch("/api/uploads/formats");
+      if (!response.ok) throw new Error("Failed to fetch formats");
+      const json = await response.json();
+      return json.formats;
+    },
+
     // Upload
     uploadFile<T>(
       endpoint: string,
@@ -228,6 +242,13 @@ export function createDataCatalog(fetchFn: typeof fetch = fetch) {
       additionalFields: Record<string, string>,
     ): Promise<T> {
       return client.uploadFile<T>(endpoint, file, additionalFields);
+    },
+
+    processUploadWithChoices<T>(
+      uploadId: string,
+      choices: Record<string, string>,
+    ): Promise<T> {
+      return client.post<T>(`/api/uploads/${uploadId}/process`, { choices });
     },
 
     // Auth bootstrap (no auth wrapper needed)

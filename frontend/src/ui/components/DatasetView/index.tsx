@@ -274,6 +274,7 @@ function DatasetDetail({
           activeCleaningTransforms.length > 0
             ? activeCleaningTransforms
             : undefined,
+        formatContext: dataset.format_context ?? undefined,
       });
     }
   }, [dataset, data.length, registerTableSchema, aliasMap, activeFilters]);

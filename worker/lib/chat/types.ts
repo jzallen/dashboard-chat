@@ -59,4 +59,5 @@ export interface TableSchema {
     operation: string;
     details?: string;
   }>;
+  formatContext?: string;
 }

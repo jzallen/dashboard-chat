@@ -19,18 +19,53 @@ from .sources_yml import generate_sources_yml
 
 if TYPE_CHECKING:
     from app.models.project import Project
+    from app.plugins import PluginRegistry
 
 __all__ = ["generate_dbt_project_zip", "to_snake_case"]
 
 _BUCKET_PLACEHOLDER = "__S3_BUCKET__"
 
 
-def generate_dbt_project_zip(project: Project, project_name_snake: str) -> bytes:
+def _collect_plugin_macros(plugin_registry: "PluginRegistry | None") -> dict[str, dict[str, str]]:
+    """Collect dbt macros from all registered plugins.
+
+    Returns:
+        Dict of plugin_name → {macro_name: sql_body}
+    """
+    if plugin_registry is None:
+        return {}
+    result = {}
+    for plugin in plugin_registry.all_plugins():
+        if plugin.dbt_macros:
+            result[plugin.name] = plugin.dbt_macros
+    return result
+
+
+def _generate_plugin_macros_sql(plugin_name: str, macros: dict[str, str]) -> str:
+    """Generate a dbt macro file for a plugin's macros."""
+    parts = [f"{{% macro register_{plugin_name}_macros() %}}"]
+    for macro_name, sql_body in macros.items():
+        parts.append(f"""
+  {{% set {macro_name}_sql %}}
+{sql_body.strip()}
+  {{% endset %}}
+
+  {{% do run_query({macro_name}_sql) %}}""")
+    parts.append(f"\n{{% endmacro %}}")
+    return "\n".join(parts)
+
+
+def generate_dbt_project_zip(
+    project: "Project",
+    project_name_snake: str,
+    plugin_registry: "PluginRegistry | None" = None,
+) -> bytes:
     """Generate a complete dbt project as an in-memory zip archive.
 
     Args:
         project: Project domain object with datasets and transforms loaded.
         project_name_snake: Pre-computed snake_case project name.
+        plugin_registry: Optional plugin registry for collecting plugin macros.
 
     Returns:
         Raw zip bytes ready for HTTP response.
@@ -62,5 +97,11 @@ def generate_dbt_project_zip(project: Project, project_name_snake: str) -> bytes
         for snake_name, ds in dataset_pairs:
             sql = generate_model_sql(project_name_snake, snake_name, ds)
             zf.writestr(f"models/staging/stg_{snake_name}.sql", sql)
+
+        # Write plugin-contributed macros
+        plugin_macros = _collect_plugin_macros(plugin_registry)
+        for p_name, macros in plugin_macros.items():
+            macro_sql = _generate_plugin_macros_sql(p_name, macros)
+            zf.writestr(f"macros/plugin_{p_name}.sql", macro_sql)
 
     return buf.getvalue()

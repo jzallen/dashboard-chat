@@ -13,6 +13,7 @@ from app.use_cases.project._dbt.naming import to_snake_case
 from app.use_cases.project.project_service import ProjectService
 
 if TYPE_CHECKING:
+    from app.plugins import PluginRegistry
     from app.repositories import RepositoryContainer
 
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 @handle_returns
 async def export_dbt_project(
     project_id: str,
+    plugin_registry: "PluginRegistry | None" = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[tuple[bytes, str], str]:
@@ -50,6 +52,6 @@ async def export_dbt_project(
     )
 
     project_name_snake = to_snake_case(project.name)
-    zip_bytes = generate_dbt_project_zip(project, project_name_snake)
+    zip_bytes = generate_dbt_project_zip(project, project_name_snake, plugin_registry)
 
     return zip_bytes, project_name_snake
