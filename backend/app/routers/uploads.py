@@ -78,8 +78,19 @@ async def process_upload(
 
     Body: {"choices": {"sheet_name": "Sheet1"}}
     """
+    choices = body.get("choices")
+    if not choices or not isinstance(choices, dict):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "type": "INVALID_REQUEST",
+                "title": "Invalid Request",
+                "status": 400,
+                "detail": "Request body must include 'choices' as a non-empty object",
+            },
+        )
+
     plugin_registry = request.app.state.plugin_registry
-    choices = body.get("choices", {})
 
     dataset_body, dataset_status = await HTTPController.post_dataset(
         upload_id=upload_id, plugin_registry=plugin_registry, choices=choices
@@ -91,8 +102,5 @@ async def process_upload(
 async def list_formats(request: Request):
     """Return registered file format plugins."""
     registry = request.app.state.plugin_registry
-    formats = [
-        {"name": p.name, "extensions": p.extensions, "label": p.label}
-        for p in registry.all_plugins()
-    ]
+    formats = [{"name": p.name, "extensions": p.extensions, "label": p.label} for p in registry.all_plugins()]
     return {"formats": formats}

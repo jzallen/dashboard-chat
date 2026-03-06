@@ -10,6 +10,7 @@ from domain events stored in the outbox_messages table.
 import asyncio
 import json
 import os
+from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from returns.result import Result
@@ -21,15 +22,13 @@ from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.dataset.exceptions import DatasetNotFound
 from app.use_cases.project.project_service import ProjectService
-from app.use_cases.upload.exceptions import EmptyFile, InvalidFileType, UnsupportedFormat
+from app.use_cases.upload.exceptions import EmptyFile, UnsupportedFormat
 
 if TYPE_CHECKING:
     from app.repositories import MetadataRepository, RepositoryContainer
 
 
-def _validate_upload(
-    file_content: bytes, file_name: str, plugin_registry: PluginRegistry
-) -> None:
+def _validate_upload(file_content: bytes, file_name: str, plugin_registry: PluginRegistry) -> None:
     if not file_content:
         raise EmptyFile()
 
@@ -80,19 +79,15 @@ async def upload_file(
     # Validate with plugin (with timeout)
     try:
         await asyncio.wait_for(asyncio.to_thread(plugin.validate, file_content, file_name), timeout=120)
-    except asyncio.TimeoutError:
-        raise PluginValidationError(f"Plugin '{plugin.name}' validation timed out")
+    except TimeoutError as err:
+        raise PluginValidationError(f"Plugin '{plugin.name}' validation timed out") from err
 
     # Check if plugin needs user choices
-    choices = await asyncio.wait_for(
-        asyncio.to_thread(plugin.detect_choices, file_content, file_name), timeout=120
-    )
+    choices = await asyncio.wait_for(asyncio.to_thread(plugin.detect_choices, file_content, file_name), timeout=120)
 
     # Process directly if no choices needed
     if choices is None:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(plugin.process, file_content, file_name), timeout=120
-        )
+        result = await asyncio.wait_for(asyncio.to_thread(plugin.process, file_content, file_name), timeout=120)
         preview_rows = json.loads(result.df.head(10).to_json(orient="records", date_format="iso"))
     else:
         preview_rows = []
@@ -120,7 +115,7 @@ async def upload_file(
             status="awaiting_input",
             created_at=upload.created_at,
             preview_rows=[],
-            choices=[c.__dict__ for c in choices],
+            choices=[asdict(c) for c in choices],
         )
 
     return upload

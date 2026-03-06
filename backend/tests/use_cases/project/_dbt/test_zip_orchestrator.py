@@ -2,6 +2,7 @@
 
 import zipfile
 from io import BytesIO
+from typing import ClassVar
 
 from app.models.dataset import Dataset
 from app.models.project import Project
@@ -200,9 +201,9 @@ class TestZipContents:
     def test_generate_zip_with_plugin_macros_includes_macro_files(self):
         class FakePlugin:
             name = "test_plugin"
-            extensions = [".fake"]
+            extensions: ClassVar[list[str]] = [".fake"]
             label = "Fake Format"
-            dbt_macros = {"parse_date": "CREATE OR REPLACE FUNCTION ..."}
+            dbt_macros: ClassVar[dict[str, str]] = {"parse_date": "CREATE OR REPLACE FUNCTION ..."}
 
             def validate(self, file_content, filename):
                 pass
