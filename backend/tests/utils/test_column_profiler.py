@@ -231,11 +231,12 @@ class TestEdgeCases:
 
     def test_large_dataframe_sampling(self):
         """Verify profiling works on DataFrames larger than 100k rows."""
+        rng = np.random.default_rng(seed=42)
         n = 200_000
         df = pd.DataFrame(
             {
-                "val": np.random.choice(["a", "b", "c"], size=n),
-                "num": np.random.randn(n),
+                "val": rng.choice(["a", "b", "c"], size=n),
+                "num": rng.standard_normal(n),
             }
         )
         schema = {

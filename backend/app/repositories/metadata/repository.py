@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 from sqlalchemy import exists, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, load_only, selectinload
 
 from ..exceptions import MetadataRepositoryError
 from .dataset_record import DatasetRecord
@@ -62,7 +62,15 @@ class MetadataRepository:
     @handle_repository_exceptions
     async def list_projects(self, org_id: str | None = None) -> list[dict[str, Any]]:
         """List all projects ordered by creation date (newest first)."""
-        query = select(ProjectRecord).options(selectinload(ProjectRecord.datasets))
+        query = select(ProjectRecord).options(
+            selectinload(ProjectRecord.datasets).load_only(
+                DatasetRecord.id,
+                DatasetRecord.name,
+                DatasetRecord.description,
+                DatasetRecord.project_id,
+                DatasetRecord.schema_config,
+            )
+        )
         if org_id is not None:
             query = query.where(ProjectRecord.org_id == org_id)
         query = query.order_by(ProjectRecord.created_at.desc())
@@ -206,13 +214,13 @@ class MetadataRepository:
         Returns the ORM record for domain model conversion.
         """
         query = select(DatasetRecord).where(DatasetRecord.id == dataset_id)
-        query = query.options(selectinload(DatasetRecord.project))
+        query = query.options(joinedload(DatasetRecord.project))
 
         if include_transforms:
-            query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
+            query = query.options(joinedload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
 
         result = await self._session.execute(query)
-        return result.scalar_one_or_none()
+        return result.unique().scalar_one_or_none()
 
     @handle_repository_exceptions
     async def create_dataset(

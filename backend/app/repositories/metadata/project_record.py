@@ -33,7 +33,7 @@ class ProjectRecord(Base):
 
     # Relationships
     datasets: Mapped[list["DatasetRecord"]] = relationship(
-        "DatasetRecord", back_populates="project", cascade="all, delete-orphan"
+        "DatasetRecord", back_populates="project", cascade="all, delete-orphan", order_by="DatasetRecord.id"
     )
 
     def __repr__(self) -> str:

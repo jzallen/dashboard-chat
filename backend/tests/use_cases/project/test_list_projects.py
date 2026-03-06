@@ -1,7 +1,5 @@
 """Tests for list_projects use case."""
 
-from unittest.mock import Mock
-
 import pytest
 from returns.result import Failure, Success
 from sqlalchemy.exc import SQLAlchemyError
@@ -33,9 +31,6 @@ class TestListProjects:
 
         match result:
             case Success(projects):
-                # Normalize dataset order within each project for deterministic comparison
-                for p in projects:
-                    p["datasets"] = sorted(p["datasets"], key=lambda d: d["id"])
                 assert projects == [
                     {
                         "id": PROJECT_2,
@@ -149,14 +144,12 @@ class TestListProjects:
         """list_projects should return Failure when a database error occurs."""
         set_session(seeded_db)
 
-        # Close the session to simulate a database error
-        await seeded_db.close()
-
-        metadata_repository = Mock()
-        metadata_repository.list_projects = Mock(side_effect=SQLAlchemyError("Database connection lost"))
+        class FailingMetadataRepository:
+            async def list_projects(self, org_id=None):
+                raise SQLAlchemyError("Database connection lost")
 
         result = await list_projects(
-            repositories={"metadata_repository": lambda: metadata_repository},
+            repositories={"metadata_repository": FailingMetadataRepository},
         )
 
         match result:

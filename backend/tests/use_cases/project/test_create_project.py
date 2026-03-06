@@ -1,7 +1,5 @@
 """Tests for create_project use case."""
 
-from unittest.mock import Mock
-
 import pytest
 from returns.result import Failure, Success
 from sqlalchemy.exc import SQLAlchemyError
@@ -47,15 +45,13 @@ class TestCreateProject:
         """create_project should return Failure when a database error occurs."""
         set_session(db_session)
 
-        # Close the session to simulate a database error
-        await db_session.close()
-
-        metadata_repository = Mock()
-        metadata_repository.create_project = Mock(side_effect=SQLAlchemyError("Database connection lost"))
+        class FailingMetadataRepository:
+            async def create_project(self, **kwargs):
+                raise SQLAlchemyError("Database connection lost")
 
         result = await create_project(
             name="New Project",
-            repositories={"metadata_repository": lambda: metadata_repository},
+            repositories={"metadata_repository": FailingMetadataRepository},
         )
 
         match result:

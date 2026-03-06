@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures."""
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -76,3 +77,4 @@ async def db_session():
         yield session
 
     await engine.dispose()
+    os.remove(db_path)

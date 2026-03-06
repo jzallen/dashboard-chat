@@ -1,5 +1,3 @@
-from unittest.mock import Mock
-
 import pytest
 from returns.result import Failure, Success
 from sqlalchemy.exc import SQLAlchemyError
@@ -150,13 +148,13 @@ class TestListDatasets:
         """list_datasets should return Failure when a database error occurs."""
         set_session(seeded_db)
 
-        # Simulate a database error by closing the session
-        await seeded_db.close()
+        class FailingMetadataRepository:
+            async def project_exists(self, project_id, org_id=None):
+                raise SQLAlchemyError("Database connection lost")
 
-        metadata_repository = Mock(side_effect=SQLAlchemyError("Database connection lost"))
         result = await list_datasets(
             project_id=PROJECT_1,
-            repositories={"metadata_repository": metadata_repository},
+            repositories={"metadata_repository": FailingMetadataRepository},
         )
 
         match result:

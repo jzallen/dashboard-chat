@@ -1,7 +1,5 @@
 """Tests for delete_project use case."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 from returns.result import Failure, Success
 from sqlalchemy import select
@@ -69,16 +67,16 @@ class TestDeleteProject:
         """delete_project should return Failure when a database error occurs."""
         set_session(seeded_db)
 
-        # Close the session to simulate a database error
-        await seeded_db.close()
+        class FailingMetadataRepository:
+            async def get_project(self, project_id):
+                return {"id": PROJECT_1, "org_id": ORG_1, "name": "Test"}
 
-        metadata_repository = AsyncMock()
-        metadata_repository.get_project = AsyncMock(return_value={"id": PROJECT_1, "org_id": ORG_1, "name": "Test"})
-        metadata_repository.delete_project = AsyncMock(side_effect=SQLAlchemyError("Database connection lost"))
+            async def delete_project(self, project_id):
+                raise SQLAlchemyError("Database connection lost")
 
         result = await delete_project(
             project_id=PROJECT_1,
-            repositories={"metadata_repository": lambda: metadata_repository},
+            repositories={"metadata_repository": FailingMetadataRepository},
         )
 
         match result:

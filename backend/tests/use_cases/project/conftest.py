@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
+from app.auth.context import clear_auth_user, set_auth_user
 from app.auth.types import AuthUser
 from app.repositories.metadata import DatasetRecord, ProjectRecord
 from tests.uuidv7_fixtures import (
@@ -27,6 +27,8 @@ def auth_user():
     explicitly for clarity or to override with a different user.
     """
     set_auth_user(TEST_USER)
+    yield
+    clear_auth_user()
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
+from app.auth.context import clear_auth_user, set_auth_user
 from app.auth.types import AuthUser
 from app.repositories.metadata import DatasetRecord, ExternalAccessRecord, ProjectRecord
 from app.use_cases.sql_access._infra import (
@@ -38,6 +38,8 @@ MOCK_ENV_PORT = 15432
 def auth_user():
     """Set a default auth user for all SQL access tests."""
     set_auth_user(TEST_USER)
+    yield
+    clear_auth_user()
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +47,8 @@ def mock_provisioner():
     """Set a mock provisioner for all SQL access tests."""
     provisioner = MockEnvironmentProvisioner()
     set_app_provisioner(provisioner)
-    return provisioner
+    yield provisioner
+    set_app_provisioner(None)  # type: ignore[arg-type]
 
 
 @pytest.fixture(autouse=True)
@@ -53,7 +56,8 @@ def mock_pgbouncer_provisioner():
     """Set a mock PgBouncer provisioner for all SQL access tests."""
     provisioner = MockPgBouncerProvisioner()
     set_app_pgbouncer_provisioner(provisioner)
-    return provisioner
+    yield provisioner
+    set_app_pgbouncer_provisioner(None)
 
 
 @pytest.fixture

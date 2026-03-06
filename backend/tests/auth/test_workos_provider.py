@@ -211,12 +211,17 @@ class TestHandleCallback:
 
     async def test_successful_callback_returns_4_tuple(self, provider):
         """handle_callback should exchange code for user, access_token, refresh_token, expires_in."""
-        exp_time = int(time.time()) + 3600
+        frozen_time = 1_000_000
+        exp_time = frozen_time + 3600
         json_data = _workos_auth_json(access_token="tok_abc123", refresh_token="rt_xyz789")
         mock_response = _make_workos_response(status_code=200, json_data=json_data)
         client_patch, _ = _mock_httpx_client(mock_response)
 
-        with client_patch, patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}):
+        with (
+            client_patch,
+            patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}),
+            patch("app.auth.workos_provider.time.time", return_value=frozen_time),
+        ):
             user, token, refresh_token, expires_in = await provider.handle_callback("auth-code-123")
 
         assert isinstance(user, AuthUser)
@@ -226,7 +231,7 @@ class TestHandleCallback:
         assert user.name == "Alice"
         assert token == "tok_abc123"
         assert refresh_token == "rt_xyz789"
-        assert 3590 <= expires_in <= 3600
+        assert expires_in == 3600
 
     async def test_failed_callback_raises_authentication_error(self, provider):
         """handle_callback should raise AuthenticationError on non-200 response."""
@@ -238,12 +243,17 @@ class TestHandleCallback:
 
     async def test_callback_without_org_id_returns_none_org(self, provider):
         """handle_callback should set org_id=None when response has no organization_id."""
-        exp_time = int(time.time()) + 3600
+        frozen_time = 1_000_000
+        exp_time = frozen_time + 3600
         json_data = _workos_auth_json(org_id=None)
         mock_response = _make_workos_response(status_code=200, json_data=json_data)
         client_patch, _ = _mock_httpx_client(mock_response)
 
-        with client_patch, patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}):
+        with (
+            client_patch,
+            patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}),
+            patch("app.auth.workos_provider.time.time", return_value=frozen_time),
+        ):
             user, _, _, _ = await provider.handle_callback("code-no-org")
 
         assert user.org_id is None
@@ -254,7 +264,8 @@ class TestRefreshAccessToken:
 
     async def test_successful_refresh_returns_4_tuple(self, provider):
         """refresh_access_token should return new user, access_token, refresh_token, expires_in."""
-        exp_time = int(time.time()) + 1800
+        frozen_time = 1_000_000
+        exp_time = frozen_time + 1800
         json_data = _workos_auth_json(
             access_token="tok_new",
             refresh_token="rt_new",
@@ -262,13 +273,17 @@ class TestRefreshAccessToken:
         mock_response = _make_workos_response(status_code=200, json_data=json_data)
         client_patch, mock_client = _mock_httpx_client(mock_response)
 
-        with client_patch, patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}):
+        with (
+            client_patch,
+            patch("app.auth.workos_provider.jwt.decode", return_value={"exp": exp_time}),
+            patch("app.auth.workos_provider.time.time", return_value=frozen_time),
+        ):
             user, token, refresh_token, expires_in = await provider.refresh_access_token("rt_old")
 
         assert isinstance(user, AuthUser)
         assert token == "tok_new"
         assert refresh_token == "rt_new"
-        assert 1790 <= expires_in <= 1800
+        assert expires_in == 1800
 
         # Verify the correct grant_type was used
         call_kwargs = mock_client.post.call_args
