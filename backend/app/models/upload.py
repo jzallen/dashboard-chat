@@ -38,6 +38,7 @@ class Upload:
     created_at: datetime | None = None
     processed_at: datetime | None = None
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
+    choices: list[dict[str, Any]] | None = None
 
     @classmethod
     def from_outbox_record(cls, record: OutboxRecord, preview_rows: list[dict[str, Any]] | None = None) -> Upload:
@@ -69,4 +70,5 @@ class Upload:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "processed_at": self.processed_at.isoformat() if self.processed_at else None,
             "preview_rows": self.preview_rows,
+            "choices": self.choices,
         }

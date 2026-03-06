@@ -45,6 +45,7 @@ class Dataset:
     column_profiles: dict[str, Any] | None = (
         None  # Per-column value stats (sample values, min/max, …) — injected into LLM system prompt
     )
+    format_context: str | None = None  # Plugin-provided context for LLM (e.g., HL7v2 column conventions)
 
     @classmethod
     def from_record(
@@ -62,6 +63,7 @@ class Dataset:
             transforms=record.transforms if include_transforms else [],
             preview_rows=preview_rows or [],
             column_profiles=record.column_profiles,
+            format_context=getattr(record, "format_context", None),
         )
 
     @property
@@ -303,6 +305,7 @@ class Dataset:
             "transforms": [t.serialize() for t in self.transforms] if self.transforms else [],
             "preview_rows": self.preview_rows,
             "column_profiles": self.column_profiles,
+            "format_context": self.format_context,
             "staging_sql": self.display_sql,
         }
 

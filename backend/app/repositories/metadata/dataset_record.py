@@ -60,6 +60,9 @@ class DatasetRecord(Base):
     # Format: { "col_name": { "type": "text", "sample_values": [...], "unique_count": N, ... } }
     column_profiles: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
 
+    # Plugin-provided context injected into LLM system prompt (e.g., HL7v2 column conventions)
+    format_context: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False

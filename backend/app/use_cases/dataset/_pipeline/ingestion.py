@@ -28,9 +28,23 @@ async def read_raw_file(lake_repo, storage_path: str, upload_id: str) -> bytes:
     return raw_content
 
 
-def analyze_dataframe(df: pd.DataFrame) -> tuple[dict, list[dict], list[dict]]:
-    """Infer schema, compute column profiles, and generate preview rows."""
+def analyze_dataframe(
+    df: pd.DataFrame, schema_hints: dict[str, str] | None = None
+) -> tuple[dict, list[dict], list[dict]]:
+    """Infer schema, compute column profiles, and generate preview rows.
+
+    Args:
+        df: The DataFrame to analyze.
+        schema_hints: Optional dict of column_name → type to override inference.
+    """
     schema_config = infer_schema_from_dataframe(df)
+
+    if schema_hints:
+        fields = schema_config.get("fields", {})
+        for col_name, col_type in schema_hints.items():
+            if col_name in fields:
+                fields[col_name]["type"] = col_type
+
     column_profiles = compute_column_profiles(df, schema_config)
     preview_rows = json.loads(df.head(10).to_json(orient="records", date_format="iso"))
     return schema_config, column_profiles, preview_rows
@@ -44,6 +58,7 @@ async def create_dataset_record(
     partition_fields: list[str],
     column_profiles: list[dict],
     preview_rows: list[dict],
+    format_context: str | None = None,
 ) -> Dataset:
     """Create the dataset metadata record and return a Dataset domain object."""
     dataset_dict = await metadata_repo.create_dataset(
@@ -53,6 +68,7 @@ async def create_dataset_record(
         description=description,
         partition_fields=partition_fields,
         column_profiles=column_profiles,
+        format_context=format_context,
     )
     return Dataset(
         id=dataset_dict["id"],
@@ -63,6 +79,7 @@ async def create_dataset_record(
         partition_fields=dataset_dict["partition_fields"],
         preview_rows=preview_rows,
         column_profiles=dataset_dict["column_profiles"],
+        format_context=dataset_dict.get("format_context"),
     )
 
 

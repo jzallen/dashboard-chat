@@ -20,6 +20,7 @@ class UploadFileReceived:
     original_filename: str
     file_size: int
     dataset_id: str | None = None
+    plugin_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
