@@ -10,6 +10,7 @@ from ...database import Base
 
 if TYPE_CHECKING:
     from .dataset_record import DatasetRecord
+    from .view_record import ViewRecord
 
 
 class ProjectRecord(Base):
@@ -34,6 +35,9 @@ class ProjectRecord(Base):
     # Relationships
     datasets: Mapped[list["DatasetRecord"]] = relationship(
         "DatasetRecord", back_populates="project", cascade="all, delete-orphan"
+    )
+    views: Mapped[list["ViewRecord"]] = relationship(
+        "ViewRecord", back_populates="project", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

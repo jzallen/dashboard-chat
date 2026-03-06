@@ -10,6 +10,7 @@ from app.use_cases import organization as organization_use_cases
 from app.use_cases import project as project_use_cases
 from app.use_cases import sql_access as sql_access_use_cases
 from app.use_cases import upload as upload_use_cases
+from app.use_cases import view as view_use_cases
 from app.use_cases.exceptions import DomainException
 
 from .response_wrapper import wrap_success
@@ -221,6 +222,53 @@ class HTTPController:
         match result:
             case Success(data):
                 return wrap_success(data), 200
+            case Failure(error):
+                return _error_response(error)
+
+    # View methods
+
+    @staticmethod
+    async def list_views(project_id: str) -> tuple[dict, int]:
+        result = await view_use_cases.list_views(project_id)
+        match result:
+            case Success(data):
+                return wrap_success(_serialize(data)), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def post_view(project_id: str, **kwargs) -> tuple[dict, int]:
+        result = await view_use_cases.create_view(project_id=project_id, **kwargs)
+        match result:
+            case Success(data):
+                return wrap_success(_serialize(data)), 201
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def get_view(view_id: str) -> tuple[dict, int]:
+        result = await view_use_cases.get_view(view_id)
+        match result:
+            case Success(data):
+                return wrap_success(_serialize(data)), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def patch_view(view_id: str, **kwargs) -> tuple[dict, int]:
+        result = await view_use_cases.update_view(view_id, kwargs)
+        match result:
+            case Success(data):
+                return wrap_success(_serialize(data)), 200
+            case Failure(error):
+                return _error_response(error)
+
+    @staticmethod
+    async def delete_view(view_id: str) -> tuple[dict, int]:
+        result = await view_use_cases.delete_view(view_id)
+        match result:
+            case Success(data):
+                return wrap_success({"deleted": data}), 200
             case Failure(error):
                 return _error_response(error)
 

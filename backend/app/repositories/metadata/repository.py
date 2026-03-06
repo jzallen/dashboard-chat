@@ -17,6 +17,7 @@ from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
 from .project_record import ProjectRecord
 from .transform_record import TransformRecord
+from .view_record import ViewRecord
 
 if TYPE_CHECKING:
     from app.repositories import RestrictedSession
@@ -508,6 +509,94 @@ class MetadataRepository:
             "expression_config": transform.expression_config,
         }
 
+    # -------------------------------------------------------------------------
+    # View operations
+    # -------------------------------------------------------------------------
+
+    @handle_repository_exceptions
+    async def create_view(
+        self,
+        project_id: str,
+        org_id: str,
+        name: str,
+        sql_definition: str,
+        source_refs: list | None = None,
+        description: str | None = None,
+        materialization: str = "ephemeral",
+    ) -> dict[str, Any]:
+        """Create a new view record."""
+        view = ViewRecord(
+            project_id=project_id,
+            org_id=org_id,
+            name=name,
+            sql_definition=sql_definition,
+            source_refs=source_refs or [],
+            description=description,
+            materialization=materialization,
+        )
+        self._session.add(view)
+        await self._session.flush()
+        await self._session.refresh(view)
+        return self._view_to_dict(view)
+
+    @handle_repository_exceptions
+    async def get_view(self, view_id: str) -> dict[str, Any] | None:
+        """Get a view by ID."""
+        result = await self._session.execute(select(ViewRecord).where(ViewRecord.id == view_id))
+        view = result.scalar_one_or_none()
+        if not view:
+            return None
+        return self._view_to_dict(view)
+
+    @handle_repository_exceptions
+    async def list_views_by_project(self, project_id: str) -> list[ViewRecord]:
+        """List views for a project."""
+        query = (
+            select(ViewRecord)
+            .where(ViewRecord.project_id == project_id)
+            .order_by(ViewRecord.created_at.desc())
+        )
+        result = await self._session.execute(query)
+        return result.scalars().all()
+
+    @handle_repository_exceptions
+    async def update_view(self, view_id: str, **kwargs: Any) -> ViewRecord | None:
+        """Update a view's metadata."""
+        result = await self._session.execute(select(ViewRecord).where(ViewRecord.id == view_id))
+        view = result.scalar_one_or_none()
+
+        if not view:
+            return None
+
+        for key, value in kwargs.items():
+            setattr(view, key, value)
+
+        await self._session.flush()
+        await self._session.refresh(view)
+        return view
+
+    @handle_repository_exceptions
+    async def delete_view(self, view_id: str) -> bool:
+        """Delete a view."""
+        result = await self._session.execute(select(ViewRecord).where(ViewRecord.id == view_id))
+        view = result.scalar_one_or_none()
+
+        if not view:
+            return False
+
+        await self._session.delete(view)
+        await self._session.flush()
+        return True
+
+    @handle_repository_exceptions
+    async def view_exists(self, view_id: str) -> bool:
+        """Check if a view exists."""
+        return (await self._session.execute(select(exists().where(ViewRecord.id == view_id)))).scalar()
+
+    # -------------------------------------------------------------------------
+    # Conversion helpers
+    # -------------------------------------------------------------------------
+
     @staticmethod
     def _organization_to_dict(org: OrganizationRecord) -> dict[str, Any]:
         """Convert OrganizationRecord to dictionary."""
@@ -516,4 +605,20 @@ class MetadataRepository:
             "name": org.name,
             "created_at": org.created_at.isoformat() if org.created_at else None,
             "updated_at": org.updated_at.isoformat() if org.updated_at else None,
+        }
+
+    @staticmethod
+    def _view_to_dict(view: ViewRecord) -> dict[str, Any]:
+        """Convert ViewRecord to dictionary."""
+        return {
+            "id": view.id,
+            "project_id": view.project_id,
+            "org_id": view.org_id,
+            "name": view.name,
+            "description": view.description,
+            "sql_definition": view.sql_definition,
+            "source_refs": view.source_refs,
+            "materialization": view.materialization,
+            "created_at": view.created_at.isoformat() if view.created_at else None,
+            "updated_at": view.updated_at.isoformat() if view.updated_at else None,
         }

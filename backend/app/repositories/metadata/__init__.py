@@ -10,6 +10,7 @@ from .external_access_record import ExternalAccessRecord as ExternalAccessRecord
 from .organization_record import OrganizationRecord as OrganizationRecord
 from .project_record import ProjectRecord as ProjectRecord
 from .transform_record import TransformRecord as TransformRecord
+from .view_record import ViewRecord as ViewRecord
 
 
 class MetadataRepositoryProtocol(Protocol):
@@ -283,6 +284,43 @@ class MetadataRepositoryProtocol(Protocol):
         Returns:
             True if deleted, False if not found.
         """
+        ...
+
+    # -------------------------------------------------------------------------
+    # View operations
+    # -------------------------------------------------------------------------
+
+    async def create_view(
+        self,
+        project_id: str,
+        org_id: str,
+        name: str,
+        sql_definition: str,
+        source_refs: list | None = None,
+        description: str | None = None,
+        materialization: str = "ephemeral",
+    ) -> dict[str, Any]:
+        """Create a new view."""
+        ...
+
+    async def get_view(self, view_id: str) -> dict[str, Any] | None:
+        """Get a view by ID."""
+        ...
+
+    async def list_views_by_project(self, project_id: str) -> list:
+        """List views for a project."""
+        ...
+
+    async def update_view(self, view_id: str, **kwargs: Any) -> Any:
+        """Update a view."""
+        ...
+
+    async def delete_view(self, view_id: str) -> bool:
+        """Delete a view."""
+        ...
+
+    async def view_exists(self, view_id: str) -> bool:
+        """Check if a view exists."""
         ...
 
 

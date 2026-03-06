@@ -7,6 +7,7 @@ from .projects import router as projects_router
 from .sql_access import router as sql_access_router
 from .transforms import router as transforms_router
 from .uploads import router as uploads_router
+from .views import router as views_router
 
 __all__ = [
     "auth_router",
@@ -16,4 +17,5 @@ __all__ = [
     "sql_access_router",
     "transforms_router",
     "uploads_router",
+    "views_router",
 ]

@@ -8,10 +8,12 @@ from .dataset import Dataset
 from .project import Project
 from .transform import Transform
 from .upload import Upload
+from .view import View
 
 __all__ = [
     "Dataset",
     "Project",
     "Transform",
     "Upload",
+    "View",
 ]
