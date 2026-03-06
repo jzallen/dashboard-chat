@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 
 import { createMockSchemaConfig } from "../../../__mocks__/data";
-import { SchemaTable } from "../../../lib/ui/components/DatasetView/SchemaTable";
+import { SchemaTable } from "../../../ui/components/DatasetView/SchemaTable";
 
 describe("SchemaTable", () => {
   it("renders a row for each field", () => {

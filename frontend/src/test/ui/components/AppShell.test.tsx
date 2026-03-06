@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { AppShell } from "../../../lib/ui/components/AppShell";
+import { AppShell } from "../../../ui/components/AppShell";
 
 // Mock @/auth to avoid real auth
 vi.mock("@/auth", () => ({
@@ -47,7 +47,7 @@ vi.mock("@/chat", async () => {
 });
 
 // Mock shared config
-vi.mock("@/shared/config", () => ({
+vi.mock("@/http/config", () => ({
   DATA_CATALOG_BASE_URL: "",
   CHAT_BASE_URL: "",
 }));

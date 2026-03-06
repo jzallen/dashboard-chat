@@ -3,7 +3,7 @@ import { type Mock,vi } from "vitest";
 
 import type { Dataset } from "@/dataCatalog";
 
-import { ChatProvider, useChatContext } from "../../../lib/ui/context/ChatContext";
+import { ChatProvider, useChatContext } from "../../../ui/context/ChatContext";
 
 function TestConsumer() {
   const { isActive, input, setInput, handleSubmit, registerToolHandler } = useChatContext();

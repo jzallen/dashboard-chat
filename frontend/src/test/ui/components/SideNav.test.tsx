@@ -3,9 +3,9 @@ import { MemoryRouter } from "react-router-dom";
 
 import { MOCK_DATASETS, MOCK_PROJECT } from "../../../__mocks__/data";
 import { createMockProject } from "../../../__mocks__/data";
-import { SideNav } from "../../../lib/ui/components/SideNav";
-import { OrgNav } from "../../../lib/ui/components/SideNav/OrgNav";
-import { ProjectNav } from "../../../lib/ui/components/SideNav/ProjectNav";
+import { SideNav } from "../../../ui/components/SideNav";
+import { OrgNav } from "../../../ui/components/SideNav/OrgNav";
+import { ProjectNav } from "../../../ui/components/SideNav/ProjectNav";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {

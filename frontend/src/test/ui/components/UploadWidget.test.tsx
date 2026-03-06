@@ -3,7 +3,7 @@ import { vi } from "vitest";
 
 import type { Dataset } from "@/dataCatalog";
 
-import { UploadWidget } from "../../../lib/ui/components/ChatPanel/UploadWidget";
+import { UploadWidget } from "../../../ui/components/ChatPanel/UploadWidget";
 
 const { mockUploadFile } = vi.hoisted(() => ({
   mockUploadFile: vi.fn(),

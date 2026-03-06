@@ -18,17 +18,17 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/table-tools": ["src/lib/table-tools"],
-      "@/chat": ["src/lib/chat"],
-      "@/chat/*": ["src/lib/chat/*"],
-      "@/raqb": ["src/lib/raqb"],
-      "@/raqb/*": ["src/lib/raqb/*"],
-      "@/dataCatalog": ["src/lib/dataCatalog"],
-      "@/dataCatalog/*": ["src/lib/dataCatalog/*"],
-      "@/shared": ["src/lib/shared"],
-      "@/shared/*": ["src/lib/shared/*"],
-      "@/auth": ["src/lib/auth"],
-      "@/auth/*": ["src/lib/auth/*"]
+      "@/toolCalls": ["src/core/toolCalls"],
+      "@/chat": ["src/core/chat"],
+      "@/chat/*": ["src/core/chat/*"],
+      "@/queryTranslation": ["src/lib/queryTranslation"],
+      "@/queryTranslation/*": ["src/lib/queryTranslation/*"],
+      "@/dataCatalog": ["src/core/dataCatalog"],
+      "@/dataCatalog/*": ["src/core/dataCatalog/*"],
+      "@/http": ["src/lib/http"],
+      "@/http/*": ["src/lib/http/*"],
+      "@/auth": ["src/core/auth"],
+      "@/auth/*": ["src/core/auth/*"]
     }
   },
   "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx"]

@@ -3,9 +3,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 
 import { MOCK_PROJECT } from "../../../__mocks__/data";
-import type { AppShellContext } from "../../../lib/ui/components/AppShell";
-import { ProjectView } from "../../../lib/ui/components/DatasetView";
-import { ChatProvider } from "../../../lib/ui/context/ChatContext";
+import type { AppShellContext } from "../../../ui/components/AppShell";
+import { ProjectView } from "../../../ui/components/DatasetView";
+import { ChatProvider } from "../../../ui/context/ChatContext";
 
 vi.mock("@/auth", () => ({
   withAuth: (fn: typeof fetch) => fn,

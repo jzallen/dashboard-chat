@@ -26,12 +26,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@/table-tools": path.resolve(__dirname, "src/lib/table-tools"),
-      "@/chat": path.resolve(__dirname, "src/lib/chat"),
-      "@/raqb": path.resolve(__dirname, "src/lib/raqb"),
-      "@/dataCatalog": path.resolve(__dirname, "src/lib/dataCatalog"),
-      "@/shared": path.resolve(__dirname, "src/lib/shared"),
-      "@/auth": path.resolve(__dirname, "src/lib/auth"),
+      "@/toolCalls": path.resolve(__dirname, "src/core/toolCalls"),
+      "@/chat": path.resolve(__dirname, "src/core/chat"),
+      "@/queryTranslation": path.resolve(__dirname, "src/lib/queryTranslation"),
+      "@/dataCatalog": path.resolve(__dirname, "src/core/dataCatalog"),
+      "@/http": path.resolve(__dirname, "src/lib/http"),
+      "@/auth": path.resolve(__dirname, "src/core/auth"),
     },
   },
 });

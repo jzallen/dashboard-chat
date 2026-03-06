@@ -7,11 +7,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ToolHandler } from "../../../lib/ui/context/ChatContext";
+import type { ToolHandler } from "../../../ui/context/ChatContext";
 import {
   ChatProvider,
   useChatContext,
-} from "../../../lib/ui/context/ChatContext";
+} from "../../../ui/context/ChatContext";
 
 // Mock session API (fire-and-forget, not critical to chat flow).
 // The real createChatClient(withEagerAuth(fetch)) captures the fetch reference at module
@@ -54,7 +54,7 @@ vi.mock("@/chat", async (importOriginal) => {
 
 const mockEnsureFreshToken = vi.fn();
 
-vi.mock("../../../lib/auth/tokenStorage", () => ({
+vi.mock("../../../core/auth/tokenStorage", () => ({
   getAuthHeaders: () => ({
     Authorization: `Bearer ${localStorage.getItem("auth_token") ?? "test-token"}`,
   }),
@@ -80,7 +80,7 @@ vi.mock("../../../lib/auth/tokenStorage", () => ({
   isExpiryKey: (key: string | null) => key === "auth_token_expires_at",
 }));
 
-vi.mock("../../../lib/auth/tokenRefresh", () => ({
+vi.mock("../../../core/auth/tokenRefresh", () => ({
   ensureFreshToken: (...args: unknown[]) => mockEnsureFreshToken(...args),
   createTokenRefresher:
     () =>

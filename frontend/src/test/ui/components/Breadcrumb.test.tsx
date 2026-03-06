@@ -1,7 +1,7 @@
 import { fireEvent,render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 
-import { Breadcrumb } from "../../../lib/ui/components/DatasetView/Breadcrumb";
+import { Breadcrumb } from "../../../ui/components/DatasetView/Breadcrumb";
 
 describe("Breadcrumb", () => {
   it("renders project and dataset names as static text", () => {
