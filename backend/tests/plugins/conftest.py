@@ -1,5 +1,7 @@
 """Shared fixtures for plugin tests."""
 
+from typing import ClassVar
+
 import pandas as pd
 
 from app.plugins.protocol import ProcessingResult
@@ -8,10 +10,10 @@ from app.plugins.protocol import ProcessingResult
 class StubPlugin:
     """Minimal plugin that satisfies the FileFormatPlugin protocol."""
 
-    name = "stub"
-    extensions = [".stub"]
-    label = "Stub"
-    dbt_macros = None
+    name: ClassVar[str] = "stub"
+    extensions: ClassVar[list[str]] = [".stub"]
+    label: ClassVar[str] = "Stub"
+    dbt_macros: ClassVar[dict[str, str] | None] = None
 
     def validate(self, file_content: bytes, filename: str) -> None:
         pass
@@ -26,10 +28,10 @@ class StubPlugin:
 class AnotherStubPlugin:
     """Second stub plugin with a different extension."""
 
-    name = "another"
-    extensions = [".other"]
-    label = "Another"
-    dbt_macros = None
+    name: ClassVar[str] = "another"
+    extensions: ClassVar[list[str]] = [".other"]
+    label: ClassVar[str] = "Another"
+    dbt_macros: ClassVar[dict[str, str] | None] = None
 
     def validate(self, file_content: bytes, filename: str) -> None:
         pass
@@ -44,10 +46,10 @@ class AnotherStubPlugin:
 class MultiExtPlugin:
     """Stub plugin that claims multiple extensions."""
 
-    name = "multi"
-    extensions = [".ext1", ".ext2"]
-    label = "Multi"
-    dbt_macros = None
+    name: ClassVar[str] = "multi"
+    extensions: ClassVar[list[str]] = [".ext1", ".ext2"]
+    label: ClassVar[str] = "Multi"
+    dbt_macros: ClassVar[dict[str, str] | None] = None
 
     def validate(self, file_content: bytes, filename: str) -> None:
         pass

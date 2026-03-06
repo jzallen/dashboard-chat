@@ -52,7 +52,7 @@ class TestPluginRegistry:
 
         class ConflictPlugin:
             name = "conflict"
-            extensions = [".stub"]  # same as StubPlugin
+            extensions = [".stub"]  # same as StubPlugin  # noqa: RUF012
             label = "Conflict"
             dbt_macros = None
 
@@ -65,7 +65,7 @@ class TestPluginRegistry:
             def process(self, file_content, filename, choices=None):
                 pass
 
-        with pytest.raises(ValueError, match="Extension '.stub' claimed by both"):
+        with pytest.raises(ValueError, match=r"Extension '\.stub' claimed by both"):
             PluginRegistry([StubPlugin(), ConflictPlugin()])
 
     def test_duplicate_name_raises_value_error(self):
@@ -73,7 +73,7 @@ class TestPluginRegistry:
 
         class DuplicateNamePlugin:
             name = "stub"  # same as StubPlugin
-            extensions = [".different"]
+            extensions = [".different"]  # noqa: RUF012
             label = "Duplicate"
             dbt_macros = None
 

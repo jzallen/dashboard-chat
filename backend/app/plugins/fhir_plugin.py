@@ -30,10 +30,9 @@ def _flatten_resource(resource: dict, prefix: str = "") -> dict:
                         result.update(nested)
                 else:
                     result[f"{col_name}_{i}"] = item
-        elif isinstance(value, dict):
-            if not prefix:  # Only one level deep
-                nested = _flatten_resource(value, f"{col_name}_")
-                result.update(nested)
+        elif isinstance(value, dict) and not prefix:  # Only one level deep
+            nested = _flatten_resource(value, f"{col_name}_")
+            result.update(nested)
     return result
 
 
@@ -83,13 +82,9 @@ class FhirPlugin:
             raise PluginValidationError("File is empty")
         resources = _parse_fhir_content(file_content)
         if not resources:
-            raise PluginValidationError(
-                "Not a valid FHIR file: no resources with 'resourceType' found"
-            )
+            raise PluginValidationError("Not a valid FHIR file: no resources with 'resourceType' found")
 
-    def detect_choices(
-        self, file_content: bytes, filename: str
-    ) -> list[PluginChoice] | None:
+    def detect_choices(self, file_content: bytes, filename: str) -> list[PluginChoice] | None:
         resources = _parse_fhir_content(file_content)
         resource_types = sorted({r["resourceType"] for r in resources if "resourceType" in r})
         if len(resource_types) > 1:
@@ -130,9 +125,9 @@ class FhirPlugin:
         schema_hints: dict[str, str] = {}
         for col in df.columns:
             lower = col.lower()
-            if lower.endswith(("date", "_date", "date_time", "_date_time")):
-                schema_hints[col] = "datetime"
-            elif lower in ("birth_date", "deceased_date_time", "effective_date_time", "issued"):
+            date_suffixes = ("date", "_date", "date_time", "_date_time")
+            date_fields = ("birth_date", "deceased_date_time", "effective_date_time", "issued")
+            if lower.endswith(date_suffixes) or lower in date_fields:
                 schema_hints[col] = "datetime"
             elif lower in ("active", "deceased_boolean"):
                 schema_hints[col] = "boolean"
