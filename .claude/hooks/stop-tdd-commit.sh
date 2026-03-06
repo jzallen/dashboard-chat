@@ -42,13 +42,9 @@ while IFS= read -r f; do
   esac
 done <<< "$ALL_CHANGED"
 
-# No service code changes (e.g. only docs, config) — commit without tests
+# No service code changes (e.g. only docs, config) — stage without tests
 if ! $HAS_BACKEND && ! $HAS_FRONTEND && ! $HAS_WORKER; then
   git add -u
-  STAT=$(git diff --cached --stat | tail -1 | xargs)
-  if [ -n "$STAT" ]; then
-    git commit -m "auto: ${STAT}" 2>&1 || true
-  fi
   exit 0
 fi
 
@@ -88,7 +84,7 @@ if [ -n "$FAILURES" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# All tests pass — stage and commit
+# All tests pass — stage files (Claude will commit with a proper message)
 # ---------------------------------------------------------------------------
 # Stage tracked file changes
 git add -u
@@ -103,15 +99,5 @@ if [ -z "$STAT" ]; then
   exit 0
 fi
 
-AREAS=""
-$HAS_BACKEND  && AREAS+="backend "
-$HAS_FRONTEND && AREAS+="frontend "
-$HAS_WORKER   && AREAS+="worker "
-
-git commit -m "auto(${AREAS% }): ${STAT}" 2>&1 || {
-  echo "Commit failed (pre-commit hook rejected). Fix linting/formatting issues." >&2
-  exit 2
-}
-
-echo "Committed: auto(${AREAS% }): ${STAT}"
+echo "Tests passed. Changes staged: ${STAT}"
 exit 0
