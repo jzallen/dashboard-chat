@@ -59,3 +59,6 @@ backend/.env
 
 # E2E seed data
 e2e/.seed-data.json
+
+# Claude Code worktrees
+.claude/worktrees/
