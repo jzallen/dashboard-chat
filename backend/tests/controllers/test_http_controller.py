@@ -53,15 +53,15 @@ class TestErrorResponse:
         assert body["errors"][0]["title"] == "Upload Already Processed"
 
     def test_invalid_file_type(self):
-        body, status = _error_response(InvalidFileType())
+        _, status = _error_response(InvalidFileType())
         assert status == 400
 
     def test_empty_file(self):
-        body, status = _error_response(EmptyFile())
+        _, status = _error_response(EmptyFile())
         assert status == 400
 
     def test_project_id_required(self):
-        body, status = _error_response(ProjectIdRequired())
+        _, status = _error_response(ProjectIdRequired())
         assert status == 400
 
 
@@ -114,12 +114,14 @@ class TestListDatasets:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.list_datasets = AsyncMock(
-            return_value=Success({
-                "items": [FakeModel("d1", "DS")],
-                "next_cursor": None,
-                "has_more": False,
-                "page_size": 50,
-            })
+            return_value=Success(
+                {
+                    "items": [FakeModel("d1", "DS")],
+                    "next_cursor": None,
+                    "has_more": False,
+                    "page_size": 50,
+                }
+            )
         )
         body, status = await HTTPController.list_datasets("p1")
         assert status == 200
@@ -131,13 +133,13 @@ class TestListDatasets:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_project_id_required_returns_400(self, mock_uc):
         mock_uc.list_datasets = AsyncMock(return_value=Failure(ProjectIdRequired()))
-        body, status = await HTTPController.list_datasets(None)
+        _, status = await HTTPController.list_datasets(None)
         assert status == 400
 
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_project_not_found_returns_404(self, mock_uc):
         mock_uc.list_datasets = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        body, status = await HTTPController.list_datasets("p1")
+        _, status = await HTTPController.list_datasets("p1")
         assert status == 404
 
 
@@ -152,7 +154,7 @@ class TestPatchDataset:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_not_found_returns_404(self, mock_uc):
         mock_uc.update_dataset = AsyncMock(return_value=Failure(DatasetNotFound("d1")))
-        body, status = await HTTPController.patch_dataset("d1", name="X")
+        _, status = await HTTPController.patch_dataset("d1", name="X")
         assert status == 404
 
 
@@ -166,13 +168,13 @@ class TestPostDataset:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_upload_not_found_returns_404(self, mock_uc):
         mock_uc.create_dataset_from_upload = AsyncMock(return_value=Failure(UploadNotFound("u1")))
-        body, status = await HTTPController.post_dataset("u1")
+        _, status = await HTTPController.post_dataset("u1")
         assert status == 404
 
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_already_processed_returns_409(self, mock_uc):
         mock_uc.create_dataset_from_upload = AsyncMock(return_value=Failure(UploadAlreadyProcessed("u1")))
-        body, status = await HTTPController.post_dataset("u1")
+        _, status = await HTTPController.post_dataset("u1")
         assert status == 409
 
 
@@ -186,13 +188,13 @@ class TestPostUpload:
     @patch("app.controllers.http_controller.upload_use_cases")
     async def test_invalid_file_type_returns_400(self, mock_uc):
         mock_uc.upload_file = AsyncMock(return_value=Failure(InvalidFileType()))
-        body, status = await HTTPController.post_upload(b"x", "f.xlsx", "p1")
+        _, status = await HTTPController.post_upload(b"x", "f.xlsx", "p1")
         assert status == 400
 
     @patch("app.controllers.http_controller.upload_use_cases")
     async def test_empty_file_returns_400(self, mock_uc):
         mock_uc.upload_file = AsyncMock(return_value=Failure(EmptyFile()))
-        body, status = await HTTPController.post_upload(b"", "f.csv", "p1")
+        _, status = await HTTPController.post_upload(b"", "f.csv", "p1")
         assert status == 400
 
 
@@ -200,12 +202,14 @@ class TestListProjects:
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.list_projects = AsyncMock(
-            return_value=Success({
-                "items": [{"id": "p1", "name": "Proj", "datasets": []}],
-                "next_cursor": None,
-                "has_more": False,
-                "page_size": 50,
-            })
+            return_value=Success(
+                {
+                    "items": [{"id": "p1", "name": "Proj", "datasets": []}],
+                    "next_cursor": None,
+                    "has_more": False,
+                    "page_size": 50,
+                }
+            )
         )
         body, status = await HTTPController.list_projects()
         assert status == 200
@@ -232,7 +236,7 @@ class TestGetProject:
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_not_found_returns_404(self, mock_uc):
         mock_uc.get_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        body, status = await HTTPController.get_project("p1")
+        _, status = await HTTPController.get_project("p1")
         assert status == 404
 
 
@@ -240,12 +244,14 @@ class TestListProjectDatasets:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_200(self, mock_uc):
         mock_uc.list_datasets_for_project = AsyncMock(
-            return_value=Success({
-                "items": [{"id": "d1", "name": "DS"}],
-                "next_cursor": None,
-                "has_more": False,
-                "page_size": 50,
-            })
+            return_value=Success(
+                {
+                    "items": [{"id": "d1", "name": "DS"}],
+                    "next_cursor": None,
+                    "has_more": False,
+                    "page_size": 50,
+                }
+            )
         )
         body, status = await HTTPController.list_project_datasets("p1")
         assert status == 200
@@ -257,7 +263,7 @@ class TestListProjectDatasets:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_project_not_found_returns_404(self, mock_uc):
         mock_uc.list_datasets_for_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        body, status = await HTTPController.list_project_datasets("p1")
+        _, status = await HTTPController.list_project_datasets("p1")
         assert status == 404
 
 
@@ -279,7 +285,7 @@ class TestPatchProject:
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_not_found_returns_404(self, mock_uc):
         mock_uc.update_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        body, status = await HTTPController.patch_project("p1", name="X")
+        _, status = await HTTPController.patch_project("p1", name="X")
         assert status == 404
 
 
@@ -294,5 +300,5 @@ class TestDeleteProject:
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_not_found_returns_404(self, mock_uc):
         mock_uc.delete_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        body, status = await HTTPController.delete_project("p1")
+        _, status = await HTTPController.delete_project("p1")
         assert status == 404

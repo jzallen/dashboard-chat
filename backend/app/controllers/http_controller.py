@@ -46,7 +46,8 @@ def _error_response(error: Exception) -> tuple[dict, int]:
         return body, error._status_code
 
     logger.error("Unhandled error: %s", error)
-    return wrap_jsonapi_error(500, "Internal Server Error", "An unexpected error occurred. Check server logs for details."), 500
+    msg = "An unexpected error occurred. Check server logs for details."
+    return wrap_jsonapi_error(500, "Internal Server Error", msg), 500
 
 
 class HTTPController:
@@ -66,7 +67,10 @@ class HTTPController:
         match result:
             case Success(data):
                 items = [_serialize(i) for i in data["items"]]
-                return wrap_jsonapi_list("datasets", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]), 200
+                resp = wrap_jsonapi_list(
+                    "datasets", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]
+                )
+                return resp, 200
             case Failure(error):
                 return _error_response(error)
 
@@ -82,7 +86,10 @@ class HTTPController:
             case Success(data):
                 items = data["items"]
                 url = f"{base_url}/{project_id}/datasets"
-                return wrap_jsonapi_list("datasets", items, url, data["page_size"], data["next_cursor"], data["has_more"]), 200
+                resp = wrap_jsonapi_list(
+                    "datasets", items, url, data["page_size"], data["next_cursor"], data["has_more"]
+                )
+                return resp, 200
             case Failure(error):
                 return _error_response(error)
 
@@ -187,7 +194,10 @@ class HTTPController:
         match result:
             case Success(data):
                 items = data["items"]
-                return wrap_jsonapi_list("projects", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]), 200
+                resp = wrap_jsonapi_list(
+                    "projects", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]
+                )
+                return resp, 200
             case Failure(error):
                 return _error_response(error)
 
@@ -257,7 +267,8 @@ class HTTPController:
         match result:
             case Success(data):
                 items = _serialize(data)
-                return wrap_jsonapi_list("views", items, f"/api/projects/{project_id}/views", len(items), None, False), 200
+                views_url = f"/api/projects/{project_id}/views"
+                return wrap_jsonapi_list("views", items, views_url, len(items), None, False), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -267,7 +278,8 @@ class HTTPController:
         match result:
             case Success(data):
                 serialized = _serialize(data)
-                return wrap_jsonapi_single("views", serialized, f"/api/projects/{project_id}/views/{serialized['id']}"), 201
+                link = f"/api/projects/{project_id}/views/{serialized['id']}"
+                return wrap_jsonapi_single("views", serialized, link), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -306,7 +318,8 @@ class HTTPController:
         match result:
             case Success(data):
                 items = _serialize(data)
-                return wrap_jsonapi_list("reports", items, f"/api/projects/{project_id}/reports", len(items), None, False), 200
+                reports_url = f"/api/projects/{project_id}/reports"
+                return wrap_jsonapi_list("reports", items, reports_url, len(items), None, False), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -316,7 +329,8 @@ class HTTPController:
         match result:
             case Success(data):
                 serialized = _serialize(data)
-                return wrap_jsonapi_single("reports", serialized, f"/api/projects/{project_id}/reports/{serialized['id']}"), 201
+                link = f"/api/projects/{project_id}/reports/{serialized['id']}"
+                return wrap_jsonapi_single("reports", serialized, link), 201
             case Failure(error):
                 return _error_response(error)
 
