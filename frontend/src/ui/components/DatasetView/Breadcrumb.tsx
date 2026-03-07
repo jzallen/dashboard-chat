@@ -90,6 +90,7 @@ export function Breadcrumb({
             <input
               ref={inputRef}
               className={styles.breadcrumbInput}
+              data-testid="breadcrumb-edit-input"
               value={editValue}
               placeholder={isDefault ? DEFAULT_NAME : undefined}
               onChange={(e) => setEditValue(e.target.value)}

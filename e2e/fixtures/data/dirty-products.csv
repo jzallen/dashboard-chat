@@ -1,0 +1,9 @@
+ID,Name,Category,Status,Amount
+1, Widget Alpha ,electronics,,25.00
+2,Widget Beta, Electronics,,30.00
+3, gadget One,ACCESSORIES,active,15.00
+4,Gadget Two ,accessories, ,8.50
+5,Tool Prime, hardware,Active,50.00
+6, tool Secondary,Hardware,,75.00
+7,Part X,components,active,3.25
+8,Part Y, Components ,,1.50

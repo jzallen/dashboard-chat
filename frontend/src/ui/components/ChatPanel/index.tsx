@@ -85,7 +85,7 @@ function ChatPanel({
                 +
               </button>
               {menuOpen && (
-                <div className={styles.actionMenu}>
+                <div className={styles.actionMenu} data-testid="chat-action-menu">
                   <button
                     type="button"
                     className={styles.actionMenuItem}
@@ -99,6 +99,7 @@ function ChatPanel({
                   <button
                     type="button"
                     className={styles.actionMenuItem}
+                    data-testid="action-create-dataset"
                     onClick={() => {
                       onAction("create-dataset");
                       setMenuOpen(false);

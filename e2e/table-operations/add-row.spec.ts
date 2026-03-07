@@ -1,8 +1,8 @@
 import { test, expect } from "../fixtures/test-fixtures";
 
 test.describe("Add Row Operations", () => {
-  test.beforeEach(async ({ tableHelper }) => {
-    await tableHelper.table.page().goto("/");
+  test.beforeEach(async ({ navigationHelper, tableHelper, seededProjectId, seededDatasetId }) => {
+    await navigationHelper.navigateToDataset(seededProjectId, seededDatasetId);
     await expect(tableHelper.table).toBeVisible();
     await expect(tableHelper.rowCountText).toHaveText("Showing 10 of 10 rows");
   });

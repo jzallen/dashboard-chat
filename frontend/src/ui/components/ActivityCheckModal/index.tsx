@@ -63,6 +63,7 @@ export function ActivityCheckModal({ isOpen, onContinue, onLogout }: ActivityChe
   return (
     <div
       className={styles.overlay}
+      data-testid="activity-check-modal"
       role="dialog"
       aria-modal="true"
       aria-labelledby="activity-check-title"
@@ -81,6 +82,7 @@ export function ActivityCheckModal({ isOpen, onContinue, onLogout }: ActivityChe
           <button
             ref={continueRef}
             className={styles.continueButton}
+            data-testid="activity-check-confirm"
             onClick={onContinue}
             type="button"
           >

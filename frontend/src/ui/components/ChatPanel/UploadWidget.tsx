@@ -135,12 +135,13 @@ export function UploadWidget({
           onClick={() => inputRef.current?.click()}
           className={styles.uploadButton}
           type="button"
+          data-testid="upload-widget-browse"
         >
           Browse
         </button>
       )}
       {state === "selected" && file && (
-        <div className={styles.uploadSelected}>
+        <div className={styles.uploadSelected} data-testid="upload-widget-selected">
           <span className={styles.uploadFilename}>{file.name}</span>
           <button
             onClick={handleRemove}
@@ -160,7 +161,7 @@ export function UploadWidget({
         </div>
       )}
       {state === "uploading" && (
-        <span className={styles.uploadUploading}>Uploading...</span>
+        <span className={styles.uploadUploading} data-testid="upload-widget-uploading">Uploading...</span>
       )}
       {state === "awaiting_input" && (
         <div className={styles.uploadSelected}>
@@ -184,12 +185,12 @@ export function UploadWidget({
         </div>
       )}
       {state === "uploaded" && (
-        <button disabled className={styles.uploadButtonDone} type="button">
+        <button disabled className={styles.uploadButtonDone} type="button" data-testid="upload-widget-uploaded">
           Uploaded
         </button>
       )}
       {state === "error" && (
-        <div className={styles.uploadErrorContainer}>
+        <div className={styles.uploadErrorContainer} data-testid="upload-widget-error">
           <span className={styles.uploadError}>{error}</span>
           <button
             onClick={handleRemove}

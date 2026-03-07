@@ -14,6 +14,7 @@ export function DatasetNavItem({ id, name, isActive, collapsed, onClick }: Datas
   return (
     <button
       className={`${styles.navItem} ${styles.navItemIndented} ${isActive ? styles.navItemActive : ""}`}
+      data-testid={`dataset-nav-${id}`}
       onClick={() => onClick(id)}
       title={collapsed ? name : undefined}
     >

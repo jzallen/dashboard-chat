@@ -15,6 +15,7 @@ export function ProjectNavItem({ id, name, datasetCount, isActive, collapsed, on
   return (
     <button
       className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
+      data-testid={`project-nav-${id}`}
       onClick={() => onClick(id)}
       title={collapsed ? name : undefined}
     >

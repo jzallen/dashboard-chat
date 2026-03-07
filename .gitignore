@@ -56,3 +56,6 @@ backend/.env
 # Embedded databases
 *.db
 *.duckdb
+
+# E2E seed data
+e2e/.seed-data.json
