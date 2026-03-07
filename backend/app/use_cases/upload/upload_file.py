@@ -17,7 +17,7 @@ from returns.result import Result
 
 from app.models import Upload
 from app.plugins import PluginRegistry
-from app.plugins.protocol import PluginValidationError
+from app.plugins.protocol import MultiProcessingResult, PluginValidationError
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.dataset.exceptions import DatasetNotFound
@@ -32,9 +32,9 @@ def _validate_upload(file_content: bytes, file_name: str, plugin_registry: Plugi
     if not file_content:
         raise EmptyFile()
 
-    ext = os.path.splitext(file_name)[1].lower()
-    plugin = plugin_registry.get_for_extension(ext)
+    plugin = plugin_registry.get_for_filename(file_name)
     if plugin is None:
+        ext = os.path.splitext(file_name)[1].lower()
         raise UnsupportedFormat(ext, plugin_registry.supported_extensions())
 
 
@@ -73,8 +73,7 @@ async def upload_file(
 
     await _validate_dataset_exists(metadata_repo, dataset_id)
 
-    ext = os.path.splitext(file_name)[1].lower()
-    plugin = plugin_registry.get_for_extension(ext)
+    plugin = plugin_registry.get_for_filename(file_name)
 
     # Validate with plugin (with timeout)
     try:
@@ -88,7 +87,11 @@ async def upload_file(
     # Process directly if no choices needed
     if choices is None:
         result = await asyncio.wait_for(asyncio.to_thread(plugin.process, file_content, file_name), timeout=120)
-        preview_rows = json.loads(result.df.head(10).to_json(orient="records", date_format="iso"))
+        if isinstance(result, MultiProcessingResult):
+            # Use first dataset's preview for multi-dataset results
+            preview_rows = json.loads(result.results[0].df.head(10).to_json(orient="records", date_format="iso"))
+        else:
+            preview_rows = json.loads(result.df.head(10).to_json(orient="records", date_format="iso"))
     else:
         preview_rows = []
 

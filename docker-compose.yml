@@ -176,6 +176,24 @@ services:
       - "997"
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # Mirth Connect - HL7v2 to FHIR conversion engine
+  mirth:
+    image: nextgenhealthcare/connect:4.5
+    container_name: dashboard-mirth
+    profiles: ["healthcare"]
+    ports:
+      - "8443:8443"  # Web dashboard
+      - "6661:6661"  # HL7v2 listener
+    environment:
+      DATABASE: derby
+      DATABASE_URL: derby
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk https://localhost:8443/api/server/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 volumes:
   postgres_data:
   minio_data:

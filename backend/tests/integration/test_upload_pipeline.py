@@ -108,6 +108,26 @@ def _make_hl7_content() -> bytes:
     )
 
 
+def _make_fhir_bundle_multi_type() -> bytes:
+    """Create a FHIR bundle with Patient and Observation resources."""
+    bundle = {
+        "resourceType": "Bundle",
+        "entry": [
+            {"resource": {"resourceType": "Patient", "id": "p1", "gender": "male", "birthDate": "1980-01-01"}},
+            {
+                "resource": {
+                    "resourceType": "Observation",
+                    "id": "o1",
+                    "status": "final",
+                    "code": {"text": "Blood Pressure"},
+                }
+            },
+            {"resource": {"resourceType": "Patient", "id": "p2", "gender": "female", "birthDate": "1990-05-15"}},
+        ],
+    }
+    return json.dumps(bundle).encode()
+
+
 def _make_fhir_bundle_single_type() -> bytes:
     """Create a FHIR bundle with only Patient resources."""
     bundle = {
@@ -283,21 +303,208 @@ class TestExcelMultiSheetPipeline:
 
 
 class TestHl7v2Pipeline:
-    """12.4: HL7 file upload → dataset with flattened columns."""
+    """12.4: HL7 file upload → requires Mirth Connect, validates MSH."""
 
-    async def test_hl7_upload_creates_dataset_with_flattened_columns(
+    async def test_hl7_upload_validates_mirth_connect_required(
         self, seeded_db: AsyncSession, plugin_registry: PluginRegistry
     ):
+        """HL7v2 upload should fail validation when Mirth Connect URL is not configured."""
         set_session(seeded_db)
         hl7_content = _make_hl7_content()
 
-        # Step 1: Upload
+        # Step 1: Upload — should fail because Mirth Connect URL is not set
         write_stubber = Stubber(boto3.client("s3"))
         write_stubber.add_response("put_object", {})
         with write_stubber:
             upload_result = await upload_file(
                 file_content=hl7_content,
                 file_name="messages.hl7",
+                project_id=PROJECT_1,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=write_stubber.client)},
+            )
+
+        # Expect failure because Mirth Connect is not configured
+        from returns.result import Failure as F
+
+        assert isinstance(upload_result, F)
+
+
+class TestHl7v2EndToEndPipeline:
+    """W2: HL7v2 upload → mocked Mirth conversion → FHIR → multi-dataset output."""
+
+    async def test_hl7_upload_with_mocked_mirth_creates_multi_datasets(self, seeded_db: AsyncSession):
+        """Full HL7v2 E2E: upload → Mirth converts to FHIR → FHIR plugin splits → multiple datasets."""
+        from unittest.mock import MagicMock, patch
+
+        set_session(seeded_db)
+        hl7_content = _make_hl7_content()
+
+        # Mock FHIR bundle that Mirth would return
+        mock_fhir_bundle = {
+            "resourceType": "Bundle",
+            "type": "transaction",
+            "entry": [
+                {
+                    "resource": {
+                        "resourceType": "Patient",
+                        "id": "p1",
+                        "gender": "male",
+                        "birthDate": "1980-01-01",
+                    }
+                },
+                {
+                    "resource": {
+                        "resourceType": "Encounter",
+                        "id": "e1",
+                        "status": "finished",
+                        "class": [{"text": "inpatient"}],
+                    }
+                },
+            ],
+        }
+
+        mock_settings = MagicMock()
+        mock_settings.mirth_connect_url = "http://mirth:8443"
+        mock_settings.mirth_connect_api_key = "test-key"
+        mock_settings.mirth_connect_timeout = 60
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_fhir_bundle
+
+        plugin_registry = create_plugin_registry()
+
+        with (
+            patch("app.plugins.hl7v2_plugin.get_settings", return_value=mock_settings),
+            patch("app.plugins.mirth_client.httpx.post", return_value=mock_response),
+        ):
+            # Step 1: Upload raw HL7v2 file
+            write_stubber = Stubber(boto3.client("s3"))
+            write_stubber.add_response("put_object", {})
+            with write_stubber:
+                upload_result = await upload_file(
+                    file_content=hl7_content,
+                    file_name="messages.hl7",
+                    project_id=PROJECT_1,
+                    plugin_registry=plugin_registry,
+                    repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=write_stubber.client)},
+                )
+
+            assert isinstance(upload_result, Success)
+            upload = upload_result.unwrap()
+            assert upload.status == "pending"
+
+            # Step 2: Create datasets from uploaded HL7v2
+            raw_path = upload.raw_storage_path
+            read_write_stubber = Stubber(boto3.client("s3"))
+            read_write_stubber.add_response(
+                "get_object",
+                {"Body": io.BytesIO(hl7_content)},
+                {"Bucket": "dashboard-chat.datalake", "Key": raw_path},
+            )
+            # put_object for converted FHIR artifact
+            read_write_stubber.add_response("put_object", {})
+            # 2 datasets x 1 parquet partition each
+            read_write_stubber.add_response("put_object", {})
+            read_write_stubber.add_response("put_object", {})
+
+            with read_write_stubber:
+                dataset_result = await create_dataset_from_upload(
+                    upload_id=upload.id,
+                    plugin_registry=plugin_registry,
+                    repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=read_write_stubber.client)},
+                )
+
+        assert isinstance(dataset_result, Success)
+        datasets = dataset_result.unwrap()
+        assert isinstance(datasets, list)
+        assert len(datasets) == 2
+
+        names = {d.name for d in datasets}
+        assert "Patient" in names
+        assert "Encounter" in names
+
+        for d in datasets:
+            assert d.project_id == PROJECT_1
+            assert len(d.preview_rows) > 0
+
+
+class TestFhirBundlePipeline:
+    """8.1: FHIR R4 Bundle upload → multiple datasets created with correct resource types."""
+
+    async def test_fhir_bundle_creates_multiple_datasets(
+        self, seeded_db: AsyncSession, plugin_registry: PluginRegistry
+    ):
+        set_session(seeded_db)
+        fhir_content = _make_fhir_ndjson_multi_type()  # Patient + Observation
+
+        # Step 1: Upload → no choices (FHIR auto-splits by resource type)
+        write_stubber = Stubber(boto3.client("s3"))
+        write_stubber.add_response("put_object", {})
+        with write_stubber:
+            upload_result = await upload_file(
+                file_content=fhir_content,
+                file_name="bundle.ndjson",
+                project_id=PROJECT_1,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=write_stubber.client)},
+            )
+
+        assert isinstance(upload_result, Success)
+        upload = upload_result.unwrap()
+        assert upload.status == "pending"  # No choices needed
+        assert upload.choices is None
+        assert len(upload.preview_rows) > 0  # Preview from first resource type
+
+        # Step 2: Create datasets — should produce one per resource type
+        upload_id = upload.id
+        raw_path = upload.raw_storage_path
+        read_write_stubber = Stubber(boto3.client("s3"))
+        read_write_stubber.add_response(
+            "get_object",
+            {"Body": io.BytesIO(fhir_content)},
+            {"Bucket": "dashboard-chat.datalake", "Key": raw_path},
+        )
+        # 2 datasets x 1 parquet partition each
+        read_write_stubber.add_response("put_object", {})
+        read_write_stubber.add_response("put_object", {})
+
+        with read_write_stubber:
+            dataset_result = await create_dataset_from_upload(
+                upload_id=upload_id,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=read_write_stubber.client)},
+            )
+
+        assert isinstance(dataset_result, Success)
+        datasets = dataset_result.unwrap()
+        assert isinstance(datasets, list)
+        assert len(datasets) == 2
+
+        names = {d.name for d in datasets}
+        assert "Observation" in names
+        assert "Patient" in names
+
+        for d in datasets:
+            assert d.project_id == PROJECT_1
+            assert d.format_context is not None
+            assert len(d.preview_rows) > 0
+
+    async def test_fhir_single_type_bundle_creates_single_item_list(
+        self, seeded_db: AsyncSession, plugin_registry: PluginRegistry
+    ):
+        """Single-type FHIR bundle still returns list (MultiProcessingResult always)."""
+        set_session(seeded_db)
+        fhir_content = _make_fhir_bundle_single_type()  # Only Patient
+
+        # Step 1: Upload
+        write_stubber = Stubber(boto3.client("s3"))
+        write_stubber.add_response("put_object", {})
+        with write_stubber:
+            upload_result = await upload_file(
+                file_content=fhir_content,
+                file_name="patients.fhir.json",
                 project_id=PROJECT_1,
                 plugin_registry=plugin_registry,
                 repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=write_stubber.client)},
@@ -313,7 +520,7 @@ class TestHl7v2Pipeline:
         read_write_stubber = Stubber(boto3.client("s3"))
         read_write_stubber.add_response(
             "get_object",
-            {"Body": io.BytesIO(hl7_content)},
+            {"Body": io.BytesIO(fhir_content)},
             {"Bucket": "dashboard-chat.datalake", "Key": raw_path},
         )
         read_write_stubber.add_response("put_object", {})
@@ -326,27 +533,140 @@ class TestHl7v2Pipeline:
             )
 
         assert isinstance(dataset_result, Success)
-        dataset = dataset_result.unwrap()
-        # Verify HL7 segment columns exist
-        fields = set(dataset.schema_config["fields"].keys())
-        assert any(f.startswith("MSH_") for f in fields), f"Expected MSH columns, got: {fields}"
-        assert any(f.startswith("PID_") for f in fields), f"Expected PID columns, got: {fields}"
-        assert any(f.startswith("PV1_") for f in fields), f"Expected PV1 columns, got: {fields}"
-        # Verify format_context is set
-        assert dataset.format_context is not None
-        assert "HL7" in dataset.format_context
+        datasets = dataset_result.unwrap()
+        assert isinstance(datasets, list)
+        assert len(datasets) == 1
+        assert datasets[0].name == "Patient"
 
 
-class TestFhirPipeline:
-    """12.5: FHIR NDJSON upload → resource type selection → dataset created."""
+class TestCsvUnchangedBehavior:
+    """8.3: CSV upload → single dataset unchanged behavior."""
 
-    async def test_fhir_ndjson_multi_type_with_choices_creates_dataset(
+    async def test_csv_upload_returns_single_dataset_not_list(
         self, seeded_db: AsyncSession, plugin_registry: PluginRegistry
     ):
+        """CSV plugin returns ProcessingResult, so create_dataset_from_upload returns a single Dataset."""
         set_session(seeded_db)
-        fhir_content = _make_fhir_ndjson_multi_type()
+        csv_content = b"x,y\n1,2\n3,4"
 
-        # Step 1: Upload → should return awaiting_input (multiple resource types)
+        # Upload
+        write_stubber = Stubber(boto3.client("s3"))
+        write_stubber.add_response("put_object", {})
+        with write_stubber:
+            upload_result = await upload_file(
+                file_content=csv_content,
+                file_name="simple.csv",
+                project_id=PROJECT_1,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=write_stubber.client)},
+            )
+
+        assert isinstance(upload_result, Success)
+        upload = upload_result.unwrap()
+
+        # Create dataset
+        raw_path = upload.raw_storage_path
+        read_write_stubber = Stubber(boto3.client("s3"))
+        read_write_stubber.add_response(
+            "get_object",
+            {"Body": io.BytesIO(csv_content)},
+            {"Bucket": "dashboard-chat.datalake", "Key": raw_path},
+        )
+        read_write_stubber.add_response("put_object", {})
+
+        with read_write_stubber:
+            dataset_result = await create_dataset_from_upload(
+                upload_id=upload.id,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=read_write_stubber.client)},
+            )
+
+        assert isinstance(dataset_result, Success)
+        dataset = dataset_result.unwrap()
+        # CSV returns single Dataset, NOT a list
+        assert isinstance(dataset, Dataset)
+        assert not isinstance(dataset, list)
+
+
+class TestMultiDatasetResponseShape:
+    """8.4: Upload API response includes dataset_ids for multi-dataset upload."""
+
+    async def test_multi_dataset_upload_response_has_dataset_ids(
+        self, seeded_db: AsyncSession, plugin_registry: PluginRegistry
+    ):
+        """Multi-dataset result serializes as list of dataset dicts."""
+        set_session(seeded_db)
+        fhir_content = _make_fhir_ndjson_multi_type()  # Patient + Observation
+
+        # Upload
+        write_stubber = Stubber(boto3.client("s3"))
+        write_stubber.add_response("put_object", {})
+        with write_stubber:
+            upload_result = await upload_file(
+                file_content=fhir_content,
+                file_name="multi.ndjson",
+                project_id=PROJECT_1,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=write_stubber.client)},
+            )
+
+        assert isinstance(upload_result, Success)
+        upload = upload_result.unwrap()
+
+        # Verify upload serialization includes new fields
+        serialized = upload.serialize()
+        assert "dataset_ids" in serialized
+        assert "converted_storage_path" in serialized
+        assert "dataset_id" in serialized  # backward compat
+
+        # Create datasets
+        raw_path = upload.raw_storage_path
+        read_write_stubber = Stubber(boto3.client("s3"))
+        read_write_stubber.add_response(
+            "get_object",
+            {"Body": io.BytesIO(fhir_content)},
+            {"Bucket": "dashboard-chat.datalake", "Key": raw_path},
+        )
+        read_write_stubber.add_response("put_object", {})
+        read_write_stubber.add_response("put_object", {})
+
+        with read_write_stubber:
+            dataset_result = await create_dataset_from_upload(
+                upload_id=upload.id,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=read_write_stubber.client)},
+            )
+
+        assert isinstance(dataset_result, Success)
+        datasets = dataset_result.unwrap()
+        assert isinstance(datasets, list)
+
+        # Each dataset serializes correctly
+        for d in datasets:
+            s = d.serialize()
+            assert "id" in s
+            assert "project_id" in s
+            assert "name" in s
+            assert "schema_config" in s
+
+
+class TestFhirMultiDatasetResponseShape:
+    """6.3: Upload FHIR bundle → verify multi-dataset response shape.
+
+    Validates:
+    - create_dataset_from_upload returns list[Dataset] with correct fields
+    - Upload outbox record is updated with dataset_ids (all) and dataset_id (first, backward compat)
+    - Controller _serialize produces correct HTTP response structure
+    """
+
+    async def test_fhir_bundle_updates_outbox_with_dataset_ids(
+        self, seeded_db: AsyncSession, plugin_registry: PluginRegistry
+    ):
+        """After multi-dataset creation, the outbox record should contain dataset_ids and dataset_id."""
+        set_session(seeded_db)
+        fhir_content = _make_fhir_bundle_multi_type()
+
+        # Step 1: Upload (.ndjson triggers FHIR plugin; _parse_fhir_content handles JSON bundles too)
         write_stubber = Stubber(boto3.client("s3"))
         write_stubber.add_response("put_object", {})
         with write_stubber:
@@ -360,12 +680,10 @@ class TestFhirPipeline:
 
         assert isinstance(upload_result, Success)
         upload = upload_result.unwrap()
-        assert upload.status == "awaiting_input"
-        assert upload.choices is not None
-
-        # Step 2: Process with choice (select "Patient" resource type)
         upload_id = upload.id
         raw_path = upload.raw_storage_path
+
+        # Step 2: Create datasets (Patient + Observation = 2 parquet writes)
         read_write_stubber = Stubber(boto3.client("s3"))
         read_write_stubber.add_response(
             "get_object",
@@ -373,22 +691,94 @@ class TestFhirPipeline:
             {"Bucket": "dashboard-chat.datalake", "Key": raw_path},
         )
         read_write_stubber.add_response("put_object", {})
+        read_write_stubber.add_response("put_object", {})
 
         with read_write_stubber:
             dataset_result = await create_dataset_from_upload(
                 upload_id=upload_id,
                 plugin_registry=plugin_registry,
-                choices={"resource_type": "Patient"},
                 repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=read_write_stubber.client)},
             )
 
         assert isinstance(dataset_result, Success)
-        dataset = dataset_result.unwrap()
-        fields = set(dataset.schema_config["fields"].keys())
-        assert "resource_type" in fields
-        assert "id" in fields
-        assert "gender" in fields
-        assert dataset.format_context is not None
+        datasets = dataset_result.unwrap()
+        assert isinstance(datasets, list)
+        dataset_ids = [d.id for d in datasets]
+        assert len(set(dataset_ids)) == 2, "Each dataset should have a distinct ID"
+
+        # Verify outbox record was updated with dataset_ids and dataset_id
+        from app.repositories.outbox import OutboxRecord
+
+        record = await seeded_db.get(OutboxRecord, upload_id)
+        assert record is not None
+        assert record.payload.get("dataset_ids") == dataset_ids
+        assert record.payload.get("dataset_id") == dataset_ids[0], "dataset_id should be first ID for backward compat"
+
+    async def test_fhir_multi_dataset_controller_serialize_shape(
+        self, seeded_db: AsyncSession, plugin_registry: PluginRegistry
+    ):
+        """The controller _serialize path should wrap list[Dataset] as list of dicts in response."""
+        set_session(seeded_db)
+        fhir_content = _make_fhir_bundle_multi_type()
+
+        # Upload
+        write_stubber = Stubber(boto3.client("s3"))
+        write_stubber.add_response("put_object", {})
+        with write_stubber:
+            upload_result = await upload_file(
+                file_content=fhir_content,
+                file_name="bundle.ndjson",
+                project_id=PROJECT_1,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=write_stubber.client)},
+            )
+        upload = upload_result.unwrap()
+
+        # Create datasets
+        read_write_stubber = Stubber(boto3.client("s3"))
+        read_write_stubber.add_response(
+            "get_object",
+            {"Body": io.BytesIO(fhir_content)},
+            {"Bucket": "dashboard-chat.datalake", "Key": upload.raw_storage_path},
+        )
+        read_write_stubber.add_response("put_object", {})
+        read_write_stubber.add_response("put_object", {})
+
+        with read_write_stubber:
+            dataset_result = await create_dataset_from_upload(
+                upload_id=upload.id,
+                plugin_registry=plugin_registry,
+                repositories={"lake_repository": partial(MinIOLakeRepository, s3_client=read_write_stubber.client)},
+            )
+
+        datasets = dataset_result.unwrap()
+
+        # Simulate controller serialization (same path as HTTPController.post_dataset)
+        from app.controllers.http_controller import _serialize
+        from app.controllers.response_wrapper import wrap_success
+
+        response_body = wrap_success(_serialize(datasets))
+
+        # Verify top-level response shape
+        assert response_body["success"] is True
+        assert isinstance(response_body["data"], list)
+        assert len(response_body["data"]) == 2
+
+        # Verify each dataset dict has all expected fields
+        names = set()
+        for item in response_body["data"]:
+            assert isinstance(item, dict)
+            assert "id" in item
+            assert "project_id" in item
+            assert item["project_id"] == PROJECT_1
+            assert "name" in item
+            assert "schema_config" in item
+            assert "format_context" in item
+            assert "staging_sql" in item
+            assert "preview_rows" in item
+            names.add(item["name"])
+
+        assert names == {"Observation", "Patient"}
 
 
 class TestDbtExportWithMixedFormats:
@@ -415,7 +805,7 @@ class TestDbtExportWithMixedFormats:
         )
         project = Project(id="proj-1", name="Mixed Format Project", datasets=[ds_csv, ds_hl7])
 
-        zip_bytes = generate_dbt_project_zip(project, "mixed_format_project", plugin_registry)
+        zip_bytes = generate_dbt_project_zip(project, "mixed_format_project", plugin_registry=plugin_registry)
         zf = zipfile.ZipFile(BytesIO(zip_bytes))
         names = set(zf.namelist())
 

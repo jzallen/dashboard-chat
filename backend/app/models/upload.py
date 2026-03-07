@@ -33,6 +33,8 @@ class Upload:
     file_size: int
     row_count: int = 0
     dataset_id: str | None = None
+    dataset_ids: list[str] = field(default_factory=list)
+    converted_storage_path: str | None = None
     status: str = "pending"
     error_message: str | None = None
     created_at: datetime | None = None
@@ -47,7 +49,9 @@ class Upload:
         return cls(
             id=record.id,
             project_id=payload["project_id"],
-            dataset_id=payload["dataset_id"],
+            dataset_id=payload.get("dataset_id"),
+            dataset_ids=payload.get("dataset_ids", []),
+            converted_storage_path=payload.get("converted_storage_path"),
             raw_storage_path=payload["raw_storage_path"],
             original_filename=payload["original_filename"],
             file_size=payload["file_size"],
@@ -61,6 +65,8 @@ class Upload:
             "id": self.id,
             "project_id": self.project_id,
             "dataset_id": self.dataset_id,
+            "dataset_ids": self.dataset_ids,
+            "converted_storage_path": self.converted_storage_path,
             "status": self.status,
             "raw_storage_path": self.raw_storage_path,
             "original_filename": self.original_filename,

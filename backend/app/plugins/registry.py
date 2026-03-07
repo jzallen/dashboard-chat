@@ -1,5 +1,7 @@
 """Plugin registry for file format plugins."""
 
+import os
+
 from .protocol import FileFormatPlugin
 
 
@@ -29,6 +31,17 @@ class PluginRegistry:
 
     def get_for_extension(self, ext: str) -> FileFormatPlugin | None:
         return self._plugins.get(ext.lower())
+
+    def get_for_filename(self, filename: str) -> FileFormatPlugin | None:
+        """Match a filename against registered extensions, trying compound extensions first."""
+        name = filename.lower()
+        # Try compound extensions first (e.g., .fhir.json)
+        for ext in sorted(self._plugins, key=len, reverse=True):
+            if name.endswith(ext):
+                return self._plugins[ext]
+        # Fallback to simple extension
+        ext = os.path.splitext(name)[1]
+        return self._plugins.get(ext)
 
     def get_by_name(self, name: str) -> FileFormatPlugin | None:
         return self._by_name.get(name)
