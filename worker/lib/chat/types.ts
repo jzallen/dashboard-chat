@@ -60,4 +60,10 @@ export interface TableSchema {
     details?: string;
   }>;
   formatContext?: string;
+  layerContext?: {
+    layer: "dataset" | "view" | "report";
+    modelName: string;
+    sqlDefinition?: string;
+    sourceSchemas?: string[];
+  };
 }

@@ -127,6 +127,125 @@ class TestProjectCRUD:
         assert del_res.status_code == 200
 
 
+class TestViewCRUD:
+    """End-to-end tests for the view endpoints."""
+
+    @property
+    def auth_headers(self):
+        return {"Authorization": f"Bearer {_get_dev_token()}"}
+
+    async def _create_project(self, client: AsyncClient) -> str:
+        """Helper to create a project and return its ID."""
+        res = await client.post(
+            "/api/projects",
+            json={"name": "View Test Project"},
+            headers=self.auth_headers,
+        )
+        return res.json()["data"]["id"]
+
+    async def test_create_view(self, client: AsyncClient):
+        """POST /api/projects/:id/views should create a view and return 201."""
+        async with client:
+            project_id = await self._create_project(client)
+
+            res = await client.post(
+                f"/api/projects/{project_id}/views",
+                json={
+                    "name": "My View",
+                    "sql_definition": "SELECT * FROM source",
+                    "source_refs": [],
+                    "description": "A test view",
+                    "materialization": "ephemeral",
+                },
+                headers=self.auth_headers,
+            )
+        assert res.status_code == 201
+        body = res.json()
+        assert body["data"]["name"] == "My View"
+        assert body["data"]["sql_definition"] == "SELECT * FROM source"
+        assert "id" in body["data"]
+
+    async def test_get_view(self, client: AsyncClient):
+        """GET /api/projects/:id/views/:view_id should return the created view."""
+        async with client:
+            project_id = await self._create_project(client)
+
+            create_res = await client.post(
+                f"/api/projects/{project_id}/views",
+                json={"name": "Fetch Me", "sql_definition": "SELECT 1"},
+                headers=self.auth_headers,
+            )
+            view_id = create_res.json()["data"]["id"]
+
+            get_res = await client.get(
+                f"/api/projects/{project_id}/views/{view_id}",
+                headers=self.auth_headers,
+            )
+        assert get_res.status_code == 200
+        body = get_res.json()
+        assert body["data"]["id"] == view_id
+        assert body["data"]["name"] == "Fetch Me"
+
+    async def test_list_views(self, client: AsyncClient):
+        """GET /api/projects/:id/views should return a list including the created view."""
+        async with client:
+            project_id = await self._create_project(client)
+
+            await client.post(
+                f"/api/projects/{project_id}/views",
+                json={"name": "Listed View", "sql_definition": "SELECT 1"},
+                headers=self.auth_headers,
+            )
+
+            list_res = await client.get(
+                f"/api/projects/{project_id}/views",
+                headers=self.auth_headers,
+            )
+        assert list_res.status_code == 200
+        body = list_res.json()
+        names = [v["name"] for v in body["data"]]
+        assert "Listed View" in names
+
+    async def test_update_view(self, client: AsyncClient):
+        """PATCH /api/projects/:id/views/:view_id should update the view name."""
+        async with client:
+            project_id = await self._create_project(client)
+
+            create_res = await client.post(
+                f"/api/projects/{project_id}/views",
+                json={"name": "Before Update", "sql_definition": "SELECT 1"},
+                headers=self.auth_headers,
+            )
+            view_id = create_res.json()["data"]["id"]
+
+            patch_res = await client.patch(
+                f"/api/projects/{project_id}/views/{view_id}",
+                json={"name": "After Update"},
+                headers=self.auth_headers,
+            )
+        assert patch_res.status_code == 200
+        body = patch_res.json()
+        assert body["data"]["name"] == "After Update"
+
+    async def test_delete_view(self, client: AsyncClient):
+        """DELETE /api/projects/:id/views/:view_id should delete and return 200."""
+        async with client:
+            project_id = await self._create_project(client)
+
+            create_res = await client.post(
+                f"/api/projects/{project_id}/views",
+                json={"name": "To Delete", "sql_definition": "SELECT 1"},
+                headers=self.auth_headers,
+            )
+            view_id = create_res.json()["data"]["id"]
+
+            del_res = await client.delete(
+                f"/api/projects/{project_id}/views/{view_id}",
+                headers=self.auth_headers,
+            )
+        assert del_res.status_code == 200
+
+
 class TestAuthRequired:
     """Verify that protected endpoints reject unauthenticated requests."""
 

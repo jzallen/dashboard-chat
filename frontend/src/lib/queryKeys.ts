@@ -18,6 +18,24 @@ export const orgKeys = {
   projects: ["org", "projects"] as const,
 };
 
+/** TanStack Query key factory for view queries. */
+export const viewKeys = {
+  all: ["views"] as const,
+  lists: () => [...viewKeys.all, "list"] as const,
+  list: (projectId: string) => [...viewKeys.lists(), projectId] as const,
+  details: () => [...viewKeys.all, "detail"] as const,
+  detail: (id: string) => [...viewKeys.details(), id] as const,
+};
+
+/** TanStack Query key factory for report queries. */
+export const reportKeys = {
+  all: ["reports"] as const,
+  lists: () => [...reportKeys.all, "list"] as const,
+  list: (projectId: string) => [...reportKeys.lists(), projectId] as const,
+  details: () => [...reportKeys.all, "detail"] as const,
+  detail: (id: string) => [...reportKeys.details(), id] as const,
+};
+
 /** TanStack Query key factory for SQL access queries. */
 export const sqlAccessKeys = {
   all: ["sql-access"] as const,

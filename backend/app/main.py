@@ -17,9 +17,11 @@ from .routers import (
     datasets_router,
     organizations_router,
     projects_router,
+    reports_router,
     sql_access_router,
     transforms_router,
     uploads_router,
+    views_router,
 )
 from .use_cases.sql_access._infra import set_app_pgbouncer_provisioner, set_app_provisioner
 from .use_cases.sql_access.reconcile_sql_access import reconcile_sql_access
@@ -115,6 +117,8 @@ app.include_router(projects_router)
 app.include_router(transforms_router)
 app.include_router(organizations_router)
 app.include_router(sql_access_router)
+app.include_router(views_router)
+app.include_router(reports_router)
 
 
 @app.get("/health")

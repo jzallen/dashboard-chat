@@ -35,3 +35,11 @@ class ProjectHasNoDatasets(DomainException):
 
     def __init__(self, project_id: str):
         super().__init__(f"Project '{project_id}' has no datasets to expose")
+
+
+class ExportValidationError(DomainException):
+    """Raised when dbt export validation fails (e.g., broken references)."""
+
+    _type = "EXPORT_VALIDATION_ERROR"
+    _title = "Export Validation Error"
+    _status_code = 400
