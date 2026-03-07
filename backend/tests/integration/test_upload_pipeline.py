@@ -333,9 +333,7 @@ class TestHl7v2Pipeline:
 class TestHl7v2EndToEndPipeline:
     """W2: HL7v2 upload → mocked Mirth conversion → FHIR → multi-dataset output."""
 
-    async def test_hl7_upload_with_mocked_mirth_creates_multi_datasets(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_hl7_upload_with_mocked_mirth_creates_multi_datasets(self, seeded_db: AsyncSession):
         """Full HL7v2 E2E: upload → Mirth converts to FHIR → FHIR plugin splits → multiple datasets."""
         from unittest.mock import MagicMock, patch
 
@@ -377,9 +375,10 @@ class TestHl7v2EndToEndPipeline:
 
         plugin_registry = create_plugin_registry()
 
-        with patch("app.plugins.hl7v2_plugin.get_settings", return_value=mock_settings), \
-             patch("app.plugins.mirth_client.httpx.post", return_value=mock_response):
-
+        with (
+            patch("app.plugins.hl7v2_plugin.get_settings", return_value=mock_settings),
+            patch("app.plugins.mirth_client.httpx.post", return_value=mock_response),
+        ):
             # Step 1: Upload raw HL7v2 file
             write_stubber = Stubber(boto3.client("s3"))
             write_stubber.add_response("put_object", {})
@@ -406,7 +405,7 @@ class TestHl7v2EndToEndPipeline:
             )
             # put_object for converted FHIR artifact
             read_write_stubber.add_response("put_object", {})
-            # 2 datasets × 1 parquet partition each
+            # 2 datasets x 1 parquet partition each
             read_write_stubber.add_response("put_object", {})
             read_write_stubber.add_response("put_object", {})
 
@@ -467,7 +466,7 @@ class TestFhirBundlePipeline:
             {"Body": io.BytesIO(fhir_content)},
             {"Bucket": "dashboard-chat.datalake", "Key": raw_path},
         )
-        # 2 datasets × 1 parquet partition each
+        # 2 datasets x 1 parquet partition each
         read_write_stubber.add_response("put_object", {})
         read_write_stubber.add_response("put_object", {})
 
@@ -713,9 +712,7 @@ class TestFhirMultiDatasetResponseShape:
         record = await seeded_db.get(OutboxRecord, upload_id)
         assert record is not None
         assert record.payload.get("dataset_ids") == dataset_ids
-        assert record.payload.get("dataset_id") == dataset_ids[0], (
-            "dataset_id should be first ID for backward compat"
-        )
+        assert record.payload.get("dataset_id") == dataset_ids[0], "dataset_id should be first ID for backward compat"
 
     async def test_fhir_multi_dataset_controller_serialize_shape(
         self, seeded_db: AsyncSession, plugin_registry: PluginRegistry

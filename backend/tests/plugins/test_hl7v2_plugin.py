@@ -9,7 +9,6 @@ import pytest
 from app.plugins.hl7v2_plugin import Hl7v2Plugin
 from app.plugins.protocol import MultiProcessingResult, PluginValidationError
 
-
 SAMPLE_MESSAGE = (
     "MSH|^~\\&|SENDING|FACILITY|RECEIVING|FACILITY|20230101120000||ADT^A01|MSG001|P|2.3\n"
     "PID|||12345^^^MRN||DOE^JOHN||19800101|M\n"
@@ -72,9 +71,8 @@ class TestMirthConnectClient:
 
         from app.plugins.mirth_client import MirthConnectClient
 
-        with patch.dict(os.environ, {"ENVIRONMENT": "production"}):
-            with pytest.raises(ValueError, match="must use HTTPS"):
-                MirthConnectClient(base_url="http://mirth:8443", api_key="key")
+        with patch.dict(os.environ, {"ENVIRONMENT": "production"}), pytest.raises(ValueError, match="must use HTTPS"):
+            MirthConnectClient(base_url="http://mirth:8443", api_key="key")
 
     def test_allows_https_in_production(self):
         import os

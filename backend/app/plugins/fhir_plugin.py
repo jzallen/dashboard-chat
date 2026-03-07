@@ -112,12 +112,12 @@ def _validate_resources(resources: list[dict]) -> list[dict]:
         try:
             model = construct_fhir_element(resource_type, r)
             validated.append(model.dict(exclude_none=True))
-        except LookupError:
+        except LookupError as err:
             raise PluginValidationError(
                 f"Unknown FHIR resource type: {resource_type}. Only FHIR R4 resources are supported."
-            )
+            ) from err
         except ValidationError as e:
-            raise PluginValidationError(f"Invalid FHIR R4 {resource_type}: {e.errors()[0]['msg']}")
+            raise PluginValidationError(f"Invalid FHIR R4 {resource_type}: {e.errors()[0]['msg']}") from e
     return validated
 
 

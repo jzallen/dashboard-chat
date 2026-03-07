@@ -7,7 +7,7 @@ from app.config import get_settings
 
 from .fhir_plugin import FhirPlugin
 from .mirth_client import MirthConnectClient
-from .protocol import MultiProcessingResult, PluginValidationError, ProcessingResult
+from .protocol import MultiProcessingResult, PluginValidationError
 
 _CHAT_GUIDANCE = (
     "This dataset contains HL7v2 message data with columns named {segment}_{field_index}. "
@@ -26,10 +26,7 @@ def _decode(file_content: bytes) -> str:
 
 def _has_msh_segments(text: str) -> bool:
     """Check if text contains MSH segments."""
-    for line in text.splitlines():
-        if line.strip().startswith("MSH"):
-            return True
-    return False
+    return any(line.strip().startswith("MSH") for line in text.splitlines())
 
 
 class Hl7v2Plugin:
@@ -61,9 +58,7 @@ class Hl7v2Plugin:
 
         settings = get_settings()
         if not settings.mirth_connect_url:
-            raise PluginValidationError(
-                "HL7v2 conversion is not configured. Set MIRTH_CONNECT_URL."
-            )
+            raise PluginValidationError("HL7v2 conversion is not configured. Set MIRTH_CONNECT_URL.")
 
     def detect_choices(self, file_content: bytes, filename: str) -> list | None:
         return None
@@ -84,9 +79,7 @@ class Hl7v2Plugin:
         # Phase 2: Convert via Mirth Connect
         settings = get_settings()
         if not settings.mirth_connect_url:
-            raise PluginValidationError(
-                "HL7v2 conversion is not configured. Set MIRTH_CONNECT_URL."
-            )
+            raise PluginValidationError("HL7v2 conversion is not configured. Set MIRTH_CONNECT_URL.")
 
         client = MirthConnectClient(
             base_url=settings.mirth_connect_url,

@@ -4,9 +4,8 @@ import json
 
 import pytest
 
-from app.plugins.fhir_plugin import FhirPlugin, MAX_RESOURCE_TYPES
+from app.plugins.fhir_plugin import MAX_RESOURCE_TYPES, FhirPlugin
 from app.plugins.protocol import MultiProcessingResult, PluginValidationError
-
 
 PATIENT_BUNDLE = json.dumps(
     {
@@ -62,8 +61,7 @@ MIXED_BUNDLE = json.dumps(
 )
 
 NDJSON = (
-    '{"resourceType": "Patient", "id": "1", "active": true}\n'
-    '{"resourceType": "Patient", "id": "2", "active": false}'
+    '{"resourceType": "Patient", "id": "1", "active": true}\n{"resourceType": "Patient", "id": "2", "active": false}'
 )
 
 
@@ -186,9 +184,7 @@ class TestFhirPlugin:
         assert "Patient" in obs_result.chat_guidance
 
     def test_single_resource_json(self):
-        resource = json.dumps(
-            {"resourceType": "Patient", "id": "solo", "active": True}
-        ).encode()
+        resource = json.dumps({"resourceType": "Patient", "id": "solo", "active": True}).encode()
         result = self.plugin.process(resource, "patient.fhir.json")
 
         assert isinstance(result, MultiProcessingResult)
@@ -214,6 +210,8 @@ class TestFhirPlugin:
         entries = [{"resource": r} for r in fake_validated]
         bundle = json.dumps({"resourceType": "Bundle", "type": "searchset", "entry": entries}).encode()
 
-        with patch("app.plugins.fhir_plugin._validate_resources", return_value=fake_validated):
-            with pytest.raises(PluginValidationError, match="exceeding the maximum"):
-                self.plugin.process(bundle, "huge.fhir.json")
+        with (
+            patch("app.plugins.fhir_plugin._validate_resources", return_value=fake_validated),
+            pytest.raises(PluginValidationError, match="exceeding the maximum"),
+        ):
+            self.plugin.process(bundle, "huge.fhir.json")

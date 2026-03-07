@@ -17,9 +17,7 @@ class MirthConnectClient:
             import os
 
             if os.environ.get("ENVIRONMENT", "development") == "production":
-                raise ValueError(
-                    "Mirth Connect URL must use HTTPS in production"
-                )
+                raise ValueError("Mirth Connect URL must use HTTPS in production")
 
     def convert_hl7v2_to_fhir(self, hl7v2_content: str) -> dict:
         """Send HL7v2 content to Mirth Connect and return FHIR bundle JSON."""
@@ -34,28 +32,20 @@ class MirthConnectClient:
                 },
                 timeout=self.timeout,
             )
-        except httpx.ConnectError:
-            raise PluginValidationError("HL7v2 conversion service is unavailable")
-        except httpx.TimeoutException:
-            raise PluginValidationError(
-                f"HL7v2 conversion timed out after {self.timeout}s"
-            )
+        except httpx.ConnectError as err:
+            raise PluginValidationError("HL7v2 conversion service is unavailable") from err
+        except httpx.TimeoutException as err:
+            raise PluginValidationError(f"HL7v2 conversion timed out after {self.timeout}s") from err
 
         if response.status_code != 200:
-            raise PluginValidationError(
-                f"HL7v2 conversion failed: Mirth Connect returned {response.status_code}"
-            )
+            raise PluginValidationError(f"HL7v2 conversion failed: Mirth Connect returned {response.status_code}")
 
         try:
             bundle = response.json()
-        except ValueError:
-            raise PluginValidationError(
-                "HL7v2 conversion failed: invalid JSON response from Mirth Connect"
-            )
+        except ValueError as err:
+            raise PluginValidationError("HL7v2 conversion failed: invalid JSON response from Mirth Connect") from err
 
         if not isinstance(bundle, dict) or bundle.get("resourceType") != "Bundle":
-            raise PluginValidationError(
-                "HL7v2 conversion failed: Mirth Connect did not return a valid FHIR Bundle"
-            )
+            raise PluginValidationError("HL7v2 conversion failed: Mirth Connect did not return a valid FHIR Bundle")
 
         return bundle

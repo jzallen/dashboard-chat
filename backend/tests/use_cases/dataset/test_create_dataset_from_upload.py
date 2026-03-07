@@ -1,6 +1,7 @@
 import io
 from dataclasses import asdict
 from functools import partial
+from typing import ClassVar
 
 import boto3
 import pandas as pd
@@ -340,7 +341,7 @@ class MockSinglePlugin:
     """Mock plugin that returns a single ProcessingResult."""
 
     name = "mock_single"
-    extensions = [".mock"]
+    extensions: ClassVar[list[str]] = [".mock"]
     label = "Mock Single"
     dbt_macros = None
 
@@ -359,7 +360,7 @@ class MockMultiPlugin:
     """Mock plugin that returns a MultiProcessingResult with two datasets."""
 
     name = "mock_multi"
-    extensions = [".mmock"]
+    extensions: ClassVar[list[str]] = [".mmock"]
     label = "Mock Multi"
     dbt_macros = None
 
@@ -384,7 +385,7 @@ class MockMultiPluginSecondFails:
     """Mock plugin that returns MultiProcessingResult where second dataset will fail during write."""
 
     name = "mock_multi_fail"
-    extensions = [".mfail"]
+    extensions: ClassVar[list[str]] = [".mfail"]
     label = "Mock Multi Fail"
     dbt_macros = None
 
@@ -409,7 +410,7 @@ class MockConvertedPlugin:
     """Mock plugin that sets _converted_content after process()."""
 
     name = "mock_converted"
-    extensions = [".cmock"]
+    extensions: ClassVar[list[str]] = [".cmock"]
     label = "Mock Converted"
     dbt_macros = None
 
@@ -436,9 +437,7 @@ class MockConvertedPlugin:
 class TestCreateDatasetFromUploadWithPlugins:
     """Tests for create_dataset_from_upload with PluginRegistry."""
 
-    async def test_single_dataset_plugin_returns_dataset_with_plugin_name(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_single_dataset_plugin_returns_dataset_with_plugin_name(self, seeded_db: AsyncSession):
         """Plugin returning ProcessingResult should create a single Dataset with the plugin-provided name."""
         set_session(seeded_db)
 
@@ -493,9 +492,7 @@ class TestCreateDatasetFromUploadWithPlugins:
                 assert dataset.project_id == PROJECT_1
                 assert set(dataset.schema_config["fields"].keys()) == {"x", "y"}
 
-    async def test_multi_dataset_plugin_returns_list_of_datasets(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_multi_dataset_plugin_returns_list_of_datasets(self, seeded_db: AsyncSession):
         """Plugin returning MultiProcessingResult should create multiple Datasets."""
         set_session(seeded_db)
 
@@ -552,9 +549,7 @@ class TestCreateDatasetFromUploadWithPlugins:
                 assert datasets[1].name == "Type B"
                 assert all(d.project_id == PROJECT_1 for d in datasets)
 
-    async def test_converted_storage_path_persisted_in_outbox(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_converted_storage_path_persisted_in_outbox(self, seeded_db: AsyncSession):
         """Plugin with _converted_content should trigger converted_storage_path update in outbox."""
         set_session(seeded_db)
 
@@ -612,13 +607,9 @@ class TestCreateDatasetFromUploadWithPlugins:
         # Verify the outbox record was updated with converted_storage_path
         record = await seeded_db.get(OutboxRecord, "upload-plugin-converted")
         assert record is not None
-        assert record.payload.get("converted_storage_path") == (
-            f"uploads/{PROJECT_1}/data.converted.fhir.json"
-        )
+        assert record.payload.get("converted_storage_path") == (f"uploads/{PROJECT_1}/data.converted.fhir.json")
 
-    async def test_multi_dataset_partial_failure_returns_failure(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_multi_dataset_partial_failure_returns_failure(self, seeded_db: AsyncSession):
         """If the second dataset write fails, the use case should return Failure.
 
         Note: The @handle_returns decorator catches the exception and returns Failure

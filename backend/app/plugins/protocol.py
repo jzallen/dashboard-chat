@@ -1,6 +1,6 @@
 """Plugin protocol and data types for file format processing."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 import pandas as pd
