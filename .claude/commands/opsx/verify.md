@@ -46,6 +46,26 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    Each dimension can have CRITICAL, WARNING, or SUGGESTION issues.
 
+   **Agent Teams — Parallel Verification**
+
+   When all three verification dimensions will be checked (tasks + specs + design artifacts exist), use Agent Teams to run them in parallel.
+
+   **Skip teams when**: Only tasks.md exists (single dimension) or only tasks + specs (two dimensions — marginal benefit). Use teams only when all three dimensions will be checked.
+
+   **Setup:**
+   1. Use `TeamCreate` with name `opsx-verify-<change-name>`
+   2. Create 3 tasks (one per verification dimension):
+      - **Completeness** (task checkboxes + spec coverage) → teammate with `CODE_REVIEWER` persona from `.claude/system_prompts/CODE_REVIEWER.md`
+      - **Correctness** (requirement implementation + scenario coverage) → teammate with `BUSINESS_ANALYST` persona from `.claude/system_prompts/BUSINESS_ANALYST.md`
+      - **Coherence** (design adherence + pattern consistency) → teammate with `SOLUTIONS_ARCHITECT` persona from `.claude/system_prompts/SOLUTIONS_ARCHITECT.md`
+   3. **No worktrees needed** — verification is read-only, use shared directory
+   4. Spawn each teammate via the `Agent` tool with:
+      - `team_name`: the team name from step 1
+      - No `isolation` (shared directory — read-only work)
+      - Prompt that includes: persona summary, the specific verification dimension instructions (from steps 5/6/7 below), artifact content, and file paths to check
+   5. Each teammate reads artifacts and codebase, then sends findings back via `SendMessage`
+   6. Lead aggregates findings from all teammates into the final verification report
+
 5. **Verify Completeness**
 
    **Task Completion**:

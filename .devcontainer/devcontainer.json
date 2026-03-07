@@ -10,7 +10,7 @@
       "installTools": true
     }
   },
-  "postStartCommand": "sudo apt-get update && sudo apt-get install -y python3-dev build-essential",
+  "postStartCommand": "sudo apt-get update && sudo apt-get install -y python3-dev build-essential tmux",
   "customizations": {
     "vscode": {
       "extensions": [

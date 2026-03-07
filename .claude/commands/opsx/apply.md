@@ -77,8 +77,66 @@ Implement tasks from an OpenSpec change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-   **Agent Teams**
-   - When possible, use an agent team to implement tasks. Group related tasks and assign to a teammate for implementation. Decide how manay teammates to create based on the grouping of tasks and assign an appropriate persona to each teammate.
+   **Agent Teams — Parallel Task Execution**
+
+   When the tasks file has multiple numbered sections (e.g., `## 1. Plugin Protocol`, `## 2. FHIR Plugin`), evaluate whether Agent Teams can accelerate implementation.
+
+   **Step 6a: Analyze task groups for parallelism**
+
+   Parse the tasks file into numbered sections. Build a dependency graph:
+   - Sections with no cross-references to other sections can run in parallel
+   - Sections that reference outputs from other sections are sequential (dependent)
+   - Example: sections 2 (FHIR Plugin) and 3 (HL7v2 Plugin) are independent; section 5 (Upload Use Case) depends on sections 1-4
+
+   **Skip teams when:**
+   - Fewer than 6 total tasks across all sections
+   - All tasks belong to a single section
+   - All sections have linear dependencies (no parallelism possible)
+
+   **Step 6b: Decide team composition**
+
+   Rules:
+   - Max 4 teammates (including the lead's own work)
+   - One teammate per independent task group
+   - Assign personas from `.claude/system_prompts/` based on task nature:
+     - Backend code (models, use cases, repos) → `SOFTWARE_ENGINEER.md`
+     - Infrastructure/config (docker, migrations, CI) → `SOLUTIONS_ARCHITECT.md`
+     - API contract / review tasks → `CODE_REVIEWER.md`
+     - Requirement verification → `BUSINESS_ANALYST.md`
+   - Read the persona file and include key sections in the teammate's spawn prompt
+
+   **Step 6c: Create team and spawn teammates**
+
+   1. Use `TeamCreate` with name `opsx-apply-<change-name>`
+   2. Use `TaskCreate` for each parallelizable section — include:
+      - The checkbox items from that section
+      - File paths mentioned in the section
+      - Persona context (key sections from the system prompt file)
+      - Relevant content from change artifacts (design decisions, spec requirements)
+   3. Set task dependencies via `TaskCreate` with `blockedBy` to mirror the section dependency graph
+   4. Spawn teammates using the `Agent` tool with:
+      - `team_name`: the team name from step 1
+      - `isolation: "worktree"` — each teammate gets an isolated git worktree
+      - `mode: "plan"` for risky sections (require lead approval before implementing)
+      - Prompt that includes: persona summary, task checkboxes, key file paths, patterns to follow
+
+   **Step 6d: Lead coordination**
+
+   The lead agent:
+   - Works on sequential/dependent tasks that cannot be parallelized
+   - Monitors teammate progress via automatic message delivery
+   - Resolves blockers when teammates report issues via `SendMessage`
+   - Updates the tasks file checkboxes (`- [ ]` → `- [x]`) — **only the lead writes to the tasks file** to prevent file conflicts
+   - Sends shutdown requests when all tasks complete
+   - Cleans up the team after completion
+
+   **Step 6e: Worktree merge protocol**
+
+   After teammates complete tasks in their worktrees:
+   - Lead reviews each worktree's changes
+   - Merges branches back to the working branch
+   - Resolves any merge conflicts
+   - Updates the tasks file with all completed checkboxes
 
 7. **On completion or pause, show status**
 

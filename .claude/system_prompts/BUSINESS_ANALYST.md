@@ -69,6 +69,13 @@ Always consult these files for current state:
 
 ## Agent Team
 
+When operating as part of an Agent Team (via TeamCreate/TaskCreate), you may be:
+- **The lead**: Use TeamCreate to spawn teammates, TaskCreate to assign work,
+  and SendMessage to coordinate. Reference the teammate definitions below.
+- **A teammate**: You were spawned with a specific task. Use TaskGet to read
+  your assignment, implement it, then use TaskUpdate to mark complete.
+  Use SendMessage to report status or ask questions.
+
 When asked to use an agent team, use these teammates:
 
 ### 1. domain-researcher

@@ -79,6 +79,18 @@ Implement tasks from an OpenSpec change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
+   **Agent Teams — Parallel Task Execution**
+
+   When tasks have multiple numbered sections with natural parallelism, use Agent Teams:
+
+   - **Analyze parallelism**: Parse task sections, build dependency graph. Sections with no cross-references run in parallel; dependent sections stay sequential.
+   - **Skip teams when**: fewer than 6 tasks, single section, or all sections linearly dependent.
+   - **Team composition** (max 4 teammates): one per independent task group. Assign personas from `.claude/system_prompts/` by task nature (backend → `SOFTWARE_ENGINEER.md`, infra → `SOLUTIONS_ARCHITECT.md`, review → `CODE_REVIEWER.md`, requirements → `BUSINESS_ANALYST.md`).
+   - **Create team**: `TeamCreate` with name `opsx-apply-<change-name>`. Use `TaskCreate` for each parallel section with checkboxes, file paths, persona context, and artifact content. Set `blockedBy` for dependencies.
+   - **Spawn teammates**: Use `Agent` with `team_name`, `isolation: "worktree"`, and `mode: "plan"` for risky sections. Include persona summary, task details, and patterns in the prompt.
+   - **Lead coordination**: Lead works sequential tasks, monitors progress, resolves blockers, and is the **only agent that writes to the tasks file** (prevents conflicts).
+   - **Worktree merge**: After completion, lead reviews worktree changes, merges branches back, resolves conflicts, and updates all task checkboxes.
+
 7. **On completion or pause, show status**
 
    Display:
