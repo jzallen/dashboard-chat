@@ -59,8 +59,5 @@ def build_pagination_links(
 ) -> dict[str, str | None]:
     """Build JSON:API pagination links."""
     self_link = f"{base_url}?page[size]={page_size}"
-    if next_cursor:
-        next_link = f"{base_url}?page[after]={next_cursor}&page[size]={page_size}"
-    else:
-        next_link = None
+    next_link = f"{base_url}?page[after]={next_cursor}&page[size]={page_size}" if next_cursor else None
     return {"self": self_link, "next": next_link, "prev": None}
