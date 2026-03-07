@@ -46,7 +46,19 @@ export class ApiClient {
     const json = await response.json();
 
     if (this.unwrapData && json && typeof json === "object" && "data" in json) {
-      return json.data as T;
+      const data = json.data;
+      // Unwrap JSON:API {type, id, attributes} → flat {id, ...attributes}
+      const unwrap = (item: unknown) =>
+        item &&
+        typeof item === "object" &&
+        "attributes" in (item as Record<string, unknown>)
+          ? {
+              id: (item as Record<string, unknown>).id,
+              ...((item as Record<string, unknown>).attributes as object),
+            }
+          : item;
+      const result = Array.isArray(data) ? data.map(unwrap) : unwrap(data);
+      return result as T;
     }
 
     return json;

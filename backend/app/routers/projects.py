@@ -1,6 +1,6 @@
 """API routes for project management."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,9 +17,13 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
 @router.get("")
-async def list_projects(_: AsyncSession = Depends(use_db_context)):
-    """List all projects."""
-    body, status_code = await HTTPController.list_projects()
+async def list_projects(
+    page_after: str | None = Query(default=None, alias="page[after]"),
+    page_size: int = Query(default=50, ge=1, le=100, alias="page[size]"),
+    _: AsyncSession = Depends(use_db_context),
+):
+    """List all projects with cursor-based pagination."""
+    body, status_code = await HTTPController.list_projects(cursor=page_after, page_size=page_size)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -36,10 +40,14 @@ async def get_project(
 @router.get("/{project_id}/datasets")
 async def list_project_datasets(
     project_id: str,
+    page_after: str | None = Query(default=None, alias="page[after]"),
+    page_size: int = Query(default=50, ge=1, le=100, alias="page[size]"),
     _: AsyncSession = Depends(use_db_context),
 ):
-    """List sparse datasets for a project."""
-    body, status_code = await HTTPController.list_project_datasets(project_id)
+    """List sparse datasets for a project with cursor-based pagination."""
+    body, status_code = await HTTPController.list_project_datasets(
+        project_id, cursor=page_after, page_size=page_size
+    )
     return JSONResponse(content=body, status_code=status_code)
 
 

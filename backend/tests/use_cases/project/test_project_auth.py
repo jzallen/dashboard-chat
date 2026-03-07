@@ -36,9 +36,9 @@ class TestListProjectsAuth:
         result = await list_projects()
 
         match result:
-            case Success(projects):
-                assert len(projects) == 1
-                assert projects[0]["id"] == PROJECT_MINE
+            case Success(data):
+                assert len(data["items"]) == 1
+                assert data["items"][0]["id"] == PROJECT_MINE
             case Failure(error):
                 pytest.fail(f"list_projects should succeed, got: {error}")
 
@@ -52,8 +52,8 @@ class TestListProjectsAuth:
         result = await list_projects()
 
         match result:
-            case Success(projects):
-                assert projects == []
+            case Success(data):
+                assert data["items"] == []
             case Failure(error):
                 pytest.fail(f"list_projects should succeed, got: {error}")
 

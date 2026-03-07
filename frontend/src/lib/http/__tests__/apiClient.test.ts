@@ -13,6 +13,43 @@ describe("ApiClient", () => {
     vi.restoreAllMocks();
   });
 
+  /** Helper: JSON:API single-resource response */
+  function jsonapiSingleResponse(
+    type: string,
+    id: string,
+    attributes: Record<string, unknown>,
+  ) {
+    const body = {
+      data: { type, id, attributes },
+      links: { self: `/api/${type}/${id}` },
+    };
+    return {
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(body),
+      text: () => Promise.resolve(JSON.stringify(body)),
+    };
+  }
+
+  /** Helper: JSON:API list response */
+  function jsonapiListResponse(
+    type: string,
+    items: { id: string; attributes: Record<string, unknown> }[],
+  ) {
+    const body = {
+      data: items.map((i) => ({ type, id: i.id, attributes: i.attributes })),
+      links: { self: `/api/${type}?page[size]=50`, next: null, prev: null },
+      meta: { page: { size: 50, has_more: false } },
+    };
+    return {
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(body),
+      text: () => Promise.resolve(JSON.stringify(body)),
+    };
+  }
+
+  /** Legacy helper for backward compat tests */
   function okResponse(data: unknown) {
     return {
       ok: true,
@@ -33,8 +70,12 @@ describe("ApiClient", () => {
 
   describe("GET", () => {
     it("constructs correct request with baseUrl and headers", async () => {
-      mockFetch.mockResolvedValue(okResponse({ id: 1 }));
-      const client = new ApiClient("https://api.example.com", { fetchFn: mockFetch });
+      mockFetch.mockResolvedValue(
+        jsonapiSingleResponse("items", "1", { name: "test" }),
+      );
+      const client = new ApiClient("https://api.example.com", {
+        fetchFn: mockFetch,
+      });
 
       const result = await client.get("/items");
 
@@ -42,13 +83,15 @@ describe("ApiClient", () => {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       });
-      expect(result).toEqual({ id: 1 });
+      expect(result).toEqual({ id: "1", name: "test" });
     });
   });
 
   describe("POST", () => {
     it("constructs correct request with JSON body", async () => {
-      mockFetch.mockResolvedValue(okResponse({ created: true }));
+      mockFetch.mockResolvedValue(
+        jsonapiSingleResponse("items", "1", { created: true }),
+      );
       const client = new ApiClient("", { fetchFn: mockFetch });
 
       const result = await client.post("/items", { name: "test" });
@@ -58,13 +101,15 @@ describe("ApiClient", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "test" }),
       });
-      expect(result).toEqual({ created: true });
+      expect(result).toEqual({ id: "1", created: true });
     });
   });
 
   describe("PATCH", () => {
     it("constructs correct request with JSON body", async () => {
-      mockFetch.mockResolvedValue(okResponse({ updated: true }));
+      mockFetch.mockResolvedValue(
+        jsonapiSingleResponse("items", "1", { name: "updated" }),
+      );
       const client = new ApiClient("", { fetchFn: mockFetch });
 
       const result = await client.patch("/items/1", { name: "updated" });
@@ -74,7 +119,7 @@ describe("ApiClient", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "updated" }),
       });
-      expect(result).toEqual({ updated: true });
+      expect(result).toEqual({ id: "1", name: "updated" });
     });
   });
 
@@ -109,16 +154,53 @@ describe("ApiClient", () => {
     });
   });
 
-  describe("response unwrapping", () => {
-    it("unwraps { data: payload } when unwrapData is true (default)", async () => {
-      mockFetch.mockResolvedValue(okResponse({ id: 1, name: "test" }));
+  describe("JSON:API unwrapping", () => {
+    it("unwraps single JSON:API resource to flat object", async () => {
+      mockFetch.mockResolvedValue(
+        jsonapiSingleResponse("projects", "p1", {
+          name: "My Project",
+          description: null,
+        }),
+      );
+      const client = new ApiClient("", { fetchFn: mockFetch });
+
+      const result = await client.get("/projects/p1");
+
+      expect(result).toEqual({
+        id: "p1",
+        name: "My Project",
+        description: null,
+      });
+    });
+
+    it("unwraps array of JSON:API resources to flat objects", async () => {
+      mockFetch.mockResolvedValue(
+        jsonapiListResponse("projects", [
+          { id: "p1", attributes: { name: "A" } },
+          { id: "p2", attributes: { name: "B" } },
+        ]),
+      );
+      const client = new ApiClient("", { fetchFn: mockFetch });
+
+      const result = await client.get("/projects");
+
+      expect(result).toEqual([
+        { id: "p1", name: "A" },
+        { id: "p2", name: "B" },
+      ]);
+    });
+
+    it("passes through plain data without attributes key", async () => {
+      mockFetch.mockResolvedValue(okResponse({ id: 1, name: "plain" }));
       const client = new ApiClient("", { fetchFn: mockFetch });
 
       const result = await client.get("/items/1");
 
-      expect(result).toEqual({ id: 1, name: "test" });
+      expect(result).toEqual({ id: 1, name: "plain" });
     });
+  });
 
+  describe("response unwrapping", () => {
     it("does not unwrap when unwrapData is false", async () => {
       mockFetch.mockResolvedValue({
         ok: true,
@@ -126,7 +208,10 @@ describe("ApiClient", () => {
         json: () => Promise.resolve({ data: { id: 1 }, meta: {} }),
         text: () => Promise.resolve(""),
       });
-      const client = new ApiClient("", { fetchFn: mockFetch, unwrapData: false });
+      const client = new ApiClient("", {
+        fetchFn: mockFetch,
+        unwrapData: false,
+      });
 
       const result = await client.get("/items/1");
 
@@ -170,7 +255,9 @@ describe("ApiClient", () => {
     });
 
     it("uses type field when no title", async () => {
-      mockFetch.mockResolvedValue(errorResponse(422, { type: "validation_error" }));
+      mockFetch.mockResolvedValue(
+        errorResponse(422, { type: "validation_error" }),
+      );
       const client = new ApiClient("", { fetchFn: mockFetch });
 
       await expect(client.get("/items")).rejects.toThrow("validation_error");
@@ -184,7 +271,9 @@ describe("ApiClient", () => {
       });
       const client = new ApiClient("", { fetchFn: mockFetch });
 
-      await expect(client.get("/items")).rejects.toThrow("Request failed with status 500");
+      await expect(client.get("/items")).rejects.toThrow(
+        "Request failed with status 500",
+      );
     });
 
     it("re-throws Session expired as ApiError(401)", async () => {
@@ -211,13 +300,17 @@ describe("ApiClient", () => {
 
   describe("uploadFile", () => {
     it("sends FormData with file and additional fields", async () => {
-      mockFetch.mockResolvedValue(okResponse({ uploaded: true }));
+      mockFetch.mockResolvedValue(
+        jsonapiSingleResponse("uploads", "u1", { uploaded: true }),
+      );
       const client = new ApiClient("", { fetchFn: mockFetch });
       const file = new File(["content"], "test.csv", { type: "text/csv" });
 
-      const result = await client.uploadFile("/upload", file, { project_id: "proj-1" });
+      const result = await client.uploadFile("/upload", file, {
+        project_id: "proj-1",
+      });
 
-      expect(result).toEqual({ uploaded: true });
+      expect(result).toEqual({ id: "u1", uploaded: true });
       expect(mockFetch).toHaveBeenCalledWith(
         "/upload",
         expect.objectContaining({ method: "POST" }),
@@ -236,12 +329,17 @@ describe("ApiClient", () => {
         headers: new Headers({ "Content-Type": "application/zip" }),
       };
       mockFetch.mockResolvedValue(rawResponse);
-      const client = new ApiClient("https://api.example.com", { fetchFn: mockFetch });
+      const client = new ApiClient("https://api.example.com", {
+        fetchFn: mockFetch,
+      });
 
       const result = await client.fetch("/download", { method: "GET" });
 
       expect(result).toBe(rawResponse);
-      expect(mockFetch).toHaveBeenCalledWith("https://api.example.com/download", { method: "GET" });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.example.com/download",
+        { method: "GET" },
+      );
     });
   });
 });

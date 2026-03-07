@@ -26,14 +26,16 @@ class TestListDatasetsForProject:
     """Tests for list_datasets_for_project use case."""
 
     async def test_returns_sparse_dicts_without_transforms(self, seeded_db: AsyncSession):
-        """Should return sparse dataset dicts (no transforms)."""
+        """Should return sparse dataset dicts (no transforms) in paginated result."""
         set_session(seeded_db)
 
         result = await list_datasets_for_project(project_id=PROJECT_1)
 
         match result:
-            case Success(datasets):
+            case Success(data):
+                datasets = data["items"]
                 assert len(datasets) == 2
+                assert data["has_more"] is False
                 # Verify sparse dict shape
                 for ds in datasets:
                     assert "id" in ds
@@ -49,7 +51,7 @@ class TestListDatasetsForProject:
                 pytest.fail(f"Expected success, got: {error}")
 
     async def test_returns_empty_list_for_project_with_no_datasets(self, db_session: AsyncSession):
-        """Should return empty list when project has no datasets."""
+        """Should return empty items when project has no datasets."""
         set_session(db_session)
 
         project = ProjectRecord(id=PROJECT_EMPTY, name="Empty Project", org_id=ORG_1)
@@ -59,8 +61,9 @@ class TestListDatasetsForProject:
         result = await list_datasets_for_project(project_id=PROJECT_EMPTY)
 
         match result:
-            case Success(datasets):
-                assert datasets == []
+            case Success(data):
+                assert data["items"] == []
+                assert data["has_more"] is False
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
@@ -96,8 +99,8 @@ class TestListDatasetsForProject:
         result = await list_datasets_for_project(project_id=PROJECT_1)
 
         match result:
-            case Success(datasets):
-                for ds in datasets:
+            case Success(data):
+                for ds in data["items"]:
                     assert ds["link"] == f"/api/datasets/{ds['id']}"
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")

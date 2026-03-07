@@ -36,9 +36,11 @@ class TestListDatasets:
         result = await list_datasets(project_id=PROJECT_1)
 
         match result:
-            case Success(datasets):
+            case Success(data):
+                datasets = data["items"]
                 assert len(datasets) == 2
-                # Ordered by created_at desc — dataset-002 first, dataset-001 second
+                assert data["has_more"] is False
+                # Ordered by ID desc — dataset-002 first, dataset-001 second
                 expected_first = Dataset(
                     id=DATASET_2,
                     project_id=PROJECT_1,
@@ -108,8 +110,8 @@ class TestListDatasets:
 
         # Assert
         match result:
-            case Success(datasets):
-                assert new_dataset not in datasets
+            case Success(data):
+                assert all(ds.project_id == PROJECT_1 for ds in data["items"])
             case Failure(error):
                 pytest.fail(f"list_datasets should filter by project_id, got: {error}")
 
@@ -127,8 +129,9 @@ class TestListDatasets:
         result = await list_datasets(project_id=PROJECT_EMPTY)
 
         match result:
-            case Success(datasets):
-                assert datasets == []
+            case Success(data):
+                assert data["items"] == []
+                assert data["has_more"] is False
             case Failure(error):
                 pytest.fail(f"list_datasets should return empty list for project with no datasets, got: {error}")
 

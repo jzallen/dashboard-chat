@@ -15,10 +15,14 @@ router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 @router.get("")
 async def list_datasets(
     project_id: str | None = None,
+    page_after: str | None = Query(default=None, alias="page[after]"),
+    page_size: int = Query(default=50, ge=1, le=100, alias="page[size]"),
     _: AsyncSession = Depends(use_db_context),
 ):
-    """List all datasets, optionally filtered by project."""
-    body, status_code = await HTTPController.list_datasets(project_id)
+    """List all datasets with cursor-based pagination, optionally filtered by project."""
+    body, status_code = await HTTPController.list_datasets(
+        project_id, cursor=page_after, page_size=page_size
+    )
     return JSONResponse(content=body, status_code=status_code)
 
 

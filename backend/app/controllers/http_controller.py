@@ -14,7 +14,7 @@ from app.use_cases import upload as upload_use_cases
 from app.use_cases import view as view_use_cases
 from app.use_cases.exceptions import DomainException
 
-from .response_wrapper import wrap_success
+from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single
 
 logger = logging.getLogger(__name__)
 
@@ -34,30 +34,19 @@ def _serialize(data: Any) -> Any:
 
 
 def _error_response(error: Exception) -> tuple[dict, int]:
-    """Build an RFC 9457 error response from an exception.
+    """Build a JSON:API error response from an exception.
 
     DomainException subclasses carry status_code, type, and title.
     All other exceptions map to a generic 500.
-    Exceptions with a `retry_after` attribute get that field in the body.
     """
     if isinstance(error, DomainException):
-        body = {
-            "type": error._type,
-            "title": error._title,
-            "status": error._status_code,
-            "detail": str(error),
-        }
+        body = wrap_jsonapi_error(error._status_code, error._title, str(error))
         if hasattr(error, "retry_after"):
-            body["retry_after"] = error.retry_after
+            body["errors"][0]["retry_after"] = error.retry_after
         return body, error._status_code
 
     logger.error("Unhandled error: %s", error)
-    return {
-        "type": "INTERNAL_SERVER_ERROR",
-        "title": "Internal Server Error",
-        "status": 500,
-        "detail": "An unexpected error occurred. Check server logs for details.",
-    }, 500
+    return wrap_jsonapi_error(500, "Internal Server Error", "An unexpected error occurred. Check server logs for details."), 500
 
 
 class HTTPController:
@@ -67,20 +56,33 @@ class HTTPController:
     """
 
     @staticmethod
-    async def list_datasets(project_id: str) -> tuple[dict, int]:
-        result = await dataset_use_cases.list_datasets(project_id)
+    async def list_datasets(
+        project_id: str,
+        cursor: str | None = None,
+        page_size: int = 50,
+        base_url: str = "/api/datasets",
+    ) -> tuple[dict, int]:
+        result = await dataset_use_cases.list_datasets(project_id, cursor=cursor, page_size=page_size)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                items = [_serialize(i) for i in data["items"]]
+                return wrap_jsonapi_list("datasets", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]), 200
             case Failure(error):
                 return _error_response(error)
 
     @staticmethod
-    async def list_project_datasets(project_id: str) -> tuple[dict, int]:
-        result = await dataset_use_cases.list_datasets_for_project(project_id)
+    async def list_project_datasets(
+        project_id: str,
+        cursor: str | None = None,
+        page_size: int = 50,
+        base_url: str = "/api/projects",
+    ) -> tuple[dict, int]:
+        result = await dataset_use_cases.list_datasets_for_project(project_id, cursor=cursor, page_size=page_size)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                items = data["items"]
+                url = f"{base_url}/{project_id}/datasets"
+                return wrap_jsonapi_list("datasets", items, url, data["page_size"], data["next_cursor"], data["has_more"]), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -91,7 +93,7 @@ class HTTPController:
         result = await dataset_use_cases.get_dataset(dataset_id, include_transforms, include_preview, preview_limit)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("datasets", _serialize(data), f"/api/datasets/{dataset_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -100,7 +102,7 @@ class HTTPController:
         result = await dataset_use_cases.update_dataset(dataset_id, kwargs)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("datasets", _serialize(data), f"/api/datasets/{dataset_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -121,7 +123,8 @@ class HTTPController:
         )
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 201
+                serialized = _serialize(data)
+                return wrap_jsonapi_single("datasets", serialized, f"/api/datasets/{serialized['id']}"), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -138,7 +141,8 @@ class HTTPController:
         )
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 201
+                serialized = _serialize(data)
+                return wrap_jsonapi_single("uploads", serialized, f"/api/uploads/{serialized['id']}"), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -167,18 +171,23 @@ class HTTPController:
         result = await dataset_use_cases.preview_cleaning_transform(dataset_id, target_column, expression_config)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return {"data": data}, 200
             case Failure(error):
                 return _error_response(error)
 
     # Project methods
 
     @staticmethod
-    async def list_projects() -> tuple[dict, int]:
-        result = await project_use_cases.list_projects()
+    async def list_projects(
+        cursor: str | None = None,
+        page_size: int = 50,
+        base_url: str = "/api/projects",
+    ) -> tuple[dict, int]:
+        result = await project_use_cases.list_projects(cursor=cursor, page_size=page_size)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                items = data["items"]
+                return wrap_jsonapi_list("projects", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -187,7 +196,7 @@ class HTTPController:
         result = await project_use_cases.get_project(project_id)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("projects", _serialize(data), f"/api/projects/{project_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -196,7 +205,8 @@ class HTTPController:
         result = await project_use_cases.create_project(name=name, description=description)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 201
+                serialized = _serialize(data)
+                return wrap_jsonapi_single("projects", serialized, f"/api/projects/{serialized['id']}"), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -205,7 +215,7 @@ class HTTPController:
         result = await project_use_cases.update_project(project_id, kwargs)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("projects", _serialize(data), f"/api/projects/{project_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -214,7 +224,7 @@ class HTTPController:
         result = await project_use_cases.delete_project(project_id)
         match result:
             case Success(data):
-                return wrap_success({"deleted": data}), 200
+                return {"meta": {"deleted": data}}, 200
             case Failure(error):
                 return _error_response(error)
 
@@ -225,7 +235,8 @@ class HTTPController:
         result = await organization_use_cases.create_organization(name=name)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 201
+                serialized = _serialize(data)
+                return wrap_jsonapi_single("organizations", serialized, f"/api/organizations/{serialized['id']}"), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -234,7 +245,7 @@ class HTTPController:
         result = await organization_use_cases.get_organization()
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("organizations", data, "/api/organizations/me"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -245,7 +256,8 @@ class HTTPController:
         result = await view_use_cases.list_views(project_id)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                items = _serialize(data)
+                return wrap_jsonapi_list("views", items, f"/api/projects/{project_id}/views", len(items), None, False), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -254,7 +266,8 @@ class HTTPController:
         result = await view_use_cases.create_view(project_id=project_id, **kwargs)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 201
+                serialized = _serialize(data)
+                return wrap_jsonapi_single("views", serialized, f"/api/projects/{project_id}/views/{serialized['id']}"), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -263,7 +276,7 @@ class HTTPController:
         result = await view_use_cases.get_view(view_id)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("views", _serialize(data), f"/api/views/{view_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -272,7 +285,7 @@ class HTTPController:
         result = await view_use_cases.update_view(view_id, kwargs)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("views", _serialize(data), f"/api/views/{view_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -281,7 +294,7 @@ class HTTPController:
         result = await view_use_cases.delete_view(view_id)
         match result:
             case Success(data):
-                return wrap_success({"deleted": data}), 200
+                return {"meta": {"deleted": data}}, 200
             case Failure(error):
                 return _error_response(error)
 
@@ -292,7 +305,8 @@ class HTTPController:
         result = await report_use_cases.list_reports(project_id)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                items = _serialize(data)
+                return wrap_jsonapi_list("reports", items, f"/api/projects/{project_id}/reports", len(items), None, False), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -301,7 +315,8 @@ class HTTPController:
         result = await report_use_cases.create_report(project_id=project_id, **kwargs)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 201
+                serialized = _serialize(data)
+                return wrap_jsonapi_single("reports", serialized, f"/api/projects/{project_id}/reports/{serialized['id']}"), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -310,7 +325,7 @@ class HTTPController:
         result = await report_use_cases.get_report(report_id)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("reports", _serialize(data), f"/api/reports/{report_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -319,7 +334,7 @@ class HTTPController:
         result = await report_use_cases.update_report(report_id, kwargs)
         match result:
             case Success(data):
-                return wrap_success(_serialize(data)), 200
+                return wrap_jsonapi_single("reports", _serialize(data), f"/api/reports/{report_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -328,7 +343,7 @@ class HTTPController:
         result = await report_use_cases.delete_report(report_id)
         match result:
             case Success(data):
-                return wrap_success({"deleted": data}), 200
+                return {"meta": {"deleted": data}}, 200
             case Failure(error):
                 return _error_response(error)
 
@@ -339,7 +354,7 @@ class HTTPController:
         result = await sql_access_use_cases.enable_sql_access(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 201
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 201
             case Failure(error):
                 return _error_response(error)
 
@@ -348,7 +363,7 @@ class HTTPController:
         result = await sql_access_use_cases.disable_sql_access(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 204
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 204
             case Failure(error):
                 return _error_response(error)
 
@@ -357,7 +372,7 @@ class HTTPController:
         result = await sql_access_use_cases.get_sql_access(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -366,7 +381,7 @@ class HTTPController:
         result = await sql_access_use_cases.sync_sql_access(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -375,7 +390,7 @@ class HTTPController:
         result = await sql_access_use_cases.regenerate_sql_credentials(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -384,7 +399,7 @@ class HTTPController:
         result = await sql_access_use_cases.start_environment(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -393,7 +408,7 @@ class HTTPController:
         result = await sql_access_use_cases.stop_environment(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -402,7 +417,7 @@ class HTTPController:
         result = await sql_access_use_cases.restart_environment(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
             case Failure(error):
                 return _error_response(error)
 
@@ -411,6 +426,6 @@ class HTTPController:
         result = await sql_access_use_cases.get_environment_status(project_id)
         match result:
             case Success(data):
-                return wrap_success(data), 200
+                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
             case Failure(error):
                 return _error_response(error)

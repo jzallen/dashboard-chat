@@ -27,10 +27,12 @@ def _sparse_dict(record) -> dict:
 @handle_returns
 async def list_datasets_for_project(
     project_id: str,
+    cursor: str | None = None,
+    page_size: int = 50,
     *,
     repositories: "RepositoryContainer",
-) -> Result[list[dict], str]:
-    """List sparse datasets belonging to a project.
+) -> Result[dict, str]:
+    """List sparse datasets belonging to a project with cursor-based pagination.
 
     Returns lightweight dataset dicts (no transforms) suitable for
     sidebar/navigation views.
@@ -42,6 +44,9 @@ async def list_datasets_for_project(
     svc = ProjectService(repositories)
     await svc.fetch_and_authorize_project(project_id)
 
-    records = await repositories.metadata.list_datasets(project_id, include_transforms=False)
+    records, next_cursor, has_more = await repositories.metadata.list_datasets(
+        project_id, include_transforms=False, cursor=cursor, limit=page_size
+    )
 
-    return [_sparse_dict(r) for r in records]
+    items = [_sparse_dict(r) for r in records]
+    return {"items": items, "next_cursor": next_cursor, "has_more": has_more, "page_size": page_size}

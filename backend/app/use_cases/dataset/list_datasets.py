@@ -15,8 +15,14 @@ if TYPE_CHECKING:
 
 @with_repositories
 @handle_returns
-async def list_datasets(project_id: str, *, repositories: "RepositoryContainer") -> Result[list[Dataset], str]:
-    """List all datasets for a project.
+async def list_datasets(
+    project_id: str,
+    cursor: str | None = None,
+    page_size: int = 50,
+    *,
+    repositories: "RepositoryContainer",
+) -> Result[dict, str]:
+    """List all datasets for a project with cursor-based pagination.
 
     Raises:
         ProjectIdRequired: If project_id is not provided.
@@ -36,6 +42,9 @@ async def list_datasets(project_id: str, *, repositories: "RepositoryContainer")
     if project and project.get("org_id") and project["org_id"] != user.org_id:
         raise AuthorizationError(f"Access denied to project {project_id}")
 
-    dataset_records = await metadata_repo.list_datasets(project_id=project_id)
+    dataset_records, next_cursor, has_more = await metadata_repo.list_datasets(
+        project_id=project_id, cursor=cursor, limit=page_size
+    )
 
-    return [Dataset.from_record(r) for r in dataset_records]
+    items = [Dataset.from_record(r) for r in dataset_records]
+    return {"items": items, "next_cursor": next_cursor, "has_more": has_more, "page_size": page_size}

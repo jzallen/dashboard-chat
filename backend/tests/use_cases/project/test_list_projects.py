@@ -24,13 +24,17 @@ class TestListProjects:
     """Tests for list_projects workflow."""
 
     async def test_list_projects_when_projects_exist_returns_all(self, seeded_db: AsyncSession):
-        """list_projects should return Result containing list[dict]."""
+        """list_projects should return Result containing paginated dict with items."""
         set_session(seeded_db)
 
         result = await list_projects()
 
         match result:
-            case Success(projects):
+            case Success(data):
+                projects = data["items"]
+                assert len(projects) == 2
+                assert data["has_more"] is False
+                assert data["next_cursor"] is None
                 assert projects == [
                     {
                         "id": PROJECT_2,
@@ -72,19 +76,20 @@ class TestListProjects:
                 pytest.fail(f"list_projects should return projects, got: {error}")
 
     async def test_list_projects_when_no_projects_exist_returns_empty_list(self, db_session: AsyncSession):
-        """list_projects should return empty list when no projects exist."""
+        """list_projects should return empty items when no projects exist."""
         set_session(db_session)
 
         result = await list_projects()
 
         match result:
-            case Success(projects):
-                assert projects == []
+            case Success(data):
+                assert data["items"] == []
+                assert data["has_more"] is False
             case Failure(error):
                 pytest.fail(f"list_projects should return empty list, got: {error}")
 
-    async def test_list_projects_when_multiple_projects_orders_by_created_at_desc(self, db_session: AsyncSession):
-        """list_projects should order projects by created_at descending."""
+    async def test_list_projects_when_multiple_projects_orders_by_id_desc(self, db_session: AsyncSession):
+        """list_projects should order projects by ID descending (UUIDv7 = chronological)."""
         set_session(db_session)
 
         # Create projects in a specific order
@@ -103,40 +108,12 @@ class TestListProjects:
         result = await list_projects()
 
         match result:
-            case Success(projects):
-                # Most recently created first
-                assert projects == [
-                    {
-                        "id": PROJECT_SORT_3,
-                        "name": "Third",
-                        "description": None,
-                        "org_id": ORG_1,
-                        "created_by": None,
-                        "created_at": projects[0]["created_at"],
-                        "updated_at": projects[0]["updated_at"],
-                        "datasets": [],
-                    },
-                    {
-                        "id": PROJECT_SORT_2,
-                        "name": "Second",
-                        "description": None,
-                        "org_id": ORG_1,
-                        "created_by": None,
-                        "created_at": projects[1]["created_at"],
-                        "updated_at": projects[1]["updated_at"],
-                        "datasets": [],
-                    },
-                    {
-                        "id": PROJECT_SORT_1,
-                        "name": "First",
-                        "description": None,
-                        "org_id": ORG_1,
-                        "created_by": None,
-                        "created_at": projects[2]["created_at"],
-                        "updated_at": projects[2]["updated_at"],
-                        "datasets": [],
-                    },
-                ]
+            case Success(data):
+                projects = data["items"]
+                # Most recently created first (highest UUIDv7 ID)
+                assert projects[0]["id"] == PROJECT_SORT_3
+                assert projects[1]["id"] == PROJECT_SORT_2
+                assert projects[2]["id"] == PROJECT_SORT_1
             case Failure(error):
                 pytest.fail(f"list_projects should return ordered projects, got: {error}")
 
@@ -145,7 +122,7 @@ class TestListProjects:
         set_session(seeded_db)
 
         class FailingMetadataRepository:
-            async def list_projects(self, org_id=None):
+            async def list_projects(self, org_id=None, cursor=None, limit=50):
                 raise SQLAlchemyError("Database connection lost")
 
         result = await list_projects(
@@ -157,3 +134,32 @@ class TestListProjects:
                 assert "Database connection lost" in str(error)
             case Success(_):
                 pytest.fail("list_projects should fail when database error occurs")
+
+    async def test_list_projects_pagination(self, db_session: AsyncSession):
+        """list_projects should paginate results when page_size is set."""
+        set_session(db_session)
+
+        p1 = ProjectRecord(id=PROJECT_SORT_1, name="First", org_id=ORG_1)
+        p2 = ProjectRecord(id=PROJECT_SORT_2, name="Second", org_id=ORG_1)
+        p3 = ProjectRecord(id=PROJECT_SORT_3, name="Third", org_id=ORG_1)
+        db_session.add_all([p1, p2, p3])
+        await db_session.commit()
+
+        # First page
+        result = await list_projects(page_size=2)
+        match result:
+            case Success(data):
+                assert len(data["items"]) == 2
+                assert data["has_more"] is True
+                assert data["next_cursor"] is not None
+
+                # Second page
+                result2 = await list_projects(cursor=data["next_cursor"], page_size=2)
+                match result2:
+                    case Success(data2):
+                        assert len(data2["items"]) == 1
+                        assert data2["has_more"] is False
+                    case Failure(error):
+                        pytest.fail(f"Second page should succeed, got: {error}")
+            case Failure(error):
+                pytest.fail(f"First page should succeed, got: {error}")

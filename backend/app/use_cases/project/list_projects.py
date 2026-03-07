@@ -15,10 +15,15 @@ if TYPE_CHECKING:
 @with_repositories
 @handle_returns
 async def list_projects(
+    cursor: str | None = None,
+    page_size: int = 50,
     *,
     repositories: "RepositoryContainer",
-) -> Result[list[dict], str]:
-    """List all projects ordered by creation date (newest first)."""
+) -> Result[dict, str]:
+    """List all projects with cursor-based pagination."""
     user = get_auth_user()
     metadata_repo = repositories.metadata
-    return await metadata_repo.list_projects(org_id=user.org_id)
+    items, next_cursor, has_more = await metadata_repo.list_projects(
+        org_id=user.org_id, cursor=cursor, limit=page_size
+    )
+    return {"items": items, "next_cursor": next_cursor, "has_more": has_more, "page_size": page_size}

@@ -49,9 +49,9 @@ class TestProjectCRUD:
             )
         assert res.status_code == 201
         body = res.json()
-        assert body["data"]["name"] == "Integration Test Project"
-        assert body["data"]["description"] == "Created by test"
-        assert "id" in body["data"]
+        assert body["data"]["attributes"]["name"] == "Integration Test Project"
+        assert body["data"]["attributes"]["description"] == "Created by test"
+        assert body["data"]["id"] is not None
 
     async def test_get_project(self, client: AsyncClient):
         """GET /api/projects/:id should return the created project."""
@@ -72,7 +72,8 @@ class TestProjectCRUD:
         assert get_res.status_code == 200
         body = get_res.json()
         assert body["data"]["id"] == project_id
-        assert body["data"]["name"] == "Fetch Me"
+        assert body["data"]["attributes"]["name"] == "Fetch Me"
+        assert body["data"]["type"] == "projects"
 
     async def test_update_project(self, client: AsyncClient):
         """PATCH /api/projects/:id should update the project name."""
@@ -93,10 +94,10 @@ class TestProjectCRUD:
             )
         assert patch_res.status_code == 200
         body = patch_res.json()
-        assert body["data"]["name"] == "After Update"
+        assert body["data"]["attributes"]["name"] == "After Update"
 
     async def test_list_projects(self, client: AsyncClient):
-        """GET /api/projects should return a list including the created project."""
+        """GET /api/projects should return a JSON:API list with pagination meta."""
         async with client:
             await client.post(
                 "/api/projects",
@@ -107,8 +108,38 @@ class TestProjectCRUD:
             list_res = await client.get("/api/projects", headers=self.auth_headers)
         assert list_res.status_code == 200
         body = list_res.json()
-        names = [p["name"] for p in body["data"]]
+        # JSON:API envelope
+        assert "data" in body
+        assert "links" in body
+        assert "meta" in body
+        assert "page" in body["meta"]
+        names = [p["attributes"]["name"] for p in body["data"]]
         assert "Listed Project" in names
+
+    async def test_list_projects_with_page_size(self, client: AsyncClient):
+        """GET /api/projects?page[size]=1 should limit results."""
+        async with client:
+            await client.post(
+                "/api/projects",
+                json={"name": "Page Size Test 1"},
+                headers=self.auth_headers,
+            )
+            await client.post(
+                "/api/projects",
+                json={"name": "Page Size Test 2"},
+                headers=self.auth_headers,
+            )
+
+            list_res = await client.get(
+                "/api/projects",
+                params={"page[size]": 1},
+                headers=self.auth_headers,
+            )
+        assert list_res.status_code == 200
+        body = list_res.json()
+        assert len(body["data"]) == 1
+        assert body["meta"]["page"]["has_more"] is True
+        assert body["links"]["next"] is not None
 
     async def test_delete_project(self, client: AsyncClient):
         """DELETE /api/projects/:id should delete and return 200."""
@@ -161,9 +192,9 @@ class TestViewCRUD:
             )
         assert res.status_code == 201
         body = res.json()
-        assert body["data"]["name"] == "My View"
-        assert body["data"]["sql_definition"] == "SELECT * FROM source"
-        assert "id" in body["data"]
+        assert body["data"]["attributes"]["name"] == "My View"
+        assert body["data"]["attributes"]["sql_definition"] == "SELECT * FROM source"
+        assert body["data"]["id"] is not None
 
     async def test_get_view(self, client: AsyncClient):
         """GET /api/projects/:id/views/:view_id should return the created view."""
@@ -184,10 +215,10 @@ class TestViewCRUD:
         assert get_res.status_code == 200
         body = get_res.json()
         assert body["data"]["id"] == view_id
-        assert body["data"]["name"] == "Fetch Me"
+        assert body["data"]["attributes"]["name"] == "Fetch Me"
 
     async def test_list_views(self, client: AsyncClient):
-        """GET /api/projects/:id/views should return a list including the created view."""
+        """GET /api/projects/:id/views should return a JSON:API list."""
         async with client:
             project_id = await self._create_project(client)
 
@@ -203,7 +234,7 @@ class TestViewCRUD:
             )
         assert list_res.status_code == 200
         body = list_res.json()
-        names = [v["name"] for v in body["data"]]
+        names = [v["attributes"]["name"] for v in body["data"]]
         assert "Listed View" in names
 
     async def test_update_view(self, client: AsyncClient):
@@ -225,7 +256,7 @@ class TestViewCRUD:
             )
         assert patch_res.status_code == 200
         body = patch_res.json()
-        assert body["data"]["name"] == "After Update"
+        assert body["data"]["attributes"]["name"] == "After Update"
 
     async def test_delete_view(self, client: AsyncClient):
         """DELETE /api/projects/:id/views/:view_id should delete and return 200."""
