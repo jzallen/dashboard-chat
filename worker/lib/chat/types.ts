@@ -59,4 +59,10 @@ export interface TableSchema {
     operation: string;
     details?: string;
   }>;
+  layerContext?: {
+    layer: "dataset" | "view" | "report";
+    modelName: string;
+    sqlDefinition?: string;
+    sourceSchemas?: string[];
+  };
 }

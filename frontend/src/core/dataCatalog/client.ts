@@ -11,7 +11,9 @@ import type {
   TransformUpdate,
 } from "./datasets";
 import type { Project } from "./projects";
+import type { Report, ReportCreate, ReportUpdate } from "./reports";
 import type { EnvironmentStatusResponse, SqlAccessStatus } from "./sqlAccess";
+import type { View, ViewCreate, ViewUpdate } from "./views";
 
 export interface OrgInfo {
   id: string;
@@ -153,6 +155,48 @@ export function createDataCatalog(fetchFn: typeof fetch = fetch) {
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(objectUrl);
+    },
+
+    // Views
+    listViews(projectId: string): Promise<View[]> {
+      return client.get<View[]>(`/api/projects/${projectId}/views`);
+    },
+
+    getView(viewId: string): Promise<View> {
+      return client.get<View>(`/api/views/${viewId}`);
+    },
+
+    createView(projectId: string, data: ViewCreate): Promise<View> {
+      return client.post<View>(`/api/projects/${projectId}/views`, data);
+    },
+
+    updateView(viewId: string, data: ViewUpdate): Promise<View> {
+      return client.patch<View>(`/api/views/${viewId}`, data);
+    },
+
+    deleteView(viewId: string): Promise<void> {
+      return client.del(`/api/views/${viewId}`);
+    },
+
+    // Reports
+    listReports(projectId: string): Promise<Report[]> {
+      return client.get<Report[]>(`/api/projects/${projectId}/reports`);
+    },
+
+    getReport(reportId: string): Promise<Report> {
+      return client.get<Report>(`/api/reports/${reportId}`);
+    },
+
+    createReport(projectId: string, data: ReportCreate): Promise<Report> {
+      return client.post<Report>(`/api/projects/${projectId}/reports`, data);
+    },
+
+    updateReport(reportId: string, data: ReportUpdate): Promise<Report> {
+      return client.patch<Report>(`/api/reports/${reportId}`, data);
+    },
+
+    deleteReport(reportId: string): Promise<void> {
+      return client.del(`/api/reports/${reportId}`);
     },
 
     // SQL Access

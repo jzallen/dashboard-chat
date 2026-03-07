@@ -16,6 +16,7 @@ from ..exceptions import MetadataRepositoryError
 from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
 from .project_record import ProjectRecord
+from .report_record import ReportRecord
 from .transform_record import TransformRecord
 from .view_record import ViewRecord
 
@@ -621,4 +622,113 @@ class MetadataRepository:
             "materialization": view.materialization,
             "created_at": view.created_at.isoformat() if view.created_at else None,
             "updated_at": view.updated_at.isoformat() if view.updated_at else None,
+        }
+
+    # -------------------------------------------------------------------------
+    # Report operations
+    # -------------------------------------------------------------------------
+
+    @handle_repository_exceptions
+    async def create_report(
+        self,
+        project_id: str,
+        org_id: str,
+        name: str,
+        sql_definition: str,
+        report_type: str,
+        source_refs: list | None = None,
+        description: str | None = None,
+        domain: str = "Organization",
+        columns_metadata: list | None = None,
+        materialization: str = "view",
+    ) -> dict[str, Any]:
+        """Create a new report record."""
+        report = ReportRecord(
+            project_id=project_id,
+            org_id=org_id,
+            name=name,
+            sql_definition=sql_definition,
+            report_type=report_type,
+            source_refs=source_refs or [],
+            description=description,
+            domain=domain,
+            columns_metadata=columns_metadata or [],
+            materialization=materialization,
+        )
+        self._session.add(report)
+        await self._session.flush()
+        await self._session.refresh(report)
+        return self._report_to_dict(report)
+
+    @handle_repository_exceptions
+    async def get_report(self, report_id: str) -> dict[str, Any] | None:
+        """Get a report by ID."""
+        result = await self._session.execute(select(ReportRecord).where(ReportRecord.id == report_id))
+        report = result.scalar_one_or_none()
+        if not report:
+            return None
+        return self._report_to_dict(report)
+
+    @handle_repository_exceptions
+    async def list_reports_by_project(self, project_id: str) -> list[ReportRecord]:
+        """List reports for a project."""
+        query = (
+            select(ReportRecord)
+            .where(ReportRecord.project_id == project_id)
+            .order_by(ReportRecord.created_at.desc())
+        )
+        result = await self._session.execute(query)
+        return result.scalars().all()
+
+    @handle_repository_exceptions
+    async def update_report(self, report_id: str, **kwargs: Any) -> ReportRecord | None:
+        """Update a report's metadata."""
+        result = await self._session.execute(select(ReportRecord).where(ReportRecord.id == report_id))
+        report = result.scalar_one_or_none()
+
+        if not report:
+            return None
+
+        for key, value in kwargs.items():
+            setattr(report, key, value)
+
+        await self._session.flush()
+        await self._session.refresh(report)
+        return report
+
+    @handle_repository_exceptions
+    async def delete_report(self, report_id: str) -> bool:
+        """Delete a report."""
+        result = await self._session.execute(select(ReportRecord).where(ReportRecord.id == report_id))
+        report = result.scalar_one_or_none()
+
+        if not report:
+            return False
+
+        await self._session.delete(report)
+        await self._session.flush()
+        return True
+
+    @handle_repository_exceptions
+    async def report_exists(self, report_id: str) -> bool:
+        """Check if a report exists."""
+        return (await self._session.execute(select(exists().where(ReportRecord.id == report_id)))).scalar()
+
+    @staticmethod
+    def _report_to_dict(report: ReportRecord) -> dict[str, Any]:
+        """Convert ReportRecord to dictionary."""
+        return {
+            "id": report.id,
+            "project_id": report.project_id,
+            "org_id": report.org_id,
+            "name": report.name,
+            "description": report.description,
+            "sql_definition": report.sql_definition,
+            "report_type": report.report_type,
+            "source_refs": report.source_refs,
+            "domain": report.domain,
+            "columns_metadata": report.columns_metadata,
+            "materialization": report.materialization,
+            "created_at": report.created_at.isoformat() if report.created_at else None,
+            "updated_at": report.updated_at.isoformat() if report.updated_at else None,
         }

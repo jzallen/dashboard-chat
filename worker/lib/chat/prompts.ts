@@ -465,5 +465,49 @@ INSTRUCTIONS:
 
 10. Do NOT guess fill values for null columns — always ask the user what value to use.
 
-Be concise. Confirm what action you're taking.`;
+Be concise. Confirm what action you're taking.${getLayerSection(tableSchema)}`;
+}
+
+// ============================================================================
+// Layer-Specific Prompt Sections
+// ============================================================================
+
+function getLayerSection(tableSchema: TableSchema): string {
+  const ctx = tableSchema.layerContext;
+  if (!ctx) return "";
+
+  switch (ctx.layer) {
+    case "dataset":
+      return `
+
+LAYER CONTEXT: You are working on a Dataset (staging layer).
+ALLOWED operations: Column cleaning (trim, case, fill nulls, map values), filtering, sorting, column renaming.
+PROHIBITED: JOINs, GROUP BY, aggregate functions (SUM, COUNT, AVG, etc.), window functions, subqueries. These belong in a View (intermediate layer).
+If the user asks for JOINs or aggregations, explain that these operations belong in a View and offer to help create one.`;
+
+    case "view": {
+      const sources = ctx.sourceSchemas?.join(", ") ?? "";
+      return `
+
+LAYER CONTEXT: You are working on View "${ctx.modelName}" (intermediate layer).
+Current SQL: ${ctx.sqlDefinition ?? ""}
+Source models: ${sources}
+ALLOWED operations: JOINs, GROUP BY, aggregations (SUM, COUNT, AVG, MIN, MAX), window functions, CTEs, UNION/UNION ALL, subqueries, CASE WHEN, column aliasing, row filtering.
+PROHIBITED: MetricFlow semantic annotations. These belong in a Report (mart layer).`;
+    }
+
+    case "report": {
+      const sources = ctx.sourceSchemas?.join(", ") ?? "";
+      return `
+
+LAYER CONTEXT: You are working on Report "${ctx.modelName}" (mart layer).
+Current SQL: ${ctx.sqlDefinition ?? ""}
+Source models: ${sources}
+ALLOWED operations: All View operations plus final denormalization joins, metric calculations, lite aggregations.
+You may also suggest semantic column metadata (entity/dimension/measure roles) for MetricFlow readiness.`;
+    }
+
+    default:
+      return "";
+  }
 }

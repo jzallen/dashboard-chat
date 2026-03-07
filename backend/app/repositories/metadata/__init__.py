@@ -9,6 +9,7 @@ from .dataset_record import DatasetRecord as DatasetRecord
 from .external_access_record import ExternalAccessRecord as ExternalAccessRecord
 from .organization_record import OrganizationRecord as OrganizationRecord
 from .project_record import ProjectRecord as ProjectRecord
+from .report_record import ReportRecord as ReportRecord
 from .transform_record import TransformRecord as TransformRecord
 from .view_record import ViewRecord as ViewRecord
 
@@ -321,6 +322,46 @@ class MetadataRepositoryProtocol(Protocol):
 
     async def view_exists(self, view_id: str) -> bool:
         """Check if a view exists."""
+        ...
+
+    # -------------------------------------------------------------------------
+    # Report operations
+    # -------------------------------------------------------------------------
+
+    async def create_report(
+        self,
+        project_id: str,
+        org_id: str,
+        name: str,
+        sql_definition: str,
+        report_type: str,
+        source_refs: list | None = None,
+        description: str | None = None,
+        domain: str = "Organization",
+        columns_metadata: list | None = None,
+        materialization: str = "view",
+    ) -> dict[str, Any]:
+        """Create a new report."""
+        ...
+
+    async def get_report(self, report_id: str) -> dict[str, Any] | None:
+        """Get a report by ID."""
+        ...
+
+    async def list_reports_by_project(self, project_id: str) -> list:
+        """List reports for a project."""
+        ...
+
+    async def update_report(self, report_id: str, **kwargs: Any) -> Any:
+        """Update a report."""
+        ...
+
+    async def delete_report(self, report_id: str) -> bool:
+        """Delete a report."""
+        ...
+
+    async def report_exists(self, report_id: str) -> bool:
+        """Check if a report exists."""
         ...
 
 

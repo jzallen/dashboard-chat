@@ -6,6 +6,7 @@ ORM models (ProjectRecord, DatasetRecord, TransformRecord) are in repositories/.
 
 from .dataset import Dataset
 from .project import Project
+from .report import Report
 from .transform import Transform
 from .upload import Upload
 from .view import View
@@ -13,6 +14,7 @@ from .view import View
 __all__ = [
     "Dataset",
     "Project",
+    "Report",
     "Transform",
     "Upload",
     "View",

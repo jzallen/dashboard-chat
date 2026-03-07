@@ -1,6 +1,7 @@
 import yaml
 
 from app.models.dataset import Dataset
+from app.models.report import Report
 from app.use_cases.project._dbt.profiles_yml import generate_profiles_yml
 from app.use_cases.project._dbt.project_yml import generate_project_yml
 from app.use_cases.project._dbt.schema_yml import generate_schema_yml
@@ -149,3 +150,137 @@ class TestSchemaYml:
         output = generate_schema_yml([("customers", ds)])
         parsed = yaml.safe_load(output)
         assert parsed["models"][0]["name"] == "stg_customers"
+
+
+def _make_report(
+    report_id: str = "rpt-1",
+    name: str = "Monthly Sales",
+    report_type: str = "fact",
+    domain: str = "Sales",
+    columns_metadata: list[dict] | None = None,
+    materialization: str = "table",
+) -> Report:
+    return Report(
+        id=report_id,
+        project_id="proj-1",
+        org_id="org-1",
+        name=name,
+        sql_definition="SELECT 1",
+        report_type=report_type,
+        domain=domain,
+        columns_metadata=columns_metadata or [],
+        materialization=materialization,
+    )
+
+
+class TestSchemaYmlWithReports:
+    def test_schema_yml_with_report(self):
+        ds = _make_dataset()
+        report = _make_report(name="Sales Total", report_type="fact")
+        output = generate_schema_yml(
+            [("orders", ds)],
+            reports=[("sales_total", report)],
+        )
+        parsed = yaml.safe_load(output)
+
+        model_names = [m["name"] for m in parsed["models"]]
+        assert "stg_orders" in model_names
+        assert "fct_sales_total" in model_names
+
+    def test_schema_yml_dimension_report_prefix(self):
+        report = _make_report(name="Customer Dim", report_type="dimension")
+        output = generate_schema_yml(
+            [],
+            reports=[("customer_dim", report)],
+        )
+        parsed = yaml.safe_load(output)
+        assert parsed["models"][0]["name"] == "dim_customer_dim"
+
+    def test_schema_yml_semantic_metadata(self):
+        report = _make_report(
+            columns_metadata=[
+                {
+                    "name": "amount",
+                    "semantic_role": "measure",
+                    "semantic_type": "sum",
+                },
+            ],
+        )
+        output = generate_schema_yml(
+            [],
+            reports=[("sales", report)],
+        )
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+
+        assert col["name"] == "amount"
+        assert col["meta"]["semantic_role"] == "measure"
+        assert col["meta"]["semantic_type"] == "sum"
+
+    def test_schema_yml_time_granularity(self):
+        report = _make_report(
+            columns_metadata=[
+                {
+                    "name": "order_date",
+                    "semantic_role": "dimension",
+                    "semantic_type": "time",
+                    "time_granularity": "day",
+                },
+            ],
+        )
+        output = generate_schema_yml(
+            [],
+            reports=[("sales", report)],
+        )
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+
+        assert col["meta"]["semantic_role"] == "dimension"
+        assert col["meta"]["semantic_type"] == "time"
+        assert col["meta"]["time_granularity"] == "day"
+
+    def test_schema_yml_column_with_expr_and_description(self):
+        report = _make_report(
+            columns_metadata=[
+                {
+                    "name": "revenue",
+                    "semantic_role": "measure",
+                    "semantic_type": "sum",
+                    "expr": "price * quantity",
+                    "description": "Total revenue",
+                },
+            ],
+        )
+        output = generate_schema_yml(
+            [],
+            reports=[("sales", report)],
+        )
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+
+        assert col["meta"]["expr"] == "price * quantity"
+        assert col["meta"]["description"] == "Total revenue"
+
+    def test_schema_yml_report_no_metadata(self):
+        report = _make_report(columns_metadata=[])
+        output = generate_schema_yml(
+            [],
+            reports=[("sales", report)],
+        )
+        parsed = yaml.safe_load(output)
+        assert parsed["models"][0]["columns"] == []
+
+    def test_schema_yml_report_column_without_meta_fields(self):
+        """Column with only a name and no semantic fields gets no meta key."""
+        report = _make_report(
+            columns_metadata=[{"name": "id"}],
+        )
+        output = generate_schema_yml(
+            [],
+            reports=[("sales", report)],
+        )
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+
+        assert col["name"] == "id"
+        assert "meta" not in col

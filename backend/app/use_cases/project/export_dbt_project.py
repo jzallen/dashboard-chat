@@ -6,6 +6,8 @@ from returns.result import Result
 
 from app.models.dataset import Dataset
 from app.models.project import Project
+from app.models.report import Report
+from app.models.view import View
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project._dbt import generate_dbt_project_zip
@@ -41,6 +43,12 @@ async def export_dbt_project(
     records = await repositories.metadata.list_datasets(project_id, include_transforms=True)
     full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
 
+    view_records = await repositories.metadata.list_views_by_project(project_id)
+    views = [View.from_record(r) for r in view_records]
+
+    report_records = await repositories.metadata.list_reports_by_project(project_id)
+    reports = [Report.from_record(r) for r in report_records]
+
     # Build Project domain object
     project = Project(
         id=project_dict["id"],
@@ -50,6 +58,6 @@ async def export_dbt_project(
     )
 
     project_name_snake = to_snake_case(project.name)
-    zip_bytes = generate_dbt_project_zip(project, project_name_snake)
+    zip_bytes = generate_dbt_project_zip(project, project_name_snake, views=views, reports=reports)
 
     return zip_bytes, project_name_snake

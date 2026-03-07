@@ -16,6 +16,7 @@ from .routers import (
     datasets_router,
     organizations_router,
     projects_router,
+    reports_router,
     sql_access_router,
     transforms_router,
     uploads_router,
@@ -113,6 +114,7 @@ app.include_router(transforms_router)
 app.include_router(organizations_router)
 app.include_router(sql_access_router)
 app.include_router(views_router)
+app.include_router(reports_router)
 
 
 @app.get("/health")

@@ -5,6 +5,7 @@ import type { Dataset } from "@/dataCatalog";
 import type { Message } from "../../types";
 import { ChatEmptyState } from "./ChatEmptyState";
 import styles from "./ChatPanel.module.css";
+import { LayerBadge } from "./LayerBadge";
 import { MessageBubble } from "./MessageBubble";
 
 /** Props for the ChatPanel component. */
@@ -20,6 +21,8 @@ interface ChatPanelProps {
   projectId?: string;
   onUploadComplete?: (dataset: Dataset) => void;
   onUploadError?: (error: string) => void;
+  activeLayer?: string;
+  activeModelName?: string;
 }
 
 /** Chat interface with message history, input field, and upload support. */
@@ -35,13 +38,20 @@ function ChatPanel({
   projectId,
   onUploadComplete,
   onUploadError,
+  activeLayer,
+  activeModelName,
 }: ChatPanelProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
-        <h2 className={styles.headerTitle}>Chat</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <h2 className={styles.headerTitle}>Chat</h2>
+          {activeLayer && activeModelName && (
+            <LayerBadge layer={activeLayer} modelName={activeModelName} />
+          )}
+        </div>
         <p className={styles.headerHint}>
           Try: "Show items with amount greater than 50"
         </p>
