@@ -34,11 +34,6 @@ The `ui/` layer SHALL contain:
 - `providers/` — QueryProvider (TanStack Query)
 - `types.ts`, `common.module.css`, `data/config.ts`
 
-#### Scenario: Each module has a single responsibility
-- **WHEN** a developer inspects the `src/` directory
-- **THEN** each subdirectory SHALL contain code for exactly one bounded context
-- **AND** no module SHALL mix concerns from different system boundaries (e.g., chat session CRUD SHALL NOT live in `dataCatalog/`)
-
 #### Scenario: core/ contains no React imports
 - **WHEN** `grep -r "from 'react'" frontend/src/core/` is run
 - **THEN** it SHALL return zero matches
