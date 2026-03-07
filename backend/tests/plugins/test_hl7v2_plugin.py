@@ -1,9 +1,13 @@
-"""Tests for Hl7v2Plugin."""
+"""Tests for Hl7v2Plugin — 3-phase pipeline with Mirth Connect."""
 
+import json
+from unittest.mock import MagicMock, patch
+
+import httpx
 import pytest
 
 from app.plugins.hl7v2_plugin import Hl7v2Plugin
-from app.plugins.protocol import PluginValidationError, ProcessingResult
+from app.plugins.protocol import MultiProcessingResult, PluginValidationError
 
 
 SAMPLE_MESSAGE = (
@@ -18,172 +22,203 @@ SAMPLE_MESSAGE_2 = (
     "PV1||O|ER^201^B|||1234^JONES^BOB"
 )
 
+# FHIR bundle that Mirth would return after converting HL7v2
+MOCK_FHIR_BUNDLE = {
+    "resourceType": "Bundle",
+    "type": "transaction",
+    "entry": [
+        {
+            "resource": {
+                "resourceType": "Patient",
+                "id": "1",
+                "name": [{"family": "DOE", "given": ["JOHN"]}],
+                "gender": "male",
+                "birthDate": "1980-01-01",
+            }
+        },
+        {
+            "resource": {
+                "resourceType": "Encounter",
+                "id": "2",
+                "status": "finished",
+                "class": [{"text": "inpatient"}],
+            }
+        },
+    ],
+}
 
-class TestHl7v2Plugin:
-    """Tests for HL7v2 file processing plugin."""
 
-    def setup_method(self):
-        self.plugin = Hl7v2Plugin()
+def _mock_settings(mirth_url="http://mirth:8443", mirth_key="test-key", mirth_timeout=60):
+    """Create a mock settings object with Mirth Connect config."""
+    settings = MagicMock()
+    settings.mirth_connect_url = mirth_url
+    settings.mirth_connect_api_key = mirth_key
+    settings.mirth_connect_timeout = mirth_timeout
+    return settings
 
+
+def _mock_mirth_response(bundle=None, status_code=200):
+    """Create a mock httpx response."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = bundle or MOCK_FHIR_BUNDLE
+    return resp
+
+
+class TestMirthConnectClient:
+    def test_rejects_http_in_production(self):
+        import os
+        from unittest.mock import patch
+
+        from app.plugins.mirth_client import MirthConnectClient
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "production"}):
+            with pytest.raises(ValueError, match="must use HTTPS"):
+                MirthConnectClient(base_url="http://mirth:8443", api_key="key")
+
+    def test_allows_https_in_production(self):
+        import os
+        from unittest.mock import patch
+
+        from app.plugins.mirth_client import MirthConnectClient
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "production"}):
+            client = MirthConnectClient(base_url="https://mirth:8443", api_key="key")
+            assert client.base_url == "https://mirth:8443"
+
+    def test_allows_http_in_development(self):
+        from app.plugins.mirth_client import MirthConnectClient
+
+        client = MirthConnectClient(base_url="http://mirth:8443", api_key="key")
+        assert client.base_url == "http://mirth:8443"
+
+
+class TestHl7v2PluginMetadata:
     def test_plugin_metadata(self):
-        """Hl7v2Plugin should expose correct name, extensions, label, and dbt_macros."""
-        assert self.plugin.name == "hl7v2"
-        assert self.plugin.extensions == [".hl7"]
-        assert self.plugin.label == "HL7v2"
-        assert self.plugin.dbt_macros is not None
-        assert "parse_hl7_date" in self.plugin.dbt_macros
-
-    def test_single_message_produces_one_row(self):
-        """process should return a DataFrame with 1 row for a single message."""
-        content = SAMPLE_MESSAGE.encode("utf-8")
-
-        result = self.plugin.process(content, "test.hl7")
-
-        assert isinstance(result, ProcessingResult)
-        assert len(result.df) == 1
-
-    def test_single_message_has_correct_columns(self):
-        """process should create columns with {segment}_{field_index} naming."""
-        content = SAMPLE_MESSAGE.encode("utf-8")
-
-        result = self.plugin.process(content, "test.hl7")
-        cols = set(result.df.columns)
-
-        # MSH fields (MSH_2 through MSH_12 for our sample)
-        assert "MSH_9" in cols  # Message Type = ADT^A01
-        assert "MSH_10" in cols  # Message Control ID = MSG001
-
-        # PID fields
-        assert "PID_3" in cols  # Patient ID = 12345^^^MRN
-        assert "PID_5" in cols  # Patient Name = DOE^JOHN
-        assert "PID_7" in cols  # Date of Birth = 19800101
-        assert "PID_8" in cols  # Sex = M
-
-        # PV1 fields
-        assert "PV1_2" in cols  # Patient Class = I
-        assert "PV1_3" in cols  # Assigned Patient Location = ICU^101^A
-
-    def test_single_message_field_values(self):
-        """process should extract correct field values from the message."""
-        content = SAMPLE_MESSAGE.encode("utf-8")
-
-        result = self.plugin.process(content, "test.hl7")
-        row = result.df.iloc[0]
-
-        assert row["MSH_9"] == "ADT^A01"
-        assert row["MSH_10"] == "MSG001"
-        assert row["PID_3"] == "12345^^^MRN"
-        assert row["PID_5"] == "DOE^JOHN"
-        assert row["PID_7"] == "19800101"
-        assert row["PID_8"] == "M"
-        assert row["PV1_2"] == "I"
-        assert row["PV1_3"] == "ICU^101^A"
-
-    def test_multiple_messages_produce_multiple_rows(self):
-        """process should return one row per HL7v2 message."""
-        content = (SAMPLE_MESSAGE + "\n\n" + SAMPLE_MESSAGE_2).encode("utf-8")
-
-        result = self.plugin.process(content, "test.hl7")
-
-        assert len(result.df) == 2
-        assert result.df.iloc[0]["PID_5"] == "DOE^JOHN"
-        assert result.df.iloc[1]["PID_5"] == "SMITH^ALICE"
-
-    def test_multiple_messages_separated_by_msh(self):
-        """process should split on MSH when messages are not blank-line separated."""
-        # Two messages back-to-back with no blank line between them.
-        content = (SAMPLE_MESSAGE + "\n" + SAMPLE_MESSAGE_2).encode("utf-8")
-
-        result = self.plugin.process(content, "test.hl7")
-
-        assert len(result.df) == 2
-
-    def test_missing_pid_segment_produces_null_columns(self):
-        """When PID is missing, PID columns should be NaN/absent."""
-        # Message with only MSH and PV1, no PID.
-        message = (
-            "MSH|^~\\&|SENDING|FACILITY|RECEIVING|FACILITY|20230101120000||ADT^A01|MSG001|P|2.3\n"
-            "PV1||I|ICU^101^A"
-        )
-        content = message.encode("utf-8")
-
-        result = self.plugin.process(content, "test.hl7")
-
-        assert len(result.df) == 1
-        # PID columns should not exist or be NaN.
-        if "PID_3" in result.df.columns:
-            assert result.df.iloc[0]["PID_3"] != result.df.iloc[0]["PID_3"]  # NaN check
-        else:
-            # Column simply doesn't exist, which is also acceptable.
-            pass
-
-    def test_invalid_file_no_msh_raises_validation_error(self):
-        """validate should raise PluginValidationError when no MSH segment found."""
-        content = b"This is not an HL7v2 file\nJust some random text"
-
-        with pytest.raises(PluginValidationError, match="no MSH segment found"):
-            self.plugin.validate(content, "bad.hl7")
-
-    def test_empty_file_raises_validation_error(self):
-        """validate should raise PluginValidationError for empty content."""
-        with pytest.raises(PluginValidationError, match="File is empty"):
-            self.plugin.validate(b"", "empty.hl7")
-
-    def test_valid_file_passes_validation(self):
-        """validate should not raise for a valid HL7v2 file."""
-        content = SAMPLE_MESSAGE.encode("utf-8")
-        self.plugin.validate(content, "test.hl7")  # Should not raise.
-
-    def test_detect_choices_returns_none(self):
-        """detect_choices should always return None for HL7v2 files."""
-        content = SAMPLE_MESSAGE.encode("utf-8")
-        assert self.plugin.detect_choices(content, "test.hl7") is None
-
-    def test_chat_guidance_is_set(self):
-        """process should set chat_guidance in the ProcessingResult."""
-        content = SAMPLE_MESSAGE.encode("utf-8")
-
-        result = self.plugin.process(content, "test.hl7")
-
-        assert result.chat_guidance is not None
-        assert "HL7v2" in result.chat_guidance
-        assert "MSH_9" in result.chat_guidance
-        assert "PID_3" in result.chat_guidance
+        plugin = Hl7v2Plugin()
+        assert plugin.name == "hl7v2"
+        assert plugin.extensions == [".hl7"]
+        assert plugin.label == "HL7v2"
+        assert plugin.dbt_macros is not None
+        assert "parse_hl7_date" in plugin.dbt_macros
 
     def test_dbt_macros_class_attribute(self):
-        """dbt_macros should contain parse_hl7_date macro."""
         assert Hl7v2Plugin.dbt_macros is not None
         assert "parse_hl7_date" in Hl7v2Plugin.dbt_macros
         assert "strptime" in Hl7v2Plugin.dbt_macros["parse_hl7_date"]
 
-    def test_dbt_macros_in_processing_result(self):
-        """process should include dbt_macros in the ProcessingResult."""
+    def test_detect_choices_returns_none(self):
+        plugin = Hl7v2Plugin()
         content = SAMPLE_MESSAGE.encode("utf-8")
+        assert plugin.detect_choices(content, "test.hl7") is None
 
-        result = self.plugin.process(content, "test.hl7")
 
-        assert result.dbt_macros is not None
-        assert "parse_hl7_date" in result.dbt_macros
+class TestHl7v2PluginValidation:
+    def setup_method(self):
+        self.plugin = Hl7v2Plugin()
 
-    def test_latin1_fallback_decoding(self):
-        """validate and process should handle latin-1 encoded files."""
-        # Create content with a latin-1 specific byte (e.g., 0xe9 = e-acute).
-        content = "MSH|^~\\&|SEND\xe9R|FAC".encode("latin-1")
-
-        # Should not raise.
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_valid_file_passes_validation(self, mock_get_settings):
+        mock_get_settings.return_value = _mock_settings()
+        content = SAMPLE_MESSAGE.encode("utf-8")
         self.plugin.validate(content, "test.hl7")
 
-    def test_columns_sorted_msh_pid_pv1(self):
-        """Columns should be ordered MSH_* then PID_* then PV1_*."""
-        content = SAMPLE_MESSAGE.encode("utf-8")
+    def test_empty_file_raises_validation_error(self):
+        with pytest.raises(PluginValidationError, match="File is empty"):
+            self.plugin.validate(b"", "empty.hl7")
 
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_invalid_file_no_msh_raises_validation_error(self, mock_get_settings):
+        mock_get_settings.return_value = _mock_settings()
+        content = b"This is not an HL7v2 file\nJust some random text"
+        with pytest.raises(PluginValidationError, match="does not contain valid HL7v2"):
+            self.plugin.validate(content, "bad.hl7")
+
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_missing_mirth_config_raises_error(self, mock_get_settings):
+        mock_get_settings.return_value = _mock_settings(mirth_url="")
+        content = SAMPLE_MESSAGE.encode("utf-8")
+        with pytest.raises(PluginValidationError, match="not configured"):
+            self.plugin.validate(content, "test.hl7")
+
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_latin1_fallback_decoding(self, mock_get_settings):
+        mock_get_settings.return_value = _mock_settings()
+        content = "MSH|^~\\&|SEND\xe9R|FAC".encode("latin-1")
+        self.plugin.validate(content, "test.hl7")
+
+
+class TestHl7v2PluginProcess:
+    """Tests for the 3-phase process pipeline with mocked Mirth Connect."""
+
+    def setup_method(self):
+        self.plugin = Hl7v2Plugin()
+
+    @patch("app.plugins.mirth_client.httpx.post")
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_successful_conversion(self, mock_get_settings, mock_post):
+        mock_get_settings.return_value = _mock_settings()
+        mock_post.return_value = _mock_mirth_response()
+
+        content = SAMPLE_MESSAGE.encode("utf-8")
         result = self.plugin.process(content, "test.hl7")
 
-        cols = list(result.df.columns)
-        msh_end = max(i for i, c in enumerate(cols) if c.startswith("MSH"))
-        pid_start = min(i for i, c in enumerate(cols) if c.startswith("PID"))
-        pid_end = max(i for i, c in enumerate(cols) if c.startswith("PID"))
-        pv1_start = min(i for i, c in enumerate(cols) if c.startswith("PV1"))
+        assert isinstance(result, MultiProcessingResult)
+        assert len(result.results) >= 1
+        names = [r.name for r in result.results]
+        assert "Patient" in names
 
-        assert msh_end < pid_start, "MSH columns should come before PID"
-        assert pid_end < pv1_start, "PID columns should come before PV1"
+    @patch("app.plugins.mirth_client.httpx.post")
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_multi_resource_type_output(self, mock_get_settings, mock_post):
+        mock_get_settings.return_value = _mock_settings()
+        mock_post.return_value = _mock_mirth_response()
+
+        content = SAMPLE_MESSAGE.encode("utf-8")
+        result = self.plugin.process(content, "test.hl7")
+
+        names = [r.name for r in result.results]
+        assert "Patient" in names
+        assert "Encounter" in names
+
+    @patch("app.plugins.mirth_client.httpx.post", side_effect=httpx.ConnectError("Connection refused"))
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_mirth_unreachable(self, mock_get_settings, mock_post):
+        mock_get_settings.return_value = _mock_settings()
+
+        content = SAMPLE_MESSAGE.encode("utf-8")
+        with pytest.raises(PluginValidationError, match="unavailable"):
+            self.plugin.process(content, "test.hl7")
+
+    @patch("app.plugins.mirth_client.httpx.post")
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_mirth_error_response(self, mock_get_settings, mock_post):
+        mock_get_settings.return_value = _mock_settings()
+        mock_post.return_value = _mock_mirth_response(status_code=500)
+
+        content = SAMPLE_MESSAGE.encode("utf-8")
+        with pytest.raises(PluginValidationError, match="returned 500"):
+            self.plugin.process(content, "test.hl7")
+
+    @patch("app.plugins.mirth_client.httpx.post", side_effect=httpx.ReadTimeout("timeout"))
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_mirth_timeout(self, mock_get_settings, mock_post):
+        mock_get_settings.return_value = _mock_settings()
+
+        content = SAMPLE_MESSAGE.encode("utf-8")
+        with pytest.raises(PluginValidationError, match="timed out"):
+            self.plugin.process(content, "test.hl7")
+
+    @patch("app.plugins.mirth_client.httpx.post")
+    @patch("app.plugins.hl7v2_plugin.get_settings")
+    def test_converted_content_stored(self, mock_get_settings, mock_post):
+        """Process should store the converted FHIR bundle for persistence."""
+        mock_get_settings.return_value = _mock_settings()
+        mock_post.return_value = _mock_mirth_response()
+
+        content = SAMPLE_MESSAGE.encode("utf-8")
+        self.plugin.process(content, "test.hl7")
+
+        assert hasattr(self.plugin, "_converted_content")
+        converted = json.loads(self.plugin._converted_content)
+        assert converted["resourceType"] == "Bundle"

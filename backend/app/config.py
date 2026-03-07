@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     workos_client_id: str = ""
     workos_redirect_uri: str = "http://localhost:5173/auth/callback"
 
+    # Mirth Connect - HL7v2 to FHIR conversion
+    mirth_connect_url: str = ""
+    mirth_connect_api_key: str = ""
+    mirth_connect_timeout: int = 60
+
     # App info
     app_name: str = "Dashboard Chat API"
     app_version: str = "1.0.0"

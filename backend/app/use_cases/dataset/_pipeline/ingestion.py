@@ -59,11 +59,12 @@ async def create_dataset_record(
     column_profiles: list[dict],
     preview_rows: list[dict],
     format_context: str | None = None,
+    name: str | None = None,
 ) -> Dataset:
     """Create the dataset metadata record and return a Dataset domain object."""
     dataset_dict = await metadata_repo.create_dataset(
         project_id=project_id,
-        name="New Dataset",
+        name=name or "New Dataset",
         schema_config=schema_config,
         description=description,
         partition_fields=partition_fields,

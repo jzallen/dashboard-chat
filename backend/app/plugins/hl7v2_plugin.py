@@ -1,26 +1,13 @@
-"""HL7v2 file format plugin — parses HL7v2 messages into tabular data."""
+"""HL7v2 file format plugin — 3-phase pipeline: validate → Mirth Convert → FHIR normalize."""
 
+import json
 from typing import ClassVar
 
-import pandas as pd
+from app.config import get_settings
 
-from .protocol import PluginChoice, PluginValidationError, ProcessingResult
-
-# Well-known HL7v2 field names for chat guidance.
-_FIELD_LABELS: dict[str, str] = {
-    "MSH_9": "Message Type",
-    "MSH_10": "Message Control ID",
-    "PID_3": "Patient ID",
-    "PID_5": "Patient Name",
-    "PID_7": "Date of Birth",
-    "PID_8": "Sex",
-    "PV1_2": "Patient Class",
-    "PV1_3": "Assigned Patient Location",
-    "PV1_7": "Attending Doctor",
-}
-
-# Segments we extract columns from.
-_SEGMENTS_OF_INTEREST = ("MSH", "PID", "PV1")
+from .fhir_plugin import FhirPlugin
+from .mirth_client import MirthConnectClient
+from .protocol import MultiProcessingResult, PluginValidationError, ProcessingResult
 
 _CHAT_GUIDANCE = (
     "This dataset contains HL7v2 message data with columns named {segment}_{field_index}. "
@@ -37,86 +24,21 @@ def _decode(file_content: bytes) -> str:
         return file_content.decode("latin-1")
 
 
-def _split_messages(text: str) -> list[str]:
-    """Split raw text into individual HL7v2 messages.
-
-    Messages are separated by blank lines or each MSH segment starts a new message.
-    """
-    lines = text.strip().splitlines()
-    messages: list[str] = []
-    current: list[str] = []
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            # Blank line — end current message if any.
-            if current:
-                messages.append("\n".join(current))
-                current = []
-            continue
-        if stripped.startswith("MSH") and current:
-            # New MSH starts a new message.
-            messages.append("\n".join(current))
-            current = [stripped]
-        else:
-            current.append(stripped)
-
-    if current:
-        messages.append("\n".join(current))
-
-    return messages
-
-
-def _parse_message(message: str) -> dict[str, str]:
-    """Parse a single HL7v2 message into a flat dict of {segment}_{index} -> value."""
-    row: dict[str, str] = {}
-    lines = message.strip().splitlines()
-
-    for line in lines:
-        line = line.strip()
-        if len(line) < 3:
-            continue
-
-        segment_name = line[:3]
-        if segment_name not in _SEGMENTS_OF_INTEREST:
-            continue
-
-        # MSH is special: position 3 is the field separator itself (usually |).
-        if segment_name == "MSH":
-            if len(line) < 4:
-                continue
-            separator = line[3]
-            # MSH fields: MSH_1 is the separator itself, MSH_2 starts after.
-            # Standard: split on separator, but first field (index 0) is segment name "MSH".
-            # In HL7v2, MSH|^~\&|... means MSH_1=|, MSH_2=^~\&, etc.
-            # We split on separator and skip the segment name part.
-            parts = line.split(separator)
-            # parts[0] = "MSH", parts[1] = encoding chars, parts[2..] = fields
-            # MSH_1 = separator (implicit), MSH_2 = parts[1], MSH_3 = parts[2], etc.
-            for i, val in enumerate(parts[1:], start=2):
-                col = f"MSH_{i}"
-                row[col] = val
-        else:
-            # For non-MSH segments, first character after segment name should be separator.
-            separator = "|"
-            # Try to detect separator from the line.
-            if len(line) > 3:
-                separator = line[3]
-            parts = line.split(separator)
-            # parts[0] = segment name, parts[1] = field 1, etc.
-            for i, val in enumerate(parts[1:], start=1):
-                col = f"{segment_name}_{i}"
-                row[col] = val
-
-    return row
+def _has_msh_segments(text: str) -> bool:
+    """Check if text contains MSH segments."""
+    for line in text.splitlines():
+        if line.strip().startswith("MSH"):
+            return True
+    return False
 
 
 class Hl7v2Plugin:
     """Plugin for HL7v2 message file processing.
 
-    HL7v2 is a pipe-delimited healthcare messaging format. This plugin
-    parses messages and flattens segments into tabular columns using
-    {segment}_{field_index} naming (e.g., PID_3 = Patient ID).
+    Implements a 3-phase pipeline:
+    1. Validate: check MSH segments and Mirth Connect config
+    2. Convert: send HL7v2 to Mirth Connect, receive FHIR R4 Bundle
+    3. Normalize: pass FHIR bundle through FhirPlugin for resource splitting
     """
 
     name: ClassVar[str] = "hl7v2"
@@ -130,20 +52,20 @@ class Hl7v2Plugin:
     }
 
     def validate(self, file_content: bytes, filename: str) -> None:
-        """Raise PluginValidationError if the file does not contain an MSH segment."""
         if not file_content:
             raise PluginValidationError("File is empty")
 
         text = _decode(file_content)
-        if "MSH" not in text:
+        if not _has_msh_segments(text):
+            raise PluginValidationError("File does not contain valid HL7v2 messages")
+
+        settings = get_settings()
+        if not settings.mirth_connect_url:
             raise PluginValidationError(
-                "Not a valid HL7v2 file: no MSH segment found"
+                "HL7v2 conversion is not configured. Set MIRTH_CONNECT_URL."
             )
 
-    def detect_choices(
-        self, file_content: bytes, filename: str
-    ) -> list[PluginChoice] | None:
-        """HL7v2 files require no user choices."""
+    def detect_choices(self, file_content: bytes, filename: str) -> list | None:
         return None
 
     def process(
@@ -151,32 +73,32 @@ class Hl7v2Plugin:
         file_content: bytes,
         filename: str,
         choices: dict[str, str] | None = None,
-    ) -> ProcessingResult:
-        """Parse HL7v2 messages into a DataFrame with one row per message."""
+    ) -> MultiProcessingResult:
+        """3-phase pipeline: validate → convert via Mirth → normalize via FHIR plugin."""
         text = _decode(file_content)
-        messages = _split_messages(text)
 
-        rows: list[dict[str, str]] = []
-        for msg in messages:
-            parsed = _parse_message(msg)
-            if parsed:
-                rows.append(parsed)
+        # Phase 1: Already validated in validate(). Re-check MSH as safety.
+        if not _has_msh_segments(text):
+            raise PluginValidationError("File does not contain valid HL7v2 messages")
 
-        df = pd.DataFrame(rows) if rows else pd.DataFrame()
-
-        # Sort columns for deterministic output: MSH first, then PID, then PV1.
-        if not df.empty:
-            sorted_cols = sorted(
-                df.columns,
-                key=lambda c: (
-                    0 if c.startswith("MSH") else 1 if c.startswith("PID") else 2,
-                    int(c.split("_")[1]) if "_" in c else 0,
-                ),
+        # Phase 2: Convert via Mirth Connect
+        settings = get_settings()
+        if not settings.mirth_connect_url:
+            raise PluginValidationError(
+                "HL7v2 conversion is not configured. Set MIRTH_CONNECT_URL."
             )
-            df = df[sorted_cols]
 
-        return ProcessingResult(
-            df=df,
-            dbt_macros=self.dbt_macros,
-            chat_guidance=_CHAT_GUIDANCE,
+        client = MirthConnectClient(
+            base_url=settings.mirth_connect_url,
+            api_key=settings.mirth_connect_api_key,
+            timeout=settings.mirth_connect_timeout,
         )
+        fhir_bundle = client.convert_hl7v2_to_fhir(text)
+
+        # Store converted content for the upload use case to persist
+        self._converted_content = json.dumps(fhir_bundle).encode("utf-8")
+
+        # Phase 3: Normalize via FHIR plugin
+        fhir_plugin = FhirPlugin()
+        fhir_content = json.dumps(fhir_bundle).encode("utf-8")
+        return fhir_plugin.process(fhir_content, filename)

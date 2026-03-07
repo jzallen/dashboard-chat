@@ -7,11 +7,12 @@ from .csv_plugin import CsvPlugin
 from .excel_plugin import ExcelPlugin
 from .fhir_plugin import FhirPlugin
 from .hl7v2_plugin import Hl7v2Plugin
-from .protocol import FileFormatPlugin, PluginChoice, PluginValidationError, ProcessingResult
+from .protocol import FileFormatPlugin, MultiProcessingResult, PluginChoice, PluginValidationError, ProcessingResult
 from .registry import PluginRegistry
 
 __all__ = [
     "FileFormatPlugin",
+    "MultiProcessingResult",
     "PluginChoice",
     "PluginRegistry",
     "PluginValidationError",

@@ -37,6 +37,22 @@ class ProcessingResult:
     default_transforms: list[dict] | None = None
     dbt_macros: dict[str, str] | None = None
     chat_guidance: str | None = None
+    name: str | None = None
+
+
+@dataclass(slots=True)
+class MultiProcessingResult:
+    """Result for plugins that produce multiple datasets from a single upload."""
+
+    results: list[ProcessingResult]
+    chat_guidance: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.results:
+            raise ValueError("MultiProcessingResult requires at least one result")
+        for i, r in enumerate(self.results):
+            if r.name is None:
+                raise ValueError(f"All items in MultiProcessingResult must have a name (item {i} is unnamed)")
 
 
 @runtime_checkable
@@ -62,6 +78,6 @@ class FileFormatPlugin(Protocol):
 
     def process(
         self, file_content: bytes, filename: str, choices: dict[str, str] | None = None
-    ) -> ProcessingResult:
+    ) -> ProcessingResult | MultiProcessingResult:
         """Convert file bytes to tabular data."""
         ...
