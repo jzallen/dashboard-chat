@@ -42,7 +42,7 @@ async def export_dbt_project(
     svc = ProjectService(repositories)
     project_dict = await svc.fetch_and_authorize_project(project_id)
 
-    records = await repositories.metadata.list_datasets(project_id, include_transforms=True)
+    records, _, _ = await repositories.metadata.list_datasets(project_id, include_transforms=True)
     full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
 
     view_records = await repositories.metadata.list_views_by_project(project_id)

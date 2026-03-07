@@ -65,7 +65,7 @@ async def sync_sql_access(
         )
 
     # Load full datasets directly from repo and bootstrap SQL views
-    records = await metadata_repo.list_datasets(project_id, include_transforms=True)
+    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=True)
     full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
 
     await bootstrap_sql_views(env, project_id, access_record.pg_schema, full_datasets, settings.storage_bucket)

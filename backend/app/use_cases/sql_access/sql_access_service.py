@@ -86,7 +86,7 @@ async def provision_and_bootstrap_environment(
     await regenerate_credentials(env, project_id, access_record.pg_password_hash)
 
     # Bootstrap views
-    records = await metadata_repo.list_datasets(project_id, include_transforms=True)
+    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=True)
     full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
     if full_datasets:
         await bootstrap_sql_views(

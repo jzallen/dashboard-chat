@@ -67,7 +67,7 @@ async def enable_sql_access(
         raise SqlAccessAlreadyEnabled(project_id)
 
     # Verify project has datasets
-    dataset_records = await metadata_repo.list_datasets(project_id, include_transforms=False)
+    dataset_records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
     if not dataset_records:
         raise ProjectHasNoDatasets(project_id)
 
@@ -122,7 +122,7 @@ async def _setup_schema_and_views(env, project_id, password, pg_schema, metadata
     await create_project_schema(env, project_id, password)
     try:
         settings = get_settings()
-        records = await metadata_repo.list_datasets(project_id, include_transforms=True)
+        records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=True)
         full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
         await bootstrap_sql_views(env, project_id, pg_schema, full_datasets, settings.storage_bucket)
     except Exception:

@@ -12,6 +12,8 @@ from sqlalchemy import exists, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, selectinload
 
+from app.utils.pagination import decode_cursor, encode_cursor
+
 from ..exceptions import MetadataRepositoryError
 from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
@@ -62,8 +64,17 @@ class MetadataRepository:
     # -------------------------------------------------------------------------
 
     @handle_repository_exceptions
-    async def list_projects(self, org_id: str | None = None) -> list[dict[str, Any]]:
-        """List all projects ordered by creation date (newest first)."""
+    async def list_projects(
+        self,
+        org_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = 50,
+    ) -> tuple[list[dict[str, Any]], str | None, bool]:
+        """List projects ordered by ID desc (UUIDv7 = chronological).
+
+        Returns (items, next_cursor, has_more).
+        Pass limit=None for unpaginated results (internal callers).
+        """
         query = select(ProjectRecord).options(
             selectinload(ProjectRecord.datasets).load_only(
                 DatasetRecord.id,
@@ -75,10 +86,26 @@ class MetadataRepository:
         )
         if org_id is not None:
             query = query.where(ProjectRecord.org_id == org_id)
-        query = query.order_by(ProjectRecord.created_at.desc())
+        if cursor is not None:
+            cursor_id = decode_cursor(cursor)
+            query = query.where(ProjectRecord.id < cursor_id)
+        query = query.order_by(ProjectRecord.id.desc())
+
+        if limit is not None:
+            query = query.limit(limit + 1)
+
         result = await self._session.execute(query)
-        projects = result.scalars().all()
-        return [
+        projects = list(result.scalars().all())
+
+        if limit is not None:
+            has_more = len(projects) > limit
+            projects = projects[:limit]
+        else:
+            has_more = False
+
+        next_cursor = encode_cursor(projects[-1].id) if has_more and projects else None
+
+        items = [
             {
                 **self._project_to_dict(p),
                 "datasets": [
@@ -94,6 +121,7 @@ class MetadataRepository:
             }
             for p in projects
         ]
+        return items, next_cursor, has_more
 
     @handle_repository_exceptions
     async def get_project(
@@ -173,18 +201,38 @@ class MetadataRepository:
         self,
         project_id: str | None = None,
         include_transforms: bool = True,
-    ) -> list[DatasetRecord]:
-        """List datasets, optionally filtered by project."""
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[DatasetRecord], str | None, bool]:
+        """List datasets, optionally filtered by project.
 
+        Always returns (records, next_cursor, has_more) tuple.
+        When limit is None, returns all records with next_cursor=None, has_more=False.
+        """
         query = select(DatasetRecord).where(DatasetRecord.project_id == project_id)
 
         if include_transforms:
             query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
 
-        query = query.order_by(DatasetRecord.created_at.desc())
+        if cursor is not None:
+            cursor_id = decode_cursor(cursor)
+            query = query.where(DatasetRecord.id < cursor_id)
+
+        query = query.order_by(DatasetRecord.id.desc())
+
+        if limit is not None:
+            query = query.limit(limit + 1)
 
         result = await self._session.execute(query)
-        return result.scalars().all()
+        records = list(result.scalars().all())
+
+        if limit is not None:
+            has_more = len(records) > limit
+            records = records[:limit]
+            next_cursor = encode_cursor(records[-1].id) if has_more and records else None
+            return records, next_cursor, has_more
+
+        return records, None, False
 
     @handle_repository_exceptions
     async def get_dataset(
