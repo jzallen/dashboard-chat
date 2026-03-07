@@ -55,9 +55,9 @@ async def update_report(
         await dep_svc.validate_source_refs(update_data["source_refs"], report_dict["project_id"])
 
     # Validate columns_metadata if provided
-    if "columns_metadata" in update_data and update_data["columns_metadata"] is not None:
-        if update_data["columns_metadata"]:
-            validate_columns_metadata(update_data["columns_metadata"])
+    cols = update_data.get("columns_metadata")
+    if cols is not None and cols:
+        validate_columns_metadata(cols)
 
     updated = await repositories.metadata.update_report(report_id, **update_data)
     if updated is None:

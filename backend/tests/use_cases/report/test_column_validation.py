@@ -26,9 +26,9 @@ class TestValidateColumnsMetadata:
 
     def test_valid_dimension_time(self):
         """Dimension with time type and granularity should pass."""
-        validate_columns_metadata([
-            {"name": "order_date", "semantic_role": "dimension", "semantic_type": "time", "time_granularity": "day"}
-        ])
+        validate_columns_metadata(
+            [{"name": "order_date", "semantic_role": "dimension", "semantic_type": "time", "time_granularity": "day"}]
+        )
 
     def test_valid_measure_sum(self):
         """Measure with sum type should pass."""
@@ -48,10 +48,12 @@ class TestValidateColumnsMetadata:
 
     def test_valid_measure_min_max(self):
         """Measure with min/max types should pass."""
-        validate_columns_metadata([
-            {"name": "min_price", "semantic_role": "measure", "semantic_type": "min"},
-            {"name": "max_price", "semantic_role": "measure", "semantic_type": "max"},
-        ])
+        validate_columns_metadata(
+            [
+                {"name": "min_price", "semantic_role": "measure", "semantic_type": "min"},
+                {"name": "max_price", "semantic_role": "measure", "semantic_type": "max"},
+            ]
+        )
 
     def test_invalid_role_raises(self):
         """Invalid semantic_role should raise InvalidColumnMetadata."""
@@ -66,16 +68,21 @@ class TestValidateColumnsMetadata:
     def test_missing_time_granularity_raises(self):
         """Time dimension without time_granularity should raise."""
         with pytest.raises(InvalidColumnMetadata, match="time_granularity is required"):
-            validate_columns_metadata([
-                {"name": "order_date", "semantic_role": "dimension", "semantic_type": "time"}
-            ])
+            validate_columns_metadata([{"name": "order_date", "semantic_role": "dimension", "semantic_type": "time"}])
 
     def test_invalid_time_granularity_raises(self):
         """Time dimension with invalid time_granularity should raise."""
         with pytest.raises(InvalidColumnMetadata, match="Invalid time_granularity 'hour'"):
-            validate_columns_metadata([
-                {"name": "order_date", "semantic_role": "dimension", "semantic_type": "time", "time_granularity": "hour"}
-            ])
+            validate_columns_metadata(
+                [
+                    {
+                        "name": "order_date",
+                        "semantic_role": "dimension",
+                        "semantic_type": "time",
+                        "time_granularity": "hour",
+                    }
+                ]
+            )
 
     def test_empty_metadata_passes(self):
         """Empty columns_metadata list should pass without error."""
@@ -83,19 +90,21 @@ class TestValidateColumnsMetadata:
 
     def test_column_with_extra_fields_passes(self):
         """Column with extra fields like expr and description should pass."""
-        validate_columns_metadata([
-            {
-                "name": "revenue",
-                "semantic_role": "measure",
-                "semantic_type": "sum",
-                "expr": "price * quantity",
-                "description": "Total revenue",
-            }
-        ])
+        validate_columns_metadata(
+            [
+                {
+                    "name": "revenue",
+                    "semantic_role": "measure",
+                    "semantic_type": "sum",
+                    "expr": "price * quantity",
+                    "description": "Total revenue",
+                }
+            ]
+        )
 
     def test_valid_time_granularities(self):
         """All valid time granularities should pass."""
         for granularity in ("day", "week", "month", "quarter", "year"):
-            validate_columns_metadata([
-                {"name": "dt", "semantic_role": "dimension", "semantic_type": "time", "time_granularity": granularity}
-            ])
+            validate_columns_metadata(
+                [{"name": "dt", "semantic_role": "dimension", "semantic_type": "time", "time_granularity": granularity}]
+            )
