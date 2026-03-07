@@ -2,12 +2,25 @@ import { useEffect, useRef, useState } from "react";
 
 import { withAuth } from "@/auth";
 import { createDataCatalog, type Dataset } from "@/dataCatalog";
+import type { FormatInfo } from "@/dataCatalog/client";
 
 const catalog = createDataCatalog(withAuth(fetch));
 
 import styles from "./ChatPanel.module.css";
 
-type UploadState = "browse" | "selected" | "uploading" | "uploaded" | "error";
+type UploadState =
+  | "browse"
+  | "selected"
+  | "uploading"
+  | "uploaded"
+  | "awaiting_input"
+  | "error";
+
+interface PluginChoice {
+  key: string;
+  label: string;
+  options: string[];
+}
 
 interface UploadWidgetProps {
   projectId: string;
@@ -25,8 +38,15 @@ export function UploadWidget({
   const [state, setState] = useState<UploadState>("browse");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formats, setFormats] = useState<FormatInfo[]>([]);
+  const [choices, setChoices] = useState<PluginChoice[]>([]);
+  const [uploadId, setUploadId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null!);
   const hasAutoOpened = useRef(false);
+
+  useEffect(() => {
+    catalog.getFormats().then(setFormats).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (autoOpen && !hasAutoOpened.current) {
@@ -34,6 +54,10 @@ export function UploadWidget({
       inputRef.current?.click();
     }
   }, [autoOpen]);
+
+  const acceptExtensions = formats.length
+    ? formats.flatMap((f) => f.extensions).join(",")
+    : ".csv";
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -47,6 +71,8 @@ export function UploadWidget({
   const handleRemove = () => {
     setFile(null);
     setState("browse");
+    setChoices([]);
+    setUploadId(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -54,13 +80,40 @@ export function UploadWidget({
     if (!file) return;
     setState("uploading");
     try {
-      const dataset = await catalog.uploadFile<Dataset>("/api/uploads", file, {
+      const result = await catalog.uploadFile<
+        Dataset & { status?: string; choices?: PluginChoice[]; id?: string }
+      >("/api/uploads", file, {
         project_id: projectId,
       });
+
+      if (result.status === "awaiting_input" && result.choices) {
+        setState("awaiting_input");
+        setChoices(result.choices);
+        setUploadId(result.id ?? null);
+      } else {
+        setState("uploaded");
+        onUploadComplete(result);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      setState("error");
+      setError(message);
+      onUploadError?.(message);
+    }
+  };
+
+  const handleChoiceSelect = async (key: string, value: string) => {
+    if (!uploadId) return;
+    setState("uploading");
+    try {
+      const dataset = await catalog.processUploadWithChoices<Dataset>(
+        uploadId,
+        { [key]: value },
+      );
       setState("uploaded");
       onUploadComplete(dataset);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Upload failed";
+      const message = err instanceof Error ? err.message : "Processing failed";
       setState("error");
       setError(message);
       onUploadError?.(message);
@@ -72,7 +125,7 @@ export function UploadWidget({
       <input
         ref={inputRef}
         type="file"
-        accept=".csv"
+        accept={acceptExtensions}
         onChange={handleFileChange}
         className={styles.uploadInput}
         data-testid="upload-file-input"
@@ -108,6 +161,27 @@ export function UploadWidget({
       )}
       {state === "uploading" && (
         <span className={styles.uploadUploading}>Uploading...</span>
+      )}
+      {state === "awaiting_input" && (
+        <div className={styles.uploadSelected}>
+          {choices.map((choice) => (
+            <div key={choice.key}>
+              <p>{choice.label}</p>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {choice.options.map((option) => (
+                  <button
+                    key={option}
+                    onClick={() => handleChoiceSelect(choice.key, option)}
+                    className={styles.uploadButton}
+                    type="button"
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
       {state === "uploaded" && (
         <button disabled className={styles.uploadButtonDone} type="button">

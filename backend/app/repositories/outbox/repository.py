@@ -71,6 +71,7 @@ class OutboxRepository:
         file_name: str,
         file_size: int,
         dataset_id: str | None = None,
+        plugin_name: str | None = None,
     ) -> OutboxEvent:
         event = UploadFileReceived(
             project_id=project_id,
@@ -78,6 +79,7 @@ class OutboxRepository:
             original_filename=file_name,
             file_size=file_size,
             dataset_id=dataset_id,
+            plugin_name=plugin_name,
         )
         return await self._append_event(
             aggregate_type="project",

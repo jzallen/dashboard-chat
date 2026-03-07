@@ -36,6 +36,18 @@ class InvalidFileType(DomainException):
         super().__init__("Only CSV files are supported")
 
 
+class UnsupportedFormat(DomainException):
+    """Raised when file extension is not supported by any plugin."""
+
+    _type = "UNSUPPORTED_FORMAT"
+    _title = "Unsupported File Format"
+    _status_code = 400
+
+    def __init__(self, ext: str, supported: list[str]):
+        formats = ", ".join(supported) if supported else "none"
+        super().__init__(f"Unsupported file extension '{ext}'. Supported formats: {formats}")
+
+
 class EmptyFile(DomainException):
     """Raised when an uploaded file is empty."""
 

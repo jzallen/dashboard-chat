@@ -10,6 +10,7 @@ from returns.result import Failure
 from .auth.middleware import AuthMiddleware
 from .config import get_settings
 from .database import async_session, close_db, init_db
+from .plugins import create_plugin_registry
 from .repositories import set_session
 from .routers import (
     auth_router,
@@ -58,6 +59,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     await init_db()
+
+    app.state.plugin_registry = create_plugin_registry()
+    logger.info("Loaded %d file format plugins", len(app.state.plugin_registry.all_plugins()))
 
     provisioner, pgbouncer_provisioner = _create_provisioners()
     set_app_provisioner(provisioner)

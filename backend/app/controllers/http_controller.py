@@ -104,10 +104,18 @@ class HTTPController:
 
     @staticmethod
     async def post_dataset(
-        upload_id: str, partition_fields: list[str] | None = None, description: str | None = None
+        upload_id: str,
+        partition_fields: list[str] | None = None,
+        description: str | None = None,
+        plugin_registry=None,
+        choices: dict[str, str] | None = None,
     ) -> tuple[dict, int]:
         result = await dataset_use_cases.create_dataset_from_upload(
-            upload_id=upload_id, partition_fields=partition_fields, description=description
+            upload_id=upload_id,
+            partition_fields=partition_fields,
+            description=description,
+            plugin_registry=plugin_registry,
+            choices=choices,
         )
         match result:
             case Success(data):
@@ -117,10 +125,14 @@ class HTTPController:
 
     @staticmethod
     async def post_upload(
-        file_content: bytes, file_name: str, project_id: str, dataset_id: str | None = None
+        file_content: bytes, file_name: str, project_id: str, plugin_registry=None, dataset_id: str | None = None
     ) -> tuple[dict, int]:
         result = await upload_use_cases.upload_file(
-            file_content=file_content, file_name=file_name, project_id=project_id, dataset_id=dataset_id
+            file_content=file_content,
+            file_name=file_name,
+            project_id=project_id,
+            plugin_registry=plugin_registry,
+            dataset_id=dataset_id,
         )
         match result:
             case Success(data):
