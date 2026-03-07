@@ -50,7 +50,7 @@ class Upload:
             id=record.id,
             project_id=payload["project_id"],
             dataset_id=payload.get("dataset_id"),
-            dataset_ids=payload.get("dataset_ids", []),
+            dataset_ids=payload.get("dataset_ids") or [],
             converted_storage_path=payload.get("converted_storage_path"),
             raw_storage_path=payload["raw_storage_path"],
             original_filename=payload["original_filename"],
