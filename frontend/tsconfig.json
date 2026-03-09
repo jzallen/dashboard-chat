@@ -28,7 +28,9 @@
       "@/http": ["src/lib/http"],
       "@/http/*": ["src/lib/http/*"],
       "@/auth": ["src/core/auth"],
-      "@/auth/*": ["src/core/auth/*"]
+      "@/auth/*": ["src/core/auth/*"],
+      "@/stream": ["src/lib/stream"],
+      "@/stream/*": ["src/lib/stream/*"]
     }
   },
   "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx"]

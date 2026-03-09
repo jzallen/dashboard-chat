@@ -1,18 +1,4 @@
 services:
-  # Redis - session write buffer
-  redis:
-    image: redis:7-alpine
-    container_name: dashboard-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Frontend - Vite dev server
   frontend:
     image: node:20-alpine
@@ -22,6 +8,7 @@ services:
       VITE_CHAT_URL: http://localhost:8787
       VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
       VITE_DEBUG_ACTIVITY: ${VITE_DEBUG_ACTIVITY:-}
+      VITE_STREAM_API_KEY: ${STREAM_API_KEY:-}
     ports:
       - "5173:5173"
     volumes:
@@ -40,12 +27,6 @@ services:
       - .dev.vars
     environment:
       NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
-      REDIS_URL: redis://redis:6379
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
-      S3_BUCKET_LOGS: dashboard-chat.logs
-      S3_REGION: us-east-1
       CORS_ORIGIN: http://localhost:5173
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
@@ -55,8 +36,6 @@ services:
       - .:/app
       - /app/node_modules
     depends_on:
-      redis:
-        condition: service_healthy
       minio:
         condition: service_healthy
     command: bash -c "apt-get update && apt-get install -y ca-certificates && npm install && npx tsx --watch worker/index.ts"
@@ -115,6 +94,8 @@ services:
       WORKOS_API_KEY: ${WORKOS_API_KEY:-}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      STREAM_API_KEY: ${STREAM_API_KEY:-}
+      STREAM_API_SECRET: ${STREAM_API_SECRET:-}
       PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
       PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
       PG_DUCKDB_DATABASE: ${PG_DUCKDB_DATABASE:-dashboard_external}
@@ -160,6 +141,8 @@ services:
       ENVIRONMENT_PROVISIONER: ${ENVIRONMENT_PROVISIONER:-docker}
       MINIO_INTERNAL_ENDPOINT: "minio:9000"
       PGBOUNCER_IMAGE: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:1.22}
+      STREAM_API_KEY: ${STREAM_API_KEY:-}
+      STREAM_API_SECRET: ${STREAM_API_SECRET:-}
       PGBOUNCER_PORT_RANGE_START: ${PGBOUNCER_PORT_RANGE_START:-6432}
       PGBOUNCER_PORT_RANGE_END: ${PGBOUNCER_PORT_RANGE_END:-7431}
     ports:
@@ -197,4 +180,3 @@ services:
 volumes:
   postgres_data:
   minio_data:
-  redis_data:

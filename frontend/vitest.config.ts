@@ -14,6 +14,7 @@ export default defineConfig({
       "@/dataCatalog": path.resolve(__dirname, "src/core/dataCatalog"),
       "@/http": path.resolve(__dirname, "src/lib/http"),
       "@/auth": path.resolve(__dirname, "src/core/auth"),
+      "@/stream": path.resolve(__dirname, "src/lib/stream"),
     },
   },
   test: {

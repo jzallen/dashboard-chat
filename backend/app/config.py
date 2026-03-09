@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     mirth_connect_api_key: str = ""
     mirth_connect_timeout: int = 60
 
+    # Stream.io chat
+    stream_api_key: str = ""
+    stream_api_secret: str = ""
+
     # App info
     app_name: str = "Dashboard Chat API"
     app_version: str = "1.0.0"

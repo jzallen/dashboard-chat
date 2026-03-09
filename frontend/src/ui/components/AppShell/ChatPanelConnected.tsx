@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 
 import type { Dataset } from "@/dataCatalog";
 
+import { useSessionContext } from "@/stream/useSessionContext";
 import { useChatContext } from "../../context/ChatContext";
 import ChatPanel from "../ChatPanel";
 
@@ -22,6 +23,7 @@ export function ChatPanelConnected({
     setInput,
     isLoading,
     handleSubmit,
+    handleStreamSubmit,
     inputRef,
     chatEndRef,
     isActive,
@@ -29,13 +31,24 @@ export function ChatPanelConnected({
     onDatasetCreated: notifyDatasetCreated,
     registerProjectUpdater,
     registerProjectId,
+    registerCurrentChannel,
     resetSession,
+    isStreaming,
+    streamingContent,
   } = useChatContext();
+
+  const { isFrozen, currentChannel } = useSessionContext(projectId);
 
   useEffect(() => {
     registerProjectId(projectId);
     return () => registerProjectId(null);
   }, [projectId, registerProjectId]);
+
+  // W2 fix: wire currentChannel into chat engine so it targets the correct channel
+  useEffect(() => {
+    registerCurrentChannel(currentChannel);
+    return () => registerCurrentChannel(null);
+  }, [currentChannel, registerCurrentChannel]);
 
   useEffect(() => {
     if (onDatasetCreated) {
@@ -91,12 +104,17 @@ export function ChatPanelConnected({
       setInput={setInput}
       isLoading={isLoading || !isActive}
       handleSubmit={handleSubmit}
+      handleStreamSubmit={handleStreamSubmit}
       inputRef={inputRef}
       chatEndRef={chatEndRef}
       onAction={handleAction}
       projectId={projectId ?? undefined}
       onUploadComplete={handleUploadComplete}
       onUploadError={handleUploadError}
+      isStreaming={isStreaming}
+      streamingContent={streamingContent}
+      isFrozen={isFrozen}
+      channel={currentChannel}
     />
   );
 }

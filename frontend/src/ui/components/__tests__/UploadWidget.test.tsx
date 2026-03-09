@@ -9,13 +9,15 @@ const { mockUploadFile } = vi.hoisted(() => ({
   mockUploadFile: vi.fn(),
 }));
 
-// Mock the dataCatalog factory to return a catalog with a mock uploadFile
+// Mock the dataCatalog factory to return a catalog with mock methods
 vi.mock("@/dataCatalog", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/dataCatalog")>();
   return {
     ...actual,
     createDataCatalog: () => ({
       uploadFile: mockUploadFile,
+      getFormats: vi.fn().mockResolvedValue([]),
+      processUploadWithChoices: vi.fn().mockResolvedValue({}),
     }),
   };
 });

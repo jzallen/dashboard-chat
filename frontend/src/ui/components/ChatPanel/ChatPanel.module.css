@@ -177,3 +177,38 @@
 .uploadError {
   @apply text-sm text-red-600;
 }
+
+/* Stream channel list */
+.streamChannelList {
+  @apply border-b border-gray-200 max-h-32 overflow-auto;
+}
+
+/* Frozen session banner */
+.frozenBanner {
+  @apply p-3 text-center text-sm text-gray-500 bg-gray-50 border-t border-gray-200;
+}
+
+/* Channel preview */
+.channelPreview {
+  @apply w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100;
+}
+
+.channelPreviewActive {
+  @apply bg-blue-50;
+}
+
+.channelPreviewFrozen {
+  @apply opacity-60;
+}
+
+.channelPreviewTitle {
+  @apply block font-medium text-gray-700 truncate;
+}
+
+.channelPreviewLock {
+  @apply mr-1;
+}
+
+.channelPreviewMessage {
+  @apply block text-xs text-gray-400 truncate mt-0.5;
+}

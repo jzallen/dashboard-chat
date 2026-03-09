@@ -19,6 +19,7 @@ from .routers import (
     projects_router,
     reports_router,
     sql_access_router,
+    stream_token_router,
     transforms_router,
     uploads_router,
     views_router,
@@ -111,6 +112,7 @@ app.add_middleware(AuthMiddleware)
 
 # Include routers
 app.include_router(auth_router)
+app.include_router(stream_token_router)
 app.include_router(datasets_router)
 app.include_router(uploads_router)
 app.include_router(projects_router)

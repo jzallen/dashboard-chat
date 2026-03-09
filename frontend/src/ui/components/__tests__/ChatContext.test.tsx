@@ -3,6 +3,37 @@ import { type Mock,vi } from "vitest";
 
 import type { Dataset } from "@/dataCatalog";
 
+vi.mock("@/auth", () => ({
+  withEagerAuth: (fn: typeof fetch) => fn,
+}));
+
+vi.mock("@/chat", () => ({
+  createChatClient: () => ({
+    createSession: vi.fn(),
+    logTurn: vi.fn(),
+    getSession: vi.fn(),
+    listSessions: vi.fn(),
+    fetchChatStream: vi.fn(),
+  }),
+}));
+
+vi.mock("../../../lib/stream/StreamProvider", () => ({
+  useStreamContext: () => ({ client: null, isReady: false }),
+}));
+
+vi.mock("../../../lib/stream/useEntityContext", () => ({
+  useEntityContext: () => ({
+    projectId: null,
+    entityType: null,
+    entityId: null,
+    tableSchema: null,
+    setProjectId: vi.fn(),
+    setEntityType: vi.fn(),
+    setEntityId: vi.fn(),
+    setTableSchema: vi.fn(),
+  }),
+}));
+
 import { ChatProvider, useChatContext } from "../../../ui/context/ChatContext";
 
 function TestConsumer() {

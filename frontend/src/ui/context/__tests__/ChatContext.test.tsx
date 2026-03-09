@@ -93,6 +93,23 @@ vi.mock("@/chat/prompts", () => ({
   getToolDefinitions: () => [],
 }));
 
+vi.mock("../../../lib/stream/StreamProvider", () => ({
+  useStreamContext: () => ({ client: null, isReady: false }),
+}));
+
+vi.mock("../../../lib/stream/useEntityContext", () => ({
+  useEntityContext: () => ({
+    projectId: null,
+    entityType: null,
+    entityId: null,
+    tableSchema: null,
+    setProjectId: vi.fn(),
+    setEntityType: vi.fn(),
+    setEntityId: vi.fn(),
+    setTableSchema: vi.fn(),
+  }),
+}));
+
 // ---- helpers ----
 
 /** Encodes data as SSE `data: ...` lines. */

@@ -12,19 +12,31 @@ import {
   useState,
 } from "react";
 
+import type { Channel as StreamChannel } from "stream-chat";
+
 import { withEagerAuth } from "@/auth";
 import { createChatClient } from "@/chat";
 import { readSSEStream } from "@/chat/services/chatStream";
-import { logChatTurn } from "@/chat/services/sessionLogger";
 import { executeToolCalls, type ToolHandler } from "@/chat/services/toolExecution";
 import type { Dataset } from "@/dataCatalog";
 
 export type { ToolHandler };
 
 import { getErrorMessage } from "../../../../lib/errors";
+import { useStreamContext } from "@/stream/StreamProvider";
+import { useEntityContext } from "@/stream/useEntityContext";
+import { useSSEOverlay } from "@/stream/useSSEOverlay";
 import type { Message, TableSchema } from "../../../types";
 
 const chatClient = createChatClient(withEagerAuth(fetch));
+
+/** Entity context tracked independently of session state. */
+export interface EntityContext {
+  projectId: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  tableSchema: TableSchema | null;
+}
 
 /** Values exposed by ChatContext to consumers via useChatContext. */
 interface ChatContextValue {
@@ -33,6 +45,7 @@ interface ChatContextValue {
   setInput: Dispatch<SetStateAction<string>>;
   isLoading: boolean;
   handleSubmit: (e: FormEvent) => void;
+  handleStreamSubmit: (text: string) => void;
   inputRef: RefObject<HTMLInputElement>;
   chatEndRef: RefObject<HTMLDivElement>;
   registerToolHandler: (handler: ToolHandler | null) => void;
@@ -45,7 +58,10 @@ interface ChatContextValue {
   ) => void;
   registerDatasetId: (datasetId: string | null) => void;
   registerProjectId: (projectId: string | null) => void;
+  registerCurrentChannel: (channel: StreamChannel | null) => void;
   resetSession: () => void;
+  isStreaming: boolean;
+  streamingContent: string;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -74,11 +90,14 @@ function useChatEngine(): ChatContextValue {
   const chatEndRef = useRef<HTMLDivElement>(null!);
   const inputRef = useRef<HTMLInputElement>(null!);
   const toolHandlerRef = useRef<ToolHandler | null>(null);
-  const tableSchemaRef = useRef<TableSchema | null>(null);
   const projectUpdaterRef = useRef<((dataset: Dataset) => void) | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  const datasetIdRef = useRef<string | null>(null);
-  const projectIdRef = useRef<string | null>(null);
+  const currentChannelRef = useRef<StreamChannel | null>(null);
+
+  // W3 fix: entity context tracks project, dataset, and table schema independently
+  const entityContext = useEntityContext();
+
+  const { isReady: streamReady } = useStreamContext();
+  const sseOverlay = useSSEOverlay();
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -90,8 +109,8 @@ function useChatEngine(): ChatContextValue {
   }, []);
 
   const registerTableSchema = useCallback((schema: TableSchema | null) => {
-    tableSchemaRef.current = schema;
-  }, []);
+    entityContext.setTableSchema(schema);
+  }, [entityContext]);
 
   const addMessage = useCallback((message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -105,16 +124,19 @@ function useChatEngine(): ChatContextValue {
   );
 
   const registerDatasetId = useCallback((id: string | null) => {
-    datasetIdRef.current = id;
-    sessionIdRef.current = null;
-  }, []);
+    entityContext.setEntityId(id);
+    entityContext.setEntityType(id ? "dataset" : null);
+  }, [entityContext]);
 
   const registerProjectId = useCallback((id: string | null) => {
-    projectIdRef.current = id;
+    entityContext.setProjectId(id);
+  }, [entityContext]);
+
+  const registerCurrentChannel = useCallback((channel: StreamChannel | null) => {
+    currentChannelRef.current = channel;
   }, []);
 
   const resetSession = useCallback(() => {
-    sessionIdRef.current = null;
     setMessages([]);
   }, []);
 
@@ -122,22 +144,82 @@ function useChatEngine(): ChatContextValue {
     projectUpdaterRef.current?.(dataset);
   }, []);
 
-  const handleSubmit = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
+  /** Build API message history from Stream channel messages if available. */
+  const buildApiMessages = useCallback(
+    (userMessage: Message) => {
+      // W2 fix: use currentChannelRef instead of activeChannels[0]
+      const channel = currentChannelRef.current;
+      if (channel && streamReady) {
+        const streamMessages = channel.state.messages || [];
+        const history = streamMessages.map((m) => ({
+          role: m.user?.id === "assistant" ? ("assistant" as const) : ("user" as const),
+          content: m.text || "",
+          tool_calls: (m as Record<string, unknown>).custom
+            ? ((m as Record<string, unknown>).custom as Record<string, unknown>)?.tool_calls as Message["tool_calls"]
+            : undefined,
+        }));
+        // Append the current user message
+        history.push({
+          role: "user" as const,
+          content: userMessage.content,
+          tool_calls: undefined,
+        });
+        return history;
+      }
 
-      const hasInput = input.trim().length > 0;
+      // Fallback: use in-memory messages
+      return [...messages, userMessage].map((m) => ({
+        role: m.role,
+        content: m.content,
+        tool_calls: m.tool_calls,
+      }));
+    },
+    [messages, streamReady],
+  );
+
+  /** Write a message to the current Stream channel. */
+  const writeToStream = useCallback(
+    async (text: string, role: "user" | "assistant", toolCalls?: Message["tool_calls"]) => {
+      // W2 fix: use currentChannelRef instead of activeChannels[0]
+      const channel = currentChannelRef.current;
+      if (!channel || !streamReady) return;
+
+      const messageData: Record<string, unknown> = { text };
+      if (role === "assistant") {
+        messageData.user_id = "assistant";
+        if (toolCalls && toolCalls.length > 0) {
+          messageData.custom = { tool_calls: toolCalls };
+        }
+      }
+
+      try {
+        await channel.sendMessage(messageData as Parameters<typeof channel.sendMessage>[0]);
+      } catch (err) {
+        console.error("Failed to write message to Stream:", err);
+      }
+    },
+    [streamReady],
+  );
+
+  /**
+   * Core submit logic extracted so both form submit and Stream MessageInput
+   * can share the same SSE flow. Prevents W1 (duplicate messages).
+   */
+  const submitText = useCallback(
+    async (text: string) => {
       const hasToolHandler = toolHandlerRef.current !== null;
-      if (!hasInput || isLoading || !hasToolHandler) return;
+      if (!text || isLoading || !hasToolHandler) return;
 
       const userMessage: Message = {
         id: String(Date.now()),
         role: "user",
-        content: input.trim(),
+        content: text,
       };
       setMessages((prev) => [...prev, userMessage]);
-      setInput("");
       setIsLoading(true);
+
+      // Write user message to Stream channel
+      writeToStream(userMessage.content, "user");
 
       const assistantId = String(Date.now() + 1);
       setMessages((prev) => [
@@ -147,14 +229,13 @@ function useChatEngine(): ChatContextValue {
 
       const patchAssistant = updateAssistantMessage(setMessages, assistantId);
       const toolHandler = toolHandlerRef.current;
-      const tableSchema = tableSchemaRef.current;
+      const tableSchema = entityContext.tableSchema;
+
+      // Start SSE overlay
+      sseOverlay.startStreaming();
 
       try {
-        const apiMessages = [...messages, userMessage].map((m) => ({
-          role: m.role,
-          content: m.content,
-          tool_calls: m.tool_calls,
-        }));
+        const apiMessages = buildApiMessages(userMessage);
 
         const response = await chatClient.fetchChatStream(
           apiMessages,
@@ -162,8 +243,14 @@ function useChatEngine(): ChatContextValue {
         );
 
         await readSSEStream(response.body!, {
-          onContent: (content) => patchAssistant({ content }),
+          onContent: (content) => {
+            patchAssistant({ content });
+            sseOverlay.updateContent(content);
+          },
           onDone: async (accumulatedContent, toolCalls) => {
+            // Stop SSE overlay
+            sseOverlay.stopStreaming();
+
             let toolResults: Array<{
               tool_call_id: string;
               result: string;
@@ -185,23 +272,17 @@ function useChatEngine(): ChatContextValue {
               patchAssistant({ isStreaming: false });
             }
 
-            // Fire-and-forget session logging
-            logChatTurn(
-              chatClient,
-              sessionIdRef,
-              projectIdRef,
-              datasetIdRef,
-              tableSchema,
-              userMessage.content,
-              accumulatedContent,
-              toolCalls,
-              toolResults,
+            // Write assistant message to Stream with tool_calls metadata
+            writeToStream(
+              accumulatedContent || (toolResults ? `Executed: ${toolResults.map((r) => r.result).join(", ")}` : ""),
+              "assistant",
+              toolCalls.length > 0 ? toolCalls : undefined,
             );
           },
         });
       } catch (error) {
         console.error("Chat error:", error);
-        sessionIdRef.current = null;
+        sseOverlay.stopStreaming();
         patchAssistant({
           content: `Error: ${getErrorMessage(error)}`,
           isStreaming: false,
@@ -211,7 +292,27 @@ function useChatEngine(): ChatContextValue {
         inputRef.current?.focus();
       }
     },
-    [input, isLoading, messages],
+    [isLoading, buildApiMessages, writeToStream, sseOverlay, entityContext],
+  );
+
+  /** Form submit handler (fallback non-Stream mode). */
+  const handleSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      const text = input.trim();
+      if (!text) return;
+      setInput("");
+      await submitText(text);
+    },
+    [input, submitText],
+  );
+
+  /** W1 fix: Override handler for Stream SDK's MessageInput — prevents default send. */
+  const handleStreamSubmit = useCallback(
+    (text: string) => {
+      submitText(text);
+    },
+    [submitText],
   );
 
   return {
@@ -220,6 +321,7 @@ function useChatEngine(): ChatContextValue {
     setInput,
     isLoading,
     handleSubmit,
+    handleStreamSubmit,
     inputRef,
     chatEndRef,
     registerToolHandler,
@@ -230,7 +332,10 @@ function useChatEngine(): ChatContextValue {
     registerProjectUpdater,
     registerDatasetId,
     registerProjectId,
+    registerCurrentChannel,
     resetSession,
+    isStreaming: sseOverlay.isStreaming,
+    streamingContent: sseOverlay.streamingContent,
   };
 }
 
@@ -248,7 +353,7 @@ export function useChatContext(): ChatContextValue {
   return ctx;
 }
 
-/** Provides SSE-based chat streaming, tool call execution, and session management. */
+/** Provides SSE-based chat streaming, tool call execution, and Stream persistence. */
 export function ChatProvider({ children }: { children: ReactNode }) {
   const value = useChatEngine();
 

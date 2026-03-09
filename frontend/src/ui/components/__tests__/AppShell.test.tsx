@@ -52,6 +52,25 @@ vi.mock("@/http/config", () => ({
   CHAT_BASE_URL: "",
 }));
 
+// Mock StreamProvider to avoid auth dependency
+vi.mock("../../../lib/stream/StreamProvider", () => ({
+  StreamProvider: ({ children }: { children: React.ReactNode }) => children,
+  useStreamContext: () => ({ client: null, isReady: false }),
+}));
+
+vi.mock("../../../lib/stream/useEntityContext", () => ({
+  useEntityContext: () => ({
+    projectId: null,
+    entityType: null,
+    entityId: null,
+    tableSchema: null,
+    setProjectId: vi.fn(),
+    setEntityType: vi.fn(),
+    setEntityId: vi.fn(),
+    setTableSchema: vi.fn(),
+  }),
+}));
+
 function renderShell(route = "/") {
   return render(
     <MemoryRouter initialEntries={[route]}>

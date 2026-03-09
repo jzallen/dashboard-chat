@@ -48,6 +48,23 @@ vi.mock("@/chat", async () => {
   };
 });
 
+vi.mock("../../../lib/stream/StreamProvider", () => ({
+  useStreamContext: () => ({ client: null, isReady: false }),
+}));
+
+vi.mock("../../../lib/stream/useEntityContext", () => ({
+  useEntityContext: () => ({
+    projectId: null,
+    entityType: null,
+    entityId: null,
+    tableSchema: null,
+    setProjectId: vi.fn(),
+    setEntityType: vi.fn(),
+    setEntityId: vi.fn(),
+    setTableSchema: vi.fn(),
+  }),
+}));
+
 function createTestQueryClient() {
   return new QueryClient({
     defaultOptions: {
