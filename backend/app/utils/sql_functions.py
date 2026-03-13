@@ -1,12 +1,9 @@
 """DuckDB SQL macro definitions and Ibis builtin UDF declarations.
 
-Provides readable, named SQL functions for cleaning operations that lack
-standard SQL equivalents. Each function is implemented as:
-
-1. A DuckDB macro (CREATE OR REPLACE MACRO) for execution
-2. An Ibis @udf.scalar.builtin declaration so Ibis emits the function name
-   directly in generated SQL (e.g., `title_case(city)`) rather than expanding
-   the macro body.
+UDF functions (title_case, snake_case, kebab_case) are lazily initialized
+via module ``__getattr__`` so that ``import ibis`` is deferred until a UDF
+is actually accessed. The macro SQL strings are plain strings and load
+instantly.
 
 Usage:
     from app.utils.sql_functions import register_duckdb_macros, title_case
@@ -18,7 +15,7 @@ Usage:
     expr = title_case(table.city)
 """
 
-import ibis
+from __future__ import annotations
 
 # ============================================================================
 # DuckDB Macro SQL
@@ -48,7 +45,7 @@ CREATE OR REPLACE MACRO kebab_case(s) AS
 ALL_MACROS = [TITLE_CASE_MACRO, SNAKE_CASE_MACRO, KEBAB_CASE_MACRO]
 
 
-def register_duckdb_macros(conn: ibis.BaseBackend) -> None:
+def register_duckdb_macros(conn) -> None:
     """Register all custom DuckDB macros on the given connection.
 
     Must be called before any query that uses title_case, snake_case,
@@ -59,17 +56,31 @@ def register_duckdb_macros(conn: ibis.BaseBackend) -> None:
 
 
 # ============================================================================
-# Ibis Builtin UDF Declarations
+# Lazy Ibis Builtin UDF Declarations
 # ============================================================================
 
-
-@ibis.udf.scalar.builtin
-def title_case(s: str) -> str: ...
+_udfs: dict | None = None
 
 
-@ibis.udf.scalar.builtin
-def snake_case(s: str) -> str: ...
+def _init_udfs():
+    import ibis
+
+    @ibis.udf.scalar.builtin
+    def title_case(s: str) -> str: ...
+
+    @ibis.udf.scalar.builtin
+    def snake_case(s: str) -> str: ...
+
+    @ibis.udf.scalar.builtin
+    def kebab_case(s: str) -> str: ...
+
+    return {"title_case": title_case, "snake_case": snake_case, "kebab_case": kebab_case}
 
 
-@ibis.udf.scalar.builtin
-def kebab_case(s: str) -> str: ...
+def __getattr__(name: str):
+    global _udfs
+    if name in ("title_case", "snake_case", "kebab_case"):
+        if _udfs is None:
+            _udfs = _init_udfs()
+        return _udfs[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

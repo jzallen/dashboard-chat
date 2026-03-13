@@ -8,9 +8,8 @@ from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.use_cases.organization import get_organization
+from tests.use_cases.organization.conftest import TEST_USER_WITH_ORG
 from tests.uuidv7_fixtures import ORG_1, USER_3
-
-from .conftest import TEST_USER_WITH_ORG
 
 
 class TestGetOrganization:

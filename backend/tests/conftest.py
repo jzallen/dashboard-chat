@@ -1,14 +1,17 @@
-"""Pytest configuration and fixtures."""
+"""Pytest configuration and fixtures.
 
-import os
+Session-scoped engine and S3 mock eliminate per-test setup overhead.
+Per-test isolation is achieved via nested transactions (SAVEPOINT) that
+roll back after each test — tests see empty tables without recreating
+the schema or re-entering mock_aws each time.
+"""
+
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
-from moto import mock_aws
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.database import Base
 from tests.uuidv7_fixtures import make_test_uuidv7
@@ -18,15 +21,16 @@ backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session")
 def mock_s3():
-    """Auto-use fixture that mocks all AWS S3 calls via moto.
+    """Session-scoped S3 mock via moto.
 
-    This runs for every test automatically, ensuring boto3 S3 calls
-    go to moto's in-memory mock instead of real S3/MinIO.
+    Enters mock_aws once for the entire test session. Domain conftest files
+    that need S3 should use auto_mock_s3 (autouse) which depends on this.
     """
+    from moto import mock_aws
+
     with mock_aws():
-        # Create the test bucket that MinIOLakeRepository expects
         import boto3
 
         from app.config import get_settings
@@ -43,38 +47,61 @@ def mock_s3():
         yield s3
 
 
+_engine = None
+
+
+def _get_engine():
+    """Lazily create and cache the session-scoped test engine."""
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+        _test_uuidv7 = make_test_uuidv7()
+
+        @event.listens_for(_engine.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+            dbapi_connection.create_function("uuidv7", 0, _test_uuidv7)
+
+    return _engine
+
+
+_schema_created = False
+
+
 @pytest.fixture
 async def db_session():
-    """Create a temporary SQLite database and session for testing."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
+    """Per-test database session with automatic rollback.
 
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{db_path}",
-        echo=False,
-    )
+    On first use, creates an in-memory SQLite engine and schema (cached
+    for the process lifetime). Each test gets a connection wrapped in a
+    transaction with a nested SAVEPOINT. session.commit() releases the
+    SAVEPOINT and a listener immediately starts a new one, so multiple
+    commits work. After the test, the outer transaction is rolled back,
+    restoring the database to its pre-test state.
+    """
+    global _schema_created
+    engine = _get_engine()
 
-    # Enable foreign keys and register deterministic uuidv7() for SQLite
-    _test_uuidv7 = make_test_uuidv7()
+    if not _schema_created:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        _schema_created = True
 
-    @event.listens_for(engine.sync_engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-        dbapi_connection.create_function("uuidv7", 0, _test_uuidv7)
+    conn = await engine.connect()
+    txn = await conn.begin()
+    await conn.begin_nested()
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    session = AsyncSession(bind=conn, expire_on_commit=False)
 
-    async_session_factory = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
+    @event.listens_for(session.sync_session, "after_transaction_end")
+    def restart_savepoint(sync_session, transaction):
+        if transaction.nested and not transaction._parent.nested:
+            sync_session.begin_nested()
 
-    async with async_session_factory() as session:
-        yield session
+    yield session
 
-    await engine.dispose()
-    os.remove(db_path)
+    await session.close()
+    await txn.rollback()
+    await conn.close()

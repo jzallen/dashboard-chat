@@ -9,10 +9,8 @@ import base64
 import json
 import uuid
 
-from app.use_cases.exceptions import DomainException
 
-
-class InvalidCursor(DomainException):
+class InvalidCursor(Exception):
     """Raised when a pagination cursor cannot be decoded."""
 
     _type: str = "INVALID_CURSOR"

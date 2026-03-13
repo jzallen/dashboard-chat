@@ -1,17 +1,20 @@
 """Domain type definitions for dashboard-chat.
 
 These types are implementation-agnostic and represent business concepts.
+
+Heavy imports (ibis, sql_functions) are deferred to method bodies so that
+``import app.types`` is cheap at module-load time. Thanks to sys.modules
+caching, repeated ``import ibis`` inside methods are dict lookups (~0 cost).
 """
 
 from __future__ import annotations
 
 from functools import reduce
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import ibis
-import ibis.expr.types
-
-from app.utils.sql_functions import kebab_case, snake_case, title_case
+if TYPE_CHECKING:
+    import ibis
+    import ibis.expr.types
 
 
 class QueryBuilderJSON(dict):
@@ -33,6 +36,8 @@ class QueryBuilderJSON(dict):
         return self._process_group(self, table)
 
     def _process_group(self, group: dict, table: ibis.Table) -> ibis.expr.types.BooleanValue:
+        import ibis
+
         children = group.get("children1", {})
         props = group.get("properties", {})
         conjunction = props.get("conjunction", "AND")
@@ -181,6 +186,10 @@ class CleaningExpression:
         Returns:
             An Ibis expression for the transformed column value.
         """
+        import ibis
+
+        from app.utils.sql_functions import kebab_case, snake_case, title_case
+
         col = table[column]
 
         match self.operation:

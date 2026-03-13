@@ -3,8 +3,7 @@
 import pytest
 
 from app.plugins.registry import PluginRegistry
-
-from .conftest import AnotherStubPlugin, MultiExtPlugin, StubPlugin
+from tests.plugins.conftest import AnotherStubPlugin, MultiExtPlugin, StubPlugin
 
 
 class TestPluginRegistry:

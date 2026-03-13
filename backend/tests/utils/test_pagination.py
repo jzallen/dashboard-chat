@@ -5,7 +5,6 @@ import json
 
 import pytest
 
-from app.use_cases.exceptions import DomainException
 from app.utils.pagination import InvalidCursor, decode_cursor, encode_cursor
 
 
@@ -42,10 +41,7 @@ class TestDecodeCursorValidation:
             decode_cursor(raw)
 
 
-class TestInvalidCursorIsDomainException:
-    def test_inherits_from_domain_exception(self):
-        assert issubclass(InvalidCursor, DomainException)
-
+class TestInvalidCursorAttributes:
     def test_status_code_is_400(self):
         exc = InvalidCursor("test")
         assert exc._status_code == 400

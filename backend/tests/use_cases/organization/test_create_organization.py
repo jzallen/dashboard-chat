@@ -13,8 +13,7 @@ from app.repositories import set_session
 from app.repositories.metadata import OrganizationRecord, ProjectRecord
 from app.use_cases.organization import create_organization
 from app.use_cases.organization.exceptions import ExternalServiceError
-
-from .conftest import TEST_USER, TEST_USER_WITH_ORG
+from tests.use_cases.organization.conftest import TEST_USER, TEST_USER_WITH_ORG
 
 
 class TestCreateOrganization:
@@ -93,7 +92,7 @@ class TestCreateOrganizationWorkosErrors:
 
         mock_settings = MagicMock()
         mock_settings.auth_mode = "workos"
-        mock_settings.workos_api_key = "test-key"
+        mock_settings.workos_api_key = "test-key"  # pragma: allowlist secret
         mock_settings.workos_api_url = "https://api.workos.com"
         mock_get_settings.return_value = mock_settings
 
@@ -125,7 +124,7 @@ class TestCreateOrganizationWorkosErrors:
 
         mock_settings = MagicMock()
         mock_settings.auth_mode = "workos"
-        mock_settings.workos_api_key = "test-key"
+        mock_settings.workos_api_key = "test-key"  # pragma: allowlist secret
         mock_settings.workos_api_url = "https://api.workos.com"
         mock_get_settings.return_value = mock_settings
 
@@ -157,7 +156,7 @@ class TestCreateOrganizationWorkosErrors:
 
         mock_settings = MagicMock()
         mock_settings.auth_mode = "workos"
-        mock_settings.workos_api_key = "test-key"
+        mock_settings.workos_api_key = "test-key"  # pragma: allowlist secret
         mock_settings.workos_api_url = "https://api.workos.com"
         mock_get_settings.return_value = mock_settings
 

@@ -6,6 +6,13 @@ from app.auth.types import AuthUser
 from app.repositories.metadata import DatasetRecord, ProjectRecord
 from tests.uuidv7_fixtures import DATASET_1, ORG_1, PROJECT_1, USER_1
 
+
+@pytest.fixture(autouse=True)
+def auto_mock_s3(mock_s3):
+    """Auto-use S3 mocking for upload tests."""
+    yield mock_s3
+
+
 TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
 
