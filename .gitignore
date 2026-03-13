@@ -60,5 +60,12 @@ backend/.env
 # E2E seed data
 e2e/.seed-data.json
 
+# Bazel
+bazel-bin/
+bazel-out/
+bazel-testlogs/
+bazel-dashboard-chat/
+.bazel-cache/
+
 # Claude Code worktrees
 .claude/worktrees/

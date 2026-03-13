@@ -1,0 +1,26 @@
+# ─── Build ────────────────────────────────────────────────────────────────────
+build --disk_cache=~/.cache/bazel-disk
+build --experimental_strict_action_env
+
+# ─── Test ─────────────────────────────────────────────────────────────────────
+test --test_output=errors
+test --test_verbose_timeout_warnings
+test --local_test_jobs=HOST_CPUS*1.5
+test --experimental_reuse_sandbox_directories
+
+# ─── E2E Config ──────────────────────────────────────────────────────────────
+test:e2e --sandbox_writable_path=/var/run/docker.sock
+test:e2e --test_output=all
+test:e2e --test_timeout=300
+
+# ─── CI ───────────────────────────────────────────────────────────────────────
+build:ci --disk_cache=~/.cache/bazel-disk
+test:ci --test_output=all
+test:ci --local_test_jobs=HOST_CPUS
+test:ci --experimental_reuse_sandbox_directories
+
+# ─── Platform: Linux ─────────────────────────────────────────────────────────
+build:linux --platforms=@platforms//os:linux
+
+# ─── Platform: macOS ─────────────────────────────────────────────────────────
+build:macos --platforms=@platforms//os:macos

@@ -32,6 +32,31 @@ npm run test:all           # JS tests via turbo + backend via uv run pytest
 - `build` tasks are cached by content hash; `test:run` and `dev` are never cached
 - Backend is NOT in the turbo graph — it's a Python project managed separately
 
+### Bazel (Hermetic Builds)
+Bazel 9.0.0 is available as an alternative build system for hermetic, reproducible builds and OCI image creation. Existing npm/uv commands still work for interactive dev.
+
+```bash
+bazel build //...                                # build everything
+bazel test //...                                 # run all tests (backend + frontend + worker)
+bazel test //backend:tests                       # all backend tests (15 targets in parallel)
+bazel test //backend:test_auth                   # single backend test target
+bazel test //frontend:test                       # all 8 frontend test suites
+bazel test //frontend:test_core_auth             # single frontend module
+bazel test //frontend:test_ui_components         # UI component tests only
+bazel test //worker:test                         # worker tests only
+bazel build //:images                            # build all 3 OCI images (frontend, backend, worker)
+bazel test //e2e:e2e --config=e2e                # e2e tests (requires Docker)
+```
+
+- Bazel config is in `MODULE.bazel` (bzlmod deps), `.bazelrc` (flags), and per-service `BUILD.bazel` files
+- Frontend has 8 per-module `vitest_test` targets (test_lib, test_core_auth, test_core_chat, test_core_datacatalog, test_core_toolcalls, test_ui_hooks, test_ui_context, test_ui_components) grouped under `//frontend:test`. Each target has scoped source deps for per-module cache invalidation.
+- JS tests use `vitest_test` from `@npm//:vitest/package_json.bzl` (sandboxed, no `no-sandbox` tag)
+- Backend uses layered `py_library` targets (core → models/utils → plugins/repos → auth → use_cases → controllers → app) and a `pytest_tests` macro in `backend/pytest_tests.bzl` that generates one `py_test` per test file
+- Backend has 15 test suites (one per directory) + `test_fitness` (tagged `manual`), all grouped under `//backend:tests`
+- Individual test files can be run as `bazel test //backend:test_utils_tests_utils_test_pagination` (pattern: `<suite>_<path_underscored>`)
+- OCI images use `oci_load` (rules_oci v2.2.7) — loader scripts in `bazel-bin/`
+- Disk cache at `~/.cache/bazel-disk` (configured in `.bazelrc`)
+
 ### Python Dependencies (uv + pyproject.toml)
 Backend dependencies are managed exclusively through `backend/pyproject.toml` and locked in `backend/uv.lock`. There is no `requirements.txt`.
 

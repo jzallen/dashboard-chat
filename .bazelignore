@@ -1,0 +1,11 @@
+node_modules
+frontend/node_modules
+worker/node_modules
+.venv
+backend/data
+.git
+.turbo
+.wrangler
+playwright-report
+test-results
+e2e/.seed-data.json
