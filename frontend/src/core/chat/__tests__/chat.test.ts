@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatTurnPayload } from "../../../core/chat/client";
-import { createChatClient } from "../../../core/chat/client";
-import { ApiError } from "../../../lib/http/apiClient";
+import type { ChatTurnPayload } from "@/chat/client";
+import { createChatClient } from "@/chat/client";
+import { ApiError } from "@/http/apiClient";
 
 const MOCK_SESSION = {
   id: "sess-001",

@@ -7,7 +7,7 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   type SortingState,
-} from "@tanstack/table-core";
+} from "@tanstack/react-table";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {

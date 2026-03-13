@@ -3,7 +3,9 @@ import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
 // Mock scrollIntoView since happy-dom doesn't support it
-Element.prototype.scrollIntoView = vi.fn();
+if (typeof Element !== 'undefined') {
+  Element.prototype.scrollIntoView = vi.fn();
+}
 
 // Mock import.meta.env
 vi.stubGlobal('import.meta', {

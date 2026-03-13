@@ -21,8 +21,8 @@ vi.mock("@/chat", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/chat")>();
   return {
     ...actual,
-    createChatClient: (fetchFn?: typeof fetch) => {
-      // We can't use fetchFn directly because it was captured before the spy was set up.
+    createChatClient: (_fetchFn?: typeof fetch) => {
+      // We can't use _fetchFn directly because it was captured before the spy was set up.
       // Instead, build a lazy factory that reads globalThis.fetch at call time, wraps it
       // through the real auth decorator (which uses the already-mocked tokenStorage /
       // tokenRefresh), then delegates to the real createChatClient.
@@ -54,7 +54,7 @@ vi.mock("@/chat", async (importOriginal) => {
 
 const mockEnsureFreshToken = vi.fn();
 
-vi.mock("../../../core/auth/tokenStorage", () => ({
+vi.mock("@/auth/tokenStorage", () => ({
   getAuthHeaders: () => ({
     Authorization: `Bearer ${localStorage.getItem("auth_token") ?? "test-token"}`,
   }),
@@ -80,7 +80,7 @@ vi.mock("../../../core/auth/tokenStorage", () => ({
   isExpiryKey: (key: string | null) => key === "auth_token_expires_at",
 }));
 
-vi.mock("../../../core/auth/tokenRefresh", () => ({
+vi.mock("@/auth/tokenRefresh", () => ({
   ensureFreshToken: (...args: unknown[]) => mockEnsureFreshToken(...args),
   createTokenRefresher:
     () =>

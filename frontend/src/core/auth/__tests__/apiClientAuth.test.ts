@@ -1,4 +1,4 @@
-import { ApiClient, ApiError } from "../../../lib/http/apiClient";
+import { ApiClient, ApiError } from "@/http/apiClient";
 
 describe("API client auth headers", () => {
   it("uses the provided fetchFn for requests", async () => {

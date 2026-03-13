@@ -79,7 +79,7 @@ export default [
   // ── Frontend test files ─────────────────────────────────────────────
   // Testing Library best practices: prefer screen queries, avoid unnecessary act()
   {
-    files: ["frontend/src/test/**/*.{ts,tsx}"],
+    files: ["frontend/src/**/*.test.{ts,tsx}", "frontend/src/**/__tests__/**/*.{ts,tsx}", "frontend/src/test/**/*.{ts,tsx}"],
     plugins: { "testing-library": testingLibrary },
     rules: {
       "testing-library/await-async-queries": "error",

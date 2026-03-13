@@ -9,7 +9,7 @@ import { act, render, screen } from "@testing-library/react";
 import { AuthProvider, useAuth } from "../../../ui/context/AuthContext";
 
 // Mock the shared config (AuthProvider uses ApiClient directly now)
-vi.mock("../../../lib/http/config", () => ({
+vi.mock("@/http/config", () => ({
   DATA_CATALOG_BASE_URL: "",
 }));
 
