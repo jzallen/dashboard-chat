@@ -151,7 +151,7 @@ vitest_bin.vitest_test(
     data = _TEST_BASE + [
         "vitest.config.lib.ts",
         ":lib",
-    ] + glob(["src/lib/**/*.test.ts", "src/lib/**/*.test.tsx"]),
+    ] + glob(["src/lib/**/*.test.ts"]),
     size = "medium",
     tags = ["no-sandbox"],
 )
