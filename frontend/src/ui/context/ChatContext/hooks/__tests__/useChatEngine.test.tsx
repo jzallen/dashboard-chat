@@ -59,11 +59,11 @@ vi.mock("@/chat/prompts", () => ({
 }));
 
 const mockUseStreamContext = vi.fn(() => ({ client: null, isReady: false }));
-vi.mock("../../../../../lib/stream/StreamProvider", () => ({
+vi.mock("@/stream/StreamProvider", () => ({
   useStreamContext: (...args: unknown[]) => mockUseStreamContext(...args),
 }));
 
-vi.mock("../../../../../lib/stream/useEntityContext", () => ({
+vi.mock("@/stream/useEntityContext", () => ({
   useEntityContext: () => ({
     projectId: null,
     entityType: null,
