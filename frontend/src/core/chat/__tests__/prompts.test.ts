@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { TableSchema } from "../types";
 import { formatProfile, getSystemPrompt, getToolDefinitions } from "../prompts";
+import type { TableSchema } from "../types";
 
 const BASIC_SCHEMA: TableSchema = {
   columns: [

@@ -1,8 +1,7 @@
-import { renderHook, act } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as tokenStorage from "@/auth/tokenStorage";
-import * as tokenRefresh from "@/auth/tokenRefresh";
 
 vi.mock("@/auth/tokenStorage", () => ({
   getToken: vi.fn(),
@@ -30,8 +29,6 @@ const mockedGetToken = vi.mocked(tokenStorage.getToken);
 const mockedGetUser = vi.mocked(tokenStorage.getUser);
 const mockedGetRefreshToken = vi.mocked(tokenStorage.getRefreshToken);
 const mockedGetTokenExpiry = vi.mocked(tokenStorage.getTokenExpiry);
-const mockedEnsureFreshToken = vi.mocked(tokenRefresh.ensureFreshToken);
-
 import { useWorkosTokenState } from "../useWorkosTokenState";
 
 const TEST_USER = { id: "u-1", email: "test@example.com", org_id: "org-1", name: "Test" };
@@ -53,7 +50,7 @@ describe("useWorkosTokenState", () => {
   describe("initial state", () => {
     it("starts unauthenticated with isLoading false after effect", async () => {
       const { result } = renderHook(() => useWorkosTokenState());
-      await act(async () => {});
+      await vi.advanceTimersByTimeAsync(0);
       expect(result.current.state.isAuthenticated).toBe(false);
       expect(result.current.state.isLoading).toBe(false);
       expect(result.current.state.user).toBeNull();
@@ -71,7 +68,7 @@ describe("useWorkosTokenState", () => {
       const { result } = renderHook(() => useWorkosTokenState());
 
       // Wait for useEffect to fire
-      await act(async () => {});
+      await vi.advanceTimersByTimeAsync(0);
 
       expect(result.current.state.isAuthenticated).toBe(true);
       expect(result.current.state.isLoading).toBe(false);
@@ -86,7 +83,7 @@ describe("useWorkosTokenState", () => {
 
       const { result } = renderHook(() => useWorkosTokenState());
 
-      await act(async () => {});
+      await vi.advanceTimersByTimeAsync(0);
 
       expect(result.current.state.isLoading).toBe(false);
       expect(result.current.state.isAuthenticated).toBe(false);
@@ -98,7 +95,7 @@ describe("useWorkosTokenState", () => {
 
       const { result } = renderHook(() => useWorkosTokenState());
 
-      await act(async () => {});
+      await vi.advanceTimersByTimeAsync(0);
 
       expect(result.current.state.isAuthenticated).toBe(false);
       expect(result.current.state.isLoading).toBe(false);
@@ -121,7 +118,7 @@ describe("useWorkosTokenState", () => {
       mockedGetTokenExpiry.mockReturnValue(expiresAt);
 
       renderHook(() => useWorkosTokenState());
-      await act(async () => {});
+      await new Promise((r) => setTimeout(r, 0));
 
       // The proactive refresh effect should have called setTimeout
       const scheduledDelays = setTimeoutSpy.mock.calls.map((c) => c[1]).filter((d) => d != null && d >= 10_000);
@@ -147,7 +144,7 @@ describe("useWorkosTokenState", () => {
       mockedGetTokenExpiry.mockReturnValue(expiresAt);
 
       renderHook(() => useWorkosTokenState());
-      await act(async () => {});
+      await new Promise((r) => setTimeout(r, 0));
 
       // Should use MIN_REFRESH_DELAY_MS (10_000) since 80% of 5s = 4s < 10s
       const scheduledDelays = setTimeoutSpy.mock.calls.map((c) => c[1]).filter((d) => d != null && d >= 10_000);
@@ -165,7 +162,7 @@ describe("useWorkosTokenState", () => {
       mockedGetUser.mockReturnValue(null);
 
       renderHook(() => useWorkosTokenState());
-      await act(async () => {});
+      await new Promise((r) => setTimeout(r, 0));
 
       // No long-running timers should be scheduled
       const longDelays = setTimeoutSpy.mock.calls.map((c) => c[1]).filter((d) => d != null && d >= 10_000);
@@ -185,7 +182,7 @@ describe("useWorkosTokenState", () => {
       mockedGetTokenExpiry.mockReturnValue(expiresAt);
 
       const { unmount } = renderHook(() => useWorkosTokenState());
-      await act(async () => {});
+      await new Promise((r) => setTimeout(r, 0));
 
       unmount();
 
@@ -203,7 +200,7 @@ describe("useWorkosTokenState", () => {
 
       const { result } = renderHook(() => useWorkosTokenState());
 
-      await act(async () => {});
+      await vi.advanceTimersByTimeAsync(0);
 
       // Simulate storage event from another tab
       const newExpiry = Date.now() + 600_000;
@@ -232,7 +229,7 @@ describe("useWorkosTokenState", () => {
 
       const { result } = renderHook(() => useWorkosTokenState());
 
-      await act(async () => {});
+      await vi.advanceTimersByTimeAsync(0);
       expect(result.current.state.isAuthenticated).toBe(true);
 
       // Simulate token removal in another tab
@@ -256,7 +253,7 @@ describe("useWorkosTokenState", () => {
 
       const { result } = renderHook(() => useWorkosTokenState());
 
-      await act(async () => {});
+      await vi.advanceTimersByTimeAsync(0);
 
       // Should not throw or change state
       await act(async () => {

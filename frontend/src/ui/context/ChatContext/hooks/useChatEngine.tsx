@@ -11,7 +11,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import type { Channel as StreamChannel } from "stream-chat";
 
 import { withEagerAuth } from "@/auth";
@@ -22,10 +21,11 @@ import type { Dataset } from "@/dataCatalog";
 
 export type { ToolHandler };
 
-import { getErrorMessage } from "../../../../lib/errors";
 import { useStreamContext } from "@/stream/StreamProvider";
 import { useEntityContext } from "@/stream/useEntityContext";
 import { useSSEOverlay } from "@/stream/useSSEOverlay";
+
+import { getErrorMessage } from "../../../../lib/errors";
 import type { Message, TableSchema } from "../../../types";
 
 const chatClient = createChatClient(withEagerAuth(fetch));

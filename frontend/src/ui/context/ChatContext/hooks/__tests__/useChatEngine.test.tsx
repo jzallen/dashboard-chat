@@ -1,9 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ToolHandler } from "../useChatEngine";
 import { ChatProvider, useChatContext } from "../useChatEngine";
-import type { Dataset } from "@/dataCatalog";
 
 // --- Mocks (same pattern as ChatContext.test.tsx) ---
 
@@ -421,9 +419,7 @@ describe("useChatEngine — Stream integration", () => {
 
     // Type and submit
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "test" } });
-    await act(async () => {
-      fireEvent.submit(screen.getByTestId("submit").closest("form")!);
-    });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
 
     await waitFor(() => {
       expect(screen.getByTestId("loading").textContent).toBe("false");
@@ -505,9 +501,7 @@ describe("useChatEngine — Stream integration", () => {
     });
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "hi" } });
-    await act(async () => {
-      fireEvent.submit(screen.getByTestId("submit").closest("form")!);
-    });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
 
     await waitFor(() => {
       expect(screen.getByTestId("loading").textContent).toBe("false");
@@ -578,9 +572,7 @@ describe("useChatEngine — Stream integration", () => {
     });
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "test" } });
-    await act(async () => {
-      fireEvent.submit(screen.getByTestId("submit").closest("form")!);
-    });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
 
     await waitFor(() => {
       expect(screen.getByTestId("loading").textContent).toBe("false");

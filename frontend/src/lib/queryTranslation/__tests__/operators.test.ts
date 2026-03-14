@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { RAQBOperator } from "../types";
 import {
   BOOLEAN_OPERATORS,
+  mapOperator,
   NUMERIC_OPERATORS,
   RAQB_TO_TANSTACK_OPERATOR,
+  requiresSpecialHandling,
   SELECT_OPERATORS,
   STRING_OPERATORS,
-  mapOperator,
-  requiresSpecialHandling,
 } from "../operators";
+import type { RAQBOperator } from "../types";
 
 describe("RAQB_TO_TANSTACK_OPERATOR lookup table", () => {
   it("maps equality operators", () => {

@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSessionContext } from "../useSessionContext";
@@ -211,22 +211,22 @@ describe("useSessionContext", () => {
       queryChannelsReturn: [],
     });
 
-    await act(async () => {
-      renderHook(() => useSessionContext("p1"));
-    });
+    renderHook(() => useSessionContext("p1"));
 
-    expect(mockClient.queryChannels).toHaveBeenCalledWith(
-      { type: "messaging", "custom.projectId": "p1" },
-      [{ last_message_at: -1 }],
-      { limit: 10 },
-    );
-    // Should have created a new session
-    expect(mockClient.channel).toHaveBeenCalledWith(
-      "messaging",
-      expect.stringContaining("project_p1_"),
-      expect.objectContaining({ projectId: "p1" }),
-    );
-    expect(channel.watch).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockClient.queryChannels).toHaveBeenCalledWith(
+        { type: "messaging", "custom.projectId": "p1" },
+        [{ last_message_at: -1 }],
+        { limit: 10 },
+      );
+      // Should have created a new session
+      expect(mockClient.channel).toHaveBeenCalledWith(
+        "messaging",
+        expect.stringContaining("project_p1_"),
+        expect.objectContaining({ projectId: "p1" }),
+      );
+      expect(channel.watch).toHaveBeenCalled();
+    });
   });
 
   it("auto-selects existing active channel on init", async () => {
@@ -239,17 +239,17 @@ describe("useSessionContext", () => {
       queryChannelsReturn: [existingChannel as never],
     });
 
-    await act(async () => {
-      renderHook(() => useSessionContext("p1"));
-    });
+    renderHook(() => useSessionContext("p1"));
 
-    // Should NOT have created a new channel
-    expect(mockClient.channel).not.toHaveBeenCalledWith(
-      "messaging",
-      expect.stringContaining("project_p1_0000"),
-      expect.anything(),
-    );
-    expect(existingChannel.updatePartial).not.toHaveBeenCalled();
+    await waitFor(() => {
+      // Should NOT have created a new channel
+      expect(mockClient.channel).not.toHaveBeenCalledWith(
+        "messaging",
+        expect.stringContaining("project_p1_0000"),
+        expect.anything(),
+      );
+      expect(existingChannel.updatePartial).not.toHaveBeenCalled();
+    });
   });
 
   it("auto-creates new session when all existing channels are frozen", async () => {
@@ -265,15 +265,15 @@ describe("useSessionContext", () => {
       queryChannelsReturn: [frozenChannel as never],
     });
 
-    await act(async () => {
-      renderHook(() => useSessionContext("p1"));
-    });
+    renderHook(() => useSessionContext("p1"));
 
-    // Should have created a new channel since the existing one is frozen
-    expect(mockClient.channel).toHaveBeenCalledWith(
-      "messaging",
-      expect.stringContaining("project_p1_"),
-      expect.objectContaining({ projectId: "p1" }),
-    );
+    await waitFor(() => {
+      // Should have created a new channel since the existing one is frozen
+      expect(mockClient.channel).toHaveBeenCalledWith(
+        "messaging",
+        expect.stringContaining("project_p1_"),
+        expect.objectContaining({ projectId: "p1" }),
+      );
+    });
   });
 });

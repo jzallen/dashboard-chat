@@ -1,5 +1,5 @@
-import { renderHook, act } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act,renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as tokenStorage from "@/auth/tokenStorage";
 
@@ -36,7 +36,7 @@ describe("useDevTokenState", () => {
   it("sets dev credentials after mount", async () => {
     const { result } = renderHook(() => useDevTokenState());
 
-    await act(async () => {});
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(result.current.state.isAuthenticated).toBe(true);
     expect(result.current.state.isLoading).toBe(false);
@@ -52,7 +52,7 @@ describe("useDevTokenState", () => {
   it("persists dev token to storage", async () => {
     renderHook(() => useDevTokenState());
 
-    await act(async () => {});
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(mockedSetToken).toHaveBeenCalledWith("dev-token-static");
     expect(mockedSetUser).toHaveBeenCalledWith({
@@ -69,7 +69,7 @@ describe("useDevTokenState", () => {
     const before = Date.now();
     renderHook(() => useDevTokenState());
 
-    await act(async () => {});
+    await new Promise((r) => setTimeout(r, 0));
 
     const expiryArg = mockedSetTokenExpiry.mock.calls[0][0];
     // Should be approximately 5 minutes (300,000ms) from now
@@ -80,7 +80,7 @@ describe("useDevTokenState", () => {
   it("sets refresh token in state", async () => {
     const { result } = renderHook(() => useDevTokenState());
 
-    await act(async () => {});
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(result.current.state.refreshToken).toBe("dev-refresh-token-001");
   });
@@ -89,7 +89,7 @@ describe("useDevTokenState", () => {
     const before = Date.now();
     const { result } = renderHook(() => useDevTokenState());
 
-    await act(async () => {});
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(result.current.state.tokenExpiresAt).toBeGreaterThanOrEqual(before + 299_000);
   });
@@ -97,7 +97,7 @@ describe("useDevTokenState", () => {
   it("exposes setState for external updates", async () => {
     const { result } = renderHook(() => useDevTokenState());
 
-    await act(async () => {});
+    await new Promise((r) => setTimeout(r, 0));
 
     await act(async () => {
       result.current.setState((prev) => ({ ...prev, token: "overridden" }));

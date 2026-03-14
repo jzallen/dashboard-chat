@@ -18,6 +18,8 @@ export default [
       "backend/**",
       "e2e/**",
       "openspec/**",
+      "playwright-report/**",
+      "tmp/**",
     ],
   },
 

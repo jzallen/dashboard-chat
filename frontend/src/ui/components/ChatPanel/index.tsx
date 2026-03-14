@@ -3,8 +3,8 @@ import type { Channel as StreamChannel } from "stream-chat";
 import { Channel, ChannelList, MessageInput, MessageList } from "stream-chat-react";
 
 import type { Dataset } from "@/dataCatalog";
-
 import { useStreamContext } from "@/stream/StreamProvider";
+
 import type { Message } from "../../types";
 import { OperationsLog } from "../TablePanel/OperationsLog";
 import styles from "./ChatPanel.module.css";

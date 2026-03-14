@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import type { AuthUser } from "../types";
 import {
   clearAll,
   getAuthHeaders,
@@ -18,6 +17,7 @@ import {
   setTokenExpiry,
   setUser,
 } from "../tokenStorage";
+import type { AuthUser } from "../types";
 
 beforeEach(() => {
   localStorage.clear();

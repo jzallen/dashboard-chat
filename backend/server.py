@@ -1,5 +1,6 @@
 """Uvicorn entrypoint for the backend API."""
 
+import contextlib
 import sys
 
 import uvicorn
@@ -12,9 +13,7 @@ if __name__ == "__main__":
     sys.argv = [sys.argv[0]]  # clear args so argparse in setup_dev doesn't choke
     from scripts.setup_dev import main as setup_dev
 
-    try:
+    with contextlib.suppress(SystemExit):
         setup_dev()
-    except SystemExit:
-        pass  # setup_dev exits(1) for non-SQLite DBs — that's fine, skip seeding
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

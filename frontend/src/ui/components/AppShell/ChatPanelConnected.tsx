@@ -1,8 +1,8 @@
 import { useCallback, useEffect } from "react";
 
 import type { Dataset } from "@/dataCatalog";
-
 import { useSessionContext } from "@/stream/useSessionContext";
+
 import { useChatContext } from "../../context/ChatContext";
 import ChatPanel from "../ChatPanel";
 
