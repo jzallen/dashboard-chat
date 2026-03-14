@@ -4,7 +4,6 @@ import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
@@ -79,18 +78,7 @@ class TestListDatasetsForProject:
             case Success(_):
                 pytest.fail("Expected failure for nonexistent project")
 
-    async def test_returns_failure_when_wrong_org(self, seeded_db: AsyncSession):
-        """Should return Failure when user's org doesn't match project org."""
-        set_session(seeded_db)
-        set_auth_user(WRONG_ORG_USER)
-
-        result = await list_datasets_for_project(project_id=PROJECT_1)
-
-        match result:
-            case Failure(error):
-                assert "access denied" in str(error).lower()
-            case Success(_):
-                pytest.fail("Expected failure for cross-org access")
+    # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)
 
     async def test_link_format_matches_api_convention(self, seeded_db: AsyncSession):
         """Sparse dicts should include correct link format."""

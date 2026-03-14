@@ -3,7 +3,6 @@
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.sql_access._infra import (
@@ -12,7 +11,7 @@ from app.use_cases.sql_access._infra import (
 )
 from app.use_cases.sql_access.exceptions import SqlAccessNotEnabled
 from app.use_cases.sql_access.get_environment_status import get_environment_status
-from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
+from tests.uuidv7_fixtures import PROJECT_1
 
 
 class TestGetEnvironmentStatus:
@@ -78,10 +77,4 @@ class TestGetEnvironmentStatus:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_get_status_when_different_org_returns_failure(self, seeded_db_other_org: AsyncSession):
-        set_session(seeded_db_other_org)
-
-        result = await get_environment_status(project_id=PROJECT_OTHER)
-
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), AuthorizationError)
+    # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)

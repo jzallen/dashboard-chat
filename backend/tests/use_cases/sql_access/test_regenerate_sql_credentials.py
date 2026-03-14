@@ -5,13 +5,12 @@ from unittest.mock import AsyncMock, patch
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.sql_access import regenerate_sql_credentials
 from app.use_cases.sql_access.exceptions import CredentialCooldown, SqlAccessNotEnabled
 from tests.use_cases.sql_access.conftest import MOCK_ENV_HOST, MOCK_ENV_PORT
-from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
+from tests.uuidv7_fixtures import PROJECT_1
 
 
 class TestRegenerateSqlCredentials:
@@ -61,14 +60,7 @@ class TestRegenerateSqlCredentials:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    @patch("app.use_cases.sql_access.regenerate_sql_credentials.regenerate_credentials", new_callable=AsyncMock)
-    async def test_regenerate_when_other_org_returns_failure(self, mock_regenerate, seeded_db_other_org: AsyncSession):
-        set_session(seeded_db_other_org)
-
-        result = await regenerate_sql_credentials(project_id=PROJECT_OTHER)
-
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), AuthorizationError)
+    # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)
 
     @patch("app.use_cases.sql_access.regenerate_sql_credentials.get_settings")
     @patch(

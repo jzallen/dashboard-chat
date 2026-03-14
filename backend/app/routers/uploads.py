@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.types import AuthUser
 from app.controllers import HTTPController
 
-from .deps import use_db_context
+from .deps import authorize_project_access, get_current_user, use_db_context
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -21,18 +22,13 @@ async def upload_file(
     file: UploadFile = File(...),
     project_id: str = Form(...),
     dataset_id: str | None = Form(None),
-    _: AsyncSession = Depends(use_db_context),
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(use_db_context),
 ):
-    """Upload a file and create a dataset in one step.
+    """Upload a file and create a dataset in one step."""
+    # Verify user's org owns the project before processing upload
+    _, project = await authorize_project_access(project_id=project_id, user=user, db=db)
 
-    Internally chains upload → dataset creation:
-    1. Validates and stores the raw file (POST /uploads logic)
-    2. On success, redirects to dataset creation (POST /datasets logic)
-    3. Returns the created Dataset with default name 'New Dataset'
-
-    For new datasets: Only provide project_id
-    For re-uploads: Provide both project_id and dataset_id
-    """
     if not file.filename:
         return JSONResponse(
             status_code=400,
@@ -49,7 +45,7 @@ async def upload_file(
 
     # Step 1: Upload file
     upload_body, upload_status = await HTTPController.post_upload(
-        content, file.filename, project_id, plugin_registry, dataset_id
+        content, file.filename, project_id, plugin_registry, dataset_id, project=project
     )
     if upload_status != 201:
         return JSONResponse(content=upload_body, status_code=upload_status)
@@ -72,6 +68,7 @@ async def process_upload(
     request: Request,
     upload_id: str,
     body: dict,
+    user: AuthUser = Depends(get_current_user),
     _: AsyncSession = Depends(use_db_context),
 ):
     """Process an upload that is awaiting user input (e.g., sheet selection).

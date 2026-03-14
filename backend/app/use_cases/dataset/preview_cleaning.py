@@ -114,7 +114,7 @@ async def preview_cleaning_transform(
     expr = _parse_expression(expression_config)
 
     service = DatasetService(repositories)
-    record = await service.fetch_and_authorize_dataset(dataset_id)
+    record = await service.fetch_dataset_record(dataset_id)
 
     schema_fields = (record.schema_config or {}).get("fields", {})
     _validate_column_for_operation(

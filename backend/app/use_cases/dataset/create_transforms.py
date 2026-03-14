@@ -31,7 +31,7 @@ async def create_transforms(
     outbox_repo = repositories.outbox
 
     service = DatasetService(repositories)
-    await service.fetch_and_authorize_dataset(dataset_id)
+    await service.fetch_dataset_record(dataset_id)
 
     # Server-side expression_sql generation for non-filter transforms (design D1)
     for t in transforms_input:

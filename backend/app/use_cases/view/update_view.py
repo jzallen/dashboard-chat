@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 async def update_view(
     view_id: str,
     update_data: dict[str, Any],
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[View, str]:
@@ -40,8 +41,9 @@ async def update_view(
     if view_dict is None:
         raise ViewNotFound(view_id)
 
-    svc = ProjectService(repositories)
-    await svc.fetch_and_authorize_project(view_dict["project_id"])
+    if project is None:
+        svc = ProjectService(repositories)
+        project = await svc.fetch_project(view_dict["project_id"])
 
     # Re-validate source_refs if they are being changed
     if "source_refs" in update_data and update_data["source_refs"] is not None:

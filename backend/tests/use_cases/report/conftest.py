@@ -3,19 +3,9 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
-from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.repositories.metadata import DatasetRecord, ProjectRecord, ReportRecord, ViewRecord
-from tests.uuidv7_fixtures import DATASET_1, ORG_1, PROJECT_1, REPORT_1, USER_1, VIEW_1
-
-TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
-
-
-@pytest.fixture(autouse=True)
-def auth_user():
-    """Set a default auth user for all report tests."""
-    set_auth_user(TEST_USER)
+from tests.uuidv7_fixtures import DATASET_1, ORG_1, PROJECT_1, REPORT_1, VIEW_1
 
 
 @pytest.fixture

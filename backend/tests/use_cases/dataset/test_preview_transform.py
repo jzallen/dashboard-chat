@@ -6,13 +6,9 @@ import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
-from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.use_cases.dataset import preview_cleaning_transform
-from tests.uuidv7_fixtures import DATASET_1, ORG_OTHER, USER_3
-
-WRONG_ORG_USER = AuthUser(id=USER_3, email="other@example.com", org_id=ORG_OTHER, name="Other User")
+from tests.uuidv7_fixtures import DATASET_1
 
 
 class MockLakeRepository:
@@ -299,23 +295,7 @@ class TestPreviewCleaningTransform:
             case Success(_):
                 pytest.fail("Expected failure for nonexistent dataset")
 
-    async def test_preview_when_wrong_org_returns_authorization_failure(self, seeded_db: AsyncSession):
-        """Preview by user in wrong org should fail with authorization error."""
-        set_session(seeded_db)
-        set_auth_user(WRONG_ORG_USER)
-
-        result = await preview_cleaning_transform(
-            dataset_id=DATASET_1,
-            target_column="col1",
-            expression_config={"operation": "trim"},
-            repositories={"lake_repository": MockLakeRepository},
-        )
-
-        match result:
-            case Failure(error):
-                assert "Access denied" in str(error) or "denied" in str(error).lower()
-            case Success(_):
-                pytest.fail("Expected failure for wrong org")
+    # NOTE: org mismatch test removed — authorization moved to router layer
 
     async def test_preview_when_trim_on_numeric_column_returns_type_mismatch(self, seeded_db: AsyncSession):
         """Trim on a numeric column should fail with type mismatch."""

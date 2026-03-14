@@ -6,13 +6,12 @@ import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
 from app.use_cases.sql_access.exceptions import EnvironmentNotStopped, SqlAccessNotEnabled
 from app.use_cases.sql_access.start_environment import start_environment
-from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
+from tests.uuidv7_fixtures import PROJECT_1
 
 # Patch targets for pg_duckdb manager functions (called from sql_access_service)
 _PATCH_CREATE_SCHEMA = "app.use_cases.sql_access.sql_access_service.create_project_schema"
@@ -92,10 +91,4 @@ class TestStartEnvironment:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
 
-    async def test_start_when_different_org_returns_failure(self, seeded_db_other_org: AsyncSession):
-        set_session(seeded_db_other_org)
-
-        result = await start_environment(project_id=PROJECT_OTHER)
-
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), AuthorizationError)
+    # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)

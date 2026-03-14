@@ -23,6 +23,7 @@ async def create_view(
     source_refs: list[dict] | None = None,
     description: str | None = None,
     materialization: str = "ephemeral",
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[View, str]:
@@ -41,8 +42,9 @@ async def create_view(
         AuthorizationError: If user's org does not own the project.
         InvalidSourceReference: If any source refs point to non-existent entities.
     """
-    svc = ProjectService(repositories)
-    project_dict = await svc.fetch_and_authorize_project(project_id)
+    if project is None:
+        svc = ProjectService(repositories)
+        project = await svc.fetch_project(project_id)
 
     refs = source_refs or []
     if refs:
@@ -51,7 +53,7 @@ async def create_view(
 
     view_dict = await repositories.metadata.create_view(
         project_id=project_id,
-        org_id=project_dict["org_id"],
+        org_id=project["org_id"],
         name=name,
         sql_definition=sql_definition,
         source_refs=refs,

@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     minio_internal_endpoint: str = ""
 
     # Auth
+    trust_proxy_headers: bool = False  # Trust X-User-Id/X-Org-Id/X-User-Email from auth proxy
     auth_mode: str = "dev"  # "dev" or "workos"
     auto_provision_org: bool = False  # auto-create org + project on login (dev/SQLite only)
     workos_api_key: str = ""

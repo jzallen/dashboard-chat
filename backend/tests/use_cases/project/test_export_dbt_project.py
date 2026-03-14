@@ -122,18 +122,7 @@ class TestExportDbtProject:
             case Success(_):
                 pytest.fail("Expected failure for nonexistent project")
 
-    async def test_export_when_org_mismatch_returns_access_denied(self, seeded_db_other_org: AsyncSession):
-        set_session(seeded_db_other_org)
-        # Auth user is ORG_1, but project is ORG_OTHER
-        set_auth_user(AuthUser(id=USER_1, email="a@b.com", org_id=ORG_1, name="Test"))
-
-        result = await export_dbt_project(PROJECT_OTHER)
-
-        match result:
-            case Failure(error):
-                assert "access denied" in str(error).lower()
-            case Success(_):
-                pytest.fail("Expected failure for wrong org_id")
+    # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)
 
     async def test_export_when_no_datasets_returns_skeleton_zip(self, seeded_db_empty_project: AsyncSession):
         set_session(seeded_db_empty_project)

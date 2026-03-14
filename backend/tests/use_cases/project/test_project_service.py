@@ -6,11 +6,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.auth.context import set_auth_user
-from app.auth.exceptions import AuthorizationError
 from app.auth.types import AuthUser
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.project.project_service import ProjectService
-from tests.uuidv7_fixtures import ORG_1, ORG_OTHER, PROJECT_1, USER_1
+from tests.uuidv7_fixtures import ORG_1, PROJECT_1, USER_1
 
 
 def _make_repositories(metadata_repo):
@@ -18,7 +17,7 @@ def _make_repositories(metadata_repo):
 
 
 class TestFetchAndAuthorizeProject:
-    """Tests for ProjectService.fetch_and_authorize_project."""
+    """Tests for ProjectService.fetch_project."""
 
     async def test_returns_project_when_found_and_org_matches(self):
         """Should return project dict when project exists and org matches."""
@@ -29,7 +28,7 @@ class TestFetchAndAuthorizeProject:
         metadata_repo.get_project = AsyncMock(return_value=project_dict)
 
         svc = ProjectService(_make_repositories(metadata_repo))
-        result = await svc.fetch_and_authorize_project(PROJECT_1)
+        result = await svc.fetch_project(PROJECT_1)
 
         assert result == project_dict
         metadata_repo.get_project.assert_awaited_once_with(PROJECT_1)
@@ -44,20 +43,9 @@ class TestFetchAndAuthorizeProject:
         svc = ProjectService(_make_repositories(metadata_repo))
 
         with pytest.raises(ProjectNotFound, match="not found"):
-            await svc.fetch_and_authorize_project("nonexistent-id")
+            await svc.fetch_project("nonexistent-id")
 
-    async def test_raises_authorization_error_when_org_mismatch(self):
-        """Should raise AuthorizationError when user org does not match project org."""
-        set_auth_user(AuthUser(id=USER_1, email="a@b.com", org_id=ORG_1, name="Test"))
-        project_dict = {"id": PROJECT_1, "name": "Other Project", "org_id": ORG_OTHER}
-
-        metadata_repo = AsyncMock()
-        metadata_repo.get_project = AsyncMock(return_value=project_dict)
-
-        svc = ProjectService(_make_repositories(metadata_repo))
-
-        with pytest.raises(AuthorizationError, match="Access denied"):
-            await svc.fetch_and_authorize_project(PROJECT_1)
+    # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)
 
     async def test_allows_access_when_project_org_id_is_none(self):
         """Should allow access for legacy projects with no org_id."""
@@ -68,6 +56,6 @@ class TestFetchAndAuthorizeProject:
         metadata_repo.get_project = AsyncMock(return_value=project_dict)
 
         svc = ProjectService(_make_repositories(metadata_repo))
-        result = await svc.fetch_and_authorize_project(PROJECT_1)
+        result = await svc.fetch_project(PROJECT_1)
 
         assert result == project_dict

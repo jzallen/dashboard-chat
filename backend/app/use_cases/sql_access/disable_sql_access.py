@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 @handle_returns
 async def disable_sql_access(
     project_id: str,
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
@@ -40,8 +41,9 @@ async def disable_sql_access(
     """
     external_access_repo = repositories.external_access
 
-    project_service = ProjectService(repositories)
-    await project_service.fetch_and_authorize_project(project_id)
+    if project is None:
+        project_service = ProjectService(repositories)
+        project = await project_service.fetch_project(project_id)
 
     # Check that SQL access is enabled (with row lock to prevent races)
     access_record = await external_access_repo.get_by_project_id_for_update(project_id)

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 @handle_returns
 async def get_report(
     report_id: str,
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[Report, str]:
@@ -36,7 +37,8 @@ async def get_report(
         raise ReportNotFound(report_id)
 
     # Authorize via the parent project
-    svc = ProjectService(repositories)
-    await svc.fetch_and_authorize_project(report_dict["project_id"])
+    if project is None:
+        svc = ProjectService(repositories)
+        project = await svc.fetch_project(report_dict["project_id"])
 
     return Report(**{k: v for k, v in report_dict.items() if k in Report.__dataclass_fields__})

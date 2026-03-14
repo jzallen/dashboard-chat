@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 @handle_returns
 async def delete_view(
     view_id: str,
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[bool, str]:
@@ -34,8 +35,9 @@ async def delete_view(
     if view_dict is None:
         raise ViewNotFound(view_id)
 
-    svc = ProjectService(repositories)
-    await svc.fetch_and_authorize_project(view_dict["project_id"])
+    if project is None:
+        svc = ProjectService(repositories)
+        project = await svc.fetch_project(view_dict["project_id"])
 
     deleted = await repositories.metadata.delete_view(view_id)
     if not deleted:

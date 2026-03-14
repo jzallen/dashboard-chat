@@ -29,6 +29,7 @@ from app.use_cases.sql_access.sql_access_service import (
 )
 
 if TYPE_CHECKING:
+    from app.auth.types import AuthUser
     from app.repositories import RepositoryContainer
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ logger = logging.getLogger(__name__)
 @handle_returns
 async def enable_sql_access(
     project_id: str,
+    user: "AuthUser",
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
@@ -58,8 +61,9 @@ async def enable_sql_access(
     metadata_repo = repositories.metadata
     external_access_repo = repositories.external_access
 
-    project_service = ProjectService(repositories)
-    await project_service.fetch_and_authorize_project(project_id)
+    if project is None:
+        project_service = ProjectService(repositories)
+        project = await project_service.fetch_project(project_id)
 
     # Check for existing enabled access (with row lock to prevent races)
     access_record = await external_access_repo.get_by_project_id_for_update(project_id)
@@ -99,6 +103,7 @@ async def enable_sql_access(
         env,
         proxy_port,
         proxy_container_id,
+        user=user,
     )
 
     return {
@@ -178,10 +183,10 @@ async def _store_access_record(
     env,
     proxy_port,
     proxy_container_id,
+    *,
+    user: "AuthUser",
 ):
     """Store or update the external access metadata record."""
-    from app.auth import get_auth_user
-
     record_data = {
         "enabled": True,
         "pg_password_hash": md5_hash,
@@ -198,7 +203,6 @@ async def _store_access_record(
         # Re-enable a previously disabled record
         await external_access_repo.update(project_id, record_data)
     else:
-        user = get_auth_user()
         await external_access_repo.create(
             project_id=project_id,
             org_id=user.org_id,

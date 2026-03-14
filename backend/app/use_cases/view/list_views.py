@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 @handle_returns
 async def list_views(
     project_id: str,
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[list[View], str]:
@@ -29,8 +30,9 @@ async def list_views(
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    svc = ProjectService(repositories)
-    await svc.fetch_and_authorize_project(project_id)
+    if project is None:
+        svc = ProjectService(repositories)
+        project = await svc.fetch_project(project_id)
 
     view_records = await repositories.metadata.list_views_by_project(project_id)
     return [View.from_record(r) for r in view_records]

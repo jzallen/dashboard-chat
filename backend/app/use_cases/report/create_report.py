@@ -28,6 +28,7 @@ async def create_report(
     domain: str = "Organization",
     columns_metadata: list[dict] | None = None,
     materialization: str = "view",
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[Report, str]:
@@ -51,8 +52,9 @@ async def create_report(
         InvalidReportReference: If source refs contain report-type references.
         InvalidColumnMetadata: If columns_metadata contains invalid role/type pairs.
     """
-    svc = ProjectService(repositories)
-    project_dict = await svc.fetch_and_authorize_project(project_id)
+    if project is None:
+        svc = ProjectService(repositories)
+        project = await svc.fetch_project(project_id)
 
     refs = source_refs or []
 
@@ -70,7 +72,7 @@ async def create_report(
 
     report_dict = await repositories.metadata.create_report(
         project_id=project_id,
-        org_id=project_dict["org_id"],
+        org_id=project["org_id"],
         name=name,
         sql_definition=sql_definition,
         report_type=report_type,

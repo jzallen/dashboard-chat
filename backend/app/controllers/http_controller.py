@@ -5,6 +5,7 @@ from typing import Any
 
 from returns.result import Failure, Success
 
+from app.auth.types import AuthUser
 from app.use_cases import dataset as dataset_use_cases
 from app.use_cases import organization as organization_use_cases
 from app.use_cases import project as project_use_cases
@@ -137,7 +138,12 @@ class HTTPController:
 
     @staticmethod
     async def post_upload(
-        file_content: bytes, file_name: str, project_id: str, plugin_registry=None, dataset_id: str | None = None
+        file_content: bytes,
+        file_name: str,
+        project_id: str,
+        plugin_registry=None,
+        dataset_id: str | None = None,
+        project: dict | None = None,
     ) -> tuple[dict, int]:
         result = await upload_use_cases.upload_file(
             file_content=file_content,
@@ -145,6 +151,7 @@ class HTTPController:
             project_id=project_id,
             plugin_registry=plugin_registry,
             dataset_id=dataset_id,
+            project=project,
         )
         match result:
             case Success(data):
@@ -189,8 +196,9 @@ class HTTPController:
         cursor: str | None = None,
         page_size: int = 50,
         base_url: str = "/api/projects",
+        user: AuthUser | None = None,
     ) -> tuple[dict, int]:
-        result = await project_use_cases.list_projects(cursor=cursor, page_size=page_size)
+        result = await project_use_cases.list_projects(user=user, cursor=cursor, page_size=page_size)
         match result:
             case Success(data):
                 items = data["items"]
@@ -202,8 +210,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_project(project_id: str) -> tuple[dict, int]:
-        result = await project_use_cases.get_project(project_id)
+    async def get_project(project_id: str, user: AuthUser | None = None) -> tuple[dict, int]:
+        result = await project_use_cases.get_project(project_id, user=user)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("projects", _serialize(data), f"/api/projects/{project_id}"), 200
@@ -211,8 +219,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def post_project(name: str, description: str | None = None) -> tuple[dict, int]:
-        result = await project_use_cases.create_project(name=name, description=description)
+    async def post_project(name: str, description: str | None = None, user: AuthUser | None = None) -> tuple[dict, int]:
+        result = await project_use_cases.create_project(name=name, description=description, user=user)
         match result:
             case Success(data):
                 serialized = _serialize(data)
@@ -221,8 +229,10 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def patch_project(project_id: str, **kwargs) -> tuple[dict, int]:
-        result = await project_use_cases.update_project(project_id, kwargs)
+    async def patch_project(
+        project_id: str, user: AuthUser | None = None, project: dict | None = None, **kwargs
+    ) -> tuple[dict, int]:
+        result = await project_use_cases.update_project(project_id, kwargs, user=user, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("projects", _serialize(data), f"/api/projects/{project_id}"), 200
@@ -230,8 +240,10 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def delete_project(project_id: str) -> tuple[dict, int]:
-        result = await project_use_cases.delete_project(project_id)
+    async def delete_project(
+        project_id: str, user: AuthUser | None = None, project: dict | None = None
+    ) -> tuple[dict, int]:
+        result = await project_use_cases.delete_project(project_id, user=user, project=project)
         match result:
             case Success(data):
                 return {"meta": {"deleted": data}}, 200
@@ -241,8 +253,8 @@ class HTTPController:
     # Organization methods
 
     @staticmethod
-    async def post_organization(name: str) -> tuple[dict, int]:
-        result = await organization_use_cases.create_organization(name=name)
+    async def post_organization(name: str, user: AuthUser) -> tuple[dict, int]:
+        result = await organization_use_cases.create_organization(name=name, user=user)
         match result:
             case Success(data):
                 serialized = _serialize(data)
@@ -251,8 +263,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_my_organization() -> tuple[dict, int]:
-        result = await organization_use_cases.get_organization()
+    async def get_my_organization(user: AuthUser) -> tuple[dict, int]:
+        result = await organization_use_cases.get_organization(user=user)
         match result:
             case Success(data) if data is not None:
                 return wrap_jsonapi_single("organizations", data, "/api/organizations/me"), 200
@@ -264,8 +276,8 @@ class HTTPController:
     # View methods
 
     @staticmethod
-    async def list_views(project_id: str) -> tuple[dict, int]:
-        result = await view_use_cases.list_views(project_id)
+    async def list_views(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await view_use_cases.list_views(project_id, project=project)
         match result:
             case Success(data):
                 items = _serialize(data)
@@ -275,8 +287,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def post_view(project_id: str, **kwargs) -> tuple[dict, int]:
-        result = await view_use_cases.create_view(project_id=project_id, **kwargs)
+    async def post_view(project_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
+        result = await view_use_cases.create_view(project_id=project_id, project=project, **kwargs)
         match result:
             case Success(data):
                 serialized = _serialize(data)
@@ -286,8 +298,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_view(view_id: str) -> tuple[dict, int]:
-        result = await view_use_cases.get_view(view_id)
+    async def get_view(view_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await view_use_cases.get_view(view_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("views", _serialize(data), f"/api/views/{view_id}"), 200
@@ -295,8 +307,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def patch_view(view_id: str, **kwargs) -> tuple[dict, int]:
-        result = await view_use_cases.update_view(view_id, kwargs)
+    async def patch_view(view_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
+        result = await view_use_cases.update_view(view_id, kwargs, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("views", _serialize(data), f"/api/views/{view_id}"), 200
@@ -304,8 +316,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def delete_view(view_id: str) -> tuple[dict, int]:
-        result = await view_use_cases.delete_view(view_id)
+    async def delete_view(view_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await view_use_cases.delete_view(view_id, project=project)
         match result:
             case Success(data):
                 return {"meta": {"deleted": data}}, 200
@@ -315,8 +327,8 @@ class HTTPController:
     # Report methods
 
     @staticmethod
-    async def list_reports(project_id: str) -> tuple[dict, int]:
-        result = await report_use_cases.list_reports(project_id)
+    async def list_reports(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await report_use_cases.list_reports(project_id, project=project)
         match result:
             case Success(data):
                 items = _serialize(data)
@@ -326,8 +338,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def post_report(project_id: str, **kwargs) -> tuple[dict, int]:
-        result = await report_use_cases.create_report(project_id=project_id, **kwargs)
+    async def post_report(project_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
+        result = await report_use_cases.create_report(project_id=project_id, project=project, **kwargs)
         match result:
             case Success(data):
                 serialized = _serialize(data)
@@ -337,8 +349,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_report(report_id: str) -> tuple[dict, int]:
-        result = await report_use_cases.get_report(report_id)
+    async def get_report(report_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await report_use_cases.get_report(report_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("reports", _serialize(data), f"/api/reports/{report_id}"), 200
@@ -346,8 +358,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def patch_report(report_id: str, **kwargs) -> tuple[dict, int]:
-        result = await report_use_cases.update_report(report_id, kwargs)
+    async def patch_report(report_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
+        result = await report_use_cases.update_report(report_id, kwargs, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("reports", _serialize(data), f"/api/reports/{report_id}"), 200
@@ -355,8 +367,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def delete_report(report_id: str) -> tuple[dict, int]:
-        result = await report_use_cases.delete_report(report_id)
+    async def delete_report(report_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await report_use_cases.delete_report(report_id, project=project)
         match result:
             case Success(data):
                 return {"meta": {"deleted": data}}, 200
@@ -366,8 +378,8 @@ class HTTPController:
     # SQL access methods
 
     @staticmethod
-    async def enable_sql_access(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.enable_sql_access(project_id)
+    async def enable_sql_access(project_id: str, user: AuthUser, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.enable_sql_access(project_id, user=user, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 201
@@ -375,8 +387,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def disable_sql_access(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.disable_sql_access(project_id)
+    async def disable_sql_access(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.disable_sql_access(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 204
@@ -384,8 +396,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_sql_access(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.get_sql_access(project_id)
+    async def get_sql_access(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.get_sql_access(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
@@ -393,8 +405,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def sync_sql_access(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.sync_sql_access(project_id)
+    async def sync_sql_access(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.sync_sql_access(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
@@ -402,8 +414,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def regenerate_sql_credentials(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.regenerate_sql_credentials(project_id)
+    async def regenerate_sql_credentials(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.regenerate_sql_credentials(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
@@ -411,8 +423,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def start_environment(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.start_environment(project_id)
+    async def start_environment(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.start_environment(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
@@ -420,8 +432,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def stop_environment(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.stop_environment(project_id)
+    async def stop_environment(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.stop_environment(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
@@ -429,8 +441,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def restart_environment(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.restart_environment(project_id)
+    async def restart_environment(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.restart_environment(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
@@ -438,8 +450,8 @@ class HTTPController:
                 return _error_response(error)
 
     @staticmethod
-    async def get_environment_status(project_id: str) -> tuple[dict, int]:
-        result = await sql_access_use_cases.get_environment_status(project_id)
+    async def get_environment_status(project_id: str, project: dict | None = None) -> tuple[dict, int]:
+        result = await sql_access_use_cases.get_environment_status(project_id, project=project)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200

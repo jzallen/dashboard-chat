@@ -3,12 +3,15 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from returns.result import Failure
 
+from .auth.exceptions import AuthorizationError
 from .auth.middleware import AuthMiddleware
 from .config import get_settings
+from .controllers.response_wrapper import wrap_jsonapi_error
 from .database import async_session, close_db, init_db
 from .plugins import create_plugin_registry
 from .repositories import set_session
@@ -109,6 +112,15 @@ app.add_middleware(
 
 # Configure auth middleware (added after CORS — Starlette LIFO means CORS runs first)
 app.add_middleware(AuthMiddleware)
+
+# Global exception handler for authorization errors (returns 403 instead of 500)
+@app.exception_handler(AuthorizationError)
+async def authorization_error_handler(request: Request, exc: AuthorizationError):
+    return JSONResponse(
+        status_code=403,
+        content=wrap_jsonapi_error(403, "Forbidden", str(exc)),
+    )
+
 
 # Include routers
 app.include_router(auth_router)

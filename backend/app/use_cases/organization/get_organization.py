@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from app.auth import get_auth_user
+from app.auth.types import AuthUser
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 @with_repositories
 @handle_returns
 async def get_organization(
+    user: AuthUser,
     *,
     repositories: "RepositoryContainer",
 ) -> dict | None:
@@ -21,7 +22,6 @@ async def get_organization(
     Returns:
         Organization dict or None if not found.
     """
-    user = get_auth_user()
     if user.org_id is None:
         return None
 

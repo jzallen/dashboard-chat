@@ -3,13 +3,12 @@
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.sql_access import disable_sql_access
 from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
 from app.use_cases.sql_access.exceptions import SqlAccessNotEnabled
-from tests.uuidv7_fixtures import PROJECT_1, PROJECT_OTHER
+from tests.uuidv7_fixtures import PROJECT_1
 
 
 class TestDisableSqlAccess:
@@ -65,14 +64,4 @@ class TestDisableSqlAccess:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessNotEnabled)
 
-    async def test_disable_sql_access_when_other_org_returns_authorization_error(
-        self,
-        mock_provisioner: MockEnvironmentProvisioner,
-        seeded_db_other_org: AsyncSession,
-    ):
-        set_session(seeded_db_other_org)
-
-        result = await disable_sql_access(project_id=PROJECT_OTHER)
-
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), AuthorizationError)
+    # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)

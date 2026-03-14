@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 @handle_returns
 async def get_view(
     view_id: str,
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[View, str]:
@@ -36,7 +37,8 @@ async def get_view(
         raise ViewNotFound(view_id)
 
     # Authorize via the parent project
-    svc = ProjectService(repositories)
-    await svc.fetch_and_authorize_project(view_dict["project_id"])
+    if project is None:
+        svc = ProjectService(repositories)
+        project = await svc.fetch_project(view_dict["project_id"])
 
     return View(**{k: v for k, v in view_dict.items() if k in View.__dataclass_fields__})

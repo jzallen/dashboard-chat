@@ -1,0 +1,212 @@
+"""Tests for router-level authorization dependencies."""
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.context import clear_auth_user, set_auth_user
+from app.auth.exceptions import AuthorizationError
+from app.auth.types import AuthUser
+from app.repositories import set_session
+from app.repositories.metadata import DatasetRecord, ProjectRecord
+from app.routers.deps import authorize_dataset_access, authorize_project_access, get_current_user
+from app.use_cases.dataset.exceptions import DatasetNotFound
+from app.use_cases.project.exceptions import ProjectNotFound
+from tests.uuidv7_fixtures import (
+    DATASET_1,
+    DATASET_OTHER,
+    ORG_1,
+    ORG_OTHER,
+    PROJECT_1,
+    PROJECT_OTHER,
+    USER_1,
+)
+
+TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
+
+
+@pytest.fixture(autouse=True)
+def auth_user():
+    set_auth_user(TEST_USER)
+    yield
+    clear_auth_user()
+
+
+class TestGetCurrentUser:
+    """get_current_user reads from proxy headers or falls back to contextvar."""
+
+    async def test_fallback_to_contextvar_when_no_proxy_headers(self):
+        """Without proxy headers, should return the contextvar user."""
+        from starlette.requests import Request
+
+        scope = {"type": "http", "headers": []}
+        request = Request(scope)
+
+        user = await get_current_user(request)
+
+        assert user.id == USER_1
+        assert user.org_id == ORG_1
+
+    async def test_reads_proxy_headers_when_trust_enabled(self, monkeypatch):
+        """With TRUST_PROXY_HEADERS=true, should read from X-User-* headers."""
+        from app.config import Settings
+
+        monkeypatch.setattr(
+            "app.routers.deps.get_settings",
+            lambda: Settings(trust_proxy_headers=True),
+        )
+
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [
+                (b"x-user-id", b"proxy-user-id"),
+                (b"x-org-id", b"proxy-org-id"),
+                (b"x-user-email", b"proxy@test.com"),
+            ],
+        }
+        request = Request(scope)
+
+        user = await get_current_user(request)
+
+        assert user.id == "proxy-user-id"
+        assert user.org_id == "proxy-org-id"
+        assert user.email == "proxy@test.com"
+
+    async def test_ignores_proxy_headers_when_trust_disabled(self, monkeypatch):
+        """With TRUST_PROXY_HEADERS=false (default), should ignore headers."""
+        from app.config import Settings
+
+        monkeypatch.setattr(
+            "app.routers.deps.get_settings",
+            lambda: Settings(trust_proxy_headers=False),
+        )
+
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [
+                (b"x-user-id", b"attacker-id"),
+                (b"x-org-id", b"attacker-org"),
+            ],
+        }
+        request = Request(scope)
+
+        user = await get_current_user(request)
+
+        # Should fall back to contextvar, not attacker headers
+        assert user.id == USER_1
+        assert user.org_id == ORG_1
+
+
+class TestAuthorizeProjectAccess:
+    """authorize_project_access verifies org ownership."""
+
+    async def test_allows_access_when_org_matches(self, db_session: AsyncSession):
+        set_session(db_session)
+        db_session.add(ProjectRecord(id=PROJECT_1, name="My Project", org_id=ORG_1))
+        await db_session.commit()
+
+        user, project = await authorize_project_access(
+            project_id=PROJECT_1, user=TEST_USER, db=db_session
+        )
+
+        assert user.id == USER_1
+        assert project["id"] == PROJECT_1
+
+    async def test_denies_access_when_org_mismatch(self, db_session: AsyncSession):
+        set_session(db_session)
+        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other", org_id=ORG_OTHER))
+        await db_session.commit()
+
+        with pytest.raises(AuthorizationError, match="Access denied"):
+            await authorize_project_access(
+                project_id=PROJECT_OTHER, user=TEST_USER, db=db_session
+            )
+
+    async def test_raises_not_found_for_missing_project(self, db_session: AsyncSession):
+        set_session(db_session)
+
+        with pytest.raises(ProjectNotFound):
+            await authorize_project_access(
+                project_id="nonexistent", user=TEST_USER, db=db_session
+            )
+
+    async def test_allows_access_when_project_has_no_org(self, db_session: AsyncSession):
+        set_session(db_session)
+        db_session.add(ProjectRecord(id=PROJECT_1, name="Legacy"))
+        await db_session.commit()
+
+        _user, project = await authorize_project_access(
+            project_id=PROJECT_1, user=TEST_USER, db=db_session
+        )
+
+        assert project["id"] == PROJECT_1
+
+
+class TestAuthorizeDatasetAccess:
+    """authorize_dataset_access verifies org ownership via parent project."""
+
+    async def test_allows_access_when_org_matches(self, db_session: AsyncSession):
+        set_session(db_session)
+        db_session.add(ProjectRecord(id=PROJECT_1, name="My Project", org_id=ORG_1))
+        db_session.add(DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="DS"))
+        await db_session.commit()
+
+        user, dataset = await authorize_dataset_access(
+            dataset_id=DATASET_1, user=TEST_USER, db=db_session
+        )
+
+        assert user.id == USER_1
+        assert dataset["id"] == DATASET_1
+        assert dataset["project_id"] == PROJECT_1
+
+    async def test_denies_access_when_org_mismatch(self, db_session: AsyncSession):
+        set_session(db_session)
+        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other", org_id=ORG_OTHER))
+        db_session.add(DatasetRecord(id=DATASET_OTHER, project_id=PROJECT_OTHER, name="DS"))
+        await db_session.commit()
+
+        with pytest.raises(AuthorizationError, match="Access denied"):
+            await authorize_dataset_access(
+                dataset_id=DATASET_OTHER, user=TEST_USER, db=db_session
+            )
+
+    async def test_raises_not_found_for_missing_dataset(self, db_session: AsyncSession):
+        set_session(db_session)
+
+        with pytest.raises(DatasetNotFound):
+            await authorize_dataset_access(
+                dataset_id="nonexistent", user=TEST_USER, db=db_session
+            )
+
+    async def test_allows_access_when_project_has_no_org(self, db_session: AsyncSession):
+        set_session(db_session)
+        db_session.add(ProjectRecord(id=PROJECT_1, name="Legacy"))
+        db_session.add(DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="DS"))
+        await db_session.commit()
+
+        _user, dataset = await authorize_dataset_access(
+            dataset_id=DATASET_1, user=TEST_USER, db=db_session
+        )
+
+        assert dataset["id"] == DATASET_1
+
+
+class TestAuthorizationErrorHandler:
+    """The global exception handler should return 403 for AuthorizationError."""
+
+    async def test_authorization_error_returns_403(self):
+        from app.main import authorization_error_handler
+
+        exc = AuthorizationError("Test access denied")
+        response = await authorization_error_handler(None, exc)
+
+        assert response.status_code == 403
+        import json
+
+        body = json.loads(response.body)
+        assert body["errors"][0]["status"] == "403"
+        assert body["errors"][0]["title"] == "Forbidden"
+        assert "Test access denied" in body["errors"][0]["detail"]

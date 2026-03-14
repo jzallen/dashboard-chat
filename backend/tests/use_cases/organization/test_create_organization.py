@@ -8,7 +8,6 @@ from returns.result import Failure, Success
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
 from app.repositories import set_session
 from app.repositories.metadata import OrganizationRecord, ProjectRecord
 from app.use_cases.organization import create_organization
@@ -22,7 +21,7 @@ class TestCreateOrganization:
     async def test_create_org_when_dev_mode_returns_org_record(self, db_session: AsyncSession):
         set_session(db_session)
 
-        result = await create_organization(name="Acme Corp")
+        result = await create_organization(name="Acme Corp", user=TEST_USER)
 
         match result:
             case Success(data):
@@ -36,7 +35,7 @@ class TestCreateOrganization:
     async def test_create_org_when_new_org_creates_default_project(self, db_session: AsyncSession):
         set_session(db_session)
 
-        result = await create_organization(name="New Org")
+        result = await create_organization(name="New Org", user=TEST_USER)
 
         match result:
             case Success(data):
@@ -54,9 +53,8 @@ class TestCreateOrganization:
 
     async def test_create_org_when_user_already_has_org_fails(self, db_session: AsyncSession):
         set_session(db_session)
-        set_auth_user(TEST_USER_WITH_ORG)
 
-        result = await create_organization(name="Another Org")
+        result = await create_organization(name="Another Org", user=TEST_USER_WITH_ORG)
 
         match result:
             case Failure(error):
@@ -67,7 +65,7 @@ class TestCreateOrganization:
     async def test_create_org_when_successful_persists_org_in_db(self, db_session: AsyncSession):
         set_session(db_session)
 
-        result = await create_organization(name="Test Org")
+        result = await create_organization(name="Test Org", user=TEST_USER)
 
         match result:
             case Success(data):
@@ -109,7 +107,7 @@ class TestCreateOrganizationWorkosErrors:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.use_cases.organization.create_organization.httpx.AsyncClient", return_value=mock_client):
-            result = await create_organization(name="Bad Org")
+            result = await create_organization(name="Bad Org", user=TEST_USER)
 
         match result:
             case Failure(error):
@@ -141,7 +139,7 @@ class TestCreateOrganizationWorkosErrors:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.use_cases.organization.create_organization.httpx.AsyncClient", return_value=mock_client):
-            result = await create_organization(name="Server Error Org")
+            result = await create_organization(name="Server Error Org", user=TEST_USER)
 
         match result:
             case Failure(error):
@@ -166,7 +164,7 @@ class TestCreateOrganizationWorkosErrors:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.use_cases.organization.create_organization.httpx.AsyncClient", return_value=mock_client):
-            result = await create_organization(name="Network Error Org")
+            result = await create_organization(name="Network Error Org", user=TEST_USER)
 
         match result:
             case Failure(error):

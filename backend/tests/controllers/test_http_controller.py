@@ -231,7 +231,7 @@ class TestGetProject:
         body, status = await HTTPController.get_project("p1")
         assert status == 200
         assert body["data"]["type"] == "projects"
-        mock_uc.get_project.assert_called_once_with("p1")
+        mock_uc.get_project.assert_called_once_with("p1", user=None)
 
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_not_found_returns_404(self, mock_uc):

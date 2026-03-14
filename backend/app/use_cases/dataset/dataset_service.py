@@ -8,8 +8,6 @@ import asyncio
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from app.auth import get_auth_user
-from app.auth.exceptions import AuthorizationError
 from app.models.dataset import Dataset
 from app.use_cases.dataset.exceptions import DatasetNotFound
 
@@ -26,20 +24,20 @@ class DatasetService:
         self._metadata_repo = repositories.metadata
         self._lake_repo = repositories.lake
 
-    async def fetch_and_authorize_dataset(self, dataset_id: str):
-        """Fetch a dataset record and verify the current user's org owns its parent project.
+    async def fetch_dataset_record(self, dataset_id: str):
+        """Fetch a dataset record by ID.
+
+        Authorization is handled at the router layer via authorize_dataset_access.
 
         Returns:
-            The dataset record if found and authorized.
+            The dataset record if found.
 
         Raises:
             DatasetNotFound: If dataset with given ID does not exist.
-            AuthorizationError: If user's org does not own the parent project.
         """
         record = await self._metadata_repo.get_dataset_record(dataset_id, include_transforms=False)
         if not record:
             raise DatasetNotFound(dataset_id)
-        self._verify_org_access(record, dataset_id)
         return record
 
     async def fetch_dataset(
@@ -51,16 +49,15 @@ class DatasetService:
     ) -> Dataset:
         """Fetch a dataset record and convert to domain model.
 
+        Authorization is handled at the router layer via authorize_dataset_access.
+
         Raises:
             DatasetNotFound: If dataset with given ID does not exist.
-            AuthorizationError: If user's org does not own the parent project.
         """
         dataset_record = await self._metadata_repo.get_dataset_record(dataset_id, include_transforms)
 
         if not dataset_record:
             raise DatasetNotFound(dataset_id)
-
-        self._verify_org_access(dataset_record, dataset_id)
 
         dataset = Dataset.from_record(dataset_record, include_transforms=include_transforms)
 
@@ -69,13 +66,3 @@ class DatasetService:
             dataset = replace(dataset, preview_rows=preview_rows)
 
         return dataset
-
-    @staticmethod
-    def _verify_org_access(dataset_record, dataset_id: str) -> None:
-        """Verify the current user's org owns the dataset's parent project."""
-        project = dataset_record.project
-        if project is None:
-            return
-        project_org_id = getattr(project, "org_id", None)
-        if project_org_id and project_org_id != get_auth_user().org_id:
-            raise AuthorizationError(f"Access denied to dataset {dataset_id}")

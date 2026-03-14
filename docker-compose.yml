@@ -61,6 +61,22 @@ services:
       timeout: 20s
       retries: 3
 
+  # Auth Proxy - validates tokens and forwards identity headers
+  auth-proxy:
+    build:
+      context: ./auth-proxy
+      dockerfile: Dockerfile
+    container_name: dashboard-auth-proxy
+    environment:
+      AUTH_MODE: ${AUTH_MODE:-dev}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      BACKEND_URL: http://api:8000
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
   # FastAPI backend - works with DuckDB (local) or PostgreSQL (full)
   api:
     image: dashboard-chat/api:bazel
@@ -75,6 +91,7 @@ services:
       WORKOS_API_KEY: ${WORKOS_API_KEY:-}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      TRUST_PROXY_HEADERS: "true"
       STREAM_API_KEY: ${STREAM_API_KEY:-}
       STREAM_API_SECRET: ${STREAM_API_SECRET:-}
       PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
@@ -110,6 +127,7 @@ services:
       WORKOS_API_KEY: ${WORKOS_API_KEY:-}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      TRUST_PROXY_HEADERS: "true"
       PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
       PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
       PG_DUCKDB_DATABASE: ${PG_DUCKDB_DATABASE:-dashboard_external}
@@ -127,6 +145,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      auth-proxy:
+        condition: service_started
     volumes:
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations

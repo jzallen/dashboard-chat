@@ -5,6 +5,7 @@ from returns.result import Failure, Success
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
 from app.use_cases.project import list_projects
@@ -17,7 +18,10 @@ from tests.uuidv7_fixtures import (
     PROJECT_SORT_1,
     PROJECT_SORT_2,
     PROJECT_SORT_3,
+    USER_1,
 )
+
+TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
 
 class TestListProjects:
@@ -27,7 +31,7 @@ class TestListProjects:
         """list_projects should return Result containing paginated dict with items."""
         set_session(seeded_db)
 
-        result = await list_projects()
+        result = await list_projects(user=TEST_USER)
 
         match result:
             case Success(data):
@@ -79,7 +83,7 @@ class TestListProjects:
         """list_projects should return empty items when no projects exist."""
         set_session(db_session)
 
-        result = await list_projects()
+        result = await list_projects(user=TEST_USER)
 
         match result:
             case Success(data):
@@ -105,7 +109,7 @@ class TestListProjects:
         db_session.add(p3)
         await db_session.commit()
 
-        result = await list_projects()
+        result = await list_projects(user=TEST_USER)
 
         match result:
             case Success(data):
@@ -126,6 +130,7 @@ class TestListProjects:
                 raise SQLAlchemyError("Database connection lost")
 
         result = await list_projects(
+            user=TEST_USER,
             repositories={"metadata_repository": FailingMetadataRepository},
         )
 
@@ -146,7 +151,7 @@ class TestListProjects:
         await db_session.commit()
 
         # First page
-        result = await list_projects(page_size=2)
+        result = await list_projects(user=TEST_USER, page_size=2)
         match result:
             case Success(data):
                 assert len(data["items"]) == 2
@@ -154,7 +159,7 @@ class TestListProjects:
                 assert data["next_cursor"] is not None
 
                 # Second page
-                result2 = await list_projects(cursor=data["next_cursor"], page_size=2)
+                result2 = await list_projects(user=TEST_USER, cursor=data["next_cursor"], page_size=2)
                 match result2:
                     case Success(data2):
                         assert len(data2["items"]) == 1

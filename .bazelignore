@@ -1,6 +1,7 @@
 node_modules
 frontend/node_modules
 worker/node_modules
+auth-proxy/node_modules
 .venv
 backend/data
 .git

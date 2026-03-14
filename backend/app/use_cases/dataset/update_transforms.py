@@ -30,7 +30,7 @@ async def update_transforms(
     outbox_repo = repositories.outbox
 
     service = DatasetService(repositories)
-    await service.fetch_and_authorize_dataset(dataset_id)
+    await service.fetch_dataset_record(dataset_id)
 
     await metadata_repo.update_transforms(updates)
 

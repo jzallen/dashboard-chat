@@ -3,7 +3,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import clear_auth_user, set_auth_user
 from app.auth.types import AuthUser
 from app.repositories.metadata import DatasetRecord, ExternalAccessRecord, ProjectRecord
 from app.use_cases.sql_access._infra import (
@@ -32,14 +31,6 @@ TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Te
 MOCK_ENV_ID = "mock-container-id"
 MOCK_ENV_HOST = "localhost"
 MOCK_ENV_PORT = 15432
-
-
-@pytest.fixture(autouse=True)
-def auth_user():
-    """Set a default auth user for all SQL access tests."""
-    set_auth_user(TEST_USER)
-    yield
-    clear_auth_user()
 
 
 @pytest.fixture(autouse=True)

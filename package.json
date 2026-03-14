@@ -6,7 +6,8 @@
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "frontend",
-    "worker"
+    "worker",
+    "auth-proxy"
   ],
   "scripts": {
     "dev:worker": "npm run dev -w worker",

@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from app.auth import get_auth_user
 from app.auth.exceptions import AuthorizationError
+from app.auth.types import AuthUser
 from app.config import get_settings
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 @handle_returns
 async def create_organization(
     name: str,
+    user: AuthUser,
     *,
     repositories: "RepositoryContainer",
 ) -> dict:
@@ -30,7 +31,6 @@ async def create_organization(
 
     For dev mode: creates local records only.
     """
-    user = get_auth_user()
     _ensure_user_has_no_org(user)
 
     metadata_repo = repositories.metadata

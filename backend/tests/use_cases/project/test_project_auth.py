@@ -1,25 +1,28 @@
-"""Tests for project authorization — org-based access control."""
+"""Tests for project authorization — org-based access control.
+
+NOTE: Per-resource authorization (org_id ownership check) has moved to the
+router layer via `authorize_project_access()` in deps.py. Tests for that
+are in tests/auth/test_deps.py. This file tests auth concerns that remain
+in use cases: list_projects filtering and create_project org/user stamping.
+"""
 
 import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
-from app.use_cases.project import create_project, get_project, list_projects
+from app.use_cases.project import create_project, list_projects
 from tests.uuidv7_fixtures import (
     ORG_1,
     ORG_OTHER,
-    ORG_ROUTE,
-    PROJECT_EMPTY,
     PROJECT_MINE,
     PROJECT_OTHER,
-    PROJECT_ROUTE_1,
     USER_1,
-    USER_2,
 )
+
+TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
 
 class TestListProjectsAuth:
@@ -33,7 +36,7 @@ class TestListProjectsAuth:
         db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other Org Project", org_id=ORG_OTHER))
         await db_session.commit()
 
-        result = await list_projects()
+        result = await list_projects(user=TEST_USER)
 
         match result:
             case Success(data):
@@ -49,11 +52,29 @@ class TestListProjectsAuth:
         db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other", org_id=ORG_OTHER))
         await db_session.commit()
 
-        result = await list_projects()
+        result = await list_projects(user=TEST_USER)
 
         match result:
             case Success(data):
                 assert data["items"] == []
+            case Failure(error):
+                pytest.fail(f"list_projects should succeed, got: {error}")
+
+    async def test_list_projects_with_explicit_user(self, db_session: AsyncSession):
+        """list_projects should use the explicitly passed user."""
+        set_session(db_session)
+
+        db_session.add(ProjectRecord(id=PROJECT_MINE, name="My Project", org_id=ORG_1))
+        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other", org_id=ORG_OTHER))
+        await db_session.commit()
+
+        other_user = AuthUser(id="other", email="other@test.com", org_id=ORG_OTHER)
+        result = await list_projects(user=other_user)
+
+        match result:
+            case Success(data):
+                assert len(data["items"]) == 1
+                assert data["items"][0]["id"] == PROJECT_OTHER
             case Failure(error):
                 pytest.fail(f"list_projects should succeed, got: {error}")
 
@@ -65,7 +86,7 @@ class TestCreateProjectAuth:
         """Created project should have the authenticated user's org_id and user id."""
         set_session(db_session)
 
-        result = await create_project(name="Auth Project")
+        result = await create_project(name="Auth Project", user=TEST_USER)
 
         match result:
             case Success(project):
@@ -74,69 +95,16 @@ class TestCreateProjectAuth:
             case Failure(error):
                 pytest.fail(f"create_project should succeed, got: {error}")
 
-
-class TestGetProjectAuth:
-    """get_project should enforce org-based authorization."""
-
-    async def test_get_project_when_org_matches_allows_access(self, db_session: AsyncSession):
-        """get_project should succeed when org_id matches."""
+    async def test_create_project_with_explicit_user(self, db_session: AsyncSession):
+        """create_project should use the explicitly passed user."""
         set_session(db_session)
 
-        db_session.add(ProjectRecord(id=PROJECT_MINE, name="My Project", org_id=ORG_1))
-        await db_session.commit()
-
-        result = await get_project(project_id=PROJECT_MINE)
+        custom_user = AuthUser(id="custom-user", email="custom@test.com", org_id="custom-org")
+        result = await create_project(name="Custom Project", user=custom_user)
 
         match result:
             case Success(project):
-                assert project["id"] == PROJECT_MINE
+                assert project["org_id"] == "custom-org"
+                assert project["created_by"] == "custom-user"
             case Failure(error):
-                pytest.fail(f"get_project should succeed, got: {error}")
-
-    async def test_get_project_when_org_mismatch_denies_access(self, db_session: AsyncSession):
-        """get_project should return Failure with AuthorizationError for wrong org."""
-        set_session(db_session)
-
-        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other", org_id=ORG_OTHER))
-        await db_session.commit()
-
-        result = await get_project(project_id=PROJECT_OTHER)
-
-        match result:
-            case Failure(error):
-                assert "Access denied" in str(error)
-            case Success(_):
-                pytest.fail("get_project should deny access to project from different org")
-
-    async def test_get_project_when_no_org_id_allows_access(self, db_session: AsyncSession):
-        """get_project should allow access when project has no org_id (legacy data)."""
-        set_session(db_session)
-
-        db_session.add(ProjectRecord(id=PROJECT_EMPTY, name="Legacy Project"))
-        await db_session.commit()
-
-        result = await get_project(project_id=PROJECT_EMPTY)
-
-        match result:
-            case Success(project):
-                assert project["id"] == PROJECT_EMPTY
-            case Failure(error):
-                pytest.fail(f"get_project should allow legacy project access, got: {error}")
-
-    async def test_get_project_when_different_auth_user_denies_access(self, db_session: AsyncSession):
-        """Switching auth user should change authorization outcome."""
-        set_session(db_session)
-
-        db_session.add(ProjectRecord(id=PROJECT_ROUTE_1, name="Org A Project", org_id=ORG_ROUTE))
-        await db_session.commit()
-
-        # Set a different user than the default
-        set_auth_user(AuthUser(id=USER_2, email="b@test.com", org_id=ORG_OTHER))
-
-        result = await get_project(project_id=PROJECT_ROUTE_1)
-
-        match result:
-            case Failure(error):
-                assert "Access denied" in str(error)
-            case Success(_):
-                pytest.fail("get_project should deny access when org doesn't match")
+                pytest.fail(f"create_project should succeed, got: {error}")

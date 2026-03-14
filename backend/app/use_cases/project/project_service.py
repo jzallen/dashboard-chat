@@ -6,8 +6,6 @@ get_project, update_project, delete_project, export_dbt_project, etc.
 
 from typing import TYPE_CHECKING
 
-from app.auth import get_auth_user
-from app.auth.exceptions import AuthorizationError
 from app.use_cases.project.exceptions import ProjectNotFound
 
 if TYPE_CHECKING:
@@ -20,31 +18,20 @@ class ProjectService:
     def __init__(self, repositories: "RepositoryContainer"):
         self._metadata_repo = repositories.metadata
 
-    async def fetch_and_authorize_project(
+    async def fetch_project(
         self,
         project_id: str,
     ) -> dict:
-        """Fetch a project and verify the current user has access.
+        """Fetch a project by ID.
+
+        Authorization is handled at the router layer via authorize_project_access.
 
         Raises:
             ProjectNotFound: If project with given ID does not exist.
-            AuthorizationError: If user's org does not own the project.
         """
         project_dict = await self._metadata_repo.get_project(project_id)
 
         if project_dict is None:
             raise ProjectNotFound(project_id)
 
-        self._verify_org_access(project_dict, project_id)
-
         return project_dict
-
-    @staticmethod
-    def _verify_org_access(project_dict: dict, project_id: str) -> None:
-        """Verify the current user's org owns the project.
-
-        Uses the lenient check: allows access if org_id is None (legacy projects).
-        """
-        user = get_auth_user()
-        if project_dict.get("org_id") and project_dict["org_id"] != user.org_id:
-            raise AuthorizationError(f"Access denied to project {project_id}")

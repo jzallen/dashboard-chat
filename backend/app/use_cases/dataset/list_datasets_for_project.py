@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING
 
 from returns.result import Result
 
+from app.auth.types import AuthUser
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.project.project_service import ProjectService
+from app.use_cases.project.exceptions import ProjectNotFound
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -29,22 +30,22 @@ async def list_datasets_for_project(
     project_id: str,
     cursor: str | None = None,
     page_size: int = 50,
+    user: AuthUser | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
     """List sparse datasets belonging to a project with cursor-based pagination.
 
-    Returns lightweight dataset dicts (no transforms) suitable for
-    sidebar/navigation views.
+    Authorization is handled at the router layer via authorize_project_access.
 
     Raises:
         ProjectNotFound: If project does not exist.
-        AuthorizationError: If user's org does not own the project.
     """
-    svc = ProjectService(repositories)
-    await svc.fetch_and_authorize_project(project_id)
+    metadata_repo = repositories.metadata
+    if not await metadata_repo.project_exists(project_id):
+        raise ProjectNotFound(project_id)
 
-    records, next_cursor, has_more = await repositories.metadata.list_datasets(
+    records, next_cursor, has_more = await metadata_repo.list_datasets(
         project_id, include_transforms=False, cursor=cursor, limit=page_size
     )
 

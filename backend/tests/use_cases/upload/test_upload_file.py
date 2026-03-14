@@ -6,19 +6,15 @@ from botocore.stub import Stubber
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
-from app.auth.exceptions import AuthorizationError
-from app.auth.types import AuthUser
 from app.models import Upload
 from app.plugins import create_plugin_registry
 from app.repositories import set_session
 from app.repositories.lake import MinIOLakeRepository
-from app.repositories.metadata import ProjectRecord
 from app.use_cases.dataset.exceptions import DatasetNotFound
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.upload import upload_file
 from app.use_cases.upload.exceptions import EmptyFile, UnsupportedFormat
-from tests.uuidv7_fixtures import DATASET_1, ORG_OTHER, PROJECT_1, PROJECT_OTHER, USER_2
+from tests.uuidv7_fixtures import DATASET_1, PROJECT_1
 
 
 @pytest.fixture
@@ -148,23 +144,4 @@ class TestUploadFile:
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), DatasetNotFound)
 
-    async def test_upload_when_org_mismatch_raises_authorization_error(
-        self, db_session: AsyncSession, sample_csv: bytes, plugin_registry
-    ):
-        set_session(db_session)
-
-        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Other Org Project", org_id=ORG_OTHER))
-        await db_session.commit()
-
-        set_auth_user(AuthUser(id=USER_2, email="other@example.com", org_id="other-org", name="Other User"))
-
-        result = await upload_file(
-            file_content=sample_csv,
-            file_name="test_data.csv",
-            project_id=PROJECT_OTHER,
-            plugin_registry=plugin_registry,
-        )
-
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), AuthorizationError)
-        assert "Access denied" in str(result.failure())
+    # NOTE: org mismatch test removed — authorization moved to router layer

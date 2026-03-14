@@ -3,17 +3,19 @@
 import time
 
 import jwt
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from app.auth.context import get_auth_user
+from app.auth.types import AuthUser
 from app.config import get_settings
+
+from .deps import get_current_user
 
 router = APIRouter(prefix="/api/stream", tags=["stream"])
 
 
 @router.get("/stream-token")
-async def stream_token():
+async def stream_token(user: AuthUser = Depends(get_current_user)):
     """Mint a Stream.io JWT for the authenticated user.
 
     Auth is enforced by AuthMiddleware (Bearer token required).
@@ -25,8 +27,6 @@ async def stream_token():
             {"detail": "Stream.io is not configured"},
             status_code=503,
         )
-
-    user = get_auth_user()
 
     now = int(time.time())
     payload = {

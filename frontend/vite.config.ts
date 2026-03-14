@@ -15,11 +15,11 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://api:8000",
+        target: "http://auth-proxy:3000",
         changeOrigin: true,
       },
       "/health": {
-        target: "http://api:8000",
+        target: "http://auth-proxy:3000",
         changeOrigin: true,
       },
     },

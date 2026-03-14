@@ -128,6 +128,18 @@ importers:
         specifier: ^5.4.11
         version: 5.4.21(@types/node@25.2.3)
 
+  auth-proxy:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^1.14.0
+        version: 1.19.9(hono@4.11.9)
+      hono:
+        specifier: ^4.7.0
+        version: 4.11.9
+      jose:
+        specifier: ^6.1.3
+        version: 6.1.3
+
   worker:
     dependencies:
       '@hono/node-server':

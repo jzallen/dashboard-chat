@@ -4,11 +4,10 @@ import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import set_auth_user
 from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.use_cases.organization import get_organization
-from tests.use_cases.organization.conftest import TEST_USER_WITH_ORG
+from tests.use_cases.organization.conftest import TEST_USER, TEST_USER_WITH_ORG
 from tests.uuidv7_fixtures import ORG_1, USER_3
 
 
@@ -17,9 +16,8 @@ class TestGetOrganization:
 
     async def test_get_org_when_user_has_org_returns_org_dict(self, seeded_db: AsyncSession):
         set_session(seeded_db)
-        set_auth_user(TEST_USER_WITH_ORG)
 
-        result = await get_organization()
+        result = await get_organization(user=TEST_USER_WITH_ORG)
 
         match result:
             case Success(data):
@@ -35,7 +33,7 @@ class TestGetOrganization:
     async def test_get_org_when_user_has_no_org_returns_none(self, seeded_db: AsyncSession):
         set_session(seeded_db)
 
-        result = await get_organization()
+        result = await get_organization(user=TEST_USER)
 
         match result:
             case Success(data):
@@ -45,16 +43,15 @@ class TestGetOrganization:
 
     async def test_get_org_when_org_id_nonexistent_returns_none(self, seeded_db: AsyncSession):
         set_session(seeded_db)
-        set_auth_user(
-            AuthUser(
+
+        result = await get_organization(
+            user=AuthUser(
                 id=USER_3,
                 email="ghost@example.com",
                 org_id="nonexistent-org",
                 name="Ghost User",
             )
         )
-
-        result = await get_organization()
 
         match result:
             case Success(data):

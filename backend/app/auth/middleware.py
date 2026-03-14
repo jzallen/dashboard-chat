@@ -34,11 +34,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Middleware that validates Bearer tokens and sets auth context."""
 
     async def dispatch(self, request: Request, call_next):
+        from app.config import get_settings
+
         path = request.url.path
 
         # Skip auth for public routes
         if path in PUBLIC_PATHS:
             return await call_next(request)
+
+        settings = get_settings()
+
+        # When behind the auth proxy, trust identity headers instead of verifying tokens
+        if settings.trust_proxy_headers:
+            user_id = request.headers.get("X-User-Id")
+            if user_id:
+                from .types import AuthUser
+
+                user = AuthUser(
+                    id=user_id,
+                    org_id=request.headers.get("X-Org-Id"),
+                    email=request.headers.get("X-User-Email", ""),
+                )
+                set_auth_user(user)
+                return await call_next(request)
 
         # Extract Bearer token
         auth_header = request.headers.get("Authorization", "")

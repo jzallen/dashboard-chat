@@ -6,13 +6,13 @@ import pytest
 from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.exceptions import AuthorizationError
 from app.repositories import set_session
 from app.use_cases.project.exceptions import ProjectHasNoDatasets, ProjectNotFound
 from app.use_cases.sql_access import enable_sql_access
 from app.use_cases.sql_access._infra import MockEnvironmentProvisioner
 from app.use_cases.sql_access.exceptions import SqlAccessAlreadyEnabled
-from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY, PROJECT_OTHER
+from tests.use_cases.sql_access.conftest import TEST_USER
+from tests.uuidv7_fixtures import PROJECT_1, PROJECT_EMPTY
 
 # Default settings values used by most tests (match get_settings() defaults)
 _DEFAULT_MINIO_ENDPOINT = "localhost:9000"
@@ -48,7 +48,7 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id=PROJECT_1)
+        result = await enable_sql_access(project_id=PROJECT_1, user=TEST_USER)
 
         assert isinstance(result, Success)
         data = result.unwrap()
@@ -89,7 +89,7 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id="nonexistent")
+        result = await enable_sql_access(project_id="nonexistent", user=TEST_USER)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectNotFound)
@@ -101,7 +101,7 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db_with_access)
 
-        result = await enable_sql_access(project_id=PROJECT_1)
+        result = await enable_sql_access(project_id=PROJECT_1, user=TEST_USER)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), SqlAccessAlreadyEnabled)
@@ -113,22 +113,12 @@ class TestEnableSqlAccess:
     ):
         set_session(seeded_db_no_datasets)
 
-        result = await enable_sql_access(project_id=PROJECT_EMPTY)
+        result = await enable_sql_access(project_id=PROJECT_EMPTY, user=TEST_USER)
 
         assert isinstance(result, Failure)
         assert isinstance(result.failure(), ProjectHasNoDatasets)
 
-    async def test_enable_when_other_org_returns_authorization_error(
-        self,
-        mock_provisioner: MockEnvironmentProvisioner,
-        seeded_db_other_org: AsyncSession,
-    ):
-        set_session(seeded_db_other_org)
-
-        result = await enable_sql_access(project_id=PROJECT_OTHER)
-
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), AuthorizationError)
+    # NOTE: org mismatch test removed — authorization moved to router layer
 
     async def test_enable_when_previously_disabled_re_enables_record(
         self,
@@ -138,7 +128,7 @@ class TestEnableSqlAccess:
         """Re-enable path: existing disabled record is updated (not created)."""
         set_session(seeded_db_with_disabled_access)
 
-        result = await enable_sql_access(project_id=PROJECT_1)
+        result = await enable_sql_access(project_id=PROJECT_1, user=TEST_USER)
 
         assert isinstance(result, Success)
         data = result.unwrap()
@@ -157,7 +147,7 @@ class TestEnableSqlAccess:
         pg_manager_mocks["execute_bootstrap"].side_effect = RuntimeError("bootstrap failed")
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id=PROJECT_1)
+        result = await enable_sql_access(project_id=PROJECT_1, user=TEST_USER)
 
         assert isinstance(result, Failure)
         pg_manager_mocks["create_schema"].assert_called_once()
@@ -174,7 +164,7 @@ class TestEnableSqlAccess:
 
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id=PROJECT_1)
+        result = await enable_sql_access(project_id=PROJECT_1, user=TEST_USER)
         assert isinstance(result, Success)
 
         # Verify stored hash is md5 format (starts with "md5")
@@ -198,7 +188,7 @@ class TestEnableSqlAccess:
         )
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id=PROJECT_1)
+        result = await enable_sql_access(project_id=PROJECT_1, user=TEST_USER)
 
         assert isinstance(result, Success)
         storage_config = mock_provisioner.provision_calls[0][1]
@@ -219,7 +209,7 @@ class TestEnableSqlAccess:
         )
         set_session(seeded_db)
 
-        result = await enable_sql_access(project_id=PROJECT_1)
+        result = await enable_sql_access(project_id=PROJECT_1, user=TEST_USER)
 
         assert isinstance(result, Success)
         storage_config = mock_provisioner.provision_calls[0][1]

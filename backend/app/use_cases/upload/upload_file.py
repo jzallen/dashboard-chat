@@ -54,6 +54,7 @@ async def upload_file(
     project_id: str,
     plugin_registry: PluginRegistry,
     dataset_id: str | None = None,
+    project: dict | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[Upload, str]:
@@ -68,8 +69,9 @@ async def upload_file(
 
     _validate_upload(file_content, file_name, plugin_registry)
 
-    project_service = ProjectService(repositories)
-    await project_service.fetch_and_authorize_project(project_id)
+    if project is None:
+        project_service = ProjectService(repositories)
+        project = await project_service.fetch_project(project_id)
 
     await _validate_dataset_exists(metadata_repo, dataset_id)
 

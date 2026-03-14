@@ -3,21 +3,12 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.context import clear_auth_user, set_auth_user
 from app.auth.types import AuthUser
 from app.repositories.metadata import OrganizationRecord, ProjectRecord
 from tests.uuidv7_fixtures import ORG_1, PROJECT_1, USER_1, USER_2
 
 TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=None, name="Test User")
 TEST_USER_WITH_ORG = AuthUser(id=USER_2, email="orguser@example.com", org_id=ORG_1, name="Org User")
-
-
-@pytest.fixture(autouse=True)
-def auth_user():
-    """Set a default auth user (no org) for organization tests."""
-    set_auth_user(TEST_USER)
-    yield
-    clear_auth_user()
 
 
 @pytest.fixture
