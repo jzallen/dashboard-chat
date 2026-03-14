@@ -5,6 +5,25 @@ import { useStreamClient } from "./useStreamClient";
 
 const FREEZE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+/** Strip hyphens from a UUID to produce a compact 32-char hex string. */
+function compactId(id: string): string {
+  return id.replace(/-/g, "");
+}
+
+/**
+ * Generate a short session hash from org, user, and timestamp.
+ * 8 hex chars ≈ 4 billion combinations — collision-safe for <100 users/org.
+ */
+async function sessionHash(orgId: string, userId: string): Promise<string> {
+  const input = `${orgId}:${userId}:${Date.now()}`;
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  const hex = Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return hex.slice(0, 8);
+}
+
 interface SessionContextValue {
   currentChannel: Channel | null;
   isFrozen: boolean;
@@ -13,10 +32,10 @@ interface SessionContextValue {
 }
 
 /**
- * Manages current Stream channel (project-scoped sessions).
+ * Manages current Stream channel (org-scoped sessions).
  * Handles channel creation, lazy freeze detection, and session switching.
  */
-export function useSessionContext(projectId: string | null): SessionContextValue {
+export function useSessionContext(projectId: string | null, orgId: string | null = null): SessionContextValue {
   const client = useStreamClient();
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [isFrozen, setIsFrozen] = useState(false);
@@ -47,9 +66,14 @@ export function useSessionContext(projectId: string | null): SessionContextValue
     async (pid: string): Promise<Channel> => {
       if (!client) throw new Error("Stream client not ready");
 
-      const sessionId = `project_${pid}_${crypto.randomUUID()}`;
+      const effectiveOrgId = orgId ?? "no-org";
+      const userId = client.userID ?? "anon";
+      const suffix = await sessionHash(effectiveOrgId, userId);
+      const sessionId = `chat_${compactId(effectiveOrgId)}_${suffix}`;
+
       const channel = client.channel("messaging", sessionId, {
         projectId: pid,
+        orgId: effectiveOrgId,
         createdAt: new Date().toISOString(),
         frozenAt: null,
       });
@@ -59,7 +83,7 @@ export function useSessionContext(projectId: string | null): SessionContextValue
       setIsFrozen(false);
       return channel;
     },
-    [client],
+    [client, orgId],
   );
 
   const switchSession = useCallback(

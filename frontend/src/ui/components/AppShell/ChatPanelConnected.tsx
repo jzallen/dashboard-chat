@@ -3,6 +3,7 @@ import { useCallback, useEffect } from "react";
 import type { Dataset } from "@/dataCatalog";
 import { useSessionContext } from "@/stream/useSessionContext";
 
+import { useAuth } from "../../context/AuthContext";
 import { useChatContext } from "../../context/ChatContext";
 import ChatPanel from "../ChatPanel";
 
@@ -17,6 +18,7 @@ export function ChatPanelConnected({
   onDatasetCreated,
   onNavigateToDataset,
 }: ChatPanelConnectedProps) {
+  const { user } = useAuth();
   const {
     messages,
     input,
@@ -37,7 +39,7 @@ export function ChatPanelConnected({
     streamingContent,
   } = useChatContext();
 
-  const { isFrozen, currentChannel } = useSessionContext(projectId);
+  const { isFrozen, currentChannel } = useSessionContext(projectId, user?.org_id ?? null);
 
   useEffect(() => {
     registerProjectId(projectId);

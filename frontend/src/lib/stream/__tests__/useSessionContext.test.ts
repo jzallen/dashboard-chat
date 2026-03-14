@@ -13,7 +13,7 @@ function makeMockChannel(
   } = {},
 ) {
   const {
-    id = "project_p1_uuid",
+    id = "chat_org1_abcd1234",
     messages = [],
     frozenAt = null,
   } = overrides;
@@ -30,6 +30,7 @@ function makeMockClient(
   overrides: {
     channelReturn?: ReturnType<typeof makeMockChannel>;
     queryChannelsReturn?: ReturnType<typeof makeMockChannel>[];
+    userID?: string;
   } = {},
 ) {
   const channel =
@@ -39,6 +40,7 @@ function makeMockClient(
     queryChannels: vi
       .fn()
       .mockResolvedValue(overrides.queryChannelsReturn ?? []),
+    userID: overrides.userID ?? "test-user-001",
   };
 }
 
@@ -50,9 +52,17 @@ vi.mock("../useStreamClient", () => ({
   useStreamClient: () => mockClient,
 }));
 
-// Stable UUID for channel ID assertions
+// Mock crypto.subtle.digest for deterministic session hashes
+const MOCK_HASH = "a1b2c3d4";
 vi.stubGlobal("crypto", {
   ...globalThis.crypto,
+  subtle: {
+    ...globalThis.crypto?.subtle,
+    digest: vi.fn().mockResolvedValue(
+      // Return a buffer whose first 4 bytes encode "a1b2c3d4" in hex
+      new Uint8Array([0xa1, 0xb2, 0xc3, 0xd4, 0x00, 0x00, 0x00, 0x00]).buffer,
+    ),
+  },
   randomUUID: () => "00000000-0000-0000-0000-000000000001",
 });
 
@@ -65,17 +75,17 @@ describe("useSessionContext", () => {
     vi.restoreAllMocks();
   });
 
-  // --- No-client cases (existing) ---
+  // --- No-client cases ---
 
   it("returns null channel when Stream client is not ready", () => {
-    const { result } = renderHook(() => useSessionContext("project-1"));
+    const { result } = renderHook(() => useSessionContext("project-1", "org-1"));
 
     expect(result.current.currentChannel).toBeNull();
     expect(result.current.isFrozen).toBe(false);
   });
 
   it("createSession throws when client is not ready", async () => {
-    const { result } = renderHook(() => useSessionContext("project-1"));
+    const { result } = renderHook(() => useSessionContext("project-1", "org-1"));
 
     await expect(result.current.createSession("project-1")).rejects.toThrow(
       "Stream client not ready",
@@ -83,7 +93,7 @@ describe("useSessionContext", () => {
   });
 
   it("switchSession throws when client is not ready", async () => {
-    const { result } = renderHook(() => useSessionContext("project-1"));
+    const { result } = renderHook(() => useSessionContext("project-1", "org-1"));
 
     await expect(result.current.switchSession("channel-1")).rejects.toThrow(
       "Stream client not ready",
@@ -99,11 +109,11 @@ describe("useSessionContext", () => {
 
   // --- Happy-path: channel creation ---
 
-  it("createSession creates a channel with project_{pid}_{uuid} ID format", async () => {
-    const channel = makeMockChannel({ id: "project_p1_00000000-0000-0000-0000-000000000001" });
+  it("createSession creates a channel with chat_{compactOrgId}_{hash} ID format", async () => {
+    const channel = makeMockChannel({ id: `chat_org1_${MOCK_HASH}` });
     mockClient = makeMockClient({ channelReturn: channel });
 
-    const { result } = renderHook(() => useSessionContext(null));
+    const { result } = renderHook(() => useSessionContext(null, "org-1"));
 
     let created: unknown;
     await act(async () => {
@@ -112,9 +122,10 @@ describe("useSessionContext", () => {
 
     expect(mockClient.channel).toHaveBeenCalledWith(
       "messaging",
-      "project_p1_00000000-0000-0000-0000-000000000001",
+      expect.stringMatching(/^chat_org1_[0-9a-f]{8}$/),
       expect.objectContaining({
         projectId: "p1",
+        orgId: "org-1",
         frozenAt: null,
       }),
     );
@@ -122,6 +133,42 @@ describe("useSessionContext", () => {
     expect(created).toBe(channel);
     expect(result.current.currentChannel).toBe(channel);
     expect(result.current.isFrozen).toBe(false);
+  });
+
+  it("channel ID stays under 64 chars for UUID org IDs", async () => {
+    const uuidOrgId = "019ce9c7-0d01-7031-b95b-bcef2a97ddb4";
+    const channel = makeMockChannel();
+    mockClient = makeMockClient({ channelReturn: channel });
+
+    const { result } = renderHook(() => useSessionContext(null, uuidOrgId));
+
+    await act(async () => {
+      await result.current.createSession("019ce9c7-0d01-7031-b95b-bcef2a97ddb4");
+    });
+
+    const channelIdArg = mockClient.channel.mock.calls[0][1] as string;
+    expect(channelIdArg.length).toBeLessThanOrEqual(64);
+    // chat_ (5) + 32 hex + _ (1) + 8 hex = 46
+    expect(channelIdArg).toMatch(/^chat_[0-9a-f]{32}_[0-9a-f]{8}$/);
+  });
+
+  it("falls back to 'no-org' when orgId is null", async () => {
+    const channel = makeMockChannel();
+    mockClient = makeMockClient({ channelReturn: channel });
+
+    const { result } = renderHook(() => useSessionContext(null, null));
+
+    await act(async () => {
+      await result.current.createSession("p1");
+    });
+
+    expect(mockClient.channel).toHaveBeenCalledWith(
+      "messaging",
+      expect.stringMatching(/^chat_noorg_[0-9a-f]{8}$/),
+      expect.objectContaining({
+        orgId: "no-org",
+      }),
+    );
   });
 
   // --- Freeze detection ---
@@ -211,7 +258,7 @@ describe("useSessionContext", () => {
       queryChannelsReturn: [],
     });
 
-    renderHook(() => useSessionContext("p1"));
+    renderHook(() => useSessionContext("p1", "org-1"));
 
     await waitFor(() => {
       expect(mockClient.queryChannels).toHaveBeenCalledWith(
@@ -219,11 +266,11 @@ describe("useSessionContext", () => {
         [{ last_message_at: -1 }],
         { limit: 10 },
       );
-      // Should have created a new session
+      // Should have created a new session with compact format
       expect(mockClient.channel).toHaveBeenCalledWith(
         "messaging",
-        expect.stringContaining("project_p1_"),
-        expect.objectContaining({ projectId: "p1" }),
+        expect.stringMatching(/^chat_org1_[0-9a-f]{8}$/),
+        expect.objectContaining({ projectId: "p1", orgId: "org-1" }),
       );
       expect(channel.watch).toHaveBeenCalled();
     });
@@ -239,13 +286,13 @@ describe("useSessionContext", () => {
       queryChannelsReturn: [existingChannel as never],
     });
 
-    renderHook(() => useSessionContext("p1"));
+    renderHook(() => useSessionContext("p1", "org-1"));
 
     await waitFor(() => {
       // Should NOT have created a new channel
       expect(mockClient.channel).not.toHaveBeenCalledWith(
         "messaging",
-        expect.stringContaining("project_p1_0000"),
+        expect.stringMatching(/^chat_/),
         expect.anything(),
       );
       expect(existingChannel.updatePartial).not.toHaveBeenCalled();
@@ -259,20 +306,20 @@ describe("useSessionContext", () => {
       messages: [{ created_at: staleTime }],
       frozenAt: "2025-01-01T00:00:00.000Z",
     });
-    const newChannel = makeMockChannel({ id: "project_p1_new" });
+    const newChannel = makeMockChannel({ id: "chat_org1_new" });
     mockClient = makeMockClient({
       channelReturn: newChannel,
       queryChannelsReturn: [frozenChannel as never],
     });
 
-    renderHook(() => useSessionContext("p1"));
+    renderHook(() => useSessionContext("p1", "org-1"));
 
     await waitFor(() => {
       // Should have created a new channel since the existing one is frozen
       expect(mockClient.channel).toHaveBeenCalledWith(
         "messaging",
-        expect.stringContaining("project_p1_"),
-        expect.objectContaining({ projectId: "p1" }),
+        expect.stringMatching(/^chat_org1_[0-9a-f]{8}$/),
+        expect.objectContaining({ projectId: "p1", orgId: "org-1" }),
       );
     });
   });
