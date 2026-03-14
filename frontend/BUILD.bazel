@@ -122,11 +122,15 @@ js_library(
 
 genrule(
     name = "dist",
-    srcs = [":sources"],
+    srcs = [
+        ":sources",
+        "//:.env",
+    ],
     outs = ["dist.tar"],
     cmd = """
+        set -a && . .env && set +a && \
         cd frontend && \
-        NODE_ENV=production npx vite build --outDir ../$$TMPDIR/dist --emptyOutDir && \
+        VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$$STREAM_API_KEY NODE_ENV=production npx vite build --outDir ../$$TMPDIR/dist --emptyOutDir && \
         tar -cf - -C ../$$TMPDIR dist > ../$(OUTS)
     """,
     tags = ["no-sandbox"],

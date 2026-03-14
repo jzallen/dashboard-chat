@@ -22,7 +22,7 @@ export class ApiClient {
     options?: ApiClientOptions,
   ) {
     this.unwrapData = options?.unwrapData ?? true;
-    this.fetchFn = options?.fetchFn ?? fetch;
+    this.fetchFn = options?.fetchFn ?? fetch.bind(globalThis);
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {

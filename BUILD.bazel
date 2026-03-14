@@ -9,7 +9,10 @@ alias(
     actual = ":all_images",
 )
 
-exports_files(["docker-compose.test.yml"])
+exports_files([
+    "docker-compose.yml",
+    ".env",
+])
 
 # Build all OCI image tarballs
 filegroup(

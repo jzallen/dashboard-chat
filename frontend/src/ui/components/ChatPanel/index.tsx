@@ -11,6 +11,7 @@ import styles from "./ChatPanel.module.css";
 import { FrozenChannelPreview } from "./FrozenChannelPreview";
 import { LayerBadge } from "./LayerBadge";
 import { SSEOverlay } from "./SSEOverlay";
+import { UploadWidget } from "./UploadWidget";
 
 /** Props for the ChatPanel component. */
 interface ChatPanelProps {
@@ -89,6 +90,22 @@ function ChatPanel({
         <Channel>
           <div className={styles.messagesArea}>
             <MessageList />
+            {messages
+              .filter((m) => m.widget?.type === "upload")
+              .map((m) => (
+                <div key={m.id} className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+                  <div className={`${styles.messageBubble} ${styles.messageBubbleAssistant}`}>
+                    <p className={styles.messageContent}>{m.content}</p>
+                    {projectId && onUploadComplete && (
+                      <UploadWidget
+                        projectId={projectId}
+                        onUploadComplete={onUploadComplete}
+                        onUploadError={onUploadError}
+                      />
+                    )}
+                  </div>
+                </div>
+              ))}
             {isStreaming && streamingContent && (
               <SSEOverlay content={streamingContent} />
             )}
@@ -200,6 +217,13 @@ function ChatPanel({
                     </div>
                   ))}
                 </div>
+              )}
+              {message.widget?.type === "upload" && projectId && onUploadComplete && (
+                <UploadWidget
+                  projectId={projectId}
+                  onUploadComplete={onUploadComplete}
+                  onUploadError={onUploadError}
+                />
               )}
               {message.isStreaming && <span className={styles.streamingCursor} />}
             </div>

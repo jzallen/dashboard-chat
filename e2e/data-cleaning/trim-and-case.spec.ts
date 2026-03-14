@@ -1,7 +1,9 @@
 import * as path from "path";
+import { fileURLToPath } from "url";
 
 import { test, expect } from "../fixtures/test-fixtures";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIRTY_CSV = path.resolve(__dirname, "../fixtures/data/dirty-products.csv");
 
 test.describe("Data Cleaning - Trim & Case", () => {

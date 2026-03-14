@@ -4,8 +4,11 @@ set -euo pipefail
 # ─── E2E Test Runner ─────────────────────────────────────────────────────────
 # Loads Bazel-built OCI images, starts docker-compose stack, runs Playwright,
 # and tears down on exit.
+#
+# NOTE: docker-compose.yml uses explicit container_name directives, so the e2e
+# stack cannot run alongside a dev stack on the same host.
 
-COMPOSE_FILE="docker-compose.test.yml"
+COMPOSE_FILE="docker-compose.yml"
 COMPOSE_PROJECT="e2e-test"
 
 # Determine workspace root
@@ -43,29 +46,30 @@ fi
 
 # ─── Start compose stack ──────────────────────────────────────────────────────
 echo "==> Starting e2e docker-compose stack..."
-docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d
+AUTH_MODE=dev docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d
 
 # ─── Wait for services ───────────────────────────────────────────────────────
 echo "==> Waiting for services to be healthy..."
 MAX_WAIT=120
 ELAPSED=0
 while [[ $ELAPSED -lt $MAX_WAIT ]]; do
-    API_HEALTHY=$(docker inspect --format='{{.State.Health.Status}}' e2e-api 2>/dev/null || echo "starting")
-    FRONTEND_HEALTHY=$(docker inspect --format='{{.State.Health.Status}}' e2e-frontend 2>/dev/null || echo "starting")
+    API_OK=$(curl -sf http://localhost:8000/health >/dev/null 2>&1 && echo "ok" || echo "waiting")
+    FRONTEND_OK=$(curl -sf http://localhost:5173/ >/dev/null 2>&1 && echo "ok" || echo "waiting")
+    WORKER_OK=$(curl -sf http://localhost:8787/health >/dev/null 2>&1 && echo "ok" || echo "waiting")
 
-    if [[ "$API_HEALTHY" == "healthy" && "$FRONTEND_HEALTHY" == "healthy" ]]; then
+    if [[ "$API_OK" == "ok" && "$FRONTEND_OK" == "ok" && "$WORKER_OK" == "ok" ]]; then
         echo "==> All services healthy!"
         break
     fi
 
     sleep 2
     ELAPSED=$((ELAPSED + 2))
-    echo "    Waiting... (api=$API_HEALTHY, frontend=$FRONTEND_HEALTHY) [${ELAPSED}s]"
+    echo "    Waiting... (api=$API_OK, frontend=$FRONTEND_OK, worker=$WORKER_OK) [${ELAPSED}s]"
 done
 
 if [[ $ELAPSED -ge $MAX_WAIT ]]; then
     echo "ERROR: Services did not become healthy within ${MAX_WAIT}s"
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs
+    AUTH_MODE=dev docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs
     exit 1
 fi
 

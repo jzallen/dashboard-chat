@@ -36,25 +36,16 @@ vitest_bin.vitest_test(
 
 # ─── OCI Image ───────────────────────────────────────────────────────────────
 
-# Worker source code layer
+# Bundle worker to a single JS file via esbuild (same pattern as frontend Vite build)
 genrule(
-    name = "app_layer",
-    srcs = glob(
-        ["**/*.ts"],
-        exclude = ["**/*.test.ts"],
-    ) + [
-        "tsconfig.json",
-        "package.json",
-    ],
-    outs = ["app_layer.tar"],
+    name = "dist",
+    srcs = [":lib"],
+    outs = ["dist.tar"],
     cmd = """
-        mkdir -p $$TMPDIR/app/worker && \
-        for f in $(SRCS); do \
-            rel=$${f#worker/}; \
-            mkdir -p $$TMPDIR/app/worker/$$(dirname $$rel); \
-            cp $$f $$TMPDIR/app/worker/$$rel; \
-        done && \
-        tar -cf $(OUTS) -C $$TMPDIR app
+        cd worker && \
+        npx esbuild index.ts --bundle --platform=node --format=esm \
+            --outfile=../$$TMPDIR/app/worker/index.mjs && \
+        tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
     """,
     tags = ["no-sandbox"],
 )
@@ -62,13 +53,9 @@ genrule(
 oci_image(
     name = "image",
     base = "@node_20_slim",
-    tars = [":app_layer"],
+    tars = [":dist"],
     workdir = "/app",
-    entrypoint = [
-        "npx",
-        "tsx",
-        "worker/index.ts",
-    ],
+    entrypoint = ["node", "worker/index.mjs"],
     exposed_ports = ["8787"],
     visibility = ["//visibility:public"],
 )

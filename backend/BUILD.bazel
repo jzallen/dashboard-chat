@@ -1,4 +1,6 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load(":pytest_tests.bzl", "pytest_tests")
 
@@ -114,6 +116,7 @@ py_library(
     deps = [
         ":repositories",
         "@pip//bcrypt",
+        "@pip//cryptography",
         "@pip//httpx",
         "@pip//pyjwt",
     ],
@@ -138,7 +141,9 @@ py_library(
         ":repositories",
         "@pip//aiodocker",
         "@pip//boto3",
+        "@pip//duckdb",
         "@pip//ibis_framework",
+        "@pip//packaging",
         "@pip//pandas",
         "@pip//pydantic",
         "@pip//pyyaml",
@@ -332,35 +337,42 @@ test_suite(
     ],
 )
 
-# ─── OCI Image ───────────────────────────────────────────────────────────────
+# ─── Scripts ─────────────────────────────────────────────────────────────────
 
-# Application code layer as tar
-genrule(
-    name = "app_layer",
-    srcs = glob(["app/**/*.py"]) + glob(["scripts/**/*.py"]) + glob(["migrations/**"]) + [
-        "pyproject.toml",
-        "uv.lock",
+py_library(
+    name = "scripts",
+    srcs = glob(["scripts/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        ":models",
+        ":repositories",
+        "@pip//boto3",
+        "@pip//sqlalchemy",
+        "@pip//uuid_utils",
     ],
-    outs = ["app_layer.tar"],
-    cmd = "tar -cf $(OUTS) -C backend app scripts migrations pyproject.toml uv.lock",
-    tags = ["no-sandbox"],
 )
+
+# ─── Entrypoint Binary ───────────────────────────────────────────────────────
+
+py_binary(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [":app", ":scripts"],
+    visibility = ["//visibility:public"],
+)
+
+# ─── OCI Image ───────────────────────────────────────────────────────────────
 
 oci_image(
     name = "image",
     base = "@python_3_11_slim",
-    tars = [":app_layer"],
-    workdir = "/app",
-    entrypoint = [
-        "python",
-        "-m",
-        "uvicorn",
-        "app.main:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8000",
-    ],
+    tars = py_image_layer(
+        name = "py_layer",
+        binary = ":server",
+    ),
+    entrypoint = ["/backend/server"],
     exposed_ports = ["8000"],
     visibility = ["//visibility:public"],
 )

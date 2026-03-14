@@ -100,10 +100,9 @@ async def setup_database(settings) -> None:
         dbapi_connection.create_function("uuidv7", 0, lambda: str(uuid7()))
 
     async with engine.begin() as conn:
-        # Drop and recreate all tables to pick up schema changes (dev only)
-        await conn.run_sync(Base.metadata.drop_all)
+        # Create tables if they don't exist (safe across restarts)
         await conn.run_sync(Base.metadata.create_all)
-    print("  Tables created")
+    print("  Tables created (if not exist)")
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     # Seed organizations

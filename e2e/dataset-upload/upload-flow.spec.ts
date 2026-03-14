@@ -1,7 +1,9 @@
 import * as path from "path";
+import { fileURLToPath } from "url";
 
 import { test, expect } from "../fixtures/test-fixtures";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_CSV = path.resolve(__dirname, "../fixtures/data/sample-upload.csv");
 
 test.describe("Dataset Upload Flow", () => {

@@ -7,7 +7,7 @@ sh_test(
         "//backend:image_tar",
         "//frontend:image_tar",
         "//worker:image_tar",
-        "//:docker-compose.test.yml",
+        "//:docker-compose.yml",
     ] + glob([
         "**/*.ts",
         "config/*",

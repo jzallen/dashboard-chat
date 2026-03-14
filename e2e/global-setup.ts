@@ -1,5 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const BACKEND_URL = "http://localhost:8000";
 const FRONTEND_URL = "http://localhost:5173";

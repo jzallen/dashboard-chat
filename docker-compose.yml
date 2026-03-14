@@ -1,44 +1,27 @@
 services:
-  # Frontend - Vite dev server
+  # Frontend - nginx serving Vite build
   frontend:
-    image: node:20-alpine
+    image: dashboard-chat/frontend:bazel
     container_name: dashboard-frontend
-    working_dir: /app/frontend
-    environment:
-      VITE_CHAT_URL: http://localhost:8787
-      VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
-      VITE_DEBUG_ACTIVITY: ${VITE_DEBUG_ACTIVITY:-}
-      VITE_STREAM_API_KEY: ${STREAM_API_KEY:-}
     ports:
-      - "5173:5173"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    command: sh -c "cd /app && npm install && cd /app/frontend && npm run dev -- --host 0.0.0.0"
+      - "5173:80"
     depends_on:
       - api
 
   # Hono Worker - Chat API
   worker:
-    image: node:20-slim
+    image: dashboard-chat/worker:bazel
     container_name: dashboard-worker
-    working_dir: /app
-    env_file:
-      - .dev.vars
     environment:
-      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+      GROQ_API_KEY: ${GROQ_API_KEY}
       CORS_ORIGIN: http://localhost:5173
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
     ports:
       - "8787:8787"
-    volumes:
-      - .:/app
-      - /app/node_modules
     depends_on:
       minio:
         condition: service_healthy
-    command: bash -c "apt-get update && apt-get install -y ca-certificates && npm install && npx tsx --watch worker/index.ts"
 
   # PostgreSQL - for persistent storage (optional for DuckDB-only mode)
   db:
@@ -80,12 +63,10 @@ services:
 
   # FastAPI backend - works with DuckDB (local) or PostgreSQL (full)
   api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: dashboard-chat/api:bazel
     container_name: dashboard-api
     environment:
-      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/app.db}
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////data/app.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,https://*.gitpod.io}
       DEBUG: ${DEBUG:-true}
       MINIO_ENDPOINT: minio:9000
@@ -109,14 +90,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/app:/app/app
-      - ./backend/scripts:/app/scripts
-      - ./backend/migrations:/app/migrations
-      - ./backend/data:/app/data
+      - backend_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - "997"
-    command: sh -c "uv run python scripts/setup_dev.py && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # Full stack with PostgreSQL
   api-full:
@@ -178,5 +155,6 @@ services:
       start_period: 60s
 
 volumes:
+  backend_data:
   postgres_data:
   minio_data:

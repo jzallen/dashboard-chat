@@ -254,8 +254,10 @@ class HTTPController:
     async def get_my_organization() -> tuple[dict, int]:
         result = await organization_use_cases.get_organization()
         match result:
-            case Success(data):
+            case Success(data) if data is not None:
                 return wrap_jsonapi_single("organizations", data, "/api/organizations/me"), 200
+            case Success():
+                return {"errors": [{"status": "404", "title": "Organization not found"}]}, 404
             case Failure(error):
                 return _error_response(error)
 

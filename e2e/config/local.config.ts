@@ -1,7 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  globalSetup: require.resolve("../global-setup.ts"),
+  globalSetup: path.resolve(__dirname, "../global-setup.ts"),
   testDir: "../",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
