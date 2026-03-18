@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/jzallen/dashboard-chat/compare/v1.0.0...v1.1.0) (2026-03-18)
+
+
+### Features
+
+* **backend:** add SQL injection guardrails across DuckDB query paths ([c085ab7](https://github.com/jzallen/dashboard-chat/commit/c085ab743a5061d96db3ab6332e93bd7ef9b0787))
+
 # [1.0.0](https://github.com/jzallen/dashboard-chat/compare/v0.0.1...v1.0.0) (2026-03-18)
 
 
