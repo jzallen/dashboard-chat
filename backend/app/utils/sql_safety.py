@@ -6,7 +6,6 @@ and lake/repository into a single well-tested module.
 
 import re
 
-
 _SAFE_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 

@@ -82,6 +82,7 @@ py_library(
     deps = [
         ":core",
         ":exceptions",
+        ":utils",
         "@pip//fhir_resources",
         "@pip//httpx",
         "@pip//openpyxl",

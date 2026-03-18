@@ -213,12 +213,12 @@ class TestValidateConditionSql:
 
     def test_rejects_glob_bare(self):
         """Bare glob() is parsed as exp.Glob by sqlglot — must be caught."""
-        with pytest.raises(ValueError, match="Dangerous function.*glob"):
+        with pytest.raises(ValueError, match=r"Dangerous function.*glob"):
             validate_condition_sql("glob('/etc/passwd')")
 
     def test_rejects_glob_in_where(self):
         """glob used as an operator in WHERE clause must be caught."""
-        with pytest.raises(ValueError, match="Dangerous function.*glob"):
+        with pytest.raises(ValueError, match=r"Dangerous function.*glob"):
             validate_condition_sql("name GLOB '/tmp/*'")
 
     def test_rejects_glob_in_subquery(self):
