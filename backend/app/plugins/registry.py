@@ -24,9 +24,7 @@ class PluginRegistry:
                 ext = ext.lower()
                 if ext in self._plugins:
                     existing = self._plugins[ext]
-                    raise ValueError(
-                        f"Extension '{ext}' claimed by both '{existing.name}' and '{plugin.name}'"
-                    )
+                    raise ValueError(f"Extension '{ext}' claimed by both '{existing.name}' and '{plugin.name}'")
                 self._plugins[ext] = plugin
 
     def get_for_extension(self, ext: str) -> FileFormatPlugin | None:

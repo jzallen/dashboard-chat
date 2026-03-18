@@ -47,9 +47,7 @@ async def list_project_datasets(
 ):
     """List sparse datasets for a project with cursor-based pagination."""
     _user, _ = auth
-    body, status_code = await HTTPController.list_project_datasets(
-        project_id, cursor=page_after, page_size=page_size
-    )
+    body, status_code = await HTTPController.list_project_datasets(project_id, cursor=page_after, page_size=page_size)
     return JSONResponse(content=body, status_code=status_code)
 
 

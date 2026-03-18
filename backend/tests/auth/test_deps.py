@@ -108,9 +108,7 @@ class TestAuthorizeProjectAccess:
         db_session.add(ProjectRecord(id=PROJECT_1, name="My Project", org_id=ORG_1))
         await db_session.commit()
 
-        user, project = await authorize_project_access(
-            project_id=PROJECT_1, user=TEST_USER, db=db_session
-        )
+        user, project = await authorize_project_access(project_id=PROJECT_1, user=TEST_USER, db=db_session)
 
         assert user.id == USER_1
         assert project["id"] == PROJECT_1
@@ -121,26 +119,20 @@ class TestAuthorizeProjectAccess:
         await db_session.commit()
 
         with pytest.raises(AuthorizationError, match="Access denied"):
-            await authorize_project_access(
-                project_id=PROJECT_OTHER, user=TEST_USER, db=db_session
-            )
+            await authorize_project_access(project_id=PROJECT_OTHER, user=TEST_USER, db=db_session)
 
     async def test_raises_not_found_for_missing_project(self, db_session: AsyncSession):
         set_session(db_session)
 
         with pytest.raises(ProjectNotFound):
-            await authorize_project_access(
-                project_id="nonexistent", user=TEST_USER, db=db_session
-            )
+            await authorize_project_access(project_id="nonexistent", user=TEST_USER, db=db_session)
 
     async def test_allows_access_when_project_has_no_org(self, db_session: AsyncSession):
         set_session(db_session)
         db_session.add(ProjectRecord(id=PROJECT_1, name="Legacy"))
         await db_session.commit()
 
-        _user, project = await authorize_project_access(
-            project_id=PROJECT_1, user=TEST_USER, db=db_session
-        )
+        _user, project = await authorize_project_access(project_id=PROJECT_1, user=TEST_USER, db=db_session)
 
         assert project["id"] == PROJECT_1
 
@@ -154,9 +146,7 @@ class TestAuthorizeDatasetAccess:
         db_session.add(DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="DS"))
         await db_session.commit()
 
-        user, dataset = await authorize_dataset_access(
-            dataset_id=DATASET_1, user=TEST_USER, db=db_session
-        )
+        user, dataset = await authorize_dataset_access(dataset_id=DATASET_1, user=TEST_USER, db=db_session)
 
         assert user.id == USER_1
         assert dataset["id"] == DATASET_1
@@ -169,17 +159,13 @@ class TestAuthorizeDatasetAccess:
         await db_session.commit()
 
         with pytest.raises(AuthorizationError, match="Access denied"):
-            await authorize_dataset_access(
-                dataset_id=DATASET_OTHER, user=TEST_USER, db=db_session
-            )
+            await authorize_dataset_access(dataset_id=DATASET_OTHER, user=TEST_USER, db=db_session)
 
     async def test_raises_not_found_for_missing_dataset(self, db_session: AsyncSession):
         set_session(db_session)
 
         with pytest.raises(DatasetNotFound):
-            await authorize_dataset_access(
-                dataset_id="nonexistent", user=TEST_USER, db=db_session
-            )
+            await authorize_dataset_access(dataset_id="nonexistent", user=TEST_USER, db=db_session)
 
     async def test_allows_access_when_project_has_no_org(self, db_session: AsyncSession):
         set_session(db_session)
@@ -187,9 +173,7 @@ class TestAuthorizeDatasetAccess:
         db_session.add(DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="DS"))
         await db_session.commit()
 
-        _user, dataset = await authorize_dataset_access(
-            dataset_id=DATASET_1, user=TEST_USER, db=db_session
-        )
+        _user, dataset = await authorize_dataset_access(dataset_id=DATASET_1, user=TEST_USER, db=db_session)
 
         assert dataset["id"] == DATASET_1
 

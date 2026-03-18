@@ -23,7 +23,5 @@ async def list_projects(
 ) -> Result[dict, str]:
     """List all projects with cursor-based pagination."""
     metadata_repo = repositories.metadata
-    items, next_cursor, has_more = await metadata_repo.list_projects(
-        org_id=user.org_id, cursor=cursor, limit=page_size
-    )
+    items, next_cursor, has_more = await metadata_repo.list_projects(org_id=user.org_id, cursor=cursor, limit=page_size)
     return {"items": items, "next_cursor": next_cursor, "has_more": has_more, "page_size": page_size}

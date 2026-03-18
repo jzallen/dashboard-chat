@@ -32,29 +32,33 @@ def plugin():
 
 @pytest.fixture
 def single_sheet_bytes():
-    return make_excel({
-        "Data": [
-            ["name", "age", "city"],
-            ["Alice", 30, "New York"],
-            ["Bob", 25, "London"],
-        ]
-    })
+    return make_excel(
+        {
+            "Data": [
+                ["name", "age", "city"],
+                ["Alice", 30, "New York"],
+                ["Bob", 25, "London"],
+            ]
+        }
+    )
 
 
 @pytest.fixture
 def multi_sheet_bytes():
-    return make_excel({
-        "Sales": [
-            ["product", "revenue"],
-            ["Widget", 100],
-            ["Gadget", 200],
-        ],
-        "Costs": [
-            ["item", "amount"],
-            ["Rent", 500],
-            ["Wages", 1000],
-        ],
-    })
+    return make_excel(
+        {
+            "Sales": [
+                ["product", "revenue"],
+                ["Widget", 100],
+                ["Gadget", 200],
+            ],
+            "Costs": [
+                ["item", "amount"],
+                ["Rent", 500],
+                ["Wages", 1000],
+            ],
+        }
+    )
 
 
 class TestValidate:
@@ -110,22 +114,26 @@ class TestProcess:
             plugin.process(single_sheet_bytes, "data.xlsx", choices={"sheet_name": "NonExistent"})
 
     def test_strips_whitespace_from_headers(self, plugin):
-        content = make_excel({
-            "Sheet1": [
-                ["  name  ", " age "],
-                ["Alice", 30],
-            ]
-        })
+        content = make_excel(
+            {
+                "Sheet1": [
+                    ["  name  ", " age "],
+                    ["Alice", 30],
+                ]
+            }
+        )
         result = plugin.process(content, "data.xlsx")
         assert list(result.df.columns) == ["name", "age"]
 
     def test_strips_whitespace_from_string_columns(self, plugin):
-        content = make_excel({
-            "Sheet1": [
-                ["name", "city"],
-                ["  Alice  ", "  New York  "],
-            ]
-        })
+        content = make_excel(
+            {
+                "Sheet1": [
+                    ["name", "city"],
+                    ["  Alice  ", "  New York  "],
+                ]
+            }
+        )
         result = plugin.process(content, "data.xlsx")
         assert result.df.iloc[0]["name"] == "Alice"
         assert result.df.iloc[0]["city"] == "New York"

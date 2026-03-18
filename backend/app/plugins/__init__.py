@@ -23,9 +23,11 @@ __all__ = [
 
 def create_plugin_registry() -> PluginRegistry:
     """Factory function called at app startup. Explicit registration."""
-    return PluginRegistry([
-        CsvPlugin(),
-        ExcelPlugin(),
-        FhirPlugin(),
-        Hl7v2Plugin(),
-    ])
+    return PluginRegistry(
+        [
+            CsvPlugin(),
+            ExcelPlugin(),
+            FhirPlugin(),
+            Hl7v2Plugin(),
+        ]
+    )

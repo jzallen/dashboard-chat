@@ -31,9 +31,7 @@ async def _create_single_dataset(
     partition_fields: list[str],
 ) -> Dataset:
     """Create one dataset from a single ProcessingResult."""
-    schema_config, column_profiles, preview_rows = analyze_dataframe(
-        result.df, result.schema_hints
-    )
+    schema_config, column_profiles, preview_rows = analyze_dataframe(result.df, result.schema_hints)
     dataset = await create_dataset_record(
         metadata_repo,
         project_id,
@@ -109,26 +107,35 @@ async def create_dataset_from_upload(
         datasets: list[Dataset] = []
         for item in result.results:
             dataset = await _create_single_dataset(
-                metadata_repo, lake_repo,
+                metadata_repo,
+                lake_repo,
                 file_received_event.project_id,
-                item, description, partition_fields,
+                item,
+                description,
+                partition_fields,
             )
             datasets.append(dataset)
 
         # Link dataset IDs to the upload record
         dataset_ids = [d.id for d in datasets]
-        await outbox_repo.update_payload(upload_id, {
-            "dataset_ids": dataset_ids,
-            "dataset_id": dataset_ids[0] if dataset_ids else None,
-        })
+        await outbox_repo.update_payload(
+            upload_id,
+            {
+                "dataset_ids": dataset_ids,
+                "dataset_id": dataset_ids[0] if dataset_ids else None,
+            },
+        )
         await outbox_repo.mark_processed([upload_id])
         return datasets
 
     # Single-dataset path (unchanged behavior)
     dataset = await _create_single_dataset(
-        metadata_repo, lake_repo,
+        metadata_repo,
+        lake_repo,
         file_received_event.project_id,
-        result, description, partition_fields,
+        result,
+        description,
+        partition_fields,
     )
     await outbox_repo.mark_processed([upload_id])
     return dataset

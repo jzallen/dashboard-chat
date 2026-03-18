@@ -113,6 +113,7 @@ app.add_middleware(
 # Configure auth middleware (added after CORS — Starlette LIFO means CORS runs first)
 app.add_middleware(AuthMiddleware)
 
+
 # Global exception handler for authorization errors (returns 403 instead of 500)
 @app.exception_handler(AuthorizationError)
 async def authorization_error_handler(request: Request, exc: AuthorizationError):

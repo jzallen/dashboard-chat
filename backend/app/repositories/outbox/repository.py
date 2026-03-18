@@ -180,11 +180,7 @@ class OutboxRepository:
         """Merge key-value pairs into an existing outbox record's payload."""
         record = await self._get_event_by_id(record_id)
         merged = {**record.payload, **updates}
-        await self._session.execute(
-            update(OutboxRecord)
-            .where(OutboxRecord.id == record_id)
-            .values(payload=merged)
-        )
+        await self._session.execute(update(OutboxRecord).where(OutboxRecord.id == record_id).values(payload=merged))
         await self._session.flush()
 
     @handle_repository_exceptions

@@ -22,9 +22,7 @@ async def list_datasets(
     _: AsyncSession = Depends(use_db_context),
 ):
     """List all datasets with cursor-based pagination, optionally filtered by project."""
-    body, status_code = await HTTPController.list_datasets(
-        project_id, cursor=page_after, page_size=page_size
-    )
+    body, status_code = await HTTPController.list_datasets(project_id, cursor=page_after, page_size=page_size)
     return JSONResponse(content=body, status_code=status_code)
 
 

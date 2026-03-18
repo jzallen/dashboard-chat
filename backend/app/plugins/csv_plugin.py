@@ -26,9 +26,7 @@ class CsvPlugin:
     def detect_choices(self, file_content: bytes, filename: str) -> list[PluginChoice] | None:
         return None
 
-    def process(
-        self, file_content: bytes, filename: str, choices: dict[str, str] | None = None
-    ) -> ProcessingResult:
+    def process(self, file_content: bytes, filename: str, choices: dict[str, str] | None = None) -> ProcessingResult:
         df = pd.read_csv(io.BytesIO(file_content))
         df.columns = df.columns.str.strip()
         str_cols = df.select_dtypes(include="object").columns

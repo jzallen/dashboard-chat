@@ -58,9 +58,7 @@ async def reconcile_sql_access(
     for record in enabled_records:
         project_id = record.project_id
 
-        is_healthy = await _check_pgduckdb_health(
-            provisioner, project_id, record, external_access_repo
-        )
+        is_healthy = await _check_pgduckdb_health(provisioner, project_id, record, external_access_repo)
         if is_healthy is None:
             degraded += 1
             continue
@@ -68,9 +66,7 @@ async def reconcile_sql_access(
         if is_healthy:
             await _reapply_runtime_config(provisioner, project_id, storage_config)
 
-            pgbouncer_ok = await _reconcile_pgbouncer(
-                record, project_id, provisioner, external_access_repo
-            )
+            pgbouncer_ok = await _reconcile_pgbouncer(record, project_id, provisioner, external_access_repo)
             if not pgbouncer_ok:
                 degraded += 1
                 continue
@@ -129,9 +125,7 @@ async def _check_pgduckdb_health(
         return None
 
 
-async def _reapply_runtime_config(
-    provisioner, project_id: str, storage_config: StorageConfig
-) -> None:
+async def _reapply_runtime_config(provisioner, project_id: str, storage_config: StorageConfig) -> None:
     """Re-apply duckdb role GUC and S3 secrets on a healthy environment."""
     env = await provisioner.get_environment(project_id)
     if env is None:
@@ -155,9 +149,7 @@ async def _reapply_runtime_config(
         )
 
 
-async def _reconcile_pgbouncer(
-    record: AccessRecordView, project_id: str, provisioner, external_access_repo
-) -> bool:
+async def _reconcile_pgbouncer(record: AccessRecordView, project_id: str, provisioner, external_access_repo) -> bool:
     """Check and reconcile PgBouncer for non-legacy records.
 
     Returns True if PgBouncer is healthy or not applicable, False if reconciliation failed.
@@ -173,9 +165,7 @@ async def _reconcile_pgbouncer(
                 "PgBouncer exited for project %s, attempting recreate",
                 project_id,
             )
-            await _recreate_pgbouncer(
-                record, project_id, provisioner, pgbouncer, external_access_repo
-            )
+            await _recreate_pgbouncer(record, project_id, provisioner, pgbouncer, external_access_repo)
     except Exception:
         logger.warning(
             "PgBouncer reconciliation failed for project %s",

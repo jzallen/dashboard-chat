@@ -40,9 +40,7 @@ class ExcelPlugin:
             ]
         return None
 
-    def process(
-        self, file_content: bytes, filename: str, choices: dict[str, str] | None = None
-    ) -> ProcessingResult:
+    def process(self, file_content: bytes, filename: str, choices: dict[str, str] | None = None) -> ProcessingResult:
         selected = None
         if choices and "sheet_name" in choices:
             selected = choices["sheet_name"]
