@@ -60,6 +60,9 @@ backend/.env
 # E2E seed data
 e2e/.seed-data.json
 
+# Core dumps (root-level only; does not affect frontend/src/core/)
+/core
+
 # Bazel (symlinks + directories)
 bazel-bin
 bazel-out
