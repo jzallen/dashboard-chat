@@ -6,10 +6,8 @@ This module handles reading and writing Parquet files to MinIO/S3 storage.
 import json
 import logging
 import os
-import re
 import shutil
 import tempfile
-from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -21,7 +19,9 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from ...config import get_settings
+from ...utils.duckdb_factory import create_hardened_duckdb_connection
 from ...utils.sql_functions import kebab_case, register_duckdb_macros, snake_case, title_case
+from ...utils.sql_safety import validate_identifier
 from ..exceptions import LakeRepositoryError
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-class BaseLakeRepository(ABC):
+class BaseLakeRepository:
     """Base repository for Parquet data lake operations.
 
     Writes: boto3 to S3-compatible storage
@@ -60,10 +60,13 @@ class BaseLakeRepository(ABC):
         self.s3_client = s3_client
         self.bucket = bucket
 
-    @abstractmethod
-    def _configure_duckdb_s3(self, conn: ibis.BaseBackend) -> None:
-        """Configure DuckDB for S3 access. Implemented by subclasses."""
-        ...
+    def _create_s3_connection(self) -> ibis.BaseBackend:
+        """Create a hardened DuckDB connection with S3 configured.
+
+        Delegates to the hardened factory which handles validation, escaping,
+        and httpfs installation from application settings.
+        """
+        return create_hardened_duckdb_connection(configure_s3=True)
 
     @handle_repository_exceptions
     def write_raw_file(self, content: bytes, storage_path: str) -> str:
@@ -94,19 +97,6 @@ class BaseLakeRepository(ABC):
         response = self.s3_client.get_object(Bucket=self.bucket, Key=storage_path)
         return response["Body"].read()
 
-    @staticmethod
-    def _validate_identifier(name: str) -> str:
-        """Validate a SQL identifier (column/field name) to prevent injection.
-
-        Only allows alphanumeric characters and underscores.
-
-        Raises:
-            ValueError: If the identifier contains invalid characters.
-        """
-        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
-            raise ValueError(f"Invalid identifier: {name!r}")
-        return name
-
     @handle_repository_exceptions
     def write_csv_as_partitioned_parquet(
         self,
@@ -130,6 +120,11 @@ class BaseLakeRepository(ABC):
             datasets/project_id/dataset_id/date=2024-01-01/region=US/part-0.parquet
             datasets/project_id/dataset_id/date=2024-01-01/region=EU/part-0.parquet
         """
+        # EXCEPTION: This method needs local filesystem access (read_csv_auto, COPY TO)
+        # for tempfile-to-tempdir conversion, so it cannot use the hardened factory
+        # (which disables enable_external_access). All inputs are tempfile-generated
+        # paths (not user-controlled) and partition_fields are validated via
+        # validate_identifier() above. See sql-injection-guardrails spec.
         conn = ibis.duckdb.connect()
 
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".csv", delete=False) as temp_csv:
@@ -140,7 +135,7 @@ class BaseLakeRepository(ABC):
 
         try:
             if partition_fields:
-                safe_fields = [self._validate_identifier(f) for f in partition_fields]
+                safe_fields = [validate_identifier(f) for f in partition_fields]
                 partition_by_clause = ", ".join(safe_fields)
                 conn.raw_sql(f"""
                     COPY (SELECT * FROM read_csv_auto('{temp_csv_path}'))
@@ -187,8 +182,7 @@ class BaseLakeRepository(ABC):
         Returns:
             List of row dictionaries
         """
-        conn = ibis.duckdb.connect()
-        self._configure_duckdb_s3(conn)
+        conn = self._create_s3_connection()
 
         s3_path = f"s3://{self.bucket}/{storage_path}"
 
@@ -215,8 +209,7 @@ class BaseLakeRepository(ABC):
         Returns:
             Number of rows in the Parquet file(s)
         """
-        conn = ibis.duckdb.connect()
-        self._configure_duckdb_s3(conn)
+        conn = self._create_s3_connection()
 
         s3_path = f"s3://{self.bucket}/{storage_path}"
 
@@ -264,8 +257,7 @@ class BaseLakeRepository(ABC):
         Returns:
             String representation of the column's data type (e.g., 'string', 'float64')
         """
-        conn = ibis.duckdb.connect()
-        self._configure_duckdb_s3(conn)
+        conn = self._create_s3_connection()
 
         s3_path = self._build_s3_path(storage_path)
         table = conn.read_parquet(s3_path)
@@ -292,8 +284,7 @@ class BaseLakeRepository(ABC):
         Returns:
             Dict with affected_count, total_count, samples list, and column_type
         """
-        conn = ibis.duckdb.connect()
-        self._configure_duckdb_s3(conn)
+        conn = self._create_s3_connection()
         register_duckdb_macros(conn)
 
         s3_path = self._build_s3_path(storage_path)
@@ -390,18 +381,3 @@ class MinIOLakeRepository(BaseLakeRepository):
         super().__init__(s3_client, settings.storage_bucket)
         self._settings = settings
 
-    def _configure_duckdb_s3(self, conn: ibis.BaseBackend) -> None:
-        """Configure DuckDB for MinIO access."""
-        endpoint = self._settings.minio_endpoint.replace("'", "''")
-        access_key = (self._settings.minio_access_key or "").replace("'", "''")
-        secret_key = (self._settings.minio_secret_key or "").replace("'", "''")
-        use_ssl = "true" if self._settings.minio_secure else "false"
-        conn.raw_sql(f"""
-            INSTALL httpfs;
-            LOAD httpfs;
-            SET s3_endpoint='{endpoint}';
-            SET s3_access_key_id='{access_key}';
-            SET s3_secret_access_key='{secret_key}';
-            SET s3_use_ssl={use_ssl};
-            SET s3_url_style='path';
-        """)

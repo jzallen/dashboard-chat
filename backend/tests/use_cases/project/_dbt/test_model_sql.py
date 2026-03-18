@@ -115,16 +115,16 @@ class TestModelSqlCleaning:
         sql = generate_model_sql("proj", "ds", ds)
         assert "WITH source AS" in sql
         assert "cleaned AS" in sql
-        assert "TRIM(name) AS name" in sql
-        assert "salary" in sql
-        assert "status" in sql
+        assert 'TRIM("name") AS "name"' in sql
+        assert '"salary"' in sql
+        assert '"status"' in sql
         assert "SELECT * FROM cleaned" in sql
         assert "filtered" not in sql
 
     def test_generate_model_sql_when_no_schema_uses_star_fallback(self):
         ds = _make_dataset(transforms=[_trim("name")])
         sql = generate_model_sql("proj", "ds", ds)
-        assert "TRIM(name) AS name" in sql
+        assert 'TRIM("name") AS "name"' in sql
         assert ",\n    *" in sql
 
 
@@ -159,8 +159,8 @@ class TestModelSqlAliases:
         )
         sql = generate_model_sql("proj", "ds", ds)
         assert "WITH source AS" in sql
-        assert "department AS dept" in sql
-        assert "    name" in sql
+        assert '"department" AS "dept"' in sql
+        assert '"name"' in sql
         assert "FROM source" in sql
         assert "cleaned" not in sql
         assert "filtered" not in sql
@@ -171,7 +171,7 @@ class TestModelSqlAliases:
             schema_fields=["full_name", "email"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "full_name AS full_display_name" in sql
+        assert '"full_name" AS "full_display_name"' in sql
 
 
 class TestModelSqlCombined:
@@ -191,7 +191,7 @@ class TestModelSqlCombined:
         assert "FROM source" in sql
         assert "FROM cleaned" in sql
         assert "WHERE salary > 50000" in sql
-        assert "department AS dept" in sql
+        assert '"department" AS "dept"' in sql
         assert "FROM filtered" in sql
 
 
@@ -205,8 +205,8 @@ class TestModelSqlDisabledTransforms:
             schema_fields=["name", "city"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "TRIM(name) AS name" in sql
-        assert "TRIM(city)" not in sql
+        assert 'TRIM("name") AS "name"' in sql
+        assert 'TRIM("city")' not in sql
 
     def test_generate_model_sql_when_filter_disabled_excludes_it(self):
         ds = _make_dataset(
@@ -237,7 +237,7 @@ class TestModelSqlFillNull:
             schema_fields=["city"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "COALESCE(city, 'Unknown') AS city" in sql
+        assert """COALESCE("city", 'Unknown') AS "city\"""" in sql
 
     def test_generate_model_sql_when_fill_null_numeric_uses_coalesce_without_quotes(self):
         ds = _make_dataset(
@@ -245,7 +245,7 @@ class TestModelSqlFillNull:
             schema_fields=["salary"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "COALESCE(salary, 0) AS salary" in sql
+        assert 'COALESCE("salary", 0) AS "salary"' in sql
 
     def test_generate_model_sql_when_fill_null_value_has_quotes_escapes_them(self):
         ds = _make_dataset(
@@ -253,7 +253,7 @@ class TestModelSqlFillNull:
             schema_fields=["city"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "COALESCE(city, 'O''Brien') AS city" in sql
+        assert """COALESCE("city", 'O''Brien') AS "city\"""" in sql
 
 
 class TestModelSqlMapValues:
@@ -272,9 +272,9 @@ class TestModelSqlMapValues:
         )
         sql = generate_model_sql("proj", "ds", ds)
         assert "CASE" in sql
-        assert "WHEN status = 'A' THEN 'Active'" in sql
-        assert "WHEN status = 'I' THEN 'Inactive'" in sql
-        assert "ELSE status END AS status" in sql
+        assert """WHEN "status" = 'A' THEN 'Active'""" in sql
+        assert """WHEN "status" = 'I' THEN 'Inactive'""" in sql
+        assert """ELSE "status" END AS "status\"""" in sql
 
     def test_generate_model_sql_when_map_values_with_quotes_escapes_them(self):
         ds = _make_dataset(
@@ -289,7 +289,7 @@ class TestModelSqlMapValues:
             schema_fields=["status"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "WHEN status = 'O''Brien' THEN 'O''Malley'" in sql
+        assert """WHEN "status" = 'O''Brien' THEN 'O''Malley'""" in sql
 
 
 class TestModelSqlUnknownOperation:
@@ -319,7 +319,7 @@ class TestModelSqlCaseOperations:
             schema_fields=["name"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "UPPER(name) AS name" in sql
+        assert 'UPPER("name") AS "name"' in sql
 
     def test_generate_model_sql_when_case_lower_uses_lower_function(self):
         ds = _make_dataset(
@@ -327,7 +327,7 @@ class TestModelSqlCaseOperations:
             schema_fields=["name"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "LOWER(name) AS name" in sql
+        assert 'LOWER("name") AS "name"' in sql
 
     def test_generate_model_sql_when_case_title_uses_title_case_macro(self):
         ds = _make_dataset(
@@ -335,7 +335,7 @@ class TestModelSqlCaseOperations:
             schema_fields=["name"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "title_case(name) AS name" in sql
+        assert 'title_case("name") AS "name"' in sql
 
     def test_generate_model_sql_when_case_snake_uses_snake_case_macro(self):
         ds = _make_dataset(
@@ -343,7 +343,7 @@ class TestModelSqlCaseOperations:
             schema_fields=["name"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "snake_case(name) AS name" in sql
+        assert 'snake_case("name") AS "name"' in sql
 
     def test_generate_model_sql_when_case_kebab_uses_kebab_case_macro(self):
         ds = _make_dataset(
@@ -351,7 +351,7 @@ class TestModelSqlCaseOperations:
             schema_fields=["name"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        assert "kebab_case(name) AS name" in sql
+        assert 'kebab_case("name") AS "name"' in sql
 
 
 class TestModelSqlCleaningOrder:
@@ -364,6 +364,27 @@ class TestModelSqlCleaningOrder:
             schema_fields=["name", "city"],
         )
         sql = generate_model_sql("proj", "ds", ds)
-        trim_pos = sql.index("TRIM(name)")
-        upper_pos = sql.index("UPPER(city)")
+        trim_pos = sql.index('TRIM("name")')
+        upper_pos = sql.index('UPPER("city")')
         assert trim_pos < upper_pos
+
+
+class TestModelSqlInjectionPrevention:
+    def test_generate_model_sql_when_column_has_special_chars_quotes_them(self):
+        ds = _make_dataset(
+            transforms=[_trim('col"; DROP TABLE t; --')],
+            schema_fields=['col"; DROP TABLE t; --', "safe_col"],
+        )
+        sql = generate_model_sql("proj", "ds", ds)
+        # The injection payload should be safely quoted
+        assert 'TRIM("col""; DROP TABLE t; --") AS "col""; DROP TABLE t; --"' in sql
+        assert '"safe_col"' in sql
+
+    def test_generate_model_sql_when_column_is_reserved_word_quotes_it(self):
+        ds = _make_dataset(
+            transforms=[_trim("select")],
+            schema_fields=["select", "order"],
+        )
+        sql = generate_model_sql("proj", "ds", ds)
+        assert 'TRIM("select") AS "select"' in sql
+        assert '"order"' in sql

@@ -137,3 +137,29 @@ class TestProcess:
         result = plugin.process(content, "data.xlsx")
         assert result.df.iloc[0]["name"] == "Alice"
         assert result.df.iloc[0]["city"] == "New York"
+
+    def test_malicious_column_names_are_sanitized(self, plugin):
+        content = make_excel(
+            {
+                "Sheet1": [
+                    ["name; DROP TABLE--", "age' OR 1=1"],
+                    ["Alice", 30],
+                ]
+            }
+        )
+        result = plugin.process(content, "data.xlsx")
+        cols = list(result.df.columns)
+        assert cols == ["name_DROP_TABLE", "age_OR_1_1"]
+
+    def test_column_name_collision_deduplicates(self, plugin):
+        content = make_excel(
+            {
+                "Sheet1": [
+                    ["col!1", "col@1"],
+                    ["a", "b"],
+                ]
+            }
+        )
+        result = plugin.process(content, "data.xlsx")
+        cols = list(result.df.columns)
+        assert cols == ["col_1", "col_1_2"]

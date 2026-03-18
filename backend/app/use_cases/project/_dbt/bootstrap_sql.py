@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from app.utils.sql_safety import quote_ident as _quote_ident
+from app.utils.sql_safety import quote_literal as _quote_literal
+
 if TYPE_CHECKING:
     from app.models.dataset import Dataset
 
@@ -21,11 +24,6 @@ _PG_TYPE_MAP = {
     "integer": "bigint",
 }
 _PG_DEFAULT_TYPE = "text"
-
-
-def _quote_ident(name: str) -> str:
-    """Double-quote a SQL identifier, escaping embedded double-quotes."""
-    return '"' + name.replace('"', '""') + '"'
 
 
 def _validate_s3_path(path: str) -> str:
@@ -117,6 +115,3 @@ def generate_bootstrap_sql(
     return "\n".join(lines)
 
 
-def _quote_literal(value: str) -> str:
-    """Single-quote a SQL literal, escaping embedded single-quotes."""
-    return "'" + value.replace("'", "''") + "'"

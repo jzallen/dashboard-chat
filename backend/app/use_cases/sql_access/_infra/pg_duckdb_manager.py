@@ -6,7 +6,6 @@ All DDL operations use an admin connection via asyncpg against a ProjectEnvironm
 
 import hashlib
 import logging
-import re
 import secrets
 import string
 
@@ -14,6 +13,9 @@ import asyncpg
 import bcrypt
 
 from app.config import get_settings
+from app.utils.sql_safety import quote_ident as _quote_ident
+from app.utils.sql_safety import quote_literal as _quote_literal
+from app.utils.sql_safety import validate_identifier as _validate_ident
 
 from .provisioner import ProjectEnvironment, StorageConfig
 
@@ -27,34 +29,9 @@ PASSWORD_LENGTH = 32
 # Group role for duckdb.postgres_role GUC — shared across all reader roles
 DUCKDB_READERS_GROUP = "duckdb_readers"
 
-# Strict pattern for identifiers derived from project UUIDs (hex prefix).
-# schema_name and role_name must match this — rejects anything unexpected.
-_SAFE_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
-
-
 def _short_id(project_id: str) -> str:
     """Derive a short identifier from a project UUID (first 8 chars)."""
     return project_id[:8]
-
-
-def _validate_ident(name: str) -> str:
-    """Validate a SQL identifier matches the expected safe pattern.
-
-    Raises ValueError if the name contains unexpected characters.
-    """
-    if not _SAFE_IDENT_RE.match(name):
-        raise ValueError(f"Invalid SQL identifier: {name!r}")
-    return name
-
-
-def _quote_ident(name: str) -> str:
-    """Double-quote a SQL identifier, escaping embedded double-quotes."""
-    return '"' + name.replace('"', '""') + '"'
-
-
-def _quote_literal(value: str) -> str:
-    """Single-quote a SQL literal, escaping embedded single-quotes."""
-    return "'" + value.replace("'", "''") + "'"
 
 
 def schema_name(project_id: str) -> str:

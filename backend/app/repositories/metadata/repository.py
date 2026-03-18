@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.utils.pagination import decode_cursor, encode_cursor
+from app.utils.sql_safety import validate_condition_sql
 
 from ..exceptions import MetadataRepositoryError
 from .dataset_record import DatasetRecord
@@ -384,6 +385,8 @@ class MetadataRepository:
         nl_prompt: str | None = None,
     ) -> dict[str, Any]:
         """Create a new transform."""
+        if condition_sql:
+            validate_condition_sql(condition_sql)
         transform = TransformRecord(
             dataset_id=dataset_id,
             name=name,
@@ -407,11 +410,14 @@ class MetadataRepository:
         """Create multiple transforms in a single flush."""
         records = []
         for t in transforms_input:
+            t_condition_sql = t.get("condition_sql", "")
+            if t_condition_sql:
+                validate_condition_sql(t_condition_sql)
             record = TransformRecord(
                 dataset_id=dataset_id,
                 name=t["name"],
                 condition_json=t.get("condition_json", {}),
-                condition_sql=t.get("condition_sql", ""),
+                condition_sql=t_condition_sql,
                 description=t.get("description"),
                 nl_prompt=t.get("nl_prompt"),
                 transform_type=t.get("transform_type", "filter"),
@@ -449,7 +455,10 @@ class MetadataRepository:
 
         if update_data.get("condition_json") is not None:
             transform.condition_json = update_data["condition_json"]
-            transform.condition_sql = update_data.get("condition_sql")
+            new_condition_sql = update_data.get("condition_sql")
+            if new_condition_sql:
+                validate_condition_sql(new_condition_sql)
+            transform.condition_sql = new_condition_sql
             transform.version += 1
 
         if update_data.get("status") is not None:

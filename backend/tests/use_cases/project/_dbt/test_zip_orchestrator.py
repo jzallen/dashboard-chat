@@ -185,7 +185,7 @@ class TestZipContents:
         zf = zipfile.ZipFile(BytesIO(zip_bytes))
 
         sql = zf.read("models/staging/stg_test_dataset.sql").decode("utf-8")
-        assert "TRIM(col_a)" in sql
+        assert 'TRIM("col_a")' in sql
         assert "source(" in sql
 
     def test_generate_zip_without_plugin_registry_has_no_plugin_macros(self):

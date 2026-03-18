@@ -136,29 +136,10 @@ class Dataset:
 
     def _get_connection(self) -> ibis.BaseBackend:
         """Get Ibis DuckDB connection configured for S3/MinIO access."""
-        from ..config import get_settings
+        from ..utils.duckdb_factory import create_hardened_duckdb_connection
         from ..utils.sql_functions import register_duckdb_macros
 
-        settings = get_settings()
-        conn = ibis.duckdb.connect()
-
-        if settings.storage_type == "minio":
-            conn.raw_sql(f"""
-                INSTALL httpfs;
-                LOAD httpfs;
-                SET s3_endpoint='{settings.minio_endpoint}';
-                SET s3_access_key_id='{settings.minio_access_key}';
-                SET s3_secret_access_key='{settings.minio_secret_key}';
-                SET s3_use_ssl={"true" if settings.minio_secure else "false"};
-                SET s3_url_style='path';
-            """)
-        else:
-            conn.raw_sql(f"""
-                INSTALL httpfs;
-                LOAD httpfs;
-                SET s3_region='{settings.s3_region}';
-            """)
-
+        conn = create_hardened_duckdb_connection(configure_s3=True)
         register_duckdb_macros(conn)
         return conn
 

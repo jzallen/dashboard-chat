@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from app.utils.sql_safety import quote_ident
+
 if TYPE_CHECKING:
     from app.models.dataset import Dataset
     from app.models.transform import Transform
@@ -87,7 +89,7 @@ def _build_cleaned_cte(
             if col in col_exprs:
                 select_parts.append(f"    {col_exprs[col]}")
             else:
-                select_parts.append(f"    {col}")
+                select_parts.append(f"    {quote_ident(col)}")
         select_body = ",\n".join(select_parts)
     else:
         # No schema: list transform expressions then *
@@ -117,12 +119,12 @@ def _build_alias_select(
         select_parts = []
         for col in schema_columns:
             if col in aliases:
-                select_parts.append(f"    {col} AS {aliases[col]}")
+                select_parts.append(f"    {quote_ident(col)} AS {quote_ident(aliases[col])}")
             else:
-                select_parts.append(f"    {col}")
+                select_parts.append(f"    {quote_ident(col)}")
         select_body = ",\n".join(select_parts)
     else:
-        parts = [f"    {col} AS {alias}" for col, alias in aliases.items()]
+        parts = [f"    {quote_ident(col)} AS {quote_ident(alias)}" for col, alias in aliases.items()]
         parts.append("    *")
         select_body = ",\n".join(parts)
 
@@ -138,8 +140,10 @@ def _transform_to_sql(t: Transform) -> str | None:
     operation = config.get("operation", "")
     col = t.target_column
 
+    qcol = quote_ident(col)
+
     if operation == "trim":
-        return f"TRIM({col}) AS {col}"
+        return f"TRIM({qcol}) AS {qcol}"
     elif operation == "case":
         return _case_to_sql(config, col)
     elif operation == "fill_null":
@@ -162,8 +166,9 @@ _CASE_MODE_SQL = {
 def _case_to_sql(config: dict, col: str) -> str:
     mode = config.get("mode", "")
     func = _CASE_MODE_SQL.get(mode)
+    qcol = quote_ident(col)
     if func:
-        return f"{func}({col}) AS {col}"
+        return f"{func}({qcol}) AS {qcol}"
     return f"-- unsupported case mode: {mode} for column {col}"
 
 
@@ -178,23 +183,25 @@ def _is_numeric(value: str) -> bool:
 
 def _fill_null_to_sql(config: dict, col: str) -> str:
     fill_value = config.get("fill_value", "")
+    qcol = quote_ident(col)
     if _is_numeric(str(fill_value)):
-        return f"COALESCE({col}, {fill_value}) AS {col}"
+        return f"COALESCE({qcol}, {fill_value}) AS {qcol}"
     else:
         escaped = str(fill_value).replace("'", "''")
-        return f"COALESCE({col}, '{escaped}') AS {col}"
+        return f"COALESCE({qcol}, '{escaped}') AS {qcol}"
 
 
 def _map_values_to_sql(config: dict, col: str) -> str:
     mappings = config.get("mappings", [])
+    qcol = quote_ident(col)
     if not mappings:
-        return f"{col}"
+        return f"{qcol}"
 
     when_parts = []
     for m in mappings:
         from_val = m.get("from", "").replace("'", "''")
         to_val = m.get("to", "").replace("'", "''")
-        when_parts.append(f"WHEN {col} = '{from_val}' THEN '{to_val}'")
+        when_parts.append(f"WHEN {qcol} = '{from_val}' THEN '{to_val}'")
 
     case_body = " ".join(when_parts)
-    return f"CASE {case_body} ELSE {col} END AS {col}"
+    return f"CASE {case_body} ELSE {qcol} END AS {qcol}"

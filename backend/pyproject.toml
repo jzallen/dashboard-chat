@@ -25,6 +25,7 @@ dependencies = [
     # Data lake storage
     "boto3==1.34.0",
     "ibis-framework[duckdb]==9.5.0",
+    "sqlglot>=25.0.0",
     "pyarrow==17.0.0",
     # HTTP client
     "httpx>=0.26.0",

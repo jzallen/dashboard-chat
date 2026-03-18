@@ -7,6 +7,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
+from ..utils.sql_safety import deduplicate_column_names, sanitize_column_name
 from .protocol import PluginChoice, PluginValidationError, ProcessingResult
 
 
@@ -55,6 +56,7 @@ class ExcelPlugin:
             raise PluginValidationError(f"Invalid sheet name: {e}") from e
 
         df.columns = df.columns.str.strip()
+        df.columns = deduplicate_column_names([sanitize_column_name(c) for c in df.columns])
         str_cols = df.select_dtypes(include="object").columns
         df[str_cols] = df[str_cols].apply(lambda col: col.str.strip())
         return ProcessingResult(df=df)

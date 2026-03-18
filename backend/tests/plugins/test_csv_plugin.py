@@ -71,3 +71,25 @@ class TestCsvPlugin:
         assert self.plugin.extensions == [".csv"]
         assert self.plugin.label == "CSV"
         assert self.plugin.dbt_macros is None
+
+    def test_malicious_column_names_are_sanitized(self):
+        """process should sanitize column names that contain injection payloads."""
+        content = b"\"col'; DROP TABLE x; --\",\"123numeric\",\"col with spaces\",SELECT\nval1,val2,val3,val4\n"
+
+        result = self.plugin.process(content, "data.csv")
+
+        cols = list(result.df.columns)
+        assert cols[0] == "col_DROP_TABLE_x"
+        assert cols[1] == "_123numeric"
+        assert cols[2] == "col_with_spaces"
+        assert cols[3] == "SELECT"
+
+    def test_column_name_collision_deduplicates(self):
+        """process should deduplicate columns that collide after sanitization."""
+        content = b"\"col-1\",\"col_1\"\nval1,val2\n"
+
+        result = self.plugin.process(content, "data.csv")
+
+        cols = list(result.df.columns)
+        assert cols[0] == "col_1"
+        assert cols[1] == "col_1_2"

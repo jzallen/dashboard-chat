@@ -107,7 +107,7 @@ class TestExportDbtProject:
 
                 # Verify SQL contains transforms
                 sql = zf.read("models/staging/stg_leads.sql").decode("utf-8")
-                assert "TRIM(name)" in sql
+                assert 'TRIM("name")' in sql
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
