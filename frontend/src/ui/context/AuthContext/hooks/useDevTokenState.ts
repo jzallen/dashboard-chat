@@ -6,8 +6,8 @@ import {
   setTokenExpiry,
   setUser,
 } from "@/auth/tokenStorage";
-import { DATA_CATALOG_BASE_URL } from "@/http/config";
 import type { AuthState, AuthUser, TokenStateResult } from "@/auth/types";
+import { DATA_CATALOG_BASE_URL } from "@/http/config";
 
 export function useDevTokenState(): TokenStateResult {
   const [state, setState] = useState<AuthState>({

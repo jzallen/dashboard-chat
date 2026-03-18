@@ -23,7 +23,7 @@
     "test": "turbo run test:run",
     "test:all": "turbo run test:run && cd backend && uv run pytest",
     "test:backend": "cd backend && uv run pytest",
-    "lint": "eslint . && cd backend && uv run ruff check .",
+    "lint": "eslint . && cd backend && uv run ruff check . && uv run ruff format --check .",
     "lint:fix": "eslint . --fix && cd backend && uv run ruff check --fix . && uv run ruff format .",
     "lint:frontend": "eslint frontend/",
     "lint:worker": "eslint worker/",

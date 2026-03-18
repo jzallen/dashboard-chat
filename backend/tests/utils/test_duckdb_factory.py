@@ -47,9 +47,7 @@ class TestHardenedConnection:
             hook_called.append(True)
             # httpfs is already installed by the factory; hook only configures S3
 
-        conn = create_hardened_duckdb_connection(
-            configure_s3=True, s3_configurator=mock_configurator
-        )
+        conn = create_hardened_duckdb_connection(configure_s3=True, s3_configurator=mock_configurator)
         assert len(hook_called) == 1
         result = conn.raw_sql("SELECT 1 AS x")
         assert result.fetchone()[0] == 1

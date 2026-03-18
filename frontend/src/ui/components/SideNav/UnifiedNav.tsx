@@ -9,8 +9,8 @@ import type { Channel } from "stream-chat";
 
 import { useStreamContext } from "@/stream/StreamProvider";
 
-import { useChatContext } from "../../context/ChatContext";
 import { formatRelativeTime } from "../../../lib/ui/utils/formatRelativeTime";
+import { useChatContext } from "../../context/ChatContext";
 import styles from "./SideNav.module.css";
 
 interface UnifiedNavProps {

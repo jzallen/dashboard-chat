@@ -113,5 +113,3 @@ def generate_bootstrap_sql(
     lines.append("")
     lines.append("COMMIT;")
     return "\n".join(lines)
-
-

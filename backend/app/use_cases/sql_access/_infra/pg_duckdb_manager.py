@@ -29,6 +29,7 @@ PASSWORD_LENGTH = 32
 # Group role for duckdb.postgres_role GUC — shared across all reader roles
 DUCKDB_READERS_GROUP = "duckdb_readers"
 
+
 def _short_id(project_id: str) -> str:
     """Derive a short identifier from a project UUID (first 8 chars)."""
     return project_id[:8]

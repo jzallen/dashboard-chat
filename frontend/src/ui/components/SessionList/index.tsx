@@ -5,8 +5,8 @@ import type { Channel } from "stream-chat";
 
 import { useStreamContext } from "@/stream/StreamProvider";
 
-import { useDatasetQuery } from "../../hooks/useDatasetQuery";
 import { formatRelativeTime } from "../../../lib/ui/utils/formatRelativeTime";
+import { useDatasetQuery } from "../../hooks/useDatasetQuery";
 import type { AppShellContext } from "../AppShell";
 import styles from "./SessionList.module.css";
 

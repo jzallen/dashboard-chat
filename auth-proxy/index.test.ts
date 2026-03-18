@@ -7,6 +7,7 @@ vi.mock("jose", () => ({
 }));
 
 import { jwtVerify } from "jose";
+
 import { app } from "./app.ts";
 
 const mockJwtVerify = vi.mocked(jwtVerify);

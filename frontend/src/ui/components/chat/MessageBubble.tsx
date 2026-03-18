@@ -2,9 +2,9 @@ import { useNavigate } from "react-router-dom";
 
 import { useChatContext } from "../../context/ChatContext";
 import type { Message } from "../../types";
+import styles from "./chat.module.css";
 import { DatasetPicker } from "./DatasetPicker";
 import { ProjectPicker } from "./ProjectPicker";
-import styles from "./chat.module.css";
 
 interface MessageBubbleProps {
   message: Message;

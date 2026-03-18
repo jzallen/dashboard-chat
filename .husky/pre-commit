@@ -1,1 +1,11 @@
+# Auto-fix Python formatting and lint issues, then re-stage
+cd backend && uv run ruff format . && uv run ruff check --fix . && cd ..
+
+# Auto-fix JS/TS lint issues
+npx eslint --fix .
+
+# Re-stage any files modified by the auto-fixers
+git add -u
+
+# Verify nothing unfixable remains
 npm run lint

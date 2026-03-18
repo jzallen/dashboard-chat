@@ -380,4 +380,3 @@ class MinIOLakeRepository(BaseLakeRepository):
 
         super().__init__(s3_client, settings.storage_bucket)
         self._settings = settings
-

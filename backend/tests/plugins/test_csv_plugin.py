@@ -74,7 +74,7 @@ class TestCsvPlugin:
 
     def test_malicious_column_names_are_sanitized(self):
         """process should sanitize column names that contain injection payloads."""
-        content = b"\"col'; DROP TABLE x; --\",\"123numeric\",\"col with spaces\",SELECT\nval1,val2,val3,val4\n"
+        content = b'"col\'; DROP TABLE x; --","123numeric","col with spaces",SELECT\nval1,val2,val3,val4\n'
 
         result = self.plugin.process(content, "data.csv")
 
@@ -86,7 +86,7 @@ class TestCsvPlugin:
 
     def test_column_name_collision_deduplicates(self):
         """process should deduplicate columns that collide after sanitization."""
-        content = b"\"col-1\",\"col_1\"\nval1,val2\n"
+        content = b'"col-1","col_1"\nval1,val2\n'
 
         result = self.plugin.process(content, "data.csv")
 

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 
 import { useChatContext } from "../../context/ChatContext";
-import { ChatInput, MessageList, WelcomeState } from "../chat";
 import type { AppShellContext } from "../AppShell";
+import { ChatInput, MessageList, WelcomeState } from "../chat";
 import styles from "./ChatView.module.css";
 
 /** Full-width chat interface. Creates a new session at `/`, resumes at `/chat/:channelId`. */

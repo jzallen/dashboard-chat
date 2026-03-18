@@ -132,11 +132,23 @@ def validate_condition_sql(sql: str) -> str:
             raise ValueError(f"Forbidden SQL operation in condition: {type(node).__name__}")
 
     # Reject dangerous DuckDB function calls
-    _DANGEROUS_FUNCTIONS = frozenset({
-        "read_csv", "read_csv_auto", "read_parquet", "read_text", "read_json",
-        "read_json_auto", "sniff_csv", "glob", "system", "copy", "attach",
-        "install", "load",
-    })
+    _DANGEROUS_FUNCTIONS = frozenset(
+        {
+            "read_csv",
+            "read_csv_auto",
+            "read_parquet",
+            "read_text",
+            "read_json",
+            "read_json_auto",
+            "sniff_csv",
+            "glob",
+            "system",
+            "copy",
+            "attach",
+            "install",
+            "load",
+        }
+    )
     for node in parsed.walk():
         # sqlglot parses glob(...) as exp.Glob (the SQL GLOB operator), not as
         # a function call. Catch it explicitly so glob('/etc/passwd') is blocked.
