@@ -1,0 +1,57 @@
+/* SessionList page styles */
+
+.container {
+  @apply flex-1 flex flex-col overflow-hidden p-6;
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.heading {
+  @apply text-lg font-semibold text-gray-900 mb-4;
+}
+
+.list {
+  @apply flex-1 overflow-auto space-y-1;
+}
+
+.sessionRow {
+  @apply flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors;
+  @apply hover:bg-gray-50;
+}
+
+.sessionTitle {
+  @apply flex-1 text-sm text-gray-800 truncate;
+}
+
+.sessionTimestamp {
+  @apply text-xs text-gray-400 flex-shrink-0;
+}
+
+.datasetBadge {
+  @apply text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 flex-shrink-0;
+}
+
+.editInput {
+  @apply flex-1 text-sm px-2 py-1 border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500;
+}
+
+.editButton {
+  @apply p-1 text-gray-400 hover:text-gray-600 rounded transition-colors flex-shrink-0;
+}
+
+.editIcon {
+  @apply w-3.5 h-3.5;
+}
+
+.loadMoreButton {
+  @apply w-full py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors mt-2;
+}
+
+.loading {
+  @apply flex-1 flex items-center justify-center text-gray-500 text-sm;
+}
+
+.empty {
+  @apply text-center text-gray-400 text-sm mt-8;
+}

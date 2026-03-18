@@ -1,0 +1,385 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load(":pytest_tests.bzl", "pytest_tests")
+
+# ─── Layered py_library Targets ──────────────────────────────────────────────
+#
+# Layer 0: exceptions (DomainException base — zero deps)
+# Layer 0: core (config, database, types — sqlalchemy, pydantic_settings)
+# Layer 0: utils (pagination, csv_parser, column_profiler, etc.)
+# Layer 0: models (no app imports beyond core)
+# Layer 1: plugins (core, exceptions), repos (core, utils)
+# Layer 2: auth (repos — core transitive)
+# Layer 3: use_cases (models, plugins, repos, auth, exceptions — core transitive)
+# Layer 4: controllers (use_cases — core transitive)
+# Layer 5: app (main.py + routers/ — depends on everything)
+
+py_library(
+    name = "exceptions",
+    srcs = [
+        "app/use_cases/__init__.py",
+        "app/use_cases/exceptions.py",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pip//returns",
+    ],
+)
+
+py_library(
+    name = "core",
+    srcs = [
+        "app/__init__.py",
+        "app/config.py",
+        "app/database.py",
+        "app/types.py",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pip//aiosqlite",
+        "@pip//asyncpg",
+        "@pip//ibis_framework",
+        "@pip//pydantic_settings",
+        "@pip//sqlalchemy",
+        "@pip//uuid_utils",
+    ],
+)
+
+py_library(
+    name = "utils",
+    srcs = glob(["app/utils/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pip//duckdb",
+        "@pip//ibis_framework",
+        "@pip//pandas",
+        "@pip//pyarrow",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = glob(["app/models/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        "@pip//pydantic",
+        "@pip//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "plugins",
+    srcs = glob(["app/plugins/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        ":exceptions",
+        "@pip//fhir_resources",
+        "@pip//httpx",
+        "@pip//openpyxl",
+        "@pip//pandas",
+        "@pip//pydantic",
+        "@pip//pyyaml",
+    ],
+)
+
+py_library(
+    name = "repositories",
+    srcs = glob(["app/repositories/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        ":utils",
+        "@pip//boto3",
+        "@pip//duckdb",
+        "@pip//ibis_framework",
+        "@pip//pyarrow",
+        "@pip//pyarrow_hotfix",
+        "@pip//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "auth",
+    srcs = glob(["app/auth/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":repositories",
+        "@pip//bcrypt",
+        "@pip//cryptography",
+        "@pip//httpx",
+        "@pip//pyjwt",
+    ],
+)
+
+py_library(
+    name = "use_cases",
+    srcs = glob(
+        ["app/use_cases/**/*.py"],
+        exclude = [
+            "app/use_cases/__init__.py",
+            "app/use_cases/exceptions.py",
+        ],
+    ),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":auth",
+        ":exceptions",
+        ":models",
+        ":plugins",
+        ":repositories",
+        "@pip//aiodocker",
+        "@pip//boto3",
+        "@pip//duckdb",
+        "@pip//ibis_framework",
+        "@pip//packaging",
+        "@pip//pandas",
+        "@pip//pydantic",
+        "@pip//pyyaml",
+        "@pip//returns",
+    ],
+)
+
+py_library(
+    name = "controllers",
+    srcs = glob(["app/controllers/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":exceptions",
+        ":use_cases",
+        "@pip//fastapi",
+        "@pip//returns",
+    ],
+)
+
+# Full app — main.py + routers (depends on everything)
+py_library(
+    name = "app",
+    srcs = ["app/main.py"] + glob(["app/routers/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":auth",
+        ":controllers",
+        ":exceptions",
+        ":use_cases",
+        "@pip//fastapi",
+        "@pip//python_multipart",
+        "@pip//uvicorn",
+    ],
+)
+
+# ─── Test Infrastructure ─────────────────────────────────────────────────────
+
+py_library(
+    name = "test_lib",
+    srcs = glob(["tests/**/__init__.py"]) + [
+        "tests/conftest.py",
+        "tests/uuidv7_fixtures.py",
+    ],
+    imports = ["."],
+    data = ["pyproject.toml"],
+    deps = [
+        ":core",
+        "@pip//boto3",
+        "@pip//moto",
+        "@pip//pytest",
+        "@pip//pytest_asyncio",
+    ],
+)
+
+# ─── Per-Directory Test Targets ──────────────────────────────────────────────
+
+pytest_tests(
+    name = "test_auth",
+    srcs = glob(["tests/auth/test_*.py"]),
+    deps = [":test_lib", ":app"],
+)
+
+pytest_tests(
+    name = "test_controllers",
+    srcs = glob(["tests/controllers/test_*.py"]),
+    deps = [":test_lib", ":controllers", ":use_cases"],
+)
+
+pytest_tests(
+    name = "test_integration",
+    srcs = glob(["tests/integration/test_*.py"]),
+    conftest = ["tests/integration/conftest.py"],
+    deps = [":test_lib", ":app"],
+)
+
+pytest_tests(
+    name = "test_models",
+    srcs = glob(["tests/models/test_*.py"]),
+    deps = [":test_lib", ":models"],
+    size = "small",
+    tags = ["unit"],
+)
+
+pytest_tests(
+    name = "test_plugins",
+    srcs = glob(["tests/plugins/test_*.py"]),
+    conftest = ["tests/plugins/conftest.py"],
+    deps = [":test_lib", ":plugins"],
+    size = "small",
+    tags = ["unit"],
+)
+
+pytest_tests(
+    name = "test_repositories",
+    srcs = glob(["tests/repositories/test_*.py"]),
+    deps = [":test_lib", ":repositories"],
+)
+
+
+pytest_tests(
+    name = "test_utils",
+    srcs = glob(["tests/utils/test_*.py"]),
+    deps = [":test_lib", ":utils"],
+    size = "small",
+    tags = ["unit"],
+)
+
+pytest_tests(
+    name = "test_uc_dataset",
+    srcs = glob(["tests/use_cases/dataset/test_*.py"]),
+    conftest = ["tests/use_cases/dataset/conftest.py"],
+    deps = [":test_lib", ":use_cases", ":repositories", ":app"],
+)
+
+pytest_tests(
+    name = "test_uc_organization",
+    srcs = glob(["tests/use_cases/organization/test_*.py"]),
+    conftest = ["tests/use_cases/organization/conftest.py"],
+    deps = [":test_lib", ":use_cases", ":repositories"],
+)
+
+pytest_tests(
+    name = "test_uc_project",
+    srcs = glob(["tests/use_cases/project/test_*.py"]),
+    conftest = ["tests/use_cases/project/conftest.py"],
+    deps = [":test_lib", ":use_cases", ":repositories"],
+)
+
+pytest_tests(
+    name = "test_uc_project_dbt",
+    srcs = glob(["tests/use_cases/project/_dbt/test_*.py"]),
+    conftest = [
+        "tests/use_cases/project/conftest.py",
+        "tests/use_cases/project/_dbt/__init__.py",
+    ],
+    deps = [":test_lib", ":use_cases"],
+    size = "small",
+    tags = ["unit"],
+)
+
+pytest_tests(
+    name = "test_uc_report",
+    srcs = glob(["tests/use_cases/report/test_*.py"]),
+    conftest = ["tests/use_cases/report/conftest.py"],
+    deps = [":test_lib", ":use_cases", ":repositories"],
+)
+
+pytest_tests(
+    name = "test_uc_sql_access",
+    srcs = glob(["tests/use_cases/sql_access/test_*.py"]),
+    conftest = ["tests/use_cases/sql_access/conftest.py"],
+    deps = [":test_lib", ":use_cases", ":repositories"],
+)
+
+pytest_tests(
+    name = "test_uc_upload",
+    srcs = glob(["tests/use_cases/upload/test_*.py"]),
+    conftest = ["tests/use_cases/upload/conftest.py"],
+    deps = [":test_lib", ":use_cases", ":repositories", ":plugins"],
+)
+
+pytest_tests(
+    name = "test_uc_view",
+    srcs = glob(["tests/use_cases/view/test_*.py"]),
+    conftest = ["tests/use_cases/view/conftest.py"],
+    deps = [":test_lib", ":use_cases", ":repositories"],
+)
+
+# ─── Convenience Test Suite ───────────────────────────────────────────────────
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":test_auth",
+        ":test_controllers",
+        ":test_integration",
+        ":test_models",
+        ":test_plugins",
+        ":test_repositories",
+        ":test_utils",
+        ":test_uc_dataset",
+        ":test_uc_organization",
+        ":test_uc_project",
+        ":test_uc_project_dbt",
+        ":test_uc_report",
+        ":test_uc_sql_access",
+        ":test_uc_upload",
+        ":test_uc_view",
+    ],
+)
+
+# ─── Scripts ─────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "scripts",
+    srcs = glob(["scripts/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        ":models",
+        ":repositories",
+        "@pip//boto3",
+        "@pip//sqlalchemy",
+        "@pip//uuid_utils",
+    ],
+)
+
+# ─── Entrypoint Binary ───────────────────────────────────────────────────────
+
+py_binary(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [":app", ":scripts"],
+    visibility = ["//visibility:public"],
+)
+
+# ─── OCI Image ───────────────────────────────────────────────────────────────
+
+oci_image(
+    name = "image",
+    base = "@python_3_11_slim",
+    tars = py_image_layer(
+        name = "py_layer",
+        binary = ":server",
+    ),
+    entrypoint = ["/backend/server"],
+    exposed_ports = ["8000"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "image_tar",
+    image = ":image",
+    repo_tags = ["dashboard-chat/api:bazel"],
+    visibility = ["//visibility:public"],
+)

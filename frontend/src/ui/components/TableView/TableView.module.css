@@ -1,0 +1,49 @@
+/* TableView styles */
+
+.container {
+  @apply flex-1 flex flex-col overflow-hidden relative;
+}
+
+.tableArea {
+  @apply flex-1 overflow-auto;
+}
+
+.inputBar {
+  @apply border-t border-gray-200 bg-white;
+}
+
+/* Activity Log overlay */
+.activityLog {
+  @apply absolute right-4 bottom-20 w-80 max-h-60 overflow-auto rounded-lg shadow-lg p-3 space-y-2 z-10;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(4px);
+}
+
+.activityMessage {
+  @apply text-sm;
+}
+
+.activityRole {
+  @apply font-medium text-gray-500 mr-1;
+}
+
+.activityContent {
+  @apply text-gray-700;
+}
+
+.activityTimestamp {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  margin-left: 0.25rem;
+}
+
+.streamingDot {
+  @apply inline-block w-1.5 h-1.5 rounded-full animate-pulse ml-1;
+  background-color: #2563eb;
+  vertical-align: middle;
+}
+
+/* Loading state */
+.loading {
+  @apply flex-1 flex items-center justify-center text-gray-500;
+}

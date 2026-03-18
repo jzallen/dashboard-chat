@@ -1,0 +1,84 @@
+"""Deterministic UUIDv7 test ID pool.
+
+All values are valid UUIDv7 strings (version nibble = 7, variant bits = 10).
+Domain-segmented second segments make IDs visually distinguishable in test output:
+
+    019515a0-0xxx  projects
+    019515a0-1xxx  datasets
+    019515a0-2xxx  transforms
+    019515a0-3xxx  users
+    019515a0-4xxx  organizations
+    019515a0-5xxx  external access
+"""
+
+# -- Projects (0001-00xx) --------------------------------------------------
+PROJECT_1 = "019515a0-0001-7000-8000-000000000001"
+PROJECT_2 = "019515a0-0002-7000-8000-000000000002"
+PROJECT_EMPTY = "019515a0-0003-7000-8000-000000000003"
+PROJECT_OTHER = "019515a0-0004-7000-8000-000000000004"
+PROJECT_EXPORT_1 = "019515a0-0005-7000-8000-000000000005"
+PROJECT_EXPORT_EMPTY = "019515a0-0006-7000-8000-000000000006"
+PROJECT_MINE = "019515a0-0007-7000-8000-000000000007"
+PROJECT_SORT_1 = "019515a0-0008-7000-8000-000000000008"
+PROJECT_SORT_2 = "019515a0-0009-7000-8000-000000000009"
+PROJECT_SORT_3 = "019515a0-000a-7000-8000-00000000000a"
+PROJECT_ROUTE_1 = "019515a0-000b-7000-8000-00000000000b"
+
+# -- Datasets (1001-10xx) --------------------------------------------------
+DATASET_1 = "019515a0-1001-7000-8000-000000000011"
+DATASET_2 = "019515a0-1002-7000-8000-000000000012"
+DATASET_3 = "019515a0-1003-7000-8000-000000000013"
+DATASET_OTHER = "019515a0-1004-7000-8000-000000000014"
+DATASET_EXPORT_1 = "019515a0-1005-7000-8000-000000000015"
+DATASET_ROUTE_1 = "019515a0-1006-7000-8000-000000000016"
+
+# -- Transforms (2001-20xx) ------------------------------------------------
+TRANSFORM_1 = "019515a0-2001-7000-8000-000000000021"
+TRANSFORM_2 = "019515a0-2002-7000-8000-000000000022"
+TRANSFORM_EXPORT_1 = "019515a0-2003-7000-8000-000000000023"
+
+# -- Users (3001-30xx) -----------------------------------------------------
+USER_1 = "019515a0-3001-7000-8000-000000000031"
+USER_2 = "019515a0-3002-7000-8000-000000000032"
+USER_3 = "019515a0-3003-7000-8000-000000000033"
+USER_ROUTE = "019515a0-3004-7000-8000-000000000034"
+
+# -- Organizations (4001-40xx) ---------------------------------------------
+ORG_1 = "019515a0-4001-7000-8000-000000000041"
+ORG_OTHER = "019515a0-4002-7000-8000-000000000042"
+ORG_ROUTE = "019515a0-4003-7000-8000-000000000043"
+
+# -- External access (5001-50xx) -------------------------------------------
+EA_1 = "019515a0-5001-7000-8000-000000000051"
+EA_DISABLED = "019515a0-5002-7000-8000-000000000052"
+
+
+# -- Views (6001-60xx) -----------------------------------------------------
+VIEW_1 = "019515a0-6001-7000-8000-000000000061"
+VIEW_2 = "019515a0-6002-7000-8000-000000000062"
+VIEW_3 = "019515a0-6003-7000-8000-000000000063"
+
+
+# -- Reports (7001-70xx) ---------------------------------------------------
+REPORT_1 = "019515a0-7001-7000-8000-000000000071"
+REPORT_2 = "019515a0-7002-7000-8000-000000000072"
+
+
+def make_test_uuidv7():
+    """Return a zero-arg callable that produces deterministic UUIDv7 strings.
+
+    Each call increments an internal counter, producing values like:
+        019515a0-f001-7000-8000-000000000001
+        019515a0-f002-7000-8000-000000000002
+
+    The `f` prefix in the second segment distinguishes auto-generated IDs
+    from the explicit domain-segmented fixtures above.
+    """
+    counter = 0
+
+    def _generate():
+        nonlocal counter
+        counter += 1
+        return f"019515a0-f{counter:03x}-7000-8000-{counter:012x}"
+
+    return _generate

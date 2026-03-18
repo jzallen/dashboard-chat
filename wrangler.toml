@@ -1,7 +1,0 @@
-name = "dashboard-chat-api"
-main = "index.ts"
-compatibility_date = "2024-11-01"
-
-[vars]
-# Add your GROQ_API_KEY in .dev.vars for local development
-# or in Cloudflare dashboard for production

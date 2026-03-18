@@ -1,0 +1,25 @@
+load("@npm//:defs.bzl", "npm_link_all_packages")
+
+npm_link_all_packages()
+
+# ─── Top-level Aliases ───────────────────────────────────────────────────────
+
+alias(
+    name = "images",
+    actual = ":all_images",
+)
+
+exports_files([
+    "docker-compose.yml",
+    ".env",
+])
+
+# Build all OCI image tarballs
+filegroup(
+    name = "all_images",
+    srcs = [
+        "//backend:image_tar",
+        "//frontend:image_tar",
+        "//worker:image_tar",
+    ],
+)

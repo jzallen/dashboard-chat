@@ -1,0 +1,27 @@
+/* Active filters container */
+.filtersContainer {
+  @apply mb-4 flex flex-wrap gap-2;
+}
+
+.filterBadge {
+  @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm;
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.removeButton {
+  @apply ml-1;
+}
+
+.removeButton:hover {
+  color: #2563eb;
+}
+
+.clearAllButton {
+  @apply px-3 py-1 text-sm;
+  color: #4b5563;
+}
+
+.clearAllButton:hover {
+  color: #1f2937;
+}

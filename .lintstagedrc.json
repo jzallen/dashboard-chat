@@ -1,0 +1,9 @@
+{
+  "backend/**/*.py": [
+    "uv run --project backend ruff check --fix",
+    "uv run --project backend ruff format"
+  ],
+  "*.{ts,tsx}": [
+    "eslint --fix"
+  ]
+}

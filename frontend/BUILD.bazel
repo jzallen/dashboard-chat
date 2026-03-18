@@ -1,0 +1,328 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+
+npm_link_all_packages()
+
+# ─── Per-Module js_library Targets ───────────────────────────────────────────
+
+js_library(
+    name = "config",
+    srcs = [
+        "index.html",
+        "package.json",
+        "postcss.config.js",
+        "tailwind.config.js",
+        "tsconfig.json",
+        "vite.config.ts",
+        "vitest.config.ts",
+    ],
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "test_support",
+    srcs = glob([
+        "src/test/**/*.ts",
+        "src/__mocks__/**/*.ts",
+    ]),
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "lib",
+    srcs = glob(
+        ["src/lib/**/*.ts", "src/lib/**/*.tsx"],
+        exclude = ["src/lib/**/*.test.ts", "src/lib/**/*.test.tsx"],
+    ),
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "core_auth",
+    srcs = glob(
+        ["src/core/auth/**/*.ts", "src/core/auth/**/*.tsx"],
+        exclude = ["src/core/auth/**/*.test.ts", "src/core/auth/**/*.test.tsx"],
+        allow_empty = True,
+    ),
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "core_chat",
+    srcs = glob(
+        ["src/core/chat/**/*.ts", "src/core/chat/**/*.tsx"],
+        exclude = ["src/core/chat/**/*.test.ts", "src/core/chat/**/*.test.tsx"],
+        allow_empty = True,
+    ),
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "core_datacatalog",
+    srcs = glob(
+        ["src/core/dataCatalog/**/*.ts", "src/core/dataCatalog/**/*.tsx"],
+        exclude = ["src/core/dataCatalog/**/*.test.ts", "src/core/dataCatalog/**/*.test.tsx"],
+        allow_empty = True,
+    ),
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "core_toolcalls",
+    srcs = glob(
+        ["src/core/toolCalls/**/*.ts", "src/core/toolCalls/**/*.tsx"],
+        exclude = ["src/core/toolCalls/**/*.test.ts", "src/core/toolCalls/**/*.test.tsx"],
+        allow_empty = True,
+    ),
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "ui",
+    srcs = glob(
+        [
+            "src/ui/**/*.ts",
+            "src/ui/**/*.tsx",
+            "src/ui/**/*.css",
+        ],
+        exclude = ["src/ui/**/*.test.ts", "src/ui/**/*.test.tsx"],
+    ),
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "app_shell",
+    srcs = [
+        "App.tsx",
+        "main.tsx",
+    ],
+    deps = [":node_modules"],
+)
+
+# Aggregate target for Vite production build
+js_library(
+    name = "sources",
+    srcs = [],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_shell",
+        ":config",
+        ":core_auth",
+        ":core_chat",
+        ":core_datacatalog",
+        ":core_toolcalls",
+        ":lib",
+        ":ui",
+    ],
+)
+
+# ─── Vite Build ──────────────────────────────────────────────────────────────
+
+genrule(
+    name = "dist",
+    srcs = [
+        ":sources",
+        "//:.env",
+    ],
+    outs = ["dist.tar"],
+    cmd = """
+        set -a && . .env && set +a && \
+        cd frontend && \
+        VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$$STREAM_API_KEY NODE_ENV=production npx vite build --outDir ../$$TMPDIR/dist --emptyOutDir && \
+        tar -cf - -C ../$$TMPDIR dist > ../$(OUTS)
+    """,
+    tags = ["no-sandbox"],
+    visibility = ["//visibility:public"],
+)
+
+# ─── Per-Module Test Targets ─────────────────────────────────────────────────
+
+# Shared data deps included in every test target
+_TEST_BASE = [
+    ":config",
+    ":test_support",
+    ":node_modules",
+    "//:node_modules/vitest",
+    "//:node_modules/@heroicons/react",
+]
+
+vitest_bin.vitest_test(
+    name = "test_lib",
+    args = ["run", "--config", "vitest.config.lib.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.lib.ts",
+        ":lib",
+    ] + glob(["src/lib/**/*.test.ts"]),
+    size = "medium",
+    tags = ["no-sandbox"],
+)
+
+vitest_bin.vitest_test(
+    name = "test_core_auth",
+    args = ["run", "--config", "vitest.config.core-auth.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.core-auth.ts",
+        ":core_auth",
+        ":lib",
+        ":ui",
+    ] + glob(["src/core/auth/**/*.test.ts", "src/core/auth/**/*.test.tsx"], allow_empty = True),
+    size = "small",
+    tags = ["no-sandbox"],
+)
+
+vitest_bin.vitest_test(
+    name = "test_core_chat",
+    args = ["run", "--config", "vitest.config.core-chat.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.core-chat.ts",
+        ":core_chat",
+        ":core_toolcalls",
+        ":lib",
+    ] + glob(["src/core/chat/**/*.test.ts", "src/core/chat/**/*.test.tsx"], allow_empty = True),
+    size = "small",
+    tags = ["no-sandbox"],
+)
+
+vitest_bin.vitest_test(
+    name = "test_core_datacatalog",
+    args = ["run", "--config", "vitest.config.core-datacatalog.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.core-datacatalog.ts",
+        ":core_datacatalog",
+        ":lib",
+    ] + glob(["src/core/dataCatalog/**/*.test.ts", "src/core/dataCatalog/**/*.test.tsx"], allow_empty = True),
+    size = "small",
+    tags = ["no-sandbox"],
+)
+
+vitest_bin.vitest_test(
+    name = "test_core_toolcalls",
+    args = ["run", "--config", "vitest.config.core-toolcalls.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.core-toolcalls.ts",
+        ":core_toolcalls",
+        ":core_datacatalog",
+        ":core_chat",
+        ":lib",
+    ] + glob(["src/core/toolCalls/**/*.test.ts", "src/core/toolCalls/**/*.test.tsx"], allow_empty = True),
+    size = "small",
+    tags = ["no-sandbox"],
+)
+
+vitest_bin.vitest_test(
+    name = "test_ui_hooks",
+    args = ["run", "--config", "vitest.config.ui-hooks.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.ui-hooks.ts",
+        ":ui",
+        ":core_auth",
+        ":core_chat",
+        ":core_datacatalog",
+        ":core_toolcalls",
+        ":lib",
+    ] + glob(["src/ui/hooks/**/*.test.ts", "src/ui/hooks/**/*.test.tsx"], allow_empty = True),
+    size = "medium",
+    tags = ["no-sandbox"],
+)
+
+vitest_bin.vitest_test(
+    name = "test_ui_context",
+    args = ["run", "--config", "vitest.config.ui-context.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.ui-context.ts",
+        ":ui",
+        ":core_auth",
+        ":core_chat",
+        ":core_datacatalog",
+        ":core_toolcalls",
+        ":lib",
+    ] + glob(["src/ui/context/**/*.test.ts", "src/ui/context/**/*.test.tsx"], allow_empty = True),
+    size = "small",
+    tags = ["no-sandbox"],
+)
+
+vitest_bin.vitest_test(
+    name = "test_ui_components",
+    args = ["run", "--config", "vitest.config.ui-components.ts"],
+    chdir = package_name(),
+    data = _TEST_BASE + [
+        "vitest.config.ui-components.ts",
+        ":ui",
+        ":core_auth",
+        ":core_chat",
+        ":core_datacatalog",
+        ":core_toolcalls",
+        ":lib",
+        ":app_shell",
+    ] + glob(["src/ui/components/**/*.test.ts", "src/ui/components/**/*.test.tsx"], allow_empty = True),
+    size = "medium",
+    tags = ["no-sandbox"],
+)
+
+test_suite(
+    name = "test",
+    tests = [
+        ":test_lib",
+        ":test_core_auth",
+        ":test_core_chat",
+        ":test_core_datacatalog",
+        ":test_core_toolcalls",
+        ":test_ui_hooks",
+        ":test_ui_context",
+        ":test_ui_components",
+    ],
+)
+
+# ─── OCI Image ───────────────────────────────────────────────────────────────
+
+genrule(
+    name = "nginx_conf_layer",
+    srcs = ["nginx.conf"],
+    outs = ["nginx_conf.tar"],
+    cmd = """
+        mkdir -p $$TMPDIR/etc/nginx/conf.d && \
+        cp $(location nginx.conf) $$TMPDIR/etc/nginx/conf.d/default.conf && \
+        tar -cf $(OUTS) -C $$TMPDIR etc
+    """,
+    tags = ["no-sandbox"],
+)
+
+genrule(
+    name = "assets_layer",
+    srcs = [":dist"],
+    outs = ["assets.tar"],
+    cmd = """
+        mkdir -p $$TMPDIR/usr/share/nginx/html && \
+        tar -xf $(location :dist) -C $$TMPDIR && \
+        cp -r $$TMPDIR/dist/* $$TMPDIR/usr/share/nginx/html/ && \
+        tar -cf $(OUTS) -C $$TMPDIR usr
+    """,
+    tags = ["no-sandbox"],
+)
+
+oci_image(
+    name = "image",
+    base = "@nginx_alpine",
+    tars = [
+        ":nginx_conf_layer",
+        ":assets_layer",
+    ],
+    exposed_ports = ["80"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "image_tar",
+    image = ":image",
+    repo_tags = ["dashboard-chat/frontend:bazel"],
+    visibility = ["//visibility:public"],
+)

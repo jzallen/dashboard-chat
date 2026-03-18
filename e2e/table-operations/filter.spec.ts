@@ -1,3 +1,9 @@
+import * as fs from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import { test, expect } from "../fixtures/test-fixtures";
 import { TableHelper } from "../helpers/table.helper";
 
@@ -6,17 +12,23 @@ test.describe("Filter Operations", () => {
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
-    await page.goto("/");
-
+    await page.addInitScript(() => {
+      localStorage.setItem("auth_token", "dev-token-static");
+      localStorage.setItem("auth_refresh_token", "dev-refresh-token-001");
+      localStorage.setItem("auth_token_expires_at", String(Date.now() + 300000));
+      localStorage.setItem("last_activity_ts", String(Date.now()));
+      localStorage.setItem("auth_user", JSON.stringify({id:"dev-user-001",email:"dev@localhost",org_id:"dev-org-001",name:"Dev User"}));
+    });
+    const seedData = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../.seed-data.json"), "utf-8"));
+    await page.goto(`/projects/${seedData.projectId}/datasets/${seedData.datasetId}`);
+    await page.waitForSelector('[data-testid="data-table"]', { timeout: 30000 });
     const tableHelper = await TableHelper.create(page);
     initialRecords = await tableHelper.getPageRecords();
-
     await page.close();
   });
 
-  test.beforeEach(async ({ tableHelper }) => {
-    await tableHelper.table.page().goto("/");
-    await expect(tableHelper.table).toBeVisible();
+  test.beforeEach(async ({ navigationHelper, seededProjectId, seededDatasetId }) => {
+    await navigationHelper.navigateToDataset(seededProjectId, seededDatasetId);
   });
 
   test("should filter products by quantity greater than 50", async ({

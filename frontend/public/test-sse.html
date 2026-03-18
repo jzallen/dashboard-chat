@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SSE Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    #output { white-space: pre-wrap; background: #f5f5f5; padding: 10px; }
+    button { padding: 10px 20px; font-size: 16px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>SSE Streaming Test</h1>
+  <button onclick="testStream()">Send Test Request</button>
+  <div id="output">Click the button to test SSE streaming...</div>
+
+  <script>
+    async function testStream() {
+      const output = document.getElementById('output');
+      output.textContent = 'Sending request...\n';
+
+      try {
+        const response = await fetch('http://localhost:8787/chat', {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'hi' }],
+            tableSchema: { columns: [{ id: 'name', type: 'string' }], rowCount: 5 }
+          })
+        });
+
+        output.textContent += `Response status: ${response.status}\n`;
+        output.textContent += `Headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}\n\n`;
+
+        if (!response.body) {
+          output.textContent += 'ERROR: No response body!\n';
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          output.textContent += `[Chunk] done=${done}, size=${value?.length || 0}\n`;
+
+          if (done) break;
+
+          const text = decoder.decode(value, { stream: true });
+          output.textContent += text;
+        }
+
+        output.textContent += '\n\n--- Stream complete ---';
+      } catch (error) {
+        output.textContent += `ERROR: ${error.message}\n`;
+        console.error(error);
+      }
+    }
+  </script>
+</body>
+</html>

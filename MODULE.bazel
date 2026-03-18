@@ -1,0 +1,80 @@
+"""Bazel module for Dashboard Chat monorepo."""
+
+module(
+    name = "dashboard-chat",
+    version = "0.0.0",
+)
+
+# ─── Core Dependencies ───────────────────────────────────────────────────────
+
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
+bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_uv", version = "0.89.2")
+bazel_dep(name = "aspect_rules_js", version = "3.0.2")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.6")
+bazel_dep(name = "aspect_rules_py", version = "1.4.0")
+bazel_dep(name = "rules_oci", version = "2.2.7")
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "rules_shell", version = "0.4.1")
+
+# ─── Python Toolchain ────────────────────────────────────────────────────────
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+
+python.toolchain(python_version = "3.11")
+
+# ─── Python Dependencies (from uv.lock → requirements_lock.txt) ─────────────
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+pip.parse(
+    hub_name = "pip",
+    python_version = "3.11",
+    requirements_lock = "//backend:requirements_dev_lock.txt",
+)
+
+use_repo(pip, "pip")
+
+# ─── Node.js / npm Dependencies ──────────────────────────────────────────────
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+
+npm.npm_translate_lock(
+    name = "npm",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+
+use_repo(npm, "npm")
+
+# ─── OCI Base Images (pinned by tag, will pin by digest once validated) ──────
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+oci.pull(
+    name = "python_3_11_slim",
+    image = "docker.io/library/python",
+    tag = "3.11-slim",
+    platforms = ["linux/amd64"],
+)
+
+oci.pull(
+    name = "nginx_alpine",
+    image = "docker.io/library/nginx",
+    tag = "alpine",
+    platforms = ["linux/amd64"],
+)
+
+oci.pull(
+    name = "node_20_slim",
+    image = "docker.io/library/node",
+    tag = "20-slim",
+    platforms = ["linux/amd64"],
+)
+
+use_repo(
+    oci,
+    "python_3_11_slim",
+    "nginx_alpine",
+    "node_20_slim",
+)

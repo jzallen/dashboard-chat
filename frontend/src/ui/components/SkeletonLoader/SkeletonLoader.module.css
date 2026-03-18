@@ -1,0 +1,156 @@
+/* ============================================
+   Skeleton Loader Styles
+   ============================================
+
+   Loading placeholder for table panel with pulsing animation.
+*/
+
+/* Main skeleton container - mimics table panel layout */
+.skeletonContainer {
+  @apply flex flex-col h-full bg-white animate-pulse;
+}
+
+/* Header section skeleton */
+.headerSkeleton {
+  @apply border-b border-surface-border p-4;
+}
+
+/* Header title placeholder bar */
+.headerTitleBar {
+  @apply h-6 bg-gray-200 rounded w-32;
+}
+
+/* Active filters section skeleton */
+.filtersSkeleton {
+  @apply border-b border-surface-border p-3;
+}
+
+/* Filter pills container */
+.filterPillsContainer {
+  @apply flex gap-2;
+}
+
+/* Individual filter pill placeholder */
+.filterPill {
+  @apply h-7 bg-gray-200 rounded-full;
+}
+
+.filterPillSmall {
+  @apply w-32;
+}
+
+.filterPillMedium {
+  @apply w-40;
+}
+
+/* Table area container */
+.tableArea {
+  @apply flex-1 overflow-hidden p-4;
+}
+
+/* Table container skeleton */
+.tableContainer {
+  @apply border border-surface-border rounded-lg overflow-hidden;
+}
+
+/* Table header skeleton */
+.tableHeader {
+  @apply bg-gray-50 border-b border-surface-border;
+}
+
+/* Header row */
+.headerRow {
+  @apply flex;
+}
+
+/* Header cell */
+.headerCell {
+  @apply flex-1 p-3;
+}
+
+/* Header text placeholder */
+.headerText {
+  @apply h-4 bg-gray-300 rounded w-20;
+}
+
+/* Table body skeleton */
+.tableBody {
+  @apply divide-y divide-gray-200;
+}
+
+/* Table row skeleton */
+.tableRow {
+  @apply flex;
+}
+
+/* Table cell skeleton */
+.tableCell {
+  @apply flex-1 p-3;
+}
+
+/* Cell content placeholder */
+.cellContent {
+  @apply h-4 bg-gray-200 rounded w-full max-w-[120px];
+}
+
+/* Pagination section skeleton */
+.paginationSkeleton {
+  @apply border-t border-surface-border p-4;
+}
+
+/* Pagination layout */
+.paginationLayout {
+  @apply flex items-center justify-between;
+}
+
+/* Pagination text placeholder */
+.paginationText {
+  @apply h-4 bg-gray-200 rounded;
+}
+
+.paginationTextLeft {
+  @apply w-32;
+}
+
+.paginationTextRight {
+  @apply w-24;
+}
+
+/* Pagination buttons container */
+.paginationButtons {
+  @apply flex gap-2;
+}
+
+/* Pagination button placeholder */
+.paginationButton {
+  @apply h-8 bg-gray-200 rounded w-20;
+}
+
+/* ============================================
+   ProjectView Skeleton
+   ============================================ */
+
+/* Cards container for project view */
+.cardsContainer {
+  @apply flex flex-col gap-3 p-6;
+}
+
+/* Individual card skeleton */
+.cardSkeleton {
+  @apply bg-white rounded-lg shadow p-4;
+}
+
+/* Card title placeholder */
+.cardTitleBar {
+  @apply h-5 bg-gray-200 rounded w-48 mb-3;
+}
+
+/* Card description placeholder */
+.cardDescriptionBar {
+  @apply h-4 bg-gray-200 rounded w-72 mb-3;
+}
+
+/* Card meta placeholder */
+.cardMetaBar {
+  @apply h-4 bg-gray-200 rounded w-32;
+}

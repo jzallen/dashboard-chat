@@ -58,25 +58,26 @@ npm install
 
 ### Environment Setup
 
-Create a `.dev.vars` file in the project root:
+**Backend API** (optional):
+```bash
+DATABASE_URL=sqlite+aiosqlite:///./data/app.db
+CORS_ORIGINS=http://localhost:5173
+DEBUG=true
+```
 
+**Chat Worker** - Create a `.dev.vars` file in the project root:
 ```
 GROQ_API_KEY=your_groq_api_key_here
 CORS_ORIGIN=http://localhost:5173
+API_URL=http://api:8000
 ```
 
 ## Development
 
-Run both servers concurrently in separate terminals:
+Start all services with Docker Compose:
 
-**Terminal 1 - Frontend** (port 5173):
 ```bash
-npm run dev
-```
-
-**Terminal 2 - Backend** (port 8787):
-```bash
-npm run dev:worker
+docker compose up
 ```
 
 Open http://localhost:5173 to use the application.

@@ -25,9 +25,50 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Turborepo
+.turbo/
+
 # TypeScript
 *.tsbuildinfo
 
 # Playwright
 playwright-report/
 test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+*.egg
+
+# Backend
+backend/.env
+
+# Embedded databases
+*.db
+*.duckdb
+
+# E2E seed data
+e2e/.seed-data.json
+
+# Core dumps (root-level only; does not affect frontend/src/core/)
+/core
+
+# Bazel (symlinks + directories)
+bazel-bin
+bazel-out
+bazel-testlogs
+bazel-dashboard-chat
+.bazel-cache/
+
+# Claude Code worktrees
+.claude/worktrees/

@@ -1,0 +1,1 @@
+"""Dashboard Chat API application."""

@@ -1,0 +1,95 @@
+[project]
+name = "dashboard-chat-backend"
+version = "0.1.0"
+description = "Backend API for Dashboard Chat"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # FastAPI and server
+    "fastapi==0.109.2",
+    "uvicorn[standard]==0.27.1",
+    "python-multipart==0.0.9",
+    # Database
+    "sqlalchemy[asyncio]==2.0.25",
+    "asyncpg==0.29.0",
+    "aiosqlite==0.19.0",
+    "alembic==1.13.1",
+    # Data processing
+    "pandas==2.2.0",
+    # Pydantic
+    "pydantic==2.6.0",
+    "pydantic-settings==2.1.0",
+    # Functional programming
+    "returns==0.22.0",
+    # DuckDB for local file-based data
+    "duckdb==1.0.0",
+    # Data lake storage
+    "boto3==1.34.0",
+    "ibis-framework[duckdb]==9.5.0",
+    "pyarrow==17.0.0",
+    # HTTP client
+    "httpx>=0.26.0",
+    # Auth
+    "PyJWT[crypto]>=2.8.0",
+    # UUIDs
+    "uuid-utils>=0.6.0",
+    "pyyaml>=6.0.3",
+    # Excel file support
+    "openpyxl>=3.1.0",
+    # FHIR resource validation
+    "fhir.resources>=7.1.0",
+    # Password hashing for external SQL access
+    "bcrypt>=4.0.0",
+    # Docker container management for ephemeral pg_duckdb environments
+    "aiodocker>=0.21.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<8.0.0",
+    "pytest-asyncio==0.23.4",
+    "pytest-xdist>=3.5.0",
+    "moto[s3]>=5.0.0",
+    "ruff>=0.15.4",
+    "detect-secrets>=1.5.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+# Alembic auto-generates migration files with its own style — don't lint them
+exclude = ["migrations/versions/*"]
+
+[tool.ruff.lint]
+select = [
+    "F",    # Pyflakes — unused imports, undefined names, redefined-unused
+    "E",    # pycodestyle errors — syntax errors, whitespace issues
+    "W",    # pycodestyle warnings — trailing whitespace, blank lines
+    "I",    # isort — import ordering and grouping
+    "B",    # flake8-bugbear — common pitfalls (e.g., mutable default args, `raise e` re-raise bug)
+    "UP",   # pyupgrade — modernize syntax for Python 3.11+ (f-strings, type unions, etc.)
+    "SIM",  # flake8-simplify — simplifiable if/else, context managers, boolean expressions
+    "RUF",  # Ruff-specific rules — implicit Optional, mutable class defaults, etc.
+]
+# E712: "comparison to True/False" — SQLAlchemy filters use `== True` intentionally
+ignore = ["E712"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic migrations: auto-generated imports and star-imports are normal
+"migrations/*" = ["F401", "F403", "UP", "E", "I"]
+# Tests: assert statements (S101) are expected in test code
+"tests/*" = ["S101"]
+# FastAPI's Depends() in argument defaults is idiomatic — B008 is a false positive for routers
+"app/routers/*" = ["B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-n auto --dist=loadfile --ignore=tests/fitness"
+markers = ["fitness: serialization fitness benchmarks"]

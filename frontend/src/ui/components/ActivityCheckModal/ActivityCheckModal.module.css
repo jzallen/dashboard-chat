@@ -1,0 +1,36 @@
+/* ActivityCheckModal styles */
+
+.overlay {
+  @apply fixed inset-0 z-50 flex items-center justify-center;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.card {
+  @apply bg-surface rounded-lg shadow-xl p-8 max-w-sm w-full mx-4;
+}
+
+.title {
+  @apply text-xl font-semibold text-surface-emphasis text-center mb-2;
+}
+
+.description {
+  @apply text-sm text-surface-muted text-center mb-6;
+}
+
+.actions {
+  @apply flex flex-col gap-3;
+}
+
+.continueButton {
+  @apply w-full px-4 py-2.5 rounded-md text-sm font-medium text-white;
+  @apply bg-primary hover:bg-primary-hover;
+  @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+  @apply transition-colors;
+}
+
+.logoutButton {
+  @apply w-full px-4 py-2.5 rounded-md text-sm font-medium;
+  @apply text-surface-muted bg-surface-tertiary hover:bg-surface-border;
+  @apply focus:outline-none focus:ring-2 focus:ring-surface-muted focus:ring-offset-2;
+  @apply transition-colors;
+}
