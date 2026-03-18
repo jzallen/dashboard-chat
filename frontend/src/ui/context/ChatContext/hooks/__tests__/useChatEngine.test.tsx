@@ -19,10 +19,6 @@ vi.mock("@/chat", async (importOriginal) => {
   return {
     ...actual,
     createChatClient: () => ({
-      createSession: vi.fn().mockResolvedValue({ id: "sess-001" }),
-      logTurn: vi.fn().mockResolvedValue(undefined),
-      getSession: vi.fn(),
-      listSessions: vi.fn(),
       fetchChatStream: (...args: unknown[]) => mockFetchChatStream(...args),
     }),
   };
@@ -63,17 +59,19 @@ vi.mock("@/stream/StreamProvider", () => ({
   useStreamContext: (...args: unknown[]) => mockUseStreamContext(...args),
 }));
 
+const mockEntityContext = {
+  projectId: null as string | null,
+  entityType: null as string | null,
+  entityId: null as string | null,
+  tableSchema: null,
+  setProjectId: vi.fn(),
+  setEntityType: vi.fn(),
+  setEntityId: vi.fn(),
+  setTableSchema: vi.fn(),
+};
+const mockUseEntityContext = vi.fn(() => mockEntityContext);
 vi.mock("@/stream/useEntityContext", () => ({
-  useEntityContext: () => ({
-    projectId: null,
-    entityType: null,
-    entityId: null,
-    tableSchema: null,
-    setProjectId: vi.fn(),
-    setEntityType: vi.fn(),
-    setEntityId: vi.fn(),
-    setTableSchema: vi.fn(),
-  }),
+  useEntityContext: (...args: unknown[]) => mockUseEntityContext(...args),
 }));
 
 // --- Test harness ---
@@ -84,7 +82,7 @@ function TestHarness() {
   return (
     <div>
       <div data-testid="message-count">{ctx.messages.length}</div>
-      <div data-testid="is-active">{String(ctx.isActive)}</div>
+      <div data-testid="has-channel">{String(ctx.channel !== null)}</div>
       <div data-testid="input">{ctx.input}</div>
       {ctx.messages.map((m) => (
         <div key={m.id} data-testid={`msg-${m.id}`}>
@@ -162,41 +160,20 @@ function renderEngine() {
 describe("useChatEngine — registration and state", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockEntityContext.entityId = null;
+    mockEntityContext.entityType = null;
+    mockEntityContext.projectId = null;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("starts inactive with no messages", () => {
+  it("starts with no channel and no messages", () => {
     renderEngine();
 
-    expect(screen.getByTestId("is-active").textContent).toBe("false");
+    expect(screen.getByTestId("has-channel").textContent).toBe("false");
     expect(screen.getByTestId("message-count").textContent).toBe("0");
-  });
-
-  it("becomes active when tool handler is registered", async () => {
-    renderEngine();
-
-    await act(async () => {
-      screen.getByTestId("register-handler").click();
-    });
-
-    expect(screen.getByTestId("is-active").textContent).toBe("true");
-  });
-
-  it("becomes inactive when tool handler is unregistered", async () => {
-    renderEngine();
-
-    await act(async () => {
-      screen.getByTestId("register-handler").click();
-    });
-    expect(screen.getByTestId("is-active").textContent).toBe("true");
-
-    await act(async () => {
-      screen.getByTestId("unregister-handler").click();
-    });
-    expect(screen.getByTestId("is-active").textContent).toBe("false");
   });
 
   it("addMessage appends to message list", async () => {
@@ -210,7 +187,7 @@ describe("useChatEngine — registration and state", () => {
     expect(screen.getByTestId("msg-custom-1").textContent).toBe("Added message");
   });
 
-  it("resetSession clears all messages", async () => {
+  it("resetSession clears all messages and channel", async () => {
     renderEngine();
 
     // Add messages
@@ -224,6 +201,7 @@ describe("useChatEngine — registration and state", () => {
       screen.getByTestId("reset-session").click();
     });
     expect(screen.getByTestId("message-count").textContent).toBe("0");
+    expect(screen.getByTestId("has-channel").textContent).toBe("false");
   });
 
   it("setInput updates the input value", async () => {
@@ -335,7 +313,6 @@ describe("useChatEngine — registration and state", () => {
 
 describe("useChatEngine — Stream integration", () => {
   beforeEach(() => {
-    // Reset to defaults without restoring module-level mocks
     mockUseStreamContext.mockReturnValue({ client: null, isReady: false });
     mockFetchChatStream.mockReset().mockResolvedValue({
       ok: true,
@@ -343,188 +320,125 @@ describe("useChatEngine — Stream integration", () => {
     });
   });
 
-  it("buildApiMessages hydrates from Stream channel when available", async () => {
-    // Override the StreamProvider mock for this test
-    const mockSendMessage = vi.fn().mockResolvedValue({});
+  it("createChannel creates a channel with correct ID format and custom data", async () => {
+    const mockWatch = vi.fn().mockResolvedValue(undefined);
     const mockChannel = {
+      id: "chat_abc123_deadbeef",
+      data: { orgId: "org-1" },
+      watch: mockWatch,
+      state: { messages: [] },
+      on: vi.fn(),
+      off: vi.fn(),
+    };
+    const mockStreamClient = {
+      userID: "user-1",
+      channel: vi.fn().mockReturnValue(mockChannel),
+    };
+
+    mockUseStreamContext.mockReturnValue({ client: mockStreamClient, isReady: true });
+
+    let capturedCtx: ReturnType<typeof useChatContext>;
+
+    function ChannelHarness() {
+      capturedCtx = useChatContext();
+      return (
+        <div>
+          <div data-testid="has-channel">{String(capturedCtx.channel !== null)}</div>
+          <div data-testid="channel-id">{capturedCtx.channel?.id ?? ""}</div>
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <ChannelHarness />
+      </ChatProvider>,
+    );
+
+    await act(async () => {
+      await capturedCtx!.createChannel("org-1");
+    });
+
+    // Verify channel() was called with "messaging" type and a session ID matching expected format
+    expect(mockStreamClient.channel).toHaveBeenCalledWith(
+      "messaging",
+      expect.stringMatching(/^chat_[a-z0-9]+_[a-f0-9]{8}$/),
+      expect.objectContaining({
+        orgId: "org-1",
+        projectId: null,
+        datasetId: null,
+        title: null,
+      }),
+    );
+    expect(mockWatch).toHaveBeenCalled();
+    expect(screen.getByTestId("has-channel").textContent).toBe("true");
+  });
+
+  it("loadChannel watches channel, sets it as current, and restores dataset context", async () => {
+    const mockWatch = vi.fn().mockResolvedValue(undefined);
+    const mockChannel = {
+      id: "existing-channel",
+      data: { datasetId: "ds-restored" },
+      watch: mockWatch,
       state: {
         messages: [
           { id: "m1", text: "hello", user: { id: "user-1" } },
           { id: "m2", text: "world", user: { id: "assistant" } },
         ],
       },
-      sendMessage: mockSendMessage,
+      on: vi.fn(),
+      off: vi.fn(),
+    };
+    const mockStreamClient = {
+      userID: "user-1",
+      channel: vi.fn().mockReturnValue(mockChannel),
     };
 
-    mockUseStreamContext.mockReturnValue({
-      client: null,
-      isReady: true,
-    });
+    mockUseStreamContext.mockReturnValue({ client: mockStreamClient, isReady: true });
 
-    // Capture API messages passed to fetchChatStream
-    let capturedMessages: any = null;
-    mockFetchChatStream.mockImplementation(async (apiMessages: unknown) => {
-      capturedMessages = apiMessages;
-      return {
-        ok: true,
-        body: new ReadableStream({
-          start(controller) {
-            const encoder = new TextEncoder();
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: "content", content: "OK" })}\n\ndata: ${JSON.stringify({ type: "done" })}\n\n`),
-            );
-            controller.close();
-          },
-        }),
-      };
-    });
+    let capturedCtx: ReturnType<typeof useChatContext>;
 
-    function StreamTestHarness() {
-      const ctx = useChatContext();
+    function LoadHarness() {
+      capturedCtx = useChatContext();
       return (
         <div>
-          <div data-testid="loading">{String(ctx.isLoading)}</div>
-          <div data-testid="message-count">{ctx.messages.length}</div>
-          <input
-            data-testid="chat-input"
-            value={ctx.input}
-            onChange={(e) => ctx.setInput(e.target.value)}
-          />
-          <form onSubmit={ctx.handleSubmit}>
-            <button type="submit" data-testid="submit">Send</button>
-          </form>
-          <button
-            data-testid="register-handler"
-            onClick={() => ctx.registerToolHandler({ executeToolCall: () => "result" })}
-          />
-          <button
-            data-testid="register-channel"
-            onClick={() => ctx.registerCurrentChannel(mockChannel as any)}
-          />
+          <div data-testid="has-channel">{String(capturedCtx.channel !== null)}</div>
+          <div data-testid="message-count">{capturedCtx.messages.length}</div>
+          {capturedCtx.messages.map((m) => (
+            <div key={m.id} data-testid={`msg-${m.id}`}>
+              {m.role}:{m.content}
+            </div>
+          ))}
         </div>
       );
     }
 
     render(
       <ChatProvider>
-        <StreamTestHarness />
-      </ChatProvider>,
-    );
-
-    // Register handler and channel
-    await act(async () => {
-      screen.getByTestId("register-handler").click();
-      screen.getByTestId("register-channel").click();
-    });
-
-    // Type and submit
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "test" } });
-    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("loading").textContent).toBe("false");
-    });
-
-    // The API call should have included Stream channel history
-    expect(capturedMessages).not.toBeNull();
-    expect(capturedMessages).toHaveLength(3); // 2 from channel + 1 user message
-    expect(capturedMessages[0]).toEqual(
-      expect.objectContaining({ role: "user", content: "hello" }),
-    );
-    expect(capturedMessages[1]).toEqual(
-      expect.objectContaining({ role: "assistant", content: "world" }),
-    );
-    expect(capturedMessages[2]).toEqual(
-      expect.objectContaining({ role: "user", content: "test" }),
-    );
-  });
-
-  it("writeToStream calls channel.sendMessage after SSE completion", async () => {
-    const mockSendMessage = vi.fn().mockResolvedValue({});
-    const mockChannel = {
-      state: { messages: [] },
-      sendMessage: mockSendMessage,
-    };
-
-    mockUseStreamContext.mockReturnValue({
-      client: null,
-      isReady: true,
-    });
-
-    mockFetchChatStream.mockResolvedValue({
-      ok: true,
-      body: new ReadableStream({
-        start(controller) {
-          const encoder = new TextEncoder();
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "content", content: "Reply" })}\n\ndata: ${JSON.stringify({ type: "done" })}\n\n`),
-          );
-          controller.close();
-        },
-      }),
-    });
-
-    function StreamWriteHarness() {
-      const ctx = useChatContext();
-      return (
-        <div>
-          <div data-testid="loading">{String(ctx.isLoading)}</div>
-          <input
-            data-testid="chat-input"
-            value={ctx.input}
-            onChange={(e) => ctx.setInput(e.target.value)}
-          />
-          <form onSubmit={ctx.handleSubmit}>
-            <button type="submit" data-testid="submit">Send</button>
-          </form>
-          <button
-            data-testid="register-handler"
-            onClick={() => ctx.registerToolHandler({ executeToolCall: () => "result" })}
-          />
-          <button
-            data-testid="register-channel"
-            onClick={() => ctx.registerCurrentChannel(mockChannel as any)}
-          />
-        </div>
-      );
-    }
-
-    render(
-      <ChatProvider>
-        <StreamWriteHarness />
+        <LoadHarness />
       </ChatProvider>,
     );
 
     await act(async () => {
-      screen.getByTestId("register-handler").click();
-      screen.getByTestId("register-channel").click();
+      await capturedCtx!.loadChannel("existing-channel");
     });
 
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "hi" } });
-    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+    expect(mockStreamClient.channel).toHaveBeenCalledWith("messaging", "existing-channel");
+    expect(mockWatch).toHaveBeenCalled();
+    expect(screen.getByTestId("has-channel").textContent).toBe("true");
 
-    await waitFor(() => {
-      expect(screen.getByTestId("loading").textContent).toBe("false");
-    });
+    // Verify messages were loaded from channel history
+    expect(screen.getByTestId("message-count").textContent).toBe("2");
+    expect(screen.getByTestId("msg-m1").textContent).toBe("user:hello");
+    expect(screen.getByTestId("msg-m2").textContent).toBe("assistant:world");
 
-    // Wait for async writeToStream calls to complete
-    await waitFor(() => {
-      expect(mockSendMessage).toHaveBeenCalledTimes(2);
-    });
-
-    // First call: user message
-    expect(mockSendMessage.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ text: "hi" }),
-    );
-    // Second call: assistant message
-    expect(mockSendMessage.mock.calls[1][0]).toEqual(
-      expect.objectContaining({ text: "Reply", user_id: "assistant" }),
-    );
+    // Verify dataset context was restored
+    expect(mockEntityContext.setEntityId).toHaveBeenCalledWith("ds-restored");
+    expect(mockEntityContext.setEntityType).toHaveBeenCalledWith("dataset");
   });
 
   it("writeToStream is a no-op when Stream is not ready", async () => {
     // Default mock already returns { client: null, isReady: false }
-    // Just verify no errors when submitting
 
     mockFetchChatStream.mockResolvedValue({
       ok: true,
@@ -553,10 +467,6 @@ describe("useChatEngine — Stream integration", () => {
           <form onSubmit={ctx.handleSubmit}>
             <button type="submit" data-testid="submit">Send</button>
           </form>
-          <button
-            data-testid="register-handler"
-            onClick={() => ctx.registerToolHandler({ executeToolCall: () => "result" })}
-          />
         </div>
       );
     }
@@ -567,10 +477,6 @@ describe("useChatEngine — Stream integration", () => {
       </ChatProvider>,
     );
 
-    await act(async () => {
-      screen.getByTestId("register-handler").click();
-    });
-
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "test" } });
     fireEvent.submit(screen.getByTestId("submit").closest("form")!);
 
@@ -580,5 +486,343 @@ describe("useChatEngine — Stream integration", () => {
 
     // Should complete without errors, using in-memory messages
     expect(screen.getByTestId("message-count").textContent).toBe("2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session title auto-set, dataset picker, and re-submit
+// ---------------------------------------------------------------------------
+
+describe("useChatEngine — session title, dataset picker, and re-submit", () => {
+  beforeEach(() => {
+    mockUseStreamContext.mockReturnValue({ client: null, isReady: false });
+    mockFetchChatStream.mockReset().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({ start(c) { c.close(); } }),
+    });
+    mockEntityContext.entityId = null;
+    mockEntityContext.setEntityId.mockClear();
+    mockEntityContext.setEntityType.mockClear();
+  });
+
+  it("auto-sets channel title from the first submitted message text", async () => {
+    const mockUpdatePartial = vi.fn().mockResolvedValue(undefined);
+    const mockSendMessage = vi.fn().mockResolvedValue(undefined);
+    const mockChannel = {
+      id: "test-channel",
+      data: { orgId: "org-1" },
+      watch: vi.fn().mockResolvedValue(undefined),
+      state: { messages: [] },
+      on: vi.fn(),
+      off: vi.fn(),
+      updatePartial: mockUpdatePartial,
+      sendMessage: mockSendMessage,
+    };
+    const mockStreamClient = {
+      userID: "user-1",
+      channel: vi.fn().mockReturnValue(mockChannel),
+    };
+
+    mockUseStreamContext.mockReturnValue({ client: mockStreamClient, isReady: true });
+
+    let capturedCtx: ReturnType<typeof useChatContext>;
+
+    function TitleHarness() {
+      capturedCtx = useChatContext();
+      return (
+        <div>
+          <input
+            data-testid="chat-input"
+            value={capturedCtx.input}
+            onChange={(e) => capturedCtx.setInput(e.target.value)}
+          />
+          <form onSubmit={capturedCtx.handleSubmit}>
+            <button type="submit" data-testid="submit">Send</button>
+          </form>
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <TitleHarness />
+      </ChatProvider>,
+    );
+
+    // Create a channel so channelRef is set
+    await act(async () => {
+      await capturedCtx!.createChannel("org-1");
+    });
+
+    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "Hello world" } });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+
+    await waitFor(() => {
+      expect(mockUpdatePartial).toHaveBeenCalledWith({ set: { title: "Hello world" } });
+    });
+  });
+
+  it("appends dataset-picker widget when table-op keyword sent without a dataset context", async () => {
+    function PickerHarness() {
+      const ctx = useChatContext();
+      return (
+        <div>
+          <div data-testid="loading">{String(ctx.isLoading)}</div>
+          <div data-testid="message-count">{ctx.messages.length}</div>
+          {ctx.messages.map((m) => (
+            <div key={m.id} data-testid={`msg-${m.id}`} data-widget={m.widget?.type ?? ""}>
+              {m.content}
+            </div>
+          ))}
+          <input
+            data-testid="chat-input"
+            value={ctx.input}
+            onChange={(e) => ctx.setInput(e.target.value)}
+          />
+          <form onSubmit={ctx.handleSubmit}>
+            <button type="submit" data-testid="submit">Send</button>
+          </form>
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <PickerHarness />
+      </ChatProvider>,
+    );
+
+    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "filter by status" } });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    // User message + assistant picker widget
+    expect(screen.getByTestId("message-count").textContent).toBe("2");
+    const msgs = screen.getAllByTestId(/^msg-/);
+    const pickerMsg = msgs[msgs.length - 1];
+    expect(pickerMsg.getAttribute("data-widget")).toBe("dataset-picker");
+    expect(pickerMsg.textContent).toContain("select a dataset");
+    // API should NOT have been called (picker intercepts the request)
+    expect(mockFetchChatStream).not.toHaveBeenCalled();
+  });
+
+  it("re-submits the pending command after dataset is selected from picker", async () => {
+    mockFetchChatStream.mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "content", content: "Done!" })}\n\n` +
+              `data: ${JSON.stringify({ type: "done" })}\n\n`,
+            ),
+          );
+          controller.close();
+        },
+      }),
+    });
+
+    function ResubmitHarness() {
+      const ctx = useChatContext();
+      return (
+        <div>
+          <div data-testid="loading">{String(ctx.isLoading)}</div>
+          <div data-testid="message-count">{ctx.messages.length}</div>
+          <input
+            data-testid="chat-input"
+            value={ctx.input}
+            onChange={(e) => ctx.setInput(e.target.value)}
+          />
+          <form onSubmit={ctx.handleSubmit}>
+            <button type="submit" data-testid="submit">Send</button>
+          </form>
+          <button
+            data-testid="select-dataset"
+            onClick={() => ctx.handleDatasetSelected("ds-picked")}
+          />
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <ResubmitHarness />
+      </ChatProvider>,
+    );
+
+    // Submit a table-op message — triggers picker, no API call
+    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "sort by name" } });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+    expect(screen.getByTestId("message-count").textContent).toBe("2");
+    expect(mockFetchChatStream).not.toHaveBeenCalled();
+
+    // Simulate entity context update (what registerDatasetId would normally do)
+    mockEntityContext.entityId = "ds-picked";
+
+    // Select a dataset — should re-submit the pending command
+    await act(async () => {
+      screen.getByTestId("select-dataset").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    // fetchChatStream should have been called for the re-submitted command
+    expect(mockFetchChatStream).toHaveBeenCalledOnce();
+    // More messages should have been added (user re-submit + assistant response)
+    expect(Number(screen.getByTestId("message-count").textContent)).toBeGreaterThan(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Navigate-to-table prompt when tool calls arrive without a handler
+// ---------------------------------------------------------------------------
+
+describe("useChatEngine — navigate-to-table prompt", () => {
+  beforeEach(() => {
+    mockUseStreamContext.mockReturnValue({ client: null, isReady: false });
+    mockFetchChatStream.mockReset();
+    mockEntityContext.entityId = null;
+    mockEntityContext.setEntityId.mockClear();
+    mockEntityContext.setEntityType.mockClear();
+  });
+
+  it("appends navigation prompt when tool calls returned but no handler registered", async () => {
+    // Use a message without table-op keywords to bypass dataset picker detection
+    // but the worker still returns tool_calls in the response
+    const toolCalls = [{ id: "tc1", function: { name: "filter_rows", arguments: '{"col":"a"}' } }];
+
+    mockFetchChatStream.mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "tool_calls", tool_calls: toolCalls })}\n\n` +
+              `data: ${JSON.stringify({ type: "done" })}\n\n`,
+            ),
+          );
+          controller.close();
+        },
+      }),
+    });
+
+    function NavPromptHarness() {
+      const ctx = useChatContext();
+      return (
+        <div>
+          <div data-testid="loading">{String(ctx.isLoading)}</div>
+          <div data-testid="message-count">{ctx.messages.length}</div>
+          {ctx.messages.map((m) => (
+            <div key={m.id} data-testid={`msg-${m.id}`}>
+              {m.content}
+            </div>
+          ))}
+          <input
+            data-testid="chat-input"
+            value={ctx.input}
+            onChange={(e) => ctx.setInput(e.target.value)}
+          />
+          <form onSubmit={ctx.handleSubmit}>
+            <button type="submit" data-testid="submit">Send</button>
+          </form>
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <NavPromptHarness />
+      </ChatProvider>,
+    );
+
+    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "apply transformation" } });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    // Should have user + assistant messages
+    expect(screen.getByTestId("message-count").textContent).toBe("2");
+
+    // The assistant message should contain the "Select a dataset" prompt (no entityId set)
+    const assistantMessages = screen.getAllByTestId(/^msg-/);
+    const lastMsg = assistantMessages[assistantMessages.length - 1];
+    expect(lastMsg.textContent).toContain("Select a dataset first");
+  });
+
+  it("includes dataset link in navigation prompt when entityId is set", async () => {
+    // Set entityId so the nav message includes a link
+    mockEntityContext.entityId = "ds-42";
+
+    const toolCalls = [{ id: "tc1", function: { name: "sort_rows", arguments: '{}' } }];
+
+    mockFetchChatStream.mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "tool_calls", tool_calls: toolCalls })}\n\n` +
+              `data: ${JSON.stringify({ type: "done" })}\n\n`,
+            ),
+          );
+          controller.close();
+        },
+      }),
+    });
+
+    function NavWithDatasetHarness() {
+      const ctx = useChatContext();
+      return (
+        <div>
+          <div data-testid="loading">{String(ctx.isLoading)}</div>
+          <div data-testid="message-count">{ctx.messages.length}</div>
+          {ctx.messages.map((m) => (
+            <div key={m.id} data-testid={`msg-${m.id}`}>
+              {m.content}
+            </div>
+          ))}
+          <input
+            data-testid="chat-input"
+            value={ctx.input}
+            onChange={(e) => ctx.setInput(e.target.value)}
+          />
+          <form onSubmit={ctx.handleSubmit}>
+            <button type="submit" data-testid="submit">Send</button>
+          </form>
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <NavWithDatasetHarness />
+      </ChatProvider>,
+    );
+
+    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "sort it" } });
+    fireEvent.submit(screen.getByTestId("submit").closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    const assistantMessages = screen.getAllByTestId(/^msg-/);
+    const lastMsg = assistantMessages[assistantMessages.length - 1];
+    expect(lastMsg.textContent).toContain("Navigate to the table view");
+    expect(lastMsg.textContent).toContain("/table/ds-42");
   });
 });

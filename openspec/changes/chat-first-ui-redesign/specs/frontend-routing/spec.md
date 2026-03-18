@@ -11,13 +11,13 @@ The frontend route configuration SHALL be restructured to support chat-first nav
 | `/projects/:projectId` | ProjectView (dataset browser) |
 | `/projects/:projectId/datasets/:datasetId` | ProjectView (dataset detail) |
 | `/projects/:projectId/datasets/:datasetId/sessions` | SessionList |
-| `/projects/:projectId/datasets/:datasetId/sessions/:sessionId` | SessionViewer |
+| `/projects/:projectId/datasets/:datasetId/sessions/:channelId` | SessionViewer |
 
 **New routes:**
 | Route | Component | Description |
 |-------|-----------|-------------|
 | `/` | ChatView | New session (landing page) |
-| `/chat/:sessionId` | ChatView | Resume existing session |
+| `/chat/:channelId` | ChatView | Resume existing session (Stream channel) |
 | `/projects` | ProjectGrid | Project list (was `/`) |
 | `/projects/:projectId` | DatasetGrid | Datasets within project |
 | `/table/:datasetId` | TableView | Full-width table with inline chat |

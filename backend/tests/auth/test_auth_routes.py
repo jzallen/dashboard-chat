@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from app.auth.dev_provider import DEV_TOKEN, DEV_USER, DevAuthProvider
+from app.auth.dev_provider import DEV_USER, DevAuthProvider
 from app.auth.exceptions import AuthenticationError
 from app.auth.rate_limiter import InMemoryRateLimiter
 from app.routers.auth import router
@@ -68,7 +68,8 @@ class TestCallbackResponse:
         resp = await client.post("/api/auth/callback", json={"code": "any-code"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["token"] == DEV_TOKEN
+        # Token is now a real RS256 JWT (3 dot-separated segments)
+        assert data["token"].count(".") == 2
         assert data["refresh_token"] == "dev-refresh-token-001"
         assert data["expires_in"] == 300
         assert data["user"]["id"] == DEV_USER.id
@@ -94,7 +95,7 @@ class TestRefreshEndpoint:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["access_token"] == DEV_TOKEN
+        assert data["access_token"].count(".") == 2
         assert data["refresh_token"] == "dev-refresh-token-002"
         assert data["expires_in"] == 300
 

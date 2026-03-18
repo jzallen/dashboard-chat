@@ -52,6 +52,12 @@ export default defineConfig({
             reuseExistingServer: !process.env.CI,
             timeout: 120000,
           },
+          {
+            command: "npm run dev --prefix auth-proxy",
+            url: "http://localhost:3000/health",
+            reuseExistingServer: !process.env.CI,
+            timeout: 120000,
+          },
         ],
       }),
 });

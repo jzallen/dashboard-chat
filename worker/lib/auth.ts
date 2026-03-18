@@ -2,18 +2,35 @@ import type { Context, Next } from "hono";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const AUTH_MODE = process.env.AUTH_MODE || "dev";
-const DEV_TOKEN = "dev-token-static";
 const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID || "";
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const JWKS_URL = process.env.JWKS_URL;
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 function getJWKS() {
-  if (!jwks && WORKOS_CLIENT_ID) {
-    jwks = createRemoteJWKSet(
-      new URL(`https://api.workos.com/sso/jwks/${WORKOS_CLIENT_ID}`)
-    );
+  if (!jwks) {
+    if (AUTH_MODE === "dev") {
+      const url = JWKS_URL || `${BACKEND_URL}/.well-known/jwks.json`;
+      jwks = createRemoteJWKSet(new URL(url));
+    } else if (WORKOS_CLIENT_ID) {
+      const url =
+        JWKS_URL ||
+        `https://api.workos.com/sso/jwks/${WORKOS_CLIENT_ID}`;
+      jwks = createRemoteJWKSet(new URL(url));
+    }
   }
   return jwks;
+}
+
+function getVerifyOptions(): { audience: string; issuer: string } {
+  if (AUTH_MODE === "dev") {
+    return { audience: "dev-client", issuer: "http://localhost:8000" };
+  }
+  return {
+    audience: WORKOS_CLIENT_ID,
+    issuer: `https://api.workos.com/user_management/${WORKOS_CLIENT_ID}`,
+  };
 }
 
 const PUBLIC_PATHS = new Set(["/health"]);
@@ -30,22 +47,20 @@ export async function authMiddleware(c: Context, next: Next) {
 
   const token = authHeader.slice(7);
 
-  if (AUTH_MODE === "dev") {
-    if (token !== DEV_TOKEN) {
-      return c.json({ error: "Invalid dev token" }, 401);
-    }
-    return next();
-  }
-
-  // Verify JWT locally using WorkOS JWKS
   try {
     const keySet = getJWKS();
     if (!keySet) {
+      if (AUTH_MODE === "dev") {
+        return c.json(
+          { error: "JWKS not available (backend not reachable?)" },
+          401
+        );
+      }
       return c.json({ error: "WORKOS_CLIENT_ID not configured" }, 401);
     }
+    const options = getVerifyOptions();
     await jwtVerify(token, keySet, {
-      audience: WORKOS_CLIENT_ID,
-      issuer: `https://api.workos.com/user_management/${WORKOS_CLIENT_ID}`,
+      ...options,
       algorithms: ["RS256"],
     });
     return next();

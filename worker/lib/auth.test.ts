@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Shared mock state that tests configure before importing auth module
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test mock needs flexible signature
@@ -22,6 +22,18 @@ function createTestApp() {
 }
 
 describe("authMiddleware (dev mode)", () => {
+  beforeEach(() => {
+    mockJwtVerifyImpl = vi.fn().mockResolvedValue({
+      payload: {
+        sub: "dev-user-001",
+        org_id: "dev-org-001",
+        email: "dev@localhost",
+      },
+      protectedHeader: { alg: "RS256" },
+      key: {},
+    });
+  });
+
   const app = createTestApp();
 
   it("allows /health without a token", async () => {
@@ -37,21 +49,39 @@ describe("authMiddleware (dev mode)", () => {
     expect(body.error).toMatch(/Authorization/i);
   });
 
-  it("rejects request with invalid token", async () => {
-    const res = await app.request("/protected", {
-      headers: { Authorization: "Bearer wrong-token" },
+  it("rejects request with invalid JWT", async () => {
+    mockJwtVerifyImpl = vi.fn().mockRejectedValue(new Error("Invalid JWT"));
+    const freshApp = createTestApp();
+    const res = await freshApp.request("/protected", {
+      headers: { Authorization: "Bearer invalid.jwt.token" },
     });
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toMatch(/invalid/i);
+    expect(body.error).toMatch(/invalid|expired/i);
   });
 
-  it("accepts request with valid dev token", async () => {
+  it("accepts request with valid JWT", async () => {
     const res = await app.request("/protected", {
-      headers: { Authorization: "Bearer dev-token-static" },
+      headers: { Authorization: "Bearer valid.jwt.token" },
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ data: "secret" });
+  });
+
+  it("verifies JWT with dev audience and issuer", async () => {
+    const app = createTestApp();
+    await app.request("/protected", {
+      headers: { Authorization: "Bearer valid.jwt.token" },
+    });
+    expect(mockJwtVerifyImpl).toHaveBeenCalledWith(
+      "valid.jwt.token",
+      expect.any(Function),
+      expect.objectContaining({
+        audience: "dev-client",
+        issuer: "http://localhost:8000",
+        algorithms: ["RS256"],
+      })
+    );
   });
 });
 

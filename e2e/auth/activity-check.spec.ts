@@ -1,15 +1,41 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL || "http://localhost:3000";
+
+async function injectDevAuth(page: Page) {
+  const res = await fetch(`${AUTH_PROXY_URL}/api/auth/callback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "dev-auth-code" }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch dev auth: ${res.status}`);
+  }
+  const auth = await res.json();
+  const expiresAt = Date.now() + auth.expires_in * 1000;
+
+  await page.addInitScript(
+    ({ token, user, refreshToken, expiresAt, lastActivity }) => {
+      localStorage.setItem("auth_token", token);
+      localStorage.setItem("auth_refresh_token", refreshToken);
+      localStorage.setItem("auth_token_expires_at", String(expiresAt));
+      localStorage.setItem("last_activity_ts", String(lastActivity));
+      localStorage.setItem("auth_user", JSON.stringify(user));
+    },
+    {
+      token: auth.token,
+      user: auth.user,
+      refreshToken: auth.refresh_token,
+      expiresAt,
+      lastActivity: Date.now(),
+    }
+  );
+}
 
 test.describe("Auth - Activity Check", () => {
   test("should show activity check modal after inactivity", async ({ page }) => {
     await page.clock.install({ time: new Date("2026-03-07T12:00:00Z") });
-    await page.addInitScript(() => {
-      localStorage.setItem("auth_token", "dev-token-static");
-      localStorage.setItem("auth_refresh_token", "dev-refresh-token-001");
-      localStorage.setItem("auth_token_expires_at", String(Date.now() + 300000));
-      localStorage.setItem("last_activity_ts", String(Date.now()));
-      localStorage.setItem("auth_user", JSON.stringify({id:"dev-user-001",email:"dev@localhost",org_id:"dev-org-001",name:"Dev User"}));
-    });
+    await injectDevAuth(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
@@ -23,13 +49,7 @@ test.describe("Auth - Activity Check", () => {
 
   test("should dismiss modal on Continue click", async ({ page }) => {
     await page.clock.install({ time: new Date("2026-03-07T12:00:00Z") });
-    await page.addInitScript(() => {
-      localStorage.setItem("auth_token", "dev-token-static");
-      localStorage.setItem("auth_refresh_token", "dev-refresh-token-001");
-      localStorage.setItem("auth_token_expires_at", String(Date.now() + 300000));
-      localStorage.setItem("last_activity_ts", String(Date.now()));
-      localStorage.setItem("auth_user", JSON.stringify({id:"dev-user-001",email:"dev@localhost",org_id:"dev-org-001",name:"Dev User"}));
-    });
+    await injectDevAuth(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
@@ -47,13 +67,7 @@ test.describe("Auth - Activity Check", () => {
 
   test("should redirect to login after modal timeout", async ({ page }) => {
     await page.clock.install({ time: new Date("2026-03-07T12:00:00Z") });
-    await page.addInitScript(() => {
-      localStorage.setItem("auth_token", "dev-token-static");
-      localStorage.setItem("auth_refresh_token", "dev-refresh-token-001");
-      localStorage.setItem("auth_token_expires_at", String(Date.now() + 300000));
-      localStorage.setItem("last_activity_ts", String(Date.now()));
-      localStorage.setItem("auth_user", JSON.stringify({id:"dev-user-001",email:"dev@localhost",org_id:"dev-org-001",name:"Dev User"}));
-    });
+    await injectDevAuth(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 

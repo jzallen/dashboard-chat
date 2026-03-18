@@ -1,27 +1,40 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const AUTH_MODE = process.env.AUTH_MODE || "dev";
-const DEV_TOKEN = "dev-token-static";
-const DEV_USER: AuthResult = {
-  userId: "dev-user-001",
-  orgId: "dev-org-001",
-  email: "dev@localhost",
-};
 const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID || "";
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const JWKS_URL = process.env.JWKS_URL;
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 function getJWKS() {
-  if (!jwks && WORKOS_CLIENT_ID) {
-    jwks = createRemoteJWKSet(
-      new URL(`https://api.workos.com/sso/jwks/${WORKOS_CLIENT_ID}`)
-    );
+  if (!jwks) {
+    if (AUTH_MODE === "dev") {
+      const url = JWKS_URL || `${BACKEND_URL}/.well-known/jwks.json`;
+      jwks = createRemoteJWKSet(new URL(url));
+    } else if (WORKOS_CLIENT_ID) {
+      const url =
+        JWKS_URL ||
+        `https://api.workos.com/sso/jwks/${WORKOS_CLIENT_ID}`;
+      jwks = createRemoteJWKSet(new URL(url));
+    }
   }
   return jwks;
 }
 
+function getVerifyOptions(): { audience: string; issuer: string } {
+  if (AUTH_MODE === "dev") {
+    return { audience: "dev-client", issuer: "http://localhost:8000" };
+  }
+  return {
+    audience: WORKOS_CLIENT_ID,
+    issuer: `https://api.workos.com/user_management/${WORKOS_CLIENT_ID}`,
+  };
+}
+
 const PUBLIC_PATHS = new Set([
   "/health",
+  "/.well-known/jwks.json",
   "/api/auth/login",
   "/api/auth/callback",
   "/api/auth/logout",
@@ -43,26 +56,21 @@ export interface AuthResult {
 
 /**
  * Verify the Bearer token and return identity claims.
- * Returns null for public paths (no auth required).
+ * Both dev and production modes use RS256 JWT verification via JWKS.
  * Throws on invalid/missing tokens.
  */
 export async function verifyToken(token: string): Promise<AuthResult> {
-  if (AUTH_MODE === "dev") {
-    if (token !== DEV_TOKEN) {
-      throw new Error("Invalid dev token");
-    }
-    return DEV_USER;
-  }
-
-  // WorkOS mode: verify JWT using JWKS
   const keySet = getJWKS();
   if (!keySet) {
+    if (AUTH_MODE === "dev") {
+      throw new Error("JWKS not available (backend not reachable?)");
+    }
     throw new Error("WORKOS_CLIENT_ID not configured");
   }
 
+  const options = getVerifyOptions();
   const { payload } = await jwtVerify(token, keySet, {
-    audience: WORKOS_CLIENT_ID,
-    issuer: `https://api.workos.com/user_management/${WORKOS_CLIENT_ID}`,
+    ...options,
     algorithms: ["RS256"],
   });
 

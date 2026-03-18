@@ -54,6 +54,11 @@ Feature: dbt Model Layers — Views (Intermediate) and Reports (Mart)
     Then the View SQL contains a WHERE clause filtering by status
 
   # --- Report (Mart Layer) Creation ---
+  # NOTE: The chat-first interaction model for Reports is specified in
+  # report-layer-chat-first.feature, which supersedes the scenarios below.
+  # The scenarios here describe intent but assume raw SQL responses from the AI.
+  # The structured tool call approach (D3 principle — backend assembles GROUP BY SQL
+  # deterministically from dimension and measure definitions) is the authoritative spec.
 
   Scenario: Create a fact Report from a View
     Given the project has a View "orders_enriched"

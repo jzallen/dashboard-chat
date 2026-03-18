@@ -5,7 +5,7 @@ import styles from "./OrgView.module.css";
 import { ProjectGrid } from "./ProjectGrid";
 
 /** Org-level landing page displaying a grid of projects. */
-export function OrgView() {
+export function ProjectsPage() {
   const { projects } = useOutletContext<AppShellContext>();
   const navigate = useNavigate();
 

@@ -1,20 +1,23 @@
 import pytest
 
-from app.auth.dev_provider import DEV_TOKEN, DEV_USER, DevAuthProvider
+from app.auth.dev_provider import DEV_USER, DevAuthProvider
 from app.auth.exceptions import AuthenticationError
 
 
 class TestDevAuthProvider:
-    """Tests for DevAuthProvider -- zero-network dev auth."""
+    """Tests for DevAuthProvider -- RS256 JWT-based dev auth."""
 
     @pytest.fixture
     def provider(self) -> DevAuthProvider:
         return DevAuthProvider()
 
-    async def test_verify_token_with_valid_token_returns_dev_user(self, provider: DevAuthProvider):
-        """verify_token with the static dev token should return DEV_USER."""
-        result = await provider.verify_token(DEV_TOKEN)
-        assert result == DEV_USER
+    async def test_verify_token_roundtrip(self, provider: DevAuthProvider):
+        """A token from handle_callback should verify back to DEV_USER."""
+        _, token, _, _ = await provider.handle_callback("any-code")
+        result = await provider.verify_token(token)
+        assert result.id == DEV_USER.id
+        assert result.email == DEV_USER.email
+        assert result.org_id == DEV_USER.org_id
 
     async def test_verify_token_with_invalid_token_raises_authentication_error(self, provider: DevAuthProvider):
         """verify_token with a bad token should raise AuthenticationError."""
@@ -26,11 +29,12 @@ class TestDevAuthProvider:
         with pytest.raises(AuthenticationError, match="Invalid dev token"):
             await provider.verify_token("")
 
-    async def test_handle_callback_returns_4_tuple(self, provider: DevAuthProvider):
-        """handle_callback should return (DEV_USER, DEV_TOKEN, refresh_token, expires_in)."""
+    async def test_handle_callback_returns_jwt(self, provider: DevAuthProvider):
+        """handle_callback should return a signed RS256 JWT."""
         user, token, refresh_token, expires_in = await provider.handle_callback("any-code")
         assert user == DEV_USER
-        assert token == DEV_TOKEN
+        # Token is a real JWT (3 dot-separated segments)
+        assert token.count(".") == 2
         assert refresh_token == "dev-refresh-token-001"
         assert expires_in == 300
 
@@ -57,7 +61,7 @@ class TestDevRefreshAccessToken:
         """refresh_access_token should increment the counter suffix."""
         user, token, new_refresh, expires_in = await provider.refresh_access_token("dev-refresh-token-001")
         assert user == DEV_USER
-        assert token == DEV_TOKEN
+        assert token.count(".") == 2
         assert new_refresh == "dev-refresh-token-002"
         assert expires_in == 300
 

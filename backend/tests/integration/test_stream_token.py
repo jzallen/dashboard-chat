@@ -6,12 +6,11 @@ import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.auth.dev_provider import _mint_jwt
 from app.main import app
 
 TEST_STREAM_SECRET = "stream-test-secret-key"
 TEST_STREAM_KEY = "stream-test-api-key"
-
-DEV_TOKEN = "dev-token-static"
 
 
 @pytest.fixture
@@ -40,7 +39,7 @@ class TestStreamToken:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(
                 "/api/stream/stream-token",
-                headers={"Authorization": f"Bearer {DEV_TOKEN}"},
+                headers={"Authorization": f"Bearer {_mint_jwt()}"},
             )
 
         assert response.status_code == 200
@@ -64,7 +63,7 @@ class TestStreamToken:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(
                 "/api/stream/stream-token",
-                headers={"Authorization": f"Bearer {DEV_TOKEN}"},
+                headers={"Authorization": f"Bearer {_mint_jwt()}"},
             )
 
         assert response.status_code == 503

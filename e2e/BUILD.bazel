@@ -4,6 +4,7 @@ sh_test(
     name = "e2e",
     srcs = ["run-e2e.sh"],
     data = [
+        "//auth-proxy:image_tar",
         "//backend:image_tar",
         "//frontend:image_tar",
         "//worker:image_tar",

@@ -135,6 +135,14 @@ app.include_router(views_router)
 app.include_router(reports_router)
 
 
+@app.get("/.well-known/jwks.json")
+async def jwks():
+    """Serve the dev-mode JWKS public key set."""
+    from .auth.dev_keys import get_jwks_dict
+
+    return get_jwks_dict()
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""

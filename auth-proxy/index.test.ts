@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Mock jose before importing app
+vi.mock("jose", () => ({
+  createRemoteJWKSet: vi.fn(() => vi.fn()),
+  jwtVerify: vi.fn(),
+}));
+
+import { jwtVerify } from "jose";
 import { app } from "./app.ts";
+
+const mockJwtVerify = vi.mocked(jwtVerify);
 
 // Mock fetch globally for proxy tests
 const mockFetch = vi.fn();
@@ -26,6 +35,16 @@ describe("Auth Proxy", () => {
         headers: { "content-type": "application/json" },
       })
     );
+    // Default: JWT verification succeeds with dev user claims
+    mockJwtVerify.mockResolvedValue({
+      payload: {
+        sub: "dev-user-001",
+        org_id: "dev-org-001",
+        email: "dev@localhost",
+      },
+      protectedHeader: { alg: "RS256" },
+      key: {},
+    } as never);
   });
 
   describe("health endpoint", () => {
@@ -42,14 +61,23 @@ describe("Auth Proxy", () => {
     });
   });
 
-  describe("dev mode auth", () => {
-    it("forwards request with valid dev token", async () => {
+  describe("dev mode auth (JWKS verification)", () => {
+    it("forwards request with valid JWT", async () => {
       const res = await makeRequest(
         "/api/projects",
-        withAuth("dev-token-static")
+        withAuth("valid.jwt.token")
       );
       expect(res.status).toBe(200);
       expect(mockFetch).toHaveBeenCalledOnce();
+      expect(mockJwtVerify).toHaveBeenCalledWith(
+        "valid.jwt.token",
+        expect.any(Function),
+        expect.objectContaining({
+          audience: "dev-client",
+          issuer: "http://localhost:8000",
+          algorithms: ["RS256"],
+        })
+      );
 
       const [, fetchOptions] = mockFetch.mock.calls[0];
       const headers = fetchOptions.headers as Headers;
@@ -58,10 +86,11 @@ describe("Auth Proxy", () => {
       expect(headers.get("X-User-Email")).toBe("dev@localhost");
     });
 
-    it("rejects invalid dev token with 401", async () => {
+    it("rejects invalid JWT with 401", async () => {
+      mockJwtVerify.mockRejectedValue(new Error("JWT verification failed"));
       const res = await makeRequest(
         "/api/projects",
-        withAuth("wrong-token")
+        withAuth("invalid.jwt.token")
       );
       expect(res.status).toBe(401);
       const body = await res.json();
@@ -99,7 +128,7 @@ describe("Auth Proxy", () => {
     it("strips client-supplied identity headers before forwarding", async () => {
       const res = await makeRequest("/api/projects", {
         headers: {
-          Authorization: "Bearer dev-token-static",
+          Authorization: "Bearer valid.jwt.token",
           "X-User-Id": "attacker-id",
           "X-Org-Id": "attacker-org",
           "X-User-Email": "attacker@evil.com",
@@ -109,7 +138,7 @@ describe("Auth Proxy", () => {
 
       const [, fetchOptions] = mockFetch.mock.calls[0];
       const headers = fetchOptions.headers as Headers;
-      // Should have auth proxy's values, not attacker's
+      // Should have auth proxy's values from JWT, not attacker's
       expect(headers.get("X-User-Id")).toBe("dev-user-001");
       expect(headers.get("X-Org-Id")).toBe("dev-org-001");
       expect(headers.get("X-User-Email")).toBe("dev@localhost");

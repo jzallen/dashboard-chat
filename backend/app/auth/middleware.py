@@ -17,6 +17,7 @@ PUBLIC_PATHS = {
     "/docs",
     "/openapi.json",
     "/redoc",
+    "/.well-known/jwks.json",
     "/api/auth/login",
     "/api/auth/callback",
     "/api/auth/logout",

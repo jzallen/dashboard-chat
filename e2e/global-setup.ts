@@ -5,9 +5,9 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const BACKEND_URL = "http://localhost:8000";
+const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL || "http://localhost:3000";
 const FRONTEND_URL = "http://localhost:5173";
 const WORKER_URL = "http://localhost:8787";
-const AUTH_TOKEN = "dev-token-static";
 
 const CSV_CONTENT = `ID,Name,Category,Amount,Quantity,In Stock
 1,Widget A,Electronics,$29.99,150,true
@@ -40,10 +40,25 @@ async function globalSetup() {
     healthCheck(`${BACKEND_URL}/health`, "Backend"),
     healthCheck(FRONTEND_URL, "Frontend"),
     healthCheck(`${WORKER_URL}/health`, "Worker"),
+    healthCheck(`${AUTH_PROXY_URL}/health`, "Auth Proxy"),
   ]);
 
-  // Create test project
-  const projectRes = await fetch(`${BACKEND_URL}/api/projects`, {
+  // Obtain a real JWT from the auth callback (via auth-proxy)
+  const authRes = await fetch(`${AUTH_PROXY_URL}/api/auth/callback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "dev-auth-code" }),
+  });
+  if (!authRes.ok) {
+    throw new Error(
+      `Failed to get dev auth token: ${authRes.status} ${await authRes.text()}`
+    );
+  }
+  const authData = await authRes.json();
+  const AUTH_TOKEN = authData.token;
+
+  // Create test project (via auth-proxy so JWT is validated)
+  const projectRes = await fetch(`${AUTH_PROXY_URL}/api/projects`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -61,13 +76,13 @@ async function globalSetup() {
   const projectData = await projectRes.json();
   const projectId = projectData.data.id;
 
-  // Upload CSV as dataset
+  // Upload CSV as dataset (via auth-proxy)
   const blob = new Blob([CSV_CONTENT], { type: "text/csv" });
   const formData = new FormData();
   formData.append("file", blob, "products.csv");
   formData.append("project_id", projectId);
 
-  const uploadRes = await fetch(`${BACKEND_URL}/api/uploads`, {
+  const uploadRes = await fetch(`${AUTH_PROXY_URL}/api/uploads`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${AUTH_TOKEN}`,

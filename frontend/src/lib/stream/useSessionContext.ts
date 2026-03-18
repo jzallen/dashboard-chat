@@ -1,148 +1,79 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { Channel } from "stream-chat";
 
+import { compactId, sessionHash } from "./channelId";
 import { useStreamClient } from "./useStreamClient";
-
-const FREEZE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-/** Strip hyphens from a UUID to produce a compact 32-char hex string. */
-function compactId(id: string): string {
-  return id.replace(/-/g, "");
-}
-
-/**
- * Generate a short session hash from org, user, and timestamp.
- * 8 hex chars ≈ 4 billion combinations — collision-safe for <100 users/org.
- */
-async function sessionHash(orgId: string, userId: string): Promise<string> {
-  const input = `${orgId}:${userId}:${Date.now()}`;
-  const data = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  const hex = Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return hex.slice(0, 8);
-}
 
 interface SessionContextValue {
   currentChannel: Channel | null;
-  isFrozen: boolean;
-  createSession: (projectId: string) => Promise<Channel>;
-  switchSession: (channelId: string) => Promise<void>;
+  createSession: (orgId: string) => Promise<Channel>;
+  resumeSession: (channelId: string) => Promise<Channel>;
+  queryChannels: (orgId: string, limit?: number) => Promise<Channel[]>;
 }
 
 /**
- * Manages current Stream channel (org-scoped sessions).
- * Handles channel creation, lazy freeze detection, and session switching.
+ * Manages Stream channels scoped to org.
+ * Channel creation is explicit (no auto-create on mount).
  */
-export function useSessionContext(projectId: string | null, orgId: string | null = null): SessionContextValue {
+export function useSessionContext(orgId: string | null): SessionContextValue {
   const client = useStreamClient();
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
-  const [isFrozen, setIsFrozen] = useState(false);
-  const initRef = useRef(false);
-
-  const checkAndFreeze = useCallback(async (channel: Channel) => {
-    const messages = channel.state.messages;
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) {
-      setIsFrozen(false);
-      return false;
-    }
-
-    const lastTime = new Date(lastMessage.created_at as string).getTime();
-    const isStale = Date.now() - lastTime > FREEZE_THRESHOLD_MS;
-    const alreadyFrozen = !!(channel.data as Record<string, unknown>)?.frozenAt;
-
-    if (isStale && !alreadyFrozen) {
-      await channel.updatePartial({ set: { frozenAt: new Date().toISOString() } });
-    }
-
-    const frozen = isStale || alreadyFrozen;
-    setIsFrozen(frozen);
-    return frozen;
-  }, []);
 
   const createSession = useCallback(
-    async (pid: string): Promise<Channel> => {
+    async (oid: string): Promise<Channel> => {
       if (!client) throw new Error("Stream client not ready");
 
-      const effectiveOrgId = orgId ?? "no-org";
       const userId = client.userID ?? "anon";
-      const suffix = await sessionHash(effectiveOrgId, userId);
-      const sessionId = `chat_${compactId(effectiveOrgId)}_${suffix}`;
+      const suffix = await sessionHash(oid, userId);
+      const sessionId = `chat_${compactId(oid)}_${suffix}`;
 
       const channel = client.channel("messaging", sessionId, {
-        projectId: pid,
-        orgId: effectiveOrgId,
+        orgId: oid,
+        projectId: null,
+        datasetId: null,
+        title: null,
         createdAt: new Date().toISOString(),
-        frozenAt: null,
       });
       await channel.watch();
 
       setCurrentChannel(channel);
-      setIsFrozen(false);
       return channel;
     },
-    [client, orgId],
+    [client],
   );
 
-  const switchSession = useCallback(
-    async (channelId: string) => {
+  const resumeSession = useCallback(
+    async (channelId: string): Promise<Channel> => {
       if (!client) throw new Error("Stream client not ready");
 
       const channel = client.channel("messaging", channelId);
       await channel.watch();
-      await checkAndFreeze(channel);
       setCurrentChannel(channel);
+      return channel;
     },
-    [client, checkAndFreeze],
+    [client],
   );
 
-  // Auto-create session when project loads and no active channel exists
-  useEffect(() => {
-    if (!client || !projectId || initRef.current) return;
-    initRef.current = true;
+  const queryChannels = useCallback(
+    async (oid: string, limit = 30): Promise<Channel[]> => {
+      if (!client) throw new Error("Stream client not ready");
 
-    async function initSession() {
-      if (!client || !projectId) return;
-
-      // Query for existing non-frozen channels for this project
-      const filter = {
-        type: "messaging" as const,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "custom.projectId": projectId as any,
-      };
-      const sort = [{ last_message_at: -1 as const }];
-      const channels = await client.queryChannels(filter, sort, { limit: 10 });
-
-      // Find an active (non-frozen) channel
-      const activeChannel = channels.find((ch) => {
-        return !(ch.data as Record<string, unknown>)?.frozenAt;
-      });
-
-      if (activeChannel) {
-        await checkAndFreeze(activeChannel);
-        if (!(activeChannel.data as Record<string, unknown>)?.frozenAt) {
-          setCurrentChannel(activeChannel);
-          return;
-        }
-      }
-
-      // No active channel — create a new one
-      await createSession(projectId);
-    }
-
-    initSession();
-
-    return () => {
-      initRef.current = false;
-    };
-  }, [client, projectId, checkAndFreeze, createSession]);
+      return client.queryChannels(
+        {
+          type: "messaging" as const,
+          "custom.orgId": oid,
+        },
+        [{ last_message_at: -1 as const }],
+        { limit },
+      );
+    },
+    [client],
+  );
 
   return {
     currentChannel,
-    isFrozen,
     createSession,
-    switchSession,
+    resumeSession,
+    queryChannels,
   };
 }

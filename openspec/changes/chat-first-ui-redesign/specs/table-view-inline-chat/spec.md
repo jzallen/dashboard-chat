@@ -8,7 +8,7 @@ The system SHALL provide a full-width TableView at `/table/:datasetId` that incl
 - A slim chat input bar SHALL be fixed at the bottom of the TableView.
 - The input bar SHALL have the same expanding textarea behavior as ChatView.
 - The input bar's gutter SHALL display the current dataset name (derived from the `datasetId` route param).
-- The input bar SHALL share the current session's chat engine — messages sent here are part of the same session.
+- The input bar SHALL share the current session's chat engine — messages sent here are part of the same Stream channel.
 - The dataset context SHALL be automatically set to the dataset being viewed.
 
 #### Scenario: User sends a table command from TableView
@@ -22,7 +22,7 @@ The system SHALL provide a full-width TableView at `/table/:datasetId` that incl
 #### Scenario: Dataset context auto-set on navigation
 
 - **GIVEN** the user navigates to `/table/ds-123`
-- **THEN** the session's dataset context SHALL be updated to `ds-123` via `PATCH /sessions/:id`
+- **THEN** the session's dataset context SHALL be updated via `channel.updatePartial({ set: { datasetId: "ds-123" } })`
 - **THEN** the input gutter SHALL display the dataset name
 
 ---
@@ -36,7 +36,7 @@ When messages are sent from the TableView's inline chat input, an activity log o
 - Message text SHALL be truncated (e.g., 80 characters) with full text available on hover or click.
 - The log SHALL auto-dismiss after a configurable timeout (e.g., 5 seconds of inactivity) or be dismissible by the user.
 - The log SHALL NOT block interaction with the table underneath.
-- Full messages SHALL be posted to the session history regardless of truncation.
+- Full messages SHALL be posted to the Stream channel regardless of truncation.
 
 #### Scenario: Activity log shows recent commands
 

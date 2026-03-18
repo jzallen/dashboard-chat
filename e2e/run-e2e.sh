@@ -37,11 +37,13 @@ if [[ -f "bazel-bin/backend/image_tar.sh" ]]; then
     bash bazel-bin/backend/image_tar.sh
     bash bazel-bin/frontend/image_tar.sh
     bash bazel-bin/worker/image_tar.sh
+    [[ -f "bazel-bin/auth-proxy/image_tar.sh" ]] && bash bazel-bin/auth-proxy/image_tar.sh
 else
     # If running via bazel test, build and load images
     bazel run //backend:image_tar
     bazel run //frontend:image_tar
     bazel run //worker:image_tar
+    bazel run //auth-proxy:image_tar 2>/dev/null || true
 fi
 
 # ─── Start compose stack ──────────────────────────────────────────────────────
@@ -56,15 +58,16 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
     API_OK=$(curl -sf http://localhost:8000/health >/dev/null 2>&1 && echo "ok" || echo "waiting")
     FRONTEND_OK=$(curl -sf http://localhost:5173/ >/dev/null 2>&1 && echo "ok" || echo "waiting")
     WORKER_OK=$(curl -sf http://localhost:8787/health >/dev/null 2>&1 && echo "ok" || echo "waiting")
+    AUTH_PROXY_OK=$(curl -sf http://localhost:3000/health >/dev/null 2>&1 && echo "ok" || echo "waiting")
 
-    if [[ "$API_OK" == "ok" && "$FRONTEND_OK" == "ok" && "$WORKER_OK" == "ok" ]]; then
+    if [[ "$API_OK" == "ok" && "$FRONTEND_OK" == "ok" && "$WORKER_OK" == "ok" && "$AUTH_PROXY_OK" == "ok" ]]; then
         echo "==> All services healthy!"
         break
     fi
 
     sleep 2
     ELAPSED=$((ELAPSED + 2))
-    echo "    Waiting... (api=$API_OK, frontend=$FRONTEND_OK, worker=$WORKER_OK) [${ELAPSED}s]"
+    echo "    Waiting... (api=$API_OK, frontend=$FRONTEND_OK, worker=$WORKER_OK, auth-proxy=$AUTH_PROXY_OK) [${ELAPSED}s]"
 done
 
 if [[ $ELAPSED -ge $MAX_WAIT ]]; then

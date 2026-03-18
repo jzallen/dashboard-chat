@@ -6,10 +6,8 @@ import {
   setTokenExpiry,
   setUser,
 } from "@/auth/tokenStorage";
+import { DATA_CATALOG_BASE_URL } from "@/http/config";
 import type { AuthState, AuthUser, TokenStateResult } from "@/auth/types";
-
-const DEV_USER: AuthUser = { id: "dev-user-001", email: "dev@localhost", org_id: "dev-org-001", name: "Dev User" };
-const DEV_TOKEN = "dev-token-static";
 
 export function useDevTokenState(): TokenStateResult {
   const [state, setState] = useState<AuthState>({
@@ -17,15 +15,51 @@ export function useDevTokenState(): TokenStateResult {
   });
 
   useEffect(() => {
-    setToken(DEV_TOKEN);
-    setUser(DEV_USER);
-    setRefreshToken("dev-refresh-token-001");
-    const devExpiresAt = Date.now() + 300000;
-    setTokenExpiry(devExpiresAt);
-    setState({
-      user: DEV_USER, token: DEV_TOKEN, refreshToken: "dev-refresh-token-001",
-      tokenExpiresAt: devExpiresAt, isAuthenticated: true, isLoading: false,
-    });
+    let cancelled = false;
+
+    async function fetchDevToken() {
+      try {
+        const res = await fetch(`${DATA_CATALOG_BASE_URL}/api/auth/callback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: "dev-auth-code" }),
+        });
+
+        if (!res.ok) throw new Error(`callback returned ${res.status}`);
+        if (cancelled) return;
+
+        const data = await res.json() as {
+          token: string;
+          user: AuthUser;
+          refresh_token: string;
+          expires_in: number;
+        };
+
+        const expiresAt = Date.now() + data.expires_in * 1000;
+
+        setToken(data.token);
+        setUser(data.user);
+        setRefreshToken(data.refresh_token);
+        setTokenExpiry(expiresAt);
+
+        setState({
+          user: data.user,
+          token: data.token,
+          refreshToken: data.refresh_token,
+          tokenExpiresAt: expiresAt,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } catch (err) {
+        console.error("Failed to fetch dev token:", err);
+        if (!cancelled) {
+          setState((prev) => ({ ...prev, isLoading: false }));
+        }
+      }
+    }
+
+    fetchDevToken();
+    return () => { cancelled = true; };
   }, []);
 
   return { state, setState };

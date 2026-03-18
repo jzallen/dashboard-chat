@@ -1,14 +1,15 @@
-import { Navigate,Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./src/ui/components/AppShell";
 import { AuthCallback } from "./src/ui/components/AuthCallback";
+import { ChatView } from "./src/ui/components/ChatView";
 import { CreateOrg } from "./src/ui/components/CreateOrg";
 import { ProjectView } from "./src/ui/components/DatasetView";
 import { LoginPage } from "./src/ui/components/LoginPage";
 import { LogoutPage } from "./src/ui/components/LogoutPage";
-import { OrgView } from "./src/ui/components/OrgView";
-import { SessionViewer } from "./src/ui/components/SessionViewer";
-import { SessionList } from "./src/ui/components/SessionViewer/SessionList";
+import { ProjectsPage } from "./src/ui/components/OrgView";
+import { SessionList } from "./src/ui/components/SessionList";
+import { TableView } from "./src/ui/components/TableView";
 import { AuthProvider, useAuth } from "./src/ui/context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -31,13 +32,14 @@ function AppRoutes() {
       <Route path="/logout" element={<LogoutPage />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/org/create" element={<RequireAuth><CreateOrg /></RequireAuth>} />
-      <Route path="/projects" element={<Navigate to="/" replace />} />
       <Route element={<RequireAuth><RequireOrg><AppShell /></RequireOrg></RequireAuth>}>
-        <Route path="/" element={<OrgView />} />
-        <Route path="/projects/:projectId" element={<ProjectView />} />
-        <Route path="/projects/:projectId/datasets/:datasetId" element={<ProjectView />} />
-        <Route path="/projects/:projectId/datasets/:datasetId/sessions" element={<SessionList />} />
-        <Route path="/projects/:projectId/datasets/:datasetId/sessions/:sessionId" element={<SessionViewer />} />
+        <Route index element={<ChatView />} />
+        <Route path="chat/:channelId" element={<ChatView />} />
+        <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects/:projectId" element={<ProjectView />} />
+        <Route path="projects/:projectId/datasets/:datasetId" element={<ProjectView />} />
+        <Route path="table/:datasetId" element={<TableView />} />
+        <Route path="sessions" element={<SessionList />} />
       </Route>
     </Routes>
   );

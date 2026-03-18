@@ -17,6 +17,7 @@ services:
       CORS_ORIGIN: http://localhost:5173
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      JWKS_URL: ${JWKS_URL:-http://api:8000/.well-known/jwks.json}
     ports:
       - "8787:8787"
     depends_on:
@@ -71,6 +72,7 @@ services:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       BACKEND_URL: http://api:8000
+      JWKS_URL: ${JWKS_URL:-http://api:8000/.well-known/jwks.json}
       PORT: "3000"
     ports:
       - "3000:3000"

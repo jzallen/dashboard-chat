@@ -1,29 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatTurnPayload } from "@/chat/client";
 import { createChatClient } from "@/chat/client";
-import { ApiError } from "@/http/apiClient";
 
-const MOCK_SESSION = {
-  id: "sess-001",
-  project_id: "proj-001",
-  dataset_id: "ds-001",
-  turns: [],
-  created_at: "2025-01-01T00:00:00Z",
-  updated_at: "2025-01-01T00:00:00Z",
-};
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
+function sseResponse(text: string): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(text));
+      controller.close();
+    },
   });
-}
-
-function textResponse(text: string, status: number): Response {
-  return new Response(text, {
-    status,
-    headers: { "Content-Type": "text/plain" },
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
   });
 }
 
@@ -39,119 +28,53 @@ describe("Chat API", () => {
     vi.restoreAllMocks();
   });
 
-  describe("createSession", () => {
+  describe("fetchChatStream", () => {
     it("sends POST with correct payload", async () => {
-      mockFetch.mockResolvedValue(jsonResponse(MOCK_SESSION));
+      mockFetch.mockResolvedValue(sseResponse("data: {}\n"));
       const client = createChatClient(mockFetch);
 
-      const result = await client.createSession("proj-001", "ds-001");
+      const messages = [{ role: "user", content: "Hello" }];
+      const schema = { columns: [{ id: "col1", type: "string" }], rowCount: 5 };
+      await client.fetchChatStream(messages, schema);
 
       expect(mockFetch).toHaveBeenCalledOnce();
       const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain("/sessions");
+      expect(url).toContain("/chat");
       expect(init?.method).toBe("POST");
       const body = JSON.parse(init?.body as string);
-      expect(body).toEqual({ project_id: "proj-001", dataset_id: "ds-001" });
-      expect(result).toEqual(MOCK_SESSION);
+      expect(body.messages).toEqual(messages);
+      expect(body.tableSchema).toEqual(schema);
     });
 
-    it("sends null dataset_id when not provided", async () => {
-      mockFetch.mockResolvedValue(jsonResponse(MOCK_SESSION));
+    it("sends null tableSchema when not provided", async () => {
+      mockFetch.mockResolvedValue(sseResponse("data: {}\n"));
       const client = createChatClient(mockFetch);
 
-      await client.createSession("proj-001");
+      await client.fetchChatStream([{ role: "user", content: "Hi" }], null);
 
       const body = JSON.parse(mockFetch.mock.calls[0][1]?.body as string);
-      expect(body.dataset_id).toBeNull();
+      expect(body.tableSchema).toBeNull();
     });
 
-    it("throws ApiError on non-ok response", async () => {
-      mockFetch.mockResolvedValue(textResponse("Server Error", 500));
+    it("throws on non-ok response", async () => {
+      mockFetch.mockResolvedValue(new Response("Server Error", { status: 500 }));
       const client = createChatClient(mockFetch);
 
-      await expect(client.createSession("proj-001", "ds-001")).rejects.toThrow(
-        ApiError,
-      );
-      try {
-        mockFetch.mockResolvedValue(textResponse("Server Error", 500));
-        await client.createSession("proj-001", "ds-001");
-      } catch (e) {
-        expect(e).toBeInstanceOf(ApiError);
-        expect((e as ApiError).status).toBe(500);
-      }
-    });
-  });
-
-  describe("logTurn", () => {
-    const turnPayload: ChatTurnPayload = {
-      user_message: "Hello",
-      system_prompt: "You are helpful",
-      tool_definitions: [],
-      assistant_content: "Hi there!",
-      tool_calls: null,
-      tool_results: null,
-      table_schema: { columns: [], rowCount: 0 },
-    };
-
-    it("sends POST to correct session turns endpoint", async () => {
-      mockFetch.mockResolvedValue(jsonResponse({ ok: true }));
-      const client = createChatClient(mockFetch);
-
-      await client.logTurn("sess-001", turnPayload);
-
-      const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain("/sessions/sess-001/turns");
-      expect(init?.method).toBe("POST");
-      const body = JSON.parse(init?.body as string);
-      expect(body.user_message).toBe("Hello");
-      expect(body.assistant_content).toBe("Hi there!");
+      await expect(
+        client.fetchChatStream([{ role: "user", content: "Hi" }], null),
+      ).rejects.toThrow("HTTP 500");
     });
 
-    it("throws ApiError on non-ok response", async () => {
-      mockFetch.mockResolvedValue(textResponse("Not Found", 404));
+    it("throws when response has no body", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        body: null,
+      } as unknown as Response);
       const client = createChatClient(mockFetch);
 
-      await expect(client.logTurn("sess-001", turnPayload)).rejects.toThrow(
-        ApiError,
-      );
-    });
-  });
-
-  describe("getSession", () => {
-    it("sends GET request", async () => {
-      mockFetch.mockResolvedValue(jsonResponse(MOCK_SESSION));
-      const client = createChatClient(mockFetch);
-
-      const result = await client.getSession("sess-001");
-
-      const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain("/sessions/sess-001");
-      expect(init?.method).toBe("GET");
-      expect(result.id).toBe("sess-001");
-    });
-  });
-
-  describe("listSessions", () => {
-    it("sends GET with dataset_id query param", async () => {
-      mockFetch.mockResolvedValue(jsonResponse([MOCK_SESSION]));
-      const client = createChatClient(mockFetch);
-
-      const result = await client.listSessions("ds-001");
-
-      const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain("dataset_id=ds-001");
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe("sess-001");
-    });
-
-    it("encodes special characters in dataset_id", async () => {
-      mockFetch.mockResolvedValue(jsonResponse([]));
-      const client = createChatClient(mockFetch);
-
-      await client.listSessions("ds/special&id");
-
-      const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain("dataset_id=ds%2Fspecial%26id");
+      await expect(
+        client.fetchChatStream([{ role: "user", content: "Hi" }], null),
+      ).rejects.toThrow("No response body");
     });
   });
 });

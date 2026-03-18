@@ -7,6 +7,7 @@ import {
   getSortedRowModel,
   type SortingState,
   useReactTable,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import { useEffect,useMemo, useState } from "react";
 
@@ -39,6 +40,7 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
   const [data, setData] = useState<TableRow[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
   // Build alias map from active alias transforms
   const aliasMap = useMemo(() => {
@@ -78,9 +80,10 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
   const reactTable = useReactTable({
     data,
     columns,
-    state: { sorting, columnFilters },
+    state: { sorting, columnFilters, columnVisibility },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -99,6 +102,8 @@ export function useTableConfig(options: UseTableConfigOptions = {}) {
     setSorting,
     columnFilters,
     setColumnFilters,
+    columnVisibility,
+    setColumnVisibility,
     refresh,
   };
 }

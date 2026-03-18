@@ -1,6 +1,8 @@
 ## Context
 
-The frontend currently uses a 3-panel layout (SideNav | Content | ChatPanel) where chat is a fixed 384px sidebar that activates only after a dataset is selected. The ChatContext (useChatEngine) manages chat state via refs and lazy session creation. The worker session API already supports org-scoped sessions with optional dataset/project context. This design covers the frontend restructuring needed to make chat the primary interface.
+The frontend currently uses a 3-panel layout (SideNav | Content | ChatPanel) where chat is a fixed 384px sidebar that activates only after a dataset is selected. Stream Chat is already integrated as the persistence layer — `StreamProvider` manages auth, `useSessionContext` creates/queries channels scoped by `projectId`, and `useChatEngine` reads/writes messages to Stream channels. However, the frontend doesn't leverage Stream's full capabilities for session management.
+
+This design covers the frontend restructuring needed to make chat the primary interface, with Stream Chat as the sole session backend. The worker's Redis/S3 session infrastructure was already removed in the `stream-chat-integration` change; remaining dead code (`worker/lib/s3.ts`, `ChatClient` session methods, broken `SessionViewer`/`SessionList`) is cleaned up here.
 
 ## Goals / Non-Goals
 
@@ -9,15 +11,18 @@ The frontend currently uses a 3-panel layout (SideNav | Content | ChatPanel) whe
 - Make ChatView the landing page at `/`
 - Decouple chat from dataset selection — chat works without a dataset
 - Add inline chat input to TableView with activity log overlay
-- Add unified navigation with recent sessions
-- Enable session title management (auto-set + editable)
+- Add unified navigation with recent sessions powered by Stream `queryChannels`
+- Enable session title management via Stream channel custom data
+- Remap Stream channels from project-scoped to org-scoped
+- Clean up dead session infrastructure code
 
 **Non-Goals:**
-- Worker or backend changes (session API is already sufficient)
+- Worker or backend changes (beyond dead code removal in worker)
 - AI-generated session titles (future)
 - Session search or pinning (future)
 - Keyboard shortcuts (future)
 - Mobile/responsive layout
+- Migrating existing project-scoped channels to new format
 
 ## Decisions
 
@@ -33,87 +38,136 @@ The frontend currently uses a 3-panel layout (SideNav | Content | ChatPanel) whe
 
 **What's shared:** `MessageBubble`, `ChatEmptyState` (modified for suggestion chips), message type definitions, streaming indicator. Extract these into `frontend/src/ui/components/chat/` as shared modules.
 
-### D2: Session created eagerly on ChatView mount, URL updated via replace
+### D2: Stream channel created eagerly on ChatView mount
 
-**Decision:** When ChatView mounts at `/`, immediately create a session via `POST /sessions` and replace the URL to `/chat/:sessionId`. This makes every chat interaction have a stable session ID from the start.
-
-**Rationale:**
-- Current lazy creation (on first message) means the session doesn't exist until a message is sent, making it impossible to share a session URL before chatting
-- Eager creation with URL replace means the back button still works (no extra history entry) and bookmarking works immediately
-- The worker already handles empty sessions gracefully — the flusher skips sessions with no turns
-- Cost: one extra API call per ChatView mount. Acceptable because session creation is a Redis HSET + ZADD (sub-millisecond)
-
-**Alternative rejected:** Create session on first message (current pattern). Simpler but breaks URL-based session resume and makes recent sessions list inconsistent.
-
-### D3: ChatContext refactored to session-centric state machine
-
-**Decision:** Refactor `useChatEngine` to manage a session state machine with three states: `idle` (no session), `active` (session created, accepting messages), `loaded` (resumed session with history). Remove the `isActive` boolean tied to tool handler registration.
+**Decision:** When ChatView mounts at `/`, immediately create a Stream channel via `client.channel("messaging", channelId, customData).watch()` and replace the URL to `/chat/:channelId`. This makes every chat interaction have a stable channel ID from the start.
 
 **Rationale:**
-- Current `isActive` is true only when a tool handler is registered (dataset mounted), which blocks chat input entirely without a dataset
-- The new model allows chat without a dataset — messages are sent without tableSchema, the LLM responds conversationally
-- Tool execution is a separate concern: if a tool call comes back but no handler is registered, show a "navigate to table view" prompt
-- Session state machine makes the lifecycle explicit and testable
+- Eager creation means the session URL is immediately shareable/bookmarkable
+- Stream channel creation is lightweight — no server-side persistence until the first message is sent (Stream uses lazy persistence for empty channels)
+- URL replace (not push) means the back button still works correctly
+- The `stream-chat-integration` change already uses eager channel creation in `useSessionContext` — this extends the same pattern
+
+**Channel ID format:** `chat_{compactOrgId}_{8charHash}` — org-scoped, not project-scoped. `compactOrgId` is a base-36 truncation of the org ID and `8charHash` is an 8-character hex hash derived from `(orgId, userId)`. This compact format stays under Stream Chat's 64-character channel ID limit. (Originally specified as `chat_{orgId}_{uuid}` with `crypto.randomUUID()`; changed in commit a339b62.)
+
+**Channel custom data on creation:**
+```typescript
+{
+  orgId: string,       // required — used for queryChannels filter
+  projectId: null,     // set later if dataset is selected
+  datasetId: null,     // set later via picker or TableView navigation
+  title: null,         // auto-set from first message
+  createdAt: new Date().toISOString(),
+}
+```
+
+### D3: useChatEngine refactored to own Stream channel lifecycle
+
+**Decision:** Refactor `useChatEngine` to manage the Stream channel directly as its primary state, removing the external `registerCurrentChannel()` pattern. The hook manages a state machine with three states: `idle`, `active`, `loaded`.
+
+**Rationale:**
+- Current `registerCurrentChannel()` is a ref set by external callers — the engine doesn't own its own session
+- The new model makes the engine the single owner of the channel lifecycle
+- `isActive` (tied to tool handler registration) is removed — chat input is always enabled when a channel exists
+- Stream channel is the source of truth for session identity, message history, and metadata
 
 **State transitions:**
 ```
-idle → active:  POST /sessions succeeds (ChatView mount)
-idle → loaded:  GET /sessions/:id succeeds (resume from URL)
-active → idle:  "New Session" clicked (reset)
-loaded → idle:  "New Session" clicked (reset)
+idle → active:  channel.watch() succeeds (ChatView mount, new session)
+idle → loaded:  channel.watch() succeeds (resume from /chat/:channelId)
+active → idle:  "New Session" clicked (clear channel reference)
+loaded → idle:  "New Session" clicked (clear channel reference)
 ```
 
 **What changes in useChatEngine:**
-- `sessionIdRef` → `sessionId` (useState, not ref — drives renders)
-- `isActive` removed — chat input always enabled when session exists
-- `handleSubmit` no longer checks `toolHandler` before sending — it sends without schema if no handler
-- Tool call results from LLM checked against `toolHandlerRef` — if null, show navigation prompt instead of executing
+- `currentChannelRef` → `channel` (useState — drives re-renders for URL updates, nav refresh)
+- `isActive` removed — chat input always enabled when `channel !== null`
+- `handleSubmit` no longer gates on `toolHandler` — sends without schema if no handler
+- Tool call results checked against `toolHandlerRef` — if null, show "navigate to table" prompt
+- `registerCurrentChannel()` removed — replaced by `createChannel(orgId)` and `loadChannel(channelId)` methods
+- `buildApiMessages()` unchanged — already reads from `channel.state.messages`
+- `writeToStream()` unchanged — already writes to current channel
 
 ### D4: Unified nav replaces conditional OrgNav/ProjectNav
 
-**Decision:** Replace the conditional rendering of OrgNav (when no project selected) and ProjectNav (when project selected) with a single `UnifiedNav` component that always shows the same structure: New Session, Projects, Chats, Recent Sessions.
+**Decision:** Replace the conditional rendering of OrgNav/ProjectNav with a single `UnifiedNav` component that always shows: New Session, Projects, Chats, Recent Sessions.
 
 **Rationale:**
 - The current conditional nav is tied to the old routing model where AppShell derives projectId from URL params
-- The new routes don't nest under `/projects/:projectId` uniformly — `/table/:datasetId` and `/chat/:sessionId` have no project in the URL
+- The new routes don't nest under `/projects/:projectId` uniformly
 - A unified nav provides consistent navigation regardless of current route
 - Project/dataset browsing moves to the content area (ProjectGrid, DatasetGrid components)
 
-**What happens to ProjectNav/OrgNav:** Deprecated. Their content (project list, dataset list) moves to dedicated route components (`/projects`, `/projects/:projectId`).
+**What happens to ProjectNav/OrgNav:** Deprecated. Their content moves to dedicated route components.
 
-### D5: TableView inline chat shares session, not a new engine
+### D5: Recent sessions powered by Stream queryChannels
 
-**Decision:** TableView's inline chat input connects to the same ChatContext session that ChatView uses. It's the same `useChatEngine` instance — just a different input UI.
+**Decision:** Use Stream's `queryChannels` API for the recent sessions list and session list page, not custom REST hooks.
 
 **Rationale:**
-- A separate chat engine for TableView would create disconnected sessions — messages in TableView wouldn't appear in ChatView history
-- The spec requires "all messages are recorded in one continuous session"
+- Stream already provides channel listing with sorting, filtering, and pagination
+- Real-time updates via WebSocket — new messages automatically reorder the list without manual query invalidation
+- No custom backend endpoints needed
+- `stream-chat-react` provides a `ChannelList` component, but we'll use a custom list for tighter control over the nav UI
+
+**Query for recent sessions (nav):**
+```typescript
+client.queryChannels(
+  { type: "messaging", "custom.orgId": orgId },
+  { last_message_at: -1 },
+  { limit: 5, watch: true }  // watch: true enables real-time updates
+);
+```
+
+**Query for session list page:**
+```typescript
+client.queryChannels(
+  { type: "messaging", "custom.orgId": orgId },
+  { last_message_at: -1 },
+  { limit: 30, offset }  // paginated
+);
+```
+
+### D6: TableView inline chat shares channel, not a new engine
+
+**Decision:** TableView's inline chat input connects to the same ChatContext channel that ChatView uses. Same `useChatEngine` instance — just a different input UI.
+
+**Rationale:**
+- A separate engine for TableView would create disconnected sessions
 - Sharing the engine means navigating from ChatView to TableView preserves conversation context
-- The activity log overlay is a view-only component that reads from the shared message array
+- The activity log overlay reads from the shared message array
+- All messages are in one continuous Stream channel
 
-**Implementation:** TableView renders its own input bar and activity log, but calls the same `handleSubmit` and reads the same `messages` from `useChatContext()`. The DatasetDetail component continues to register `toolHandler` and `tableSchema` on mount.
+**Implementation:** TableView renders its own input bar and activity log, but calls the same `handleSubmit` and reads the same `messages` from `useChatContext()`. DatasetDetail registers `toolHandler` and `tableSchema` on mount.
 
-### D6: Dataset context picker is a chat message component, not a modal
+### D7: Dataset context picker is a chat message component, not a modal
 
-**Decision:** When a table operation is issued without dataset context, render an inline dataset picker as a special message in the chat history — not a modal or popover.
-
-**Rationale:**
-- Keeps the user in the chat flow — no context switch to a modal
-- The picker becomes part of the conversation history, providing context for what happened
-- Consistent with the Claude.ai pattern of inline interactive elements
-- Simpler to implement: it's a React component rendered inside the message list
-
-**Implementation:** A new message type `widget: { type: "dataset-picker" }` triggers rendering a `DatasetPicker` component inline. On selection, it fires a callback that sets the dataset context and re-submits the original command.
-
-### D7: /table/:datasetId derives projectId from dataset API response
-
-**Decision:** The `/table/:datasetId` route does not include projectId in the URL. TableView fetches the dataset, which includes `project_id`, and uses that for any project-scoped operations.
+**Decision:** When a table operation is issued without dataset context, render an inline dataset picker as a special message in the chat history.
 
 **Rationale:**
-- Shorter, cleaner URLs (`/table/ds-123` vs `/projects/proj-456/datasets/ds-123`)
-- The dataset→project relationship is already in the API response — no extra fetch needed
-- Breadcrumbs can still show the project name by fetching the project (or including it in dataset response)
-- Trade-off: deep-linking to a dataset doesn't immediately reveal the project from the URL alone. Acceptable — the UI shows it.
+- Keeps the user in the chat flow
+- The picker becomes part of the conversation history
+- Consistent with modern chat UI patterns (inline interactive elements)
+
+**Implementation:** A new message type `widget: { type: "dataset-picker" }` triggers rendering a `DatasetPicker` component inline. On selection, it calls `channel.updatePartial({ set: { datasetId } })` and re-submits the original command.
+
+### D8: /table/:datasetId derives projectId from dataset API response
+
+**Decision:** The `/table/:datasetId` route omits projectId from the URL. TableView fetches the dataset, which includes `project_id`.
+
+**Rationale:**
+- Shorter, cleaner URLs
+- The dataset→project relationship is already in the API response
+- Trade-off: deep-linking doesn't reveal the project from the URL alone. Acceptable — the UI shows it.
+
+### D9: Old project-scoped channels are not migrated
+
+**Decision:** Existing `project_{pid}_{uuid}` channels are left as-is. The new nav only queries `chat_{compactOrgId}_{8charHash}` channels. Old channels are effectively archived — accessible if you know the channel ID, but not listed in the new UI.
+
+**Rationale:**
+- Migration adds complexity for marginal benefit (existing sessions have limited history)
+- Stream channels don't expire by default — they remain accessible indefinitely
+- If needed later, a one-time script can backfill `orgId` into old channels
 
 ## Architecture
 
@@ -122,21 +176,23 @@ loaded → idle:  "New Session" clicked (reset)
 ```
 <BrowserRouter>
   <AuthProvider>
-    <Routes>
-      {/* Public */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
+    <StreamProvider>
+      <Routes>
+        {/* Public */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
 
-      {/* Protected */}
-      <Route element={<RequireAuth><RequireOrg><AppShell /></RequireOrg></RequireAuth>}>
-        <Route index element={<ChatView />} />
-        <Route path="chat/:sessionId" element={<ChatView />} />
-        <Route path="projects" element={<ProjectGrid />} />
-        <Route path="projects/:projectId" element={<DatasetGrid />} />
-        <Route path="table/:datasetId" element={<TableView />} />
-        <Route path="sessions" element={<SessionList />} />
-      </Route>
-    </Routes>
+        {/* Protected */}
+        <Route element={<RequireAuth><RequireOrg><ChatProvider><AppShell /></ChatProvider></RequireOrg></RequireAuth>}>
+          <Route index element={<ChatView />} />
+          <Route path="chat/:channelId" element={<ChatView />} />
+          <Route path="projects" element={<ProjectGrid />} />
+          <Route path="projects/:projectId" element={<DatasetGrid />} />
+          <Route path="table/:datasetId" element={<TableView />} />
+          <Route path="sessions" element={<SessionList />} />
+        </Route>
+      </Routes>
+    </StreamProvider>
   </AuthProvider>
 </BrowserRouter>
 ```
@@ -164,26 +220,47 @@ loaded → idle:  "New Session" clicked (reset)
 
 ```
                     ┌─────────────┐
-                    │    idle     │
+                    │    idle      │
                     └──────┬──────┘
                            │
               ┌────────────┼────────────┐
               │ mount at /  │ mount at   │
               │             │ /chat/:id  │
               ▼             │            ▼
-     POST /sessions         │     GET /sessions/:id
+     client.channel()       │     client.channel(id)
+     .watch()               │     .watch()
               │             │            │
               ▼             │            ▼
         ┌─────────┐        │     ┌──────────┐
-        │ active  │        │     │  loaded   │
+        │ active   │        │     │  loaded   │
         └────┬────┘        │     └─────┬─────┘
              │             │           │
              │  "New Session" clicked  │
              └────────────►┤◄──────────┘
                            │
                     ┌──────┴──────┐
-                    │    idle     │
+                    │    idle      │
                     └─────────────┘
+```
+
+### Stream Channel Data Model
+
+```
+Channel {
+  id:     "chat_{compactOrgId}_{8charHash}"
+  type:   "messaging"
+  data: {
+    orgId:      string       // required — query filter
+    projectId:  string|null  // set when dataset selected
+    datasetId:  string|null  // set via picker or TableView
+    title:      string|null  // auto-set from first message
+    createdAt:  string       // ISO timestamp
+  }
+  state: {
+    messages:       Message[]    // full history
+    last_message_at: string     // for sort ordering
+  }
+}
 ```
 
 ### Shared Chat Components
@@ -194,61 +271,43 @@ frontend/src/ui/components/chat/
   MessageList.tsx            # Scrollable message container with auto-scroll
   ChatInput.tsx              # Expanding textarea + gutter (shared by ChatView + TableView)
   WelcomeState.tsx           # Greeting + suggestion chips (ChatView only)
-  ActivityLog.tsx            # Overlay for TableView
+  ActivityLog.tsx            # (lives in TableView/ — only used there; not shared)
   DatasetPicker.tsx          # Inline dataset/project selector
   SessionItem.tsx            # Nav item for recent sessions
 ```
 
-### Session Query Hooks
+### Data Flow: Message Send
 
-```typescript
-// frontend/src/ui/hooks/useSessions.ts
-
-// Fetch recent sessions for nav sidebar
-const useRecentSessions = (orgId: string, limit = 5) =>
-  useQuery({
-    queryKey: sessionKeys.recent(orgId, limit),
-    queryFn: () => chatClient.listSessions({ orgId, limit }),
-  });
-
-// Fetch single session with turns (for resume)
-const useSession = (sessionId: string) =>
-  useQuery({
-    queryKey: sessionKeys.detail(sessionId),
-    queryFn: () => chatClient.getSession(sessionId),
-    enabled: !!sessionId,
-  });
-
-// Update session title or dataset_id
-const useUpdateSession = () =>
-  useMutation({
-    mutationFn: ({ sessionId, ...body }) => chatClient.updateSession(sessionId, body),
-    onMutate: optimisticTitleUpdate,
-  });
 ```
-
-### ChatClient API Changes
-
-The `ChatClient` needs updates to match the worker's org-scoped session API:
-
-```typescript
-// Current
-createSession(projectId: string, datasetId?: string): Promise<ChatSession>
-listSessions(datasetId: string): Promise<ChatSession[]>
-
-// New
-createSession(orgId: string, opts?: { projectId?: string; datasetId?: string; title?: string }): Promise<ChatSession>
-listSessions(params: { orgId: string; limit?: number }): Promise<ChatSession[]>
-updateSession(sessionId: string, body: { title?: string; dataset_id?: string | null }): Promise<ChatSession>
+User types in ChatView (or TableView inline input)
+  ↓
+submitText() — no gating on toolHandler
+  ↓
+writeToStream() → channel.sendMessage({ text })     [user msg persisted in Stream]
+  ↓
+chatClient.fetchChatStream(apiMessages, tableSchema) → POST /chat to worker
+  ↓
+Worker: GroqChatClient.streamCompletion() → Groq API (SSE streaming)
+  ↓
+readSSEStream() → onContent() updates UI overlay
+  ↓
+onDone(content, toolCalls):
+  ├─ toolHandler exists? → executeToolCalls() → apply to table
+  └─ toolHandler null?   → show "navigate to table" prompt
+  ↓
+writeToStream() → channel.sendMessage({ text, custom: { tool_calls } })  [assistant msg persisted]
+  ↓
+Stream WebSocket → nav recent sessions list auto-updates
 ```
 
 ## Migration
 
-This is a frontend-only change with no data migration required. The approach is:
+This is a frontend-only change with no data migration. The approach:
 
-1. **Phase 1 — Foundation**: Refactor AppShell layout (remove ChatPanelConnected), update routes, extract shared chat components. Tests will break during this phase.
-2. **Phase 2 — New views**: Build ChatView, TableView (refactored DatasetView), UnifiedNav, SessionList. Wire up to ChatContext.
-3. **Phase 3 — Context refactor**: Refactor useChatEngine to session-centric model. Update ChatClient API. Add dataset picker.
-4. **Phase 4 — Polish**: Session titles, activity log, navigation state preservation, test fixes.
+1. **Phase 0 — Dead Code Cleanup**: Remove broken/dead code (`worker/lib/s3.ts`, ChatClient session methods, SessionViewer, SessionList). Clean foundation.
+2. **Phase 1 — Foundation**: Refactor AppShell layout (remove ChatPanelConnected), update routes, extract shared chat components.
+3. **Phase 2 — Stream Session Refactor**: Remap `useSessionContext` from project-scoped to org-scoped. Refactor `useChatEngine` to own channel lifecycle. Remove `isActive` gating.
+4. **Phase 3 — New Views**: Build ChatView, TableView, UnifiedNav (with Stream-backed recent sessions), SessionList (with Stream-backed channel query).
+5. **Phase 4 — Polish**: Session titles, dataset picker, activity log, navigation state preservation, test fixes.
 
-No feature flags needed — this is a UI restructure, not a gradual rollout. All changes land together on the feature branch.
+No feature flags needed — all changes land together on the feature branch. Old project-scoped channels are left as-is (D9).

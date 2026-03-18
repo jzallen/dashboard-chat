@@ -11,7 +11,7 @@ import os
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.auth.dev_provider import DEV_TOKEN
+from app.auth.dev_provider import _mint_jwt
 from app.main import app
 
 pytestmark = pytest.mark.skipif(
@@ -21,8 +21,8 @@ pytestmark = pytest.mark.skipif(
 
 
 def _get_dev_token() -> str:
-    """Return the dev auth token for integration tests."""
-    return DEV_TOKEN
+    """Mint a fresh RS256 JWT for integration tests."""
+    return _mint_jwt()
 
 
 @pytest.fixture

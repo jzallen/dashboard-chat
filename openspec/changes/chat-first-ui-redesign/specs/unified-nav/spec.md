@@ -15,9 +15,9 @@ The SideNav SHALL display a unified navigation structure that replaces the condi
 #### Scenario: New Session creates a fresh conversation
 
 - **WHEN** the user clicks "New Session"
-- **THEN** a new session SHALL be created via `POST /sessions` with the user's `org_id`
+- **THEN** the current channel reference SHALL be cleared in ChatContext
 - **THEN** the browser SHALL navigate to `/`
-- **THEN** ChatView SHALL render with empty message history and welcome state
+- **THEN** ChatView SHALL mount, create a new Stream channel, and render welcome state
 
 #### Scenario: Projects shows project grid
 
@@ -33,28 +33,29 @@ The SideNav SHALL display a unified navigation structure that replaces the condi
 
 ---
 
-### Requirement: Recent Sessions in Nav
+### Requirement: Recent Sessions in Nav (Stream-Backed)
 
-The nav sidebar SHALL display up to 5 most recent sessions below the main navigation items.
+The nav sidebar SHALL display up to 5 most recent sessions below the main navigation items, powered by Stream's `queryChannels` API.
 
-- Sessions SHALL be fetched via `GET /sessions?org_id={orgId}&limit=5`.
+- Sessions SHALL be fetched via `client.queryChannels({ type: "messaging", "custom.orgId": orgId }, { last_message_at: -1 }, { limit: 5 })`.
 - Each session item SHALL display:
-  - The session title (if set) or first message text (truncated to ~40 characters).
-  - A relative timestamp (e.g., "2m ago", "yesterday").
-- Clicking a session item SHALL navigate to `/chat/:sessionId`.
-- The list SHALL update when a new session is created or a message is sent (via query invalidation).
+  - The session title from `channel.data.title` (if set) or first message text (truncated to ~40 characters).
+  - A relative timestamp from `channel.state.last_message_at` (e.g., "2m ago", "yesterday").
+- Clicking a session item SHALL navigate to `/chat/{channelId}`.
+- The list SHALL update in real-time via Stream's WebSocket connection — when a new message is sent in any channel, the list reorders automatically.
 - When the nav is collapsed, recent sessions SHALL be hidden (only main nav icons visible).
 
 #### Scenario: Recent session loads in ChatView
 
 - **GIVEN** the nav shows a recent session titled "Sales analysis"
 - **WHEN** the user clicks "Sales analysis"
-- **THEN** the browser SHALL navigate to `/chat/{sessionId}`
-- **THEN** ChatView SHALL load with that session's message history
+- **THEN** the browser SHALL navigate to `/chat/{channelId}`
+- **THEN** ChatView SHALL watch the channel and load message history
 
 #### Scenario: New message updates recent sessions list
 
 - **GIVEN** the user sends a message in session A
+- **THEN** Stream's WebSocket SHALL deliver the channel update
 - **THEN** session A SHALL move to the top of the recent sessions list
 - **THEN** the timestamp SHALL update to "just now"
 
@@ -64,7 +65,7 @@ The nav sidebar SHALL display up to 5 most recent sessions below the main naviga
 
 The nav SHALL visually indicate which section is currently active.
 
-- "New Session" / recent sessions SHALL be highlighted when on `/` or `/chat/:sessionId`.
+- "New Session" / recent sessions SHALL be highlighted when on `/` or `/chat/:channelId`.
 - "Projects" SHALL be highlighted when on `/projects` or `/projects/:projectId`.
 - "Chats" SHALL be highlighted when on `/sessions`.
 - No nav item is highlighted when on `/table/:datasetId` (the user arrived via project navigation, not nav).

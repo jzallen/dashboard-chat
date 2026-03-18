@@ -6,10 +6,10 @@ import type { Dataset } from "@/dataCatalog";
 import { ChatProvider, useChatContext } from "../ChatContext";
 
 function TestConsumer() {
-  const { isActive, registerToolHandler } = useChatContext();
+  const { channel, registerToolHandler } = useChatContext();
   return (
     <div>
-      <span data-testid="active">{String(isActive)}</span>
+      <span data-testid="has-channel">{String(channel !== null)}</span>
       <button
         data-testid="register"
         onClick={() =>
@@ -55,16 +55,13 @@ function ProjectUpdaterConsumer({ onUpdated }: { onUpdated: Mock }) {
 }
 
 describe("ChatContext state edge cases", () => {
-  it("registerToolHandler(null) reverts to inactive", () => {
+  it("starts with no channel", () => {
     render(
       <ChatProvider>
         <TestConsumer />
       </ChatProvider>,
     );
-    fireEvent.click(screen.getByTestId("register"));
-    expect(screen.getByTestId("active").textContent).toBe("true");
-    fireEvent.click(screen.getByTestId("unregister"));
-    expect(screen.getByTestId("active").textContent).toBe("false");
+    expect(screen.getByTestId("has-channel").textContent).toBe("false");
   });
 
   it("onDatasetCreated invokes the registered project updater", () => {

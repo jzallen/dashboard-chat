@@ -2,27 +2,29 @@
 
 ### Requirement: ChatView as Routed Page
 
-The system SHALL provide a full-width ChatView component rendered as a routed page at `/` (new session) and `/chat/:sessionId` (resume session). ChatView replaces the fixed ChatPanel sidebar as the primary chat interface.
+The system SHALL provide a full-width ChatView component rendered as a routed page at `/` (new session) and `/chat/:channelId` (resume session). ChatView replaces the fixed ChatPanel sidebar as the primary chat interface.
 
 - ChatView SHALL fill the entire content area of the 2-panel layout (no fixed width constraint).
 - ChatView SHALL render a scrollable message history area above and an input area below.
 - ChatView SHALL support both new sessions (empty state) and resumed sessions (loaded history).
-- ChatView SHALL use the existing `useChatEngine` hook for SSE streaming, message state, and tool call execution.
+- ChatView SHALL use the refactored `useChatEngine` hook for SSE streaming, message state, and tool call execution.
+- Message history SHALL be sourced from the Stream channel's `channel.state.messages`.
 
 #### Scenario: New session on landing page
 
 - **WHEN** an authenticated user navigates to `/`
 - **THEN** the system SHALL render ChatView with an empty message history
 - **THEN** the welcome state SHALL be displayed (see Welcome State requirement below)
-- **THEN** a new session SHALL be created via `POST /sessions` with the user's `org_id`
+- **THEN** a new Stream channel SHALL be created with the user's `orgId` as custom data
+- **THEN** the URL SHALL update to `/chat/{channelId}` via replace (no history push)
 
 #### Scenario: Resume existing session
 
-- **WHEN** an authenticated user navigates to `/chat/:sessionId`
-- **THEN** the system SHALL fetch the session via `GET /sessions/:sessionId`
-- **THEN** the message history SHALL be populated from the session's turns
-- **THEN** the dataset context (if `dataset_id` is set on the session) SHALL be restored in the input gutter
-- **THEN** the user SHALL be able to continue sending messages in the same session
+- **WHEN** an authenticated user navigates to `/chat/{channelId}`
+- **THEN** the system SHALL watch the Stream channel via `client.channel("messaging", channelId).watch()`
+- **THEN** the message history SHALL be populated from `channel.state.messages`
+- **THEN** the dataset context (if `datasetId` is set in channel custom data) SHALL be restored in the input gutter
+- **THEN** the user SHALL be able to continue sending messages in the same channel
 
 ---
 
@@ -62,13 +64,13 @@ The ChatView input area SHALL use an auto-expanding textarea that grows with con
 
 #### Scenario: Dataset context displayed in gutter
 
-- **GIVEN** a dataset "Sales Q4" is selected as context for the current session
+- **GIVEN** a dataset "Sales Q4" is selected as context for the current session (stored in channel custom data)
 - **THEN** the gutter SHALL display "Sales Q4" aligned to the right
 - **THEN** clicking the dataset name SHALL allow the user to change or clear the context
 
 #### Scenario: No dataset context
 
-- **GIVEN** no dataset is selected as context
+- **GIVEN** no dataset is selected as context (channel custom data has no `datasetId`)
 - **THEN** the gutter SHALL not display a dataset name
 - **THEN** the gutter MAY display a hint like "No dataset selected"
 
@@ -76,7 +78,7 @@ The ChatView input area SHALL use an auto-expanding textarea that grows with con
 
 ### Requirement: Message Rendering
 
-ChatView SHALL render messages using the same bubble-style components as the current ChatPanel.
+ChatView SHALL render messages using shared chat components (extracted from the current ChatPanel).
 
 - User messages SHALL be right-aligned with a distinct background color.
 - Assistant messages SHALL be left-aligned with a different background color.

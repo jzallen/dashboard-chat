@@ -27,10 +27,6 @@ vi.mock("@/chat", async (importOriginal) => {
       // through the real auth decorator (which uses the already-mocked tokenStorage /
       // tokenRefresh), then delegates to the real createChatClient.
       return {
-        createSession: vi.fn().mockResolvedValue({ id: "sess-001" }),
-        logTurn: vi.fn().mockResolvedValue(undefined),
-        getSession: vi.fn(),
-        listSessions: vi.fn(),
         async fetchChatStream(
           apiMessages: Array<{ role: string; content: string }>,
           tableSchema: unknown,
@@ -291,7 +287,7 @@ describe("ChatProvider", () => {
     renderChat(toolHandler);
 
     fireEvent.change(screen.getByTestId("chat-input"), {
-      target: { value: "Filter col a" },
+      target: { value: "Apply transformation to col a" },
     });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
@@ -385,22 +381,31 @@ describe("ChatProvider", () => {
     );
   });
 
-  it("does not submit when no tool handler is registered", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
+  it("submits without tool handler and shows SSE content", async () => {
+    mockFetchSSE([
+      { type: "content", content: "I can help with that" },
+      { type: "done" },
+    ]);
 
     // No tool handler passed
     renderChat();
 
     fireEvent.change(screen.getByTestId("chat-input"), {
-      target: { value: "No handler" },
+      target: { value: "Hello" },
     });
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.submit(screen.getByTestId("submit").closest("form")!);
     });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(screen.getByTestId("message-count").textContent).toBe("0");
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    expect(screen.getByTestId("message-count").textContent).toBe("2");
+    expect(screen.getByTestId("msg-assistant").textContent).toBe(
+      "I can help with that",
+    );
   });
 
   describe("stream token resilience", () => {
