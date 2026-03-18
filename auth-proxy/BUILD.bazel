@@ -46,7 +46,7 @@ genrule(
             --outfile=../$$TMPDIR/app/auth-proxy/index.mjs && \
         tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
     """,
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "manual"],
 )
 
 oci_image(
@@ -56,6 +56,7 @@ oci_image(
     workdir = "/app",
     entrypoint = ["node", "auth-proxy/index.mjs"],
     exposed_ports = ["3000"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
@@ -63,5 +64,6 @@ oci_load(
     name = "image_tar",
     image = ":image",
     repo_tags = ["dashboard-chat/auth-proxy:bazel"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )

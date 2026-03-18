@@ -133,7 +133,7 @@ genrule(
         VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$$STREAM_API_KEY NODE_ENV=production npx vite build --outDir ../$$TMPDIR/dist --emptyOutDir && \
         tar -cf - -C ../$$TMPDIR dist > ../$(OUTS)
     """,
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "manual"],
     visibility = ["//visibility:public"],
 )
 
@@ -293,7 +293,7 @@ genrule(
         cp $(location nginx.conf) $$TMPDIR/etc/nginx/conf.d/default.conf && \
         tar -cf $(OUTS) -C $$TMPDIR etc
     """,
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "manual"],
 )
 
 genrule(
@@ -306,7 +306,7 @@ genrule(
         cp -r $$TMPDIR/dist/* $$TMPDIR/usr/share/nginx/html/ && \
         tar -cf $(OUTS) -C $$TMPDIR usr
     """,
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "manual"],
 )
 
 oci_image(
@@ -317,6 +317,7 @@ oci_image(
         ":assets_layer",
     ],
     exposed_ports = ["80"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
@@ -324,5 +325,6 @@ oci_load(
     name = "image_tar",
     image = ":image",
     repo_tags = ["dashboard-chat/frontend:bazel"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )

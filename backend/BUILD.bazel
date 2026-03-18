@@ -374,6 +374,7 @@ oci_image(
     ),
     entrypoint = ["/backend/server"],
     exposed_ports = ["8000"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
@@ -381,5 +382,6 @@ oci_load(
     name = "image_tar",
     image = ":image",
     repo_tags = ["dashboard-chat/api:bazel"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )

@@ -47,7 +47,7 @@ genrule(
             --outfile=../$$TMPDIR/app/worker/index.mjs && \
         tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
     """,
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "manual"],
 )
 
 oci_image(
@@ -57,6 +57,7 @@ oci_image(
     workdir = "/app",
     entrypoint = ["node", "worker/index.mjs"],
     exposed_ports = ["8787"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
@@ -64,5 +65,6 @@ oci_load(
     name = "image_tar",
     image = ":image",
     repo_tags = ["dashboard-chat/worker:bazel"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
