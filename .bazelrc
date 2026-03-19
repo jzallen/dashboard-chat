@@ -7,6 +7,8 @@ test --test_output=errors
 test --test_verbose_timeout_warnings
 test --local_test_jobs=HOST_CPUS*1.5
 test --experimental_reuse_sandbox_directories
+# Pass through PATH so no-sandbox lint targets (sh_test) can find uv and npm
+test --action_env=PATH
 
 # ─── E2E Config ──────────────────────────────────────────────────────────────
 test:e2e --sandbox_writable_path=/var/run/docker.sock

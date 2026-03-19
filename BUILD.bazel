@@ -13,6 +13,8 @@ alias(
 exports_files([
     "docker-compose.yml",
     ".env",
+    "eslint.config.js",
+    "package.json",
 ])
 
 # Build all OCI image tarballs

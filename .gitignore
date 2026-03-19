@@ -72,3 +72,6 @@ bazel-dashboard-chat
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Local-only docs (superpowers plans, specs)
+docs/superpowers/

@@ -2,6 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":pytest_tests.bzl", "pytest_tests")
 
 # ─── Layered py_library Targets ──────────────────────────────────────────────
@@ -199,6 +200,21 @@ py_library(
         "@pip//pytest",
         "@pip//pytest_asyncio",
     ],
+)
+
+# ─── Lint ────────────────────────────────────────────────────────────────────
+
+sh_test(
+    name = "lint",
+    srcs = ["lint_test.sh"],
+    data = [
+        "pyproject.toml",
+    ] + glob([
+        "app/**/*.py",
+        "tests/**/*.py",
+    ]),
+    tags = ["no-sandbox"],
+    size = "small",
 )
 
 # ─── Per-Directory Test Targets ──────────────────────────────────────────────

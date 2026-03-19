@@ -13,30 +13,9 @@ env:
   HUSKY: 0
 
 jobs:
-  # ── Lint (ESLint + Ruff) ──────────────────────────────────────────────────
-  # Kept outside Bazel until lint targets are added (see docs/backlog/bazel-lint-standardization.md)
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@v4
-      - run: npm ci --legacy-peer-deps
-      - run: cd backend && uv sync
-      - name: ESLint (TypeScript/React)
-        run: npx eslint .
-      - name: Ruff check (Python)
-        run: cd backend && uv run ruff check .
-      - name: Ruff format check (Python)
-        run: cd backend && uv run ruff format --check .
-
-  # ── Tests (Bazel) ─────────────────────────────────────────────────────────
+  # ── Tests + Lint (Bazel) ──────────────────────────────────────────────────
+  # bazel test //... covers unit tests AND lint:
+  #   //frontend:lint, //worker:lint, //backend:lint
   test:
     runs-on: ubuntu-latest
     steps:
@@ -46,13 +25,14 @@ jobs:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true
+      - uses: astral-sh/setup-uv@v4
       - name: Run all tests
         run: bazel test //... --nocache_test_results --config=ci
 
   # ── Release (semantic-release) ────────────────────────────────────────────
   # Runs only on push to main (not on pull_request events)
   release:
-    needs: [lint, test]
+    needs: [test]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     permissions:
