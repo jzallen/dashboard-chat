@@ -75,3 +75,6 @@ bazel-dashboard-chat
 
 # Local-only docs (superpowers plans, specs)
 docs/superpowers/
+
+# Temporary files
+tmp/
