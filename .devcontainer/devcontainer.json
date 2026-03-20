@@ -30,7 +30,7 @@
       }
     }
   },
-  "postCreateCommand": "npm install && curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"$HOME/.cargo/bin:$PATH\" && cd backend && uv sync && cd .. && npx husky init && npm install -g @upstash/context7-mcp@latest && uv tool install \"serena @ git+https://github.com/oraios/serena\"",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
   "forwardPorts": [5173, 8000],
   "remoteEnv": {
     "MIRTH_CONNECT_URL": "",
