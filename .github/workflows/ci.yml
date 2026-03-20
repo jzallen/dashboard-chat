@@ -13,26 +13,85 @@ env:
   HUSKY: 0
 
 jobs:
-  # ── Tests + Lint (Bazel) ──────────────────────────────────────────────────
-  # bazel test //... covers unit tests AND lint:
-  #   //frontend:lint, //worker:lint, //backend:lint
-  test:
+  # ── Lint (Bazel) ──────────────────────────────────────────────────────────
+  # Runs first so formatting/lint failures fail fast without paying test costs.
+  # Targets: //frontend:lint, //agent:lint, //backend:lint
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: bazel-contrib/setup-bazel@0.9.1
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
+          disk-cache: ${{ github.workflow }}-lint
           repository-cache: true
       - uses: astral-sh/setup-uv@v4
-      - name: Run all tests
-        run: bazel test //... --nocache_test_results --config=ci
+      - name: Run lint
+        run: bazel test //... --test_tag_filters=lint --nocache_test_results --config=ci
+
+  # ── Frontend tests (Bazel) ────────────────────────────────────────────────
+  test-frontend:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-frontend
+          repository-cache: true
+      - name: Run frontend tests
+        run: bazel test //frontend/... --test_tag_filters=-lint --nocache_test_results --config=ci
+
+  # ── Agent tests (Bazel) ───────────────────────────────────────────────────
+  test-agent:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-agent
+          repository-cache: true
+      - name: Run agent tests
+        run: bazel test //agent/... --test_tag_filters=-lint --nocache_test_results --config=ci
+
+  # ── Backend tests (Bazel) ─────────────────────────────────────────────────
+  # Backend has the most test suites (15 targets) so benefits most from
+  # parallelism. uv is required for the Python toolchain.
+  test-backend:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-backend
+          repository-cache: true
+      - uses: astral-sh/setup-uv@v4
+      - name: Run backend tests
+        run: bazel test //backend/... --test_tag_filters=-lint --nocache_test_results --config=ci
+
+  # ── Auth-proxy tests (Bazel) ──────────────────────────────────────────────
+  test-auth-proxy:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-auth-proxy
+          repository-cache: true
+      - name: Run auth-proxy tests
+        run: bazel test //auth-proxy/... --test_tag_filters=-lint --nocache_test_results --config=ci
 
   # ── Release (semantic-release) ────────────────────────────────────────────
   # Runs only on push to main (not on pull_request events)
   release:
-    needs: [test]
+    needs: [lint, test-frontend, test-agent, test-backend, test-auth-proxy]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     permissions:
