@@ -299,10 +299,14 @@ class HTTPController:
 
     @staticmethod
     async def get_view(view_id: str, project: dict | None = None) -> tuple[dict, int]:
+        from app.use_cases.view.sql_generator import ViewSQLGenerator
+
         result = await view_use_cases.get_view(view_id, project=project)
         match result:
             case Success(data):
-                return wrap_jsonapi_single("views", _serialize(data), f"/api/views/{view_id}"), 200
+                serialized = _serialize(data)
+                serialized["display_sql"] = ViewSQLGenerator().generate_display(data)
+                return wrap_jsonapi_single("views", serialized, f"/api/views/{view_id}"), 200
             case Failure(error):
                 return _error_response(error)
 

@@ -1,4 +1,4 @@
-// Chat Worker — Hono server for chat streaming via Groq SSE
+// Chat Agent — Hono server for chat streaming via Groq (Vercel AI SDK)
 // Session management is handled by Stream.io (frontend-side)
 
 import { serve } from "@hono/node-server";
@@ -19,7 +19,7 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 if (!GROQ_API_KEY) {
-  console.error("[worker] GROQ_API_KEY is required but not set");
+  console.error("[agent] GROQ_API_KEY is required but not set");
   process.exit(1);
 }
 
@@ -59,15 +59,15 @@ app.post("/chat", async (c) => {
 // ---------------------------------------------------------------------------
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.debug(`[worker] Listening on http://localhost:${info.port}`);
+  console.debug(`[agent] Listening on http://localhost:${info.port}`);
 });
 
 process.on("SIGTERM", () => {
-  console.debug("[worker] Shutting down...");
+  console.debug("[agent] Shutting down...");
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
-  console.debug("[worker] Shutting down...");
+  console.debug("[agent] Shutting down...");
   process.exit(0);
 });

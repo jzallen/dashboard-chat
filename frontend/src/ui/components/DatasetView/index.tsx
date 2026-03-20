@@ -66,7 +66,7 @@ function DatasetDetail({
   onShowSettings,
 }: DatasetDetailProps) {
   const queryClient = useQueryClient();
-  const { registerToolHandler, registerTableSchema, registerDatasetId } =
+  const { registerToolHandler, registerTableSchema, setContext } =
     useChatContext();
   const { data: dataset, isLoading } = useDatasetQuery(datasetId);
 
@@ -197,9 +197,9 @@ function DatasetDetail({
   }, [executeToolCall, registerToolHandler]);
 
   useEffect(() => {
-    registerDatasetId(datasetId);
-    return () => registerDatasetId(null);
-  }, [datasetId, registerDatasetId]);
+    setContext("dataset", datasetId);
+    return () => setContext(null, null);
+  }, [datasetId, setContext]);
 
   const aliasMap = useMemo(() => {
     const map = new Map<string, string>();

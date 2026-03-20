@@ -6,11 +6,11 @@
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "frontend",
-    "worker",
+    "agent",
     "auth-proxy"
   ],
   "scripts": {
-    "dev:worker": "npm run dev -w worker",
+    "dev:agent": "npm run dev -w agent",
     "deploy:pages": "wrangler pages deploy frontend/dist --project-name=dashboard-chat",
     "test:e2e": "playwright test --config=e2e/config/local.config.ts",
     "test:e2e:local": "playwright test --config=e2e/config/local.config.ts",
@@ -18,7 +18,7 @@
     "test:e2e:ui": "playwright test --ui --config=e2e/config/local.config.ts",
     "test:e2e:debug": "playwright test --debug --config=e2e/config/local.config.ts",
     "test:frontend": "npm run test:run -w frontend",
-    "test:worker": "npm run test:run -w worker",
+    "test:agent": "npm run test:run -w agent",
     "build": "turbo run build",
     "test": "turbo run test:run",
     "test:all": "turbo run test:run && cd backend && uv run pytest",
@@ -26,7 +26,7 @@
     "lint": "eslint . && cd backend && uv run ruff check . && uv run ruff format --check .",
     "lint:fix": "eslint . --fix && cd backend && uv run ruff check --fix . && uv run ruff format .",
     "lint:frontend": "eslint frontend/",
-    "lint:worker": "eslint worker/",
+    "lint:agent": "eslint agent/",
     "lint:backend": "cd backend && uv run ruff check . && uv run ruff format --check .",
     "format:backend": "cd backend && uv run ruff format .",
     "prepare": "husky"

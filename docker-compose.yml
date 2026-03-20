@@ -8,10 +8,10 @@ services:
     depends_on:
       - api
 
-  # Hono Worker - Chat API
-  worker:
-    image: dashboard-chat/worker:bazel
-    container_name: dashboard-worker
+  # Hono Agent - Chat API
+  agent:
+    image: dashboard-chat/agent:bazel
+    container_name: dashboard-agent
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
       CORS_ORIGIN: http://localhost:5173

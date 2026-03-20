@@ -1,7 +1,7 @@
 /**
- * Chat Worker API Client
+ * Chat Agent API Client
  *
- * Factory-based client for all communication with the chat worker service.
+ * Factory-based client for all communication with the chat agent service.
  * Callers inject auth via fetchFn: createChatClient(withAuth(fetch)).
  */
 
@@ -18,12 +18,19 @@ export function createChatClient(fetchFn: typeof fetch = fetch) {
         tool_calls?: ToolCall[];
       }>,
       tableSchema: TableSchema | null,
+      contextType?: "dataset" | "view" | null,
+      contextId?: string | null,
     ): Promise<Response> {
       const response = await fetchFn(`${CHAT_BASE_URL}/chat`, {
         method: "POST",
         mode: "cors",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages, tableSchema }),
+        body: JSON.stringify({
+          messages: apiMessages,
+          tableSchema,
+          contextType: contextType ?? null,
+          contextId: contextId ?? null,
+        }),
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);

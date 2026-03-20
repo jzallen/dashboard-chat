@@ -23,7 +23,7 @@ export function ChatView() {
     createChannel,
     loadChannel,
     addMessage,
-    registerDatasetId,
+    setContext,
   } = useChatContext();
 
   const [isInitializing, setIsInitializing] = useState(true);
@@ -69,8 +69,14 @@ export function ChatView() {
     };
   }, [channelId, orgId, channel, createChannel, loadChannel, navigate]);
 
-  // Resolve dataset name from channel custom data
-  const datasetId = (channel?.data as Record<string, unknown>)?.datasetId as string | undefined;
+  // Resolve context from channel custom data (with legacy fallback)
+  const channelData = channel?.data as Record<string, unknown> | undefined;
+  const contextType = (channelData?.contextType as "dataset" | "view" | null) ?? null;
+  const contextId = (channelData?.contextId as string | null) ?? null;
+  // Legacy fallback
+  const datasetId = contextType === "dataset"
+    ? contextId
+    : (channelData?.datasetId as string | undefined) ?? undefined;
 
   if (isInitializing && !channel) {
     return <div className={styles.loading}>Starting session...</div>;
@@ -105,9 +111,11 @@ export function ChatView() {
             onSubmit={handleSubmit}
             isLoading={isLoading}
             datasetName={datasetId ?? undefined}
-            onClearDataset={datasetId ? () => {
-              channel?.updatePartial({ set: { datasetId: null } }).catch(console.error);
-              registerDatasetId(null);
+            contextType={contextType}
+            contextLabel={contextId ?? undefined}
+            onClearContext={(contextType || datasetId) ? () => {
+              setContext(null, null);
+              channel?.updatePartial({ set: { datasetId: null, contextType: null, contextId: null } }).catch(console.error);
             } : undefined}
           />
         </div>

@@ -51,7 +51,7 @@ export function TableView() {
     handleSubmit,
     registerToolHandler,
     registerTableSchema,
-    registerDatasetId,
+    setContext,
     channel,
     isStreaming,
     streamingContent,
@@ -195,20 +195,21 @@ export function TableView() {
     return () => registerToolHandler(null);
   }, [executeToolCall, registerToolHandler]);
 
-  // Register dataset ID with ChatContext
+  // Register dataset context
   useEffect(() => {
     if (datasetId) {
-      registerDatasetId(datasetId);
+      setContext("dataset", datasetId);
     }
-    return () => registerDatasetId(null);
-  }, [datasetId, registerDatasetId]);
+    return () => setContext(null, null);
+  }, [datasetId, setContext]);
 
-  // Update channel's datasetId if different from current
+  // Update channel's context if different from current
   useEffect(() => {
     if (channel && datasetId) {
-      const currentDatasetId = (channel.data as Record<string, unknown>)?.datasetId;
+      const channelData = channel.data as Record<string, unknown> | undefined;
+      const currentDatasetId = channelData?.datasetId;
       if (currentDatasetId !== datasetId) {
-        channel.updatePartial({ set: { datasetId } }).catch(console.error);
+        channel.updatePartial({ set: { datasetId, contextType: "dataset", contextId: datasetId } }).catch(console.error);
       }
     }
   }, [channel, datasetId]);

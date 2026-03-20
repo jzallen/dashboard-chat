@@ -1,6 +1,6 @@
 packages:
   - frontend
-  - worker
+  - agent
   - auth-proxy
 
 onlyBuiltDependencies: []

@@ -31,6 +31,8 @@ export function useSessionContext(orgId: string | null): SessionContextValue {
         orgId: oid,
         projectId: null,
         datasetId: null,
+        contextType: null,
+        contextId: null,
         title: null,
         createdAt: new Date().toISOString(),
       });

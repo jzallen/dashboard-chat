@@ -24,6 +24,6 @@ filegroup(
     srcs = [
         "//backend:image_tar",
         "//frontend:image_tar",
-        "//worker:image_tar",
+        "//agent:image_tar",
     ],
 )

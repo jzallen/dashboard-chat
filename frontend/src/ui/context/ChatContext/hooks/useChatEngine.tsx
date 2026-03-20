@@ -48,8 +48,10 @@ interface ChatContextValue {
   registerProjectUpdater: (
     updater: ((dataset: Dataset) => void) | null,
   ) => void;
+  /** @deprecated Use setContext instead */
   registerDatasetId: (datasetId: string | null) => void;
   registerProjectId: (projectId: string | null) => void;
+  setContext: (type: "dataset" | "view" | null, id: string | null) => void;
   channel: StreamChannel | null;
   createChannel: (orgId: string) => Promise<StreamChannel>;
   loadChannel: (channelId: string) => Promise<StreamChannel>;
@@ -153,6 +155,17 @@ function useChatEngine(): ChatContextValue {
     [],
   );
 
+  const setContext = useCallback((type: "dataset" | "view" | null, id: string | null) => {
+    entityContext.setContext(type, id);
+    // Update channel custom data
+    if (channelRef.current) {
+      channelRef.current.updatePartial({
+        set: { contextType: type, contextId: id },
+      }).catch(console.error);
+    }
+  }, [entityContext]);
+
+  /** @deprecated Use setContext instead */
   const registerDatasetId = useCallback((id: string | null) => {
     entityContext.setEntityId(id);
     entityContext.setEntityType(id ? "dataset" : null);
@@ -174,6 +187,8 @@ function useChatEngine(): ChatContextValue {
         orgId,
         projectId: null,
         datasetId: null,
+        contextType: null,
+        contextId: null,
         title: null,
         createdAt: new Date().toISOString(),
       });
@@ -195,10 +210,18 @@ function useChatEngine(): ChatContextValue {
 
       setChannel(ch);
 
-      // Restore dataset context from channel custom data
-      const datasetId = ch.data?.datasetId;
-      if (datasetId) {
-        registerDatasetId(datasetId);
+      // Restore context from channel custom data (with legacy fallback)
+      const channelData = ch.data as Record<string, unknown> | undefined;
+      const contextType = channelData?.contextType as "dataset" | "view" | null | undefined;
+      const contextId = channelData?.contextId as string | null | undefined;
+      if (contextType && contextId) {
+        setContext(contextType, contextId);
+      } else {
+        // Legacy fallback: if no contextType but datasetId is present, treat as dataset
+        const datasetId = channelData?.datasetId as string | undefined;
+        if (datasetId) {
+          setContext("dataset", datasetId);
+        }
       }
 
       // Populate messages from channel history
@@ -312,7 +335,7 @@ function useChatEngine(): ChatContextValue {
       }
 
       // Detect table operations that need a dataset context
-      const hasDataset = !!channelRef.current?.data?.datasetId || !!entityContext.entityId;
+      const hasDataset = !!entityContext.entityId || !!(channelRef.current?.data as Record<string, unknown>)?.datasetId;
       if (looksLikeTableOperation(text) && !hasDataset) {
         pendingCommandRef.current = text;
         setMessages((prev) => [
@@ -336,7 +359,9 @@ function useChatEngine(): ChatContextValue {
 
       const patchAssistant = updateAssistantMessage(setMessages, assistantId);
       const toolHandler = toolHandlerRef.current;
-      const tableSchema = entityContext.tableSchema;
+      const contextType = entityContext.entityType;
+      const contextId = entityContext.entityId;
+      const tableSchema = contextType === "dataset" ? entityContext.tableSchema : null;
 
       // Start SSE overlay
       sseOverlay.startStreaming();
@@ -347,6 +372,8 @@ function useChatEngine(): ChatContextValue {
         const response = await chatClient.fetchChatStream(
           apiMessages,
           tableSchema,
+          contextType,
+          contextId,
         );
 
         await readSSEStream(response.body!, {
@@ -443,7 +470,7 @@ function useChatEngine(): ChatContextValue {
     (datasetId: string) => {
       // Update channel custom data with the selected dataset
       if (channelRef.current) {
-        channelRef.current.updatePartial({ set: { datasetId } }).catch(console.error);
+        channelRef.current.updatePartial({ set: { datasetId, contextType: "dataset", contextId: datasetId } }).catch(console.error);
       }
 
       // Register dataset context
@@ -475,6 +502,7 @@ function useChatEngine(): ChatContextValue {
     registerProjectUpdater,
     registerDatasetId,
     registerProjectId,
+    setContext,
     channel,
     createChannel,
     loadChannel,

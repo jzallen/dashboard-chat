@@ -68,6 +68,7 @@ const mockEntityContext = {
   setEntityType: vi.fn(),
   setEntityId: vi.fn(),
   setTableSchema: vi.fn(),
+  setContext: vi.fn(),
 };
 const mockUseEntityContext = vi.fn(() => mockEntityContext);
 vi.mock("@/stream/useEntityContext", () => ({
@@ -432,9 +433,8 @@ describe("useChatEngine — Stream integration", () => {
     expect(screen.getByTestId("msg-m1").textContent).toBe("user:hello");
     expect(screen.getByTestId("msg-m2").textContent).toBe("assistant:world");
 
-    // Verify dataset context was restored
-    expect(mockEntityContext.setEntityId).toHaveBeenCalledWith("ds-restored");
-    expect(mockEntityContext.setEntityType).toHaveBeenCalledWith("dataset");
+    // Verify dataset context was restored via setContext (legacy fallback path)
+    expect(mockEntityContext.setContext).toHaveBeenCalledWith("dataset", "ds-restored");
   });
 
   it("writeToStream is a no-op when Stream is not ready", async () => {
@@ -446,7 +446,7 @@ describe("useChatEngine — Stream integration", () => {
         start(controller) {
           const encoder = new TextEncoder();
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "content", content: "OK" })}\n\ndata: ${JSON.stringify({ type: "done" })}\n\n`),
+            encoder.encode(`0:"OK"\nd:${JSON.stringify({ finishReason: "stop" })}\n`),
           );
           controller.close();
         },
@@ -503,6 +503,7 @@ describe("useChatEngine — session title, dataset picker, and re-submit", () =>
     mockEntityContext.entityId = null;
     mockEntityContext.setEntityId.mockClear();
     mockEntityContext.setEntityType.mockClear();
+    mockEntityContext.setContext.mockClear();
   });
 
   it("auto-sets channel title from the first submitted message text", async () => {
@@ -617,8 +618,8 @@ describe("useChatEngine — session title, dataset picker, and re-submit", () =>
           const encoder = new TextEncoder();
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ type: "content", content: "Done!" })}\n\n` +
-              `data: ${JSON.stringify({ type: "done" })}\n\n`,
+              `0:"Done!"\n` +
+              `d:${JSON.stringify({ finishReason: "stop" })}\n`,
             ),
           );
           controller.close();
@@ -698,8 +699,8 @@ describe("useChatEngine — navigate-to-table prompt", () => {
 
   it("appends navigation prompt when tool calls returned but no handler registered", async () => {
     // Use a message without table-op keywords to bypass dataset picker detection
-    // but the worker still returns tool_calls in the response
-    const toolCalls = [{ id: "tc1", function: { name: "filter_rows", arguments: '{"col":"a"}' } }];
+    // but the agent still returns tool_calls in the response
+    const toolCalls = [{ toolCallId: "tc1", toolName: "filter_rows", args: { col: "a" } }];
 
     mockFetchChatStream.mockResolvedValue({
       ok: true,
@@ -708,8 +709,8 @@ describe("useChatEngine — navigate-to-table prompt", () => {
           const encoder = new TextEncoder();
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ type: "tool_calls", tool_calls: toolCalls })}\n\n` +
-              `data: ${JSON.stringify({ type: "done" })}\n\n`,
+              `9:${JSON.stringify(toolCalls)}\n` +
+              `d:${JSON.stringify({ finishReason: "tool-calls" })}\n`,
             ),
           );
           controller.close();
@@ -766,7 +767,7 @@ describe("useChatEngine — navigate-to-table prompt", () => {
     // Set entityId so the nav message includes a link
     mockEntityContext.entityId = "ds-42";
 
-    const toolCalls = [{ id: "tc1", function: { name: "sort_rows", arguments: '{}' } }];
+    const toolCalls = [{ toolCallId: "tc1", toolName: "sort_rows", args: {} }];
 
     mockFetchChatStream.mockResolvedValue({
       ok: true,
@@ -775,8 +776,8 @@ describe("useChatEngine — navigate-to-table prompt", () => {
           const encoder = new TextEncoder();
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ type: "tool_calls", tool_calls: toolCalls })}\n\n` +
-              `data: ${JSON.stringify({ type: "done" })}\n\n`,
+              `9:${JSON.stringify(toolCalls)}\n` +
+              `d:${JSON.stringify({ finishReason: "tool-calls" })}\n`,
             ),
           );
           controller.close();

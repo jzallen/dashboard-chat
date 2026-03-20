@@ -10,6 +10,7 @@ import { LogoutPage } from "./src/ui/components/LogoutPage";
 import { ProjectsPage } from "./src/ui/components/OrgView";
 import { SessionList } from "./src/ui/components/SessionList";
 import { TableView } from "./src/ui/components/TableView";
+import { ViewDetailView } from "./src/ui/components/ViewDetailView";
 import { AuthProvider, useAuth } from "./src/ui/context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -39,6 +40,7 @@ function AppRoutes() {
         <Route path="projects/:projectId" element={<ProjectView />} />
         <Route path="projects/:projectId/datasets/:datasetId" element={<ProjectView />} />
         <Route path="table/:datasetId" element={<TableView />} />
+        <Route path="view/:viewId" element={<ViewDetailView />} />
         <Route path="sessions" element={<SessionList />} />
       </Route>
     </Routes>

@@ -19,7 +19,7 @@ ECS Fargate task with 2 containers:
 | Container | Role |
 |-----------|------|
 | `api` | FastAPI backend |
-| `worker` | Hono transform worker |
+| `agent` | Hono chat agent |
 
 Infrastructure:
 - **Database**: Containerized Postgres + EBS gp3 volume (2-10x cheaper than Aurora at small scale)

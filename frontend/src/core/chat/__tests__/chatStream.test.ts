@@ -19,9 +19,9 @@ describe("readSSEStream", () => {
     const onContent = vi.fn();
     const onDone = vi.fn();
     const stream = createStream([
-      'data: {"type":"content","content":"Hello"}',
-      'data: {"type":"content","content":" world"}',
-      'data: {"type":"done"}',
+      '0:"Hello"',
+      '0:" world"',
+      `d:${JSON.stringify({ finishReason: "stop" })}`,
     ]);
 
     await readSSEStream(stream, { onContent, onDone });
@@ -36,21 +36,27 @@ describe("readSSEStream", () => {
     const onContent = vi.fn();
     const onDone = vi.fn();
     const toolCalls = [
-      { id: "tc-1", type: "function", function: { name: "sort", arguments: "{}" } },
+      { toolCallId: "tc-1", toolName: "sort", args: {} },
     ];
     const stream = createStream([
-      'data: ' + JSON.stringify({ type: "tool_calls", tool_calls: toolCalls }),
-      'data: {"type":"done"}',
+      `9:${JSON.stringify(toolCalls)}`,
+      `d:${JSON.stringify({ finishReason: "tool-calls" })}`,
     ]);
 
     await readSSEStream(stream, { onContent, onDone });
 
-    expect(onDone).toHaveBeenCalledWith("", toolCalls);
+    expect(onDone).toHaveBeenCalledWith("", [
+      {
+        id: "tc-1",
+        type: "function",
+        function: { name: "sort", arguments: "{}" },
+      },
+    ]);
   });
 
   it("throws on error events", async () => {
     const stream = createStream([
-      'data: {"type":"error","error":"Rate limited"}',
+      '1:"Rate limited"',
     ]);
 
     await expect(
@@ -58,22 +64,13 @@ describe("readSSEStream", () => {
     ).rejects.toThrow("Rate limited");
   });
 
-  it("uses default error message when none provided", async () => {
-    const stream = createStream(['data: {"type":"error"}']);
-
-    await expect(
-      readSSEStream(stream, { onContent: vi.fn(), onDone: vi.fn() }),
-    ).rejects.toThrow("Stream error");
-  });
-
-  it("ignores non-data lines", async () => {
+  it("ignores unknown prefix lines", async () => {
     const onContent = vi.fn();
     const onDone = vi.fn();
     const stream = createStream([
-      ": comment",
-      "event: message",
-      'data: {"type":"content","content":"Hi"}',
-      'data: {"type":"done"}',
+      "e:{}",
+      '0:"Hi"',
+      `d:${JSON.stringify({ finishReason: "stop" })}`,
     ]);
 
     await readSSEStream(stream, { onContent, onDone });
@@ -82,33 +79,18 @@ describe("readSSEStream", () => {
     expect(onDone).toHaveBeenCalledWith("Hi", []);
   });
 
-  it("skips empty data payloads", async () => {
+  it("skips empty lines", async () => {
     const onContent = vi.fn();
     const onDone = vi.fn();
     const stream = createStream([
-      "data: ",
-      'data: {"type":"content","content":"X"}',
-      'data: {"type":"done"}',
+      "",
+      '0:"X"',
+      `d:${JSON.stringify({ finishReason: "stop" })}`,
     ]);
 
     await readSSEStream(stream, { onContent, onDone });
 
     expect(onContent).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips content events with no content field", async () => {
-    const onContent = vi.fn();
-    const onDone = vi.fn();
-    const stream = createStream([
-      'data: {"type":"content"}',
-      'data: {"type":"content","content":"real"}',
-      'data: {"type":"done"}',
-    ]);
-
-    await readSSEStream(stream, { onContent, onDone });
-
-    expect(onContent).toHaveBeenCalledTimes(1);
-    expect(onContent).toHaveBeenCalledWith("real");
   });
 
   it("handles malformed JSON gracefully", async () => {
@@ -116,9 +98,9 @@ describe("readSSEStream", () => {
     const onContent = vi.fn();
     const onDone = vi.fn();
     const stream = createStream([
-      "data: {not valid json}",
-      'data: {"type":"content","content":"ok"}',
-      'data: {"type":"done"}',
+      "0:{not valid json}",
+      '0:"ok"',
+      `d:${JSON.stringify({ finishReason: "stop" })}`,
     ]);
 
     await readSSEStream(stream, { onContent, onDone });
@@ -134,9 +116,9 @@ describe("readSSEStream", () => {
     const onDone = vi.fn();
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode('data: {"type":"con'));
-        controller.enqueue(encoder.encode('tent","content":"split"}\n'));
-        controller.enqueue(encoder.encode('data: {"type":"done"}\n'));
+        controller.enqueue(encoder.encode('0:"spl'));
+        controller.enqueue(encoder.encode('it"\n'));
+        controller.enqueue(encoder.encode(`d:${JSON.stringify({ finishReason: "stop" })}\n`));
         controller.close();
       },
     });
@@ -149,23 +131,25 @@ describe("readSSEStream", () => {
 
   it("last tool_calls event wins", async () => {
     const onDone = vi.fn();
-    const tc1 = [{ id: "1", type: "function", function: { name: "a", arguments: "{}" } }];
-    const tc2 = [{ id: "2", type: "function", function: { name: "b", arguments: "{}" } }];
+    const tc1 = [{ toolCallId: "1", toolName: "a", args: {} }];
+    const tc2 = [{ toolCallId: "2", toolName: "b", args: {} }];
     const stream = createStream([
-      'data: ' + JSON.stringify({ type: "tool_calls", tool_calls: tc1 }),
-      'data: ' + JSON.stringify({ type: "tool_calls", tool_calls: tc2 }),
-      'data: {"type":"done"}',
+      `9:${JSON.stringify(tc1)}`,
+      `9:${JSON.stringify(tc2)}`,
+      `d:${JSON.stringify({ finishReason: "tool-calls" })}`,
     ]);
 
     await readSSEStream(stream, { onContent: vi.fn(), onDone });
 
-    expect(onDone).toHaveBeenCalledWith("", tc2);
+    expect(onDone).toHaveBeenCalledWith("", [
+      { id: "2", type: "function", function: { name: "b", arguments: "{}" } },
+    ]);
   });
 
   it("does not call onDone when stream ends without done event", async () => {
     const onDone = vi.fn();
     const stream = createStream([
-      'data: {"type":"content","content":"Hi"}',
+      '0:"Hi"',
     ]);
 
     await readSSEStream(stream, { onContent: vi.fn(), onDone });

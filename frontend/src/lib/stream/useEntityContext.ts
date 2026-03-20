@@ -2,15 +2,18 @@ import { useCallback, useRef } from "react";
 
 import type { TableSchema } from "../../ui/types";
 
+export type ContextType = "dataset" | "view" | null;
+
 export interface EntityContextValue {
   projectId: string | null;
-  entityType: "dataset" | null;
+  entityType: ContextType;
   entityId: string | null;
   tableSchema: TableSchema | null;
   setProjectId: (id: string | null) => void;
-  setEntityType: (type: "dataset" | null) => void;
+  setEntityType: (type: ContextType) => void;
   setEntityId: (id: string | null) => void;
   setTableSchema: (schema: TableSchema | null) => void;
+  setContext: (type: ContextType, id: string | null) => void;
 }
 
 /**
@@ -19,7 +22,7 @@ export interface EntityContextValue {
  */
 export function useEntityContext(): EntityContextValue {
   const projectIdRef = useRef<string | null>(null);
-  const entityTypeRef = useRef<"dataset" | null>(null);
+  const entityTypeRef = useRef<ContextType>(null);
   const entityIdRef = useRef<string | null>(null);
   const tableSchemaRef = useRef<TableSchema | null>(null);
 
@@ -27,7 +30,7 @@ export function useEntityContext(): EntityContextValue {
     projectIdRef.current = id;
   }, []);
 
-  const setEntityType = useCallback((type: "dataset" | null) => {
+  const setEntityType = useCallback((type: ContextType) => {
     entityTypeRef.current = type;
   }, []);
 
@@ -39,6 +42,11 @@ export function useEntityContext(): EntityContextValue {
     tableSchemaRef.current = schema;
   }, []);
 
+  const setContext = useCallback((type: ContextType, id: string | null) => {
+    entityTypeRef.current = type;
+    entityIdRef.current = id;
+  }, []);
+
   return {
     get projectId() { return projectIdRef.current; },
     get entityType() { return entityTypeRef.current; },
@@ -48,5 +56,6 @@ export function useEntityContext(): EntityContextValue {
     setEntityType,
     setEntityId,
     setTableSchema,
+    setContext,
   };
 }

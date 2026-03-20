@@ -50,15 +50,15 @@ vitest_bin.vitest_test(
 
 # ─── OCI Image ───────────────────────────────────────────────────────────────
 
-# Bundle worker to a single JS file via esbuild (same pattern as frontend Vite build)
+# Bundle agent to a single JS file via esbuild (same pattern as frontend Vite build)
 genrule(
     name = "dist",
     srcs = [":lib"],
     outs = ["dist.tar"],
     cmd = """
-        cd worker && \
+        cd agent && \
         npx esbuild index.ts --bundle --platform=node --format=esm \
-            --outfile=../$$TMPDIR/app/worker/index.mjs && \
+            --outfile=../$$TMPDIR/app/agent/index.mjs && \
         tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
     """,
     tags = ["no-sandbox", "manual"],
@@ -69,7 +69,7 @@ oci_image(
     base = "@node_20_slim",
     tars = [":dist"],
     workdir = "/app",
-    entrypoint = ["node", "worker/index.mjs"],
+    entrypoint = ["node", "agent/index.mjs"],
     exposed_ports = ["8787"],
     tags = ["manual"],
     visibility = ["//visibility:public"],
@@ -78,7 +78,7 @@ oci_image(
 oci_load(
     name = "image_tar",
     image = ":image",
-    repo_tags = ["dashboard-chat/worker:bazel"],
+    repo_tags = ["dashboard-chat/agent:bazel"],
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

@@ -40,6 +40,10 @@ class ViewRecord(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     sql_definition: Mapped[str] = mapped_column(Text, nullable=False)
     source_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    columns: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    joins: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    filters: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    grain: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     materialization: Mapped[str] = mapped_column(String(20), nullable=False, default="ephemeral")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

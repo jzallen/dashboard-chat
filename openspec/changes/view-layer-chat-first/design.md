@@ -5,11 +5,11 @@ The chat-first UI redesign (completed) established: Stream Chat channels with cu
 This design formalizes the full-stack contracts for the View Layer across five phases:
 1. Backend domain model + SQL generator (no frontend changes)
 2. Frontend unified context model (contextType+contextId replaces datasetId)
-3. Worker tool routing (forks tool set by contextType at request ingestion)
+3. Agent tool routing (forks tool set by contextType at request ingestion)
 4. Frontend ViewDetailView + view tool execution (parallelizable)
 5. dbt export extension (depends only on sql_generator)
 
-**Constraints**: SQLite in dev (no ALTER COLUMN; JSON stored as TEXT). Worker reads tool definitions before any LLM call. Frontend mutations follow read-modify-write against TanStack Query cache (no sub-column endpoints).
+**Constraints**: SQLite in dev (no ALTER COLUMN; JSON stored as TEXT). Agent reads tool definitions before any LLM call. Frontend mutations follow read-modify-write against TanStack Query cache (no sub-column endpoints).
 
 ---
 
@@ -19,7 +19,7 @@ This design formalizes the full-stack contracts for the View Layer across five p
 - Replace raw `sql_definition` as source of truth with structured `columns`/`joins`/`filters`/`grain`
 - Deterministic SQL synthesis from structure — the AI never writes raw SQL
 - Unified context picker surfacing both datasets and views with type badges
-- Worker tool forking by contextType at the HTTP handler level (before first LLM call)
+- Agent tool forking by contextType at the HTTP handler level (before first LLM call)
 - `ViewDetailView` mirroring `TableView` pattern: schema table + SQL preview + inline chat
 - dbt intermediate model export with correct `{{ ref() }}` macro resolution
 - Grain role auto-assignment server-side (not computed in the frontend)
@@ -67,9 +67,9 @@ This design formalizes the full-stack contracts for the View Layer across five p
 
 ---
 
-### D4: Worker forks tool set before any LLM call
+### D4: Agent forks tool set before any LLM call
 
-**Decision**: The first thing the worker does after body parsing is select the tool set: view tools, dataset tools, or conversational-only. No LLM turn is used for routing.
+**Decision**: The first thing the agent does after body parsing is select the tool set: view tools, dataset tools, or conversational-only. No LLM turn is used for routing.
 
 **Rationale**: Using an LLM turn to decide "is this a view operation?" wastes latency and tokens. The client already knows the context type and sends it explicitly. Early forking also ensures the system prompt can be tailored per context type (view guardrail prompts vs. dataset prompts).
 
@@ -133,7 +133,7 @@ This design formalizes the full-stack contracts for the View Layer across five p
 
 1. **Write and review Alembic migration** adding `columns`, `joins`, `filters`, `grain` JSON columns to `view_records` with default `[]`/`null`
 2. **Deploy backend** (migration runs on startup via Alembic auto-apply in dev; explicit `alembic upgrade head` in prod)
-3. **Deploy worker** (contextType routing is backward-compatible: missing contextType → null → conversational only)
+3. **Deploy agent** (contextType routing is backward-compatible: missing contextType → null → conversational only)
 4. **Deploy frontend** (unified context model is backward-compatible: legacy channels continue to work via fallback read)
 5. **Rollback**: If needed, revert frontend deploy (no schema change); revert worker deploy (tool sets unchanged); run `alembic downgrade -1` to drop new JSON columns (no data loss — columns are additive)
 

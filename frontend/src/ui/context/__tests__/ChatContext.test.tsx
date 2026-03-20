@@ -30,6 +30,8 @@ vi.mock("@/chat", async (importOriginal) => {
         async fetchChatStream(
           apiMessages: Array<{ role: string; content: string }>,
           tableSchema: unknown,
+          contextType?: unknown,
+          contextId?: unknown,
         ): Promise<Response> {
           // Import the real withEagerAuth to add auth headers / token refresh
           const { withEagerAuth } = await import("@/auth");
@@ -41,6 +43,8 @@ vi.mock("@/chat", async (importOriginal) => {
           return liveClient.fetchChatStream(
             apiMessages as any,
             tableSchema as any,
+            contextType as any,
+            contextId as any,
           );
         },
       };
@@ -103,20 +107,55 @@ vi.mock("../../../lib/stream/useEntityContext", () => ({
     setEntityType: vi.fn(),
     setEntityId: vi.fn(),
     setTableSchema: vi.fn(),
+    setContext: vi.fn(),
   }),
 }));
 
 // ---- helpers ----
 
-/** Encodes data as SSE `data: ...` lines. */
-function sseLines(
+/**
+ * Converts legacy-style SSE event objects into AI SDK data stream lines.
+ * Supports: content (0:), tool_calls (9:), done (d:), error (1:)
+ */
+function toDataStreamLines(
   events: Array<{ type: string; [k: string]: unknown }>,
 ): string {
-  return events.map((e) => `data: ${JSON.stringify(e)}\n`).join("\n");
+  const lines: string[] = [];
+  let accumulatedContent = "";
+
+  for (const event of events) {
+    switch (event.type) {
+      case "content":
+        accumulatedContent += event.content as string;
+        lines.push(`0:${JSON.stringify(event.content)}`);
+        break;
+      case "tool_calls": {
+        const calls = event.tool_calls as Array<{
+          id: string;
+          function: { name: string; arguments: string };
+        }>;
+        const mapped = calls.map((c) => ({
+          toolCallId: c.id,
+          toolName: c.function.name,
+          args: JSON.parse(c.function.arguments),
+        }));
+        lines.push(`9:${JSON.stringify(mapped)}`);
+        break;
+      }
+      case "done":
+        lines.push(`d:${JSON.stringify({ finishReason: "stop" })}`);
+        break;
+      case "error":
+        lines.push(`1:${JSON.stringify(event.error)}`);
+        break;
+    }
+  }
+
+  return lines.join("\n") + "\n";
 }
 
-/** Creates a ReadableStream from an SSE string. */
-function sseStream(text: string): ReadableStream<Uint8Array> {
+/** Creates a ReadableStream from a string. */
+function dataStream(text: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({
     start(controller) {
@@ -129,7 +168,7 @@ function sseStream(text: string): ReadableStream<Uint8Array> {
 function mockFetchSSE(events: Array<{ type: string; [k: string]: unknown }>) {
   return vi.spyOn(globalThis, "fetch").mockResolvedValue({
     ok: true,
-    body: sseStream(sseLines(events)),
+    body: dataStream(toDataStreamLines(events)),
   } as unknown as Response);
 }
 
@@ -488,8 +527,8 @@ describe("ChatProvider", () => {
         .mockResolvedValueOnce({ ok: false, status: 401 } as Response)
         .mockResolvedValueOnce({
           ok: true,
-          body: sseStream(
-            sseLines([
+          body: dataStream(
+            toDataStreamLines([
               { type: "content", content: "Retried OK" },
               { type: "done" },
             ]),

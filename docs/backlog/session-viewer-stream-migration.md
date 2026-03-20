@@ -1,16 +1,16 @@
-# Session Viewer: Migrate from Worker REST API to Stream Chat SDK
+# Session Viewer: Migrate from Agent REST API to Stream Chat SDK
 
 ## Context
 
-The `SessionList` and `SessionViewer` components (`frontend/src/ui/components/SessionViewer/`) still call the worker's REST API (`/sessions`, `/sessions/:id`) to list and display chat sessions. These endpoints were never implemented — the worker only has `/health` and `/chat` routes. Session persistence was moved to Stream Chat (channels + messages), but the viewer components were never updated to read from Stream.
+The `SessionList` and `SessionViewer` components (`frontend/src/ui/components/SessionViewer/`) still call the agent's REST API (`/sessions`, `/sessions/:id`) to list and display chat sessions. These endpoints were never implemented — the agent only has `/health` and `/chat` routes. Session persistence was moved to Stream Chat (channels + messages), but the viewer components were never updated to read from Stream.
 
 The chat engine (`useChatEngine.tsx`) already writes messages to Stream channels via `writeToStream()` and reads history via `buildApiMessages()`. The `SessionViewer` just needs to use the same Stream SDK instead of the REST client.
 
 ## Current State
 
-- `SessionList.tsx` calls `chatClient.listSessions(datasetId)` → `GET /worker/sessions?dataset_id=...` → 404
-- `SessionViewer/index.tsx` calls `chatClient.getSession(sessionId)` → `GET /worker/sessions/:id` → 404
-- Both create a `chatClient` via `createChatClient(withAuth(fetch))` which targets the worker
+- `SessionList.tsx` calls `chatClient.listSessions(datasetId)` → `GET /agent/sessions?dataset_id=...` → 404
+- `SessionViewer/index.tsx` calls `chatClient.getSession(sessionId)` → `GET /agent/sessions/:id` → 404
+- Both create a `chatClient` via `createChatClient(withAuth(fetch))` which targets the agent
 - Stream Chat is already connected and working (channels are created, messages are persisted)
 
 ## Changes

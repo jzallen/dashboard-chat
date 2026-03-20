@@ -9,9 +9,12 @@ interface ChatInputProps {
   isLoading: boolean;
   datasetName?: string;
   onClearDataset?: () => void;
+  contextType?: "dataset" | "view" | null;
+  contextLabel?: string;
+  onClearContext?: () => void;
 }
 
-export function ChatInput({ input, setInput, onSubmit, isLoading, datasetName, onClearDataset }: ChatInputProps) {
+export function ChatInput({ input, setInput, onSubmit, isLoading, datasetName, onClearDataset, contextType, contextLabel, onClearContext }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustHeight = useCallback(() => {
@@ -56,15 +59,19 @@ export function ChatInput({ input, setInput, onSubmit, isLoading, datasetName, o
           {isLoading ? "..." : "Send"}
         </button>
       </div>
-      {datasetName && (
+      {(datasetName || contextLabel) && (
         <div className={styles.chatInputGutter}>
-          <span className={styles.chatInputDatasetName}>{datasetName}</span>
-          {onClearDataset && (
+          <span className={styles.chatInputDatasetName}>
+            {contextLabel
+              ? `${contextType === "view" ? "View" : "Dataset"} / ${contextLabel}`
+              : datasetName}
+          </span>
+          {(onClearContext || onClearDataset) && (
             <button
               type="button"
               className={styles.chatInputClearDataset}
-              onClick={onClearDataset}
-              title="Clear dataset context"
+              onClick={onClearContext ?? onClearDataset}
+              title="Clear context"
             >
               ×
             </button>

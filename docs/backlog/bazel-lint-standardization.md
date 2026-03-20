@@ -13,7 +13,7 @@ The CI `lint` job installs Node and Python separately, outside the Bazel graph.
 ## Desired State
 
 - `//frontend:lint` — ESLint over frontend sources
-- `//worker:lint` — ESLint over worker sources
+- `//agent:lint` — ESLint over agent sources
 - `//backend:lint` — Ruff check + format check over backend sources
 - All lint targets included in `bazel test //...`
 - CI `lint` job removed; single `test` job covers everything

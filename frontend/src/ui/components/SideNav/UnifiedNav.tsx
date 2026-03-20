@@ -1,7 +1,9 @@
 import {
   ChatBubbleLeftRightIcon,
+  EyeIcon,
   FolderIcon,
   PlusIcon,
+  TableCellsIcon,
 } from "@heroicons/react/24/outline";
 import { type KeyboardEvent, useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -130,6 +132,7 @@ export function UnifiedNav({ orgId, collapsed }: UnifiedNavProps) {
             const data = ch.data as Record<string, unknown> | undefined;
             const rawTitle = (data?.title as string) || null;
             const title = localTitles.get(ch.id) ?? rawTitle;
+            const contextType = (data?.contextType as string) || null;
             const firstMessage = ch.state.messages?.[0]?.text;
             const displayText = title || (firstMessage ? firstMessage.slice(0, 40) : "New session");
             const isActive = pathname === `/chat/${ch.id}`;
@@ -181,6 +184,12 @@ export function UnifiedNav({ orgId, collapsed }: UnifiedNavProps) {
                 title={displayText}
                 data-testid={`recent-session-${ch.id}`}
               >
+                {contextType === "view" && (
+                  <EyeIcon className={styles.navItemIcon} title="View" />
+                )}
+                {contextType === "dataset" && (
+                  <TableCellsIcon className={styles.navItemIcon} title="Dataset" />
+                )}
                 <span className={styles.navItemLabel}>
                   {displayText.length > 40 ? `${displayText.slice(0, 37)}...` : displayText}
                 </span>
