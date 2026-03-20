@@ -1,3 +1,11 @@
+# [1.2.0](https://github.com/jzallen/dashboard-chat/compare/v1.1.0...v1.2.0) (2026-03-20)
+
+
+### Features
+
+* **agent:** rename worker service to agent, adopt Vercel AI SDK ([9298e9b](https://github.com/jzallen/dashboard-chat/commit/9298e9bc832f0a43265d7f28efbd50e4299b2eeb))
+* **view:** view-layer chat-first UI with structured view columns ([6301e65](https://github.com/jzallen/dashboard-chat/commit/6301e65bde1c138e12331f250a359f1f5bd753ab))
+
 # [1.1.0](https://github.com/jzallen/dashboard-chat/compare/v1.0.0...v1.1.0) (2026-03-18)
 
 
