@@ -297,7 +297,7 @@ sh_test(
         "src/**/*.ts",
         "src/**/*.tsx",
     ]),
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "lint"],
     size = "small",
 )
 

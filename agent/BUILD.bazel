@@ -30,7 +30,7 @@ sh_test(
         "package.json",
         "tsconfig.json",
     ] + glob(["**/*.ts"]),
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "lint"],
     size = "small",
 )
 

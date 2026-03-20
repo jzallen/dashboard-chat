@@ -213,7 +213,7 @@ sh_test(
         "app/**/*.py",
         "tests/**/*.py",
     ]),
-    tags = ["no-sandbox"],
+    tags = ["no-sandbox", "lint"],
     size = "small",
 )
 
