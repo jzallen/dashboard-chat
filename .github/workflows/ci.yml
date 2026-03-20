@@ -26,6 +26,11 @@ jobs:
           disk-cache: ${{ github.workflow }}-lint
           repository-cache: true
       - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
       - name: Run lint
         run: bazel test //... --test_tag_filters=lint --nocache_test_results --config=ci
 

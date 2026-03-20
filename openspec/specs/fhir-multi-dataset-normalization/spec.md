@@ -1,10 +1,4 @@
-# FHIR Multi-Dataset Normalization
-
-## Purpose
-
-Defines how the FHIR plugin parses, validates, flattens, and splits FHIR R4 resources into multiple tabular datasets with schema hints and chat guidance.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: FHIR R4 validated parsing
 

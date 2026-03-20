@@ -1,10 +1,4 @@
-# Multi-Dataset Upload
-
-## Purpose
-
-Defines how the upload pipeline creates multiple datasets from a single file upload when a plugin returns `MultiProcessingResult`. Covers the use case logic, upload model extensions, API response shape, and outbox events.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: One upload produces multiple datasets
 

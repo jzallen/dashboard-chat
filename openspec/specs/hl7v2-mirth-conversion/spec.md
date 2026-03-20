@@ -1,10 +1,4 @@
-# HL7v2 Mirth Connect Conversion
-
-## Purpose
-
-Defines the 3-phase HL7v2 upload pipeline: validate MSH segments, convert to FHIR via Mirth Connect, and normalize through the FHIR plugin. Includes Mirth Connect integration, configuration, and dual artifact persistence.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: 3-phase HL7v2 upload pipeline
 
