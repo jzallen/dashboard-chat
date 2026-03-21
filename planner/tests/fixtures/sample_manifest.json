@@ -1,0 +1,96 @@
+{
+  "data_sources": [
+    {
+      "id": "patients",
+      "label": "Patients",
+      "columns": [
+        {"id": "patient_id", "label": "Patient ID", "type": "string"},
+        {"id": "name", "label": "Patient Name", "type": "string"},
+        {"id": "age", "label": "Age", "type": "number"},
+        {"id": "gender", "label": "Gender", "type": "string"},
+        {"id": "admission_date", "label": "Admission Date", "type": "date"},
+        {"id": "is_readmitted", "label": "Readmitted", "type": "boolean"}
+      ]
+    },
+    {
+      "id": "encounters",
+      "label": "Encounters",
+      "columns": [
+        {"id": "encounter_id", "label": "Encounter ID", "type": "string"},
+        {"id": "patient_id", "label": "Patient ID", "type": "string"},
+        {"id": "department", "label": "Department", "type": "string"},
+        {"id": "length_of_stay", "label": "Length of Stay", "type": "number"},
+        {"id": "total_charges", "label": "Total Charges", "type": "number"},
+        {"id": "encounter_date", "label": "Encounter Date", "type": "date"},
+        {"id": "discharge_disposition", "label": "Discharge Disposition", "type": "string"}
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "id": "avg_length_of_stay",
+      "label": "Avg Length of Stay",
+      "expression": "AVG(length_of_stay)",
+      "type": "simple",
+      "format": ".1f"
+    },
+    {
+      "id": "total_charges",
+      "label": "Total Charges",
+      "expression": "SUM(total_charges)",
+      "type": "simple",
+      "format": "$,.0f"
+    },
+    {
+      "id": "readmission_rate",
+      "label": "Readmission Rate",
+      "expression": "AVG(is_readmitted)",
+      "type": "ratio",
+      "format": ".1%"
+    },
+    {
+      "id": "patient_count",
+      "label": "Patient Count",
+      "expression": "COUNT(DISTINCT patient_id)",
+      "type": "simple"
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "department",
+      "label": "Department",
+      "column_id": "department",
+      "type": "categorical",
+      "cardinality": "low"
+    },
+    {
+      "id": "gender",
+      "label": "Gender",
+      "column_id": "gender",
+      "type": "categorical",
+      "cardinality": "low"
+    },
+    {
+      "id": "discharge_disposition",
+      "label": "Discharge Disposition",
+      "column_id": "discharge_disposition",
+      "type": "categorical",
+      "cardinality": "medium"
+    },
+    {
+      "id": "admission_month",
+      "label": "Admission Month",
+      "column_id": "admission_date",
+      "type": "time",
+      "time_granularity": "month"
+    }
+  ],
+  "relationships": [
+    {
+      "from_source": "encounters",
+      "to_source": "patients",
+      "join_key": "patient_id",
+      "type": "many_to_one"
+    }
+  ]
+}

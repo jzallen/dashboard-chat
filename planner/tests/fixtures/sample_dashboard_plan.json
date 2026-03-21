@@ -1,0 +1,127 @@
+{
+  "version": "1.0",
+  "title": "Patient Demographics Dashboard",
+  "description": "Overview of patient demographics, admissions, and key metrics",
+  "data_source_ids": ["patients", "encounters"],
+  "filters": [
+    {
+      "dimension_id": "department",
+      "widget_type": "dropdown",
+      "label": "Department"
+    },
+    {
+      "dimension_id": "gender",
+      "widget_type": "checklist",
+      "label": "Gender"
+    },
+    {
+      "dimension_id": "admission_month",
+      "widget_type": "date_picker",
+      "label": "Admission Period"
+    }
+  ],
+  "sections": [
+    {
+      "id": "kpi_overview",
+      "title": "Key Metrics",
+      "description": "High-level KPI cards",
+      "components": [
+        {
+          "id": "kpi_patient_count",
+          "type": "chart",
+          "spec": {
+            "chart_type": "kpi_card",
+            "title": "Total Patients",
+            "metric_id": "patient_count"
+          }
+        },
+        {
+          "id": "kpi_avg_los",
+          "type": "chart",
+          "spec": {
+            "chart_type": "kpi_card",
+            "title": "Avg Length of Stay",
+            "metric_id": "avg_length_of_stay",
+            "format": ".1f"
+          }
+        },
+        {
+          "id": "kpi_readmission",
+          "type": "chart",
+          "spec": {
+            "chart_type": "kpi_card",
+            "title": "Readmission Rate",
+            "metric_id": "readmission_rate",
+            "format": ".1%"
+          }
+        }
+      ],
+      "grid": [[0, 1, 2]]
+    },
+    {
+      "id": "trends",
+      "title": "Trends & Breakdown",
+      "description": "Time series and categorical breakdown charts",
+      "components": [
+        {
+          "id": "los_trend",
+          "type": "chart",
+          "spec": {
+            "chart_type": "line",
+            "title": "Avg LOS Over Time",
+            "x_axis": "admission_month",
+            "y_axis": "avg_length_of_stay"
+          }
+        },
+        {
+          "id": "dept_charges",
+          "type": "chart",
+          "spec": {
+            "chart_type": "bar",
+            "title": "Total Charges by Department",
+            "x_axis": "department",
+            "y_axis": "total_charges",
+            "color_by": "gender"
+          }
+        },
+        {
+          "id": "disposition_pie",
+          "type": "chart",
+          "spec": {
+            "chart_type": "pie",
+            "title": "Discharge Disposition",
+            "x_axis": "discharge_disposition",
+            "y_axis": "patient_count"
+          }
+        }
+      ],
+      "grid": [[0, 1], [0, 2]]
+    },
+    {
+      "id": "detail_table",
+      "title": "Patient Details",
+      "description": "Tabular view of patient data",
+      "components": [
+        {
+          "id": "summary_text",
+          "type": "text",
+          "spec": {
+            "content": "## Patient Records\nBrowse individual patient encounters below.",
+            "style": "header"
+          }
+        },
+        {
+          "id": "patient_table",
+          "type": "table",
+          "spec": {
+            "title": "Patient Encounters",
+            "columns": ["patient_id", "name", "department", "length_of_stay", "total_charges"],
+            "sortable": true,
+            "page_size": 20
+          }
+        }
+      ],
+      "grid": [[0], [1]]
+    }
+  ]
+}
