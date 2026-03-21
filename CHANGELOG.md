@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/jzallen/dashboard-chat/compare/v1.2.0...v1.3.0) (2026-03-21)
+
+
+### Features
+
+* **planner:** add ui-layout-planner service with multi-agent pipeline ([07e5e3e](https://github.com/jzallen/dashboard-chat/commit/07e5e3e6ca4da218ec4297be4b10ffb27048b318))
+
 # [1.2.0](https://github.com/jzallen/dashboard-chat/compare/v1.1.0...v1.2.0) (2026-03-20)
 
 
