@@ -2,6 +2,7 @@ services:
   # Frontend - nginx serving Vite build
   frontend:
     image: dashboard-chat/frontend:bazel
+    pull_policy: never
     container_name: dashboard-frontend
     ports:
       - "5173:80"
@@ -11,6 +12,7 @@ services:
   # Hono Agent - Chat API
   agent:
     image: dashboard-chat/agent:bazel
+    pull_policy: never
     container_name: dashboard-agent
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
@@ -64,9 +66,8 @@ services:
 
   # Auth Proxy - validates tokens and forwards identity headers
   auth-proxy:
-    build:
-      context: ./auth-proxy
-      dockerfile: Dockerfile
+    image: dashboard-chat/auth-proxy:bazel
+    pull_policy: never
     container_name: dashboard-auth-proxy
     environment:
       AUTH_MODE: ${AUTH_MODE:-dev}
@@ -82,6 +83,7 @@ services:
   # FastAPI backend - works with DuckDB (local) or PostgreSQL (full)
   api:
     image: dashboard-chat/api:bazel
+    pull_policy: never
     container_name: dashboard-api
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////data/app.db}

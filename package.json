@@ -29,6 +29,8 @@
     "lint:agent": "eslint agent/",
     "lint:backend": "cd backend && uv run ruff check . && uv run ruff format --check .",
     "format:backend": "cd backend && uv run ruff format .",
+    "compose:up": "make up",
+    "compose:down": "make down",
     "prepare": "husky"
   },
   "devDependencies": {
