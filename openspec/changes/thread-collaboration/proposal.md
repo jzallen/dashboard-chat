@@ -8,33 +8,33 @@ By adding a visibility/permission layer on top of the sessions model, owners can
 
 ## What Changes
 
-- **Session visibility as a separate table** — A new `session_visibility` table stores non-owner permissions for sessions. Each row grants a specific access level (`read` or `readwrite`) for a session. Sessions with no rows in this table are private (owner-only). This separates the permission concern from the session entity itself, keeping the `sessions` table focused on session identity and ownership.
+- **Session visibility as a separate table** — A new `session_permissions` table stores non-owner permissions for sessions. Each row grants a specific access level (`read` or `readwrite`) for a session. Sessions with no rows in this table are private (owner-only). This separates the permission concern from the session entity itself, keeping the `sessions` table focused on session identity and ownership.
 - **Sharing controls UI** — Session owners can change visibility from the session list or within the session header. A share button or menu exposes the visibility options with clear labels (e.g., "Only me", "Others can view", "Others can edit").
 - **Shared sessions in session list** — The session list shows a "Shared with me" section listing sessions made accessible by other users in the same project. Shared sessions display the owner's name, access level, and last activity.
 - **Stream member management** — When a session is shared, the backend manages Stream thread membership accordingly. For `readwrite` sessions, Stream's built-in message permissions allow all members to send messages. For `read` sessions, the application enforces read-only in the UI and optionally via Stream thread-level permissions.
 - **Real-time collaboration in readwrite sessions** — Multiple users can simultaneously view and send messages in a `readwrite` session. Stream handles message ordering, delivery, and real-time sync. Typing indicators and presence show who else is active in the session.
-- **Permission enforcement** — The backend validates access permissions on session operations. Users cannot load or query sessions they don't have permission to see. The `session_visibility` table is the authoritative source for non-owner access. The frontend hides sessions that have no visibility grant for the current user.
+- **Permission enforcement** — The backend validates access permissions on session operations. Users cannot load or query sessions they don't have permission to see. The `session_permissions` table is the authoritative source for non-owner access. The frontend hides sessions that have no visibility grant for the current user.
 
 ## Capabilities
 
 ### New Capabilities
-- `session-visibility`: A `session_visibility` table stores non-owner access grants per session. Access levels are `read` (can view messages but not send) and `readwrite` (full participation). Sessions with no visibility rows are private to the owner. Only the session owner can create, update, or revoke visibility grants.
+- `session-visibility`: A `session_permissions` table stores non-owner access grants per session. Access levels are `read` (can view messages but not send) and `readwrite` (full participation). Sessions with no visibility rows are private to the owner. Only the session owner can create, update, or revoke visibility grants.
 - `session-sharing-controls`: Session owners can manage visibility via UI controls in the session list and session header. Changes propagate immediately — other users see the session appear in their "Shared with me" section in real time.
 - `shared-session-browsing`: The session list includes a "Shared with me" section showing sessions with visibility grants for the current user. Each entry displays the owner's name, access level badge, and last activity timestamp.
 - `collaborative-sessions`: In `readwrite` sessions, multiple users can send messages, trigger tool calls, and see each other's activity in real time. Stream provides message ordering, delivery guarantees, typing indicators, and presence.
 - `session-permission-enforcement`: The backend enforces access rules on session operations. Private sessions (no visibility rows) are invisible and inaccessible to non-owners. Read sessions allow message retrieval but reject message sends from non-owners. Readwrite sessions allow full participation.
 
 ### Modified Capabilities
-- `session-management`: The `sessions` table is unchanged. Non-owner permissions are managed entirely through the `session_visibility` table, keeping session identity and access control cleanly separated.
+- `session-management`: The `sessions` table is unchanged. Non-owner permissions are managed entirely through the `session_permissions` table, keeping session identity and access control cleanly separated.
 - `stream-chat-display`: Chat UI respects session access level — read-only sessions disable the message input for non-owners. A banner indicates the session's sharing status.
 - `session-lifecycle`: Session freezing interacts with visibility — frozen sessions remain visible to shared users but are read-only for everyone, including the owner.
 
 ## Impact
 
 ### Backend
-- **New**: `session_visibility` table — columns: `id`, `session_id` (FK to sessions), `access_level` (`read`/`readwrite`), `granted_at`, unique constraint on `session_id` (one visibility level per session for the org)
-- **New**: Alembic migration for the `session_visibility` table
-- **New**: Use case `update_session_visibility` — validates ownership, upserts or deletes the visibility row
+- **New**: `session_permissions` table — columns: `id`, `session_id` (FK to sessions), `access_level` (`read`/`readwrite`), `granted_at`, unique constraint on `session_id` (one visibility level per session for the org)
+- **New**: Alembic migration for the `session_permissions` table
+- **New**: Use case `update_session_permissions` — validates ownership, upserts or deletes the visibility row
 - **New**: Use case `list_shared_sessions` — returns sessions with visibility grants for the requesting user within a project
 - **Modified**: `list_sessions` — returns sessions owned by the user plus sessions with visibility grants
 - **Modified**: Session access validation — checks ownership or visibility grant before allowing message retrieval or sends
@@ -51,5 +51,5 @@ By adding a visibility/permission layer on top of the sessions model, owners can
 - **Unchanged**: POST /chat remains stateless. The worker does not enforce session permissions — that is handled by the backend and frontend.
 
 ### Infrastructure
-- **New**: Alembic migration for `session_visibility` table
+- **New**: Alembic migration for `session_permissions` table
 - **Stream configuration**: May need to configure Stream thread-level permissions to enforce read-only for `read` sessions at the platform level (defense in depth beyond UI enforcement)
