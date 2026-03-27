@@ -25,5 +25,6 @@ filegroup(
         "//backend:image_tar",
         "//frontend:image_tar",
         "//agent:image_tar",
+        "//auth-proxy:image_tar",
     ],
 )

@@ -44,7 +44,7 @@ bazel test //frontend:test                       # all 8 frontend test suites
 bazel test //frontend:test_core_auth             # single frontend module
 bazel test //frontend:test_ui_components         # UI component tests only
 bazel test //worker:test                         # worker tests only
-bazel build //:images                            # build all 3 OCI images (frontend, backend, worker)
+bazel build //:images                            # build all 4 OCI images (frontend, backend, agent, auth-proxy)
 bazel test //e2e:e2e --config=e2e                # e2e tests (requires Docker)
 ```
 
@@ -79,9 +79,13 @@ The `.devcontainer/` config installs Node 20, Python 3.11, and all dependencies 
 
 ### Docker Compose
 ```bash
-docker compose up                    # SQLite + MinIO + Redis (default)
-docker compose up --profile full     # PostgreSQL instead of SQLite
+make up                              # Build Bazel OCI images + load + compose up (recommended)
+make up-full                         # Same, with full profile (PostgreSQL + hot-reload)
+make up-force                        # Force-recreate all containers
+make down                            # Stop all services
+docker compose up                    # Manual: works if images are pre-loaded
 ```
+Bazel-built services use `pull_policy: never` — if images aren't loaded, compose fails loudly instead of pulling stale/nonexistent tags.
 
 ### Services & Ports
 | Service  | Port | URL                    |
