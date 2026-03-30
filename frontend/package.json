@@ -13,6 +13,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",
     "@tanstack/react-table": "^8.20.5",
+    "ai": "6.0.141",
     "clsx": "^2.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -32,6 +33,6 @@
     "happy-dom": "^20.0.11",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
-    "vite": "^5.4.11"
+    "vite": "^8.0.3"
   }
 }
