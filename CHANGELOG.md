@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/jzallen/dashboard-chat/compare/v1.3.0...v1.3.1) (2026-03-30)
+
+
+### Bug Fixes
+
+* resolve auth loop, agent 502, upload flow, and dataset preview ([61b7333](https://github.com/jzallen/dashboard-chat/commit/61b733307a21d8f96a3c32df088adcba540a10ff))
+
 # [1.3.0](https://github.com/jzallen/dashboard-chat/compare/v1.2.0...v1.3.0) (2026-03-21)
 
 
