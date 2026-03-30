@@ -1,10 +1,9 @@
-import { useNavigate } from "react-router-dom";
-
 import { useChatContext } from "../../context/ChatContext";
 import type { Message } from "../../types";
 import styles from "./chat.module.css";
 import { DatasetPicker } from "./DatasetPicker";
 import { ProjectPicker } from "./ProjectPicker";
+import { UploadWidget } from "./UploadWidget";
 
 interface MessageBubbleProps {
   message: Message;
@@ -13,8 +12,7 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const isUser = message.role === "user";
-  const { handleDatasetSelected } = useChatContext();
-  const navigate = useNavigate();
+  const { handleDatasetSelected, addMessage } = useChatContext();
 
   return (
     <div className={`${styles.messageRow} ${isUser ? styles.messageRowUser : styles.messageRowAssistant}`}>
@@ -24,7 +22,19 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           <DatasetPicker onSelect={handleDatasetSelected} />
         )}
         {message.widget?.type === "upload" && (
-          <ProjectPicker onSelect={(projectId) => navigate(`/projects/${projectId}`)} />
+          <ProjectPicker
+            onSelect={(projectId) =>
+              addMessage({
+                id: crypto.randomUUID(),
+                role: "assistant",
+                content: "Upload your file below.",
+                widget: { type: "file-upload", projectId },
+              })
+            }
+          />
+        )}
+        {message.widget?.type === "file-upload" && (
+          <UploadWidget projectId={message.widget.projectId} />
         )}
         {message.tool_calls && message.tool_calls.length > 0 && (
           <div className={styles.toolCalls}>

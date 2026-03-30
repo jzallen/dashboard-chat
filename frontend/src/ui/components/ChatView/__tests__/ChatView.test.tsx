@@ -38,6 +38,18 @@ vi.mock("../../../../ui/context/ChatContext", () => ({
   }),
 }));
 
+const { mockListProjects } = vi.hoisted(() => ({
+  mockListProjects: vi.fn(),
+}));
+
+vi.mock("@/dataCatalog", () => ({
+  createDataCatalog: () => ({ listProjects: mockListProjects }),
+}));
+
+vi.mock("@/auth", () => ({
+  withAuth: (f: typeof fetch) => f,
+}));
+
 // --- Tests ---
 
 describe("ChatView", () => {
@@ -49,6 +61,10 @@ describe("ChatView", () => {
     mockCreateChannel.mockResolvedValue({ id: "chat_org1_abc123" });
     mockLoadChannel.mockResolvedValue({ id: "chat_org1_existing" });
     mockAddMessage.mockReset();
+    mockListProjects.mockResolvedValue([
+      { id: "proj-1", name: "Project 1" },
+      { id: "proj-2", name: "Project 2" },
+    ]);
   });
 
   it("renders welcome state when no messages", async () => {
@@ -113,7 +129,7 @@ describe("ChatView", () => {
     });
   });
 
-  it("clicking 'Upload a CSV' appends an upload widget message instead of navigating to /projects", async () => {
+  it("clicking 'Upload a CSV' shows project picker when multiple projects", async () => {
     mockChannelId.current = "ch-1";
     mockChannel.current = { id: "ch-1", data: {} };
 
@@ -125,9 +141,33 @@ describe("ChatView", () => {
 
     fireEvent.click(screen.getByText("Upload a CSV"));
 
-    expect(mockAddMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ widget: { type: "upload" } }),
-    );
+    await waitFor(() => {
+      expect(mockAddMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ widget: { type: "upload" } }),
+      );
+    });
     expect(mockNavigate).not.toHaveBeenCalledWith("/projects");
+  });
+
+  it("clicking 'Upload a CSV' skips picker when single project", async () => {
+    mockChannelId.current = "ch-1";
+    mockChannel.current = { id: "ch-1", data: {} };
+    mockListProjects.mockResolvedValue([{ id: "proj-1", name: "Only Project" }]);
+
+    render(<ChatView />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Upload a CSV")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Upload a CSV"));
+
+    await waitFor(() => {
+      expect(mockAddMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          widget: { type: "file-upload", projectId: "proj-1" },
+        }),
+      );
+    });
   });
 });

@@ -179,6 +179,13 @@ class Dataset:
                 conn = self._get_connection()
             table = conn.read_parquet(self._s3_path(), table_name=table_name)
         except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Failed to read parquet from S3 for dataset %s, falling back to schema",
+                self.name,
+                exc_info=True,
+            )
             table = self._build_table_from_schema(table_name)
 
         # Select columns from schema

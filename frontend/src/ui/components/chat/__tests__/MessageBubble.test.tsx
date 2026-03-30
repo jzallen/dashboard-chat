@@ -5,14 +5,11 @@ import { MessageBubble } from "../MessageBubble";
 
 // --- Mocks ---
 
-const mockNavigate = vi.fn();
-vi.mock("react-router-dom", () => ({
-  useNavigate: () => mockNavigate,
-}));
-
+const mockAddMessage = vi.fn();
 vi.mock("../../../../ui/context/ChatContext", () => ({
   useChatContext: () => ({
     handleDatasetSelected: vi.fn(),
+    addMessage: mockAddMessage,
   }),
 }));
 
@@ -25,6 +22,12 @@ vi.mock("../DatasetPicker", () => ({
 vi.mock("../ProjectPicker", () => ({
   ProjectPicker: ({ onSelect }: { onSelect: (id: string) => void }) => (
     <div data-testid="project-picker-mock" onClick={() => onSelect("proj-1")} />
+  ),
+}));
+
+vi.mock("../UploadWidget", () => ({
+  UploadWidget: ({ projectId }: { projectId: string }) => (
+    <div data-testid="upload-widget-mock">{projectId}</div>
   ),
 }));
 
@@ -63,7 +66,7 @@ describe("MessageBubble", () => {
     expect(screen.getByTestId("project-picker-mock")).toBeInTheDocument();
   });
 
-  it("navigates to project page when project selected from upload widget", () => {
+  it("adds file-upload message when project selected from upload widget", () => {
     const message = {
       id: "1",
       role: "assistant" as const,
@@ -72,6 +75,12 @@ describe("MessageBubble", () => {
     };
     render(<MessageBubble message={message} isStreaming={false} />);
     fireEvent.click(screen.getByTestId("project-picker-mock"));
-    expect(mockNavigate).toHaveBeenCalledWith("/projects/proj-1");
+    expect(mockAddMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "assistant",
+        content: "Upload your file below.",
+        widget: { type: "file-upload", projectId: "proj-1" },
+      }),
+    );
   });
 });

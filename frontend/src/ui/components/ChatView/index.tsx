@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
+
+import { withAuth } from "@/auth";
+import { createDataCatalog } from "@/dataCatalog";
 
 import { useChatContext } from "../../context/ChatContext";
 import type { AppShellContext } from "../AppShell";
 import { ChatInput, MessageList, WelcomeState } from "../chat";
 import styles from "./ChatView.module.css";
+
+const catalog = createDataCatalog(withAuth(fetch));
 
 /** Full-width chat interface. Creates a new session at `/`, resumes at `/chat/:channelId`. */
 export function ChatView() {
@@ -78,6 +83,29 @@ export function ChatView() {
     ? contextId
     : (channelData?.datasetId as string | undefined) ?? undefined;
 
+  const handleUploadCsv = useCallback(async () => {
+    try {
+      const projects = await catalog.listProjects();
+      if (projects.length === 1) {
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Upload your file below.",
+          widget: { type: "file-upload", projectId: projects[0].id },
+        });
+      } else {
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Which project would you like to upload to?",
+          widget: { type: "upload" },
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch projects for upload:", err);
+    }
+  }, [addMessage]);
+
   if (isInitializing && !channel) {
     return <div className={styles.loading}>Starting session...</div>;
   }
@@ -88,14 +116,7 @@ export function ChatView() {
         {messages.length === 0 ? (
           <div className={styles.welcomeArea}>
             <WelcomeState
-              onUploadCsv={() =>
-                addMessage({
-                  id: crypto.randomUUID(),
-                  role: "assistant",
-                  content: "Which project would you like to upload to?",
-                  widget: { type: "upload" },
-                })
-              }
+              onUploadCsv={handleUploadCsv}
               onBrowseProjects={() => navigate("/projects")}
             />
           </div>

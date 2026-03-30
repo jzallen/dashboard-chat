@@ -1,7 +1,10 @@
 import type { ToolCall } from "@/toolCalls";
 export type { SSEMessage, TableSchema } from "@/chat/types";
 
-export type MessageWidget = { type: "upload" } | { type: "dataset-picker" };
+export type MessageWidget =
+  | { type: "upload" }
+  | { type: "dataset-picker" }
+  | { type: "file-upload"; projectId: string };
 
 export interface Message {
   id: string;

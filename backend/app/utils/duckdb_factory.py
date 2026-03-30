@@ -24,11 +24,11 @@ def create_hardened_duckdb_connection(
     1. Create in-memory connection
     2. Install/load httpfs extension
     3. Configure S3/MinIO endpoint (if requested, via settings or custom hook)
-    4. Set enable_external_access = false
-    5. Set allow_community_extensions = false
+    4. Set allow_community_extensions = false
 
-    After step 4, no further filesystem/network access is possible
-    except through the already-configured S3 endpoint.
+    S3/MinIO access remains available after setup. SQL injection is
+    guarded by input validation (identifier quoting, AST-based SQL
+    validation) rather than blanket external access lockdown.
 
     Args:
         configure_s3: If True, configure S3 from application settings.
@@ -64,9 +64,8 @@ def create_hardened_duckdb_connection(
             region = (settings.s3_region or "").replace("'", "''")
             conn.raw_sql(f"SET s3_region='{region}';")
 
-    # Lock down: disable external access and community extensions.
-    # These settings are irreversible per-session (DuckDB security feature).
-    conn.raw_sql("SET enable_external_access = false;")
+    # Disable community extensions to prevent loading untrusted code.
+    # This setting is irreversible per-session (DuckDB security feature).
     conn.raw_sql("SET allow_community_extensions = false;")
 
     return conn

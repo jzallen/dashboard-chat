@@ -158,3 +158,68 @@
 .pickerEmpty {
   @apply text-sm text-gray-400 py-2;
 }
+
+/* UploadWidget */
+.uploadWidget {
+  @apply mt-2 text-sm;
+}
+
+.uploadHiddenInput {
+  display: none;
+}
+
+.uploadBrowseButton {
+  @apply px-3 py-2 text-sm font-medium rounded-md border border-gray-300 text-gray-700;
+  @apply hover:bg-white hover:shadow-sm transition-all cursor-pointer;
+}
+
+.uploadSelected {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.uploadFileName {
+  @apply font-medium text-gray-800;
+}
+
+.uploadFileSize {
+  @apply text-gray-400 text-xs;
+}
+
+.uploadActions {
+  @apply flex gap-2 ml-auto;
+}
+
+.uploadSendButton {
+  @apply px-3 py-1 text-sm text-white rounded-md font-medium;
+  background-color: #2563eb;
+}
+
+.uploadSendButton:hover {
+  background-color: #1d4ed8;
+}
+
+.uploadRemoveButton {
+  @apply px-3 py-1 text-sm text-gray-500 rounded-md;
+  @apply hover:text-gray-700 cursor-pointer;
+}
+
+.uploadUploading {
+  @apply flex items-center gap-2 text-gray-500;
+}
+
+.uploadSpinner {
+  @apply inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin;
+}
+
+.uploadUploaded {
+  @apply text-green-700;
+}
+
+.uploadError {
+  @apply flex items-center gap-2 text-red-600;
+}
+
+.uploadRetryButton {
+  @apply px-2 py-1 text-xs text-red-600 border border-red-300 rounded;
+  @apply hover:bg-red-50 cursor-pointer;
+}

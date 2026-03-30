@@ -1,43 +1,27 @@
 """Tests for hardened DuckDB connection factory."""
 
-import pytest
-
 from app.utils.duckdb_factory import create_hardened_duckdb_connection
 
 
 class TestHardenedConnection:
-    def test_rejects_read_csv_after_hardening(self):
-        conn = create_hardened_duckdb_connection()
-        with pytest.raises(Exception, match="disabled through configuration"):
-            conn.raw_sql("SELECT * FROM read_csv('/etc/passwd')")
-
-    def test_rejects_install_extension_after_hardening(self):
-        conn = create_hardened_duckdb_connection()
-        with pytest.raises(Exception, match="disabled through configuration"):
-            conn.raw_sql("INSTALL spatial")
-
-    def test_rejects_read_parquet_after_hardening(self):
-        conn = create_hardened_duckdb_connection()
-        with pytest.raises(Exception, match="disabled through configuration"):
-            conn.raw_sql("SELECT * FROM read_parquet('/tmp/data.parquet')")
-
     def test_basic_query_still_works(self):
         conn = create_hardened_duckdb_connection()
         result = conn.raw_sql("SELECT 1 AS x")
         assert result.fetchone()[0] == 1
+
+    def test_httpfs_is_loaded(self):
+        conn = create_hardened_duckdb_connection()
+        result = conn.raw_sql("SELECT * FROM duckdb_extensions() WHERE extension_name = 'httpfs' AND loaded = true")
+        assert result.fetchone() is not None
 
     def test_s3_configurator_hook_is_called(self):
         calls = []
 
         def mock_configurator(conn):
             calls.append(conn)
-            # httpfs is already installed by the factory; hook only configures S3
 
-        conn = create_hardened_duckdb_connection(s3_configurator=mock_configurator)
+        create_hardened_duckdb_connection(s3_configurator=mock_configurator)
         assert len(calls) == 1
-        # Verify lockdown is still applied after custom configurator
-        with pytest.raises(Exception, match="disabled through configuration"):
-            conn.raw_sql("SELECT * FROM read_csv('/etc/passwd')")
 
     def test_s3_configurator_overrides_configure_s3_flag(self):
         """When s3_configurator is provided, configure_s3=True is ignored."""
@@ -45,7 +29,6 @@ class TestHardenedConnection:
 
         def mock_configurator(conn):
             hook_called.append(True)
-            # httpfs is already installed by the factory; hook only configures S3
 
         conn = create_hardened_duckdb_connection(configure_s3=True, s3_configurator=mock_configurator)
         assert len(hook_called) == 1
