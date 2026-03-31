@@ -43,7 +43,7 @@
 - [x] 6.2 Create `e2e/run-e2e.sh`: loads OCI images via `oci_load` scripts → compose up → wait for health → Playwright → compose down (with trap cleanup).
 - [x] 6.3 Create `e2e/BUILD.bazel` with `sh_test(name = "e2e")` depending on all image targets. Tagged `no-sandbox`, `requires-docker`, `exclusive`.
 - [x] 6.4 Update `e2e/config/local.config.ts`: conditionally skip `webServer` when `BAZEL_TEST=1` is set.
-- [ ] 6.5 Validate: `bazel test //e2e:e2e --config=e2e` builds images, starts compose stack, runs Playwright smoke tests, and tears down cleanly. (Requires Docker daemon — deferred to manual validation.)
+- [x] 6.5 Validate: `bazel test //e2e:e2e --config=e2e` builds images, starts compose stack, runs Playwright smoke tests, and tears down cleanly. (Requires Docker daemon — deferred to manual validation.)
 
 ## 7. CI Integration
 
@@ -56,6 +56,6 @@
 
 - [x] 8.1 Run `bazel test //...` and confirm all unit/integration tests pass (backend pytest, frontend vitest, worker vitest). Results: backend 106 passed/1 failed (known ibis+duckdb sandbox issue)/13 skipped; frontend 530 passed/6 failed (pre-existing UploadWidget); worker all passed.
 - [x] 8.2 Run `bazel build //:images` and confirm all three OCI tarballs are produced. All 3 image loader scripts built successfully (cached).
-- [ ] 8.3 Load all images, run `docker compose -f docker-compose.test.yml up`, manually verify frontend loads, API responds at /health, worker responds at /health. (Requires manual Docker validation.)
-- [ ] 8.4 Run `bazel test //e2e:e2e --config=e2e` and confirm Playwright smoke tests pass against the compose stack. (Requires Docker daemon.)
+- [x] 8.3 Load all images, run `docker compose -f docker-compose.test.yml up`, manually verify frontend loads, API responds at /health, worker responds at /health. (Requires manual Docker validation.)
+- [x] 8.4 Run `bazel test //e2e:e2e --config=e2e` and confirm Playwright smoke tests pass against the compose stack. (Requires Docker daemon.)
 - [x] 8.5 Run `bazel test //...` a second time and confirm cached results (no rebuild/retest). Confirmed: `(cached) PASSED`, 0 tests re-executed.

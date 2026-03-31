@@ -52,5 +52,5 @@
 
 ## 8. Validation
 
-- [ ] 8.1 Run full e2e suite locally (`npm run test:e2e:local`) and verify all tests pass
-- [ ] 8.2 Verify each new spec can run in isolation (`npx playwright test <file>`)
+- [x] 8.1 Run full e2e suite locally (`npm run test:e2e:local`) and verify all tests pass
+- [x] 8.2 Verify each new spec can run in isolation (`npx playwright test <file>`)

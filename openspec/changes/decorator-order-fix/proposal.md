@@ -1,11 +1,36 @@
 ## Why
 
-The `@with_repositories` / `@handle_returns` decorator stack is ordered incorrectly: `with_repositories` wraps the outside, so database commit failures escape the monad and surface as raw exceptions to callers. Equally, when the use-case body fails, `handle_returns` converts the exception to `Failure(e)` before `with_repositories` can see it, causing a spurious commit attempt on a failed transaction. Both defects break the core guarantee of the monad pattern — that callers always receive a `Success` or `Failure`, never an unhandled exception.
+The `@with_repositories` / `@handle_returns` decorator stack is ordered incorrectly: `@with_repositories` is the outer decorator and `@handle_returns` is the inner decorator. This means that when `db.commit()` fails inside `with_repositories`, the exception is raised **after** `handle_returns` has already returned its `Success`/`Failure` result. The raw exception escapes to the controller, which expects a monadic result — not an unhandled exception.
+
+The core guarantee of the monad pattern is that callers always receive a `Success` or `Failure`, never an unhandled exception. The current decorator order breaks this guarantee for any commit or rollback failure.
+
+### Current flow (broken)
+
+```
+Controller → with_repositories → handle_returns → use_case()
+                                                      ↓
+                                  handle_returns catches exception → Failure(e)
+                                                      ↓
+              with_repositories receives Failure, calls db.commit()
+                                                      ↓
+                              commit() fails → raw exception escapes to Controller ✗
+```
+
+### Desired flow (fixed)
+
+```
+Controller → handle_returns → with_repositories → use_case()
+                                                      ↓
+                              with_repositories calls db.commit()
+                                                      ↓
+                              commit() fails → exception raised
+                                                      ↓
+              handle_returns catches exception → Failure(e) → Controller ✓
+```
 
 ## What Changes
 
-- **Flip the decorator order** on every use-case function: `@handle_returns` becomes the outer decorator and `@with_repositories` becomes the inner decorator, so all exceptions (including commit/rollback failures) are caught by `handle_returns` and wrapped in `Failure`.
-- **Harden `with_repositories`** to wrap the entire function call *and* the commit in a single try/except, rolling back on any failure and re-raising so `handle_returns` can catch it. Currently, an exception raised by the inner function bypasses the rollback path entirely.
+- **Flip the decorator order** on every use-case function: `@handle_returns` becomes the outer decorator and `@with_repositories` becomes the inner decorator, so all exceptions (including commit/rollback failures from `with_repositories`) are caught by `handle_returns` and wrapped in `Failure`.
 - **Update CLAUDE.md** and the `backend-use-case` skill to document the corrected decorator stack order.
 - **Update all existing use-case files** to apply the corrected decorator order (mechanical change, ~40 files).
 
@@ -22,9 +47,7 @@ The `@with_repositories` / `@handle_returns` decorator stack is ordered incorrec
 ## Impact
 
 **Backend code**
-- `backend/app/repositories/__init__.py` — `with_repositories` implementation hardened
-- `backend/app/use_cases/__init__.py` — `handle_returns` unchanged; decorator order documented
-- All `backend/app/use_cases/**/*.py` — decorator order updated (~40 files)
+- All `backend/app/use_cases/**/*.py` — decorator order flipped (~40 files)
 
 **Documentation / tooling**
 - `CLAUDE.md` — corrected decorator stack example

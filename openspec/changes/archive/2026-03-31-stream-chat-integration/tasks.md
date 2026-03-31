@@ -102,4 +102,4 @@
 - [x] 12.3 Write frontend tests for `OperationsLog` — filters tool calls from channel messages, dedup with SSE-delivered tool calls
 - [x] 12.4 Verify existing Worker tests pass (POST /chat handler unchanged)
 - [x] 12.5 Verify existing backend tests pass (no backend changes beyond stream token endpoint)
-- [ ] 12.6 Manual E2E: send chat message → see in Stream MessageList → refresh page → see history → tool call appears in operations log → switch session → history updates
+- [x] 12.6 Manual E2E: send chat message → see in Stream MessageList → refresh page → see history → tool call appears in operations log → switch session → history updates
