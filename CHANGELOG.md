@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/jzallen/dashboard-chat/compare/v1.3.1...v1.4.0) (2026-03-31)
+
+
+### Features
+
+* **openspec:** add query-engine change proposal ([9ead1f1](https://github.com/jzallen/dashboard-chat/commit/9ead1f195342a20462ad1d437520ffc6b1cd36d6))
+
 ## [1.3.1](https://github.com/jzallen/dashboard-chat/compare/v1.3.0...v1.3.1) (2026-03-30)
 
 
