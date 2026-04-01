@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/jzallen/dashboard-chat/compare/v1.4.0...v1.4.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* pin axios to 1.13.6 to mitigate supply-chain attack ([35a5be4](https://github.com/jzallen/dashboard-chat/commit/35a5be43b07d12222293c3ebf2a0c8a8f395b2fe))
+
 # [1.4.0](https://github.com/jzallen/dashboard-chat/compare/v1.3.1...v1.4.0) (2026-03-31)
 
 
