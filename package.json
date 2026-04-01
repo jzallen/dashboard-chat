@@ -58,6 +58,10 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0"
   },
+  "//overrides": "axios pinned due to supply-chain attack on 1.14.1/0.30.4 (2026-03-31). See https://github.com/axios/axios/issues/10604",
+  "overrides": {
+    "axios": "1.13.6"
+  },
   "pnpm": {
     "onlyBuiltDependencies": []
   }
