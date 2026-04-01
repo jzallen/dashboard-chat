@@ -1,5 +1,11 @@
 export const CASE_OPERATIONS = ["upper", "lower", "title", "snake", "kebab"] as const;
 
+/** A request emitted by the agent via the `r:` SSE prefix, asking the frontend to fulfill it. */
+export interface AgentRequest {
+  type: string;
+  params: Record<string, unknown>;
+}
+
 export interface ToolCall {
   id: string;
   type: "function";

@@ -42,3 +42,17 @@ export const sqlAccessKeys = {
   detail: (projectId: string) => ["sql-access", projectId] as const,
   status: (projectId: string) => ["sql-access", projectId, "status"] as const,
 };
+
+/** TanStack Query key factory for project memory queries. */
+export const memoryKeys = {
+  all: ["memories"] as const,
+  detail: (projectId: string) => ["memories", projectId] as const,
+};
+
+/** TanStack Query key factory for session queries. */
+export const sessionKeys = {
+  all: ["sessions"] as const,
+  lists: () => [...sessionKeys.all, "list"] as const,
+  list: (projectId: string) => [...sessionKeys.lists(), projectId] as const,
+  detail: (sessionId: string) => [...sessionKeys.all, sessionId] as const,
+};

@@ -16,7 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
 from ..exceptions import OutboxRepositoryError
-from .events import OutboxEvent, TransformsCreated, TransformsUpdated, UploadFileReceived, to_event
+from .events import OutboxEvent, ProjectCreated, TransformsCreated, TransformsUpdated, UploadFileReceived, to_event
 from .outbox_record import OutboxRecord
 
 if TYPE_CHECKING:
@@ -112,6 +112,54 @@ class OutboxRepository:
             aggregate_id=dataset_id,
             event=event,
         )
+
+    @handle_repository_exceptions
+    async def submit_project_created_event(
+        self,
+        project_id: str,
+        org_id: str,
+        created_by: str,
+    ) -> OutboxRecord:
+        event = ProjectCreated(
+            project_id=project_id,
+            org_id=org_id,
+            created_by=created_by,
+        )
+        return await self._append_event(
+            aggregate_type="project",
+            aggregate_id=project_id,
+            event=event,
+        )
+
+    @handle_repository_exceptions
+    async def get_pending_event(
+        self,
+        aggregate_type: str,
+        aggregate_id: str,
+        event_type: str,
+    ) -> OutboxRecord | None:
+        """Fetch the most recent unprocessed event matching the criteria.
+
+        Args:
+            aggregate_type: Type of aggregate (e.g., "project")
+            aggregate_id: ID of the aggregate instance
+            event_type: Event class name (e.g., "ProjectCreated")
+
+        Returns:
+            OutboxRecord if found, None otherwise
+        """
+        result = await self._session.execute(
+            select(OutboxRecord)
+            .where(
+                OutboxRecord.aggregate_type == aggregate_type,
+                OutboxRecord.aggregate_id == aggregate_id,
+                OutboxRecord.event_type == event_type,
+                OutboxRecord.processed == False,
+            )
+            .order_by(OutboxRecord.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     @handle_repository_exceptions
     async def get_file_received_event_by_id(self, record_id: str) -> OutboxEvent | None:

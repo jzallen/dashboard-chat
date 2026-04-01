@@ -16,3 +16,11 @@ export async function sessionHash(orgId: string, userId: string): Promise<string
     .join("");
   return hex.slice(0, 8);
 }
+
+/**
+ * Generate a project-scoped memory channel ID.
+ * Format: proj_{compactOrgId}_{compactProjectId}
+ */
+export function memoryChannelId(orgId: string, projectId: string): string {
+  return `proj_${compactId(orgId)}_${compactId(projectId)}`;
+}

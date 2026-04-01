@@ -21,7 +21,10 @@ async def create_project(
     *,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
-    """Create a new project.
+    """Create a new project and emit a ProjectCreated outbox event.
+
+    Memory provisioning is handled when the first session is created,
+    triggered by the outbox event consumer.
 
     Args:
         name: The project name.
@@ -32,6 +35,18 @@ async def create_project(
         Success with created project dict, or Failure with error message.
     """
     metadata_repo = repositories.metadata
-    return await metadata_repo.create_project(
+    outbox_repo = repositories.outbox
+
+    project = await metadata_repo.create_project(
         name=name, description=description, org_id=user.org_id, created_by=user.id
     )
+
+    # Emit ProjectCreated outbox event — memory provisioning happens
+    # when the outbox dispatcher processes this event.
+    await outbox_repo.submit_project_created_event(
+        project_id=project["id"],
+        org_id=user.org_id,
+        created_by=user.id,
+    )
+
+    return project

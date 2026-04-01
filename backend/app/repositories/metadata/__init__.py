@@ -8,8 +8,10 @@ from typing import Any, Protocol
 from .dataset_record import DatasetRecord as DatasetRecord
 from .external_access_record import ExternalAccessRecord as ExternalAccessRecord
 from .organization_record import OrganizationRecord as OrganizationRecord
+from .project_memory_record import ProjectMemoryRecord as ProjectMemoryRecord
 from .project_record import ProjectRecord as ProjectRecord
 from .report_record import ReportRecord as ReportRecord
+from .session_record import SessionRecord as SessionRecord
 from .transform_record import TransformRecord as TransformRecord
 from .view_record import ViewRecord as ViewRecord
 

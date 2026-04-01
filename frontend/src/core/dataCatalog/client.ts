@@ -12,6 +12,7 @@ import type {
 } from "./datasets";
 import type { Project } from "./projects";
 import type { Report, ReportCreate, ReportUpdate } from "./reports";
+import type { ProjectMemory, Session, SessionsPage } from "./sessions";
 import type { EnvironmentStatusResponse, SqlAccessStatus } from "./sqlAccess";
 import type { View, ViewCreate, ViewUpdate } from "./views";
 
@@ -263,6 +264,62 @@ export function createDataCatalog(fetchFn: typeof fetch = fetch) {
     ): Promise<EnvironmentStatusResponse> {
       return client.get<EnvironmentStatusResponse>(
         `/api/projects/${projectId}/sql-access/environment/status`,
+      );
+    },
+
+    // Memory
+    getProjectMemory(projectId: string): Promise<ProjectMemory> {
+      return client.get<ProjectMemory>(`/api/projects/${projectId}/memory`);
+    },
+
+    // Sessions
+    createSession(projectId: string): Promise<Session> {
+      return client.post<Session>(`/api/projects/${projectId}/sessions`, {});
+    },
+
+    async listSessions(
+      projectId: string,
+      options?: { after?: string; size?: number },
+    ): Promise<SessionsPage> {
+      const params = new URLSearchParams();
+      if (options?.after) params.append("page[after]", options.after);
+      if (options?.size) params.append("page[size]", String(options.size));
+      const query = params.toString() ? `?${params.toString()}` : "";
+      // Backend returns JSON:API envelope — unwrap into flat SessionsPage shape
+      const response = await client.fetch(`/api/projects/${projectId}/sessions${query}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to list sessions: ${response.status} ${errorText}`);
+      }
+      const json = await response.json();
+      // Flatten JSON:API resource objects {type, id, attributes} → flat Session objects
+      const data = (json.data ?? []).map(
+        (resource: { id: string; attributes: Record<string, unknown> }) => ({
+          id: resource.id,
+          ...resource.attributes,
+        }),
+      );
+      const has_more = json.meta?.page?.has_more ?? false;
+      // Extract cursor from links.next URL param, or null
+      let next_cursor: string | null = null;
+      if (json.links?.next) {
+        const nextUrl = new URL(json.links.next, window.location.origin);
+        next_cursor = nextUrl.searchParams.get("page[after]");
+      }
+      return { data, meta: { next_cursor, has_more } } as SessionsPage;
+    },
+
+    updateSession(
+      projectId: string,
+      sessionId: string,
+      data: { title: string },
+    ): Promise<Session> {
+      return client.patch<Session>(
+        `/api/projects/${projectId}/sessions/${sessionId}`,
+        data,
       );
     },
 

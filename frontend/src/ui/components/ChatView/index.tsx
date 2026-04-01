@@ -14,7 +14,7 @@ const catalog = createDataCatalog(withAuth(fetch));
 /** Full-width chat interface. Creates a new session at `/`, resumes at `/chat/:channelId`. */
 export function ChatView() {
   const { channelId } = useParams<{ channelId?: string }>();
-  const { orgId } = useOutletContext<AppShellContext>();
+  const { orgId, projects } = useOutletContext<AppShellContext>();
   const navigate = useNavigate();
 
   const {
@@ -25,6 +25,9 @@ export function ChatView() {
     handleSubmit,
     chatEndRef,
     channel,
+    session,
+    createSession,
+    loadSession,
     createChannel,
     loadChannel,
     addMessage,
@@ -34,6 +37,9 @@ export function ChatView() {
   const [isInitializing, setIsInitializing] = useState(true);
   const initRef = useRef(false);
   const prevChannelIdRef = useRef(channelId);
+
+  // Determine the default project for new sessions
+  const defaultProjectId = projects?.[0]?.id;
 
   // Reset init guard when channelId changes (e.g. navigating from /chat/abc to /)
   if (prevChannelIdRef.current !== channelId) {
@@ -51,12 +57,29 @@ export function ChatView() {
     async function init() {
       try {
         if (channelId) {
-          // Resume existing session
-          if (channel?.id !== channelId) {
+          // Resume existing session — try backend session first, fall back to legacy channel
+          if (defaultProjectId) {
+            try {
+              if (session?.id !== channelId) {
+                await loadSession(defaultProjectId, channelId);
+              }
+            } catch {
+              // Fall back to legacy channel loading
+              if (channel?.id !== channelId) {
+                await loadChannel(channelId);
+              }
+            }
+          } else if (channel?.id !== channelId) {
             await loadChannel(channelId);
           }
+        } else if (defaultProjectId) {
+          // Create new session via backend API
+          const newSession = await createSession(defaultProjectId);
+          if (!cancelled) {
+            navigate(`/chat/${newSession.id}`, { replace: true });
+          }
         } else if (orgId) {
-          // Create new session and redirect
+          // Fallback: create legacy channel
           const ch = await createChannel(orgId);
           if (!cancelled) {
             navigate(`/chat/${ch.id}`, { replace: true });
@@ -72,7 +95,7 @@ export function ChatView() {
     return () => {
       cancelled = true;
     };
-  }, [channelId, orgId, channel, createChannel, loadChannel, navigate]);
+  }, [channelId, orgId, defaultProjectId, channel, session, createSession, loadSession, createChannel, loadChannel, navigate]);
 
   // Resolve context from channel custom data (with legacy fallback)
   const channelData = channel?.data as Record<string, unknown> | undefined;
@@ -85,13 +108,13 @@ export function ChatView() {
 
   const handleUploadCsv = useCallback(async () => {
     try {
-      const projects = await catalog.listProjects();
-      if (projects.length === 1) {
+      const projectList = await catalog.listProjects();
+      if (projectList.length === 1) {
         addMessage({
           id: crypto.randomUUID(),
           role: "assistant",
           content: "Upload your file below.",
-          widget: { type: "file-upload", projectId: projects[0].id },
+          widget: { type: "file-upload", projectId: projectList[0].id },
         });
       } else {
         addMessage({
@@ -106,7 +129,7 @@ export function ChatView() {
     }
   }, [addMessage]);
 
-  if (isInitializing && !channel) {
+  if (isInitializing && !channel && !session) {
     return <div className={styles.loading}>Starting session...</div>;
   }
 

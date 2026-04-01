@@ -20,6 +20,10 @@ export function createChatClient(fetchFn: typeof fetch = fetch) {
       tableSchema: TableSchema | null,
       contextType?: "dataset" | "view" | null,
       contextId?: string | null,
+      options?: {
+        thread_id?: string | null;
+        project_id?: string | null;
+      },
     ): Promise<Response> {
       const response = await fetchFn(`${CHAT_BASE_URL}/chat`, {
         method: "POST",
@@ -30,6 +34,8 @@ export function createChatClient(fetchFn: typeof fetch = fetch) {
           tableSchema,
           contextType: contextType ?? null,
           contextId: contextId ?? null,
+          ...(options?.thread_id ? { thread_id: options.thread_id } : {}),
+          ...(options?.project_id ? { project_id: options.project_id } : {}),
         }),
       });
 

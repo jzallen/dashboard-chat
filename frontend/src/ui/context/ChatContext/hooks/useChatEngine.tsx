@@ -13,15 +13,16 @@ import {
 } from "react";
 import type { Channel as StreamChannel } from "stream-chat";
 
-import { withEagerAuth } from "@/auth";
+import { withAuth, withEagerAuth } from "@/auth";
 import { createChatClient } from "@/chat";
+import type { AgentRequest } from "@/chat/services/chatStream";
 import { readSSEStream } from "@/chat/services/chatStream";
+import { fulfillAgentRequest } from "@/chat/services/fulfillRequest";
 import { executeToolCalls, type ToolHandler } from "@/chat/services/toolExecution";
-import type { Dataset } from "@/dataCatalog";
+import { createDataCatalog, type Dataset, type Session } from "@/dataCatalog";
 
 export type { ToolHandler };
 
-import { compactId, sessionHash } from "@/stream/channelId";
 import { useStreamContext } from "@/stream/StreamProvider";
 import { useEntityContext } from "@/stream/useEntityContext";
 import { useSSEOverlay } from "@/stream/useSSEOverlay";
@@ -30,6 +31,7 @@ import { getErrorMessage } from "../../../../lib/errors";
 import type { Message, TableSchema } from "../../../types";
 
 const chatClient = createChatClient(withEagerAuth(fetch));
+const catalog = createDataCatalog(withAuth(fetch));
 
 /** Values exposed by ChatContext to consumers via useChatContext. */
 interface ChatContextValue {
@@ -53,7 +55,12 @@ interface ChatContextValue {
   registerProjectId: (projectId: string | null) => void;
   setContext: (type: "dataset" | "view" | null, id: string | null) => void;
   channel: StreamChannel | null;
+  session: Session | null;
+  createSession: (projectId: string) => Promise<Session>;
+  loadSession: (projectId: string, sessionId: string) => Promise<Session>;
+  /** @deprecated Use createSession/loadSession instead */
   createChannel: (orgId: string) => Promise<StreamChannel>;
+  /** @deprecated Use createSession/loadSession instead */
   loadChannel: (channelId: string) => Promise<StreamChannel>;
   setTitle: (title: string) => void;
   resetSession: () => void;
@@ -92,14 +99,17 @@ function useChatEngine(): ChatContextValue {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [channel, setChannel] = useState<StreamChannel | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null!);
   const inputRef = useRef<HTMLInputElement>(null!);
   const toolHandlerRef = useRef<ToolHandler | null>(null);
   const projectUpdaterRef = useRef<((dataset: Dataset) => void) | null>(null);
   const channelRef = useRef<StreamChannel | null>(null);
+  const sessionRef = useRef<Session | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const pendingCommandRef = useRef<string | null>(null);
+  const projectIdRef = useRef<string | null>(null);
 
   // W3 fix: entity context tracks project, dataset, and table schema independently
   const entityContext = useEntityContext();
@@ -109,6 +119,7 @@ function useChatEngine(): ChatContextValue {
 
   // Keep refs in sync with state for use in stable callbacks
   channelRef.current = channel;
+  sessionRef.current = session;
   messagesRef.current = messages;
 
   useEffect(() => {
@@ -173,12 +184,87 @@ function useChatEngine(): ChatContextValue {
 
   const registerProjectId = useCallback((id: string | null) => {
     entityContext.setProjectId(id);
+    projectIdRef.current = id;
   }, [entityContext]);
 
+  /** Create a session via the backend API, then watch the Stream thread. */
+  const createSessionFn = useCallback(
+    async (projectId: string): Promise<Session> => {
+      const newSession = await catalog.createSession(projectId);
+
+      // Watch the Stream thread if the client is available
+      if (streamClient && newSession.stream_thread_id) {
+        try {
+          const memory = await catalog.getProjectMemory(projectId);
+          const ch = streamClient.channel("messaging", memory.stream_channel_id);
+          await ch.watch();
+          setChannel(ch);
+        } catch (err) {
+          console.error("Failed to watch memory channel:", err);
+        }
+      }
+
+      setSession(newSession);
+      setMessages([]);
+      projectIdRef.current = projectId;
+      return newSession;
+    },
+    [streamClient],
+  );
+
+  /** Load an existing session by fetching its thread from Stream. */
+  const loadSessionFn = useCallback(
+    async (projectId: string, sessionId: string): Promise<Session> => {
+      // Fetch sessions list to find the session metadata
+      const sessionsPage = await catalog.listSessions(projectId, { size: 100 });
+      const sessionData = sessionsPage.data.find((s) => s.id === sessionId);
+      if (!sessionData) throw new Error(`Session ${sessionId} not found`);
+
+      // Watch the Stream channel/thread if available
+      if (streamClient && sessionData.stream_thread_id) {
+        try {
+          const memory = await catalog.getProjectMemory(projectId);
+          const ch = streamClient.channel("messaging", memory.stream_channel_id);
+          await ch.watch();
+          setChannel(ch);
+
+          // Restore context from channel custom data
+          const channelData = ch.data as Record<string, unknown> | undefined;
+          const contextType = channelData?.contextType as "dataset" | "view" | null | undefined;
+          const contextId = channelData?.contextId as string | null | undefined;
+          if (contextType && contextId) {
+            setContext(contextType, contextId);
+          }
+
+          // Load messages from Stream thread
+          const streamMessages = ch.state.messages || [];
+          const loadedMessages: Message[] = streamMessages.map((m, i) => ({
+            id: m.id || String(i),
+            role: m.user?.id === "assistant" ? ("assistant" as const) : ("user" as const),
+            content: m.text || "",
+            tool_calls: (m as Record<string, unknown>).custom
+              ? ((m as Record<string, unknown>).custom as Record<string, unknown>)?.tool_calls as Message["tool_calls"]
+              : undefined,
+          }));
+          setMessages(loadedMessages);
+        } catch (err) {
+          console.error("Failed to watch session thread:", err);
+        }
+      }
+
+      setSession(sessionData);
+      projectIdRef.current = projectId;
+      return sessionData;
+    },
+    [streamClient, setContext],
+  );
+
+  /** @deprecated Legacy channel creation for backward compat. Use createSession instead. */
   const createChannel = useCallback(
     async (orgId: string): Promise<StreamChannel> => {
       if (!streamClient) throw new Error("Stream client not ready");
 
+      const { sessionHash, compactId } = await import("@/stream/channelId");
       const userId = streamClient.userID ?? "anon";
       const suffix = await sessionHash(orgId, userId);
       const sessionId = `chat_${compactId(orgId)}_${suffix}`;
@@ -201,6 +287,7 @@ function useChatEngine(): ChatContextValue {
     [streamClient],
   );
 
+  /** @deprecated Legacy channel loading for backward compat. Use loadSession instead. */
   const loadChannel = useCallback(
     async (channelId: string): Promise<StreamChannel> => {
       if (!streamClient) throw new Error("Stream client not ready");
@@ -237,19 +324,30 @@ function useChatEngine(): ChatContextValue {
       setMessages(loadedMessages);
       return ch;
     },
-    [streamClient, registerDatasetId],
+    [streamClient, setContext],
   );
 
   const setTitle = useCallback(
     (title: string) => {
-      if (!channel) return;
-      channel.updatePartial({ set: { title } }).catch(console.error);
+      // Update via backend API if we have a session
+      const currentSession = sessionRef.current;
+      const currentProjectId = projectIdRef.current;
+      if (currentSession && currentProjectId) {
+        catalog
+          .updateSession(currentProjectId, currentSession.id, { title })
+          .catch(console.error);
+      }
+      // Also update Stream channel for backward compat
+      if (channelRef.current) {
+        channelRef.current.updatePartial({ set: { title } }).catch(console.error);
+      }
     },
-    [channel],
+    [],
   );
 
   const resetSession = useCallback(() => {
     setChannel(null);
+    setSession(null);
     setMessages([]);
   }, []);
 
@@ -330,8 +428,20 @@ function useChatEngine(): ChatContextValue {
       writeToStream(userMessage.content, "user");
 
       // Auto-set title from first message in a new session
-      if (channelRef.current && messagesRef.current.length === 0) {
-        channelRef.current.updatePartial({ set: { title: text.slice(0, 100) } }).catch(console.error);
+      if (messagesRef.current.length === 0) {
+        const titleText = text.slice(0, 100);
+        // Update via backend API
+        const currentSession = sessionRef.current;
+        const currentProjectId = projectIdRef.current;
+        if (currentSession && currentProjectId) {
+          catalog
+            .updateSession(currentProjectId, currentSession.id, { title: titleText })
+            .catch(console.error);
+        }
+        // Also update Stream channel for backward compat
+        if (channelRef.current) {
+          channelRef.current.updatePartial({ set: { title: titleText } }).catch(console.error);
+        }
       }
 
       // Detect table operations that need a dataset context
@@ -429,6 +539,23 @@ function useChatEngine(): ChatContextValue {
               writeToStream(accumulatedContent || "", "assistant");
             }
           },
+          onRequest: async (agentReq: AgentRequest) => {
+            sseOverlay.stopStreaming();
+            const projectId = projectIdRef.current;
+            if (!projectId) {
+              patchAssistant({ content: "No project selected. Please select a project first.", isStreaming: false });
+              return;
+            }
+            const fulfillResult = await fulfillAgentRequest(agentReq, projectId, withEagerAuth(fetch));
+            if (fulfillResult.error) {
+              patchAssistant({ content: fulfillResult.error, isStreaming: false });
+            } else if (fulfillResult.dataset) {
+              entityContext.setContext("dataset", fulfillResult.dataset.id);
+              patchAssistant({ content: `Resolved dataset: ${fulfillResult.dataset.name}`, isStreaming: false });
+              // Store for re-submit after this stream finishes and isLoading resets
+              pendingCommandRef.current = text;
+            }
+          },
         });
       } catch (error) {
         console.error("Chat error:", error);
@@ -440,9 +567,17 @@ function useChatEngine(): ChatContextValue {
       } finally {
         setIsLoading(false);
         inputRef.current?.focus();
+
+        // Re-submit if a dataset was resolved during the stream
+        const pendingResubmit = pendingCommandRef.current;
+        if (pendingResubmit) {
+          pendingCommandRef.current = null;
+          // Defer to next tick so isLoading=false takes effect first
+          setTimeout(() => submitText(pendingResubmit), 0);
+        }
       }
     },
-    [isLoading, buildApiMessages, writeToStream, sseOverlay, entityContext],
+    [isLoading, buildApiMessages, writeToStream, sseOverlay, entityContext, submitText],
   );
 
   /** Form submit handler. */
@@ -504,6 +639,9 @@ function useChatEngine(): ChatContextValue {
     registerProjectId,
     setContext,
     channel,
+    session,
+    createSession: createSessionFn,
+    loadSession: loadSessionFn,
     createChannel,
     loadChannel,
     setTitle,

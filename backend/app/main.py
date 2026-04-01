@@ -21,6 +21,7 @@ from .routers import (
     organizations_router,
     projects_router,
     reports_router,
+    sessions_router,
     sql_access_router,
     stream_token_router,
     transforms_router,
@@ -134,6 +135,7 @@ app.include_router(organizations_router)
 app.include_router(sql_access_router)
 app.include_router(views_router)
 app.include_router(reports_router)
+app.include_router(sessions_router)
 
 
 @app.get("/.well-known/jwks.json")

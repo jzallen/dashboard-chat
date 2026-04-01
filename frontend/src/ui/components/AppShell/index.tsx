@@ -40,7 +40,7 @@ function AppShellInner() {
     <ChatProvider>
       <div className={styles.shell}>
         <SideNav orgName={orgName} collapsed={navCollapsed} onToggleCollapse={() => setNavCollapsed((v) => !v)}>
-          <UnifiedNav orgId={orgId} collapsed={navCollapsed} />
+          <UnifiedNav orgId={orgId} collapsed={navCollapsed} projectId={project?.id ?? projects?.[0]?.id ?? null} />
         </SideNav>
         <main className={styles.viewWindow}>
           <Outlet context={outletContext} />

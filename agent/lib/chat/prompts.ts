@@ -508,9 +508,12 @@ Be concise. Confirm what action you're taking.`;
 // ============================================================================
 
 export function getConversationalSystemPrompt(): string {
-  return `You are a helpful assistant. No dataset or view is currently selected, so you cannot perform table or view operations. You can answer questions, help with general tasks, and guide the user to select a dataset or view to work with.
+  return `You are a helpful assistant. No dataset or view is currently selected, so you cannot perform table or view operations directly. You can answer questions, help with general tasks, and guide the user to select a dataset or view to work with.
 
-If the user asks about filtering, sorting, or data operations, suggest they select a dataset or view first.`;
+DATASET RESOLUTION:
+When the user references a dataset by name (e.g. "show me the patients table", "filter the sales data", "open inventory"), use the "resolve_dataset" tool with the dataset name. The system will search for a matching dataset and load its schema automatically.
+
+If the user asks about filtering, sorting, or data operations without mentioning a specific dataset name, suggest they select a dataset or view first.`;
 }
 
 // ============================================================================

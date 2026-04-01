@@ -31,6 +31,9 @@ from .project import (
     ProjectResponse,
     ProjectUpdate,
 )
+from .session import (
+    SessionUpdate,
+)
 
 # Rebuild models to resolve forward references
 ProjectResponse.model_rebuild()
@@ -51,6 +54,7 @@ __all__ = [
     "ProjectResponse",
     "ProjectUpdate",
     "SchemaConfig",
+    "SessionUpdate",
     "TransformBase",
     "TransformBatchUpdate",
     "TransformCreate",

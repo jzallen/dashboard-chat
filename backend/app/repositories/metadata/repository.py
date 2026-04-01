@@ -4,11 +4,14 @@ Session lifecycle (commit/rollback) is managed at the edge (routers/controllers)
 This repository uses flush() to persist changes within the transaction.
 """
 
+import base64
+import json
 from collections.abc import Callable
+from datetime import datetime
 from functools import wraps
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -18,8 +21,10 @@ from app.utils.sql_safety import validate_condition_sql
 from ..exceptions import MetadataRepositoryError
 from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
+from .project_memory_record import ProjectMemoryRecord
 from .project_record import ProjectRecord
 from .report_record import ReportRecord
+from .session_record import SessionRecord
 from .transform_record import TransformRecord
 from .view_record import ViewRecord
 
@@ -192,6 +197,167 @@ class MetadataRepository:
     async def project_exists(self, project_id: str) -> bool:
         """Check if a project exists."""
         return (await self._session.execute(select(exists().where(ProjectRecord.id == project_id)))).scalar()
+
+    # -------------------------------------------------------------------------
+    # Project memory operations
+    # -------------------------------------------------------------------------
+
+    @handle_repository_exceptions
+    async def get_project_memory(self, project_id: str) -> dict[str, Any] | None:
+        """Get the memory for a project."""
+        result = await self._session.execute(
+            select(ProjectMemoryRecord).where(ProjectMemoryRecord.project_id == project_id)
+        )
+        memory = result.scalar_one_or_none()
+        if not memory:
+            return None
+        return self._memory_to_dict(memory)
+
+    @handle_repository_exceptions
+    async def create_project_memory(
+        self,
+        project_id: str,
+        org_id: str,
+        stream_channel_id: str,
+    ) -> dict[str, Any]:
+        """Create a project memory mapping."""
+        memory = ProjectMemoryRecord(
+            project_id=project_id,
+            org_id=org_id,
+            stream_channel_id=stream_channel_id,
+        )
+        self._session.add(memory)
+        await self._session.flush()
+        await self._session.refresh(memory)
+        return self._memory_to_dict(memory)
+
+    # -------------------------------------------------------------------------
+    # Session operations
+    # -------------------------------------------------------------------------
+
+    @handle_repository_exceptions
+    async def create_session(
+        self,
+        memory_id: str,
+        stream_thread_id: str,
+        owner_id: str,
+        org_id: str,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new session (Stream thread) within a memory."""
+        session = SessionRecord(
+            memory_id=memory_id,
+            stream_thread_id=stream_thread_id,
+            owner_id=owner_id,
+            org_id=org_id,
+            title=title,
+        )
+        self._session.add(session)
+        await self._session.flush()
+        await self._session.refresh(session)
+        return self._session_to_dict(session)
+
+    @staticmethod
+    def _encode_session_cursor(session: "SessionRecord") -> str:
+        """Encode a (last_active_at, id) composite cursor for session pagination."""
+        payload = json.dumps(
+            {
+                "id": session.id,
+                "last_active_at": session.last_active_at.isoformat(),
+            }
+        )
+        return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+    @staticmethod
+    def _decode_session_cursor(cursor: str) -> tuple[str, str]:
+        """Decode a composite session cursor. Returns (last_active_at_iso, id)."""
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = base64.urlsafe_b64decode(padded.encode()).decode()
+        data = json.loads(payload)
+        return data["last_active_at"], data["id"]
+
+    @handle_repository_exceptions
+    async def list_sessions(
+        self,
+        memory_id: str,
+        org_id: str,
+        cursor: str | None = None,
+        limit: int = 30,
+    ) -> tuple[list[dict[str, Any]], str | None, bool]:
+        """List sessions for a memory, ordered by last_active_at desc."""
+        query = select(SessionRecord).where(
+            SessionRecord.memory_id == memory_id,
+            SessionRecord.org_id == org_id,
+        )
+        if cursor is not None:
+            last_active_iso, cursor_id = self._decode_session_cursor(cursor)
+            cursor_ts = datetime.fromisoformat(last_active_iso)
+            # Composite keyset: skip rows with same (last_active_at, id) as cursor
+            query = query.where(
+                or_(
+                    SessionRecord.last_active_at < cursor_ts,
+                    and_(
+                        SessionRecord.last_active_at == cursor_ts,
+                        SessionRecord.id < cursor_id,
+                    ),
+                )
+            )
+        query = query.order_by(SessionRecord.last_active_at.desc(), SessionRecord.id.desc())
+        query = query.limit(limit + 1)
+
+        result = await self._session.execute(query)
+        sessions = list(result.scalars().all())
+
+        has_more = len(sessions) > limit
+        sessions = sessions[:limit]
+        next_cursor = self._encode_session_cursor(sessions[-1]) if has_more and sessions else None
+
+        return [self._session_to_dict(s) for s in sessions], next_cursor, has_more
+
+    @handle_repository_exceptions
+    async def get_session(self, session_id: str) -> dict[str, Any] | None:
+        """Get a session by ID."""
+        result = await self._session.execute(select(SessionRecord).where(SessionRecord.id == session_id))
+        session = result.scalar_one_or_none()
+        if not session:
+            return None
+        return self._session_to_dict(session)
+
+    @handle_repository_exceptions
+    async def update_session(
+        self,
+        session_id: str,
+        update_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Update a session's metadata."""
+        result = await self._session.execute(select(SessionRecord).where(SessionRecord.id == session_id))
+        session = result.scalar_one_or_none()
+        if not session:
+            return None
+
+        for key, value in update_data.items():
+            setattr(session, key, value)
+
+        await self._session.flush()
+        await self._session.refresh(session)
+        return self._session_to_dict(session)
+
+    @handle_repository_exceptions
+    async def search_datasets_by_name(
+        self,
+        project_id: str,
+        query: str,
+    ) -> list[dict[str, Any]]:
+        """Search datasets by name within a project."""
+        stmt = (
+            select(DatasetRecord)
+            .where(DatasetRecord.project_id == project_id)
+            .where(DatasetRecord.name.ilike(f"%{query}%"))
+            .order_by(DatasetRecord.name)
+            .limit(10)
+        )
+        result = await self._session.execute(stmt)
+        return [self._dataset_to_dict(ds) for ds in result.scalars().all()]
 
     # -------------------------------------------------------------------------
     # Dataset operations
@@ -538,6 +704,31 @@ class MetadataRepository:
             "created_by": project.created_by,
             "created_at": project.created_at.isoformat() if project.created_at else None,
             "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        }
+
+    @staticmethod
+    def _memory_to_dict(memory: ProjectMemoryRecord) -> dict[str, Any]:
+        """Convert ProjectMemoryRecord to dictionary."""
+        return {
+            "id": memory.id,
+            "project_id": memory.project_id,
+            "org_id": memory.org_id,
+            "stream_channel_id": memory.stream_channel_id,
+            "created_at": memory.created_at.isoformat() if memory.created_at else None,
+        }
+
+    @staticmethod
+    def _session_to_dict(session: SessionRecord) -> dict[str, Any]:
+        """Convert SessionRecord to dictionary."""
+        return {
+            "id": session.id,
+            "memory_id": session.memory_id,
+            "stream_thread_id": session.stream_thread_id,
+            "owner_id": session.owner_id,
+            "title": session.title,
+            "org_id": session.org_id,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "last_active_at": session.last_active_at.isoformat() if session.last_active_at else None,
         }
 
     @staticmethod

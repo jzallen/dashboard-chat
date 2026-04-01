@@ -8,4 +8,6 @@ export const QUERY_STALE_TIMES = {
   REPORT_LIST: 10_000,
   REPORT_DETAIL: 5 * 60 * 1000,
   SQL_ACCESS: 5 * 60 * 1000,
+  MEMORY: 5 * 60 * 1000,
+  SESSION_LIST: 10_000,
 } as const;

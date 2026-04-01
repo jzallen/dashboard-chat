@@ -1,94 +1,49 @@
 import { PencilIcon } from "@heroicons/react/24/outline";
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useOutletContext } from "react-router-dom";
-import type { Channel } from "stream-chat";
+import { useState } from "react";
+import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 
-import { useStreamContext } from "@/stream/StreamProvider";
+import type { Session } from "@/dataCatalog";
 
 import { formatRelativeTime } from "../../../lib/ui/utils/formatRelativeTime";
-import { useDatasetQuery } from "../../hooks/useDatasetQuery";
+import { useSessions } from "../../hooks/useSessions";
+import { useUpdateSession } from "../../hooks/useUpdateSession";
 import type { AppShellContext } from "../AppShell";
 import styles from "./SessionList.module.css";
 
-/** Resolves a dataset ID to its name via the query cache. */
-function DatasetBadge({ datasetId }: { datasetId: string }) {
-  const { data } = useDatasetQuery(datasetId);
-  return (
-    <span className={styles.datasetBadge}>{data?.name ?? datasetId}</span>
-  );
-}
-
-/** Org-scoped session list page backed by Stream queryChannels. */
+/** Org-scoped session list page backed by the backend sessions API. */
 export function SessionList() {
-  const { orgId } = useOutletContext<AppShellContext>();
-  const { client, isReady } = useStreamContext();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const { projects } = useOutletContext<AppShellContext>();
   const navigate = useNavigate();
 
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(false);
+  // Use route param or fall back to first project
+  const projectId = routeProjectId ?? projects?.[0]?.id;
+
+  const {
+    data: sessionPages,
+    isLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useSessions(projectId);
+
+  const updateSession = useUpdateSession(projectId ?? "");
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const [localTitles, setLocalTitles] = useState<Map<string, string>>(new Map());
 
-  const PAGE_SIZE = 30;
+  const sessions: Session[] =
+    sessionPages?.pages.flatMap((page) => page.data) ?? [];
 
-  const fetchChannels = useCallback(
-    async (offset = 0) => {
-      if (!client || !isReady || !orgId) return;
-      setLoading(true);
-      try {
-        const result = await client.queryChannels(
-          {
-            type: "messaging" as const,
-            "custom.orgId": orgId,
-          },
-          [{ last_message_at: -1 as const }],
-          { limit: PAGE_SIZE, offset },
-        );
-        if (offset === 0) {
-          setChannels(result);
-        } else {
-          setChannels((prev) => [...prev, ...result]);
-        }
-        setHasMore(result.length === PAGE_SIZE);
-      } catch (err) {
-        console.error("Failed to fetch sessions:", err);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [client, isReady, orgId],
-  );
-
-  useEffect(() => {
-    fetchChannels(0);
-  }, [fetchChannels]);
-
-  const handleLoadMore = () => {
-    fetchChannels(channels.length);
+  const handleStartEdit = (session: Session) => {
+    setEditingId(session.id);
+    setEditTitle(session.title ?? "");
   };
 
-  const handleStartEdit = (channel: Channel) => {
-    const data = channel.data as Record<string, unknown> | undefined;
-    setEditingId(channel.id);
-    setEditTitle((data?.title as string) ?? "");
-  };
-
-  const handleConfirmEdit = (channel: Channel) => {
+  const handleConfirmEdit = (session: Session) => {
     const newTitle = editTitle.trim();
     if (newTitle) {
-      const channelId = channel.id;
-      // Optimistically update immediately
-      setLocalTitles((prev) => new Map(prev).set(channelId, newTitle));
-      // Persist in background, revert on error
-      channel.updatePartial({ set: { title: newTitle } }).catch(() => {
-        setLocalTitles((prev) => {
-          const m = new Map(prev);
-          m.delete(channelId);
-          return m;
-        });
-      });
+      updateSession.mutate({ sessionId: session.id, title: newTitle });
     }
     setEditingId(null);
     setEditTitle("");
@@ -99,7 +54,7 @@ export function SessionList() {
     setEditTitle("");
   };
 
-  if (loading && channels.length === 0) {
+  if (isLoading && sessions.length === 0) {
     return <div className={styles.loading}>Loading sessions...</div>;
   }
 
@@ -107,28 +62,28 @@ export function SessionList() {
     <div className={styles.container}>
       <h2 className={styles.heading}>Chat Sessions</h2>
 
-      {channels.length === 0 ? (
-        <p className={styles.empty}>No chat sessions yet. Start a new session from the home page.</p>
+      {sessions.length === 0 ? (
+        <p className={styles.empty}>
+          No chat sessions yet. Start a new session from the home page.
+        </p>
       ) : (
         <div className={styles.list}>
-          {channels.map((ch) => {
-            const data = ch.data as Record<string, unknown> | undefined;
-            const rawTitle = (data?.title as string) || null;
-            const title = localTitles.get(ch.id) ?? rawTitle;
-            const firstMessage = ch.state.messages?.[0]?.text;
-            const displayText = title || (firstMessage ? firstMessage.slice(0, 60) : "New session");
-            const datasetId = (data?.datasetId as string) || null;
-            const lastMessageAt = ch.state.last_message_at as string | undefined;
+          {sessions.map((session) => {
+            const displayText = session.title || "New session";
 
-            if (editingId === ch.id) {
+            if (editingId === session.id) {
               return (
-                <div key={ch.id} className={styles.sessionRow} data-testid={`session-${ch.id}`}>
+                <div
+                  key={session.id}
+                  className={styles.sessionRow}
+                  data-testid={`session-${session.id}`}
+                >
                   <input
                     className={styles.editInput}
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleConfirmEdit(ch);
+                      if (e.key === "Enter") handleConfirmEdit(session);
                       if (e.key === "Escape") handleCancelEdit();
                     }}
                     autoFocus
@@ -140,24 +95,24 @@ export function SessionList() {
 
             return (
               <div
-                key={ch.id}
+                key={session.id}
                 className={styles.sessionRow}
-                onClick={() => navigate(`/chat/${ch.id}`)}
-                data-testid={`session-${ch.id}`}
+                onClick={() => navigate(`/chat/${session.id}`)}
+                data-testid={`session-${session.id}`}
               >
                 <span className={styles.sessionTitle}>{displayText}</span>
-                {datasetId && <DatasetBadge datasetId={datasetId} />}
+                <span className={styles.sessionOwner}>{session.owner_id}</span>
                 <span className={styles.sessionTimestamp}>
-                  {formatRelativeTime(lastMessageAt)}
+                  {formatRelativeTime(session.last_active_at)}
                 </span>
                 <button
                   className={styles.editButton}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleStartEdit(ch);
+                    handleStartEdit(session);
                   }}
                   title="Edit title"
-                  data-testid={`edit-${ch.id}`}
+                  data-testid={`edit-${session.id}`}
                 >
                   <PencilIcon className={styles.editIcon} />
                 </button>
@@ -165,13 +120,13 @@ export function SessionList() {
             );
           })}
 
-          {hasMore && (
+          {hasNextPage && (
             <button
               className={styles.loadMoreButton}
-              onClick={handleLoadMore}
-              disabled={loading}
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
             >
-              {loading ? "Loading..." : "Load more"}
+              {isFetchingNextPage ? "Loading..." : "Load more"}
             </button>
           )}
         </div>

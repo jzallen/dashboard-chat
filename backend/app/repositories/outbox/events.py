@@ -39,7 +39,16 @@ class TransformsUpdated:
     changes: list[dict[str, Any]]
 
 
-OutboxEvent = UploadFileReceived | TransformsCreated | TransformsUpdated
+@dataclass(frozen=True, slots=True)
+class ProjectCreated:
+    """A new project was created — triggers memory provisioning."""
+
+    project_id: str
+    org_id: str
+    created_by: str
+
+
+OutboxEvent = UploadFileReceived | TransformsCreated | TransformsUpdated | ProjectCreated
 
 
 def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:
@@ -59,6 +68,7 @@ def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:
         "UploadFileReceived": UploadFileReceived,
         "TransformsCreated": TransformsCreated,
         "TransformsUpdated": TransformsUpdated,
+        "ProjectCreated": ProjectCreated,
     }
     event_class = event_registry[event_type]
     return event_class(**payload)

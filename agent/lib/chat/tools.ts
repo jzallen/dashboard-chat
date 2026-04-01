@@ -3,6 +3,26 @@ import { z } from "zod";
 
 import { CASE_OPERATIONS, type TableSchema } from "./types";
 
+/**
+ * Tools available in conversational mode (no dataset/view context).
+ * Includes resolve_dataset so the LLM can request dataset resolution
+ * when the user references a dataset by name.
+ */
+export function getConversationalTools() {
+  return {
+    resolve_dataset: tool({
+      description:
+        "Resolve a dataset by name. Use this when the user references a dataset by name " +
+        "(e.g. 'show me the patients table', 'filter the sales data') and no dataset context " +
+        "is currently active. The frontend will search for a matching dataset and re-submit " +
+        "the request with the resolved schema.",
+      parameters: z.object({
+        name: z.string().describe("The dataset name the user is referring to"),
+      }),
+    }),
+  };
+}
+
 export function getTools(tableSchema: TableSchema) {
   const columnNames = tableSchema.columns.map((c) => c.id);
   const textColumnNames = tableSchema.columns
