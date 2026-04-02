@@ -1,9 +1,16 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Stream Channel as Session Identity
 
 ChatContext SHALL use Stream threads within a project memory channel as the session identity. Sessions are threads, not top-level channels.
 
+**Current behavior:**
+- Channels are scoped to `orgId` with ID format `chat_{orgId}_{uuid}`.
+- Each session is a separate top-level Stream channel.
+- `createChannel(orgId)` creates a new channel per session.
+- `loadChannel(channelId)` loads a top-level channel.
+
+**New behavior:**
 - One Stream channel per project with ID format `proj_{compactOrgId}_{compactProjectId}`.
 - Sessions are threads within the project channel.
 - `createSession(projectId)` SHALL call the backend API to create a session, receiving a `stream_thread_id`.
@@ -30,6 +37,11 @@ ChatContext SHALL use Stream threads within a project memory channel as the sess
 
 Entity context SHALL be tracked per-session (thread-level), while the parent memory channel holds project-level context.
 
+**Current behavior:**
+- Dataset context stored as channel custom data (`channel.data.datasetId`).
+- Single context scope per channel.
+
+**New behavior:**
 - Project-level context (project ID, org ID) stored on the memory channel's custom data.
 - Session-level context (active dataset/view) tracked in the frontend's session state and passed in chat requests.
 - Dataset context can be set explicitly by the user or resolved by the agent via the SSE request protocol.
@@ -52,6 +64,10 @@ Entity context SHALL be tracked per-session (thread-level), while the parent mem
 
 Starting a new session SHALL create a new thread in the project memory, not a new channel.
 
+**Current behavior:**
+- "New Session" clears the channel reference and creates a new channel on next mount.
+
+**New behavior:**
 - "New Session" SHALL call the backend to create a new session (thread) in the current project.
 - The previous session remains accessible in the session list.
 - In-memory messages SHALL be cleared and the UI SHALL switch to the new thread.

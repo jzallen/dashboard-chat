@@ -1,14 +1,13 @@
-# session-title-management Specification
-
-## Purpose
-Manages session titles: auto-set from first message, editable by owner via backend API, and session list backed by backend queries.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Auto-Set Session Title from First Message
 
 When the user sends the first message in a new session, the system SHALL automatically set the session title via the backend API.
 
+**Current behavior:**
+- Title set via `channel.updatePartial({ set: { title: "..." } })` on Stream channel custom data.
+
+**New behavior:**
 - Title set via `PATCH /api/projects/{project_id}/sessions/{session_id}` with the title field.
 - The `sessions` table is the authoritative source for session titles.
 - The title SHALL be the first message truncated to 100 characters.
@@ -38,6 +37,10 @@ When the user sends the first message in a new session, the system SHALL automat
 
 Users SHALL be able to edit session titles from the session list. Only the session owner SHALL be able to edit.
 
+**Current behavior:**
+- Any user can edit via `channel.updatePartial()`.
+
+**New behavior:**
 - Title edits go through `PATCH /api/projects/{project_id}/sessions/{session_id}`.
 - Backend enforces ownership: only `owner_id` can update the title.
 
@@ -60,6 +63,10 @@ Users SHALL be able to edit session titles from the session list. Only the sessi
 
 The session list SHALL query the backend API instead of Stream's `queryChannels`.
 
+**Current behavior:**
+- Sessions fetched via `client.queryChannels({ type: "messaging", "custom.orgId": orgId })`.
+
+**New behavior:**
 - Sessions fetched via `GET /api/projects/{project_id}/sessions`.
 - Each session row SHALL display: title, owner, relative timestamp from `last_active_at`.
 - Clicking a session SHALL load the corresponding Stream thread.
