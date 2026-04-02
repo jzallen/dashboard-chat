@@ -26,10 +26,10 @@ class MockLakeRepository:
         self._total_count = total_count
         self._samples = self._DEFAULT_SAMPLES if samples is None else samples
 
-    def get_parquet_column_type(self, storage_path, column):
+    async def get_parquet_column_type(self, storage_path, column):
         return self._column_type
 
-    def preview_cleaning_operation(self, storage_path, target_column, expression_config, sample_limit=5):
+    async def preview_cleaning_operation(self, storage_path, target_column, expression_config, sample_limit=5):
         return {
             "affected_count": self._affected_count,
             "total_count": self._total_count,

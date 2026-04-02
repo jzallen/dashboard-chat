@@ -8,7 +8,12 @@ Provides event sourcing capabilities:
 
 from typing import Protocol
 
-from .events import OutboxEvent
+from .events import (
+    DatasetRemoved,
+    DatasetSyncRequested,
+    OutboxEvent,
+    TransformSyncRequested,
+)
 from .outbox_record import OutboxRecord
 
 
@@ -58,4 +63,10 @@ class OutboxRepositoryProtocol(Protocol):
 
 from .repository import OutboxRepository  # noqa: E402
 
-__all__ = ["OutboxRepository", "OutboxRepositoryProtocol"]
+__all__ = [
+    "DatasetRemoved",
+    "DatasetSyncRequested",
+    "OutboxRepository",
+    "OutboxRepositoryProtocol",
+    "TransformSyncRequested",
+]

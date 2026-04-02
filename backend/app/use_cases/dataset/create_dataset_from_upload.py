@@ -126,6 +126,15 @@ async def create_dataset_from_upload(
             },
         )
         await outbox_repo.mark_processed([upload_id])
+
+        # Emit sync events if project has SQL access enabled
+        await _emit_sync_events(
+            repositories.external_access,
+            outbox_repo,
+            file_received_event.project_id,
+            datasets,
+        )
+
         return datasets
 
     # Single-dataset path (unchanged behavior)
@@ -138,4 +147,26 @@ async def create_dataset_from_upload(
         partition_fields,
     )
     await outbox_repo.mark_processed([upload_id])
+
+    # Emit sync events if project has SQL access enabled
+    await _emit_sync_events(
+        repositories.external_access,
+        outbox_repo,
+        file_received_event.project_id,
+        [dataset],
+    )
+
     return dataset
+
+
+async def _emit_sync_events(external_access_repo, outbox_repo, project_id: str, datasets: list) -> None:
+    """Emit DatasetSyncRequested events if the project has SQL access enabled."""
+    engine_node_id = await external_access_repo.get_active_engine_node_id(project_id)
+    if not engine_node_id:
+        return
+    for dataset in datasets:
+        await outbox_repo.submit_dataset_sync_event(
+            project_id=project_id,
+            dataset_id=dataset.id,
+            engine_node_id=engine_node_id,
+        )

@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Naming convention: short_id = first 8 chars of project UUID
 SCHEMA_PREFIX = "project_"
 ROLE_PREFIX = "reader_"
+PROXY_ROLE_PREFIX = "proxy_"
 PASSWORD_LENGTH = 32
 
 # Group role for duckdb.postgres_role GUC — shared across all reader roles
@@ -43,6 +44,11 @@ def schema_name(project_id: str) -> str:
 def role_name(project_id: str) -> str:
     """Derive the pg_duckdb role name for a project."""
     return f"{ROLE_PREFIX}{_short_id(project_id)}"
+
+
+def proxy_role_name(project_id: str) -> str:
+    """Derive the pg_duckdb proxy role name for a project."""
+    return f"{PROXY_ROLE_PREFIX}{_short_id(project_id)}"
 
 
 def generate_password() -> str:
@@ -179,6 +185,9 @@ async def create_project_schema(env: ProjectEnvironment, project_id: str, passwo
     finally:
         await conn.close()
 
+    # Create proxy role after internal reader role is ready
+    await create_proxy_role(env, project_id, password)
+
 
 async def drop_project_schema(env: ProjectEnvironment, project_id: str) -> None:
     """Drop a project's schema and role, terminating active connections.
@@ -189,17 +198,24 @@ async def drop_project_schema(env: ProjectEnvironment, project_id: str) -> None:
     """
     schema = _validate_ident(schema_name(project_id))
     role = _validate_ident(role_name(project_id))
+    proxy = _validate_ident(proxy_role_name(project_id))
 
     conn = await _get_connection(env)
     try:
-        # Terminate active connections for this role (parameterized — safe)
+        # Terminate active connections for both proxy and internal roles
+        await conn.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1",
+            proxy,
+        )
         await conn.execute(
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1",
             role,
         )
         await conn.execute(f"DROP SCHEMA IF EXISTS {_quote_ident(schema)} CASCADE")
+        # Drop proxy role before internal reader (proxy depends on reader via GRANT)
+        await conn.execute(f"DROP ROLE IF EXISTS {_quote_ident(proxy)}")
         await conn.execute(f"DROP ROLE IF EXISTS {_quote_ident(role)}")
-        logger.info("Dropped schema %s and role %s for project %s", schema, role, project_id)
+        logger.info("Dropped schema %s, role %s, and proxy %s for project %s", schema, role, proxy, project_id)
     finally:
         await conn.close()
 
@@ -253,5 +269,51 @@ async def grant_schema_usage(env: ProjectEnvironment, project_id: str) -> None:
         await conn.execute(f"GRANT USAGE ON SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}")
         await conn.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA {_quote_ident(schema)} TO {_quote_ident(role)}")
         logger.info("Granted schema usage to role %s on schema %s", role, schema)
+    finally:
+        await conn.close()
+
+
+async def create_proxy_role(env: ProjectEnvironment, project_id: str, password: str) -> None:
+    """Create a proxy role with LOGIN and SET ROLE privilege to the internal reader.
+
+    The proxy role is the externally-facing credential. It can SET ROLE to the
+    internal reader role, inheriting its schema permissions without directly
+    owning any objects.
+
+    Args:
+        env: ProjectEnvironment to connect to
+        project_id: Project UUID
+        password: Plaintext password for the proxy role
+    """
+    proxy = _validate_ident(proxy_role_name(project_id))
+    reader = _validate_ident(role_name(project_id))
+
+    conn = await _get_connection(env)
+    try:
+        await conn.execute(build_create_role_sql(proxy, password))
+        await conn.execute(f"GRANT {_quote_ident(reader)} TO {_quote_ident(proxy)}")
+        await conn.execute(
+            f"ALTER ROLE {_quote_ident(proxy)} SET search_path TO {_quote_ident(schema_name(project_id))}"
+        )
+        await conn.execute(f"ALTER ROLE {_quote_ident(proxy)} SET idle_session_timeout = '5min'")
+        logger.info("Created proxy role %s with SET ROLE to %s for project %s", proxy, reader, project_id)
+    finally:
+        await conn.close()
+
+
+async def regenerate_proxy_credentials(env: ProjectEnvironment, project_id: str, new_password: str) -> None:
+    """Change the password for a project's proxy role.
+
+    Args:
+        env: ProjectEnvironment to connect to
+        project_id: Project UUID
+        new_password: New plaintext password
+    """
+    proxy = _validate_ident(proxy_role_name(project_id))
+
+    conn = await _get_connection(env)
+    try:
+        await conn.execute(build_alter_role_password_sql(proxy, new_password))
+        logger.info("Regenerated credentials for proxy role %s", proxy)
     finally:
         await conn.close()

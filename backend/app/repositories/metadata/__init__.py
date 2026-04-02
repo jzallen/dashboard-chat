@@ -10,6 +10,7 @@ from .external_access_record import ExternalAccessRecord as ExternalAccessRecord
 from .organization_record import OrganizationRecord as OrganizationRecord
 from .project_memory_record import ProjectMemoryRecord as ProjectMemoryRecord
 from .project_record import ProjectRecord as ProjectRecord
+from .query_engine_node_record import QueryEngineNodeRecord as QueryEngineNodeRecord
 from .report_record import ReportRecord as ReportRecord
 from .session_record import SessionRecord as SessionRecord
 from .transform_record import TransformRecord as TransformRecord

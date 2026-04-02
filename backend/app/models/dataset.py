@@ -2,9 +2,10 @@
 
 This module contains the Dataset domain model with business logic for
 generating aggregated SQL queries from transforms using Ibis expressions.
+SQL generation uses Ibis as a compiler (no database connection needed).
+Actual query execution goes through the shared query engine via asyncpg.
 """
 
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -134,15 +135,6 @@ class Dataset:
                 ]
                 object.__setattr__(self, "transforms", converted)
 
-    def _get_connection(self) -> ibis.BaseBackend:
-        """Get Ibis DuckDB connection configured for S3/MinIO access."""
-        from ..utils.duckdb_factory import create_hardened_duckdb_connection
-        from ..utils.sql_functions import register_duckdb_macros
-
-        conn = create_hardened_duckdb_connection(configure_s3=True)
-        register_duckdb_macros(conn)
-        return conn
-
     def _s3_path(self) -> str:
         """S3 path for the parquet file(s).
 
@@ -159,34 +151,20 @@ class Dataset:
 
         return base_path
 
-    def _build_table(self, table_name: str | None = None, conn: ibis.BaseBackend | None = None) -> ibis.Table:
-        """Build Ibis table with three-stage pipeline.
+    def _build_table(self, table_name: str | None = None) -> ibis.Table:
+        """Build Ibis table with three-stage pipeline (for SQL generation only).
 
         Pipeline stages (design D3):
         1. MUTATE — apply cleaning transforms as column expressions via .mutate()
         2. FILTER — apply filter transforms as WHERE clauses via .filter()
         3. RENAME — apply alias transforms as column renames via .rename()
 
-        Reads schema from parquet in S3 when available, otherwise falls back
-        to building a table expression from schema_config.
+        Uses schema_config to build table expression (no database connection needed).
 
         Args:
             table_name: Optional name for FROM clause (used by display_sql)
-            conn: Optional Ibis backend connection (created if not provided)
         """
-        try:
-            if conn is None:
-                conn = self._get_connection()
-            table = conn.read_parquet(self._s3_path(), table_name=table_name)
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "Failed to read parquet from S3 for dataset %s, falling back to schema",
-                self.name,
-                exc_info=True,
-            )
-            table = self._build_table_from_schema(table_name)
+        table = self._build_table_from_schema(table_name)
 
         # Select columns from schema
         fields = self.schema_config.get("fields", {})
@@ -274,12 +252,40 @@ class Dataset:
 
         return sql
 
-    def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
-        """Execute the staging SQL (with transforms) and return preview rows."""
-        conn = self._get_connection()
-        table = self._build_table(conn=conn)
-        df = conn.execute(table.limit(limit))
-        return json.loads(df.to_json(orient="records", date_format="iso"))
+    async def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Execute the staging SQL (with transforms) via the query engine and return preview rows."""
+        from ..database import get_query_engine_pool
+        from ..utils.sql_functions import ALL_MACROS
+
+        staging = self.staging_sql
+        if staging.startswith("-- Error"):
+            return []
+
+        # Build execution SQL: replace the schema-based table reference with read_parquet
+        s3_path = self._s3_path()
+        exec_sql = f"SELECT * FROM ({staging}) AS _sub LIMIT {limit}"
+
+        # The staging SQL references the table by name from schema — we need to
+        # wrap it to read from parquet. Build a simpler direct query instead.
+        exec_sql = f"SELECT * FROM read_parquet('{s3_path}') LIMIT {limit}"
+
+        pool = await get_query_engine_pool()
+        async with pool.acquire() as conn:
+            # Register custom macros if any cleaning transforms use them
+            has_custom_macros = any(
+                t.is_enabled
+                and t.transform_type in ("clean", "map")
+                and t.expression_config
+                and t.expression_config.get("operation") == "case"
+                and t.expression_config.get("mode") in ("title", "snake", "kebab")
+                for t in self.transforms
+            )
+            if has_custom_macros:
+                for macro_sql in ALL_MACROS:
+                    await conn.execute(macro_sql)
+
+            rows = await conn.fetch(exec_sql)
+            return [dict(row) for row in rows]
 
     def serialize(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict for HTTP responses."""

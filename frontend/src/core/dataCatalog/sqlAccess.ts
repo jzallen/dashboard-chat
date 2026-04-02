@@ -1,9 +1,13 @@
 /**
  * SQL Access API — Types
- *
- * Domain functions are provided by createDataCatalog() in ./client.ts.
- * This file exports only types used by the factory and consumers.
  */
+
+export interface DatasetSyncStatus {
+  dataset_id: string;
+  name: string;
+  view_name: string;
+  sync_status: "synced" | "pending" | "error";
+}
 
 export interface SqlAccessStatus {
   project_id: string;
@@ -17,11 +21,11 @@ export interface SqlAccessStatus {
   last_synced_at?: string;
   created_at?: string;
   connection_string?: string;
-  environment_status?: string;
-  status_message?: string | null;
-  is_legacy?: boolean;
+  engine_node_id?: string;
+  datasets?: DatasetSyncStatus[];
 }
 
+// Kept for backward compat in imports — no longer used
 export interface EnvironmentStatusResponse {
   project_id: string;
   environment_status: string;

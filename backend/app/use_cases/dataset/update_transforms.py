@@ -30,7 +30,7 @@ async def update_transforms(
     outbox_repo = repositories.outbox
 
     service = DatasetService(repositories)
-    await service.fetch_dataset_record(dataset_id)
+    dataset_record = await service.fetch_dataset_record(dataset_id)
 
     await metadata_repo.update_transforms(updates)
 
@@ -38,3 +38,13 @@ async def update_transforms(
         dataset_id=dataset_id,
         changes=updates,
     )
+
+    # Emit sync event if project has SQL access enabled
+    project_id = dataset_record.project_id
+    engine_node_id = await repositories.external_access.get_active_engine_node_id(project_id)
+    if engine_node_id:
+        await outbox_repo.submit_transform_sync_event(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            engine_node_id=engine_node_id,
+        )

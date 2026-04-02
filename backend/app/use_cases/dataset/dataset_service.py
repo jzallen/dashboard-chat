@@ -4,7 +4,6 @@ Provides the DatasetService class for operations shared across
 get_dataset, update_dataset, etc.
 """
 
-import asyncio
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -62,7 +61,7 @@ class DatasetService:
         dataset = Dataset.from_record(dataset_record, include_transforms=include_transforms)
 
         if include_preview:
-            preview_rows = await asyncio.to_thread(lambda: dataset.query_preview_rows(limit=preview_limit))
+            preview_rows = await dataset.query_preview_rows(limit=preview_limit)
             dataset = replace(dataset, preview_rows=preview_rows)
 
         return dataset

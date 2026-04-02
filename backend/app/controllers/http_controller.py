@@ -9,6 +9,7 @@ from app.auth.types import AuthUser
 from app.use_cases import dataset as dataset_use_cases
 from app.use_cases import organization as organization_use_cases
 from app.use_cases import project as project_use_cases
+from app.use_cases import query_engine as query_engine_use_cases
 from app.use_cases import report as report_use_cases
 from app.use_cases import sql_access as sql_access_use_cases
 from app.use_cases import upload as upload_use_cases
@@ -495,38 +496,32 @@ class HTTPController:
             case Failure(error):
                 return _error_response(error)
 
+    # Query engine methods
+
     @staticmethod
-    async def start_environment(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.start_environment(project_id, project=project)
+    async def list_query_engines(user: AuthUser) -> tuple[dict, int]:
+        result = await query_engine_use_cases.list_query_engines(user.org_id)
         match result:
             case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
+                items = _serialize(data)
+                return wrap_jsonapi_list("query-engines", items, "/api/query-engines", len(items), None, False), 200
             case Failure(error):
                 return _error_response(error)
 
     @staticmethod
-    async def stop_environment(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.stop_environment(project_id, project=project)
+    async def get_query_engine(node_id: str, user: AuthUser) -> tuple[dict, int]:
+        result = await query_engine_use_cases.get_query_engine(node_id, user.org_id)
         match result:
             case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
+                return wrap_jsonapi_single("query-engines", data, f"/api/query-engines/{node_id}"), 200
             case Failure(error):
                 return _error_response(error)
 
     @staticmethod
-    async def restart_environment(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.restart_environment(project_id, project=project)
+    async def test_query_engine(node_id: str, user: AuthUser) -> tuple[dict, int]:
+        result = await query_engine_use_cases.test_query_engine_connection(node_id, user.org_id)
         match result:
             case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def get_environment_status(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.get_environment_status(project_id, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
+                return wrap_jsonapi_single("query-engines", data, f"/api/query-engines/{node_id}/test"), 200
             case Failure(error):
                 return _error_response(error)

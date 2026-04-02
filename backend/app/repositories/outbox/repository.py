@@ -16,7 +16,17 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
 from ..exceptions import OutboxRepositoryError
-from .events import OutboxEvent, ProjectCreated, TransformsCreated, TransformsUpdated, UploadFileReceived, to_event
+from .events import (
+    DatasetRemoved,
+    DatasetSyncRequested,
+    OutboxEvent,
+    ProjectCreated,
+    TransformsCreated,
+    TransformsUpdated,
+    TransformSyncRequested,
+    UploadFileReceived,
+    to_event,
+)
 from .outbox_record import OutboxRecord
 
 if TYPE_CHECKING:
@@ -132,6 +142,62 @@ class OutboxRepository:
         )
 
     @handle_repository_exceptions
+    async def submit_dataset_sync_event(
+        self,
+        project_id: str,
+        dataset_id: str,
+        engine_node_id: str,
+    ) -> OutboxRecord:
+        event = DatasetSyncRequested(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            engine_node_id=engine_node_id,
+        )
+        return await self._append_event(
+            aggregate_type="dataset",
+            aggregate_id=dataset_id,
+            event=event,
+        )
+
+    @handle_repository_exceptions
+    async def submit_transform_sync_event(
+        self,
+        project_id: str,
+        dataset_id: str,
+        engine_node_id: str,
+    ) -> OutboxRecord:
+        event = TransformSyncRequested(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            engine_node_id=engine_node_id,
+        )
+        return await self._append_event(
+            aggregate_type="dataset",
+            aggregate_id=dataset_id,
+            event=event,
+        )
+
+    @handle_repository_exceptions
+    async def submit_dataset_removed_event(
+        self,
+        project_id: str,
+        dataset_id: str,
+        engine_node_id: str,
+        view_name: str,
+    ) -> OutboxRecord:
+        event = DatasetRemoved(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            engine_node_id=engine_node_id,
+            view_name=view_name,
+        )
+        return await self._append_event(
+            aggregate_type="dataset",
+            aggregate_id=dataset_id,
+            event=event,
+        )
+
+    @handle_repository_exceptions
     async def get_pending_event(
         self,
         aggregate_type: str,
@@ -160,6 +226,90 @@ class OutboxRepository:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    @handle_repository_exceptions
+    async def get_unprocessed(
+        self,
+        limit: int = 100,
+        event_types: list[str] | None = None,
+    ) -> list[OutboxRecord]:
+        """Fetch unprocessed events ordered by creation time.
+
+        Args:
+            limit: Maximum number of records to return.
+            event_types: Optional filter to specific event types.
+        """
+        query = (
+            select(OutboxRecord)
+            .where(OutboxRecord.processed == False)
+            .order_by(OutboxRecord.created_at.asc())
+            .limit(limit)
+        )
+        if event_types:
+            query = query.where(OutboxRecord.event_type.in_(event_types))
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    @handle_repository_exceptions
+    async def get_unprocessed_sync_events(
+        self,
+        limit: int = 100,
+    ) -> list[OutboxRecord]:
+        """Fetch unprocessed sync events (DatasetSyncRequested, TransformSyncRequested, DatasetRemoved)."""
+        return await self.get_unprocessed(
+            limit=limit,
+            event_types=["DatasetSyncRequested", "TransformSyncRequested", "DatasetRemoved"],
+        )
+
+    @handle_repository_exceptions
+    async def get_sync_status_by_dataset(
+        self,
+        dataset_ids: list[str],
+    ) -> dict[str, str]:
+        """Derive per-dataset sync status from outbox state.
+
+        Returns a dict of dataset_id -> status ("synced" | "pending" | "error").
+        Datasets with no unprocessed sync events are "synced".
+        Datasets with unprocessed sync events less than 60s old are "pending".
+        Datasets with unprocessed sync events older than 60s are "error" (likely stuck).
+        """
+        if not dataset_ids:
+            return {}
+
+        sync_types = ["DatasetSyncRequested", "TransformSyncRequested", "DatasetRemoved"]
+        result = await self._session.execute(
+            select(
+                OutboxRecord.aggregate_id,
+                OutboxRecord.created_at,
+            ).where(
+                OutboxRecord.aggregate_id.in_(dataset_ids),
+                OutboxRecord.event_type.in_(sync_types),
+                OutboxRecord.processed == False,
+            )
+        )
+        rows = result.all()
+
+        # Group oldest unprocessed event per dataset
+        oldest_per_dataset: dict[str, datetime] = {}
+        for aggregate_id, created_at in rows:
+            # Ensure timezone-aware for comparison
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=UTC)
+            if aggregate_id not in oldest_per_dataset or created_at < oldest_per_dataset[aggregate_id]:
+                oldest_per_dataset[aggregate_id] = created_at
+
+        now = datetime.now(UTC)
+        statuses: dict[str, str] = {}
+        error_threshold_seconds = 60
+
+        for dataset_id in dataset_ids:
+            if dataset_id not in oldest_per_dataset:
+                statuses[dataset_id] = "synced"
+            else:
+                age = (now - oldest_per_dataset[dataset_id]).total_seconds()
+                statuses[dataset_id] = "error" if age > error_threshold_seconds else "pending"
+
+        return statuses
 
     @handle_repository_exceptions
     async def get_file_received_event_by_id(self, record_id: str) -> OutboxEvent | None:

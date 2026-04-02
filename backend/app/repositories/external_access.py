@@ -27,15 +27,10 @@ class AccessRecordView:
     id: str
     project_id: str
     org_id: str
+    engine_node_id: str | None
     pg_schema: str
     pg_role: str
-    environment_id: str | None
-    environment_host: str | None
-    environment_port: int | None
-    proxy_container_id: str | None
-    environment_status: str | None
-    status_message: str | None
-    is_legacy: bool
+    pg_proxy_role: str | None
     enabled: bool
     last_synced_at: str | None
     created_at: str | None
@@ -76,27 +71,20 @@ class ExternalAccessRepository:
         pg_schema: str,
         pg_role: str,
         pg_password_hash: str,
-        environment_id: str | None = None,
-        environment_host: str | None = None,
-        environment_port: int | None = None,
-        proxy_container_id: str | None = None,
-        environment_status: str | None = None,
+        engine_node_id: str | None = None,
+        pg_proxy_role: str | None = None,
     ) -> AccessRecordView:
         """Create a new external access record."""
         record = ExternalAccessRecord(
             project_id=project_id,
             org_id=org_id,
+            engine_node_id=engine_node_id,
             pg_schema=pg_schema,
             pg_role=pg_role,
+            pg_proxy_role=pg_proxy_role,
             pg_password_hash=pg_password_hash,
-            environment_id=environment_id,
-            environment_host=environment_host,
-            environment_port=environment_port,
-            proxy_container_id=proxy_container_id,
             enabled=True,
         )
-        if environment_status is not None:
-            record.environment_status = environment_status
         self._session.add(record)
         await self._session.flush()
         await self._session.refresh(record)
@@ -130,9 +118,31 @@ class ExternalAccessRepository:
         return self._to_dict(record)
 
     @handle_repository_exceptions
+    async def get_active_engine_node_id(self, project_id: str) -> str | None:
+        """Return the engine_node_id if SQL access is enabled for this project, else None."""
+        result = await self._session.execute(
+            select(ExternalAccessRecord.engine_node_id).where(
+                ExternalAccessRecord.project_id == project_id,
+                ExternalAccessRecord.enabled == True,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @handle_repository_exceptions
     async def list_enabled(self) -> list[AccessRecordView]:
         """List all enabled external access records."""
         result = await self._session.execute(select(ExternalAccessRecord).where(ExternalAccessRecord.enabled == True))
+        return [self._to_dict(r) for r in result.scalars().all()]
+
+    @handle_repository_exceptions
+    async def list_enabled_by_engine_node(self, engine_node_id: str) -> list[AccessRecordView]:
+        """List all enabled external access records for a specific engine node."""
+        result = await self._session.execute(
+            select(ExternalAccessRecord).where(
+                ExternalAccessRecord.enabled == True,
+                ExternalAccessRecord.engine_node_id == engine_node_id,
+            )
+        )
         return [self._to_dict(r) for r in result.scalars().all()]
 
     @handle_repository_exceptions
@@ -167,11 +177,6 @@ class ExternalAccessRepository:
             return None
 
         record.enabled = False
-        record.environment_id = None
-        record.environment_host = None
-        record.environment_port = None
-        record.proxy_container_id = None
-        record.environment_status = "disabled"
         record.updated_at = datetime.now(UTC)
 
         await self._session.flush()
@@ -180,10 +185,7 @@ class ExternalAccessRepository:
 
     @handle_repository_exceptions
     async def get_by_project_id_with_hash(self, project_id: str) -> AccessRecordWithHash | None:
-        """Get external access record by project ID, including pg_password_hash.
-
-        Use only when the stored hash is needed (e.g. start_environment, regenerate).
-        """
+        """Get external access record by project ID, including pg_password_hash."""
         result = await self._session.execute(
             select(ExternalAccessRecord).where(ExternalAccessRecord.project_id == project_id)
         )
@@ -194,24 +196,15 @@ class ExternalAccessRepository:
 
     @staticmethod
     def _to_dict(record: ExternalAccessRecord) -> AccessRecordView:
-        """Convert ExternalAccessRecord to AccessRecordView.
-
-        Deliberately excludes pg_password_hash — use _to_dict_with_hash()
-        only when credential verification is needed.
-        """
+        """Convert ExternalAccessRecord to AccessRecordView."""
         return AccessRecordView(
             id=record.id,
             project_id=record.project_id,
             org_id=record.org_id,
+            engine_node_id=record.engine_node_id,
             pg_schema=record.pg_schema,
             pg_role=record.pg_role,
-            environment_id=record.environment_id,
-            environment_host=record.environment_host,
-            environment_port=record.environment_port,
-            proxy_container_id=record.proxy_container_id,
-            environment_status=record.environment_status,
-            status_message=record.status_message,
-            is_legacy=record.enabled and record.proxy_container_id is None,
+            pg_proxy_role=record.pg_proxy_role,
             enabled=record.enabled,
             last_synced_at=record.last_synced_at.isoformat() if record.last_synced_at else None,
             created_at=record.created_at.isoformat() if record.created_at else None,
@@ -220,23 +213,15 @@ class ExternalAccessRepository:
 
     @staticmethod
     def _to_dict_with_hash(record: ExternalAccessRecord) -> AccessRecordWithHash:
-        """Convert ExternalAccessRecord to AccessRecordWithHash.
-
-        Only use when credential verification or environment restart is needed.
-        """
+        """Convert ExternalAccessRecord to AccessRecordWithHash."""
         return AccessRecordWithHash(
             id=record.id,
             project_id=record.project_id,
             org_id=record.org_id,
+            engine_node_id=record.engine_node_id,
             pg_schema=record.pg_schema,
             pg_role=record.pg_role,
-            environment_id=record.environment_id,
-            environment_host=record.environment_host,
-            environment_port=record.environment_port,
-            proxy_container_id=record.proxy_container_id,
-            environment_status=record.environment_status,
-            status_message=record.status_message,
-            is_legacy=record.enabled and record.proxy_container_id is None,
+            pg_proxy_role=record.pg_proxy_role,
             enabled=record.enabled,
             last_synced_at=record.last_synced_at.isoformat() if record.last_synced_at else None,
             created_at=record.created_at.isoformat() if record.created_at else None,

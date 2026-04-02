@@ -2,6 +2,7 @@ import {
   ChatBubbleLeftRightIcon,
   FolderIcon,
   PlusIcon,
+  ServerIcon,
 } from "@heroicons/react/24/outline";
 import { type KeyboardEvent, useCallback, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -38,6 +39,7 @@ export function UnifiedNav({ orgId, collapsed, projectId }: UnifiedNavProps) {
 
   const isChatActive = pathname === "/" || pathname.startsWith("/chat");
   const isProjectsActive = pathname.startsWith("/projects");
+  const isQueryEnginesActive = pathname.startsWith("/query-engines");
   const isSessionsActive = pathname === "/sessions";
 
   const handleNewSession = useCallback(() => {
@@ -67,6 +69,17 @@ export function UnifiedNav({ orgId, collapsed, projectId }: UnifiedNavProps) {
       >
         <FolderIcon className={styles.navItemIcon} />
         {!collapsed && <span className={styles.navItemLabel}>Projects</span>}
+      </button>
+
+      {/* Query Engines link */}
+      <button
+        className={`${styles.navItem} ${isQueryEnginesActive ? styles.navItemActive : ""}`}
+        onClick={() => navigate("/query-engines")}
+        title="Query Engines"
+        data-testid="nav-query-engines"
+      >
+        <ServerIcon className={styles.navItemIcon} />
+        {!collapsed && <span className={styles.navItemLabel}>Query Engines</span>}
       </button>
 
       {/* All Chats link */}

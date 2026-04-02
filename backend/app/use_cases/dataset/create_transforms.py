@@ -31,7 +31,7 @@ async def create_transforms(
     outbox_repo = repositories.outbox
 
     service = DatasetService(repositories)
-    await service.fetch_dataset_record(dataset_id)
+    dataset_record = await service.fetch_dataset_record(dataset_id)
 
     # Server-side expression_sql generation for non-filter transforms (design D1)
     for t in transforms_input:
@@ -48,3 +48,13 @@ async def create_transforms(
         dataset_id=dataset_id,
         transforms=created,
     )
+
+    # Emit sync event if project has SQL access enabled
+    project_id = dataset_record.project_id
+    engine_node_id = await repositories.external_access.get_active_engine_node_id(project_id)
+    if engine_node_id:
+        await outbox_repo.submit_transform_sync_event(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            engine_node_id=engine_node_id,
+        )

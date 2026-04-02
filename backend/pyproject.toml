@@ -20,11 +20,12 @@ dependencies = [
     "pydantic-settings==2.1.0",
     # Functional programming
     "returns==0.22.0",
-    # DuckDB for local file-based data
+    # DuckDB for local CSV-to-Parquet conversion
     "duckdb==1.0.0",
     # Data lake storage
     "boto3==1.34.0",
-    "ibis-framework[duckdb]==9.5.0",
+    # Ibis for SQL generation (no DuckDB backend — queries go through the shared query engine)
+    "ibis-framework==9.5.0",
     "sqlglot>=25.0.0",
     "pyarrow==17.0.0",
     # HTTP client
@@ -40,8 +41,6 @@ dependencies = [
     "fhir.resources>=7.1.0",
     # Password hashing for external SQL access
     "bcrypt>=4.0.0",
-    # Docker container management for ephemeral pg_duckdb environments
-    "aiodocker>=0.21.0",
 ]
 
 [build-system]

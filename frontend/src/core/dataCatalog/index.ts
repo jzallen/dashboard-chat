@@ -2,6 +2,7 @@ export type { DataCatalog, OrgInfo } from "./client";
 export { createDataCatalog } from "./client";
 export * from "./datasets";
 export * from "./projects";
+export * from "./queryEngines";
 export * from "./reports";
 export * from "./sessions";
 export * from "./sqlAccess";

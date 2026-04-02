@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -80,7 +80,7 @@ class TestGetDataset:
 
         mock_preview = [{"col1": "value1"}, {"col1": "value2"}]
 
-        with patch.object(Dataset, "query_preview_rows", return_value=mock_preview):
+        with patch.object(Dataset, "query_preview_rows", new_callable=AsyncMock, return_value=mock_preview):
             result = await get_dataset(
                 dataset_id=DATASET_1,
                 include_preview=True,
@@ -117,7 +117,7 @@ class TestGetDataset:
         """get_dataset should return Failure when preview query fails."""
         set_session(seeded_db)
 
-        def failing_preview(limit=10):
+        async def failing_preview(limit=10):
             raise ClientError({"Error": {"Code": "NoSuchKey", "Message": "Key not found"}}, "GetObject")
 
         with patch.object(Dataset, "query_preview_rows", side_effect=failing_preview):

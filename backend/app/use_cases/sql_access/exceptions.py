@@ -57,3 +57,14 @@ class EnvironmentNotStopped(DomainException):
 
     def __init__(self, project_id: str):
         super().__init__(f"Environment for project '{project_id}' is not stopped")
+
+
+class QueryEngineUnreachable(DomainException):
+    """Raised when a query engine node is not reachable."""
+
+    _type = "QUERY_ENGINE_UNREACHABLE"
+    _title = "Query Engine Unreachable"
+    _status_code = 502
+
+    def __init__(self, engine_node_id: str):
+        super().__init__(f"Query engine node '{engine_node_id}' is not reachable")

@@ -68,7 +68,7 @@ def _parse_expression(expression_config: dict[str, Any]) -> CleaningExpression:
     return expr
 
 
-def _validate_column_for_operation(
+async def _validate_column_for_operation(
     lake_repo,
     storage_path: str,
     target_column: str,
@@ -84,7 +84,7 @@ def _validate_column_for_operation(
     if target_column not in schema_fields:
         raise InvalidExpressionConfig(f"Column '{target_column}' not found in dataset schema")
 
-    column_type = lake_repo.get_parquet_column_type(storage_path, target_column)
+    column_type = await lake_repo.get_parquet_column_type(storage_path, target_column)
     if operation in TEXT_ONLY_OPERATIONS and not _is_text_type(column_type):
         raise ColumnTypeMismatch(target_column, column_type, operation)
 
@@ -117,7 +117,7 @@ async def preview_cleaning_transform(
     record = await service.fetch_dataset_record(dataset_id)
 
     schema_fields = (record.schema_config or {}).get("fields", {})
-    _validate_column_for_operation(
+    await _validate_column_for_operation(
         lake_repo,
         record.storage_path,
         target_column,
@@ -125,7 +125,7 @@ async def preview_cleaning_transform(
         expr.operation,
     )
 
-    preview = lake_repo.preview_cleaning_operation(
+    preview = await lake_repo.preview_cleaning_operation(
         storage_path=record.storage_path,
         target_column=target_column,
         expression_config=expression_config,

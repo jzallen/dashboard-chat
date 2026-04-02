@@ -56,3 +56,10 @@ export const sessionKeys = {
   list: (projectId: string) => [...sessionKeys.lists(), projectId] as const,
   detail: (sessionId: string) => [...sessionKeys.all, sessionId] as const,
 };
+
+/** TanStack Query key factory for query engine queries. */
+export const queryEngineKeys = {
+  all: ["query-engines"] as const,
+  list: () => [...queryEngineKeys.all, "list"] as const,
+  detail: (id: string) => ["query-engines", id] as const,
+};

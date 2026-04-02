@@ -17,12 +17,15 @@ from .external_access import ExternalAccessRepository
 from .lake import LakeRepository, MinIOLakeRepository
 from .metadata import MetadataRepository
 from .outbox import OutboxRepository
+from .query_engine_node import QueryEngineNodeRepository
 
 # Context variable to hold the current database session
 _db_session: ContextVar[AsyncSession | None] = ContextVar("db_session", default=None)
 
 
-Repository = MetadataRepository | LakeRepository | OutboxRepository | ExternalAccessRepository
+Repository = (
+    MetadataRepository | LakeRepository | OutboxRepository | ExternalAccessRepository | QueryEngineNodeRepository
+)
 
 
 def get_session() -> AsyncSession:
@@ -71,6 +74,7 @@ class RepositoryContainer:
             "lake_repository": MinIOLakeRepository,
             "outbox_repository": partial(OutboxRepository, db),
             "external_access_repository": partial(ExternalAccessRepository, db),
+            "query_engine_node_repository": partial(QueryEngineNodeRepository, db),
             **(overrides or {}),
         }
         self._cache: dict[str, object] = {}
@@ -99,6 +103,10 @@ class RepositoryContainer:
     @property
     def external_access(self) -> ExternalAccessRepository:
         return self["external_access_repository"]  # type: ignore[return-value]
+
+    @property
+    def query_engine_node(self) -> QueryEngineNodeRepository:
+        return self["query_engine_node_repository"]  # type: ignore[return-value]
 
 
 def with_repositories(func: Callable[P, R]) -> Callable[P, R]:

@@ -26,11 +26,11 @@ class LakeRepository(Protocol):
         """Convert CSV to partitioned Parquet files using hive-style partitioning."""
         ...
 
-    def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict[str, Any]]:
+    async def read_parquet_preview(self, storage_path: str, limit: int = 10) -> list[dict[str, Any]]:
         """Read preview rows from Parquet file."""
         ...
 
-    def get_parquet_row_count(self, storage_path: str) -> int:
+    async def get_parquet_row_count(self, storage_path: str) -> int:
         """Get row count from Parquet file."""
         ...
 
@@ -38,11 +38,11 @@ class LakeRepository(Protocol):
         """Delete Parquet file from storage."""
         ...
 
-    def get_parquet_column_type(self, storage_path: str, column: str) -> str:
+    async def get_parquet_column_type(self, storage_path: str, column: str) -> str:
         """Get the DuckDB type name for a column from Parquet schema."""
         ...
 
-    def preview_cleaning_operation(
+    async def preview_cleaning_operation(
         self,
         storage_path: str,
         target_column: str,

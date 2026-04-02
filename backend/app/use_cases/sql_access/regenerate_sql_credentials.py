@@ -8,15 +8,12 @@ from returns.result import Result
 
 from app.config import get_settings
 from app.repositories import with_repositories
-from app.repositories.external_access import AccessRecordWithHash
 from app.use_cases import handle_returns
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import (
-    ProjectEnvironment,
     generate_password,
-    get_app_pgbouncer_provisioner,
     pg_md5_hash,
-    regenerate_credentials,
+    regenerate_proxy_credentials,
 )
 from app.use_cases.sql_access.exceptions import CredentialCooldown, SqlAccessNotEnabled
 
@@ -34,11 +31,10 @@ async def regenerate_sql_credentials(
     *,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
-    """Regenerate the password for a project's external SQL access.
+    """Regenerate the proxy role password for a project's external SQL access.
 
-    Generates a new password, updates the pg_duckdb role, recreates the
-    PgBouncer proxy with the new md5 hash, stores the new md5 hash,
-    and returns the one-time plaintext password.
+    Generates a new password, updates the proxy role in the query engine,
+    stores the new hash, and returns the one-time plaintext password.
 
     Rate-limited: rejects if updated_at is less than cooldown seconds ago.
 
@@ -49,6 +45,7 @@ async def regenerate_sql_credentials(
         CredentialCooldown: If regeneration is attempted too soon.
     """
     external_access_repo = repositories.external_access
+    query_engine_repo = repositories.query_engine_node
 
     if project is None:
         project_service = ProjectService(repositories)
@@ -63,49 +60,46 @@ async def regenerate_sql_credentials(
     settings = get_settings()
     _enforce_cooldown(access_record, settings.credential_regen_cooldown_seconds)
 
-    # Reconstruct ProjectEnvironment from stored record + settings
-    env = ProjectEnvironment(
-        environment_id=access_record.environment_id,
-        host=access_record.environment_host,
-        port=access_record.environment_port,
-        database=settings.pg_duckdb_database,
-        admin_user=settings.pg_duckdb_admin_user,
-        admin_password=settings.pg_duckdb_admin_password,
-    )
+    # Get engine node connection details
+    engine_node = await query_engine_repo.get_by_id(access_record.engine_node_id)
+    if not engine_node:
+        raise RuntimeError(f"Engine node '{access_record.engine_node_id}' not found")
 
-    # Generate new credentials
+    # Generate new proxy credentials
     new_password = generate_password()
-    pg_role = access_record.pg_role
-    md5_hash = pg_md5_hash(new_password, pg_role)
+    proxy_role = access_record.pg_proxy_role or access_record.pg_role
+    md5_hash = pg_md5_hash(new_password, proxy_role)
 
-    # Update pg_duckdb role password
-    await regenerate_credentials(env, project_id, new_password)
+    # Update proxy role password in the query engine
+    from app.use_cases.sql_access._infra import ProjectEnvironment
 
-    # Recreate PgBouncer with new md5 hash (if not legacy)
-    proxy_container_id = await _rotate_pgbouncer(access_record, project_id, env, md5_hash, pg_role)
+    env = ProjectEnvironment(
+        environment_id=engine_node.id,
+        host=engine_node.host,
+        port=engine_node.port,
+        database=engine_node.database,
+        admin_user=engine_node.admin_user,
+        admin_password=settings.query_engine_admin_password,
+    )
+    await regenerate_proxy_credentials(env, project_id, new_password)
 
-    # Update stored hash and proxy container
-    update_data = {"pg_password_hash": md5_hash}
-    if proxy_container_id:
-        update_data["proxy_container_id"] = proxy_container_id
-    await external_access_repo.update(project_id, update_data)
+    # Update stored hash
+    await external_access_repo.update(project_id, {"pg_password_hash": md5_hash})
 
     return {
-        "host": access_record.environment_host,
-        "port": access_record.environment_port,
-        "database": settings.pg_duckdb_database,
-        "username": pg_role,
+        "host": engine_node.host,
+        "port": engine_node.port,
+        "database": engine_node.database,
+        "username": proxy_role,
         "password": new_password,  # One-time plaintext
         "schema": access_record.pg_schema,
         "connection_string": (
-            f"postgresql://{pg_role}:{new_password}"
-            f"@{access_record.environment_host}:{access_record.environment_port}"
-            f"/{settings.pg_duckdb_database}"
+            f"postgresql://{proxy_role}:{new_password}@{engine_node.host}:{engine_node.port}/{engine_node.database}"
         ),
     }
 
 
-def _enforce_cooldown(access_record: AccessRecordWithHash, cooldown_seconds: int) -> None:
+def _enforce_cooldown(access_record, cooldown_seconds: int) -> None:
     """Raise CredentialCooldown if the last update was too recent."""
     if access_record.updated_at:
         updated_at = datetime.fromisoformat(access_record.updated_at)
@@ -115,42 +109,3 @@ def _enforce_cooldown(access_record: AccessRecordWithHash, cooldown_seconds: int
         if elapsed < cooldown_seconds:
             remaining = int(cooldown_seconds - elapsed) + 1
             raise CredentialCooldown(remaining)
-
-
-async def _rotate_pgbouncer(
-    access_record: AccessRecordWithHash, project_id: str, env, md5_hash: str, pg_role: str
-) -> str | None:
-    """Recreate PgBouncer with new credentials, compensating on failure."""
-    old_md5_hash = access_record.pg_password_hash
-    proxy_container_id = access_record.proxy_container_id
-
-    if not proxy_container_id:
-        return None
-
-    upstream_host = env.internal_host or f"dashboard-pgduckdb-{project_id[:8]}"
-    try:
-        pgbouncer = get_app_pgbouncer_provisioner()
-        return await pgbouncer.recreate(
-            project_id=project_id,
-            proxy_port=access_record.environment_port,
-            md5_hash=md5_hash,
-            upstream_host=upstream_host,
-            auth_user=pg_role,
-        )
-    except Exception:
-        # Compensate: revert pg_duckdb role to old md5 hash so PgBouncer stays in sync
-        logger.error(
-            "PgBouncer recreate failed for project %s after credential rotation, reverting role password",
-            project_id,
-            exc_info=True,
-        )
-        try:
-            await regenerate_credentials(env, project_id, old_md5_hash)
-            logger.info("Reverted role password for project %s", project_id)
-        except Exception:
-            logger.error(
-                "Failed to revert role password for project %s — credentials may be inconsistent",
-                project_id,
-                exc_info=True,
-            )
-        raise

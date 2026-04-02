@@ -4,6 +4,7 @@ from .auth import router as auth_router
 from .datasets import router as datasets_router
 from .organizations import router as organizations_router
 from .projects import router as projects_router
+from .query_engines import router as query_engines_router
 from .reports import router as reports_router
 from .sessions import router as sessions_router
 from .sql_access import router as sql_access_router
@@ -17,6 +18,7 @@ __all__ = [
     "datasets_router",
     "organizations_router",
     "projects_router",
+    "query_engines_router",
     "reports_router",
     "sessions_router",
     "sql_access_router",

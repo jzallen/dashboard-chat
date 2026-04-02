@@ -1,12 +1,13 @@
 """FastAPI application entry point."""
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from returns.result import Failure
 
 from .auth.exceptions import AuthorizationError
 from .auth.middleware import AuthMiddleware
@@ -14,12 +15,12 @@ from .config import get_settings
 from .controllers.response_wrapper import wrap_jsonapi_error
 from .database import async_session, close_db, init_db
 from .plugins import create_plugin_registry
-from .repositories import set_session
 from .routers import (
     auth_router,
     datasets_router,
     organizations_router,
     projects_router,
+    query_engines_router,
     reports_router,
     sessions_router,
     sql_access_router,
@@ -28,37 +29,43 @@ from .routers import (
     uploads_router,
     views_router,
 )
-from .use_cases.sql_access._infra import set_app_pgbouncer_provisioner, set_app_provisioner
-from .use_cases.sql_access.reconcile_sql_access import reconcile_sql_access
+from .use_cases.query_engine.seed_default_node import seed_default_query_engine_node
+from .use_cases.query_engine.sync_processor import run_sync_processor
+from .use_cases.sql_access._infra import (
+    AsyncpgQueryEngineProvisioner,
+    MockQueryEngineProvisioner,
+    set_app_query_engine_provisioner,
+)
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
 
-def _create_provisioners():
-    """Create the environment provisioners based on config."""
+def _create_query_engine_provisioner():
+    """Create the query engine provisioner based on config."""
     if settings.environment_provisioner == "mock":
-        from .use_cases.sql_access._infra import MockEnvironmentProvisioner, MockPgBouncerProvisioner
+        return MockQueryEngineProvisioner()
 
-        return MockEnvironmentProvisioner(), MockPgBouncerProvisioner()
+    async def node_lookup(engine_node_id: str) -> dict:
+        """Look up engine node connection details from the database."""
+        async with async_session() as session:
+            from .repositories import RestrictedSession
+            from .repositories.query_engine_node import QueryEngineNodeRepository
 
-    from .use_cases.sql_access._infra.docker_provisioner import DockerPgDuckDbProvisioner
-    from .use_cases.sql_access._infra.pgbouncer_provisioner import DockerPgBouncerProvisioner
+            repo = QueryEngineNodeRepository(RestrictedSession(session))
+            node = await repo.get_by_id(engine_node_id)
+            if not node:
+                raise KeyError(f"Engine node '{engine_node_id}' not found")
+            return {
+                "host": node.host,
+                "port": node.port,
+                "database": node.database,
+                "admin_user": node.admin_user,
+                "admin_password": settings.query_engine_admin_password,
+            }
 
-    pgbouncer_provisioner = DockerPgBouncerProvisioner(
-        image=settings.pgbouncer_image,
-        network=settings.pg_duckdb_network,
-    )
-    env_provisioner = DockerPgDuckDbProvisioner(
-        image=settings.pg_duckdb_image,
-        network=settings.pg_duckdb_network,
-        admin_user=settings.pg_duckdb_admin_user,
-        admin_password=settings.pg_duckdb_admin_password,
-        database=settings.pg_duckdb_database,
-        pgbouncer_provisioner=pgbouncer_provisioner,
-    )
-    return env_provisioner, pgbouncer_provisioner
+    return AsyncpgQueryEngineProvisioner(node_lookup=node_lookup)
 
 
 @asynccontextmanager
@@ -70,29 +77,29 @@ async def lifespan(app: FastAPI):
     app.state.plugin_registry = create_plugin_registry()
     logger.info("Loaded %d file format plugins", len(app.state.plugin_registry.all_plugins()))
 
-    provisioner, pgbouncer_provisioner = _create_provisioners()
-    set_app_provisioner(provisioner)
-    set_app_pgbouncer_provisioner(pgbouncer_provisioner)
-    app.state.provisioner = provisioner
-    app.state.pgbouncer_provisioner = pgbouncer_provisioner
-    logger.info("Configured environment provisioner: %s", settings.environment_provisioner)
+    # Configure query engine provisioner
+    provisioner = _create_query_engine_provisioner()
+    set_app_query_engine_provisioner(provisioner)
+    logger.info("Configured query engine provisioner: %s", type(provisioner).__name__)
 
-    # Reconcile enabled environments against running containers
-    async with async_session() as session:
-        set_session(session)
-        result = await reconcile_sql_access()
-        if isinstance(result, Failure):
-            logger.warning("SQL access reconciliation failed: %s", result.failure())
-        else:
-            logger.info("SQL access reconciliation: %s", result.unwrap())
+    # Seed default query engine node for dev org
+    if settings.auto_provision_org:
+        async with async_session() as session:
+            from .auth.dev_provider import DEV_USER
+
+            await seed_default_query_engine_node(session, DEV_USER.org_id)
+
+    # Start sync processor background task
+    sync_task = asyncio.create_task(run_sync_processor(), name="sync-processor")
+    app.state.sync_processor_task = sync_task
 
     yield
 
     # Shutdown
-    if hasattr(pgbouncer_provisioner, "close"):
-        await pgbouncer_provisioner.close()
-    if hasattr(provisioner, "close"):
-        await provisioner.close()
+    sync_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sync_task
+
     await close_db()
 
 
@@ -133,6 +140,7 @@ app.include_router(projects_router)
 app.include_router(transforms_router)
 app.include_router(organizations_router)
 app.include_router(sql_access_router)
+app.include_router(query_engines_router)
 app.include_router(views_router)
 app.include_router(reports_router)
 app.include_router(sessions_router)

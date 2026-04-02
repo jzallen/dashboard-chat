@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING
 from returns.result import Result
 
 from app.config import get_settings
+from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
+from app.use_cases.project._dbt.naming import to_snake_case
 from app.use_cases.project.project_service import ProjectService
 
 if TYPE_CHECKING:
@@ -24,37 +26,62 @@ async def get_sql_access(
     """Get SQL access connection details for a project.
 
     Returns connection details (without password) if enabled,
-    or a minimal response with enabled=False if not enabled.
-
-    Host and port are read from the ExternalAccessRecord (dynamic per-container).
+    including per-dataset sync status derived from the outbox.
 
     Raises:
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
     external_access_repo = repositories.external_access
+    metadata_repo = repositories.metadata
 
     if project is None:
         project_service = ProjectService(repositories)
         project = await project_service.fetch_project(project_id)
 
-    # Get SQL access record
     access_record = await external_access_repo.get_by_project_id(project_id)
     if not access_record or not access_record.enabled:
         return {"project_id": project_id, "enabled": False}
 
     settings = get_settings()
+
+    # Derive connection details from engine node
+    engine_node = None
+    if access_record.engine_node_id:
+        engine_node = await repositories.query_engine_node.get_by_id(access_record.engine_node_id)
+
+    host = engine_node.host if engine_node else settings.query_engine_host
+    port = engine_node.port if engine_node else settings.query_engine_port
+    database = engine_node.database if engine_node else settings.query_engine_database
+
+    # Get per-dataset sync status
+    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
+    dataset_ids = [r.id if hasattr(r, "id") else r["id"] for r in records]
+    sync_statuses = await repositories.outbox.get_sync_status_by_dataset(dataset_ids)
+
+    datasets_sync = []
+    for r in records:
+        ds = Dataset.from_record(r, include_transforms=False)
+        ds_id = ds.id
+        datasets_sync.append(
+            {
+                "dataset_id": ds_id,
+                "name": ds.name,
+                "view_name": to_snake_case(ds.name),
+                "sync_status": sync_statuses.get(ds_id, "synced"),
+            }
+        )
+
     return {
         "project_id": project_id,
         "enabled": True,
-        "host": access_record.environment_host,
-        "port": access_record.environment_port,
-        "database": settings.pg_duckdb_database,
-        "username": access_record.pg_role,
+        "host": host,
+        "port": port,
+        "database": database,
+        "username": access_record.pg_proxy_role or access_record.pg_role,
         "schema": access_record.pg_schema,
-        "environment_status": access_record.environment_status or "running",
-        "status_message": access_record.status_message,
-        "is_legacy": access_record.is_legacy,
+        "engine_node_id": access_record.engine_node_id,
         "last_synced_at": access_record.last_synced_at,
         "created_at": access_record.created_at,
+        "datasets": datasets_sync,
     }

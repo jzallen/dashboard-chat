@@ -3,13 +3,14 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.context import clear_auth_user, set_auth_user
 from app.auth.types import AuthUser
-from app.repositories.metadata import DatasetRecord, ExternalAccessRecord, ProjectRecord
+from app.repositories.metadata import DatasetRecord, ProjectRecord
+from app.repositories.metadata.external_access_record import ExternalAccessRecord
+from app.repositories.metadata.query_engine_node_record import QueryEngineNodeRecord
 from app.use_cases.sql_access._infra import (
-    MockEnvironmentProvisioner,
-    MockPgBouncerProvisioner,
-    set_app_pgbouncer_provisioner,
-    set_app_provisioner,
+    MockQueryEngineProvisioner,
+    set_app_query_engine_provisioner,
 )
 from tests.uuidv7_fixtures import (
     DATASET_1,
@@ -17,6 +18,7 @@ from tests.uuidv7_fixtures import (
     DATASET_OTHER,
     EA_1,
     EA_DISABLED,
+    ENGINE_NODE_1,
     ORG_1,
     ORG_OTHER,
     PROJECT_1,
@@ -27,33 +29,41 @@ from tests.uuidv7_fixtures import (
 
 TEST_USER = AuthUser(id=USER_1, email="test@example.com", org_id=ORG_1, name="Test User")
 
-# Environment fields matching MockEnvironmentProvisioner defaults
-MOCK_ENV_ID = "mock-container-id"
-MOCK_ENV_HOST = "localhost"
-MOCK_ENV_PORT = 15432
+
+@pytest.fixture(autouse=True)
+def auth_user():
+    """Set a default auth user for all SQL access tests."""
+    set_auth_user(TEST_USER)
+    yield
+    clear_auth_user()
 
 
 @pytest.fixture(autouse=True)
-def mock_provisioner():
-    """Set a mock provisioner for all SQL access tests."""
-    provisioner = MockEnvironmentProvisioner()
-    set_app_provisioner(provisioner)
+def mock_query_engine_provisioner():
+    """Set a mock query engine provisioner for all SQL access tests."""
+    provisioner = MockQueryEngineProvisioner()
+    set_app_query_engine_provisioner(provisioner)
     yield provisioner
-    set_app_provisioner(None)  # type: ignore[arg-type]
-
-
-@pytest.fixture(autouse=True)
-def mock_pgbouncer_provisioner():
-    """Set a mock PgBouncer provisioner for all SQL access tests."""
-    provisioner = MockPgBouncerProvisioner()
-    set_app_pgbouncer_provisioner(provisioner)
-    yield provisioner
-    set_app_pgbouncer_provisioner(None)
+    set_app_query_engine_provisioner(None)  # type: ignore[arg-type]
 
 
 @pytest.fixture
 async def seeded_db(db_session: AsyncSession):
-    """Seed the database with a project and two datasets."""
+    """Seed the database with an engine node, project, and two datasets."""
+    # Engine node (parent)
+    node = QueryEngineNodeRecord(
+        id=ENGINE_NODE_1,
+        org_id=ORG_1,
+        name="default",
+        host="query-engine",
+        port=5432,
+        database="dashboard_external",
+        admin_user="duckdb_admin",
+        admin_password_encrypted="encrypted-secret",
+        status="active",
+    )
+    db_session.add(node)
+
     project = ProjectRecord(
         id=PROJECT_1,
         name="Test Project",
@@ -61,6 +71,7 @@ async def seeded_db(db_session: AsyncSession):
         org_id=ORG_1,
     )
     db_session.add(project)
+    await db_session.flush()
 
     dataset1 = DatasetRecord(
         id=DATASET_1,
@@ -83,19 +94,16 @@ async def seeded_db(db_session: AsyncSession):
 
 @pytest.fixture
 async def seeded_db_with_access(seeded_db: AsyncSession):
-    """Seed the database with a project, datasets, and an enabled external access record."""
+    """Seed with enabled external access record linked to engine node."""
     record = ExternalAccessRecord(
         id=EA_1,
         project_id=PROJECT_1,
         org_id=ORG_1,
+        engine_node_id=ENGINE_NODE_1,
         pg_schema="project_project_",
         pg_role="reader_project_",
+        pg_proxy_role="proxy_project_",
         pg_password_hash="md5abcdef1234567890abcdef12345678",
-        environment_id=MOCK_ENV_ID,
-        environment_host=MOCK_ENV_HOST,
-        environment_port=MOCK_ENV_PORT,
-        proxy_container_id="mock-pgbouncer-container",
-        environment_status="running",
         enabled=True,
     )
     seeded_db.add(record)
@@ -105,18 +113,16 @@ async def seeded_db_with_access(seeded_db: AsyncSession):
 
 @pytest.fixture
 async def seeded_db_with_disabled_access(seeded_db: AsyncSession):
-    """Seed the database with a project, datasets, and a disabled external access record."""
+    """Seed with disabled external access record."""
     record = ExternalAccessRecord(
         id=EA_DISABLED,
         project_id=PROJECT_1,
         org_id=ORG_1,
+        engine_node_id=ENGINE_NODE_1,
         pg_schema="project_project_",
         pg_role="reader_project_",
+        pg_proxy_role="proxy_project_",
         pg_password_hash="md5abcdef1234567890abcdef12345678",
-        environment_id=None,
-        environment_host=None,
-        environment_port=None,
-        environment_status="disabled",
         enabled=False,
     )
     seeded_db.add(record)
@@ -125,30 +131,21 @@ async def seeded_db_with_disabled_access(seeded_db: AsyncSession):
 
 
 @pytest.fixture
-async def seeded_db_with_stopped_access(seeded_db: AsyncSession):
-    """Seed the database with a project, datasets, and a stopped external access record."""
-    record = ExternalAccessRecord(
-        id=EA_1,
-        project_id=PROJECT_1,
-        org_id=ORG_1,
-        pg_schema="project_project_",
-        pg_role="reader_project_",
-        pg_password_hash="md5abcdef1234567890abcdef12345678",
-        environment_id=None,
-        environment_host=MOCK_ENV_HOST,
-        environment_port=MOCK_ENV_PORT,
-        proxy_container_id="mock-pgbouncer-container",
-        environment_status="stopped",
-        enabled=True,
-    )
-    seeded_db.add(record)
-    await seeded_db.commit()
-    return seeded_db
-
-
-@pytest.fixture
 async def seeded_db_no_datasets(db_session: AsyncSession):
-    """Seed the database with a project that has no datasets."""
+    """Seed with an engine node and project that has no datasets."""
+    node = QueryEngineNodeRecord(
+        id=ENGINE_NODE_1,
+        org_id=ORG_1,
+        name="default",
+        host="query-engine",
+        port=5432,
+        database="dashboard_external",
+        admin_user="duckdb_admin",
+        admin_password_encrypted="encrypted-secret",
+        status="active",
+    )
+    db_session.add(node)
+
     project = ProjectRecord(
         id=PROJECT_EMPTY,
         name="Empty Project",
@@ -161,7 +158,7 @@ async def seeded_db_no_datasets(db_session: AsyncSession):
 
 @pytest.fixture
 async def seeded_db_other_org(db_session: AsyncSession):
-    """Seed the database with a project owned by a different org."""
+    """Seed with a project owned by a different org."""
     project = ProjectRecord(
         id=PROJECT_OTHER,
         name="Other Org Project",

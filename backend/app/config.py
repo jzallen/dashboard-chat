@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     # Credential management
     credential_regen_cooldown_seconds: int = 60
 
+    # Query engine — org-level persistent pg_duckdb service
+    query_engine_host: str = "query-engine"
+    query_engine_port: int = 5432
+    query_engine_admin_user: str = "duckdb_admin"
+    query_engine_admin_password: str = "duckdb_secret"
+    query_engine_database: str = "dashboard_external"
+    query_engine_name: str = "default"
+
     # MinIO internal endpoint for pg_duckdb containers (Docker networking)
     minio_internal_endpoint: str = ""
 

@@ -37,3 +37,10 @@ class ExternalAccessRepositoryError(RepositoryError):
 
     def __init__(self, message: str):
         super().__init__(f"[ExternalAccessRepository] {message}")
+
+
+class QueryEngineNodeRepositoryError(RepositoryError):
+    """Raised when the query engine node repository encounters an error."""
+
+    def __init__(self, message: str):
+        super().__init__(f"[QueryEngineNodeRepository] {message}")

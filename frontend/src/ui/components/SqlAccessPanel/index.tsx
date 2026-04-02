@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import type { SqlAccessStatus } from "@/dataCatalog";
 
@@ -6,10 +7,7 @@ import {
   useDisableSqlAccess,
   useEnableSqlAccess,
   useRegenerateSqlCredentials,
-  useRestartEnvironment,
   useSqlAccessQuery,
-  useStartEnvironment,
-  useStopEnvironment,
   useSyncSqlAccess,
 } from "../../hooks/useSqlAccessQuery";
 import styles from "./SqlAccessPanel.module.css";
@@ -61,22 +59,14 @@ function ConfirmDialog({
       <div className={styles.dialog}>
         <h3 className={styles.dialogTitle}>Disable SQL Access?</h3>
         <p className={styles.dialogDescription}>
-          This will terminate all active connections and remove the database.
-          This action cannot be undone.
+          This will drop the project schema and roles from the query engine.
+          Active connections will be terminated.
         </p>
         <div className={styles.dialogActions}>
-          <button
-            className={styles.secondaryButton}
-            onClick={onCancel}
-            type="button"
-          >
+          <button className={styles.secondaryButton} onClick={onCancel} type="button">
             Cancel
           </button>
-          <button
-            className={styles.dangerButton}
-            onClick={onConfirm}
-            type="button"
-          >
+          <button className={styles.dangerButton} onClick={onConfirm} type="button">
             Disable
           </button>
         </div>
@@ -85,121 +75,22 @@ function ConfirmDialog({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function SyncStatusIndicator({ status }: { status: string }) {
   const config: Record<string, { color: string; label: string }> = {
-    running: { color: styles.statusRunning, label: "Running" },
-    stopped: { color: styles.statusStopped, label: "Stopped" },
-    degraded: { color: styles.statusDegraded, label: "Degraded" },
-    provisioning: { color: styles.statusProvisioning, label: "Provisioning" },
-    error: { color: styles.statusError, label: "Error" },
+    synced: { color: "#22c55e", label: "Synced" },
+    pending: { color: "#f59e0b", label: "Pending" },
+    error: { color: "#ef4444", label: "Error" },
   };
-  const { color, label } = config[status] ?? config.running;
+  const { color, label } = config[status] ?? config.synced;
   return (
-    <span className={`${styles.statusBadge} ${color}`} data-testid="status-badge">
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: color }} />
       {label}
     </span>
   );
 }
 
-function LegacyMigrationBanner({ onDisable }: { onDisable: () => void }) {
-  return (
-    <div className={styles.legacyBanner} data-testid="legacy-banner">
-      <div className={styles.legacyIcon}>&#9888;</div>
-      <div className={styles.legacyContent}>
-        <h3 className={styles.legacyTitle}>SQL Access needs to be reconfigured</h3>
-        <p className={styles.legacyDescription}>
-          We've upgraded SQL Access to use stable credentials that survive
-          environment restarts. Please disable and re-enable SQL Access to get
-          your new stable endpoint.
-        </p>
-        <button className={styles.dangerButton} onClick={onDisable} type="button">
-          Disable SQL Access
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function EnvironmentControls({
-  projectId,
-  environmentStatus,
-  statusMessage,
-}: {
-  projectId: string;
-  environmentStatus: string;
-  statusMessage?: string | null;
-}) {
-  const startMutation = useStartEnvironment();
-  const stopMutation = useStopEnvironment();
-  const restartMutation = useRestartEnvironment();
-
-  const isPending = startMutation.isPending || stopMutation.isPending || restartMutation.isPending;
-  const isRunning = environmentStatus === "running";
-  const isStopped = environmentStatus === "stopped";
-  const isDegraded = environmentStatus === "degraded";
-  const isError = environmentStatus === "error";
-  const isProvisioning = environmentStatus === "provisioning";
-
-  return (
-    <div className={styles.environmentSection}>
-      <div className={styles.environmentHeader}>
-        <span className={styles.sectionTitle}>Environment</span>
-        <StatusBadge status={environmentStatus} />
-      </div>
-
-      {statusMessage && (isDegraded || isError) && (
-        <p className={styles.statusMessage}>{statusMessage}</p>
-      )}
-
-      {isStopped && (
-        <p className={styles.stoppedNote}>
-          Environment is stopped. Connection attempts will fail until started.
-        </p>
-      )}
-
-      <div className={styles.environmentActions}>
-        {(isStopped || isError) && (
-          <button
-            className={styles.primaryButton}
-            onClick={() => (isError ? restartMutation : startMutation).mutate(projectId)}
-            disabled={isPending || isProvisioning}
-            type="button"
-          >
-            {isPending ? "Starting..." : isError ? "Retry" : "Start"}
-          </button>
-        )}
-        {(isRunning || isDegraded) && (
-          <>
-            <button
-              className={styles.secondaryButton}
-              onClick={() => stopMutation.mutate(projectId)}
-              disabled={isPending || isProvisioning}
-              type="button"
-            >
-              {stopMutation.isPending ? "Stopping..." : "Stop"}
-            </button>
-            <button
-              className={styles.secondaryButton}
-              onClick={() => restartMutation.mutate(projectId)}
-              disabled={isPending || isProvisioning}
-              type="button"
-            >
-              {restartMutation.isPending ? "Restarting..." : "Restart"}
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
+function DetailRow({ label, value }: { label: string; value: string | number }) {
   return (
     <>
       <span className={styles.detailLabel}>{label}</span>
@@ -228,54 +119,28 @@ function ConnectionDetails({
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showConnString, setShowConnString] = useState(false);
-
-  const buildConnectionString = () => {
-    if (status.connection_string) return status.connection_string;
-    if (status.host) return `postgresql://${status.username}@${status.host}:${status.port}/${status.database}`;
-    return undefined;
-  };
-  const connectionString = buildConnectionString();
-
-  const maskedConnString = connectionString
-    ? connectionString.replace(/\/\/([^@]+)@/, "//****@")
-    : undefined;
 
   return (
     <>
       <div className={styles.header}>
         <span className={styles.title}>SQL Access</span>
-        <StatusBadge status={status.environment_status ?? "running"} />
+        {status.engine_node_id && (
+          <Link
+            to={`/query-engines/${status.engine_node_id}`}
+            style={{ fontSize: 13, color: "#2563eb", textDecoration: "none" }}
+          >
+            View Engine
+          </Link>
+        )}
       </div>
 
       <div className={styles.detailsGrid}>
         {status.host && <DetailRow label="Host" value={status.host} />}
         {status.port && <DetailRow label="Port" value={status.port} />}
-        {status.database && (
-          <DetailRow label="Database" value={status.database} />
-        )}
-        {status.username && (
-          <DetailRow label="Username" value={status.username} />
-        )}
+        {status.database && <DetailRow label="Database" value={status.database} />}
+        {status.username && <DetailRow label="Username" value={status.username} />}
         {status.schema && <DetailRow label="Schema" value={status.schema} />}
       </div>
-
-      {connectionString && (
-        <div className={styles.connectionString}>
-          <span className={styles.connectionStringText}>
-            {showConnString ? connectionString : maskedConnString}
-          </span>
-          <button
-            className={styles.eyeButton}
-            onClick={() => setShowConnString(!showConnString)}
-            aria-label={showConnString ? "Hide connection string" : "Show connection string"}
-            type="button"
-          >
-            {showConnString ? "\u25C9" : "\u25CE"}
-          </button>
-          <CopyButton text={connectionString} />
-        </div>
-      )}
 
       <div className={styles.section}>
         <div className={styles.passwordRow}>
@@ -306,18 +171,35 @@ function ConnectionDetails({
           </button>
         </div>
         {password && (
-          <p className={styles.passwordWarning}>
-            Save this password — it won't be shown again
-          </p>
+          <p className={styles.passwordWarning}>Save this password — it won't be shown again</p>
         )}
       </div>
 
-      {status.environment_status && (
-        <EnvironmentControls
-          projectId={status.project_id}
-          environmentStatus={status.environment_status}
-          statusMessage={status.status_message}
-        />
+      {/* Per-dataset sync status */}
+      {status.datasets && status.datasets.length > 0 && (
+        <div className={styles.section}>
+          <span className={styles.sectionTitle}>Dataset Sync Status</span>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8, fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #e5e7eb", textAlign: "left" }}>
+                <th style={{ padding: "4px 8px", fontWeight: 500, color: "#6b7280" }}>Dataset</th>
+                <th style={{ padding: "4px 8px", fontWeight: 500, color: "#6b7280" }}>View</th>
+                <th style={{ padding: "4px 8px", fontWeight: 500, color: "#6b7280" }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.datasets.map((ds: { dataset_id: string; name: string; view_name: string; sync_status: string }) => (
+                <tr key={ds.dataset_id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "6px 8px" }}>{ds.name}</td>
+                  <td style={{ padding: "6px 8px", fontFamily: "monospace" }}>{ds.view_name}</td>
+                  <td style={{ padding: "6px 8px" }}>
+                    <SyncStatusIndicator status={ds.sync_status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <div className={styles.section}>
@@ -333,7 +215,7 @@ function ConnectionDetails({
             disabled={isSyncing}
             type="button"
           >
-            {isSyncing ? "Syncing..." : "Sync Now"}
+            {isSyncing ? "Syncing..." : "Force Sync"}
           </button>
         </div>
       </div>
@@ -369,7 +251,6 @@ export function SqlAccessPanel({ projectId }: SqlAccessPanelProps) {
   const syncMutation = useSyncSqlAccess();
   const regenerateMutation = useRegenerateSqlCredentials();
 
-  // Track the password shown after enable/regenerate
   const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
 
   const handleEnable = useCallback(() => {
@@ -409,19 +290,17 @@ export function SqlAccessPanel({ projectId }: SqlAccessPanelProps) {
     );
   }
 
-  // Provisioning state (enable in progress)
   if (enableMutation.isPending) {
     return (
       <div className={styles.container}>
         <div className={styles.spinnerContainer}>
           <div className={styles.spinner} />
-          <span className={styles.spinnerText}>Provisioning database...</span>
+          <span className={styles.spinnerText}>Setting up SQL access...</span>
         </div>
       </div>
     );
   }
 
-  // Disabled or no data
   if (!status?.enabled) {
     return (
       <div className={styles.container}>
@@ -430,11 +309,7 @@ export function SqlAccessPanel({ projectId }: SqlAccessPanelProps) {
           <p className={styles.emptyDescription}>
             Connect to your project data with any PostgreSQL client.
           </p>
-          <button
-            className={styles.primaryButton}
-            onClick={handleEnable}
-            type="button"
-          >
+          <button className={styles.primaryButton} onClick={handleEnable} type="button">
             Enable SQL Access
           </button>
         </div>
@@ -442,16 +317,6 @@ export function SqlAccessPanel({ projectId }: SqlAccessPanelProps) {
     );
   }
 
-  // Legacy migration banner
-  if (status.is_legacy) {
-    return (
-      <div className={styles.container}>
-        <LegacyMigrationBanner onDisable={handleDisable} />
-      </div>
-    );
-  }
-
-  // Enabled — show connection details
   return (
     <div className={styles.container}>
       <ConnectionDetails

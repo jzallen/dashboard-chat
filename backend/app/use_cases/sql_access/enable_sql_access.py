@@ -7,26 +7,17 @@ from returns.result import Result
 
 from app.config import get_settings
 from app.models.dataset import Dataset
-from app.repositories import get_session, with_repositories
+from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project.exceptions import ProjectHasNoDatasets
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.sql_access._infra import (
-    allocate_proxy_port,
-    create_project_schema,
     generate_password,
-    get_app_pgbouncer_provisioner,
-    get_app_provisioner,
+    get_app_query_engine_provisioner,
     pg_md5_hash,
-    role_name,
-    schema_name,
 )
-from app.use_cases.sql_access._status import EnvironmentStatusValue as Status
-from app.use_cases.sql_access.exceptions import SqlAccessAlreadyEnabled
-from app.use_cases.sql_access.sql_access_service import (
-    bootstrap_sql_views,
-    build_storage_config,
-)
+from app.use_cases.sql_access.exceptions import QueryEngineUnreachable, SqlAccessAlreadyEnabled
+from app.use_cases.sql_access.sql_access_service import bootstrap_sql_views_via_provisioner
 
 if TYPE_CHECKING:
     from app.auth.types import AuthUser
@@ -46,9 +37,8 @@ async def enable_sql_access(
 ) -> Result[dict, str]:
     """Enable external SQL access for a project.
 
-    Provisions an ephemeral pg_duckdb container, creates a schema and role,
-    runs bootstrap SQL to create source views, provisions a PgBouncer proxy,
-    and stores credentials.
+    Creates a schema, internal reader role, and proxy role in the org's
+    query engine node, bootstraps SQL views, and stores credentials.
 
     Returns connection details including the one-time plaintext password.
 
@@ -60,6 +50,7 @@ async def enable_sql_access(
     """
     metadata_repo = repositories.metadata
     external_access_repo = repositories.external_access
+    query_engine_repo = repositories.query_engine_node
 
     if project is None:
         project_service = ProjectService(repositories)
@@ -75,132 +66,44 @@ async def enable_sql_access(
     if not dataset_records:
         raise ProjectHasNoDatasets(project_id)
 
-    # Provision ephemeral pg_duckdb environment
-    storage_config = build_storage_config()
-    provisioner = get_app_provisioner()
-    env = await provisioner.provision(project_id, storage_config)
+    # Get the org's default engine node
+    engine_node = await query_engine_repo.get_first_for_org(user.org_id)
+    if not engine_node:
+        raise RuntimeError(f"No query engine node found for org '{user.org_id}'")
 
-    # Generate credentials
+    # Verify engine is reachable before provisioning
+    provisioner = get_app_query_engine_provisioner()
+    if not await provisioner.health_check(engine_node.id):
+        raise QueryEngineUnreachable(engine_node.id)
+
+    # Generate credentials and create schema/roles in the engine
     password = generate_password()
-    pg_schema = schema_name(project_id)
-    pg_role = role_name(project_id)
-    md5_hash = pg_md5_hash(password, pg_role)
+    access_info = await provisioner.create_project_access(engine_node.id, project_id, password)
 
-    # Create schema/role and bootstrap views, with compensation on failure
-    await _setup_schema_and_views(env, project_id, password, pg_schema, metadata_repo, provisioner)
+    pg_schema = access_info["pg_schema"]
+    pg_role = access_info["pg_role"]
+    pg_proxy_role = access_info["pg_proxy_role"]
+    md5_hash = pg_md5_hash(password, pg_proxy_role)
 
-    # Allocate proxy port and provision PgBouncer
-    proxy_port, proxy_container_id = await _provision_pgbouncer(project_id, env, md5_hash, pg_role, provisioner)
-
-    # Store metadata
-    await _store_access_record(
-        external_access_repo,
-        project_id,
-        access_record,
-        md5_hash,
-        pg_schema,
-        pg_role,
-        env,
-        proxy_port,
-        proxy_container_id,
-        user=user,
+    # Bootstrap SQL views
+    settings = get_settings()
+    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=True)
+    full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
+    await bootstrap_sql_views_via_provisioner(
+        provisioner, engine_node.id, project_id, pg_schema, full_datasets, settings.storage_bucket
     )
 
-    return {
-        "host": env.host,
-        "port": proxy_port,
-        "database": env.database,
-        "username": pg_role,
-        "password": password,  # One-time plaintext
-        "schema": pg_schema,
-        "enabled": True,
-        "environment_status": Status.RUNNING,
-        "connection_string": (f"postgresql://{pg_role}:{password}@{env.host}:{proxy_port}/{env.database}"),
-    }
-
-
-async def _setup_schema_and_views(env, project_id, password, pg_schema, metadata_repo, provisioner):
-    """Create schema/role, bootstrap SQL views, and grant usage.
-
-    Compensates by deprovisioning the environment if bootstrap fails.
-    """
-    await create_project_schema(env, project_id, password)
-    try:
-        settings = get_settings()
-        records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=True)
-        full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
-        await bootstrap_sql_views(env, project_id, pg_schema, full_datasets, settings.storage_bucket)
-    except Exception:
-        logger.warning("Bootstrap failed for project %s, deprovisioning environment", project_id)
-        await _compensate_deprovision(provisioner, project_id)
-        raise
-
-
-async def _provision_pgbouncer(project_id, env, md5_hash, pg_role, provisioner):
-    """Allocate a proxy port and provision PgBouncer.
-
-    Compensates by deprovisioning pg_duckdb if PgBouncer provisioning fails.
-    """
-    session = get_session()
-    proxy_port = await allocate_proxy_port(session)
-    upstream_host = env.internal_host or f"dashboard-pgduckdb-{project_id[:8]}"
-
-    try:
-        pgbouncer = get_app_pgbouncer_provisioner()
-        proxy_container_id = await pgbouncer.provision(
-            project_id=project_id,
-            proxy_port=proxy_port,
-            md5_hash=md5_hash,
-            upstream_host=upstream_host,
-            auth_user=pg_role,
-        )
-    except Exception:
-        logger.warning(
-            "PgBouncer provisioning failed for project %s, deprovisioning pg_duckdb",
-            project_id,
-        )
-        await _compensate_deprovision(provisioner, project_id)
-        raise
-
-    return proxy_port, proxy_container_id
-
-
-async def _compensate_deprovision(provisioner, project_id: str) -> None:
-    """Deprovision pg_duckdb as compensation for a failed step."""
-    try:
-        await provisioner.deprovision(project_id)
-    except Exception:
-        logger.error("Cleanup also failed for project %s", project_id, exc_info=True)
-
-
-async def _store_access_record(
-    external_access_repo,
-    project_id,
-    access_record,
-    md5_hash,
-    pg_schema,
-    pg_role,
-    env,
-    proxy_port,
-    proxy_container_id,
-    *,
-    user: "AuthUser",
-):
-    """Store or update the external access metadata record."""
+    # Store metadata
     record_data = {
         "enabled": True,
         "pg_password_hash": md5_hash,
         "pg_schema": pg_schema,
         "pg_role": pg_role,
-        "environment_id": env.environment_id,
-        "environment_host": env.host,
-        "environment_port": proxy_port,
-        "proxy_container_id": proxy_container_id,
-        "environment_status": Status.RUNNING,
+        "pg_proxy_role": pg_proxy_role,
+        "engine_node_id": engine_node.id,
     }
 
     if access_record:
-        # Re-enable a previously disabled record
         await external_access_repo.update(project_id, record_data)
     else:
         await external_access_repo.create(
@@ -209,9 +112,20 @@ async def _store_access_record(
             pg_schema=pg_schema,
             pg_role=pg_role,
             pg_password_hash=md5_hash,
-            environment_id=env.environment_id,
-            environment_host=env.host,
-            environment_port=proxy_port,
-            proxy_container_id=proxy_container_id,
-            environment_status=Status.RUNNING,
+            engine_node_id=engine_node.id,
+            pg_proxy_role=pg_proxy_role,
         )
+
+    return {
+        "host": engine_node.host,
+        "port": engine_node.port,
+        "database": engine_node.database,
+        "username": pg_proxy_role,
+        "password": password,  # One-time plaintext
+        "schema": pg_schema,
+        "enabled": True,
+        "engine_node_id": engine_node.id,
+        "connection_string": (
+            f"postgresql://{pg_proxy_role}:{password}@{engine_node.host}:{engine_node.port}/{engine_node.database}"
+        ),
+    }

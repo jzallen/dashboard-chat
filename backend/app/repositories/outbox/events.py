@@ -48,7 +48,43 @@ class ProjectCreated:
     created_by: str
 
 
-OutboxEvent = UploadFileReceived | TransformsCreated | TransformsUpdated | ProjectCreated
+@dataclass(frozen=True, slots=True)
+class DatasetSyncRequested:
+    """Dataset sync requested — propagate view creation/update to query engine."""
+
+    project_id: str
+    dataset_id: str
+    engine_node_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class TransformSyncRequested:
+    """Transform sync requested — propagate view update to query engine."""
+
+    project_id: str
+    dataset_id: str
+    engine_node_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetRemoved:
+    """Dataset removed — propagate view deletion to query engine."""
+
+    project_id: str
+    dataset_id: str
+    engine_node_id: str
+    view_name: str
+
+
+OutboxEvent = (
+    UploadFileReceived
+    | TransformsCreated
+    | TransformsUpdated
+    | ProjectCreated
+    | DatasetSyncRequested
+    | TransformSyncRequested
+    | DatasetRemoved
+)
 
 
 def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:
@@ -69,6 +105,9 @@ def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:
         "TransformsCreated": TransformsCreated,
         "TransformsUpdated": TransformsUpdated,
         "ProjectCreated": ProjectCreated,
+        "DatasetSyncRequested": DatasetSyncRequested,
+        "TransformSyncRequested": TransformSyncRequested,
+        "DatasetRemoved": DatasetRemoved,
     }
     event_class = event_registry[event_type]
     return event_class(**payload)

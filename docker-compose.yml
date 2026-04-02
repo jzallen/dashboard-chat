@@ -45,6 +45,31 @@ services:
       timeout: 5s
       retries: 5
 
+  # Query Engine - persistent pg_duckdb analytical query layer
+  query-engine:
+    image: pgduckdb/pgduckdb:16-main
+    container_name: dashboard-query-engine
+    environment:
+      POSTGRES_USER: ${QUERY_ENGINE_ADMIN_USER:-duckdb_admin}
+      POSTGRES_PASSWORD: ${QUERY_ENGINE_ADMIN_PASSWORD:-duckdb_secret}
+      POSTGRES_DB: ${QUERY_ENGINE_DATABASE:-dashboard_external}
+    volumes:
+      - query_engine_data:/var/lib/postgresql/data
+      - ./backend/sql/init-query-engine.sql:/docker-entrypoint-initdb.d/init-query-engine.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${QUERY_ENGINE_ADMIN_USER:-duckdb_admin} -d ${QUERY_ENGINE_DATABASE:-dashboard_external}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+
   # MinIO - S3-compatible object storage for Parquet files
   minio:
     image: minio/minio:latest
@@ -108,13 +133,18 @@ services:
       PGBOUNCER_IMAGE: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:1.22}
       PGBOUNCER_PORT_RANGE_START: ${PGBOUNCER_PORT_RANGE_START:-6432}
       PGBOUNCER_PORT_RANGE_END: ${PGBOUNCER_PORT_RANGE_END:-7431}
+      QUERY_ENGINE_HOST: ${QUERY_ENGINE_HOST:-query-engine}
+      QUERY_ENGINE_PORT: ${QUERY_ENGINE_PORT:-5432}
+      QUERY_ENGINE_ADMIN_USER: ${QUERY_ENGINE_ADMIN_USER:-duckdb_admin}
+      QUERY_ENGINE_ADMIN_PASSWORD: ${QUERY_ENGINE_ADMIN_PASSWORD:-duckdb_secret}
+      QUERY_ENGINE_DATABASE: ${QUERY_ENGINE_DATABASE:-dashboard_external}
     ports:
       - "8000:8000"
     volumes:
       - backend_data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-    group_add:
-      - "997"
+    depends_on:
+      query-engine:
+        condition: service_healthy
 
   # Full stack with PostgreSQL
   api-full:
@@ -144,6 +174,11 @@ services:
       STREAM_API_SECRET: ${STREAM_API_SECRET:-}
       PGBOUNCER_PORT_RANGE_START: ${PGBOUNCER_PORT_RANGE_START:-6432}
       PGBOUNCER_PORT_RANGE_END: ${PGBOUNCER_PORT_RANGE_END:-7431}
+      QUERY_ENGINE_HOST: ${QUERY_ENGINE_HOST:-query-engine}
+      QUERY_ENGINE_PORT: ${QUERY_ENGINE_PORT:-5432}
+      QUERY_ENGINE_ADMIN_USER: ${QUERY_ENGINE_ADMIN_USER:-duckdb_admin}
+      QUERY_ENGINE_ADMIN_PASSWORD: ${QUERY_ENGINE_ADMIN_PASSWORD:-duckdb_secret}
+      QUERY_ENGINE_DATABASE: ${QUERY_ENGINE_DATABASE:-dashboard_external}
     ports:
       - "8000:8000"
     depends_on:
@@ -151,13 +186,12 @@ services:
         condition: service_healthy
       auth-proxy:
         condition: service_started
+      query-engine:
+        condition: service_healthy
     volumes:
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
       - ./backend/data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
-    group_add:
-      - "997"
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # Mirth Connect - HL7v2 to FHIR conversion engine
@@ -182,3 +216,4 @@ volumes:
   backend_data:
   postgres_data:
   minio_data:
+  query_engine_data:

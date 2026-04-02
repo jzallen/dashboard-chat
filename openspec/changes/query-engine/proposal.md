@@ -1,74 +1,192 @@
-## Why
+# Query Engine: Org-Level Persistent Query Access Layer
 
-DuckDB runs in-process inside the FastAPI web server. Every dataset preview, row count, and cleaning operation spins up an embedded DuckDB connection that shares memory and CPU with HTTP request handling. A heavy analytical query can starve the API; an OOM or DuckDB crash takes the entire server process down. The hand-rolled SQL validation in `sql_safety.py` is the only barrier between user-provided filter expressions and arbitrary code execution in the server process — if bypassed, it's not just SQL injection, it's RCE.
+## Problem
 
-Meanwhile, the external SQL access feature already provisions ephemeral per-project pg_duckdb containers via `DockerPgDuckDbProvisioner`. This is the right idea (DuckDB behind a PostgreSQL wire protocol boundary) but the wrong topology for a single-tenant internal platform: spinning up and tearing down containers per project adds operational complexity that isn't justified when tenant isolation is user/project-level, not org-level.
+SQL access is currently a per-project, ephemeral feature. Each time a user enables it, the system spins up a dedicated container with dynamic connection details. When disabled, it's gone. Users who configure BI tools (Tableau, Power BI, Excel/ODBC) must reconfigure every time the endpoint changes.
 
-A single always-on query engine container — PostgreSQL + pg_duckdb — solves both problems. The backend delegates all analytical queries over the network to a process-isolated, resource-bounded service. BI tools connect via standard ODBC/JDBC with dedicated read-only users. PostgreSQL roles, `statement_timeout`, and `CONNECTION LIMIT` replace hand-rolled safety logic as the primary enforcement boundary. The architecture matches how MinIO already serves as a dedicated object store in the stack.
+Meanwhile, the web application runs analytical queries (dataset previews, row counts, cleaning previews) in-process on the API server. A heavy query can starve HTTP handling or crash the server.
 
-## What Changes
+Both problems point to the same solution: a persistent, org-level query engine that serves as the analytical access layer for both the platform and external tools.
 
-- **New: always-on query engine service** — a single `query-engine` container (PostgreSQL + pg_duckdb + httpfs) in docker-compose, alongside minio and redis. Configured with S3/MinIO credentials at startup. Per-project schemas and read-only roles created on demand.
+## Vision
 
-- **Replaced: in-process DuckDB** — all backend paths that currently use `ibis.duckdb.connect()` via `duckdb_factory.py` are replaced with asyncpg queries against the query engine. This covers dataset preview (`dataset.py._build_table`), row counts, column type inspection, cleaning operation previews, and CSV-to-parquet conversion in `lake/repository.py`.
+The query engine is a **thin, stateless access layer**. It holds no data — all data lives in the data lake (S3/MinIO as Parquet files). The engine's job is to enforce permissions and map schemas so that queries resolve to the correct lake data. All permission and mapping configuration lives in the backend data catalog (SQLite/PostgreSQL), which is the source of truth. The engine is kept in sync via event-driven propagation.
 
-- **Simplified: provisioner infrastructure** — the `DockerPgDuckDbProvisioner` (aiodocker, per-project containers, dynamic port mapping, health polling) is replaced with a stateless provisioner that creates/drops schemas and roles in the shared query engine instance. The `ProjectEnvironmentProvisioner` protocol simplifies to schema lifecycle management. Connection info comes from config, not runtime container inspection.
+Users should think of the query engine as a window into their data lake — always available, stable connection details, queryable from any PostgreSQL-compatible tool.
 
-- **Simplified: PgBouncer** — a single optional PgBouncer instance in front of the shared query engine replaces per-project PgBouncer containers. At internal-platform scale, this may be unnecessary entirely.
+## What Changes for Users
 
-- **Retained: pg_duckdb_manager.py** — schema/role/credential management already operates against a connection target via asyncpg. It works as-is against a shared instance. Per-project schemas (`project_{short_id}`), read-only roles (`reader_{short_id}`), `idle_session_timeout`, `CONNECTION LIMIT`, and `search_path` lockdown are all retained.
+### Before (current)
+- SQL access is a per-project on/off toggle
+- Enabling provisions a container; disabling destroys it
+- Connection details (host, port) change each time
+- BI tools need reconfiguration after every disable/enable cycle
+- No visibility into what's running
+- Web app queries run in-process (affects performance)
+- Manual "Sync" required after every dataset or transform change
 
-- **Retained: sql_safety.py** — AST-based SQL validation remains as defense-in-depth. PostgreSQL roles become the primary enforcement boundary; validation becomes a second layer.
+### After (proposed)
+- Query engines are **org-level resources** — always running, shared across projects
+- Connection details are **stable and persistent** — configure your BI tool once
+- Users can see how many query engine nodes their org has and their status
+- ODBC/JDBC connection info is always available
+- Dataset uploads and transform changes **automatically sync** to the engine (event-driven)
+- Credentials are **obfuscated** — regenerable without disrupting the underlying permission and schema scaffolding
+- The web app uses the engine for all analytical queries (better performance, security isolation)
 
-- **Retained: bootstrap_sql.py** — view creation per project (`CREATE VIEW ... AS SELECT * FROM read_parquet('s3://...')`) is unchanged. Views are created in the query engine instead of ephemeral containers.
+## Core Design Principles
 
-- **Removed: duckdb_factory.py** — the in-process hardened connection factory is no longer needed. The query engine container handles extension loading, S3 configuration, and security lockdown at startup.
+### 1. Engine as Access Layer, Lake as Storage
+The query engine stores no data. It maps schemas and enforces permissions so queries resolve to Parquet files in the data lake. If the engine is destroyed and rebuilt, no data is lost — only the permission/mapping configuration needs to be re-synced from the catalog.
 
-- **Removed: aiodocker dependency** — no longer managing container lifecycle from the backend.
+### 2. Catalog as Source of Truth
+All permission grants, schema mappings, dataset-to-table associations, and credential records live in the backend data catalog (SQLite/PostgreSQL). The query engine is a downstream consumer of this configuration. The catalog can fully reconstruct an engine's state.
 
-## Capabilities
+### 3. Event-Driven Sync
+When a user uploads a dataset, applies a transform, or changes permissions, the backend catalog updates first, then propagates the change to the engine. The user should not need to click "Sync" for routine operations. The experience should feel seamless — upload a CSV, and it's queryable externally within seconds.
 
-### New Capabilities
-- `query-engine`: Always-on analytical query sandbox — a PostgreSQL + pg_duckdb container that serves as the dedicated query execution layer for both the backend API and external BI tools. Connects to S3/MinIO for parquet access. Exposes standard PostgreSQL wire protocol. Resource-isolated from the web server. Per-project schema isolation with read-only roles. Configurable resource limits (memory, CPU, statement timeout) at the container and role level.
+### 4. Obfuscated Credentials
+Connection credentials presented to users are proxy credentials that can be rotated without altering the underlying permission scaffolding (roles, schema grants, search paths). If a user's credentials leak, an admin regenerates them and the user gets a new connection string — but the role structure, schema mappings, and permission grants remain intact. The mechanism for credential obfuscation (e.g., PgBouncer auth mapping, proxy roles) is left to the architect.
 
-### Modified Capabilities
-- `external-sql-access`: Simplified from ephemeral per-project container provisioning to schema/role lifecycle management against a shared query engine instance. Enable/disable creates or drops a schema and role rather than starting or stopping a container. Connection details point to the shared query engine (fixed host/port) rather than dynamically assigned ports.
-- `dbt-bootstrap`: Bootstrap SQL executes against the shared query engine instead of ephemeral containers. No changes to SQL generation — only the execution target changes.
-- `duckdb-role-configuration`: The `duckdb_readers` group role and `duckdb.postgres_role` GUC are configured once at query engine startup rather than per-container provision.
+## Requirements
 
-## Impact
+### R1: Org-Level Query Engine Lifecycle
 
-**Backend**
-- Removed: `app/utils/duckdb_factory.py` (in-process DuckDB factory)
-- Removed: `app/use_cases/sql_access/_infra/docker_provisioner.py` (per-project container lifecycle)
-- Removed: `app/use_cases/sql_access/_infra/pgbouncer_provisioner.py` (per-project PgBouncer)
-- Simplified: `app/use_cases/sql_access/_infra/provisioner.py` (protocol reduces to schema/role management)
-- Modified: `app/models/dataset.py` — `_get_connection()` and `_build_table()` switch from `ibis.duckdb.connect()` to asyncpg queries against the query engine
-- Modified: `app/repositories/lake/repository.py` — `_create_s3_connection()`, `read_parquet_preview()`, `get_parquet_row_count()`, `get_parquet_column_type()`, `preview_cleaning_operation()` all switch to query engine
-- Modified: `app/repositories/lake/repository.py` — `write_csv_as_partitioned_parquet()` uses query engine for CSV conversion (or retained as local-only operation)
-- Modified: `app/config.py` — replace per-container pg_duckdb settings with shared query engine connection config (host, port, admin credentials)
-- Modified: `app/main.py` — provisioner startup simplified; no aiodocker initialization
-- Modified: `app/use_cases/sql_access/enable_sql_access.py`, `start_environment.py`, `stop_environment.py` — simplified to schema/role operations
-- Removed dependency: `aiodocker`
-- Removed dependency: `ibis-framework[duckdb]` (or reduced to non-DuckDB usage if Ibis is used elsewhere)
+Query engines are provisioned at the organization level. An organization has one or more engine nodes.
 
-**Infrastructure**
-- New: `query-engine` service in docker-compose (pgduckdb/pgduckdb image, always-on, `pull_policy: never` if Bazel-built)
-- New: init script for query engine startup (load httpfs, configure S3 secrets, create `duckdb_readers` group role, set GUC)
-- Optional: single PgBouncer service in front of query engine (replaces per-project PgBouncer containers)
-- Modified: backend service no longer needs Docker socket mount (no container provisioning)
-- Resource limits: `mem_limit`, `cpus` on query engine container; `statement_timeout` and `CONNECTION LIMIT` per role
+- An org admin can see all engine nodes for their organization
+- Each engine node has a stable endpoint (host, port) that persists for its lifetime
+- Engine nodes run continuously — they are not tied to project-level actions
+- The backend models a **1:many relationship** between organizations and engine nodes
+- The frontend displays multiple engine nodes when present
+- Provisioning, scaling, and deployment of additional nodes is out of scope — the data model and UI support it, but orchestration is deferred
 
-**Frontend**
-- No changes — connection details UI already shows host/port/username. Values become static (shared query engine) rather than dynamic (per-container).
+### R2: Query Engine Dashboard
 
-**Worker**
-- No changes
+Users need a place to see their org's engine nodes and connection details.
 
-**Security**
-- PostgreSQL roles become the primary access control boundary (not hand-rolled SQL validation)
-- `sql_safety.py` validation retained as defense-in-depth
-- Query engine container runs with no access to backend secrets, database credentials, or filesystem
-- `statement_timeout` per role prevents runaway queries (not possible with in-process DuckDB today)
-- Container-level memory limits prevent OOM from affecting the API server
-- Docker socket no longer exposed to the backend service (reduced attack surface)
+**Engine List View** (accessible from org settings or navigation):
+- Shows all engine nodes for the organization
+- Each node displays: name/label, status (running, degraded, unreachable), endpoint (host:port), project count
+- Status updates automatically (event-driven or short-interval polling)
+
+**Engine Detail View** (click into a specific node):
+- Connection information:
+  - Host, Port, Database name
+  - ODBC connection string (copyable, pre-formatted)
+  - JDBC connection string (copyable, pre-formatted)
+  - PostgreSQL connection string (copyable, pre-formatted)
+- Connected projects: list of projects using this node, each showing schema name and sync status
+- Quick-start connection guides:
+  - Excel (ODBC) — driver + connection string
+  - Power BI — server/database fields
+  - Tableau — connector setup
+  - psql — CLI command
+  - dbt — profiles.yml snippet
+
+### R3: Project-Level Permissions & Sync Page
+
+The per-project SQL access panel is reworked as a **permissions and sync status page**. It does not manage engine lifecycle — it shows what's mapped and whether it's current.
+
+**When SQL access is enabled for a project:**
+- The page shows which engine node the project is connected to
+- Lists all datasets in the project with their sync status:
+  - Synced — schema mapping exists in the engine, up to date
+  - Pending — dataset or transform changed, sync event in flight
+  - Error — sync failed (with error detail)
+- Shows the project's reader credentials (obfuscated, with regenerate option)
+- Links to the engine detail view for full ODBC/JDBC connection info
+- "Force Sync" button for manual re-sync if needed (fallback, not primary workflow)
+
+**When SQL access is not enabled:**
+- Simple prompt to enable, which creates the project's schema/role/mappings in the org's engine
+- No container provisioning — just catalog entries and engine sync
+
+### R4: Event-Driven Dataset Sync
+
+When a dataset is created or modified, the system automatically propagates changes to the query engine without user intervention.
+
+**Dataset creation (file upload):**
+1. User uploads CSV → Parquet written to data lake
+2. Backend catalog creates dataset record with schema mapping
+3. Sync event fires → engine receives mapping (CREATE VIEW pointing to Parquet in lake)
+4. Dataset is queryable externally within seconds — no manual sync step
+
+**Transform changes (filter, clean, alias):**
+1. User applies/modifies/disables a transform in the web UI
+2. Backend catalog updates transform record
+3. Sync event fires → engine receives updated view definition (new CTE pipeline)
+4. Next external query reflects the change
+
+**Dataset deletion:**
+1. User deletes a dataset
+2. Backend catalog marks dataset as deleted
+3. Sync event fires → engine drops the view
+4. External tools no longer see the table
+
+**Sync status visibility:**
+- The project permissions page shows per-dataset sync state
+- A brief "syncing..." indicator appears after changes, resolves to "synced" on confirmation
+- If a sync event fails, the dataset shows an error state with retry option
+
+### R5: Obfuscated, Regenerable Credentials
+
+Credentials presented to users are decoupled from the underlying permission structure.
+
+- Users receive a connection string with a username and password
+- These credentials are a **proxy layer** — rotating them does not require rebuilding roles, schemas, or grants
+- "Regenerate Credentials" produces a new username/password pair. The old credentials stop working immediately. The project's data access, schema mappings, and permission grants are unaffected.
+- Password is shown once at creation/regeneration (one-time reveal), then masked
+- The credential obfuscation mechanism (PgBouncer auth, proxy roles, etc.) is left to the architect
+
+### R6: Per-Project Data Isolation (Unchanged)
+
+Even though engines are shared, project data remains isolated.
+
+- Each project gets its own schema within the engine
+- Credentials for Project A cannot query Project B's data
+- External tools see only the datasets for the authenticated project
+- Read-only enforcement: no INSERT, UPDATE, DELETE, CREATE, DROP
+- Connection limits per project role still apply
+
+### R7: Status Visibility
+
+Users need confidence that their BI tool connections will work.
+
+- Engine node status is visible: running, degraded, unreachable
+- Per-project sync status is visible: synced, pending, error
+- If an engine is degraded or unreachable, the UI explains the issue
+- Connection test: "Test Connection" button on the engine detail view that verifies reachability
+
+## Out of Scope (For Solutions Architect)
+
+These are technical concerns for the architect to address in a design document:
+
+- Container orchestration and engine deployment strategy
+- How the web app routes internal queries to the engine (connection pooling, asyncpg)
+- Query engine runtime (PostgreSQL + pg_duckdb, or alternatives)
+- S3/MinIO credential management within the engine
+- Resource limits (memory, CPU, statement timeout)
+- Credential obfuscation mechanism (PgBouncer auth mapping, proxy roles, token-based auth)
+- Event propagation infrastructure (message queue, webhooks, DB triggers, or polling fallback)
+- Migration path from current per-project containers to shared engines
+- Multi-node engine topology and load balancing
+- Engine rebuild/recovery procedure from catalog state
+- Monitoring and alerting
+
+## Impact on Existing Features
+
+### External Data Access Feature
+The `external-data-access.feature` spec needs significant revision. A new `query-engine.feature` captures the updated UX. The old per-project toggle model is replaced by org engines + project enrollment + event-driven sync.
+
+### Dataset Upload Flow
+Upload now triggers an automatic sync event to the engine. The upload workflow itself doesn't change for the user — they just no longer need a manual sync step afterward.
+
+### dbt Export
+No UX changes. Exported profiles.yml references the stable engine endpoint. Connection details come from the engine node, not from ephemeral provisioning.
+
+### Chat/Table Operations
+No UX changes. The web app uses the engine for previews and operations, but this is invisible to the user.
+
+### Auth & Multi-Tenancy
+Query engines are scoped by `org_id`. Engine management requires org-level permissions. Project enrollment requires project-level permissions.

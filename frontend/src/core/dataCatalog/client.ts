@@ -11,9 +11,14 @@ import type {
   TransformUpdate,
 } from "./datasets";
 import type { Project } from "./projects";
+import type {
+  QueryEngineDetail,
+  QueryEngineNode,
+  QueryEngineTestResult,
+} from "./queryEngines";
 import type { Report, ReportCreate, ReportUpdate } from "./reports";
 import type { ProjectMemory, Session, SessionsPage } from "./sessions";
-import type { EnvironmentStatusResponse, SqlAccessStatus } from "./sqlAccess";
+import type { SqlAccessStatus } from "./sqlAccess";
 import type { View, ViewCreate, ViewUpdate } from "./views";
 
 export interface OrgInfo {
@@ -238,32 +243,19 @@ export function createDataCatalog(fetchFn: typeof fetch = fetch) {
       );
     },
 
-    startEnvironment(projectId: string): Promise<SqlAccessStatus> {
-      return client.post<SqlAccessStatus>(
-        `/api/projects/${projectId}/sql-access/environment/start`,
-        {},
-      );
+    // Query Engines
+    listQueryEngines(): Promise<QueryEngineNode[]> {
+      return client.get<QueryEngineNode[]>("/api/query-engines");
     },
 
-    stopEnvironment(projectId: string): Promise<SqlAccessStatus> {
-      return client.post<SqlAccessStatus>(
-        `/api/projects/${projectId}/sql-access/environment/stop`,
-        {},
-      );
+    getQueryEngine(nodeId: string): Promise<QueryEngineDetail> {
+      return client.get<QueryEngineDetail>(`/api/query-engines/${nodeId}`);
     },
 
-    restartEnvironment(projectId: string): Promise<SqlAccessStatus> {
-      return client.post<SqlAccessStatus>(
-        `/api/projects/${projectId}/sql-access/environment/restart`,
+    testQueryEngine(nodeId: string): Promise<QueryEngineTestResult> {
+      return client.post<QueryEngineTestResult>(
+        `/api/query-engines/${nodeId}/test`,
         {},
-      );
-    },
-
-    getEnvironmentStatus(
-      projectId: string,
-    ): Promise<EnvironmentStatusResponse> {
-      return client.get<EnvironmentStatusResponse>(
-        `/api/projects/${projectId}/sql-access/environment/status`,
       );
     },
 

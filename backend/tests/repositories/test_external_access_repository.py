@@ -40,13 +40,8 @@ class TestExternalAccessRepository:
         assert result.org_id == ORG_1
         assert result.pg_schema == "project_project_"
         assert result.pg_role == "reader_project_"
-        assert result.environment_id is None
-        assert result.environment_host is None
-        assert result.environment_port is None
-        assert result.proxy_container_id is None
-        assert result.environment_status == "running"
-        assert result.status_message is None
-        assert result.is_legacy is True
+        assert result.engine_node_id is None
+        assert result.pg_proxy_role is None
         assert result.enabled is True
         assert result.last_synced_at is None
         assert result.id is not None

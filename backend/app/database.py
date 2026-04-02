@@ -82,3 +82,38 @@ async def close_db() -> None:
     """Close database connections."""
     if _engine is not None:
         await _engine.dispose()
+    await close_query_engine_pool()
+
+
+# --- Query engine (asyncpg) connection pool ---
+
+_query_engine_pool = None
+
+
+async def get_query_engine_pool():
+    """Get or create the asyncpg connection pool to the query engine."""
+    global _query_engine_pool
+    if _query_engine_pool is None:
+        from .config import get_settings
+
+        settings = get_settings()
+        import asyncpg
+
+        _query_engine_pool = await asyncpg.create_pool(
+            host=settings.query_engine_host,
+            port=settings.query_engine_port,
+            user=settings.query_engine_admin_user,
+            password=settings.query_engine_admin_password,
+            database=settings.query_engine_database,
+            min_size=2,
+            max_size=10,
+        )
+    return _query_engine_pool
+
+
+async def close_query_engine_pool():
+    """Close the query engine connection pool."""
+    global _query_engine_pool
+    if _query_engine_pool is not None:
+        await _query_engine_pool.close()
+        _query_engine_pool = None
