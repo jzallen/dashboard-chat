@@ -122,7 +122,11 @@ def with_repositories(func: Callable[P, R]) -> Callable[P, R]:
                 kwargs["repositories"] = RepositoryContainer(RestrictedSession(db), overrides)
             case _:
                 kwargs["repositories"] = RepositoryContainer(RestrictedSession(db))
-        result = await func(*args, **kwargs)
+        try:
+            result = await func(*args, **kwargs)
+        except Exception:
+            await db.rollback()
+            raise
         try:
             await db.commit()
         except Exception as e:

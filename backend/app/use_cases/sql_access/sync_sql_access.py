@@ -21,8 +21,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def sync_sql_access(
     project_id: str,
     project: dict | None = None,

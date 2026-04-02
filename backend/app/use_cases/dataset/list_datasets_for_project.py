@@ -24,8 +24,8 @@ def _sparse_dict(record) -> dict:
     }
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def list_datasets_for_project(
     project_id: str,
     cursor: str | None = None,

@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def disable_sql_access(
     project_id: str,
     project: dict | None = None,

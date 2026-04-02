@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def reconcile_sql_access(
     *,
     repositories: "RepositoryContainer",

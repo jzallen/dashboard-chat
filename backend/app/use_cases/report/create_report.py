@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def create_report(
     project_id: str,
     name: str,

@@ -46,8 +46,8 @@ async def _validate_dataset_exists(
         raise DatasetNotFound(dataset_id)
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def upload_file(
     file_content: bytes,
     file_name: str,

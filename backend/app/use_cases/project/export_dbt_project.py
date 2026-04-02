@@ -20,8 +20,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def export_dbt_project(
     project_id: str,
     plugin_registry: "PluginRegistry | None" = None,

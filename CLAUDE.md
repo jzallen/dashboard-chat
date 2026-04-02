@@ -134,8 +134,8 @@ npm run test:e2e:ui                  # interactive UI
 
 **Decorator stack** on use case functions:
 ```python
-@with_repositories    # outer — injects RepositoryContainer, commits on success
-@handle_returns       # inner — wraps result in Success/Failure
+@handle_returns       # outer — wraps result in Success/Failure, catches all exceptions
+@with_repositories    # inner — injects RepositoryContainer, commits on success
 async def my_use_case(...):
 ```
 

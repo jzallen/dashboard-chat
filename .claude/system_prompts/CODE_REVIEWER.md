@@ -22,7 +22,7 @@ Your role is to catch bugs, security vulnerabilities, and convention violations 
 
 ### Backend
 - **Use case structure**: Individual modules in `app/use_cases/<domain>/`, not monolithic files
-- **Decorator stack**: `@with_repositories` (outer) → `@handle_returns` (inner) — in this exact order
+- **Decorator stack**: `@handle_returns` (outer) → `@with_repositories` (inner) — in this exact order
 - **Error format**: `handle_returns` uses `f"[{func.__name__}] {str(e)}"` — test assertions must match
 - **Context vars**: `set_session()` and `set_auth_user()` must be called in test setup
 - **Org scoping**: Every data-access use case must verify `org_id` on the parent project

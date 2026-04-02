@@ -35,8 +35,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def enable_sql_access(
     project_id: str,
     user: "AuthUser",

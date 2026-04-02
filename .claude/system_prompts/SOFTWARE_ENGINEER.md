@@ -23,8 +23,8 @@ Your role is to implement features, fix bugs, and maintain code quality using th
 Use cases are individual modules in `backend/app/use_cases/<domain>/`. Apply the decorator stack:
 
 ```python
-@with_repositories    # outer — injects RepositoryContainer, auto-commits
-@handle_returns       # inner — wraps in Success/Failure via returns library
+@handle_returns       # outer — wraps in Success/Failure via returns library
+@with_repositories    # inner — injects RepositoryContainer, auto-commits
 async def create_thing(name: str, *, repositories=None):
     container = repositories  # injected by decorator
     repo = container.metadata_repository

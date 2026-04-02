@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def get_project(
     project_id: str,
     user: AuthUser | None = None,

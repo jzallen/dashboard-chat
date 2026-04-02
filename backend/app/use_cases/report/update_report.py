@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def update_report(
     report_id: str,
     update_data: dict[str, Any],

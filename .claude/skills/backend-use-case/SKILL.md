@@ -11,17 +11,17 @@ Backend business logic lives in `app/use_cases/<domain>/` and follows a strict d
 
 ## Decorator Stack
 
-Always apply decorators in this order — `@with_repositories` outermost, `@handle_returns` innermost:
+Always apply decorators in this order — `@handle_returns` outermost, `@with_repositories` innermost:
 
 ```python
-@with_repositories    # outer — injects RepositoryContainer, commits on success / rolls back on failure
-@handle_returns       # inner — catches exceptions, wraps as Success(value) or Failure(exception)
+@handle_returns       # outer — catches all exceptions (including commit/rollback), wraps as Success(value) or Failure(exception)
+@with_repositories    # inner — injects RepositoryContainer, commits on success / rolls back on failure
 async def create_thing(name: str, *, user: AuthUser, repositories: "RepositoryContainer") -> Thing:
     thing = await repositories.metadata.things.create(name=name, org_id=user.org_id)
     return thing
 ```
 
-**Never swap the order.** `with_repositories` must wrap `handle_returns` so the session commit happens after the result is determined.
+**Never swap the order.** `handle_returns` must wrap `with_repositories` so that commit/rollback failures are also caught and returned as `Failure`.
 
 ## Function Signature Rules
 
@@ -134,7 +134,7 @@ async def test_with_mock_repo():
 
 | Mistake | Fix |
 |---------|-----|
-| `@handle_returns` outer, `@with_repositories` inner | Swap — `@with_repositories` must be outermost |
+| `@with_repositories` outer, `@handle_returns` inner | Swap — `@handle_returns` must be outermost |
 | Calling `session.commit()` in a repo method | Use `session.flush()` only |
 | Querying without `org_id` in list/create | Always pass `user.org_id` |
 | `result.failure()` with `==` comparison | Use `isinstance(result.failure(), SomeDomainException)` |

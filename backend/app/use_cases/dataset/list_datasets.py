@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def list_datasets(
     project_id: str,
     cursor: str | None = None,

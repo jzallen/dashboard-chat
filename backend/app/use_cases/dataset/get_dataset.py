@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def get_dataset(
     dataset_id: str,
     include_transforms: bool = True,

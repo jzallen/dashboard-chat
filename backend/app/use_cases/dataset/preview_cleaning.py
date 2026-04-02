@@ -89,8 +89,8 @@ def _validate_column_for_operation(
         raise ColumnTypeMismatch(target_column, column_type, operation)
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def preview_cleaning_transform(
     dataset_id: str,
     target_column: str,

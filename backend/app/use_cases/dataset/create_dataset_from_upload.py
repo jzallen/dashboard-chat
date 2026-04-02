@@ -47,8 +47,8 @@ async def _create_single_dataset(
     return dataset
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def create_dataset_from_upload(
     upload_id: str,
     partition_fields: list[str] | None = None,

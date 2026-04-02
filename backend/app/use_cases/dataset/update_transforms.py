@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
-@with_repositories
 @handle_returns
+@with_repositories
 async def update_transforms(
     dataset_id: str,
     updates: list[dict[str, Any]],
