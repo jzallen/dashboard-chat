@@ -76,7 +76,9 @@ describe("useCreateSession", () => {
       await result.current.mutateAsync();
     });
 
-    expect(result.current.data).toEqual(session);
+    await waitFor(() => {
+      expect(result.current.data).toEqual(session);
+    });
     expect(mockCreateSession).toHaveBeenCalledWith("proj-1");
   });
 
@@ -116,7 +118,9 @@ describe("useCreateSession", () => {
       }
     });
 
-    expect(result.current.isError).toBe(true);
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
     expect(result.current.error?.message).toBe("forbidden");
   });
 });

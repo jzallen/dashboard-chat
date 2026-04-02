@@ -25,6 +25,7 @@ vi.mock("@/chat", async (importOriginal) => {
 });
 
 vi.mock("@/auth", () => ({
+  withAuth: (f: typeof fetch) => f,
   withEagerAuth: (f: typeof fetch) => f,
 }));
 

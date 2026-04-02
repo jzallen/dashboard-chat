@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UnifiedNav } from "../UnifiedNav";
@@ -13,23 +13,19 @@ vi.mock("react-router-dom", () => ({
   useLocation: () => ({ pathname: mockPathname.current }),
 }));
 
-const mockQueryChannels = vi.fn().mockResolvedValue([]);
-const mockClientOn = vi.fn();
-const mockClientOff = vi.fn();
-const mockStreamContext = {
-  current: {
-    client: { queryChannels: mockQueryChannels, on: mockClientOn, off: mockClientOff },
-    isReady: true,
-  },
-};
-
-vi.mock("@/stream/StreamProvider", () => ({
-  useStreamContext: () => mockStreamContext.current,
-}));
-
 const mockResetSession = vi.fn();
 vi.mock("../../../context/ChatContext", () => ({
   useChatContext: () => ({ resetSession: mockResetSession }),
+}));
+
+const mockSessionsData = { current: undefined as unknown };
+vi.mock("../../../hooks/useSessions", () => ({
+  useSessions: () => ({ data: mockSessionsData.current }),
+}));
+
+const mockUpdateMutate = vi.fn();
+vi.mock("../../../hooks/useUpdateSession", () => ({
+  useUpdateSession: () => ({ mutate: mockUpdateMutate }),
 }));
 
 // --- Tests ---
@@ -38,11 +34,7 @@ describe("UnifiedNav", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPathname.current = "/";
-    mockQueryChannels.mockResolvedValue([]);
-    mockStreamContext.current = {
-      client: { queryChannels: mockQueryChannels, on: mockClientOn, off: mockClientOff },
-      isReady: true,
-    };
+    mockSessionsData.current = undefined;
   });
 
   it("renders New Session, Projects, and All Chats buttons", () => {
@@ -83,63 +75,70 @@ describe("UnifiedNav", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/projects");
   });
 
-  it("shows recent sessions from queryChannels", async () => {
-    const mockChannels = [
-      {
-        id: "chat_org1_abc",
-        data: { title: "My chat session" },
-        state: { messages: [], last_message_at: new Date().toISOString() },
-      },
-      {
-        id: "chat_org1_def",
-        data: { title: null },
-        state: {
-          messages: [{ text: "Hello world this is a test message" }],
-          last_message_at: new Date(Date.now() - 3600000).toISOString(),
+  it("shows recent sessions from useSessions", () => {
+    mockSessionsData.current = {
+      pages: [
+        {
+          data: [
+            {
+              id: "sess-1",
+              title: "My chat session",
+              last_active_at: new Date().toISOString(),
+            },
+            {
+              id: "sess-2",
+              title: null,
+              last_active_at: new Date(Date.now() - 3600000).toISOString(),
+            },
+          ],
         },
-      },
-    ];
-    mockQueryChannels.mockResolvedValue(mockChannels);
+      ],
+    };
 
     render(<UnifiedNav orgId="org-1" collapsed={false} />);
 
-    await waitFor(() => {
-      expect(screen.getByText("My chat session")).toBeInTheDocument();
-    });
-
-    // Second session should show first message text
-    expect(screen.getByText("Hello world this is a test message")).toBeInTheDocument();
+    expect(screen.getByText("My chat session")).toBeInTheDocument();
+    // Second session should show fallback "New session" text
+    expect(screen.getByText("New session")).toBeInTheDocument();
   });
 
-  it("navigates to /chat/:id on recent session click", async () => {
-    const mockChannels = [
-      {
-        id: "chat_org1_abc",
-        data: { title: "Test session" },
-        state: { messages: [], last_message_at: new Date().toISOString() },
-      },
-    ];
-    mockQueryChannels.mockResolvedValue(mockChannels);
+  it("navigates to /chat/:id on recent session click", () => {
+    mockSessionsData.current = {
+      pages: [
+        {
+          data: [
+            {
+              id: "sess-abc",
+              title: "Test session",
+              last_active_at: new Date().toISOString(),
+            },
+          ],
+        },
+      ],
+    };
 
     render(<UnifiedNav orgId="org-1" collapsed={false} />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Test session")).toBeInTheDocument();
-    });
+    expect(screen.getByText("Test session")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId("recent-session-chat_org1_abc"));
-    expect(mockNavigate).toHaveBeenCalledWith("/chat/chat_org1_abc");
+    fireEvent.click(screen.getByTestId("recent-session-sess-abc"));
+    expect(mockNavigate).toHaveBeenCalledWith("/chat/sess-abc");
   });
 
-  it("hides labels and recent sessions when collapsed", async () => {
-    const mockChannels = [
-      {
-        id: "chat_org1_abc",
-        data: { title: "Hidden session" },
-        state: { messages: [], last_message_at: new Date().toISOString() },
-      },
-    ];
-    mockQueryChannels.mockResolvedValue(mockChannels);
+  it("hides labels and recent sessions when collapsed", () => {
+    mockSessionsData.current = {
+      pages: [
+        {
+          data: [
+            {
+              id: "sess-hidden",
+              title: "Hidden session",
+              last_active_at: new Date().toISOString(),
+            },
+          ],
+        },
+      ],
+    };
 
     render(<UnifiedNav orgId="org-1" collapsed={true} />);
 
@@ -148,8 +147,6 @@ describe("UnifiedNav", () => {
     expect(screen.queryByText("Projects")).not.toBeInTheDocument();
 
     // Recent sessions should be hidden
-    await waitFor(() => {
-      expect(screen.queryByText("Hidden session")).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText("Hidden session")).not.toBeInTheDocument();
   });
 });

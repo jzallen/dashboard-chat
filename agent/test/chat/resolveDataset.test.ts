@@ -241,8 +241,6 @@ describe("thread_id and project_id in request payload", () => {
 
 describe("re-submitted request with resolved dataset schema", () => {
   it("uses dataset tools when re-submitted with dataset context", async () => {
-    const { streamText } = await import("ai");
-
     mockStreamText.mockImplementationOnce(() => ({
       toDataStreamResponse: () =>
         new Response('0:"filtering..."\nd:{"finishReason":"stop"}\n', {
@@ -271,7 +269,7 @@ describe("re-submitted request with resolved dataset schema", () => {
     expect(response.status).not.toBe(400);
 
     // Verify streamText was called with dataset system prompt and tools
-    expect(streamText).toHaveBeenCalledWith(
+    expect(mockStreamText).toHaveBeenCalledWith(
       expect.objectContaining({
         system: expect.stringContaining("controls a data table"),
         tools: expect.objectContaining({ sortTable: expect.anything() }),

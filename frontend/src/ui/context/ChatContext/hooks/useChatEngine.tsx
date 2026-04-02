@@ -577,7 +577,10 @@ function useChatEngine(): ChatContextValue {
         }
       }
     },
-    [isLoading, buildApiMessages, writeToStream, sseOverlay, entityContext, submitText],
+    // Note: submitText is called recursively via setTimeout (line 576) but must NOT
+    // appear in its own dependency array — doing so causes a ReferenceError at init time.
+     
+    [isLoading, buildApiMessages, writeToStream, sseOverlay, entityContext],
   );
 
   /** Form submit handler. */

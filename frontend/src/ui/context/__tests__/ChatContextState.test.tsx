@@ -3,6 +3,58 @@ import { describe, expect, it, type Mock, vi } from "vitest";
 
 import type { Dataset } from "@/dataCatalog";
 
+vi.mock("@/auth", () => ({
+  withAuth: (f: typeof fetch) => f,
+  withEagerAuth: (f: typeof fetch) => f,
+}));
+
+vi.mock("@/chat", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/chat")>();
+  return {
+    ...actual,
+    createChatClient: () => ({
+      fetchChatStream: vi.fn().mockResolvedValue({
+        ok: true,
+        body: new ReadableStream({ start(c) { c.close(); } }),
+      }),
+    }),
+  };
+});
+
+vi.mock("@/chat/prompts", () => ({
+  getSystemPrompt: () => "system prompt",
+  getToolDefinitions: () => [],
+}));
+
+vi.mock("@/stream/StreamProvider", () => ({
+  useStreamContext: () => ({ client: null, isReady: false }),
+}));
+
+vi.mock("@/stream/useEntityContext", () => ({
+  useEntityContext: () => ({
+    projectId: null,
+    entityType: null,
+    entityId: null,
+    tableSchema: null,
+    setProjectId: vi.fn(),
+    setEntityType: vi.fn(),
+    setEntityId: vi.fn(),
+    setTableSchema: vi.fn(),
+    setContext: vi.fn(),
+  }),
+}));
+
+vi.mock("@/stream/useSSEOverlay", () => ({
+  useSSEOverlay: () => ({
+    isStreaming: false,
+    streamingContent: "",
+    startStreaming: vi.fn(),
+    stopStreaming: vi.fn(),
+    updateContent: vi.fn(),
+  }),
+}));
+
+
 import { ChatProvider, useChatContext } from "../ChatContext";
 
 function TestConsumer() {
