@@ -1,3 +1,15 @@
+# [1.5.0](https://github.com/jzallen/dashboard-chat/compare/v1.4.2...v1.5.0) (2026-04-02)
+
+
+### Bug Fixes
+
+* resolve test failures in agent and frontend suites ([55d7ac8](https://github.com/jzallen/dashboard-chat/commit/55d7ac87f10daa35a7391fcbe219d6c38b0450cf))
+
+
+### Features
+
+* add sessions-as-threads with project memory and SSE dataset resolution ([2bb1b9a](https://github.com/jzallen/dashboard-chat/commit/2bb1b9a4cb12be8f91ed3d8fd1820a2481f2890b))
+
 ## [1.4.2](https://github.com/jzallen/dashboard-chat/compare/v1.4.1...v1.4.2) (2026-04-02)
 
 
