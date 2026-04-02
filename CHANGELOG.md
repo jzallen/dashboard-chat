@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/jzallen/dashboard-chat/compare/v1.5.0...v1.6.0) (2026-04-02)
+
+
+### Features
+
+* **sql-access:** replace per-project containers with shared query engine ([47d491e](https://github.com/jzallen/dashboard-chat/commit/47d491e87140a8e09553490273e7129054917c5b))
+
 # [1.5.0](https://github.com/jzallen/dashboard-chat/compare/v1.4.2...v1.5.0) (2026-04-02)
 
 
