@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/jzallen/dashboard-chat/compare/v1.4.1...v1.4.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* **backend:** swap decorator order to [@handle](https://github.com/handle)_returns outer, [@with](https://github.com/with)_repositories inner ([58ca275](https://github.com/jzallen/dashboard-chat/commit/58ca275225b993d1de3f57ea379b360562196992))
+
 ## [1.4.1](https://github.com/jzallen/dashboard-chat/compare/v1.4.0...v1.4.1) (2026-04-01)
 
 
