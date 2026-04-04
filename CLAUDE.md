@@ -11,19 +11,27 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 - **Worker** (`worker/`) — Hono (Node.js) chat API with SSE streaming via Groq
 - **Shared** (`shared/chat/`) — Chat handler, prompts, and types used by frontend + worker
 
+## Editing Workflow
+
+**Before editing any source file**, review and run its related tests first. Use the `tdd` skill to map source files to the correct Bazel test target. The workflow is:
+
+1. Identify the test file(s) for the code you're about to change
+2. Read the relevant tests to understand expected behavior
+3. Run the targeted tests to confirm they pass (green baseline)
+4. Make the edit
+5. Re-run the same tests to confirm nothing broke
+6. After all edits, run the full affected-service suite as a final check
+
+This avoids wasting tokens on broken edits and catches regressions early.
+
 ## Quick Commands
 
 ```bash
-# Tests (use these to verify changes)
 npm run test:all                     # ALL tests: JS (turbo) + backend (pytest)
 cd frontend && npx vitest run        # frontend only
 cd backend && uv run pytest          # backend only
 npm run test:worker                  # worker only
-
-# Build
 npm run build                        # turbo build (frontend only)
-
-# Dev
 npm run dev                          # start all services
 ```
 
@@ -57,7 +65,7 @@ npm run dev                          # start all services
 
 ## Commit Convention
 
-Conventional Commits format. The stop hook runs tests and stages files automatically.
+Conventional Commits format.
 
 - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`
 - Include scope: `feat(backend): add dataset pagination endpoint`
@@ -67,7 +75,3 @@ Conventional Commits format. The stop hook runs tests and stages files automatic
 
 - **TypeScript**: strict mode, Prettier
 - **Python**: Black, type hints throughout
-
-## Reference
-
-For detailed information on Bazel targets, Docker Compose, monorepo tooling, ports, and project structure, see [CLAUDE_REFERENCE.md](./CLAUDE_REFERENCE.md).
