@@ -1,0 +1,43 @@
+# Bazel build artifacts and symlinks
+bazel-bin/
+bazel-out/
+bazel-testlogs/
+bazel-dashboard-chat/
+.bazel-cache/
+
+# Dependencies (already in .gitignore, but explicit for Claude)
+node_modules/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+.wrangler/
+
+# Lockfiles (large, not useful for understanding code)
+package-lock.json
+uv.lock
+
+# Alembic migration versions (auto-generated, rarely need full scan)
+backend/migrations/versions/
+
+# Test artifacts
+playwright-report/
+test-results/
+.pytest_cache/
+
+# Turborepo cache
+.turbo/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Claude Code worktrees
+.claude/worktrees/
+
+# Temporary files
+tmp/
