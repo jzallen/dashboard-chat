@@ -1,0 +1,156 @@
+%% Entity-Relationship Diagram — Dashboard Chat
+%% All 11 tables with relationships and key columns
+
+erDiagram
+    organizations {
+        varchar(36) id PK
+        varchar(255) name
+        datetime created_at
+        datetime updated_at
+    }
+
+    projects {
+        varchar(36) id PK
+        varchar(255) name
+        text description
+        varchar(36) org_id FK "indexed"
+        varchar(36) created_by
+        datetime created_at
+        datetime updated_at
+    }
+
+    datasets {
+        varchar(36) id PK
+        varchar(36) project_id FK
+        varchar(255) name
+        text description
+        json schema_config
+        json partition_fields
+        json column_profiles
+        text format_context
+        text storage_path "computed, unique"
+        datetime created_at
+        datetime updated_at
+    }
+
+    transforms {
+        varchar(36) id PK
+        varchar(36) dataset_id FK
+        varchar(255) name
+        text description
+        json condition_json
+        text condition_sql
+        integer version
+        varchar(20) status "enabled|disabled|deleted"
+        varchar(20) transform_type "filter|clean|alias|map"
+        varchar(255) target_column
+        text expression_sql
+        json expression_config
+        text nl_prompt
+        datetime created_at
+        datetime updated_at
+    }
+
+    views {
+        varchar(36) id PK
+        varchar(36) project_id FK
+        varchar(36) org_id FK "indexed"
+        varchar(255) name
+        text description
+        text sql_definition
+        json source_refs
+        json columns
+        json joins
+        json filters
+        json grain
+        varchar(20) materialization "ephemeral|view|table|incremental"
+        datetime created_at
+        datetime updated_at
+    }
+
+    reports {
+        varchar(36) id PK
+        varchar(36) project_id FK
+        varchar(36) org_id FK "indexed"
+        varchar(255) name
+        text description
+        text sql_definition
+        json source_refs
+        varchar(20) report_type
+        varchar(100) domain
+        json columns_metadata
+        varchar(20) materialization "view|table|ephemeral|incremental"
+        datetime created_at
+        datetime updated_at
+    }
+
+    external_access {
+        varchar(36) id PK
+        varchar(36) project_id FK "unique"
+        varchar(36) org_id FK "indexed"
+        varchar(36) engine_node_id FK "nullable"
+        varchar(255) pg_schema
+        varchar(255) pg_role
+        varchar(255) pg_proxy_role
+        text pg_password_hash
+        boolean enabled
+        datetime last_synced_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    query_engine_nodes {
+        varchar(36) id PK
+        varchar(36) org_id "indexed"
+        varchar(255) name
+        varchar(255) host
+        integer port
+        varchar(255) database
+        varchar(255) admin_user
+        text admin_password_encrypted
+        varchar(50) status "running|stopped|error"
+        text status_message
+        datetime created_at
+        datetime updated_at
+    }
+
+    project_memories {
+        varchar(36) id PK
+        varchar(36) project_id FK "unique"
+        varchar(36) org_id FK "indexed"
+        varchar(100) stream_channel_id "unique"
+        datetime created_at
+    }
+
+    sessions {
+        varchar(36) id PK
+        varchar(36) memory_id FK
+        varchar(100) stream_thread_id
+        varchar(36) owner_id "indexed"
+        varchar(500) title
+        varchar(36) org_id "indexed"
+        datetime created_at
+        datetime last_active_at
+    }
+
+    outbox_messages {
+        varchar(36) id PK
+        varchar(100) aggregate_type "indexed"
+        varchar(36) aggregate_id "indexed"
+        varchar(100) event_type
+        json payload
+        boolean processed
+        datetime created_at "indexed"
+        datetime processed_at
+    }
+
+    %% Relationships
+    organizations ||--o{ projects : "has"
+    projects ||--o{ datasets : "contains"
+    projects ||--o{ views : "contains"
+    projects ||--o{ reports : "contains"
+    projects ||--o| project_memories : "has"
+    projects ||--o| external_access : "has"
+    datasets ||--o{ transforms : "has"
+    project_memories ||--o{ sessions : "has"
+    query_engine_nodes ||--o{ external_access : "serves"

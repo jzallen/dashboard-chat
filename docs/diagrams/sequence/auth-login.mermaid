@@ -1,0 +1,45 @@
+%% Authentication Login Sequence
+%% Covers both dev mode and WorkOS production mode
+
+sequenceDiagram
+    participant User
+    participant Frontend as Frontend
+    participant AuthProxy as Auth Proxy (:3000)
+    participant API as API (FastAPI :8000)
+    participant WorkOS as WorkOS
+    participant StreamIO as Stream.io
+
+    alt Dev Mode (AUTH_MODE=dev)
+        User->>Frontend: Access application
+        Frontend->>API: GET /api/auth/me (Bearer: dev-token-static)
+        API->>API: DevAuthProvider.verify_token()
+        API->>API: Return AuthUser(id=dev-user-001, org=dev-org-001)
+        API->>API: Auto-provision org + default project
+        API-->>Frontend: 200 {user, org}
+    end
+
+    alt WorkOS Mode (AUTH_MODE=workos)
+        User->>Frontend: Click "Sign In"
+        Frontend->>API: GET /api/auth/login
+        API->>WorkOS: Get authorization URL
+        API-->>Frontend: {authorization_url, state}
+        Frontend->>User: Redirect to WorkOS login
+        User->>WorkOS: Authenticate (SSO/email)
+        WorkOS->>Frontend: Redirect with auth code
+        Frontend->>API: POST /api/auth/callback {code}
+        API->>WorkOS: Exchange code for tokens
+        WorkOS-->>API: {access_token, refresh_token, user}
+        API->>API: enrich_org_id() — lookup org from DB
+        API-->>Frontend: {access_token, refresh_token, user}
+    end
+
+    Frontend->>API: GET /api/stream/stream-token (Bearer: access_token)
+    API->>StreamIO: Mint user JWT
+    StreamIO-->>API: {token}
+    API-->>Frontend: {stream_token}
+    Frontend->>Frontend: Initialize Stream.io client for chat persistence
+
+    note over AuthProxy: In Docker Compose, requests flow through Auth Proxy
+    Frontend->>AuthProxy: REST request (Bearer: token)
+    AuthProxy->>AuthProxy: Validate token
+    AuthProxy->>API: Forward with X-User-Id, X-Org-Id, X-User-Email headers

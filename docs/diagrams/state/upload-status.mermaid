@@ -1,0 +1,42 @@
+%% Upload Status State Machine
+%% Tracks file upload lifecycle from submission to completion
+
+stateDiagram-v2
+    [*] --> pending : POST /api/uploads
+
+    pending --> processing : Format detected,\nsingle-sheet file
+    pending --> awaiting_input : Multi-sheet file\ndetected
+
+    awaiting_input --> processing : POST /api/uploads/{id}/process\n(user selects sheet)
+
+    processing --> completed : Parquet conversion +\ndataset creation success
+    processing --> failed : Conversion error or\nstorage failure
+
+    completed --> [*]
+    failed --> [*]
+
+    state pending {
+        [*] --> raw_stored : File saved to MinIO
+        raw_stored --> format_detected : Plugin identifies format
+    }
+
+    state processing {
+        [*] --> converting : Parquet conversion
+        converting --> partitioning : Apply partition fields
+        partitioning --> storing : Upload to S3
+        storing --> profiling : Generate previews +\ncolumn profiles
+        profiling --> creating : Create Dataset record
+    }
+
+    note right of awaiting_input
+        Response includes:
+        - choices: available sheets
+        - preview_rows: sample data
+    end note
+
+    note right of completed
+        Response includes:
+        - dataset_id (or dataset_ids)
+        - converted_storage_path
+        - preview_rows
+    end note

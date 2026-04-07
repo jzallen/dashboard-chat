@@ -1,0 +1,57 @@
+%% Authentication Flow — Dev Mode vs WorkOS Mode
+%% Shows both paths through the auth system
+
+graph TB
+    subgraph devMode["Dev Mode (AUTH_MODE=dev)"]
+        devToken["Bearer: dev-token-static"]
+        devProvider["DevAuthProvider"]
+        devUser["AuthUser<br/>id: dev-user-001<br/>org: dev-org-001"]
+        devJWKS["/.well-known/jwks.json<br/>(local RSA key)"]
+    end
+
+    subgraph workosMode["WorkOS Mode (AUTH_MODE=workos)"]
+        loginURL["GET /api/auth/login<br/>→ WorkOS authorization URL"]
+        callback["POST /api/auth/callback<br/>code → access_token + refresh_token"]
+        refresh["POST /api/auth/refresh<br/>refresh_token → new access_token"]
+        verify["verify_token()<br/>JWKS validation"]
+    end
+
+    subgraph middleware["Auth Middleware"]
+        publicCheck{"Public<br/>path?"}
+        proxyCheck{"Trust proxy<br/>headers?"}
+        proxyHeaders["Read X-User-Id<br/>X-Org-Id<br/>X-User-Email"]
+        bearerExtract["Extract<br/>Bearer token"]
+        orgEnrich["enrich_org_id()<br/>Lookup org from DB"]
+        orgCheck{"Has<br/>org_id?"}
+        orgLess{"Org-less<br/>path?"}
+        setCtx["set_auth_user()<br/>→ contextvars"]
+    end
+
+    subgraph authProxy["Auth Proxy (Port 3000)"]
+        proxyValidate["Validate token<br/>(dev or WorkOS)"]
+        injectHeaders["Inject identity<br/>headers"]
+    end
+
+    %% Request enters middleware
+    request["Incoming Request"] --> publicCheck
+    publicCheck -->|"Yes (/health, /docs,<br/>/api/auth/*)"| passthrough["Pass through"]
+    publicCheck -->|"No"| proxyCheck
+
+    proxyCheck -->|"Yes (TRUST_PROXY_HEADERS)"| proxyHeaders
+    proxyHeaders --> setCtx
+
+    proxyCheck -->|"No"| bearerExtract
+    bearerExtract -->|"dev mode"| devProvider
+    bearerExtract -->|"workos mode"| verify
+    devProvider --> orgEnrich
+    verify --> orgEnrich
+    orgEnrich --> orgCheck
+    orgCheck -->|"Yes"| setCtx
+    orgCheck -->|"No"| orgLess
+    orgLess -->|"Yes (/api/orgs)"| setCtx
+    orgLess -->|"No"| forbidden["403 Organization required"]
+
+    %% Auth proxy flow (used in Docker Compose)
+    browser["Browser"] -->|"Bearer token"| authProxy
+    proxyValidate --> injectHeaders
+    injectHeaders -->|"X-User-Id, X-Org-Id"| request

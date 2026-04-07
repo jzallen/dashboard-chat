@@ -1,0 +1,50 @@
+%% SQL Access Provisioning Sequence
+%% Enable external SQL access → pg_duckdb schema → PgBouncer → connection string
+
+sequenceDiagram
+    participant User
+    participant Frontend as Frontend
+    participant API as API (FastAPI)
+    participant Provisioner as QueryEngineProvisioner
+    participant QE as Query Engine (pg_duckdb :5433)
+    participant MinIO as MinIO (S3)
+    participant Client as External SQL Client
+
+    User->>Frontend: Click "Enable SQL Access"
+    Frontend->>API: POST /api/projects/{project_id}/sql-access
+
+    API->>API: Generate pg_role, pg_schema, password
+    API->>API: Store ExternalAccess record (hashed password)
+
+    API->>Provisioner: Provision SQL access
+    Provisioner->>QE: CREATE SCHEMA project_{id}
+    Provisioner->>QE: CREATE ROLE project_{id}_role WITH LOGIN PASSWORD '...'
+    Provisioner->>QE: GRANT USAGE ON SCHEMA to role
+
+    loop For each dataset in project
+        Provisioner->>Provisioner: Generate staging SQL (read_parquet with S3 paths)
+        Provisioner->>QE: CREATE VIEW schema.dataset_name AS SELECT ... FROM read_parquet('s3://...')
+        Provisioner->>QE: GRANT SELECT ON VIEW to role
+    end
+
+    API-->>Frontend: 201 {connection_string, schema, role}
+    Frontend->>User: Display connection details
+
+    note over Client: External client connects via PostgreSQL protocol
+    Client->>QE: Connect as project_{id}_role
+    Client->>QE: SELECT * FROM project_{id}.my_dataset
+    QE->>MinIO: httpfs reads Parquet from S3
+    MinIO-->>QE: Parquet data
+    QE-->>Client: Query results
+
+    note over API: Sync keeps views current with dataset changes
+    User->>Frontend: Click "Sync"
+    Frontend->>API: POST /api/projects/{project_id}/sql-access/sync
+    API->>Provisioner: Drop and recreate views with latest transform SQL
+    API-->>Frontend: 200 {synced_at}
+
+    note over API: Credential regeneration has 60s cooldown
+    User->>Frontend: Click "Regenerate Credentials"
+    Frontend->>API: POST /api/projects/{project_id}/sql-access/credentials
+    API->>QE: ALTER ROLE ... PASSWORD '...'
+    API-->>Frontend: 200 {new_connection_string}

@@ -1,0 +1,36 @@
+%% File Upload Sequence
+%% Upload → format detection → conversion → dataset creation
+
+sequenceDiagram
+    participant User
+    participant Frontend as Frontend
+    participant API as API (FastAPI :8000)
+    participant Plugin as Format Plugin
+    participant MinIO as MinIO (S3)
+    participant Pipeline as Ingestion Pipeline
+
+    User->>Frontend: Select file (CSV/Excel/JSON/Parquet)
+    Frontend->>API: POST /api/uploads (multipart file)
+
+    API->>Plugin: Detect file format
+    Plugin->>Plugin: Validate file structure
+    API->>MinIO: Store raw file at uploads/{project_id}/{upload_id}/raw/
+
+    alt Multi-sheet Excel file
+        API-->>Frontend: 202 {status: "awaiting_input", choices: [...sheets]}
+        Frontend->>User: Display sheet selection UI
+        User->>Frontend: Select sheet(s)
+        Frontend->>API: POST /api/uploads/{upload_id}/process {selected_sheets}
+    end
+
+    API->>Pipeline: Start ingestion
+    Pipeline->>Plugin: Convert to Parquet
+    Pipeline->>Pipeline: Apply partition fields
+    Pipeline->>MinIO: Store Parquet at datasets/{project_id}/{dataset_id}/
+
+    Pipeline->>Pipeline: Generate preview rows (first N)
+    Pipeline->>Pipeline: Compute column profiles
+
+    API->>API: Create Dataset record in DB
+    API-->>Frontend: 201 {dataset_id, preview_rows, schema_config}
+    Frontend->>User: Display dataset table with preview

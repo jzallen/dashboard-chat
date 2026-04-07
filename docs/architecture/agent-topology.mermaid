@@ -1,0 +1,40 @@
+%% Agent (Chat Worker) Topology
+%% Shows the chat request lifecycle including context routing and tool execution
+
+graph LR
+    subgraph frontend["Frontend"]
+        chatUI["Chat UI"]
+        toolExec["Tool Executor"]
+        tanstack["TanStack Table<br/>State"]
+    end
+
+    subgraph agent["Agent (Hono — Port 8787)"]
+        cors["CORS Middleware"]
+        auth["Auth Middleware"]
+        handler["handleChat()"]
+        router{"Context<br/>Router"}
+        convMode["Conversational<br/>Mode"]
+        datasetMode["Dataset<br/>Mode"]
+        viewMode["View<br/>Mode"]
+    end
+
+    subgraph groqAPI["Groq API"]
+        llm["llama-3.3-70b<br/>-versatile"]
+    end
+
+    chatUI -->|"POST /chat<br/>{messages, tableSchema,<br/>contextType, contextId}"| cors
+    cors --> auth
+    auth --> handler
+    handler --> router
+
+    router -->|"contextType: null"| convMode
+    router -->|"contextType: dataset"| datasetMode
+    router -->|"contextType: view"| viewMode
+
+    convMode -->|"resolve_dataset tool<br/>+ conversational prompt"| llm
+    datasetMode -->|"dataset tools<br/>+ schema-aware prompt"| llm
+    viewMode -->|"view tools<br/>+ view prompt"| llm
+
+    llm -->|"SSE stream<br/>(text + tool calls)"| chatUI
+    chatUI -->|"tool call args"| toolExec
+    toolExec -->|"state updates"| tanstack

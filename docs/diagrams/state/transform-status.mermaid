@@ -1,0 +1,37 @@
+%% Transform Status State Machine
+%% Lifecycle of cleaning/filter/alias/map transforms
+
+stateDiagram-v2
+    [*] --> enabled : POST /api/datasets/{id}/transforms\n(batch create)
+
+    enabled --> disabled : undoCleaningTransform\n(action: disable)
+    disabled --> enabled : reEnableCleaningTransform
+
+    enabled --> deleted : undoCleaningTransform\n(action: delete)
+    disabled --> deleted : undoCleaningTransform\n(action: delete)
+
+    deleted --> [*] : Soft-deleted\n(excluded from all queries)
+
+    note right of enabled
+        Transform is active in the
+        3-stage Ibis pipeline:
+        MUTATE → FILTER → RENAME
+    end note
+
+    note right of disabled
+        Transform is preserved in DB
+        but skipped during pipeline
+        execution. Reversible.
+    end note
+
+    note left of deleted
+        Soft delete — record remains
+        in DB with status="deleted".
+        Not reversible via API.
+    end note
+
+    state enabled {
+        [*] --> applied
+        applied --> previewing : New preview requested
+        previewing --> applied : Preview confirmed
+    }

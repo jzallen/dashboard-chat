@@ -1,0 +1,42 @@
+%% Chat Interaction Sequence
+%% User message → SSE stream → tool execution → UI update
+
+sequenceDiagram
+    participant User
+    participant Frontend as Frontend (React)
+    participant Agent as Agent (Hono :8787)
+    participant Groq as Groq API
+    participant Table as TanStack Table
+
+    User->>Frontend: Types natural language message
+    Frontend->>Frontend: Append to message history
+
+    alt No active dataset context
+        Frontend->>Agent: POST /chat {messages, contextType: null}
+        Agent->>Groq: streamText(conversational prompt, resolve_dataset tool)
+        Groq-->>Agent: SSE: tool_call(resolve_dataset, {name: "..."})
+        Agent->>Agent: Intercept resolve_dataset in stream transform
+        Agent-->>Frontend: SSE: r:{type: "resolve_dataset", params: {name}}
+        Frontend->>Frontend: Search datasets by name
+        Frontend->>Agent: POST /chat {messages, contextType: "dataset", tableSchema}
+    end
+
+    Agent->>Agent: Route by contextType (dataset/view/conversational)
+    Agent->>Agent: Select system prompt + tools for context
+    Agent->>Groq: streamText(system prompt, messages, tools)
+
+    loop SSE Stream
+        Groq-->>Agent: SSE chunk (text or tool call)
+        Agent-->>Frontend: Forward SSE chunk
+        Frontend->>Frontend: Parse SSE data stream
+    end
+
+    alt Tool call received
+        Frontend->>Frontend: Extract tool name + args from stream
+        Frontend->>Table: Execute tool (filter, sort, add, delete, clean)
+        Table->>Frontend: State updated → re-render
+    end
+
+    alt Text response
+        Frontend->>Frontend: Display assistant message in chat
+    end

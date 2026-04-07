@@ -1,0 +1,57 @@
+%% Docker Compose Service Topology
+%% Shows service dependencies, ports, and profiles
+
+graph TB
+    subgraph defaultProfile["Default Profile"]
+        frontend["<b>frontend</b><br/>Nginx + Vite build<br/>:5173 → :80"]
+        agent["<b>agent</b><br/>Hono chat API<br/>:8787"]
+        api["<b>api</b><br/>FastAPI + SQLite<br/>:8000"]
+        authProxy["<b>auth-proxy</b><br/>Token validation<br/>:3000"]
+        minio["<b>minio</b><br/>S3 object storage<br/>:9000 (API) :9001 (Console)"]
+        queryEngine["<b>query-engine</b><br/>pg_duckdb<br/>:5433 → :5432<br/>2GB RAM / 2 CPU"]
+    end
+
+    subgraph fullProfile["Profile: full / postgres"]
+        db["<b>db</b><br/>PostgreSQL 18<br/>:5432"]
+        apiFull["<b>api-full</b><br/>FastAPI + PostgreSQL<br/>:8000 (hot reload)"]
+    end
+
+    subgraph healthcareProfile["Profile: healthcare"]
+        mirth["<b>mirth</b><br/>Mirth Connect 4.5<br/>:8443 (Web) :6661 (HL7v2)"]
+    end
+
+    subgraph volumes["Named Volumes"]
+        v1["backend_data"]
+        v2["postgres_data"]
+        v3["minio_data"]
+        v4["query_engine_data"]
+    end
+
+    subgraph external["External Services"]
+        groq["Groq API"]
+        workos["WorkOS"]
+        streamio["Stream.io"]
+    end
+
+    %% Dependencies
+    frontend -->|depends_on| api
+    agent -->|depends_on<br/>healthy| minio
+    authProxy -->|depends_on| api
+    api -->|depends_on<br/>healthy| queryEngine
+    apiFull -->|depends_on<br/>healthy| db
+    apiFull -->|depends_on| authProxy
+    apiFull -->|depends_on<br/>healthy| queryEngine
+
+    %% External connections
+    agent -.->|GROQ_API_KEY| groq
+    api -.->|WorkOS SDK| workos
+    api -.->|Stream SDK| streamio
+
+    %% Volume mounts
+    api ---|volume| v1
+    db ---|volume| v2
+    minio ---|volume| v3
+    queryEngine ---|volume| v4
+
+    classDef optional fill:#f5f5f5,stroke:#999,stroke-dasharray: 5 5
+    class db,apiFull,mirth optional

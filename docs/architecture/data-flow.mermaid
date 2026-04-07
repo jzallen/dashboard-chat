@@ -1,0 +1,61 @@
+%% Data Flow Diagram — Upload through Query
+%% Shows trust boundaries and data transformations
+
+graph TB
+    subgraph trustBoundary1["Trust Boundary: User Input"]
+        upload["File Upload<br/>(CSV, Excel, JSON, Parquet)"]
+    end
+
+    subgraph trustBoundary2["Trust Boundary: Application"]
+        formatPlugin["Format Plugin<br/>Registry"]
+        ingestion["Ingestion Pipeline<br/>(validate, convert)"]
+        parquet["Parquet Conversion"]
+        partition["Partition by<br/>configured fields"]
+    end
+
+    subgraph storage["Object Storage (MinIO / S3)"]
+        s3path["datasets/{project_id}/{dataset_id}/<br/>*.parquet"]
+    end
+
+    subgraph queryLayer["Query Layer"]
+        ibis["Ibis Expression<br/>Compiler"]
+        mutate["Stage 1: MUTATE<br/>(cleaning transforms)"]
+        filter["Stage 2: FILTER<br/>(filter transforms)"]
+        rename["Stage 3: RENAME<br/>(alias transforms)"]
+        stagingSQL["Staging SQL<br/>(compact, S3 paths)"]
+    end
+
+    subgraph trustBoundary3["Trust Boundary: External Access"]
+        duckdb["pg_duckdb<br/>Query Engine"]
+        httpfs["httpfs extension<br/>→ S3 reads"]
+        foreignTable["Foreign Tables<br/>(per-project schema)"]
+        pgbouncer["PgBouncer<br/>Connection Pool"]
+        externalClient["External SQL Client"]
+    end
+
+    subgraph preview["Preview Layer"]
+        previewRows["Preview Rows<br/>(first N rows)"]
+        columnProfiles["Column Profiles<br/>(stats, cardinality)"]
+    end
+
+    upload --> formatPlugin
+    formatPlugin -->|"detect format"| ingestion
+    ingestion --> parquet
+    parquet --> partition
+    partition -->|"PUT objects"| s3path
+
+    s3path -->|"read_parquet()"| ibis
+    ibis --> mutate
+    mutate --> filter
+    filter --> rename
+    rename --> stagingSQL
+
+    stagingSQL --> previewRows
+    stagingSQL --> columnProfiles
+    stagingSQL -->|"CREATE VIEW AS"| foreignTable
+
+    s3path -->|"httpfs"| httpfs
+    httpfs --> duckdb
+    foreignTable --> duckdb
+    duckdb --> pgbouncer
+    pgbouncer --> externalClient
