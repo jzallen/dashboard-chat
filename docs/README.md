@@ -1,14 +1,27 @@
 # Documentation
 
-Architectural documentation for Dashboard Chat — a full-stack web app for chat-driven data table operations.
+Architectural documentation for Dashboard Chat — a chat-first data platform that takes users from raw files to production-ready analytics via natural language.
+
+## Product Vision
+
+**[Read the full vision](vision.md)** — Upload → Model → Access → Visualize
+
+```
+Upload files  ──►  Model with chat  ──►  dbt export + SQL/ODBC access  ──►  Auto-generate dashboards
+  (complete)         (complete)              (complete)                        (planned)
+```
 
 ## Contents
+
+### Vision & Roadmap
+
+- [Product Vision](vision.md) — End-to-end user journey and what makes this different
 
 ### Architecture
 
 High-level system design and service topology.
 
-- [C4 Container Diagram](architecture/c4-containers.mermaid) — 8 services and their interactions
+- [C4 Container Diagram](architecture/c4-containers.mermaid) — 9 services (incl. planner) and their interactions
 - [Agent Topology](architecture/agent-topology.mermaid) — Chat worker context routing and tool execution
 - [Auth Flow](architecture/auth-flow.mermaid) — Dev mode vs WorkOS authentication paths
 - [Data Flow](architecture/data-flow.mermaid) — Upload through query with trust boundaries
@@ -42,7 +55,7 @@ Interaction and state diagrams for key user flows.
 
 ### Decisions
 
-- [Architecture Decision Records](decisions/adrs.md) — 10 ADRs covering key technology choices
+- [Architecture Decision Records](decisions/adrs.md) — 11 ADRs covering key technology choices
 
 ### Requirements
 

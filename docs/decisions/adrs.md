@@ -97,3 +97,13 @@
 **Decision:** Use Bazel as the primary build system, with Turborepo for JavaScript-specific task orchestration.  
 **Rationale:** Bazel provides hermetic builds, cross-language dependency tracking, and Docker image generation (`dashboard-chat/*:bazel` images). Turborepo handles npm workspace tasks (`test`, `build`, `dev`) where Bazel's overhead isn't justified.  
 **Consequences:** Two build systems to maintain. `BUILD.bazel` and `MODULE.bazel` define Bazel targets. `turbo.json` defines JS pipeline tasks. Default-profile Docker images are built by Bazel for reproducibility. The optional `api-full` service in the "full" profile uses a traditional Dockerfile for hot-reload development.
+
+---
+
+## ADR-011: Dual LLM Strategy — Groq for Chat, Anthropic for Planning
+
+**Status:** Accepted  
+**Context:** The system has two distinct LLM workloads with different requirements. Real-time chat needs low-latency tool calling (sub-second first token). Dashboard layout planning needs high-quality multi-step reasoning over complex data manifests.  
+**Decision:** Use Groq (llama-3.3-70b-versatile) for the chat agent and Anthropic Claude (claude-sonnet-4-6) for the layout planner.  
+**Rationale:** Groq's inference speed is essential for the chat UX — users type a message and expect immediate streaming feedback. The layout planner runs as a batch pipeline (planner → section → filter → assembler → validation) where latency is less critical but reasoning quality determines output fidelity. Claude excels at the structured, multi-step reasoning the LangGraph pipeline requires. Using two providers also avoids single-vendor dependency.  
+**Consequences:** Two API keys to manage (`GROQ_API_KEY`, `PLANNER_ANTHROPIC_API_KEY`). Two SDK dependencies (`@ai-sdk/groq` in TypeScript, `anthropic` in Python). The planner service is currently standalone (`planner/`) and not yet integrated into the main application's Docker Compose or API surface.

@@ -12,6 +12,7 @@ graph TB
         authProxy["<b>Auth Proxy</b><br/>Hono (Node.js)<br/>Token validation<br/><i>Port 3000</i>"]
         agent["<b>Agent</b><br/>Hono (Node.js)<br/>Chat API + SSE streaming<br/><i>Port 8787</i>"]
         api["<b>API</b><br/>FastAPI (Python)<br/>REST endpoints<br/><i>Port 8000</i>"]
+        planner["<b>Layout Planner</b><br/>Python CLI<br/>LangGraph multi-agent<br/><i>(standalone — planned integration)</i>"]
         queryEngine["<b>Query Engine</b><br/>pg_duckdb<br/>Analytical queries<br/><i>Port 5433</i>"]
         minio["<b>MinIO</b><br/>S3-compatible storage<br/>Parquet files<br/><i>Port 9000</i>"]
         db["<b>PostgreSQL</b><br/>Persistent metadata<br/><i>Port 5432</i><br/><i>(optional — full profile)</i>"]
@@ -20,6 +21,7 @@ graph TB
 
     subgraph external["External Services"]
         groq["<b>Groq API</b><br/>LLM inference<br/>llama-3.3-70b-versatile"]
+        anthropic["<b>Anthropic API</b><br/>LLM inference<br/>claude-sonnet-4-6"]
         workos["<b>WorkOS</b><br/>SSO + directory sync<br/><i>(production auth)</i>"]
         streamio["<b>Stream.io</b><br/>Chat persistence<br/>Channel/thread management"]
     end
@@ -36,8 +38,12 @@ graph TB
     api -->|"SQL (asyncpg)"| db
     api -->|"user/token API"| streamio
     api -->|"JWT verification"| workos
+    planner -->|"multi-agent pipeline"| anthropic
+    planner -.->|"reads manifest from"| api
     sqlClient -->|"PostgreSQL wire protocol"| queryEngine
     queryEngine -->|"httpfs → S3"| minio
 
     classDef optional fill:#f5f5f5,stroke:#999,stroke-dasharray: 5 5
+    classDef planned fill:#fff3cd,stroke:#856404,stroke-dasharray: 5 5
     class db,mirth optional
+    class planner planned
