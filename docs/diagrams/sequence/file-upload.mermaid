@@ -1,5 +1,6 @@
 %% File Upload Sequence
-%% Upload → format detection → conversion → dataset creation
+%% Single-endpoint upload: POST /api/uploads handles format detection,
+%% conversion, and dataset creation internally.
 
 sequenceDiagram
     participant User
@@ -10,7 +11,9 @@ sequenceDiagram
     participant Pipeline as Ingestion Pipeline
 
     User->>Frontend: Select file (CSV/Excel/JSON/Parquet)
-    Frontend->>API: POST /api/uploads (multipart file)
+    Frontend->>API: POST /api/uploads (multipart file + project_id)
+
+    note over API: Single endpoint orchestrates the full flow
 
     API->>Plugin: Detect file format
     Plugin->>Plugin: Validate file structure
@@ -23,7 +26,7 @@ sequenceDiagram
         Frontend->>API: POST /api/uploads/{upload_id}/process {selected_sheets}
     end
 
-    API->>Pipeline: Start ingestion
+    API->>Pipeline: Start ingestion (internal)
     Pipeline->>Plugin: Convert to Parquet
     Pipeline->>Pipeline: Apply partition fields
     Pipeline->>MinIO: Store Parquet at datasets/{project_id}/{dataset_id}/
@@ -31,6 +34,7 @@ sequenceDiagram
     Pipeline->>Pipeline: Generate preview rows (first N)
     Pipeline->>Pipeline: Compute column profiles
 
+    note over API: Dataset record created internally (not a separate API call)
     API->>API: Create Dataset record in DB
     API-->>Frontend: 201 {dataset_id, preview_rows, schema_config}
     Frontend->>User: Display dataset table with preview

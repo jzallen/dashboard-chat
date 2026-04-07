@@ -96,4 +96,4 @@
 **Context:** The monorepo contains Python (backend), TypeScript (frontend, agent, auth-proxy), and shared configs. Builds need to be reproducible and cacheable across languages.  
 **Decision:** Use Bazel as the primary build system, with Turborepo for JavaScript-specific task orchestration.  
 **Rationale:** Bazel provides hermetic builds, cross-language dependency tracking, and Docker image generation (`dashboard-chat/*:bazel` images). Turborepo handles npm workspace tasks (`test`, `build`, `dev`) where Bazel's overhead isn't justified.  
-**Consequences:** Two build systems to maintain. `BUILD.bazel` and `MODULE.bazel` define Bazel targets. `turbo.json` defines JS pipeline tasks. Docker images are built by Bazel (not Dockerfile), ensuring reproducibility.
+**Consequences:** Two build systems to maintain. `BUILD.bazel` and `MODULE.bazel` define Bazel targets. `turbo.json` defines JS pipeline tasks. Default-profile Docker images are built by Bazel for reproducibility. The optional `api-full` service in the "full" profile uses a traditional Dockerfile for hot-reload development.

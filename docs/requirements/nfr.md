@@ -7,7 +7,7 @@
 | NFR-P1 | Chat SSE first token must arrive within 2 seconds of request submission | Users perceive >2s as unresponsive in a conversational UI |
 | NFR-P2 | Dataset preview must render within 3 seconds of upload completion | Upload flow should feel immediate; preview is the confirmation step |
 | NFR-P3 | API list endpoints must respond within 500ms for pages of 50 items | Cursor-based pagination keeps response times constant regardless of total count |
-| NFR-P4 | File uploads must support files up to 100MB | Covers common CSV/Excel files; larger datasets should use direct S3 upload |
+| NFR-P4 | File uploads should enforce a size limit (target: 100MB) | Covers common CSV/Excel files; larger datasets should use direct S3 upload. **Not yet enforced in code.** |
 | NFR-P5 | Transform preview must return within 2 seconds | Users iterate on cleaning operations interactively |
 | NFR-P6 | SQL access queries must start returning rows within 5 seconds for datasets under 1M rows | External BI tools expect sub-10s query starts |
 
@@ -66,5 +66,5 @@
 |----|-------------|-----------|
 | NFR-B1 | Docker images built by Bazel for reproducibility | Identical images regardless of build environment |
 | NFR-B2 | All services startable with single `docker compose up` command | Reduces onboarding friction for new developers |
-| NFR-B3 | CI runs full test suite (Vitest + pytest + Playwright) on every PR | Catches regressions before merge |
+| NFR-B3 | CI runs unit test suite (Vitest + pytest) on every PR; e2e (Playwright) runs locally | Unit tests catch regressions in CI; e2e exists but is not yet wired into the pipeline |
 | NFR-B4 | Frontend builds produce static assets servable by any CDN/web server | Decouples frontend deployment from backend |

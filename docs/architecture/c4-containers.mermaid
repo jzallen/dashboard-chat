@@ -26,9 +26,11 @@ graph TB
 
     browser -->|"HTTPS"| frontend
     frontend -->|"POST /chat (SSE)"| agent
-    frontend -->|"REST API"| authProxy
+    frontend -->|"REST API"| api
+    frontend -.->|"optional proxy path"| authProxy
     authProxy -->|"X-User-Id headers"| api
     agent -->|"streaming completions"| groq
+    agent -->|"depends_on (health)"| minio
     api -->|"S3 API"| minio
     api -->|"SQL (asyncpg)"| queryEngine
     api -->|"SQL (asyncpg)"| db

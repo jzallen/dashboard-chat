@@ -13,7 +13,7 @@ erDiagram
         varchar(36) id PK
         varchar(255) name
         text description
-        varchar(36) org_id FK "indexed"
+        varchar(36) org_id "indexed, convention — no DB FK"
         varchar(36) created_by
         datetime created_at
         datetime updated_at
@@ -145,7 +145,9 @@ erDiagram
     }
 
     %% Relationships
-    organizations ||--o{ projects : "has"
+    %% Note: organizations → projects is a logical relationship enforced by
+    %% application convention (RestrictedSession), not a database-level FK.
+    organizations ||--o{ projects : "scopes"
     projects ||--o{ datasets : "contains"
     projects ||--o{ views : "contains"
     projects ||--o{ reports : "contains"

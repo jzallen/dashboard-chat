@@ -52,7 +52,7 @@
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
-| POST | `/api/uploads` | Upload file and create dataset | 201/202 |
+| POST | `/api/uploads` | Upload file and create dataset | 201/202 (note: FastAPI route has no explicit `status_code`, so OpenAPI spec shows 200; actual responses are 201 or 202) |
 | POST | `/api/uploads/{upload_id}/process` | Process upload awaiting user input (sheet selection) | 200 |
 | GET | `/api/uploads/formats` | List registered file format plugins | 200 |
 
