@@ -1,11 +1,12 @@
 # Non-Functional Requirements
 
-Requirements are organized by the product vision stages (Upload → Model → Access → Visualize) plus cross-cutting concerns.
+Requirements organized by the prototyping workflow (Upload → Model → Preview → Handoff) plus cross-cutting concerns. Each uses the format best suited to its nature:
 
-**Format guide:**
-- **Planguage** for measurable targets — defines Scale (unit), Meter (how to test), Must (minimum), Plan (target), Wish (stretch)
-- **Quality Attribute Scenarios** for behavioral requirements — defines Source, Stimulus, Environment, Response, Response Measure
-- **Constraints** for binary (yes/no) architectural rules
+- **Planguage** (Scale/Meter/Must/Plan) for measurable targets
+- **Quality Attribute Scenarios** for behavioral requirements
+- **Declarative invariants** for binary constraints
+
+Status tags: **Implemented**, **Partial**, **Not implemented**, **Not measured**
 
 ---
 
@@ -13,364 +14,178 @@ Requirements are organized by the product vision stages (Upload → Model → Ac
 
 ### NFR-U1: Upload Size Limit
 
-- **Scale:** Maximum file size accepted by `POST /api/uploads` (megabytes)
-- **Meter:** Automated test submitting files at boundary sizes
-- **Past:** Unlimited (no enforcement except FHIR plugin at 100MB)
-- **Must:** ≤ 200MB
-- **Plan:** ≤ 100MB, consistent with FHIR plugin's `MAX_FILE_SIZE`
-- **Wish:** Configurable per org via settings
-- **Status:** Not enforced. Tracked in `s3-lifecycle-cleanup`.
+> **Scale:** Maximum file size accepted by POST /api/uploads
+> **Meter:** Reject with HTTP 413 when file exceeds threshold
+> **Must:** 200 MB
+> **Plan:** 100 MB (tighter limit encourages Parquet pre-conversion for large files)
+> **Status:** **Not implemented** — no size check in upload router. FHIR plugin enforces 100MB independently.
 
-### NFR-U2: Upload-to-Preview Latency
+### NFR-U2: Time to Preview
 
-- **Scale:** Seconds from upload completion to preview table render in browser
-- **Meter:** Playwright E2E test timing from file selection to visible table rows
-- **Past:** Not measured
-- **Must:** < 5s for a 10MB CSV
-- **Plan:** < 3s for a 10MB CSV
-- **Wish:** < 1s (streaming preview before full ingestion completes)
-- **Status:** Implemented. Not measured in CI.
+> **Scale:** Wall-clock time from upload completion to rendered preview table
+> **Meter:** P95 measured on CSV files under 50MB
+> **Must:** < 5 seconds
+> **Plan:** < 3 seconds
+> **Status:** **Implemented** — Parquet conversion + preview row generation
 
-### NFR-U3: Ambiguous Format Handling
+### NFR-U3: Multi-Sheet Confirmation
 
-> **Source:** User  
-> **Stimulus:** Uploads a multi-sheet Excel file  
-> **Environment:** Normal operation  
-> **Response:** System pauses processing, returns `202 Accepted` with available sheets and sample rows, waits for user to select sheet(s) before continuing  
-> **Response Measure:** Zero data loss from unconfirmed sheet selection; user sees choices within the upload response  
-> **Status:** Implemented.
+> **Stimulus:** User uploads a multi-sheet Excel file
+> **Response:** System pauses, presents sheet options, waits for user selection
+> **Measure:** No data processed without explicit user confirmation
+> **Status:** **Implemented** — `awaiting_input` state with choices list
 
 ### NFR-U4: Format Extensibility
 
-> **Constraint:** Adding a new file format (e.g., Avro, ORC) SHALL require only a new plugin module implementing the `FormatPlugin` interface. No modifications to the upload router, ingestion pipeline, or existing plugins.  
-> **Status:** Implemented. Plugin registry in `backend/app/plugins/`.
-
-### NFR-U5: Upload State Observability
-
-> **Constraint:** Every upload SHALL transition through an explicit state machine (`pending` → `processing` → `completed`/`failed`, with optional `awaiting_input`). State transitions SHALL be queryable via the API.  
-> **Status:** Implemented.
+> Adding a new file format (e.g., Avro, Synthea FHIR bundles) SHALL require only a new plugin module — no changes to core upload logic.
+> **Status:** **Implemented** — plugin registry pattern
 
 ---
 
 ## Stage 2: Model with Natural Language
 
-### NFR-M1: Chat First-Token Latency
+### NFR-M1: Chat Responsiveness
 
-- **Scale:** Milliseconds from `POST /chat` to first SSE byte received by frontend
-- **Meter:** P95 latency measured at the frontend `EventSource` `onmessage` callback over 100 requests with a single-sentence user message
-- **Past:** Not measured
-- **Must:** < 3000ms
-- **Plan:** < 2000ms
-- **Wish:** < 800ms
-- **Status:** Implemented (Groq inference). Not measured.
+> **Scale:** Time from POST /chat to first SSE byte received by frontend
+> **Meter:** P95 latency over 100 requests during normal operation
+> **Must:** < 3 seconds
+> **Plan:** < 2 seconds
+> **Wish:** < 1 second
+> **Status:** **Implemented** — Groq inference delivers sub-2s first token typically
 
 ### NFR-M2: Transform Preview Latency
 
-- **Scale:** Milliseconds from `POST .../transforms/preview` to response
-- **Meter:** P95 server-side response time for a preview on a 100K-row dataset with one cleaning operation
-- **Past:** Not measured
-- **Must:** < 5000ms
-- **Plan:** < 2000ms
-- **Wish:** < 500ms
-- **Status:** Implemented. Not measured.
+> **Scale:** Time from transform preview request to rendered result
+> **Meter:** P95 on datasets under 100K rows
+> **Must:** < 5 seconds
+> **Plan:** < 2 seconds
+> **Status:** **Implemented** — pg_duckdb executes preview SQL
 
-### NFR-M3: Transform Reversibility
+### NFR-M3: Non-Destructive Exploration
 
-> **Constraint:** All transforms (clean, filter, alias, map) SHALL be non-destructive. Raw Parquet files SHALL never be modified. Every transform SHALL support `enabled` → `disabled` (reversible) and `disabled` → `enabled` (re-enable) transitions.  
-> **Status:** Implemented.
+> All transforms SHALL be reversible. Raw Parquet files SHALL never be modified by any transform operation. Users SHALL be able to disable and re-enable any transform without data loss.
+> **Status:** **Implemented** — transforms generate SQL via Ibis; Parquet is read-only
 
-### NFR-M4: LLM Provider Failure
+### NFR-M4: LLM Provider Failure Handling
 
-> **Source:** Groq API  
-> **Stimulus:** API returns 5xx error, times out, or rate limits the request  
-> **Environment:** Normal operation, user waiting for chat response  
-> **Response:** Agent service returns a structured error event via SSE within the timeout window. Frontend displays a human-readable error message ("AI service temporarily unavailable — try again in a moment"). No silent hang, no broken stream state.  
-> **Response Measure:** Error delivered to user within 5 seconds of failure detection. Frontend chat input re-enabled for retry.  
-> **Status:** Not implemented. Agent has no timeout or error-to-SSE mapping for Groq failures.
+> **Stimulus:** Groq API returns 500, times out, or is unreachable
+> **Response:** User receives a clear error message in the chat within 5 seconds; no silent hang
+> **Measure:** Error displayed within 5s; SSE connection closed cleanly
+> **Status:** **Not implemented** — no timeout or fallback mechanism
 
-### NFR-M5: Tool Call Schema Validation
+### NFR-M5: Report Context Routing
 
-> **Source:** LLM (Groq)  
-> **Stimulus:** LLM generates a tool call with a column name that doesn't exist in the dataset schema, or an operator incompatible with the column type  
-> **Environment:** Active dataset context with known schema  
-> **Response:** Frontend rejects the tool call before execution and displays an error in chat. No table state mutation occurs.  
-> **Response Measure:** Zero invalid tool calls reach TanStack Table state.  
-> **Status:** Partially implemented. Zod enums constrain column names at the LLM level. No server-side or frontend re-validation.
-
-### NFR-M6: Report Context Routing
-
-> **Constraint:** The agent SHALL support `contextType: "report"` alongside `"dataset"` and `"view"`, with a dedicated tool set and system prompt for report modeling. All three context types required to complete the modeling stage.  
-> **Status:** Not implemented. Tracked in `report-chat-tools`.
+> The agent SHALL support `contextType: "report"` alongside `"dataset"` and `"view"`, enabling the full modeling layer.
+> **Status:** **Not implemented** — tracked in `report-chat-tools` proposal
 
 ---
 
-## Stage 3: Access (dbt Export + SQL)
+## Stage 3: Preview (Planned)
 
-### NFR-A1: SQL Query Start Latency
+### NFR-P1: Dashboard Generation Time
 
-- **Scale:** Seconds from SQL query submission to first row returned via PostgreSQL wire protocol
-- **Meter:** `psql` query against a pg_duckdb foreign table backed by Parquet in MinIO, timed with `\timing`
-- **Past:** Not measured
-- **Must:** < 10s for datasets under 1M rows
-- **Plan:** < 5s for datasets under 1M rows
-- **Wish:** < 2s (warm cache)
-- **Status:** Implemented. Not measured.
+> **Scale:** Wall-clock time from natural language prompt to rendered dashboard in preview tab
+> **Meter:** End-to-end including LangGraph pipeline + Vizro rendering
+> **Must:** < 120 seconds
+> **Plan:** < 60 seconds
+> **Wish:** < 30 seconds
+> **Status:** **Not measured** — planner is standalone CLI
 
-### NFR-A2: Wire Protocol Compatibility
+### NFR-P2: Hot Reload Latency
 
-> **Constraint:** External SQL access SHALL use the standard PostgreSQL wire protocol. Any tool that speaks PostgreSQL (psql, DBeaver, Tableau, Power BI, Excel ODBC, Python psycopg2) SHALL connect without custom drivers or plugins.  
-> **Status:** Implemented via pg_duckdb.
+> **Scale:** Time from natural language refinement to updated preview in the dashboard tab
+> **Meter:** Wall-clock from chat submission to re-rendered preview
+> **Must:** < 30 seconds (incremental changes should be faster than full generation)
+> **Plan:** < 15 seconds
+> **Status:** **Not implemented** — preview tab and hot-reload mechanism not yet built
 
-### NFR-A3: dbt Export Validity
+### NFR-P3: Manifest Auto-Generation
 
-> **Source:** User  
-> **Stimulus:** Clicks "Export dbt project" on a project with 3 datasets, 2 views, and 1 report  
-> **Environment:** Normal operation  
-> **Response:** System generates a ZIP archive containing a complete dbt project with `dbt_project.yml`, source definitions, staging models (`stg_` prefix), intermediate models (`int_` prefix from views), and mart models (`fct_`/`dim_` prefix from reports). The archive is a valid dbt project that runs successfully with `dbt run` against the query engine.  
-> **Response Measure:** `dbt parse` succeeds with zero errors. `dbt run` materializes all models.  
-> **Status:** Implemented. No automated validation — no test runs `dbt parse` against the generated output.
-
-### NFR-A4: Query Engine Auto-Sync Latency
-
-- **Scale:** Seconds from dataset/transform change to query engine foreign table reflecting the change
-- **Meter:** Measure time between outbox event commit and sync processor completion via structured log timestamps
-- **Past:** Not measured
-- **Must:** < 60s
-- **Plan:** < 30s
-- **Wish:** < 5s (near-real-time)
-- **Status:** Implemented (event-driven via outbox). Not measured.
-
-### NFR-A5: Credential Security
-
-> **Constraint:** SQL access passwords SHALL be stored as hashed values (never plaintext). Credential regeneration SHALL enforce a 60-second cooldown to rate-limit brute-force rotation.  
-> **Status:** Implemented.
-
-### NFR-A6: Query Engine Resource Isolation
-
-- **Scale:** Maximum RAM and CPU per query engine node
-- **Meter:** Docker Compose `deploy.resources.limits` configuration
-- **Past:** N/A
-- **Must:** ≤ 4GB RAM, ≤ 4 CPU
-- **Plan:** 2GB RAM, 2 CPU
-- **Wish:** Auto-scaling based on query load
-- **Status:** Implemented (2GB/2CPU in docker-compose.yml).
-
-### NFR-A7: Storage Cleanup on Deletion
-
-> **Source:** User  
-> **Stimulus:** Deletes a project or individual dataset  
-> **Environment:** Normal operation  
-> **Response:** System deletes all associated Parquet files from S3/MinIO in addition to cascade-deleting database records. Query engine foreign tables are dropped via outbox event.  
-> **Response Measure:** Zero orphaned Parquet files remain in the `datasets/{project_id}/` prefix after deletion. S3 `ListObjects` on the prefix returns empty.  
-> **Status:** Not implemented. DB cascade works; S3 cleanup does not. Tracked in `s3-lifecycle-cleanup`.
+> The system SHALL auto-generate a semantic manifest from project Views and Reports. Users SHALL NOT manually assemble manifests.
+> **Status:** **Not implemented** — tracked in `planner-docker-integration` proposal
 
 ---
 
-## Stage 4: Visualize (Planned)
+## Stage 4: Handoff
 
-### NFR-V1: Dashboard Generation Latency
+### NFR-H1: dbt Export Validity
 
-- **Scale:** Seconds from plan request to complete dashboard JSON
-- **Meter:** CLI `planner plan` command wall-clock time, end-to-end including all agent stages
-- **Past:** Not measured
-- **Must:** < 120s
-- **Plan:** < 60s
-- **Wish:** < 30s with caching of section templates
-- **Status:** Not measured. Planner is standalone.
+> **Stimulus:** User exports a project with datasets, views, and reports
+> **Response:** The exported zip contains a valid dbt project that passes `dbt parse` without errors
+> **Measure:** All model files, schema YAML, macros, and profiles.yml present and syntactically correct
+> **Status:** **Implemented** — 4-layer export. No automated validation against `dbt parse`.
 
-### NFR-V2: Manifest Auto-Generation
+### NFR-H2: SQL Access Query Latency
 
-> **Source:** Backend  
-> **Stimulus:** User requests a dashboard plan for a project with Views and Reports  
-> **Environment:** Views have typed columns; Reports have dimension/measure metadata  
-> **Response:** System auto-generates a `SemanticManifest` JSON from project Views (→ data sources) and Reports (→ metrics/dimensions) without manual manifest authoring  
-> **Response Measure:** Generated manifest passes schema validation and contains all View columns and Report measures  
-> **Status:** Not implemented. Tracked in `planner-docker-integration`.
+> **Scale:** Time to first row returned for a SQL query via external client
+> **Meter:** P95 on datasets under 1M rows connected via psql
+> **Must:** < 10 seconds
+> **Plan:** < 5 seconds
+> **Status:** **Implemented** — pg_duckdb reads Parquet via httpfs
 
-### NFR-V3: Planner Cost Isolation
+### NFR-H3: PostgreSQL Wire Protocol
 
-- **Scale:** Maximum Anthropic API spend per plan request (USD)
-- **Meter:** Token usage reported by Anthropic SDK per pipeline run
-- **Past:** Not tracked
-- **Must:** < $5 per plan (multi-agent pipeline with retries)
-- **Plan:** < $2 per plan
-- **Wish:** < $0.50 with prompt caching and smaller models for validation
-- **Status:** Partially implemented. Env var config exists. No per-request budget enforcement.
+> External SQL access SHALL use standard PostgreSQL wire protocol. Any SQL client, BI tool, ODBC/JDBC driver, or ORM SHALL connect without custom drivers.
+> **Status:** **Implemented**
+
+### NFR-H4: Query Engine Auto-Sync
+
+> **Scale:** Time from dataset/transform change to query engine view update
+> **Meter:** Elapsed time between outbox event and foreign table refresh
+> **Must:** < 60 seconds
+> **Plan:** < 30 seconds
+> **Status:** **Implemented** — event-driven sync via outbox pattern
+
+### NFR-H5: S3 Cleanup on Delete
+
+> When a dataset or project is deleted, corresponding Parquet files in S3 SHALL be removed.
+> **Status:** **Not implemented** — tracked in `s3-lifecycle-cleanup` proposal
 
 ---
 
 ## Security
 
-### NFR-SEC1: Authentication Boundary
-
-> **Constraint:** All API endpoints SHALL require authentication except: health checks (`/health`), OpenAPI docs (`/docs`, `/openapi.json`), JWKS (`/.well-known/jwks.json`), and auth flow (`/api/auth/*`). Enforced by `AuthMiddleware` on every request.  
-> **Status:** Implemented.
-
-### NFR-SEC2: Token Verification
-
-> **Constraint:** Production auth SHALL validate JWT tokens via JWKS (asymmetric key verification through WorkOS). No shared secrets. Dev mode SHALL use a local RSA key pair served via `/.well-known/jwks.json`.  
-> **Status:** Implemented.
-
-### NFR-SEC3: Proxy Trust Boundary
-
-> **Constraint:** Backend SHALL only trust `X-User-Id`, `X-Org-Id`, `X-User-Email` headers when `TRUST_PROXY_HEADERS=true` is explicitly set. Default is to verify Bearer tokens directly.  
-> **Status:** Implemented.
-
-### NFR-SEC4: CORS
-
-> **Constraint:** CORS SHALL be restricted to origins listed in `CORS_ORIGINS`. No wildcard `*` in production.  
-> **Status:** Implemented.
-
-### NFR-SEC5: Org Gating
-
-> **Constraint:** Authenticated users without an `org_id` SHALL be blocked from all endpoints except `/api/orgs` and `/api/orgs/me`. Organization membership is required before data access.  
-> **Status:** Implemented.
-
-### NFR-SEC6: Data at Rest Encryption
-
-> **Source:** Infrastructure operator  
-> **Stimulus:** Configures production S3 bucket  
-> **Environment:** Production deployment  
-> **Response:** All Parquet files stored with server-side encryption (SSE-S3 at minimum, SSE-KMS for healthcare deployments)  
-> **Response Measure:** S3 bucket policy rejects unencrypted `PutObject` requests  
-> **Status:** Not configured. MinIO dev setup has no encryption. Production S3 bucket policy TBD.
-
-### NFR-SEC7: Transport Encryption
-
-> **Constraint:** All service-to-service communication in production SHALL use TLS. Docker Compose internal networking is acceptable for development only.  
-> **Status:** Not configured. Development uses unencrypted Docker network.
-
----
+| ID | Requirement | Status |
+|----|-------------|--------|
+| NFR-SEC1 | All API endpoints require authentication except health checks and auth flow | **Implemented** |
+| NFR-SEC2 | JWT tokens validated via JWKS in production (WorkOS) | **Implemented** |
+| NFR-SEC3 | Backend trusts proxy headers only when TRUST_PROXY_HEADERS is set | **Implemented** |
+| NFR-SEC4 | CORS restricted to configured origins | **Implemented** |
+| NFR-SEC5 | Org-less users blocked from all endpoints except /api/orgs | **Implemented** |
+| NFR-SEC6 | Parquet files encrypted at rest via SSE-S3 or SSE-KMS | **Not configured** |
+| NFR-SEC7 | SQL credentials stored as hashed passwords; 60s regeneration cooldown | **Implemented** |
 
 ## Multi-Tenancy
 
-### NFR-MT1: Query Scoping
-
-> **Constraint:** All data queries SHALL be scoped by `org_id` via `RestrictedSession`. No query path SHALL exist that bypasses org scoping except admin/migration operations.  
-> **Status:** Implemented.
-
-### NFR-MT2: SQL Access Isolation
-
-> **Constraint:** Query engine schemas SHALL be isolated per project. A project's SQL credentials SHALL only grant access to that project's schema. Cross-project queries SHALL be impossible.  
-> **Status:** Implemented.
-
-### NFR-MT3: API Rate Limiting
-
-> **Source:** Tenant (org)  
-> **Stimulus:** One org submits 100 chat requests per minute or 50 file uploads per minute  
-> **Environment:** Multi-tenant production, shared infrastructure  
-> **Response:** System throttles requests from the offending org with `429 Too Many Requests`. Other orgs are unaffected.  
-> **Response Measure:** No single org can consume more than its fair share of chat agent or upload processing capacity. Other tenants maintain NFR-M1 and NFR-U2 latency targets.  
-> **Status:** Not implemented. Only credential regeneration has a rate limit (60s cooldown).
-
----
+| ID | Requirement | Status |
+|----|-------------|--------|
+| NFR-MT1 | All queries scoped by org_id via RestrictedSession | **Implemented** |
+| NFR-MT2 | Query engine schemas isolated per project | **Implemented** |
+| NFR-MT3 | Per-org rate limiting on upload and chat endpoints | **Not implemented** |
 
 ## Reliability
 
-### NFR-R1: Event Delivery
-
-> **Constraint:** Side effects (query engine sync, project memory provisioning) SHALL use the outbox pattern. Events SHALL be committed in the same transaction as the business operation. The dispatcher SHALL guarantee at-least-once delivery with exponential backoff on failure.  
-> **Status:** Implemented.
-
-### NFR-R2: Health Probes
-
-> **Constraint:** Every service SHALL expose a `GET /health` endpoint returning 200 on success. Docker Compose and Kubernetes health probes SHALL use these endpoints.  
-> **Status:** Implemented.
-
-### NFR-R3: Graceful Shutdown
-
-> **Source:** Orchestrator (Docker, Kubernetes)  
-> **Stimulus:** Sends `SIGTERM` to agent service during an active SSE stream  
-> **Environment:** Rolling deployment  
-> **Response:** Agent completes in-flight SSE responses (or closes them cleanly) before shutting down. No client receives a truncated stream without a proper close event.  
-> **Response Measure:** Zero dropped SSE connections during deployments when using rolling updates with health check readiness gates.  
-> **Status:** Implemented in agent (`SIGTERM`/`SIGINT` handlers).
-
-### NFR-R4: Migration Safety
-
-> **Constraint:** Database migrations SHALL be forward-compatible. No destructive `ALTER` (drop column, rename column, change type in place). New columns SHALL be nullable or have defaults. This supports zero-downtime deployments where old code runs against new schema.  
-> **Status:** Implemented.
-
----
+| ID | Requirement | Status |
+|----|-------------|--------|
+| NFR-R1 | Outbox pattern for at-least-once event delivery | **Implemented** |
+| NFR-R2 | Health check endpoints on all services | **Implemented** |
+| NFR-R3 | Graceful shutdown on SIGTERM/SIGINT for agent | **Implemented** |
+| NFR-R4 | Forward-compatible database migrations | **Implemented** |
 
 ## Observability
 
-### NFR-O1: Auth Audit Trail
+| ID | Requirement | Status |
+|----|-------------|--------|
+| NFR-O1 | Structured logging on auth failures | **Implemented** |
+| NFR-O2 | Tool call execution logged with name, duration, success/failure | **Not implemented** |
+| NFR-O3 | Upload state machine with structured events | **Partial** |
 
-> **Constraint:** Auth failures SHALL be logged with structured fields: request path, failure reason, client IP. Token values SHALL NOT appear in logs.  
-> **Status:** Implemented.
+## Build & Development
 
-### NFR-O2: Service Health Dashboard
-
-> **Constraint:** Health endpoints SHALL return structured JSON including service name, version, and dependency status (DB connectivity, S3 reachability, query engine health).  
-> **Status:** Partially implemented. Health endpoints exist but return minimal payloads.
-
-### NFR-O3: Pipeline Operation Logging
-
-> **Source:** System  
-> **Stimulus:** User uploads a file, applies a transform, or previews a cleaning operation  
-> **Environment:** Normal operation  
-> **Response:** System emits a structured log event with: operation type, dataset ID, duration (ms), success/failure, and error detail on failure  
-> **Response Measure:** Every upload and transform operation produces exactly one log event with duration. Log events are queryable for P95 latency dashboards.  
-> **Status:** Partially implemented. Upload state machine exists. No duration logging on transforms.
-
-### NFR-O4: Chat Tool Call Logging
-
-> **Source:** Agent service  
-> **Stimulus:** LLM generates a tool call (filterTable, trimWhitespace, createView, etc.)  
-> **Environment:** Active chat session  
-> **Response:** Agent logs: tool name, dataset/view/report ID, execution duration (ms), success/failure  
-> **Response Measure:** Every tool call produces one log event. Enables "most used tools" and "tool failure rate" dashboards.  
-> **Status:** Not implemented.
-
----
-
-## Compatibility
-
-### NFR-C1: Zero-Dependency Dev Mode
-
-> **Constraint:** `docker compose up` with default profile SHALL start all required services with no external dependencies. SQLite for metadata, MinIO for storage, dev auth mode with hardcoded tokens. No PostgreSQL, no WorkOS, no Groq API key required for basic UI exploration.  
-> **Status:** Implemented. (Groq API key IS required for chat functionality.)
-
-### NFR-C2: Storage Abstraction
-
-> **Constraint:** All S3 operations SHALL use the boto3/aioboto3 API. MinIO in development, AWS S3 in production. No code paths SHALL reference MinIO-specific APIs.  
-> **Status:** Implemented.
-
-### NFR-C3: Auth Mode Switching
-
-> **Constraint:** `AUTH_MODE` environment variable SHALL switch between `"dev"` (hardcoded user, local JWKS) and `"workos"` (JWT via WorkOS JWKS). No code changes required.  
-> **Status:** Implemented.
-
-### NFR-C4: Single-Command Startup
-
-> **Constraint:** `docker compose up` SHALL start all default-profile services and produce a working application at `http://localhost:5173`.  
-> **Status:** Implemented.
-
----
-
-## Build & Deployment
-
-### NFR-B1: Reproducible Images
-
-> **Constraint:** Default-profile Docker images SHALL be built by Bazel for deterministic, hermetic builds. The optional `api-full` service MAY use a traditional Dockerfile for hot-reload development.  
-> **Status:** Implemented.
-
-### NFR-B2: CI Unit Tests
-
-> **Constraint:** CI SHALL run the full unit test suite (Vitest for frontend/agent/auth-proxy, pytest for backend) on every pull request. Merge SHALL be blocked on test failure.  
-> **Status:** Implemented.
-
-### NFR-B3: CI E2E Tests
-
-> **Source:** CI pipeline  
-> **Stimulus:** Pull request opened or updated  
-> **Environment:** GitHub Actions with Docker Compose  
-> **Response:** CI spins up all services, runs Playwright smoke + critical-path tests (upload flow, basic chat, auth lifecycle), uploads HTML report as artifact  
-> **Response Measure:** E2E job completes within 10 minutes. Failures produce Playwright traces for debugging.  
-> **Status:** Not wired. E2E tests exist locally. Tracked in `e2e-ci-pipeline`.
-
-### NFR-B4: Static Frontend
-
-> **Constraint:** Frontend builds SHALL produce static assets (HTML/JS/CSS) servable by any CDN or web server (Nginx, Cloudflare Pages, S3+CloudFront). No server-side rendering dependency.  
-> **Status:** Implemented.
+| ID | Requirement | Status |
+|----|-------------|--------|
+| NFR-B1 | All services start with `docker compose up` | **Implemented** |
+| NFR-B2 | Docker images built by Bazel | **Implemented** |
+| NFR-B3 | CI runs unit tests (Vitest + pytest) on every PR | **Implemented** |
+| NFR-B4 | E2E tests runnable in CI with Docker Compose | **Not wired** |
+| NFR-B5 | Dev/prod parity (SQLite+MinIO dev, PostgreSQL+S3 prod) | **Implemented** |

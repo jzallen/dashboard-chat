@@ -1,27 +1,27 @@
 # Documentation
 
-Architectural documentation for Dashboard Chat — a chat-first data platform that takes users from raw files to production-ready analytics via natural language.
+Dashboard Chat — a chat-first prototyping tool for data models and dashboards. Users go from raw files (or synthetic data) to working prototypes, then hand off dbt projects and renderable dashboard code to engineering teams.
 
 ## Product Vision
 
-**[Read the full vision](vision.md)** — Upload → Model → Access → Visualize
+**[Read the full vision](vision.md)** — the prototyping workflow and handoff model
 
 ```
-Upload files  ──►  Model with chat  ──►  dbt export + SQL/ODBC access  ──►  Auto-generate dashboards
-  (complete)         (complete)              (complete)                        (planned)
+Upload files  ──►  Model with chat  ──►  Preview dashboard  ──►  Hand off dbt + dashboard code
+  (complete)      (reports in progress)      (planned)              (dbt complete, dashboards planned)
 ```
 
 ## Contents
 
 ### Vision & Roadmap
 
-- [Product Vision](vision.md) — End-to-end user journey and what makes this different
+- [Product Vision](vision.md) — Prototyping workflow, target users, healthcare/Synthea strategy, handoff model
 
 ### Architecture
 
 High-level system design and service topology.
 
-- [C4 Container Diagram](architecture/c4-containers.mermaid) — 9 services (incl. planner) and their interactions
+- [C4 Container Diagram](architecture/c4-containers.mermaid) — Services, handoff artifacts, and external integrations (incl. Synthea, planner)
 - [Agent Topology](architecture/agent-topology.mermaid) — Chat worker context routing and tool execution
 - [Auth Flow](architecture/auth-flow.mermaid) — Dev mode vs WorkOS authentication paths
 - [Data Flow](architecture/data-flow.mermaid) — Upload through query with trust boundaries
@@ -38,7 +38,7 @@ Core business concepts and data model.
 
 ### API
 
-- [Endpoints](api/endpoints.md) — 52 REST endpoints across 12 routers
+- [Endpoints](api/endpoints.md) — REST endpoints across 12 routers + agent routes
 
 ### Diagrams
 
@@ -56,18 +56,15 @@ Interaction and state diagrams for key user flows.
 
 ### Decisions
 
-- [Architecture Decision Records](decisions/adrs.md) — 11 ADRs covering key technology choices
+- [Architecture Decision Records](decisions/adrs.md) — 12 ADRs covering technology choices, LLM strategy, and healthcare positioning
 
 ### Requirements
 
-- [Non-Functional Requirements](requirements/nfr.md) — Performance, security, scalability, reliability
+- [Non-Functional Requirements](requirements/nfr.md) — Organized by prototyping workflow stages with Planguage targets
 
-### Guides
+### Contributing
 
-Engineering guides and conventions.
-
-- [Design Decisions](guides/design.md) — Code organization, testability, testing strategy
-- [CSS Modules Guide](guides/css-modules.md) — Domain-specific CSS naming with Tailwind
+- [CSS Modules Guide](guides/contributing-css-modules.md) — Domain-specific CSS naming conventions with Tailwind (for contributors to the frontend)
 
 ### Infrastructure
 

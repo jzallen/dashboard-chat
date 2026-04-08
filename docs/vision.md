@@ -1,28 +1,36 @@
 # Product Vision
 
-Dashboard Chat is a **chat-first data platform** that takes users from raw files to production-ready analytics in three stages — each accessible via natural language.
+Dashboard Chat is a **chat-first prototyping tool** for data models and dashboards. Users go from raw files (or synthetic data) to a working prototype — then hand off dbt projects to data engineers and renderable dashboard code to software engineers.
 
-## The End-to-End Journey
+It's built for people who have domain expertise and maybe know some SQL, but don't want to manage data infrastructure just to explore an idea.
+
+## The Prototyping Workflow
 
 ```
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│   1. UPLOAD  │    │  2. MODEL    │    │  3. ACCESS   │    │  4. VISUALIZE│
+│   1. UPLOAD  │    │  2. MODEL    │    │  3. PREVIEW  │    │  4. HANDOFF  │
 │              │───►│              │───►│              │───►│              │
-│  CSV, Excel, │    │ Clean, join, │    │ dbt export + │    │ Auto-generate│
-│  JSON, HL7v2 │    │ filter, view │    │ SQL/ODBC     │    │ dashboards   │
-│              │    │ via chat     │    │ via pg_duckdb │    │ via chat     │
+│  CSV, Excel, │    │ Clean, join, │    │ Live dashboard│    │ dbt project  │
+│  Synthea,    │    │ filter, view │    │ preview with  │    │ + renderable │
+│  FHIR        │    │ via chat     │    │ hot reload    │    │ dashboard    │
 └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
        ▲                   ▲                   ▲                   ▲
-    COMPLETE            COMPLETE            COMPLETE            PLANNED
+    COMPLETE            COMPLETE            PLANNED             COMPLETE
+                    (reports in progress)                    (dbt export +
+                                                             SQL access)
 ```
 
-### Stage 1: Upload (complete)
+### Stage 1: Upload
 
-Users upload structured files (CSV, Excel, JSON, Parquet) through the UI. The system auto-detects format, converts to Parquet, stores in S3, and generates previews with column profiles. Multi-sheet Excel files prompt for sheet selection.
+Users upload structured files through the UI. The system auto-detects format, converts to Parquet, stores in S3, and generates previews with column profiles. Multi-sheet Excel files prompt for sheet selection.
 
-Healthcare users can ingest HL7v2 messages via Mirth Connect for FHIR conversion.
+**Supported formats:** CSV, Excel (.xlsx/.xls), JSON, Parquet, FHIR bundles
 
-### Stage 2: Model with Natural Language (complete)
+**For healthcare prototyping:** Generate synthetic patient data via Synthea (patients, encounters, observations, conditions) and upload the output directly. No real patient data needed — prototype your data model against realistic synthetic populations before committing to production infrastructure.
+
+Mirth Connect integration is available for organizations that want to test with HL7v2 message formats (optional `healthcare` Docker Compose profile).
+
+### Stage 2: Model with Natural Language
 
 With a dataset loaded, users interact entirely through chat:
 
@@ -30,41 +38,59 @@ With a dataset loaded, users interact entirely through chat:
 - **Filter** — any column with operators (equals, contains, gt, lt, between, etc.)
 - **Transform** — rename columns, sort, add/delete rows
 - **Build views** — join multiple datasets, add filters, set grain and materialization
-- **Build reports** — define dimensions, measures, and aggregations *(agent tools not yet wired — backend ready)*
+- **Build reports** — define dimensions, measures, and aggregations *(agent tools in progress — backend ready)*
 
-Every operation is captured as a reproducible transform in the 3-stage Ibis pipeline (MUTATE → FILTER → RENAME). Nothing is destructive — transforms can be disabled and re-enabled.
+Every operation is captured as a reproducible transform in the 3-stage Ibis pipeline (MUTATE → FILTER → RENAME). Nothing is destructive — transforms can be disabled and re-enabled. The user is sketching a data model, not committing to one.
 
-### Stage 3: Access (complete)
+### Stage 3: Preview (planned)
 
-The modeled data becomes accessible two ways:
+The **layout planner** generates dashboard layouts from natural language prompts. It uses a multi-agent LangGraph pipeline powered by Anthropic Claude to produce renderable Vizro dashboard code.
 
-1. **dbt export** — Export the entire project as a 4-layer dbt archive (sources → staging → intermediate → marts) with YAML schemas, macros, and model SQL. This plugs directly into existing dbt workflows and BI pipelines.
+The preview experience:
+1. User describes the dashboard they want in natural language ("show me readmission rates by department with a 30-day trend")
+2. Planner generates a Vizro dashboard plan from the project's semantic manifest (derived from Views and Reports)
+3. Dashboard renders in a **separate preview tab/window**
+4. User continues chatting to refine — natural language changes trigger **hot reload** in the preview
+5. The cycle is: describe → preview → refine → preview → hand off
 
-2. **External SQL access** — Enable SQL access on a project to provision a dedicated pg_duckdb schema with foreign tables reading directly from Parquet in S3. Any SQL client, BI tool, or ODBC driver can connect via standard PostgreSQL wire protocol. PgBouncer handles connection pooling.
+This is the core interaction loop that makes prototyping fast. The user never leaves the chat interface to configure charts, drag widgets, or write code. They describe what they want and see it immediately.
 
-The combination means users go from "I have a CSV" to "my BI tool is querying a governed, version-controlled data model" without writing SQL or managing infrastructure.
+### Stage 4: Handoff
 
-### Stage 4: Visualize (planned)
+The prototype produces two handoff artifacts for engineering teams:
 
-The **layout planner** service (`planner/`) generates Vizro dashboard layouts from natural language prompts. It uses a multi-agent LangGraph pipeline (planner → section → filter → assembler → validation) powered by Anthropic Claude to produce chart configurations from a semantic data manifest.
+**For data engineers — dbt project:**
+- Export the entire project as a 4-layer dbt archive (sources → staging → intermediate → marts)
+- Includes YAML schemas, macros, model SQL, and `profiles.yml`
+- Plugs directly into existing dbt workflows — `dbt run` works out of the box
+- Data engineers take the model and build it against real data in their production warehouse
 
-Currently standalone — the integration path is:
-1. User builds views and reports through chat (Stage 2)
-2. Views/reports produce a manifest describing available dimensions and measures
-3. User describes the dashboard they want in natural language
-4. Planner generates a Vizro dashboard plan and renders it
+**For software engineers — renderable dashboard code:**
+- The Vizro plan is renderable Python code, not a screenshot or wireframe
+- Engineers can take the generated dashboard, connect it to real data sources, and deploy
+- The prototype communicates intent precisely because it's a working artifact, not a mockup
 
-This stage bridges the gap from "data is modeled" to "data is visualized" without requiring users to learn a BI tool.
+**For immediate exploration — SQL access:**
+- Enable SQL access on a project to provision a pg_duckdb schema with foreign tables
+- Any SQL client, BI tool, or ODBC driver connects via standard PostgreSQL wire protocol
+- Useful for validating the data model before handoff ("does this join actually make sense?")
 
 ## Target Users
 
-**Primary:** Data analysts and business users who need to wrangle, model, and share tabular data but don't write SQL.
+**Primary:** Product owners, data professionals, and domain experts who want to prototype data models and dashboards without managing infrastructure. They may know SQL and are comfortable in Excel — they don't need the platform to replace their skills, they need it to eliminate the infrastructure between their idea and a working prototype.
 
-**Vertical focus:** Healthcare — HL7v2/FHIR ingestion, Mirth Connect integration, and clinical data modeling workflows.
+**The handoff model:** Users are not the ones who build the production system. They prototype, then hand off:
+- dbt projects → data engineers
+- Dashboard code → software engineers
+- SQL access → analysts who want to validate the model
+
+**Healthcare vertical:** Healthcare POs and analysts prototyping clinical data models against synthetic data (Synthea). The workflow is: generate synthetic patient populations → upload → model with natural language → prototype dashboards → hand the dbt project to the data engineering team who builds it against real EHR data. This sidesteps HIPAA concerns entirely — synthetic data isn't PHI.
 
 ## What Makes This Different
 
-1. **Chat-native** — Every operation from cleaning to view modeling happens through natural language. The LLM sees the actual schema and produces structured tool calls, not generated SQL.
-2. **Non-destructive transforms** — All operations are reversible. The raw Parquet is never modified.
-3. **dbt as the output format** — Models export as standard dbt projects, not a proprietary format. Users aren't locked in.
-4. **SQL access without ETL** — pg_duckdb reads Parquet directly from S3. No data copying, no sync jobs, no stale caches.
+1. **Prototyping, not production** — The output is a handoff artifact (dbt project + dashboard code), not a hosted analytics platform. Users sketch ideas; engineers build the real thing.
+2. **Chat-native** — Every operation from cleaning to dashboard design happens through natural language. The LLM sees the actual schema and produces structured tool calls, not generated SQL.
+3. **Non-destructive exploration** — All operations are reversible. Raw Parquet is never modified. Users can try things without consequence.
+4. **Live preview with hot reload** — Dashboard changes render immediately in a preview tab. The feedback loop is seconds, not sprint cycles.
+5. **Standard handoff formats** — dbt projects and renderable Vizro code, not proprietary exports. Engineers receive artifacts they already know how to work with.
+6. **Synthetic-first for healthcare** — Prototype against Synthea data, hand off to engineers who connect real EHR data. No PHI in the prototyping environment.

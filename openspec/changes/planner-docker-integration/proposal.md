@@ -1,12 +1,18 @@
-# Planner Docker Integration: Connect Visual Design to the Data Platform
+# Planner Docker Integration: Live Dashboard Preview with Hot Reload
 
 ## Why
 
-The layout planner (`planner/`) is a fully built multi-agent service that generates Vizro dashboard layouts from natural language prompts. It uses LangGraph with Anthropic Claude (Sonnet) and has a CLI (`plan`, `serve`), tests, and a complete agent pipeline (planner → section → filter → assembler → validation). ADR-011 documents the dual-LLM decision.
+The layout planner (`planner/`) is a fully built multi-agent service that generates renderable Vizro dashboard code from natural language prompts. It uses LangGraph with Anthropic Claude (Sonnet) and has a CLI (`plan`, `serve`), tests, and a complete agent pipeline (planner → section → filter → assembler → validation). ADR-011 documents the dual-LLM decision.
 
-But the planner is an island — not in Docker Compose, no API surface for the main application, and critically, no way to generate a semantic manifest from the platform's Views and Reports. The product vision's Stage 4 (Visualize) requires the planner to receive a manifest describing available dimensions and measures, then produce dashboard layouts.
+But the planner is an island — not in Docker Compose, no API surface for the main application, and critically, no way to generate a semantic manifest from the platform's Views and Reports.
 
-The integration path: users build Views and Reports through chat (Stages 1-2) → the backend generates a `SemanticManifest` from View columns and Report column metadata → the planner consumes the manifest and produces a dashboard plan → the Vizro renderer displays it.
+The product vision's Stage 3 (Preview) requires the planner to:
+1. Receive a manifest derived from Views and Reports
+2. Generate renderable Vizro dashboard code from natural language prompts
+3. Render the dashboard in a **separate preview tab** that the user can see alongside the chat
+4. Support **hot reload** — when the user refines the dashboard via chat, the preview updates live
+
+The core UX loop is: describe → preview → refine → preview → hand off. This is what makes the prototyping workflow fast. The output isn't a screenshot — it's renderable Python code that software engineers can take and deploy.
 
 This change depends on `report-chat-tools` — without populated Report `columns_metadata`, the manifest would have no metrics or dimensions.
 
