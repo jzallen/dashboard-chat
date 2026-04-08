@@ -22,8 +22,9 @@ NFR-B3 was corrected during the docs restructure to acknowledge this: "CI runs u
 - Groq API key provided via GitHub Actions secret (or mock for deterministic tests)
 - Services start with `AUTH_MODE=dev` for predictable authentication
 
-### Test Selection
-- Initial CI run includes smoke test + critical path tests (upload, basic chat interaction)
+### Test Selection (CSV-First Scope)
+- **Phase 1 (CSV pipeline):** Smoke spec + dataset-upload specs + data-cleaning specs. These validate the core CSV flow: upload → dataset creation → transform application. This is the initial CI scope.
+- **Phase 2 (after report-chat-tools):** Add view and report E2E specs once chat tools for reports land.
 - Full e2e suite can run on demand via workflow dispatch or on release branches
 
 ## Capabilities

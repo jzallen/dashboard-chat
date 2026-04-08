@@ -1,4 +1,8 @@
-## Status: Needs Re-Evaluation
+## Status: Closed
+
+**Closed:** 2026-04-08. REST is sufficient for the prototyping workflow. The proposal's own re-evaluation note acknowledged this: TanStack Query with key factories works well with REST, and subscription needs can be solved with SSE (already in use for chat). Closing rather than shelving — reopen only if a concrete use case emerges that REST cannot serve.
+
+## Original Status: Needs Re-Evaluation
 
 > This proposal was written when the product was framed as a production analytics platform. With the reframe to a prototyping tool (see `docs/vision.md`), the justification is weaker: the REST API serves the prototyping workflow adequately, and the frontend's data fetching patterns (TanStack Query with key factories) work well with REST. The subscription use case (dataset processing status) could be solved with simpler polling or SSE. Consider whether this adds prototyping value or is over-engineering for the current product stage.
 

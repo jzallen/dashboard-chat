@@ -1,5 +1,13 @@
 # Planner Docker Integration: Live Dashboard Preview with Hot Reload
 
+## Status: Shelved
+
+**Reason:** CSV-first focus (2026-04-08). This is Stage 3 (Preview) work that explicitly depends on `report-chat-tools` — without populated Report `columns_metadata`, the manifest would have no metrics or dimensions.
+
+**Unblock condition:** `report-chat-tools` complete.
+
+---
+
 ## Why
 
 The layout planner (`planner/`) is a fully built multi-agent service that generates renderable Vizro dashboard code from natural language prompts. It uses LangGraph with Anthropic Claude (Sonnet) and has a CLI (`plan`, `serve`), tests, and a complete agent pipeline (planner → section → filter → assembler → validation). ADR-011 documents the dual-LLM decision.

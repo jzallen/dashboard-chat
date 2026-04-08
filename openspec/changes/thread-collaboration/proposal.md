@@ -1,3 +1,11 @@
+## Status: Shelved
+
+**Reason:** CSV-first focus (2026-04-08). Multi-user collaboration is orthogonal to the core data preparation pipeline. Requires new DB migration (`session_permissions`), Stream.io integration work.
+
+**Unblock condition:** Core CSV pipeline complete and multi-user need emerges.
+
+---
+
 ## Why
 
 With sessions modeled as threads in project memories (see `sessions-as-threads` change), every user's conversations live in the same Stream channel for a project. However, sessions are currently personal — only the owner can see and interact with their own sessions. There is no way to share a conversation with a teammate, let a colleague observe an analysis in progress, or hand off an in-flight session to another user.

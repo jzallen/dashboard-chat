@@ -1,3 +1,11 @@
+## Status: Shelved
+
+**Reason:** CSV-first focus (2026-04-08). This is Stage 3 (Preview) work with multiple unmet dependencies: report-chat-tools must land first, semantic manifest generation must exist, and DuckDB WASM runtime must be built.
+
+**Unblock condition:** `report-chat-tools` complete + `planner-docker-integration` complete (which itself depends on report-chat-tools).
+
+---
+
 ## Why
 
 The dashboard pipeline currently has specs for a semantic manifest, a layout planner, and a report mart layer — but no defined read path for how dashboards actually query data at runtime. Every dashboard interaction (filter change, drill-down, time range adjustment) would require a backend round-trip through the query engine, making interactive analytics slow and putting load on shared infrastructure. The local-first analytics pattern moves interactive compute to the browser: the backend loads a pre-aggregated extract once via pg_duckdb, the client caches it in DuckDB WASM, and all subsequent queries execute locally with zero network latency. This is the same pattern MotherDuck's UI uses — load once, query many.

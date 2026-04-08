@@ -1,3 +1,11 @@
+## Status: Shelved
+
+**Reason:** CSV-first focus (2026-04-08). Infrastructure/deployment concern with zero overlap with the CSV data preparation pipeline. Revisit when deployment becomes a priority.
+
+**Unblock condition:** Core CSV pipeline complete (upload → model → handoff).
+
+---
+
 ## Why
 
 The current architecture assumes a shared multi-tenant deployment. A self-hosted, single-tenant ECS model gives enterprise customers full data isolation (each org runs in its own AWS account), reduces compliance surface area, and opens a new distribution channel where customers deploy into their own infrastructure. The existing Docker Compose stack maps naturally to ECS Fargate task definitions.
