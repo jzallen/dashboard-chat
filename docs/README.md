@@ -34,8 +34,8 @@ Core business concepts and data model.
 
 - [Entity-Relationship Diagram](domain/erd.mermaid) — All 11 database tables with relationships
 - [Dataset Lifecycle](domain/dataset-lifecycle.md) — Upload → transform → query pipeline
-- [Tool Call Registry](domain/tool-call-registry.md) — All chat agent tools with parameter schemas
-- [Business Rules](domain/business-rules.md) — Per-entity invariants, type systems, lifecycle rules, and authorization model
+- [Tool Call Registry](domain/tool-calls/README.md) — All chat agent tools with parameter schemas (per-tool files)
+- [Domain Entities](domain/entities/README.md) — Per-entity invariants, type systems, lifecycle rules, and authorization model
 
 ### API
 
@@ -57,11 +57,11 @@ Interaction and state diagrams for key user flows.
 
 ### Decisions
 
-- [Architecture Decision Records](decisions/adrs.md) — 12 ADRs covering technology choices, LLM strategy, and healthcare positioning
+- [Architecture Decision Records](decisions/README.md) — 12 ADRs in MADR format covering technology choices, LLM strategy, and healthcare positioning
 
 ### Requirements
 
-- [Non-Functional Requirements](requirements/nfr.md) — Organized by prototyping workflow stages with Planguage targets
+- [Non-Functional Requirements](requirements/README.md) — Organized by prototyping workflow stages with Planguage + Quality Attribute Scenarios
 
 ### Contributing
 
