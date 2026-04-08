@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure we have the latest from remote main
+git pull origin main
+
 # Node workspace dependencies
 npm install
 
