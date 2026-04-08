@@ -34,6 +34,7 @@ Core business concepts and data model.
 - [Entity-Relationship Diagram](domain/erd.mermaid) — All 11 database tables with relationships
 - [Dataset Lifecycle](domain/dataset-lifecycle.md) — Upload → transform → query pipeline
 - [Tool Call Registry](domain/tool-call-registry.md) — All chat agent tools with parameter schemas
+- [Business Rules](domain/business-rules.md) — Per-entity invariants, type systems, lifecycle rules, and authorization model
 
 ### API
 
