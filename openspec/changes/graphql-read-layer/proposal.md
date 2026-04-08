@@ -1,3 +1,7 @@
+## Status: Needs Re-Evaluation
+
+> This proposal was written when the product was framed as a production analytics platform. With the reframe to a prototyping tool (see `docs/vision.md`), the justification is weaker: the REST API serves the prototyping workflow adequately, and the frontend's data fetching patterns (TanStack Query with key factories) work well with REST. The subscription use case (dataset processing status) could be solved with simpler polling or SSE. Consider whether this adds prototyping value or is over-engineering for the current product stage.
+
 ## Why
 
 The current REST API requires separate round-trips for projects, datasets, and views. A GraphQL read layer lets clients fetch exactly the shape they need in one request, enables the frontend to co-locate data requirements with components, and opens the door to real-time subscriptions for dataset state changes without polling.

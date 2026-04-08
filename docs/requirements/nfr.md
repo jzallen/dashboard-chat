@@ -99,7 +99,23 @@ Status tags: **Implemented**, **Partial**, **Not implemented**, **Not measured**
 > **Plan:** < 15 seconds
 > **Status:** **Not implemented** — preview tab and hot-reload mechanism not yet built
 
-### NFR-P3: Manifest Auto-Generation
+### NFR-P3: Dashboard Interaction Latency (Local-First)
+
+> **Scale:** Time from user interaction (filter click, drill-down, time range change) to updated chart in preview
+> **Meter:** P95 measured in browser on datasets with pre-loaded DuckDB WASM extract
+> **Must:** < 100 ms
+> **Plan:** < 10 ms
+> **Status:** **Not implemented** — DuckDB WASM runtime not yet built. Tracked in `local-first-analytics` proposal.
+
+### NFR-P4: Extract Load Time
+
+> **Scale:** Time to load the initial data extract from backend into DuckDB WASM
+> **Meter:** Wall-clock from dashboard open to interactive-ready, for extracts under 50MB (Arrow IPC)
+> **Must:** < 10 seconds
+> **Plan:** < 5 seconds
+> **Status:** **Not implemented** — tracked in `local-first-analytics` proposal
+
+### NFR-P5: Manifest Auto-Generation
 
 > The system SHALL auto-generate a semantic manifest from project Views and Reports. Users SHALL NOT manually assemble manifests.
 > **Status:** **Not implemented** — tracked in `planner-docker-integration` proposal

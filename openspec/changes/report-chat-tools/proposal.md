@@ -2,11 +2,16 @@
 
 ## Why
 
-The core product vision is Upload → Model with NL → dbt export → SQL access. Reports are the mart layer — the final modeling step before export. Backend Report CRUD is complete: domain model, use cases, endpoints, dbt export with `fct_`/`dim_` prefixes. The `report-layer-chat-first.feature` defines 64 Gherkin scenarios specifying 15 structured tools.
+Reports are the mart layer — the final modeling step before handoff. They define the dimensions and measures that drive both dbt export (fact/dimension models) and the dashboard preview (MetricFlow queries that DuckDB WASM executes locally). Without report tools in the chat agent, users cannot complete the prototyping workflow: they can clean and join data, but they can't define what gets aggregated and how — which is the entire point of the modeling stage.
+
+Backend Report CRUD is complete: domain model, use cases, endpoints, dbt export with `fct_`/`dim_` prefixes. The `report-layer-chat-first.feature` defines 64 Gherkin scenarios specifying 15 structured tools.
 
 But the agent has zero report support. `handleChat.ts` routes on `contextType: "dataset" | "view" | null` — there is no `"report"` branch. No report tool definitions exist. The frontend context system does not recognize report as a context type. Users cannot build reports through chat, which is the only interaction model the platform offers.
 
-This is the single highest-priority gap. Without it, the dbt export produces only sources and intermediate models — no mart layer, no MetricFlow-ready output, and no useful semantic manifest for the planner.
+This is the single highest-priority gap. It blocks:
+1. **dbt handoff** — mart layer models require dimension/measure definitions from reports
+2. **Dashboard preview** — the semantic manifest (which drives MetricFlow queries and chart configurations) is derived from report column metadata
+3. **Interactive preview** — DuckDB WASM extracts are shaped by the dashboard's data contract, which comes from reports
 
 ## What Changes
 

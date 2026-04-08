@@ -46,14 +46,24 @@ Every operation is captured as a reproducible transform in the 3-stage Ibis pipe
 
 The **layout planner** generates dashboard layouts from natural language prompts. It uses a multi-agent LangGraph pipeline powered by Anthropic Claude to produce renderable Vizro dashboard code.
 
-The preview experience:
-1. User describes the dashboard they want in natural language ("show me readmission rates by department with a 30-day trend")
-2. Planner generates a Vizro dashboard plan from the project's semantic manifest (derived from Views and Reports)
-3. Dashboard renders in a **separate preview tab/window**
-4. User continues chatting to refine — natural language changes trigger **hot reload** in the preview
-5. The cycle is: describe → preview → refine → preview → hand off
+**Two interaction modes in the preview tab:**
 
-This is the core interaction loop that makes prototyping fast. The user never leaves the chat interface to configure charts, drag widgets, or write code. They describe what they want and see it immediately.
+1. **Layout changes via chat (hot reload)** — User describes what they want ("add a readmission trend by department"). The planner generates updated Vizro code and the preview tab hot-reloads with the new layout. This is seconds, not minutes.
+
+2. **Dashboard interaction (local-first)** — The preview dashboard is interactive, not static. Users click filters, drill down, adjust time ranges, and explore the data to get a feel for whether the model works. These interactions execute against a **DuckDB WASM** instance running in the browser — the backend loads a pre-aggregated extract once (shaped by the dashboard's MetricFlow data contract), and all subsequent queries run locally with sub-10ms latency. No round-trips.
+
+**The prototyping loop:**
+```
+Chat: "show me readmission rates by department"
+  → Planner generates layout → hot reload (seconds)
+    → User clicks "Cardiology" filter in preview → instant drill-down (milliseconds)
+      → Chat: "add a 30-day rolling trend"
+        → Planner updates layout → hot reload (seconds)
+          → User explores the trend → instant interaction (milliseconds)
+            → Looks right → hand off
+```
+
+This is normal UX testing workflow. The user isn't just visually reviewing a static render — they're interacting with the dashboard to validate that the data model supports the questions they care about. The combination of chat-driven layout changes and instant local interaction is what makes prototyping fast enough to be useful.
 
 ### Stage 4: Handoff
 
