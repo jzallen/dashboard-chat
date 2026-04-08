@@ -26,6 +26,7 @@ High-level system design and service topology.
 - [Auth Flow](architecture/auth-flow.mermaid) — Dev mode vs WorkOS authentication paths
 - [Data Flow](architecture/data-flow.mermaid) — Upload through query with trust boundaries
 - [Backend Layers](architecture/backend-layers.md) — Router → Controller → UseCase → Repository
+- [Frontend Layers](architecture/frontend-layers.md) — Provider stack, chat engine, SSE protocol, tool execution, TanStack Query
 
 ### Domain
 
