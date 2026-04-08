@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/jzallen/dashboard-chat/compare/v1.6.0...v1.6.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* **devcontainer:** pull latest from origin main in postcreate setup ([96de72a](https://github.com/jzallen/dashboard-chat/commit/96de72ad50a0c03d5eddbe164698e49bf9d72da0))
+
 # [1.6.0](https://github.com/jzallen/dashboard-chat/compare/v1.5.0...v1.6.0) (2026-04-02)
 
 
