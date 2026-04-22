@@ -31,13 +31,22 @@ The system SHALL persist chat messages in Stream.io channels, replacing Redis + 
 
 ### Requirement: Session Creation
 
-- **WHEN** a user opens a project and no active (non-frozen) session exists
+The system SHALL create a new Stream channel when a user enters a project without an active (non-frozen) session.
+
+#### Scenario: Project entry creates a new channel
+
+- **GIVEN** a user opens a project and no active (non-frozen) session exists
+- **WHEN** the Chat Panel mounts
 - **THEN** the system SHALL create a new Stream channel for the session
-- **THEN** the channel SHALL be configured with custom data: `{ projectId, createdAt, frozenAt: null }`
+- **AND** the channel SHALL be configured with custom data `{ projectId, createdAt, frozenAt: null }`
 
 ### Requirement: Session Listing
 
-- **WHEN** a user views the Chat Panel
-- **THEN** the system SHALL display a list of all channels for the current project via Stream's `ChannelList`
-- **THEN** channels SHALL be sorted by last message timestamp (most recent first)
-- **THEN** frozen sessions SHALL be visually distinguished from active sessions
+The Chat Panel SHALL present all sessions for the current project via Stream's `ChannelList`, ordered by recency and distinguishing frozen sessions.
+
+#### Scenario: Channel list rendered for a project
+
+- **WHEN** a user views the Chat Panel for a project
+- **THEN** the system SHALL display a list of all channels for that project via Stream's `ChannelList`
+- **AND** channels SHALL be sorted by last message timestamp (most recent first)
+- **AND** frozen sessions SHALL be visually distinguished from active sessions

@@ -27,6 +27,11 @@ The existing SSE streaming from Worker to frontend SHALL be preserved. After tur
 
 ### Requirement: Conversation History for Worker Context
 
-- The frontend SHALL build the Worker's message history from Stream channel messages (not from in-memory state).
-- Each Stream message SHALL be mapped to the Worker's Message format: `{ role, content, tool_calls }`.
-- The `user` field on Stream messages determines role mapping: `"assistant"` user → `role: "assistant"`, all others → `role: "user"`.
+The frontend SHALL build the Worker's message history from Stream channel messages (not from in-memory state). Each Stream message SHALL be mapped to the Worker's Message format: `{ role, content, tool_calls }`. The `user` field on Stream messages determines role mapping: `"assistant"` user → `role: "assistant"`, all others → `role: "user"`.
+
+#### Scenario: History built from Stream channel
+
+- **GIVEN** a Stream channel with a prior exchange of user and assistant messages
+- **WHEN** the frontend prepares a Worker `/chat` request
+- **THEN** the message history SHALL be read from `channel.state.messages` rather than any in-memory state
+- **AND** each message SHALL be mapped to `{ role, content, tool_calls }` with role derived from the Stream `user` field (`"assistant"` user → `assistant`, otherwise → `user`)

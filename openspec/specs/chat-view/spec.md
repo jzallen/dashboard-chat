@@ -90,3 +90,17 @@ ChatView SHALL render messages using shared chat components (extracted from the 
 - Tool call results SHALL be rendered inline (e.g., "Filtered to 42 rows").
 - The message list SHALL auto-scroll to the bottom on new messages.
 - The message list SHALL preserve scroll position when the user scrolls up.
+
+#### Scenario: New message appended to history
+
+- **GIVEN** ChatView has rendered an existing message history
+- **WHEN** a new user or assistant message arrives on the channel
+- **THEN** the message SHALL be rendered with role-appropriate alignment and styling
+- **AND** the message list SHALL auto-scroll to the bottom if the user was already at the bottom
+- **AND** the scroll position SHALL be preserved if the user had scrolled up to read earlier messages
+
+#### Scenario: Assistant response streams with typing indicator
+
+- **WHEN** an assistant response is streaming
+- **THEN** a typing indicator SHALL be visible until streaming completes
+- **AND** tool call results SHALL be rendered inline alongside the streamed text

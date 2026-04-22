@@ -46,6 +46,10 @@ Sessions SHALL freeze after 24 hours of inactivity, enforced by the application 
 
 ### Requirement: Session Auto-Creation
 
+The system SHALL automatically create a new session when a user enters a project with no active (non-frozen) session available.
+
+#### Scenario: Project entry with no active session
+
 - **WHEN** a user navigates to a project and no active (non-frozen) session exists
 - **THEN** the system SHALL automatically create a new session (Stream channel)
-- **THEN** the Chat Panel SHALL display the empty new session
+- **AND** the Chat Panel SHALL display the empty new session

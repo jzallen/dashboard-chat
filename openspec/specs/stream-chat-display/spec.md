@@ -35,7 +35,12 @@ The Chat Panel SHALL use Stream React SDK primitives to render conversation hist
 
 ### Requirement: Read-Only Display for Frozen Sessions
 
-- **WHEN** a user views a frozen session
+The Chat Panel SHALL render frozen sessions in a read-only mode that prevents new input.
+
+#### Scenario: Frozen session renders read-only
+
+- **GIVEN** a session whose `frozenAt` custom data is set
+- **WHEN** a user views that session
 - **THEN** the `MessageList` SHALL display all messages in read-only mode
-- **THEN** the `MessageInput` SHALL be disabled or hidden
-- **THEN** a visual indicator SHALL show that the session is frozen
+- **AND** the `MessageInput` SHALL be disabled or hidden
+- **AND** a visual indicator SHALL show that the session is frozen

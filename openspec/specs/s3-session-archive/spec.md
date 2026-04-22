@@ -6,12 +6,25 @@ Documents the removal of S3-based JSONL session archival, replaced by Stream.io 
 ## Requirements
 ### Requirement: S3 JSONL Session Archival [REMOVED]
 
-The S3-based session archival is removed. All functionality is replaced by Stream.io channel persistence.
+The S3-based session archival SHALL be removed. All functionality SHALL be replaced by Stream.io channel persistence.
 
-- DELETE `worker/lib/sessions/s3-store.ts` (104 lines)
-- DELETE S3 session log path structure: `{projectId}/{datasetId}/{sessionId}.jsonl`
-- DELETE `SessionStartEvent` and `TurnEvent` JSONL event types
-- DELETE `S3_BUCKET_LOGS` environment variable from Worker configuration
-- The Worker's S3 dependency for audit logging is removed (S3 remains for Parquet data storage via the Backend)
+- `worker/lib/sessions/s3-store.ts` SHALL be deleted.
+- The S3 session log path structure `{projectId}/{datasetId}/{sessionId}.jsonl` SHALL no longer be written.
+- The `SessionStartEvent` and `TurnEvent` JSONL event types SHALL be removed.
+- The `S3_BUCKET_LOGS` environment variable SHALL be removed from Worker configuration.
+- The Worker SHALL no longer depend on S3 for audit logging (S3 remains for Parquet data storage via the Backend).
 
 **Rationale**: Stream.io provides indefinite message retention with search and export capabilities via REST API. The JSONL format was append-only with no query capability — Stream channels are queryable by timestamp, user, and custom fields.
+
+#### Scenario: Worker runs without S3 audit logging
+
+- **GIVEN** a Worker deployment with no `S3_BUCKET_LOGS` configured
+- **WHEN** the Worker handles chat requests and completes turns
+- **THEN** no JSONL event SHALL be written to S3
+- **AND** session history SHALL be available via Stream.io channel queries instead
+
+#### Scenario: Repository contains no S3 session archival code
+
+- **WHEN** the repository is inspected after removal
+- **THEN** `worker/lib/sessions/s3-store.ts` SHALL NOT exist
+- **AND** no code SHALL reference `SessionStartEvent`, `TurnEvent`, or `S3_BUCKET_LOGS`

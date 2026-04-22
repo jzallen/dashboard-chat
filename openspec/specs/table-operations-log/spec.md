@@ -35,6 +35,15 @@ The Table Panel SHALL display an operations log showing tool calls executed in t
 
 ### Requirement: Live Tool Call Execution via SSE
 
-- During an active turn, tool calls SHALL still execute immediately from the SSE response (not from Stream channel events).
+Tool call execution SHALL remain driven by the SSE response path so that execution is not delayed by Stream write-behind persistence.
+
+- During an active turn, tool calls SHALL execute immediately from the SSE response (not from Stream channel events).
 - The Table Panel SHALL deduplicate tool calls that arrive via both SSE (immediate) and Stream (write-behind) using the `tool_call.id` field.
-- SSE-delivered tool calls take priority for execution; Stream-delivered tool calls are display-only for the operations log.
+- SSE-delivered tool calls SHALL take priority for execution; Stream-delivered tool calls SHALL be display-only for the operations log.
+
+#### Scenario: Tool call executes from SSE, not Stream
+
+- **GIVEN** an active chat turn producing tool calls
+- **WHEN** the SSE `done` event is received
+- **THEN** tool calls SHALL execute from the SSE payload without waiting for the Stream write
+- **AND** when the corresponding Stream message arrives with the same `tool_call.id`, the Table Panel SHALL deduplicate and NOT re-execute the tool call
