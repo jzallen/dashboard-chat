@@ -1,3 +1,12 @@
+# [1.7.0](https://github.com/jzallen/dashboard-chat/compare/v1.6.1...v1.7.0) (2026-04-22)
+
+
+### Features
+
+* **agent:** add report context tools, prompt, and routing ([e494fd8](https://github.com/jzallen/dashboard-chat/commit/e494fd888e52d97a93f5a008de0cebfd15b7a2fe))
+* **frontend:** add report tool executor and widen context union ([059fba3](https://github.com/jzallen/dashboard-chat/commit/059fba3cd99ac1b8555c083ec2e2a045d340993d))
+* **frontend:** add ReportDetailView and wire /report/:reportId route ([312c8aa](https://github.com/jzallen/dashboard-chat/commit/312c8aaab08fd0bf9bd2974f3cea3dd007e75780))
+
 ## [1.6.1](https://github.com/jzallen/dashboard-chat/compare/v1.6.0...v1.6.1) (2026-04-08)
 
 
