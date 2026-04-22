@@ -95,6 +95,40 @@ describe("handleChat", () => {
       );
     });
 
+    it("uses report tools when contextType is 'report'", async () => {
+      const { streamText } = await import("ai");
+      const response = await handleChat(
+        createRequest({
+          messages: [{ role: "user", content: "add a dimension" }],
+          contextType: "report",
+          contextId: "r-1",
+          tableSchema: {
+            columns: [{ id: "region", type: "string" }],
+            rowCount: 5,
+            layerContext: {
+              layer: "report",
+              modelName: "monthly_revenue",
+              sqlDefinition: "SELECT month, SUM(amount) FROM orders GROUP BY month",
+              sourceSchemas: ["int_orders"],
+            },
+          },
+        }),
+        env,
+      );
+
+      expect(response.status).not.toBe(400);
+      expect(streamText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: expect.stringContaining("Report context"),
+          tools: expect.objectContaining({ createReport: expect.anything() }),
+        }),
+      );
+      // Should NOT contain dataset or view tools
+      const callArgs = (streamText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+      expect(callArgs.tools).not.toHaveProperty("sortTable");
+      expect(callArgs.tools).not.toHaveProperty("createView");
+    });
+
     it("uses view tools when contextType is 'view'", async () => {
       const { streamText } = await import("ai");
       const response = await handleChat(

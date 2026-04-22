@@ -1,12 +1,13 @@
 import { createGroq } from "@ai-sdk/groq";
 import { type CoreMessage, streamText, type ToolSet } from "ai";
 
-import { getConversationalSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "./prompts";
+import { getConversationalSystemPrompt, getReportSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "./prompts";
 import { getConversationalTools, getTools } from "./tools";
 import type { AgentRequest, TableSchema } from "./types";
+import { getReportTools } from "./reportToolDefinitions";
 import { getViewTools } from "./viewToolDefinitions";
 
-type ContextType = "dataset" | "view" | null;
+type ContextType = "dataset" | "view" | "report" | null;
 
 interface ChatRequest {
   messages: CoreMessage[];
@@ -37,7 +38,10 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
   let tools: ToolSet | undefined;
   let interceptResolveDataset = false;
 
-  if (contextType === "view") {
+  if (contextType === "report") {
+    systemPrompt = getReportSystemPrompt(tableSchema);
+    tools = getReportTools();
+  } else if (contextType === "view") {
     systemPrompt = getViewSystemPrompt();
     tools = getViewTools();
   } else if (contextType === "dataset" && tableSchema?.columns) {

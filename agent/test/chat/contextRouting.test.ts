@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { getConversationalSystemPrompt,getSystemPrompt, getViewSystemPrompt } from "../../lib/chat/prompts";
+import { getConversationalSystemPrompt, getReportSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "../../lib/chat/prompts";
+import { getReportTools } from "../../lib/chat/reportToolDefinitions";
 import { getTools } from "../../lib/chat/tools";
 import type { TableSchema } from "../../lib/chat/types";
 import { getViewTools } from "../../lib/chat/viewToolDefinitions";
@@ -56,6 +57,35 @@ describe("context routing — tool set selection", () => {
     expect(toolNames).not.toContain("setGrain");
   });
 
+  it("contextType 'report' returns report tools", () => {
+    const tools = getReportTools();
+    const toolNames = Object.keys(tools);
+
+    expect(toolNames).toContain("createReport");
+    expect(toolNames).toContain("renameReport");
+    expect(toolNames).toContain("deleteReport");
+    expect(toolNames).toContain("addDimension");
+    expect(toolNames).toContain("removeDimension");
+    expect(toolNames).toContain("addMeasure");
+    expect(toolNames).toContain("removeMeasure");
+    expect(toolNames).toContain("addFilter");
+    expect(toolNames).toContain("removeFilter");
+    expect(toolNames).toContain("addJoin");
+    expect(toolNames).toContain("removeJoin");
+    expect(toolNames).toContain("setMaterialization");
+    expect(toolNames).toContain("setDomain");
+    expect(toolNames).toContain("setReportType");
+    expect(toolNames).toContain("suggestStructure");
+    expect(toolNames).toHaveLength(15);
+
+    // Should NOT contain dataset or view tools
+    expect(toolNames).not.toContain("sortTable");
+    expect(toolNames).not.toContain("addRow");
+    expect(toolNames).not.toContain("createView");
+    expect(toolNames).not.toContain("addColumn");
+    expect(toolNames).not.toContain("setGrain");
+  });
+
   it("contextType null means no mutation tools (conversational only)", () => {
     // When contextType is null, handleChat passes no tools.
     // We verify this by checking the conversational prompt doesn't mention tools.
@@ -88,6 +118,35 @@ describe("context routing — system prompt selection", () => {
     expect(prompt).toContain("Total rows: 10");
   });
 
+  it("report context returns report system prompt with guardrails", () => {
+    const prompt = getReportSystemPrompt();
+
+    expect(prompt).toContain("Report context");
+    expect(prompt).toContain("report mutation tools only");
+    expect(prompt).toContain("derived from SQL");
+    expect(prompt).toContain("mart-layer");
+    expect(prompt).toContain("NEVER other reports");
+    expect(prompt).toContain("suggestStructure");
+    expect(prompt).toContain("semantic_type");
+  });
+
+  it("report context includes layer section when tableSchema provided", () => {
+    const prompt = getReportSystemPrompt({
+      columns: [{ id: "month", type: "string" }],
+      rowCount: 0,
+      layerContext: {
+        layer: "report",
+        modelName: "monthly_revenue",
+        sqlDefinition: "SELECT month, SUM(amount) FROM orders GROUP BY month",
+        sourceSchemas: ["int_orders"],
+      },
+    });
+
+    expect(prompt).toContain("LAYER CONTEXT");
+    expect(prompt).toContain('Report "monthly_revenue"');
+    expect(prompt).toContain("mart layer");
+  });
+
   it("conversational prompt does not mention tools", () => {
     const prompt = getConversationalSystemPrompt();
 
@@ -107,5 +166,11 @@ describe("context routing — null tableSchema handling", () => {
     // View tools don't depend on tableSchema
     expect(() => getViewTools()).not.toThrow();
     expect(() => getViewSystemPrompt()).not.toThrow();
+  });
+
+  it("report context does not require tableSchema", () => {
+    // Report tools don't depend on tableSchema
+    expect(() => getReportTools()).not.toThrow();
+    expect(() => getReportSystemPrompt()).not.toThrow();
   });
 });
