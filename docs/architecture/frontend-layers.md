@@ -84,10 +84,11 @@ The chat engine sends a `contextType` to the agent, which determines the tool se
 |-------------|------|----------------|
 | `"dataset"` | User has a dataset selected with schema | Table ops, cleaning, filtering |
 | `"view"` | User has a view selected | View composition (joins, columns, grain) |
+| `"report"` | User has a report (mart-layer model) selected | Report CRUD, dimensions, measures, filters, joins, materialization |
 | `null` | No entity selected | `resolve_dataset` only |
 
 ```typescript
-setContext(type: "dataset" | "view" | null, id: string | null)
+setContext(type: "dataset" | "view" | "report" | null, id: string | null)
 ```
 
 When `contextType` is null and the user mentions a dataset, the agent calls `resolve_dataset`. The frontend intercepts this via the custom `"r:"` SSE prefix, searches for the dataset via `/api/projects/{projectId}/datasets/search?q=name`, sets the context, and re-submits the message.

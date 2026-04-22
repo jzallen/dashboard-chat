@@ -32,6 +32,6 @@
 
 ## 5. Documentation Updates
 
-- [ ] 5.1 Update context routing table in `docs/architecture/frontend-layers.md` (lines 81-93) to include `"report"` context type and update the `setContext()` type signature
-- [ ] 5.2 Update context routing table in `docs/domain/tool-calls/README.md` (lines 6-12) to add a "Report Tools" section listing all 15 report tools
-- [ ] 5.3 Create per-tool `.md` files in `docs/domain/tool-calls/` for each of the 15 report tools, following the format of existing tool docs (e.g., `add-filter.md`, `set-materialization.md`)
+- [x] 5.1 Update context routing table in `docs/architecture/frontend-layers.md` (lines 81-93) to include `"report"` context type and update the `setContext()` type signature
+- [x] 5.2 Update context routing table in `docs/domain/tool-calls/README.md` (lines 6-12) to add a "Report Tools" section listing all 15 report tools
+- [x] 5.3 Create per-tool `.md` files in `docs/domain/tool-calls/` for each of the 15 report tools, following the format of existing tool docs (e.g., `add-filter.md`, `set-materialization.md`)

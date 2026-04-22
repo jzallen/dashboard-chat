@@ -6,9 +6,10 @@ The chat agent exposes different tool sets depending on the active context. Tool
 
 | Context | Condition | Tools Available |
 |---------|-----------|-----------------|
-| **Conversational** | No dataset/view active | `resolve_dataset` |
+| **Conversational** | No dataset/view/report active | `resolve_dataset` |
 | **Dataset** | Dataset selected, schema available | Table operations + cleaning tools |
 | **View** | View selected | View management tools |
+| **Report** | Report (mart-layer model) selected | Report CRUD + dimension/measure/filter/join tools |
 
 ## Conversational Tools
 
@@ -59,3 +60,25 @@ All cleaning tools (except `renameColumn`) produce a **preview**. Use `applyClea
 | [setMaterialization](set-materialization.md) | Set materialization strategy |
 | [castColumn](cast-column.md) | Change column display type |
 | [setGrain](set-grain.md) | Set time dimension and grain |
+
+## Report Tools
+
+Report tools operate on mart-layer models (dbt fact/dimension entities). Tool names that collide with view tools (e.g. `addFilter`) have report-specific docs prefixed with `report-`.
+
+| Tool | Description |
+|------|-------------|
+| [createReport](create-report.md) | Create a new report (fact or dimension mart model) |
+| [renameReport](rename-report.md) | Rename the report |
+| [deleteReport](delete-report.md) | Delete the report |
+| [addDimension](add-dimension.md) | Add a dimension column to the report |
+| [removeDimension](remove-dimension.md) | Remove a dimension column |
+| [addMeasure](add-measure.md) | Add a measure column to the report |
+| [removeMeasure](remove-measure.md) | Remove a measure column |
+| [addFilter](report-add-filter.md) | Add a WHERE clause to the report SQL |
+| [removeFilter](report-remove-filter.md) | Remove a WHERE clause from the report SQL |
+| [addJoin](report-add-join.md) | Add a join to another source |
+| [removeJoin](report-remove-join.md) | Remove a join |
+| [setMaterialization](report-set-materialization.md) | Set the report's materialization strategy |
+| [setDomain](set-domain.md) | Set the report's business domain |
+| [setReportType](set-report-type.md) | Set report type (fact or dimension) |
+| [suggestStructure](suggest-structure.md) | Suggest dimension/measure assignments for source columns |
