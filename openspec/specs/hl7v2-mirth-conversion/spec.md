@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how the system ingests HL7v2 messages: store the raw message in S3, convert it to FHIR R4 via Mirth Connect, then normalise through the FHIR plugin pipeline. It extends the analytics platform to legacy healthcare messaging without special-casing downstream processing.
+
+## Requirements
 
 ### Requirement: 3-phase HL7v2 upload pipeline
 

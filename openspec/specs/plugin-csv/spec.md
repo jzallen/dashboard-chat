@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the `CsvPlugin` reference implementation of the `FileFormatPlugin` protocol. It formalises CSV ingest behaviour (whitespace stripping, empty-file rejection, headers-only tolerance) and doubles as the canonical example for authors of new file-format plugins.
+
+## Requirements
 
 ### Requirement: CsvPlugin Reference Implementation
 

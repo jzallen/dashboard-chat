@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the unified SideNav — a single nav component that presents the same items (New Session, Projects, Chats, Recent Sessions) on every authenticated page. It replaces the earlier route-conditional OrgNav/ProjectNav split with a stable, always-present structure.
+
+## Requirements
 
 ### Requirement: Unified Navigation Sidebar
 

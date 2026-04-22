@@ -1,3 +1,7 @@
+## Purpose
+
+Defines the Bazel-orchestrated end-to-end test target that builds the OCI images, stands up a docker-compose stack, runs Playwright against it, and tears everything down. It is the closed-loop gate for cross-service integration behaviour.
+
 ## Capability: bazel-e2e-orchestration
 
 E2E test target that builds OCI images, starts a docker-compose stack, runs Playwright, and tears down.

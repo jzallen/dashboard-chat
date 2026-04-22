@@ -1,3 +1,7 @@
+## Purpose
+
+Defines the Bazel build surface for the Python backend — library targets, hermetic pytest execution from `uv.lock`, and the layered OCI image used in production. It is the backend's entry point into the Bazel monorepo build graph.
+
 ## Capability: bazel-backend-build
 
 BUILD files for the Python backend service — library targets, test targets, and OCI image.

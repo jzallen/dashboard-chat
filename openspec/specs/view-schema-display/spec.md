@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes ViewDetailView — the frontend page at `/view/:viewId` that renders a view's columns, joins, filters, grain role, and chat-tool hooks. It is the View equivalent of TableView, and the surface through which users inspect and refine view structure via chat.
+
+## Requirements
 
 ### Requirement: ViewDetailView component at /view/:viewId route
 

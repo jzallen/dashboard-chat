@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes TableView — the full-width dataset page that embeds the chat input inline at the bottom rather than in a sidebar. It keeps data-cleaning interactions spatially close to the data being cleaned while sharing the same Stream channel as other chat surfaces.
+
+## Requirements
 
 ### Requirement: TableView with Inline Chat Input
 

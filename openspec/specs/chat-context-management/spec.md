@@ -1,3 +1,7 @@
+## Purpose
+
+Describes how the frontend manages chat context — the per-project Stream channel, session identity as threads within that channel, and the entity context (dataset / view / report) attached to each session. It is the control surface for all chat state lifecycle decisions.
+
 ## Requirements
 
 ### Requirement: Stream Channel as Session Identity

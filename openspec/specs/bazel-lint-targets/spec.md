@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the Bazel lint targets (`//frontend:lint`, `//worker:lint`, `//backend:lint`) that wrap ESLint and ruff as `sh_test`s. They give lint the same cacheability and CI enforcement as real tests, replacing ad-hoc shell steps.
+
+## Requirements
 
 ### Requirement: Frontend lint runs as a Bazel test target
 A `//frontend:lint` `sh_test` target SHALL exist that runs ESLint over `frontend/src` and exits with code 0 when there are no lint errors or warnings.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the auth-proxy edge service that sits in front of the backend. It validates bearer tokens, strips any client-supplied identity headers, and forwards trusted `X-User-Id` / `X-Org-Id` / `X-User-Email` headers so the backend can rely on proxy-attested identity without re-verifying JWTs on every request.
+
+## Requirements
 
 ### Requirement: Auth proxy validates Bearer tokens and forwards identity headers
 The auth proxy service SHALL accept incoming HTTP requests, validate the Bearer token in the `Authorization` header, and forward the request to the backend with identity headers (`X-User-Id`, `X-Org-Id`, `X-User-Email`) set from the validated token claims. Invalid or missing tokens SHALL be rejected with a 401 response before the request reaches the backend.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the unified context model that Stream channel custom data uses to identify an entity context — a `(contextType, contextId)` pair covering datasets, views, and null (conversational) contexts. It generalises the legacy dataset-only channel custom data so chat can operate over any entity type.
+
+## Requirements
 
 ### Requirement: Channel custom data uses contextType and contextId
 

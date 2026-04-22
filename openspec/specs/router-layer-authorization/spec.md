@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the router-layer authorization dependencies (`get_current_user`, `authorize_project_access`) that every FastAPI router uses to derive identity from proxy headers or contextvars and enforce that the caller's `org_id` matches the requested project's `org_id`. It is the single choke point for request-level auth in the backend.
+
+## Requirements
 
 ### Requirement: get_current_user dependency reads identity from proxy headers
 The `get_current_user()` FastAPI dependency SHALL read user identity from trusted proxy headers (`X-User-Id`, `X-Org-Id`, `X-User-Email`), falling back to the contextvar-based `get_auth_user()` when headers are absent.

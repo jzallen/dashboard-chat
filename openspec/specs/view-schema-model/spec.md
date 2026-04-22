@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the structured View domain model (`columns`, `joins`, `filters`, `grain`) that replaces raw `sql_definition` as the source of truth for view structure. It lets chat tools reason about and mutate view structure safely, with SQL derived from the model rather than hand-edited.
+
+## Requirements
 
 ### Requirement: View domain model has structured column definitions
 

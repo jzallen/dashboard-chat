@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Provides the `withAuth(fetch)` decorator that injects auth headers and retries after 401 for every backend request made by the frontend. It centralises token-handling concerns so individual API call sites never touch auth primitives directly.
+
+## Requirements
 
 ### Requirement: Backend API client uses withAuth decorator
 The backend API client (`lib/api/client.ts`) SHALL use `withAuth(fetch)` for all requests instead of manually calling `getAuthHeaders()` and `withAuthRetry()`.
@@ -16,8 +20,6 @@ The backend API client (`lib/api/client.ts`) SHALL use `withAuth(fetch)` for all
 - **WHEN** `client.uploadFile()` is called
 - **THEN** the `FormData` body SHALL be sent through `withAuth(fetch)` without a `Content-Type` header (letting the browser set multipart boundary)
 - **AND** auth headers SHALL be injected by the decorator
-
-## ADDED Requirements
 
 ### Requirement: Frontend proxy target routes through auth proxy
 The Vite dev server proxy SHALL route `/api/*` requests through the auth proxy instead of directly to the backend.

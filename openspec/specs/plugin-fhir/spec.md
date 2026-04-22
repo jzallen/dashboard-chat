@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the `FhirPlugin` implementation for FHIR NDJSON and JSON bundle files. It validates that incoming files contain FHIR resources, supports resource-type selection for mixed bundles, and flattens each resource type into a tabular dataset.
+
+## Requirements
 
 ### Requirement: FhirPlugin Implementation
 

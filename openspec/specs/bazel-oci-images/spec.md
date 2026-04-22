@@ -1,3 +1,7 @@
+## Purpose
+
+Defines the deterministic, layered OCI image targets for every deployable service. Each service produces reproducible image digests via `rules_oci`, with layering tuned for cache efficiency, and a top-level `//:images` target builds all three tarballs at once.
+
 ## Capability: bazel-oci-images
 
 Deterministic OCI image targets for all three services, built by rules_oci with optimized layering.

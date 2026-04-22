@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Describes the frontend's chat-agent client — the browser-side module that POSTs chat requests, uses `withEagerAuth` to ensure fresh tokens before streaming, and returns the raw `Response` for AI SDK data-stream consumption. It is the sole entry point the UI uses to open a chat stream against the agent service.
+
+## Requirements
 
 ### Requirement: SSE chat streaming via chat agent client
 

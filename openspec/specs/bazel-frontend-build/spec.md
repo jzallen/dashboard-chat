@@ -1,3 +1,7 @@
+## Purpose
+
+Defines the Bazel build surface for the Vite frontend — source library targets, opaque Vite build, Vitest test target, and the nginx-based OCI image. It lets the frontend participate in hermetic monorepo builds alongside the backend and worker.
+
 ## Capability: bazel-frontend-build
 
 BUILD files for the React/Vite frontend — source library, Vite build, Vitest tests, and OCI image.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes ChatView — the full-width chat page that hosts both new and resumed chat sessions as the primary authenticated landing surface. It replaces the fixed-sidebar ChatPanel as the main entry point to chat-driven workflows and owns session creation, history rendering, and tool-call execution.
+
+## Requirements
 
 ### Requirement: ChatView as Routed Page
 

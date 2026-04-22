@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how Reports carry column-level semantic metadata — the `columns_metadata` JSON array that tags each column with a semantic role (entity / dimension / measure), type, and optional expression. It is the data backbone for MetricFlow-style semantic layers and AI-assisted semantic suggestions.
+
+## Requirements
 
 ### Requirement: Column Semantic Metadata Structure
 

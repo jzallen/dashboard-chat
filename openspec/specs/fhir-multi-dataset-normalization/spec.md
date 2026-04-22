@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how FHIR R4 bundles are ingested: validated via `fhir.resources`, split by `resourceType`, and normalised into one dataset per resource type. It is the interoperability capability that turns clinical FHIR data into analytics-ready datasets.
+
+## Requirements
 
 ### Requirement: FHIR R4 validated parsing
 

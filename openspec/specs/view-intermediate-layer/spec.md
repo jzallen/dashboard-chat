@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the View entity in the intermediate layer — a dbt intermediate model that reshapes, combines, or restructures staging data within a project. It defines the REST surface for View CRUD and the multi-tenancy and materialization contracts Views share with Reports.
+
+## Requirements
 
 ### Requirement: View Entity CRUD
 

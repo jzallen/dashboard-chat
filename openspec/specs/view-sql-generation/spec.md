@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the `ViewSQLGenerator` that deterministically renders SQL from the structured View model. It produces two renderings — `executable_sql` using backend SQL types and `display_sql` using human-facing display types — so the runtime SQL and what the user reads stay aligned.
+
+## Requirements
 
 ### Requirement: ViewSQLGenerator produces executable and display SQL
 

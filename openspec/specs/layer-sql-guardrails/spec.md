@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the layer-aware SQL guardrails that constrain the chat AI's SQL generation to operations appropriate for the current layer (staging dataset, intermediate view, or mart report). It keeps generated SQL aligned with dbt's three-layer architecture instead of letting the model cross-layer.
+
+## Requirements
 
 ### Requirement: Layer-Specific SQL Operation Allowlists
 

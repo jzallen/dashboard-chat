@@ -1,3 +1,7 @@
+## Purpose
+
+Defines the root Bazel workspace via `MODULE.bazel` (bzlmod), registering the Python 3.11 and Node.js 20 toolchains and the rulesets every service build depends on. It is the foundational layer every Bazel target in the repo sits on top of.
+
 ## Capability: bazel-workspace
 
 Root Bazel workspace configuration using bzlmod (MODULE.bazel) with toolchain registration for Python 3.11 and Node.js 20.

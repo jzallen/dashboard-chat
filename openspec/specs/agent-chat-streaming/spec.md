@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Provides the agent service's chat-streaming capability — the LLM loop that turns user chat requests and table schema into a streaming response with typed tool calls. It standardises on the Vercel AI SDK (Groq provider, Zod-typed tool definitions) so the frontend consumes a well-defined data stream.
+
+## Requirements
 
 ### Requirement: Agent service uses Vercel AI SDK for chat streaming
 The agent service SHALL use the Vercel AI SDK (`ai` package with `@ai-sdk/groq` provider) for all LLM interactions. The custom `GroqChatClient` class and `SSEStreamWriter` class SHALL be removed. The `eventsource-parser` dependency SHALL be removed.

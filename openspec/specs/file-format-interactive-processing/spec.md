@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the two-phase plugin-processing protocol — `detect_choices()` followed by `process()` — that lets file-format plugins ask the user for input (e.g., sheet selection, resource-type selection) between validation and parsing. It is the extension hook that makes non-trivial file formats tractable without bespoke per-format glue.
+
+## Requirements
 
 ### Requirement: PluginChoice Data Model
 

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how Views and Reports track their upstream sources. Each entity stores a `source_refs` JSON array identifying its dependency graph, validated at creation and update time so the mart layer cannot reference missing datasets or views.
+
+## Requirements
 
 ### Requirement: Source Reference Storage
 

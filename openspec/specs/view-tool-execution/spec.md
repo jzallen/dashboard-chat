@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how view-mutation chat tools (addColumn, addJoin, addFilter, setGrain, etc.) are executed in the browser. ViewDetailView registers the handler on mount; the handler uses a read-modify-write pattern against the TanStack Query cache and PATCHes the full view back to the backend.
+
+## Requirements
 
 ### Requirement: View tool handler registered by ViewDetailView
 

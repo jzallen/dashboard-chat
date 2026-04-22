@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Describes the frontend's chat client module — the single place that consolidates session CRUD plus SSE streaming against the chat agent service, and that owns the chat type definitions and prompt constants shared across the frontend.
+
+## Requirements
 
 ### Requirement: Dedicated chat agent API client
 The frontend SHALL have a dedicated API client module (`lib/chat/client.ts`) that consolidates all HTTP communication with the chat agent service. This client SHALL be the single point of entry for session CRUD and SSE streaming. The chat module SHALL also own chat types and prompt definitions.

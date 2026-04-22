@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the inline dataset picker ChatView renders when a user issues a table operation without a dataset already selected. It keeps dataset selection inside the chat conversation rather than forcing a navigation away to browse, preserving the chat-first workflow.
+
+## Requirements
 
 ### Requirement: Inline Dataset Selection
 

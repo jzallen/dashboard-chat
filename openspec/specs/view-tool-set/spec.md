@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how the worker selects the right chat tool set based on `contextType` (`view`, `dataset`, or null) before making the LLM call. It formalises the tool-set fork so the LLM never sees tools that don't apply to the active context, and avoids an extra routing turn.
+
+## Requirements
 
 ### Requirement: Worker forks tool set based on contextType before LLM invocation
 

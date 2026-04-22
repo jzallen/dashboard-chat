@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how a single upload can yield multiple datasets atomically. It accommodates plugins that return `MultiProcessingResult` — primarily healthcare formats like FHIR — so one uploaded file becomes N normalised datasets without bespoke per-upload logic.
+
+## Requirements
 
 ### Requirement: One upload produces multiple datasets
 

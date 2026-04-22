@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Describes the frontend route table that maps URLs to top-level page components. It defines the chat-first information architecture (`/` is ChatView, `/table/:datasetId`, `/view/:viewId`, `/projects`, `/sessions`) and the canonical URL schema used for deep links and navigation.
+
+## Requirements
 
 ### Requirement: Route Table Restructuring
 

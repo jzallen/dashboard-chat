@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Describes the root React AppShell layout that hosts every authenticated page. It defines the panel composition (SideNav + routed content) and scaffolds the navigation and collapse behaviour every other frontend view relies on.
+
+## Requirements
 
 ### Requirement: Two-Panel Layout
 

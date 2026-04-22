@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Describes the baseline code-quality gates — ESLint for TypeScript, ruff for Python — that every source file in the repo must pass to merge. It is the canonical definition of "clean" code as enforced by CI, invoked through Bazel lint targets for cacheability.
+
+## Requirements
 
 ### Requirement: TypeScript source passes ESLint with zero warnings
 All TypeScript and TSX files in `frontend/`, `worker/`, and `shared/` SHALL pass `eslint .` with zero errors and zero warnings using the rules configured in `eslint.config.js`. The canonical CI invocation is `bazel test //frontend:lint //worker:lint`; the npm script `npx eslint .` remains available for local convenience.

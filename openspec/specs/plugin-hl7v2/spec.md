@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the `Hl7v2Plugin` implementation for `.hl7` message files. It validates HL7v2 structure (MSH segment required), flattens segment fields into a tabular schema, and supports files containing batches of messages so legacy clinical data becomes queryable.
+
+## Requirements
 
 ### Requirement: Hl7v2Plugin Implementation
 

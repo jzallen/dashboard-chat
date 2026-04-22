@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes how views are exported into the dbt project structure alongside datasets. Each view becomes an intermediate model (`models/intermediate/int_*.sql`) with correct materialisation config, source refs, and chained dependencies resolved through the project's model graph.
+
+## Requirements
 
 ### Requirement: Views export as intermediate dbt models
 

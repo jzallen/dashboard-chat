@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the `ExcelPlugin` implementation for `.xlsx` and `.xls` files. It supports both single-sheet files (immediate processing) and multi-sheet workbooks (interactive sheet selection via the two-phase plugin protocol), giving analysts a smooth Excel-ingest path.
+
+## Requirements
 
 ### Requirement: ExcelPlugin Implementation
 

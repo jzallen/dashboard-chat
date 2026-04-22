@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Describes the Report entity in the mart layer — a consumption-ready fact or dimension dbt model scoped to a project. It defines the REST surface for Report CRUD, the enum constraints on `report_type` / `domain` / `materialization`, and the multi-tenancy contract that scopes Reports by `org_id`.
+
+## Requirements
 
 ### Requirement: Report Entity CRUD
 

@@ -1,3 +1,7 @@
+## Purpose
+
+Defines the Bazel build surface for the Hono/Node.js worker — TypeScript compilation, Vitest execution, and the Node-runtime OCI image. It wires the worker into the shared monorepo build graph together with its `/shared/chat` library dependency.
+
 ## Capability: bazel-worker-build
 
 BUILD files for the Hono/Node.js worker — TypeScript source, Vitest tests, and OCI image.
