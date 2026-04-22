@@ -2,8 +2,8 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { withAuth } from "@/auth";
 import {
-  createDataCatalog,
   type ColumnMetadata,
+  createDataCatalog,
   type Report,
   type ReportCreate,
   type ReportUpdate,

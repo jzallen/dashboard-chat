@@ -2,9 +2,9 @@ import { createGroq } from "@ai-sdk/groq";
 import { type CoreMessage, streamText, type ToolSet } from "ai";
 
 import { getConversationalSystemPrompt, getReportSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "./prompts";
+import { getReportTools } from "./reportToolDefinitions";
 import { getConversationalTools, getTools } from "./tools";
 import type { AgentRequest, TableSchema } from "./types";
-import { getReportTools } from "./reportToolDefinitions";
 import { getViewTools } from "./viewToolDefinitions";
 
 type ContextType = "dataset" | "view" | "report" | null;
