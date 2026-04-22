@@ -230,7 +230,7 @@ function useChatEngine(): ChatContextValue {
 
           // Restore context from channel custom data
           const channelData = ch.data as Record<string, unknown> | undefined;
-          const contextType = channelData?.contextType as "dataset" | "view" | null | undefined;
+          const contextType = channelData?.contextType as "dataset" | "view" | "report" | null | undefined;
           const contextId = channelData?.contextId as string | null | undefined;
           if (contextType && contextId) {
             setContext(contextType, contextId);
@@ -299,7 +299,7 @@ function useChatEngine(): ChatContextValue {
 
       // Restore context from channel custom data (with legacy fallback)
       const channelData = ch.data as Record<string, unknown> | undefined;
-      const contextType = channelData?.contextType as "dataset" | "view" | null | undefined;
+      const contextType = channelData?.contextType as "dataset" | "view" | "report" | null | undefined;
       const contextId = channelData?.contextId as string | null | undefined;
       if (contextType && contextId) {
         setContext(contextType, contextId);
@@ -471,7 +471,7 @@ function useChatEngine(): ChatContextValue {
       const toolHandler = toolHandlerRef.current;
       const contextType = entityContext.entityType;
       const contextId = entityContext.entityId;
-      const tableSchema = contextType === "dataset" ? entityContext.tableSchema : null;
+      const tableSchema = (contextType === "dataset" || contextType === "report") ? entityContext.tableSchema : null;
 
       // Start SSE overlay
       sseOverlay.startStreaming();

@@ -18,7 +18,7 @@ export function createChatClient(fetchFn: typeof fetch = fetch) {
         tool_calls?: ToolCall[];
       }>,
       tableSchema: TableSchema | null,
-      contextType?: "dataset" | "view" | null,
+      contextType?: "dataset" | "view" | "report" | null,
       contextId?: string | null,
       options?: {
         thread_id?: string | null;

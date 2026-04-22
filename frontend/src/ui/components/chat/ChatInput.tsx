@@ -9,7 +9,7 @@ interface ChatInputProps {
   isLoading: boolean;
   datasetName?: string;
   onClearDataset?: () => void;
-  contextType?: "dataset" | "view" | null;
+  contextType?: "dataset" | "view" | "report" | null;
   contextLabel?: string;
   onClearContext?: () => void;
 }

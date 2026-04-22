@@ -2,7 +2,7 @@ import { useCallback, useRef } from "react";
 
 import type { TableSchema } from "../../ui/types";
 
-export type ContextType = "dataset" | "view" | null;
+export type ContextType = "dataset" | "view" | "report" | null;
 
 export interface EntityContextValue {
   projectId: string | null;
