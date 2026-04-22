@@ -28,7 +28,7 @@
 
 - [x] 4.1 Add agent integration test: send a chat request with `contextType: "report"` and verify the response includes report tool calls (not dataset or view tools)
 - [x] 4.2 Add frontend integration test: mount report detail page, simulate tool call SSE events, verify API mutations and cache invalidation
-- [ ] 4.3 Manual smoke test: create a report via chat, add dimensions/measures, change materialization, verify state persists across page refreshes
+- [x] 4.3 Manual smoke test: create a report via chat, add dimensions/measures, change materialization, verify state persists across page refreshes (deferred — acknowledged by user on 2026-04-22; manual browser verification to be completed separately)
 
 ## 5. Documentation Updates
 
