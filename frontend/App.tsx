@@ -10,6 +10,7 @@ import { LogoutPage } from "./src/ui/components/LogoutPage";
 import { ProjectsPage } from "./src/ui/components/OrgView";
 import { QueryEngineDetail } from "./src/ui/components/QueryEngineDetail";
 import { QueryEngineList } from "./src/ui/components/QueryEngineList";
+import { ReportDetailView } from "./src/ui/components/ReportDetailView";
 import { SessionList } from "./src/ui/components/SessionList";
 import { TableView } from "./src/ui/components/TableView";
 import { ViewDetailView } from "./src/ui/components/ViewDetailView";
@@ -43,6 +44,7 @@ function AppRoutes() {
         <Route path="projects/:projectId/datasets/:datasetId" element={<ProjectView />} />
         <Route path="table/:datasetId" element={<TableView />} />
         <Route path="view/:viewId" element={<ViewDetailView />} />
+        <Route path="report/:reportId" element={<ReportDetailView />} />
         <Route path="query-engines" element={<QueryEngineList />} />
         <Route path="query-engines/:nodeId" element={<QueryEngineDetail />} />
         <Route path="sessions" element={<SessionList />} />
