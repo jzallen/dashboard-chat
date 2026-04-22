@@ -1,9 +1,7 @@
 ## Purpose
 
 Describes how the frontend manages chat context — the per-project Stream channel, session identity as threads within that channel, and the entity context (dataset / view / report) attached to each session. It is the control surface for all chat state lifecycle decisions.
-
 ## Requirements
-
 ### Requirement: Stream Channel as Session Identity
 
 ChatContext SHALL use Stream threads within a project memory channel as the session identity. Sessions are threads, not top-level channels.
@@ -35,7 +33,7 @@ ChatContext SHALL use Stream threads within a project memory channel as the sess
 Entity context SHALL be tracked per-session (thread-level), while the parent memory channel holds project-level context.
 
 - Project-level context (project ID, org ID) stored on the memory channel's custom data.
-- Session-level context (active dataset/view) tracked in the frontend's session state and passed in chat requests.
+- Session-level context (active dataset/view/report) tracked in the frontend's session state and passed in chat requests.
 - Dataset context can be set explicitly by the user or resolved by the agent via the SSE request protocol.
 
 #### Scenario: Context persists within a session
@@ -50,7 +48,11 @@ Entity context SHALL be tracked per-session (thread-level), while the parent mem
 - **WHEN** the user switches from session A to session B
 - **THEN** session B SHALL NOT inherit session A's dataset context
 
----
+#### Scenario: Report context persists within a session
+
+- **GIVEN** the user is viewing report "Orders" in a session
+- **WHEN** the user sends subsequent messages in the same session
+- **THEN** the report context SHALL be included in each chat request with `contextType: "report"`
 
 ### Requirement: Session Reset (New Session)
 
@@ -66,3 +68,4 @@ Starting a new session SHALL create a new thread in the project memory, not a ne
 - **THEN** a new session SHALL be created via `POST /api/projects/{project_id}/sessions`
 - **AND** the chat UI SHALL clear and display the new empty session
 - **AND** the previous session SHALL remain in the session list
+

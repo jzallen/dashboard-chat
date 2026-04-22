@@ -1,9 +1,7 @@
 ## Purpose
 
 Describes the Report entity in the mart layer — a consumption-ready fact or dimension dbt model scoped to a project. It defines the REST surface for Report CRUD, the enum constraints on `report_type` / `domain` / `materialization`, and the multi-tenancy contract that scopes Reports by `org_id`.
-
 ## Requirements
-
 ### Requirement: Report Entity CRUD
 
 The system SHALL support creating, reading, updating, and deleting Report entities within a project. A Report represents a mart-layer dbt model — a consumption-ready business entity (fact or dimension).
@@ -14,6 +12,7 @@ The system SHALL support creating, reading, updating, and deleting Report entiti
 - The `report_type` field SHALL accept values: `"fact"` or `"dimension"`.
 - The `domain` field SHALL default to `"Organization"`.
 - The `materialization` field SHALL default to `"view"` and accept values: `"ephemeral"`, `"view"`, `"table"`, `"incremental"`.
+- Report CRUD SHALL be operable via chat tools in addition to direct API calls. The chat agent SHALL invoke the same REST endpoints.
 
 #### Scenario: Create a fact Report
 
@@ -41,7 +40,11 @@ The system SHALL support creating, reading, updating, and deleting Report entiti
 - **WHEN** an authenticated user sends DELETE to `/api/projects/{project_id}/reports/{report_id}`
 - **THEN** the system SHALL delete the Report record and return status 204
 
----
+#### Scenario: Create Report via chat tool
+
+- **WHEN** the chat agent emits a `createReport` tool call with `name: "Orders"`, `report_type: "fact"`
+- **THEN** the frontend SHALL POST to `/api/projects/{project_id}/reports` with the provided parameters
+- **THEN** the new Report SHALL appear in the project's report list
 
 ### Requirement: Report Domain Model
 
@@ -100,3 +103,4 @@ The system SHALL generate mart model SQL files for Reports during dbt project ex
 
 - **WHEN** a project has Reports in domains "Finance" and "Marketing"
 - **THEN** the export SHALL create subdirectories `models/marts/finance/` and `models/marts/marketing/`
+

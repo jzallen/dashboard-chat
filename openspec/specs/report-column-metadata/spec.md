@@ -1,9 +1,7 @@
 ## Purpose
 
 Describes how Reports carry column-level semantic metadata — the `columns_metadata` JSON array that tags each column with a semantic role (entity / dimension / measure), type, and optional expression. It is the data backbone for MetricFlow-style semantic layers and AI-assisted semantic suggestions.
-
 ## Requirements
-
 ### Requirement: Column Semantic Metadata Structure
 
 The system SHALL support column-level semantic metadata on Reports, stored as a JSON array in the `columns_metadata` field.
@@ -106,6 +104,8 @@ The AI chat system SHALL suggest semantic roles for Report columns based on colu
 - Numeric columns not ending in `_id` SHALL be suggested as `measure` candidates.
 - String/categorical columns SHALL be suggested as `dimension` with `semantic_type: "categorical"`.
 - Suggestions SHALL be presented to the user for confirmation, not auto-applied.
+- The `suggestStructure` chat tool SHALL trigger suggestion generation by analyzing `tableSchema.layerContext.sourceSchemas`.
+- Suggestion heuristics SHALL execute in the agent's system prompt context, not via a backend endpoint.
 
 #### Scenario: AI suggests entity role for ID column
 
@@ -116,3 +116,11 @@ The AI chat system SHALL suggest semantic roles for Report columns based on colu
 
 - **WHEN** the AI analyzes a Report column named `created_at`
 - **THEN** the AI SHALL suggest `semantic_role: "dimension"`, `semantic_type: "time"`, `time_granularity: "day"`
+
+#### Scenario: suggestStructure tool triggers heuristic analysis
+
+- **WHEN** the user asks the agent to suggest a report structure
+- **THEN** the agent SHALL invoke the `suggestStructure` tool
+- **THEN** the agent SHALL analyze all columns from `sourceSchemas` and present categorized suggestions
+- **THEN** the user SHALL confirm, modify, or reject each suggestion before it is applied via `addDimension` / `addMeasure` tool calls
+
