@@ -2,31 +2,56 @@
 
 Defines the Bazel build surface for the Hono/Node.js worker — TypeScript compilation, Vitest execution, and the Node-runtime OCI image. It wires the worker into the shared monorepo build graph together with its `/shared/chat` library dependency.
 
-## Capability: bazel-worker-build
+## Requirements
 
-BUILD files for the Hono/Node.js worker — TypeScript source, Vitest tests, and OCI image.
+### Requirement: Worker TypeScript library target
 
-### Behavior
+The worker SHALL expose a `ts_project(name = "lib")` target compiling its TypeScript sources and declaring its npm and shared dependencies.
 
-- `ts_project(name = "lib")` compiles worker TypeScript source
-  - Includes `index.ts`, `lib/**/*.ts`
-  - Dependencies: `@npm//hono`, `@npm//ioredis`, `@npm//@aws-sdk/client-s3`, `@npm//jose`, `@npm//eventsource-parser`
-  - Depends on `//shared/chat:lib` for shared chat code
-- `js_test(name = "test")` wraps `vitest run`:
-  - Input: all source + test files, vitest.config.ts
-  - Tool: `node_modules/.bin/vitest`
-  - Args: `["run"]`
-- `oci_image(name = "image")` produces a Node.js runtime image:
-  - Base: `node:20-slim`
-  - Layer: production node_modules
-  - Layer: compiled worker source + shared code
-  - Entrypoint: `["node", "--import", "tsx", "worker/index.ts"]` or pre-compiled JS
-  - Port: 8787
-- `oci_tarball(name = "image.tar")` for loading into Docker
+- Inputs SHALL include `index.ts` and all files under `lib/**/*.ts`.
+- Dependencies SHALL include `@npm//hono`, `@npm//ioredis`, `@npm//@aws-sdk/client-s3`, `@npm//jose`, and `@npm//eventsource-parser`.
+- The target SHALL depend on `//shared/chat:lib` for shared chat code.
+- Worker npm dependencies SHALL be resolved from the root `package-lock.json` shared with the frontend.
+- Cross-package imports such as `@/raqb` SHALL be expressed via explicit Bazel dependency declarations rather than relying solely on bundler path aliases.
 
-### Constraints
+#### Scenario: TypeScript compilation succeeds with shared deps
 
-- Worker uses tsx for TypeScript execution — OCI image may need tsx or pre-compilation
-- Worker imports from `@/raqb` (frontend path alias) — needs cross-package dep declaration
-- Worker imports from `@shared/*` — resolved via `//shared/chat:lib` dep
-- npm dependencies from root package-lock.json shared with frontend
+- **WHEN** `bazel build //worker:lib` is run
+- **THEN** the `ts_project` rule SHALL compile `worker/index.ts` and all `worker/lib/**/*.ts`
+- **AND** the target SHALL resolve the declared `@npm//...` dependencies and `//shared/chat:lib`
+- **AND** imports from `@shared/*` SHALL resolve through the `//shared/chat:lib` dependency
+
+### Requirement: Worker Vitest test target
+
+The worker SHALL expose a `js_test(name = "test")` target that runs `vitest run` over all source and test files.
+
+- Inputs SHALL include all source files, test files, and `vitest.config.ts`.
+- The tool SHALL be `node_modules/.bin/vitest`, invoked with `args = ["run"]`.
+
+#### Scenario: Worker tests run under Bazel
+
+- **WHEN** `bazel test //worker:test` is run
+- **THEN** Bazel SHALL invoke `node_modules/.bin/vitest run`
+- **AND** the worker's TypeScript tests SHALL execute against the compiled worker sources
+
+### Requirement: Worker OCI image
+
+The worker SHALL publish an `oci_image(name = "image")` target producing a Node.js runtime image plus an `oci_tarball(name = "image.tar")` target for Docker loading.
+
+- Base layer SHALL be `node:20-slim`.
+- A dependency layer SHALL contain production `node_modules`.
+- An application layer SHALL contain the compiled worker source and shared chat code.
+- The entrypoint SHALL execute the worker (`node --import tsx worker/index.ts`, or a pre-compiled JavaScript entrypoint if the image is built without `tsx`).
+- The image SHALL expose port 8787.
+
+#### Scenario: Worker image starts Hono server
+
+- **WHEN** the worker image is loaded into Docker and started
+- **THEN** the container SHALL listen on port 8787
+- **AND** the worker's Hono server SHALL handle `/chat` requests
+
+#### Scenario: TypeScript execution strategy is consistent
+
+- **GIVEN** the worker uses `tsx` for TypeScript execution in development
+- **WHEN** the OCI image is built
+- **THEN** the image SHALL either include `tsx` so the entrypoint runs TypeScript directly, or ship pre-compiled JavaScript that the entrypoint runs with plain `node`
