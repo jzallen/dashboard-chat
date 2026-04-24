@@ -1,4 +1,12 @@
-"""HTTP controller for serializing domain models to JSON responses."""
+"""HTTP controller for serializing domain models to JSON responses.
+
+This module is the facade for the per-context controllers under
+`app/controllers/` (see docs/feature/dc-e65d/design/domain/seams.md).
+The module-level `<domain>_use_cases` aliases are intentionally retained so
+that existing tests (which patch `app.controllers.http_controller.<alias>`)
+continue to work as the per-context controllers read these aliases off this
+module at call time. Do not remove the aliases until those tests are moved.
+"""
 
 import logging
 from typing import Any
@@ -15,46 +23,17 @@ from app.use_cases import sql_access as sql_access_use_cases
 from app.use_cases import upload as upload_use_cases
 from app.use_cases import view as view_use_cases
 from app.use_cases.dataset import search_datasets as search_datasets_uc
-from app.use_cases.exceptions import DomainException
+from app.use_cases.exceptions import DomainException  # noqa: F401 — kept for test compat
 from app.use_cases.memory import get_project_memory as get_project_memory_uc
 from app.use_cases.session import create_session as create_session_uc
 from app.use_cases.session import list_sessions as list_sessions_uc
 from app.use_cases.session import update_session as update_session_uc
 
-from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single
+from ._result_mapper import error_response as _error_response  # re-export for test compat
+from ._result_mapper import serialize as _serialize  # re-export for test compat
+from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single  # noqa: F401
 
 logger = logging.getLogger(__name__)
-
-
-def _serialize(data: Any) -> Any:
-    """Serialize use case result data for HTTP response.
-
-    Handles single models and iterables by calling model.serialize().
-    """
-    match data:
-        case _ if hasattr(data, "serialize"):
-            return data.serialize()
-        case list() | tuple():
-            return [_serialize(item) for item in data]
-        case _:
-            return data
-
-
-def _error_response(error: Exception) -> tuple[dict, int]:
-    """Build a JSON:API error response from an exception.
-
-    DomainException subclasses carry status_code, type, and title.
-    All other exceptions map to a generic 500.
-    """
-    if isinstance(error, DomainException):
-        body = wrap_jsonapi_error(error._status_code, error._title, str(error))
-        if hasattr(error, "retry_after"):
-            body["errors"][0]["retry_after"] = error.retry_after
-        return body, error._status_code
-
-    logger.error("Unhandled error: %s", error)
-    msg = "An unexpected error occurred. Check server logs for details."
-    return wrap_jsonapi_error(500, "Internal Server Error", msg), 500
 
 
 class HTTPController:
