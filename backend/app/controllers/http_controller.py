@@ -34,8 +34,10 @@ from ._result_mapper import serialize as _serialize  # re-export for test compat
 from .organization_controller import OrganizationController
 from .project_controller import ProjectController
 from .query_engine_controller import QueryEngineController
+from .report_controller import ReportController
 from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single  # noqa: F401
 from .sql_access_controller import SQLAccessController
+from .view_controller import ViewController
 
 logger = logging.getLogger(__name__)
 
@@ -253,111 +255,19 @@ class HTTPController:
     post_organization = staticmethod(OrganizationController.post_organization)
     get_my_organization = staticmethod(OrganizationController.get_my_organization)
 
-    # View methods
+    # View methods — delegated to ViewController (Seam 5a)
+    list_views = staticmethod(ViewController.list_views)
+    post_view = staticmethod(ViewController.post_view)
+    get_view = staticmethod(ViewController.get_view)
+    patch_view = staticmethod(ViewController.patch_view)
+    delete_view = staticmethod(ViewController.delete_view)
 
-    @staticmethod
-    async def list_views(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await view_use_cases.list_views(project_id, project=project)
-        match result:
-            case Success(data):
-                items = _serialize(data)
-                views_url = f"/api/projects/{project_id}/views"
-                return wrap_jsonapi_list("views", items, views_url, len(items), None, False), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def post_view(project_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
-        result = await view_use_cases.create_view(project_id=project_id, project=project, **kwargs)
-        match result:
-            case Success(data):
-                serialized = _serialize(data)
-                link = f"/api/projects/{project_id}/views/{serialized['id']}"
-                return wrap_jsonapi_single("views", serialized, link), 201
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def get_view(view_id: str, project: dict | None = None) -> tuple[dict, int]:
-        from app.use_cases.view.sql_generator import ViewSQLGenerator
-
-        result = await view_use_cases.get_view(view_id, project=project)
-        match result:
-            case Success(data):
-                serialized = _serialize(data)
-                serialized["display_sql"] = ViewSQLGenerator().generate_display(data)
-                return wrap_jsonapi_single("views", serialized, f"/api/views/{view_id}"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def patch_view(view_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
-        result = await view_use_cases.update_view(view_id, kwargs, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("views", _serialize(data), f"/api/views/{view_id}"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def delete_view(view_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await view_use_cases.delete_view(view_id, project=project)
-        match result:
-            case Success(data):
-                return {"meta": {"deleted": data}}, 200
-            case Failure(error):
-                return _error_response(error)
-
-    # Report methods
-
-    @staticmethod
-    async def list_reports(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await report_use_cases.list_reports(project_id, project=project)
-        match result:
-            case Success(data):
-                items = _serialize(data)
-                reports_url = f"/api/projects/{project_id}/reports"
-                return wrap_jsonapi_list("reports", items, reports_url, len(items), None, False), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def post_report(project_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
-        result = await report_use_cases.create_report(project_id=project_id, project=project, **kwargs)
-        match result:
-            case Success(data):
-                serialized = _serialize(data)
-                link = f"/api/projects/{project_id}/reports/{serialized['id']}"
-                return wrap_jsonapi_single("reports", serialized, link), 201
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def get_report(report_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await report_use_cases.get_report(report_id, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("reports", _serialize(data), f"/api/reports/{report_id}"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def patch_report(report_id: str, project: dict | None = None, **kwargs) -> tuple[dict, int]:
-        result = await report_use_cases.update_report(report_id, kwargs, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("reports", _serialize(data), f"/api/reports/{report_id}"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def delete_report(report_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await report_use_cases.delete_report(report_id, project=project)
-        match result:
-            case Success(data):
-                return {"meta": {"deleted": data}}, 200
-            case Failure(error):
-                return _error_response(error)
+    # Report methods — delegated to ReportController (Seam 5b)
+    list_reports = staticmethod(ReportController.list_reports)
+    post_report = staticmethod(ReportController.post_report)
+    get_report = staticmethod(ReportController.get_report)
+    patch_report = staticmethod(ReportController.patch_report)
+    delete_report = staticmethod(ReportController.delete_report)
 
     # SQL access methods — delegated to SQLAccessController (Seam 6)
     enable_sql_access = staticmethod(SQLAccessController.enable_sql_access)
