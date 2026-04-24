@@ -22,6 +22,7 @@ from app.utils.pagination import decode_cursor, encode_cursor
 from app.utils.sql_safety import validate_condition_sql
 
 from ..exceptions import MetadataRepositoryError
+from . import _mappers
 from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
 from .project_memory_record import ProjectMemoryRecord
@@ -117,8 +118,8 @@ class MetadataRepository:
 
         items = [
             {
-                **self._project_to_dict(p),
-                "datasets": [self._dataset_summary(ds) for ds in p.datasets],
+                **_mappers.project_to_dict(p),
+                "datasets": [_mappers.dataset_summary(ds) for ds in p.datasets],
             }
             for p in projects
         ]
@@ -138,7 +139,7 @@ class MetadataRepository:
         if not project:
             return None
 
-        return self._project_to_dict(project)
+        return _mappers.project_to_dict(project)
 
     @handle_repository_exceptions
     async def create_project(
@@ -153,7 +154,7 @@ class MetadataRepository:
         self._session.add(project)
         await self._session.flush()
         await self._session.refresh(project)
-        return self._project_to_dict(project)
+        return _mappers.project_to_dict(project)
 
     @handle_repository_exceptions
     async def update_project(
@@ -173,7 +174,7 @@ class MetadataRepository:
 
         await self._session.flush()
         await self._session.refresh(project)
-        return self._project_to_dict(project)
+        return _mappers.project_to_dict(project)
 
     @handle_repository_exceptions
     async def delete_project(self, project_id: str) -> bool:
@@ -206,7 +207,7 @@ class MetadataRepository:
         memory = result.scalar_one_or_none()
         if not memory:
             return None
-        return self._memory_to_dict(memory)
+        return _mappers.memory_to_dict(memory)
 
     @handle_repository_exceptions
     async def create_project_memory(
@@ -224,7 +225,7 @@ class MetadataRepository:
         self._session.add(memory)
         await self._session.flush()
         await self._session.refresh(memory)
-        return self._memory_to_dict(memory)
+        return _mappers.memory_to_dict(memory)
 
     # -------------------------------------------------------------------------
     # Session operations
@@ -250,7 +251,7 @@ class MetadataRepository:
         self._session.add(session)
         await self._session.flush()
         await self._session.refresh(session)
-        return self._session_to_dict(session)
+        return _mappers.session_to_dict(session)
 
     @staticmethod
     def _encode_session_cursor(session: "SessionRecord") -> str:
@@ -307,7 +308,7 @@ class MetadataRepository:
         sessions = sessions[:limit]
         next_cursor = self._encode_session_cursor(sessions[-1]) if has_more and sessions else None
 
-        return [self._session_to_dict(s) for s in sessions], next_cursor, has_more
+        return [_mappers.session_to_dict(s) for s in sessions], next_cursor, has_more
 
     @handle_repository_exceptions
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
@@ -316,7 +317,7 @@ class MetadataRepository:
         session = result.scalar_one_or_none()
         if not session:
             return None
-        return self._session_to_dict(session)
+        return _mappers.session_to_dict(session)
 
     @handle_repository_exceptions
     async def update_session(
@@ -335,7 +336,7 @@ class MetadataRepository:
 
         await self._session.flush()
         await self._session.refresh(session)
-        return self._session_to_dict(session)
+        return _mappers.session_to_dict(session)
 
     # -------------------------------------------------------------------------
     # Dataset operations
@@ -391,10 +392,10 @@ class MetadataRepository:
         if not dataset:
             return None
 
-        dataset_dict = self._dataset_to_dict(dataset)
+        dataset_dict = _mappers.dataset_to_dict(dataset)
 
         if include_transforms:
-            dataset_dict["transforms"] = [self._transform_to_dict(t) for t in dataset.transforms]
+            dataset_dict["transforms"] = [_mappers.transform_to_dict(t) for t in dataset.transforms]
 
         return dataset_dict
 
@@ -445,7 +446,7 @@ class MetadataRepository:
         self._session.add(dataset)
         await self._session.flush()
         await self._session.refresh(dataset)
-        return self._dataset_to_dict(dataset)
+        return _mappers.dataset_to_dict(dataset)
 
     @handle_repository_exceptions
     async def update_dataset(
@@ -503,7 +504,7 @@ class MetadataRepository:
             .limit(10)
         )
         result = await self._session.execute(stmt)
-        return [self._dataset_to_dict(ds) for ds in result.scalars().all()]
+        return [_mappers.dataset_to_dict(ds) for ds in result.scalars().all()]
 
     @handle_repository_exceptions
     async def dataset_exists(self, dataset_id: str) -> bool:
@@ -533,7 +534,7 @@ class MetadataRepository:
         if not transform:
             return None
 
-        return self._transform_to_dict(transform)
+        return _mappers.transform_to_dict(transform)
 
     @handle_repository_exceptions
     async def create_transform(
@@ -560,7 +561,7 @@ class MetadataRepository:
         self._session.add(transform)
         await self._session.flush()
         await self._session.refresh(transform)
-        return self._transform_to_dict(transform)
+        return _mappers.transform_to_dict(transform)
 
     @handle_repository_exceptions
     async def create_transforms_batch(
@@ -577,7 +578,7 @@ class MetadataRepository:
         for record in records:
             await self._session.refresh(record)
 
-        return [self._transform_to_dict(r) for r in records]
+        return [_mappers.transform_to_dict(r) for r in records]
 
     @staticmethod
     def _build_transform_record(dataset_id: str, spec: dict[str, Any]) -> TransformRecord:
@@ -630,7 +631,7 @@ class MetadataRepository:
 
         await self._session.flush()
         await self._session.refresh(transform)
-        return self._transform_to_dict(transform)
+        return _mappers.transform_to_dict(transform)
 
     @handle_repository_exceptions
     async def update_transforms(self, updates: list[dict[str, Any]]) -> None:
@@ -674,7 +675,7 @@ class MetadataRepository:
         self._session.add(org)
         await self._session.flush()
         await self._session.refresh(org)
-        return self._organization_to_dict(org)
+        return _mappers.organization_to_dict(org)
 
     @handle_repository_exceptions
     async def get_organization(self, org_id: str) -> dict[str, Any] | None:
@@ -683,98 +684,7 @@ class MetadataRepository:
         org = result.scalar_one_or_none()
         if not org:
             return None
-        return self._organization_to_dict(org)
-
-    # -------------------------------------------------------------------------
-    # Conversion helpers
-    # -------------------------------------------------------------------------
-
-    @staticmethod
-    def _project_to_dict(project: ProjectRecord) -> dict[str, Any]:
-        """Convert ProjectRecord to dictionary."""
-        return {
-            "id": project.id,
-            "name": project.name,
-            "description": project.description,
-            "org_id": project.org_id,
-            "created_by": project.created_by,
-            "created_at": project.created_at.isoformat() if project.created_at else None,
-            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
-        }
-
-    @staticmethod
-    def _memory_to_dict(memory: ProjectMemoryRecord) -> dict[str, Any]:
-        """Convert ProjectMemoryRecord to dictionary."""
-        return {
-            "id": memory.id,
-            "project_id": memory.project_id,
-            "org_id": memory.org_id,
-            "stream_channel_id": memory.stream_channel_id,
-            "created_at": memory.created_at.isoformat() if memory.created_at else None,
-        }
-
-    @staticmethod
-    def _session_to_dict(session: SessionRecord) -> dict[str, Any]:
-        """Convert SessionRecord to dictionary."""
-        return {
-            "id": session.id,
-            "memory_id": session.memory_id,
-            "stream_thread_id": session.stream_thread_id,
-            "owner_id": session.owner_id,
-            "title": session.title,
-            "org_id": session.org_id,
-            "created_at": session.created_at.isoformat() if session.created_at else None,
-            "last_active_at": session.last_active_at.isoformat() if session.last_active_at else None,
-        }
-
-    @staticmethod
-    def _dataset_summary(dataset: DatasetRecord) -> dict[str, Any]:
-        """Compact dataset projection used when listing projects."""
-        return {
-            "id": dataset.id,
-            "name": dataset.name,
-            "link": f"/api/datasets/{dataset.id}",
-            "description": dataset.description,
-            "schema_config": dataset.schema_config,
-        }
-
-    @staticmethod
-    def _dataset_to_dict(dataset: DatasetRecord) -> dict[str, Any]:
-        """Convert DatasetRecord to dictionary."""
-        return {
-            "id": dataset.id,
-            "storage_path": dataset.storage_path,
-            "project_id": dataset.project_id,
-            "name": dataset.name,
-            "description": dataset.description,
-            "schema_config": dataset.schema_config,
-            "partition_fields": dataset.partition_fields,
-            "column_profiles": dataset.column_profiles,
-            "format_context": dataset.format_context,
-            "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
-            "updated_at": dataset.updated_at.isoformat() if dataset.updated_at else None,
-        }
-
-    @staticmethod
-    def _transform_to_dict(transform: TransformRecord) -> dict[str, Any]:
-        """Convert TransformRecord to dictionary."""
-        return {
-            "id": transform.id,
-            "dataset_id": transform.dataset_id,
-            "name": transform.name,
-            "description": transform.description,
-            "condition_json": transform.condition_json,
-            "condition_sql": transform.condition_sql,
-            "version": transform.version,
-            "status": transform.status,
-            "nl_prompt": transform.nl_prompt,
-            "created_at": transform.created_at.isoformat() if transform.created_at else None,
-            "updated_at": transform.updated_at.isoformat() if transform.updated_at else None,
-            "transform_type": transform.transform_type,
-            "target_column": transform.target_column,
-            "expression_sql": transform.expression_sql,
-            "expression_config": transform.expression_config,
-        }
+        return _mappers.organization_to_dict(org)
 
     # -------------------------------------------------------------------------
     # View operations
@@ -812,7 +722,7 @@ class MetadataRepository:
         self._session.add(view)
         await self._session.flush()
         await self._session.refresh(view)
-        return self._view_to_dict(view)
+        return _mappers.view_to_dict(view)
 
     @handle_repository_exceptions
     async def get_view(self, view_id: str) -> dict[str, Any] | None:
@@ -821,7 +731,7 @@ class MetadataRepository:
         view = result.scalar_one_or_none()
         if not view:
             return None
-        return self._view_to_dict(view)
+        return _mappers.view_to_dict(view)
 
     @handle_repository_exceptions
     async def list_views_by_project(self, project_id: str) -> list[ViewRecord]:
@@ -865,40 +775,6 @@ class MetadataRepository:
         return (await self._session.execute(select(exists().where(ViewRecord.id == view_id)))).scalar()
 
     # -------------------------------------------------------------------------
-    # Conversion helpers
-    # -------------------------------------------------------------------------
-
-    @staticmethod
-    def _organization_to_dict(org: OrganizationRecord) -> dict[str, Any]:
-        """Convert OrganizationRecord to dictionary."""
-        return {
-            "id": org.id,
-            "name": org.name,
-            "created_at": org.created_at.isoformat() if org.created_at else None,
-            "updated_at": org.updated_at.isoformat() if org.updated_at else None,
-        }
-
-    @staticmethod
-    def _view_to_dict(view: ViewRecord) -> dict[str, Any]:
-        """Convert ViewRecord to dictionary."""
-        return {
-            "id": view.id,
-            "project_id": view.project_id,
-            "org_id": view.org_id,
-            "name": view.name,
-            "description": view.description,
-            "sql_definition": view.sql_definition,
-            "source_refs": view.source_refs,
-            "columns": view.columns or [],
-            "joins": view.joins or [],
-            "filters": view.filters or [],
-            "grain": view.grain,
-            "materialization": view.materialization,
-            "created_at": view.created_at.isoformat() if view.created_at else None,
-            "updated_at": view.updated_at.isoformat() if view.updated_at else None,
-        }
-
-    # -------------------------------------------------------------------------
     # Report operations
     # -------------------------------------------------------------------------
 
@@ -932,7 +808,7 @@ class MetadataRepository:
         self._session.add(report)
         await self._session.flush()
         await self._session.refresh(report)
-        return self._report_to_dict(report)
+        return _mappers.report_to_dict(report)
 
     @handle_repository_exceptions
     async def get_report(self, report_id: str) -> dict[str, Any] | None:
@@ -941,7 +817,7 @@ class MetadataRepository:
         report = result.scalar_one_or_none()
         if not report:
             return None
-        return self._report_to_dict(report)
+        return _mappers.report_to_dict(report)
 
     @handle_repository_exceptions
     async def list_reports_by_project(self, project_id: str) -> list[ReportRecord]:
@@ -985,22 +861,3 @@ class MetadataRepository:
     async def report_exists(self, report_id: str) -> bool:
         """Check if a report exists."""
         return (await self._session.execute(select(exists().where(ReportRecord.id == report_id)))).scalar()
-
-    @staticmethod
-    def _report_to_dict(report: ReportRecord) -> dict[str, Any]:
-        """Convert ReportRecord to dictionary."""
-        return {
-            "id": report.id,
-            "project_id": report.project_id,
-            "org_id": report.org_id,
-            "name": report.name,
-            "description": report.description,
-            "sql_definition": report.sql_definition,
-            "report_type": report.report_type,
-            "source_refs": report.source_refs,
-            "domain": report.domain,
-            "columns_metadata": report.columns_metadata,
-            "materialization": report.materialization,
-            "created_at": report.created_at.isoformat() if report.created_at else None,
-            "updated_at": report.updated_at.isoformat() if report.updated_at else None,
-        }
