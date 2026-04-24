@@ -14,7 +14,7 @@ from datetime import datetime
 from functools import wraps
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, exists, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -118,16 +118,7 @@ class MetadataRepository:
         items = [
             {
                 **self._project_to_dict(p),
-                "datasets": [
-                    {
-                        "id": ds.id,
-                        "name": ds.name,
-                        "link": f"/api/datasets/{ds.id}",
-                        "description": ds.description,
-                        "schema_config": ds.schema_config,
-                    }
-                    for ds in p.datasets
-                ],
+                "datasets": [self._dataset_summary(ds) for ds in p.datasets],
             }
             for p in projects
         ]
@@ -578,31 +569,34 @@ class MetadataRepository:
         transforms_input: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Create multiple transforms in a single flush."""
-        records = []
-        for t in transforms_input:
-            t_condition_sql = t.get("condition_sql", "")
-            if t_condition_sql:
-                validate_condition_sql(t_condition_sql)
-            record = TransformRecord(
-                dataset_id=dataset_id,
-                name=t["name"],
-                condition_json=t.get("condition_json", {}),
-                condition_sql=t_condition_sql,
-                description=t.get("description"),
-                nl_prompt=t.get("nl_prompt"),
-                transform_type=t.get("transform_type", "filter"),
-                target_column=t.get("target_column"),
-                expression_sql=t.get("expression_sql"),
-                expression_config=t.get("expression_config"),
-            )
+        records = [self._build_transform_record(dataset_id, spec) for spec in transforms_input]
+        for record in records:
             self._session.add(record)
-            records.append(record)
 
         await self._session.flush()
         for record in records:
             await self._session.refresh(record)
 
         return [self._transform_to_dict(r) for r in records]
+
+    @staticmethod
+    def _build_transform_record(dataset_id: str, spec: dict[str, Any]) -> TransformRecord:
+        """Construct a TransformRecord from a batch-input dict, validating SQL."""
+        condition_sql = spec.get("condition_sql", "")
+        if condition_sql:
+            validate_condition_sql(condition_sql)
+        return TransformRecord(
+            dataset_id=dataset_id,
+            name=spec["name"],
+            condition_json=spec.get("condition_json", {}),
+            condition_sql=condition_sql,
+            description=spec.get("description"),
+            nl_prompt=spec.get("nl_prompt"),
+            transform_type=spec.get("transform_type", "filter"),
+            target_column=spec.get("target_column"),
+            expression_sql=spec.get("expression_sql"),
+            expression_config=spec.get("expression_config"),
+        )
 
     @handle_repository_exceptions
     async def update_transform(
@@ -645,8 +639,6 @@ class MetadataRepository:
         Args:
             updates: List of dicts, each containing 'id' and fields to update.
         """
-        from sqlalchemy import update
-
         if updates:
             await self._session.execute(update(TransformRecord), updates)
             await self._session.flush()
@@ -733,6 +725,17 @@ class MetadataRepository:
             "org_id": session.org_id,
             "created_at": session.created_at.isoformat() if session.created_at else None,
             "last_active_at": session.last_active_at.isoformat() if session.last_active_at else None,
+        }
+
+    @staticmethod
+    def _dataset_summary(dataset: DatasetRecord) -> dict[str, Any]:
+        """Compact dataset projection used when listing projects."""
+        return {
+            "id": dataset.id,
+            "name": dataset.name,
+            "link": f"/api/datasets/{dataset.id}",
+            "description": dataset.description,
+            "schema_config": dataset.schema_config,
         }
 
     @staticmethod
