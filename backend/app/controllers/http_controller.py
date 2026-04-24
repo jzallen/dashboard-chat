@@ -32,6 +32,7 @@ from app.use_cases.session import update_session as update_session_uc
 from ._result_mapper import error_response as _error_response  # re-export for test compat
 from ._result_mapper import serialize as _serialize  # re-export for test compat
 from .organization_controller import OrganizationController
+from .project_controller import ProjectController
 from .query_engine_controller import QueryEngineController
 from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single  # noqa: F401
 from .sql_access_controller import SQLAccessController
@@ -177,66 +178,12 @@ class HTTPController:
             case Failure(error):
                 return _error_response(error)
 
-    # Project methods
-
-    @staticmethod
-    async def list_projects(
-        cursor: str | None = None,
-        page_size: int = 50,
-        base_url: str = "/api/projects",
-        user: AuthUser | None = None,
-    ) -> tuple[dict, int]:
-        result = await project_use_cases.list_projects(user=user, cursor=cursor, page_size=page_size)
-        match result:
-            case Success(data):
-                items = data["items"]
-                resp = wrap_jsonapi_list(
-                    "projects", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]
-                )
-                return resp, 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def get_project(project_id: str, user: AuthUser | None = None) -> tuple[dict, int]:
-        result = await project_use_cases.get_project(project_id, user=user)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("projects", _serialize(data), f"/api/projects/{project_id}"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def post_project(name: str, description: str | None = None, user: AuthUser | None = None) -> tuple[dict, int]:
-        result = await project_use_cases.create_project(name=name, description=description, user=user)
-        match result:
-            case Success(data):
-                serialized = _serialize(data)
-                return wrap_jsonapi_single("projects", serialized, f"/api/projects/{serialized['id']}"), 201
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def patch_project(
-        project_id: str, user: AuthUser | None = None, project: dict | None = None, **kwargs
-    ) -> tuple[dict, int]:
-        result = await project_use_cases.update_project(project_id, kwargs, user=user, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("projects", _serialize(data), f"/api/projects/{project_id}"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def delete_project(
-        project_id: str, user: AuthUser | None = None, project: dict | None = None
-    ) -> tuple[dict, int]:
-        result = await project_use_cases.delete_project(project_id, user=user, project=project)
-        match result:
-            case Success(data):
-                return {"meta": {"deleted": data}}, 200
-            case Failure(error):
-                return _error_response(error)
+    # Project methods — delegated to ProjectController (Seam 2)
+    list_projects = staticmethod(ProjectController.list_projects)
+    get_project = staticmethod(ProjectController.get_project)
+    post_project = staticmethod(ProjectController.post_project)
+    patch_project = staticmethod(ProjectController.patch_project)
+    delete_project = staticmethod(ProjectController.delete_project)
 
     # Memory methods
 
