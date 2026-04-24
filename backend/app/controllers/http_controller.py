@@ -31,6 +31,7 @@ from app.use_cases.session import update_session as update_session_uc
 
 from ._result_mapper import error_response as _error_response  # re-export for test compat
 from ._result_mapper import serialize as _serialize  # re-export for test compat
+from .organization_controller import OrganizationController
 from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -299,28 +300,9 @@ class HTTPController:
             case Failure(error):
                 return _error_response(error)
 
-    # Organization methods
-
-    @staticmethod
-    async def post_organization(name: str, user: AuthUser) -> tuple[dict, int]:
-        result = await organization_use_cases.create_organization(name=name, user=user)
-        match result:
-            case Success(data):
-                serialized = _serialize(data)
-                return wrap_jsonapi_single("organizations", serialized, f"/api/organizations/{serialized['id']}"), 201
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def get_my_organization(user: AuthUser) -> tuple[dict, int]:
-        result = await organization_use_cases.get_organization(user=user)
-        match result:
-            case Success(data) if data is not None:
-                return wrap_jsonapi_single("organizations", data, "/api/organizations/me"), 200
-            case Success():
-                return {"errors": [{"status": "404", "title": "Organization not found"}]}, 404
-            case Failure(error):
-                return _error_response(error)
+    # Organization methods — delegated to OrganizationController (Seam 4)
+    post_organization = staticmethod(OrganizationController.post_organization)
+    get_my_organization = staticmethod(OrganizationController.get_my_organization)
 
     # View methods
 
