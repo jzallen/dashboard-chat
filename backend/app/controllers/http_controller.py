@@ -34,6 +34,7 @@ from ._result_mapper import serialize as _serialize  # re-export for test compat
 from .organization_controller import OrganizationController
 from .query_engine_controller import QueryEngineController
 from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single  # noqa: F401
+from .sql_access_controller import SQLAccessController
 
 logger = logging.getLogger(__name__)
 
@@ -411,52 +412,12 @@ class HTTPController:
             case Failure(error):
                 return _error_response(error)
 
-    # SQL access methods
-
-    @staticmethod
-    async def enable_sql_access(project_id: str, user: AuthUser, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.enable_sql_access(project_id, user=user, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 201
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def disable_sql_access(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.disable_sql_access(project_id, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 204
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def get_sql_access(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.get_sql_access(project_id, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def sync_sql_access(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.sync_sql_access(project_id, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def regenerate_sql_credentials(project_id: str, project: dict | None = None) -> tuple[dict, int]:
-        result = await sql_access_use_cases.regenerate_sql_credentials(project_id, project=project)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sql-access", data, f"/api/projects/{project_id}/sql-access"), 200
-            case Failure(error):
-                return _error_response(error)
+    # SQL access methods — delegated to SQLAccessController (Seam 6)
+    enable_sql_access = staticmethod(SQLAccessController.enable_sql_access)
+    disable_sql_access = staticmethod(SQLAccessController.disable_sql_access)
+    get_sql_access = staticmethod(SQLAccessController.get_sql_access)
+    sync_sql_access = staticmethod(SQLAccessController.sync_sql_access)
+    regenerate_sql_credentials = staticmethod(SQLAccessController.regenerate_sql_credentials)
 
     # Query engine methods — delegated to QueryEngineController (Seam 7)
     list_query_engines = staticmethod(QueryEngineController.list_query_engines)
