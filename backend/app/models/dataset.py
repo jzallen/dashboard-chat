@@ -1,31 +1,17 @@
 """Dataset domain model - authoritative business object.
 
-This module contains the Dataset domain model with business logic for
-generating aggregated SQL queries from transforms using Ibis expressions.
-SQL generation uses Ibis as a compiler (no database connection needed).
-Actual query execution goes through the shared query engine via asyncpg.
+This module defines the ``Dataset`` domain object. SQL compilation lives next
+door in :mod:`app.models.dataset_sql`; execution against the query engine is
+coordinated here via ``query_preview_rows``.
 """
 
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import ibis
-
-from ..types import CleaningExpression, SQLQuery
+from ..types import SQLQuery
+from . import dataset_sql
 from .transform import Transform
-
-# Maps dataset schema_config "type" values to ibis/duckdb type names.
-_SCHEMA_TYPE_MAP = {
-    "text": "string",
-    "number": "float64",
-    "boolean": "boolean",
-    "select": "string",
-}
-
-# Ibis's default table alias in rendered SQL. display_sql post-processes this
-# into a human-readable initials-based alias (e.g. "Customer Purchase" -> "cp").
-_DEFAULT_IBIS_TABLE_ALIAS = "t0"
 
 # Case-conversion modes that require the project's custom DuckDB macros
 # (title/snake/kebab are not built-in to DuckDB's SQL dialect).
@@ -85,10 +71,15 @@ def _transform_from_orm(record: Any) -> Transform:
 class Dataset:
     """Dataset domain model (authoritative business object).
 
-    Business rules:
-    - Aggregates transform filters into SQL queries via Ibis
-    - Manages dataset schema and metadata
-    - No database/persistence concerns (that's the repository's job)
+    Responsibilities:
+    - Identity and metadata (id, project_id, name, description, schema, transforms)
+    - ORM/dict coercion (``from_record``, ``__post_init__``)
+    - Storage path derivation (``storage_path`` / ``_s3_path``)
+    - SQL surfaces (``staging_sql`` / ``display_sql``) — compiled by :mod:`dataset_sql`
+    - Preview-row execution (``query_preview_rows``) against the shared query engine
+    - HTTP serialization (``serialize``)
+
+    No persistence concerns — that belongs to the repository layer.
     """
 
     id: str  # UUID primary key
@@ -174,130 +165,30 @@ class Dataset:
     def _s3_path(self) -> str:
         """S3 path for the parquet file(s).
 
-        For partitioned data (storage_path ending with /), returns glob pattern.
+        For partitioned storage (``storage_path`` ends with ``/``), returns a
+        ``**/*.parquet`` glob pattern so downstream readers pick up every part.
         """
         from ..config import get_settings
 
         settings = get_settings()
         base_path = f"s3://{settings.storage_bucket}/{self.storage_path}"
-
-        # For partitioned data, use glob pattern to read all parquet files
         if self.storage_path and self.storage_path.endswith("/"):
             return f"{base_path}**/*.parquet"
-
         return base_path
-
-    def _build_table(self, table_name: str | None = None) -> ibis.Table:
-        """Build Ibis table via the MUTATE -> FILTER -> RENAME pipeline (design D3).
-
-        No database connection is needed; schema_config drives the table shape.
-        ``table_name`` sets the FROM-clause identifier (used by display_sql).
-        """
-        table = self._build_table_from_schema(table_name)
-
-        fields = self.schema_config.get("fields", {})
-        if fields:
-            table = table.select(*fields.keys())
-
-        table = self._apply_cleaning_mutations(table)
-        table = self._apply_filter_predicates(table)
-        table = self._apply_alias_renames(table)
-        return table
-
-    def _apply_cleaning_mutations(self, table: ibis.Table) -> ibis.Table:
-        """Stage 1: MUTATE — apply clean/map transforms as column expressions,
-        in created_at order. Transforms without a ``created_at`` sort first (stable)."""
-        cleaning_transforms = sorted(
-            [
-                t
-                for t in self.transforms
-                if t.is_enabled
-                and t.transform_type in ("clean", "map")
-                and t.expression_config
-            ],
-            key=lambda t: getattr(t, "created_at", "") or "",
-        )
-        for t in cleaning_transforms:
-            expr = CleaningExpression(t.expression_config)
-            table = table.mutate(
-                **{t.target_column: expr.as_ibis_expr(table, t.target_column)}
-            )
-        return table
-
-    def _apply_filter_predicates(self, table: ibis.Table) -> ibis.Table:
-        """Stage 2: FILTER — apply filter transforms as WHERE clauses."""
-        active_filters = [
-            t.condition_json.as_ibis_filter(table)
-            for t in self.transforms
-            if t.is_enabled and t.transform_type == "filter" and t.condition_json
-        ]
-        if not active_filters:
-            return table
-        return table.filter(*active_filters)
-
-    def _apply_alias_renames(self, table: ibis.Table) -> ibis.Table:
-        """Stage 3: RENAME — apply alias transforms as column renames."""
-        alias_renames: dict[str, str] = {}
-        for t in self.transforms:
-            if not (
-                t.is_enabled and t.transform_type == "alias" and t.expression_config
-            ):
-                continue
-            expr = CleaningExpression(t.expression_config)
-            if expr.alias_name:
-                alias_renames[expr.alias_name] = t.target_column
-        if not alias_renames:
-            return table
-        return table.rename(alias_renames)
-
-    def _build_table_from_schema(self, table_name: str | None = None) -> ibis.Table:
-        """Build Ibis table expression from schema_config (no S3 read needed)."""
-        fields = self.schema_config.get("fields", {})
-        if not fields:
-            raise ValueError("No data or schema available for this dataset")
-
-        ibis_schema = {
-            name: _SCHEMA_TYPE_MAP.get(info.get("type", "text"), "string")
-            for name, info in fields.items()
-        }
-        return ibis.table(ibis_schema, name=table_name or self.name)
-
-    def _table_alias(self) -> str:
-        """Lowercase initials of dataset name for SQL alias."""
-        return "".join(word[0].lower() for word in self.name.split() if word)
 
     @property
     def staging_sql(self) -> SQLQuery:
-        """SQL for query execution (compact, with S3 path)."""
-        try:
-            return ibis.to_sql(self._build_table(), dialect="duckdb", pretty=False)
-        except Exception as e:
-            return f"-- Error generating SQL: {e!s}"
+        """Compact DuckDB SQL for query execution (no pretty printing)."""
+        return dataset_sql.build_staging_sql(
+            self.name, self.schema_config, self.transforms
+        )
 
     @property
     def display_sql(self) -> SQLQuery:
-        """Human-readable SQL with dataset-derived alias and expanded SELECT *."""
-        try:
-            table = self._build_table(table_name=self.name)
-            sql = ibis.to_sql(table, dialect="duckdb", pretty=True)
-        except Exception as e:
-            return f"-- Error generating SQL: {e!s}"
-
-        alias = self._table_alias()
-        sql = sql.replace(f'"{_DEFAULT_IBIS_TABLE_ALIAS}"', alias)
-        # Remove quotes around bare column refs: ``sp."col"`` -> ``sp.col``.
-        sql = re.sub(rf'{alias}\."(\w+)"', rf"{alias}.\1", sql)
-        return self._expand_select_star(sql, alias)
-
-    def _expand_select_star(self, sql: str, alias: str) -> str:
-        """Replace pretty-printed ``SELECT *`` with the explicit column list."""
-        if "SELECT\n  *\n" not in sql:
-            return sql
-        fields = self.schema_config.get("fields", {})
-        if not fields:
-            return sql
-        col_list = ",\n  ".join(f"{alias}.{col}" for col in fields)
-        return sql.replace("SELECT\n  *\n", f"SELECT\n  {col_list}\n")
+        """Human-readable DuckDB SQL with dataset-derived alias and explicit columns."""
+        return dataset_sql.build_display_sql(
+            self.name, self.schema_config, self.transforms
+        )
 
     async def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
         """Execute the staging SQL (with transforms) via the query engine and return preview rows."""
