@@ -31,6 +31,7 @@ from app.use_cases.session import update_session as update_session_uc
 
 from ._result_mapper import error_response as _error_response  # re-export for test compat
 from ._result_mapper import serialize as _serialize  # re-export for test compat
+from .conversation_controller import ConversationController
 from .organization_controller import OrganizationController
 from .project_controller import ProjectController
 from .query_engine_controller import QueryEngineController
@@ -187,58 +188,11 @@ class HTTPController:
     patch_project = staticmethod(ProjectController.patch_project)
     delete_project = staticmethod(ProjectController.delete_project)
 
-    # Memory methods
-
-    @staticmethod
-    async def get_project_memory(project_id: str, user: AuthUser) -> tuple[dict, int]:
-        result = await get_project_memory_uc.get_project_memory(project_id, user=user)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("memories", data, f"/api/projects/{project_id}/memory"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    # Session methods
-
-    @staticmethod
-    async def post_session(project_id: str, user: AuthUser) -> tuple[dict, int]:
-        result = await create_session_uc.create_session(project_id, user=user)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sessions", data, f"/api/projects/{project_id}/sessions/{data['id']}"), 201
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def list_sessions(
-        project_id: str,
-        user: AuthUser,
-        cursor: str | None = None,
-        page_size: int = 30,
-    ) -> tuple[dict, int]:
-        result = await list_sessions_uc.list_sessions(project_id, user=user, cursor=cursor, page_size=page_size)
-        match result:
-            case Success(data):
-                resp = wrap_jsonapi_list(
-                    "sessions",
-                    data["items"],
-                    f"/api/projects/{project_id}/sessions",
-                    data["page_size"],
-                    data["next_cursor"],
-                    data["has_more"],
-                )
-                return resp, 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def patch_session(project_id: str, session_id: str, user: AuthUser, **kwargs: Any) -> tuple[dict, int]:
-        result = await update_session_uc.update_session(session_id, update_data=kwargs, user=user)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("sessions", data, f"/api/projects/{project_id}/sessions/{session_id}"), 200
-            case Failure(error):
-                return _error_response(error)
+    # Conversation methods — delegated to ConversationController (Seam 3)
+    get_project_memory = staticmethod(ConversationController.get_project_memory)
+    post_session = staticmethod(ConversationController.post_session)
+    list_sessions = staticmethod(ConversationController.list_sessions)
+    patch_session = staticmethod(ConversationController.patch_session)
 
     # Dataset search
 
