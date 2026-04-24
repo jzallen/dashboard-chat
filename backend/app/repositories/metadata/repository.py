@@ -1,5 +1,8 @@
 """MetadataRepository - SQLAlchemy implementation for metadata persistence.
 
+Covers all control-plane aggregates: projects, project memories, sessions,
+datasets, transforms, organizations, views, and reports.
+
 Session lifecycle (commit/rollback) is managed at the edge (routers/controllers).
 This repository uses flush() to persist changes within the transaction.
 """
@@ -51,7 +54,8 @@ def handle_repository_exceptions(func: Callable[P, R]) -> Callable[P, R]:
 class MetadataRepository:
     """SQLAlchemy implementation of MetadataRepositoryProtocol.
 
-    Handles all metadata database operations for projects, datasets, and transforms.
+    Handles metadata database operations for projects, project memories,
+    sessions, datasets, transforms, organizations, views, and reports.
 
     Note: This repository does NOT commit. Session commit/rollback is managed
     at the router/controller level to ensure transactional consistency.
@@ -342,23 +346,6 @@ class MetadataRepository:
         await self._session.refresh(session)
         return self._session_to_dict(session)
 
-    @handle_repository_exceptions
-    async def search_datasets_by_name(
-        self,
-        project_id: str,
-        query: str,
-    ) -> list[dict[str, Any]]:
-        """Search datasets by name within a project."""
-        stmt = (
-            select(DatasetRecord)
-            .where(DatasetRecord.project_id == project_id)
-            .where(DatasetRecord.name.ilike(f"%{query}%"))
-            .order_by(DatasetRecord.name)
-            .limit(10)
-        )
-        result = await self._session.execute(stmt)
-        return [self._dataset_to_dict(ds) for ds in result.scalars().all()]
-
     # -------------------------------------------------------------------------
     # Dataset operations
     # -------------------------------------------------------------------------
@@ -509,6 +496,23 @@ class MetadataRepository:
         await self._session.flush()
 
         return storage_path
+
+    @handle_repository_exceptions
+    async def search_datasets_by_name(
+        self,
+        project_id: str,
+        query: str,
+    ) -> list[dict[str, Any]]:
+        """Search datasets by name within a project."""
+        stmt = (
+            select(DatasetRecord)
+            .where(DatasetRecord.project_id == project_id)
+            .where(DatasetRecord.name.ilike(f"%{query}%"))
+            .order_by(DatasetRecord.name)
+            .limit(10)
+        )
+        result = await self._session.execute(stmt)
+        return [self._dataset_to_dict(ds) for ds in result.scalars().all()]
 
     @handle_repository_exceptions
     async def dataset_exists(self, dataset_id: str) -> bool:
