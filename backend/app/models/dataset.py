@@ -188,26 +188,25 @@ class Dataset:
         return base_path
 
     def _build_table(self, table_name: str | None = None) -> ibis.Table:
-        """Build Ibis table with three-stage pipeline (for SQL generation only).
+        """Build Ibis table via the MUTATE -> FILTER -> RENAME pipeline (design D3).
 
-        Pipeline stages (design D3):
-        1. MUTATE — apply cleaning transforms as column expressions via .mutate()
-        2. FILTER — apply filter transforms as WHERE clauses via .filter()
-        3. RENAME — apply alias transforms as column renames via .rename()
-
-        Uses schema_config to build table expression (no database connection needed).
-
-        Args:
-            table_name: Optional name for FROM clause (used by display_sql)
+        No database connection is needed; schema_config drives the table shape.
+        ``table_name`` sets the FROM-clause identifier (used by display_sql).
         """
         table = self._build_table_from_schema(table_name)
 
-        # Select columns from schema
         fields = self.schema_config.get("fields", {})
         if fields:
             table = table.select(*fields.keys())
 
-        # Stage 1: MUTATE — apply cleaning transforms sorted by created_at
+        table = self._apply_cleaning_mutations(table)
+        table = self._apply_filter_predicates(table)
+        table = self._apply_alias_renames(table)
+        return table
+
+    def _apply_cleaning_mutations(self, table: ibis.Table) -> ibis.Table:
+        """Stage 1: MUTATE — apply clean/map transforms as column expressions,
+        in created_at order. Transforms without a ``created_at`` sort first (stable)."""
         cleaning_transforms = sorted(
             [
                 t
@@ -223,27 +222,33 @@ class Dataset:
             table = table.mutate(
                 **{t.target_column: expr.as_ibis_expr(table, t.target_column)}
             )
+        return table
 
-        # Stage 2: FILTER — apply filter transforms as WHERE clauses (existing behavior)
+    def _apply_filter_predicates(self, table: ibis.Table) -> ibis.Table:
+        """Stage 2: FILTER — apply filter transforms as WHERE clauses."""
         active_filters = [
             t.condition_json.as_ibis_filter(table)
             for t in self.transforms
             if t.is_enabled and t.transform_type == "filter" and t.condition_json
         ]
-        if active_filters:
-            table = table.filter(*active_filters)
+        if not active_filters:
+            return table
+        return table.filter(*active_filters)
 
-        # Stage 3: RENAME — apply alias transforms as column renames
-        alias_renames = {}
+    def _apply_alias_renames(self, table: ibis.Table) -> ibis.Table:
+        """Stage 3: RENAME — apply alias transforms as column renames."""
+        alias_renames: dict[str, str] = {}
         for t in self.transforms:
-            if t.is_enabled and t.transform_type == "alias" and t.expression_config:
-                expr = CleaningExpression(t.expression_config)
-                if expr.alias_name:
-                    alias_renames[expr.alias_name] = t.target_column
-        if alias_renames:
-            table = table.rename(alias_renames)
-
-        return table
+            if not (
+                t.is_enabled and t.transform_type == "alias" and t.expression_config
+            ):
+                continue
+            expr = CleaningExpression(t.expression_config)
+            if expr.alias_name:
+                alias_renames[expr.alias_name] = t.target_column
+        if not alias_renames:
+            return table
+        return table.rename(alias_renames)
 
     def _build_table_from_schema(self, table_name: str | None = None) -> ibis.Table:
         """Build Ibis table expression from schema_config (no S3 read needed)."""
