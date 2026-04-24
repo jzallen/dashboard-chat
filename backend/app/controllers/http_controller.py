@@ -32,6 +32,7 @@ from app.use_cases.session import update_session as update_session_uc
 from ._result_mapper import error_response as _error_response  # re-export for test compat
 from ._result_mapper import serialize as _serialize  # re-export for test compat
 from .organization_controller import OrganizationController
+from .query_engine_controller import QueryEngineController
 from .response_wrapper import wrap_jsonapi_error, wrap_jsonapi_list, wrap_jsonapi_single  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -457,32 +458,7 @@ class HTTPController:
             case Failure(error):
                 return _error_response(error)
 
-    # Query engine methods
-
-    @staticmethod
-    async def list_query_engines(user: AuthUser) -> tuple[dict, int]:
-        result = await query_engine_use_cases.list_query_engines(user.org_id)
-        match result:
-            case Success(data):
-                items = _serialize(data)
-                return wrap_jsonapi_list("query-engines", items, "/api/query-engines", len(items), None, False), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def get_query_engine(node_id: str, user: AuthUser) -> tuple[dict, int]:
-        result = await query_engine_use_cases.get_query_engine(node_id, user.org_id)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("query-engines", data, f"/api/query-engines/{node_id}"), 200
-            case Failure(error):
-                return _error_response(error)
-
-    @staticmethod
-    async def test_query_engine(node_id: str, user: AuthUser) -> tuple[dict, int]:
-        result = await query_engine_use_cases.test_query_engine_connection(node_id, user.org_id)
-        match result:
-            case Success(data):
-                return wrap_jsonapi_single("query-engines", data, f"/api/query-engines/{node_id}/test"), 200
-            case Failure(error):
-                return _error_response(error)
+    # Query engine methods — delegated to QueryEngineController (Seam 7)
+    list_query_engines = staticmethod(QueryEngineController.list_query_engines)
+    get_query_engine = staticmethod(QueryEngineController.get_query_engine)
+    test_query_engine = staticmethod(QueryEngineController.test_query_engine)
