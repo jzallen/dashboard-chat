@@ -78,3 +78,110 @@ use_repo(
     "nginx_alpine",
     "node_20_slim",
 )
+
+# ─── Gas City Toolchain (gc, dolt, bd) ───────────────────────────────────────
+#
+# Pre-built binaries fetched from upstream releases. Invoke with:
+#     bazel run //tools/gc-toolchain:install
+#
+# Versions live here; bump + update sha256 when upgrading. Checksums gathered
+# with `sha256sum` over the release tarballs.
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+_GC_BUILD = 'exports_files(["gc"])'
+_BD_BUILD = 'exports_files(["bd"])'
+_DOLT_BUILD = """exports_files(["bin/dolt"])
+alias(name = "dolt", actual = "bin/dolt", visibility = ["//visibility:public"])
+"""
+
+# gc — Gas City CLI (github.com/gastownhall/gascity)
+http_archive(
+    name = "gc_linux_amd64",
+    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_linux_amd64.tar.gz"],
+    sha256 = "cc45e6be54c6bb00fe6915829f8beabb25a585b604a47846845aa7b9a70370d3",
+    build_file_content = _GC_BUILD,
+)
+
+http_archive(
+    name = "gc_linux_arm64",
+    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_linux_arm64.tar.gz"],
+    sha256 = "0d3107b83ca4e3ad33cc6e145844079d1f4027304c621e071f2f085c64d9a67a",
+    build_file_content = _GC_BUILD,
+)
+
+http_archive(
+    name = "gc_darwin_amd64",
+    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_darwin_amd64.tar.gz"],
+    sha256 = "d74e75863ed169c0b5dbf6b65f9332f7cd016db13211cc8a438f80e7b825319c",
+    build_file_content = _GC_BUILD,
+)
+
+http_archive(
+    name = "gc_darwin_arm64",
+    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_darwin_arm64.tar.gz"],
+    sha256 = "4b6cdbffd528b4b2985108fcd8e212d26deceeecc78e4b28f95a09c7e3091459",
+    build_file_content = _GC_BUILD,
+)
+
+# dolt — github.com/dolthub/dolt (pinned to gascity/deps.env DOLT_VERSION)
+http_archive(
+    name = "dolt_linux_amd64",
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-linux-amd64.tar.gz"],
+    sha256 = "37b4bd73b4c44fd1779115b35ab3e046a332ed99e563cf562882eb4fdb8bde86",
+    strip_prefix = "dolt-linux-amd64",
+    build_file_content = _DOLT_BUILD,
+)
+
+http_archive(
+    name = "dolt_linux_arm64",
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-linux-arm64.tar.gz"],
+    sha256 = "5dc46c9db3cb2e8a3b5154ef972e502671520efdcdcdce0df644b67bab27d958",
+    strip_prefix = "dolt-linux-arm64",
+    build_file_content = _DOLT_BUILD,
+)
+
+http_archive(
+    name = "dolt_darwin_amd64",
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-darwin-amd64.tar.gz"],
+    sha256 = "563c9bae968e9d3dfa935eff36b06e91c16eed8b11d6a9c0d08e2b4629cdc458",
+    strip_prefix = "dolt-darwin-amd64",
+    build_file_content = _DOLT_BUILD,
+)
+
+http_archive(
+    name = "dolt_darwin_arm64",
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-darwin-arm64.tar.gz"],
+    sha256 = "2e92b6aed60b2b02c4defc97fb48ca8b1c79d6994c645f690944c4c39a00d3a5",
+    strip_prefix = "dolt-darwin-arm64",
+    build_file_content = _DOLT_BUILD,
+)
+
+# bd — github.com/gastownhall/beads (v1.0.2 drops libicu dep; see docs/ICU-POLICY.md)
+http_archive(
+    name = "bd_linux_amd64",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_linux_amd64.tar.gz"],
+    sha256 = "66280bca14581218684027fee000810c2e40a9c6fe00e876ff64bdcb01a036c0",
+    build_file_content = _BD_BUILD,
+)
+
+http_archive(
+    name = "bd_linux_arm64",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_linux_arm64.tar.gz"],
+    sha256 = "f7b60c2398305bdb18d4ece1c84b87951e5bbcd6966fa0d607ac16f9d6e11a4d",
+    build_file_content = _BD_BUILD,
+)
+
+http_archive(
+    name = "bd_darwin_amd64",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_darwin_amd64.tar.gz"],
+    sha256 = "7d9de37b544ecc55ccc798da6778051344dba839834943957942f38412d7a13a",
+    build_file_content = _BD_BUILD,
+)
+
+http_archive(
+    name = "bd_darwin_arm64",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_darwin_arm64.tar.gz"],
+    sha256 = "f3b27edd4ed43ce8aa792837145f324e4b8a3cbf9dc0c81d144682da46189038",
+    build_file_content = _BD_BUILD,
+)

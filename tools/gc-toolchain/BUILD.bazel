@@ -1,0 +1,91 @@
+"""Install gc, dolt, and bd binaries to a local PATH dir.
+
+Usage:
+    bazel run //tools/gc-toolchain:install                  # → /usr/local/bin (sudo if needed)
+    INSTALL_DIR=~/.local/bin bazel run //tools/gc-toolchain:install
+
+The binary for the current host platform is fetched via http_archive (see
+MODULE.bazel), so the install is hermetic and version-pinned.
+"""
+
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+package(default_visibility = ["//visibility:private"])
+
+config_setting(
+    name = "linux_amd64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "darwin_amd64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "darwin_arm64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+alias(
+    name = "gc",
+    actual = select({
+        ":linux_amd64": "@gc_linux_amd64//:gc",
+        ":linux_arm64": "@gc_linux_arm64//:gc",
+        ":darwin_amd64": "@gc_darwin_amd64//:gc",
+        ":darwin_arm64": "@gc_darwin_arm64//:gc",
+    }),
+)
+
+alias(
+    name = "dolt",
+    actual = select({
+        ":linux_amd64": "@dolt_linux_amd64//:dolt",
+        ":linux_arm64": "@dolt_linux_arm64//:dolt",
+        ":darwin_amd64": "@dolt_darwin_amd64//:dolt",
+        ":darwin_arm64": "@dolt_darwin_arm64//:dolt",
+    }),
+)
+
+alias(
+    name = "bd",
+    actual = select({
+        ":linux_amd64": "@bd_linux_amd64//:bd",
+        ":linux_arm64": "@bd_linux_arm64//:bd",
+        ":darwin_amd64": "@bd_darwin_amd64//:bd",
+        ":darwin_arm64": "@bd_darwin_arm64//:bd",
+    }),
+)
+
+sh_binary(
+    name = "install",
+    srcs = ["install.sh"],
+    args = [
+        "$(rlocationpath :gc)",
+        "$(rlocationpath :dolt)",
+        "$(rlocationpath :bd)",
+    ],
+    data = [
+        ":bd",
+        ":dolt",
+        ":gc",
+    ],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)
