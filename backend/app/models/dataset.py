@@ -15,12 +15,21 @@ import ibis
 from ..types import CleaningExpression, SQLQuery
 from .transform import Transform
 
+# Maps dataset schema_config "type" values to ibis/duckdb type names.
 _SCHEMA_TYPE_MAP = {
     "text": "string",
     "number": "float64",
     "boolean": "boolean",
     "select": "string",
 }
+
+# Ibis's default table alias in rendered SQL. display_sql post-processes this
+# into a human-readable initials-based alias (e.g. "Customer Purchase" -> "cp").
+_DEFAULT_IBIS_TABLE_ALIAS = "t0"
+
+# Case-conversion modes that require the project's custom DuckDB macros
+# (title/snake/kebab are not built-in to DuckDB's SQL dialect).
+_CUSTOM_CASE_MODES = frozenset({"title", "snake", "kebab"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,17 +49,26 @@ class Dataset:
     schema_config: dict[str, Any] = field(
         default_factory=dict
     )  # Column names + types — drives query builder, table UI, and SQL generation
-    partition_fields: list[str] = field(default_factory=list)  # Hive-style partition field names
-    transforms: list[Transform] | list[dict[str, Any]] | None = field(default_factory=list)
+    partition_fields: list[str] = field(
+        default_factory=list
+    )  # Hive-style partition field names
+    transforms: list[Transform] | list[dict[str, Any]] | None = field(
+        default_factory=list
+    )
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
     column_profiles: dict[str, Any] | None = (
         None  # Per-column value stats (sample values, min/max, …) — injected into LLM system prompt
     )
-    format_context: str | None = None  # Plugin-provided context for LLM (e.g., HL7v2 column conventions)
+    format_context: str | None = (
+        None  # Plugin-provided context for LLM (e.g., HL7v2 column conventions)
+    )
 
     @classmethod
     def from_record(
-        cls, record: Any, preview_rows: list[dict[str, Any]] | None = None, include_transforms: bool = True
+        cls,
+        record: Any,
+        preview_rows: list[dict[str, Any]] | None = None,
+        include_transforms: bool = True,
     ) -> "Dataset":
         """Create Dataset domain object from ORM record."""
 
@@ -74,17 +92,10 @@ class Dataset:
 
     @property
     def storage_path(self) -> str:
-        """Compute the storage path for a dataset.
+        """Storage path prefix for S3/MinIO (e.g., ``datasets/proj-123/ds-456/``).
 
-        Storage path follows the pattern: datasets/{project_id}/{dataset_id}/
-        The trailing slash indicates partitioned parquet storage.
-
-        Args:
-            project_id: Project UUID
-            dataset_id: Dataset UUID
-
-        Returns:
-            Storage path prefix for S3/MinIO (e.g., "datasets/proj-123/ds-456/")
+        Pattern: ``datasets/{project_id}/{dataset_id}/``. The trailing slash
+        signals partitioned parquet storage (see ``_s3_path`` glob expansion).
         """
         return f"datasets/{self.project_id}/{self.id}/"
 
@@ -100,9 +111,11 @@ class Dataset:
                     Transform(
                         id=t.get("id"),
                         name=t["name"],
-                        condition_json=QueryBuilderJSON.from_dict(t["condition_json"])
-                        if t.get("condition_json")
-                        else None,
+                        condition_json=(
+                            QueryBuilderJSON.from_dict(t["condition_json"])
+                            if t.get("condition_json")
+                            else None
+                        ),
                         condition_sql=t.get("condition_sql"),
                         description=t.get("description"),
                         status=t.get("status", "enabled"),
@@ -121,7 +134,11 @@ class Dataset:
                     Transform(
                         id=t.id,
                         name=t.name,
-                        condition_json=QueryBuilderJSON.from_dict(t.condition_json) if t.condition_json else None,
+                        condition_json=(
+                            QueryBuilderJSON.from_dict(t.condition_json)
+                            if t.condition_json
+                            else None
+                        ),
                         condition_sql=t.condition_sql,
                         description=t.description,
                         status=t.status,
@@ -176,13 +193,17 @@ class Dataset:
             [
                 t
                 for t in self.transforms
-                if t.is_enabled and t.transform_type in ("clean", "map") and t.expression_config
+                if t.is_enabled
+                and t.transform_type in ("clean", "map")
+                and t.expression_config
             ],
             key=lambda t: getattr(t, "created_at", "") or "",
         )
         for t in cleaning_transforms:
             expr = CleaningExpression(t.expression_config)
-            table = table.mutate(**{t.target_column: expr.as_ibis_expr(table, t.target_column)})
+            table = table.mutate(
+                **{t.target_column: expr.as_ibis_expr(table, t.target_column)}
+            )
 
         # Stage 2: FILTER — apply filter transforms as WHERE clauses (existing behavior)
         active_filters = [
@@ -211,7 +232,10 @@ class Dataset:
         if not fields:
             raise ValueError("No data or schema available for this dataset")
 
-        ibis_schema = {name: _SCHEMA_TYPE_MAP.get(info.get("type", "text"), "string") for name, info in fields.items()}
+        ibis_schema = {
+            name: _SCHEMA_TYPE_MAP.get(info.get("type", "text"), "string")
+            for name, info in fields.items()
+        }
         return ibis.table(ibis_schema, name=table_name or self.name)
 
     def _table_alias(self) -> str:
@@ -228,7 +252,7 @@ class Dataset:
 
     @property
     def display_sql(self) -> SQLQuery:
-        """Human-readable SQL with dataset name and alias."""
+        """Human-readable SQL with dataset-derived alias and expanded SELECT *."""
         try:
             table = self._build_table(table_name=self.name)
             sql = ibis.to_sql(table, dialect="duckdb", pretty=True)
@@ -236,21 +260,20 @@ class Dataset:
             return f"-- Error generating SQL: {e!s}"
 
         alias = self._table_alias()
-
-        # Replace "t0" with meaningful alias
-        sql = sql.replace('"t0"', alias)
-
-        # Remove quotes around column names: sp."col" -> sp.col
+        sql = sql.replace(f'"{_DEFAULT_IBIS_TABLE_ALIAS}"', alias)
+        # Remove quotes around bare column refs: ``sp."col"`` -> ``sp.col``.
         sql = re.sub(rf'{alias}\."(\w+)"', rf"{alias}.\1", sql)
+        return self._expand_select_star(sql, alias)
 
-        # Expand SELECT * to explicit columns
-        if "SELECT\n  *\n" in sql:
-            fields = self.schema_config.get("fields", {})
-            if fields:
-                col_list = ",\n  ".join(f"{alias}.{col}" for col in fields)
-                sql = sql.replace("SELECT\n  *\n", f"SELECT\n  {col_list}\n")
-
-        return sql
+    def _expand_select_star(self, sql: str, alias: str) -> str:
+        """Replace pretty-printed ``SELECT *`` with the explicit column list."""
+        if "SELECT\n  *\n" not in sql:
+            return sql
+        fields = self.schema_config.get("fields", {})
+        if not fields:
+            return sql
+        col_list = ",\n  ".join(f"{alias}.{col}" for col in fields)
+        return sql.replace("SELECT\n  *\n", f"SELECT\n  {col_list}\n")
 
     async def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
         """Execute the staging SQL (with transforms) via the query engine and return preview rows."""
@@ -269,21 +292,24 @@ class Dataset:
 
         pool = await get_query_engine_pool()
         async with pool.acquire() as conn:
-            # Register custom macros if any cleaning transforms use them
-            has_custom_macros = any(
-                t.is_enabled
-                and t.transform_type in ("clean", "map")
-                and t.expression_config
-                and t.expression_config.get("operation") == "case"
-                and t.expression_config.get("mode") in ("title", "snake", "kebab")
-                for t in self.transforms
-            )
-            if has_custom_macros:
+            if self._needs_custom_case_macros():
                 for macro_sql in ALL_MACROS:
                     await conn.execute(macro_sql)
 
             rows = await conn.fetch(build_read_parquet_preview_query(s3_path, limit))
             return decode_wrapped_rows(rows)
+
+    def _needs_custom_case_macros(self) -> bool:
+        """True if any enabled clean/map transform uses a custom case mode
+        (``title``/``snake``/``kebab``) not supported natively by DuckDB."""
+        return any(
+            t.is_enabled
+            and t.transform_type in ("clean", "map")
+            and t.expression_config
+            and t.expression_config.get("operation") == "case"
+            and t.expression_config.get("mode") in _CUSTOM_CASE_MODES
+            for t in self.transforms
+        )
 
     def serialize(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict for HTTP responses."""
@@ -294,7 +320,9 @@ class Dataset:
             "description": self.description,
             "schema_config": self.schema_config,
             "partition_fields": self.partition_fields,
-            "transforms": [t.serialize() for t in self.transforms] if self.transforms else [],
+            "transforms": (
+                [t.serialize() for t in self.transforms] if self.transforms else []
+            ),
             "preview_rows": self.preview_rows,
             "column_profiles": self.column_profiles,
             "format_context": self.format_context,
