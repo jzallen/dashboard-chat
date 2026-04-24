@@ -1,0 +1,159 @@
+"""Record-to-dict mappers for metadata aggregates.
+
+Pure functions that convert SQLAlchemy ORM records into plain dict payloads
+consumed at the repository's public boundary. Kept module-level (not static
+methods) to isolate presentation from persistence concerns and shrink the
+MetadataRepository class.
+"""
+
+from typing import Any
+
+from .dataset_record import DatasetRecord
+from .organization_record import OrganizationRecord
+from .project_memory_record import ProjectMemoryRecord
+from .project_record import ProjectRecord
+from .report_record import ReportRecord
+from .session_record import SessionRecord
+from .transform_record import TransformRecord
+from .view_record import ViewRecord
+
+
+def _iso(dt: Any) -> str | None:
+    """Return ISO-8601 string for a datetime, or None if the value is None."""
+    return dt.isoformat() if dt else None
+
+
+def project_to_dict(project: ProjectRecord) -> dict[str, Any]:
+    """Convert ProjectRecord to dictionary."""
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "org_id": project.org_id,
+        "created_by": project.created_by,
+        "created_at": _iso(project.created_at),
+        "updated_at": _iso(project.updated_at),
+    }
+
+
+def memory_to_dict(memory: ProjectMemoryRecord) -> dict[str, Any]:
+    """Convert ProjectMemoryRecord to dictionary."""
+    return {
+        "id": memory.id,
+        "project_id": memory.project_id,
+        "org_id": memory.org_id,
+        "stream_channel_id": memory.stream_channel_id,
+        "created_at": _iso(memory.created_at),
+    }
+
+
+def session_to_dict(session: SessionRecord) -> dict[str, Any]:
+    """Convert SessionRecord to dictionary."""
+    return {
+        "id": session.id,
+        "memory_id": session.memory_id,
+        "stream_thread_id": session.stream_thread_id,
+        "owner_id": session.owner_id,
+        "title": session.title,
+        "org_id": session.org_id,
+        "created_at": _iso(session.created_at),
+        "last_active_at": _iso(session.last_active_at),
+    }
+
+
+def dataset_summary(dataset: DatasetRecord) -> dict[str, Any]:
+    """Compact dataset projection used when listing projects."""
+    return {
+        "id": dataset.id,
+        "name": dataset.name,
+        "link": f"/api/datasets/{dataset.id}",
+        "description": dataset.description,
+        "schema_config": dataset.schema_config,
+    }
+
+
+def dataset_to_dict(dataset: DatasetRecord) -> dict[str, Any]:
+    """Convert DatasetRecord to dictionary."""
+    return {
+        "id": dataset.id,
+        "storage_path": dataset.storage_path,
+        "project_id": dataset.project_id,
+        "name": dataset.name,
+        "description": dataset.description,
+        "schema_config": dataset.schema_config,
+        "partition_fields": dataset.partition_fields,
+        "column_profiles": dataset.column_profiles,
+        "format_context": dataset.format_context,
+        "created_at": _iso(dataset.created_at),
+        "updated_at": _iso(dataset.updated_at),
+    }
+
+
+def transform_to_dict(transform: TransformRecord) -> dict[str, Any]:
+    """Convert TransformRecord to dictionary."""
+    return {
+        "id": transform.id,
+        "dataset_id": transform.dataset_id,
+        "name": transform.name,
+        "description": transform.description,
+        "condition_json": transform.condition_json,
+        "condition_sql": transform.condition_sql,
+        "version": transform.version,
+        "status": transform.status,
+        "nl_prompt": transform.nl_prompt,
+        "created_at": _iso(transform.created_at),
+        "updated_at": _iso(transform.updated_at),
+        "transform_type": transform.transform_type,
+        "target_column": transform.target_column,
+        "expression_sql": transform.expression_sql,
+        "expression_config": transform.expression_config,
+    }
+
+
+def organization_to_dict(org: OrganizationRecord) -> dict[str, Any]:
+    """Convert OrganizationRecord to dictionary."""
+    return {
+        "id": org.id,
+        "name": org.name,
+        "created_at": _iso(org.created_at),
+        "updated_at": _iso(org.updated_at),
+    }
+
+
+def view_to_dict(view: ViewRecord) -> dict[str, Any]:
+    """Convert ViewRecord to dictionary."""
+    return {
+        "id": view.id,
+        "project_id": view.project_id,
+        "org_id": view.org_id,
+        "name": view.name,
+        "description": view.description,
+        "sql_definition": view.sql_definition,
+        "source_refs": view.source_refs,
+        "columns": view.columns or [],
+        "joins": view.joins or [],
+        "filters": view.filters or [],
+        "grain": view.grain,
+        "materialization": view.materialization,
+        "created_at": _iso(view.created_at),
+        "updated_at": _iso(view.updated_at),
+    }
+
+
+def report_to_dict(report: ReportRecord) -> dict[str, Any]:
+    """Convert ReportRecord to dictionary."""
+    return {
+        "id": report.id,
+        "project_id": report.project_id,
+        "org_id": report.org_id,
+        "name": report.name,
+        "description": report.description,
+        "sql_definition": report.sql_definition,
+        "report_type": report.report_type,
+        "source_refs": report.source_refs,
+        "domain": report.domain,
+        "columns_metadata": report.columns_metadata,
+        "materialization": report.materialization,
+        "created_at": _iso(report.created_at),
+        "updated_at": _iso(report.updated_at),
+    }
