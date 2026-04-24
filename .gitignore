@@ -78,3 +78,11 @@ docs/superpowers/
 
 # Temporary files
 tmp/
+
+# Gas City
+.gc/
+.beads/*
+!.beads/config.yaml
+!.beads/metadata.json
+hooks/
+.runtime/

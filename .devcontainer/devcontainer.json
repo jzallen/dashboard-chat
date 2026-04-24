@@ -27,7 +27,8 @@
         "[python]": {
           "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true
-        }
+        },
+        "terminal.integrated.defaultProfile.linux": "bash"
       }
     }
   },
