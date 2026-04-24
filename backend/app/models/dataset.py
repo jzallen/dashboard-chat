@@ -32,6 +32,55 @@ _DEFAULT_IBIS_TABLE_ALIAS = "t0"
 _CUSTOM_CASE_MODES = frozenset({"title", "snake", "kebab"})
 
 
+def _transform_from_dict(payload: dict[str, Any]) -> Transform:
+    """Build a ``Transform`` from a plain JSON-shaped dict payload."""
+    from ..types import QueryBuilderJSON
+
+    raw_condition = payload.get("condition_json")
+    return Transform(
+        id=payload.get("id"),
+        name=payload["name"],
+        condition_json=(
+            QueryBuilderJSON.from_dict(raw_condition) if raw_condition else None
+        ),
+        condition_sql=payload.get("condition_sql"),
+        description=payload.get("description"),
+        status=payload.get("status", "enabled"),
+        transform_type=payload.get("transform_type", "filter"),
+        target_column=payload.get("target_column"),
+        expression_sql=payload.get("expression_sql"),
+        expression_config=payload.get("expression_config"),
+        created_at=payload.get("created_at"),
+    )
+
+
+def _transform_from_orm(record: Any) -> Transform:
+    """Build a ``Transform`` from a SQLAlchemy-style ORM record.
+
+    Older ORM records may not carry the newer clean/alias/map fields; those
+    are read via ``getattr`` with safe defaults so legacy rows keep working.
+    """
+    from ..types import QueryBuilderJSON
+
+    return Transform(
+        id=record.id,
+        name=record.name,
+        condition_json=(
+            QueryBuilderJSON.from_dict(record.condition_json)
+            if record.condition_json
+            else None
+        ),
+        condition_sql=record.condition_sql,
+        description=record.description,
+        status=record.status,
+        transform_type=getattr(record, "transform_type", "filter"),
+        target_column=getattr(record, "target_column", None),
+        expression_sql=getattr(record, "expression_sql", None),
+        expression_config=getattr(record, "expression_config", None),
+        created_at=getattr(record, "created_at", None),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Dataset:
     """Dataset domain model (authoritative business object).
@@ -100,57 +149,27 @@ class Dataset:
         return f"datasets/{self.project_id}/{self.id}/"
 
     def __post_init__(self) -> None:
-        """Convert transform dicts to Transform domain objects."""
-        from ..types import QueryBuilderJSON
+        """Coerce the ``transforms`` input into ``list[Transform]``.
 
+        The field accepts three shapes: ``None`` / empty list, a list of plain
+        dicts (JSON payload), or a list of ORM records. Transform objects
+        themselves are left untouched (no arm matches, list passes through).
+        """
         match self.transforms:
             case None | []:
                 object.__setattr__(self, "transforms", [])
             case [{}, *_rest]:
-                converted = [
-                    Transform(
-                        id=t.get("id"),
-                        name=t["name"],
-                        condition_json=(
-                            QueryBuilderJSON.from_dict(t["condition_json"])
-                            if t.get("condition_json")
-                            else None
-                        ),
-                        condition_sql=t.get("condition_sql"),
-                        description=t.get("description"),
-                        status=t.get("status", "enabled"),
-                        transform_type=t.get("transform_type", "filter"),
-                        target_column=t.get("target_column"),
-                        expression_sql=t.get("expression_sql"),
-                        expression_config=t.get("expression_config"),
-                        created_at=t.get("created_at"),
-                    )
-                    for t in self.transforms
-                ]
-                object.__setattr__(self, "transforms", converted)
+                object.__setattr__(
+                    self,
+                    "transforms",
+                    [_transform_from_dict(t) for t in self.transforms],
+                )
             case [obj, *_rest] if hasattr(obj, "_sa_instance_state"):
-                # iterable of TransformRecord ORM objects - convert to Transform domain objects
-                converted = [
-                    Transform(
-                        id=t.id,
-                        name=t.name,
-                        condition_json=(
-                            QueryBuilderJSON.from_dict(t.condition_json)
-                            if t.condition_json
-                            else None
-                        ),
-                        condition_sql=t.condition_sql,
-                        description=t.description,
-                        status=t.status,
-                        transform_type=getattr(t, "transform_type", "filter"),
-                        target_column=getattr(t, "target_column", None),
-                        expression_sql=getattr(t, "expression_sql", None),
-                        expression_config=getattr(t, "expression_config", None),
-                        created_at=getattr(t, "created_at", None),
-                    )
-                    for t in self.transforms
-                ]
-                object.__setattr__(self, "transforms", converted)
+                object.__setattr__(
+                    self,
+                    "transforms",
+                    [_transform_from_orm(t) for t in self.transforms],
+                )
 
     def _s3_path(self) -> str:
         """S3 path for the parquet file(s).
