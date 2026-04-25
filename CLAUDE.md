@@ -11,26 +11,58 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 - **Worker** (`worker/`) — Hono (Node.js) chat API with SSE streaming via Groq
 - **Shared** (`shared/chat/`) — Chat handler, prompts, and types used by frontend + worker
 
-## Editing Workflow
+## Development Methodology — nwave-ai waves
 
-**Before editing any source file**, review and run its related tests first. Use the `tdd` skill to map source files to the correct Bazel test target. The workflow is:
+This project uses **nwave-ai** as its SDLC framework (see [ADR-013](docs/decisions/adr-013-nwave-adoption.md)). Features flow through waves; OpenSpec is frozen (see `openspec/FROZEN.md`).
 
-1. Identify the test file(s) for the code you're about to change
-2. Read the relevant tests to understand expected behavior
-3. Run the targeted tests to confirm they pass (green baseline)
-4. Make the edit
-5. Re-run the same tests to confirm nothing broke
-6. After all edits, run the full affected-service suite as a final check
+**This is a brownfield codebase — enter at later waves.** ADRs 001–012 already ratify most of the architecture, so new features start at **DISCUSS** (not DIVERGE or DISCOVER), refactors start at **DESIGN** or **DELIVER**, and bug fixes with known cause start at **DISTILL**. See [docs/research/nwave-brownfield-approach.md](docs/research/nwave-brownfield-approach.md) for the full routing matrix and rationale.
 
-This avoids wasting tokens on broken edits and catches regressions early.
+**Pick the right entry point by task shape:**
 
-## Quick Commands
+| Task shape | Entry command | Produces |
+|---|---|---|
+| New feature (stories already exist or obvious) | `/nw-discuss` | Stories + Given-When-Then AC + UX journeys |
+| Architecture question or refactoring scope | `/nw-design` | C4 + ADRs + domain model |
+| Have stories, need tests | `/nw-distill` | BDD acceptance tests + `roadmap.json` |
+| Ready to build (tests already green) | `/nw-deliver` | Working code via Outside-In TDD |
+| Bug report, cause known | `/nw-distill` first (write regression test) | Regression test + fix |
+| Bug report, cause unknown | `/nw-bugfix` (→ `/nw-root-why`) | RCA → regression test → fix |
+| Code quality / churn / tech debt | `/nw-hotspot` then `/nw-refactor` | Hotspot map → RPP L1–L6 passes |
+| Complex multi-module refactor | `/nw-mikado` | Mikado roadmap with visual tracking |
+| Legacy code needing DDD extraction | `nw-legacy-refactoring-ddd` skill via `/nw-refactor` | Characterization tests + bounded-context extraction |
+| Root cause of failure (no fix yet) | `/nw-root-why` | 5-Whys analysis |
+| Documentation | `/nw-document` | DIVIO/Diátaxis-compliant docs |
+| Unsure where to start | `/nw-new` or `/nw-continue` | Wizard picks the wave |
+
+**Iron Rule & pre-existing theater tests:** NEVER modify a failing test to make it pass. For pre-existing bad tests (tautological, assertion-free, implementation-mirroring, etc.), triage via `nw-test-refactoring-catalog` L1–L3 before deleting or rewriting. Before touching untested legacy code, write **characterization tests** (Feathers) first — they are the brownfield analog to the walking skeleton.
+
+**Feature artifacts live in `docs/feature/{bead-id}/`** during active waves and migrate to `docs/evolution/` on `/nw-finalize`. The bead ID is the feature ID — stable, unique, appears in git trailers.
+
+**Testing discipline — Outside-In TDD + hexagonal:**
+- Write/update the acceptance test first (RED_ACCEPTANCE).
+- Drive a unit test from the smallest failing step (RED_UNIT).
+- Make it green with minimum code.
+- Refactor after GREEN per RPP L1–L6.
+- **Iron Rule**: NEVER modify a failing test to make it pass. After 3 failed attempts, revert and escalate.
+- Mocks only at port boundaries. No internal class mocks.
+
+**Running tests during development** (use the `tdd` skill to map source → test target):
 
 ```bash
 npm run test:all                     # ALL tests: JS (turbo) + backend (pytest)
 cd frontend && npx vitest run        # frontend only
 cd backend && uv run pytest          # backend only
 npm run test:worker                  # worker only
+```
+
+**Gates:**
+- Pre-commit runs ruff + eslint auto-fix (fast; preserved).
+- Pre-push Bazel gate removed — Bazel runs in CI only.
+- nwave's DES hooks enforce Outside-In TDD discipline at agent level (11 quality gates under `standard` rigor).
+
+## Quick Commands
+
+```bash
 npm run build                        # turbo build (frontend only)
 npm run dev                          # start all services
 ```
@@ -65,11 +97,13 @@ npm run dev                          # start all services
 
 ## Commit Convention
 
-Conventional Commits format.
-
-- Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`
-- Include scope: `feat(backend): add dataset pagination endpoint`
-- No attributions. Subject under 72 chars.
+- **Style**: Conventional Commits — `type(scope): subject`
+- **Types**: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`
+- **Scope**: include where it adds clarity, e.g. `feat(backend): add dataset pagination endpoint`
+- **Subject**: under 72 chars
+- **Attribution**: do not attribute Claude (no `Co-Authored-By` lines or "generated with" footers)
+- **Base the message on the diff** — describe what changed and why it matters, not the process used to arrive at it
+- **Atomic commits**: if multiple logical changes exist, prefer separate atomic commits over one combined commit
 
 ## Code Style
 
