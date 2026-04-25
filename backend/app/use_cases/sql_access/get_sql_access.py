@@ -1,5 +1,6 @@
 """Get SQL access details for a project."""
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from returns.result import Result
@@ -11,6 +12,7 @@ from app.use_cases import handle_returns
 from app.use_cases.project._dbt.naming import to_snake_case
 from app.use_cases.sql_access._context import load_context
 from app.use_cases.sql_access._engine import resolve_engine_node_by_id
+from app.use_cases.sql_access._response import build_connection_response
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -40,18 +42,20 @@ async def get_sql_access(
     if not access_record or not access_record.enabled:
         return {"project_id": project_id, "enabled": False}
 
-    settings = get_settings()
-
-    # Derive connection details from engine node (silent fallback to settings)
+    # Resolve engine node; silently fall back to settings-derived defaults when
+    # access_record.engine_node_id is unset OR the lookup returns None.
     engine_node = None
     if access_record.engine_node_id:
         engine_node = await resolve_engine_node_by_id(
             access_record.engine_node_id, repositories, fallback_to_settings=True
         )
-
-    host = engine_node.host if engine_node else settings.query_engine_host
-    port = engine_node.port if engine_node else settings.query_engine_port
-    database = engine_node.database if engine_node else settings.query_engine_database
+    if engine_node is None:
+        settings = get_settings()
+        engine_node = SimpleNamespace(
+            host=settings.query_engine_host,
+            port=settings.query_engine_port,
+            database=settings.query_engine_database,
+        )
 
     # Get per-dataset sync status
     records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
@@ -71,16 +75,20 @@ async def get_sql_access(
             }
         )
 
-    return {
-        "project_id": project_id,
-        "enabled": True,
-        "host": host,
-        "port": port,
-        "database": database,
-        "username": access_record.pg_proxy_role or access_record.pg_role,
-        "schema": access_record.pg_schema,
-        "engine_node_id": access_record.engine_node_id,
-        "last_synced_at": access_record.last_synced_at,
-        "created_at": access_record.created_at,
-        "datasets": datasets_sync,
-    }
+    return build_connection_response(
+        engine_node,
+        schema=access_record.pg_schema,
+        username=access_record.pg_proxy_role or access_record.pg_role,
+        password=None,
+        extras={
+            "project_id": project_id,
+            "enabled": True,
+            # engine_node_id reflects the access record's stored id, NOT the
+            # resolved node's id — preserves the silent-fallback semantics where
+            # the response still reports the original (possibly-stale) reference.
+            "engine_node_id": access_record.engine_node_id,
+            "last_synced_at": access_record.last_synced_at,
+            "created_at": access_record.created_at,
+            "datasets": datasets_sync,
+        },
+    )
