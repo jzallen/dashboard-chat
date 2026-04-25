@@ -13,7 +13,7 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 
 ## Development Methodology — nwave-ai waves
 
-This project uses **nwave-ai** as its SDLC framework (see [ADR-013](docs/decisions/adr-013-nwave-adoption.md)). Features flow through waves; OpenSpec is frozen (see `openspec/FROZEN.md`).
+This project uses **nwave-ai** as its SDLC framework (see [ADR-013](docs/decisions/adr-013-nwave-adoption.md)). Features flow through waves.
 
 **This is a brownfield codebase — enter at later waves.** ADRs 001–012 already ratify most of the architecture, so new features start at **DISCUSS** (not DIVERGE or DISCOVER), refactors start at **DESIGN** or **DELIVER**, and bug fixes with known cause start at **DISTILL**. See [docs/research/nwave-brownfield-approach.md](docs/research/nwave-brownfield-approach.md) for the full routing matrix and rationale.
 
