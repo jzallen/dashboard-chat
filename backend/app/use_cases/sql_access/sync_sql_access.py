@@ -6,12 +6,11 @@ from typing import TYPE_CHECKING
 from returns.result import Result
 
 from app.config import get_settings
-from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.project.project_service import ProjectService
+from app.use_cases.sql_access._context import load_context
+from app.use_cases.sql_access._datasets import load_full_datasets
 from app.use_cases.sql_access._infra import get_app_query_engine_provisioner
-from app.use_cases.sql_access.exceptions import SqlAccessNotEnabled
 from app.use_cases.sql_access.sql_access_service import bootstrap_sql_views_via_provisioner
 
 if TYPE_CHECKING:
@@ -39,26 +38,26 @@ async def sync_sql_access(
     metadata_repo = repositories.metadata
     external_access_repo = repositories.external_access
 
-    if project is None:
-        project_service = ProjectService(repositories)
-        project = await project_service.fetch_project(project_id)
-
-    access_record = await external_access_repo.get_by_project_id(project_id)
-    if not access_record or not access_record.enabled:
-        raise SqlAccessNotEnabled(project_id)
+    ctx = await load_context(
+        project_id,
+        project,
+        repositories,
+        fetch_variant="plain",
+        require_enabled=True,
+    )
 
     settings = get_settings()
     provisioner = get_app_query_engine_provisioner()
 
-    # Load full datasets and bootstrap SQL views via provisioner
-    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=True)
-    full_datasets = [Dataset.from_record(r, include_transforms=True) for r in records]
+    full_datasets = await load_full_datasets(
+        project_id, metadata_repo, include_transforms=True
+    )
 
     await bootstrap_sql_views_via_provisioner(
         provisioner,
-        access_record.engine_node_id,
+        ctx.access_record.engine_node_id,
         project_id,
-        access_record.pg_schema,
+        ctx.access_record.pg_schema,
         full_datasets,
         settings.storage_bucket,
     )
