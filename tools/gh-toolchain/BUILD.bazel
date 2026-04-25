@@ -1,0 +1,63 @@
+"""Install the GitHub CLI (gh) to a local PATH dir.
+
+Usage:
+    bazel run //tools/gh-toolchain:install                  # → /usr/local/bin (sudo if needed)
+    INSTALL_DIR=~/.local/bin bazel run //tools/gh-toolchain:install
+
+The binary for the current host platform is fetched via http_archive (see
+MODULE.bazel), so the install is hermetic and version-pinned.
+"""
+
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+package(default_visibility = ["//visibility:private"])
+
+config_setting(
+    name = "linux_amd64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "darwin_amd64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "darwin_arm64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+alias(
+    name = "gh",
+    actual = select({
+        ":linux_amd64": "@gh_linux_amd64//:gh",
+        ":linux_arm64": "@gh_linux_arm64//:gh",
+        ":darwin_amd64": "@gh_darwin_amd64//:gh",
+        ":darwin_arm64": "@gh_darwin_arm64//:gh",
+    }),
+)
+
+sh_binary(
+    name = "install",
+    srcs = ["install.sh"],
+    args = ["$(rlocationpath :gh)"],
+    data = [":gh"],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)

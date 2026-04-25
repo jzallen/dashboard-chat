@@ -185,3 +185,45 @@ http_archive(
     sha256 = "f3b27edd4ed43ce8aa792837145f324e4b8a3cbf9dc0c81d144682da46189038",
     build_file_content = _BD_BUILD,
 )
+
+# ─── GitHub CLI Toolchain (gh) ───────────────────────────────────────────────
+#
+# Pre-built binaries fetched from upstream releases. Invoke with:
+#     bazel run //tools/gh-toolchain:install
+
+_GH_BUILD = """exports_files(["bin/gh"])
+alias(name = "gh", actual = "bin/gh", visibility = ["//visibility:public"])
+"""
+
+# gh — GitHub CLI (github.com/cli/cli)
+http_archive(
+    name = "gh_linux_amd64",
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_linux_amd64.tar.gz"],
+    sha256 = "304a0d2460f4a8847d2f192bad4e2a32cd9420d28716e7ae32198181b65b5f9c",
+    strip_prefix = "gh_2.91.0_linux_amd64",
+    build_file_content = _GH_BUILD,
+)
+
+http_archive(
+    name = "gh_linux_arm64",
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_linux_arm64.tar.gz"],
+    sha256 = "ccbed39c472d3dc1c501d1e164a9cffd934c5f6fce1012811a1a59d24cb7d7c6",
+    strip_prefix = "gh_2.91.0_linux_arm64",
+    build_file_content = _GH_BUILD,
+)
+
+http_archive(
+    name = "gh_darwin_amd64",
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_macOS_amd64.zip"],
+    sha256 = "8806784f93603fe6d3f95c3583a08df38f175df9ebc123dc8b15f919329980e2",
+    strip_prefix = "gh_2.91.0_macOS_amd64",
+    build_file_content = _GH_BUILD,
+)
+
+http_archive(
+    name = "gh_darwin_arm64",
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_macOS_arm64.zip"],
+    sha256 = "20446cd714d9fa1b69fbd410deade3731f38fe09a2b980c8488aa388dd320ada",
+    strip_prefix = "gh_2.91.0_macOS_arm64",
+    build_file_content = _GH_BUILD,
+)
