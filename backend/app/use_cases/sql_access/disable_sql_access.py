@@ -7,9 +7,8 @@ from returns.result import Result
 
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.project.project_service import ProjectService
+from app.use_cases.sql_access._context import load_context
 from app.use_cases.sql_access._infra import get_app_query_engine_provisioner
-from app.use_cases.sql_access.exceptions import SqlAccessNotEnabled
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -35,16 +34,14 @@ async def disable_sql_access(
         AuthorizationError: If user's org does not own the project.
         SqlAccessNotEnabled: If SQL access is not currently enabled.
     """
-    external_access_repo = repositories.external_access
-
-    if project is None:
-        project_service = ProjectService(repositories)
-        project = await project_service.fetch_project(project_id)
-
-    # Check that SQL access is enabled (with row lock to prevent races)
-    access_record = await external_access_repo.get_by_project_id_for_update(project_id)
-    if not access_record or not access_record.enabled:
-        raise SqlAccessNotEnabled(project_id)
+    ctx = await load_context(
+        project_id,
+        project,
+        repositories,
+        fetch_variant="for_update",
+        require_enabled=True,
+    )
+    access_record = ctx.access_record
 
     # Drop schema and roles from the engine
     if access_record.engine_node_id:
@@ -52,6 +49,6 @@ async def disable_sql_access(
         await provisioner.drop_project_access(access_record.engine_node_id, project_id)
 
     # Soft-disable the metadata record
-    await external_access_repo.soft_disable(project_id)
+    await repositories.external_access.soft_disable(project_id)
 
     return {"project_id": project_id, "enabled": False}
