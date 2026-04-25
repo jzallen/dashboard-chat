@@ -9,7 +9,8 @@ from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project._dbt.naming import to_snake_case
-from app.use_cases.project.project_service import ProjectService
+from app.use_cases.sql_access._context import load_context
+from app.use_cases.sql_access._engine import resolve_engine_node_by_id
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -32,23 +33,21 @@ async def get_sql_access(
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    external_access_repo = repositories.external_access
     metadata_repo = repositories.metadata
 
-    if project is None:
-        project_service = ProjectService(repositories)
-        project = await project_service.fetch_project(project_id)
-
-    access_record = await external_access_repo.get_by_project_id(project_id)
+    ctx = await load_context(project_id, project, repositories)
+    access_record = ctx.access_record
     if not access_record or not access_record.enabled:
         return {"project_id": project_id, "enabled": False}
 
     settings = get_settings()
 
-    # Derive connection details from engine node
+    # Derive connection details from engine node (silent fallback to settings)
     engine_node = None
     if access_record.engine_node_id:
-        engine_node = await repositories.query_engine_node.get_by_id(access_record.engine_node_id)
+        engine_node = await resolve_engine_node_by_id(
+            access_record.engine_node_id, repositories, fallback_to_settings=True
+        )
 
     host = engine_node.host if engine_node else settings.query_engine_host
     port = engine_node.port if engine_node else settings.query_engine_port
