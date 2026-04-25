@@ -1,8 +1,8 @@
-"""Install gc, dolt, and bd binaries to a local PATH dir.
+"""Install gt, dolt, and bd binaries to a local PATH dir.
 
 Usage:
-    bazel run //tools/gc-toolchain:install                  # → /usr/local/bin (sudo if needed)
-    INSTALL_DIR=~/.local/bin bazel run //tools/gc-toolchain:install
+    bazel run //tools/gt-toolchain:install                  # → /usr/local/bin (sudo if needed)
+    INSTALL_DIR=~/.local/bin bazel run //tools/gt-toolchain:install
 
 The binary for the current host platform is fetched via http_archive (see
 MODULE.bazel), so the install is hermetic and version-pinned.
@@ -45,12 +45,12 @@ config_setting(
 )
 
 alias(
-    name = "gc",
+    name = "gt",
     actual = select({
-        ":linux_amd64": "@gc_linux_amd64//:gc",
-        ":linux_arm64": "@gc_linux_arm64//:gc",
-        ":darwin_amd64": "@gc_darwin_amd64//:gc",
-        ":darwin_arm64": "@gc_darwin_arm64//:gc",
+        ":linux_amd64": "@gt_linux_amd64//:gt",
+        ":linux_arm64": "@gt_linux_arm64//:gt",
+        ":darwin_amd64": "@gt_darwin_amd64//:gt",
+        ":darwin_arm64": "@gt_darwin_arm64//:gt",
     }),
 )
 
@@ -78,14 +78,14 @@ sh_binary(
     name = "install",
     srcs = ["install.sh"],
     args = [
-        "$(rlocationpath :gc)",
+        "$(rlocationpath :gt)",
         "$(rlocationpath :dolt)",
         "$(rlocationpath :bd)",
     ],
     data = [
         ":bd",
         ":dolt",
-        ":gc",
+        ":gt",
     ],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )

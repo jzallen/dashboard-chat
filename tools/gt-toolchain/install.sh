@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Install gc, dolt, and bd into $INSTALL_DIR (default /usr/local/bin).
+# Install gt, dolt, and bd into $INSTALL_DIR (default /usr/local/bin).
 # Sources are per-platform binaries fetched by Bazel via http_archive.
-# Args (passed by BUILD.bazel): $1 gc rlocation, $2 dolt rlocation, $3 bd rlocation.
+# Args (passed by BUILD.bazel): $1 gt rlocation, $2 dolt rlocation, $3 bd rlocation.
 set -euo pipefail
 
 # --- Bazel bash runfiles initialization (boilerplate from bazel_tools) ---
@@ -13,11 +13,11 @@ source "${RUNFILES_DIR:-/dev/null}/bazel_tools/tools/bash/runfiles/runfiles.bash
   || { echo >&2 "ERROR: cannot locate Bazel runfiles library"; exit 1; }
 # --- end runfiles boilerplate ---
 
-gc_src=$(rlocation "$1")
+gt_src=$(rlocation "$1")
 dolt_src=$(rlocation "$2")
 bd_src=$(rlocation "$3")
 
-for f in "$gc_src" "$dolt_src" "$bd_src"; do
+for f in "$gt_src" "$dolt_src" "$bd_src"; do
   [ -x "$f" ] || { echo >&2 "ERROR: binary not executable or missing: $f"; exit 1; }
 done
 
@@ -35,8 +35,8 @@ if [ ! -w "$INSTALL_DIR" ]; then
   fi
 fi
 
-echo "→ installing gc, dolt, bd to $INSTALL_DIR"
-$SUDO install -m 0755 "$gc_src"   "$INSTALL_DIR/gc"
+echo "→ installing gt, dolt, bd to $INSTALL_DIR"
+$SUDO install -m 0755 "$gt_src"   "$INSTALL_DIR/gt"
 $SUDO install -m 0755 "$dolt_src" "$INSTALL_DIR/dolt"
 $SUDO install -m 0755 "$bd_src"   "$INSTALL_DIR/bd"
 
@@ -45,6 +45,6 @@ echo "Installed:"
 # Tool banners may span multiple lines; disable pipefail so `head -1` SIGPIPE
 # doesn't abort the script under `set -e`.
 set +o pipefail
-printf "  gc:   "; "$INSTALL_DIR/gc" version 2>/dev/null | head -1
+printf "  gt:   "; "$INSTALL_DIR/gt" version 2>/dev/null | head -1
 printf "  dolt: "; "$INSTALL_DIR/dolt" version 2>/dev/null | head -1
 printf "  bd:   "; "$INSTALL_DIR/bd" --version 2>/dev/null | head -1

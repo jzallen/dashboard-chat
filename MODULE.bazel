@@ -79,52 +79,52 @@ use_repo(
     "node_20_slim",
 )
 
-# ─── Gas City Toolchain (gc, dolt, bd) ───────────────────────────────────────
+# ─── Gas Town Toolchain (gt, dolt, bd) ───────────────────────────────────────
 #
 # Pre-built binaries fetched from upstream releases. Invoke with:
-#     bazel run //tools/gc-toolchain:install
+#     bazel run //tools/gt-toolchain:install
 #
 # Versions live here; bump + update sha256 when upgrading. Checksums gathered
 # with `sha256sum` over the release tarballs.
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-_GC_BUILD = 'exports_files(["gc"])'
+_GT_BUILD = 'exports_files(["gt"])'
 _BD_BUILD = 'exports_files(["bd"])'
 _DOLT_BUILD = """exports_files(["bin/dolt"])
 alias(name = "dolt", actual = "bin/dolt", visibility = ["//visibility:public"])
 """
 
-# gc — Gas City CLI (github.com/gastownhall/gascity)
+# gt — Gas Town CLI (github.com/gastownhall/gastown)
 http_archive(
-    name = "gc_linux_amd64",
-    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_linux_amd64.tar.gz"],
-    sha256 = "cc45e6be54c6bb00fe6915829f8beabb25a585b604a47846845aa7b9a70370d3",
-    build_file_content = _GC_BUILD,
+    name = "gt_linux_amd64",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_linux_amd64.tar.gz"],
+    sha256 = "929b2d73586a4037eb71e00ffed3d62c3e2c4dece2163c63c2a9310ad6889ba5",
+    build_file_content = _GT_BUILD,
 )
 
 http_archive(
-    name = "gc_linux_arm64",
-    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_linux_arm64.tar.gz"],
-    sha256 = "0d3107b83ca4e3ad33cc6e145844079d1f4027304c621e071f2f085c64d9a67a",
-    build_file_content = _GC_BUILD,
+    name = "gt_linux_arm64",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_linux_arm64.tar.gz"],
+    sha256 = "eb08e49871f0030d9cbed742cd0005574035d3b8a150951130597cbc756683cb",
+    build_file_content = _GT_BUILD,
 )
 
 http_archive(
-    name = "gc_darwin_amd64",
-    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_darwin_amd64.tar.gz"],
-    sha256 = "d74e75863ed169c0b5dbf6b65f9332f7cd016db13211cc8a438f80e7b825319c",
-    build_file_content = _GC_BUILD,
+    name = "gt_darwin_amd64",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_darwin_amd64.tar.gz"],
+    sha256 = "109c923677aa774f500d67c515bc4b9cf278b5e8dbf7b622290fb8879bf13ef5",
+    build_file_content = _GT_BUILD,
 )
 
 http_archive(
-    name = "gc_darwin_arm64",
-    urls = ["https://github.com/gastownhall/gascity/releases/download/v1.0.0/gascity_1.0.0_darwin_arm64.tar.gz"],
-    sha256 = "4b6cdbffd528b4b2985108fcd8e212d26deceeecc78e4b28f95a09c7e3091459",
-    build_file_content = _GC_BUILD,
+    name = "gt_darwin_arm64",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_darwin_arm64.tar.gz"],
+    sha256 = "7b7a7629f73350e2bb0dfa9c5a2828172d8cc440e3f9a8821477f278e19b10b8",
+    build_file_content = _GT_BUILD,
 )
 
-# dolt — github.com/dolthub/dolt (pinned to gascity/deps.env DOLT_VERSION)
+# dolt — github.com/dolthub/dolt (pinned at v1.86.1)
 http_archive(
     name = "dolt_linux_amd64",
     urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-linux-amd64.tar.gz"],
