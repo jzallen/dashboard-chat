@@ -39,17 +39,13 @@ async def _resolve_engine_node_or_fallback(
     so the caller can pass it uniformly to ``build_connection_response``.
     """
     if engine_node_id:
-        engine_node = await resolve_engine_node_by_id(
-            engine_node_id, repositories, fallback_to_settings=True
-        )
+        engine_node = await resolve_engine_node_by_id(engine_node_id, repositories, fallback_to_settings=True)
         if engine_node is not None:
             return engine_node
     return _settings_engine_node_stub()
 
 
-async def _load_dataset_sync_entries(
-    project_id: str, repositories: "RepositoryContainer"
-) -> list[dict]:
+async def _load_dataset_sync_entries(project_id: str, repositories: "RepositoryContainer") -> list[dict]:
     """Build the per-dataset sync-status entries for the response."""
     metadata_repo = repositories.metadata
     records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
@@ -92,9 +88,7 @@ async def get_sql_access(
     if not access_record or not access_record.enabled:
         return {"project_id": project_id, "enabled": False}
 
-    engine_node = await _resolve_engine_node_or_fallback(
-        access_record.engine_node_id, repositories
-    )
+    engine_node = await _resolve_engine_node_or_fallback(access_record.engine_node_id, repositories)
     datasets_sync = await _load_dataset_sync_entries(project_id, repositories)
 
     return build_connection_response(

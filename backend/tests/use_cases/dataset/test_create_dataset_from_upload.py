@@ -762,9 +762,7 @@ class _FakeExternalAccessRepoDisabled:
 class TestCreateDatasetFromUploadCharacterization:
     """Characterization tests for create_dataset_from_upload (bead dc-89fx)."""
 
-    async def test_multi_dataset_persists_dataset_ids_and_first_id_in_outbox_payload(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_multi_dataset_persists_dataset_ids_and_first_id_in_outbox_payload(self, seeded_db: AsyncSession):
         """Pin: after multi-dataset run, outbox payload contains dataset_ids=[all] and dataset_id=first_id."""
         set_session(seeded_db)
 
@@ -876,10 +874,10 @@ class TestCreateDatasetFromUploadCharacterization:
         from sqlalchemy import select  # local import to avoid touching top-of-file
 
         rows = (
-            await seeded_db.execute(
-                select(OutboxRecord).where(OutboxRecord.event_type == "DatasetSyncRequested")
-            )
-        ).scalars().all()
+            (await seeded_db.execute(select(OutboxRecord).where(OutboxRecord.event_type == "DatasetSyncRequested")))
+            .scalars()
+            .all()
+        )
         assert len(rows) == 2
         sync_dataset_ids = {r.payload["dataset_id"] for r in rows}
         assert sync_dataset_ids == {datasets[0].id, datasets[1].id}
@@ -929,10 +927,10 @@ class TestCreateDatasetFromUploadCharacterization:
         from sqlalchemy import select
 
         rows = (
-            await seeded_db.execute(
-                select(OutboxRecord).where(OutboxRecord.event_type == "DatasetSyncRequested")
-            )
-        ).scalars().all()
+            (await seeded_db.execute(select(OutboxRecord).where(OutboxRecord.event_type == "DatasetSyncRequested")))
+            .scalars()
+            .all()
+        )
         assert rows == []
         # external_access still consulted exactly once.
         assert fake_external.calls == [PROJECT_1]

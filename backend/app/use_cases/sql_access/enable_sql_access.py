@@ -63,9 +63,7 @@ async def enable_sql_access(
     access_record = ctx.access_record
 
     # Verify project has datasets
-    early_datasets = await load_full_datasets(
-        project_id, metadata_repo, include_transforms=False
-    )
+    early_datasets = await load_full_datasets(project_id, metadata_repo, include_transforms=False)
     if not early_datasets:
         raise ProjectHasNoDatasets(project_id)
 
@@ -87,9 +85,7 @@ async def enable_sql_access(
 
     # Bootstrap SQL views
     settings = get_settings()
-    full_datasets = await load_full_datasets(
-        project_id, metadata_repo, include_transforms=True
-    )
+    full_datasets = await load_full_datasets(project_id, metadata_repo, include_transforms=True)
     await bootstrap_sql_views_via_provisioner(
         provisioner, engine_node.id, project_id, pg_schema, full_datasets, settings.storage_bucket
     )

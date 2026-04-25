@@ -49,8 +49,7 @@ def build_connection_response(
     if password is not None:
         response["password"] = password
         response["connection_string"] = (
-            f"postgresql://{username}:{password}"
-            f"@{engine_node.host}:{engine_node.port}/{engine_node.database}"
+            f"postgresql://{username}:{password}@{engine_node.host}:{engine_node.port}/{engine_node.database}"
         )
 
     if extras:

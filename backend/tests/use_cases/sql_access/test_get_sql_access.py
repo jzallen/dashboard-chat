@@ -63,9 +63,7 @@ class TestGetSqlAccessEngineNodeFallback:
     ``_engine.resolve_engine_node_by_id(fallback_to_settings=True)``.
     """
 
-    async def test_get_when_engine_node_id_is_none_falls_back_to_settings(
-        self, seeded_db_with_access_no_engine_node
-    ):
+    async def test_get_when_engine_node_id_is_none_falls_back_to_settings(self, seeded_db_with_access_no_engine_node):
         """When access_record.engine_node_id is None, host/port/database come from settings."""
         set_session(seeded_db_with_access_no_engine_node)
 
@@ -81,9 +79,7 @@ class TestGetSqlAccessEngineNodeFallback:
         assert data["database"] == "dashboard_external"
         assert data["engine_node_id"] is None
 
-    async def test_get_when_engine_node_id_resolves_to_none_silently_falls_back(
-        self, seeded_db_with_access
-    ):
+    async def test_get_when_engine_node_id_resolves_to_none_silently_falls_back(self, seeded_db_with_access):
         """access_record.engine_node_id is set, but query_engine_node.get_by_id returns None.
 
         Current impl silently falls back to settings (no error). Pinned because
@@ -120,9 +116,7 @@ class TestGetSqlAccessEngineNodeFallback:
 
 
 class TestGetSqlAccessUsernamePreference:
-    async def test_get_when_proxy_role_unset_returns_pg_role_as_username(
-        self, seeded_db_with_access_no_proxy_role
-    ):
+    async def test_get_when_proxy_role_unset_returns_pg_role_as_username(self, seeded_db_with_access_no_proxy_role):
         """username falls back to pg_role when pg_proxy_role is None."""
         set_session(seeded_db_with_access_no_proxy_role)
 
@@ -135,9 +129,7 @@ class TestGetSqlAccessUsernamePreference:
 
 
 class TestGetSqlAccessDatasetShape:
-    async def test_get_when_enabled_returns_per_dataset_view_name_and_synced_status(
-        self, seeded_db_with_access
-    ):
+    async def test_get_when_enabled_returns_per_dataset_view_name_and_synced_status(self, seeded_db_with_access):
         """Each datasets[i] entry has {dataset_id, name, view_name, sync_status}.
 
         view_name == to_snake_case(name); sync_status defaults to "synced" when
@@ -166,9 +158,7 @@ class TestGetSqlAccessDatasetShape:
         assert ds_two["view_name"] == "dataset_two"
         assert ds_two["sync_status"] == "synced"
 
-    async def test_get_when_outbox_has_unprocessed_event_returns_pending_status(
-        self, seeded_db_with_access
-    ):
+    async def test_get_when_outbox_has_unprocessed_event_returns_pending_status(self, seeded_db_with_access):
         """Datasets with a recent unprocessed sync event are reported as 'pending'."""
         seeded_db_with_access.add(
             OutboxRecord(
@@ -195,9 +185,7 @@ class TestGetSqlAccessDatasetShape:
 
 
 class TestGetSqlAccessProjectShortcut:
-    async def test_get_when_project_dict_passed_does_not_call_metadata_get_project(
-        self, seeded_db_with_access
-    ):
+    async def test_get_when_project_dict_passed_does_not_call_metadata_get_project(self, seeded_db_with_access):
         """Passing project=<dict> bypasses ProjectService.fetch_project (no metadata.get_project call).
 
         Pinned because the U3 refactor routes through _context.load_context which
@@ -244,9 +232,7 @@ class TestGetSqlAccessProjectShortcut:
 
 
 class TestGetSqlAccessTimestamps:
-    async def test_get_when_enabled_returns_record_timestamps(
-        self, seeded_db_with_access_pinned_timestamps
-    ):
+    async def test_get_when_enabled_returns_record_timestamps(self, seeded_db_with_access_pinned_timestamps):
         """last_synced_at and created_at are returned from the access_record (ISO-format strings).
 
         The ExternalAccessRepository serializes datetimes via .isoformat() before

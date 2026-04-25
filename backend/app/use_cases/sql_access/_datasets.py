@@ -21,9 +21,5 @@ async def load_full_datasets(
     callers that treat "no datasets" as a domain error (e.g. enable) raise
     their own exception at the use-case level.
     """
-    records, _, _ = await metadata_repo.list_datasets(
-        project_id, include_transforms=include_transforms
-    )
-    return [
-        Dataset.from_record(r, include_transforms=include_transforms) for r in records
-    ]
+    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=include_transforms)
+    return [Dataset.from_record(r, include_transforms=include_transforms) for r in records]

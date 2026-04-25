@@ -259,9 +259,7 @@ class TestUploadFileCharacterization:
         upload = result.unwrap()
         assert upload.status == "awaiting_input"
         assert upload.preview_rows == []
-        assert upload.choices == [
-            {"key": "sheet_name", "label": "Pick a sheet", "options": ["Sheet1", "Sheet2"]}
-        ]
+        assert upload.choices == [{"key": "sheet_name", "label": "Pick a sheet", "options": ["Sheet1", "Sheet2"]}]
 
     async def test_upload_when_multi_processing_result_uses_first_dataset_for_preview(
         self, seeded_db: AsyncSession, s3_write_stubber: Stubber
@@ -314,10 +312,12 @@ class TestUploadFileCharacterization:
     async def test_upload_persists_outbox_payload_with_file_size_and_uploads_path_shape(
         self, seeded_db: AsyncSession, sample_csv: bytes, plugin_registry
     ):
-        """Pin: outbox-derived Upload exposes file_size == len(content) and raw_storage_path == 'uploads/<project>/<filename>'.
+        """Pin: outbox-derived Upload exposes file_size == len(content) and
+        raw_storage_path == 'uploads/<project>/<filename>'.
 
-        Verified at the put_object boundary too: lake.write_raw_file is called with the SAME key the outbox generated,
-        and the bucket is the configured datalake bucket.
+        Verified at the put_object boundary too: lake.write_raw_file is called
+        with the SAME key the outbox generated, and the bucket is the
+        configured datalake bucket.
         """
         set_session(seeded_db)
 

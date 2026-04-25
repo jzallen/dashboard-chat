@@ -7,6 +7,7 @@ monkeypatch for ProjectService.
 """
 
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -43,7 +44,7 @@ class _FakeExternalAccessRepo:
 class _FakeProjectService:
     """Stands in for app.use_cases.project.project_service.ProjectService."""
 
-    instances: list["_FakeProjectService"] = []
+    instances: ClassVar[list["_FakeProjectService"]] = []
 
     def __init__(self, repositories):
         self.repositories = repositories

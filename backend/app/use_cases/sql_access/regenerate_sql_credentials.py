@@ -61,9 +61,7 @@ async def regenerate_sql_credentials(
     settings = get_settings()
     _enforce_cooldown(access_record, settings.credential_regen_cooldown_seconds)
 
-    engine_node = await resolve_engine_node_by_id(
-        access_record.engine_node_id, repositories
-    )
+    engine_node = await resolve_engine_node_by_id(access_record.engine_node_id, repositories)
 
     new_password = generate_password()
     proxy_role = access_record.pg_proxy_role or access_record.pg_role

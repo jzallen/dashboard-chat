@@ -49,9 +49,7 @@ async def sync_sql_access(
     settings = get_settings()
     provisioner = get_app_query_engine_provisioner()
 
-    full_datasets = await load_full_datasets(
-        project_id, metadata_repo, include_transforms=True
-    )
+    full_datasets = await load_full_datasets(project_id, metadata_repo, include_transforms=True)
 
     await bootstrap_sql_views_via_provisioner(
         provisioner,
