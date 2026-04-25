@@ -1,0 +1,65 @@
+"""Install uv and uv-managed dev CLI tools (currently nwave-ai).
+
+Usage:
+    bazel run //tools/python-toolchain:install                  # → /usr/local/bin (sudo if needed)
+    INSTALL_DIR=~/.local/bin bazel run //tools/python-toolchain:install
+
+The uv binary is fetched via http_archive (hermetic + version-pinned). Once
+on PATH, install.sh uses it to `uv tool install` each pinned dev tool listed
+in DEV_TOOLS at the top of install.sh. Add new tools there to grow the
+toolchain.
+"""
+
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+package(default_visibility = ["//visibility:private"])
+
+config_setting(
+    name = "linux_amd64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "darwin_amd64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "darwin_arm64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+alias(
+    name = "uv",
+    actual = select({
+        ":linux_amd64": "@uv_linux_amd64//:uv",
+        ":linux_arm64": "@uv_linux_arm64//:uv",
+        ":darwin_amd64": "@uv_darwin_amd64//:uv",
+        ":darwin_arm64": "@uv_darwin_arm64//:uv",
+    }),
+)
+
+sh_binary(
+    name = "install",
+    srcs = ["install.sh"],
+    args = ["$(rlocationpath :uv)"],
+    data = [":uv"],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)

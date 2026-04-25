@@ -227,3 +227,44 @@ http_archive(
     strip_prefix = "gh_2.91.0_macOS_arm64",
     build_file_content = _GH_BUILD,
 )
+
+# ─── Python Toolchain (uv) ───────────────────────────────────────────────────
+#
+# Pre-built uv binary fetched from upstream releases. Invoke with:
+#     bazel run //tools/python-toolchain:install
+# install.sh then `uv tool install`s each pinned dev CLI tool listed inside.
+
+_UV_BUILD = 'exports_files(["uv"])'
+
+# uv — github.com/astral-sh/uv
+http_archive(
+    name = "uv_linux_amd64",
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-unknown-linux-gnu.tar.gz"],
+    sha256 = "6681d691eb7f9c00ac6a3af54252f7ab29ae72f0c8f95bdc7f9d1401c23ea868",
+    strip_prefix = "uv-x86_64-unknown-linux-gnu",
+    build_file_content = _UV_BUILD,
+)
+
+http_archive(
+    name = "uv_linux_arm64",
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-unknown-linux-gnu.tar.gz"],
+    sha256 = "f2ee1cde9aabb4c6e43bd3f341dadaf42189a54e001e521346dc31547310e284",
+    strip_prefix = "uv-aarch64-unknown-linux-gnu",
+    build_file_content = _UV_BUILD,
+)
+
+http_archive(
+    name = "uv_darwin_amd64",
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-apple-darwin.tar.gz"],
+    sha256 = "0a4bc8fcde4974ea3560be21772aeecab600a6f43fa6e58169f9fa7b3b71d302",
+    strip_prefix = "uv-x86_64-apple-darwin",
+    build_file_content = _UV_BUILD,
+)
+
+http_archive(
+    name = "uv_darwin_arm64",
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-apple-darwin.tar.gz"],
+    sha256 = "66e37d91f839e12481d7b932a1eccbfe732560f42c1cfb89faddfa2454534ba8",
+    strip_prefix = "uv-aarch64-apple-darwin",
+    build_file_content = _UV_BUILD,
+)
