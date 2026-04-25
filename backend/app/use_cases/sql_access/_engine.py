@@ -2,11 +2,31 @@
 
 from typing import TYPE_CHECKING
 
+from app.use_cases.sql_access._infra.provisioner import ProjectEnvironment
 from app.use_cases.sql_access.exceptions import QueryEngineUnreachable
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
     from app.repositories.query_engine_node import QueryEngineNodeView
+
+
+def build_project_environment(engine_node, admin_password: str) -> ProjectEnvironment:
+    """Build a ProjectEnvironment from an engine node row + admin password.
+
+    Pure synchronous mapping: copies the connection fields off the engine
+    node row and pairs them with the supplied ``admin_password``. The
+    optional ``internal_host``, ``internal_port``, and
+    ``proxy_container_id`` fields keep their dataclass defaults, matching
+    the existing call site in ``regenerate_sql_credentials``.
+    """
+    return ProjectEnvironment(
+        environment_id=engine_node.id,
+        host=engine_node.host,
+        port=engine_node.port,
+        database=engine_node.database,
+        admin_user=engine_node.admin_user,
+        admin_password=admin_password,
+    )
 
 
 async def ensure_engine_reachable(engine_node, provisioner) -> None:
