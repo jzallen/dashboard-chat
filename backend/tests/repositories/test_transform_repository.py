@@ -1,12 +1,15 @@
 """Characterization tests for Transform operations on MetadataRepository.
 
-Covers the 5 methods in scope:
+Covers the 6 methods in scope:
 - create_transform
 - create_transforms_batch
+- find_transform_by_sql (earliest match by created_at asc, capped at 1)
 - update_transform (partial update semantics; version increment on condition_json)
 - update_transforms (bulk update)
 - delete_transform
 """
+
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
@@ -101,6 +104,55 @@ class TestCreateTransformsBatch:
     async def test_returns_empty_list_when_input_empty(self, repo_with_dataset):
         results = await repo_with_dataset.create_transforms_batch(dataset_id=DATASET_1, transforms_input=[])
         assert results == []
+
+
+class TestFindTransformBySql:
+    async def test_returns_dict_when_match_exists(self, repo_with_dataset, db_session):
+        t = TransformRecord(
+            id=TRANSFORM_1,
+            dataset_id=DATASET_1,
+            name="Filter",
+            condition_json={"rule": "x"},
+            condition_sql="x = 1",
+        )
+        db_session.add(t)
+        await db_session.commit()
+
+        result = await repo_with_dataset.find_transform_by_sql(dataset_id=DATASET_1, condition_sql="x = 1")
+        assert result is not None
+        assert result["id"] == TRANSFORM_1
+        assert result["condition_sql"] == "x = 1"
+
+    async def test_returns_none_when_no_match(self, repo_with_dataset):
+        assert await repo_with_dataset.find_transform_by_sql(dataset_id=DATASET_1, condition_sql="never = 1") is None
+
+    async def test_returns_earliest_when_multiple_match(self, repo_with_dataset, db_session):
+        # Two transforms with identical condition_sql — find_by must
+        # return the EARLIEST one (created_at asc, limit 1).
+        base = datetime(2026, 3, 1, 9, 0, 0)
+        oldest = TransformRecord(
+            id=TRANSFORM_1,
+            dataset_id=DATASET_1,
+            name="First",
+            condition_json={"rule": "x"},
+            condition_sql="dup = 1",
+            created_at=base,
+        )
+        newer = TransformRecord(
+            id=TRANSFORM_2,
+            dataset_id=DATASET_1,
+            name="Second",
+            condition_json={"rule": "x"},
+            condition_sql="dup = 1",
+            created_at=base + timedelta(hours=1),
+        )
+        db_session.add(oldest)
+        db_session.add(newer)
+        await db_session.commit()
+
+        result = await repo_with_dataset.find_transform_by_sql(dataset_id=DATASET_1, condition_sql="dup = 1")
+        assert result is not None
+        assert result["id"] == TRANSFORM_1
 
 
 class TestUpdateTransform:
