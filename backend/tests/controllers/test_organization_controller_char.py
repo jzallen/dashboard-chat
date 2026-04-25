@@ -39,12 +39,8 @@ class _Model:
 class TestPostOrganizationCharacterization:
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_success_returns_201_with_envelope(self, mock_uc):
-        mock_uc.create_organization = AsyncMock(
-            return_value=Success(_Model("org-1", "Acme"))
-        )
-        body, status = await HTTPController.post_organization(
-            "Acme", user="USER_SENTINEL"
-        )
+        mock_uc.create_organization = AsyncMock(return_value=Success(_Model("org-1", "Acme")))
+        body, status = await HTTPController.post_organization("Acme", user="USER_SENTINEL")
         assert status == 201
         assert body["data"]["type"] == "organizations"
         assert body["data"]["id"] == "org-1"
@@ -53,19 +49,13 @@ class TestPostOrganizationCharacterization:
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_forwards_name_and_user(self, mock_uc):
-        mock_uc.create_organization = AsyncMock(
-            return_value=Success(_Model("org-1", "X"))
-        )
+        mock_uc.create_organization = AsyncMock(return_value=Success(_Model("org-1", "X")))
         await HTTPController.post_organization("X", user="USER_SENTINEL")
-        mock_uc.create_organization.assert_awaited_once_with(
-            name="X", user="USER_SENTINEL"
-        )
+        mock_uc.create_organization.assert_awaited_once_with(name="X", user="USER_SENTINEL")
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_failure_returns_mapped_status(self, mock_uc):
-        mock_uc.create_organization = AsyncMock(
-            return_value=Failure(ExternalServiceError("workos down"))
-        )
+        mock_uc.create_organization = AsyncMock(return_value=Failure(ExternalServiceError("workos down")))
         _, status = await HTTPController.post_organization("X", user="U")
         assert status == 502
 
@@ -78,9 +68,7 @@ class TestPostOrganizationCharacterization:
 class TestGetMyOrganizationCharacterization:
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_success_with_data_returns_200(self, mock_uc):
-        mock_uc.get_organization = AsyncMock(
-            return_value=Success({"id": "org-1", "name": "Acme"})
-        )
+        mock_uc.get_organization = AsyncMock(return_value=Success({"id": "org-1", "name": "Acme"}))
         body, status = await HTTPController.get_my_organization(user="U")
         assert status == 200
         assert body["data"]["type"] == "organizations"
@@ -95,15 +83,11 @@ class TestGetMyOrganizationCharacterization:
         mock_uc.get_organization = AsyncMock(return_value=Success(None))
         body, status = await HTTPController.get_my_organization(user="U")
         assert status == 404
-        assert body == {
-            "errors": [{"status": "404", "title": "Organization not found"}]
-        }
+        assert body == {"errors": [{"status": "404", "title": "Organization not found"}]}
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_failure_routes_through_error_response(self, mock_uc):
-        mock_uc.get_organization = AsyncMock(
-            return_value=Failure(ExternalServiceError("upstream"))
-        )
+        mock_uc.get_organization = AsyncMock(return_value=Failure(ExternalServiceError("upstream")))
         _, status = await HTTPController.get_my_organization(user="U")
         assert status == 502
 

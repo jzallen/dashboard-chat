@@ -84,9 +84,7 @@ class TestCreateTransformsBatch:
                 "expression_config": {"method": "add"},
             },
         ]
-        results = await repo_with_dataset.create_transforms_batch(
-            dataset_id=DATASET_1, transforms_input=batch
-        )
+        results = await repo_with_dataset.create_transforms_batch(dataset_id=DATASET_1, transforms_input=batch)
         assert len(results) == 2
         assert {r["name"] for r in results} == {"T1", "T2"}
         for r in results:
@@ -101,16 +99,12 @@ class TestCreateTransformsBatch:
         assert t2["expression_config"] == {"method": "add"}
 
     async def test_returns_empty_list_when_input_empty(self, repo_with_dataset):
-        results = await repo_with_dataset.create_transforms_batch(
-            dataset_id=DATASET_1, transforms_input=[]
-        )
+        results = await repo_with_dataset.create_transforms_batch(dataset_id=DATASET_1, transforms_input=[])
         assert results == []
 
 
 class TestUpdateTransform:
-    async def test_updates_name_description_status_without_version_bump(
-        self, repo_with_dataset, db_session
-    ):
+    async def test_updates_name_description_status_without_version_bump(self, repo_with_dataset, db_session):
         t = TransformRecord(
             id=TRANSFORM_1,
             dataset_id=DATASET_1,
@@ -133,9 +127,7 @@ class TestUpdateTransform:
         assert result["status"] == "disabled"
         assert result["version"] == 3  # unchanged — no condition_json update
 
-    async def test_increments_version_when_condition_json_updated(
-        self, repo_with_dataset, db_session
-    ):
+    async def test_increments_version_when_condition_json_updated(self, repo_with_dataset, db_session):
         t = TransformRecord(
             id=TRANSFORM_1,
             dataset_id=DATASET_1,

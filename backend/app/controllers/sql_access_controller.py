@@ -34,9 +34,7 @@ class SQLAccessController:
     """Controller for ProjectSQLAccess aggregate HTTP endpoints."""
 
     @staticmethod
-    async def enable_sql_access(
-        project_id: str, user: "AuthUser", project: dict | None = None
-    ) -> tuple[dict, int]:
+    async def enable_sql_access(project_id: str, user: "AuthUser", project: dict | None = None) -> tuple[dict, int]:
         result = await _uc().enable_sql_access(project_id, user=user, project=project)
         match result:
             case Success(data):

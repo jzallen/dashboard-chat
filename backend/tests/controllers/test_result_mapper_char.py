@@ -143,9 +143,7 @@ class TestErrorResponseDomainExceptionDispatch:
             (lambda: QueryEngineUnreachable("qe1"), 502, "Query Engine Unreachable"),
         ],
     )
-    def test_domain_exception_maps_to_jsonapi_error(
-        self, exc_factory, expected_status, expected_title
-    ):
+    def test_domain_exception_maps_to_jsonapi_error(self, exc_factory, expected_status, expected_title):
         body, status = _error_response(exc_factory())
         assert status == expected_status
         assert body["errors"][0]["status"] == str(expected_status)

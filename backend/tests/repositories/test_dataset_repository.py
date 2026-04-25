@@ -78,9 +78,7 @@ class TestGetDataset:
         assert len(result["transforms"]) == 1
         assert result["transforms"][0]["id"] == TRANSFORM_1
 
-    async def test_excludes_deleted_transforms_when_transforms_included(
-        self, repo_with_dataset, db_session
-    ):
+    async def test_excludes_deleted_transforms_when_transforms_included(self, repo_with_dataset, db_session):
         active = TransformRecord(
             id=TRANSFORM_1,
             dataset_id=DATASET_1,
@@ -105,9 +103,7 @@ class TestGetDataset:
         transform_ids = {t["id"] for t in result["transforms"]}
         assert transform_ids == {TRANSFORM_1}  # deleted filtered out
 
-    async def test_omits_transforms_key_when_include_transforms_false(
-        self, repo_with_dataset
-    ):
+    async def test_omits_transforms_key_when_include_transforms_false(self, repo_with_dataset):
         result = await repo_with_dataset.get_dataset(DATASET_1, include_transforms=False)
         assert result is not None
         assert "transforms" not in result
@@ -129,9 +125,7 @@ class TestGetDatasetRecord:
 
 class TestUpdateDataset:
     async def test_applies_kwargs_and_returns_record(self, repo_with_dataset):
-        record = await repo_with_dataset.update_dataset(
-            DATASET_1, name="Renamed", description="New desc"
-        )
+        record = await repo_with_dataset.update_dataset(DATASET_1, name="Renamed", description="New desc")
         assert record is not None
         assert isinstance(record, DatasetRecord)
         assert record.name == "Renamed"
@@ -161,9 +155,7 @@ class TestDatasetExists:
 
 class TestListDatasets:
     async def test_returns_empty_when_no_datasets(self, repo_with_project):
-        records, cursor, has_more = await repo_with_project.list_datasets(
-            project_id=PROJECT_1
-        )
+        records, cursor, has_more = await repo_with_project.list_datasets(project_id=PROJECT_1)
         assert records == []
         assert cursor is None
         assert has_more is False
@@ -172,12 +164,8 @@ class TestListDatasets:
         # Two projects, one dataset each
         p1 = ProjectRecord(id=PROJECT_1, name="P1", org_id=ORG_1)
         p2 = ProjectRecord(id=PROJECT_2, name="P2", org_id=ORG_1)
-        d1 = DatasetRecord(
-            id=DATASET_1, project_id=PROJECT_1, name="Mine", schema_config={"fields": {}}
-        )
-        d_other = DatasetRecord(
-            id=DATASET_OTHER, project_id=PROJECT_2, name="Theirs", schema_config={"fields": {}}
-        )
+        d1 = DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="Mine", schema_config={"fields": {}})
+        d_other = DatasetRecord(id=DATASET_OTHER, project_id=PROJECT_2, name="Theirs", schema_config={"fields": {}})
         db_session.add(p1)
         db_session.add(p2)
         db_session.add(d1)
@@ -188,9 +176,7 @@ class TestListDatasets:
         ids = {r.id for r in records}
         assert ids == {DATASET_1}
 
-    async def test_returns_orm_records_with_transforms_eager_loaded(
-        self, repo_with_dataset, db_session
-    ):
+    async def test_returns_orm_records_with_transforms_eager_loaded(self, repo_with_dataset, db_session):
         active = TransformRecord(
             id=TRANSFORM_1,
             dataset_id=DATASET_1,
@@ -211,43 +197,27 @@ class TestListDatasets:
         db_session.add(deleted)
         await db_session.commit()
 
-        records, _, _ = await repo_with_dataset.list_datasets(
-            project_id=PROJECT_1, include_transforms=True
-        )
+        records, _, _ = await repo_with_dataset.list_datasets(project_id=PROJECT_1, include_transforms=True)
         assert len(records) == 1
         transform_ids = {t.id for t in records[0].transforms}
         assert transform_ids == {TRANSFORM_1}  # deleted filtered
 
     async def test_unpaginated_when_limit_none(self, repo_with_project, db_session):
-        d1 = DatasetRecord(
-            id=DATASET_1, project_id=PROJECT_1, name="A", schema_config={"fields": {}}
-        )
-        d2 = DatasetRecord(
-            id=DATASET_2, project_id=PROJECT_1, name="B", schema_config={"fields": {}}
-        )
+        d1 = DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="A", schema_config={"fields": {}})
+        d2 = DatasetRecord(id=DATASET_2, project_id=PROJECT_1, name="B", schema_config={"fields": {}})
         db_session.add(d1)
         db_session.add(d2)
         await db_session.commit()
 
-        records, cursor, has_more = await repo_with_project.list_datasets(
-            project_id=PROJECT_1, limit=None
-        )
+        records, cursor, has_more = await repo_with_project.list_datasets(project_id=PROJECT_1, limit=None)
         assert len(records) == 2
         assert cursor is None
         assert has_more is False
 
-    async def test_cursor_pagination_has_more_and_next_cursor(
-        self, repo_with_project, db_session
-    ):
-        d1 = DatasetRecord(
-            id=DATASET_1, project_id=PROJECT_1, name="A", schema_config={"fields": {}}
-        )
-        d2 = DatasetRecord(
-            id=DATASET_2, project_id=PROJECT_1, name="B", schema_config={"fields": {}}
-        )
-        d3 = DatasetRecord(
-            id=DATASET_3, project_id=PROJECT_1, name="C", schema_config={"fields": {}}
-        )
+    async def test_cursor_pagination_has_more_and_next_cursor(self, repo_with_project, db_session):
+        d1 = DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="A", schema_config={"fields": {}})
+        d2 = DatasetRecord(id=DATASET_2, project_id=PROJECT_1, name="B", schema_config={"fields": {}})
+        d3 = DatasetRecord(id=DATASET_3, project_id=PROJECT_1, name="C", schema_config={"fields": {}})
         db_session.add(d1)
         db_session.add(d2)
         db_session.add(d3)
@@ -272,12 +242,8 @@ class TestListDatasets:
 
 class TestSearchDatasetsByName:
     async def test_ilike_match_is_case_insensitive(self, repo_with_project, db_session):
-        d1 = DatasetRecord(
-            id=DATASET_1, project_id=PROJECT_1, name="Sales Report", schema_config={"fields": {}}
-        )
-        d2 = DatasetRecord(
-            id=DATASET_2, project_id=PROJECT_1, name="Users", schema_config={"fields": {}}
-        )
+        d1 = DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="Sales Report", schema_config={"fields": {}})
+        d2 = DatasetRecord(id=DATASET_2, project_id=PROJECT_1, name="Users", schema_config={"fields": {}})
         db_session.add(d1)
         db_session.add(d2)
         await db_session.commit()
@@ -288,15 +254,9 @@ class TestSearchDatasetsByName:
 
     async def test_orders_by_name_ascending(self, repo_with_project, db_session):
         # All names share the substring "data" — order must be asc by name
-        d1 = DatasetRecord(
-            id=DATASET_1, project_id=PROJECT_1, name="Zebra-data", schema_config={"fields": {}}
-        )
-        d2 = DatasetRecord(
-            id=DATASET_2, project_id=PROJECT_1, name="Alpha-data", schema_config={"fields": {}}
-        )
-        d3 = DatasetRecord(
-            id=DATASET_3, project_id=PROJECT_1, name="Mid-data", schema_config={"fields": {}}
-        )
+        d1 = DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="Zebra-data", schema_config={"fields": {}})
+        d2 = DatasetRecord(id=DATASET_2, project_id=PROJECT_1, name="Alpha-data", schema_config={"fields": {}})
+        d3 = DatasetRecord(id=DATASET_3, project_id=PROJECT_1, name="Mid-data", schema_config={"fields": {}})
         db_session.add(d1)
         db_session.add(d2)
         db_session.add(d3)

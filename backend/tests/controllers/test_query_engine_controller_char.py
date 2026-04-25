@@ -44,9 +44,7 @@ class _Model:
 class TestListQueryEnginesCharacterization:
     @patch("app.controllers.http_controller.query_engine_use_cases")
     async def test_success_returns_non_paginated_list(self, mock_uc):
-        mock_uc.list_query_engines = AsyncMock(
-            return_value=Success([_Model("qe1", "node-a"), _Model("qe2", "node-b")])
-        )
+        mock_uc.list_query_engines = AsyncMock(return_value=Success([_Model("qe1", "node-a"), _Model("qe2", "node-b")]))
         body, status = await HTTPController.list_query_engines(user=_User())
         assert status == 200
         assert len(body["data"]) == 2
@@ -79,9 +77,7 @@ class TestListQueryEnginesCharacterization:
 class TestGetQueryEngineCharacterization:
     @patch("app.controllers.http_controller.query_engine_use_cases")
     async def test_success_returns_200_with_envelope(self, mock_uc):
-        mock_uc.get_query_engine = AsyncMock(
-            return_value=Success({"id": "qe-1", "host": "db.example.com"})
-        )
+        mock_uc.get_query_engine = AsyncMock(return_value=Success({"id": "qe-1", "host": "db.example.com"}))
         body, status = await HTTPController.get_query_engine("qe-1", user=_User())
         assert status == 200
         assert body["data"]["type"] == "query-engines"
@@ -96,9 +92,7 @@ class TestGetQueryEngineCharacterization:
 
     @patch("app.controllers.http_controller.query_engine_use_cases")
     async def test_failure_returns_502(self, mock_uc):
-        mock_uc.get_query_engine = AsyncMock(
-            return_value=Failure(QueryEngineUnreachable("qe-1"))
-        )
+        mock_uc.get_query_engine = AsyncMock(return_value=Failure(QueryEngineUnreachable("qe-1")))
         _, status = await HTTPController.get_query_engine("qe-1", user=_User())
         assert status == 502
 
@@ -111,9 +105,7 @@ class TestGetQueryEngineCharacterization:
 class TestTestQueryEngineCharacterization:
     @patch("app.controllers.http_controller.query_engine_use_cases")
     async def test_success_returns_200_with_envelope(self, mock_uc):
-        mock_uc.test_query_engine_connection = AsyncMock(
-            return_value=Success({"id": "qe-1", "status": "healthy"})
-        )
+        mock_uc.test_query_engine_connection = AsyncMock(return_value=Success({"id": "qe-1", "status": "healthy"}))
         body, status = await HTTPController.test_query_engine("qe-1", user=_User())
         assert status == 200
         assert body["data"]["type"] == "query-engines"
@@ -123,20 +115,12 @@ class TestTestQueryEngineCharacterization:
     @patch("app.controllers.http_controller.query_engine_use_cases")
     async def test_forwards_node_id_and_org_id(self, mock_uc):
         """L522: delegates to `test_query_engine_connection(node_id, user.org_id)`."""
-        mock_uc.test_query_engine_connection = AsyncMock(
-            return_value=Success({"id": "qe-1"})
-        )
-        await HTTPController.test_query_engine(
-            "qe-1", user=_User(org_id="ORG-XYZ")
-        )
-        mock_uc.test_query_engine_connection.assert_awaited_once_with(
-            "qe-1", "ORG-XYZ"
-        )
+        mock_uc.test_query_engine_connection = AsyncMock(return_value=Success({"id": "qe-1"}))
+        await HTTPController.test_query_engine("qe-1", user=_User(org_id="ORG-XYZ"))
+        mock_uc.test_query_engine_connection.assert_awaited_once_with("qe-1", "ORG-XYZ")
 
     @patch("app.controllers.http_controller.query_engine_use_cases")
     async def test_unreachable_returns_502(self, mock_uc):
-        mock_uc.test_query_engine_connection = AsyncMock(
-            return_value=Failure(QueryEngineUnreachable("qe-1"))
-        )
+        mock_uc.test_query_engine_connection = AsyncMock(return_value=Failure(QueryEngineUnreachable("qe-1")))
         _, status = await HTTPController.test_query_engine("qe-1", user=_User())
         assert status == 502

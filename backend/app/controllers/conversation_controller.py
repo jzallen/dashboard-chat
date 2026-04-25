@@ -80,9 +80,7 @@ class ConversationController:
         cursor: str | None = None,
         page_size: int = 30,
     ) -> tuple[dict, int]:
-        result = await _list_sessions_uc().list_sessions(
-            project_id, user=user, cursor=cursor, page_size=page_size
-        )
+        result = await _list_sessions_uc().list_sessions(project_id, user=user, cursor=cursor, page_size=page_size)
         match result:
             case Success(data):
                 resp = wrap_jsonapi_list(
@@ -98,9 +96,7 @@ class ConversationController:
                 return error_response(error)
 
     @staticmethod
-    async def patch_session(
-        project_id: str, session_id: str, user: "AuthUser", **kwargs: Any
-    ) -> tuple[dict, int]:
+    async def patch_session(project_id: str, session_id: str, user: "AuthUser", **kwargs: Any) -> tuple[dict, int]:
         result = await _update_session_uc().update_session(session_id, update_data=kwargs, user=user)
         match result:
             case Success(data):

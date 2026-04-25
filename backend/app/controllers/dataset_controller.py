@@ -87,9 +87,7 @@ class DatasetController:
         include_preview: bool = False,
         preview_limit: int = 10,
     ) -> tuple[dict, int]:
-        result = await _dataset_uc().get_dataset(
-            dataset_id, include_transforms, include_preview, preview_limit
-        )
+        result = await _dataset_uc().get_dataset(dataset_id, include_transforms, include_preview, preview_limit)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("datasets", serialize(data), f"/api/datasets/{dataset_id}"), 200
@@ -178,12 +176,8 @@ class DatasetController:
                 return error_response(error)
 
     @staticmethod
-    async def preview_transform(
-        dataset_id: str, target_column: str, expression_config: dict
-    ) -> tuple[dict, int]:
-        result = await _dataset_uc().preview_cleaning_transform(
-            dataset_id, target_column, expression_config
-        )
+    async def preview_transform(dataset_id: str, target_column: str, expression_config: dict) -> tuple[dict, int]:
+        result = await _dataset_uc().preview_cleaning_transform(dataset_id, target_column, expression_config)
         match result:
             case Success(data):
                 return {"data": data}, 200

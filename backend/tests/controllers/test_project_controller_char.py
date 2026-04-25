@@ -57,12 +57,8 @@ class TestListProjectsForwarding:
                 }
             )
         )
-        await HTTPController.list_projects(
-            cursor="IN", page_size=25, base_url="/api/p", user="USER_SENTINEL"
-        )
-        mock_uc.list_projects.assert_awaited_once_with(
-            user="USER_SENTINEL", cursor="IN", page_size=25
-        )
+        await HTTPController.list_projects(cursor="IN", page_size=25, base_url="/api/p", user="USER_SENTINEL")
+        mock_uc.list_projects.assert_awaited_once_with(user="USER_SENTINEL", cursor="IN", page_size=25)
 
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_envelope_uses_base_url(self, mock_uc):
@@ -89,18 +85,12 @@ class TestPostProjectForwarding:
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_forwards_name_description_user(self, mock_uc):
         mock_uc.create_project = AsyncMock(return_value=Success(_Model("p1", "Name")))
-        await HTTPController.post_project(
-            "Name", description="Desc", user="USER_SENTINEL"
-        )
-        mock_uc.create_project.assert_awaited_once_with(
-            name="Name", description="Desc", user="USER_SENTINEL"
-        )
+        await HTTPController.post_project("Name", description="Desc", user="USER_SENTINEL")
+        mock_uc.create_project.assert_awaited_once_with(name="Name", description="Desc", user="USER_SENTINEL")
 
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_self_link_contains_new_project_id(self, mock_uc):
-        mock_uc.create_project = AsyncMock(
-            return_value=Success(_Model("NEW-P-ID", "Fresh"))
-        )
+        mock_uc.create_project = AsyncMock(return_value=Success(_Model("NEW-P-ID", "Fresh")))
         body, status = await HTTPController.post_project("Fresh")
         assert status == 201
         assert body["links"]["self"] == "/api/projects/NEW-P-ID"
@@ -114,9 +104,7 @@ class TestPostProjectForwarding:
 class TestPatchProjectForwarding:
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_forwards_kwargs_as_update_body(self, mock_uc):
-        mock_uc.update_project = AsyncMock(
-            return_value=Success(_Model("p1", "Updated"))
-        )
+        mock_uc.update_project = AsyncMock(return_value=Success(_Model("p1", "Updated")))
         await HTTPController.patch_project(
             "p1",
             user="U",
@@ -146,9 +134,7 @@ class TestDeleteProjectBodyAndForwarding:
         assert body == {"meta": {"deleted": True}}
 
     @patch("app.controllers.http_controller.project_use_cases")
-    async def test_body_is_meta_deleted_false_when_use_case_returns_false(
-        self, mock_uc
-    ):
+    async def test_body_is_meta_deleted_false_when_use_case_returns_false(self, mock_uc):
         """The controller does NOT interpret truthiness — it pipes through
         whatever the use case returned. Characterize this verbatim."""
         mock_uc.delete_project = AsyncMock(return_value=Success(False))
@@ -159,17 +145,11 @@ class TestDeleteProjectBodyAndForwarding:
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_forwards_user_and_project(self, mock_uc):
         mock_uc.delete_project = AsyncMock(return_value=Success(True))
-        await HTTPController.delete_project(
-            "p1", user="USER_SENTINEL", project={"id": "p1"}
-        )
-        mock_uc.delete_project.assert_awaited_once_with(
-            "p1", user="USER_SENTINEL", project={"id": "p1"}
-        )
+        await HTTPController.delete_project("p1", user="USER_SENTINEL", project={"id": "p1"})
+        mock_uc.delete_project.assert_awaited_once_with("p1", user="USER_SENTINEL", project={"id": "p1"})
 
     @patch("app.controllers.http_controller.project_use_cases")
     async def test_not_found_returns_404(self, mock_uc):
-        mock_uc.delete_project = AsyncMock(
-            return_value=Failure(ProjectNotFound("p1"))
-        )
+        mock_uc.delete_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
         _, status = await HTTPController.delete_project("p1")
         assert status == 404

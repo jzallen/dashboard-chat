@@ -20,9 +20,7 @@ async def ensure_engine_reachable(engine_node, provisioner) -> None:
         raise QueryEngineUnreachable(engine_node.id)
 
 
-async def resolve_engine_node_for_org(
-    org_id: str, repos: "RepositoryContainer"
-) -> "QueryEngineNodeView":
+async def resolve_engine_node_for_org(org_id: str, repos: "RepositoryContainer") -> "QueryEngineNodeView":
     """Return the org's default query engine node, or raise if none exists.
 
     Looks up the first (default) engine node assigned to the given org via
@@ -34,3 +32,22 @@ async def resolve_engine_node_for_org(
     if not node:
         raise RuntimeError(f"No query engine node found for org '{org_id}'")
     return node
+
+
+async def resolve_engine_node_by_id(
+    engine_node_id: str,
+    repos: "RepositoryContainer",
+    *,
+    fallback_to_settings: bool = False,
+) -> "QueryEngineNodeView | None":
+    """Return the engine node with the given id.
+
+    When ``fallback_to_settings`` is False (default), raises RuntimeError
+    if no node exists for the id - matches regenerate_sql_credentials
+    policy. When True, returns None and lets the caller fall back to
+    settings-derived defaults - matches get_sql_access policy.
+    """
+    engine_node = await repos.query_engine_node.get_by_id(engine_node_id)
+    if engine_node is None and not fallback_to_settings:
+        raise RuntimeError(f"Engine node '{engine_node_id}' not found")
+    return engine_node

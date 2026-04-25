@@ -15,7 +15,6 @@ from app.controllers.http_controller import HTTPController
 from app.use_cases.project.exceptions import ProjectNotFound
 from app.use_cases.session.exceptions import SessionAccessDenied, SessionNotFound
 
-
 # ---------------------------------------------------------------------------
 # get_project_memory (L262-268) — JSON:API single, type='memories'
 # ---------------------------------------------------------------------------
@@ -24,12 +23,8 @@ from app.use_cases.session.exceptions import SessionAccessDenied, SessionNotFoun
 class TestGetProjectMemoryCharacterization:
     @patch("app.controllers.http_controller.get_project_memory_uc")
     async def test_success_returns_200_with_memory_envelope(self, mock_uc):
-        mock_uc.get_project_memory = AsyncMock(
-            return_value=Success({"id": "mem-1", "content": "hello"})
-        )
-        body, status = await HTTPController.get_project_memory(
-            "p1", user="USER_SENTINEL"
-        )
+        mock_uc.get_project_memory = AsyncMock(return_value=Success({"id": "mem-1", "content": "hello"}))
+        body, status = await HTTPController.get_project_memory("p1", user="USER_SENTINEL")
         assert status == 200
         assert body["data"]["type"] == "memories"
         assert body["data"]["id"] == "mem-1"
@@ -38,19 +33,13 @@ class TestGetProjectMemoryCharacterization:
 
     @patch("app.controllers.http_controller.get_project_memory_uc")
     async def test_forwards_user(self, mock_uc):
-        mock_uc.get_project_memory = AsyncMock(
-            return_value=Success({"id": "mem-1"})
-        )
+        mock_uc.get_project_memory = AsyncMock(return_value=Success({"id": "mem-1"}))
         await HTTPController.get_project_memory("p1", user="USER_SENTINEL")
-        mock_uc.get_project_memory.assert_awaited_once_with(
-            "p1", user="USER_SENTINEL"
-        )
+        mock_uc.get_project_memory.assert_awaited_once_with("p1", user="USER_SENTINEL")
 
     @patch("app.controllers.http_controller.get_project_memory_uc")
     async def test_project_not_found_returns_404(self, mock_uc):
-        mock_uc.get_project_memory = AsyncMock(
-            return_value=Failure(ProjectNotFound("p1"))
-        )
+        mock_uc.get_project_memory = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
         _, status = await HTTPController.get_project_memory("p1", user="U")
         assert status == 404
 
@@ -63,9 +52,7 @@ class TestGetProjectMemoryCharacterization:
 class TestPostSessionCharacterization:
     @patch("app.controllers.http_controller.create_session_uc")
     async def test_success_returns_201_with_nested_self_link(self, mock_uc):
-        mock_uc.create_session = AsyncMock(
-            return_value=Success({"id": "s-42", "title": "Chat"})
-        )
+        mock_uc.create_session = AsyncMock(return_value=Success({"id": "s-42", "title": "Chat"}))
         body, status = await HTTPController.post_session("p1", user="USER_SENTINEL")
         assert status == 201
         assert body["data"]["type"] == "sessions"
@@ -80,9 +67,7 @@ class TestPostSessionCharacterization:
 
     @patch("app.controllers.http_controller.create_session_uc")
     async def test_project_not_found_returns_404(self, mock_uc):
-        mock_uc.create_session = AsyncMock(
-            return_value=Failure(ProjectNotFound("p1"))
-        )
+        mock_uc.create_session = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
         _, status = await HTTPController.post_session("p1", user="U")
         assert status == 404
 
@@ -125,12 +110,8 @@ class TestListSessionsCharacterization:
                 }
             )
         )
-        await HTTPController.list_sessions(
-            "p1", user="USER_SENTINEL", cursor="IN", page_size=10
-        )
-        mock_uc.list_sessions.assert_awaited_once_with(
-            "p1", user="USER_SENTINEL", cursor="IN", page_size=10
-        )
+        await HTTPController.list_sessions("p1", user="USER_SENTINEL", cursor="IN", page_size=10)
+        mock_uc.list_sessions.assert_awaited_once_with("p1", user="USER_SENTINEL", cursor="IN", page_size=10)
 
     @patch("app.controllers.http_controller.list_sessions_uc")
     async def test_default_page_size_is_30(self, mock_uc):
@@ -158,12 +139,8 @@ class TestListSessionsCharacterization:
 class TestPatchSessionCharacterization:
     @patch("app.controllers.http_controller.update_session_uc")
     async def test_success_returns_200_with_envelope(self, mock_uc):
-        mock_uc.update_session = AsyncMock(
-            return_value=Success({"id": "s1", "title": "Updated"})
-        )
-        body, status = await HTTPController.patch_session(
-            "p1", "s1", user="U", title="Updated"
-        )
+        mock_uc.update_session = AsyncMock(return_value=Success({"id": "s1", "title": "Updated"}))
+        body, status = await HTTPController.patch_session("p1", "s1", user="U", title="Updated")
         assert status == 200
         assert body["data"]["type"] == "sessions"
         assert body["data"]["id"] == "s1"
@@ -172,29 +149,19 @@ class TestPatchSessionCharacterization:
     @patch("app.controllers.http_controller.update_session_uc")
     async def test_forwards_kwargs_as_update_data(self, mock_uc):
         mock_uc.update_session = AsyncMock(return_value=Success({"id": "s1"}))
-        await HTTPController.patch_session(
-            "p1", "s1", user="USER_SENTINEL", title="New", pinned=True
-        )
+        await HTTPController.patch_session("p1", "s1", user="USER_SENTINEL", title="New", pinned=True)
         mock_uc.update_session.assert_awaited_once_with(
             "s1", update_data={"title": "New", "pinned": True}, user="USER_SENTINEL"
         )
 
     @patch("app.controllers.http_controller.update_session_uc")
     async def test_session_not_found_returns_404(self, mock_uc):
-        mock_uc.update_session = AsyncMock(
-            return_value=Failure(SessionNotFound("s1"))
-        )
-        _, status = await HTTPController.patch_session(
-            "p1", "s1", user="U", title="X"
-        )
+        mock_uc.update_session = AsyncMock(return_value=Failure(SessionNotFound("s1")))
+        _, status = await HTTPController.patch_session("p1", "s1", user="U", title="X")
         assert status == 404
 
     @patch("app.controllers.http_controller.update_session_uc")
     async def test_session_access_denied_returns_403(self, mock_uc):
-        mock_uc.update_session = AsyncMock(
-            return_value=Failure(SessionAccessDenied("s1"))
-        )
-        _, status = await HTTPController.patch_session(
-            "p1", "s1", user="U", title="X"
-        )
+        mock_uc.update_session = AsyncMock(return_value=Failure(SessionAccessDenied("s1")))
+        _, status = await HTTPController.patch_session("p1", "s1", user="U", title="X")
         assert status == 403

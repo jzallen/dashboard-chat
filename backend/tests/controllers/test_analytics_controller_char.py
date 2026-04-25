@@ -49,9 +49,7 @@ class TestListViewsCharacterization:
 
     @patch("app.controllers.http_controller.view_use_cases")
     async def test_success_returns_non_paginated_list(self, mock_uc):
-        mock_uc.list_views = AsyncMock(
-            return_value=Success([_Model("v1", "A"), _Model("v2", "B")])
-        )
+        mock_uc.list_views = AsyncMock(return_value=Success([_Model("v1", "A"), _Model("v2", "B")]))
         body, status = await HTTPController.list_views("p1")
         assert status == 200
         assert len(body["data"]) == 2
@@ -78,12 +76,8 @@ class TestListViewsCharacterization:
 class TestPostViewCharacterization:
     @patch("app.controllers.http_controller.view_use_cases")
     async def test_success_returns_201_with_nested_self_link(self, mock_uc):
-        mock_uc.create_view = AsyncMock(
-            return_value=Success(_Model("V-NEW", "New View"))
-        )
-        body, status = await HTTPController.post_view(
-            "p1", name="New View", definition={"sources": []}
-        )
+        mock_uc.create_view = AsyncMock(return_value=Success(_Model("V-NEW", "New View")))
+        body, status = await HTTPController.post_view("p1", name="New View", definition={"sources": []})
         assert status == 201
         assert body["data"]["type"] == "views"
         assert body["data"]["id"] == "V-NEW"
@@ -93,26 +87,18 @@ class TestPostViewCharacterization:
     async def test_forwards_kwargs(self, mock_uc):
         mock_uc.create_view = AsyncMock(return_value=Success(_Model("v1")))
         proj = {"id": "p1"}
-        await HTTPController.post_view(
-            "p1", project=proj, name="N", definition={"x": 1}
-        )
-        mock_uc.create_view.assert_awaited_once_with(
-            project_id="p1", project=proj, name="N", definition={"x": 1}
-        )
+        await HTTPController.post_view("p1", project=proj, name="N", definition={"x": 1})
+        mock_uc.create_view.assert_awaited_once_with(project_id="p1", project=proj, name="N", definition={"x": 1})
 
     @patch("app.controllers.http_controller.view_use_cases")
     async def test_invalid_source_reference_returns_400(self, mock_uc):
-        mock_uc.create_view = AsyncMock(
-            return_value=Failure(InvalidSourceReference(["missing-id"]))
-        )
+        mock_uc.create_view = AsyncMock(return_value=Failure(InvalidSourceReference(["missing-id"])))
         _, status = await HTTPController.post_view("p1", name="X")
         assert status == 400
 
     @patch("app.controllers.http_controller.view_use_cases")
     async def test_circular_dependency_returns_400(self, mock_uc):
-        mock_uc.create_view = AsyncMock(
-            return_value=Failure(CircularDependency("v1"))
-        )
+        mock_uc.create_view = AsyncMock(return_value=Failure(CircularDependency("v1")))
         _, status = await HTTPController.post_view("p1", name="X")
         assert status == 400
 
@@ -122,9 +108,7 @@ class TestGetViewCharacterization:
 
     @patch("app.controllers.http_controller.view_use_cases")
     @patch("app.use_cases.view.sql_generator.ViewSQLGenerator")
-    async def test_success_attaches_display_sql_from_generator(
-        self, mock_generator_cls, mock_uc
-    ):
+    async def test_success_attaches_display_sql_from_generator(self, mock_generator_cls, mock_uc):
         """L378 inlines `ViewSQLGenerator().generate_display(data)` on the
         serialized payload. Pin this verbatim.
         KNOWN LEAK: seams.md Risks #3 — view-rendering logic in the controller,
@@ -172,12 +156,8 @@ class TestPatchViewCharacterization:
     async def test_forwards_kwargs_as_update_dict(self, mock_uc):
         mock_uc.update_view = AsyncMock(return_value=Success(_Model("v1")))
         proj = {"id": "p1"}
-        await HTTPController.patch_view(
-            "v1", project=proj, name="N", definition={"x": 1}
-        )
-        mock_uc.update_view.assert_awaited_once_with(
-            "v1", {"name": "N", "definition": {"x": 1}}, project=proj
-        )
+        await HTTPController.patch_view("v1", project=proj, name="N", definition={"x": 1})
+        mock_uc.update_view.assert_awaited_once_with("v1", {"name": "N", "definition": {"x": 1}}, project=proj)
 
 
 class TestDeleteViewCharacterization:
@@ -203,9 +183,7 @@ class TestDeleteViewCharacterization:
 class TestListReportsCharacterization:
     @patch("app.controllers.http_controller.report_use_cases")
     async def test_success_returns_non_paginated_list(self, mock_uc):
-        mock_uc.list_reports = AsyncMock(
-            return_value=Success([_Model("r1", "A"), _Model("r2", "B")])
-        )
+        mock_uc.list_reports = AsyncMock(return_value=Success([_Model("r1", "A"), _Model("r2", "B")]))
         body, status = await HTTPController.list_reports("p1")
         assert status == 200
         assert len(body["data"]) == 2
@@ -224,12 +202,8 @@ class TestListReportsCharacterization:
 class TestPostReportCharacterization:
     @patch("app.controllers.http_controller.report_use_cases")
     async def test_success_returns_201_with_nested_self_link(self, mock_uc):
-        mock_uc.create_report = AsyncMock(
-            return_value=Success(_Model("R-NEW", "New Report"))
-        )
-        body, status = await HTTPController.post_report(
-            "p1", name="New Report", definition={}
-        )
+        mock_uc.create_report = AsyncMock(return_value=Success(_Model("R-NEW", "New Report")))
+        body, status = await HTTPController.post_report("p1", name="New Report", definition={})
         assert status == 201
         assert body["data"]["type"] == "reports"
         assert body["data"]["id"] == "R-NEW"
@@ -239,18 +213,12 @@ class TestPostReportCharacterization:
     async def test_forwards_kwargs(self, mock_uc):
         mock_uc.create_report = AsyncMock(return_value=Success(_Model("r1")))
         proj = {"id": "p1"}
-        await HTTPController.post_report(
-            "p1", project=proj, name="N", definition={"x": 1}
-        )
-        mock_uc.create_report.assert_awaited_once_with(
-            project_id="p1", project=proj, name="N", definition={"x": 1}
-        )
+        await HTTPController.post_report("p1", project=proj, name="N", definition={"x": 1})
+        mock_uc.create_report.assert_awaited_once_with(project_id="p1", project=proj, name="N", definition={"x": 1})
 
     @patch("app.controllers.http_controller.report_use_cases")
     async def test_invalid_report_reference_returns_400(self, mock_uc):
-        mock_uc.create_report = AsyncMock(
-            return_value=Failure(InvalidReportReference())
-        )
+        mock_uc.create_report = AsyncMock(return_value=Failure(InvalidReportReference()))
         _, status = await HTTPController.post_report("p1", name="X")
         assert status == 400
 
@@ -275,9 +243,7 @@ class TestGetReportCharacterization:
 class TestPatchReportCharacterization:
     @patch("app.controllers.http_controller.report_use_cases")
     async def test_success_returns_200(self, mock_uc):
-        mock_uc.update_report = AsyncMock(
-            return_value=Success(_Model("r1", "Updated"))
-        )
+        mock_uc.update_report = AsyncMock(return_value=Success(_Model("r1", "Updated")))
         body, status = await HTTPController.patch_report("r1", name="Updated")
         assert status == 200
         assert body["data"]["attributes"]["name"] == "Updated"
@@ -286,12 +252,8 @@ class TestPatchReportCharacterization:
     async def test_forwards_kwargs_as_update_dict(self, mock_uc):
         mock_uc.update_report = AsyncMock(return_value=Success(_Model("r1")))
         proj = {"id": "p1"}
-        await HTTPController.patch_report(
-            "r1", project=proj, name="N", definition={"x": 1}
-        )
-        mock_uc.update_report.assert_awaited_once_with(
-            "r1", {"name": "N", "definition": {"x": 1}}, project=proj
-        )
+        await HTTPController.patch_report("r1", project=proj, name="N", definition={"x": 1})
+        mock_uc.update_report.assert_awaited_once_with("r1", {"name": "N", "definition": {"x": 1}}, project=proj)
 
 
 class TestDeleteReportCharacterization:

@@ -13,6 +13,8 @@ from tests.uuidv7_fixtures import (
     ORG_OTHER,
     PROJECT_1,
     PROJECT_2,
+)
+from tests.uuidv7_fixtures import (
     PROJECT_EMPTY as PROJECT_3,  # Third project slot for pagination
 )
 
@@ -165,9 +167,7 @@ class TestListProjects:
         assert cursor_p1 is not None
 
         # Page 2: use cursor, expect remaining 1 item, has_more=False
-        items_p2, cursor_p2, has_more_p2 = await repo.list_projects(
-            org_id=ORG_1, cursor=cursor_p1, limit=2
-        )
+        items_p2, cursor_p2, has_more_p2 = await repo.list_projects(org_id=ORG_1, cursor=cursor_p1, limit=2)
         assert [i["id"] for i in items_p2] == [PROJECT_1]
         assert has_more_p2 is False
         assert cursor_p2 is None

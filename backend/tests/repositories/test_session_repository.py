@@ -85,9 +85,7 @@ class TestUpdateSession:
 
 class TestListSessions:
     async def test_returns_empty_when_no_sessions(self, repo_with_memory):
-        items, cursor, has_more = await repo_with_memory.list_sessions(
-            memory_id=MEMORY_1, org_id=ORG_1
-        )
+        items, cursor, has_more = await repo_with_memory.list_sessions(memory_id=MEMORY_1, org_id=ORG_1)
         assert items == []
         assert cursor is None
         assert has_more is False
@@ -113,9 +111,7 @@ class TestListSessions:
         db_session.add(other_org)
         await db_session.commit()
 
-        items, _, _ = await repo_with_memory.list_sessions(
-            memory_id=MEMORY_1, org_id=ORG_1
-        )
+        items, _, _ = await repo_with_memory.list_sessions(memory_id=MEMORY_1, org_id=ORG_1)
         ids = {item["id"] for item in items}
         assert ids == {SESSION_1}
 
@@ -150,14 +146,10 @@ class TestListSessions:
         db_session.add(s_middle)
         await db_session.commit()
 
-        items, _, _ = await repo_with_memory.list_sessions(
-            memory_id=MEMORY_1, org_id=ORG_1
-        )
+        items, _, _ = await repo_with_memory.list_sessions(memory_id=MEMORY_1, org_id=ORG_1)
         assert [s["id"] for s in items] == [SESSION_2, SESSION_3, SESSION_1]
 
-    async def test_composite_cursor_pagination_with_same_last_active_at(
-        self, repo_with_memory, db_session
-    ):
+    async def test_composite_cursor_pagination_with_same_last_active_at(self, repo_with_memory, db_session):
         # Three sessions with IDENTICAL last_active_at — exercises the
         # composite (last_active_at, id) keyset tie-breaker. Order becomes
         # id-desc within equal timestamps.
