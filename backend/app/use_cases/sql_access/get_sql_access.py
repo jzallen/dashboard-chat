@@ -1,5 +1,6 @@
 """Get SQL access details for a project."""
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from returns.result import Result
@@ -9,10 +10,64 @@ from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project._dbt.naming import to_snake_case
-from app.use_cases.project.project_service import ProjectService
+from app.use_cases.sql_access._context import load_context
+from app.use_cases.sql_access._engine import resolve_engine_node_by_id
+from app.use_cases.sql_access._response import build_connection_response
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
+
+
+def _settings_engine_node_stub() -> SimpleNamespace:
+    """Build an engine-node-shaped object from settings for the silent fallback."""
+    settings = get_settings()
+    return SimpleNamespace(
+        host=settings.query_engine_host,
+        port=settings.query_engine_port,
+        database=settings.query_engine_database,
+    )
+
+
+async def _resolve_engine_node_or_fallback(
+    engine_node_id: str | None,
+    repositories: "RepositoryContainer",
+):
+    """Resolve the engine node, silently falling back to settings.
+
+    Falls back when ``engine_node_id`` is unset OR when the lookup returns
+    None. Returns an object exposing ``.host``, ``.port``, and ``.database``
+    so the caller can pass it uniformly to ``build_connection_response``.
+    """
+    if engine_node_id:
+        engine_node = await resolve_engine_node_by_id(
+            engine_node_id, repositories, fallback_to_settings=True
+        )
+        if engine_node is not None:
+            return engine_node
+    return _settings_engine_node_stub()
+
+
+async def _load_dataset_sync_entries(
+    project_id: str, repositories: "RepositoryContainer"
+) -> list[dict]:
+    """Build the per-dataset sync-status entries for the response."""
+    metadata_repo = repositories.metadata
+    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
+    dataset_ids = [r.id if hasattr(r, "id") else r["id"] for r in records]
+    sync_statuses = await repositories.outbox.get_sync_status_by_dataset(dataset_ids)
+
+    entries: list[dict] = []
+    for record in records:
+        dataset = Dataset.from_record(record, include_transforms=False)
+        entries.append(
+            {
+                "dataset_id": dataset.id,
+                "name": dataset.name,
+                "view_name": to_snake_case(dataset.name),
+                "sync_status": sync_statuses.get(dataset.id, "synced"),
+            }
+        )
+    return entries
 
 
 @handle_returns
@@ -32,56 +87,30 @@ async def get_sql_access(
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    external_access_repo = repositories.external_access
-    metadata_repo = repositories.metadata
-
-    if project is None:
-        project_service = ProjectService(repositories)
-        project = await project_service.fetch_project(project_id)
-
-    access_record = await external_access_repo.get_by_project_id(project_id)
+    ctx = await load_context(project_id, project, repositories)
+    access_record = ctx.access_record
     if not access_record or not access_record.enabled:
         return {"project_id": project_id, "enabled": False}
 
-    settings = get_settings()
+    engine_node = await _resolve_engine_node_or_fallback(
+        access_record.engine_node_id, repositories
+    )
+    datasets_sync = await _load_dataset_sync_entries(project_id, repositories)
 
-    # Derive connection details from engine node
-    engine_node = None
-    if access_record.engine_node_id:
-        engine_node = await repositories.query_engine_node.get_by_id(access_record.engine_node_id)
-
-    host = engine_node.host if engine_node else settings.query_engine_host
-    port = engine_node.port if engine_node else settings.query_engine_port
-    database = engine_node.database if engine_node else settings.query_engine_database
-
-    # Get per-dataset sync status
-    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
-    dataset_ids = [r.id if hasattr(r, "id") else r["id"] for r in records]
-    sync_statuses = await repositories.outbox.get_sync_status_by_dataset(dataset_ids)
-
-    datasets_sync = []
-    for r in records:
-        ds = Dataset.from_record(r, include_transforms=False)
-        ds_id = ds.id
-        datasets_sync.append(
-            {
-                "dataset_id": ds_id,
-                "name": ds.name,
-                "view_name": to_snake_case(ds.name),
-                "sync_status": sync_statuses.get(ds_id, "synced"),
-            }
-        )
-
-    return {
-        "project_id": project_id,
-        "enabled": True,
-        "host": host,
-        "port": port,
-        "database": database,
-        "username": access_record.pg_proxy_role or access_record.pg_role,
-        "schema": access_record.pg_schema,
-        "engine_node_id": access_record.engine_node_id,
-        "last_synced_at": access_record.last_synced_at,
-        "created_at": access_record.created_at,
-        "datasets": datasets_sync,
-    }
+    return build_connection_response(
+        engine_node,
+        schema=access_record.pg_schema,
+        username=access_record.pg_proxy_role or access_record.pg_role,
+        password=None,
+        extras={
+            "project_id": project_id,
+            "enabled": True,
+            # engine_node_id reflects the access record's stored id, NOT the
+            # resolved node's id — preserves the silent-fallback semantics where
+            # the response still reports the original (possibly-stale) reference.
+            "engine_node_id": access_record.engine_node_id,
+            "last_synced_at": access_record.last_synced_at,
+            "created_at": access_record.created_at,
+            "datasets": datasets_sync,
+        },
+    )

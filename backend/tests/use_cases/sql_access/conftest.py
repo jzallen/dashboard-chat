@@ -175,3 +175,71 @@ async def seeded_db_other_org(db_session: AsyncSession):
     db_session.add(dataset)
     await db_session.commit()
     return db_session
+
+
+@pytest.fixture
+async def seeded_db_with_access_no_engine_node(seeded_db: AsyncSession):
+    """Enabled access record with engine_node_id=None (fallback path).
+
+    Pinned timestamps allow exact assertion of last_synced_at and created_at.
+    """
+    from datetime import UTC, datetime
+
+    record = ExternalAccessRecord(
+        id=EA_1,
+        project_id=PROJECT_1,
+        org_id=ORG_1,
+        engine_node_id=None,
+        pg_schema="project_project_",
+        pg_role="reader_project_",
+        pg_proxy_role="proxy_project_",
+        pg_password_hash="md5abcdef1234567890abcdef12345678",
+        enabled=True,
+        last_synced_at=datetime(2026, 1, 15, 12, 30, 0, tzinfo=UTC),
+        created_at=datetime(2026, 1, 1, 9, 0, 0, tzinfo=UTC),
+    )
+    seeded_db.add(record)
+    await seeded_db.commit()
+    return seeded_db
+
+
+@pytest.fixture
+async def seeded_db_with_access_no_proxy_role(seeded_db: AsyncSession):
+    """Enabled access record where pg_proxy_role is None (username falls back to pg_role)."""
+    record = ExternalAccessRecord(
+        id=EA_1,
+        project_id=PROJECT_1,
+        org_id=ORG_1,
+        engine_node_id=ENGINE_NODE_1,
+        pg_schema="project_project_",
+        pg_role="reader_project_",
+        pg_proxy_role=None,
+        pg_password_hash="md5abcdef1234567890abcdef12345678",
+        enabled=True,
+    )
+    seeded_db.add(record)
+    await seeded_db.commit()
+    return seeded_db
+
+
+@pytest.fixture
+async def seeded_db_with_access_pinned_timestamps(seeded_db: AsyncSession):
+    """Enabled access record (with engine_node) and explicit timestamps for assertion."""
+    from datetime import UTC, datetime
+
+    record = ExternalAccessRecord(
+        id=EA_1,
+        project_id=PROJECT_1,
+        org_id=ORG_1,
+        engine_node_id=ENGINE_NODE_1,
+        pg_schema="project_project_",
+        pg_role="reader_project_",
+        pg_proxy_role="proxy_project_",
+        pg_password_hash="md5abcdef1234567890abcdef12345678",
+        enabled=True,
+        last_synced_at=datetime(2026, 2, 20, 14, 0, 0, tzinfo=UTC),
+        created_at=datetime(2026, 2, 1, 10, 0, 0, tzinfo=UTC),
+    )
+    seeded_db.add(record)
+    await seeded_db.commit()
+    return seeded_db
