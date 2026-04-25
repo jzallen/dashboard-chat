@@ -18,6 +18,58 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
+def _settings_engine_node_stub() -> SimpleNamespace:
+    """Build an engine-node-shaped object from settings for the silent fallback."""
+    settings = get_settings()
+    return SimpleNamespace(
+        host=settings.query_engine_host,
+        port=settings.query_engine_port,
+        database=settings.query_engine_database,
+    )
+
+
+async def _resolve_engine_node_or_fallback(
+    engine_node_id: str | None,
+    repositories: "RepositoryContainer",
+):
+    """Resolve the engine node, silently falling back to settings.
+
+    Falls back when ``engine_node_id`` is unset OR when the lookup returns
+    None. Returns an object exposing ``.host``, ``.port``, and ``.database``
+    so the caller can pass it uniformly to ``build_connection_response``.
+    """
+    if engine_node_id:
+        engine_node = await resolve_engine_node_by_id(
+            engine_node_id, repositories, fallback_to_settings=True
+        )
+        if engine_node is not None:
+            return engine_node
+    return _settings_engine_node_stub()
+
+
+async def _load_dataset_sync_entries(
+    project_id: str, repositories: "RepositoryContainer"
+) -> list[dict]:
+    """Build the per-dataset sync-status entries for the response."""
+    metadata_repo = repositories.metadata
+    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
+    dataset_ids = [r.id if hasattr(r, "id") else r["id"] for r in records]
+    sync_statuses = await repositories.outbox.get_sync_status_by_dataset(dataset_ids)
+
+    entries: list[dict] = []
+    for record in records:
+        dataset = Dataset.from_record(record, include_transforms=False)
+        entries.append(
+            {
+                "dataset_id": dataset.id,
+                "name": dataset.name,
+                "view_name": to_snake_case(dataset.name),
+                "sync_status": sync_statuses.get(dataset.id, "synced"),
+            }
+        )
+    return entries
+
+
 @handle_returns
 @with_repositories
 async def get_sql_access(
@@ -35,45 +87,15 @@ async def get_sql_access(
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
     """
-    metadata_repo = repositories.metadata
-
     ctx = await load_context(project_id, project, repositories)
     access_record = ctx.access_record
     if not access_record or not access_record.enabled:
         return {"project_id": project_id, "enabled": False}
 
-    # Resolve engine node; silently fall back to settings-derived defaults when
-    # access_record.engine_node_id is unset OR the lookup returns None.
-    engine_node = None
-    if access_record.engine_node_id:
-        engine_node = await resolve_engine_node_by_id(
-            access_record.engine_node_id, repositories, fallback_to_settings=True
-        )
-    if engine_node is None:
-        settings = get_settings()
-        engine_node = SimpleNamespace(
-            host=settings.query_engine_host,
-            port=settings.query_engine_port,
-            database=settings.query_engine_database,
-        )
-
-    # Get per-dataset sync status
-    records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
-    dataset_ids = [r.id if hasattr(r, "id") else r["id"] for r in records]
-    sync_statuses = await repositories.outbox.get_sync_status_by_dataset(dataset_ids)
-
-    datasets_sync = []
-    for r in records:
-        ds = Dataset.from_record(r, include_transforms=False)
-        ds_id = ds.id
-        datasets_sync.append(
-            {
-                "dataset_id": ds_id,
-                "name": ds.name,
-                "view_name": to_snake_case(ds.name),
-                "sync_status": sync_statuses.get(ds_id, "synced"),
-            }
-        )
+    engine_node = await _resolve_engine_node_or_fallback(
+        access_record.engine_node_id, repositories
+    )
+    datasets_sync = await _load_dataset_sync_entries(project_id, repositories)
 
     return build_connection_response(
         engine_node,
