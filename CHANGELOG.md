@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/jzallen/dashboard-chat/compare/v1.7.0...v1.7.1) (2026-04-25)
+
+
+### Bug Fixes
+
+* **backend:** clean up ruff violations blocking pre-commit ([41de3ca](https://github.com/jzallen/dashboard-chat/commit/41de3cac4d5429122f70c983fc9909b192705c20))
+
 # [1.7.0](https://github.com/jzallen/dashboard-chat/compare/v1.6.1...v1.7.0) (2026-04-22)
 
 
