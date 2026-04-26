@@ -3,6 +3,7 @@ load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tools:version_layer.bzl", "version_layer")
 
 npm_link_all_packages()
 
@@ -64,10 +65,18 @@ genrule(
     tags = ["no-sandbox", "manual"],
 )
 
+version_layer(
+    name = "version_layer",
+    image_tag = "dashboard-chat/agent:bazel",
+)
+
 oci_image(
     name = "image",
     base = "@node_20_slim",
-    tars = [":dist"],
+    tars = [
+        ":dist",
+        ":version_layer",
+    ],
     workdir = "/app",
     entrypoint = ["node", "agent/index.mjs"],
     exposed_ports = ["8787"],

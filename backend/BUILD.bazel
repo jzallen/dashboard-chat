@@ -3,6 +3,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tools:version_layer.bzl", "version_layer")
 load(":pytest_tests.bzl", "pytest_tests")
 
 # ─── Layered py_library Targets ──────────────────────────────────────────────
@@ -32,12 +33,10 @@ py_library(
 
 py_library(
     name = "core",
-    srcs = [
-        "app/__init__.py",
-        "app/config.py",
-        "app/database.py",
-        "app/types.py",
-    ] + glob(["app/infra/**/*.py"]),
+    srcs = glob(
+        ["app/*.py"],
+        exclude = ["app/main.py"],  # main.py is owned by the :app py_library
+    ) + glob(["app/infra/**/*.py"]),
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
@@ -382,13 +381,18 @@ py_binary(
 
 # ─── OCI Image ───────────────────────────────────────────────────────────────
 
+version_layer(
+    name = "version_layer",
+    image_tag = "dashboard-chat/api:bazel",
+)
+
 oci_image(
     name = "image",
     base = "@python_3_11_slim",
     tars = py_image_layer(
         name = "py_layer",
         binary = ":server",
-    ),
+    ) + [":version_layer"],
     entrypoint = ["/backend/server"],
     exposed_ports = ["8000"],
     tags = ["manual"],

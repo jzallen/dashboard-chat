@@ -7,6 +7,9 @@ import { cors } from "hono/cors";
 
 import { authMiddleware } from "./lib/auth";
 import { createChatHandler } from "./lib/chat";
+import { logImageIdentity } from "./version";
+
+logImageIdentity("dashboard-agent");
 
 const app = new Hono();
 
@@ -35,7 +38,7 @@ app.use(
     origin: CORS_ORIGIN,
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
 app.use("*", authMiddleware);

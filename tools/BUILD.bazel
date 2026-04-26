@@ -1,0 +1,4 @@
+exports_files([
+    "version.json.tmpl",
+    "workspace_status.sh",
+])
