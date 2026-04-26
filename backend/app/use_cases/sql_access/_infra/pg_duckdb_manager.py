@@ -17,7 +17,7 @@ from app.utils.sql_safety import quote_ident as _quote_ident
 from app.utils.sql_safety import quote_literal as _quote_literal
 from app.utils.sql_safety import validate_identifier as _validate_ident
 
-from .provisioner import ProjectEnvironment, StorageConfig
+from .provisioner import ProjectEnvironment
 
 logger = logging.getLogger(__name__)
 
@@ -103,24 +103,6 @@ async def _get_connection(env: ProjectEnvironment) -> asyncpg.Connection:
         password=env.admin_password,
         database=env.database,
     )
-
-
-async def configure_s3_secrets(env: ProjectEnvironment, storage_config: StorageConfig) -> None:
-    """Configure S3/MinIO access secrets in a pg_duckdb environment.
-
-    Thin wrapper over ``app.infra.query_engine_secrets.ensure_minio_secret``
-    that opens its own admin connection to ``env``. The shared SQL builder
-    lives in ``app.infra`` because PERSISTENT SECRETs are server-wide,
-    not sql_access-specific.
-    """
-    from app.infra.query_engine_secrets import ensure_minio_secret
-
-    conn = await _get_connection(env)
-    try:
-        await ensure_minio_secret(conn, storage_config)
-        logger.info("Configured S3 secrets for environment %s", env.environment_id)
-    finally:
-        await conn.close()
 
 
 async def ensure_duckdb_role_configured(env: ProjectEnvironment) -> None:

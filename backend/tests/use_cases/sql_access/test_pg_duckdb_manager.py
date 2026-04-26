@@ -196,32 +196,6 @@ class TestEnsureDuckdbRoleConfigured:
         conn.close.assert_awaited_once()
 
 
-class TestConfigureS3SecretsPersistent:
-    """Test that configure_s3_secrets uses PERSISTENT keyword."""
-
-    @patch("app.use_cases.sql_access._infra.pg_duckdb_manager._get_connection")
-    async def test_secret_sql_contains_persistent(self, mock_get_conn):
-        from app.use_cases.sql_access._infra import StorageConfig, configure_s3_secrets
-
-        conn = AsyncMock()
-        mock_get_conn.return_value = conn
-
-        storage_config = StorageConfig(
-            endpoint="minio:9000",
-            access_key="minioadmin",
-            secret_key="minioadmin",
-            region="us-east-1",
-            url_style="path",
-            use_ssl=False,
-        )
-
-        await configure_s3_secrets(MOCK_ENV, storage_config)
-
-        executed_sql = conn.execute.await_args_list[0].args[0]
-        assert "CREATE OR REPLACE PERSISTENT SECRET" in executed_sql
-        conn.close.assert_awaited_once()
-
-
 class TestPgMd5Hash:
     """Tests for pg_md5_hash — PostgreSQL md5 password format."""
 

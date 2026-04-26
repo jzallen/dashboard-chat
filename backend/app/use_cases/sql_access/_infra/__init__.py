@@ -6,7 +6,6 @@ individual infrastructure modules.
 """
 
 from .pg_duckdb_manager import (
-    configure_s3_secrets,
     create_project_schema,
     create_proxy_role,
     drop_project_schema,
@@ -42,7 +41,6 @@ __all__ = [
     "ProvisioningError",
     "QueryEngineProvisioner",
     "StorageConfig",
-    "configure_s3_secrets",
     "create_project_schema",
     "create_proxy_role",
     "drop_project_schema",

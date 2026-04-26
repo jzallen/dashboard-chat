@@ -5,8 +5,8 @@ so they belong to the query-engine bootstrap rather than to any single
 use case. This module owns the SQL builder for the MinIO secret and the
 async helper that issues it on a given connection.
 
-Both the query-engine pool factory in ``app.database`` and the legacy
-``configure_s3_secrets`` re-export in ``sql_access._infra`` delegate here.
+The query-engine pool factory in ``app.database`` calls
+``ensure_minio_secret`` once at first acquire to install the secret.
 """
 
 from __future__ import annotations
@@ -46,8 +46,7 @@ async def ensure_minio_secret(conn: asyncpg.Connection, storage_config: StorageC
     """Issue the persistent MinIO secret on ``conn``.
 
     Idempotent at the SQL level (CREATE OR REPLACE), so repeated calls are
-    safe. Used both by the query-engine pool factory at first acquire and
-    by the legacy ``configure_s3_secrets`` entry point.
+    safe. Used by the query-engine pool factory at first acquire.
     """
     await conn.execute(build_minio_secret_sql(storage_config))
     logger.info("Configured MinIO persistent secret on query-engine connection")
