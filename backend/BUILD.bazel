@@ -33,13 +33,10 @@ py_library(
 
 py_library(
     name = "core",
-    srcs = [
-        "app/__init__.py",
-        "app/config.py",
-        "app/database.py",
-        "app/types.py",
-        "app/version.py",
-    ] + glob(["app/infra/**/*.py"]),
+    srcs = glob(
+        ["app/*.py"],
+        exclude = ["app/main.py"],  # main.py is owned by the :app py_library
+    ) + glob(["app/infra/**/*.py"]),
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
