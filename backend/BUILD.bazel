@@ -37,7 +37,7 @@ py_library(
         "app/config.py",
         "app/database.py",
         "app/types.py",
-    ],
+    ] + glob(["app/infra/**/*.py"]),
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [

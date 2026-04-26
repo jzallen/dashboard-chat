@@ -3,8 +3,8 @@
 -- Idempotent: safe to re-run on restart (uses IF NOT EXISTS / OR REPLACE)
 
 -- Install and load httpfs extension for S3/MinIO access
-INSTALL httpfs;
-LOAD httpfs;
+-- pg_duckdb exposes DuckDB extension management as Postgres functions
+SELECT duckdb.install_extension('httpfs');
 
 -- Create the shared group role for DuckDB query authorization
 -- All per-project reader roles get membership in this group
