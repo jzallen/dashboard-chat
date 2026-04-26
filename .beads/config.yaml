@@ -1,5 +1,8 @@
 issue_prefix: dc
-issue-prefix: dc
+issue-prefix: 
 dolt.auto-start: false
 gc.endpoint_origin: managed_city
 gc.endpoint_status: verified
+
+prefix: 
+dolt.idle-timeout: "0"
