@@ -36,6 +36,7 @@ from .use_cases.sql_access._infra import (
     MockQueryEngineProvisioner,
     set_app_query_engine_provisioner,
 )
+from .version import log_image_identity
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ def _create_query_engine_provisioner():
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
+    log_image_identity("dashboard-api")
     await init_db()
 
     app.state.plugin_registry = create_plugin_registry()

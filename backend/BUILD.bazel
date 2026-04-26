@@ -3,6 +3,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tools:version_layer.bzl", "version_layer")
 load(":pytest_tests.bzl", "pytest_tests")
 
 # ─── Layered py_library Targets ──────────────────────────────────────────────
@@ -382,13 +383,18 @@ py_binary(
 
 # ─── OCI Image ───────────────────────────────────────────────────────────────
 
+version_layer(
+    name = "version_layer",
+    image_tag = "dashboard-chat/api:bazel",
+)
+
 oci_image(
     name = "image",
     base = "@python_3_11_slim",
     tars = py_image_layer(
         name = "py_layer",
         binary = ":server",
-    ),
+    ) + [":version_layer"],
     entrypoint = ["/backend/server"],
     exposed_ports = ["8000"],
     tags = ["manual"],

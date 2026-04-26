@@ -3,6 +3,7 @@ load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tools:version_layer.bzl", "version_layer")
 
 npm_link_all_packages()
 
@@ -328,13 +329,36 @@ genrule(
     tags = ["no-sandbox", "manual"],
 )
 
+version_layer(
+    name = "version_layer",
+    image_tag = "dashboard-chat/frontend:bazel",
+)
+
+genrule(
+    name = "entrypoint_layer",
+    srcs = ["docker-entrypoint.sh"],
+    outs = ["entrypoint.tar"],
+    cmd = """
+        staging=$$(mktemp -d) && \
+        mkdir -p $$staging/usr/local/bin && \
+        cp $(location docker-entrypoint.sh) $$staging/usr/local/bin/dashboard-entrypoint.sh && \
+        chmod +x $$staging/usr/local/bin/dashboard-entrypoint.sh && \
+        tar -cf $(OUTS) -C $$staging usr && \
+        rm -rf $$staging
+    """,
+    tags = ["no-sandbox", "manual"],
+)
+
 oci_image(
     name = "image",
     base = "@nginx_alpine",
     tars = [
         ":nginx_conf_layer",
         ":assets_layer",
+        ":version_layer",
+        ":entrypoint_layer",
     ],
+    entrypoint = ["/usr/local/bin/dashboard-entrypoint.sh"],
     exposed_ports = ["80"],
     tags = ["manual"],
     visibility = ["//visibility:public"],

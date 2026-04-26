@@ -1,6 +1,11 @@
 # ─── Build ────────────────────────────────────────────────────────────────────
 build --disk_cache=~/.cache/bazel-disk
 build --experimental_strict_action_env
+build --workspace_status_command=tools/workspace_status.sh
+# --stamp enables expand_template.stamp_substitutions in tools/version_layer.bzl.
+# Cache hygiene: STABLE_* keys only invalidate the small version_layer tar,
+# not dependent actions, so day-to-day builds stay incremental.
+build --stamp
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 test --test_output=errors
