@@ -5,6 +5,13 @@ must have a MinIO persistent secret configured at first acquire, sourced
 from app settings. Without it, `read_parquet('s3://...')` falls through
 to AWS S3 with empty region and 404s.
 
+Regression for dc-dex: the same pool must disable asyncpg's prepared-
+statement cache (``statement_cache_size=0``). pg_duckdb's Describe-phase
+metadata for ``read_parquet`` queries reports a different column count
+than Execute returns, which trips asyncpg's strict protocol parser
+(``ProtocolError: number of columns ... different from what was described``).
+Forcing the simple-query protocol on this pool sidesteps the mismatch.
+
 The seam under test is the asyncpg port: we spy at `asyncpg.create_pool`
 and the resulting connection's `execute`. We do NOT patch internals of
 the helper module — that would be an implementation-mirroring test.
@@ -91,3 +98,30 @@ class TestQueryEnginePoolMinioSecret:
 
         sql = spy_conn.execute.await_args.args[0]
         assert "ENDPOINT 'minio:9000'" in sql
+
+
+class TestQueryEnginePoolStatementCacheDisabled:
+    """Regression for dc-dex.
+
+    pg_duckdb's prepared-statement Describe phase returns column metadata
+    that does not match Execute output for ``read_parquet`` queries. asyncpg
+    raises ``ProtocolError`` and caches the bad metadata for the connection's
+    lifetime. Disabling the statement cache forces the simple-query protocol
+    on this pool, bypassing the Describe step entirely.
+    """
+
+    async def test_pool_is_created_with_statement_cache_disabled(self):
+        spy_conn = AsyncMock()
+        spy_conn.execute = AsyncMock()
+        fake_pool = _fake_pool_with_spy_conn(spy_conn)
+
+        create_pool_spy = AsyncMock(return_value=fake_pool)
+        with patch("asyncpg.create_pool", new=create_pool_spy):
+            await database.get_query_engine_pool()
+
+        assert create_pool_spy.await_count == 1
+        kwargs = create_pool_spy.await_args.kwargs
+        assert kwargs.get("statement_cache_size") == 0, (
+            "asyncpg pool for pg_duckdb must disable the prepared-statement "
+            "cache to avoid ProtocolError on read_parquet queries (dc-dex)."
+        )

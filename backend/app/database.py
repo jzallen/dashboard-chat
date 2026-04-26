@@ -97,6 +97,13 @@ async def get_query_engine_pool():
     pool so ``read_parquet('s3://...')`` can reach the local object store
     on the lake-repo preview path. Sourced from app settings via
     ``build_storage_config()``. See dc-6gg.
+
+    The pool is created with ``statement_cache_size=0`` so asyncpg uses
+    the simple-query protocol. pg_duckdb's prepared-statement Describe
+    metadata for ``read_parquet`` queries reports a column count that
+    does not match Execute output, which trips asyncpg's strict parser
+    with ``ProtocolError``. Disabling the cache sidesteps Describe. See
+    dc-dex.
     """
     global _query_engine_pool
     if _query_engine_pool is None:
@@ -116,6 +123,8 @@ async def get_query_engine_pool():
             database=settings.query_engine_database,
             min_size=2,
             max_size=10,
+            statement_cache_size=0,
+            max_cached_statement_lifetime=0,
         )
         async with _query_engine_pool.acquire() as conn:
             await ensure_minio_secret(conn, build_storage_config())
