@@ -29,7 +29,7 @@ Run through this **before hitting record**. If any item fails, fix it first — 
 - [ ] Screen recorder is running (OBS, Loom, QuickTime — operator's choice). Record at 1080p or higher; window-only capture preferred over full screen
 - [ ] Microphone audio is enabled and tested — narrate as you go
 - [ ] You have this doc open in another window for the script
-- [ ] Friction-capture table (below) is open in a notes app, ready to fill in real time
+- [ ] Friction-capture CSV is open in a spreadsheet tool, ready to fill in real time: `/usr/local/share/dc-demo-data/demo-staging-friction-2026-04-26.csv`
 - [ ] Browser zoom set so chat panel and table are both readable on the recording
 
 ---
@@ -87,28 +87,15 @@ Type each prompt as a separate chat turn. **Wait for the agent to finish each on
 - [ ] Click the dataset name in the breadcrumb, rename to `ecommerce_orders_clean` (note: the demo also exercises rename)
 - [ ] Stop recording
 - [ ] Save the recording to a known location, name it `demo-staging-2026-04-26.<ext>`
-- [ ] Save your friction-capture notes alongside it
+- [ ] Save your filled-in copy of `demo-staging-friction-2026-04-26.csv` alongside the recording
 
 ---
 
-## Friction-Capture Template
+## Friction-Capture CSV
 
-Fill in **as you go**, not after. Memory of "what felt off" decays fast. One row per surprise.
+Fill in **as you go**, not after. Memory of "what felt off" decays fast.
 
-| Step | Expected | Actual | Severity | Bead to file |
-|---|---|---|---|---|
-| _e.g. 3_ | _Agent fixes "Electornics" + standardizes case in one turn_ | _Agent only fixed the typo, ignored case standardization — needed to re-prompt_ | _annoys_ | _bug: combined cleanup prompts not handled atomically_ |
-| | | | | |
-| | | | | |
-| | | | | |
-| | | | | |
-
-**Severity scale:**
-- `blocks` — the demo cannot proceed; loop is broken
-- `annoys` — works but takes extra prompts, confuses the user, slow, or surfaces a misleading error
-- `nice` — minor polish (wording, spacing, animation)
-
-**Bead-to-file column** — write the working title only. Actually filing the beads happens after the demo, not during.
+Open `/usr/local/share/dc-demo-data/demo-staging-friction-2026-04-26.csv` in your spreadsheet tool of choice. The 10 Act 3 chat turns are pre-populated; for each row, fill `success` (1 or 0) and use `notes` for what surprised you (severity tag + working title for any bead to file). Severity scale: `blocks` (loop is broken) / `annoys` (extra prompts, confusing error, slow) / `nice` (minor polish). Filing the beads happens after the demo, not during.
 
 ---
 
@@ -140,7 +127,7 @@ To keep this demo disciplined and short, the following are **deliberately not co
 - ❌ **Multi-user / collaboration scenarios** — single operator only
 - ❌ **Auth flows** — assumed working; operator is already signed in before recording starts
 
-Anything that surfaces in those areas during the recording goes into the friction table tagged with the layer name, but is **not investigated on camera**. Stay on staging.
+Anything that surfaces in those areas during the recording goes into the friction CSV tagged with the layer name in `notes`, but is **not investigated on camera**. Stay on staging.
 
 ---
 
@@ -149,7 +136,7 @@ Anything that surfaces in those areas during the recording goes into the frictio
 After the recording wraps, the operator should have:
 
 1. The video file (`demo-staging-2026-04-26.<ext>`) — share location TBD
-2. The completed friction-capture table — paste into a follow-on doc `demo-staging-friction-2026-04-XX.md`
-3. A list of bead titles ready to file under the parent demo bead
+2. The completed friction-capture CSV (your filled copy of `demo-staging-friction-2026-04-26.csv`) saved alongside the video
+3. A list of bead titles ready to file under the parent demo bead (extract from the `notes` column)
 
-Those three together are the deliverable. The video alone isn't enough — the friction table is what feeds the next round of work.
+Those three together are the deliverable. The video alone isn't enough — the friction CSV is what feeds the next round of work.
