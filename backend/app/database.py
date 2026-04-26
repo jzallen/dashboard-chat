@@ -91,13 +91,22 @@ _query_engine_pool = None
 
 
 async def get_query_engine_pool():
-    """Get or create the asyncpg connection pool to the query engine."""
+    """Get or create the asyncpg connection pool to the query engine.
+
+    On first creation, a MinIO PERSISTENT SECRET is installed against the
+    pool so ``read_parquet('s3://...')`` can reach the local object store
+    on the lake-repo preview path. Sourced from app settings via
+    ``build_storage_config()``. See dc-6gg.
+    """
     global _query_engine_pool
     if _query_engine_pool is None:
         from .config import get_settings
 
         settings = get_settings()
         import asyncpg
+
+        from app.infra.query_engine_secrets import ensure_minio_secret
+        from app.use_cases.sql_access.sql_access_service import build_storage_config
 
         _query_engine_pool = await asyncpg.create_pool(
             host=settings.query_engine_host,
@@ -108,6 +117,8 @@ async def get_query_engine_pool():
             min_size=2,
             max_size=10,
         )
+        async with _query_engine_pool.acquire() as conn:
+            await ensure_minio_secret(conn, build_storage_config())
     return _query_engine_pool
 
 

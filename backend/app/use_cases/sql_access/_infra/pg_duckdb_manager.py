@@ -108,26 +108,16 @@ async def _get_connection(env: ProjectEnvironment) -> asyncpg.Connection:
 async def configure_s3_secrets(env: ProjectEnvironment, storage_config: StorageConfig) -> None:
     """Configure S3/MinIO access secrets in a pg_duckdb environment.
 
-    Runs CREATE OR REPLACE SECRET via duckdb.raw_query() so that
-    read_parquet('s3://...') calls can access the storage backend.
+    Thin wrapper over ``app.infra.query_engine_secrets.ensure_minio_secret``
+    that opens its own admin connection to ``env``. The shared SQL builder
+    lives in ``app.infra`` because PERSISTENT SECRETs are server-wide,
+    not sql_access-specific.
     """
-    use_ssl_str = "true" if storage_config.use_ssl else "false"
-    secret_sql = f"""
-SELECT duckdb.raw_query($q$
-  CREATE OR REPLACE PERSISTENT SECRET minio_secret (
-    TYPE S3,
-    KEY_ID {_quote_literal(storage_config.access_key)},
-    SECRET {_quote_literal(storage_config.secret_key)},
-    ENDPOINT {_quote_literal(storage_config.endpoint)},
-    URL_STYLE {_quote_literal(storage_config.url_style)},
-    USE_SSL {use_ssl_str},
-    REGION {_quote_literal(storage_config.region)}
-  );
-$q$);
-"""
+    from app.infra.query_engine_secrets import ensure_minio_secret
+
     conn = await _get_connection(env)
     try:
-        await conn.execute(secret_sql)
+        await ensure_minio_secret(conn, storage_config)
         logger.info("Configured S3 secrets for environment %s", env.environment_id)
     finally:
         await conn.close()
