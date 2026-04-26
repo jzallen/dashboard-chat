@@ -48,3 +48,35 @@ set +o pipefail
 printf "  gt:   "; "$INSTALL_DIR/gt" version 2>/dev/null | head -1
 printf "  dolt: "; "$INSTALL_DIR/dolt" version 2>/dev/null | head -1
 printf "  bd:   "; "$INSTALL_DIR/bd" --version 2>/dev/null | head -1
+
+cat <<'EOF'
+
+Next steps — set up your Gas Town workspace:
+
+  # If you installed via 'go install' instead of this Bazel target,
+  # add Go binaries to PATH (skip if you used this installer).
+  # Add the line to ~/.zshrc or ~/.bashrc to persist:
+  export PATH="$PATH:$HOME/go/bin"
+
+  # Create the workspace with git initialization
+  gt install ~/gt --git
+  cd ~/gt
+
+  # Add the dashboard_chat rig — scope it to your local clone at
+  # /workspaces/dashboard-chat so refinery merges and agent pushes land
+  # in your local clone's object store before being pushed to GitHub.
+  # Without --local-repo, agents push straight to the remote and bypass
+  # your working copy.
+  gt rig add dashboard_chat https://github.com/jzallen/dashboard-chat.git \
+      --local-repo /workspaces/dashboard-chat
+
+  # Run doctor preemptively — fresh rigs typically have a few hook,
+  # settings, and config drifts that --fix resolves cleanly here.
+  gt doctor --fix
+
+  # Create your crew workspace. Naming it "notes" makes the purpose
+  # of crew explicit: it's a human-managed scratch space for context,
+  # exploratory work, and notes — not where agents do feature work.
+  # (Agents work in polecat worktrees managed by the witness/refinery.)
+  gt crew add notes --rig dashboard_chat
+EOF
