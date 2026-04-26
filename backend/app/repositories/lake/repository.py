@@ -21,6 +21,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from ...config import get_settings
 from ...utils.sql_safety import validate_identifier
 from ..exceptions import LakeRepositoryError
+from ._pg_duckdb_query import build_read_parquet_preview_query, decode_wrapped_rows
 
 logger = logging.getLogger(__name__)
 
@@ -193,8 +194,8 @@ class BaseLakeRepository:
         s3_path = self._build_s3_path(storage_path)
         pool = await self._get_query_engine_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch(f"SELECT * FROM read_parquet('{s3_path}') LIMIT {limit}")
-            return [dict(row) for row in rows]
+            rows = await conn.fetch(build_read_parquet_preview_query(s3_path, limit))
+            return decode_wrapped_rows(rows)
 
     async def get_parquet_row_count(self, storage_path: str) -> int:
         """Get row count from Parquet file(s).
@@ -321,16 +322,29 @@ class BaseLakeRepository:
             )
             affected_count = int(affected_row["cnt"])
 
-            # Get sample before/after pairs
+            # Get sample before/after pairs.
+            #
+            # We issue two single-column queries (before, after) instead of a
+            # single multi-column projection because pg_duckdb's Describe
+            # phase reports a single column for ``read_parquet`` regardless of
+            # the actual projection — multi-column queries trip asyncpg's
+            # protocol parser. Single-column queries are unaffected. The two
+            # queries share an identical WHERE/LIMIT, so they return the same
+            # row set in the same order (parquet read order is stable).
             samples = []
             if affected_count > 0:
-                sample_rows = await conn.fetch(
-                    f"SELECT {col} AS before, {after_expr} AS after "
+                before_rows = await conn.fetch(
+                    f"SELECT {col} AS val FROM read_parquet('{s3_path}') WHERE {affected_pred} LIMIT {sample_limit}"
+                )
+                after_rows = await conn.fetch(
+                    f"SELECT {after_expr} AS val "
                     f"FROM read_parquet('{s3_path}') "
                     f"WHERE {affected_pred} "
                     f"LIMIT {sample_limit}"
                 )
-                samples = [{"before": row["before"], "after": row["after"]} for row in sample_rows]
+                samples = [
+                    {"before": b["val"], "after": a["val"]} for b, a in zip(before_rows, after_rows, strict=False)
+                ]
 
         return {
             "affected_count": affected_count,

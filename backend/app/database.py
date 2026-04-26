@@ -98,12 +98,16 @@ async def get_query_engine_pool():
     on the lake-repo preview path. Sourced from app settings via
     ``build_storage_config()``. See dc-6gg.
 
-    The pool is created with ``statement_cache_size=0`` so asyncpg uses
-    the simple-query protocol. pg_duckdb's prepared-statement Describe
-    metadata for ``read_parquet`` queries reports a column count that
-    does not match Execute output, which trips asyncpg's strict parser
-    with ``ProtocolError``. Disabling the cache sidesteps Describe. See
-    dc-dex.
+    The pool is created with ``statement_cache_size=0`` so asyncpg does
+    not retain prepared statements between calls. This does NOT switch
+    asyncpg to the simple-query protocol — Parse/Describe still run on
+    every ``conn.fetch`` — so it does not by itself fix pg_duckdb's
+    Describe-vs-Execute column-count mismatch on ``read_parquet`` queries.
+    The actual fix lives at the call sites: see
+    ``app/repositories/lake/_pg_duckdb_query.wrap_for_asyncpg`` (dc-f8m).
+    The cache is still disabled because retaining bad metadata across
+    calls makes the failure mode worse. See dc-dex (kwarg origin) and
+    dc-f8m (root cause + fix).
     """
     global _query_engine_pool
     if _query_engine_pool is None:

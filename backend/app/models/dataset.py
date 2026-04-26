@@ -255,19 +255,17 @@ class Dataset:
     async def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
         """Execute the staging SQL (with transforms) via the query engine and return preview rows."""
         from ..database import get_query_engine_pool
+        from ..repositories.lake._pg_duckdb_query import (
+            build_read_parquet_preview_query,
+            decode_wrapped_rows,
+        )
         from ..utils.sql_functions import ALL_MACROS
 
         staging = self.staging_sql
         if staging.startswith("-- Error"):
             return []
 
-        # Build execution SQL: replace the schema-based table reference with read_parquet
         s3_path = self._s3_path()
-        exec_sql = f"SELECT * FROM ({staging}) AS _sub LIMIT {limit}"
-
-        # The staging SQL references the table by name from schema — we need to
-        # wrap it to read from parquet. Build a simpler direct query instead.
-        exec_sql = f"SELECT * FROM read_parquet('{s3_path}') LIMIT {limit}"
 
         pool = await get_query_engine_pool()
         async with pool.acquire() as conn:
@@ -284,8 +282,8 @@ class Dataset:
                 for macro_sql in ALL_MACROS:
                     await conn.execute(macro_sql)
 
-            rows = await conn.fetch(exec_sql)
-            return [dict(row) for row in rows]
+            rows = await conn.fetch(build_read_parquet_preview_query(s3_path, limit))
+            return decode_wrapped_rows(rows)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict for HTTP responses."""
