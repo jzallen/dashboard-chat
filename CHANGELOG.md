@@ -1,3 +1,11 @@
+## [1.7.2](https://github.com/jzallen/dashboard-chat/compare/v1.7.1...v1.7.2) (2026-04-26)
+
+
+### Bug Fixes
+
+* **backend:** install MinIO persistent secret on query-engine pool init (dc-6gg) ([7ec9fa5](https://github.com/jzallen/dashboard-chat/commit/7ec9fa51b113a4cc02dfde355dab6aab4965449e))
+* **bazel:** include app/infra in core py_library (dc-6gg follow-up) ([cc04712](https://github.com/jzallen/dashboard-chat/commit/cc04712c3d91fd27198dd78f845e02e278ecbb2e))
+
 ## [1.7.1](https://github.com/jzallen/dashboard-chat/compare/v1.7.0...v1.7.1) (2026-04-25)
 
 
