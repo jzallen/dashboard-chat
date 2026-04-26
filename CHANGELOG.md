@@ -1,3 +1,18 @@
+# [1.8.0](https://github.com/jzallen/dashboard-chat/compare/v1.7.2...v1.8.0) (2026-04-26)
+
+
+### Bug Fixes
+
+* auto-save uncommitted implementation work (gt-pvx safety net) ([3f342fc](https://github.com/jzallen/dashboard-chat/commit/3f342fc642df43d82493fb0fe055948ce190303d))
+* **backend:** disable asyncpg statement cache on query-engine pool (dc-dex) ([330c73c](https://github.com/jzallen/dashboard-chat/commit/330c73cac4df2361424668031cbd3705016e1c5f))
+* **backend:** wrap pg_duckdb multi-column reads in to_json for asyncpg (dc-f8m) ([1f2addb](https://github.com/jzallen/dashboard-chat/commit/1f2addb5fde9770e07a48ec16a9fce13c0d8bc78))
+* **bazel:** include app/version.py in core py_library (dc-1k8 follow-up) ([d03c39c](https://github.com/jzallen/dashboard-chat/commit/d03c39cf2e3bdcd11fab6870a29aad4f32eb5be7))
+
+
+### Features
+
+* **bazel:** log image identity on container startup (dc-1k8) ([4abaa93](https://github.com/jzallen/dashboard-chat/commit/4abaa93391f83cf3a4b640701f1630338da60dda))
+
 ## [1.7.2](https://github.com/jzallen/dashboard-chat/compare/v1.7.1...v1.7.2) (2026-04-26)
 
 
