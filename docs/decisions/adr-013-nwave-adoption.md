@@ -77,6 +77,16 @@ The invariant `DISTILL → DELIVER` still terminates every path; no exception.
 
 Additionally: before touching untested legacy code, write **characterization tests** (Feathers) first. They are the brownfield analog to the greenfield walking skeleton. Pre-existing "testing theater" tests (tautological, implementation-mirroring, assertion-free) are triaged via the `nw-test-refactoring-catalog` L1–L3 taxonomy before deletion or rewriting — the Iron Rule applies to legitimate tests only, not theater.
 
+## Amendment (2026-04-28): Feature dir slug naming convention
+
+Supersedes Decision #2 ("Feature IDs are bead IDs") on the directory-naming dimension only.
+
+Feature artifacts now live in `docs/feature/{slug}/` where `{slug}` is a kebab-case description of the feature (e.g. `log-image-identity-on-startup`). Bead IDs remain the durable feature identifier — they continue to appear in git trailers, bead descriptions, and inter-bead links — but they no longer name directories. The bead-ID directory pattern was opaque at a glance and forced a `bd show` round-trip to learn what each dir was about.
+
+Migration: existing `docs/feature/dc-{id}/` dirs were renamed to slugs in commit `c7f531e` (bead `dc-wrg`). New features pick a slug at DISCUSS time. Archives in `docs/evolution/` are not retroactively renamed; the historical `YYYY-MM-DD-{bead-id}.md` archive shape stays as-is.
+
+Rationale: scanability beats stable-identifier-as-path when the stable identifier already lives elsewhere (trailers, bead DB).
+
 ## References
 
 - nwave-ai: https://github.com/nWave-ai/nWave
