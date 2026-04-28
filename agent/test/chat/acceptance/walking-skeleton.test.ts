@@ -12,7 +12,7 @@
  * are unreachable, the same shape as backend/tests/integration/test_lake_preview_live.py.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, expect,it } from "vitest";
 
 const requiresExternal = !!process.env.GROQ_API_KEY && !!process.env.AGENT_URL;
 

@@ -1,15 +1,5 @@
-// SCAFFOLD: true — DISTILL RED scaffold for worker-tool-dispatch-refactor PR 0.
-// handleChatEvent is the FE switch on event.type. PR 0 ships the skeleton with
-// no cases handled (every call throws). PRs 1-3 add cases as tools migrate.
-// The `default: const _: never = event` line gives AC2.1 its compile-time
-// exhaustiveness — preserve it during DELIVER.
-
-export const __SCAFFOLD__ = true;
-
-const NOT_IMPLEMENTED = "Not yet implemented — RED scaffold (DISTILL output for worker-tool-dispatch-refactor)";
-
-import type { ChatEvent } from "./events";
 import type { TableApi } from "./dispatcher";
+import type { ChatEvent } from "./events";
 
 export type EventHandlerContext = {
   queryClient: { invalidateQueries: (input: unknown) => unknown };
@@ -18,6 +8,16 @@ export type EventHandlerContext = {
   thinking?: { setVisible: (v: boolean) => void };
 };
 
-export function handleChatEvent(_event: ChatEvent, _ctx: EventHandlerContext): void {
-  throw new Error(NOT_IMPLEMENTED);
+export function handleChatEvent(event: ChatEvent, _ctx: EventHandlerContext): void {
+  switch (event.type) {
+    default: {
+      // PR 1-3 fill cases above this default as tools migrate. The
+      // `const _exhaustive: never = event` line is the AC2.1 marker — once
+      // every variant has a case, TS narrows `event` to `never` and the cast
+      // becomes redundant. Until then, we preserve the structural invariant
+      // and throw so untriaged events surface loudly.
+      const _exhaustive: never = event as never;
+      throw new Error(`unhandled chat event: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
 }

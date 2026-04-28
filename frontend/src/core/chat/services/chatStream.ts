@@ -1,5 +1,7 @@
 import type { ToolCall } from "@/toolCalls";
 
+import { type ChatEvent,ChatEventSchema } from "../events";
+
 /** Payload emitted by the agent via the `r:` SSE prefix, requesting data from the frontend. */
 export interface AgentRequest {
   type: string;
@@ -11,13 +13,17 @@ export interface SSEHandlers {
   onDone: (accumulatedContent: string, toolCalls: ToolCall[]) => void;
   /** Called when the agent emits an `r:` request followed by `d:{finishReason:"request"}`. */
   onRequest?: (request: AgentRequest) => void;
+  /** Called when the agent emits a typed ChatEvent on the AI SDK annotation channel. */
+  onChatEvent?: (event: ChatEvent) => void;
 }
 
 /** Reads the AI SDK data stream, dispatching parsed events to handlers.
  *
  * Line format (per AI SDK data stream protocol):
  *   0:"text token"         — text delta (JSON-encoded string)
- *   9:[{toolCallId,...}]   — tool call array
+ *   2:[{...},...]          — data parts (JSON array; we extract ChatEvents from here)
+ *   8:[{...},...]          — message annotations (JSON array; we extract ChatEvents from here)
+ *   9:[{toolCallId,...}]   — tool call array (legacy path, deleted in PR 3)
  *   d:{finishReason,...}   — stream finish
  *   e:{...}                — step finish (ignored)
  *   1:"error message"      — error
@@ -55,8 +61,20 @@ export async function readSSEStream(body: ReadableStream<Uint8Array>, handlers: 
           const token: string = JSON.parse(payload);
           accumulatedContent += token;
           handlers.onContent(accumulatedContent);
+        } else if (prefix === "2" || prefix === "8") {
+          // Data parts (2:) or message annotations (8:) — both carry JSON arrays
+          // that may contain typed ChatEvent objects. Parse and forward.
+          if (!handlers.onChatEvent) continue;
+          const parts = JSON.parse(payload);
+          if (!Array.isArray(parts)) continue;
+          for (const part of parts) {
+            const result = ChatEventSchema.safeParse(part);
+            if (result.success) {
+              handlers.onChatEvent(result.data);
+            }
+          }
         } else if (prefix === "9") {
-          // Tool call array
+          // Tool call array — legacy path; coexists with onChatEvent until PR 3.
           const calls = JSON.parse(payload) as Array<{
             toolCallId: string;
             toolName: string;
@@ -94,7 +112,7 @@ export async function readSSEStream(body: ReadableStream<Uint8Array>, handlers: 
           const errorMsg: string = JSON.parse(payload);
           throw new Error(errorMsg);
         }
-        // Ignore: e (step finish), 2, 8, a, b, c
+        // Ignore: e (step finish), a, b, c
       } catch (parseError) {
         if (parseError instanceof SyntaxError) {
           console.error("Parse error:", parseError);

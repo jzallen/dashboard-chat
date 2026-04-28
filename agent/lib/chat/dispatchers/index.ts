@@ -1,20 +1,21 @@
-// SCAFFOLD: true — DISTILL RED scaffold for worker-tool-dispatch-refactor.
-// Registry that PR 1/2/3 dispatcher modules attach to. Empty until PR 0 wires
-// the DispatchContext plumbing in handleChat.ts.
+import type { Tool } from "ai";
 
-export const __SCAFFOLD__ = true;
-
-const NOT_IMPLEMENTED = "Not yet implemented — RED scaffold (DISTILL output for worker-tool-dispatch-refactor)";
+import type { BackendClient } from "../backend-client";
+import type { ChatEvent } from "../events";
 
 export type DispatchContext = {
   jwt: string;
   datasetId?: string;
   projectId?: string;
   contextType: "dataset" | "project" | "report";
+  backend: BackendClient;
+  emit: (event: ChatEvent) => void;
 };
 
 export type DispatcherFamily = "cleaning" | "mutations" | "ui";
 
-export function dispatcherRegistry(_ctx: DispatchContext): never {
-  throw new Error(NOT_IMPLEMENTED);
+export type DispatcherRegistry = Record<string, Tool>;
+
+export function dispatcherRegistry(_ctx: DispatchContext): DispatcherRegistry {
+  return {};
 }
