@@ -17,7 +17,7 @@ of:
      pointing at the per-context controllers. All router call-sites use this
      class; signatures are unchanged from pre-refactor.
 
-See `docs/feature/dc-e65d/design/domain/seams.md` for the extraction plan.
+See `docs/feature/http-controller-ddd-refactor/design/domain/seams.md` for the extraction plan.
 
 Do NOT remove any of the module-level aliases until the tests that patch
 them are rewritten to patch the per-context controllers directly.

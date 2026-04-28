@@ -36,7 +36,7 @@ This project uses **nwave-ai** as its SDLC framework (see [ADR-013](docs/decisio
 
 **Iron Rule & pre-existing theater tests:** NEVER modify a failing test to make it pass. For pre-existing bad tests (tautological, assertion-free, implementation-mirroring, etc.), triage via `nw-test-refactoring-catalog` L1–L3 before deleting or rewriting. Before touching untested legacy code, write **characterization tests** (Feathers) first — they are the brownfield analog to the walking skeleton.
 
-**Feature artifacts live in `docs/feature/{bead-id}/`** during active waves and migrate to `docs/evolution/` on `/nw-finalize`. The bead ID is the feature ID — stable, unique, appears in git trailers.
+**Feature artifacts live in `docs/feature/{slug}/`** during active waves and migrate to `docs/evolution/` on `/nw-finalize`. The slug is a kebab-case description of the feature (e.g. `log-image-identity-on-startup`); bead linkage stays via git trailers and bead descriptions, not directory names.
 
 **Testing discipline — Outside-In TDD + hexagonal:**
 - Write/update the acceptance test first (RED_ACCEPTANCE).
