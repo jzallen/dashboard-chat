@@ -34,4 +34,4 @@ This feature has known scope and a small but real architectural choice (where im
 1. **DESIGN** (`/nw-design`) — pick the injection mechanism (Bazel `--stamp` + `oci_image.env` is the leading candidate) and produce a one-page ADR. Likely 30–60 minutes of work.
 2. **DISTILL** (`/nw-distill`) — write the Given/When/Then acceptance test as an executable spec. Acceptance test asserts on `docker compose logs` output for each of the four services; runs in CI.
 3. **DELIVER** (`/nw-deliver`) — Outside-In TDD implementation. Inner loops: workspace_status emitter, Bazel image env wiring, per-service startup logger, frontend `/_meta` endpoint or container shim.
-4. **FINALIZE** (`/nw-finalize`) — migrate `docs/feature/dc-1k8/` → `docs/evolution/`.
+4. **FINALIZE** (`/nw-finalize`) — migrate `docs/feature/log-image-identity-on-startup/` → `docs/evolution/`.
