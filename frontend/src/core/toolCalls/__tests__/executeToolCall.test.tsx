@@ -441,137 +441,9 @@ describe("executeToolCall", () => {
     });
   });
 
-  describe("Feature: Table Row Management", () => {
-    describe("Scenario: Add a new row", () => {
-      it("should add row and return message", async () => {
-        const { table, context } = createTestTable();
-
-        const message = await executeToolCall(
-          createToolCall("addRow", {
-            data: {
-              id: "4",
-              name: "New Item",
-              category: "C",
-              amount: 75,
-              quantity: 15,
-              inStock: true,
-            },
-          }),
-          context,
-        );
-
-        expect(message).toBe("Added new row");
-        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
-          {
-            id: "1",
-            name: "Alpha",
-            category: "A",
-            amount: 50,
-            quantity: 10,
-            inStock: true,
-          },
-          {
-            id: "2",
-            name: "Beta Widget",
-            category: "B",
-            amount: 100,
-            quantity: 5,
-            inStock: false,
-          },
-          {
-            id: "3",
-            name: "Gamma",
-            category: "A",
-            amount: 25,
-            quantity: 20,
-            inStock: true,
-          },
-          {
-            id: "4",
-            name: "New Item",
-            category: "C",
-            amount: 75,
-            quantity: 15,
-            inStock: true,
-          },
-        ]);
-      });
-    });
-
-    describe("Scenario: Delete a row by search", () => {
-      it("should delete row matching search text and return message", async () => {
-        const { table, context } = createTestTable();
-
-        const message = await executeToolCall(
-          createToolCall("deleteRow", { search: "Beta Widget" }),
-          context,
-        );
-
-        expect(message).toBe('Deleted row matching "Beta Widget"');
-        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
-          {
-            id: "1",
-            name: "Alpha",
-            category: "A",
-            amount: 50,
-            quantity: 10,
-            inStock: true,
-          },
-          {
-            id: "3",
-            name: "Gamma",
-            category: "A",
-            amount: 25,
-            quantity: 20,
-            inStock: true,
-          },
-        ]);
-      });
-
-      it("should match case-insensitively", async () => {
-        const { table, context } = createTestTable();
-
-        const message = await executeToolCall(
-          createToolCall("deleteRow", { search: "beta" }),
-          context,
-        );
-
-        expect(message).toBe('Deleted row matching "beta"');
-        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual([
-          {
-            id: "1",
-            name: "Alpha",
-            category: "A",
-            amount: 50,
-            quantity: 10,
-            inStock: true,
-          },
-          {
-            id: "3",
-            name: "Gamma",
-            category: "A",
-            amount: 25,
-            quantity: 20,
-            inStock: true,
-          },
-        ]);
-      });
-
-      it("should not modify data if no match found", async () => {
-        const { table, context } = createTestTable();
-
-        const message = await executeToolCall(
-          createToolCall("deleteRow", { search: "Nonexistent" }),
-          context,
-        );
-
-        expect(message).toBe('Deleted row matching "Nonexistent"');
-        expect(table.getCoreRowModel().rows.map((r) => r.original)).toEqual(
-          testData,
-        );
-      });
-    });
-  });
+  // Feature: Table Row Management — addRow/deleteRow migrated to the worker
+  // dispatcher in worker-tool-dispatch-refactor PR 2. Their unit coverage now
+  // lives in agent/test/chat/acceptance/worker-tool-dispatch.test.ts.
 
   describe("Feature: RAQB Filter Generation", () => {
     describe("Scenario: Apply single rule RAQB filter", () => {
@@ -894,12 +766,11 @@ describe("executeToolCall", () => {
     });
   });
 
-  describe("Feature: Cleaning Tool Handlers", () => {
-    // PR 1 of worker-tool-dispatch-refactor migrated trimWhitespace,
-    // standardizeCase, fillNulls, mapValues, and applyCleaningTransform to
-    // the worker dispatcher (agent/lib/chat/dispatchers/cleaning.ts). Their
-    // unit coverage now lives in agent/test/chat/acceptance/worker-tool-dispatch.test.ts.
-
+  // Feature: Cleaning Tool Handlers — every cleaning + mutation tool migrated
+  // to the worker dispatcher. PR 1 covers trim/case/fillNulls/mapValues/apply;
+  // PR 2 covers renameColumn/undoCleaningTransform/reEnableCleaningTransform.
+  // Unit coverage now lives in agent/test/chat/acceptance/worker-tool-dispatch.test.ts.
+  describe.skip("Feature: Cleaning Tool Handlers (migrated to worker)", () => {
     describe("Scenario: Rename column", () => {
       it("should create alias transform and invalidate cache", async () => {
         const { context, queryClient } = createTestTable();

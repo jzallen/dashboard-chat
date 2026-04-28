@@ -1,8 +1,6 @@
 import { getErrorMessage } from "../../lib/errors";
-import { datasetKeys } from "../../lib/queryKeys";
 import type { ToolCall } from "../../lib/types";
 import type {
-  TableRow,
   ToolCallArgs,
   ToolCallContext,
   ToolCallHandlers,
@@ -32,16 +30,6 @@ const validators: Record<
       throw new Error("sortTable: invalid direction");
     return { tool: "sortTable", column: raw.column, direction: raw.direction };
   },
-  addRow: (raw) => {
-    if (typeof raw.data !== "object" || raw.data === null)
-      throw new Error("addRow: missing data");
-    return { tool: "addRow", data: raw.data as Record<string, unknown> };
-  },
-  deleteRow: (raw) => {
-    if (typeof raw.search !== "string")
-      throw new Error("deleteRow: missing search");
-    return { tool: "deleteRow", search: raw.search };
-  },
   replaceColumnFilter: (raw) => {
     if (typeof raw.column !== "string")
       throw new Error("replaceColumnFilter: missing column");
@@ -63,26 +51,6 @@ const validators: Record<
   },
   clearFilters: () => ({ tool: "clearFilters" }),
   clearSort: () => ({ tool: "clearSort" }),
-  renameColumn: (raw) => {
-    if (typeof raw.column !== "string")
-      throw new Error("renameColumn: missing column");
-    if (typeof raw.newName !== "string")
-      throw new Error("renameColumn: missing newName");
-    return { tool: "renameColumn", column: raw.column, newName: raw.newName };
-  },
-  undoCleaningTransform: (raw) => {
-    if (raw.action !== "disable" && raw.action !== "delete")
-      throw new Error("undoCleaningTransform: invalid action");
-    return {
-      tool: "undoCleaningTransform",
-      action: raw.action,
-      transformId: raw.transformId as string | undefined,
-    };
-  },
-  reEnableCleaningTransform: (raw) => ({
-    tool: "reEnableCleaningTransform",
-    transformId: raw.transformId as string | undefined,
-  }),
 };
 
 /** Validates raw tool call arguments against the validator map and returns a typed ToolCallArgs union member. */
@@ -95,7 +63,7 @@ function validateToolCallArgs(
   return validator(raw);
 }
 
-/** Executes synchronous table actions (filter, sort, add/delete rows) against in-memory table state. */
+/** Executes synchronous table actions (filter, sort) against in-memory table state. */
 function performTableAction(
   validated: ToolCallArgs,
   handlers: ToolCallHandlers,
@@ -136,29 +104,6 @@ function performTableAction(
       handlers.setSorting((prev) => {
         const filtered = prev.filter((s) => s.id !== column);
         return [...filtered, { id: column, desc: direction === "desc" }];
-      });
-      break;
-    }
-
-    case "addRow": {
-      const newRow: TableRow = {
-        id: String(Date.now()),
-        ...validated.data,
-      };
-      handlers.setData((prev) => [...prev, newRow]);
-      break;
-    }
-
-    case "deleteRow": {
-      const searchLower = validated.search.toLowerCase();
-      handlers.setData((prev) => {
-        const indexToDelete = prev.findIndex((row) =>
-          Object.values(row).some((value) =>
-            String(value).toLowerCase().includes(searchLower),
-          ),
-        );
-        if (indexToDelete === -1) return prev;
-        return prev.filter((_, i) => i !== indexToDelete);
       });
       break;
     }
@@ -271,94 +216,6 @@ function countRaqbRules(tree: RaqbGroup): number {
   return count;
 }
 
-/** Handles async cleaning tool calls (rename, undo, re-enable) against the backend API.
- *  Preview/apply paths (trim, case, fill_null, map_values) migrated to the worker
- *  dispatcher in worker-tool-dispatch-refactor PR 1. */
-async function handleCleaningTool(
-  validated: ToolCallArgs,
-  context: ToolCallContext,
-): Promise<string | null> {
-  const { datasetId, transforms, queryClient, catalog } = context;
-
-  switch (validated.tool) {
-    case "renameColumn": {
-      await catalog.createCleaningTransforms(datasetId, [
-        {
-          name: `Rename ${validated.column} to ${validated.newName}`,
-          transform_type: "alias",
-          target_column: validated.column,
-          expression_config: { operation: "alias", alias: validated.newName },
-        },
-      ]);
-      queryClient.invalidateQueries({
-        queryKey: datasetKeys.detail(datasetId),
-        exact: true,
-      });
-      return `Renamed column: ${validated.column} → ${validated.newName}`;
-    }
-
-    case "undoCleaningTransform": {
-      let targetId = validated.transformId;
-      if (!targetId) {
-        const cleaningTransforms = transforms
-          .filter(
-            (t) => t.transform_type !== "filter" && t.status === "enabled",
-          )
-          .sort((a, b) =>
-            (b.created_at ?? "").localeCompare(a.created_at ?? ""),
-          );
-        if (cleaningTransforms.length === 0) {
-          return "No active cleaning transforms to undo.";
-        }
-        targetId = cleaningTransforms[0].id;
-      }
-      const newStatus = validated.action === "delete" ? "deleted" : "disabled";
-      await catalog.updateTransform(datasetId, targetId, { status: newStatus });
-      queryClient.invalidateQueries({
-        queryKey: datasetKeys.detail(datasetId),
-        exact: true,
-      });
-      const target = transforms.find((t) => t.id === targetId);
-      const desc = target ? `${target.name}` : targetId;
-      return `${validated.action === "delete" ? "Deleted" : "Disabled"} transform: ${desc}`;
-    }
-
-    case "reEnableCleaningTransform": {
-      let targetId = validated.transformId;
-      if (!targetId) {
-        const disabledTransforms = transforms
-          .filter(
-            (t) => t.transform_type !== "filter" && t.status === "disabled",
-          )
-          .sort((a, b) =>
-            (b.created_at ?? "").localeCompare(a.created_at ?? ""),
-          );
-        if (disabledTransforms.length === 0) {
-          return "No disabled cleaning transforms to re-enable.";
-        }
-        targetId = disabledTransforms[0].id;
-      }
-      await catalog.updateTransform(datasetId, targetId, { status: "enabled" });
-      queryClient.invalidateQueries({
-        queryKey: datasetKeys.detail(datasetId),
-        exact: true,
-      });
-      const target = transforms.find((t) => t.id === targetId);
-      const desc = target ? `${target.name}` : targetId;
-      return `Re-enabled transform: ${desc}`;
-    }
-
-    default:
-      return null;
-  }
-}
-
-const CLEANING_TOOLS = new Set([
-  "renameColumn",
-  "undoCleaningTransform",
-  "reEnableCleaningTransform",
-]);
-
 /** Generates a human-readable summary message for a completed tool call. */
 function generateToolMessage(validated: ToolCallArgs): string {
   switch (validated.tool) {
@@ -366,10 +223,6 @@ function generateToolMessage(validated: ToolCallArgs): string {
       return `Filtered ${validated.column} ${validated.operator} ${validated.value}`;
     case "sortTable":
       return `Sorted by ${validated.column} ${validated.direction}`;
-    case "addRow":
-      return "Added new row";
-    case "deleteRow":
-      return `Deleted row matching "${validated.search}"`;
     case "replaceColumnFilter": {
       const { column, filters } = validated;
       if (!filters?.length) return `Cleared filters on ${column}`;
@@ -383,18 +236,13 @@ function generateToolMessage(validated: ToolCallArgs): string {
       return "Cleared all filters";
     case "clearSort":
       return "Cleared sorting";
-    case "renameColumn":
-      return `Renaming ${validated.column} to ${validated.newName}...`;
-    case "undoCleaningTransform":
-      return "Undoing cleaning transform...";
-    case "reEnableCleaningTransform":
-      return "Re-enabling cleaning transform...";
   }
 }
 
 /**
- * Dispatches a validated tool call to the appropriate handler (table action or cleaning tool).
- * Parses and validates arguments, then returns a human-readable result message.
+ * Dispatches a validated tool call to the in-memory table action handler. The
+ * cleaning + mutation tool families have migrated to the worker dispatcher; the
+ * UI directive family migrates in PR 3.
  */
 export async function executeToolCall(
   toolCall: ToolCall,
@@ -416,17 +264,6 @@ export async function executeToolCall(
     return `Error: ${getErrorMessage(error)}`;
   }
 
-  // Cleaning tools are async — handle them first
-  if (CLEANING_TOOLS.has(name)) {
-    try {
-      const result = await handleCleaningTool(validated, context);
-      return result ?? generateToolMessage(validated);
-    } catch (error) {
-      return `Error: ${getErrorMessage(error)}`;
-    }
-  }
-
-  // Table tools are synchronous
   performTableAction(validated, context);
   return generateToolMessage(validated);
 }

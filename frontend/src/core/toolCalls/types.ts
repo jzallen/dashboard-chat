@@ -6,12 +6,12 @@ import type { DataCatalog } from "@/dataCatalog";
 /** A single row of table data, keyed by column name. */
 export type TableRow = Record<string, unknown>;
 
-/** Discriminated union of all validated tool call argument shapes. The `tool` field is the discriminant. */
+/** Discriminated union of all validated tool call argument shapes. The `tool` field is the discriminant.
+ *  After PR 1 (cleaning) and PR 2 (mutations) of worker-tool-dispatch-refactor,
+ *  only the UI-directive family remains here (PR 3 migrates and deletes it). */
 export type ToolCallArgs =
   | { tool: "filterTable"; column: string; operator: string; value: unknown }
   | { tool: "sortTable"; column: string; direction: "asc" | "desc" }
-  | { tool: "addRow"; data: Record<string, unknown> }
-  | { tool: "deleteRow"; search: string }
   | {
       tool: "replaceColumnFilter";
       column: string;
@@ -19,14 +19,7 @@ export type ToolCallArgs =
     }
   | { tool: "generateFilter"; description: string; raqb_tree: unknown }
   | { tool: "clearFilters" }
-  | { tool: "clearSort" }
-  | { tool: "renameColumn"; column: string; newName: string }
-  | {
-      tool: "undoCleaningTransform";
-      action: "disable" | "delete";
-      transformId?: string;
-    }
-  | { tool: "reEnableCleaningTransform"; transformId?: string };
+  | { tool: "clearSort" };
 
 /** Callbacks for mutating table state (filters, sorting, data) in response to tool calls. */
 export interface ToolCallHandlers {

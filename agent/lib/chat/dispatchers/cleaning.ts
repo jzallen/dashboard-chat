@@ -1,9 +1,13 @@
 import { type Tool,tool } from "ai";
 import { z } from "zod";
 
-import { BackendClientError } from "../backend-client";
-import type { ChatEvent } from "../events";
 import { CASE_OPERATIONS } from "../types";
+import {
+  type Emit,
+  readBackendId,
+  requireDatasetId,
+  runWithEmit,
+} from "./_helpers";
 import type { DispatchContext } from "./index";
 
 type CleaningOperation =
@@ -15,18 +19,6 @@ type CleaningOperation =
   | "kebab"
   | "fill_null"
   | "map_values";
-
-type Emit = (event: ChatEvent) => void;
-
-type DispatcherSuccess = { ok: true; transform_id: string };
-type DispatcherFailure = { ok: false; error: string };
-type DispatcherResult = DispatcherSuccess | DispatcherFailure;
-
-type BackendCreateResponse = {
-  id?: string;
-  data?: { id?: string; transforms?: Array<{ id: string }> };
-  transforms?: Array<{ id: string }>;
-};
 
 const CASE_OPERATION_SET = new Set<CleaningOperation>(
   CASE_OPERATIONS as readonly CleaningOperation[],
@@ -46,41 +38,6 @@ function expressionConfigFor(
   return { operation, ...config };
 }
 
-function readBackendId(raw: unknown): string {
-  const body = raw as BackendCreateResponse | null;
-  if (body && typeof body === "object") {
-    if (typeof body.id === "string") return body.id;
-    if (Array.isArray(body.transforms) && typeof body.transforms[0]?.id === "string") {
-      return body.transforms[0].id;
-    }
-    if (body.data) {
-      if (typeof body.data.id === "string") return body.data.id;
-      if (
-        Array.isArray(body.data.transforms) &&
-        typeof body.data.transforms[0]?.id === "string"
-      ) {
-        return body.data.transforms[0].id;
-      }
-    }
-  }
-  // Backend currently returns {ok: true} only on POST /transforms — generate a
-  // synthetic id so the FE has a stable handle for invalidation. Replaced when
-  // the backend returns the persisted id (out of scope for this PR).
-  return `worker-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function isRetryable(err: unknown): boolean {
-  if (err instanceof BackendClientError) {
-    return err.status === 0 || err.status >= 500;
-  }
-  return false;
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
-}
-
 async function dispatchCleaningCall(args: {
   ctx: DispatchContext;
   emit: Emit;
@@ -88,59 +45,38 @@ async function dispatchCleaningCall(args: {
   column: string;
   operation: CleaningOperation;
   config: Record<string, unknown>;
-}): Promise<DispatcherResult> {
+}) {
   const { ctx, emit, failedTool, column, operation, config } = args;
-
-  if (!ctx.datasetId) {
-    const message = `${failedTool}: missing dataset context`;
-    emit({
-      type: "error_occurred",
-      phase: "validation",
-      message,
-      failed_tool: failedTool,
-      retryable: false,
-    });
-    return { ok: false, error: message };
-  }
+  const guard = requireDatasetId(emit, failedTool, ctx.datasetId);
+  if (!guard.ok) return guard;
 
   const expression_config = expressionConfigFor(operation, config);
   const transform_type = transformTypeFor(operation);
-  const body = {
-    transforms: [
-      {
-        name: `${operation} on ${column}`,
-        transform_type,
-        target_column: column,
-        expression_config,
-      },
-    ],
-  };
 
-  try {
+  return runWithEmit<{ transform_id: string }>(emit, failedTool, async () => {
     const raw = await ctx.backend.post(
-      `/api/datasets/${ctx.datasetId}/transforms`,
-      body,
+      `/api/datasets/${guard.datasetId}/transforms`,
+      {
+        transforms: [
+          {
+            name: `${operation} on ${column}`,
+            transform_type,
+            target_column: column,
+            expression_config,
+          },
+        ],
+      },
     );
-    const transform_id = readBackendId(raw);
+    const transform_id = readBackendId(raw, "worker");
     emit({
       type: "transform_applied",
       transform_id,
-      dataset_id: ctx.datasetId,
+      dataset_id: guard.datasetId,
       operation,
       column,
     });
     return { ok: true, transform_id };
-  } catch (err) {
-    const message = errorMessage(err);
-    emit({
-      type: "error_occurred",
-      phase: "backend_dispatch",
-      message,
-      failed_tool: failedTool,
-      retryable: isRetryable(err),
-    });
-    return { ok: false, error: message };
-  }
+  });
 }
 
 export function makeApplyCleaningTransformDispatcher(

@@ -19,13 +19,20 @@ import type { DispatchContext } from "../../../lib/chat/dispatchers";
 import {
   makeApplyCleaningTransformDispatcher,
 } from "../../../lib/chat/dispatchers/cleaning";
+import {
+  makeAddRowDispatcher,
+  makeDeleteRowDispatcher,
+  makeReEnableCleaningTransformDispatcher,
+  makeRenameColumnDispatcher,
+  makeUndoCleaningTransformDispatcher,
+} from "../../../lib/chat/dispatchers/mutations";
 import { type ChatEvent, ChatEventSchema } from "../../../lib/chat/events";
 
 type ToolWithExecute = {
   execute: (
     input: Record<string, unknown>,
     options: { toolCallId: string; messages: unknown[] },
-  ) => Promise<{ ok: boolean; transform_id?: string; error?: string }>;
+  ) => Promise<Record<string, unknown> & { ok: boolean; error?: string }>;
 };
 
 function buildContext(overrides: {
@@ -46,7 +53,7 @@ function buildContext(overrides: {
 function callExecute(
   tool: unknown,
   input: Record<string, unknown>,
-): Promise<{ ok: boolean; transform_id?: string; error?: string }> {
+): Promise<Record<string, unknown> & { ok: boolean; error?: string }> {
   const t = tool as ToolWithExecute;
   return t.execute(input, { toolCallId: "tc-test", messages: [] });
 }
@@ -253,29 +260,203 @@ describe("PR 1 — cleaning tools dispatch via worker", () => {
 
 // ---- PR 2: Row + column mutations ----------------------------------------
 
-describe.skip("PR 2 — row and column mutations dispatch via worker", () => {
+describe("PR 2 — row and column mutations dispatch via worker", () => {
   it("addRow emits row_added with backend-issued id", async () => {
-    expect.fail("PR 2 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => ({ id: "row-42" })),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeAddRowDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, { data: { name: "Alpha" } });
+
+    const added = events.filter((e) => e.type === "row_added");
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({
+      type: "row_added",
+      dataset_id: "ds-1",
+      row_id: "row-42",
+    });
+    expect(() => ChatEventSchema.parse(added[0])).not.toThrow();
+    expect(result).toEqual({ ok: true, row_id: "row-42" });
+    expect(backend.post).toHaveBeenCalledWith(
+      "/api/datasets/ds-1/rows",
+      { row: { name: "Alpha" } },
+    );
   });
 
   it("deleteRow emits row_deleted", async () => {
-    expect.fail("PR 2 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => ({ ok: true })),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeDeleteRowDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, { row_id: "row-7" });
+
+    const deleted = events.filter((e) => e.type === "row_deleted");
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toMatchObject({
+      type: "row_deleted",
+      dataset_id: "ds-1",
+      row_id: "row-7",
+    });
+    expect(result).toEqual({ ok: true, row_id: "row-7" });
+    expect(backend.post).toHaveBeenCalledWith(
+      "/api/datasets/ds-1/rows/row-7/delete",
+      {},
+    );
   });
 
   it("renameColumn emits column_renamed with old + new names", async () => {
-    expect.fail("PR 2 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => ({ ok: true })),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeRenameColumnDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {
+      column: "first_name",
+      newName: "Given Name",
+    });
+
+    const renamed = events.filter((e) => e.type === "column_renamed");
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]).toMatchObject({
+      type: "column_renamed",
+      dataset_id: "ds-1",
+      old_name: "first_name",
+      new_name: "Given Name",
+    });
+    expect(result).toEqual({
+      ok: true,
+      old_name: "first_name",
+      new_name: "Given Name",
+    });
+    expect(backend.post).toHaveBeenCalledWith(
+      "/api/datasets/ds-1/transforms",
+      expect.objectContaining({
+        transforms: expect.arrayContaining([
+          expect.objectContaining({
+            transform_type: "alias",
+            target_column: "first_name",
+            expression_config: { operation: "alias", alias: "Given Name" },
+          }),
+        ]),
+      }),
+    );
   });
 
   it("undoCleaningTransform with disable mode emits transform_undone mode=disable", async () => {
-    expect.fail("PR 2 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => ({ ok: true })),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeUndoCleaningTransformDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {
+      transform_id: "t-9",
+      mode: "disable",
+    });
+
+    const undone = events.filter((e) => e.type === "transform_undone");
+    expect(undone).toHaveLength(1);
+    expect(undone[0]).toMatchObject({
+      type: "transform_undone",
+      transform_id: "t-9",
+      dataset_id: "ds-1",
+      mode: "disable",
+    });
+    expect(result).toEqual({ ok: true, transform_id: "t-9", mode: "disable" });
+    expect(backend.post).toHaveBeenCalledWith(
+      "/api/datasets/ds-1/transforms/patch",
+      { updates: [{ id: "t-9", status: "disabled" }] },
+    );
   });
 
   it("undoCleaningTransform with delete mode emits transform_undone mode=delete", async () => {
-    expect.fail("PR 2 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => ({ ok: true })),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeUndoCleaningTransformDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {
+      transform_id: "t-9",
+      mode: "delete",
+    });
+
+    const undone = events.filter((e) => e.type === "transform_undone");
+    expect(undone).toHaveLength(1);
+    expect(undone[0]).toMatchObject({
+      type: "transform_undone",
+      mode: "delete",
+    });
+    expect(result).toEqual({ ok: true, transform_id: "t-9", mode: "delete" });
+    expect(backend.post).toHaveBeenCalledWith(
+      "/api/datasets/ds-1/transforms/patch",
+      { updates: [{ id: "t-9", status: "deleted" }] },
+    );
   });
 
   it("reEnableCleaningTransform emits transform_re_enabled", async () => {
-    expect.fail("PR 2 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => ({ ok: true })),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeReEnableCleaningTransformDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, { transform_id: "t-3" });
+
+    const reenabled = events.filter((e) => e.type === "transform_re_enabled");
+    expect(reenabled).toHaveLength(1);
+    expect(reenabled[0]).toMatchObject({
+      type: "transform_re_enabled",
+      transform_id: "t-3",
+      dataset_id: "ds-1",
+    });
+    expect(result).toEqual({ ok: true, transform_id: "t-3" });
+    expect(backend.post).toHaveBeenCalledWith(
+      "/api/datasets/ds-1/transforms/patch",
+      { updates: [{ id: "t-3", status: "enabled" }] },
+    );
+  });
+
+  it("addRow emits error_occurred when the backend fails (Q7 — never throws past execute)", async () => {
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => {
+        throw new BackendClientError(500, "boom", "POST failed: 500");
+      }),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeAddRowDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, { data: { name: "Alpha" } });
+
+    const errors = events.filter((e) => e.type === "error_occurred");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      type: "error_occurred",
+      phase: "backend_dispatch",
+      failed_tool: "addRow",
+      retryable: true,
+    });
+    expect(events.some((e) => e.type === "row_added")).toBe(false);
+    expect(result.ok).toBe(false);
   });
 });
 

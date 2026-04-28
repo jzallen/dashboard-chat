@@ -189,13 +189,78 @@ describe("PR 1 — cleaning event reactions", () => {
 
 // ---- PR 2: mutation event reactions --------------------------------------
 
-describe.skip("PR 2 — mutation event reactions", () => {
+describe("PR 2 — mutation event reactions", () => {
   it("row_added invalidates the dataset detail query", () => {
-    expect.fail("PR 2 polecat implements.");
+    const ctx = makeCtx();
+    handleChatEvent(
+      { type: "row_added", dataset_id: "ds-9", row_id: "row-1" },
+      ctx,
+    );
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: datasetKeys.detail("ds-9"),
+    });
   });
 
   it("column_renamed invalidates the dataset detail query", () => {
-    expect.fail("PR 2 polecat implements.");
+    const ctx = makeCtx();
+    handleChatEvent(
+      {
+        type: "column_renamed",
+        dataset_id: "ds-9",
+        old_name: "first_name",
+        new_name: "Given Name",
+      },
+      ctx,
+    );
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: datasetKeys.detail("ds-9"),
+    });
+  });
+
+  it.each([
+    ["disable", "tf-1"],
+    ["delete", "tf-2"],
+  ] as const)(
+    "transform_undone (mode=%s) invalidates the dataset detail query",
+    (mode, transformId) => {
+      const ctx = makeCtx();
+      handleChatEvent(
+        {
+          type: "transform_undone",
+          dataset_id: "ds-9",
+          transform_id: transformId,
+          mode,
+        },
+        ctx,
+      );
+      expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+      expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: datasetKeys.detail("ds-9"),
+      });
+    },
+  );
+
+  it("transform_re_enabled invalidates the dataset detail query", () => {
+    const ctx = makeCtx();
+    handleChatEvent(
+      { type: "transform_re_enabled", dataset_id: "ds-9", transform_id: "tf-1" },
+      ctx,
+    );
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+  });
+
+  it("row_deleted invalidates the dataset detail query", () => {
+    const ctx = makeCtx();
+    handleChatEvent(
+      { type: "row_deleted", dataset_id: "ds-9", row_id: "row-1" },
+      ctx,
+    );
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: datasetKeys.detail("ds-9"),
+    });
   });
 });
 
