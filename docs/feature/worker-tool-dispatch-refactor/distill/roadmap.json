@@ -1,0 +1,114 @@
+{
+  "feature": "worker-tool-dispatch-refactor",
+  "feature_dir": "docs/feature/worker-tool-dispatch-refactor",
+  "produced_by": "DISTILL wave",
+  "produced_on": "2026-04-28",
+  "binding_decisions": "docs/feature/worker-tool-dispatch-refactor/distill/wave-decisions.md",
+  "upstream_issues": "docs/feature/worker-tool-dispatch-refactor/distill/upstream-issues.md",
+  "phases": [
+    {
+      "id": "pr0",
+      "title": "PR 0 — Scaffolding (no behavior change)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Replace DISTILL RED scaffolds with thin real implementations of events.ts, backend-client.ts, dispatchers/index.ts, frontend dispatcher.ts, eventHandler.ts (skeleton — no cases handled), MockSSESource. Wire DispatchContext plumbing in agent/lib/chat/handleChat.ts. Build the Groq fixture-replay harness (UI-2 resolution). Decide schema location per TWD-8 (default: option 1 verbatim duplicate + sync test).",
+      "scenarios_to_unskip": [
+        "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 0 — scaffolding contract :: ChatEventSchema parses every event the worker may emit",
+        "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 0 — scaffolding contract :: Worker forwards JWT via auth-proxy when calling backend",
+        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 0 — MockSSESource contract :: all 5 scenarios"
+      ],
+      "files_changed_estimate": "agent: events.ts, backend-client.ts, dispatchers/index.ts, handleChat.ts (modify); fixtures/groq-replay.ts. frontend: events.ts, dispatcher.ts, eventHandler.ts, mockSSESource.ts. ~400-500 LoC.",
+      "exit_criteria": [
+        "All PR 0 scenarios green",
+        "Walking skeleton remains @skip but its imports resolve",
+        "Zero __SCAFFOLD__ markers remaining in files PR 0 owns",
+        "agent build + frontend build green",
+        "No production behavior change observable to a user"
+      ],
+      "blocks": ["pr1"],
+      "estimated_size": "M",
+      "ac_references": ["AC2.1 (compile-time exhaustiveness wiring)", "AC3.1 (MockSSESource contract)"]
+    },
+    {
+      "id": "pr1",
+      "title": "PR 1 — Cleaning tools migrated to worker dispatch (UNBLOCKS api-driven-user-flow-tests)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Implement agent/lib/chat/dispatchers/cleaning.ts: trimWhitespace, standardizeCase, fillNulls, mapValues, applyCleaningTransform. All emit transform_applied. Add transform_applied + error_occurred + turn_done cases to frontend eventHandler.ts. Delete corresponding cleaning-tool branches in frontend/src/core/toolCalls/executeToolCall.ts. Un-skip the walking skeleton.",
+      "scenarios_to_unskip": [
+        "agent/test/chat/acceptance/walking-skeleton.test.ts :: walking skeleton (single scenario)",
+        "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 1 — cleaning tools dispatch via worker (3 scenarios)",
+        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 1 — cleaning event reactions (3 scenarios)"
+      ],
+      "files_changed_estimate": "agent: dispatchers/cleaning.ts (new), tools.ts (remove cleaning defs), handleChat.ts (attach dispatchers). frontend: eventHandler.ts (3 cases), executeToolCall.ts (delete cleaning branches). ~300-400 LoC.",
+      "exit_criteria": [
+        "All PR 1 scenarios green (including walking skeleton when GROQ_API_KEY present)",
+        "PR 0 scenarios still green",
+        "Existing chat UX unchanged (manual smoke: trim a column via chat in dev)",
+        "AC1.4 grep guard passes (no chat refs in backend/app/)",
+        "Polecat MUST file a follow-up bead: \"Unblock api-driven-user-flow-tests — revise its DESIGN per the new protocol\""
+      ],
+      "blocks": ["pr2"],
+      "estimated_size": "M",
+      "ac_references": ["AC1.1", "AC1.2", "AC2.2 (transform_applied reaction)", "AC3.2"]
+    },
+    {
+      "id": "pr2",
+      "title": "PR 2 — Row + column mutations migrated to worker dispatch",
+      "polecat_command": "/nw-deliver",
+      "scope": "Implement agent/lib/chat/dispatchers/mutations.ts: addRow, deleteRow, renameColumn, undoCleaningTransform, reEnableCleaningTransform. Emit row_added / row_deleted / column_renamed / transform_undone (with mode) / transform_re_enabled. Add corresponding cases to frontend eventHandler.ts. Delete mutation branches in executeToolCall.ts.",
+      "scenarios_to_unskip": [
+        "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 2 — row and column mutations dispatch via worker (6 scenarios)",
+        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 2 — mutation event reactions (2 scenarios)"
+      ],
+      "files_changed_estimate": "agent: dispatchers/mutations.ts (new), tools.ts (remove mutation defs), handleChat.ts (attach dispatchers). frontend: eventHandler.ts (5 cases), executeToolCall.ts (delete mutation branches). ~350-450 LoC.",
+      "exit_criteria": [
+        "All PR 2 scenarios green",
+        "PR 0 + PR 1 scenarios still green",
+        "Walking skeleton still green",
+        "AC1.4 grep guard passes"
+      ],
+      "blocks": ["pr3"],
+      "estimated_size": "M",
+      "ac_references": ["AC1.2 (mutation paths)", "AC2.2"]
+    },
+    {
+      "id": "pr3",
+      "title": "PR 3 — UI directives migrated; legacy code deleted",
+      "polecat_command": "/nw-deliver",
+      "scope": "Implement agent/lib/chat/dispatchers/ui.ts: sortTable, filterTable, replaceColumnFilters, clearFilters. UI-only — no backend calls. Emit sort_directive / filter_directive / filters_cleared. Add cases to frontend eventHandler.ts. Modify direct-UI click handlers (column header sort/filter) to call applyDirective. DELETE frontend/src/core/toolCalls/executeToolCall.ts entirely. Remove default-throws from eventHandler.ts (every variant now handled). Final cleanup of any legacy parser branches in chatStream.ts.",
+      "scenarios_to_unskip": [
+        "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 3 — UI directives dispatch via worker (3 scenarios)",
+        "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: structural — backend stays chat-unaware (1 scenario)",
+        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 3 — UI directive event reactions (4 scenarios)",
+        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: AC2.1 — exhaustiveness via TS types"
+      ],
+      "files_changed_estimate": "agent: dispatchers/ui.ts (new), tools.ts (remove UI defs), handleChat.ts. frontend: eventHandler.ts (3 cases + remove default-throws), executeToolCall.ts (delete entire file), direct-UI click handlers (modify to call applyDirective). ~300-400 LoC + significant deletions.",
+      "exit_criteria": [
+        "All scenarios across all PRs green (every previously-skipped test now runs and passes)",
+        "Walking skeleton still green",
+        "executeToolCall.ts deleted (file removed; imports redirected or removed)",
+        "AC2.1 exhaustiveness type-test green",
+        "AC1.4 grep guard passes",
+        "Manual UX smoke: chat-driven sort works, click-driven sort works, both via the same applyDirective body",
+        "Polecat MUST file a follow-up bead: documentation review for AC4.3 (revise api-driven-user-flow-tests/design/design.md §2 and §10 per the simpler shape)"
+      ],
+      "blocks": [],
+      "estimated_size": "M-L",
+      "ac_references": ["AC1.1", "AC1.3", "AC1.4", "AC2.1", "AC2.2", "AC2.4", "AC3.3"]
+    }
+  ],
+  "manual_review_gates": [
+    {
+      "after": "pr3",
+      "title": "Confirm api-driven-user-flow-tests can resume",
+      "description": "AC4.3 — verify that docs/feature/api-driven-user-flow-tests/design/design.md §2 (Python tool dispatcher wrinkle) is now deletable and §10 worked example collapses to 'send prompt, observe events, query state'. NOT blocking the merge of this feature, but is the value-validation step that proves K4.",
+      "owner": "human reviewer or follow-up bead"
+    }
+  ],
+  "kpi_tracking": {
+    "K1_cross_cutting_change_cost": "post-merge — measured at next chat-tool addition",
+    "K2_backend_chat_references": "guarded by structural scenario in worker-tool-dispatch.feature; CI-enforced after PR 3",
+    "K3_fe_test_wallclock": "soft-tracked via afterEach hook in fe-event-vocabulary.test.tsx",
+    "K4_unblock_lead_time": "post-merge — measured by the resumption commit on api-driven-user-flow-tests",
+    "K5_event_vocabulary_churn": "long-tail — quarterly review of agent/lib/chat/events.ts commit history"
+  }
+}
