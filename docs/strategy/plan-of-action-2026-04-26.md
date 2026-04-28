@@ -32,7 +32,7 @@ Run Path E's 30-minute demo **first** (per Obsidian's recommendation — capture
 | `/nw-mutation-test` | After Path B unit tests land | Validates the report-layer suite catches real mutations (≥80% kill) |
 | `/nw-refactor` | If B's test-writing surfaces structural smells in `report/` use cases | RPP L1–L3 only — keep scope to what tests reveal |
 | `/nw-review` | Critique the e2e spec before it goes red | Catches BDD anti-patterns before the loop hardens |
-| `/nw-finalize` | After A is green and B's gates pass | Migrates `docs/feature/dc-9g9/` artifacts to `docs/evolution/` |
+| `/nw-finalize` | After A is green and B's gates pass | Migrates `docs/feature/paths-a-b-combined-plan/` artifacts to `docs/evolution/` |
 
 ### Agents
 
@@ -71,13 +71,13 @@ Ten steps, sized in half-day units. Steps marked **[parallelizable]** can overla
 | 1 | **Path E demo** — 30-min recorded session walking the full loop. Capture every friction point as a draft bead. | E (prelude) | 0.5d | Friction inventory, raw bead drafts |
 | 2 | **Triage demo findings** — split into (a) bugs with known cause → `/nw-bugfix` queue, (b) UX gaps → defer, (c) test-coverage gaps → fold into A or B. | E | 0.25d | Bead backlog refined |
 | 3 | **Update vision.md** — kill the stale "agent tools in progress — backend ready" line for reports (per strategy §3). | housekeeping | 0.25d | Updated `docs/vision.md` |
-| 4 | **Path B: report-layer scenario inventory** via `/nw-distill` — enumerate edge cases (zero-dim, zero-measure, dimension/measure name collision, joins crossing grain). | B | 0.5d | `docs/feature/dc-9g9/distill/report-edge-cases.md` |
+| 4 | **Path B: report-layer scenario inventory** via `/nw-distill` — enumerate edge cases (zero-dim, zero-measure, dimension/measure name collision, joins crossing grain). | B | 0.5d | `docs/feature/paths-a-b-combined-plan/distill/report-edge-cases.md` |
 | 5 | **Path B: write missing report unit + characterization tests** via `/nw-execute` per step. | B | 1.0d | New tests under `backend/app/use_cases/report/` |
 | 6 | **Path B: mutation test report suite** via `/nw-mutation-test`. Iterate on tests until kill rate ≥ 80%. | B | 0.5d | Mutation report; suite hardened |
 | 7 | **Path B: structured logging at agent-tool boundary** — wrap `reportToolDefinitions.ts` handlers with the same logging shape that landed for datasets in `61b7333`. | B | 0.5d | Log lines on every report-tool call |
 | 8 | **Path A: author `e2e/full-prototyping-loop/build-and-export.spec.ts`** via `nw-acceptance-designer`. Mirror `e2e/dataset-upload/upload-flow.spec.ts` conventions; use `seededProjectId` fixture. | A | 1.0d | Failing (RED) e2e spec |
 | 9 | **Path A: drive e2e to GREEN** — fix bugs with `/nw-bugfix`, add `dbt parse` assertion on extracted ZIP. **[parallelizable]** with step 7. | A | 1.5d | Green full-loop test in CI |
-| 10 | **`/nw-finalize`** — archive `docs/feature/dc-9g9/`, update CHANGELOG, close bead. | wrap | 0.25d | Migrated artifacts |
+| 10 | **`/nw-finalize`** — archive `docs/feature/paths-a-b-combined-plan/`, update CHANGELOG, close bead. | wrap | 0.25d | Migrated artifacts |
 
 **Total:** 6.25 days nominal; budget **5–7 days** with buffer.
 

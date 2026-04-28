@@ -1,7 +1,7 @@
 # Design — dc-1k8: App servers log image identity on startup
 
 > **Status**: proposed (mode = `propose`; awaiting user decision between Options A/B/C)
-> **Source**: `docs/feature/dc-1k8/discuss/{user-stories,outcome-kpis,wave-decisions}.md`
+> **Source**: `docs/feature/log-image-identity-on-startup/discuss/{user-stories,outcome-kpis,wave-decisions}.md`
 > **Scope (D0)**: Application — affects build instrumentation + four service entrypoints
 > **Mode (D1)**: Propose
 > **Skipped (per user direction)**: C4 diagrams, domain modeling, SSOT `brief.md` bootstrap
