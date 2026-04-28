@@ -66,9 +66,11 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     interceptResolveDataset = true;
   }
 
-  // Build DispatchContext — empty registry until PR 1/2/3 attach dispatchers.
-  // emit() is a no-op for now; PR 1+ will wire it to the SSE annotation channel.
+  // Build DispatchContext. emit() pushes onto a buffer that is drained into the
+  // SSE response as `8:` annotation lines (chatStream.ts parses both `2:` and
+  // `8:` JSON arrays as ChatEvent carriers).
   const jwt = extractJwt(request);
+  const eventBuffer: ChatEvent[] = [];
   const dispatchCtx: DispatchContext = {
     jwt,
     datasetId: contextType === "dataset" ? contextId ?? undefined : undefined,
@@ -78,8 +80,8 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
       authProxyUrl: env.AUTH_PROXY_URL ?? "http://localhost:3000",
       jwt,
     }),
-    emit: (_event: ChatEvent) => {
-      // PR 0: registry empty, emit unreachable. PR 1+ wires this to annotations.
+    emit: (event: ChatEvent) => {
+      eventBuffer.push(event);
     },
   };
 
@@ -105,15 +107,49 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
   void thread_id;
 
   const upstreamResponse = result.toDataStreamResponse();
+  const responseWithEvents = injectEmittedEvents(upstreamResponse, eventBuffer);
 
   // When resolve_dataset interception is NOT active, pass through directly
   if (!interceptResolveDataset) {
-    return upstreamResponse;
+    return responseWithEvents;
   }
 
   // Transform the stream to intercept resolve_dataset tool calls.
   // When found, inject an `r:` line and change the finish reason to "request".
-  return transformStreamForResolveDataset(upstreamResponse);
+  return transformStreamForResolveDataset(responseWithEvents);
+}
+
+/**
+ * Wraps the upstream SSE response so that any ChatEvents pushed to `buffer`
+ * during streaming (by dispatcher execute() callbacks) are flushed into the
+ * stream as `8:[event,...]` annotation lines. The frontend's chatStream.ts
+ * already parses prefix `8` as ChatEvents.
+ */
+function injectEmittedEvents(upstream: Response, buffer: ChatEvent[]): Response {
+  const upstreamBody = upstream.body;
+  if (!upstreamBody) return upstream;
+
+  const encoder = new TextEncoder();
+
+  const flushBuffer = (controller: TransformStreamDefaultController<Uint8Array>): void => {
+    if (buffer.length === 0) return;
+    const events = buffer.splice(0, buffer.length);
+    controller.enqueue(encoder.encode(`8:${JSON.stringify(events)}\n`));
+  };
+
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      flushBuffer(controller);
+      controller.enqueue(chunk);
+    },
+    flush(controller) {
+      flushBuffer(controller);
+    },
+  });
+
+  return new Response(upstreamBody.pipeThrough(transform), {
+    headers: upstream.headers,
+  });
 }
 
 /**

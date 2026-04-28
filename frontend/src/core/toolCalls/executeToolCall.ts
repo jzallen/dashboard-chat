@@ -1,6 +1,3 @@
-import { CASE_OPERATIONS } from "@/chat/types";
-import type { PreviewResponse } from "@/dataCatalog/datasets";
-
 import { getErrorMessage } from "../../lib/errors";
 import { datasetKeys } from "../../lib/queryKeys";
 import type { ToolCall } from "../../lib/types";
@@ -66,52 +63,12 @@ const validators: Record<
   },
   clearFilters: () => ({ tool: "clearFilters" }),
   clearSort: () => ({ tool: "clearSort" }),
-  trimWhitespace: (raw) => {
-    if (typeof raw.column !== "string")
-      throw new Error("trimWhitespace: missing column");
-    return { tool: "trimWhitespace", column: raw.column };
-  },
-  standardizeCase: (raw) => {
-    if (typeof raw.column !== "string")
-      throw new Error("standardizeCase: missing column");
-    if (typeof raw.mode !== "string")
-      throw new Error("standardizeCase: missing mode");
-    return { tool: "standardizeCase", column: raw.column, mode: raw.mode };
-  },
-  fillNulls: (raw) => {
-    if (typeof raw.column !== "string")
-      throw new Error("fillNulls: missing column");
-    if (raw.fillValue === undefined)
-      throw new Error("fillNulls: missing fillValue");
-    return { tool: "fillNulls", column: raw.column, fillValue: raw.fillValue };
-  },
-  mapValues: (raw) => {
-    if (typeof raw.column !== "string")
-      throw new Error("mapValues: missing column");
-    return {
-      tool: "mapValues",
-      column: raw.column,
-      mappings: raw.mappings as Array<{ from: string; to: string }>,
-    };
-  },
   renameColumn: (raw) => {
     if (typeof raw.column !== "string")
       throw new Error("renameColumn: missing column");
     if (typeof raw.newName !== "string")
       throw new Error("renameColumn: missing newName");
     return { tool: "renameColumn", column: raw.column, newName: raw.newName };
-  },
-  applyCleaningTransform: (raw) => {
-    if (typeof raw.column !== "string")
-      throw new Error("applyCleaningTransform: missing column");
-    if (typeof raw.operation !== "string")
-      throw new Error("applyCleaningTransform: missing operation");
-    return {
-      tool: "applyCleaningTransform",
-      column: raw.column,
-      operation: raw.operation,
-      config: (raw.config ?? {}) as Record<string, unknown>,
-    };
   },
   undoCleaningTransform: (raw) => {
     if (raw.action !== "disable" && raw.action !== "delete")
@@ -314,22 +271,9 @@ function countRaqbRules(tree: RaqbGroup): number {
   return count;
 }
 
-/** Formats a cleaning transform preview into a human-readable summary with before/after samples. */
-function formatPreviewResult(preview: PreviewResponse): string {
-  let msg = `Preview: ${preview.operation_description}\n`;
-  msg += `Affected: ${preview.affected_count} of ${preview.total_count} rows\n`;
-  if (preview.samples.length > 0) {
-    msg += "Samples:\n";
-    for (const s of preview.samples) {
-      const before = s.before === null ? "null" : `"${s.before}"`;
-      const after = s.after === null ? "null" : `"${s.after}"`;
-      msg += `  ${before} → ${after}\n`;
-    }
-  }
-  return msg;
-}
-
-/** Handles async cleaning tool calls (preview, apply, undo) against the backend API. */
+/** Handles async cleaning tool calls (rename, undo, re-enable) against the backend API.
+ *  Preview/apply paths (trim, case, fill_null, map_values) migrated to the worker
+ *  dispatcher in worker-tool-dispatch-refactor PR 1. */
 async function handleCleaningTool(
   validated: ToolCallArgs,
   context: ToolCallContext,
@@ -337,48 +281,6 @@ async function handleCleaningTool(
   const { datasetId, transforms, queryClient, catalog } = context;
 
   switch (validated.tool) {
-    case "trimWhitespace": {
-      const preview = await catalog.previewCleaningTransform(datasetId, {
-        transform_type: "clean",
-        target_column: validated.column,
-        expression_config: { operation: "trim" },
-      });
-      return formatPreviewResult(preview);
-    }
-
-    case "standardizeCase": {
-      const preview = await catalog.previewCleaningTransform(datasetId, {
-        transform_type: "clean",
-        target_column: validated.column,
-        expression_config: { operation: "case", mode: validated.mode },
-      });
-      return formatPreviewResult(preview);
-    }
-
-    case "fillNulls": {
-      const preview = await catalog.previewCleaningTransform(datasetId, {
-        transform_type: "clean",
-        target_column: validated.column,
-        expression_config: {
-          operation: "fill_null",
-          fill_value: validated.fillValue,
-        },
-      });
-      return formatPreviewResult(preview);
-    }
-
-    case "mapValues": {
-      const preview = await catalog.previewCleaningTransform(datasetId, {
-        transform_type: "map",
-        target_column: validated.column,
-        expression_config: {
-          operation: "map_values",
-          mappings: validated.mappings,
-        },
-      });
-      return formatPreviewResult(preview);
-    }
-
     case "renameColumn": {
       await catalog.createCleaningTransforms(datasetId, [
         {
@@ -393,29 +295,6 @@ async function handleCleaningTool(
         exact: true,
       });
       return `Renamed column: ${validated.column} → ${validated.newName}`;
-    }
-
-    case "applyCleaningTransform": {
-      const { column, operation, config } = validated;
-      const isCase = (CASE_OPERATIONS as readonly string[]).includes(operation);
-      const expressionConfig = isCase
-        ? { operation: "case", mode: operation, ...config }
-        : { operation, ...config };
-      const transformType = operation === "map_values" ? "map" : "clean";
-      const transformName = `${operation} on ${column}`;
-      await catalog.createCleaningTransforms(datasetId, [
-        {
-          name: transformName,
-          transform_type: transformType,
-          target_column: column,
-          expression_config: expressionConfig,
-        },
-      ]);
-      queryClient.invalidateQueries({
-        queryKey: datasetKeys.detail(datasetId),
-        exact: true,
-      });
-      return `Applied: ${transformName}`;
     }
 
     case "undoCleaningTransform": {
@@ -475,12 +354,7 @@ async function handleCleaningTool(
 }
 
 const CLEANING_TOOLS = new Set([
-  "trimWhitespace",
-  "standardizeCase",
-  "fillNulls",
-  "mapValues",
   "renameColumn",
-  "applyCleaningTransform",
   "undoCleaningTransform",
   "reEnableCleaningTransform",
 ]);
@@ -509,18 +383,8 @@ function generateToolMessage(validated: ToolCallArgs): string {
       return "Cleared all filters";
     case "clearSort":
       return "Cleared sorting";
-    case "trimWhitespace":
-      return `Previewing trim whitespace on ${validated.column}...`;
-    case "standardizeCase":
-      return `Previewing ${validated.mode} case on ${validated.column}...`;
-    case "fillNulls":
-      return `Previewing fill nulls on ${validated.column}...`;
-    case "mapValues":
-      return `Previewing value mapping on ${validated.column}...`;
     case "renameColumn":
       return `Renaming ${validated.column} to ${validated.newName}...`;
-    case "applyCleaningTransform":
-      return `Applying ${validated.operation} on ${validated.column}...`;
     case "undoCleaningTransform":
       return "Undoing cleaning transform...";
     case "reEnableCleaningTransform":

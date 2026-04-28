@@ -20,21 +20,7 @@ export type ToolCallArgs =
   | { tool: "generateFilter"; description: string; raqb_tree: unknown }
   | { tool: "clearFilters" }
   | { tool: "clearSort" }
-  | { tool: "trimWhitespace"; column: string }
-  | { tool: "standardizeCase"; column: string; mode: string }
-  | { tool: "fillNulls"; column: string; fillValue: unknown }
-  | {
-      tool: "mapValues";
-      column: string;
-      mappings: Array<{ from: string; to: string }>;
-    }
   | { tool: "renameColumn"; column: string; newName: string }
-  | {
-      tool: "applyCleaningTransform";
-      column: string;
-      operation: string;
-      config: Record<string, unknown>;
-    }
   | {
       tool: "undoCleaningTransform";
       action: "disable" | "delete";

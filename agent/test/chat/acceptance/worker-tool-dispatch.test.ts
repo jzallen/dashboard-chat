@@ -10,8 +10,46 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { backendClient } from "../../../lib/chat/backend-client";
-import { ChatEventSchema } from "../../../lib/chat/events";
+import {
+  type BackendClient,
+  backendClient,
+  BackendClientError,
+} from "../../../lib/chat/backend-client";
+import type { DispatchContext } from "../../../lib/chat/dispatchers";
+import {
+  makeApplyCleaningTransformDispatcher,
+} from "../../../lib/chat/dispatchers/cleaning";
+import { type ChatEvent, ChatEventSchema } from "../../../lib/chat/events";
+
+type ToolWithExecute = {
+  execute: (
+    input: Record<string, unknown>,
+    options: { toolCallId: string; messages: unknown[] },
+  ) => Promise<{ ok: boolean; transform_id?: string; error?: string }>;
+};
+
+function buildContext(overrides: {
+  backend: BackendClient;
+  emit: (event: ChatEvent) => void;
+  datasetId?: string;
+}): DispatchContext {
+  return {
+    jwt: "test.jwt.value",
+    datasetId: overrides.datasetId ?? "ds-1",
+    projectId: undefined,
+    contextType: "dataset",
+    backend: overrides.backend,
+    emit: overrides.emit,
+  };
+}
+
+function callExecute(
+  tool: unknown,
+  input: Record<string, unknown>,
+): Promise<{ ok: boolean; transform_id?: string; error?: string }> {
+  const t = tool as ToolWithExecute;
+  return t.execute(input, { toolCallId: "tc-test", messages: [] });
+}
 
 // ---- PR 0: Scaffolding contract ------------------------------------------
 
@@ -78,36 +116,138 @@ describe("PR 0 — scaffolding contract", () => {
 
 // ---- PR 1: Cleaning tools ------------------------------------------------
 
-describe.skip("PR 1 — cleaning tools dispatch via worker", () => {
+describe("PR 1 — cleaning tools dispatch via worker", () => {
   it("applyCleaningTransform dispatch emits transform_applied", async () => {
-    // Given a chat turn that triggers applyCleaningTransform with column "region", operation "trim"
-    // When the worker dispatches the tool call (Groq replayed from fixture)
-    // Then the SSE stream emits a transform_applied event with column "region", operation "trim"
-    // And the event's transform_id matches what backend returned
-    // And the tool's execute callback returns { ok: true, transform_id }
-    expect.fail("PR 1 polecat implements.");
+    // Given a DispatchContext bound to dataset ds-1 and a fake backend that
+    // returns the persisted transform id "t-abc"
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => ({ id: "t-abc" })),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({
+      backend,
+      emit: (e) => events.push(e),
+      datasetId: "ds-1",
+    });
+
+    // When the dispatcher's execute callback runs for column=region, operation=trim
+    const tool = makeApplyCleaningTransformDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {
+      column: "region",
+      operation: "trim",
+      config: {},
+    });
+
+    // Then exactly one transform_applied event was emitted with the matching id
+    const applied = events.filter((e) => e.type === "transform_applied");
+    expect(applied).toHaveLength(1);
+    expect(applied[0]).toMatchObject({
+      type: "transform_applied",
+      transform_id: "t-abc",
+      dataset_id: "ds-1",
+      operation: "trim",
+      column: "region",
+    });
+    // And the emitted event parses cleanly through ChatEventSchema (contract)
+    expect(() => ChatEventSchema.parse(applied[0])).not.toThrow();
+    // And the execute callback returns the structured success
+    expect(result).toEqual({ ok: true, transform_id: "t-abc" });
+    // And the backend was called with the canonical transforms-batch shape
+    expect(backend.post).toHaveBeenCalledWith(
+      "/api/datasets/ds-1/transforms",
+      expect.objectContaining({
+        transforms: expect.arrayContaining([
+          expect.objectContaining({
+            target_column: "region",
+            transform_type: "clean",
+            expression_config: { operation: "trim" },
+          }),
+        ]),
+      }),
+    );
   });
 
   it("applyCleaningTransform emits error_occurred on backend failure", async () => {
-    // Given a chat turn that triggers applyCleaningTransform
-    // And the backend is configured to return 500 for the next call
-    // When the worker dispatches the tool call
-    // Then the SSE stream emits an error_occurred event with phase "backend_dispatch"
-    // And the error_occurred event has failed_tool "applyCleaningTransform"
-    // And the tool's execute callback returns { ok: false, error: <message> }
-    // And the SSE stream is NOT terminated (Q7 — continue past errors)
-    expect.fail("PR 1 polecat implements.");
+    // Given a backend that fails the next call with HTTP 500
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => {
+        throw new BackendClientError(500, "boom", "POST failed: 500");
+      }),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({
+      backend,
+      emit: (e) => events.push(e),
+      datasetId: "ds-1",
+    });
+
+    // When the dispatcher's execute runs
+    const tool = makeApplyCleaningTransformDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {
+      column: "region",
+      operation: "trim",
+      config: {},
+    });
+
+    // Then exactly one error_occurred event was emitted with phase backend_dispatch
+    const errors = events.filter((e) => e.type === "error_occurred");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      type: "error_occurred",
+      phase: "backend_dispatch",
+      failed_tool: "applyCleaningTransform",
+      retryable: true,
+    });
+    // And no transform_applied was emitted
+    expect(events.some((e) => e.type === "transform_applied")).toBe(false);
+    // And the execute callback returns { ok: false, error } — never throws past execute
+    expect(result.ok).toBe(false);
+    expect(typeof result.error).toBe("string");
   });
 
   it("Multiple cleaning tools in one turn — partial-progress emits per call", async () => {
-    // Given a chat turn that triggers three applyCleaningTransform calls
-    // And the backend is configured to fail on the second call only
-    // When the worker dispatches all three (Groq replayed from fixture)
-    // Then the SSE stream contains exactly two transform_applied events
-    // And the SSE stream contains exactly one error_occurred event with failed_tool "applyCleaningTransform"
-    // And the events appear in the order: success, error, success
-    // And the tool execute results in the message thread reflect 2x ok:true and 1x ok:false
-    expect.fail("PR 1 polecat implements.");
+    // Given a backend where the second call (only) fails — Q7: continue past errors
+    const events: ChatEvent[] = [];
+    let callIndex = 0;
+    const backend: BackendClient = {
+      post: vi.fn(async () => {
+        callIndex += 1;
+        if (callIndex === 2) {
+          throw new BackendClientError(500, "second fails", "POST failed: 500");
+        }
+        return { id: `t-${callIndex}` };
+      }),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({
+      backend,
+      emit: (e) => events.push(e),
+      datasetId: "ds-1",
+    });
+
+    // When three apply calls are dispatched in order
+    const tool = makeApplyCleaningTransformDispatcher(ctx.emit, ctx);
+    const r1 = await callExecute(tool, { column: "a", operation: "trim", config: {} });
+    const r2 = await callExecute(tool, { column: "b", operation: "trim", config: {} });
+    const r3 = await callExecute(tool, { column: "c", operation: "trim", config: {} });
+
+    // Then we see two transform_applied events and one error_occurred event...
+    const applied = events.filter((e) => e.type === "transform_applied");
+    const errors = events.filter((e) => e.type === "error_occurred");
+    expect(applied).toHaveLength(2);
+    expect(errors).toHaveLength(1);
+    // ...in the order success, error, success
+    expect(events.map((e) => e.type)).toEqual([
+      "transform_applied",
+      "error_occurred",
+      "transform_applied",
+    ]);
+    // And the tool execute results reflect 2x ok:true and 1x ok:false
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(false);
+    expect(r3.ok).toBe(true);
   });
 });
 

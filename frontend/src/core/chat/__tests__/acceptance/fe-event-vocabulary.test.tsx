@@ -9,14 +9,30 @@
  */
 
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { afterEach,beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatEventSchema as AgentSchema } from "../../../../../../agent/lib/chat/events";
+import { datasetKeys } from "../../../../lib/queryKeys";
 import { ChatTranscript } from "../../ChatTranscript";
-import { applyDirective } from "../../dispatcher";
-import { handleChatEvent } from "../../eventHandler";
+import { applyDirective, type TableApi } from "../../dispatcher";
+import { type EventHandlerContext, handleChatEvent } from "../../eventHandler";
 import { ChatEventSchema as FrontendSchema } from "../../events";
 import { MockSSESource } from "../mockSSESource";
+
+function makeCtx(overrides?: Partial<EventHandlerContext>): EventHandlerContext {
+  const noopTable: TableApi = {
+    setSorting: () => {},
+    setColumnFilters: () => {},
+    resetColumnFilters: () => {},
+  };
+  return {
+    queryClient: { invalidateQueries: vi.fn() },
+    table: noopTable,
+    toast: { error: vi.fn(), success: vi.fn() },
+    thinking: { setVisible: vi.fn() },
+    ...overrides,
+  };
+}
 
 // Cross-workspace import to ../agent/lib/chat/events resolved per TWD-8 option 1
 // (verbatim duplicate). The cross-schema sync scenario asserts that both
@@ -120,17 +136,54 @@ describe("PR 0 — MockSSESource contract", () => {
 
 // ---- PR 1: cleaning event reactions --------------------------------------
 
-describe.skip("PR 1 — cleaning event reactions", () => {
+describe("PR 1 — cleaning event reactions", () => {
   it("transform_applied invalidates the dataset detail query", () => {
-    expect.fail("PR 1 polecat implements (uses spied invalidateQueries).");
+    // Given a context whose queryClient.invalidateQueries is spied
+    const ctx = makeCtx();
+    // When handleChatEvent processes a transform_applied event for ds-456
+    handleChatEvent(
+      {
+        type: "transform_applied",
+        transform_id: "t-123",
+        dataset_id: "ds-456",
+        operation: "trim",
+        column: "region",
+      },
+      ctx,
+    );
+    // Then invalidateQueries was called with datasetKeys.detail("ds-456")
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(ctx.queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: datasetKeys.detail("ds-456"),
+    });
   });
 
   it("error_occurred triggers a toast with the event's message", () => {
-    expect.fail("PR 1 polecat implements.");
+    // Given a context whose toast.error is spied
+    const ctx = makeCtx();
+    // When handleChatEvent processes an error_occurred event
+    handleChatEvent(
+      {
+        type: "error_occurred",
+        phase: "backend_dispatch",
+        message: "backend exploded",
+        retryable: false,
+      },
+      ctx,
+    );
+    // Then toast.error was called with the event's message
+    expect(ctx.toast.error).toHaveBeenCalledTimes(1);
+    expect(ctx.toast.error).toHaveBeenCalledWith("backend exploded");
   });
 
   it("turn_done clears the chat panel \"thinking\" indicator", () => {
-    expect.fail("PR 1 polecat implements (chat panel mount + state assertion).");
+    // Given a context whose thinking.setVisible is spied
+    const ctx = makeCtx();
+    // When handleChatEvent processes a turn_done event
+    handleChatEvent({ type: "turn_done", reason: "stop" }, ctx);
+    // Then thinking.setVisible(false) was called exactly once
+    expect(ctx.thinking!.setVisible).toHaveBeenCalledTimes(1);
+    expect(ctx.thinking!.setVisible).toHaveBeenCalledWith(false);
   });
 });
 
