@@ -1,6 +1,9 @@
 import { createGroq } from "@ai-sdk/groq";
 import { type CoreMessage, streamText, type ToolSet } from "ai";
 
+import { backendClient } from "./backend-client";
+import { type DispatchContext, dispatcherRegistry } from "./dispatchers";
+import type { ChatEvent } from "./events";
 import { getConversationalSystemPrompt, getReportSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "./prompts";
 import { getReportTools } from "./reportToolDefinitions";
 import { getConversationalTools, getTools } from "./tools";
@@ -20,6 +23,15 @@ interface ChatRequest {
 
 interface Env {
   GROQ_API_KEY: string;
+  AUTH_PROXY_URL?: string;
+}
+
+function extractJwt(request: Request): string {
+  const header = request.headers.get("Authorization") ?? request.headers.get("authorization") ?? "";
+  if (header.toLowerCase().startsWith("bearer ")) {
+    return header.slice("bearer ".length).trim();
+  }
+  return "";
 }
 
 export async function handleChat(request: Request, env: Env): Promise<Response> {
@@ -54,16 +66,43 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     interceptResolveDataset = true;
   }
 
+  // Build DispatchContext — empty registry until PR 1/2/3 attach dispatchers.
+  // emit() is a no-op for now; PR 1+ will wire it to the SSE annotation channel.
+  const jwt = extractJwt(request);
+  const dispatchCtx: DispatchContext = {
+    jwt,
+    datasetId: contextType === "dataset" ? contextId ?? undefined : undefined,
+    projectId: project_id ?? undefined,
+    contextType: contextType === "report" ? "report" : contextType === "dataset" ? "dataset" : "project",
+    backend: backendClient({
+      authProxyUrl: env.AUTH_PROXY_URL ?? "http://localhost:3000",
+      jwt,
+    }),
+    emit: (_event: ChatEvent) => {
+      // PR 0: registry empty, emit unreachable. PR 1+ wires this to annotations.
+    },
+  };
+
+  const dispatcherTools = dispatcherRegistry(dispatchCtx);
+  const mergedTools: ToolSet | undefined =
+    tools || Object.keys(dispatcherTools).length > 0
+      ? ({ ...(tools ?? {}), ...dispatcherTools } as ToolSet)
+      : undefined;
+
   const groq = createGroq({ apiKey: env.GROQ_API_KEY });
 
   const result = streamText({
     model: groq("llama-3.3-70b-versatile"),
     system: systemPrompt,
     messages,
-    ...(tools ? { tools, toolChoice: "auto" as const } : {}),
+    ...(mergedTools ? { tools: mergedTools, toolChoice: "auto" as const } : {}),
     temperature: 0.4,
     maxTokens: 1024,
   });
+
+  // Touch thread_id so the unused-variable lint stays quiet — the field is part
+  // of the request contract and will be used by future routing.
+  void thread_id;
 
   const upstreamResponse = result.toDataStreamResponse();
 

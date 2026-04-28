@@ -1,24 +1,37 @@
-// SCAFFOLD: true — DISTILL RED scaffold for worker-tool-dispatch-refactor PR 0.
-// applyDirective is the shared body called by both the SSE event handler and
-// direct UI click handlers (DESIGN §2.1). Real impl wires TanStack Table API.
+import type { Filter } from "./events";
 
-export const __SCAFFOLD__ = true;
-
-const NOT_IMPLEMENTED = "Not yet implemented — RED scaffold (DISTILL output for worker-tool-dispatch-refactor)";
-
-export type Filter = { op: string; values: unknown[] };
+export type { Filter } from "./events";
 
 export type Directive =
   | { kind: "sort"; column: string; direction: "asc" | "desc" }
   | { kind: "filter"; column: string; filters: Filter[] }
   | { kind: "clear_filters" };
 
+type ColumnFilter = { id: string; value: unknown };
+
 export type TableApi = {
-  setSorting: (s: unknown) => void;
-  setColumnFilters: (updater: unknown) => void;
+  setSorting: (updater: { id: string; desc: boolean }[]) => void;
+  setColumnFilters: (
+    updater: ColumnFilter[] | ((prev: ColumnFilter[]) => ColumnFilter[]),
+  ) => void;
   resetColumnFilters: () => void;
 };
 
-export function applyDirective(_directive: Directive, _table: TableApi): void {
-  throw new Error(NOT_IMPLEMENTED);
+function upsertFilter(prev: ColumnFilter[], column: string, filters: Filter[]): ColumnFilter[] {
+  const without = prev.filter((f) => f.id !== column);
+  return [...without, { id: column, value: filters }];
+}
+
+export function applyDirective(directive: Directive, table: TableApi): void {
+  switch (directive.kind) {
+    case "sort":
+      table.setSorting([{ id: directive.column, desc: directive.direction === "desc" }]);
+      return;
+    case "filter":
+      table.setColumnFilters((prev) => upsertFilter(prev, directive.column, directive.filters));
+      return;
+    case "clear_filters":
+      table.resetColumnFilters();
+      return;
+  }
 }

@@ -1,11 +1,3 @@
-// SCAFFOLD: true — DISTILL RED scaffold for worker-tool-dispatch-refactor.
-// Real implementation lands in PR 0 (DELIVER): a thin fetch wrapper that
-// targets AUTH_PROXY_URL and forwards the user's JWT verbatim.
-
-export const __SCAFFOLD__ = true;
-
-const NOT_IMPLEMENTED = "Not yet implemented — RED scaffold (DISTILL output for worker-tool-dispatch-refactor)";
-
 export type BackendClient = {
   post: (path: string, body: unknown) => Promise<unknown>;
   get: (path: string) => Promise<unknown>;
@@ -16,9 +8,47 @@ export type BackendClientConfig = {
   jwt: string;
 };
 
-export function backendClient(_config: BackendClientConfig): BackendClient {
+export class BackendClientError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BackendClientError";
+  }
+}
+
+export function backendClient(config: BackendClientConfig): BackendClient {
+  const { authProxyUrl, jwt } = config;
+  const base = authProxyUrl.replace(/\/$/, "");
+  const headers = {
+    Authorization: `Bearer ${jwt}`,
+    "Content-Type": "application/json",
+  };
+
+  async function request(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
+    const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
+    const init: RequestInit = {
+      method,
+      headers,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    };
+    const res = await fetch(url, init);
+    const text = await res.text();
+    if (!res.ok) {
+      throw new BackendClientError(res.status, text, `${method} ${path} failed: ${res.status}`);
+    }
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  }
+
   return {
-    async post(_path, _body) { throw new Error(NOT_IMPLEMENTED); },
-    async get(_path) { throw new Error(NOT_IMPLEMENTED); },
+    post: (path, body) => request("POST", path, body),
+    get: (path) => request("GET", path),
   };
 }

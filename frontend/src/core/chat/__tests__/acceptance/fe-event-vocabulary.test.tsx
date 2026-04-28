@@ -8,16 +8,20 @@
  * Skipped until each PR lands. Polecat un-skips and implements.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { ChatEventSchema as FrontendSchema } from "../events";
-import { applyDirective } from "../dispatcher";
-import { handleChatEvent } from "../eventHandler";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
+import { ChatEventSchema as AgentSchema } from "../../../../../../agent/lib/chat/events";
+import { ChatTranscript } from "../../ChatTranscript";
+import { applyDirective } from "../../dispatcher";
+import { handleChatEvent } from "../../eventHandler";
+import { ChatEventSchema as FrontendSchema } from "../../events";
 import { MockSSESource } from "../mockSSESource";
 
-// NOTE: cross-workspace import to ../agent/lib/chat/events is resolved by the
-// PR-0 polecat per TWD-8 (verbatim duplicate / re-export / shared workspace).
-// The "schemas-equivalent" scenario below uses FrontendSchema only until that
-// decision is locked.
+// Cross-workspace import to ../agent/lib/chat/events resolved per TWD-8 option 1
+// (verbatim duplicate). The cross-schema sync scenario asserts that both
+// schemas parse every variant identically — the polecat-time check that catches
+// future drift.
 
 // Soft K3 perf check — prints only, never fails (TWD-11).
 let _start = 0;
@@ -32,7 +36,7 @@ afterEach(() => {
 
 // ---- PR 0: MockSSESource contract + schema sync --------------------------
 
-describe.skip("PR 0 — MockSSESource contract", () => {
+describe("PR 0 — MockSSESource contract", () => {
   it("MockSSESource synchronously delivers emit() to all subscribers", () => {
     // Given a MockSSESource with two subscribers
     const source = new MockSSESource();
@@ -70,8 +74,23 @@ describe.skip("PR 0 — MockSSESource contract", () => {
     expect(count).toBe(0);
   });
 
-  it("assistant_text_delta accumulates into the chat panel's transcript", () => {
-    expect.fail("PR 0 polecat implements (chat panel test that mounts component + drives MockSSESource).");
+  it("assistant_text_delta accumulates into the chat panel's transcript", async () => {
+    // Given a chat transcript component mounted with a MockSSESource
+    const source = new MockSSESource();
+    render(<ChatTranscript source={source} />);
+    const transcript = screen.getByTestId("chat-transcript");
+    expect(transcript.textContent).toBe("");
+    // When two assistant_text_delta events are emitted in order
+    await act(async () => {
+      await source.emitSequence([
+        { type: "assistant_text_delta", delta: "Hello, " },
+        { type: "assistant_text_delta", delta: "world!" },
+      ]);
+    });
+    // Then the transcript reflects the accumulated text in order
+    await waitFor(() => {
+      expect(transcript.textContent).toBe("Hello, world!");
+    });
   });
 
   it("agent's ChatEventSchema and frontend's ChatEventSchema parse every variant identically", () => {
@@ -79,16 +98,23 @@ describe.skip("PR 0 — MockSSESource contract", () => {
     const samples = [
       { type: "assistant_text_delta", delta: "hi" },
       { type: "transform_applied", transform_id: "t-1", dataset_id: "d-1", operation: "trim", column: "region" },
+      { type: "column_renamed", dataset_id: "d-1", old_name: "a", new_name: "b" },
+      { type: "row_added", dataset_id: "d-1", row_id: "r-1" },
+      { type: "row_deleted", dataset_id: "d-1", row_id: "r-1" },
+      { type: "transform_undone", transform_id: "t-1", dataset_id: "d-1", mode: "disable" },
+      { type: "transform_re_enabled", transform_id: "t-1", dataset_id: "d-1" },
+      { type: "sort_directive", column: "region", direction: "asc" },
+      { type: "filter_directive", column: "region", filters: [] },
       { type: "filters_cleared" },
+      { type: "error_occurred", phase: "backend_dispatch", message: "boom", retryable: false },
       { type: "turn_done", reason: "stop" },
     ];
-    // Polecat at PR 0 wires the AgentSchema import per TWD-8 and asserts
-    // expect(AgentSchema.parse(sample)).toEqual(FrontendSchema.parse(sample))
-    // for each sample.
+    // Then both schemas accept every sample, and the parsed shapes match.
     for (const sample of samples) {
-      expect(() => FrontendSchema.parse(sample)).not.toThrow();
+      const frontendParsed = FrontendSchema.parse(sample);
+      const agentParsed = AgentSchema.parse(sample);
+      expect(frontendParsed).toEqual(agentParsed);
     }
-    expect.fail("PR 0 polecat completes the cross-schema equivalence assertion (TWD-8).");
   });
 });
 

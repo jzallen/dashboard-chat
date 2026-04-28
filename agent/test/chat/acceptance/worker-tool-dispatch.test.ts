@@ -8,13 +8,14 @@
  * block during DELIVER as scenarios become testable.
  */
 
-import { describe, it, expect } from "vitest";
-import { ChatEventSchema } from "../../../lib/chat/events";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { backendClient } from "../../../lib/chat/backend-client";
+import { ChatEventSchema } from "../../../lib/chat/events";
 
 // ---- PR 0: Scaffolding contract ------------------------------------------
 
-describe.skip("PR 0 — scaffolding contract", () => {
+describe("PR 0 — scaffolding contract", () => {
   it("ChatEventSchema parses every event the worker may emit", () => {
     // Given the agent's events.ts module exports ChatEventSchema
     // When a sample of every event variant in the closed vocabulary is parsed
@@ -38,13 +39,40 @@ describe.skip("PR 0 — scaffolding contract", () => {
     }
   });
 
-  it("Worker forwards JWT via auth-proxy when calling backend", async () => {
-    // Given a DispatchContext with a known JWT
-    const client = backendClient({ authProxyUrl: "http://localhost:8788", jwt: "test.jwt.value" });
-    // When the worker's backend-client issues POST /api/datasets/{id}/transforms
-    // Then auth-proxy receives Authorization: Bearer <JWT>
-    // (Polecat asserts this via a fetch interceptor or against the running auth-proxy.)
-    await expect(client.post("/api/datasets/d-1/transforms", {})).resolves.toBeTruthy();
+  describe("Worker forwards JWT via auth-proxy when calling backend", () => {
+    let originalFetch: typeof fetch;
+    let capturedRequest: Request | null;
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch;
+      capturedRequest = null;
+      globalThis.fetch = vi.fn(async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input as string | URL, init);
+        capturedRequest = req;
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch;
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("forwards Authorization: Bearer <JWT> verbatim", async () => {
+      // Given a DispatchContext with a known JWT
+      const client = backendClient({ authProxyUrl: "http://localhost:8788", jwt: "test.jwt.value" });
+      // When the worker's backend-client issues POST /api/datasets/{id}/transforms
+      const result = await client.post("/api/datasets/d-1/transforms", { transforms: [] });
+      // Then the request URL targets the auth-proxy
+      expect(capturedRequest!.url).toBe("http://localhost:8788/api/datasets/d-1/transforms");
+      // And auth-proxy receives Authorization: Bearer <JWT>
+      expect(capturedRequest!.headers.get("authorization")).toBe("Bearer test.jwt.value");
+      expect(capturedRequest!.method).toBe("POST");
+      // And the response body parses to a truthy value
+      expect(result).toEqual({ ok: true });
+    });
   });
 });
 
