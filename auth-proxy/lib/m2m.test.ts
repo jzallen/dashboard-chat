@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   _resetForTests,
   authenticateClient,
+  DEV_CLIENT_ID,
+  DEV_CLIENT_SECRET,
   isM2mEnabled,
   isM2mToken,
   issueM2mToken,
@@ -116,6 +118,86 @@ describe("authenticateClient", () => {
     process.env.M2M_CLIENTS = "{not valid json";
     const client = await authenticateClient("svc-1", "topsecret");
     expect(client).toBeNull();
+  });
+});
+
+describe("authenticateClient — dev-mode parity", () => {
+  it("authenticates the built-in dev client when AUTH_MODE=dev with no M2M_CLIENTS", async () => {
+    process.env.AUTH_MODE = "dev";
+    delete process.env.M2M_CLIENTS;
+
+    const client = await authenticateClient(DEV_CLIENT_ID, DEV_CLIENT_SECRET);
+    expect(client).toEqual({
+      sub: "dev-user-001",
+      orgId: "dev-org-001",
+      email: "dev@localhost",
+    });
+  });
+
+  it("rejects the built-in dev client outside dev mode", async () => {
+    process.env.AUTH_MODE = "workos";
+    delete process.env.M2M_CLIENTS;
+
+    const client = await authenticateClient(DEV_CLIENT_ID, DEV_CLIENT_SECRET);
+    expect(client).toBeNull();
+  });
+
+  it("rejects an empty AUTH_MODE built-in (production default unsets dev client)", async () => {
+    delete process.env.AUTH_MODE;
+    delete process.env.M2M_CLIENTS;
+
+    const client = await authenticateClient(DEV_CLIENT_ID, DEV_CLIENT_SECRET);
+    expect(client).toBeNull();
+  });
+
+  it("rejects a wrong secret on the built-in dev client", async () => {
+    process.env.AUTH_MODE = "dev";
+    delete process.env.M2M_CLIENTS;
+
+    const client = await authenticateClient(DEV_CLIENT_ID, "not-the-secret");
+    expect(client).toBeNull();
+  });
+
+  it("merges built-in dev client with user-supplied M2M_CLIENTS in dev mode", async () => {
+    process.env.AUTH_MODE = "dev";
+    process.env.M2M_CLIENTS = JSON.stringify({
+      "extra-svc": {
+        secret: "extra-secret",
+        sub: "service-account:extra",
+        org_id: "org-extra",
+        email: "extra@example.com",
+      },
+    });
+
+    const dev = await authenticateClient(DEV_CLIENT_ID, DEV_CLIENT_SECRET);
+    expect(dev?.sub).toBe("dev-user-001");
+
+    const extra = await authenticateClient("extra-svc", "extra-secret");
+    expect(extra?.sub).toBe("service-account:extra");
+  });
+
+  it("user-supplied M2M_CLIENTS entry overrides built-in dev client when ids collide", async () => {
+    process.env.AUTH_MODE = "dev";
+    process.env.M2M_CLIENTS = JSON.stringify({
+      [DEV_CLIENT_ID]: {
+        secret: "override-secret",
+        sub: "override-sub",
+        org_id: "override-org",
+        email: "override@example.com",
+      },
+    });
+
+    // Built-in secret no longer works
+    const builtin = await authenticateClient(DEV_CLIENT_ID, DEV_CLIENT_SECRET);
+    expect(builtin).toBeNull();
+
+    // Override secret + override identity is what authenticates
+    const overridden = await authenticateClient(DEV_CLIENT_ID, "override-secret");
+    expect(overridden).toEqual({
+      sub: "override-sub",
+      orgId: "override-org",
+      email: "override@example.com",
+    });
   });
 });
 

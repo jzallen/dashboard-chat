@@ -11,7 +11,15 @@
  *   { "<client_id>": { "secret": "...", "sub": "...", "org_id": "...", "email": "..." } }
  *
  * For production: clients should be injected through a secrets manager.
- * Dev-mode parity (A.2) layers a friendlier setup on top of this surface.
+ *
+ * Dev-mode parity: when AUTH_MODE=dev, a synthetic built-in client
+ * (DEV_CLIENT_ID / DEV_CLIENT_SECRET) is available without any
+ * M2M_CLIENTS configuration. It mints tokens identifying the standard
+ * dev user (dev-user-001 / dev-org-001 / dev@localhost), the same
+ * identity that backend's `dev-token-static` represents. User-supplied
+ * M2M_CLIENTS entries override the built-in if they share a client_id.
+ * The built-in is suppressed outside dev mode, so production deployments
+ * never inadvertently expose it.
  */
 
 import { timingSafeEqual } from "node:crypto";
@@ -32,6 +40,21 @@ interface ClientConfig {
   org_id: string;
   email: string;
 }
+
+/**
+ * Built-in dev-mode client (only registered when AUTH_MODE=dev).
+ * Mirrors backend's DEV_USER (dev-user-001 / dev-org-001 / dev@localhost)
+ * so an M2M-minted dev token forwards the same identity headers as
+ * `dev-token-static`.
+ */
+export const DEV_CLIENT_ID = "dev-m2m-client";
+export const DEV_CLIENT_SECRET = "dev-m2m-secret";
+const DEV_BUILTIN_CLIENT: ClientConfig = {
+  secret: DEV_CLIENT_SECRET,
+  sub: "dev-user-001",
+  org_id: "dev-org-001",
+  email: "dev@localhost",
+};
 
 export interface ClientIdentity {
   sub: string;
@@ -66,21 +89,30 @@ let cachedClients: Record<string, ClientConfig> | null = null;
 
 function loadClients(): Record<string, ClientConfig> {
   if (cachedClients) return cachedClients;
+
+  // In dev mode, seed a built-in synthetic client so local development and
+  // the api-driven test compose stack can mint M2M tokens without any
+  // M2M_CLIENTS configuration. User-supplied entries override the built-in.
+  const base: Record<string, ClientConfig> =
+    process.env.AUTH_MODE === "dev"
+      ? { [DEV_CLIENT_ID]: { ...DEV_BUILTIN_CLIENT } }
+      : {};
+
   const raw = process.env.M2M_CLIENTS;
   if (!raw) {
-    cachedClients = {};
+    cachedClients = base;
     return cachedClients;
   }
   try {
     const parsed = JSON.parse(raw) as Record<string, ClientConfig>;
     if (parsed && typeof parsed === "object") {
-      cachedClients = parsed;
+      cachedClients = { ...base, ...parsed };
       return cachedClients;
     }
   } catch {
     // fallthrough — bad JSON is treated as no clients
   }
-  cachedClients = {};
+  cachedClients = base;
   return cachedClients;
 }
 
