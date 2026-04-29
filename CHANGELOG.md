@@ -1,3 +1,12 @@
+# [1.11.0](https://github.com/jzallen/dashboard-chat/compare/v1.10.0...v1.11.0) (2026-04-29)
+
+
+### Features
+
+* **agent:** reflect-only presentation-state directive log + GET endpoint (dc-x3y.2.2) ([a1c9073](https://github.com/jzallen/dashboard-chat/commit/a1c9073e6dc81a552a0b14074506a7c1bb609d94))
+* **auth-proxy:** dev-mode M2M parity with built-in synthetic client (dc-x3y.1.2) ([f9aec20](https://github.com/jzallen/dashboard-chat/commit/f9aec2074ffe8e70395a4ccfe3653fc57e0a911e))
+* **backend:** GET /api/sessions/{id}/events replay endpoint (dc-x3y.3.2) ([9534189](https://github.com/jzallen/dashboard-chat/commit/95341891c93c3214ea6ef2a3f227b67909242d32))
+
 # [1.10.0](https://github.com/jzallen/dashboard-chat/compare/v1.9.0...v1.10.0) (2026-04-29)
 
 
