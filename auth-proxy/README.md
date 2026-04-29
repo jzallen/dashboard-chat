@@ -24,6 +24,7 @@ through the JWKS path.
 | `M2M_TOKEN_TTL_SECONDS`  | no       | `3600`                | Token lifetime.                                             |
 | `M2M_ISSUER`             | no       | `auth-proxy`          | `iss` claim on minted tokens.                               |
 | `M2M_AUDIENCE`           | no       | derived from AUTH_MODE | `aud` claim on minted tokens.                              |
+| `AUTH_PROXY_KEYPAIR_PATH` | no — but see [keypair persistence](#keypair-persistence) | _(unset)_ | Filesystem path for the persisted RS256 keypair JWK. Without it, restarts rotate the keypair and every still-live token (M2M and PAT) silently fails verification. |
 
 `M2M_CLIENTS` shape:
 
@@ -287,3 +288,28 @@ and timestamps. Compromise of the store does **not** leak usable
 tokens; it does leak metadata about who minted what and when, so
 permissions on the store path should match the rest of auth-proxy's
 runtime.
+
+### Keypair persistence
+
+PATs (and M2M tokens) are RS256-signed with a process-local keypair.
+By default the keypair is generated fresh on first use **and lost on
+process exit** — which silently invalidates every previously-issued
+PAT at the next restart, regardless of `expires_in_seconds`. PATs are
+documented as long-lived so this is not a safe production default.
+
+Set `AUTH_PROXY_KEYPAIR_PATH` to a filesystem path to persist the
+keypair as JWK JSON. The path is read on first use; if the file
+exists it is loaded, if it does not the freshly-generated keypair is
+written there (atomically, mode `0600`) so subsequent boots reuse it.
+
+| Env var                   | Required | Default   | Notes                                                                            |
+|---------------------------|----------|-----------|----------------------------------------------------------------------------------|
+| `AUTH_PROXY_KEYPAIR_PATH` | strongly recommended in production | _(unset)_ | Path for the persisted RS256 keypair (JWK JSON). Without it, restarts invalidate every issued PAT and every M2M token still inside its TTL. |
+
+The persisted file contains private key material; mount it from a
+secrets-grade volume and restrict access (parent directory, perms,
+backup policy) the same way you would treat a TLS private key. To
+rotate, delete (or move aside) the keypair file and restart
+auth-proxy — at the cost of invalidating all currently-issued tokens.
+A graceful in-place rotation (overlap window with two `kid`s) is not
+implemented today.

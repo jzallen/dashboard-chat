@@ -1,3 +1,7 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -18,6 +22,7 @@ function resetEnv() {
     if (
       key.startsWith("M2M_") ||
       key === "AUTH_MODE" ||
+      key === "AUTH_PROXY_KEYPAIR_PATH" ||
       key === "WORKOS_CLIENT_ID"
     ) {
       delete process.env[key];
@@ -27,6 +32,7 @@ function resetEnv() {
     if (
       k.startsWith("M2M_") ||
       k === "AUTH_MODE" ||
+      k === "AUTH_PROXY_KEYPAIR_PATH" ||
       k === "WORKOS_CLIENT_ID"
     ) {
       if (v !== undefined) process.env[k] = v;
@@ -192,7 +198,10 @@ describe("authenticateClient — dev-mode parity", () => {
     expect(builtin).toBeNull();
 
     // Override secret + override identity is what authenticates
-    const overridden = await authenticateClient(DEV_CLIENT_ID, "override-secret");
+    const overridden = await authenticateClient(
+      DEV_CLIENT_ID,
+      "override-secret",
+    );
     expect(overridden).toEqual({
       sub: "override-sub",
       orgId: "override-org",
@@ -233,10 +242,12 @@ describe("issueM2mToken / verifyM2mToken round trip", () => {
 
   it("isM2mToken returns false for tokens without the M2M kid", () => {
     // A non-M2M token: header { alg: 'RS256' } base64url, body {}, fake sig
-    const header = Buffer.from(JSON.stringify({ alg: "RS256" }))
-      .toString("base64url");
-    const body = Buffer.from(JSON.stringify({ sub: "x" }))
-      .toString("base64url");
+    const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString(
+      "base64url",
+    );
+    const body = Buffer.from(JSON.stringify({ sub: "x" })).toString(
+      "base64url",
+    );
     const fake = `${header}.${body}.signature`;
     expect(isM2mToken(fake)).toBe(false);
   });
@@ -266,6 +277,95 @@ describe("issueM2mToken / verifyM2mToken round trip", () => {
     });
     // Reset rotates the keypair; verification with the new keypair should fail
     _resetForTests();
+    await expect(verifyM2mToken(token)).rejects.toThrow();
+  });
+});
+
+/**
+ * AUTH_PROXY_KEYPAIR_PATH persistence: an issued M2M token must
+ * survive a process restart (within its TTL window) when the keypair
+ * is persisted. We simulate the restart with `_resetForTests()` —
+ * which clears the in-memory keypair cache — and verify the same
+ * token still validates because the next `getKeypair()` call reloads
+ * the same key material from disk.
+ */
+describe("issueM2mToken / verifyM2mToken — keypair persistence across restart", () => {
+  let dir: string;
+  let keypairPath: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "auth-proxy-kp-"));
+    keypairPath = join(dir, "keypair.json");
+    process.env.AUTH_MODE = "dev";
+    process.env.AUTH_PROXY_KEYPAIR_PATH = keypairPath;
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("verifies a token across simulated restart when AUTH_PROXY_KEYPAIR_PATH is set", async () => {
+    const { token } = await issueM2mToken({
+      sub: "service-account:svc-a",
+      orgId: "org-a",
+      email: "svc-a@example.com",
+    });
+
+    // The first issuance should have written the keypair to disk.
+    const stored = JSON.parse(readFileSync(keypairPath, "utf8"));
+    expect(stored.privateJwk).toBeDefined();
+    expect(stored.publicJwk).toBeDefined();
+    expect(stored.privateJwk.kty).toBe("RSA");
+
+    // Simulate process restart: drop the in-memory keypair cache.
+    _resetForTests();
+    process.env.AUTH_MODE = "dev";
+    process.env.AUTH_PROXY_KEYPAIR_PATH = keypairPath;
+
+    const payload = await verifyM2mToken(token);
+    expect(payload.sub).toBe("service-account:svc-a");
+    expect(payload.org_id).toBe("org-a");
+  });
+
+  it("a fresh process boot with an existing keypair file mints a token verifiable from that file", async () => {
+    // First boot: writes the keypair to disk.
+    const { token: firstToken } = await issueM2mToken({
+      sub: "x",
+      orgId: "y",
+      email: "z@example.com",
+    });
+    const firstFile = readFileSync(keypairPath, "utf8");
+
+    // Second boot: same path → should load, not regenerate.
+    _resetForTests();
+    process.env.AUTH_MODE = "dev";
+    process.env.AUTH_PROXY_KEYPAIR_PATH = keypairPath;
+    const { token: secondToken } = await issueM2mToken({
+      sub: "x",
+      orgId: "y",
+      email: "z@example.com",
+    });
+    const secondFile = readFileSync(keypairPath, "utf8");
+
+    // Same key material on disk before and after second boot.
+    expect(secondFile).toBe(firstFile);
+
+    // Both tokens verify under the (single) loaded keypair.
+    await expect(verifyM2mToken(firstToken)).resolves.toBeDefined();
+    await expect(verifyM2mToken(secondToken)).resolves.toBeDefined();
+  });
+
+  it("without persistence configured, a simulated restart invalidates an issued token", async () => {
+    // Re-establish the negative baseline — this is the bug we are fixing.
+    delete process.env.AUTH_PROXY_KEYPAIR_PATH;
+    const { token } = await issueM2mToken({
+      sub: "x",
+      orgId: "y",
+      email: "z@example.com",
+    });
+    _resetForTests();
+    process.env.AUTH_MODE = "dev";
+    // Still no AUTH_PROXY_KEYPAIR_PATH.
     await expect(verifyM2mToken(token)).rejects.toThrow();
   });
 });

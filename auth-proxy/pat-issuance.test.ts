@@ -20,8 +20,20 @@
  * + CI exercise the same code paths the headless flow uses in prod.
  */
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { exportJWK, generateKeyPair, type KeyLike, SignJWT } from "jose";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { app } from "./app.ts";
 import { _resetForTests as resetM2m } from "./lib/m2m.ts";
@@ -35,6 +47,7 @@ function resetEnv() {
       key.startsWith("M2M_") ||
       key.startsWith("PAT_") ||
       key === "AUTH_MODE" ||
+      key === "AUTH_PROXY_KEYPAIR_PATH" ||
       key === "BACKEND_URL" ||
       key === "JWKS_URL" ||
       key === "WORKOS_CLIENT_ID"
@@ -47,6 +60,7 @@ function resetEnv() {
       k.startsWith("M2M_") ||
       k.startsWith("PAT_") ||
       k === "AUTH_MODE" ||
+      k === "AUTH_PROXY_KEYPAIR_PATH" ||
       k === "BACKEND_URL" ||
       k === "JWKS_URL" ||
       k === "WORKOS_CLIENT_ID"
@@ -156,7 +170,9 @@ interface PatListItem {
 function proxiedCalls(): unknown[][] {
   return mockFetch.mock.calls.filter((call) => {
     const url = String(call[0]);
-    return !url.endsWith("/.well-known/jwks.json") && !url.includes("/sso/jwks/");
+    return (
+      !url.endsWith("/.well-known/jwks.json") && !url.includes("/sso/jwks/")
+    );
   });
 }
 
@@ -358,8 +374,12 @@ describe.each(MODES)("PAT lifecycle — AUTH_MODE=$name", (mode) => {
 
   describe("PAT list — scoped to the owning user", () => {
     it("lists only the caller's PATs (not other users')", async () => {
-      const a1 = (await (await issuePat(USER_A_TOKEN, { name: "a1" })).json()) as PatIssueResponse;
-      const a2 = (await (await issuePat(USER_A_TOKEN, { name: "a2" })).json()) as PatIssueResponse;
+      const a1 = (await (
+        await issuePat(USER_A_TOKEN, { name: "a1" })
+      ).json()) as PatIssueResponse;
+      const a2 = (await (
+        await issuePat(USER_A_TOKEN, { name: "a2" })
+      ).json()) as PatIssueResponse;
       await issuePat(USER_B_TOKEN, { name: "b1" });
 
       const listRes = await listPats(USER_A_TOKEN);
@@ -372,7 +392,9 @@ describe.each(MODES)("PAT lifecycle — AUTH_MODE=$name", (mode) => {
     it("does not include the token secret in list responses", async () => {
       await issuePat(USER_A_TOKEN, { name: "secret-checker" });
       const listRes = await listPats(USER_A_TOKEN);
-      const list = (await listRes.json()) as { pats: Record<string, unknown>[] };
+      const list = (await listRes.json()) as {
+        pats: Record<string, unknown>[];
+      };
       for (const item of list.pats) {
         expect(item).not.toHaveProperty("token");
         expect(item).not.toHaveProperty("access_token");
@@ -395,7 +417,9 @@ describe.each(MODES)("PAT lifecycle — AUTH_MODE=$name", (mode) => {
     });
 
     it("returns 404 when revoking another user's PAT", async () => {
-      const a = (await (await issuePat(USER_A_TOKEN, { name: "a" })).json()) as PatIssueResponse;
+      const a = (await (
+        await issuePat(USER_A_TOKEN, { name: "a" })
+      ).json()) as PatIssueResponse;
       const res = await revokePatReq(USER_B_TOKEN, a.id);
       // Use 404 (not 403) so the existence of A's token id is not leaked
       // to user B.
@@ -456,5 +480,163 @@ describe.each(MODES)("PAT lifecycle — AUTH_MODE=$name", (mode) => {
       expect(headers.get("X-Org-Id")).toBe(USER_A.org_id);
       expect(headers.get("X-User-Email")).toBe(USER_A.email);
     });
+  });
+});
+
+/**
+ * Restart-survival: an issued PAT must still authenticate after the
+ * auth-proxy process restarts, provided both the keypair and the PAT
+ * store are configured to persist. We simulate the restart by clearing
+ * the in-memory state of both modules (`resetPat()` + `resetM2m()`),
+ * then sending the previously-issued token as a Bearer to a protected
+ * endpoint. With `AUTH_PROXY_KEYPAIR_PATH` set the keypair is reloaded
+ * from disk; with `PAT_STORE_PATH` set the PAT records replay from
+ * JSONL. Both must hold for the token to validate end-to-end.
+ *
+ * Single AUTH_MODE here (dev) — the keypair persistence path is
+ * mode-independent, the dev-issuer JWT path is already exercised
+ * exhaustively in the per-mode block above.
+ */
+describe("PAT restart-survival — AUTH_PROXY_KEYPAIR_PATH persists keypair", () => {
+  let dir: string;
+  let keypairPath: string;
+  let storePath: string;
+  let userToken = "";
+
+  async function signUserJwt(claims: {
+    sub: string;
+    org_id: string;
+    email: string;
+  }): Promise<string> {
+    return new SignJWT({ org_id: claims.org_id, email: claims.email })
+      .setProtectedHeader({ alg: "RS256", kid: "test-user-key" })
+      .setSubject(claims.sub)
+      .setIssuer("http://localhost:8000")
+      .setAudience("dev-client")
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(userPrivateKey);
+  }
+
+  beforeEach(async () => {
+    resetEnv();
+    resetM2m();
+    resetPat();
+    vi.clearAllMocks();
+
+    dir = mkdtempSync(join(tmpdir(), "auth-proxy-pat-restart-"));
+    keypairPath = join(dir, "keypair.json");
+    storePath = join(dir, "pats.jsonl");
+
+    process.env.AUTH_MODE = "dev";
+    process.env.BACKEND_URL = "http://localhost:8000";
+    process.env.JWKS_URL = "http://localhost:8000/.well-known/jwks.json";
+    process.env.M2M_ENABLED = "true";
+    process.env.AUTH_PROXY_KEYPAIR_PATH = keypairPath;
+    process.env.PAT_STORE_PATH = storePath;
+
+    userToken = await signUserJwt(USER_A);
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : (input as URL).toString
+            ? (input as URL).toString()
+            : (input as Request).url;
+      if (
+        url.endsWith("/.well-known/jwks.json") ||
+        url.includes("/sso/jwks/")
+      ) {
+        return new Response(JSON.stringify(userJwks), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+  });
+
+  afterEach(() => {
+    resetEnv();
+    resetM2m();
+    resetPat();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("issued PAT still authenticates after a simulated restart", async () => {
+    // Issue a PAT.
+    const issueRes = await app.fetch(
+      new Request("http://localhost/api/auth/pats", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({ name: "long-lived" }),
+      }),
+    );
+    expect(issueRes.status).toBe(201);
+    const { token } = (await issueRes.json()) as PatIssueResponse;
+
+    // Simulate auth-proxy restart: drop in-memory keypair AND records.
+    // Records will replay from PAT_STORE_PATH; keypair will reload
+    // from AUTH_PROXY_KEYPAIR_PATH on next use.
+    resetPat();
+    resetM2m();
+
+    // The persisted env must remain set to mirror a real restart that
+    // brought the same env back up.
+    process.env.AUTH_MODE = "dev";
+    process.env.AUTH_PROXY_KEYPAIR_PATH = keypairPath;
+    process.env.PAT_STORE_PATH = storePath;
+    process.env.BACKEND_URL = "http://localhost:8000";
+    process.env.JWKS_URL = "http://localhost:8000/.well-known/jwks.json";
+
+    const after = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(after.status).toBe(200);
+  });
+
+  it("without AUTH_PROXY_KEYPAIR_PATH, simulated restart breaks the PAT (the bug)", async () => {
+    delete process.env.AUTH_PROXY_KEYPAIR_PATH;
+    resetPat();
+    resetM2m();
+
+    // Issue a PAT in this no-persistence configuration.
+    const issueRes = await app.fetch(
+      new Request("http://localhost/api/auth/pats", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({ name: "ephemeral" }),
+      }),
+    );
+    expect(issueRes.status).toBe(201);
+    const { token } = (await issueRes.json()) as PatIssueResponse;
+
+    // Simulate restart: keypair regenerates because nothing is persisted.
+    resetPat();
+    resetM2m();
+    process.env.AUTH_MODE = "dev";
+    process.env.BACKEND_URL = "http://localhost:8000";
+    process.env.JWKS_URL = "http://localhost:8000/.well-known/jwks.json";
+    // Still no AUTH_PROXY_KEYPAIR_PATH.
+
+    const after = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    // Signature verification fails against a fresh keypair → 401.
+    expect(after.status).toBe(401);
   });
 });
