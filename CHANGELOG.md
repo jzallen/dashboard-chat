@@ -1,3 +1,11 @@
+# [1.12.0](https://github.com/jzallen/dashboard-chat/compare/v1.11.0...v1.12.0) (2026-04-29)
+
+
+### Features
+
+* **auth-proxy:** dev-mode parity for PAT issuer + partner how-to (dc-d97.1.2) ([f9b0f3d](https://github.com/jzallen/dashboard-chat/commit/f9b0f3dc78113644e17fc013b2af01fd44555d1a))
+* **auth-proxy:** user-bound PAT issuance with immediate revocation (dc-d97.1.1) ([ebc168c](https://github.com/jzallen/dashboard-chat/commit/ebc168cbecc00aeae7578253cb272f0ed59b6d16))
+
 # [1.11.0](https://github.com/jzallen/dashboard-chat/compare/v1.10.0...v1.11.0) (2026-04-29)
 
 
