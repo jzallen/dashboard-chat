@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import {
   type BackendClient,
@@ -31,7 +32,12 @@ import {
   makeFilterTableDispatcher,
   makeSortTableDispatcher,
 } from "../../../lib/chat/dispatchers/ui";
-import { type ChatEvent, ChatEventSchema } from "../../../lib/chat/events";
+import {
+  type ChatEvent,
+  ChatEventSchema,
+  DomainEventSchema,
+  UiDirectiveSchema,
+} from "../../../lib/chat/events";
 
 type ToolWithExecute = {
   execute: (
@@ -87,6 +93,34 @@ describe("PR 0 — scaffolding contract", () => {
     for (const sample of samples) {
       expect(() => ChatEventSchema.parse(sample)).not.toThrow();
     }
+  });
+
+  it("DomainEventSchema rejects UI directives while ChatEventSchema accepts them (ADR-014)", () => {
+    // Given a UI directive sample (sort_directive — has no backend correlate)
+    const uiDirective = {
+      type: "sort_directive",
+      column: "region",
+      direction: "asc",
+    };
+    // When a headless consumer parses with DomainEventSchema only
+    // Then parsing fails (schema-level rejection — no allowlist needed)
+    expect(() => DomainEventSchema.parse(uiDirective)).toThrow(z.ZodError);
+    // And UiDirectiveSchema parses it cleanly
+    expect(() => UiDirectiveSchema.parse(uiDirective)).not.toThrow();
+    // And the re-unioned ChatEventSchema parses it cleanly (wire compat)
+    expect(() => ChatEventSchema.parse(uiDirective)).not.toThrow();
+
+    // Symmetric: a domain event is rejected by UiDirectiveSchema
+    const domainEvent = {
+      type: "transform_applied",
+      transform_id: "t-1",
+      dataset_id: "d-1",
+      operation: "trim",
+      column: "region",
+    };
+    expect(() => UiDirectiveSchema.parse(domainEvent)).toThrow(z.ZodError);
+    expect(() => DomainEventSchema.parse(domainEvent)).not.toThrow();
+    expect(() => ChatEventSchema.parse(domainEvent)).not.toThrow();
   });
 
   describe("Worker forwards JWT via auth-proxy when calling backend", () => {
