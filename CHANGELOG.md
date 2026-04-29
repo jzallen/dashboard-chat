@@ -1,3 +1,18 @@
+# [1.9.0](https://github.com/jzallen/dashboard-chat/compare/v1.8.0...v1.9.0) (2026-04-29)
+
+
+### Bug Fixes
+
+* **ci:** unblock Bazel hermetic test failures (dc-bj2.1) ([4f128c1](https://github.com/jzallen/dashboard-chat/commit/4f128c1c2300c5db38caf6662c9122a4ceeabe85))
+
+
+### Features
+
+* **chat:** PR 0 scaffolding for worker-tool-dispatch-refactor (dc-8v9) ([074627a](https://github.com/jzallen/dashboard-chat/commit/074627adde96f6c5784978b06231500314ca0b3c))
+* **chat:** PR 1 — migrate cleaning tools to worker dispatch (dc-67t) ([0510f52](https://github.com/jzallen/dashboard-chat/commit/0510f52695b6ed83bf9631925acc6633425de0da))
+* **chat:** PR 2 — migrate row + column mutations to worker dispatch (dc-xrt) ([c9c40fd](https://github.com/jzallen/dashboard-chat/commit/c9c40fde66a4313b42eb1b7b186d53acc22d030e))
+* **chat:** PR 3 — UI directives migrated; legacy executor deleted (dc-dab) ([0a19079](https://github.com/jzallen/dashboard-chat/commit/0a1907952d9fb63b3e53523cefcd78c27029096c))
+
 # [1.8.0](https://github.com/jzallen/dashboard-chat/compare/v1.7.2...v1.8.0) (2026-04-26)
 
 
