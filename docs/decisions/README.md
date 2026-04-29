@@ -18,3 +18,7 @@ This directory contains Architecture Decision Records (ADRs) using the [MADR](ht
 | [ADR-010](adr-010-bazel-over-pure-turborepo.md) | Bazel over Pure Turborepo for Build Orchestration | Accepted |
 | [ADR-011](adr-011-dual-llm-strategy.md) | Dual LLM Strategy -- Groq for Chat, Anthropic for Planning | Accepted |
 | [ADR-012](adr-012-synthetic-first-healthcare.md) | Synthetic-First Healthcare Strategy via Synthea | Proposed |
+| [ADR-013](adr-013-nwave-adoption.md) | Adopt nwave-ai as the SDLC framework | Accepted |
+| [ADR-014](adr-014-chatevent-vocabulary-stratification.md) | ChatEvent Vocabulary Stratification — Two Parallel Unions in `shared/chat/` | Ratified |
+| [ADR-015](adr-015-headless-presentation-state-retrieval.md) | Headless Presentation-State Retrieval — Reflect-Only Directive Log | Ratified |
+| [ADR-016](adr-016-auth-proxy-in-test-stack.md) | Auth-Proxy in the api-driven-user-flow-tests Compose Stack | Ratified |
