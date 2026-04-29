@@ -1,7 +1,6 @@
 # Design — api-driven-user-flow-tests
 
-> **🛑 STATUS: BLOCKED on `worker-tool-dispatch-refactor` (2026-04-26).**
-> The "Python `ToolCallDispatcher` mimicking the frontend" plan in §2 and §9 is parallel construction, not production fidelity. Replaced by: refactor the worker to be the single tool dispatcher; frontend (and test harness) subscribe to a typed SSE event vocabulary. New feature: `docs/feature/worker-tool-dispatch-refactor/`. When this feature resumes, §2 (the wrinkle) is gone and §10 (worked example) collapses — `chat_turn` becomes "send prompt, observe SSE events, query backend state."
+> **✅ STATUS: UNBLOCKED (revised 2026-04-29).** The protocol that this design depended on shipped via `worker-tool-dispatch-refactor` PRs 1–3 (commits `0510f52`, `c9c40fd`, `0a19079`). The worker is now the single tool dispatcher and emits a typed `ChatEvent` vocabulary on the SSE stream (`agent/lib/chat/events.ts`); backend stays chat-unaware (`rg -wi 'groq|sse|tool_call|tool_calls' backend/app/` returns zero matches, AC1.4). The former "Python `ToolCallDispatcher`" wrinkle in §2 is gone; §10 (worked example) collapses to "send prompt to `/chat`, observe `ChatEvent`s on SSE, query backend state via `/api/datasets/{id}`." The walking-skeleton test at `agent/test/chat/acceptance/walking-skeleton.test.ts` is the permanent guard on this contract.
 
 
 > **Status**: proposed
@@ -16,22 +15,19 @@
 
 DISCUSS established one story (headless dataset (staging) layer test), nine AC, and four open questions (Q1–Q4) under a binding **Guiding Principle**: only WorkOS auth is substituted (dev JWT); every other production dependency runs as in production. This document answers Q1–Q4 with one decision each, defends the AC1.6 wall-clock budget, surfaces a code-level wrinkle DISCUSS did not have visibility into, and provides DISTILL with a concrete shape to aim at.
 
-## 2. The wrinkle DISCUSS missed: tools are client-side directives
+## 2. Protocol contract (post worker-tool-dispatch-refactor)
 
-A grep of `agent/lib/chat/tools.ts:90-150` and `backend/app/routers/transforms.py:15` reveals that the cleanup tools (`trimWhitespace`, `standardizeCase`, `fillNulls`, `mapValues`) are **preview** tools — the LLM emits them as tool-calls in the SSE stream, but they do not themselves mutate the dataset. To persist a cleaning operation the LLM must additionally emit `applyCleaningTransform`, which the **frontend** then dispatches to `POST /api/datasets/{dataset_id}/transforms`.
+This section originally described a "Python tool dispatcher" wrinkle: the test harness mimicking the frontend's interpretation of tool calls. **That wrinkle is gone.** The `worker-tool-dispatch-refactor` feature (PRs 1–3, merged) made the worker the single dispatcher: it interprets every Groq tool-call inside `agent/lib/chat/handleChat.ts` and emits a typed `ChatEvent` discriminated union on the SSE stream. The frontend (and any test harness) subscribes to those events; nobody dispatches tool calls a second time.
 
-This means the test harness has more responsibility than DISCUSS implied: it must **mimic the frontend's tool dispatcher**, not merely tail the SSE. Specifically, for each chat turn the harness:
+The harness contract is therefore minimal:
 
-1. POSTs to worker `/chat` with the user message + current `tableSchema`
-2. Reads the SSE stream of tool calls
-3. **Interprets and dispatches** each tool call:
-   - `applyCleaningTransform` → POST `/api/datasets/{dataset_id}/transforms`
-   - `renameColumn` → applies immediately to the dataset
-   - read-only tools (sortTable, count queries) → executes in-test
-4. Polls the dataset until the new transform's effect is observable
-5. Refreshes the `tableSchema` so the next chat turn has up-to-date column metadata
+1. POST to worker `/chat` with the user message + current `tableSchema`.
+2. Read the SSE stream and parse each frame as a `ChatEvent` per `agent/lib/chat/events.ts` (`assistant_text_delta`, `transform_applied`, `column_renamed`, `row_added`, `row_deleted`, `transform_undone`, `transform_re_enabled`, `sort_directive`, `filter_directive`, `filters_cleared`, `error_occurred`, `turn_done`).
+3. After `turn_done` (or after observing the relevant `transform_applied` / mutation event), GET `/api/datasets/{dataset_id}` and assert on the resulting table state.
 
-This is not a fidelity violation — it IS what the frontend does. But it is not zero LOC, and DISTILL/DELIVER need to plan for it.
+No client-side tool dispatch. No POST to `/api/datasets/{id}/transforms` from the harness. No `tableSchema` refresh between turns beyond what the test cares to assert.
+
+**AC1.4 is verified by construction**: the backend has zero references to `groq`, `sse`, `tool_call`, or `tool_calls` (use the word-boundary form `rg -wi` to avoid false positives like "accessed" / "processed"). The structural scenario in DISTILL re-verifies this guard as a permanent regression check.
 
 ## 3. Constraints (carried from DISCUSS)
 
@@ -53,12 +49,12 @@ This is not a fidelity violation — it IS what the frontend does. But it is not
 | FastAPI integration test harness (httpx + ASGITransport) | `backend/tests/integration/test_api.py` | Already drives `/api/projects` with dev JWTs | EXTEND but **switch transport** | The pattern carries over (httpx + Bearer dev JWT). Keep the JWT minting + headers helpers; **replace ASGITransport with a real HTTP base_url** pointing at the compose-hosted backend. Per-fidelity policy. |
 | Dev JWT minter | `backend/app/auth/dev_provider.py:_mint_jwt`, `backend/app/auth/dev_keys.py` | Produces RS256 JWTs validated by both backend and worker (worker reads JWKS from backend at `/.well-known/jwks.json`) | EXTEND | Use as-is. The worker's `agent/lib/auth.ts` already trusts the backend's JWKS in dev mode (`AUTH_MODE=dev`, `JWKS_URL=http://localhost:8000/.well-known/jwks.json`). |
 | Worker chat handler | `agent/lib/chat/handleChat.ts` | The endpoint the test must drive | EXTEND (no changes) | Reach via real HTTP to `worker:8787/chat`. SSE parsing in pytest via `httpx-sse` or equivalent. |
-| Frontend tool dispatcher | (frontend code — implicit; we don't import it from Python) | The harness must replicate the frontend's interpretation of tool calls | CREATE NEW (small) | A Python-side `ToolCallDispatcher` that maps `applyCleaningTransform` tool-calls → `POST /api/datasets/{id}/transforms`. ~100 LOC. This is the largest new component. |
+| Worker dispatcher + typed `ChatEvent` vocabulary | `agent/lib/chat/dispatchers/{index,cleaning,mutations,ui}.ts`, `agent/lib/chat/events.ts` | The contract the harness asserts against | REUSE (no harness-side dispatcher) | Worker is the single tool dispatcher; harness only consumes typed events. No Python equivalent of the old "frontend tool dispatcher" is needed. Walking-skeleton test (`agent/test/chat/acceptance/walking-skeleton.test.ts`) is the permanent guard on the contract. |
 | Compose stack | `docker-compose.yml` (root) | All four services + DB + MinIO + query-engine | EXTEND | A `docker-compose.test.yml` overlay (or a marker env-var to compose) that swaps `AUTH_MODE=workos` for `AUTH_MODE=dev` if it isn't already. Likely already dev by default in local. |
 | Pytest config | `backend/pyproject.toml`, `backend/tests/conftest.py` | Test runner + fixtures | EXTEND | Add a `tests/integration/dataset_layer/` subdir with its own conftest hosting the compose-up fixture and `DatasetLayerHarness`. |
 | MinIO test bucket lifecycle | `backend/tests/conftest.py` (`mock_s3` autouse) | Today the integration tests use a moto-style mock | **DEVIATE** — DISCUSS Guiding Principle forbids mocking | Use the real MinIO from compose. The existing `auto_mock_s3` autouse must NOT apply to the dataset-layer tests. New conftest scope keeps that boundary clean. |
 
-**Zero unjustified `CREATE NEW`.** The tool-dispatcher is the only new component, and it has no existing analog (the frontend's dispatcher is in TypeScript and React-component shaped — not reusable from Python).
+**Zero unjustified `CREATE NEW`.** All harness components either extend existing infra or read the worker's typed event stream — no Python-side dispatcher is needed.
 
 ## 5. Q1 — Managing Groq non-determinism
 
@@ -126,7 +122,7 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
       async def __aexit__(self, *_): ...                     # cleanup
       async def create_project(name: str) -> str: ...
       async def upload_csv(project_id, csv_path) -> str: ... # returns dataset_id
-      async def chat_turn(prompt: str, *, max_retries=2) -> ToolCallTrace: ...
+      async def chat_turn(prompt: str, *, max_retries=2) -> ChatEventTrace: ...
       async def get_table_state(dataset_id) -> TableState: ...
       async def assert_distinct_values(dataset_id, column, expected: set[str]): ...
       async def assert_no_nulls(dataset_id, column): ...
@@ -134,7 +130,7 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
       async def count_by(dataset_id, column) -> dict[str, int]: ...
   ```
 
-- Inside `chat_turn`: opens an SSE connection, reads tool-call deltas, builds a `ToolCallTrace`, dispatches `applyCleaningTransform` calls to `POST /api/datasets/{id}/transforms`, polls the dataset until the transform is reflected, returns the trace.
+- Inside `chat_turn`: opens an SSE connection to worker `/chat`, parses each frame into a typed `ChatEvent` per `agent/lib/chat/events.ts`, accumulates them into a `ChatEventTrace`, waits until `turn_done` (or the relevant mutation event), then returns the trace. **No client-side dispatch** — the worker has already persisted any state changes by the time the corresponding `transform_applied` / `column_renamed` / `row_added` / etc. event lands. Per-turn assertions then GET `/api/datasets/{id}` for table-state checks (AC1.4 invariants).
 
 ### Why not the alternatives
 
@@ -163,7 +159,7 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
 |---|---|---|
 | Test infra | `backend/tests/integration/dataset_layer/__init__.py` (NEW) | Package marker |
 | Test infra | `backend/tests/integration/dataset_layer/conftest.py` (NEW) | Session fixture for `docker compose up -d`; function fixture for per-test project; **explicitly disables** the parent `auto_mock_s3` autouse for this subtree (per Reuse Analysis row) |
-| Test infra | `backend/tests/integration/dataset_layer/harness.py` (NEW) | `DatasetLayerHarness` + `ToolCallDispatcher` + `TableState` dataclass. Largest new module. ~250–400 LOC |
+| Test infra | `backend/tests/integration/dataset_layer/harness.py` (NEW) | `DatasetLayerHarness` + `ChatEvent` consumer + `TableState` dataclass. ~150–250 LOC (smaller now that no Python tool dispatcher is needed; the worker persists state before emitting the corresponding typed event). |
 | Test infra | `backend/tests/integration/dataset_layer/test_dataset_staging_layer.py` (NEW) | The actual acceptance test — one `test_dataset_staging_layer` function that walks the demo doc workload using the harness |
 | Test data | `backend/tests/integration/dataset_layer/fixtures/ecommerce-orders.csv` (NEW or symlink) | Either copy from `/usr/local/share/dc-demo-data/` (CI portability) or symlink (local dev). DESIGN recommends copying; treat the demo CSV as a versioned test fixture |
 | Compose overlay | `docker-compose.test.yml` (NEW) — or env in `.env.test` | Set `AUTH_MODE=dev`, `GROQ_API_KEY=$GROQ_TEST_API_KEY`, `GROQ_MODEL=<pinned>`, `GROQ_TEMPERATURE=0`. Source `GROQ_TEST_API_KEY` from CI secrets; locally from `.env.test` |
@@ -171,14 +167,15 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
 | CI | `.github/workflows/<existing-ci>.yml` (path TBD by DEVOPS wave) | New job: `dataset-layer-tests` running `RUN_INTEGRATION_TESTS=1 pytest backend/tests/integration/dataset_layer/`. Compose stack started at job-start, torn down at job-end |
 | Docs | `docs/feature/api-driven-user-flow-tests/design/` | This file + wave-decisions.md |
 
-**Estimated total**: 1 new test file, 1 new conftest, 1 new harness module, 1 new compose overlay (or env file), ~5–10 LOC config plumbing in worker, 1 CI job. ~400–600 LOC of new test code total.
+**Estimated total**: 1 new test file, 1 new conftest, 1 new harness module, 1 new compose overlay (or env file), ~5–10 LOC config plumbing in worker, 1 CI job. ~250–450 LOC of new test code total (revised down from ~400–600 — no Python dispatcher).
 
 ## 10. Worked example — the shape DISTILL should aim at
 
-The intent is for `test_dataset_staging_layer.py` to read like the demo doc's "Act 3" table, with each turn collapsing to one harness call:
+The intent is for `test_dataset_staging_layer.py` to read like the demo doc's "Act 3" table, with each turn collapsing to one harness call. With the worker as the single dispatcher, `chat_turn` reduces to: send prompt → observe `ChatEvent`s on the SSE stream → return when `turn_done` lands; per-turn assertions GET `/api/datasets/{id}` for the AC1.4 invariants.
 
 ```python
 # backend/tests/integration/dataset_layer/test_dataset_staging_layer.py
+import pathlib
 import pytest
 from .harness import DatasetLayerHarness
 
@@ -198,7 +195,11 @@ async def test_dataset_staging_layer(dataset_layer_project):
         assert len(state.columns) == 11
 
         # ----- Cleanup operation 1: trim whitespace -----
-        await h.chat_turn("Trim whitespace on every text column")
+        trace = await h.chat_turn("Trim whitespace on every text column")
+        # Optional protocol-level checks on the typed event vocabulary:
+        assert any(e.type == "transform_applied" and e.operation == "trim"
+                   for e in trace.events)
+        # Authoritative state check (AC1.4 invariants live on table state):
         for col in ("region", "customer_email", "product_category",
                     "payment_method", "shipping_status"):
             await h.assert_no_leading_trailing_whitespace(dataset_id, col)
@@ -232,7 +233,11 @@ async def test_dataset_staging_layer(dataset_layer_project):
         assert len(by_cat) == 5
 ```
 
-The harness method `chat_turn(prompt)` encapsulates: open SSE → consume tool-call deltas → dispatch `applyCleaningTransform` to `POST /api/datasets/{id}/transforms` → poll dataset until transform is observable → return `ToolCallTrace`. Internally it manages the AC1.5 retry budget via a small rephrase table.
+The harness method `chat_turn(prompt)` encapsulates: POST `/chat` → consume the SSE stream → parse each frame into a `ChatEvent` per `agent/lib/chat/events.ts` → return a `ChatEventTrace` when `turn_done` lands. Tests assert on table state via `GET /api/datasets/{id}`; protocol-level event assertions are optional debugging affordances. The harness manages the AC1.5 retry budget via a small rephrase table; tool-call sequences are not asserted (Q1 decision).
+
+**Note on `transform_id`**: `POST /api/datasets/{id}/transforms` currently returns `{ok: True}` only. The worker dispatcher synthesizes a transient `transform_id` for the `transform_applied` event so the FE has a stable handle for invalidation. Tests that need a server-authoritative id should query `/api/datasets/{id}` for the latest transform, not rely on the synthesized value.
+
+**Reference implementation**: `agent/test/chat/acceptance/walking-skeleton.test.ts` is the permanent guard on this protocol contract. It posts to worker `/chat`, parses frames against `ChatEventSchema`, asserts the `transform_applied` shape, and asserts that no raw Groq tool-call deltas (frame prefix `9:`) leak through. The Python harness mirrors that shape in pytest.
 
 This shape is a contract for DISTILL: write the test FIRST (it'll fail end-to-end on the first run, as the Iron Rule requires), then DELIVER builds the harness inner-loop until the test goes green.
 
@@ -261,7 +266,7 @@ If unanswered, defaults will be applied at DISTILL/DELIVER and recorded in this 
 |---|---|
 | **Status** | Proposed |
 | **Context** | Validating the dataset (staging) layer today requires a 15-min recorded browser demo. We need a headless API-driven test that mirrors production end-to-end (only WorkOS substituted), runs ≤ 5 min, and gates merges with ≥ 95% pass rate. |
-| **Decision** | Pytest-driven harness in `backend/tests/integration/dataset_layer/` reaches a real `docker compose up -d` SUT (backend + worker + query-engine + MinIO) over published ports. Auth via `_mint_jwt()` (RS256 dev JWT, validated by both backend and worker via the existing JWKS path). Worker uses real Groq with pinned model + temp=0. Per-cleanup-op retry budget of 2 absorbs LLM jitter; assertions live on table state, not tool-call sequences. Per-test project, ULID-keyed, deleted in teardown. New `DatasetLayerHarness` mimics the frontend's tool dispatcher (the only nontrivial new component). |
-| **Alternatives considered** | LLM mocking (forbidden by Guiding Principle); in-process ASGI (forbidden); vitest runner (reinvents existing pytest infra, hurts K4); shared fixture project (failure-mode complexity not worth the saved milliseconds); refactoring worker to allow stub provider (anti-goal per DISCUSS C6). |
-| **Consequences** | New test directory and harness module (~400–600 LOC). New compose overlay or `.env.test`. New CI job. No changes to backend or worker code beyond verifying env-driven model/temp/seed config. Real Groq spend on every CI run (controlled by pinned model + AC1.6 budget + dedicated test key with spend cap). The harness's tool dispatcher is the single largest engineering risk — DELIVER should build it inside-out from one cleanup op working end-to-end before generalizing. |
+| **Decision** | Pytest-driven harness in `backend/tests/integration/dataset_layer/` reaches a real `docker compose up -d` SUT (backend + worker + query-engine + MinIO) over published ports. Auth via `_mint_jwt()` (RS256 dev JWT, validated by both backend and worker via the existing JWKS path). Worker uses real Groq with pinned model + temp=0 and is the **single tool dispatcher** (post `worker-tool-dispatch-refactor`); the harness consumes the worker's typed `ChatEvent` SSE vocabulary and asserts on table state via `GET /api/datasets/{id}`. No client-side tool dispatch in the harness. Per-cleanup-op retry budget of 2 absorbs LLM jitter; assertions live on table state, not tool-call sequences. Per-test project, ULID-keyed, deleted in teardown. |
+| **Alternatives considered** | LLM mocking (forbidden by Guiding Principle); in-process ASGI (forbidden); vitest runner (reinvents existing pytest infra, hurts K4); shared fixture project (failure-mode complexity not worth the saved milliseconds); refactoring worker to allow stub provider (anti-goal per DISCUSS C6); Python-side tool dispatcher mimicking the frontend (superseded — worker is now the single dispatcher, see §2). |
+| **Consequences** | New test directory and harness module (~250–450 LOC, smaller than originally scoped because no Python dispatcher is needed). New compose overlay or `.env.test`. New CI job. No changes to backend or worker code beyond verifying env-driven model/temp/seed config. Real Groq spend on every CI run (controlled by pinned model + AC1.6 budget + dedicated test key with spend cap). The largest engineering risk is now LLM determinism on the demo workload (Q1 mitigations apply); harness construction is mechanical SSE-frame parsing against `ChatEventSchema`. |
 | **Out of scope** | UI / browser tests; view layer, report layer, dbt-export flows; multi-user; performance benchmarking; mocking any production dependency other than WorkOS. |
