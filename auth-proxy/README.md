@@ -184,3 +184,106 @@ in that stack consumes the forwarded headers exactly as in production.
 
 The receiving half of this contract is exercised in
 [`backend/tests/integration/test_auth_proxy_m2m.py`](../backend/tests/integration/test_auth_proxy_m2m.py).
+
+## PAT (Personal Access Token) issuance
+
+In addition to the OAuth2 client_credentials flow above, auth-proxy can
+issue **user-bound** PATs: long-lived (or explicitly time-bounded)
+bearer credentials minted by an authenticated end user. PATs use the
+same JWT/JWKS validation path the proxy already uses for every other
+Bearer; the only addition is a store lookup so revocation takes effect
+immediately rather than waiting for JWT expiry.
+
+Same `M2M_ENABLED` flag gates this surface — both are non-interactive
+credential paths and share configuration.
+
+### Issuer endpoint
+
+```
+POST /api/auth/pats
+Authorization: Bearer <user JWT>     # WorkOS or dev-backend user token; PATs may not mint PATs
+Content-Type: application/json
+
+{ "name": "<label>", "expires_in_seconds": 86400 }
+```
+
+`expires_in_seconds` is optional. Omit it for a long-lived PAT. The
+issuer endpoint refuses any Bearer that is itself a PAT or an M2M
+client_credentials token (returns 403) — only a real user JWT can mint
+a PAT, which prevents a leaked credential from silently regenerating
+itself.
+
+**201 Created**
+
+```json
+{
+  "id": "pat_<uuid>",
+  "token": "<jwt>",
+  "name": "<label>",
+  "created_at": "2026-04-29T19:56:04.000Z",
+  "expires_at": null
+}
+```
+
+The `token` field is shown **once** at issuance — it is not stored in
+plaintext and cannot be retrieved later. Lost tokens must be revoked
+and reissued.
+
+### Lifecycle endpoints
+
+| Method | Path                       | Behavior                                                                 |
+|--------|----------------------------|--------------------------------------------------------------------------|
+| `POST` | `/api/auth/pats`           | Issue a PAT for the authenticated user.                                  |
+| `GET`  | `/api/auth/pats`           | List the caller's PATs (id, name, timestamps, revoked_at). No tokens.    |
+| `DELETE` | `/api/auth/pats/{id}`    | Revoke. Returns 204 on success, 404 if missing/already revoked/not yours. |
+
+`DELETE` returns 404 (not 403) when the PAT belongs to another user, so
+the existence of other users' PAT ids is not leaked.
+
+### Token shape
+
+PATs are RS256 JWTs signed with the same auth-proxy keypair that signs
+M2M tokens, distinguished by `kid=auth-proxy:pat:1`. Payload claims:
+
+| Claim    | Source                                  |
+|----------|-----------------------------------------|
+| `sub`    | Issuing user's `userId`                 |
+| `org_id` | Issuing user's `orgId`                  |
+| `email`  | Issuing user's `email`                  |
+| `jti`    | PAT id (used for revocation lookup)     |
+| `iss`    | `M2M_ISSUER` (default `auth-proxy`)     |
+| `aud`    | `M2M_AUDIENCE` (or AUTH_MODE-derived)   |
+| `iat`    | Issuance time                           |
+| `exp`    | Present iff `expires_in_seconds` was set |
+
+### Verification flow
+
+`verifyToken` (in `lib/auth.ts`) inspects `kid` first:
+
+1. `kid=auth-proxy:m2m:1` → existing M2M verifier (local keypair).
+2. `kid=auth-proxy:pat:1` → PAT verifier: signature check **plus** a
+   store lookup on `jti`. Tokens whose record is missing or revoked are
+   rejected with the same 401 the proxy returns for any other invalid
+   Bearer.
+3. Anything else → existing JWKS path (WorkOS or dev backend).
+
+Backend's `TRUST_PROXY_HEADERS=true` middleware branch then accepts the
+forwarded identity headers exactly as for any other Bearer.
+
+### Storage and persistence
+
+PAT records are kept in an in-memory `Map<jti, PatRecord>`. Set
+`PAT_STORE_PATH` to enable file persistence (append-only JSONL; the
+file is replayed on boot). Without `PAT_STORE_PATH`, PATs do not
+survive an auth-proxy restart — fine for tests and ephemeral envs, but
+production deployments should mount a volume and set the env var.
+
+| Env var          | Required | Default | Notes                                                                       |
+|------------------|----------|---------|-----------------------------------------------------------------------------|
+| `PAT_STORE_PATH` | no       | _(unset)_ | Filesystem path for the JSONL store. When unset, PATs are in-memory only. |
+
+PAT records carry no token material — only id, owner identity, name,
+and timestamps. Compromise of the store does **not** leak usable
+tokens; it does leak metadata about who minted what and when, so
+permissions on the store path should match the rest of auth-proxy's
+runtime.

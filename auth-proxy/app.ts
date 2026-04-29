@@ -4,8 +4,16 @@ import { IDENTITY_HEADERS, isPublicPath, verifyToken } from "./lib/auth.ts";
 import {
   authenticateClient,
   isM2mEnabled,
+  isM2mToken,
   issueM2mToken,
 } from "./lib/m2m.ts";
+import {
+  isPatToken,
+  issuePat,
+  listPatsForUser,
+  patListItem,
+  revokePat,
+} from "./lib/pat.ts";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
 
@@ -57,6 +65,108 @@ app.post("/api/auth/token", async (c) => {
     token_type: "Bearer",
     expires_in: expiresIn,
   });
+});
+
+// PAT (Personal Access Token) lifecycle — issue / list / revoke.
+// All endpoints require a real user JWT (NOT a PAT, NOT an M2M token);
+// see `requireUserAuth`. Flag-gated by M2M_ENABLED.
+app.post("/api/auth/pats", async (c) => {
+  if (!isM2mEnabled()) return c.json({ error: "not_found" }, 404);
+
+  const user = await requireUserAuth(c.req.header("Authorization") || "");
+  if (user.kind === "missing") {
+    return c.json({ error: "Missing or invalid Authorization header" }, 401);
+  }
+  if (user.kind === "invalid") {
+    return c.json({ error: "Invalid or expired token" }, 401);
+  }
+  if (user.kind === "non-user") {
+    return c.json(
+      { error: "PATs may only be issued by an authenticated user" },
+      403,
+    );
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await c.req.raw.json()) as Record<string, unknown>;
+  } catch {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) {
+    return c.json(
+      { error: "invalid_request", error_description: "name is required" },
+      400,
+    );
+  }
+
+  const expiresInRaw = body.expires_in_seconds;
+  const expiresInSeconds =
+    typeof expiresInRaw === "number" && Number.isFinite(expiresInRaw)
+      ? expiresInRaw
+      : null;
+
+  const { record, token } = await issuePat(
+    { sub: user.identity.userId, orgId: user.identity.orgId, email: user.identity.email },
+    { name, expiresInSeconds },
+  );
+
+  return c.json(
+    {
+      id: record.id,
+      token,
+      name: record.name,
+      created_at: record.createdAt,
+      expires_at: record.expiresAt,
+    },
+    201,
+  );
+});
+
+app.get("/api/auth/pats", async (c) => {
+  if (!isM2mEnabled()) return c.json({ error: "not_found" }, 404);
+
+  const user = await requireUserAuth(c.req.header("Authorization") || "");
+  if (user.kind === "missing") {
+    return c.json({ error: "Missing or invalid Authorization header" }, 401);
+  }
+  if (user.kind === "invalid") {
+    return c.json({ error: "Invalid or expired token" }, 401);
+  }
+  if (user.kind === "non-user") {
+    return c.json(
+      { error: "PATs may only be managed by an authenticated user" },
+      403,
+    );
+  }
+
+  const pats = listPatsForUser(user.identity.userId).map(patListItem);
+  return c.json({ pats });
+});
+
+app.delete("/api/auth/pats/:id", async (c) => {
+  if (!isM2mEnabled()) return c.json({ error: "not_found" }, 404);
+
+  const user = await requireUserAuth(c.req.header("Authorization") || "");
+  if (user.kind === "missing") {
+    return c.json({ error: "Missing or invalid Authorization header" }, 401);
+  }
+  if (user.kind === "invalid") {
+    return c.json({ error: "Invalid or expired token" }, 401);
+  }
+  if (user.kind === "non-user") {
+    return c.json(
+      { error: "PATs may only be managed by an authenticated user" },
+      403,
+    );
+  }
+
+  const id = c.req.param("id");
+  const ok = revokePat(id, user.identity.userId);
+  if (!ok) return c.json({ error: "not_found" }, 404);
+  return c.body(null, 204);
 });
 
 // All other requests: authenticate then proxy
@@ -152,6 +262,30 @@ async function proxyRequest(c: { req: { raw: Request; url: string } }, headers: 
     status: response.status,
     headers: response.headers,
   });
+}
+
+/**
+ * Authenticate a Bearer header as a real end-user JWT — explicitly
+ * NOT a PAT and NOT an M2M client_credentials token. Used to gate the
+ * PAT lifecycle endpoints, since allowing a PAT to mint another PAT
+ * would let a leaked credential silently regenerate itself.
+ */
+type UserAuthOutcome =
+  | { kind: "missing" }
+  | { kind: "invalid" }
+  | { kind: "non-user" }
+  | { kind: "ok"; identity: { userId: string; orgId: string; email: string } };
+
+async function requireUserAuth(authHeader: string): Promise<UserAuthOutcome> {
+  if (!authHeader.startsWith("Bearer ")) return { kind: "missing" };
+  const token = authHeader.slice(7);
+  if (isPatToken(token) || isM2mToken(token)) return { kind: "non-user" };
+  try {
+    const identity = await verifyToken(token);
+    return { kind: "ok", identity };
+  } catch {
+    return { kind: "invalid" };
+  }
 }
 
 export { app };

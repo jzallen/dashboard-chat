@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 import { isM2mToken, verifyM2mToken } from "./m2m.ts";
+import { isPatToken, verifyPatToken } from "./pat.ts";
 
 const AUTH_MODE = process.env.AUTH_MODE || "dev";
 const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID || "";
@@ -66,6 +67,18 @@ export async function verifyToken(token: string): Promise<AuthResult> {
   // This dispatch keeps the existing JWKS-based path unchanged for WorkOS / dev backend tokens.
   if (isM2mToken(token)) {
     const payload = await verifyM2mToken(token);
+    return {
+      userId: (payload.sub as string) || "",
+      orgId: (payload.org_id as string) || "",
+      email: (payload.email as string) || "",
+    };
+  }
+
+  // PATs share the same dispatch shape but additionally consult the PAT
+  // store, so revocation takes effect immediately rather than waiting for
+  // JWT expiry.
+  if (isPatToken(token)) {
+    const payload = await verifyPatToken(token);
     return {
       userId: (payload.sub as string) || "",
       orgId: (payload.org_id as string) || "",
