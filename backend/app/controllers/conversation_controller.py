@@ -52,6 +52,12 @@ def _update_session_uc():
     return http_controller.update_session_uc
 
 
+def _list_session_events_uc():
+    from app.controllers import http_controller
+
+    return http_controller.list_session_events_uc
+
+
 class ConversationController:
     """Controller for Session (chat conversation) + ProjectMemory HTTP endpoints."""
 
@@ -92,6 +98,33 @@ class ConversationController:
                     data["has_more"],
                 )
                 return resp, 200
+            case Failure(error):
+                return error_response(error)
+
+    @staticmethod
+    async def list_session_events(
+        session_id: str,
+        user: "AuthUser",
+        since: str | None = None,
+        limit: int = 100,
+    ) -> tuple[dict, int]:
+        """Replay endpoint — returns persisted DomainEvents since the cursor.
+
+        Response shape (per dc-x3y.3.2 bead, NOT JSON:API):
+            {session_id, events, next_cursor, has_more}
+
+        404 (SessionNotFound) for both unknown sessions and cross-org access —
+        the use case collapses the two so existence is not leaked.
+        """
+        result = await _list_session_events_uc().list_session_events(
+            session_id,
+            user=user,
+            since=since,
+            limit=limit,
+        )
+        match result:
+            case Success(data):
+                return data, 200
             case Failure(error):
                 return error_response(error)
 

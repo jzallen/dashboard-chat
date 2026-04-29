@@ -6,10 +6,15 @@ from fastapi.responses import JSONResponse
 from app.auth.types import AuthUser
 from app.controllers import HTTPController
 
-from .deps import authorize_project_access
+from .deps import authorize_project_access, get_current_user, use_db_context
 from .schemas import SessionUpdate
 
 router = APIRouter(prefix="/api/projects", tags=["sessions"])
+
+# Top-level session router — endpoints rooted at /api/sessions/{session_id}.
+# Auth is enforced inside the use case (org-scoped session lookup) rather than
+# via a router-level dependency, since these routes are not project-nested.
+session_replay_router = APIRouter(prefix="/api/sessions", tags=["session-replay"])
 
 
 @router.get("/{project_id}/memory")
@@ -75,4 +80,25 @@ async def search_datasets(
     """Search datasets by name within a project."""
     user, project = auth
     body, status_code = await HTTPController.search_datasets(project["id"], q, user=user)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@session_replay_router.get("/{session_id}/events")
+async def list_session_events(
+    session_id: str,
+    since: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    user: AuthUser = Depends(get_current_user),
+    _db=Depends(use_db_context),
+):
+    """SSE replay endpoint (dc-x3y.3.2 / Epic C).
+
+    Returns persisted DomainEvents for the session since `since` (opaque
+    cursor; omit for "from the beginning"). Response shape per the bead:
+        {session_id, events, next_cursor, has_more}
+
+    Auth: org-scoped (404 for unknown session OR cross-org access — existence
+    is not leaked). UI directives are filtered out per ADR-014.
+    """
+    body, status_code = await HTTPController.list_session_events(session_id, user=user, since=since, limit=limit)
     return JSONResponse(content=body, status_code=status_code)
