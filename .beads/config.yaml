@@ -1,8 +1,6 @@
-issue_prefix: dc
-issue-prefix: 
+prefix: dashboard_chat
+issue-prefix: dc
 dolt.auto-start: false
 gc.endpoint_origin: managed_city
 gc.endpoint_status: verified
-
-prefix: 
 dolt.idle-timeout: "0"

@@ -20,64 +20,58 @@ bazel_dep(name = "rules_shell", version = "0.4.1")
 # ─── Python Toolchain ────────────────────────────────────────────────────────
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
-
 python.toolchain(python_version = "3.11")
 
 # ─── Python Dependencies (from uv.lock → requirements_lock.txt) ─────────────
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-
 pip.parse(
     hub_name = "pip",
     python_version = "3.11",
     requirements_lock = "//backend:requirements_dev_lock.txt",
 )
-
 use_repo(pip, "pip")
 
 # ─── Node.js / npm Dependencies ──────────────────────────────────────────────
 
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-
 npm.npm_translate_lock(
     name = "npm",
     npmrc = "//:.npmrc",
     pnpm_lock = "//:pnpm-lock.yaml",
     verify_node_modules_ignored = "//:.bazelignore",
 )
-
 use_repo(npm, "npm")
 
 # ─── OCI Base Images (pinned by tag, will pin by digest once validated) ──────
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
-
 oci.pull(
     name = "python_3_11_slim",
     image = "docker.io/library/python",
-    tag = "3.11-slim",
     platforms = ["linux/amd64"],
+    tag = "3.11-slim",
 )
-
 oci.pull(
     name = "nginx_alpine",
     image = "docker.io/library/nginx",
-    tag = "alpine",
     platforms = ["linux/amd64"],
+    tag = "alpine",
 )
-
 oci.pull(
     name = "node_20_slim",
     image = "docker.io/library/node",
-    tag = "20-slim",
     platforms = ["linux/amd64"],
+    tag = "20-slim",
 )
-
 use_repo(
     oci,
-    "python_3_11_slim",
     "nginx_alpine",
+    "nginx_alpine_linux_amd64",
     "node_20_slim",
+    "node_20_slim_linux_amd64",
+    "python_3_11_slim",
+    "python_3_11_slim_linux_amd64",
 )
 
 # ─── Gas Town Toolchain (gt, dolt, bd) ───────────────────────────────────────
@@ -91,7 +85,9 @@ use_repo(
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 _GT_BUILD = 'exports_files(["gt"])'
+
 _BD_BUILD = 'exports_files(["bd"])'
+
 _DOLT_BUILD = """exports_files(["bin/dolt"])
 alias(name = "dolt", actual = "bin/dolt", visibility = ["//visibility:public"])
 """
@@ -99,92 +95,92 @@ alias(name = "dolt", actual = "bin/dolt", visibility = ["//visibility:public"])
 # gt — Gas Town CLI (github.com/gastownhall/gastown)
 http_archive(
     name = "gt_linux_amd64",
-    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_linux_amd64.tar.gz"],
-    sha256 = "929b2d73586a4037eb71e00ffed3d62c3e2c4dece2163c63c2a9310ad6889ba5",
     build_file_content = _GT_BUILD,
+    sha256 = "929b2d73586a4037eb71e00ffed3d62c3e2c4dece2163c63c2a9310ad6889ba5",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_linux_amd64.tar.gz"],
 )
 
 http_archive(
     name = "gt_linux_arm64",
-    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_linux_arm64.tar.gz"],
-    sha256 = "eb08e49871f0030d9cbed742cd0005574035d3b8a150951130597cbc756683cb",
     build_file_content = _GT_BUILD,
+    sha256 = "eb08e49871f0030d9cbed742cd0005574035d3b8a150951130597cbc756683cb",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_linux_arm64.tar.gz"],
 )
 
 http_archive(
     name = "gt_darwin_amd64",
-    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_darwin_amd64.tar.gz"],
-    sha256 = "109c923677aa774f500d67c515bc4b9cf278b5e8dbf7b622290fb8879bf13ef5",
     build_file_content = _GT_BUILD,
+    sha256 = "109c923677aa774f500d67c515bc4b9cf278b5e8dbf7b622290fb8879bf13ef5",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_darwin_amd64.tar.gz"],
 )
 
 http_archive(
     name = "gt_darwin_arm64",
-    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_darwin_arm64.tar.gz"],
-    sha256 = "7b7a7629f73350e2bb0dfa9c5a2828172d8cc440e3f9a8821477f278e19b10b8",
     build_file_content = _GT_BUILD,
+    sha256 = "7b7a7629f73350e2bb0dfa9c5a2828172d8cc440e3f9a8821477f278e19b10b8",
+    urls = ["https://github.com/gastownhall/gastown/releases/download/v1.0.1/gastown_1.0.1_darwin_arm64.tar.gz"],
 )
 
 # dolt — github.com/dolthub/dolt (pinned at v1.86.1)
 http_archive(
     name = "dolt_linux_amd64",
-    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-linux-amd64.tar.gz"],
+    build_file_content = _DOLT_BUILD,
     sha256 = "37b4bd73b4c44fd1779115b35ab3e046a332ed99e563cf562882eb4fdb8bde86",
     strip_prefix = "dolt-linux-amd64",
-    build_file_content = _DOLT_BUILD,
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-linux-amd64.tar.gz"],
 )
 
 http_archive(
     name = "dolt_linux_arm64",
-    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-linux-arm64.tar.gz"],
+    build_file_content = _DOLT_BUILD,
     sha256 = "5dc46c9db3cb2e8a3b5154ef972e502671520efdcdcdce0df644b67bab27d958",
     strip_prefix = "dolt-linux-arm64",
-    build_file_content = _DOLT_BUILD,
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-linux-arm64.tar.gz"],
 )
 
 http_archive(
     name = "dolt_darwin_amd64",
-    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-darwin-amd64.tar.gz"],
+    build_file_content = _DOLT_BUILD,
     sha256 = "563c9bae968e9d3dfa935eff36b06e91c16eed8b11d6a9c0d08e2b4629cdc458",
     strip_prefix = "dolt-darwin-amd64",
-    build_file_content = _DOLT_BUILD,
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-darwin-amd64.tar.gz"],
 )
 
 http_archive(
     name = "dolt_darwin_arm64",
-    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-darwin-arm64.tar.gz"],
+    build_file_content = _DOLT_BUILD,
     sha256 = "2e92b6aed60b2b02c4defc97fb48ca8b1c79d6994c645f690944c4c39a00d3a5",
     strip_prefix = "dolt-darwin-arm64",
-    build_file_content = _DOLT_BUILD,
+    urls = ["https://github.com/dolthub/dolt/releases/download/v1.86.1/dolt-darwin-arm64.tar.gz"],
 )
 
 # bd — github.com/gastownhall/beads (v1.0.2 drops libicu dep; see docs/ICU-POLICY.md)
 http_archive(
     name = "bd_linux_amd64",
-    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_linux_amd64.tar.gz"],
-    sha256 = "66280bca14581218684027fee000810c2e40a9c6fe00e876ff64bdcb01a036c0",
     build_file_content = _BD_BUILD,
+    sha256 = "66280bca14581218684027fee000810c2e40a9c6fe00e876ff64bdcb01a036c0",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_linux_amd64.tar.gz"],
 )
 
 http_archive(
     name = "bd_linux_arm64",
-    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_linux_arm64.tar.gz"],
-    sha256 = "f7b60c2398305bdb18d4ece1c84b87951e5bbcd6966fa0d607ac16f9d6e11a4d",
     build_file_content = _BD_BUILD,
+    sha256 = "f7b60c2398305bdb18d4ece1c84b87951e5bbcd6966fa0d607ac16f9d6e11a4d",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_linux_arm64.tar.gz"],
 )
 
 http_archive(
     name = "bd_darwin_amd64",
-    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_darwin_amd64.tar.gz"],
-    sha256 = "7d9de37b544ecc55ccc798da6778051344dba839834943957942f38412d7a13a",
     build_file_content = _BD_BUILD,
+    sha256 = "7d9de37b544ecc55ccc798da6778051344dba839834943957942f38412d7a13a",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_darwin_amd64.tar.gz"],
 )
 
 http_archive(
     name = "bd_darwin_arm64",
-    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_darwin_arm64.tar.gz"],
-    sha256 = "f3b27edd4ed43ce8aa792837145f324e4b8a3cbf9dc0c81d144682da46189038",
     build_file_content = _BD_BUILD,
+    sha256 = "f3b27edd4ed43ce8aa792837145f324e4b8a3cbf9dc0c81d144682da46189038",
+    urls = ["https://github.com/gastownhall/beads/releases/download/v1.0.2/beads_1.0.2_darwin_arm64.tar.gz"],
 )
 
 # ─── GitHub CLI Toolchain (gh) ───────────────────────────────────────────────
@@ -199,34 +195,34 @@ alias(name = "gh", actual = "bin/gh", visibility = ["//visibility:public"])
 # gh — GitHub CLI (github.com/cli/cli)
 http_archive(
     name = "gh_linux_amd64",
-    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_linux_amd64.tar.gz"],
+    build_file_content = _GH_BUILD,
     sha256 = "304a0d2460f4a8847d2f192bad4e2a32cd9420d28716e7ae32198181b65b5f9c",
     strip_prefix = "gh_2.91.0_linux_amd64",
-    build_file_content = _GH_BUILD,
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_linux_amd64.tar.gz"],
 )
 
 http_archive(
     name = "gh_linux_arm64",
-    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_linux_arm64.tar.gz"],
+    build_file_content = _GH_BUILD,
     sha256 = "ccbed39c472d3dc1c501d1e164a9cffd934c5f6fce1012811a1a59d24cb7d7c6",
     strip_prefix = "gh_2.91.0_linux_arm64",
-    build_file_content = _GH_BUILD,
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_linux_arm64.tar.gz"],
 )
 
 http_archive(
     name = "gh_darwin_amd64",
-    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_macOS_amd64.zip"],
+    build_file_content = _GH_BUILD,
     sha256 = "8806784f93603fe6d3f95c3583a08df38f175df9ebc123dc8b15f919329980e2",
     strip_prefix = "gh_2.91.0_macOS_amd64",
-    build_file_content = _GH_BUILD,
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_macOS_amd64.zip"],
 )
 
 http_archive(
     name = "gh_darwin_arm64",
-    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_macOS_arm64.zip"],
+    build_file_content = _GH_BUILD,
     sha256 = "20446cd714d9fa1b69fbd410deade3731f38fe09a2b980c8488aa388dd320ada",
     strip_prefix = "gh_2.91.0_macOS_arm64",
-    build_file_content = _GH_BUILD,
+    urls = ["https://github.com/cli/cli/releases/download/v2.91.0/gh_2.91.0_macOS_arm64.zip"],
 )
 
 # ─── Python Toolchain (uv) ───────────────────────────────────────────────────
@@ -240,32 +236,32 @@ _UV_BUILD = 'exports_files(["uv"])'
 # uv — github.com/astral-sh/uv
 http_archive(
     name = "uv_linux_amd64",
-    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-unknown-linux-gnu.tar.gz"],
+    build_file_content = _UV_BUILD,
     sha256 = "6681d691eb7f9c00ac6a3af54252f7ab29ae72f0c8f95bdc7f9d1401c23ea868",
     strip_prefix = "uv-x86_64-unknown-linux-gnu",
-    build_file_content = _UV_BUILD,
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-unknown-linux-gnu.tar.gz"],
 )
 
 http_archive(
     name = "uv_linux_arm64",
-    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-unknown-linux-gnu.tar.gz"],
+    build_file_content = _UV_BUILD,
     sha256 = "f2ee1cde9aabb4c6e43bd3f341dadaf42189a54e001e521346dc31547310e284",
     strip_prefix = "uv-aarch64-unknown-linux-gnu",
-    build_file_content = _UV_BUILD,
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-unknown-linux-gnu.tar.gz"],
 )
 
 http_archive(
     name = "uv_darwin_amd64",
-    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-apple-darwin.tar.gz"],
+    build_file_content = _UV_BUILD,
     sha256 = "0a4bc8fcde4974ea3560be21772aeecab600a6f43fa6e58169f9fa7b3b71d302",
     strip_prefix = "uv-x86_64-apple-darwin",
-    build_file_content = _UV_BUILD,
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-apple-darwin.tar.gz"],
 )
 
 http_archive(
     name = "uv_darwin_arm64",
-    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-apple-darwin.tar.gz"],
+    build_file_content = _UV_BUILD,
     sha256 = "66e37d91f839e12481d7b932a1eccbfe732560f42c1cfb89faddfa2454534ba8",
     strip_prefix = "uv-aarch64-apple-darwin",
-    build_file_content = _UV_BUILD,
+    urls = ["https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-apple-darwin.tar.gz"],
 )
