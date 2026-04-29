@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /**
  * Frontend chat event vocabulary acceptance suite — see fe-event-vocabulary.feature.
  *
@@ -6,12 +7,17 @@
  * KPI K3 (test wall-clock < 100ms per scenario; soft assertion only)
  *
  * Skipped until each PR lands. Polecat un-skips and implements.
+ *
+ * The shared core-chat vitest config uses environment: "node" for speed.
+ * The PR-0 transcript test renders <ChatTranscript> via @testing-library/react,
+ * which needs a DOM — a file-level happy-dom override scopes the slower
+ * environment to this single suite. Previously masked by the cross-package
+ * import failure (dc-bj2.1 F1).
  */
 
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ChatEventSchema as AgentSchema } from "../../../../../../agent/lib/chat/events";
 import { datasetKeys } from "../../../../lib/queryKeys";
 import { ChatTranscript } from "../../ChatTranscript";
 import { applyDirective, type TableApi } from "../../dispatcher";
@@ -34,10 +40,13 @@ function makeCtx(overrides?: Partial<EventHandlerContext>): EventHandlerContext 
   };
 }
 
-// Cross-workspace import to ../agent/lib/chat/events resolved per TWD-8 option 1
-// (verbatim duplicate). The cross-schema sync scenario asserts that both
-// schemas parse every variant identically — the polecat-time check that catches
-// future drift.
+// Cross-package drift between this file's sibling events.ts and
+// agent/lib/chat/events.ts is caught by agent/test/chat/schema-sync.test.ts
+// (a verbatim-duplicate text check). This suite verifies that the frontend
+// schema accepts every variant in the chat event vocabulary; running it
+// alongside the sync test transitively guarantees the agent schema accepts
+// the same set. The structural coupling is the F1 surgical unblock for
+// dc-bj2.1; F2 (dc-bj2.2) replaces the duplication with shared/chat SSOT.
 
 // Soft K3 perf check — prints only, never fails (TWD-11).
 let _start = 0;
@@ -109,7 +118,7 @@ describe("PR 0 — MockSSESource contract", () => {
     });
   });
 
-  it("agent's ChatEventSchema and frontend's ChatEventSchema parse every variant identically", () => {
+  it("frontend's ChatEventSchema accepts every variant in the chat event vocabulary", () => {
     // Given a sample of every event variant in the vocabulary
     const samples = [
       { type: "assistant_text_delta", delta: "hi" },
@@ -125,11 +134,12 @@ describe("PR 0 — MockSSESource contract", () => {
       { type: "error_occurred", phase: "backend_dispatch", message: "boom", retryable: false },
       { type: "turn_done", reason: "stop" },
     ];
-    // Then both schemas accept every sample, and the parsed shapes match.
+    // Then the frontend schema accepts every sample. Drift between this
+    // schema and agent/lib/chat/events.ts is caught by agent/test/chat/
+    // schema-sync.test.ts (verbatim-duplicate text check).
     for (const sample of samples) {
-      const frontendParsed = FrontendSchema.parse(sample);
-      const agentParsed = AgentSchema.parse(sample);
-      expect(frontendParsed).toEqual(agentParsed);
+      const parsed = FrontendSchema.parse(sample);
+      expect(parsed).toEqual(sample);
     }
   });
 });

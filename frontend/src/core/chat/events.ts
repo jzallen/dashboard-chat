@@ -1,7 +1,6 @@
 // Co-located with FE per TWD-8 option 1 (verbatim duplicate of agent/lib/chat/events.ts).
-// The cross-schema sync test in __tests__/acceptance/fe-event-vocabulary.test.tsx
-// asserts equivalence by parsing the same samples through both schemas.
-// If you change one, change the other; the sync test catches drift.
+// agent/test/chat/schema-sync.test.ts catches drift via a verbatim text check.
+// If you change one, change the other (or land F2 / dc-bj2.2 to remove the duplication).
 
 import { z } from "zod";
 
