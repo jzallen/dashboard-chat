@@ -17,8 +17,11 @@ contain UI directives in the first place; the read-side filter is defense in
 depth.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 # DomainEvent type set per ADR-014 — kept in sync with
 # agent/lib/chat/threadPersister.ts `DOMAIN_EVENT_TYPES`. UI directives
@@ -77,7 +80,13 @@ class _NoopSessionEventReader:
     side). The endpoint stays live and contract-compliant — clients receive
     `{events: [], next_cursor: null, has_more: false}` — but no replay data is
     served until the adapter is swapped in.
+
+    Emits a one-time WARNING the first time it is exercised in a process so a
+    misconfigured deployment (no real adapter wired in) is distinguishable
+    from a session that genuinely has no events.
     """
+
+    _warned: bool = False
 
     async def get_events(
         self,
@@ -85,6 +94,13 @@ class _NoopSessionEventReader:
         since: str | None,
         limit: int,
     ) -> EventsPage:
+        if not _NoopSessionEventReader._warned:
+            _NoopSessionEventReader._warned = True
+            logger.warning(
+                "[SessionEventReader] noop default in use — "
+                "GET /api/sessions/{id}/events will return empty pages until a "
+                "real adapter is registered."
+            )
         return EventsPage(events=[], next_cursor=None, has_more=False)
 
 

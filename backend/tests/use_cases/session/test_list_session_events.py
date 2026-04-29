@@ -7,6 +7,7 @@ an in-memory adapter that captures the cursor + limit it was called with so
 the use case's contract can be verified independently of the durable backend.
 """
 
+import logging
 from dataclasses import dataclass, field
 
 import pytest
@@ -14,7 +15,11 @@ from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import set_session
-from app.use_cases.session.event_replay import EventsPage, SessionEventReader
+from app.use_cases.session.event_replay import (
+    EventsPage,
+    SessionEventReader,
+    _NoopSessionEventReader,
+)
 from app.use_cases.session.exceptions import SessionNotFound
 from app.use_cases.session.list_session_events import (
     MAX_EVENTS_PER_PAGE,
@@ -193,6 +198,28 @@ class TestListSessionEvents:
                 pytest.fail("Expected SessionNotFound for cross-org access")
             case Failure(err):
                 assert isinstance(err, SessionNotFound)
+
+    async def test_adapter_override_suppresses_noop_warning(
+        self, seeded_db: AsyncSession, caplog: pytest.LogCaptureFixture
+    ):
+        """Per the bead acceptance: passing a real `event_reader=` adapter
+        must not trigger the noop misconfiguration warning."""
+        set_session(seeded_db)
+        _NoopSessionEventReader._warned = False
+        try:
+            with caplog.at_level(logging.WARNING, logger="app.use_cases.session.event_replay"):
+                await list_session_events(
+                    SESSION_1,
+                    user=TEST_USER,
+                    event_reader=_FakeReader(events=[]),
+                )
+
+            warnings = [
+                r for r in caplog.records if r.levelno == logging.WARNING and "noop default in use" in r.message
+            ]
+            assert warnings == []
+        finally:
+            _NoopSessionEventReader._warned = False
 
     async def test_limit_clamped_to_max(self, seeded_db: AsyncSession):
         """A pathological limit value is clamped to MAX_EVENTS_PER_PAGE so a
