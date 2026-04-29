@@ -2,6 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools:version_layer.bzl", "version_layer")
 
 npm_link_all_packages()
@@ -19,6 +20,19 @@ js_library(
     deps = [
         ":node_modules",
     ],
+)
+
+sh_test(
+    name = "lint",
+    srcs = ["lint_test.sh"],
+    data = [
+        "//:eslint.config.js",
+        "//:package.json",
+        "package.json",
+        "tsconfig.json",
+    ] + glob(["**/*.ts"]),
+    tags = ["no-sandbox", "lint"],
+    size = "small",
 )
 
 vitest_bin.vitest_test(
