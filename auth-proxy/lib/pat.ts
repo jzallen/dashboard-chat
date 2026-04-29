@@ -18,6 +18,13 @@
  * `auth-proxy:pat:1`. Payload: sub/org_id/email (caller identity at
  * issuance time), jti (PAT id, used as the revocation lookup key),
  * iat, optional exp.
+ *
+ * Dev-mode parity: when `AUTH_MODE=dev`, the PAT id (and therefore the
+ * `jti` claim) is prefixed `dev-pat-` instead of `pat_`. The token is
+ * still an RS256 JWT validated through the same dispatch, so the
+ * verification path is identical to production — the prefix only
+ * exists to make dev-issued tokens visually distinguishable so they
+ * can't be confused with prod credentials.
  */
 
 import { randomUUID } from "node:crypto";
@@ -33,6 +40,15 @@ import {
 } from "jose";
 
 const PAT_KID = "auth-proxy:pat:1";
+
+const PAT_ID_PREFIX_PROD = "pat_";
+const PAT_ID_PREFIX_DEV = "dev-pat-";
+
+function patIdPrefix(): string {
+  return process.env.AUTH_MODE === "dev"
+    ? PAT_ID_PREFIX_DEV
+    : PAT_ID_PREFIX_PROD;
+}
 
 export interface PatOwner {
   sub: string;
@@ -156,7 +172,7 @@ export async function issuePat(
 ): Promise<IssuedPat> {
   loadFromDiskIfNeeded();
 
-  const id = `pat_${randomUUID().replace(/-/g, "")}`;
+  const id = `${patIdPrefix()}${randomUUID().replace(/-/g, "")}`;
   const now = new Date();
   const expiresAt =
     opts.expiresInSeconds && opts.expiresInSeconds > 0

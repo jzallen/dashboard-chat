@@ -3,36 +3,55 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { isM2mToken, verifyM2mToken } from "./m2m.ts";
 import { isPatToken, verifyPatToken } from "./pat.ts";
 
-const AUTH_MODE = process.env.AUTH_MODE || "dev";
-const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID || "";
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
-const JWKS_URL = process.env.JWKS_URL;
+/**
+ * Auth-proxy ingress verification.
+ *
+ * Env vars are read lazily (per request) rather than at module-load
+ * time. The tradeoff is one extra `process.env` read per ingress call;
+ * the win is that `AUTH_MODE` / `WORKOS_CLIENT_ID` switches take effect
+ * without a process restart, which keeps dev/workos test parity honest
+ * (a test that flips modes doesn't get a stale module-level snapshot).
+ */
 
-let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-
-function getJWKS() {
-  if (!jwks) {
-    if (AUTH_MODE === "dev") {
-      const url = JWKS_URL || `${BACKEND_URL}/.well-known/jwks.json`;
-      jwks = createRemoteJWKSet(new URL(url));
-    } else if (WORKOS_CLIENT_ID) {
-      const url =
-        JWKS_URL ||
-        `https://api.workos.com/sso/jwks/${WORKOS_CLIENT_ID}`;
-      jwks = createRemoteJWKSet(new URL(url));
-    }
-  }
-  return jwks;
+interface JwksConfig {
+  url: string;
+  audience: string;
+  issuer: string;
 }
 
-function getVerifyOptions(): { audience: string; issuer: string } {
-  if (AUTH_MODE === "dev") {
-    return { audience: "dev-client", issuer: "http://localhost:8000" };
+function readJwksConfig(): JwksConfig | null {
+  const authMode = process.env.AUTH_MODE || "dev";
+  const explicitJwksUrl = process.env.JWKS_URL;
+
+  if (authMode === "dev") {
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+    return {
+      url: explicitJwksUrl || `${backendUrl}/.well-known/jwks.json`,
+      audience: "dev-client",
+      issuer: "http://localhost:8000",
+    };
   }
+
+  const workosClientId = process.env.WORKOS_CLIENT_ID || "";
+  if (!workosClientId) return null;
   return {
-    audience: WORKOS_CLIENT_ID,
-    issuer: `https://api.workos.com/user_management/${WORKOS_CLIENT_ID}`,
+    url:
+      explicitJwksUrl || `https://api.workos.com/sso/jwks/${workosClientId}`,
+    audience: workosClientId,
+    issuer: `https://api.workos.com/user_management/${workosClientId}`,
   };
+}
+
+// Cache the JWKS resolver per URL so we don't rebuild it on every
+// request, but invalidate when the URL itself changes (mode switch).
+let cachedJwks: { url: string; resolver: ReturnType<typeof createRemoteJWKSet> } | null =
+  null;
+
+function getJWKS(url: string) {
+  if (!cachedJwks || cachedJwks.url !== url) {
+    cachedJwks = { url, resolver: createRemoteJWKSet(new URL(url)) };
+  }
+  return cachedJwks.resolver;
 }
 
 const PUBLIC_PATHS = new Set([
@@ -86,17 +105,18 @@ export async function verifyToken(token: string): Promise<AuthResult> {
     };
   }
 
-  const keySet = getJWKS();
-  if (!keySet) {
-    if (AUTH_MODE === "dev") {
+  const config = readJwksConfig();
+  if (!config) {
+    if ((process.env.AUTH_MODE || "dev") === "dev") {
       throw new Error("JWKS not available (backend not reachable?)");
     }
     throw new Error("WORKOS_CLIENT_ID not configured");
   }
 
-  const options = getVerifyOptions();
+  const keySet = getJWKS(config.url);
   const { payload } = await jwtVerify(token, keySet, {
-    ...options,
+    audience: config.audience,
+    issuer: config.issuer,
     algorithms: ["RS256"],
   });
 

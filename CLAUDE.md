@@ -99,6 +99,8 @@ npm run dev                          # start all services
   tokens that resolve to `DEV_USER` — see
   [auth-proxy/README.md](auth-proxy/README.md) for the env vars,
   production setup, and token flow.
+- Headless flow (PATs + M2M, dev/prod curl examples): see
+  [docs/guides/headless-tokens.md](docs/guides/headless-tokens.md).
 - Multi-tenancy: projects/datasets scoped by `org_id`
 
 ## Commit Convention
