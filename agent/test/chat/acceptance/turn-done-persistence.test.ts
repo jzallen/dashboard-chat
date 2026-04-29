@@ -180,13 +180,12 @@ describe("dc-x3y.3.1 — turn_done + Stream.io thread persistence", () => {
     expect(events.map((e) => e.type)).toEqual(["sort_directive", "turn_done"]);
   });
 
-  it("maps the upstream finishReason onto the turn_done reason (length, error, request)", async () => {
-    const cases: Array<{ raw: string; reason: "stop" | "length" | "request" | "error" }> = [
+  it("maps the upstream finishReason onto the turn_done reason (stop, length, error)", async () => {
+    const cases: Array<{ raw: string; reason: "stop" | "length" | "error" }> = [
       { raw: "stop", reason: "stop" },
       { raw: "length", reason: "length" },
       { raw: "tool-calls", reason: "stop" },
       { raw: "error", reason: "error" },
-      { raw: "request", reason: "request" },
     ];
 
     for (const { raw, reason } of cases) {
@@ -199,5 +198,29 @@ describe("dc-x3y.3.1 — turn_done + Stream.io thread persistence", () => {
       const turnDone = events.find((e) => e.type === "turn_done");
       expect(turnDone).toEqual({ type: "turn_done", reason });
     }
+  });
+
+  it("does NOT emit turn_done or persist when the upstream finishReason is 'request' (resolve_dataset pause)", async () => {
+    // The resolve_dataset interception rewrites the d: line to finishReason="request".
+    // The turn is pausing for FE data resolution; the FE keeps its thinking indicator
+    // up while it fetches and re-submits, so emitting turn_done here would prematurely
+    // clear that indicator (and would record an incomplete turn on the thread).
+    const buffer: ChatEvent[] = [];
+    const upstream = fakeUpstream([
+      'r:{"type":"resolve_dataset","params":{"name":"patients"}}',
+      'd:{"finishReason":"request"}',
+    ]);
+    const persister = recordingPersister();
+
+    const wrapped = wrapWithTurnDoneAndPersist(upstream, buffer, "channel-abc", persister);
+    const lines = await readLines(wrapped);
+
+    // No turn_done annotation on the SSE stream.
+    expect(lines.find((l) => l.startsWith("8:"))).toBeUndefined();
+    // No persistence call — the turn isn't complete.
+    expect(persister.calls).toHaveLength(0);
+    // The upstream r: + d: lines pass through unchanged.
+    expect(lines).toContain('r:{"type":"resolve_dataset","params":{"name":"patients"}}');
+    expect(lines).toContain('d:{"finishReason":"request"}');
   });
 });

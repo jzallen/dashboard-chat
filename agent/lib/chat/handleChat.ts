@@ -238,8 +238,18 @@ export function wrapWithTurnDoneAndPersist(
       }
     },
     async flush(controller) {
+      // resolve_dataset interception rewrites finishReason to "request" — the
+      // turn is pausing for FE data resolution, not ending. Skip turn_done +
+      // persistence so the FE keeps its thinking indicator and the partial
+      // turn isn't recorded as a checkpoint.
+      const reason = mapFinishReason(finishReasonRaw);
+      if (reason === "request") {
+        flushBuffer(controller);
+        return;
+      }
+
       // Push turn_done into the buffer alongside any trailing dispatcher events.
-      buffer.push({ type: "turn_done", reason: mapFinishReason(finishReasonRaw) });
+      buffer.push({ type: "turn_done", reason });
 
       // Best-effort persistence — never blocks turn_done emission.
       const domainEvents = buffer.filter(isDomainEvent);
