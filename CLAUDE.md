@@ -93,6 +93,12 @@ npm run dev                          # start all services
 
 - `AUTH_MODE`: `"dev"` (hardcoded DEV_USER) or `"workos"` (JWT via JWKS)
 - Dev token: `dev-token-static`, user: `dev-user-001`, org: `dev-org-001`
+- M2M (service-to-service): auth-proxy mints OAuth2 `client_credentials`
+  tokens at `POST /api/auth/token` (flag-gated by `M2M_ENABLED=true`). In
+  `AUTH_MODE=dev` a built-in `dev-m2m-client` / `dev-m2m-secret` mints
+  tokens that resolve to `DEV_USER` — see
+  [auth-proxy/README.md](auth-proxy/README.md) for the env vars,
+  production setup, and token flow.
 - Multi-tenancy: projects/datasets scoped by `org_id`
 
 ## Commit Convention

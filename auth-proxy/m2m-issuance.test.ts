@@ -9,7 +9,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { app } from "./app.ts";
-import { _resetForTests } from "./lib/m2m.ts";
+import {
+  _resetForTests,
+  DEV_CLIENT_ID,
+  DEV_CLIENT_SECRET,
+} from "./lib/m2m.ts";
 
 const ORIG_ENV = { ...process.env };
 
@@ -307,5 +311,76 @@ describe("M2M token round-trip — issuance verifies through proxy auth path", (
     expect(headers.get("X-User-Id")).toBe("service-account:svc-a");
     expect(headers.get("X-Org-Id")).toBe("org-a");
     expect(headers.get("X-User-Email")).toBe("svc-a@example.com");
+  });
+});
+
+describe("M2M issuance — dev-mode parity (built-in dev client)", () => {
+  beforeEach(() => {
+    // Dev-mode parity: no M2M_CLIENTS configured; the built-in dev client
+    // alone should mint tokens that forward backend's DEV_USER identity.
+    process.env.AUTH_MODE = "dev";
+    process.env.M2M_ENABLED = "true";
+    delete process.env.M2M_CLIENTS;
+  });
+
+  it("mints a token with no M2M_CLIENTS configured using the dev built-in", async () => {
+    const res = await tokenRequest({
+      grant_type: "client_credentials",
+      client_id: DEV_CLIENT_ID,
+      client_secret: DEV_CLIENT_SECRET,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TokenResponse;
+    expect(body.access_token.split(".")).toHaveLength(3);
+    expect(body.token_type).toBe("Bearer");
+  });
+
+  it("dev-minted token flows through proxy with DEV_USER identity headers", async () => {
+    const issueRes = await tokenRequest({
+      grant_type: "client_credentials",
+      client_id: DEV_CLIENT_ID,
+      client_secret: DEV_CLIENT_SECRET,
+    });
+    const { access_token } = (await issueRes.json()) as TokenResponse;
+
+    const protectedRes = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Authorization: `Bearer ${access_token}` },
+      }),
+    );
+    expect(protectedRes.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledOnce();
+
+    const [, fetchOptions] = mockFetch.mock.calls[0];
+    const headers = fetchOptions.headers as Headers;
+    expect(headers.get("X-User-Id")).toBe("dev-user-001");
+    expect(headers.get("X-Org-Id")).toBe("dev-org-001");
+    expect(headers.get("X-User-Email")).toBe("dev@localhost");
+  });
+
+  it("rejects an unknown client in dev mode (built-in is not a wildcard)", async () => {
+    const res = await tokenRequest({
+      grant_type: "client_credentials",
+      client_id: "ghost",
+      client_secret: DEV_CLIENT_SECRET,
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as ErrorResponse;
+    expect(body.error).toBe("invalid_client");
+  });
+
+  it("rejects the dev client when AUTH_MODE is not dev", async () => {
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_CLIENT_ID = "wos-id";
+    _resetForTests();
+
+    const res = await tokenRequest({
+      grant_type: "client_credentials",
+      client_id: DEV_CLIENT_ID,
+      client_secret: DEV_CLIENT_SECRET,
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as ErrorResponse;
+    expect(body.error).toBe("invalid_client");
   });
 });
