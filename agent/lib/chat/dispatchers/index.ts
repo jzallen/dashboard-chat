@@ -2,6 +2,7 @@ import type { Tool } from "ai";
 
 import type { BackendClient } from "../backend-client";
 import type { ChatEvent } from "../events";
+import type { PresentationStateLog } from "../presentationState";
 import {
   makeApplyCleaningTransformDispatcher,
   makeFillNullsDispatcher,
@@ -30,6 +31,18 @@ export type DispatchContext = {
   contextType: "dataset" | "project" | "report";
   backend: BackendClient;
   emit: (event: ChatEvent) => void;
+  /**
+   * Channel/thread id for ADR-015 reflect-only directive log writes. Empty
+   * string when the chat request omits a thread id; UI dispatchers skip the
+   * log append in that case (the SSE emit still happens as before).
+   */
+  channelId: string;
+  /**
+   * Reflect-only directive log (ADR-015 / dc-x3y.2.2). UI dispatchers append
+   * the emitted directive here as a side effect of `emit`. Defaults to
+   * `noopPresentationStateLog` for legacy call sites.
+   */
+  presentationState: PresentationStateLog;
 };
 
 export type DispatcherFamily = "cleaning" | "mutations" | "ui";

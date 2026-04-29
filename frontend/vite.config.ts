@@ -14,6 +14,13 @@ export default defineConfig({
       clientPort: 5173,
     },
     proxy: {
+      // Presentation-state log reads are served by the agent (ADR-015 /
+      // dc-x3y.2.2). The regex key must precede `/api` so the more-specific
+      // match wins.
+      "^/api/channels/[^/]+/presentation-state$": {
+        target: "http://agent:8787",
+        changeOrigin: true,
+      },
       "/api": {
         target: "http://auth-proxy:3000",
         changeOrigin: true,

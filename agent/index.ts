@@ -6,7 +6,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import { authMiddleware } from "./lib/auth";
-import { createChatHandler } from "./lib/chat";
+import { createChatHandler, presentationStateLogFor } from "./lib/chat";
+import { createPresentationStateRoutes } from "./lib/chat/presentationStateRoutes";
 import { logImageIdentity } from "./version";
 
 logImageIdentity("dashboard-agent");
@@ -26,7 +27,9 @@ if (!GROQ_API_KEY) {
   process.exit(1);
 }
 
-const handleChat = createChatHandler({ GROQ_API_KEY });
+const chatEnv = { GROQ_API_KEY };
+const handleChat = createChatHandler(chatEnv);
+const presentationStateLog = presentationStateLogFor(chatEnv);
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -56,6 +59,19 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 app.post("/chat", async (c) => {
   return handleChat(c.req.raw);
 });
+
+// ---------------------------------------------------------------------------
+// Reflect-only directive log (ADR-015 / dc-x3y.2.2)
+// ---------------------------------------------------------------------------
+// Co-located with the in-process Map storage in this worker. Headless
+// consumers reach this endpoint via the FE proxy chain
+// (nginx in production, vite dev-server in development) which routes
+// /api/channels/{id}/presentation-state directly to the agent rather than
+// the FastAPI backend. Persistence backend choice: in-process Map (matches
+// C.1's same-process Stream.io persistence model). Replace with a Redis-backed
+// `PresentationStateLog` when the worker scales horizontally.
+
+app.route("/", createPresentationStateRoutes(presentationStateLog));
 
 // ---------------------------------------------------------------------------
 // Startup

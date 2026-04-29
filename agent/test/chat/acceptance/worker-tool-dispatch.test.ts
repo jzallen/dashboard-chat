@@ -38,6 +38,7 @@ import {
   DomainEventSchema,
   UiDirectiveSchema,
 } from "../../../lib/chat/events";
+import { noopPresentationStateLog } from "../../../lib/chat/presentationState";
 
 type ToolWithExecute = {
   execute: (
@@ -58,6 +59,8 @@ function buildContext(overrides: {
     contextType: "dataset",
     backend: overrides.backend,
     emit: overrides.emit,
+    channelId: "",
+    presentationState: noopPresentationStateLog,
   };
 }
 

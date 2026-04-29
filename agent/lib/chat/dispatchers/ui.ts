@@ -1,6 +1,7 @@
 import { type Tool, tool } from "ai";
 import { z } from "zod";
 
+import type { UiDirective } from "../events";
 import type { Emit } from "./_helpers";
 import type { DispatchContext } from "./index";
 
@@ -22,9 +23,27 @@ const FilterArgSchema = z.object({
   value: z.unknown(),
 });
 
+/**
+ * Emits a UI directive on the SSE side AND appends it to the per-channel
+ * reflect-only log (ADR-015 / dc-x3y.2.2). The log write is a side channel —
+ * it does NOT go through `BackendClient.post`, preserving the worker test
+ * invariant at `worker-tool-dispatch.test.ts:502-550`.
+ *
+ * Errors from `presentationState.append` are caught and logged. The SSE emit
+ * is the user-facing contract; persistence of the reflect-only log is
+ * best-effort and must not block the dispatcher's `execute` callback.
+ */
+function emitAndLog(ctx: DispatchContext, directive: UiDirective): void {
+  ctx.emit(directive);
+  if (!ctx.channelId) return;
+  void ctx.presentationState.append(ctx.channelId, directive).catch((err) => {
+    console.error("[agent] presentation-state append failed:", err);
+  });
+}
+
 export function makeSortTableDispatcher(
-  emit: Emit,
-  _ctx: DispatchContext,
+  _emit: Emit,
+  ctx: DispatchContext,
 ): Tool {
   return tool({
     description:
@@ -37,15 +56,15 @@ export function makeSortTableDispatcher(
         .describe("Sort direction: ascending or descending"),
     }),
     execute: async ({ column, direction }) => {
-      emit({ type: "sort_directive", column, direction });
+      emitAndLog(ctx, { type: "sort_directive", column, direction });
       return { ok: true } as const;
     },
   });
 }
 
 export function makeFilterTableDispatcher(
-  emit: Emit,
-  _ctx: DispatchContext,
+  _emit: Emit,
+  ctx: DispatchContext,
 ): Tool {
   return tool({
     description:
@@ -64,7 +83,7 @@ export function makeFilterTableDispatcher(
         ),
     }),
     execute: async ({ column, operator, value }) => {
-      emit({
+      emitAndLog(ctx, {
         type: "filter_directive",
         column,
         filters: [{ operator, value }],
@@ -75,8 +94,8 @@ export function makeFilterTableDispatcher(
 }
 
 export function makeReplaceColumnFiltersDispatcher(
-  emit: Emit,
-  _ctx: DispatchContext,
+  _emit: Emit,
+  ctx: DispatchContext,
 ): Tool {
   return tool({
     description:
@@ -91,15 +110,15 @@ export function makeReplaceColumnFiltersDispatcher(
         .describe("Full set of conditions for this column"),
     }),
     execute: async ({ column, filters }) => {
-      emit({ type: "filter_directive", column, filters });
+      emitAndLog(ctx, { type: "filter_directive", column, filters });
       return { ok: true } as const;
     },
   });
 }
 
 export function makeClearFiltersDispatcher(
-  emit: Emit,
-  _ctx: DispatchContext,
+  _emit: Emit,
+  ctx: DispatchContext,
 ): Tool {
   return tool({
     description:
@@ -107,7 +126,7 @@ export function makeClearFiltersDispatcher(
       "event. No backend call.",
     inputSchema: z.object({}),
     execute: async () => {
-      emit({ type: "filters_cleared" });
+      emitAndLog(ctx, { type: "filters_cleared" });
       return { ok: true } as const;
     },
   });
