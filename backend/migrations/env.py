@@ -14,6 +14,7 @@ from app.database import Base
 
 # Import all ORM records to ensure they're registered with Base.metadata
 from app.repositories import *
+from app.infra.idempotency import IdempotencyKeyRecord
 
 
 # Alembic Config object

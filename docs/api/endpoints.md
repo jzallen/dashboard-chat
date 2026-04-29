@@ -42,11 +42,36 @@
 
 ## Transforms (`/api/datasets/{dataset_id}/transforms`)
 
-| Method | Path | Description | Status |
-|--------|------|-------------|--------|
-| POST | `/api/datasets/{dataset_id}/transforms` | Batch-create transforms | 201 |
-| PATCH | `/api/datasets/{dataset_id}/transforms` | Batch-update transforms (soft-delete via status) | 200 |
-| POST | `/api/datasets/{dataset_id}/transforms/preview` | Preview cleaning transform without persisting | 200 |
+| Method | Path | Description | Status | Idempotent |
+|--------|------|-------------|--------|------------|
+| POST | `/api/datasets/{dataset_id}/transforms` | Batch-create transforms | 201 | `Idempotency-Key` |
+| PATCH | `/api/datasets/{dataset_id}/transforms` | Batch-update transforms (soft-delete via status) | 200 | `Idempotency-Key` |
+| POST | `/api/datasets/{dataset_id}/transforms/preview` | Preview cleaning transform without persisting | 200 | — |
+
+### Idempotency-Key header
+
+Mutation endpoints in the table above accept an optional `Idempotency-Key`
+request header (Stripe-style). Behavior:
+
+- **First call with a new key** — request is processed; the `(status, body)`
+  is cached under `(user_id, org_id, endpoint, key)`.
+- **Retry with the same key + same body** — cached response is returned
+  without re-running the use case.
+- **Retry with the same key + different body** — `409 Conflict` with title
+  `Idempotency Key Conflict` (the key is treated as bound to the original
+  payload).
+- **Same key on a different endpoint** — independent; each endpoint has
+  its own key namespace.
+- **No header sent** — endpoint behavior is unchanged. Idempotency is opt-in.
+
+The cache TTL is 24 hours. Non-2xx responses are not cached, so a retry
+after a 5xx will re-process. Records are stored in the
+`idempotency_keys` table (Alembic revision `b9c0d1e2f3a4`).
+
+Future row-mutation endpoints (`POST /rows`, `DELETE /rows/{row_id}`) will
+reuse `app.infra.idempotency.idempotent_request` once they materialize;
+data-row mutations are currently dispatched via the agent worker rather
+than the backend HTTP API.
 
 ## Uploads (`/api/uploads`)
 

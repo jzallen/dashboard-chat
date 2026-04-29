@@ -14,6 +14,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.database import Base
+from app.infra.idempotency import IdempotencyKeyRecord  # noqa: F401 — register with Base.metadata
 from tests.uuidv7_fixtures import make_test_uuidv7
 
 # Add backend directory to path for imports
