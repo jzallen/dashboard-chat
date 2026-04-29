@@ -9,7 +9,7 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 - **Frontend** (`frontend/`) — React 18 + Vite + TanStack Query/Table + Tailwind CSS
 - **Backend** (`backend/`) — FastAPI + SQLAlchemy (async) + DuckDB + Alembic migrations
 - **Worker** (`worker/`) — Hono (Node.js) chat API with SSE streaming via Groq
-- **Shared** (`shared/chat/`) — Chat handler, prompts, and types used by frontend + worker
+- **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `frontend/`. Future cross-cutting chat types/handlers/prompts go here.
 
 ## Development Methodology — nwave-ai waves
 

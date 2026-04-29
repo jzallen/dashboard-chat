@@ -11,6 +11,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@dashboard-chat/shared-chat": "*",
     "@tanstack/react-query": "^5.90.20",
     "@tanstack/react-table": "^8.20.5",
     "ai": "6.0.141",

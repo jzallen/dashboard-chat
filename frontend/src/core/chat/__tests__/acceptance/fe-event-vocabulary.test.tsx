@@ -134,9 +134,9 @@ describe("PR 0 — MockSSESource contract", () => {
       { type: "error_occurred", phase: "backend_dispatch", message: "boom", retryable: false },
       { type: "turn_done", reason: "stop" },
     ];
-    // Then the frontend schema accepts every sample. Drift between this
-    // schema and agent/lib/chat/events.ts is caught by agent/test/chat/
-    // schema-sync.test.ts (verbatim-duplicate text check).
+    // The frontend schema is a re-export of @dashboard-chat/shared-chat/events,
+    // the same module imported by agent/lib/chat/events.ts. Both surfaces share
+    // a single source of truth (no drift possible) — see shared/chat/events.ts.
     for (const sample of samples) {
       const parsed = FrontendSchema.parse(sample);
       expect(parsed).toEqual(sample);

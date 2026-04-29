@@ -7,15 +7,6 @@ load("//tools:version_layer.bzl", "version_layer")
 
 npm_link_all_packages()
 
-# Expose the chat event schema for the agent ↔ frontend sync test
-# (see agent/test/chat/schema-sync.test.ts; dc-bj2.1 / TWD-8 option 1).
-# F2 (dc-bj2.2) replaces this duplication with a shared/chat SSOT.
-js_library(
-    name = "chat_events_ts",
-    srcs = ["src/core/chat/events.ts"],
-    visibility = ["//agent:__pkg__"],
-)
-
 # ─── Per-Module js_library Targets ───────────────────────────────────────────
 
 js_library(
@@ -67,7 +58,10 @@ js_library(
         exclude = ["src/core/chat/**/*.test.ts", "src/core/chat/**/*.test.tsx"],
         allow_empty = True,
     ),
-    deps = [":node_modules"],
+    deps = [
+        ":node_modules",
+        "//shared/chat:lib",
+    ],
 )
 
 js_library(

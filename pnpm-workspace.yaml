@@ -2,5 +2,6 @@ packages:
   - frontend
   - agent
   - auth-proxy
+  - shared/chat
 
 onlyBuiltDependencies: []

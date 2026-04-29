@@ -19,6 +19,7 @@ js_library(
     visibility = ["//visibility:public"],
     deps = [
         ":node_modules",
+        "//shared/chat:lib",
     ],
 )
 
@@ -45,9 +46,6 @@ vitest_bin.vitest_test(
         "package.json",
         "tsconfig.json",
         "//:node_modules/vitest",
-        # Sync test reads frontend/src/core/chat/events.ts as a string to detect
-        # drift between the duplicated schemas (dc-bj2.1 / TWD-8 option 1).
-        "//frontend:chat_events_ts",
     ] + glob(["**/*.test.ts"]) + [":node_modules"],
     size = "small",
 )
