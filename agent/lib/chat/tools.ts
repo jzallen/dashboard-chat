@@ -41,13 +41,6 @@ export function getTools(tableSchema: TableSchema) {
       : z.string();
 
   return {
-    sortTable: tool({
-      description: `Sort table by a column. Available columns: ${columnDescriptions}`,
-      parameters: z.object({
-        column: colEnum(columnNames).describe("Column ID to sort by"),
-        direction: z.enum(["asc", "desc"]).describe("Sort direction: ascending or descending"),
-      }),
-    }),
     addRow: tool({
       description: `Add a new row to the table. Columns: ${columnDescriptions}`,
       parameters: z.object({
@@ -58,33 +51,6 @@ export function getTools(tableSchema: TableSchema) {
       description: "Delete a row from the table by searching for matching text across all columns.",
       parameters: z.object({
         search: z.string().describe("Text to search for. Matches against any column value in the row."),
-      }),
-    }),
-    clearFilters: tool({
-      description: "Remove all active filters from the table",
-      parameters: z.object({}),
-    }),
-    clearSort: tool({
-      description: "Remove sorting from the table",
-      parameters: z.object({}),
-    }),
-    filterTable: tool({
-      description: `Add a filter to the table. Use this to ADD a new filter condition. Available columns: ${columnDescriptions}`,
-      parameters: z.object({
-        column: colEnum(columnNames).describe("Column ID to filter by"),
-        operator: z.enum(["equals", "notEquals", "contains", "startsWith", "endsWith", "gt", "gte", "lt", "lte", "between"])
-          .describe("Comparison operator. Use gt/gte/lt/lte for numbers, contains/startsWith/endsWith for text."),
-        value: z.unknown().describe("Value to compare against. Use number for numeric comparisons, string for text. For 'between', use an array of two numbers."),
-      }),
-    }),
-    replaceColumnFilter: tool({
-      description: `Replace all existing filters on a column with new condition(s). Use when the user wants to CHANGE an existing filter. Preserves filters on other columns. Available columns: ${columnDescriptions}`,
-      parameters: z.object({
-        column: colEnum(columnNames).describe("Column to replace filters on"),
-        filters: z.array(z.object({
-          operator: z.enum(["equals", "notEquals", "contains", "startsWith", "endsWith", "gt", "gte", "lt", "lte", "between"]),
-          value: z.unknown().describe("Value to compare against"),
-        })).describe("ALL desired conditions for this column (include unchanged ones too)"),
       }),
     }),
     trimWhitespace: tool({

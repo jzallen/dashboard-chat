@@ -1,7 +1,17 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, type Mock, vi } from "vitest";
 
 import type { Dataset } from "@/dataCatalog";
+
+const qc = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
+function withQueryClient(children: ReactNode) {
+  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+}
 
 vi.mock("@/auth", () => ({
   withAuth: (f: typeof fetch) => f,
@@ -108,21 +118,21 @@ function ProjectUpdaterConsumer({ onUpdated }: { onUpdated: Mock }) {
 
 describe("ChatContext state edge cases", () => {
   it("starts with no channel", () => {
-    render(
+    render(withQueryClient(
       <ChatProvider>
         <TestConsumer />
       </ChatProvider>,
-    );
+    ));
     expect(screen.getByTestId("has-channel").textContent).toBe("false");
   });
 
   it("onDatasetCreated invokes the registered project updater", () => {
     const mockUpdater = vi.fn();
-    render(
+    render(withQueryClient(
       <ChatProvider>
         <ProjectUpdaterConsumer onUpdated={mockUpdater} />
       </ChatProvider>,
-    );
+    ));
     fireEvent.click(screen.getByTestId("register-updater"));
     fireEvent.click(screen.getByTestId("create-dataset"));
     expect(mockUpdater).toHaveBeenCalledOnce();
@@ -132,11 +142,11 @@ describe("ChatContext state edge cases", () => {
   });
 
   it("onDatasetCreated does nothing when no updater registered", () => {
-    render(
+    render(withQueryClient(
       <ChatProvider>
         <ProjectUpdaterConsumer onUpdated={vi.fn()} />
       </ChatProvider>,
-    );
+    ));
     // Should not throw
     fireEvent.click(screen.getByTestId("create-dataset"));
   });

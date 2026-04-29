@@ -1,5 +1,5 @@
 import { datasetKeys } from "../../lib/queryKeys";
-import type { TableApi } from "./dispatcher";
+import { applyDirective, type TableApi } from "./dispatcher";
 import type { ChatEvent } from "./events";
 
 export type EventHandlerContext = {
@@ -11,6 +11,11 @@ export type EventHandlerContext = {
 
 export function handleChatEvent(event: ChatEvent, ctx: EventHandlerContext): void {
   switch (event.type) {
+    case "assistant_text_delta": {
+      // Chat panel renders text deltas elsewhere (via subscription); nothing
+      // for the structural handler to do here.
+      return;
+    }
     case "transform_applied":
     case "row_added":
     case "row_deleted":
@@ -24,6 +29,24 @@ export function handleChatEvent(event: ChatEvent, ctx: EventHandlerContext): voi
       });
       return;
     }
+    case "sort_directive": {
+      applyDirective(
+        { kind: "sort", column: event.column, direction: event.direction },
+        ctx.table,
+      );
+      return;
+    }
+    case "filter_directive": {
+      applyDirective(
+        { kind: "filter", column: event.column, filters: event.filters },
+        ctx.table,
+      );
+      return;
+    }
+    case "filters_cleared": {
+      applyDirective({ kind: "clear_filters" }, ctx.table);
+      return;
+    }
     case "error_occurred": {
       ctx.toast.error(event.message);
       return;
@@ -33,11 +56,10 @@ export function handleChatEvent(event: ChatEvent, ctx: EventHandlerContext): voi
       return;
     }
     default: {
-      // PR 3 fills the remaining UI-directive cases. Until every variant has
-      // a case, the cast keeps TS happy while the throw surfaces untriaged
-      // events loudly. PR 3 removes the default and lets the never-narrowing
-      // prove exhaustiveness at compile time (AC2.1).
-      const _exhaustive: never = event as never;
+      // Compile-time exhaustiveness (AC2.1): if a new ChatEvent variant lands
+      // without a matching case above, this assignment fails to type-check.
+      // The throw is defensive — every variant has a case in normal flow.
+      const _exhaustive: never = event;
       throw new Error(`unhandled chat event: ${JSON.stringify(_exhaustive)}`);
     }
   }

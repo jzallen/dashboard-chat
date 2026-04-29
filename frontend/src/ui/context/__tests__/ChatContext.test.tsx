@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
   fireEvent,
@@ -12,6 +13,10 @@ import {
   ChatProvider,
   useChatContext,
 } from "../../../ui/context/ChatContext";
+
+const qc = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
 
 // Mock session API (fire-and-forget, not critical to chat flow).
 // The real createChatClient(withEagerAuth(fetch)) captures the fetch reference at module
@@ -221,9 +226,11 @@ function TestHarness({ toolHandler }: { toolHandler?: ToolHandler }) {
 function renderChat(toolHandler?: ToolHandler) {
   (globalThis as any).__chatTestRegistered = false;
   return render(
-    <ChatProvider>
-      <TestHarness toolHandler={toolHandler} />
-    </ChatProvider>,
+    <QueryClientProvider client={qc}>
+      <ChatProvider>
+        <TestHarness toolHandler={toolHandler} />
+      </ChatProvider>
+    </QueryClientProvider>,
   );
 }
 

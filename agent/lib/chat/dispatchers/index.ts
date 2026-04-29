@@ -16,6 +16,12 @@ import {
   makeRenameColumnDispatcher,
   makeUndoCleaningTransformDispatcher,
 } from "./mutations";
+import {
+  makeClearFiltersDispatcher,
+  makeFilterTableDispatcher,
+  makeReplaceColumnFiltersDispatcher,
+  makeSortTableDispatcher,
+} from "./ui";
 
 export type DispatchContext = {
   jwt: string;
@@ -45,6 +51,11 @@ export function dispatcherRegistry(ctx: DispatchContext): DispatcherRegistry {
     registry.renameColumn = makeRenameColumnDispatcher(ctx.emit, ctx);
     registry.undoCleaningTransform = makeUndoCleaningTransformDispatcher(ctx.emit, ctx);
     registry.reEnableCleaningTransform = makeReEnableCleaningTransformDispatcher(ctx.emit, ctx);
+    // UI directives (PR 3) — emit only; no backend call.
+    registry.sortTable = makeSortTableDispatcher(ctx.emit, ctx);
+    registry.filterTable = makeFilterTableDispatcher(ctx.emit, ctx);
+    registry.replaceColumnFilter = makeReplaceColumnFiltersDispatcher(ctx.emit, ctx);
+    registry.clearFilters = makeClearFiltersDispatcher(ctx.emit, ctx);
   }
   return registry;
 }

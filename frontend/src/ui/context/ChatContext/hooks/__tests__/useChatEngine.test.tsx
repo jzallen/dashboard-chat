@@ -1,7 +1,21 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatProvider, useChatContext } from "../useChatEngine";
+
+const qc = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
+function withProviders(children: ReactNode) {
+  return (
+    <QueryClientProvider client={qc}>
+      <ChatProvider>{children}</ChatProvider>
+    </QueryClientProvider>
+  );
+}
 
 // --- Mocks (same pattern as ChatContext.test.tsx) ---
 
@@ -150,11 +164,7 @@ function TestHarness() {
 }
 
 function renderEngine() {
-  return render(
-    <ChatProvider>
-      <TestHarness />
-    </ChatProvider>,
-  );
+  return render(withProviders(<TestHarness />));
 }
 
 // --- Tests ---
@@ -249,9 +259,9 @@ describe("useChatEngine — registration and state", () => {
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <HarnessWithUpdater />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     await act(async () => {
@@ -299,9 +309,9 @@ describe("useChatEngine — registration and state", () => {
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <Inspector />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     expect(contextValue).not.toBeNull();
@@ -352,9 +362,9 @@ describe("useChatEngine — Stream integration", () => {
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <ChannelHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     await act(async () => {
@@ -416,9 +426,9 @@ describe("useChatEngine — Stream integration", () => {
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <LoadHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     await act(async () => {
@@ -473,9 +483,9 @@ describe("useChatEngine — Stream integration", () => {
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <NoStreamHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "test" } });
@@ -546,9 +556,9 @@ describe("useChatEngine — session title, dataset picker, and re-submit", () =>
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <TitleHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     // Create a channel so channelRef is set
@@ -589,9 +599,9 @@ describe("useChatEngine — session title, dataset picker, and re-submit", () =>
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <PickerHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "filter by status" } });
@@ -651,9 +661,9 @@ describe("useChatEngine — session title, dataset picker, and re-submit", () =>
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <ResubmitHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     // Submit a table-op message — triggers picker, no API call
@@ -743,9 +753,9 @@ describe("useChatEngine — navigate-to-table prompt", () => {
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <NavPromptHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "apply transformation" } });
@@ -810,9 +820,9 @@ describe("useChatEngine — navigate-to-table prompt", () => {
     }
 
     render(
-      <ChatProvider>
+      <QueryClientProvider client={qc}><ChatProvider>
         <NavWithDatasetHarness />
-      </ChatProvider>,
+      </ChatProvider></QueryClientProvider>,
     );
 
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "sort it" } });

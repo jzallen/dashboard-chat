@@ -41,15 +41,23 @@ describe("context routing — tool set selection", () => {
     expect(toolNames).not.toContain("filterTable");
   });
 
-  it("contextType 'dataset' returns dataset tools", () => {
+  it("contextType 'dataset' returns dataset (non-migrated) tools", () => {
+    // Post-PR-3: UI-directive tools (sortTable, filterTable, replaceColumnFilter,
+    // clearFilters) live in dispatchers/ui.ts and are merged into the tool set
+    // by handleChat via dispatcherRegistry. tools.ts only retains the
+    // schema-only entries that haven't migrated yet.
     const tools = getTools(baseSchema());
     const toolNames = Object.keys(tools);
 
-    expect(toolNames).toContain("sortTable");
     expect(toolNames).toContain("addRow");
     expect(toolNames).toContain("deleteRow");
-    expect(toolNames).toContain("filterTable");
-    expect(toolNames).toContain("clearFilters");
+    expect(toolNames).toContain("trimWhitespace");
+    expect(toolNames).toContain("applyCleaningTransform");
+
+    // UI-directive tools are no longer in tools.ts
+    expect(toolNames).not.toContain("sortTable");
+    expect(toolNames).not.toContain("filterTable");
+    expect(toolNames).not.toContain("clearFilters");
 
     // Should NOT contain view tools
     expect(toolNames).not.toContain("createView");

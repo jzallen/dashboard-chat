@@ -266,32 +266,155 @@ describe("PR 2 — mutation event reactions", () => {
 
 // ---- PR 3: UI directive event reactions ----------------------------------
 
-describe.skip("PR 3 — UI directive event reactions via shared applyDirective", () => {
+describe("PR 3 — UI directive event reactions via shared applyDirective", () => {
   it("sort_directive applies sort via the shared dispatcher", () => {
-    expect.fail("PR 3 polecat implements.");
+    // Given a TableApi whose setSorting is spied
+    const setSorting = vi.fn();
+    const ctx = makeCtx({
+      table: {
+        setSorting,
+        setColumnFilters: vi.fn(),
+        resetColumnFilters: vi.fn(),
+      },
+    });
+    // When handleChatEvent processes a sort_directive
+    handleChatEvent(
+      { type: "sort_directive", column: "region", direction: "desc" },
+      ctx,
+    );
+    // Then setSorting was called with the TanStack-shaped descriptor
+    expect(setSorting).toHaveBeenCalledTimes(1);
+    expect(setSorting).toHaveBeenCalledWith([{ id: "region", desc: true }]);
   });
 
   it("filter_directive merges into existing column filters via shared dispatcher", () => {
-    expect.fail("PR 3 polecat implements.");
+    // Given a TableApi whose setColumnFilters is spied
+    const setColumnFilters = vi.fn();
+    const ctx = makeCtx({
+      table: {
+        setSorting: vi.fn(),
+        setColumnFilters,
+        resetColumnFilters: vi.fn(),
+      },
+    });
+    // When handleChatEvent processes a filter_directive
+    handleChatEvent(
+      {
+        type: "filter_directive",
+        column: "region",
+        filters: [{ operator: "equals", value: "West" }],
+      },
+      ctx,
+    );
+    // Then setColumnFilters was called with an updater function
+    expect(setColumnFilters).toHaveBeenCalledTimes(1);
+    const updater = setColumnFilters.mock.calls[0][0] as (
+      prev: { id: string; value: unknown }[],
+    ) => { id: string; value: unknown }[];
+    // And the updater upserts the column's filters, preserving other columns
+    const next = updater([{ id: "amount", value: { operator: "gt", value: 5 } }]);
+    expect(next).toEqual([
+      { id: "amount", value: { operator: "gt", value: 5 } },
+      { id: "region", value: [{ operator: "equals", value: "West" }] },
+    ]);
   });
 
   it("filters_cleared resets all column filters via shared dispatcher", () => {
-    expect.fail("PR 3 polecat implements.");
+    // Given a TableApi whose resetColumnFilters is spied
+    const resetColumnFilters = vi.fn();
+    const ctx = makeCtx({
+      table: {
+        setSorting: vi.fn(),
+        setColumnFilters: vi.fn(),
+        resetColumnFilters,
+      },
+    });
+    // When handleChatEvent processes a filters_cleared event
+    handleChatEvent({ type: "filters_cleared" }, ctx);
+    // Then resetColumnFilters was called exactly once
+    expect(resetColumnFilters).toHaveBeenCalledTimes(1);
   });
 
   it("Column-header sort click calls the same dispatcher as sort_directive", () => {
-    expect.fail("PR 3 polecat implements (proves the convergence point).");
+    // Given a single TableApi shared by both paths
+    const table: TableApi = {
+      setSorting: vi.fn(),
+      setColumnFilters: vi.fn(),
+      resetColumnFilters: vi.fn(),
+    };
+    // When the chat-driven sort_directive arrives
+    handleChatEvent(
+      { type: "sort_directive", column: "region", direction: "asc" },
+      makeCtx({ table }),
+    );
+    // And the click-driven path calls applyDirective with the same descriptor
+    applyDirective(
+      { kind: "sort", column: "region", direction: "asc" },
+      table,
+    );
+    // Then both paths produced the same setSorting call (convergence point)
+    expect(table.setSorting).toHaveBeenCalledTimes(2);
+    expect(table.setSorting).toHaveBeenNthCalledWith(1, [
+      { id: "region", desc: false },
+    ]);
+    expect(table.setSorting).toHaveBeenNthCalledWith(2, [
+      { id: "region", desc: false },
+    ]);
   });
 });
 
 // ---- AC2.1 exhaustiveness — TS-level test --------------------------------
 
-describe.skip("AC2.1 — exhaustiveness via TS types", () => {
+describe("AC2.1 — exhaustiveness via TS types", () => {
   it("handleChatEvent compiles only when every ChatEvent variant has a case", () => {
-    // This is a TYPE test, not a runtime test. The polecat at PR 0 wires this
-    // up via tsd or expectTypeOf. It asserts that handleChatEvent has a
-    // `default: const _: never = event` branch and a complete switch.
-    // Runtime body below is just a sanity check that the function is callable.
+    // Compile-time exhaustiveness is enforced by the `const _exhaustive: never
+    // = event` line in eventHandler.ts. If a new ChatEvent variant lands
+    // without a matching case, TS narrowing fails and the build breaks.
+    // Runtime sanity: every variant we know about is dispatched without
+    // throwing.
+    const ctx = makeCtx();
+    const samples: Parameters<typeof handleChatEvent>[0][] = [
+      { type: "assistant_text_delta", delta: "hi" },
+      {
+        type: "transform_applied",
+        transform_id: "t-1",
+        dataset_id: "d-1",
+        operation: "trim",
+        column: "region",
+      },
+      { type: "row_added", dataset_id: "d-1", row_id: "r-1" },
+      { type: "row_deleted", dataset_id: "d-1", row_id: "r-1" },
+      {
+        type: "column_renamed",
+        dataset_id: "d-1",
+        old_name: "a",
+        new_name: "b",
+      },
+      {
+        type: "transform_undone",
+        transform_id: "t-1",
+        dataset_id: "d-1",
+        mode: "disable",
+      },
+      {
+        type: "transform_re_enabled",
+        transform_id: "t-1",
+        dataset_id: "d-1",
+      },
+      { type: "sort_directive", column: "region", direction: "asc" },
+      { type: "filter_directive", column: "region", filters: [] },
+      { type: "filters_cleared" },
+      {
+        type: "error_occurred",
+        phase: "backend_dispatch",
+        message: "boom",
+        retryable: false,
+      },
+      { type: "turn_done", reason: "stop" },
+    ];
+    for (const sample of samples) {
+      expect(() => handleChatEvent(sample, ctx)).not.toThrow();
+    }
     expect(typeof handleChatEvent).toBe("function");
     expect(typeof applyDirective).toBe("function");
   });

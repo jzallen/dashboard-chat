@@ -26,6 +26,11 @@ import {
   makeRenameColumnDispatcher,
   makeUndoCleaningTransformDispatcher,
 } from "../../../lib/chat/dispatchers/mutations";
+import {
+  makeClearFiltersDispatcher,
+  makeFilterTableDispatcher,
+  makeSortTableDispatcher,
+} from "../../../lib/chat/dispatchers/ui";
 import { type ChatEvent, ChatEventSchema } from "../../../lib/chat/events";
 
 type ToolWithExecute = {
@@ -462,28 +467,138 @@ describe("PR 2 — row and column mutations dispatch via worker", () => {
 
 // ---- PR 3: UI directives -------------------------------------------------
 
-describe.skip("PR 3 — UI directives dispatch via worker (no backend call)", () => {
+describe("PR 3 — UI directives dispatch via worker (no backend call)", () => {
   it("sortTable emits sort_directive without calling backend", async () => {
-    expect.fail("PR 3 polecat implements.");
+    // Given a DispatchContext whose backend MUST NOT be called for UI tools
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => {
+        throw new Error("UI dispatcher must not call backend");
+      }),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    // When sortTable's execute runs for column=region, direction=desc
+    const tool = makeSortTableDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {
+      column: "region",
+      direction: "desc",
+    });
+
+    // Then exactly one sort_directive was emitted with the matching shape
+    const sorts = events.filter((e) => e.type === "sort_directive");
+    expect(sorts).toHaveLength(1);
+    expect(sorts[0]).toEqual({
+      type: "sort_directive",
+      column: "region",
+      direction: "desc",
+    });
+    expect(() => ChatEventSchema.parse(sorts[0])).not.toThrow();
+    expect(result.ok).toBe(true);
+    expect(backend.post).not.toHaveBeenCalled();
   });
 
   it("filterTable emits filter_directive", async () => {
-    expect.fail("PR 3 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => {
+        throw new Error("UI dispatcher must not call backend");
+      }),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeFilterTableDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {
+      column: "region",
+      operator: "equals",
+      value: "West",
+    });
+
+    const filters = events.filter((e) => e.type === "filter_directive");
+    expect(filters).toHaveLength(1);
+    expect(filters[0]).toEqual({
+      type: "filter_directive",
+      column: "region",
+      filters: [{ operator: "equals", value: "West" }],
+    });
+    expect(() => ChatEventSchema.parse(filters[0])).not.toThrow();
+    expect(result.ok).toBe(true);
+    expect(backend.post).not.toHaveBeenCalled();
   });
 
   it("clearFilters emits filters_cleared", async () => {
-    expect.fail("PR 3 polecat implements.");
+    const events: ChatEvent[] = [];
+    const backend: BackendClient = {
+      post: vi.fn(async () => {
+        throw new Error("UI dispatcher must not call backend");
+      }),
+      get: vi.fn(),
+    };
+    const ctx = buildContext({ backend, emit: (e) => events.push(e) });
+
+    const tool = makeClearFiltersDispatcher(ctx.emit, ctx);
+    const result = await callExecute(tool, {});
+
+    const cleared = events.filter((e) => e.type === "filters_cleared");
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]).toEqual({ type: "filters_cleared" });
+    expect(() => ChatEventSchema.parse(cleared[0])).not.toThrow();
+    expect(result.ok).toBe(true);
+    expect(backend.post).not.toHaveBeenCalled();
   });
 });
 
 // ---- Structural: backend stays chat-unaware (AC1.4 / K2) -----------------
 
-describe.skip("structural — backend stays chat-unaware", () => {
+describe("structural — backend stays chat-unaware", () => {
   it("Backend production code references no chat / Groq / SSE concepts", async () => {
-    // Given the repository is at the post-PR-3 state
-    // When `rg -i 'groq|sse|tool_call|tool_calls' backend/app/` runs
-    // Then the command exits with non-zero (zero matches)
-    // And the same command run against agent/lib/chat/ DOES return matches
-    expect.fail("PR 3 polecat enables and runs the rg via execSync; this guards K2.");
+    // Given the repository is at the post-PR-3 state — AC1.4 grep guard.
+    const { execFileSync } = await import("node:child_process");
+    const { existsSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+
+    // Walk up from the test file to find the repo root (where backend/ lives).
+    let repoRoot = resolve(__dirname);
+    while (repoRoot !== "/" && !existsSync(resolve(repoRoot, "backend"))) {
+      repoRoot = resolve(repoRoot, "..");
+    }
+    const backendDir = resolve(repoRoot, "backend/app");
+    expect(existsSync(backendDir)).toBe(true);
+
+    // When grep -rEn '\b(groq|sse|tool_call|tool_calls)\b' --include='*.py'
+    // backend/app/ runs. Word boundaries avoid noise from common Python words
+    // that contain "sse" as a substring (processed, assert, etc.); the intent
+    // of AC1.4 is to forbid the chat / Groq / SSE *concepts*, not literal
+    // substrings in unrelated identifiers.
+    const pattern = "\\b(groq|sse|tool_call|tool_calls)\\b";
+    const backendArgs = [
+      "-rliE",
+      pattern,
+      "--include=*.py",
+      backendDir,
+    ];
+    let backendMatches = "";
+    try {
+      backendMatches = execFileSync("grep", backendArgs, {
+        encoding: "utf8",
+      });
+    } catch (err) {
+      const code = (err as { status?: number }).status;
+      if (code !== 1) throw err;
+      backendMatches = "";
+    }
+    // Then the backend has zero matches
+    expect(backendMatches.trim()).toBe("");
+
+    // And the same grep against agent/lib/chat/ DOES return matches (sanity).
+    const agentChatDir = resolve(repoRoot, "agent/lib/chat");
+    const agentMatches = execFileSync(
+      "grep",
+      ["-rliE", pattern, agentChatDir],
+      { encoding: "utf8" },
+    );
+    expect(agentMatches.trim().length).toBeGreaterThan(0);
   });
 });

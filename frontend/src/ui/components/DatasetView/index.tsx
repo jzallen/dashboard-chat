@@ -15,22 +15,9 @@ import { withAuth } from "@/auth";
 import { createDataCatalog } from "@/dataCatalog";
 
 const catalog = createDataCatalog(withAuth(fetch));
-import { raqbToSql } from "@/queryTranslation";
-import {
-  filterTableToRaqb,
-  generateFilterDescription,
-} from "@/queryTranslation/tanstackToRaqb";
-import {
-  executeToolCall as executeToolCallFn,
-  type ToolCall,
-  type ToolCallContext,
-} from "@/toolCalls";
 
 import { useChatContext } from "../../context/ChatContext";
-import {
-  getTransformIdsForColumn,
-  toConditions,
-} from "../../hooks/filterUtils";
+import { toConditions } from "../../hooks/filterUtils";
 import { useRenameDataset } from "../../hooks/useDatasetMutations";
 import {
   datasetKeys,
@@ -66,7 +53,7 @@ function DatasetDetail({
   onShowSettings,
 }: DatasetDetailProps) {
   const queryClient = useQueryClient();
-  const { registerToolHandler, registerTableSchema, setContext } =
+  const { registerTableApi, registerTableSchema, setContext } =
     useChatContext();
   const { data: dataset, isLoading } = useDatasetQuery(datasetId);
 
@@ -76,15 +63,18 @@ function DatasetDetail({
     columnFilters,
     setColumnFilters,
     setSorting,
-    setData,
     refresh: refreshData,
   } = useTableConfig({ dataset: dataset ?? null });
+
+  const resetColumnFilters = useCallback(
+    () => setColumnFilters([]),
+    [setColumnFilters],
+  );
 
   const {
     transforms,
     loading: transformsLoading,
     error: transformsError,
-    saveTransform,
     toggleTransform,
     removeTransform,
   } = useTransforms({
@@ -101,100 +91,13 @@ function DatasetDetail({
     });
   }, [queryClient, datasetId]);
 
-  const executeToolCall = useCallback(
-    async (toolCall: ToolCall): Promise<string> => {
-      const context: ToolCallContext = {
-        setColumnFilters,
-        setSorting,
-        setData,
-        datasetId,
-        transforms: (dataset?.transforms ?? []).map((t) => ({
-          id: t.id,
-          name: t.name,
-          status: t.status,
-          transform_type: t.transform_type ?? "filter",
-          target_column: t.target_column,
-          expression_config: t.expression_config,
-          created_at: t.created_at,
-        })),
-        queryClient,
-        catalog,
-      };
-      const result = await executeToolCallFn(toolCall, context);
-      if (toolCall.function.name === "filterTable") {
-        try {
-          const args = JSON.parse(toolCall.function.arguments);
-          const raqbJson = filterTableToRaqb(args);
-          const description = generateFilterDescription(args);
-          const conditionSql = raqbToSql(raqbJson);
-          await saveTransform({
-            name: description,
-            condition_json: raqbJson,
-            condition_sql: conditionSql,
-          });
-        } catch (e) {
-          console.error("Failed to persist transform:", e);
-        }
-        handleRefreshDataset();
-      }
-      if (toolCall.function.name === "replaceColumnFilter") {
-        try {
-          const args = JSON.parse(toolCall.function.arguments) as {
-            column: string;
-            filters: Array<{ operator: string; value: unknown }>;
-          };
-          const idsToDisable = getTransformIdsForColumn(
-            transforms,
-            args.column,
-          );
-          for (const id of idsToDisable) {
-            await toggleTransform(id, false);
-          }
-          if (args.filters?.length) {
-            for (const f of args.filters) {
-              const raqbJson = filterTableToRaqb({
-                column: args.column,
-                operator: f.operator,
-                value: f.value,
-              });
-              const description = generateFilterDescription({
-                column: args.column,
-                operator: f.operator,
-                value: f.value,
-              });
-              const conditionSql = raqbToSql(raqbJson);
-              await saveTransform({
-                name: description,
-                condition_json: raqbJson,
-                condition_sql: conditionSql,
-              });
-            }
-          }
-        } catch (e) {
-          console.error("Failed to persist replaceColumnFilter transform:", e);
-        }
-        handleRefreshDataset();
-      }
-      return result;
-    },
-    [
-      setColumnFilters,
-      setSorting,
-      setData,
-      datasetId,
-      dataset,
-      queryClient,
-      handleRefreshDataset,
-      saveTransform,
-      toggleTransform,
-      transforms,
-    ],
-  );
-
+  // Expose a TableApi to ChatContext so SSE-driven UI directives
+  // (sort_directive / filter_directive / filters_cleared) flow through the
+  // shared applyDirective body — same convergence point as direct UI clicks.
   useEffect(() => {
-    registerToolHandler({ executeToolCall });
-    return () => registerToolHandler(null);
-  }, [executeToolCall, registerToolHandler]);
+    registerTableApi({ setSorting, setColumnFilters, resetColumnFilters });
+    return () => registerTableApi(null);
+  }, [registerTableApi, setSorting, setColumnFilters, resetColumnFilters]);
 
   useEffect(() => {
     setContext("dataset", datasetId);

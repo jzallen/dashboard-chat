@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnFiltersState, SortingState, VisibilityState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
@@ -6,34 +5,12 @@ import { useParams } from "react-router-dom";
 /** Module-level cache for table state across navigations, keyed by datasetId. */
 const tableStateCache = new Map<string, { columnFilters: ColumnFiltersState; sorting: SortingState; columnVisibility: VisibilityState }>();
 
-import { withAuth } from "@/auth";
-import { createDataCatalog } from "@/dataCatalog";
-
-const catalog = createDataCatalog(withAuth(fetch));
-import { raqbToSql } from "@/queryTranslation";
-import {
-  filterTableToRaqb,
-  generateFilterDescription,
-} from "@/queryTranslation/tanstackToRaqb";
-import {
-  executeToolCall as executeToolCallFn,
-  type ToolCall,
-  type ToolCallContext,
-} from "@/toolCalls";
-
 import { useChatContext } from "../../context/ChatContext";
-import {
-  getTransformIdsForColumn,
-  toConditions,
-} from "../../hooks/filterUtils";
-import {
-  datasetKeys,
-  useDatasetQuery,
-} from "../../hooks/useDatasetQuery";
+import { toConditions } from "../../hooks/filterUtils";
+import { useDatasetQuery } from "../../hooks/useDatasetQuery";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
 import { ChatInput } from "../chat";
-import { TablePanelSkeleton } from "../SkeletonLoader";
 import TablePanel from "../TablePanel";
 import { ActivityLog } from "./ActivityLog";
 import styles from "./TableView.module.css";
@@ -41,7 +18,6 @@ import styles from "./TableView.module.css";
 /** Full-width table view with inline chat input and activity log overlay. */
 export function TableView() {
   const { datasetId } = useParams<{ datasetId: string }>();
-  const queryClient = useQueryClient();
 
   const {
     messages,
@@ -49,7 +25,7 @@ export function TableView() {
     setInput,
     isLoading: chatLoading,
     handleSubmit,
-    registerToolHandler,
+    registerTableApi,
     registerTableSchema,
     setContext,
     channel,
@@ -68,7 +44,6 @@ export function TableView() {
     setSorting,
     columnVisibility,
     setColumnVisibility,
-    setData,
     refresh: refreshData,
   } = useTableConfig({ dataset: dataset ?? null });
 
@@ -90,8 +65,6 @@ export function TableView() {
   }, [datasetId, columnFilters, sorting, columnVisibility]);
 
   const {
-    transforms,
-    saveTransform,
     toggleTransform,
   } = useTransforms({
     dataset: dataset ?? null,
@@ -100,100 +73,17 @@ export function TableView() {
     onFiltersChanged: refreshData,
   });
 
-  const handleRefreshDataset = useCallback(() => {
-    if (!datasetId) return;
-    queryClient.invalidateQueries({
-      queryKey: datasetKeys.detail(datasetId),
-      exact: true,
-    });
-  }, [queryClient, datasetId]);
-
-  // Tool call execution — same pattern as DatasetDetail
-  const executeToolCall = useCallback(
-    async (toolCall: ToolCall): Promise<string> => {
-      if (!datasetId) return "No dataset";
-      const context: ToolCallContext = {
-        setColumnFilters,
-        setSorting,
-        setData,
-        datasetId,
-        transforms: (dataset?.transforms ?? []).map((t) => ({
-          id: t.id,
-          name: t.name,
-          status: t.status,
-          transform_type: t.transform_type ?? "filter",
-          target_column: t.target_column,
-          expression_config: t.expression_config,
-          created_at: t.created_at,
-        })),
-        queryClient,
-        catalog,
-      };
-      const result = await executeToolCallFn(toolCall, context);
-      if (toolCall.function.name === "filterTable") {
-        try {
-          const args = JSON.parse(toolCall.function.arguments);
-          const raqbJson = filterTableToRaqb(args);
-          const description = generateFilterDescription(args);
-          const conditionSql = raqbToSql(raqbJson);
-          await saveTransform({
-            name: description,
-            condition_json: raqbJson,
-            condition_sql: conditionSql,
-          });
-        } catch (e) {
-          console.error("Failed to persist transform:", e);
-        }
-        handleRefreshDataset();
-      }
-      if (toolCall.function.name === "replaceColumnFilter") {
-        try {
-          const args = JSON.parse(toolCall.function.arguments) as {
-            column: string;
-            filters: Array<{ operator: string; value: unknown }>;
-          };
-          const idsToDisable = getTransformIdsForColumn(transforms, args.column);
-          for (const id of idsToDisable) {
-            await toggleTransform(id, false);
-          }
-          if (args.filters?.length) {
-            for (const f of args.filters) {
-              const raqbJson = filterTableToRaqb({
-                column: args.column,
-                operator: f.operator,
-                value: f.value,
-              });
-              const description = generateFilterDescription({
-                column: args.column,
-                operator: f.operator,
-                value: f.value,
-              });
-              const conditionSql = raqbToSql(raqbJson);
-              await saveTransform({
-                name: description,
-                condition_json: raqbJson,
-                condition_sql: conditionSql,
-              });
-            }
-          }
-        } catch (e) {
-          console.error("Failed to persist replaceColumnFilter:", e);
-        }
-        handleRefreshDataset();
-      }
-      return result;
-    },
-    [
-      setColumnFilters, setSorting, setData, datasetId, dataset,
-      queryClient, handleRefreshDataset, saveTransform, toggleTransform, transforms,
-    ],
+  const resetColumnFilters = useCallback(
+    () => setColumnFilters([]),
+    [setColumnFilters],
   );
 
-  // Register tool handler with ChatContext
+  // Expose a TableApi to ChatContext so SSE-driven UI directives flow
+  // through the shared applyDirective body — see DatasetView for rationale.
   useEffect(() => {
-    registerToolHandler({ executeToolCall });
-    return () => registerToolHandler(null);
-  }, [executeToolCall, registerToolHandler]);
+    registerTableApi({ setSorting, setColumnFilters, resetColumnFilters });
+    return () => registerTableApi(null);
+  }, [registerTableApi, setSorting, setColumnFilters, resetColumnFilters]);
 
   // Register dataset context
   useEffect(() => {

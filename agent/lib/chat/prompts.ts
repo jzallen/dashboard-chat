@@ -78,14 +78,6 @@ export function getToolDefinitions(tableSchema: TableSchema): ToolDefinition[] {
       },
     },
     {
-      name: "clearSort",
-      description: "Remove sorting from the table",
-      parameters: {
-        type: "object",
-        properties: {},
-      },
-    },
-    {
       name: "filterTable",
       description: `Add a filter to the table. Use this to ADD a new filter condition. Available columns: ${columnDescriptions}`,
       parameters: {
@@ -453,7 +445,7 @@ INSTRUCTIONS:
 3. For sorting, use "sortTable" with column and direction ("asc" or "desc").
 4. For adding rows, use "addRow" with data matching the column schema.
 5. For deleting rows, use "deleteRow" with search text that matches the row.
-6. Use "clearFilters" or "clearSort" to reset the table view.
+6. Use "clearFilters" to reset the table filters.
 
 7. For DATA CLEANING operations (trim, case, fill nulls, map values):
    - ALWAYS call BOTH the preview tool AND "applyCleaningTransform" in the SAME response

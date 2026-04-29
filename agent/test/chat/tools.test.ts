@@ -16,17 +16,16 @@ function baseSchema(overrides?: Partial<TableSchema>): TableSchema {
 }
 
 describe("getTools", () => {
-  it("returns an object with all expected tools", () => {
+  it("returns an object with all expected (non-migrated) tools", () => {
+    // After worker-tool-dispatch-refactor PR 3, UI directives (sortTable,
+    // filterTable, replaceColumnFilter, clearFilters, clearSort) live in
+    // dispatchers/ui.ts and are registered via the dispatcherRegistry — they
+    // are no longer schema-only entries here.
     const tools = getTools(baseSchema());
     const toolNames = Object.keys(tools);
 
-    expect(toolNames).toContain("sortTable");
     expect(toolNames).toContain("addRow");
     expect(toolNames).toContain("deleteRow");
-    expect(toolNames).toContain("clearFilters");
-    expect(toolNames).toContain("clearSort");
-    expect(toolNames).toContain("filterTable");
-    expect(toolNames).toContain("replaceColumnFilter");
     expect(toolNames).toContain("trimWhitespace");
     expect(toolNames).toContain("standardizeCase");
     expect(toolNames).toContain("renameColumn");
@@ -35,36 +34,13 @@ describe("getTools", () => {
     expect(toolNames).toContain("applyCleaningTransform");
     expect(toolNames).toContain("undoCleaningTransform");
     expect(toolNames).toContain("reEnableCleaningTransform");
-  });
 
-  it("sortTable has description and parameters schema", () => {
-    const tools = getTools(baseSchema());
-    const sortTable = tools.sortTable;
-
-    expect(sortTable.description).toContain("Sort table");
-    expect(sortTable.parameters).toBeDefined();
-  });
-
-  it("filterTable column parameter accepts only valid column ids", () => {
-    const tools = getTools(baseSchema());
-    const params = tools.filterTable.parameters;
-
-    // Valid column id should parse successfully
-    const valid = params.safeParse({ column: "id", operator: "equals", value: 1 });
-    expect(valid.success).toBe(true);
-
-    // Invalid column id should fail
-    const invalid = params.safeParse({ column: "nonexistent", operator: "equals", value: 1 });
-    expect(invalid.success).toBe(false);
-  });
-
-  it("sortTable direction is constrained to asc/desc", () => {
-    const tools = getTools(baseSchema());
-    const params = tools.sortTable.parameters;
-
-    expect(params.safeParse({ column: "id", direction: "asc" }).success).toBe(true);
-    expect(params.safeParse({ column: "id", direction: "desc" }).success).toBe(true);
-    expect(params.safeParse({ column: "id", direction: "invalid" }).success).toBe(false);
+    // UI directive tools are no longer in tools.ts (PR 3 migration).
+    expect(toolNames).not.toContain("sortTable");
+    expect(toolNames).not.toContain("filterTable");
+    expect(toolNames).not.toContain("replaceColumnFilter");
+    expect(toolNames).not.toContain("clearFilters");
+    expect(toolNames).not.toContain("clearSort");
   });
 
   it("trimWhitespace only accepts text/string columns", () => {
@@ -76,17 +52,6 @@ describe("getTools", () => {
 
     // "id" is a number column — should fail
     expect(params.safeParse({ column: "id" }).success).toBe(false);
-  });
-
-  it("builds column enums from the live tableSchema", () => {
-    const tools = getTools({
-      columns: [{ id: "price", type: "number" }, { id: "sku", type: "string" }],
-      rowCount: 5,
-    });
-    const params = tools.filterTable.parameters;
-
-    expect(params.safeParse({ column: "price", operator: "gt", value: 100 }).success).toBe(true);
-    expect(params.safeParse({ column: "id", operator: "equals", value: 1 }).success).toBe(false);
   });
 
   it("falls back to z.string() when no text columns exist", () => {

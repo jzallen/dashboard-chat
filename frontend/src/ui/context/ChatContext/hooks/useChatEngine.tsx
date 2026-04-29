@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type Dispatch,
@@ -15,6 +16,8 @@ import type { Channel as StreamChannel } from "stream-chat";
 
 import { withAuth, withEagerAuth } from "@/auth";
 import { createChatClient } from "@/chat";
+import type { TableApi } from "@/chat/dispatcher";
+import { handleChatEvent } from "@/chat/eventHandler";
 import type { AgentRequest } from "@/chat/services/chatStream";
 import { readSSEStream } from "@/chat/services/chatStream";
 import { fulfillAgentRequest } from "@/chat/services/fulfillRequest";
@@ -44,6 +47,7 @@ interface ChatContextValue {
   inputRef: RefObject<HTMLInputElement>;
   chatEndRef: RefObject<HTMLDivElement>;
   registerToolHandler: (handler: ToolHandler | null) => void;
+  registerTableApi: (api: TableApi | null) => void;
   registerTableSchema: (schema: TableSchema | null) => void;
   addMessage: (message: Message) => void;
   onDatasetCreated: (dataset: Dataset) => void;
@@ -104,7 +108,9 @@ function useChatEngine(): ChatContextValue {
   const chatEndRef = useRef<HTMLDivElement>(null!);
   const inputRef = useRef<HTMLInputElement>(null!);
   const toolHandlerRef = useRef<ToolHandler | null>(null);
+  const tableApiRef = useRef<TableApi | null>(null);
   const projectUpdaterRef = useRef<((dataset: Dataset) => void) | null>(null);
+  const queryClient = useQueryClient();
   const channelRef = useRef<StreamChannel | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const messagesRef = useRef<Message[]>([]);
@@ -149,6 +155,10 @@ function useChatEngine(): ChatContextValue {
 
   const registerToolHandler = useCallback((handler: ToolHandler | null) => {
     toolHandlerRef.current = handler;
+  }, []);
+
+  const registerTableApi = useCallback((api: TableApi | null) => {
+    tableApiRef.current = api;
   }, []);
 
   const registerTableSchema = useCallback((schema: TableSchema | null) => {
@@ -491,6 +501,18 @@ function useChatEngine(): ChatContextValue {
             patchAssistant({ content });
             sseOverlay.updateContent(content);
           },
+          onChatEvent: (event) => {
+            const table = tableApiRef.current;
+            if (!table) return;
+            handleChatEvent(event, {
+              queryClient,
+              table,
+              toast: {
+                error: (msg) => console.error("[chat]", msg),
+              },
+              thinking: { setVisible: (_v) => {} },
+            });
+          },
           onDone: async (accumulatedContent, toolCalls) => {
             // Stop SSE overlay
             sseOverlay.stopStreaming();
@@ -580,7 +602,7 @@ function useChatEngine(): ChatContextValue {
     // Note: submitText is called recursively via setTimeout (line 576) but must NOT
     // appear in its own dependency array — doing so causes a ReferenceError at init time.
      
-    [isLoading, buildApiMessages, writeToStream, sseOverlay, entityContext],
+    [isLoading, buildApiMessages, writeToStream, sseOverlay, entityContext, queryClient],
   );
 
   /** Form submit handler. */
@@ -634,6 +656,7 @@ function useChatEngine(): ChatContextValue {
     inputRef,
     chatEndRef,
     registerToolHandler,
+    registerTableApi,
     registerTableSchema,
     addMessage,
     onDatasetCreated,
