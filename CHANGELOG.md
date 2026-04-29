@@ -1,3 +1,18 @@
+# [1.10.0](https://github.com/jzallen/dashboard-chat/compare/v1.9.0...v1.10.0) (2026-04-29)
+
+
+### Bug Fixes
+
+* **agent:** skip turn_done emission when finishReason='request' (resolve_dataset pause) ([01d967d](https://github.com/jzallen/dashboard-chat/commit/01d967df92cb6fadf18703c08eaaac9a38cdf439))
+* auto-save uncommitted implementation work (dc-99b, gt-pvx safety net) ([fc8ec6b](https://github.com/jzallen/dashboard-chat/commit/fc8ec6bcbb19bf426d6cad86f8fe827280cf6cd6))
+
+
+### Features
+
+* **agent:** persist domain events to Stream.io thread before turn_done (dc-x3y.3.1) ([807b71f](https://github.com/jzallen/dashboard-chat/commit/807b71f686646b205b5f74c95a5a09f72c41cb1f))
+* **auth-proxy:** M2M client_credentials issuer (dc-x3y.1.1) ([3a81b01](https://github.com/jzallen/dashboard-chat/commit/3a81b01ef4d6ede7932bb1e5778aa9efed48cecc))
+* **backend:** idempotency-key support on transforms mutation endpoints (dc-x3y.3.3) ([d8cdad6](https://github.com/jzallen/dashboard-chat/commit/d8cdad63ba418db2b1038b7e403c99876e991fd5))
+
 # [1.9.0](https://github.com/jzallen/dashboard-chat/compare/v1.8.0...v1.9.0) (2026-04-29)
 
 
