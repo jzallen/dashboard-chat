@@ -13,11 +13,14 @@
  *     store on every request, so a revoked token stops working as soon
  *     as the DELETE returns.
  *
- * Token shape: an RS256 JWT signed with the auth-proxy keypair (the
- * same keypair `m2m.ts` uses), distinguished by a fixed `kid` of
- * `auth-proxy:pat:1`. Payload: sub/org_id/email (caller identity at
- * issuance time), jti (PAT id, used as the revocation lookup key),
- * iat, optional exp.
+ * Token shape: an RS256 JWT signed with the shared auth-proxy keypair
+ * (`lib/keypair.ts` — the same keypair `m2m.ts` uses), distinguished
+ * by a fixed `kid` of `auth-proxy:pat:1`. Payload: sub/org_id/email
+ * (caller identity at issuance time), jti (PAT id, used as the
+ * revocation lookup key), iat, optional exp. The keypair is persisted
+ * across restarts when `AUTH_PROXY_KEYPAIR_PATH` is set; without it,
+ * every restart silently invalidates every issued PAT, which violates
+ * the "long-lived" contract above and so is not safe in production.
  *
  * Dev-mode parity: when `AUTH_MODE=dev`, the PAT id (and therefore the
  * `jti` claim) is prefixed `dev-pat-` instead of `pat_`. The token is
@@ -33,11 +36,12 @@ import { dirname } from "node:path";
 
 import {
   decodeProtectedHeader,
-  generateKeyPair,
   type JWTPayload,
   jwtVerify,
   SignJWT,
 } from "jose";
+
+import { _resetKeypairForTests, getKeypair } from "./keypair.ts";
 
 const PAT_KID = "auth-proxy:pat:1";
 
@@ -132,15 +136,6 @@ function persist(line: object): void {
     mkdirSync(dir, { recursive: true });
   }
   appendFileSync(storePath, JSON.stringify(line) + "\n", "utf8");
-}
-
-let keypairPromise: ReturnType<typeof generateKeyPair> | null = null;
-
-function getKeypair() {
-  if (!keypairPromise) {
-    keypairPromise = generateKeyPair("RS256");
-  }
-  return keypairPromise;
 }
 
 export function getPatKid(): string {
@@ -293,9 +288,29 @@ export function patListItem(record: PatRecord): {
   };
 }
 
-/** Test-only helper: clears the in-memory store and the module keypair. */
+/**
+ * Test-only helper: clears the in-memory PAT store and the shared
+ * keypair cache. Records are gone after this call; the keypair, if
+ * `AUTH_PROXY_KEYPAIR_PATH` is set, is reloaded from disk on next use —
+ * simulating a process restart with persistence configured (records
+ * lost only because `PAT_STORE_PATH` is also unset in that scenario;
+ * with `PAT_STORE_PATH` set, records would replay from JSONL too).
+ */
 export function _resetForTests(): void {
   records.clear();
   storeLoadedFor = null;
-  keypairPromise = null;
+  _resetKeypairForTests();
+}
+
+/**
+ * Test-only helper: clears the in-memory PAT store but preserves the
+ * shared keypair cache. Use to simulate a process restart that
+ * persists key material in memory (or, equivalently, the same boot)
+ * without rolling over to disk. For the on-disk persistence path,
+ * `_resetForTests()` plus `AUTH_PROXY_KEYPAIR_PATH` already gives the
+ * same effective outcome via reload-from-disk.
+ */
+export function _resetRecordsForTests(): void {
+  records.clear();
+  storeLoadedFor = null;
 }

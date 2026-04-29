@@ -1,10 +1,14 @@
 /**
  * M2M (machine-to-machine) token issuance and verification for auth-proxy.
  *
- * Implements an OAuth2 client_credentials grant. Auth-proxy generates an
- * RSA keypair at first use; the same keypair signs and verifies M2M tokens.
- * Tokens carry a fixed `kid` so the existing verifyToken path can dispatch
- * to the local verifier (kid match) versus the remote JWKS path.
+ * Implements an OAuth2 client_credentials grant. The shared auth-proxy
+ * keypair (`lib/keypair.ts`) signs and verifies M2M tokens; the same
+ * keypair also signs PATs (distinguished by `kid`). Tokens carry a
+ * fixed `kid` so the existing verifyToken path can dispatch to the
+ * local verifier (kid match) versus the remote JWKS path. Set
+ * `AUTH_PROXY_KEYPAIR_PATH` to persist key material across restarts;
+ * without it, restart rotates the keypair and every still-live token
+ * fails verification.
  *
  * Disabled by default. Enable via M2M_ENABLED=true. Clients are configured
  * via the M2M_CLIENTS env var as a JSON object:
@@ -26,11 +30,12 @@ import { timingSafeEqual } from "node:crypto";
 
 import {
   decodeProtectedHeader,
-  generateKeyPair,
   type JWTPayload,
   jwtVerify,
   SignJWT,
 } from "jose";
+
+import { _resetKeypairForTests, getKeypair } from "./keypair.ts";
 
 const LOCAL_KID = "auth-proxy:m2m:1";
 
@@ -116,15 +121,6 @@ function loadClients(): Record<string, ClientConfig> {
   return cachedClients;
 }
 
-let keypairPromise: ReturnType<typeof generateKeyPair> | null = null;
-
-function getKeypair() {
-  if (!keypairPromise) {
-    keypairPromise = generateKeyPair("RS256");
-  }
-  return keypairPromise;
-}
-
 export function isM2mEnabled(): boolean {
   return readConfig().enabled;
 }
@@ -190,8 +186,14 @@ export function isM2mToken(token: string): boolean {
   }
 }
 
-/** Test-only helper: clears the cached clients map and the module keypair. */
+/**
+ * Test-only helper: clears the cached clients map and the shared
+ * keypair. With `AUTH_PROXY_KEYPAIR_PATH` set the next `getKeypair()`
+ * reloads the same keypair from disk — simulating a process restart
+ * with persistence. Without it the next call regenerates a fresh
+ * keypair, simulating a restart on an unconfigured deployment.
+ */
 export function _resetForTests(): void {
   cachedClients = null;
-  keypairPromise = null;
+  _resetKeypairForTests();
 }

@@ -98,6 +98,13 @@ Omit `expires_in_seconds` for a long-lived PAT. Issuance refuses any
 Bearer that is itself a PAT or an M2M token (returns `403`) — only a real
 user JWT can mint a PAT.
 
+> **Production deployments must persist the auth-proxy signing keypair**
+> by setting `AUTH_PROXY_KEYPAIR_PATH`. Without it, every auth-proxy
+> restart rotates the keypair and silently invalidates every issued PAT
+> regardless of `expires_in_seconds`. See
+> [auth-proxy/README.md](../../auth-proxy/README.md#keypair-persistence)
+> for the full setup.
+
 ### 2. Use
 
 Pass the issued `token` as a Bearer to any auth-proxy route. Auth-proxy
