@@ -7,7 +7,8 @@
   "types": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./events": "./events.ts"
+    "./events": "./events.ts",
+    "./applyDirective": "./applyDirective.ts"
   },
   "dependencies": {
     "zod": "^3.24.2"

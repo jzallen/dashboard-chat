@@ -4,6 +4,10 @@ import { type CoreMessage, streamText, type ToolSet } from "ai";
 import { backendClient } from "./backend-client";
 import { type DispatchContext, dispatcherRegistry } from "./dispatchers";
 import type { ChatEvent } from "./events";
+import {
+  inProcessPresentationStateLog,
+  type PresentationStateLog,
+} from "./presentationState";
 import { getConversationalSystemPrompt, getReportSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "./prompts";
 import { getReportTools } from "./reportToolDefinitions";
 import { isDomainEvent, noopThreadPersister, type ThreadEventPersister } from "./threadPersister";
@@ -33,6 +37,13 @@ interface Env {
    * completes normally.
    */
   threadPersister?: ThreadEventPersister;
+  /**
+   * Per-channel reflect-only directive log (ADR-015 / dc-x3y.2.2). Worker UI
+   * dispatchers append the emitted UiDirective here as a side effect of
+   * `emit`. Defaults to the in-process Map singleton; tests inject a fresh
+   * `InProcessPresentationStateLog` per case to avoid cross-test bleed.
+   */
+  presentationStateLog?: PresentationStateLog;
 }
 
 const TURN_DONE_REASON_BY_FINISH_REASON: Record<string, "stop" | "length" | "request" | "error"> = {
@@ -95,6 +106,8 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
   // `8:` JSON arrays as ChatEvent carriers).
   const jwt = extractJwt(request);
   const eventBuffer: ChatEvent[] = [];
+  const channelId = thread_id ?? "";
+  const presentationStateLog = env.presentationStateLog ?? inProcessPresentationStateLog;
   const dispatchCtx: DispatchContext = {
     jwt,
     datasetId: contextType === "dataset" ? contextId ?? undefined : undefined,
@@ -107,6 +120,8 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     emit: (event: ChatEvent) => {
       eventBuffer.push(event);
     },
+    channelId,
+    presentationState: presentationStateLog,
   };
 
   const dispatcherTools = dispatcherRegistry(dispatchCtx);
@@ -131,7 +146,6 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
 
   // When resolve_dataset interception is NOT active, persist + emit turn_done
   // on the responseWithEvents pipeline directly.
-  const channelId = thread_id ?? "";
   const persister = env.threadPersister ?? noopThreadPersister;
 
   if (!interceptResolveDataset) {
