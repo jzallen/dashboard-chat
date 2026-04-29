@@ -23,9 +23,13 @@ from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
-# DomainEvent type set per ADR-014 — kept in sync with
-# agent/lib/chat/threadPersister.ts `DOMAIN_EVENT_TYPES`. UI directives
-# (sort_directive, filter_directive, filters_cleared) are explicitly excluded.
+# DomainEvent type set per ADR-014 — Python mirror of the TS allowlist derived
+# from `shared/chat/events.ts:DomainEventSchema` (minus `assistant_text_delta`).
+# UI directives (`sort_directive`, `filter_directive`, `filters_cleared`) are
+# explicitly excluded. Parity with the TS source is enforced mechanically by
+# the cross-language test in `agent/test/chat/threadPersister.test.ts` —
+# adding or removing an entry here without a matching change in the schema
+# fails CI with an actionable diff. (Bead dc-ora.)
 DOMAIN_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "transform_applied",
