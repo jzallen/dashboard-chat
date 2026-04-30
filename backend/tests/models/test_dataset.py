@@ -915,7 +915,11 @@ class TestQueryPreviewRows:
 
         monkeypatch.setattr("app.config.get_settings", _fake_get_settings)
 
-        connection = fake_pool_factory(fetch_rows=[{"a": 1}, {"a": 2}])
+        # Post-dc-f8m: rows are wrapped in ``to_json(t) AS row`` to satisfy
+        # pg_duckdb's Describe phase, and decoded by ``decode_wrapped_rows``.
+        connection = fake_pool_factory(
+            fetch_rows=[{"row": '{"a": 1}'}, {"row": '{"a": 2}'}]
+        )
         ds = Dataset(
             id="ds-x",
             project_id="proj-y",
@@ -925,14 +929,14 @@ class TestQueryPreviewRows:
 
         rows = await ds.query_preview_rows(limit=5)
 
-        # characterization pin — exact SQL sent to the driver. The current
-        # implementation overwrites an earlier SELECT and ships this form:
+        # characterization pin — exact SQL sent through
+        # ``build_read_parquet_preview_query``.
         assert connection.fetched_sql == [
-            "SELECT * FROM read_parquet('s3://test-bucket/datasets/proj-y/ds-x/**/*.parquet') LIMIT 5"
+            "SELECT to_json(t) AS row FROM read_parquet('s3://test-bucket/datasets/proj-y/ds-x/**/*.parquet') t LIMIT 5"
         ]
         # No macros needed: no clean/map transforms with snake/kebab/title mode
         assert connection.executed_sql == []
-        # Rows are returned as list[dict] (the ``dict(row)`` call in the method).
+        # Rows are decoded from the single ``row`` JSON column.
         assert rows == [{"a": 1}, {"a": 2}]
 
     @pytest.mark.asyncio
