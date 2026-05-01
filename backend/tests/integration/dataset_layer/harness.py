@@ -1,7 +1,7 @@
 """DatasetLayerHarness — drives the dataset (staging) layer over the API.
 
 Implements the harness shape defined in
-``docs/feature/api-driven-user-flow-tests/design/design.md`` §7. The harness
+``docs/evolution/2026-05-01-api-driven-user-flow-tests.md`` §7. The harness
 runs against a real compose stack (auth-proxy + backend + worker +
 query-engine + MinIO per ADR-016) and consumes the worker's typed
 ``ChatEvent`` SSE vocabulary (see ``shared/chat/events.ts``).

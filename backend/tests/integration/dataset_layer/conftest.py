@@ -1,6 +1,6 @@
 """Conftest for the dataset-layer api-driven-user-flow-tests.
 
-Per ``docs/feature/api-driven-user-flow-tests/design/design.md`` §4 Reuse
+Per ``docs/evolution/2026-05-01-api-driven-user-flow-tests.md`` §4 Reuse
 Analysis, this subtree explicitly does NOT use the moto-based S3 mock — the
 Guiding Principle requires real MinIO from the compose stack. We therefore
 override the parent ``backend/tests/integration/conftest.py`` autouse

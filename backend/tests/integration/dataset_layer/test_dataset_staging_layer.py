@@ -3,7 +3,7 @@
 Walks the demo doc's Act 3 workload (10 cleanup ops + 2 count queries)
 end-to-end through a real ``docker compose up -d`` SUT (auth-proxy +
 backend + worker + query-engine + MinIO per ADR-016). The shape mirrors
-``docs/feature/api-driven-user-flow-tests/design/design.md`` §10 and the
+``docs/evolution/2026-05-01-api-driven-user-flow-tests.md`` §10 and the
 demo script in ``docs/strategy/demo-staging-2026-04-26.md``.
 
 Skip-when-unavailable semantics mirror ``test_smoke_chat_cleaning.py`` and
