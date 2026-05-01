@@ -9,6 +9,8 @@ them one at a time during DELIVER and extends the glue below.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 import time
@@ -16,7 +18,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pytest
 from pytest_bdd import given, parsers, then, when
@@ -51,6 +53,9 @@ class IdentityCapture:
     identity_lines: List[str] = field(default_factory=list)
     # AC1.3: full stdout from `tools/workspace_status.sh`.
     workspace_status_output: Optional[str] = None
+    # AC3.1 / AC3.2: {compose_service: matched_identity_line} across the four
+    # bazel-built services after a same-workspace-state build.
+    lines_per_service: Dict[str, str] = field(default_factory=dict)
 
 
 def _repo_root() -> Path:
@@ -856,4 +861,284 @@ def then_meta_json_canonical_shape(capture: IdentityCapture) -> None:
     )
     assert isinstance(body["built"], str) and body["built"], (
         f"built must be non-empty str, got {body['built']!r}"
+    )
+
+
+# ── Milestone 3: cross-service consistency (AC3.1, AC3.2) ─────────────────
+
+# All four bazel-built services in compose-name → identity-prefix order. The
+# identity prefix is the first whitespace-delimited token each container
+# emits (DESIGN §7) and is what `awk '{print $1}'` extracts in AC3.2.
+_FOUR_SERVICES: Dict[str, str] = {
+    "api":        "dashboard-api",
+    "agent":      "dashboard-agent",
+    "auth-proxy": "dashboard-auth-proxy",
+    "frontend":   "dashboard-frontend",
+}
+
+_FOUR_IMAGE_TARGETS: Dict[str, str] = {
+    "api":        "//backend:image_tar",
+    "agent":      "//agent:image_tar",
+    "auth-proxy": "//auth-proxy:image_tar",
+    "frontend":   "//frontend:image_tar",
+}
+
+
+def _head_commit_epoch() -> str:
+    """Unix timestamp of HEAD's commit time, as a string.
+
+    Used to pin SOURCE_DATE_EPOCH across the four bazel image loads so each
+    invocation of tools/workspace_status.sh stamps the same
+    STABLE_BUILD_TIMESTAMP into its version_layer. Without this, every
+    `bazel run //X:image_tar` re-stamps with a fresh wall-clock second and
+    AC3.1's "captured built timestamp is identical across all four lines"
+    becomes a race against the clock.
+    """
+    result = subprocess.run(
+        ["git", "log", "-1", "--pretty=%ct", "HEAD"],
+        cwd=_repo_root(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _bazel_image_load_with_env(target: str, extra_env: Dict[str, str]) -> None:
+    """Load a bazel image with the supplied env merged onto the parent's.
+
+    Mirrors `_bazel_image_load` but threads an env dict so the workspace-
+    status command sees a fixed SOURCE_DATE_EPOCH for cross-service
+    timestamp parity (see `_head_commit_epoch`).
+    """
+    root = _repo_root()
+    if target == "//frontend:image_tar":
+        _ensure_repo_root_env(root)
+    env = {**os.environ, **extra_env}
+    subprocess.run(
+        ["bazel", "run", target],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def _capture_four_service_identities(
+    capture: IdentityCapture, request: pytest.FixtureRequest
+) -> Dict[str, str]:
+    """Build all four bazel images from one stamped workspace state, start
+    them via compose, and capture the identity line for each.
+
+    Side-effects on `capture`:
+        - `workspace_status_sha` set to the build's STABLE_GIT_COMMIT.
+        - `lines_per_service` populated with one entry per compose service.
+
+    Cleanup: stops just the four bazel-built services on teardown so
+    shared infrastructure containers (db, redis, minio) survive across
+    scenarios.
+    """
+    epoch = _head_commit_epoch()
+    extra_env = {"SOURCE_DATE_EPOCH": epoch}
+    for target in _FOUR_IMAGE_TARGETS.values():
+        _bazel_image_load_with_env(target, extra_env)
+    capture.workspace_status_sha = _read_workspace_status_sha()
+
+    services = list(_FOUR_SERVICES.keys())
+    root = _repo_root()
+    # The agent container's index.ts hard-exits with code 1 if GROQ_API_KEY is
+    # unset (it emits the identity line FIRST, but a container that exits in
+    # under a second confuses compose's watch loop and the next `up -d` call
+    # races a "No such container" error from the docker daemon). We pass a
+    # placeholder so agent stays alive long enough for compose to settle, and
+    # so subsequent `docker compose logs` calls have a stable container to
+    # tail. This is test-only — production env-var handling is unchanged.
+    compose_env = {**os.environ, "GROQ_API_KEY": os.environ.get("GROQ_API_KEY", "test-key-cross-service")}
+    # Pre-warm the shared infra (postgres-via-pgduckdb, redis, minio) once so
+    # the per-scenario recreate loop never has to wait on cold-start health-
+    # checks and never trips compose's "recreate dependency" heuristic when
+    # an infra container momentarily goes unhealthy between scenarios.
+    deps = ["query-engine", "redis", "minio"]
+    subprocess.run(
+        ["docker", "compose", "up", "-d", "--wait", *deps],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=compose_env,
+    )
+    # Tear down any lingering containers for the four bazel-built services so
+    # the next `up -d` is guaranteed to instantiate them from the just-loaded
+    # images. Without this, docker compose's "image changed since container
+    # was created" heuristic occasionally misses near-instant tag updates and
+    # we capture stdout from a stale image (sha=unknown if the container
+    # predates the version_layer macro). `rm -fs` stops + removes; the four
+    # bazel-built services are listed explicitly so shared infrastructure
+    # containers (db, redis, minio, query-engine) survive across scenarios.
+    subprocess.run(
+        ["docker", "compose", "rm", "-fs", *services],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=compose_env,
+    )
+    # --no-deps so compose treats the just-warmed infra as fixed; without it,
+    # an unhealthy-blip on any dep triggers a recreate cascade that can race
+    # the test's stop finalizer and leave a "Dead" container behind.
+    proc = subprocess.run(
+        ["docker", "compose", "up", "-d", "--no-deps", *services],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=compose_env,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(
+            "`docker compose up -d --no-deps "
+            f"{' '.join(services)}` exited with {proc.returncode}.\n"
+            f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
+    request.addfinalizer(
+        lambda: subprocess.run(
+            ["docker", "compose", "stop", *services],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    )
+
+    lines: Dict[str, str] = {}
+    for svc in services:
+        # The agent service depends on Redis + MinIO healthchecks. With
+        # --force-recreate-equivalent semantics those dependencies don't get
+        # recreated here, but a cold-start can still need several seconds for
+        # the healthcheck to succeed before agent's process even starts. 60s
+        # gives generous headroom on a busy CI host.
+        line = _wait_for_log_match(svc, IDENTITY_REGEX, timeout_s=60.0)
+        assert line is not None, (
+            f"no identity line matching {IDENTITY_REGEX.pattern!r} in first 50 "
+            f"lines of `docker compose logs {svc}` within 60s"
+        )
+        lines[svc] = line
+    capture.lines_per_service = lines
+    return lines
+
+
+# ── pytest-bdd bindings (Milestone 3) ─────────────────────────────────────
+
+
+@given(
+    'all four services are started from images produced by the same '
+    '"bazel run //...:image_load" invocation'
+)
+def given_four_services_same_invocation(
+    capture: IdentityCapture,
+    requires_real_io: None,
+    request: pytest.FixtureRequest,
+) -> None:
+    _capture_four_service_identities(capture, request)
+
+
+@given("the four bazel-built services are running")
+def given_four_services_running(
+    capture: IdentityCapture,
+    requires_real_io: None,
+    request: pytest.FixtureRequest,
+) -> None:
+    _capture_four_service_identities(capture, request)
+
+
+@when(
+    'the developer runs "docker compose logs --since 1m" and filters for '
+    'identity lines'
+)
+def when_developer_filters_logs(capture: IdentityCapture) -> None:
+    # The Given clause already polled each service's logs and captured the
+    # one matching identity line per service into capture.lines_per_service.
+    # Re-running `docker compose logs --since 1m` here would race the
+    # 1-minute window for a slow build and tells us nothing the polled
+    # capture does not. This step exists so the .feature reads naturally.
+    assert capture.lines_per_service, (
+        "no per-service identity lines captured — Given clause did not run"
+    )
+
+
+@when('the developer pipes "docker compose logs" through "awk \'{print $1}\'"')
+def when_developer_pipes_awk(capture: IdentityCapture) -> None:
+    assert capture.lines_per_service, (
+        "no per-service identity lines captured — Given clause did not run"
+    )
+
+
+@then(
+    "exactly four lines match the canonical identity regex — one per service"
+)
+def then_exactly_four_identity_lines(capture: IdentityCapture) -> None:
+    assert len(capture.lines_per_service) == 4, (
+        f"expected 4 identity lines (one per service), got "
+        f"{len(capture.lines_per_service)}: {capture.lines_per_service!r}"
+    )
+    for svc, line in capture.lines_per_service.items():
+        assert IDENTITY_REGEX.match(line), (
+            f"line for service {svc!r} does not match canonical regex: {line!r}"
+        )
+
+
+def _parse_identity_tokens(line: str) -> Dict[str, str]:
+    return dict(token.split("=", 1) for token in line.split() if "=" in token)
+
+
+@then("the captured sha is identical across all four lines")
+def then_sha_identical_across_four(capture: IdentityCapture) -> None:
+    shas = {
+        svc: _parse_identity_tokens(line).get("sha", "").removesuffix("+dirty")
+        for svc, line in capture.lines_per_service.items()
+    }
+    unique_shas = set(shas.values())
+    assert len(unique_shas) == 1, (
+        f"sha is not identical across services; got per-service: {shas!r}"
+    )
+    # Belt-and-braces: the shared sha must also be the workspace-status SHA
+    # (short-form). Catches the failure mode where all four images share an
+    # off-by-one stale SHA from a prior build.
+    sha = next(iter(unique_shas))
+    if capture.workspace_status_sha is not None and sha != "unknown":
+        expected_short = capture.workspace_status_sha[:7]
+        assert sha == expected_short, (
+            f"shared sha {sha!r} does not match workspace-status short SHA "
+            f"{expected_short!r} (full={capture.workspace_status_sha!r})"
+        )
+
+
+@then("the captured built timestamp is identical across all four lines")
+def then_built_identical_across_four(capture: IdentityCapture) -> None:
+    builts = {
+        svc: _parse_identity_tokens(line).get("built", "")
+        for svc, line in capture.lines_per_service.items()
+    }
+    unique_builts = set(builts.values())
+    assert len(unique_builts) == 1, (
+        f"built timestamp is not identical across services; got per-service: "
+        f"{builts!r}"
+    )
+
+
+@then("the unique service identifiers in the output include exactly:")
+def then_unique_service_identifiers(
+    datatable: list[list[str]], capture: IdentityCapture
+) -> None:
+    # pytest-bdd 7+ delivers gherkin datatables as List[List[str]]; this step
+    # uses a single-column table where each row is one expected identifier.
+    expected = {row[0].strip() for row in datatable if row and row[0].strip()}
+    actual = {
+        line.split(maxsplit=1)[0]
+        for line in capture.lines_per_service.values()
+        if line.strip()
+    }
+    assert actual == expected, (
+        f"first-token identifiers differ.\n  expected: {sorted(expected)}\n"
+        f"  actual:   {sorted(actual)}"
     )

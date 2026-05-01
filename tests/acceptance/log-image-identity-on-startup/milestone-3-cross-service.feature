@@ -9,7 +9,6 @@
 @real-io @slow
 Feature: All four bazel-built services share one identity format
 
-  @pending
   Scenario: Single shared format across services (AC3.1)
     Given all four services are started from images produced by the same "bazel run //...:image_load" invocation
     When the developer runs "docker compose logs --since 1m" and filters for identity lines
@@ -17,7 +16,6 @@ Feature: All four bazel-built services share one identity format
     And the captured sha is identical across all four lines
     And the captured built timestamp is identical across all four lines
 
-  @pending
   Scenario: Service name is unambiguous (AC3.2)
     Given the four bazel-built services are running
     When the developer pipes "docker compose logs" through "awk '{print $1}'"
