@@ -7,6 +7,7 @@ import {
   isM2mToken,
   issueM2mToken,
 } from "./lib/m2m.ts";
+import { openApiDocument } from "./lib/openapi.ts";
 import {
   isPatToken,
   issuePat,
@@ -21,6 +22,10 @@ const app = new Hono();
 
 // Health endpoint — handled locally, not proxied
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// OpenAPI 3.x spec for the auth-proxy's owned surface (token + PAT lifecycle).
+// Built once at module load from the Zod schemas in lib/schemas.ts.
+app.get("/openapi.json", (c) => c.json(openApiDocument));
 
 // M2M token issuance — OAuth2 client_credentials grant.
 // Flag-gated by M2M_ENABLED. Disabled by default; returns 404 until enabled.

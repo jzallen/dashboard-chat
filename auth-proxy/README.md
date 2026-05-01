@@ -6,6 +6,16 @@ identity headers, and forwards `X-User-Id` / `X-Org-Id` / `X-User-Email`
 to the upstream service. See [ADR-016](../docs/decisions/adr-016-auth-proxy-in-test-stack.md)
 for the production-topology rationale.
 
+## OpenAPI
+
+`GET /openapi.json` returns the OpenAPI 3.x spec for the auth-proxy's
+owned surface (`/api/auth/token` + `/api/auth/pats[/{id}]`). The spec is
+generated from the Zod schemas in `lib/schemas.ts` via
+`@asteasolutions/zod-to-openapi`, so the wire shapes can't drift from
+their TypeScript types. The wildcard proxy is intentionally not
+documented here — consume the FastAPI backend's own OpenAPI for that
+surface (see `dashboard_chat_sdk` for the typed Python client).
+
 ## M2M (machine-to-machine) token issuance
 
 Auth-proxy can mint short-lived JWTs for service-to-service callers via an
