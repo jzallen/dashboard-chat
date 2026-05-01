@@ -8,11 +8,13 @@ import type { ThreadEventPersister } from "./threadPersister";
 interface Env {
   GROQ_API_KEY: string;
   /**
-   * Per-channel reflect-only directive log (ADR-015 / dc-x3y.2.2). Defaults
-   * to the in-process Map singleton. The same instance is exposed for the
-   * agent's `GET /api/channels/{id}/presentation-state` endpoint via
-   * `presentationStateLogFor(env)` so writes (chat) and reads (endpoint)
-   * share the same store.
+   * Per-channel reflect-only directive log (ADR-015 / dc-x3y.2.2 / F.3).
+   * The agent's startup picks the adapter via `selectPresentationStateLog`
+   * (Redis-backed when REDIS_URL is set, in-process Map otherwise) and
+   * threads the same instance through here AND into the
+   * `createPresentationStateRoutes` mount, so chat writes and endpoint reads
+   * share storage. When omitted in tests, falls back to the in-process Map
+   * singleton.
    */
   presentationStateLog?: PresentationStateLog;
   /**

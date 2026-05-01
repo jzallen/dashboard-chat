@@ -10,21 +10,35 @@ services:
       - api
 
   # Hono Agent - Chat API
+  #
+  # Scaling: this service holds the per-channel presentation-state log
+  # (ADR-015 / F.3). When REDIS_URL is set the log is backed by Redis and a
+  # directive appended on replica A is visible from a GET on replica B; when
+  # unset the in-process Map fallback is single-replica only.
+  #
+  # Multi-replica usage (compose acceptance test):
+  #     docker compose up -d --scale agent=2
+  # We deliberately omit `container_name` and the fixed host port so
+  # `--scale=N` works without name/port conflicts. The frontend's nginx
+  # routes to the `agent:8787` service name over the compose network and
+  # rides docker's round-robin DNS across replicas; the test orchestrator
+  # uses `docker compose port --index N agent 8787` to hit each replica.
   agent:
     image: dashboard-chat/agent:bazel
     pull_policy: never
-    container_name: dashboard-agent
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
       CORS_ORIGIN: http://localhost:5173
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       JWKS_URL: ${JWKS_URL:-}
-      # Redis-backed ThreadEventPersister (ADR-017). Compose dev runs the
-      # Redis path byte-identically to prod-without-Stream.io.
+      # Redis-backed ThreadEventPersister (ADR-017) and PresentationStateLog
+      # (F.3). Compose dev runs the Redis path byte-identically to
+      # prod-without-Stream.io.
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PRESENTATION_STATE_MAXLEN: ${PRESENTATION_STATE_MAXLEN:-1000}
     ports:
-      - "8787:8787"
+      - "8787"
     depends_on:
       minio:
         condition: service_healthy

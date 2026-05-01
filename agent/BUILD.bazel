@@ -57,9 +57,19 @@ genrule(
     name = "dist",
     srcs = [":lib"],
     outs = ["dist.tar"],
+    # `--banner:js` polyfills CommonJS `require` inside the ESM bundle so
+    # transitively-bundled CJS deps (ioredis -> 'events', 'net', etc.) can
+    # still load Node built-ins at runtime. Without it, ioredis's
+    # `require('events')` throws "Dynamic require of 'events' is not
+    # supported" the moment the agent process boots — the failure surfaces
+    # only under `docker compose up` (unit tests use ioredis-mock and never
+    # exercise the bundled image). Added by F.3 (dc-qj9.1.3); F.2 added
+    # ioredis but never ran the bundled agent, so the regression slipped in
+    # earlier.
     cmd = """
         cd agent && \
         npx esbuild index.ts --bundle --platform=node --format=esm \
+            --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" \
             --outfile=../$$TMPDIR/app/agent/index.mjs && \
         tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
     """,

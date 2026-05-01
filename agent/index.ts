@@ -6,7 +6,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import { authMiddleware } from "./lib/auth";
-import { createChatHandler, presentationStateLogFor } from "./lib/chat";
+import { createChatHandler } from "./lib/chat";
+import { selectPresentationStateLog } from "./lib/chat/presentationStateDispatch";
 import { createPresentationStateRoutes } from "./lib/chat/presentationStateRoutes";
 import { selectThreadPersister } from "./lib/chat/threadPersisterDispatch";
 import { createOpenApiRoutes } from "./lib/openapi";
@@ -37,9 +38,20 @@ const { persister: threadPersister, kind: threadPersisterKind } = selectThreadPe
 });
 console.debug(`[ThreadEventPersister] selected adapter: ${threadPersisterKind}`);
 
-const chatEnv = { GROQ_API_KEY, threadPersister };
+// Wire PresentationStateLog via the same capability-presence dispatch (F.3 /
+// ADR-015). Multi-replica deployments need Redis so directives appended on
+// one replica are visible to GET /api/channels/{id}/presentation-state on
+// any other replica; in-process Map is preserved as a single-replica dev
+// fallback when REDIS_URL is unset.
+const { log: presentationStateLog, kind: presentationStateKind } =
+  selectPresentationStateLog({
+    REDIS_URL: process.env.REDIS_URL,
+    PRESENTATION_STATE_MAXLEN: process.env.PRESENTATION_STATE_MAXLEN,
+  });
+console.debug(`[PresentationStateLog] selected adapter: ${presentationStateKind}`);
+
+const chatEnv = { GROQ_API_KEY, threadPersister, presentationStateLog };
 const handleChat = createChatHandler(chatEnv);
-const presentationStateLog = presentationStateLogFor(chatEnv);
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -71,15 +83,14 @@ app.post("/chat", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Reflect-only directive log (ADR-015 / dc-x3y.2.2)
+// Reflect-only directive log (ADR-015 / dc-x3y.2.2 / F.3)
 // ---------------------------------------------------------------------------
-// Co-located with the in-process Map storage in this worker. Headless
-// consumers reach this endpoint via the FE proxy chain
-// (nginx in production, vite dev-server in development) which routes
-// /api/channels/{id}/presentation-state directly to the agent rather than
-// the FastAPI backend. Persistence backend choice: in-process Map (matches
-// C.1's same-process Stream.io persistence model). Replace with a Redis-backed
-// `PresentationStateLog` when the worker scales horizontally.
+// Headless consumers reach this endpoint via the FE proxy chain (nginx in
+// production, vite dev-server in development) which routes
+// /api/channels/{id}/presentation-state directly to the agent rather than the
+// FastAPI backend. The backing store is selected by `selectPresentationStateLog`
+// above: Redis when REDIS_URL is set (multi-replica safe; reads on replica B
+// see writes from replica A), in-process Map otherwise (single-replica dev).
 
 app.route("/", createPresentationStateRoutes(presentationStateLog));
 

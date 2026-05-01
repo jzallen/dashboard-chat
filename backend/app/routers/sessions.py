@@ -91,10 +91,12 @@ async def list_session_events(
     user: AuthUser = Depends(get_current_user),
     _db=Depends(use_db_context),
 ):
-    """SSE replay endpoint (dc-x3y.3.2 / Epic C).
+    """Session-event replay endpoint (dc-x3y.3.2 / Epic C).
 
     Returns persisted DomainEvents for the session since `since` (opaque
-    cursor; omit for "from the beginning"). Response shape per the bead:
+    cursor; omit for "from the beginning"). The response is a JSON page,
+    not a server-sent stream — the chat side is the streaming surface; this
+    endpoint is for headless replay consumers. Response shape per the bead:
         {session_id, events, next_cursor, has_more}
 
     Auth: org-scoped (404 for unknown session OR cross-org access — existence
