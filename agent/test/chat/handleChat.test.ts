@@ -149,4 +149,34 @@ describe("handleChat", () => {
       );
     });
   });
+
+  describe("temperature override (dc-e8i)", () => {
+    it("defaults to 0.3 when env.GROQ_TEMPERATURE is omitted", async () => {
+      const { streamText } = await import("ai");
+      await handleChat(
+        createRequest({
+          messages: [{ role: "user", content: "hi" }],
+          contextType: null,
+          tableSchema: null,
+        }),
+        env,
+      );
+      const callArgs = (streamText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+      expect(callArgs.temperature).toBe(0.3);
+    });
+
+    it("uses env.GROQ_TEMPERATURE when provided (e.g. 0 for harness determinism)", async () => {
+      const { streamText } = await import("ai");
+      await handleChat(
+        createRequest({
+          messages: [{ role: "user", content: "hi" }],
+          contextType: null,
+          tableSchema: null,
+        }),
+        { GROQ_API_KEY: "test-key", GROQ_TEMPERATURE: 0 },
+      );
+      const callArgs = (streamText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+      expect(callArgs.temperature).toBe(0);
+    });
+  });
 });

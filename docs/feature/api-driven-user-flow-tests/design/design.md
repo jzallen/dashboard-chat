@@ -58,11 +58,11 @@ No client-side tool dispatch. No POST to `/api/datasets/{id}/transforms` from th
 
 ## 5. Q1 — Managing Groq non-determinism
 
-**Decision**: combine **(a) + (b) + (c)** — pin model + temp=0 + seed where supported; assert on table state, not tool-call sequences; retry-with-rephrase up to 2× per cleanup op.
+**Decision**: combine **(a) + (b) + (c)** — pin model + low temperature (production default 0.3, test default 0.0) + seed where supported; assert on table state, not tool-call sequences; retry-with-rephrase up to 2× per cleanup op.
 
 ### Mechanics
 
-- **Pin model.** Worker reads `GROQ_MODEL` env var (defaulting to whatever production uses). Test compose overlay sets `GROQ_MODEL` to a specific pinned model + `GROQ_TEMPERATURE=0` + a fixed `GROQ_SEED` if the SDK exposes one. Verify via reading `agent/lib/chat/handleChat.ts` and the `@ai-sdk/groq` provider — if seed is not exposed, drop that dial; the other two carry the determinism load.
+- **Pin model + temperature.** Worker reads `GROQ_MODEL` and `GROQ_TEMPERATURE` env vars. Production default is **0.3** (temp=0 was found too literal — users phrase prompts abstractly and the agent needs interpretive freedom; the previous hardcoded 0.4 drifted too far for the harness's retry budget). The dataset-layer harness pins **`GROQ_TEMPERATURE=0.0`** for determinism via `backend/tests/integration/dataset_layer/conftest.py`; the compose overlay also sets a pinned `GROQ_MODEL` + `GROQ_SEED` if the SDK exposes one. Verify via `agent/lib/chat/handleChat.ts` and the `@ai-sdk/groq` provider — if seed is not exposed, drop that dial; pinned model + temp=0 carry the determinism load.
 - **Assert on table state.** The harness's per-turn assertion runs `GET /api/datasets/{id}` (or a preview endpoint) and inspects the resulting JSON for the AC1.4 invariants — distinct values, type, null counts. Tool-call **sequences** are logged for debugging but not asserted.
 - **Retry-with-rephrase.** If the post-turn assertion fails, the harness rephrases the prompt using a small lookup table (e.g., `Trim whitespace on every text column` → `Remove leading and trailing spaces from all text columns`) and retries. After 2 rephrases the test fails with a structured error including the SSE transcript and the table-state diff (per AC1.9).
 

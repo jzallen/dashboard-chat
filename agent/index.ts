@@ -30,6 +30,22 @@ if (!GROQ_API_KEY) {
   process.exit(1);
 }
 
+// GROQ_TEMPERATURE override: production default is 0.3 (set in handleChat).
+// Tests pin to 0 for determinism (see backend/tests/integration/dataset_layer/
+// conftest.py). Invalid / out-of-range values fall back to the default.
+const GROQ_TEMPERATURE = (() => {
+  const raw = process.env.GROQ_TEMPERATURE;
+  if (raw === undefined || raw === "") return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 2) {
+    console.warn(
+      `[agent] GROQ_TEMPERATURE=${raw} is invalid (expected 0-2 finite); using default`,
+    );
+    return undefined;
+  }
+  return parsed;
+})();
+
 // Wire ThreadEventPersister via capability-presence dispatch (ADR-017).
 // Logs the choice once at startup; no NODE_ENV branching.
 const { persister: threadPersister, kind: threadPersisterKind } = selectThreadPersister({
@@ -50,7 +66,7 @@ const { log: presentationStateLog, kind: presentationStateKind } =
   });
 console.debug(`[PresentationStateLog] selected adapter: ${presentationStateKind}`);
 
-const chatEnv = { GROQ_API_KEY, threadPersister, presentationStateLog };
+const chatEnv = { GROQ_API_KEY, GROQ_TEMPERATURE, threadPersister, presentationStateLog };
 const handleChat = createChatHandler(chatEnv);
 
 // ---------------------------------------------------------------------------

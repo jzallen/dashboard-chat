@@ -8,6 +8,12 @@ import type { ThreadEventPersister } from "./threadPersister";
 interface Env {
   GROQ_API_KEY: string;
   /**
+   * Sampling temperature for the Groq model (default 0.3). Threaded through
+   * from `process.env.GROQ_TEMPERATURE` at startup; the dataset-layer
+   * integration harness pins this to 0 for determinism.
+   */
+  GROQ_TEMPERATURE?: number;
+  /**
    * Per-channel reflect-only directive log (ADR-015 / dc-x3y.2.2 / F.3).
    * The agent's startup picks the adapter via `selectPresentationStateLog`
    * (Redis-backed when REDIS_URL is set, in-process Map otherwise) and

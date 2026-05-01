@@ -48,6 +48,19 @@ from .harness import (
 )
 
 # ---------------------------------------------------------------------------
+# Pin Groq temperature to 0 for harness determinism
+# ---------------------------------------------------------------------------
+# Per design.md §5, the dataset-layer suite needs deterministic LLM behavior so
+# the retry-with-rephrase budget (≤2 per cleanup op) is sufficient under real
+# Groq jitter. Production default is 0.3 (interpretive freedom for abstract
+# user prompts); tests pin to 0.0. Set at import time so it lands before any
+# subprocess that reads the agent's env (compose, in-process spawn, etc.)
+# inherits it. We do NOT overwrite an explicit caller value — CI may pin a
+# different temperature for a specific failure investigation.
+os.environ.setdefault("GROQ_TEMPERATURE", "0.0")
+
+
+# ---------------------------------------------------------------------------
 # Override the parent integration autouse so this subtree never enters moto
 # ---------------------------------------------------------------------------
 

@@ -30,6 +30,14 @@ interface Env {
   GROQ_API_KEY: string;
   AUTH_PROXY_URL?: string;
   /**
+   * Sampling temperature for the Groq model. Production default is 0.3 —
+   * 0 was found too literal (users phrase prompts abstractly and the agent
+   * needs interpretive freedom), 0.4 (the previous hardcoded value) drifted
+   * too far for the dataset-layer harness's retry-with-rephrase budget.
+   * The dataset-layer integration suite pins this to 0 for determinism.
+   */
+  GROQ_TEMPERATURE?: number;
+  /**
    * Persists domain events onto the Stream.io thread before `turn_done` is
    * emitted (Epic C / dc-x3y.3.1). Defaults to a no-op when omitted, which is
    * the production default until Stream.io credentials are wired through —
@@ -45,6 +53,8 @@ interface Env {
    */
   presentationStateLog?: PresentationStateLog;
 }
+
+const DEFAULT_GROQ_TEMPERATURE = 0.3;
 
 const TURN_DONE_REASON_BY_FINISH_REASON: Record<string, "stop" | "length" | "request" | "error"> = {
   stop: "stop",
@@ -137,7 +147,7 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     system: systemPrompt,
     messages,
     ...(mergedTools ? { tools: mergedTools, toolChoice: "auto" as const } : {}),
-    temperature: 0.4,
+    temperature: env.GROQ_TEMPERATURE ?? DEFAULT_GROQ_TEMPERATURE,
     maxTokens: 1024,
   });
 
