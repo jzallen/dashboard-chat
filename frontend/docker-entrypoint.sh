@@ -53,15 +53,13 @@ fi
 printf '%s image=%s sha=%s%s built=%s\n' \
     "$SERVICE" "$image" "$short_sha" "$dirty_marker" "$built"
 
-# Publish the JSON payload at /_meta.json for HTTP consumers (AC2.2). If the
-# source is missing, write a best-effort fallback so the endpoint still 200s.
+# Publish the JSON payload at /_meta.json for HTTP consumers (AC2.2). Build it
+# from the values just parsed (or "unknown" fallbacks) rather than cp'ing the
+# source — a /dev/null override would otherwise produce an empty /_meta.json
+# instead of a graceful-degradation JSON document (AC1.5).
 mkdir -p "$(dirname "$META_FILE")"
-if [ -r "$VERSION_FILE" ]; then
-    cp "$VERSION_FILE" "$META_FILE"
-else
-    cat > "$META_FILE" <<EOF
-{"image":"$UNKNOWN","sha":"$UNKNOWN","dirty":false,"built":"$UNKNOWN"}
+cat > "$META_FILE" <<EOF
+{"image":"$image","sha":"$sha","dirty":$dirty,"built":"$built"}
 EOF
-fi
 
 exec nginx -g 'daemon off;'
