@@ -9,6 +9,7 @@ import { authMiddleware } from "./lib/auth";
 import { createChatHandler, presentationStateLogFor } from "./lib/chat";
 import { createPresentationStateRoutes } from "./lib/chat/presentationStateRoutes";
 import { selectThreadPersister } from "./lib/chat/threadPersisterDispatch";
+import { createOpenApiRoutes } from "./lib/openapi";
 import { logImageIdentity } from "./version";
 
 logImageIdentity("dashboard-agent");
@@ -81,6 +82,14 @@ app.post("/chat", async (c) => {
 // `PresentationStateLog` when the worker scales horizontally.
 
 app.route("/", createPresentationStateRoutes(presentationStateLog));
+
+// ---------------------------------------------------------------------------
+// OpenAPI spec (Epic H — schema-first contracts; dc-qj9.3.7)
+// ---------------------------------------------------------------------------
+// Public — `/openapi.json` is allowlisted in `PUBLIC_PATHS` so partner SDK
+// generators can fetch the contract without needing a token.
+
+app.route("/", createOpenApiRoutes());
 
 // ---------------------------------------------------------------------------
 // Startup

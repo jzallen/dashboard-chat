@@ -33,7 +33,7 @@ function getVerifyOptions(): { audience: string; issuer: string } {
   };
 }
 
-const PUBLIC_PATHS = new Set(["/health"]);
+const PUBLIC_PATHS = new Set(["/health", "/openapi.json"]);
 
 export async function authMiddleware(c: Context, next: Next) {
   if (PUBLIC_PATHS.has(c.req.path)) {
