@@ -1,0 +1,4 @@
+package_name_override: dashboard_chat_sdk_generated
+project_name_override: dashboard-chat-sdk-generated
+use_path_prefixes_for_title_model_names: true
+field_constraints: true
