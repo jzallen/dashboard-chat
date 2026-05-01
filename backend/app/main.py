@@ -32,6 +32,7 @@ from .routers import (
 )
 from .use_cases.query_engine.seed_default_node import seed_default_query_engine_node
 from .use_cases.query_engine.sync_processor import run_sync_processor
+from .use_cases.session.event_replay_dispatch import install_session_event_reader
 from .use_cases.sql_access._infra import (
     AsyncpgQueryEngineProvisioner,
     MockQueryEngineProvisioner,
@@ -91,6 +92,10 @@ async def lifespan(app: FastAPI):
             from .auth.dev_provider import DEV_USER
 
             await seed_default_query_engine_node(session, DEV_USER.org_id)
+
+    # Wire the SessionEventReader (ADR-017): Stream.io if creds present,
+    # Redis if REDIS_URL set, else noop. Logs the choice once.
+    install_session_event_reader(settings)
 
     # Start sync processor background task
     sync_task = asyncio.create_task(run_sync_processor(), name="sync-processor")

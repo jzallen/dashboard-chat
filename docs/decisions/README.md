@@ -22,3 +22,4 @@ This directory contains Architecture Decision Records (ADRs) using the [MADR](ht
 | [ADR-014](adr-014-chatevent-vocabulary-stratification.md) | ChatEvent Vocabulary Stratification — Two Parallel Unions in `shared/chat/` | Ratified |
 | [ADR-015](adr-015-headless-presentation-state-retrieval.md) | Headless Presentation-State Retrieval — Reflect-Only Directive Log | Ratified |
 | [ADR-016](adr-016-auth-proxy-in-test-stack.md) | Auth-Proxy in the api-driven-user-flow-tests Compose Stack | Ratified |
+| [ADR-017](adr-017-session-event-reader-dispatch.md) | SessionEventReader Dispatch — Redis-default, Stream.io-optional | Ratified |

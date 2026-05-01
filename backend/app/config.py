@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     # Stream.io chat
     stream_api_key: str = ""
     stream_api_secret: str = ""
+    # Channel type the worker writes replay messages onto (Epic F.2 — ADR-017).
+    stream_io_channel_type: str = "messaging"
+
+    # Redis — durable replay log when Stream.io is not configured (ADR-017).
+    redis_url: str = ""
 
     # App info
     app_name: str = "Dashboard Chat API"

@@ -8,6 +8,7 @@ import { cors } from "hono/cors";
 import { authMiddleware } from "./lib/auth";
 import { createChatHandler, presentationStateLogFor } from "./lib/chat";
 import { createPresentationStateRoutes } from "./lib/chat/presentationStateRoutes";
+import { selectThreadPersister } from "./lib/chat/threadPersisterDispatch";
 import { logImageIdentity } from "./version";
 
 logImageIdentity("dashboard-agent");
@@ -27,7 +28,15 @@ if (!GROQ_API_KEY) {
   process.exit(1);
 }
 
-const chatEnv = { GROQ_API_KEY };
+// Wire ThreadEventPersister via capability-presence dispatch (ADR-017).
+// Logs the choice once at startup; no NODE_ENV branching.
+const { persister: threadPersister, kind: threadPersisterKind } = selectThreadPersister({
+  REDIS_URL: process.env.REDIS_URL,
+  REDIS_STREAM_MAXLEN: process.env.REDIS_STREAM_MAXLEN,
+});
+console.debug(`[ThreadEventPersister] selected adapter: ${threadPersisterKind}`);
+
+const chatEnv = { GROQ_API_KEY, threadPersister };
 const handleChat = createChatHandler(chatEnv);
 const presentationStateLog = presentationStateLogFor(chatEnv);
 
