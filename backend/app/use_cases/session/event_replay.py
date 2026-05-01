@@ -99,7 +99,23 @@ class _NoopSessionEventReader:
 
 noop_session_event_reader: SessionEventReader = _NoopSessionEventReader()
 
+# Active reader for the running process. The dispatch helper
+# (`event_replay_dispatch.install_session_event_reader`) replaces this with
+# the Redis or Stream.io adapter at startup based on env capabilities (per
+# ADR-017). Stays as the noop until installation, so test contexts that
+# never trigger startup wiring see the documented default.
+_active_reader: SessionEventReader = noop_session_event_reader
+
+
+def set_session_event_reader(reader: SessionEventReader) -> None:
+    """Swap the process-wide reader. Used by the startup dispatch helper and
+    by integration tests that need a real Redis-backed reader."""
+    global _active_reader
+    _active_reader = reader
+
 
 def get_session_event_reader() -> SessionEventReader:
-    """Return the active reader. Patched in tests; production returns noop."""
-    return noop_session_event_reader
+    """Return the active reader. Production wires Redis or Stream.io via
+    `install_session_event_reader`; test-only callers may override per-call
+    by passing `event_reader=` to `list_session_events`."""
+    return _active_reader

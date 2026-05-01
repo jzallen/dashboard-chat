@@ -20,10 +20,15 @@ services:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       JWKS_URL: ${JWKS_URL:-}
+      # Redis-backed ThreadEventPersister (ADR-017). Compose dev runs the
+      # Redis path byte-identically to prod-without-Stream.io.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "8787:8787"
     depends_on:
       minio:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # PostgreSQL - for persistent storage (optional for DuckDB-only mode)
@@ -89,6 +94,25 @@ services:
       timeout: 20s
       retries: 3
 
+  # Redis - durable replay-event log for the SessionEventReader (ADR-017).
+  # Selected when STREAM_API_KEY is not configured (i.e., compose dev and
+  # any prod-without-Stream.io deployment). The agent writes via
+  # RedisThreadPersister.persist (XADD); the api reads via
+  # RedisSessionEventReader.get_events (XRANGE).
+  redis:
+    image: redis:7-alpine
+    container_name: dashboard-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # Auth Proxy - validates tokens and forwards identity headers
   auth-proxy:
     image: dashboard-chat/auth-proxy:bazel
@@ -123,6 +147,9 @@ services:
       TRUST_PROXY_HEADERS: "true"
       STREAM_API_KEY: ${STREAM_API_KEY:-}
       STREAM_API_SECRET: ${STREAM_API_SECRET:-}
+      # SessionEventReader dispatch (ADR-017). With STREAM_API_KEY+SECRET
+      # unset (the dev compose default), the api container picks Redis.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
       PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
       PG_DUCKDB_DATABASE: ${PG_DUCKDB_DATABASE:-dashboard_external}
@@ -144,6 +171,8 @@ services:
       - backend_data:/data
     depends_on:
       query-engine:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # Full stack with PostgreSQL
@@ -217,3 +246,4 @@ volumes:
   postgres_data:
   minio_data:
   query_engine_data:
+  redis_data:

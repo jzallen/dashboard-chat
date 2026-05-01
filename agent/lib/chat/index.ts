@@ -3,6 +3,7 @@ import {
   inProcessPresentationStateLog,
   type PresentationStateLog,
 } from "./presentationState";
+import type { ThreadEventPersister } from "./threadPersister";
 
 interface Env {
   GROQ_API_KEY: string;
@@ -14,6 +15,12 @@ interface Env {
    * share the same store.
    */
   presentationStateLog?: PresentationStateLog;
+  /**
+   * DomainEvent persister selected at startup by `selectThreadPersister`
+   * (Epic F.2 — ADR-017). When omitted, `handleChat` falls back to
+   * `noopThreadPersister`, preserving Phase 1 behavior in tests.
+   */
+  threadPersister?: ThreadEventPersister;
 }
 
 export { handleChat } from "./handleChat";
