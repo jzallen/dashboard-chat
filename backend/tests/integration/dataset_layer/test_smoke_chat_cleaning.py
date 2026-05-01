@@ -2,7 +2,7 @@
 
 This is the value-validation smoke probe for ``api-driven-user-flow-tests``
 (bead ``dc-ms8.4``). It mirrors the §10 worked-example shape from
-``docs/feature/api-driven-user-flow-tests/design/design.md`` for a single
+``docs/evolution/2026-05-01-api-driven-user-flow-tests.md`` for a single
 representative cleaning-tool path: send prompt → observe ``ChatEvent``s on
 the worker SSE stream → query backend dataset state.
 

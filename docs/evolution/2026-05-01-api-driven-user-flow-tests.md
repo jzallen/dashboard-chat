@@ -1,6 +1,56 @@
+# API-Driven User Flow Tests — Evolution
+
+> **Feature**: api-driven-user-flow-tests
+> **Finalized**: 2026-05-01
+> **Delivery path**: cross-epic absorption into Phase 2 of `dc-qj9` (chat-protocol stabilization)
+> **DELIVER beads**: `dc-qj9.2.1` (G.1 — full `DatasetLayerHarness` + demo workload), `dc-qj9.2.2` (G.2 — replay + idempotency end-to-end test)
+> **AC4.3 verification (smoke probe)**: `dc-ms8.4` (under epic `dc-ms8` — `worker-tool-dispatch-refactor`)
+> **Manual finalize workaround**: `dc-444` (nw-finalize gap for cross-epic-absorbed features)
+
+## Summary
+
+This feature shipped a headless, API-driven acceptance test of the dataset
+(staging) layer's full chat-mediated cleanup workload (10 cleanup ops + 2
+count queries). The harness reaches a real `docker compose up -d` SUT
+(auth-proxy + backend + worker + query-engine + MinIO per ADR-016) over
+published ports, authenticates via the dev-mode PAT path (validating
+`docs/guides/headless-tokens.md` end-to-end), and consumes the worker's
+typed `ChatEvent` SSE vocabulary established by
+`worker-tool-dispatch-refactor` (`shared/chat/events.ts`). Tests assert on
+table state via `GET /api/datasets/{id}`; tool-call sequences are not
+asserted, matching the design's Q1 decision.
+
+## Delivery path (cross-epic absorption)
+
+The DESIGN wave produced an unblocked design after the
+`worker-tool-dispatch-refactor` feature (PRs 1–3, merged 2026-04-28/29)
+collapsed the original "Python tool dispatcher" wrinkle (see §2 below).
+DELIVER did not run as a dedicated epic for this feature; instead the
+deliverables were absorbed into Phase 2 of the broader chat-protocol
+stabilization epic `dc-qj9`:
+
+| Bead | Title | Delivers |
+|---|---|---|
+| `dc-ms8.4` (AC4.3 verification) | Smoke probe for `trim_whitespace` via worker dispatch | `backend/tests/integration/dataset_layer/test_smoke_chat_cleaning.py` (~215 LOC) — single-tool thin slice, skip-when-unavailable |
+| `dc-qj9.2.1` (G.1) | Full `DatasetLayerHarness` + demo workload | `harness.py` (~695 LOC) + `conftest.py` (~191 LOC) + `test_dataset_staging_layer.py` (~191 LOC), implementing §7 surface and the §10 worked-example shape |
+| `dc-qj9.2.2` (G.2) | Replay + idempotency end-to-end test | `test_replay_idempotency.py` (~349 LOC), exercising the C.2 replay endpoint and C.3 idempotency keys end-to-end |
+
+Total: ~1080 LOC of test/harness code from G.1 alone (revised up from the
+DESIGN-wave estimate of 250–450 LOC), plus the ~349 LOC G.2 surface and
+~215 LOC AC4.3 smoke probe.
+
+Because the feature shipped via this cross-epic absorption rather than its
+own DELIVER wave, no `deliver/execution-log.json` exists for it. This is
+the case `dc-444` documents and the manual-finalize workaround applied
+here.
+
+---
+
 # Design — api-driven-user-flow-tests
 
 > **✅ STATUS: UNBLOCKED (revised 2026-04-29).** The protocol that this design depended on shipped via `worker-tool-dispatch-refactor` PRs 1–3 (commits `0510f52`, `c9c40fd`, `0a19079`). The worker is now the single tool dispatcher and emits a typed `ChatEvent` vocabulary on the SSE stream (`agent/lib/chat/events.ts`); backend stays chat-unaware (`rg -wi 'groq|sse|tool_call|tool_calls' backend/app/` returns zero matches, AC1.4). The former "Python `ToolCallDispatcher`" wrinkle in §2 is gone; §10 (worked example) collapses to "send prompt to `/chat`, observe `ChatEvent`s on SSE, query backend state via `/api/datasets/{id}`." The walking-skeleton test at `agent/test/chat/acceptance/walking-skeleton.test.ts` is the permanent guard on this contract.
+
+> **✅ STATUS: DELIVERED 2026-05-01.** Phase 2 G.1 (`dc-qj9.2.1`) and G.2 (`dc-qj9.2.2`) shipped the §7 harness surface and the §10 worked-example shape end-to-end. The harness now consumes events from the `shared/chat/events.ts` SSOT (introduced by Phase 1 schema-canonicalization beads); the `agent/lib/chat/events.ts` reference below was the canonical path at design time. See the appendix for the AC4.3 verification trail.
 
 
 > **Status**: proposed
@@ -59,6 +109,8 @@ No client-side tool dispatch. No POST to `/api/datasets/{id}/transforms` from th
 ## 5. Q1 — Managing Groq non-determinism
 
 **Decision**: combine **(a) + (b) + (c)** — pin model + temp=0 + seed where supported; assert on table state, not tool-call sequences; retry-with-rephrase up to 2× per cleanup op.
+
+> **Resolved 2026-05-01 (per `dc-e8i`)**: production temperature is **0.3** (env-overridable via `GROQ_TEMPERATURE`), tests set **0.0** for determinism. Mayor's call: temp=0 too literal for free-form user prompts (users don't know worker design); 0.3 is the interpretive sweet spot. Tests lock to 0.0 because the AC1.5 retry budget is too tight to absorb production-grade jitter.
 
 ### Mechanics
 
@@ -155,6 +207,8 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
 
 ## 9. Component impact
 
+> **Delivered 2026-05-01 (revised LOC)**: actual code shipped is **~1080 LOC** for G.1 (`harness.py` ~695 + `conftest.py` ~191 + `test_dataset_staging_layer.py` ~191), plus ~349 LOC for G.2's `test_replay_idempotency.py` (replay + idempotency surfaces added in Phase 2 — see header), and ~215 LOC for the AC4.3 smoke probe shipped earlier under `dc-ms8.4`. The original DESIGN-wave estimate (250–450 LOC) underweighted the realised complexity of the harness's ChatEvent consumption + retry-with-rephrase + per-turn state-diff machinery, and did not anticipate the G.2 replay/idempotency surfaces.
+
 | Layer | File(s) | Change |
 |---|---|---|
 | Test infra | `backend/tests/integration/dataset_layer/__init__.py` (NEW) | Package marker |
@@ -167,7 +221,7 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
 | CI | `.github/workflows/<existing-ci>.yml` (path TBD by DEVOPS wave) | New job: `dataset-layer-tests` running `RUN_INTEGRATION_TESTS=1 pytest backend/tests/integration/dataset_layer/`. Compose stack started at job-start, torn down at job-end |
 | Docs | `docs/feature/api-driven-user-flow-tests/design/` | This file + wave-decisions.md |
 
-**Estimated total**: 1 new test file, 1 new conftest, 1 new harness module, 1 new compose overlay (or env file), ~5–10 LOC config plumbing in worker, 1 CI job. ~250–450 LOC of new test code total (revised down from ~400–600 — no Python dispatcher).
+**Estimated total**: 1 new test file, 1 new conftest, 1 new harness module, 1 new compose overlay (or env file), ~5–10 LOC config plumbing in worker, 1 CI job. ~250–450 LOC of new test code total (revised down from ~400–600 — no Python dispatcher). **Actual realised: ~1080 LOC for G.1, plus ~349 LOC for G.2 surfaces — see callout above.**
 
 ## 10. Worked example — the shape DISTILL should aim at
 
@@ -253,6 +307,15 @@ This is config + ops, not code. Zero changes to `agent/`.
 
 ## 12. Open questions for the user
 
+> **Resolution status (2026-05-01)**:
+>
+> | OQ | Status | Outcome |
+> |---|---|---|
+> | OQ1 — `GROQ_MODEL` pinning | Resolved | Production model is pinned in `agent/lib/chat/handleChat.ts`; tests inherit the same string via env. Per-test override available via `GROQ_MODEL`. |
+> | **OQ2 — CSV fixture location** | **Resolved** | CSV copied into `backend/tests/integration/dataset_layer/fixtures/ecommerce-orders.csv` (CI-portable, versioned with the test code), as DESIGN recommended. |
+> | **OQ3 — Compose overlay vs `.env.test`** | **Resolved** | Neither file shipped — the harness's `conftest.py` reads URL/key/temperature env vars at session-fixture time and skips when unset (same pattern as `backend/tests/integration/test_lake_preview_live.py`). Operator provides env via shell, `.env`, or container orchestration. A dedicated overlay can be added later if a CI-only env divergence emerges. |
+> | OQ4 — Stale-project sweep job | Deferred | Per-test try/finally teardown is the primary cleanup; no nightly sweep job shipped. Revisit if orphan rate becomes a real signal. |
+
 1. **GROQ_MODEL pinning.** What model does production use today? DESIGN recommends pinning to that exact model (avoid drift between test and prod). If production uses model auto-routing, we pick one explicitly (recommendation: `llama-3.3-70b-versatile` or whatever the current production prompt is tested against). **Default if no answer**: read `agent/lib/chat/handleChat.ts` for the current `createGroq` config and pin to that.
 2. **CSV fixture location.** Copy the demo CSV into `backend/tests/integration/dataset_layer/fixtures/` (CI-portable, versioned), or keep the absolute `/usr/local/share/dc-demo-data/` path (matches demo doc, but breaks CI). **Default**: copy into the test fixture dir.
 3. **Compose overlay vs `.env.test`.** Both work; `docker-compose.test.yml` is more explicit, `.env.test` is lighter weight. **Default**: `.env.test` for the few env-var differences (test uses dev mode + pinned model), gitignored, with a `.env.test.example` checked in.
@@ -268,5 +331,107 @@ If unanswered, defaults will be applied at DISTILL/DELIVER and recorded in this 
 | **Context** | Validating the dataset (staging) layer today requires a 15-min recorded browser demo. We need a headless API-driven test that mirrors production end-to-end (only WorkOS substituted), runs ≤ 5 min, and gates merges with ≥ 95% pass rate. |
 | **Decision** | Pytest-driven harness in `backend/tests/integration/dataset_layer/` reaches a real `docker compose up -d` SUT (backend + worker + query-engine + MinIO) over published ports. Auth via `_mint_jwt()` (RS256 dev JWT, validated by both backend and worker via the existing JWKS path). Worker uses real Groq with pinned model + temp=0 and is the **single tool dispatcher** (post `worker-tool-dispatch-refactor`); the harness consumes the worker's typed `ChatEvent` SSE vocabulary and asserts on table state via `GET /api/datasets/{id}`. No client-side tool dispatch in the harness. Per-cleanup-op retry budget of 2 absorbs LLM jitter; assertions live on table state, not tool-call sequences. Per-test project, ULID-keyed, deleted in teardown. |
 | **Alternatives considered** | LLM mocking (forbidden by Guiding Principle); in-process ASGI (forbidden); vitest runner (reinvents existing pytest infra, hurts K4); shared fixture project (failure-mode complexity not worth the saved milliseconds); refactoring worker to allow stub provider (anti-goal per DISCUSS C6); Python-side tool dispatcher mimicking the frontend (superseded — worker is now the single dispatcher, see §2). |
-| **Consequences** | New test directory and harness module (~250–450 LOC, smaller than originally scoped because no Python dispatcher is needed). New compose overlay or `.env.test`. New CI job. No changes to backend or worker code beyond verifying env-driven model/temp/seed config. Real Groq spend on every CI run (controlled by pinned model + AC1.6 budget + dedicated test key with spend cap). The largest engineering risk is now LLM determinism on the demo workload (Q1 mitigations apply); harness construction is mechanical SSE-frame parsing against `ChatEventSchema`. |
+| **Consequences** | New test directory and harness module (~250–450 LOC, smaller than originally scoped because no Python dispatcher is needed). **Actual realised: ~1080 LOC for G.1 + ~349 LOC for G.2 surfaces; see §9 callout.** New compose overlay or `.env.test`. New CI job. No changes to backend or worker code beyond verifying env-driven model/temp/seed config. Real Groq spend on every CI run (controlled by pinned model + AC1.6 budget + dedicated test key with spend cap). The largest engineering risk is now LLM determinism on the demo workload (Q1 mitigations apply); harness construction is mechanical SSE-frame parsing against `ChatEventSchema`. |
 | **Out of scope** | UI / browser tests; view layer, report layer, dbt-export flows; multi-user; performance benchmarking; mocking any production dependency other than WorkOS. |
+
+---
+
+# Appendix A — AC4.3 Verification Note (preserved from `AC4.3-VERIFIED.md`)
+
+**Bead**: `dc-ms8.4` (final value-validation step of epic `dc-ms8`).
+**Verified on**: 2026-04-29.
+**Verifying base commit**: `94494d9` — `docs(design): unblock api-driven-user-flow-tests; collapse §2 + §10 (dc-ho4)`,
+on top of PRs 1–3 (`0510f52`, `c9c40fd`, `0a19079`) and finalize commit `92b0b40`.
+
+## Status
+
+> **`api-driven-user-flow-tests` is structurally unblocked and ready to resume.**
+
+The protocol contract that the feature depends on shipped via
+`worker-tool-dispatch-refactor`. The DESIGN document has been revised in place
+to reflect the new shape; the feature can now proceed through DISTILL → DELIVER
+without the "Python tool dispatcher" wrinkle that blocked it before.
+
+## What was checked
+
+1. **DESIGN coherence with `main`** — `docs/feature/api-driven-user-flow-tests/design/design.md`
+   read end-to-end at HEAD (`94494d9`):
+   - **§2** ("Protocol contract"): the former *Python `ToolCallDispatcher`*
+     wrinkle is explicitly deleted ("That wrinkle is gone."). The harness contract
+     is now `POST /chat → consume SSE → parse ChatEvents → query backend state`.
+   - **§10** ("Worked example"): the worked example collapses to that same
+     send→observe→query shape (one `chat_turn` per turn, table-state asserts via
+     `GET /api/datasets/{id}`).
+   - **§4 Reuse Analysis, §7 Q3 Mechanics, §9 Component impact, §13 ADR
+     summary**: all consistent with §2 — no Python equivalent of the old
+     frontend dispatcher is needed; harness LOC budget revised down accordingly.
+   - **Cross-referenced files exist on `main`**:
+     `agent/lib/chat/events.ts`, `agent/lib/chat/handleChat.ts`,
+     `agent/lib/chat/dispatchers/{index,cleaning,mutations,ui}.ts`,
+     `agent/test/chat/acceptance/walking-skeleton.test.ts`.
+   - **AC1.4 invariant** holds by construction: `rg -wi 'groq|sse|tool_call|tool_calls' backend/app/`
+     returns zero matches at HEAD.
+
+2. **Smoke probe** — added at
+   `backend/tests/integration/dataset_layer/test_smoke_chat_cleaning.py`. It
+   mirrors the §10 shape for one representative cleaning-tool path
+   (`trim_whitespace` on a column):
+   - POST worker `/chat` with the trim prompt.
+   - Parse the AI SDK SSE stream; extract `ChatEvent` annotations from prefix-`8`
+     frames; assert at least one `transform_applied { operation: "trim", column, dataset_id }`
+     event lands.
+   - Assert no raw Groq tool-call deltas (prefix `9:`) leak — AC1.4 regression
+     guard parallel to the worker-side walking skeleton.
+   - GET `/api/datasets/{id}?include_preview=true` and assert the targeted
+     column has no leading/trailing whitespace in the preview rows.
+   - Skip-when-unavailable semantics mirror
+     `backend/tests/integration/test_lake_preview_live.py` and
+     `agent/test/chat/acceptance/walking-skeleton.test.ts`: the test is a
+     permanent guard but only executes when the operator has provisioned
+     `AGENT_URL`, `BACKEND_URL`, `SMOKE_DATASET_ID`, `SMOKE_COLUMN` and the
+     services are reachable on those URLs.
+
+3. **Smoke probe execution** — `uv run pytest backend/tests/integration/dataset_layer/ -v`
+   collects and runs cleanly:
+   ```
+   tests/integration/dataset_layer/test_smoke_chat_cleaning.py::test_trim_whitespace_via_chat_propagates_to_dataset_state SKIPPED
+   ============================== 1 skipped in 1.70s ==============================
+   ```
+   In a polecat sandbox without compose+GROQ creds the probe correctly skips
+   (matching the established live-integration pattern). It runs end-to-end on
+   any environment that publishes the four required env vars and brings up
+   `docker compose up -d backend worker query-engine minio`.
+
+4. **No regression to the `worker-tool-dispatch-refactor` surface** — only
+   additions under `backend/tests/integration/dataset_layer/`; zero production
+   code touched. `pytest --collect-only` reports 1140 tests collected
+   (1139 pre-existing + 1 new).
+
+## Companion guards (already on `main`)
+
+- `agent/test/chat/acceptance/walking-skeleton.test.ts` — worker-side guard on
+  the `transform_applied` event shape and the no-raw-tool-call invariant.
+- `agent/test/chat/acceptance/worker-tool-dispatch.test.ts` — full
+  worker-tool-dispatch acceptance suite shipped with PR 3.
+
+The new smoke probe is the backend↔worker boundary's complement: it proves the
+typed event the worker emits actually corresponds to the dataset state the
+backend persists.
+
+## Next-action ownership
+
+The feature is structurally unblocked. **Whoever owns
+`api-driven-user-flow-tests` resumption can pick it up from DISTILL** with the
+revised DESIGN as the input contract. The smoke probe at
+`backend/tests/integration/dataset_layer/test_smoke_chat_cleaning.py` is an
+intentional thin slice — DELIVER will grow the full `DatasetLayerHarness`
+described in §7 + the demo-doc workload (§10) on top of it. Mayor has been
+notified that the gate is open.
+
+## Out of scope for this verification
+
+- Resuming the full DISTILL/DELIVER waves of `api-driven-user-flow-tests`.
+- Modifying any production code or any
+  `docs/feature/worker-tool-dispatch-refactor/` artifacts (already finalized).
+- Building the full `DatasetLayerHarness` (~250–450 LOC per §9). The smoke
+  probe is one scenario, not the suite.
