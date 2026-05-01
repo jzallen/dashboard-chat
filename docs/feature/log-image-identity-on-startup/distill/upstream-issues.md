@@ -49,6 +49,25 @@ contributor wants them, they should add a new milestone-5 .feature
 file rather than extending milestone-1 (different image, different
 build path).
 
+## Issue 5 — DESIGN draft `STABLE_GIT_DIRTY 1/0` vs shipped `true/false`
+
+**Status:** Resolved during DELIVER milestone-1; .feature literal
+updated to match implementation.
+
+`design/design.md` §4 sketched the workspace-status emission as
+`STABLE_GIT_DIRTY 1` / `0`. The shipped `tools/workspace_status.sh`
+emits the JSON booleans `true` / `false` so that the value can be
+substituted directly into `version.json` (which is JSON-typed:
+`"dirty": <bool>`). The user stories (`discuss/user-stories.md`
+AC2.1) lock in `"dirty":<bool>` for the HTTP/file payload, so the
+boolean form is the correct contract; the design.md "1/0" snippet
+was an informal early sketch.
+
+The DISTILL `milestone-1-server-identity.feature` (AC1.3) was
+authored against the early-draft form and was updated during DELIVER
+of milestone-1 (dc-1k8.2) to assert `STABLE_GIT_DIRTY true`. No
+production-code change.
+
 ## Issue 4 — No DEVOPS wave artifact
 
 **Status:** Documented; no action required.

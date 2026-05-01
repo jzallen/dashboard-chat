@@ -9,15 +9,14 @@ them one at a time during DELIVER and extends the glue below.
 """
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import pytest
 from pytest_bdd import given, parsers, then, when
@@ -48,6 +47,10 @@ class IdentityCapture:
     meta_status: Optional[int] = None
     meta_body: Optional[str] = None
     meta_json: Optional[dict[str, Any]] = None
+    # AC1.2: identity line captured after each (re)start, in order.
+    identity_lines: List[str] = field(default_factory=list)
+    # AC1.3: full stdout from `tools/workspace_status.sh`.
+    workspace_status_output: Optional[str] = None
 
 
 def _repo_root() -> Path:
@@ -248,6 +251,29 @@ def _frontend_capture(
         ) from exc
 
 
+def _all_identity_lines(service: str, max_lines: int = 1000) -> list[str]:
+    """Return every line in `docker compose logs <service>` matching IDENTITY_REGEX.
+
+    Used by AC1.2: after stop+start, the container accumulates a fresh identity
+    line per startup; this helper counts them so the test can wait for "one
+    new identity line emitted" between restarts.
+    """
+    raw = _compose_logs(service, max_lines=max_lines)
+    return [line for line in raw.splitlines() if IDENTITY_REGEX.match(line)]
+
+
+def _wait_for_identity_count(
+    service: str, expected: int, timeout_s: float = 30.0
+) -> list[str]:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        lines = _all_identity_lines(service)
+        if len(lines) >= expected:
+            return lines
+        time.sleep(0.25)
+    return _all_identity_lines(service)
+
+
 # ── pytest-bdd bindings ────────────────────────────────────────────────────
 
 
@@ -314,6 +340,365 @@ def then_one_identity_line_present(service: str, capture: IdentityCapture) -> No
     raw_sha = parts.get("sha", "")
     capture.captured_sha = raw_sha.removesuffix("+dirty")
     capture.captured_built = parts.get("built", "")
+
+
+# ── AC1.4: stale-vs-fresh diagnosis ───────────────────────────────────────
+
+
+@given(
+    parsers.parse(
+        'the bazel image "{image}" has been freshly built for the current HEAD'
+    )
+)
+def given_freshly_built_for_head(
+    image: str, capture: IdentityCapture, requires_real_io: None
+) -> None:
+    given_freshly_built_image(image, capture, requires_real_io)
+
+
+@when(
+    parsers.parse(
+        'the developer runs "docker compose up -d {service_up}" and inspects '
+        '"docker compose logs {service_logs}"'
+    )
+)
+def when_developer_inspects_logs(
+    service_up: str,
+    service_logs: str,
+    capture: IdentityCapture,
+    request: pytest.FixtureRequest,
+) -> None:
+    assert service_up == service_logs, (
+        f"step expects identical service in both places: "
+        f"up={service_up!r} logs={service_logs!r}"
+    )
+    when_service_started(service_up, capture, request)
+    then_one_identity_line_present(service_up, capture)
+
+
+def _git_short_sha() -> str:
+    out = subprocess.run(
+        ["git", "rev-parse", "--short=7", "HEAD"],
+        cwd=_repo_root(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout.strip()
+
+
+@then(parsers.parse('the captured sha equals "git rev-parse --short=7 HEAD"'))
+def then_captured_sha_equals_head(capture: IdentityCapture) -> None:
+    expected = _git_short_sha()
+    assert capture.captured_sha == expected, (
+        f"captured sha {capture.captured_sha!r} != git short HEAD {expected!r}"
+    )
+
+
+def _capture_stale_image_identity(
+    image: str, request: pytest.FixtureRequest
+) -> str:
+    """Boot `image` with a synthetic stale `version.json` mounted, return its
+    captured identity line.
+
+    This simulates "an out-of-date image started without rebuilding" by
+    overriding only the file the identity loader reads. Compose isn't needed
+    — `docker run` is enough since we only care about the identity line that
+    is emitted *before* the app reaches its compose-dependent startup steps.
+    """
+    import tempfile
+
+    stale_payload = (
+        '{"image":"' + image + '",'
+        '"sha":"deadbeefcafebabe1234567890abcdef12345678",'
+        '"dirty":false,'
+        '"built":"2020-01-01T00:00:00Z"}'
+    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix="-stale-version.json", delete=False
+    ) as fh:
+        fh.write(stale_payload)
+        stale_path = fh.name
+    Path(stale_path).chmod(0o644)
+    request.addfinalizer(lambda: Path(stale_path).unlink(missing_ok=True))
+
+    container = "dc-1k8-stale-image"
+    subprocess.run(
+        ["docker", "rm", "-f", container],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            container,
+            "-v",
+            f"{stale_path}:/etc/dashboard-chat/version.json:ro",
+            image,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    request.addfinalizer(
+        lambda: subprocess.run(
+            ["docker", "rm", "-f", container],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    )
+
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        logs = subprocess.run(
+            ["docker", "logs", container],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for raw in logs.stdout.splitlines() + logs.stderr.splitlines():
+            if IDENTITY_REGEX.match(raw):
+                return raw
+        time.sleep(0.25)
+    raise AssertionError(
+        f"no identity line in stale-image stdout/stderr within 30s "
+        f"(image={image!r}, container={container!r})"
+    )
+
+
+@then(
+    parsers.parse(
+        'if instead an out-of-date image is started without rebuilding, the '
+        'captured sha differs from "git rev-parse --short=7 HEAD"'
+    )
+)
+def then_stale_image_sha_differs(
+    capture: IdentityCapture, request: pytest.FixtureRequest
+) -> None:
+    # Tear down the freshly-running api so its container_name is free for
+    # the stale-mount run below (compose owns dashboard-api; the stale run
+    # uses a distinct name).
+    if capture.service is not None:
+        _compose_down(capture.service)
+
+    expected_head = _git_short_sha()
+    image = capture.image or "dashboard-chat/api:bazel"
+    stale_line = _capture_stale_image_identity(image, request)
+
+    parts = dict(token.split("=", 1) for token in stale_line.split() if "=" in token)
+    stale_sha = parts.get("sha", "").removesuffix("+dirty")
+    assert stale_sha != expected_head, (
+        f"stale-image sha {stale_sha!r} unexpectedly equals current HEAD "
+        f"{expected_head!r}; the diagnostic property is not detectable"
+    )
+
+
+# ── AC1.3: dirty working tree is flagged ──────────────────────────────────
+
+
+@given("there are uncommitted changes in the working tree")
+def given_uncommitted_changes(
+    capture: IdentityCapture,
+    requires_real_io: None,
+    request: pytest.FixtureRequest,
+) -> None:
+    """Force a known dirty state by writing an untracked sentinel file.
+
+    Adding an untracked file is the lightest-weight way to make
+    `git status --porcelain` non-empty without touching tracked files. The
+    finalizer removes it so the precondition is hermetic regardless of
+    ambient state (CI clean tree or contributor laptop already dirty).
+    """
+    sentinel = _repo_root() / ".dc-1k8-dirty-sentinel"
+    sentinel.write_text("dirty marker for AC1.3\n", encoding="utf-8")
+    request.addfinalizer(lambda: sentinel.unlink(missing_ok=True))
+
+    porcelain = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=_repo_root(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert porcelain.stdout.strip() != "", (
+        "precondition failed: expected dirty working tree but "
+        "`git status --porcelain` is empty after writing sentinel"
+    )
+
+
+@when("the bazel workspace-status command is invoked")
+def when_workspace_status_invoked(capture: IdentityCapture) -> None:
+    result = subprocess.run(
+        ["./tools/workspace_status.sh"],
+        cwd=_repo_root(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    capture.workspace_status_output = result.stdout
+
+
+@then(parsers.parse('it emits "{token}"'))
+def then_workspace_status_emits(token: str, capture: IdentityCapture) -> None:
+    assert capture.workspace_status_output is not None, (
+        "workspace_status.sh output not captured — Given step did not run"
+    )
+    lines = [line.strip() for line in capture.workspace_status_output.splitlines()]
+    assert token in lines, (
+        f"workspace_status.sh did not emit a line equal to {token!r}; "
+        f"got lines: {lines!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'a freshly-built image started under those conditions logs an identity '
+        'line containing "{marker}" immediately after the SHA'
+    )
+)
+def then_dirty_image_logs_marker(
+    marker: str, capture: IdentityCapture, request: pytest.FixtureRequest
+) -> None:
+    # Build a fresh api image while the dirty sentinel is in place. The
+    # version_layer macro re-runs the workspace_status command at every
+    # build so the resulting version.json carries dirty=true.
+    given_freshly_built_image("dashboard-chat/api:bazel", capture, None)
+    capture.service = "api"
+    _compose_up("api")
+    request.addfinalizer(lambda: _compose_down("api"))
+
+    line = _wait_for_log_match("api", IDENTITY_REGEX)
+    assert line is not None, (
+        f"no identity line matching {IDENTITY_REGEX.pattern!r} after fresh "
+        f"build under dirty tree"
+    )
+    capture.matched_line = line
+
+    parts = dict(token.split("=", 1) for token in line.split() if "=" in token)
+    sha_token = parts.get("sha", "")
+    assert marker in sha_token, (
+        f"identity sha-token {sha_token!r} does not contain {marker!r}; "
+        f"full line: {line!r}"
+    )
+    # "Immediately after the SHA": the token is exactly <hex>+dirty (no other
+    # characters between the hex and the marker).
+    expected_pattern = re.compile(r"^[0-9a-f]{7,40}" + re.escape(marker) + r"$")
+    assert expected_pattern.match(sha_token), (
+        f"sha-token {sha_token!r} has {marker!r} but not immediately after "
+        f"the hex SHA (expected pattern {expected_pattern.pattern!r})"
+    )
+
+
+# ── AC1.2: identity is built-in, not start-in ─────────────────────────────
+
+
+@given(
+    parsers.parse(
+        'the bazel image "{image}" has been freshly built at build commit {commit}'
+    )
+)
+def given_freshly_built_image_at_commit(
+    image: str, commit: str, capture: IdentityCapture, requires_real_io: None
+) -> None:
+    # Same build path as AC1.1; the `commit` token is informational ("HEAD" in
+    # the Examples table) — its concrete value is whatever the workspace_status
+    # command stamped at build time, which is asserted in the Then step.
+    given_freshly_built_image(image, capture, requires_real_io)
+
+
+@when(
+    parsers.parse(
+        'the "{service}" container is started, stopped, and restarted three times'
+    )
+)
+def when_started_stopped_restarted_3x(
+    service: str, capture: IdentityCapture, request: pytest.FixtureRequest
+) -> None:
+    capture.service = service
+    _compose_up(service)
+    request.addfinalizer(lambda: _compose_down(service))
+
+    # Initial startup: wait for the first identity line.
+    initial = _wait_for_identity_count(service, expected=1)
+    assert len(initial) >= 1, (
+        f"no identity line emitted on first start of {service!r}; "
+        f"compose logs lacked a match for {IDENTITY_REGEX.pattern!r}"
+    )
+    capture.identity_lines = list(initial)
+
+    # Three stop+start cycles. We use `restart` so the same container is
+    # reused — its accumulated stdout grows by exactly one identity line per
+    # cycle, which makes "every startup logs the same sha and built" trivial
+    # to assert without juggling --since timestamps.
+    root = _repo_root()
+    for cycle in range(1, 4):
+        subprocess.run(
+            ["docker", "compose", "restart", service],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        target = len(initial) + cycle
+        lines = _wait_for_identity_count(service, expected=target)
+        assert len(lines) >= target, (
+            f"expected at least {target} identity lines after restart cycle "
+            f"{cycle} of {service!r}, found {len(lines)}"
+        )
+        capture.identity_lines = list(lines)
+
+
+@then(
+    parsers.parse(
+        "every startup logs sha={commit} and built equals the original "
+        "build timestamp"
+    )
+)
+def then_every_startup_stable(commit: str, capture: IdentityCapture) -> None:
+    assert capture.workspace_status_sha is not None
+    expected_sha = capture.workspace_status_sha[:7]
+    if commit != "HEAD":
+        # Allow callers to pin an explicit short sha in the Examples table.
+        expected_sha = commit
+
+    lines = capture.identity_lines
+    assert len(lines) >= 4, (
+        f"expected at least 4 identity lines (1 initial + 3 restarts), "
+        f"got {len(lines)}: {lines!r}"
+    )
+
+    # All captured lines must agree on sha and built — the values were stamped
+    # into version.json at build time, so subsequent restarts cannot change them.
+    first_parts = dict(t.split("=", 1) for t in lines[0].split() if "=" in t)
+    expected_built = first_parts.get("built", "")
+    for idx, line in enumerate(lines):
+        parts = dict(t.split("=", 1) for t in line.split() if "=" in t)
+        sha = parts.get("sha", "").removesuffix("+dirty")
+        built = parts.get("built", "")
+        assert sha == expected_sha, (
+            f"identity line {idx} sha={sha!r} does not match expected "
+            f"{expected_sha!r}; line was {line!r}"
+        )
+        assert built == expected_built, (
+            f"identity line {idx} built={built!r} does not match initial "
+            f"built={expected_built!r}; line was {line!r}"
+        )
+
+
+@then(parsers.parse('the line begins with the service identifier "{service_name}"'))
+def then_line_starts_with_service_name(
+    service_name: str, capture: IdentityCapture
+) -> None:
+    assert capture.matched_line is not None, "no identity line captured"
+    assert capture.matched_line.startswith(f"{service_name} "), (
+        f"identity line {capture.matched_line!r} does not begin with "
+        f"service identifier {service_name!r}"
+    )
 
 
 @then(

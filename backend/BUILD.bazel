@@ -104,7 +104,6 @@ py_library(
         "@pip//duckdb",
         "@pip//ibis_framework",
         "@pip//pyarrow",
-        "@pip//pyarrow_hotfix",
         "@pip//sqlalchemy",
     ],
 )
@@ -140,7 +139,6 @@ py_library(
         ":models",
         ":plugins",
         ":repositories",
-        "@pip//aiodocker",
         "@pip//boto3",
         "@pip//duckdb",
         "@pip//ibis_framework",
@@ -148,7 +146,9 @@ py_library(
         "@pip//pandas",
         "@pip//pydantic",
         "@pip//pyyaml",
+        "@pip//redis",
         "@pip//returns",
+        "@pip//stream_chat",
     ],
 )
 

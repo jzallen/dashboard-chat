@@ -13,7 +13,6 @@
 @real-io @slow
 Feature: Server-process containers log build identity on startup
 
-  @pending
   Scenario Outline: Identity line is emitted on startup, end-to-end (AC1.1)
     Given the bazel image "<image>" has been freshly built
     When the "<service>" service is started via "docker compose up -d"
@@ -27,7 +26,6 @@ Feature: Server-process containers log build identity on startup
       | agent      | dashboard-agent        | dashboard-chat/agent:bazel     |
       | auth-proxy | dashboard-auth-proxy   | dashboard-chat/auth-proxy:bazel|
 
-  @pending
   Scenario Outline: Identity is built-in, not start-in (AC1.2)
     Given the bazel image "<image>" has been freshly built at build commit <commit>
     When the "<service>" container is started, stopped, and restarted three times
@@ -39,14 +37,12 @@ Feature: Server-process containers log build identity on startup
       | agent      | dashboard-chat/agent:bazel     | HEAD   |
       | auth-proxy | dashboard-chat/auth-proxy:bazel| HEAD   |
 
-  @pending
   Scenario: Dirty working tree is flagged (AC1.3)
     Given there are uncommitted changes in the working tree
     When the bazel workspace-status command is invoked
-    Then it emits "STABLE_GIT_DIRTY 1"
+    Then it emits "STABLE_GIT_DIRTY true"
     And a freshly-built image started under those conditions logs an identity line containing "+dirty" immediately after the SHA
 
-  @pending
   Scenario: Stale-vs-fresh diagnosis end-to-end (AC1.4)
     Given the bazel image "dashboard-chat/api:bazel" has been freshly built for the current HEAD
     When the developer runs "docker compose up -d api" and inspects "docker compose logs api"
