@@ -32,6 +32,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci --legacy-peer-deps
+      - name: Codegen drift check (DOMAIN_EVENT_TYPES — bead dc-qj9.3.1)
+        run: npm run codegen:domain-events:check
       - name: Run lint
         run: bazel test //... --test_tag_filters=lint --nocache_test_results --config=ci
 

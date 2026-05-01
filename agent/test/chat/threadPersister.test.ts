@@ -1,7 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { describe, expect, it } from "vitest";
 
 import type { ChatEvent } from "../../lib/chat/events";
@@ -74,81 +70,11 @@ describe("threadPersister classifier", () => {
   });
 });
 
-describe("DOMAIN_EVENT_TYPES cross-language parity (TS schema ↔ Python mirror)", () => {
-  // ADR-014 stratifies the wire schema; the persistence/replay scope is a
-  // strict subset of `DomainEventSchema` (currently: schema minus
-  // `assistant_text_delta`). The TS allowlist is now derived from the schema
-  // automatically. The Python mirror at
-  // `backend/app/use_cases/session/event_replay.py:DOMAIN_EVENT_TYPES` is
-  // hand-written and must stay in sync — this test is the mechanical guard.
-  // (Bead dc-ora.)
-
-  const REPO_ROOT = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "../../..",
-  );
-  const PY_PATH = resolve(
-    REPO_ROOT,
-    "backend/app/use_cases/session/event_replay.py",
-  );
-
-  function readPythonDomainEventTypes(): Set<string> {
-    const source = readFileSync(PY_PATH, "utf8");
-    const blockMatch = source.match(
-      /DOMAIN_EVENT_TYPES\s*:\s*frozenset\[str\]\s*=\s*frozenset\(\s*\{([\s\S]*?)\}\s*\)/,
-    );
-    if (!blockMatch) {
-      throw new Error(
-        `Could not locate \`DOMAIN_EVENT_TYPES: frozenset[str] = frozenset({...})\` in ${PY_PATH}. ` +
-          "If you renamed the symbol or changed its literal shape, update the regex in this test.",
-      );
-    }
-    const literals = [...blockMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    return new Set(literals);
-  }
-
-  it("the Python `DOMAIN_EVENT_TYPES` frozenset matches the TS allowlist exactly", () => {
-    const tsTypes = new Set(DOMAIN_EVENT_TYPES);
-    const pyTypes = readPythonDomainEventTypes();
-
-    const missingFromPython = [...tsTypes]
-      .filter((t) => !pyTypes.has(t))
-      .sort();
-    const extraneousInPython = [...pyTypes]
-      .filter((t) => !tsTypes.has(t))
-      .sort();
-
-    if (missingFromPython.length > 0 || extraneousInPython.length > 0) {
-      const lines: string[] = [
-        "DOMAIN_EVENT_TYPES drift between TS and Python (ADR-014, dc-ora).",
-        `  TS source:     shared/chat/events.ts:DomainEventSchema (minus assistant_text_delta)`,
-        `  Python mirror: backend/app/use_cases/session/event_replay.py:DOMAIN_EVENT_TYPES`,
-      ];
-      if (missingFromPython.length > 0) {
-        lines.push(
-          `  → Add to event_replay.py:DOMAIN_EVENT_TYPES: ${missingFromPython
-            .map((t) => `"${t}"`)
-            .join(", ")}`,
-        );
-      }
-      if (extraneousInPython.length > 0) {
-        lines.push(
-          `  → Remove from event_replay.py:DOMAIN_EVENT_TYPES (not in TS schema): ${extraneousInPython
-            .map((t) => `"${t}"`)
-            .join(", ")}`,
-        );
-      }
-      throw new Error(lines.join("\n"));
-    }
-
-    expect(pyTypes).toEqual(tsTypes);
-  });
-
-  it("Python mirror explicitly excludes `assistant_text_delta` (ADR-014: text streaming, not a state-change outcome)", () => {
-    const pyTypes = readPythonDomainEventTypes();
-    expect(pyTypes.has("assistant_text_delta")).toBe(false);
-  });
-});
+// Cross-language parity (TS schema ↔ Python mirror) is now enforced at build
+// time: `npm run codegen:domain-events` regenerates
+// `backend/app/use_cases/session/_domain_event_types_generated.py` and
+// `npm run codegen:domain-events:check` fails CI if the file is stale.
+// (Bead dc-qj9.3.1, retiring dc-ora's runtime parity test.)
 
 describe("noopThreadPersister", () => {
   it("resolves without throwing for any input", async () => {

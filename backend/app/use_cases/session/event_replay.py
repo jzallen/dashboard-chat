@@ -21,27 +21,16 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-logger = logging.getLogger(__name__)
-
-# DomainEvent type set per ADR-014 — Python mirror of the TS allowlist derived
-# from `shared/chat/events.ts:DomainEventSchema` (minus `assistant_text_delta`).
-# UI directives (`sort_directive`, `filter_directive`, `filters_cleared`) are
-# explicitly excluded. Parity with the TS source is enforced mechanically by
-# the cross-language test in `agent/test/chat/threadPersister.test.ts` —
-# adding or removing an entry here without a matching change in the schema
-# fails CI with an actionable diff. (Bead dc-ora.)
-DOMAIN_EVENT_TYPES: frozenset[str] = frozenset(
-    {
-        "transform_applied",
-        "row_added",
-        "row_deleted",
-        "column_renamed",
-        "transform_undone",
-        "transform_re_enabled",
-        "error_occurred",
-        "turn_done",
-    }
+# DomainEvent type set per ADR-014. The frozenset is generated from the Zod
+# schema by `npm run codegen:domain-events` and re-exported here so callers
+# import from a stable use-case-local symbol. CI guards against drift via
+# `npm run codegen:domain-events:check`. (Bead dc-qj9.3.1, retiring dc-ora's
+# runtime parity test.)
+from app.use_cases.session._domain_event_types_generated import (
+    DOMAIN_EVENT_TYPES,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def is_domain_event(event: dict[str, Any]) -> bool:
