@@ -1,0 +1,14 @@
+# Bazel wiring for dashboard_chat_sdk is intentionally deferred per the H.2
+# bead: "(SDK in a new bazel target — defer concrete BUILD wiring to DESIGN)".
+#
+# The package builds and tests today via uv:
+#
+#     cd dashboard_chat_sdk
+#     uv venv .venv && source .venv/bin/activate
+#     uv pip install -e ".[dev]"
+#     pytest
+#
+# Wiring this into Bazel needs a fresh pip hub (SDK has narrower deps than
+# backend/) plus a py_library + pytest_tests macro mirroring backend/BUILD.bazel.
+# Track that under the H.2 follow-on bead — DESIGN wave covers it before the
+# unified Python client (auth-proxy + agent endpoints from H.4/H.5) lands.
