@@ -241,6 +241,7 @@ class DatasetLayerHarness:
         *,
         dataset_id: str | None = None,
         table_schema: dict[str, Any] | None = None,
+        thread_id: str | None = None,
         max_retries: int = 2,
         post_turn_check: Callable[[ChatEventTrace], Awaitable[None] | None] | None = None,
     ) -> ChatEventTrace:
@@ -256,7 +257,12 @@ class DatasetLayerHarness:
         last_error: AssertionError | None = None
         current = prompt
         for attempt in range(attempts):
-            trace = await self._drive_one_turn(current, dataset_id=dataset_id, table_schema=table_schema)
+            trace = await self._drive_one_turn(
+                current,
+                dataset_id=dataset_id,
+                table_schema=table_schema,
+                thread_id=thread_id,
+            )
             if trace.raw_tool_call_seen:
                 raise AssertionError(
                     "raw Groq tool-call delta (frame prefix '9:') leaked through SSE — "
@@ -350,6 +356,167 @@ class DatasetLayerHarness:
             counts[str(val)] = counts.get(str(val), 0) + 1
         return counts
 
+    # ----- replay + idempotency surfaces (G.2) ------------------------------
+
+    async def create_session(self, project_id: str | None = None) -> dict[str, Any]:
+        """Create a session in the project; return its dict.
+
+        The returned dict carries both ``id`` (used by ``GET /api/sessions/{id}/events``)
+        and ``stream_thread_id`` (the worker ``thread_id`` the agent persists
+        to). The ``RedisSessionEventReader`` keys its stream by
+        ``stream_thread_id``, so the test must pass the same value to
+        ``chat_turn(thread_id=...)`` for replay assertions to find anything.
+        """
+        target_project = project_id or self._project_id
+        if not target_project:
+            raise RuntimeError("create_session: no project_id; pass one or initialize the harness with one")
+        client = self._require_client()
+        res = await client.post(
+            f"{self._auth_proxy_url}/api/projects/{target_project}/sessions",
+            headers=self._backend_headers(json_body=True),
+            content=json.dumps({}),
+        )
+        res.raise_for_status()
+        body = res.json()
+        data = body.get("data", body)
+        if not isinstance(data, dict) or "id" not in data:
+            raise RuntimeError(f"create_session: unexpected response shape: {body!r}")
+        return data
+
+    async def list_session_events(
+        self,
+        session_id: str,
+        *,
+        since: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Page through ``GET /api/sessions/{id}/events`` and return all events.
+
+        Drains ``has_more`` so a single call returns the full event log for the
+        session (limit per page is 100; sessions in tests stay well under
+        a few pages). The replay endpoint filters out UI directives by
+        contract — only DomainEvents come back.
+        """
+        client = self._require_client()
+        cursor = since
+        out: list[dict[str, Any]] = []
+        while True:
+            params: dict[str, str] = {"limit": str(limit)}
+            if cursor:
+                params["since"] = cursor
+            res = await client.get(
+                f"{self._auth_proxy_url}/api/sessions/{session_id}/events",
+                headers=self._backend_headers(),
+                params=params,
+            )
+            res.raise_for_status()
+            body = res.json()
+            page_events = body.get("events") or []
+            out.extend(page_events)
+            if not body.get("has_more"):
+                break
+            next_cursor = body.get("next_cursor")
+            if not next_cursor or next_cursor == cursor:
+                break
+            cursor = next_cursor
+        return out
+
+    async def assert_exactly_once_via_replay(
+        self,
+        session_id: str,
+        *,
+        idempotency_key: str,
+        expected_event_type: str,
+        correlation_field: str = "transform_id",
+    ) -> dict[str, Any]:
+        """Bead-spec'd cross-product helper for C.2 (replay) x C.3 (idempotency).
+
+        Asserts the session's replay stream contains exactly ONE event of
+        ``expected_event_type`` whose ``correlation_field`` equals
+        ``idempotency_key``. Returns the matching event for further assertions.
+
+        Architectural note: ``transform_applied`` events do not carry the
+        backend ``Idempotency-Key`` header value directly. The agent emits
+        them with a ``transform_id`` (the id returned by the idempotent
+        backend POST), and a retry under C.3 returns the same id from the
+        cache — so ``transform_id`` is the stable correlation token between
+        an idempotent request and its replay-visible event. Callers pass
+        that token as ``idempotency_key`` here. ``correlation_field`` is
+        overridable for non-transform domain events that may surface in the
+        future (e.g., ``row_id`` for a ``row_added`` event).
+        """
+        events = await self.list_session_events(session_id)
+        matching = [
+            e for e in events if e.get("type") == expected_event_type and e.get(correlation_field) == idempotency_key
+        ]
+        assert len(matching) == 1, (
+            f"replay stream did not show exactly ONE {expected_event_type!r} for "
+            f"{correlation_field}={idempotency_key!r}: got {len(matching)} matches. "
+            f"All event types in stream: {[e.get('type') for e in events]!r}"
+        )
+        return matching[0]
+
+    async def post_transforms_direct(
+        self,
+        dataset_id: str,
+        body: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> httpx.Response:
+        """Direct POST to ``/api/datasets/{id}/transforms`` (skips the agent).
+
+        Used by G.2 to exercise the C.3 backend idempotency contract with
+        explicit retry semantics. Returns the raw httpx Response so callers
+        can assert on status, headers, and body shape.
+        """
+        client = self._require_client()
+        headers = self._backend_headers(json_body=True)
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+        return await client.post(
+            f"{self._auth_proxy_url}/api/datasets/{dataset_id}/transforms",
+            headers=headers,
+            content=json.dumps(body),
+        )
+
+    async def patch_transforms_direct(
+        self,
+        dataset_id: str,
+        body: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> httpx.Response:
+        """Direct PATCH to ``/api/datasets/{id}/transforms`` (the soft-delete /
+        update entry point that stands in for ``DELETE /rows/{id}`` per the
+        bead's mutation set).
+        """
+        client = self._require_client()
+        headers = self._backend_headers(json_body=True)
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+        return await client.patch(
+            f"{self._auth_proxy_url}/api/datasets/{dataset_id}/transforms",
+            headers=headers,
+            content=json.dumps(body),
+        )
+
+    async def list_dataset_transforms(self, dataset_id: str) -> list[dict[str, Any]]:
+        """Return the dataset's persisted transforms via GET /api/datasets/{id}.
+
+        Used by G.2 to verify that an idempotent retry did not actually
+        create a duplicate row in the metadata store.
+        """
+        client = self._require_client()
+        res = await client.get(
+            f"{self._auth_proxy_url}/api/datasets/{dataset_id}",
+            headers=self._backend_headers(),
+            params={"include_transforms": "true"},
+        )
+        res.raise_for_status()
+        body = res.json()
+        data = body.get("data", body)
+        return list(data.get("transforms") or [])
+
     # ----- internals --------------------------------------------------------
 
     def _require_client(self) -> httpx.AsyncClient:
@@ -380,6 +547,7 @@ class DatasetLayerHarness:
         *,
         dataset_id: str | None,
         table_schema: dict[str, Any] | None,
+        thread_id: str | None = None,
     ) -> ChatEventTrace:
         client = self._require_client()
         body: dict[str, Any] = {
@@ -392,6 +560,8 @@ class DatasetLayerHarness:
             body["tableSchema"] = table_schema
         if self._project_id:
             body["project_id"] = self._project_id
+        if thread_id:
+            body["thread_id"] = thread_id
         res = await client.post(
             f"{self._agent_url}/chat",
             headers=self._agent_headers(),
