@@ -1,0 +1,251 @@
+order_id,order_date,customer_email,region,product_category,product_name,quantity,unit_price,discount_pct,payment_method,shipping_status
+ORD-00001,2025-02-22,rowan.kim@sample.net , North ,APPAREL ,Denim Jacket,3,$81.92,25,Credit Card,pending
+ORD-00002,08/27/2025,jamie.clark@example.com,NORTH,electronics,4K Webcam,2,81.60,10,paypal,cancelled
+ORD-00003,2025-10-26,casey.smith@example.com,North,Electronics,Mechanical Keyboard,7,31.72,0,credit-card,DELIVERED
+ORD-00004,03/14/2025,alex.smith@sample.net,north, Toys,Toy Car Set,3,$51.67,0,credit_card,cancelled
+ORD-00005,2025-06-17,rowan.lee@example.com,West,Electornics,USB-C Charger,6,$380.02,0,CREDIT_CARD,delivered
+ORD-00006,11/13/2025,casey.walker@testmail.org,west, Toys,Building Blocks,2,$17.27,0,applepay,Cancelled
+ORD-00007,2025-03-26, quinn.nguyen@testmail.org,north,Apparel,Wool Socks,1,13.45,0,CREDIT_CARD,Delivered
+ORD-00008,03/25/2025,drew.hall@example.com,east, Toys,Puzzle 1000pc,8,33.12,5,Apple Pay,Shipped
+ORD-00009,2025-08-24,alex.moore@example.com,east,Home Goods,Desk Lamp,6,$105.05,15,CREDIT_CARD,cancelled
+ORD-00010,2025-10-07,jordan.hall@example.com,East,home goods,Cutting Board,6,$129.21,25,Bank Transfer,shipped
+ORD-00011,2025-04-11,taylor.wilson@testmail.org, North ,Home Goods,Desk Lamp,4,$22.84,20,credit-card,shipped
+ORD-00012,2025-03-07,blake.garcia@example.com,West,Electornics,4K Webcam,6,306.33,20,CREDIT_CARD,cancelled
+ORD-00013,2025-11-09,jamie.young@example.com,SOUTH ,toys,Toy Car Set,2,53.05,0,bank_transfer,Pending
+ORD-00014,2025-05-16,riley.young@testmail.org,north,toys,Building Blocks,5,$45.17,25,CREDIT_CARD,DELIVERED
+ORD-00015,2025-05-11,quinn.garcia@example.com,North, Toys,Puzzle 1000pc,5,38.87,,Credit Card,Shipped
+ORD-00016,2025-04-19,jamie.clark@sample.net,SOUTH ,Home goods,Throw Pillow,6,45.01,0,Paypal,Cancelled
+ORD-00017,2025-06-08,sage.davis@demo.io,North,Home goods,Ceramic Mug,3,93.35,0,Apple Pay,delivered
+ORD-00018,2025-01-14,morgan.davis@demo.io ,NORTH,apparel,Baseball Cap,4,28.20,20,paypal,Delivered
+ORD-00019,12/21/2025,taylor.hall@demo.io,North,Electronics,Mechanical Keyboard,3,$71.35,25,Paypal,delivered
+ORD-00020,2025-11-20,casey.garcia@testmail.org,west, Toys,Plush Bear,7,$68.26,0,Apple Pay,Delivered
+ORD-00021,2025-10-23,jordan.lewis@testmail.org,SOUTH ,Electronics,Bluetooth Speaker,4,391.11,0,PayPal,pending
+ORD-00022,2025-12-19,alex.nguyen@sample.net,WEST,Home goods,Cutting Board,8,34.54,0,credit_card,DELIVERED
+ORD-00023,11/26/2025,taylor.hall@example.com,WEST,apparel,Baseball Cap,8,26.17,5,Bank Transfer,Pending
+ORD-00024,2025-06-07,riley.davis@example.com,east,Books,Coding Manual,7,$27.88,25,Apple Pay,cancelled
+ORD-00025,2025-02-24,sage.wilson@testmail.org ,West,toys,Plush Bear,5,31.81,0,CREDIT_CARD,delivered
+ORD-00026,12/14/2025,rowan.smith@demo.io,SOUTH , Toys,Toy Car Set,3,$19.46,,Apple Pay,Cancelled
+ORD-00027,2025-03-26,cameron.kim@example.com ,south, Toys,Board Game Classic,3,64.65,0,applepay,Cancelled
+ORD-00028,2025-06-22,quinn.kim@example.com,East,Electornics,4K Webcam,3,$312.30,10,PayPal,shipped
+ORD-00029,09/21/2025,casey.brown@example.com ,West,Books,Sci-Fi Anthology,5,24.41,10,apple_pay,PENDING
+ORD-00030,05/26/2025,sage.smith@testmail.org, East,Home Goods,Throw Pillow,5,$93.11,5,apple_pay,delivered
+ORD-00031,2025-05-30,rowan.brown@sample.net,South,Home goods,Ceramic Mug,3,$70.51,10,credit-card,delivered
+ORD-00032,04/21/2025,sam.garcia@example.com, North ,Apparel,Wool Socks,4,28.61,0,credit_card,cancelled
+ORD-00033,03/01/2025,sam.kim@demo.io,north,Electronics,Bluetooth Speaker,2,$336.84,0,PayPal,cancelled
+ORD-00034,07/28/2025,sam.wilson@testmail.org,SOUTH ,Apparel,Running Shoes,5,$39.68,20,apple_pay,DELIVERED
+ORD-00035,2025-05-23, blake.walker@sample.net,north,Home Goods,Desk Lamp,6,95.46,,Apple Pay,delivered
+ORD-00036,10/07/2025,alex.brown@demo.io,SOUTH ,Toys,Board Game Classic,3,$10.17,25,bank_transfer,Shipped
+ORD-00037,2025-12-22,avery.nguyen@example.com,North,home goods,Wall Clock,4,48.37,20,Paypal,Pending
+ORD-00038,03/20/2025,drew.patel@example.com, East,Electornics,Wireless Headphones,7,$68.12,25,CREDIT_CARD,Pending
+ORD-00039,04/10/2025,avery.lewis@sample.net, East,Home goods,Cutting Board,2,57.31,25,CREDIT_CARD,pending
+ORD-00040,2025-01-18,drew.patel@sample.net ,West,electronics,4K Webcam,1,153.48,,Credit Card,Cancelled
+ORD-00041,12/19/2025,alex.wilson@testmail.org,East,Electornics,Wireless Headphones,2,$144.19,5,CREDIT_CARD,cancelled
+ORD-00042,04/04/2025,drew.davis@testmail.org,WEST,Electornics,4K Webcam,4,$345.84,20,credit_card,Cancelled
+ORD-00043,2025-06-11,jordan.hall@demo.io, East,electronics,Bluetooth Speaker,3,49.99,0,Credit Card,Cancelled
+ORD-00044,10/08/2025,rowan.clark@demo.io,NORTH,home goods,Throw Pillow,1,85.38,0,Apple Pay,DELIVERED
+ORD-00045,2025-06-08,morgan.moore@example.com ,WEST,APPAREL ,Running Shoes,6,43.12,15,applepay,DELIVERED
+ORD-00046,2025-07-07,quinn.young@demo.io,East,Home Goods,Wall Clock,5,$69.49,0,Bank Transfer,Shipped
+ORD-00047,2025-02-20,avery.brown@sample.net,East,apparel,Running Shoes,6,$81.86,15,Paypal,Shipped
+ORD-00048,2025-09-26,blake.garcia@testmail.org,NORTH,Home Goods,Desk Lamp,7,64.45,25,Paypal,delivered
+ORD-00049,06/26/2025, jamie.walker@demo.io, East,electronics,Wireless Headphones,8,63.33,0,paypal,DELIVERED
+ORD-00050,2025-01-04,casey.walker@testmail.org,South,Electornics,USB-C Charger,6,$97.07,0,Credit Card,Cancelled
+ORD-00051,2025-03-08,blake.davis@example.com,north,Home goods,Desk Lamp,2,$43.46,15,Apple Pay,pending
+ORD-00052,2025-04-18,jordan.smith@demo.io,WEST,Home Goods,Wall Clock,8,72.51,0,CREDIT_CARD,Delivered
+ORD-00053,2025-07-07,riley.lee@demo.io,south,Home Goods,Cutting Board,8,$95.29,20,credit_card,pending
+ORD-00054,08/13/2025,riley.hall@testmail.org,SOUTH ,APPAREL ,Denim Jacket,7,64.52,25,credit_card,Cancelled
+ORD-00055,08/21/2025,alex.wilson@demo.io, North ,APPAREL ,Baseball Cap,6,$52.85,0,Apple Pay,Cancelled
+ORD-00056,2025-06-08,casey.lewis@example.com,SOUTH , Toys,Toy Car Set,7,$36.84,20,credit_card,Pending
+ORD-00057,2025-01-16,jamie.smith@demo.io , East,Toys,Plush Bear,2,$25.11,10,Apple Pay,delivered
+ORD-00058,2025-07-27,drew.wilson@sample.net,NORTH,Apparel,Running Shoes,3,89.71,10,apple_pay,Delivered
+ORD-00059,2025-01-17, rowan.wilson@testmail.org,north,Electronics,Bluetooth Speaker,2,312.48,25,Bank Transfer,delivered
+ORD-00060,04/06/2025,cameron.smith@example.com , East,Electronics,USB-C Charger,8,330.82,0,credit-card,pending
+ORD-00061,08/26/2025,avery.lee@testmail.org,east,APPAREL ,Wool Socks,3,$85.24,0,Apple Pay,PENDING
+ORD-00062,2025-02-24,drew.lee@sample.net,South,Books,Coding Manual,8,$7.13,10,CREDIT_CARD,shipped
+ORD-00063,01/18/2025,avery.davis@demo.io,east,electronics,Bluetooth Speaker,4,83.47,25,applepay,Shipped
+ORD-00064,03/17/2025,avery.patel@testmail.org,south,Books,Coding Manual,6,22.70,10,Bank Transfer,DELIVERED
+ORD-00065,05/11/2025,taylor.brown@demo.io ,south,Home Goods,Ceramic Mug,7,12.57,5,credit_card,PENDING
+ORD-00066,10/09/2025,riley.nguyen@example.com,south,Books,Travel Guide: Iceland,8,$12.71,15,bank_transfer,delivered
+ORD-00067,2025-04-07,taylor.brown@example.com, East,electronics,Bluetooth Speaker,5,364.89,0,paypal,Cancelled
+ORD-00068,2025-01-06,taylor.clark@demo.io,NORTH,Home Goods,Desk Lamp,8,$44.74,0,Apple Pay,Cancelled
+ORD-00069,07/13/2025,alex.nguyen@demo.io, North ,apparel,Baseball Cap,6,$39.58,15,Credit Card,PENDING
+ORD-00070,2025-08-13,jordan.smith@testmail.org,west,Electronics,Mechanical Keyboard,4,300.41,,credit-card,pending
+ORD-00071,2025-11-25,cameron.garcia@sample.net,west,Electornics,4K Webcam,1,$393.18,10,credit-card,Shipped
+ORD-00072,2025-01-19,quinn.kim@demo.io,east,apparel,Wool Socks,5,49.35,20,bank_transfer,PENDING
+ORD-00073,08/26/2025,avery.nguyen@demo.io,East,APPAREL ,Denim Jacket,8,17.57,10,paypal,pending
+ORD-00074,2025-03-21,sage.young@example.com, North ,electronics,Bluetooth Speaker,5,$347.69,,applepay,Pending
+ORD-00075,2025-11-12, sam.moore@example.com ,South,toys,Toy Car Set,4,46.87,,credit-card,delivered
+ORD-00076,2025-01-30,avery.young@sample.net,north,toys,Puzzle 1000pc,5,74.20,0,Paypal,Shipped
+ORD-00077,06/01/2025,rowan.moore@testmail.org,SOUTH ,Home goods,Wall Clock,6,114.62,,Apple Pay,cancelled
+ORD-00078,10/03/2025,taylor.davis@testmail.org,West,Electronics,USB-C Charger,6,$322.34,10,Apple Pay,shipped
+ORD-00079,2025-11-29,rowan.smith@testmail.org,East,electronics,USB-C Charger,3,$370.47,15,Paypal,shipped
+ORD-00080,07/13/2025,sage.hall@testmail.org,north,Books,Travel Guide: Iceland,3,$14.41,,credit-card,PENDING
+ORD-00081,07/31/2025,blake.lee@sample.net,south, Toys,Building Blocks,3,41.74,15,Bank Transfer,delivered
+ORD-00082,2025-05-17,taylor.lee@sample.net,South,Electronics,Bluetooth Speaker,5,304.08,20,bank_transfer,Delivered
+ORD-00083,2025-07-18,alex.lewis@sample.net,east,Toys,Puzzle 1000pc,1,$24.50,10,Credit Card,cancelled
+ORD-00084,01/22/2025,sage.nguyen@sample.net,west,home goods,Throw Pillow,8,$121.52,10,paypal,Pending
+ORD-00085,2025-03-07,sam.moore@testmail.org, East,Electornics,Wireless Headphones,4,$179.45,0,credit-card,DELIVERED
+ORD-00086,03/14/2025,sam.nguyen@example.com,SOUTH ,Home Goods,Desk Lamp,3,110.76,5,paypal,shipped
+ORD-00087,2025-07-05,morgan.brown@demo.io,SOUTH ,Toys,Plush Bear,6,63.12,5,credit_card,delivered
+ORD-00088,04/30/2025,blake.moore@testmail.org,west,Apparel,Running Shoes,7,70.00,0,CREDIT_CARD,cancelled
+ORD-00089,2025-03-31,riley.moore@sample.net,WEST,Apparel,Cotton T-Shirt,5,64.11,0,Credit Card,pending
+ORD-00090,2025-02-20, morgan.lewis@example.com,East, Toys,Toy Car Set,8,79.84,20,paypal,delivered
+ORD-00091,04/20/2025,cameron.hall@demo.io,SOUTH ,Electronics,Mechanical Keyboard,6,103.42,0,credit_card,delivered
+ORD-00092,2025-09-01,morgan.young@sample.net,east,Apparel,Wool Socks,6,42.76,5,bank_transfer,Shipped
+ORD-00093,02/26/2025,cameron.lee@testmail.org, North , Toys,Board Game Classic,4,18.29,25,credit_card,Cancelled
+ORD-00094,2025-02-03, jamie.clark@sample.net,east,electronics,Bluetooth Speaker,8,159.53,5,Paypal,pending
+ORD-00095,01/10/2025,blake.nguyen@example.com,north,APPAREL ,Wool Socks,4,24.79,15,Paypal,DELIVERED
+ORD-00096,02/14/2025,drew.smith@example.com,west,Toys,Plush Bear,5,32.32,5,credit_card,Delivered
+ORD-00097,2025-06-14,jamie.lewis@sample.net,South,Home goods,Cutting Board,5,110.22,0,credit_card,DELIVERED
+ORD-00098,12/26/2025,blake.clark@example.com,east,apparel,Denim Jacket,8,78.30,15,credit-card,DELIVERED
+ORD-00099,09/17/2025,alex.clark@testmail.org,north,Electornics,4K Webcam,7,49.24,0,PayPal,Shipped
+ORD-00100,06/03/2025,drew.patel@demo.io,East,toys,Puzzle 1000pc,3,$63.50,0,Paypal,Shipped
+ORD-00101,2025-08-17,quinn.davis@demo.io, North ,apparel,Cotton T-Shirt,2,75.04,10,bank_transfer,delivered
+ORD-00102,2025-03-11,rowan.brown@example.com,north,toys,Plush Bear,1,$18.54,,apple_pay,Pending
+ORD-00103,2025-06-09,drew.nguyen@testmail.org, East,Home goods,Wall Clock,1,$45.84,25,credit-card,delivered
+ORD-00104,2025-10-14,blake.walker@testmail.org,WEST,electronics,4K Webcam,1,81.51,,apple_pay,pending
+ORD-00105,2025-12-07, alex.walker@sample.net,south,apparel,Running Shoes,7,52.37,,credit-card,Pending
+ORD-00106,02/16/2025,rowan.young@example.com,East,toys,Plush Bear,1,49.81,10,Apple Pay,DELIVERED
+ORD-00107,01/12/2025,jordan.davis@sample.net,west,Apparel,Denim Jacket,3,30.98,0,Bank Transfer,Pending
+ORD-00108,04/07/2025,rowan.brown@demo.io, North ,home goods,Cutting Board,8,67.62,10,applepay,Delivered
+ORD-00109,2025-12-04,blake.lewis@demo.io,NORTH,Books,Cookbook Vol 2,4,8.28,0,Paypal,delivered
+ORD-00110,2025-03-13,quinn.nguyen@sample.net,south,home goods,Wall Clock,2,$16.45,0,Paypal,Pending
+ORD-00111,2025-02-04,morgan.moore@sample.net,South,apparel,Cotton T-Shirt,6,69.30,10,PayPal,shipped
+ORD-00112,07/20/2025,jamie.lewis@sample.net,west,home goods,Cutting Board,5,18.59,5,applepay,DELIVERED
+ORD-00113,12/09/2025,alex.brown@sample.net,East,books,Mystery Novel,4,21.92,,Credit Card,cancelled
+ORD-00114,2025-05-30,quinn.brown@example.com,SOUTH ,Electronics,Wireless Headphones,6,221.86,25,apple_pay,Pending
+ORD-00115,11/16/2025,avery.walker@sample.net,East,books,Coding Manual,8,$30.01,,applepay,Shipped
+ORD-00116,2025-10-25,drew.walker@sample.net,west,books,Sci-Fi Anthology,6,13.73,5,PayPal,delivered
+ORD-00117,2025-05-10,morgan.walker@example.com,South,Electronics,4K Webcam,5,386.50,20,Apple Pay,Delivered
+ORD-00118,05/05/2025,morgan.kim@testmail.org,WEST,Electronics,Bluetooth Speaker,8,387.17,0,Paypal,shipped
+ORD-00119,2025-07-26,jamie.hall@example.com, East,books,Mystery Novel,7,17.49,10,Paypal,shipped
+ORD-00120,01/17/2025,quinn.garcia@example.com ,East, Toys,Board Game Classic,5,58.72,0,bank_transfer,Cancelled
+ORD-00121,05/10/2025,morgan.lewis@demo.io,WEST,APPAREL ,Baseball Cap,7,$19.15,5,Credit Card,Cancelled
+ORD-00122,08/11/2025,riley.walker@sample.net, East,home goods,Throw Pillow,4,94.39,0,Bank Transfer,DELIVERED
+ORD-00123,2025-04-04,morgan.moore@example.com,north,Home Goods,Throw Pillow,8,51.01,20,apple_pay,Cancelled
+ORD-00124,07/17/2025,avery.clark@testmail.org,WEST,toys,Plush Bear,6,20.65,15,applepay,PENDING
+ORD-00125,2025-11-19,taylor.walker@demo.io, North ,toys,Building Blocks,5,30.01,20,paypal,Shipped
+ORD-00126,01/09/2025,alex.davis@testmail.org,south,books,Cookbook Vol 2,7,32.99,5,Apple Pay,Delivered
+ORD-00127,07/08/2025,cameron.patel@demo.io, North ,home goods,Desk Lamp,8,95.59,20,Credit Card,Delivered
+ORD-00128,02/27/2025,drew.young@sample.net,West,toys,Building Blocks,2,56.55,0,credit-card,delivered
+ORD-00129,2025-03-08,rowan.clark@testmail.org ,south,Books,Coding Manual,1,33.46,0,bank_transfer,Delivered
+ORD-00130,08/08/2025,morgan.kim@demo.io,NORTH,electronics,Mechanical Keyboard,6,262.58,20,credit-card,Cancelled
+ORD-00131,2025-12-10,casey.davis@testmail.org,west,Electronics,Bluetooth Speaker,8,49.52,5,apple_pay,Delivered
+ORD-00132,09/06/2025,morgan.clark@testmail.org,South, Toys,Puzzle 1000pc,7,$72.34,15,Credit Card,delivered
+ORD-00133,2025-09-11,sage.wilson@testmail.org,West,home goods,Throw Pillow,7,$84.43,,Credit Card,Cancelled
+ORD-00134,04/14/2025,taylor.nguyen@sample.net,north,Books,Coding Manual,3,15.33,15,credit_card,Cancelled
+ORD-00135,2025-04-19,avery.walker@sample.net,West,toys,Plush Bear,4,33.80,10,Apple Pay,Shipped
+ORD-00136,2025-12-22,jordan.patel@sample.net,west,home goods,Ceramic Mug,5,55.86,10,bank_transfer,Shipped
+ORD-00137,2025-02-11,sage.brown@demo.io,south,apparel,Running Shoes,4,55.30,0,credit_card,pending
+ORD-00138,2025-07-29,avery.brown@sample.net,west,APPAREL ,Denim Jacket,5,75.12,15,apple_pay,DELIVERED
+ORD-00139,2025-08-30,blake.walker@sample.net,East,Books,Cookbook Vol 2,5,$25.30,0,Paypal,shipped
+ORD-00140,08/27/2025,drew.wilson@sample.net,West,Toys,Puzzle 1000pc,6,25.49,15,CREDIT_CARD,DELIVERED
+ORD-00141,2025-12-31,blake.garcia@sample.net, East, Toys,Building Blocks,1,10.41,5,CREDIT_CARD,Pending
+ORD-00142,02/15/2025,riley.hall@example.com, East,Apparel,Wool Socks,4,$75.29,,PayPal,cancelled
+ORD-00143,2025-12-07,rowan.lee@example.com,west,Home goods,Throw Pillow,5,$94.25,0,apple_pay,Delivered
+ORD-00144,2025-08-31,morgan.wilson@example.com,east,Home goods,Throw Pillow,5,21.55,0,credit-card,pending
+ORD-00145,2025-09-14,cameron.lee@demo.io,west,Books,Cookbook Vol 2,4,15.66,25,Paypal,Cancelled
+ORD-00146,2025-04-28, sage.walker@example.com,East,home goods,Ceramic Mug,4,$102.41,20,Apple Pay,pending
+ORD-00147,10/21/2025,avery.garcia@demo.io,north, Toys,Toy Car Set,7,16.55,5,CREDIT_CARD,Shipped
+ORD-00148,2025-09-06,jordan.clark@sample.net,west,Home goods,Wall Clock,1,$104.67,,applepay,delivered
+ORD-00149,2025-04-26,alex.hall@demo.io,East, Toys,Puzzle 1000pc,6,76.46,0,apple_pay,Shipped
+ORD-00150,2025-01-31,morgan.brown@sample.net,east,Toys,Board Game Classic,8,40.88,,paypal,Pending
+ORD-00151,2025-07-14,blake.wilson@testmail.org,South,toys,Puzzle 1000pc,3,30.15,10,bank_transfer,pending
+ORD-00152,2025-05-07,avery.patel@example.com ,East, Toys,Plush Bear,3,58.04,10,CREDIT_CARD,Cancelled
+ORD-00153,2025-12-18,jamie.lewis@testmail.org,west,Apparel,Wool Socks,4,83.19,15,paypal,pending
+ORD-00154,2025-01-16,rowan.hall@demo.io, North ,Apparel,Baseball Cap,7,26.76,15,Paypal,cancelled
+ORD-00155,2025-04-20,sage.young@sample.net,North,toys,Puzzle 1000pc,5,55.49,0,CREDIT_CARD,Shipped
+ORD-00156,12/09/2025,cameron.kim@example.com,South,Electronics,Mechanical Keyboard,1,140.95,,paypal,DELIVERED
+ORD-00157,2025-09-21,sam.moore@testmail.org,NORTH,Electornics,Mechanical Keyboard,4,122.55,25,applepay,Delivered
+ORD-00158,11/04/2025,quinn.smith@testmail.org,West,Toys,Building Blocks,7,19.90,15,paypal,cancelled
+ORD-00159,06/09/2025,sam.lee@testmail.org,East,Electronics,Bluetooth Speaker,8,69.48,0,bank_transfer,Cancelled
+ORD-00160,06/05/2025,cameron.clark@sample.net,East,Toys,Plush Bear,1,58.50,,applepay,pending
+ORD-00161,2025-07-01,taylor.davis@sample.net,south,Apparel,Running Shoes,6,61.47,25,CREDIT_CARD,pending
+ORD-00162,09/09/2025,jamie.moore@sample.net,south,Books,Coding Manual,5,22.75,15,PayPal,shipped
+ORD-00163,05/26/2025,quinn.lee@testmail.org,east,Home Goods,Throw Pillow,4,53.02,5,CREDIT_CARD,shipped
+ORD-00164,05/18/2025,blake.brown@example.com,east,Apparel,Running Shoes,1,$31.22,0,applepay,pending
+ORD-00165,2025-12-06,morgan.lewis@example.com ,North,Toys,Plush Bear,7,31.98,0,paypal,shipped
+ORD-00166,04/16/2025,sam.brown@example.com,west,home goods,Throw Pillow,8,48.38,25,bank_transfer,Delivered
+ORD-00167,2025-01-05,riley.wilson@sample.net,south,Books,Cookbook Vol 2,5,27.40,20,paypal,PENDING
+ORD-00168,2025-02-13,quinn.smith@example.com ,West,toys,Building Blocks,1,17.68,,credit-card,PENDING
+ORD-00169,2025-03-22,sage.wilson@testmail.org,WEST,Home Goods,Wall Clock,5,33.10,15,Credit Card,Cancelled
+ORD-00170,03/05/2025,avery.davis@sample.net,South,Home goods,Wall Clock,5,52.33,,paypal,pending
+ORD-00171,08/30/2025,avery.walker@testmail.org,NORTH,Electronics,Bluetooth Speaker,5,$240.70,0,Paypal,delivered
+ORD-00172,2025-09-30,jordan.brown@demo.io, East,Books,Coding Manual,4,17.13,10,paypal,Delivered
+ORD-00173,2025-08-14,sam.smith@example.com,WEST,Home Goods,Desk Lamp,8,39.94,5,Apple Pay,DELIVERED
+ORD-00174,2025-08-14,sam.young@demo.io,north,home goods,Cutting Board,1,$26.72,0,apple_pay,Shipped
+ORD-00175,2025-01-18,sam.patel@demo.io,north,home goods,Throw Pillow,5,74.06,0,PayPal,Pending
+ORD-00176,2025-06-10,alex.kim@demo.io,SOUTH ,Electronics,Mechanical Keyboard,6,173.87,5,Paypal,cancelled
+ORD-00177,2025-11-24,casey.smith@testmail.org,South,Electronics,4K Webcam,3,271.78,5,PayPal,Shipped
+ORD-00178,2025-10-10,jordan.kim@example.com,WEST,Books,Mystery Novel,7,$12.34,0,paypal,cancelled
+ORD-00179,2025-03-02,cameron.brown@testmail.org,SOUTH ,Apparel,Denim Jacket,4,$82.80,0,PayPal,DELIVERED
+ORD-00180,2025-02-23,drew.walker@testmail.org,south, Toys,Toy Car Set,3,58.66,0,Credit Card,cancelled
+ORD-00181,2025-04-21,blake.kim@testmail.org,SOUTH ,Home goods,Ceramic Mug,5,$112.78,15,applepay,Pending
+ORD-00182,02/28/2025,quinn.nguyen@demo.io,WEST,Electornics,Wireless Headphones,2,182.71,5,credit-card,DELIVERED
+ORD-00183,2025-08-07,casey.lee@sample.net,WEST,Apparel,Wool Socks,6,78.27,5,paypal,Shipped
+ORD-00184,04/11/2025,rowan.hall@sample.net,East, Toys,Plush Bear,4,$39.53,0,bank_transfer,Pending
+ORD-00185,2025-09-04,cameron.smith@example.com,SOUTH , Toys,Board Game Classic,8,30.96,15,PayPal,DELIVERED
+ORD-00186,02/24/2025,sam.clark@testmail.org,North,toys,Board Game Classic,3,48.72,15,credit_card,Shipped
+ORD-00187,11/01/2025,jamie.patel@sample.net, North ,Books,Travel Guide: Iceland,1,16.26,,apple_pay,DELIVERED
+ORD-00188,2025-04-23,taylor.moore@example.com,north,Apparel,Running Shoes,8,$46.40,0,bank_transfer,Cancelled
+ORD-00189,2025-11-24,casey.lewis@sample.net ,North,Electronics,USB-C Charger,1,$183.81,0,Paypal,Delivered
+ORD-00190,06/06/2025,morgan.kim@example.com,SOUTH ,Electronics,Mechanical Keyboard,1,121.04,10,paypal,Delivered
+ORD-00191,07/14/2025,casey.walker@example.com,east,books,Sci-Fi Anthology,6,8.25,,Apple Pay,cancelled
+ORD-00192,10/07/2025,avery.lewis@example.com ,West,home goods,Desk Lamp,8,80.70,0,Paypal,cancelled
+ORD-00193,2025-04-20,rowan.nguyen@example.com,east,Electronics,USB-C Charger,3,388.21,15,CREDIT_CARD,Cancelled
+ORD-00194,2025-09-28,quinn.davis@sample.net,south,Electornics,4K Webcam,6,$300.13,0,CREDIT_CARD,Shipped
+ORD-00195,2025-04-25,jamie.hall@demo.io,North,Electornics,Bluetooth Speaker,5,192.71,0,bank_transfer,Delivered
+ORD-00196,2025-09-10,jamie.patel@demo.io, North ,Books,Sci-Fi Anthology,8,$25.82,0,apple_pay,PENDING
+ORD-00197,2025-03-24, jordan.smith@sample.net,East,toys,Toy Car Set,4,55.58,0,bank_transfer,shipped
+ORD-00198,2025-10-01,drew.brown@demo.io,NORTH,Books,Coding Manual,1,27.01,15,Apple Pay,cancelled
+ORD-00199,2025-02-15, riley.lee@example.com,South,Toys,Plush Bear,4,35.97,15,Paypal,pending
+ORD-00200,07/07/2025,riley.moore@example.com,SOUTH , Toys,Board Game Classic,1,11.41,10,apple_pay,Cancelled
+ORD-00201,04/23/2025,riley.young@testmail.org , East,Home goods,Throw Pillow,3,73.07,,paypal,cancelled
+ORD-00202,2025-03-09,jordan.hall@sample.net,SOUTH ,Electornics,Bluetooth Speaker,2,202.48,0,Bank Transfer,Pending
+ORD-00203,04/11/2025,sage.davis@testmail.org ,WEST,electronics,USB-C Charger,7,266.99,,paypal,DELIVERED
+ORD-00204,2025-10-24,alex.garcia@demo.io,north,Books,Coding Manual,7,16.47,20,credit_card,cancelled
+ORD-00205,2025-04-06,drew.moore@example.com,west,home goods,Cutting Board,1,$116.20,10,Bank Transfer,Pending
+ORD-00206,2025-06-29,alex.wilson@testmail.org, North ,toys,Board Game Classic,8,31.99,,Bank Transfer,cancelled
+ORD-00207,2025-02-04,alex.clark@sample.net,south, Toys,Building Blocks,8,$76.48,5,Paypal,Delivered
+ORD-00208,10/02/2025,jamie.patel@example.com, North ,Home Goods,Wall Clock,5,124.35,0,Credit Card,DELIVERED
+ORD-00209,2025-11-22,avery.clark@testmail.org,west,Home Goods,Desk Lamp,7,86.43,,Credit Card,shipped
+ORD-00210,2025-05-02,jamie.patel@demo.io,west,electronics,USB-C Charger,6,73.17,,Paypal,Delivered
+ORD-00211,10/16/2025,casey.nguyen@demo.io,east, Toys,Toy Car Set,7,50.79,15,paypal,pending
+ORD-00212,2025-04-13,morgan.clark@sample.net,North,Electronics,USB-C Charger,4,314.41,5,Paypal,Shipped
+ORD-00213,10/12/2025,jordan.patel@sample.net,SOUTH ,APPAREL ,Running Shoes,4,$29.75,10,applepay,PENDING
+ORD-00214,01/12/2025,morgan.clark@demo.io,SOUTH ,Home Goods,Desk Lamp,1,22.00,20,Paypal,Delivered
+ORD-00215,06/03/2025,avery.walker@demo.io,east,Electornics,Bluetooth Speaker,6,100.60,10,credit-card,cancelled
+ORD-00216,2025-03-23,morgan.garcia@demo.io, East,Home Goods,Desk Lamp,7,$23.82,25,Apple Pay,Pending
+ORD-00217,2025-03-19,quinn.lee@sample.net,WEST,toys,Toy Car Set,8,78.84,5,CREDIT_CARD,Cancelled
+ORD-00218,2025-03-01,avery.clark@sample.net, North ,Electronics,4K Webcam,3,377.88,20,paypal,Shipped
+ORD-00219,10/06/2025,casey.garcia@testmail.org,South,electronics,Mechanical Keyboard,5,$309.18,5,bank_transfer,Pending
+ORD-00220,2025-01-09,drew.garcia@example.com, East,Home Goods,Desk Lamp,3,$101.40,20,Credit Card,shipped
+ORD-00221,11/12/2025,sage.smith@sample.net ,South,Home goods,Cutting Board,4,124.62,0,applepay,PENDING
+ORD-00222,2025-11-20,avery.moore@testmail.org,East,books,Mystery Novel,4,21.42,15,paypal,Cancelled
+ORD-00223,2025-09-25,alex.moore@testmail.org,West,Home goods,Desk Lamp,6,43.91,0,applepay,shipped
+ORD-00224,12/11/2025,sage.hall@demo.io,south,Home Goods,Wall Clock,2,118.78,0,Credit Card,Delivered
+ORD-00225,2025-07-03,alex.smith@testmail.org,WEST,Electornics,4K Webcam,2,255.51,0,apple_pay,Delivered
+ORD-00226,08/19/2025,sage.lee@sample.net ,WEST,Home Goods,Ceramic Mug,4,62.94,5,Apple Pay,Pending
+ORD-00227,2025-10-02,blake.nguyen@example.com,NORTH,Apparel,Cotton T-Shirt,5,86.32,,Apple Pay,Cancelled
+ORD-00228,2025-12-06,sam.walker@demo.io,east,Electronics,USB-C Charger,8,303.35,0,PayPal,Pending
+ORD-00229,06/21/2025,jordan.nguyen@testmail.org,NORTH,Toys,Toy Car Set,8,$31.83,,CREDIT_CARD,cancelled
+ORD-00230,12/21/2025,riley.patel@demo.io ,north,toys,Building Blocks,1,64.08,,credit_card,cancelled
+ORD-00231,2025-10-21, blake.nguyen@example.com, North , Toys,Toy Car Set,7,25.92,0,apple_pay,DELIVERED
+ORD-00232,06/18/2025,riley.wilson@demo.io,West,Apparel,Baseball Cap,3,$31.96,10,Apple Pay,DELIVERED
+ORD-00233,11/07/2025,cameron.hall@demo.io,west,Home goods,Wall Clock,1,42.95,5,Credit Card,shipped
+ORD-00234,2025-06-09,alex.kim@sample.net, East,APPAREL ,Running Shoes,6,64.97,15,PayPal,Pending
+ORD-00235,2025-05-06,riley.smith@testmail.org, North ,Electornics,Wireless Headphones,4,150.42,15,apple_pay,Shipped
+ORD-00236,2025-07-22,alex.wilson@testmail.org,SOUTH ,books,Travel Guide: Iceland,2,31.70,15,credit-card,delivered
+ORD-00237,2025-08-08,drew.wilson@sample.net, North ,Apparel,Cotton T-Shirt,3,19.76,,Paypal,Cancelled
+ORD-00238,04/18/2025,casey.nguyen@demo.io,north,Books,Mystery Novel,7,28.89,,paypal,PENDING
+ORD-00239,2025-05-17,riley.moore@sample.net,North,electronics,USB-C Charger,7,262.70,0,Apple Pay,Pending
+ORD-00240,2025-07-23,avery.wilson@testmail.org, North ,Electornics,Wireless Headphones,7,$75.78,15,Apple Pay,Cancelled
+ORD-00241,2025-09-28,avery.walker@testmail.org,WEST,Electornics,USB-C Charger,6,372.72,0,CREDIT_CARD,cancelled
+ORD-00242,2025-04-18,sam.brown@sample.net,West,home goods,Cutting Board,6,$129.77,10,PayPal,Delivered
+ORD-00243,03/25/2025, jordan.walker@testmail.org,WEST,Apparel,Running Shoes,3,$86.38,5,CREDIT_CARD,PENDING
+ORD-00244,01/14/2025,taylor.clark@example.com,NORTH,Home goods,Ceramic Mug,5,$125.94,5,CREDIT_CARD,delivered
+ORD-00245,2025-06-08,sage.smith@sample.net, East,books,Coding Manual,8,7.06,15,credit_card,Delivered
+ORD-00246,2025-04-14,taylor.davis@demo.io,SOUTH ,Electornics,4K Webcam,4,78.45,20,Paypal,PENDING
+ORD-00247,03/12/2025,avery.young@demo.io, East,Electornics,Bluetooth Speaker,4,$241.63,5,credit_card,Shipped
+ORD-00248,2025-12-08,jamie.clark@demo.io,west,APPAREL ,Baseball Cap,5,$38.28,20,credit-card,Pending
+ORD-00249,12/12/2025,rowan.clark@sample.net, North ,Electronics,USB-C Charger,2,72.66,0,Bank Transfer,Shipped
+ORD-00250,2025-05-23,avery.davis@example.com,north,books,Coding Manual,5,8.74,20,credit-card,Delivered
