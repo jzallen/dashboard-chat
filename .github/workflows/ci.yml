@@ -80,7 +80,7 @@ jobs:
           repository-cache: true
       - uses: astral-sh/setup-uv@v4
       - name: Run backend tests
-        run: bazel test //backend/... --test_tag_filters=-lint --nocache_test_results --config=ci
+        run: bazel test //backend/... --test_tag_filters=-lint,-requires-compose --nocache_test_results --config=ci
 
   # ── Auth-proxy tests (Bazel) ──────────────────────────────────────────────
   test-auth-proxy:

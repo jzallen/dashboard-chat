@@ -221,6 +221,7 @@ sh_test(
 pytest_tests(
     name = "test_auth",
     srcs = glob(["tests/auth/test_*.py"]),
+    compose_srcs = ["tests/auth/test_middleware.py"],
     deps = [":test_lib", ":app"],
 )
 
@@ -233,6 +234,12 @@ pytest_tests(
 pytest_tests(
     name = "test_integration",
     srcs = glob(["tests/integration/test_*.py"]),
+    compose_srcs = [
+        "tests/integration/test_api.py",
+        "tests/integration/test_auth_proxy_m2m.py",
+        "tests/integration/test_session_event_replay_redis_live.py",
+        "tests/integration/test_stream_token.py",
+    ],
     conftest = ["tests/integration/conftest.py"],
     deps = [":test_lib", ":app"],
 )

@@ -119,3 +119,24 @@ npm run test:all                    # JS via turbo + backend via pytest
 - Use direct `uv run pytest` or `npx vitest run` for faster iteration during TDD loops
 - Backend pytest uses `-n auto` by default; add `-n0` for serial debugging
 - Backend S3 is auto-mocked via moto — no setup needed
+
+## Test Tags
+
+| Tag | Meaning |
+|---|---|
+| `lint` | Lint targets; CI lint job runs `--test_tag_filters=lint`, all other jobs run `-lint`. |
+| `unit` | Pure unit test (no I/O, no compose services). Informational. |
+| `requires-compose` | Test needs services from `docker compose up -d` (Redis, auth-proxy, stream.io). CI skips these via `--test_tag_filters=-requires-compose`; run them locally only. |
+
+Run the same set CI runs:
+```bash
+bazel test //backend/... --test_tag_filters=-lint,-requires-compose
+```
+
+Run the compose-only tests locally (compose must be up):
+```bash
+docker compose up -d
+bazel test //backend/... --test_tag_filters=requires-compose
+```
+
+To tag a new test that needs compose, list its source path in the `compose_srcs` argument of its `pytest_tests(...)` call in `backend/BUILD.bazel`.

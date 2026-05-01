@@ -2,7 +2,7 @@
 
 load("@rules_python//python:py_test.bzl", _py_test = "py_test")
 
-def pytest_tests(name, srcs, deps, conftest = [], data = [], size = "medium", tags = []):
+def pytest_tests(name, srcs, deps, conftest = [], data = [], size = "medium", tags = [], compose_srcs = []):
     """Generate individual py_test targets for each test file and a test_suite.
 
     Args:
@@ -13,10 +13,15 @@ def pytest_tests(name, srcs, deps, conftest = [], data = [], size = "medium", ta
         data: Additional data files (pyproject.toml is always included).
         size: Bazel test size (default "medium").
         tags: Bazel tags to apply to all targets.
+        compose_srcs: Subset of srcs that require `docker compose up -d` services
+            (Redis, auth-proxy, stream.io, etc.). These targets get an additional
+            `requires-compose` tag so CI can skip them via
+            `--test_tag_filters=-requires-compose`.
     """
     tests = []
     for src in srcs:
         test_name = name + "_" + src.replace("/", "_").replace(".py", "")
+        src_tags = tags + ["requires-compose"] if src in compose_srcs else tags
         _py_test(
             name = test_name,
             srcs = [src] + conftest,
@@ -34,7 +39,7 @@ def pytest_tests(name, srcs, deps, conftest = [], data = [], size = "medium", ta
             ],
             deps = deps,
             size = size,
-            tags = tags,
+            tags = src_tags,
         )
         tests.append(":" + test_name)
     native.test_suite(name = name, tests = tests, tags = tags)
