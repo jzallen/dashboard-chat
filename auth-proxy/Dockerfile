@@ -7,7 +7,10 @@ RUN npm install --production && npm install tsx
 
 COPY . .
 
-RUN useradd -m appuser && chown -R appuser:appuser /app
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app \
+    && mkdir -p /var/lib/auth-proxy \
+    && chown appuser:appuser /var/lib/auth-proxy
 USER appuser
 
 EXPOSE 3000

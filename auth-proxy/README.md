@@ -307,19 +307,63 @@ process exit** — which silently invalidates every previously-issued
 PAT at the next restart, regardless of `expires_in_seconds`. PATs are
 documented as long-lived so this is not a safe production default.
 
-Set `AUTH_PROXY_KEYPAIR_PATH` to a filesystem path to persist the
-keypair as JWK JSON. The path is read on first use; if the file
-exists it is loaded, if it does not the freshly-generated keypair is
-written there (atomically, mode `0600`) so subsequent boots reuse it.
+Persistence is delegated to a pluggable `SecretsProvider` (see
+`lib/secrets.ts`). Two providers ship; selection is via env.
 
-| Env var                   | Required | Default   | Notes                                                                            |
-|---------------------------|----------|-----------|----------------------------------------------------------------------------------|
-| `AUTH_PROXY_KEYPAIR_PATH` | strongly recommended in production | _(unset)_ | Path for the persisted RS256 keypair (JWK JSON). Without it, restarts invalidate every issued PAT and every M2M token still inside its TTL. |
+| Env var                       | Required | Default | Notes                                                                              |
+|-------------------------------|----------|---------|------------------------------------------------------------------------------------|
+| `AUTH_PROXY_SECRETS_PROVIDER` | no       | _(auto)_ | One of `file`, `vault`. Unset → file when `AUTH_PROXY_KEYPAIR_PATH` is set, otherwise no persistence. |
+| `AUTH_PROXY_KEYPAIR_PATH`     | for `file` | _(unset)_ | Filesystem path for the persisted JWK pair. Used by `FileSecretsProvider`. |
+| `VAULT_ADDR`                  | for `vault` | _(unset)_ | Base URL of the Vault server (e.g. `https://vault.example`). |
+| `VAULT_TOKEN`                 | for `vault` | _(unset)_ | Vault token with read+write on the keypair path. |
+| `VAULT_KEYPAIR_PATH`          | for `vault` | _(unset)_ | kv-v2 data path including mount, e.g. `secret/data/auth-proxy/keypair`. |
 
-The persisted file contains private key material; mount it from a
-secrets-grade volume and restrict access (parent directory, perms,
-backup policy) the same way you would treat a TLS private key. To
-rotate, delete (or move aside) the keypair file and restart
+`FileSecretsProvider` (the default when only `AUTH_PROXY_KEYPAIR_PATH`
+is set) preserves the historical contract: the keypair is read from /
+written to that path as JWK JSON, atomic write, mode `0600`. Suitable
+for **single-replica** deployments where the file lives on a
+secrets-grade volume.
+
+`VaultSecretsProvider` reads/writes the same JWK pair via Vault's
+kv-v2 HTTP API. Required for multi-replica deployments — see below.
+A misconfigured Vault crashes auth-proxy at boot rather than silently
+falling through to a fresh keypair (which would invalidate every
+existing token). Operators wiring AWS Secrets Manager or Kubernetes
+Secrets can drop in a sibling provider — `getSecretsProvider()` in
+`lib/secrets.ts` is the single point that needs extending.
+
+To rotate, delete (or move aside) the persisted keypair and restart
 auth-proxy — at the cost of invalidating all currently-issued tokens.
 A graceful in-place rotation (overlap window with two `kid`s) is not
 implemented today.
+
+### Multi-replica deployment
+
+The token-signing keypair must be **shared across replicas** —
+otherwise a token minted by replica A fails verification at replica
+B. Concretely:
+
+- Single replica + mounted file: `AUTH_PROXY_KEYPAIR_PATH=/var/lib/auth-proxy/keypair.json`
+  (the compose default) is enough.
+- N > 1 replicas: switch to a remote provider. Set
+  `AUTH_PROXY_SECRETS_PROVIDER=vault` plus the Vault env above. All
+  replicas read the same key material at boot.
+
+The compose-runnable acceptance test
+(`auth-proxy/test/multi-replica.test.ts`) pins this contract: it
+brings up two replicas via `docker compose up -d --scale auth-proxy=2`
+(both backed by the shared `auth_proxy_secrets` named volume —
+production should swap that for `vault`) and verifies that a token
+minted at one replica passes signature check at the other.
+
+Run locally with:
+
+```bash
+bazel run //auth-proxy:image_load
+docker compose up -d --scale auth-proxy=2
+npx vitest run --config auth-proxy/vitest.config.ts auth-proxy/test/multi-replica.test.ts
+```
+
+The test is automatically skipped when docker is unavailable, the
+auth-proxy image is not loaded, or `SKIP_DOCKER_ACCEPTANCE=1` is
+set.

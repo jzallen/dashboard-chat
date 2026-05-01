@@ -113,19 +113,39 @@ services:
       timeout: 3s
       retries: 5
 
-  # Auth Proxy - validates tokens and forwards identity headers
+  # Auth Proxy - validates tokens and forwards identity headers.
+  #
+  # Scaling: this service is stateless w.r.t. proxied requests, but the
+  # token-signing keypair must be shared across replicas — otherwise
+  # tokens minted by replica A fail verification at replica B. The
+  # `auth_proxy_secrets` volume holds the persisted JWK keypair; the
+  # FileSecretsProvider (default) reads/writes there. Production
+  # deployments running >1 replica should switch to a remote provider
+  # (AUTH_PROXY_SECRETS_PROVIDER=vault) backed by an actual secrets
+  # manager — the file mount is acceptable for compose-local scaling
+  # but not durable across hosts.
+  #
+  # Multi-replica usage (compose acceptance test):
+  #     docker compose up -d --scale auth-proxy=2
+  # We deliberately omit `container_name` and the fixed host port so
+  # `--scale=N` works without name/port conflicts. The api service
+  # reaches auth-proxy via the compose network; the test orchestrator
+  # uses `docker compose exec` (or container IPs) to hit each replica.
   auth-proxy:
     image: dashboard-chat/auth-proxy:bazel
     pull_policy: never
-    container_name: dashboard-auth-proxy
     environment:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       BACKEND_URL: http://api:8000
       JWKS_URL: ${JWKS_URL:-}
       PORT: "3000"
+      M2M_ENABLED: ${M2M_ENABLED:-true}
+      AUTH_PROXY_KEYPAIR_PATH: /var/lib/auth-proxy/keypair.json
     ports:
-      - "3000:3000"
+      - "3000"
+    volumes:
+      - auth_proxy_secrets:/var/lib/auth-proxy
     depends_on:
       - api
 
@@ -247,3 +267,4 @@ volumes:
   minio_data:
   query_engine_data:
   redis_data:
+  auth_proxy_secrets:

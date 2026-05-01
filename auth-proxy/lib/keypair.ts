@@ -5,119 +5,108 @@
  * (`kid=auth-proxy:m2m:1`) and PATs (`kid=auth-proxy:pat:1`) sign and
  * verify against it.
  *
- * Persistence: when `AUTH_PROXY_KEYPAIR_PATH` is set, the keypair is
- * serialized to that path as JWK JSON and re-loaded on the next boot.
- * Without persistence, every restart rotates the keypair — which
- * silently invalidates every previously-issued PAT and every M2M token
- * still inside its TTL window. PATs in particular are advertised as
- * long-lived (see `pat.ts` header), so production deployments must
- * configure persistence to honour that contract.
- *
- * File format: `{"privateJwk": {...}, "publicJwk": {...}}`. Written
- * atomically (write-temp-then-rename) with mode 0600 so private key
- * material is not world-readable.
+ * Persistence is delegated to a `SecretsProvider` (see `secrets.ts`).
+ * The default in production is the file-backed provider reading
+ * `AUTH_PROXY_KEYPAIR_PATH` (the legacy contract). Multi-replica
+ * deployments select `AUTH_PROXY_SECRETS_PROVIDER=vault` and read
+ * the same key material across replicas, so a token issued by
+ * replica A verifies at replica B. Without persistence, every
+ * restart rotates the keypair — which silently invalidates every
+ * previously-issued PAT and every M2M token still inside its TTL
+ * window. PATs are advertised as long-lived (see `pat.ts` header),
+ * so production deployments must configure persistence.
  */
-
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname } from "node:path";
 
 import {
   type CryptoKey,
   exportJWK,
   generateKeyPair,
   importJWK,
-  type JWK,
 } from "jose";
+
+import {
+  getSecretsProvider,
+  isPersistent,
+  type SecretsProvider,
+  type StoredKeypair,
+} from "./secrets.ts";
 
 interface Keypair {
   privateKey: CryptoKey;
   publicKey: CryptoKey;
 }
 
-interface StoredKeypair {
-  privateJwk: JWK;
-  publicJwk: JWK;
+let keypairPromise: Promise<Keypair> | null = null;
+let providerSignature: string | null = null;
+let providerOverride: SecretsProvider | null = null;
+
+/**
+ * A stable identifier for the configured provider. Used to invalidate
+ * the cached keypair when env switches between calls (tests toggling
+ * persistence). Keys on the env vars the provider reads at construction.
+ */
+function currentProviderSignature(): string {
+  if (providerOverride) return "<override>";
+  return [
+    process.env.AUTH_PROXY_SECRETS_PROVIDER || "",
+    process.env.AUTH_PROXY_KEYPAIR_PATH || "",
+    process.env.VAULT_ADDR || "",
+    process.env.VAULT_TOKEN ? "token-set" : "",
+    process.env.VAULT_KEYPAIR_PATH || "",
+  ].join("|");
 }
 
-let keypairPromise: Promise<Keypair> | null = null;
-let loadedFor: string | null = null;
-
-function readPath(): string | null {
-  return process.env.AUTH_PROXY_KEYPAIR_PATH || null;
+function resolveProvider(): SecretsProvider {
+  return providerOverride ?? getSecretsProvider();
 }
 
 /**
- * Returns the shared RS256 keypair, generating it on first call. When
- * `AUTH_PROXY_KEYPAIR_PATH` is set, the keypair is loaded from disk if
- * the file exists, or generated and persisted otherwise. The cached
- * promise is invalidated when the env var changes between calls so
- * tests that toggle persistence pick up the new path.
+ * Returns the shared RS256 keypair, generating it on first call. The
+ * configured `SecretsProvider` decides whether key material is loaded
+ * from / written to a backing store; `NoopSecretsProvider` (the
+ * default when no persistence env is set) keeps the keypair purely
+ * in process memory.
  */
 export function getKeypair(): Promise<Keypair> {
-  const path = readPath();
-  if (keypairPromise && loadedFor !== path) {
+  const sig = currentProviderSignature();
+  if (keypairPromise && providerSignature !== sig) {
     keypairPromise = null;
   }
   if (!keypairPromise) {
-    loadedFor = path;
-    keypairPromise = loadOrGenerate(path);
+    providerSignature = sig;
+    keypairPromise = loadOrGenerate(resolveProvider());
   }
   return keypairPromise;
 }
 
-async function loadOrGenerate(path: string | null): Promise<Keypair> {
-  if (path && existsSync(path)) {
-    try {
-      const raw = readFileSync(path, "utf8");
-      const stored = JSON.parse(raw) as StoredKeypair;
-      const privateKey = (await importJWK(
-        stored.privateJwk,
-        "RS256",
-      )) as CryptoKey;
-      const publicKey = (await importJWK(
-        stored.publicJwk,
-        "RS256",
-      )) as CryptoKey;
-      return { privateKey, publicKey };
-    } catch {
-      // Corrupt/unreadable persisted keypair: fall through to regenerate
-      // and overwrite. A corrupt file would otherwise wedge auth-proxy
-      // entirely; rotating is a less-bad failure mode than a hard crash.
-    }
+async function loadOrGenerate(provider: SecretsProvider): Promise<Keypair> {
+  const existing = await provider.loadKeypair();
+  if (existing) {
+    const privateKey = (await importJWK(
+      existing.privateJwk,
+      "RS256",
+    )) as CryptoKey;
+    const publicKey = (await importJWK(
+      existing.publicJwk,
+      "RS256",
+    )) as CryptoKey;
+    return { privateKey, publicKey };
   }
 
-  // `extractable: true` only when persistence is configured — without
-  // it the key cannot be exported to JWK. When persistence is not
-  // configured the default (non-extractable) is preserved so the key
-  // material cannot leak via `exportJWK` on a non-persisted deployment.
+  // `extractable: true` only when a persistent provider will export the
+  // key — without persistence the default (non-extractable) is preserved
+  // so private key material cannot leak via `exportJWK`.
+  const persistent = isPersistent(provider);
   const { privateKey, publicKey } = await generateKeyPair("RS256", {
-    extractable: path !== null,
+    extractable: persistent,
   });
 
-  if (path) {
-    const dir = dirname(path);
-    if (dir && !existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
+  if (persistent) {
     const stored: StoredKeypair = {
       privateJwk: await exportJWK(privateKey),
       publicJwk: await exportJWK(publicKey),
     };
-    // Atomic write: a concurrent reader either sees the old file or the
-    // new file, never a half-written one. Mode 0600 keeps the private
-    // key off other unix users on the host.
-    const tmp = `${path}.tmp.${process.pid}`;
-    writeFileSync(tmp, JSON.stringify(stored), {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    renameSync(tmp, path);
+    await provider.saveKeypair(stored);
   }
 
   return { privateKey, publicKey };
@@ -126,5 +115,17 @@ async function loadOrGenerate(path: string | null): Promise<Keypair> {
 /** Test-only helper: drops the cached keypair so the next call regenerates or reloads. */
 export function _resetKeypairForTests(): void {
   keypairPromise = null;
-  loadedFor = null;
+  providerSignature = null;
+  providerOverride = null;
+}
+
+/**
+ * Test-only helper: pin a specific `SecretsProvider` instance for the
+ * next `getKeypair()` call, bypassing env resolution. Useful for unit
+ * tests that want to assert provider interaction directly.
+ */
+export function _setProviderForTests(provider: SecretsProvider | null): void {
+  providerOverride = provider;
+  keypairPromise = null;
+  providerSignature = null;
 }
