@@ -9,8 +9,10 @@ them one at a time during DELIVER and extends the glue below.
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -153,13 +155,19 @@ def _compose_down(service: Optional[str] = None) -> None:
 
 def _compose_logs(service: str, max_lines: int = 50) -> str:
     root = _repo_root()
+    # check=False — during poll loops, the target container may not yet be
+    # visible to compose (race between `up -d` returning and the project
+    # state catching up). A transient non-zero `compose logs` should not
+    # abort the wait; the next poll cycle will succeed.
     result = subprocess.run(
         ["docker", "compose", "logs", "--no-color", service],
         cwd=root,
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
+    if result.returncode != 0:
+        return ""
     # docker compose prefixes each line with "<service>  | " — strip it so
     # the regex matches the application's emitted line, not the wrapper.
     raw_lines = result.stdout.splitlines()[:max_lines]
@@ -328,10 +336,10 @@ def when_service_started(
     )
 )
 def then_one_identity_line_present(service: str, capture: IdentityCapture) -> None:
-    line = _wait_for_log_match(service, IDENTITY_REGEX)
+    line = _wait_for_log_match(service, IDENTITY_REGEX, timeout_s=60.0)
     assert line is not None, (
         f"no identity line matching {IDENTITY_REGEX.pattern!r} in first 50 "
-        f"lines of `docker compose logs {service}` within 30s"
+        f"lines of `docker compose logs {service}` within 60s"
     )
     capture.matched_line = line
 
@@ -387,11 +395,30 @@ def _git_short_sha() -> str:
     return out.stdout.strip()
 
 
-@then(parsers.parse('the captured sha equals "git rev-parse --short=7 HEAD"'))
-def then_captured_sha_equals_head(capture: IdentityCapture) -> None:
-    expected = _git_short_sha()
+@then(parsers.parse('the captured sha equals "{value}"'))
+def then_captured_sha_equals(value: str, capture: IdentityCapture) -> None:
+    """Generic sha-equality assertion.
+
+    Two callers in this codebase: AC1.4 passes the literal token
+    ``git rev-parse --short=7 HEAD`` (computed at assertion time) and AC1.5
+    passes ``unknown`` (literal). Dispatch on the literal so a single
+    parameterized binding covers both — pytest-bdd does not let two
+    @then-bindings share the same parser shape with different parameter
+    names without ambiguity.
+    """
+    if value == "git rev-parse --short=7 HEAD":
+        expected = _git_short_sha()
+    else:
+        expected = value
     assert capture.captured_sha == expected, (
-        f"captured sha {capture.captured_sha!r} != git short HEAD {expected!r}"
+        f"captured sha {capture.captured_sha!r} != expected {expected!r}"
+    )
+
+
+@then(parsers.parse('the captured built equals "{value}"'))
+def then_captured_built_equals(value: str, capture: IdentityCapture) -> None:
+    assert capture.captured_built == value, (
+        f"captured built {capture.captured_built!r} != expected {value!r}"
     )
 
 
@@ -856,4 +883,295 @@ def then_meta_json_canonical_shape(capture: IdentityCapture) -> None:
     )
     assert isinstance(body["built"], str) and body["built"], (
         f"built must be non-empty str, got {body['built']!r}"
+    )
+
+
+# ── Milestone 4: graceful degradation when version.json is missing/corrupt ──
+#
+# Scenarios bind-mount an alternate file (or /dev/null) over
+# /etc/dashboard-chat/version.json so the running container observes a
+# missing-or-malformed payload without rebuilding the image without the
+# version layer (per design upstream-changes.md, the canonical regex was
+# loosened to admit literal "unknown" tokens). The override is delivered via
+# a temporary docker-compose.override.yml — compose merges service `volumes`
+# from base + override, and a later mount targeting the same path wins.
+
+_MILESTONE_4_FRONTEND_PEERS = ("auth-proxy", "agent")
+
+
+def _write_compose_override(service: str, host_path: str) -> Path:
+    """Write a temp docker-compose.override.yml that overlays *host_path*
+    onto /etc/dashboard-chat/version.json (read-only) for *service*.
+
+    Also injects a placeholder ``GROQ_API_KEY`` for the agent service: agent
+    hard-exits at startup when the variable is unset (agent/index.ts:30) but
+    its identity log is emitted *before* that check. The graceful-degradation
+    AC is "service stays running with version.json missing", so the agent's
+    Groq dependency must be satisfied via env-injection or the test fails for
+    an unrelated reason. Other services do not gate startup on env this way.
+    """
+    fh = tempfile.NamedTemporaryFile(
+        mode="w", suffix="-version-override.yml", delete=False
+    )
+    overlay = (
+        "services:\n"
+        f"  {service}:\n"
+        "    volumes:\n"
+        f"      - {host_path}:/etc/dashboard-chat/version.json:ro\n"
+    )
+    if service == "agent":
+        overlay += (
+            "    environment:\n"
+            "      GROQ_API_KEY: dc-1k8-milestone4-stub\n"
+        )
+    elif service == "frontend":
+        # Frontend stack brings up agent; ensure agent stays alive too.
+        overlay += (
+            "  agent:\n"
+            "    environment:\n"
+            "      GROQ_API_KEY: dc-1k8-milestone4-stub\n"
+        )
+    fh.write(overlay)
+    fh.close()
+    return Path(fh.name)
+
+
+def _compose_up_with_override(
+    services: list[str], override_path: Path
+) -> None:
+    root = _repo_root()
+    # --force-recreate guarantees the override volume is honoured even when
+    # a prior iteration left a stopped container with stale spec around;
+    # capturing stderr so the assertion message includes compose's reason
+    # rather than a bare CalledProcessError.
+    result = subprocess.run(
+        [
+            "docker", "compose",
+            "-f", "docker-compose.yml",
+            "-f", str(override_path),
+            "up", "-d",
+            "--force-recreate",
+            *services,
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"`docker compose up -d {' '.join(services)}` failed "
+            f"(rc={result.returncode}):\nSTDOUT:\n{result.stdout}\n"
+            f"STDERR:\n{result.stderr}"
+        )
+
+
+def _compose_container_status(service: str) -> str:
+    """Return the docker State.Status for the compose-managed *service*.
+
+    Uses `docker compose ps --format json` so we can read state directly
+    without a second `docker inspect` round-trip — the inspect was racy when
+    compose recreated the container between the ps and inspect calls.
+    Returns ``""`` if the service has no current container.
+    """
+    root = _repo_root()
+    result = subprocess.run(
+        ["docker", "compose", "ps", "--format", "json", "--all", service],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    # `compose ps --format json` emits one JSON object per line (NDJSON).
+    for raw in result.stdout.splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            entry = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        # `compose ps` may return a single object or a list depending on the
+        # version; handle both shapes.
+        if isinstance(entry, list):
+            for item in entry:
+                if item.get("Service") == service:
+                    return str(item.get("State", ""))
+        elif isinstance(entry, dict) and entry.get("Service") == service:
+            return str(entry.get("State", ""))
+    return ""
+
+
+def _compose_full_down() -> None:
+    """Bring the compose stack fully down with orphan removal.
+
+    Used as the milestone-4 teardown. `compose stop` / `compose rm` of a
+    single service leaves dependent containers (api → port 8000, redis,
+    minio) bound to host ports between iterations; the next iteration's
+    `--force-recreate` sometimes races the port release, surfacing as
+    'address already in use' on api. A full down is heavy-handed but
+    deterministic, and milestone-4 only runs three scenarios in the suite.
+    """
+    root = _repo_root()
+    subprocess.run(
+        ["docker", "compose", "down", "--remove-orphans"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _start_with_version_override(
+    service: str,
+    host_path: str,
+    capture: IdentityCapture,
+    request: pytest.FixtureRequest,
+) -> None:
+    capture.service = service
+    services_to_start = (
+        [*_MILESTONE_4_FRONTEND_PEERS, service]
+        if service == "frontend"
+        else [service]
+    )
+    override = _write_compose_override(service, host_path)
+    request.addfinalizer(lambda: override.unlink(missing_ok=True))
+    _compose_up_with_override(services_to_start, override)
+    request.addfinalizer(_compose_full_down)
+
+
+@when(
+    parsers.parse(
+        'the "{service}" container is started with '
+        '"/etc/dashboard-chat/version.json" overridden by "{host_path}"'
+    )
+)
+def when_container_started_with_version_override(
+    service: str,
+    host_path: str,
+    capture: IdentityCapture,
+    request: pytest.FixtureRequest,
+) -> None:
+    _start_with_version_override(service, host_path, capture, request)
+
+
+@when(
+    parsers.parse(
+        'the "{service}" container is started with '
+        '"/etc/dashboard-chat/version.json" overridden by a file '
+        'containing "{content}"'
+    )
+)
+def when_container_started_with_corrupt_version(
+    service: str,
+    content: str,
+    capture: IdentityCapture,
+    request: pytest.FixtureRequest,
+) -> None:
+    fh = tempfile.NamedTemporaryFile(
+        mode="w", suffix="-corrupt-version.json", delete=False
+    )
+    fh.write(content)
+    fh.close()
+    Path(fh.name).chmod(0o644)
+    request.addfinalizer(lambda: Path(fh.name).unlink(missing_ok=True))
+    _start_with_version_override(service, fh.name, capture, request)
+
+
+@then(
+    parsers.parse(
+        'the service starts successfully and remains in state "{state}"'
+    )
+)
+def then_service_in_state(state: str, capture: IdentityCapture) -> None:
+    assert capture.service is not None, "no service captured"
+    # Identity is logged before any compose-dependent boot work, so a passing
+    # regex match (asserted by the same scenario's "exactly one line"
+    # assertion) is necessary but not sufficient — we also require the
+    # container to settle into the requested state, proving graceful
+    # degradation did not crash the boot path.
+    deadline = time.monotonic() + 30.0
+    last = ""
+    while time.monotonic() < deadline:
+        last = _compose_container_status(capture.service)
+        if last == state:
+            return
+        # "starting" / "created" are transient; "exited" / "dead" are fatal.
+        if last in {"exited", "dead", "removing"}:
+            break
+        time.sleep(0.5)
+    raise AssertionError(
+        f"service {capture.service!r} state={last!r}, expected {state!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the identity line in "docker compose logs {service}" contains '
+        'sha={sha} and built={built}'
+    )
+)
+def then_identity_line_contains(
+    service: str, sha: str, built: str, capture: IdentityCapture
+) -> None:
+    # Milestone-4 boots are cold (--force-recreate) so the api/agent paths
+    # take ~15-20s to emit the identity line after MinIO + DB init. 60s gives
+    # comfortable headroom on slower CI runners.
+    line = _wait_for_log_match(service, IDENTITY_REGEX, timeout_s=60.0)
+    assert line is not None, (
+        f"no identity line matching {IDENTITY_REGEX.pattern!r} in first 50 "
+        f"lines of `docker compose logs {service}` within 30s"
+    )
+    capture.matched_line = line
+    parts = dict(token.split("=", 1) for token in line.split() if "=" in token)
+    captured_sha = parts.get("sha", "").removesuffix("+dirty")
+    captured_built = parts.get("built", "")
+    capture.captured_sha = captured_sha
+    capture.captured_built = captured_built
+    assert captured_sha == sha, (
+        f"identity line sha={captured_sha!r}, expected {sha!r}; "
+        f"line was {line!r}"
+    )
+    assert captured_built == built, (
+        f"identity line built={captured_built!r}, expected {built!r}; "
+        f"line was {line!r}"
+    )
+
+
+@then(parsers.parse('"GET {path}" returns {status:d}'))
+def then_http_get_returns(
+    path: str, status: int, capture: IdentityCapture
+) -> None:
+    # Frontend nginx publishes on host port 5173 (compose 5173:80).
+    assert path == "/_meta.json", f"unsupported HTTP path: {path!r}"
+    actual_status, body = _wait_for_http_200(f"http://localhost:5173{path}")
+    capture.meta_status = actual_status
+    capture.meta_body = body
+    try:
+        capture.meta_json = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(
+            f"GET {path} returned non-JSON body: {body!r} ({exc})"
+        ) from exc
+    assert actual_status == status, (
+        f"GET {path} status={actual_status}, expected {status}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the response body is JSON with sha="{sha}" and built="{built}"'
+    )
+)
+def then_response_body_with_tokens(
+    sha: str, built: str, capture: IdentityCapture
+) -> None:
+    body = capture.meta_json
+    assert body is not None, "no /_meta.json JSON body captured"
+    assert body.get("sha") == sha, (
+        f"/_meta.json sha={body.get('sha')!r}, expected {sha!r}"
+    )
+    assert body.get("built") == built, (
+        f"/_meta.json built={body.get('built')!r}, expected {built!r}"
     )
