@@ -57,9 +57,7 @@ def _filter_transform(
     )
 
 
-def _clean_trim(
-    column: str, status: str = "enabled", created_at: datetime | None = None
-) -> Transform:
+def _clean_trim(column: str, status: str = "enabled", created_at: datetime | None = None) -> Transform:
     return Transform(
         id=f"t-trim-{column}",
         name=f"Trim {column}",
@@ -72,9 +70,7 @@ def _clean_trim(
     )
 
 
-def _clean_case(
-    column: str, mode: str, created_at: datetime | None = None
-) -> Transform:
+def _clean_case(column: str, mode: str, created_at: datetime | None = None) -> Transform:
     return Transform(
         id=f"t-case-{column}-{mode}",
         name=f"Case {mode} {column}",
@@ -442,15 +438,9 @@ class TestTransformsToDelete:
     def test_transforms_to_delete_filters_only_status_deleted(self):
         tx = [
             Transform(id="t-en", name="enabled", condition_json=None, status="enabled"),
-            Transform(
-                id="t-del-1", name="deleted one", condition_json=None, status="deleted"
-            ),
-            Transform(
-                id="t-dis", name="disabled", condition_json=None, status="disabled"
-            ),
-            Transform(
-                id="t-del-2", name="deleted two", condition_json=None, status="deleted"
-            ),
+            Transform(id="t-del-1", name="deleted one", condition_json=None, status="deleted"),
+            Transform(id="t-dis", name="disabled", condition_json=None, status="disabled"),
+            Transform(id="t-del-2", name="deleted two", condition_json=None, status="deleted"),
         ]
         ds = Dataset(id="ds-1", transforms=tx)
 
@@ -512,10 +502,7 @@ class TestStagingSql:
         # characterization pin — empty schema raises ValueError internally;
         # staging_sql catches and formats as "-- Error generating SQL: ...".
         ds = Dataset(id="ds-1", project_id="p", name="Empty")
-        assert (
-            ds.staging_sql
-            == "-- Error generating SQL: No data or schema available for this dataset"
-        )
+        assert ds.staging_sql == "-- Error generating SQL: No data or schema available for this dataset"
 
     def test_staging_sql_simple_schema_no_transforms(self):
         # characterization pin — refactor must preserve this output verbatim
@@ -537,8 +524,7 @@ class TestStagingSql:
             transforms=[_clean_trim("name")],
         )
         assert ds.staging_sql == (
-            'SELECT TRIM("t0"."name", \' \t\n\r\x0b\x0c\') AS "name", '
-            '"t0"."age" FROM "Clean" AS "t0"'
+            'SELECT TRIM("t0"."name", \' \t\n\r\x0b\x0c\') AS "name", "t0"."age" FROM "Clean" AS "t0"'
         )
 
     def test_staging_sql_with_filter_transform(self):
@@ -550,9 +536,7 @@ class TestStagingSql:
             schema_config=_make_schema({"name": "text", "age": "number"}),
             transforms=[_filter_transform(condition_json=_age_gt_filter_json())],
         )
-        assert ds.staging_sql == (
-            'SELECT * FROM "FilterSet" AS "t0" WHERE "t0"."age" > 18'
-        )
+        assert ds.staging_sql == ('SELECT * FROM "FilterSet" AS "t0" WHERE "t0"."age" > 18')
 
     def test_staging_sql_with_alias_transform(self):
         # characterization pin — refactor must preserve this output verbatim
@@ -563,9 +547,7 @@ class TestStagingSql:
             schema_config=_make_schema({"name": "text", "age": "number"}),
             transforms=[_alias_transform("age", "person_age")],
         )
-        assert ds.staging_sql == (
-            'SELECT "t0"."name", "t0"."age" AS "person_age" FROM "Aliased" AS "t0"'
-        )
+        assert ds.staging_sql == ('SELECT "t0"."name", "t0"."age" AS "person_age" FROM "Aliased" AS "t0"')
 
     def test_staging_sql_skips_disabled_transforms(self):
         # Structural check (the exact SQL is already pinned above for the
@@ -613,10 +595,7 @@ class TestDisplaySql:
     def test_display_sql_empty_schema_returns_error_comment(self):
         # characterization pin
         ds = Dataset(id="ds-1", project_id="p", name="Empty")
-        assert (
-            ds.display_sql
-            == "-- Error generating SQL: No data or schema available for this dataset"
-        )
+        assert ds.display_sql == "-- Error generating SQL: No data or schema available for this dataset"
 
     def test_display_sql_expands_select_star_and_applies_alias(self):
         # characterization pin — refactor must preserve this output verbatim.
@@ -641,10 +620,7 @@ class TestDisplaySql:
             schema_config=_make_schema({"name": "text", "age": "number"}),
             transforms=[_clean_trim("name")],
         )
-        assert ds.display_sql == (
-            "SELECT\n  TRIM(c.name, ' \t\n\r\x0b\x0c') AS \"name\",\n"
-            '  c.age\nFROM "Clean" AS c'
-        )
+        assert ds.display_sql == ('SELECT\n  TRIM(c.name, \' \t\n\r\x0b\x0c\') AS "name",\n  c.age\nFROM "Clean" AS c')
 
     def test_display_sql_with_filter_transform(self):
         # characterization pin
@@ -655,9 +631,7 @@ class TestDisplaySql:
             schema_config=_make_schema({"name": "text", "age": "number"}),
             transforms=[_filter_transform(condition_json=_age_gt_filter_json())],
         )
-        assert ds.display_sql == (
-            'SELECT\n  f.name,\n  f.age\nFROM "FilterSet" AS f\nWHERE\n  f.age > 18'
-        )
+        assert ds.display_sql == ('SELECT\n  f.name,\n  f.age\nFROM "FilterSet" AS f\nWHERE\n  f.age > 18')
 
     def test_display_sql_with_alias_transform(self):
         # characterization pin
@@ -668,9 +642,7 @@ class TestDisplaySql:
             schema_config=_make_schema({"name": "text", "age": "number"}),
             transforms=[_alias_transform("age", "person_age")],
         )
-        assert ds.display_sql == (
-            'SELECT\n  a.name,\n  a.age AS "person_age"\nFROM "Aliased" AS a'
-        )
+        assert ds.display_sql == ('SELECT\n  a.name,\n  a.age AS "person_age"\nFROM "Aliased" AS a')
 
     def test_display_sql_alias_uses_lowercase_initials_of_multi_word_name(self):
         # "Customer Purchase History" -> initials "cph"
@@ -721,10 +693,7 @@ class TestSerialize:
         # characterization pin
         ds = Dataset(id="ds-1", project_id="p", name="Empty")
         result = ds.serialize()
-        assert (
-            result["staging_sql"]
-            == "-- Error generating SQL: No data or schema available for this dataset"
-        )
+        assert result["staging_sql"] == "-- Error generating SQL: No data or schema available for this dataset"
 
     def test_serialize_includes_transforms_via_their_serialize_method(self):
         tx = Transform(
@@ -889,9 +858,7 @@ class TestQueryPreviewRows:
     """``query_preview_rows`` — async, hits the query engine pool."""
 
     @pytest.mark.asyncio
-    async def test_query_preview_rows_when_staging_sql_errors_returns_empty_list(
-        self, fake_pool_factory
-    ):
+    async def test_query_preview_rows_when_staging_sql_errors_returns_empty_list(self, fake_pool_factory):
         # Empty schema -> staging_sql starts with "-- Error" -> short-circuits.
         connection = fake_pool_factory(fetch_rows=[])
         ds = Dataset(id="ds-1", project_id="p", name="N")  # no schema
@@ -917,9 +884,7 @@ class TestQueryPreviewRows:
 
         # Post-dc-f8m: rows are wrapped in ``to_json(t) AS row`` to satisfy
         # pg_duckdb's Describe phase, and decoded by ``decode_wrapped_rows``.
-        connection = fake_pool_factory(
-            fetch_rows=[{"row": '{"a": 1}'}, {"row": '{"a": 2}'}]
-        )
+        connection = fake_pool_factory(fetch_rows=[{"row": '{"a": 1}'}, {"row": '{"a": 2}'}])
         ds = Dataset(
             id="ds-x",
             project_id="proj-y",

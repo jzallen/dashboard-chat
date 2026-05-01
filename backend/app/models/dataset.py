@@ -26,9 +26,7 @@ def _transform_from_dict(payload: dict[str, Any]) -> Transform:
     return Transform(
         id=payload.get("id"),
         name=payload["name"],
-        condition_json=(
-            QueryBuilderJSON.from_dict(raw_condition) if raw_condition else None
-        ),
+        condition_json=(QueryBuilderJSON.from_dict(raw_condition) if raw_condition else None),
         condition_sql=payload.get("condition_sql"),
         description=payload.get("description"),
         status=payload.get("status", "enabled"),
@@ -51,11 +49,7 @@ def _transform_from_orm(record: Any) -> Transform:
     return Transform(
         id=record.id,
         name=record.name,
-        condition_json=(
-            QueryBuilderJSON.from_dict(record.condition_json)
-            if record.condition_json
-            else None
-        ),
+        condition_json=(QueryBuilderJSON.from_dict(record.condition_json) if record.condition_json else None),
         condition_sql=record.condition_sql,
         description=record.description,
         status=record.status,
@@ -89,19 +83,13 @@ class Dataset:
     schema_config: dict[str, Any] = field(
         default_factory=dict
     )  # Column names + types — drives query builder, table UI, and SQL generation
-    partition_fields: list[str] = field(
-        default_factory=list
-    )  # Hive-style partition field names
-    transforms: list[Transform] | list[dict[str, Any]] | None = field(
-        default_factory=list
-    )
+    partition_fields: list[str] = field(default_factory=list)  # Hive-style partition field names
+    transforms: list[Transform] | list[dict[str, Any]] | None = field(default_factory=list)
     preview_rows: list[dict[str, Any]] = field(default_factory=list)
     column_profiles: dict[str, Any] | None = (
         None  # Per-column value stats (sample values, min/max, …) — injected into LLM system prompt
     )
-    format_context: str | None = (
-        None  # Plugin-provided context for LLM (e.g., HL7v2 column conventions)
-    )
+    format_context: str | None = None  # Plugin-provided context for LLM (e.g., HL7v2 column conventions)
 
     @classmethod
     def from_record(
@@ -179,16 +167,12 @@ class Dataset:
     @property
     def staging_sql(self) -> SQLQuery:
         """Compact DuckDB SQL for query execution (no pretty printing)."""
-        return dataset_sql.build_staging_sql(
-            self.name, self.schema_config, self.transforms
-        )
+        return dataset_sql.build_staging_sql(self.name, self.schema_config, self.transforms)
 
     @property
     def display_sql(self) -> SQLQuery:
         """Human-readable DuckDB SQL with dataset-derived alias and explicit columns."""
-        return dataset_sql.build_display_sql(
-            self.name, self.schema_config, self.transforms
-        )
+        return dataset_sql.build_display_sql(self.name, self.schema_config, self.transforms)
 
     async def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
         """Execute the staging SQL (with transforms) via the query engine and return preview rows."""
@@ -235,9 +219,7 @@ class Dataset:
             "description": self.description,
             "schema_config": self.schema_config,
             "partition_fields": self.partition_fields,
-            "transforms": (
-                [t.serialize() for t in self.transforms] if self.transforms else []
-            ),
+            "transforms": ([t.serialize() for t in self.transforms] if self.transforms else []),
             "preview_rows": self.preview_rows,
             "column_profiles": self.column_profiles,
             "format_context": self.format_context,

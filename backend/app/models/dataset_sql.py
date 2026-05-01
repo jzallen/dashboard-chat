@@ -15,7 +15,8 @@ Pipeline (design D3):
 from __future__ import annotations
 
 import re
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import ibis
 
@@ -40,9 +41,7 @@ _DEFAULT_IBIS_TABLE_ALIAS = "t0"
 # ---------------------------------------------------------------------------
 
 
-def build_staging_sql(
-    name: str, schema_config: dict[str, Any], transforms: Sequence[Transform]
-) -> str:
+def build_staging_sql(name: str, schema_config: dict[str, Any], transforms: Sequence[Transform]) -> str:
     """Compact DuckDB SQL used for query execution (no pretty printing)."""
     try:
         table = build_ibis_table(name, schema_config, transforms)
@@ -51,9 +50,7 @@ def build_staging_sql(
         return f"-- Error generating SQL: {e!s}"
 
 
-def build_display_sql(
-    name: str, schema_config: dict[str, Any], transforms: Sequence[Transform]
-) -> str:
+def build_display_sql(name: str, schema_config: dict[str, Any], transforms: Sequence[Transform]) -> str:
     """Human-readable DuckDB SQL with dataset-derived alias + explicit columns."""
     try:
         table = build_ibis_table(name, schema_config, transforms, table_name=name)
@@ -101,32 +98,20 @@ def build_ibis_table(
     return table
 
 
-def apply_cleaning_mutations(
-    table: ibis.Table, transforms: Sequence[Transform]
-) -> ibis.Table:
+def apply_cleaning_mutations(table: ibis.Table, transforms: Sequence[Transform]) -> ibis.Table:
     """Stage 1: MUTATE — apply clean/map transforms as column expressions,
     in ``created_at`` order. Transforms without a ``created_at`` sort first (stable)."""
     cleaning_transforms = sorted(
-        [
-            t
-            for t in transforms
-            if t.is_enabled
-            and t.transform_type in ("clean", "map")
-            and t.expression_config
-        ],
+        [t for t in transforms if t.is_enabled and t.transform_type in ("clean", "map") and t.expression_config],
         key=lambda t: getattr(t, "created_at", "") or "",
     )
     for t in cleaning_transforms:
         expr = CleaningExpression(t.expression_config)
-        table = table.mutate(
-            **{t.target_column: expr.as_ibis_expr(table, t.target_column)}
-        )
+        table = table.mutate(**{t.target_column: expr.as_ibis_expr(table, t.target_column)})
     return table
 
 
-def apply_filter_predicates(
-    table: ibis.Table, transforms: Sequence[Transform]
-) -> ibis.Table:
+def apply_filter_predicates(table: ibis.Table, transforms: Sequence[Transform]) -> ibis.Table:
     """Stage 2: FILTER — apply filter transforms as WHERE clauses."""
     active_filters = [
         t.condition_json.as_ibis_filter(table)
@@ -138,9 +123,7 @@ def apply_filter_predicates(
     return table.filter(*active_filters)
 
 
-def apply_alias_renames(
-    table: ibis.Table, transforms: Sequence[Transform]
-) -> ibis.Table:
+def apply_alias_renames(table: ibis.Table, transforms: Sequence[Transform]) -> ibis.Table:
     """Stage 3: RENAME — apply alias transforms as column renames."""
     alias_renames: dict[str, str] = {}
     for t in transforms:
@@ -159,9 +142,7 @@ def apply_alias_renames(
 # ---------------------------------------------------------------------------
 
 
-def _build_table_from_schema(
-    name: str, schema_config: dict[str, Any], table_name: str | None
-) -> ibis.Table:
+def _build_table_from_schema(name: str, schema_config: dict[str, Any], table_name: str | None) -> ibis.Table:
     """Build Ibis table expression from schema_config (no S3 read needed).
 
     Raises ``ValueError`` when the schema has no ``fields`` — callers wrap this
@@ -171,10 +152,7 @@ def _build_table_from_schema(
     if not fields:
         raise ValueError("No data or schema available for this dataset")
 
-    ibis_schema = {
-        column: _SCHEMA_TYPE_MAP.get(info.get("type", "text"), "string")
-        for column, info in fields.items()
-    }
+    ibis_schema = {column: _SCHEMA_TYPE_MAP.get(info.get("type", "text"), "string") for column, info in fields.items()}
     return ibis.table(ibis_schema, name=table_name or name)
 
 
