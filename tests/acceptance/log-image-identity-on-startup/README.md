@@ -1,8 +1,9 @@
 # Acceptance — log image identity on startup (dc-1k8)
 
 This directory holds the BDD acceptance suite for the
-`log-image-identity-on-startup` feature. See `docs/feature/log-image-identity-on-startup/`
-for the user stories, design, and DISTILL wave-decisions.
+`log-image-identity-on-startup` feature. See
+`docs/evolution/2026-05-04-log-image-identity-on-startup.md` for the user stories,
+design, and DISTILL wave-decisions (consolidated post-finalize).
 
 ## What is in here
 

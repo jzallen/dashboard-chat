@@ -25,7 +25,7 @@ import pytest
 from pytest_bdd import given, parsers, then, when
 
 # Canonical identity regex — sourced from
-# docs/feature/log-image-identity-on-startup/design/upstream-changes.md.
+# docs/evolution/2026-05-04-log-image-identity-on-startup.md (Identity format section).
 # Loosened from the original DISCUSS regex to admit literal "unknown" tokens
 # so that AC1.5 (graceful degradation) and AC1.1 (canonical line) are not
 # mutually exclusive.

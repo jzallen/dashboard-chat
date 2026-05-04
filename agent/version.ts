@@ -5,7 +5,7 @@
 // "unknown" tokens if the file is missing or unparseable so that
 // uninstrumented images still boot (AC1.5 of dc-1k8).
 //
-// Format (matches AC1.1 regex from docs/feature/log-image-identity-on-startup/discuss/user-stories.md):
+// Format (matches AC1.1 regex from docs/evolution/2026-05-04-log-image-identity-on-startup.md):
 //
 //     <service> image=<tag> sha=<sha7>[+dirty] built=<rfc3339>
 
