@@ -136,7 +136,7 @@ def _trim_region_body() -> dict:
                 "name": "trim on region",
                 "transform_type": "clean",
                 "target_column": "region",
-                "expression_config": {"operation": "case", "mode": "trim"},
+                "expression_config": {"operation": "trim"},
             }
         ]
     }
@@ -339,11 +339,12 @@ async def test_patch_transforms_idempotency_contract(
             f"got {r3.status_code}: {r3.text[:300]}"
         )
 
-        # The transform should remain soft-deleted exactly once — the second
-        # PATCH was cached, not re-applied.
+        # The transform should be soft-deleted exactly once — the second
+        # PATCH was cached, not re-applied. The backend's transform listing
+        # excludes ``status='deleted'`` rows, so absence from the listing is
+        # the success signal here.
         post_state = await h.list_dataset_transforms(dataset_id)
         target_after = next((t for t in post_state if t.get("id") == target["id"]), None)
-        assert target_after is not None, "transform vanished from listing after PATCH retries"
-        assert target_after.get("status") == "deleted", (
-            f"PATCH should have soft-deleted the transform, status={target_after.get('status')!r}"
+        assert target_after is None, (
+            f"transform should have been soft-deleted (absent from listing); still present: {target_after!r}"
         )

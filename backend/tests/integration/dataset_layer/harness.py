@@ -288,7 +288,7 @@ class DatasetLayerHarness:
         assert last_error is not None
         raise last_error
 
-    async def get_table_state(self, dataset_id: str, *, preview_limit: int = 100) -> TableState:
+    async def get_table_state(self, dataset_id: str, *, preview_limit: int = 1000) -> TableState:
         client = self._require_client()
         res = await client.get(
             f"{self._auth_proxy_url}/api/datasets/{dataset_id}",
@@ -296,9 +296,7 @@ class DatasetLayerHarness:
             params={"include_preview": "true", "preview_limit": str(preview_limit)},
         )
         res.raise_for_status()
-        body = res.json()
-        # Backend response shape: {data: {...}} or {...}; tolerate both.
-        data = body.get("data", body)
+        data = _unwrap_jsonapi(res.json())
         preview = data.get("preview") or data.get("preview_rows") or []
         columns = data.get("columns") or data.get("schema", {}).get("columns") or []
         row_count = data.get("row_count") or data.get("rows") or len(preview)
@@ -378,7 +376,7 @@ class DatasetLayerHarness:
         )
         res.raise_for_status()
         body = res.json()
-        data = body.get("data", body)
+        data = _unwrap_jsonapi(body)
         if not isinstance(data, dict) or "id" not in data:
             raise RuntimeError(f"create_session: unexpected response shape: {body!r}")
         return data
@@ -513,8 +511,7 @@ class DatasetLayerHarness:
             params={"include_transforms": "true"},
         )
         res.raise_for_status()
-        body = res.json()
-        data = body.get("data", body)
+        data = _unwrap_jsonapi(res.json())
         return list(data.get("transforms") or [])
 
     # ----- internals --------------------------------------------------------
@@ -681,6 +678,19 @@ def _dataset_id_from_response(body: dict[str, Any]) -> str:
     if not isinstance(did, str):
         raise RuntimeError(f"upload_csv: no dataset id in response body: {body!r}")
     return did
+
+
+def _unwrap_jsonapi(body: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a JSON:API single-resource envelope to ``{id, **attributes}``.
+
+    Tolerates already-flat responses: if ``data`` isn't a JSON:API resource
+    object (no ``attributes`` field), returns it unchanged. Older endpoints
+    that don't envelope at all also pass through.
+    """
+    data = body.get("data", body) if isinstance(body, dict) else body
+    if isinstance(data, dict) and isinstance(data.get("attributes"), dict):
+        return {"id": data.get("id"), **data["attributes"]}
+    return data if isinstance(data, dict) else {}
 
 
 # ---------------------------------------------------------------------------

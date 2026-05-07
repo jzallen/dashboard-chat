@@ -1,0 +1,142 @@
+{
+  "roadmap": {
+    "project_id": "agent-ai-sdk-v6-migration",
+    "created_at": "2026-05-07T02:47:44Z",
+    "total_steps": 8,
+    "phases": 3,
+    "description": "Migrate the agent SSE pipeline from AI SDK v4 to v6 API surface. The `ai` package was bumped 4.3.16 -> 6.0.141 in commit 32e3dd3 without migrating call sites; the chat path has been broken end-to-end since (TypeError: result.toDataStreamResponse is not a function at agent/lib/chat/handleChat.ts:154). Migration follows outside-in TDD: write failing acceptance tests against the v6 stream shape first, drive the agent emit side green, then propagate the new wire format to frontend and backend consumers, then verify the full stack. Personal project — no compat shims, clean break to v6 API.",
+    "bead": "dc-p1z",
+    "estimated_total_hours": 9
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Migrate agent emit side to v6 UIMessage stream",
+      "description": "Drive agent/lib/chat/handleChat.ts and agent unit tests from v4 (toDataStreamResponse + numeric-prefix `8:` annotation injection) to v6 (createUIMessageStream + writer.write({type:'data-chat-event', ...}) + createUIMessageStreamResponse). Walking-skeleton acceptance test is rewritten first (RED), then production code is migrated until it goes GREEN.",
+      "estimated_hours": 5,
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Rewrite walking-skeleton acceptance test to assert v6 data-* parts (RED)",
+          "description": "Replace the v4 numeric-prefix SSE parser in agent/test/chat/acceptance/walking-skeleton.test.ts (the `prefix === '2' || prefix === '8'` branch at line 51) with a v6 UIMessage stream parser. The new parser must read `data: {...}\\n\\n` SSE frames whose JSON payload has `type: 'data-chat-event'` and a `data` field carrying a `ChatEvent` validated by `ChatEventSchema` from `shared/chat/events.ts`. Also rewrite the `prefix === '9'` raw-tool-call check to look for any v6 part whose type begins with `tool-` and carries unsanitized Groq tool-call deltas. Test is expected to FAIL after this step because the agent still emits v4 format. Per docs/evolution/2026-05-01-api-driven-user-flow-tests.md this test is a permanent regression guard and must remain in place.",
+          "criteria": "agent/test/chat/acceptance/walking-skeleton.test.ts no longer references prefix `2:` or `8:`; parser consumes v6 `data:`-framed JSON and extracts ChatEvent instances via `type === 'data-chat-event'`; running the test against current handleChat.ts FAILS (the test is RED, demonstrating it actually exercises the new contract).",
+          "test_file": "agent/test/chat/acceptance/walking-skeleton.test.ts",
+          "scenario_name": "walking skeleton — chat-driven trim propagates as a typed event",
+          "estimated_hours": 1,
+          "dependencies": []
+        },
+        {
+          "id": "01-02",
+          "name": "Migrate handleChat.ts + injectEmittedEvents to createUIMessageStream (drive RED -> GREEN)",
+          "description": "Replace `result.toDataStreamResponse()` at agent/lib/chat/handleChat.ts:154 and the `injectEmittedEvents` helper (lines ~177-200, currently writes `8:${JSON.stringify(events)}\\n` raw frames) with the v6 idiom: build the response via `createUIMessageStream({ execute: ({ writer }) => { writer.merge(result.toUIMessageStream()); /* flush eventBuffer as data-chat-event parts via writer.write({type:'data-chat-event', id, data: chatEvent}) */ } })` then `createUIMessageStreamResponse({ stream })`. The dispatcher execute() callbacks already push ChatEvent objects into `eventBuffer`; the new writer must drain that buffer in the same temporal positions the v4 transform did (before each upstream chunk). Also update `wrapWithTurnDoneAndPersist` and `transformStreamForResolveDataset` so they operate on the new stream shape (typed parts, not numeric-prefixed text frames). The walking-skeleton test from 01-01 must transition from RED to GREEN.",
+          "criteria": "agent/lib/chat/handleChat.ts contains no reference to `toDataStreamResponse`, no numeric-prefix string emission, and no `8:` literals; v6 imports (`createUIMessageStream`, `createUIMessageStreamResponse`) come from `ai`; walking-skeleton acceptance test (01-01) PASSES; agent boots and `/chat` returns 200 against a real Groq backend.",
+          "test_file": "agent/test/chat/acceptance/walking-skeleton.test.ts",
+          "scenario_name": "walking skeleton — chat-driven trim propagates as a typed event",
+          "estimated_hours": 2.5,
+          "dependencies": ["01-01"]
+        },
+        {
+          "id": "01-03",
+          "name": "Rewrite agent unit-test mocks from v4 to v6 stream API",
+          "description": "Update every `streamText` mock site in agent unit tests so the mocked return value exposes `toUIMessageStream()` (and any other v6 surface handleChat.ts now consumes) instead of `toDataStreamResponse()`. Concrete sites: agent/test/chat/handleChat.test.ts; agent/test/chat/resolveDataset.test.ts (7 mocks at approx lines 16, 73, 118, 157, 199, 223, 245); agent/test/chat/reportIntegration.test.ts:35. Mocks should produce a ReadableStream of v6 UIMessage parts (text-delta and data-chat-event) consistent with what the production code now consumes. No production code changes in this step.",
+          "criteria": "`pnpm --filter agent test` (or equivalent bazel target `//agent:test`) passes with zero references to `toDataStreamResponse` or `8:` prefix in agent/test/**; all mocks return ReadableStream<v6 part>; coverage for handleChat, resolveDataset, reportIntegration paths preserved.",
+          "test_file": "agent/test/chat/handleChat.test.ts",
+          "scenario_name": "handleChat unit suite",
+          "estimated_hours": 1.5,
+          "dependencies": ["01-02"]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Propagate v6 wire format to downstream consumers",
+      "description": "The agent now emits v6 typed `data-*` parts. Update both consumers of the SSE wire format — the frontend chatStream parser and the backend integration-test harness — to read the new shape. ChatEvent payload SSOT (shared/chat/events.ts) is unchanged; only the framing envelope changes.",
+      "estimated_hours": 2.5,
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Migrate frontend chatStream parser to v6 data-* parts",
+          "description": "Replace the numeric-prefix parser in frontend/src/core/chat/services/chatStream.ts (lines ~50-80) with a v6 SSE parser. Read `data: {...}\\n\\n` frames; dispatch on the `type` field: text-delta -> handlers.onContent (accumulating); `data-chat-event` -> handlers.onChatEvent with `ChatEventSchema.safeParse(part.data)`. Drop the `prefix === '9'` legacy tool-call branch — v6 surfaces tool calls via typed `tool-*` parts but the agent already strips raw Groq tool-call deltas, so for now the parser only needs text and data-chat-event. Update any frontend unit tests in `frontend/src/core/chat/services/**` that fed the old parser fixtures.",
+          "criteria": "frontend/src/core/chat/services/chatStream.ts contains no `prefix ===` numeric checks; consumes v6 `data:`-framed JSON parts; existing frontend chat test suite passes (`pnpm --filter frontend test` or `bazel test //frontend:test`); accumulated content + ChatEvent dispatch behavior preserved against fixture streams.",
+          "test_file": "frontend/src/core/chat/services/chatStream.test.ts",
+          "scenario_name": "chatStream parses v6 data-chat-event parts",
+          "estimated_hours": 1,
+          "dependencies": ["01-02"]
+        },
+        {
+          "id": "02-02",
+          "name": "Migrate backend integration harness SSE parser to v6 data-* parts",
+          "description": "Update backend/tests/integration/dataset_layer/harness.py so its SSE parser pulls ChatEvents from v6 `data-chat-event` parts instead of `8:`-prefixed annotation frames. Parser should consume `data: {...}\\n\\n` SSE lines, json-decode the payload, branch on `type == 'data-chat-event'`, and surface the inner `data` dict as the ChatEvent the integration suite asserts on. Keep the existing JSON:API unwrap and ChatEvent shape expectations otherwise unchanged (the SSOT in shared/chat/events.ts is stable).",
+          "criteria": "backend/tests/integration/dataset_layer/harness.py contains no reference to `8:` or numeric-prefix line slicing; with the compose stack up, `cd backend && uv run --env-file ../.env pytest tests/integration/dataset_layer/ -v -rs -o 'addopts='` shows the 3 active tests (`test_dataset_staging_layer`, both `test_replay_idempotency` cases) PASSING and the smoke probe SKIPPED by design absent SMOKE_DATASET_ID.",
+          "test_file": "backend/tests/integration/dataset_layer/test_dataset_staging_layer.py",
+          "scenario_name": "test_dataset_staging_layer + test_replay_idempotency",
+          "estimated_hours": 1,
+          "dependencies": ["01-02"]
+        },
+        {
+          "id": "02-03",
+          "name": "Cross-stack contract sanity: agent emit shape matches both consumers",
+          "description": "Add (or extend) a single small contract fixture asserting parity: a synthetic v6 SSE byte stream (built from the same writer calls handleChat.ts now uses) is parsed identically by (a) the agent walking-skeleton parser, (b) the frontend chatStream parser, and (c) the backend harness parser. Each should yield the same set of ChatEvents from the same input. This catches drift if any one consumer is later edited in isolation. Implement in whichever side is most natural (suggestion: agent/test/chat/acceptance/wire-contract.test.ts driving fixtures shared via shared/chat/__fixtures__/).",
+          "criteria": "A new test file asserts that one canonical v6 SSE byte sequence yields identical ChatEvent[] across all three parsers; test passes; no parser-specific quirks remain (e.g., one consumer accepting a frame shape another rejects).",
+          "test_file": "agent/test/chat/acceptance/wire-contract.test.ts",
+          "scenario_name": "v6 wire contract — agent emit parses identically in all consumers",
+          "estimated_hours": 0.5,
+          "dependencies": ["02-01", "02-02"]
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Full-stack verification and manual smoke",
+      "description": "Run the complete acceptance-criteria battery from the migration brief: full bazel sweep, dataset-layer integration suite against a live compose stack, and a manual end-to-end smoke (CSV upload + cleaning prompt visible in the UI).",
+      "estimated_hours": 1.5,
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Green full bazel sweep + dataset-layer integration suite",
+          "description": "Run `bazel test //agent/... //backend/... //frontend/...` and confirm zero failures, zero `toDataStreamResponse` errors, zero LanguageModelV1/V2 spec mismatches, and zero references to numeric SSE prefixes in source. Then with the docker compose stack up, run `cd backend && uv run --env-file ../.env pytest tests/integration/dataset_layer/ -v -rs -o 'addopts='` and confirm test_dataset_staging_layer + both test_replay_idempotency cases PASS, smoke probe SKIPS by design. Capture command output in the validation block.",
+          "criteria": "Bazel sweep is clean. Dataset-layer integration suite matches the migration brief's acceptance criterion #1 exactly. Output captured and attached to the bead dc-p1z work record.",
+          "test_file": "",
+          "scenario_name": "",
+          "estimated_hours": 0.5,
+          "dependencies": ["02-03"]
+        },
+        {
+          "id": "03-02",
+          "name": "Manual end-to-end smoke: CSV upload + cleaning prompt visible",
+          "description": "With the compose stack up and the frontend served, perform a manual smoke: open the chat UI, upload a CSV via the dataset path, send a chat turn that triggers a cleaning prompt. Confirm: (a) agent /chat responds 200; (b) text streams into the UI without prefix-number artifacts; (c) the cleaning ChatEvent surfaces in the UI as a typed annotation (not raw text); (d) browser devtools network tab shows v6 `data: {...}` SSE frames with `type` fields, not numeric-prefixed lines. Document outcome and any visual regressions in deliver notes.",
+          "criteria": "Manual smoke passes all four sub-checks above. Result documented under docs/feature/agent-ai-sdk-v6-migration/deliver/ with a timestamped note. Bead dc-p1z transitioned to done.",
+          "test_file": "",
+          "scenario_name": "",
+          "estimated_hours": 1,
+          "dependencies": ["03-01"]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "agent/lib/chat/",
+      "frontend/src/core/chat/services/",
+      "backend/tests/integration/dataset_layer/"
+    ],
+    "test_directories": [
+      "agent/test/chat/",
+      "agent/test/chat/acceptance/",
+      "frontend/src/core/chat/services/",
+      "backend/tests/integration/dataset_layer/"
+    ],
+    "excluded_patterns": [
+      "__init__.py",
+      "__pycache__/**",
+      "node_modules/**",
+      "dist/**",
+      "shared/chat/events.ts"
+    ]
+  },
+  "validation": {
+    "status": "pending",
+    "reviewer": "polecat (via /nw-deliver)",
+    "approved_at": "TODO"
+  }
+}
