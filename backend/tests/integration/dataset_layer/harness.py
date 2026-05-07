@@ -440,6 +440,35 @@ class AuthApi:
             )
 
 
+class ProjectsApi:
+    """Backend ``/api/projects`` wrapper (design §2.2).
+
+    Owns POST (create) and DELETE (cleanup). The facade composes one in
+    ``__aenter__`` using the backend token (PAT or dev JWT) and delegates
+    ``create_project`` + project teardown to it.
+    """
+
+    def __init__(self, client: httpx.AsyncClient, *, base_url: str, token: str):
+        self._client = client
+        self._base = base_url.rstrip("/")
+        self._token = token
+
+    async def create(self, name: str) -> ProjectId:
+        res = await self._client.post(
+            f"{self._base}/api/projects",
+            headers=bearer(self._token, json_body=True),
+            content=json.dumps({"name": name}),
+        )
+        res.raise_for_status()
+        return to_project_id(res.json())
+
+    async def delete(self, project_id: str) -> None:
+        await self._client.delete(
+            f"{self._base}/api/projects/{project_id}",
+            headers=bearer(self._token),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
@@ -497,39 +526,38 @@ class DatasetLayerHarness:
         self._timeout = timeout_seconds
         self._rephrase = rephrase or _default_rephrase
         self._client: httpx.AsyncClient | None = None
+        # Wrappers built lazily in __aenter__ once the client exists (design §2.2).
+        self._projects: ProjectsApi | None = None
 
     # ----- lifecycle --------------------------------------------------------
 
     async def __aenter__(self) -> DatasetLayerHarness:
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout))
+        backend_token = self._pat or self._user_jwt
+        self._projects = ProjectsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         if self._owns_project:
             self._project_id = await self.create_project(f"dataset-staging-{_new_ulid_suffix()}")
         return self
 
     async def __aexit__(self, *_: object) -> None:
         try:
-            if self._owns_project and self._project_id and self._client is not None:
-                await self._client.delete(
-                    f"{self._auth_proxy_url}/api/projects/{self._project_id}",
-                    headers=self._backend_headers(),
-                )
+            if self._owns_project and self._project_id and self._projects is not None:
+                await self._projects.delete(self._project_id)
         finally:
             if self._client is not None:
                 await self._client.aclose()
                 self._client = None
+                self._projects = None
 
     # ----- public API -------------------------------------------------------
 
     async def create_project(self, name: str) -> str:
         """Create a project via auth-proxy → backend; return its id."""
-        client = self._require_client()
-        res = await client.post(
-            f"{self._auth_proxy_url}/api/projects",
-            headers=self._backend_headers(json_body=True),
-            content=json.dumps({"name": name}),
-        )
-        res.raise_for_status()
-        return to_project_id(res.json())
+        if self._projects is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        return await self._projects.create(name)
 
     async def upload_csv(self, csv_path: str | Path, project_id: str | None = None) -> str:
         """Upload a CSV via the backend ``/api/uploads`` endpoint; return dataset_id."""
