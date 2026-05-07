@@ -166,7 +166,7 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
 ### Mechanics
 
 - Test directory: `backend/tests/integration/dataset_layer/` (new). Why backend/tests: it's where pytest lives; the test exercises the backend's API surface; reuses dev JWT minting from there. The fact that the worker is also driven is incidental — worker is just another HTTP service.
-- New harness module: `backend/tests/integration/dataset_layer/harness.py` (or split into multiple files as it grows). Public API:
+- New harness module: `backend/tests/integration/dataset_layer/harness.py`. Public API:
 
   ```python
   class DatasetLayerHarness:
@@ -183,6 +183,8 @@ AC1.6 (≤ 5 min = 300s) is met in both scenarios with > 30% headroom in the wor
   ```
 
 - Inside `chat_turn`: opens an SSE connection to worker `/chat`, parses each frame into a typed `ChatEvent` per `agent/lib/chat/events.ts`, accumulates them into a `ChatEventTrace`, waits until `turn_done` (or the relevant mutation event), then returns the trace. **No client-side dispatch** — the worker has already persisted any state changes by the time the corresponding `transform_applied` / `column_renamed` / `row_added` / etc. event lands. Per-turn assertions then GET `/api/datasets/{id}` for table-state checks (AC1.4 invariants).
+
+> **Revised 2026-05-07 (epic `dc-wcy`)**: the harness module was decomposed in place — **all classes inline in `harness.py`**, no new files (Mayor scope override). Above the facade, in order, sit (1) four mapper dataclasses (`ChatEventTrace`, `TableState`, `SessionState`, `TransformRecord`), (2) the module-level mappers + `bearer()` helper, (3) seven per-API wrapper classes (`AuthApi`, `ProjectsApi`, `UploadsApi`, `DatasetsApi`, `SessionsApi`, `TransformsApi`, `ChatApi.send_turn`), and finally (4) `DatasetLayerHarness` itself, which composes the wrappers via DI and keeps the retry-with-rephrase loop + AC1.4 guard at the facade layer. The public surface listed above is unchanged; back-compat re-exports (`parse_chat_event_frames`, `fetch_dev_user_jwt`, `mint_pat`, `revoke_pat`, `required_env_or_skip_reason`, `TableState`, `ChatEventTrace`) remain importable from the harness module. See the harness refactor evolution doc for the per-phase rationale and bead trail.
 
 ### Why not the alternatives
 

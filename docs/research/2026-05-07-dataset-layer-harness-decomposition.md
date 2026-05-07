@@ -3,8 +3,8 @@
 **Date:** 2026-05-07
 **Author:** dave (crew, dashboard_chat)
 **Audience:** Mayor (decision-maker)
-**Status:** Research input — design lives in
-[`docs/feature/refactor-dataset-layer-harness/design/design.md`](../feature/refactor-dataset-layer-harness/design/design.md)
+**Status:** Research input — design and shipped outcome are recorded in
+[`docs/evolution/2026-05-07-refactor-dataset-layer-harness.md`](../evolution/2026-05-07-refactor-dataset-layer-harness.md). The original design doc (per-module file layout, since superseded by Mayor's inline-only scope override) is preserved in git history at commit `981008f`.
 **Baseline:** `origin/main` @ `f9465a8` (after `dc-9u1` test pre-assertions, `dc-v5u`
 `row_count`, and `dc-u43` compose URL fix landed)
 **Supersedes:** the stale roadmap previously filed under `dc-4dp` ("single
@@ -377,11 +377,13 @@ phase boundary is the safety net.
 
 ## 10. Hand-off
 
-- Design lives in
-  [`docs/feature/refactor-dataset-layer-harness/design/design.md`](../feature/refactor-dataset-layer-harness/design/design.md).
-- Mayor reviews → answers open questions → invokes `/nw-roadmap` per phase
-  (mirroring the Stream.io epic shape) → polecat executes via `/nw-deliver`
-  per phase.
+- Shipped outcome is recorded in
+  [`docs/evolution/2026-05-07-refactor-dataset-layer-harness.md`](../evolution/2026-05-07-refactor-dataset-layer-harness.md);
+  the original DESIGN-wave artifact (per-module file layout, superseded by Mayor's
+  inline-only scope override) is preserved in git at commit `981008f`.
+- Delivery shape: Mayor reviewed → answered open questions → opened bead epic
+  `dc-wcy` (one bead per phase, mirroring the Stream.io epic shape) → polecats
+  executed via `/nw-deliver` per phase.
 
 ---
 
