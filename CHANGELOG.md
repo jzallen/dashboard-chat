@@ -1,3 +1,15 @@
+# [1.14.0](https://github.com/jzallen/dashboard-chat/compare/v1.13.0...v1.14.0) (2026-05-07)
+
+
+### Bug Fixes
+
+* **compose:** hardcode container-internal URLs (dc-u43) ([d196383](https://github.com/jzallen/dashboard-chat/commit/d1963836d991735bd25ece5dcffb5af19c9c5b68))
+
+
+### Features
+
+* **backend:** expose dataset row_count on GET response (dc-v5u) ([4e3f785](https://github.com/jzallen/dashboard-chat/commit/4e3f785b4ca0d1e3cfe8deceff9a416c27874e0a))
+
 # [1.13.0](https://github.com/jzallen/dashboard-chat/compare/v1.12.0...v1.13.0) (2026-05-07)
 
 
