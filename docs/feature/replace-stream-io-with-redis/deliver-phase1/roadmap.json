@@ -1,0 +1,56 @@
+{
+  "roadmap": {
+    "project_id": "replace-stream-io-with-redis-phase1",
+    "created_at": "2026-05-07T07:05:00Z",
+    "total_steps": 1,
+    "feature_description": "Phase 1: delete Stream.io tier from SessionEventReader dispatch.",
+    "design_reference": "docs/feature/replace-stream-io-with-redis/design/design.md §3 Phase 1",
+    "bead": "dc-1ng",
+    "validation": {
+      "status": "approved",
+      "approved_by": "mayor (via bead dc-1ng)",
+      "rationale": "Single-bead cohesive deletion; sub-decomposition would split interlocked changes."
+    }
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Delete Stream.io tier from SessionEventReader dispatch",
+      "description": "Tests-first deletion of the Stream.io adapter and supporting settings/dep, per design §3 Phase 1.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Remove Stream.io adapter and settings",
+          "description": "Tests-first deletion. Update dispatch test (RED). Delete stream_io adapter, _build_stream_io, tier-1 in _classify, three Stream.io settings, stream-chat dep. Regen uv.lock.",
+          "criteria": [
+            "grep -ri 'stream[-_](io|chat)' backend/app/use_cases/session/ backend/app/config.py backend/pyproject.toml returns zero hits",
+            "uv run pytest backend/tests/use_cases/session/test_event_replay_dispatch.py is GREEN with stream_io tests deleted",
+            "ReaderKind in event_replay_dispatch.py is exactly Literal['redis', 'noop']; _classify has no tier-1 branch",
+            "stream_io_session_event_reader.py and its test module no longer exist",
+            "backend/uv.lock regenerated via `uv lock` and contains no stream-chat entries"
+          ],
+          "agent": "nw-software-crafter",
+          "test_file": "backend/tests/use_cases/session/test_event_replay_dispatch.py",
+          "scenario_name": "SessionEventReader dispatch — Redis-only after Phase 1",
+          "files_to_modify": [
+            "backend/tests/use_cases/session/test_event_replay_dispatch.py",
+            "backend/app/use_cases/session/event_replay_dispatch.py",
+            "backend/app/use_cases/session/stream_io_session_event_reader.py",
+            "backend/tests/use_cases/session/test_stream_io_session_event_reader.py",
+            "backend/app/config.py",
+            "backend/pyproject.toml",
+            "backend/uv.lock"
+          ],
+          "implementation_notes": [
+            "Order strict: update tests FIRST (RED) before deleting production symbols. The test module currently imports StreamIoSessionEventReader from the soon-to-be-deleted module — that import is the first thing to remove from the test file.",
+            "_settings(stream_api_key=..., stream_api_secret=...) helper at line 39 currently passes those kwargs to Settings(...). Once config.py drops those fields, those kwargs will raise. Update the helper to drop the deleted kwargs and only accept redis_url.",
+            "Pydantic Settings has extra='ignore' (config.py:15); leftover STREAM_API_KEY in operator .env files is silently ignored — no startup crash.",
+            "DO NOT touch backend/app/routers/stream_token.py, backend/tests/integration/test_stream_token.py, docker-compose.yml, identity_steps.py, or ADR docs — Phase 2/3/4 scope. The router still imports from stream_chat, so the @pip//stream_chat Bazel dep at backend/BUILD.bazel:151 must STAY for Phase 1.",
+            "After deleting the dep from pyproject.toml, run `cd backend && uv lock` to regenerate the lock from clean state. Do NOT hand-edit uv.lock.",
+            "Quality gates: `cd backend && uv run pytest tests/use_cases/session/` GREEN, `ruff check app/` GREEN, `uv lock --check` GREEN."
+          ]
+        }
+      ]
+    }
+  ]
+}
