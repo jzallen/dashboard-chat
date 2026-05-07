@@ -1,0 +1,59 @@
+{
+  "roadmap": {
+    "project_id": "replace-stream-io-with-redis-phase2",
+    "created_at": "2026-05-07T10:10:00Z",
+    "total_steps": 1,
+    "feature_description": "Phase 2: delete Stream.io token router and remove STREAM_API_* env vars from compose.",
+    "design_reference": "docs/feature/replace-stream-io-with-redis/design/design.md §3 Phase 2 (Mayor decision: Option 2a — delete the router)",
+    "bead": "dc-5u9",
+    "validation": {
+      "status": "approved",
+      "approved_by": "mayor (via bead dc-5u9 + answer to design §7 Q1)",
+      "rationale": "Single-bead cohesive cleanup. Phase 1 (dc-1ng) already merged the settings the router reads, so the router crashes at import today — must land as one tested unit."
+    }
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Delete Stream.io token router and compose env wiring",
+      "description": "Mechanical deletion of the stream_token router, its integration test, its main.py + routers/__init__.py wiring, the agent and worker STREAM_API_KEY/STREAM_API_SECRET compose vars, and the Stream.io clause in the replay-idempotency skip condition. Per design §3 Phase 2 with Option 2a.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Remove stream_token router + compose env vars",
+          "description": "Delete the stream_token router module, its integration test, and its wiring in main.py + routers/__init__.py. Strip STREAM_API_KEY/SECRET from agent and worker services in docker-compose.yml. Reword the comment block at compose line 116. Drop the STREAM_API_KEY+SECRET clause from the replay-idempotency skip condition.",
+          "criteria": [
+            "grep -ri 'STREAM_API' docker-compose.yml returns zero hits",
+            "grep -ri 'stream_token' backend/ returns zero hits",
+            "grep -i 'stream_token' backend/app/main.py backend/app/routers/__init__.py returns zero hits",
+            "backend/app/routers/stream_token.py and backend/tests/integration/test_stream_token.py no longer exist",
+            "backend/tests/integration/dataset_layer/test_replay_idempotency.py skip condition references only REDIS_URL, not STREAM_API_KEY/SECRET",
+            "cd backend && uv run pytest is GREEN",
+            "docker compose config -q is clean (no missing-env-var warnings)",
+            "PR description includes the StreamProvider degeneracy note (per design §7 Q5)"
+          ],
+          "agent": "nw-software-crafter",
+          "test_file": "backend/tests/integration/dataset_layer/test_replay_idempotency.py",
+          "scenario_name": "Replay idempotency — Redis-only skip condition after Phase 2",
+          "files_to_modify": [
+            "docker-compose.yml",
+            "backend/app/main.py",
+            "backend/app/routers/__init__.py",
+            "backend/app/routers/stream_token.py",
+            "backend/tests/integration/test_stream_token.py",
+            "backend/tests/integration/dataset_layer/test_replay_idempotency.py"
+          ],
+          "implementation_notes": [
+            "RED-first ordering: edit backend/tests/integration/dataset_layer/test_replay_idempotency.py to drop the STREAM_API_KEY+SECRET clause from the skip condition (lines ~99-118). The test imports/uses the skip; tightening the skip is the RED step that exposes any drift. After that, the deletion of test_stream_token.py and the router file is symmetric — delete the test FIRST, then the production module it covers.",
+            "Order of deletions inside backend/app/main.py: drop the `from .routers import ... stream_token_router` from the import block at line 28 AND the `app.include_router(stream_token_router)` line at 144. Run `cd backend && uv run pytest tests/integration/` — the import-time crash from Phase 1 (router reads settings.stream_api_key which Phase 1 removed) goes away as soon as both are gone.",
+            "Order of deletions inside backend/app/routers/__init__.py: drop the import (line 12) AND the entry in `__all__` (line 27). Both must go together or `from .routers import *` callers break.",
+            "docker-compose.yml actual layout (verified): line 117-121 holds the redis-service header comment that mentions 'Selected when STREAM_API_KEY is not configured' — reword to drop the STREAM_API_KEY mention and just describe Redis as the durable replay-event log. Lines 188-189 (api service) and 247-248 (api-full service) hold the STREAM_API_KEY/STREAM_API_SECRET assignments — delete both pairs. Lines 190-193 in the api service contain the ADR-017 dispatch explanation comment referencing STREAM_API_KEY+SECRET — rewrite to drop the deleted vars (just note REDIS_URL is hardcoded for compose, dc-u43). The bead text mentions 'agent' and 'worker' services but the actual services holding STREAM_API_* are 'api' and 'api-full'; the agent + worker services do not carry these vars (verified by grep).",
+            "Quality gates: `cd backend && uv run pytest tests/integration/` GREEN, `ruff check app/` GREEN, `docker compose config -q` no warnings, `grep -ri 'STREAM_API' docker-compose.yml` empty, `grep -ri 'stream_token' backend/` empty.",
+            "OUT OF SCOPE: do NOT touch backend/app/use_cases/session/* (Phase 1 territory, already merged), tests/acceptance/log-image-identity-on-startup/steps/identity_steps.py:118 (Phase 3), or any ADR docs (Phase 4). Frontend chat UI also stays.",
+            "PR description requirement: include a note that StreamProvider.tsx:71 now returns {children} 100% of the time in dev — same as today's working state, but now permanent. Mayor flagged this as a frontend-team coordination signal."
+          ]
+        }
+      ]
+    }
+  ]
+}

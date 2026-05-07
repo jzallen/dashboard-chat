@@ -1,0 +1,5 @@
+{
+  "schema_version": "3.0",
+  "feature_id": "replace-stream-io-with-redis-phase2",
+  "events": []
+}
