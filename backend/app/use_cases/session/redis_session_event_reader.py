@@ -1,11 +1,11 @@
-"""Redis-backed SessionEventReader (Epic F.2 — ADR-017).
+"""Redis-backed SessionEventReader (Epic F.2 — ADR-018 (supersedes ADR-017)).
 
 Reads DomainEvents off a Redis Stream keyed by the session's stream_thread_id.
 The TS-side `RedisThreadPersister` writes via `XADD`; this reader uses
 `XRANGE` to retrieve them.
 
 Cursor format: a Redis stream entry id (e.g., `1735689600000-0`). Opaque to
-callers per the ADR-017 contract — they pass it back unchanged.
+callers per the ADR-018 (supersedes ADR-017) contract — they pass it back unchanged.
 
 Strictly-after semantics: Redis `XRANGE key (cursor +` excludes the boundary
 entry, so `since=cursor` returns events strictly after `cursor` without an

@@ -1,7 +1,7 @@
 /**
  * Capability-presence dispatch for PresentationStateLog (Epic F.3 / ADR-015).
  *
- * Mirrors `threadPersisterDispatch.ts` (ADR-017): the presence of REDIS_URL
+ * Mirrors `threadPersisterDispatch.ts` (ADR-018 (supersedes ADR-017)): the presence of REDIS_URL
  * picks the Redis-backed log; absence falls back to InProcessPresentationStateLog
  * for dev-single-replica use only. The two dispatch helpers share the same
  * env shape on purpose — the agent's chat handler and the
@@ -9,7 +9,7 @@
  * we want both adapters keyed on the same capability variable so a deployment
  * can't end up with one half durable and the other half ephemeral.
  *
- * Forbidden: branching on NODE_ENV / APP_ENV / ENV (ADR-017).
+ * Forbidden: branching on NODE_ENV / APP_ENV / ENV (ADR-018 (supersedes ADR-017)).
  */
 
 import { Redis } from "ioredis";

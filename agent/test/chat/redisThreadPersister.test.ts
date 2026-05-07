@@ -1,5 +1,5 @@
 /**
- * Tests for RedisThreadPersister (Epic F.2 — ADR-017).
+ * Tests for RedisThreadPersister (Epic F.2 — ADR-018 (supersedes ADR-017)).
  *
  * Uses ioredis-mock so the suite has no docker dependency. The cross-language
  * compose-runnable smoke test in

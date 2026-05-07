@@ -1,5 +1,5 @@
 /**
- * Capability-presence dispatch for `ThreadEventPersister` (Epic F.2 — ADR-017).
+ * Capability-presence dispatch for `ThreadEventPersister` (Epic F.2 — ADR-018 (supersedes ADR-017)).
  *
  * Mirrors the Python-side
  * `backend/app/use_cases/session/event_replay_dispatch.py`. The matching
@@ -7,7 +7,7 @@
  * the only non-noop option is Redis.
  *
  * Forbidden: branching on `NODE_ENV` / `APP_ENV` / etc. The presence of the
- * connection variable is the single source of truth (ADR-017).
+ * connection variable is the single source of truth (ADR-018 (supersedes ADR-017)).
  */
 
 import { Redis } from "ioredis";

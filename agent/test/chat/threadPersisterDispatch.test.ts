@@ -1,5 +1,5 @@
 /**
- * Tests for the agent-side persister dispatch helper (ADR-017).
+ * Tests for the agent-side persister dispatch helper (ADR-018 (supersedes ADR-017)).
  *
  * Pins the capability-presence routing rule: REDIS_URL set → Redis;
  * otherwise → noop. Mirrors the Python-side
@@ -31,7 +31,7 @@ describe("selectThreadPersister", () => {
     expect(result.persister).toBeInstanceOf(RedisThreadPersister);
   });
 
-  it("does not branch on NODE_ENV (ADR-017 prohibition)", () => {
+  it("does not branch on NODE_ENV (ADR-018 (supersedes ADR-017) prohibition)", () => {
     // Encoding the prohibition as a test: the dispatch helper accepts only
     // capability vars in its env type. If a future refactor adds NODE_ENV
     // branching, it would have to widen the input type — TypeScript would

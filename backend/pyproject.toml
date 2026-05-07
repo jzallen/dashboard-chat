@@ -41,7 +41,7 @@ dependencies = [
     "fhir.resources>=7.1.0",
     # Password hashing for external SQL access
     "bcrypt>=4.0.0",
-    # Redis client for SessionEventReader (Epic F.2 — ADR-017)
+    # Redis client for SessionEventReader (Epic F.2 — ADR-018 (supersedes ADR-017))
     "redis>=5.0.0",
 ]
 

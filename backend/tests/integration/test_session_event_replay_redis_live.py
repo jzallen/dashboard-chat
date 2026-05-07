@@ -116,7 +116,7 @@ class TestRedisAcceptanceGate:
     async def test_strictly_after_cursor_against_real_redis(self, redis_client, thread_id, cleanup_thread):
         """Pin the boundary the bead description called out as previously
         unpinned. Run against a real Redis so fakeredis behavior is verified
-        against the server. (ADR-017 cursor opacity + strictly-after.)"""
+        against the server. (ADR-018 (supersedes ADR-017) cursor opacity + strictly-after.)"""
         ids = await _persist_like_worker(
             redis_client,
             thread_id,

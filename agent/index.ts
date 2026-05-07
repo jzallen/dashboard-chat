@@ -55,7 +55,7 @@ const GROQ_TEMPERATURE = (() => {
   return parsed;
 })();
 
-// Wire ThreadEventPersister via capability-presence dispatch (ADR-017).
+// Wire ThreadEventPersister via capability-presence dispatch (ADR-018 (supersedes ADR-017)).
 // Logs the choice once at startup; no NODE_ENV branching.
 const { persister: threadPersister, kind: threadPersisterKind } = selectThreadPersister({
   REDIS_URL: process.env.REDIS_URL,

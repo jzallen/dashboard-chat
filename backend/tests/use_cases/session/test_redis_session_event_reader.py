@@ -1,6 +1,6 @@
-"""Tests for RedisSessionEventReader (Epic F.2 — ADR-017).
+"""Tests for RedisSessionEventReader (Epic F.2 — ADR-018 (supersedes ADR-017)).
 
-Pins the cursor contract documented at event_replay.py:64-69 and ADR-017:
+Pins the cursor contract documented at event_replay.py:64-69 and ADR-018 (supersedes ADR-017):
   - `since=None` → from the beginning.
   - `since=<cursor>` → events strictly after `<cursor>`.
   - `next_cursor=None` ⟺ no more events as of the read.
@@ -71,7 +71,7 @@ class TestSingleSession:
         assert page.next_cursor is None  # tail consumed
 
     async def test_strictly_after_cursor_excludes_boundary(self, reader, redis_client):
-        """ADR-017: `since=<cursor>` returns events strictly after `<cursor>`.
+        """ADR-018 (supersedes ADR-017): `since=<cursor>` returns events strictly after `<cursor>`.
 
         This is the boundary the bead description called out as previously
         unpinned — `event_replay.py:64-69` says 'strictly after' but Phase 1

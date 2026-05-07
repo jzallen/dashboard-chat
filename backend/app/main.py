@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
 
             await seed_default_query_engine_node(session, DEV_USER.org_id)
 
-    # Wire the SessionEventReader (ADR-017): Stream.io if creds present,
+    # Wire the SessionEventReader (ADR-018 (supersedes ADR-017)): Stream.io if creds present,
     # Redis if REDIS_URL set, else noop. Logs the choice once.
     install_session_event_reader(settings)
 

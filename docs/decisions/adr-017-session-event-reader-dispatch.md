@@ -1,6 +1,6 @@
 # ADR-017: SessionEventReader dispatch — Redis-default, Stream.io-optional
 
-**Status:** Ratified
+**Status:** Superseded by ADR-018
 **Date:** 2026-05-01
 **Originating wave:** Phase 2 DESIGN — Epic F (multi-replica readiness)
 **Bead:** `dc-qj9.1.2` (F.2 — Stream.io adapter through Python backend)

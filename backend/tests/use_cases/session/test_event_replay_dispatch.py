@@ -1,10 +1,10 @@
-"""Tests for the SessionEventReader dispatch helper (Epic F.2 — ADR-017).
+"""Tests for the SessionEventReader dispatch helper (Epic F.2 — ADR-018 (supersedes ADR-017)).
 
 Pins the capability-presence routing rule (post Stream.io deletion):
   REDIS_URL set → redis
   unset         → noop
 
-ENV-name-based dispatch (NODE_ENV / APP_ENV / etc.) is forbidden by ADR-017;
+ENV-name-based dispatch (NODE_ENV / APP_ENV / etc.) is forbidden by ADR-018 (supersedes ADR-017);
 these tests would be the first place a regression toward env-keying would
 break. We don't add a negative test for "ENV setting changes the result"
 because the helper has no `ENV` knob and never reads one — encoding "we

@@ -1,4 +1,4 @@
-"""Capability-presence dispatch for SessionEventReader (Epic F.2 — ADR-017).
+"""Capability-presence dispatch for SessionEventReader (Epic F.2 — ADR-018 (supersedes ADR-017)).
 
 At process startup, `select_session_event_reader` inspects which capability
 env vars are configured and returns the matching adapter:
@@ -10,7 +10,7 @@ The decision is logged once at INFO so an operator can confirm at startup
 which adapter is live.
 
 Forbidden: branching on `ENV`, `APP_ENV`, `NODE_ENV`, etc. The presence of
-the connection variable is the single source of truth (see ADR-017
+the connection variable is the single source of truth (see ADR-018 (supersedes ADR-017)
 "Prohibited: NODE_ENV / ENV-keyed dispatch").
 
 Note: a Stream.io tier was removed in Phase 1 of the Stream.io → Redis

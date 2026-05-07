@@ -102,7 +102,7 @@ noop_session_event_reader: SessionEventReader = _NoopSessionEventReader()
 # Active reader for the running process. The dispatch helper
 # (`event_replay_dispatch.install_session_event_reader`) replaces this with
 # the Redis or Stream.io adapter at startup based on env capabilities (per
-# ADR-017). Stays as the noop until installation, so test contexts that
+# ADR-018 (supersedes ADR-017)). Stays as the noop until installation, so test contexts that
 # never trigger startup wiring see the documented default.
 _active_reader: SessionEventReader = noop_session_event_reader
 

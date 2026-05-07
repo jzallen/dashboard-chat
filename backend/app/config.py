@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     mirth_connect_api_key: str = ""
     mirth_connect_timeout: int = 60
 
-    # Redis — durable replay log for SessionEventReader (ADR-017).
+    # Redis — durable replay log for SessionEventReader (ADR-018 (supersedes ADR-017)).
     redis_url: str = ""
 
     # App info

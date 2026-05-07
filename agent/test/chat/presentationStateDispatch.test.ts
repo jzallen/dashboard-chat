@@ -33,7 +33,7 @@ describe("selectPresentationStateLog", () => {
     expect(result.log).toBeInstanceOf(RedisPresentationStateLog);
   });
 
-  it("does not branch on NODE_ENV (ADR-017 prohibition; mirrored for F.3)", () => {
+  it("does not branch on NODE_ENV (ADR-018 (supersedes ADR-017) prohibition; mirrored for F.3)", () => {
     // Encoding the prohibition as a test: the dispatch helper accepts only
     // capability vars in its env type. If a future refactor adds NODE_ENV
     // branching it would have to widen the input type — TypeScript would

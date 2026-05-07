@@ -32,7 +32,7 @@ interface Env {
   presentationStateLog?: PresentationStateLog;
   /**
    * DomainEvent persister selected at startup by `selectThreadPersister`
-   * (Epic F.2 — ADR-017). When omitted, `handleChat` falls back to
+   * (Epic F.2 — ADR-018 (supersedes ADR-017)). When omitted, `handleChat` falls back to
    * `noopThreadPersister`, preserving Phase 1 behavior in tests.
    */
   threadPersister?: ThreadEventPersister;

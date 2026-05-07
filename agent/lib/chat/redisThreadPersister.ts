@@ -1,5 +1,5 @@
 /**
- * Redis-backed `ThreadEventPersister` (Epic F.2 — ADR-017).
+ * Redis-backed `ThreadEventPersister` (Epic F.2 — ADR-018 (supersedes ADR-017)).
  *
  * Writes DomainEvents to a Redis Stream keyed by the channel id (the
  * session's `stream_thread_id`). The Python-side `RedisSessionEventReader`
@@ -57,7 +57,7 @@ export class RedisThreadPersister implements ThreadEventPersister {
     }
     const key = streamKey(channelId);
     // Sequential XADD calls — Redis assigns the entry id (`*`), so retries
-    // cause duplicates rather than corrupted entries (per ADR-017
+    // cause duplicates rather than corrupted entries (per ADR-018 (supersedes ADR-017)
     // idempotent-write contract). Sequential rather than pipelined because
     // tight pipelining can collide ms-resolution ids in some mock backends
     // (and a typical batch size is <10 events: pipeline savings are noise).
