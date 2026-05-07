@@ -279,6 +279,20 @@ def _transform_record_to_dict(record: TransformRecord) -> dict[str, Any]:
     }
 
 
+def _session_state_to_dict(state: SessionState) -> dict[str, Any]:
+    """Flatten a ``SessionState`` back to the test-facing ``dict`` shape.
+
+    Mirrors ``_transform_record_to_dict`` for Q1 6.1a: typed fields (``id``,
+    ``stream_thread_id``) plus the ``extra`` forward-compat bag merged flat
+    onto the top level.
+    """
+    return {
+        "id": state.id,
+        "stream_thread_id": state.stream_thread_id,
+        **state.extra,
+    }
+
+
 def to_session_events_page(
     body: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], str | None, bool]:
@@ -546,6 +560,57 @@ class DatasetsApi:
         return to_transform_records(res.json())
 
 
+class SessionsApi:
+    """Backend ``/api/projects/{id}/sessions`` and ``/api/sessions/{id}/events`` wrapper.
+
+    ``create`` posts a new session under a project and returns a typed
+    ``SessionState``. ``list_events`` drains the paged replay endpoint and
+    returns the full event log; events stay as ``dict`` because DomainEvents
+    are heterogeneous and their schema lives in ``shared/chat/events.ts``
+    (design §2.2 / §8.2).
+    """
+
+    def __init__(self, client: httpx.AsyncClient, *, base_url: str, token: str):
+        self._client = client
+        self._base = base_url.rstrip("/")
+        self._token = token
+
+    async def create(self, project_id: str) -> SessionState:
+        res = await self._client.post(
+            f"{self._base}/api/projects/{project_id}/sessions",
+            headers=bearer(self._token, json_body=True),
+            content=json.dumps({}),
+        )
+        res.raise_for_status()
+        return to_session_state(res.json())
+
+    async def list_events(
+        self,
+        session_id: str,
+        *,
+        since: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        cursor = since
+        out: list[dict[str, Any]] = []
+        while True:
+            params: dict[str, str] = {"limit": str(limit)}
+            if cursor:
+                params["since"] = cursor
+            res = await self._client.get(
+                f"{self._base}/api/sessions/{session_id}/events",
+                headers=bearer(self._token),
+                params=params,
+            )
+            res.raise_for_status()
+            page_events, next_cursor, has_more = to_session_events_page(res.json())
+            out.extend(page_events)
+            if not has_more or not next_cursor or next_cursor == cursor:
+                break
+            cursor = next_cursor
+        return out
+
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
@@ -607,6 +672,7 @@ class DatasetLayerHarness:
         self._projects: ProjectsApi | None = None
         self._uploads: UploadsApi | None = None
         self._datasets: DatasetsApi | None = None
+        self._sessions: SessionsApi | None = None
 
     # ----- lifecycle --------------------------------------------------------
 
@@ -616,6 +682,7 @@ class DatasetLayerHarness:
         self._projects = ProjectsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         self._uploads = UploadsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         self._datasets = DatasetsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
+        self._sessions = SessionsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         if self._owns_project:
             self._project_id = await self.create_project(f"dataset-staging-{_new_ulid_suffix()}")
         return self
@@ -631,6 +698,7 @@ class DatasetLayerHarness:
                 self._projects = None
                 self._uploads = None
                 self._datasets = None
+                self._sessions = None
 
     # ----- public API -------------------------------------------------------
 
@@ -753,25 +821,19 @@ class DatasetLayerHarness:
         to). The ``RedisSessionEventReader`` keys its stream by
         ``stream_thread_id``, so the test must pass the same value to
         ``chat_turn(thread_id=...)`` for replay assertions to find anything.
+
+        Per design Q1 6.1a the facade returns ``dict`` to preserve the
+        test-facing surface; the wrapper layer carries ``SessionState``
+        internally.
         """
         target_project = project_id or self._project_id
         if not target_project:
             raise RuntimeError("create_session: no project_id; pass one or initialize the harness with one")
-        client = self._require_client()
-        res = await client.post(
-            f"{self._auth_proxy_url}/api/projects/{target_project}/sessions",
-            headers=self._backend_headers(json_body=True),
-            content=json.dumps({}),
-        )
-        res.raise_for_status()
-        body = res.json()
-        data = unwrap_jsonapi(body)
-        if not isinstance(data, dict) or "id" not in data:
-            raise RuntimeError(f"create_session: unexpected response shape: {body!r}")
-        # Phase 1 (dc-wcy.5): the typed ``to_session_state`` mapper is
-        # introduced + tested; the facade keeps the test-facing ``dict``
-        # surface verbatim. Phase 2 will wire ``SessionState`` through.
-        return data
+        if self._sessions is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        return _session_state_to_dict(await self._sessions.create(target_project))
 
     async def list_session_events(
         self,
@@ -787,25 +849,11 @@ class DatasetLayerHarness:
         a few pages). The replay endpoint filters out UI directives by
         contract — only DomainEvents come back.
         """
-        client = self._require_client()
-        cursor = since
-        out: list[dict[str, Any]] = []
-        while True:
-            params: dict[str, str] = {"limit": str(limit)}
-            if cursor:
-                params["since"] = cursor
-            res = await client.get(
-                f"{self._auth_proxy_url}/api/sessions/{session_id}/events",
-                headers=self._backend_headers(),
-                params=params,
+        if self._sessions is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
             )
-            res.raise_for_status()
-            page_events, next_cursor, has_more = to_session_events_page(res.json())
-            out.extend(page_events)
-            if not has_more or not next_cursor or next_cursor == cursor:
-                break
-            cursor = next_cursor
-        return out
+        return await self._sessions.list_events(session_id, since=since, limit=limit)
 
     async def assert_exactly_once_via_replay(
         self,
