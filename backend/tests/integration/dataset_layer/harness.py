@@ -261,6 +261,24 @@ def to_transform_records(body: dict[str, Any]) -> list[TransformRecord]:
     return records
 
 
+def _transform_record_to_dict(record: TransformRecord) -> dict[str, Any]:
+    """Flatten a ``TransformRecord`` back to the test-facing ``dict`` shape.
+
+    Per design Q1 6.1a the facade preserves ``list[dict]`` for
+    ``list_dataset_transforms``. The wrapper layer returns typed
+    ``TransformRecord``s; this helper merges ``extra`` (non-typed fields like
+    ``target_column``, ``transform_type``, ``name`` surfaced by the backend)
+    back onto the top level so existing callers keep working unchanged.
+    """
+    return {
+        "id": record.id,
+        "kind": record.kind,
+        "params": record.params,
+        "created_at": record.created_at,
+        **record.extra,
+    }
+
+
 def to_session_events_page(
     body: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], str | None, bool]:
@@ -495,6 +513,39 @@ class UploadsApi:
         return to_dataset_id(res.json())
 
 
+class DatasetsApi:
+    """Backend ``/api/datasets/{id}`` wrapper (design §2.2).
+
+    Two read-only entry points: ``get_table_state`` (preview + columns +
+    row_count) and ``list_transforms`` (the persisted transform log). Both
+    return typed domain carriers; the facade re-wraps to ``dict`` /
+    ``list[dict]`` at the test-facing boundary (Q1 6.1a).
+    """
+
+    def __init__(self, client: httpx.AsyncClient, *, base_url: str, token: str):
+        self._client = client
+        self._base = base_url.rstrip("/")
+        self._token = token
+
+    async def get_table_state(self, dataset_id: str, *, preview_limit: int = 100) -> TableState:
+        res = await self._client.get(
+            f"{self._base}/api/datasets/{dataset_id}",
+            headers=bearer(self._token),
+            params={"include_preview": "true", "preview_limit": str(preview_limit)},
+        )
+        res.raise_for_status()
+        return to_table_state(res.json(), dataset_id)
+
+    async def list_transforms(self, dataset_id: str) -> list[TransformRecord]:
+        res = await self._client.get(
+            f"{self._base}/api/datasets/{dataset_id}",
+            headers=bearer(self._token),
+            params={"include_transforms": "true"},
+        )
+        res.raise_for_status()
+        return to_transform_records(res.json())
+
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
@@ -555,6 +606,7 @@ class DatasetLayerHarness:
         # Wrappers built lazily in __aenter__ once the client exists (design §2.2).
         self._projects: ProjectsApi | None = None
         self._uploads: UploadsApi | None = None
+        self._datasets: DatasetsApi | None = None
 
     # ----- lifecycle --------------------------------------------------------
 
@@ -563,6 +615,7 @@ class DatasetLayerHarness:
         backend_token = self._pat or self._user_jwt
         self._projects = ProjectsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         self._uploads = UploadsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
+        self._datasets = DatasetsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         if self._owns_project:
             self._project_id = await self.create_project(f"dataset-staging-{_new_ulid_suffix()}")
         return self
@@ -577,6 +630,7 @@ class DatasetLayerHarness:
                 self._client = None
                 self._projects = None
                 self._uploads = None
+                self._datasets = None
 
     # ----- public API -------------------------------------------------------
 
@@ -653,14 +707,11 @@ class DatasetLayerHarness:
         raise last_error
 
     async def get_table_state(self, dataset_id: str, *, preview_limit: int = 100) -> TableState:
-        client = self._require_client()
-        res = await client.get(
-            f"{self._auth_proxy_url}/api/datasets/{dataset_id}",
-            headers=self._backend_headers(),
-            params={"include_preview": "true", "preview_limit": str(preview_limit)},
-        )
-        res.raise_for_status()
-        return to_table_state(res.json(), dataset_id)
+        if self._datasets is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        return await self._datasets.get_table_state(dataset_id, preview_limit=preview_limit)
 
     async def assert_distinct_values(self, dataset_id: str, column: str, expected: set[str]) -> None:
         state = await self.get_table_state(dataset_id, preview_limit=100)
@@ -839,20 +890,19 @@ class DatasetLayerHarness:
         """Return the dataset's persisted transforms via GET /api/datasets/{id}.
 
         Used by G.2 to verify that an idempotent retry did not actually
-        create a duplicate row in the metadata store.
+        create a duplicate row in the metadata store. Per design Q1 6.1a the
+        facade returns ``list[dict]`` (asdict at the boundary) so test
+        consumers see the same shape they had before Phase 2 wired
+        ``TransformRecord`` through the wrapper layer. Each dict carries the
+        record's typed fields plus the ``extra`` forward-compat bag merged
+        flat onto the top level.
         """
-        client = self._require_client()
-        res = await client.get(
-            f"{self._auth_proxy_url}/api/datasets/{dataset_id}",
-            headers=self._backend_headers(),
-            params={"include_transforms": "true"},
-        )
-        res.raise_for_status()
-        data = unwrap_jsonapi(res.json())
-        # Phase 1 (dc-wcy.5): the typed ``to_transform_records`` mapper is
-        # introduced + tested; the facade keeps the test-facing ``list[dict]``
-        # surface verbatim. Phase 2 will wire ``TransformRecord`` through.
-        return list(data.get("transforms") or [])
+        if self._datasets is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        records = await self._datasets.list_transforms(dataset_id)
+        return [_transform_record_to_dict(r) for r in records]
 
     # ----- internals --------------------------------------------------------
 
