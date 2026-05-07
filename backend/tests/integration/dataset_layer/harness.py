@@ -43,13 +43,23 @@ import os
 import secrets
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, NewType
 
 import httpx
 
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
+#
+# Phase 1 (dc-wcy.5) introduces the typed identifier aliases and the new
+# ``SessionState`` / ``TransformRecord`` data carriers inline per Mayor's scope
+# override (no new files). The pre-existing ``TableState`` and
+# ``ChatEventTrace`` remain unchanged. See ``docs/feature/refactor-dataset-
+# layer-harness/design/design.md`` §2.2.
+
+ProjectId = NewType("ProjectId", str)
+DatasetId = NewType("DatasetId", str)
+SessionId = NewType("SessionId", str)
 
 
 @dataclasses.dataclass
@@ -82,6 +92,188 @@ class TableState:
             if c.get("name") == column or c.get("id") == column:
                 return c.get("type")
         return None
+
+
+@dataclasses.dataclass(frozen=True)
+class SessionState:
+    """Typed view of a session resource returned by ``POST /api/projects/{id}/sessions``.
+
+    ``id`` is the session id used for ``GET /api/sessions/{id}/events``;
+    ``stream_thread_id`` is the worker thread id the agent persists to (the
+    ``RedisSessionEventReader`` keys its stream by it). Non-essential fields
+    survive in ``extra`` for forward-compat without re-typing every backend
+    addition here.
+    """
+
+    id: str
+    stream_thread_id: str
+    extra: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+
+@dataclasses.dataclass(frozen=True)
+class TransformRecord:
+    """Typed view of one entry in ``GET /api/datasets/{id}?include_transforms=true``.
+
+    Fields mirror the bead's typed-mapper design (§2.2). ``created_at`` is
+    optional because the backend surfaces it inconsistently. Non-essential
+    fields survive in ``extra`` for forward-compat.
+    """
+
+    id: str
+    kind: str
+    params: dict[str, Any]
+    created_at: str | None = None
+    extra: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# HTTP helpers (dc-wcy.5 — inline per Mayor scope override)
+# ---------------------------------------------------------------------------
+#
+# Single-purpose Bearer-header builder used by the harness's ``_backend_headers``
+# / ``_agent_headers`` and (in Phase 2) by the per-API wrapper classes. Centralizing
+# this here avoids the same ``{"Authorization": f"Bearer {token}"}`` literal
+# scattered across each future wrapper's constructor. Design ref §3.1.
+
+
+def bearer(token: str, *, json_body: bool = False) -> dict[str, str]:
+    """Return a fresh dict with ``Authorization: Bearer <token>``.
+
+    When ``json_body=True`` also sets ``Content-Type: application/json`` for
+    request bodies. Each call returns a new dict so callers may safely mutate
+    (e.g. to add ``Idempotency-Key``).
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    if json_body:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
+# ---------------------------------------------------------------------------
+# Mappers (dc-wcy.5 — inline per Mayor scope override; design §2.2)
+# ---------------------------------------------------------------------------
+#
+# Tolerant unwrappers that translate raw backend JSON bodies into the typed
+# data carriers above. These are pure functions: no HTTP, no I/O, no shared
+# state. They live inline in this module for Phase 1; Phase 2 will lift them
+# into per-API wrapper classes.
+
+
+def unwrap_jsonapi(body: Any) -> dict[str, Any]:
+    """Flatten a JSON:API single-resource envelope to ``{id, **attributes}``.
+
+    Tolerates already-flat responses: if ``data`` isn't a JSON:API resource
+    object (no ``attributes`` field), returns it unchanged. Older endpoints
+    that don't envelope at all also pass through. Non-dict bodies (or a
+    non-dict ``data`` entry, e.g. a JSON:API collection) return ``{}`` so
+    downstream mappers can defensively ``body.get(...)``.
+    """
+    if not isinstance(body, dict):
+        return {}
+    data = body.get("data", body)
+    if isinstance(data, dict) and isinstance(data.get("attributes"), dict):
+        return {"id": data.get("id"), **data["attributes"]}
+    return data if isinstance(data, dict) else {}
+
+
+def to_project_id(body: dict[str, Any]) -> ProjectId:
+    """Extract the project id from ``POST /api/projects`` response.
+
+    Tolerates both flat ``{id, ...}`` and ``{data: {id, ...}}`` shapes.
+    """
+    if isinstance(body.get("data"), dict):
+        body = body["data"]
+    pid = body.get("id")
+    if not isinstance(pid, str):
+        raise RuntimeError(f"create_project: no id in response body: {body!r}")
+    return ProjectId(pid)
+
+
+def to_dataset_id(body: dict[str, Any]) -> DatasetId:
+    """Extract the dataset id from ``POST /api/uploads`` response.
+
+    Prefers ``id`` over the legacy ``dataset_id`` field; tolerates ``data``
+    envelope.
+    """
+    if isinstance(body.get("data"), dict):
+        body = body["data"]
+    did = body.get("id") or body.get("dataset_id")
+    if not isinstance(did, str):
+        raise RuntimeError(f"upload_csv: no dataset id in response body: {body!r}")
+    return DatasetId(did)
+
+
+def to_table_state(body: dict[str, Any], dataset_id: str) -> TableState:
+    """Build a ``TableState`` from ``GET /api/datasets/{id}?include_preview=true``.
+
+    Tolerates JSON:API envelopes, the legacy ``preview_rows`` alias, columns
+    nested under ``schema.columns``, and missing row counts (falls back to
+    ``rows`` and finally ``len(preview)``).
+    """
+    data = unwrap_jsonapi(body)
+    preview = data.get("preview") or data.get("preview_rows") or []
+    columns = data.get("columns") or data.get("schema", {}).get("columns") or []
+    row_count = data.get("row_count") or data.get("rows") or len(preview)
+    return TableState(
+        dataset_id=dataset_id,
+        row_count=int(row_count) if row_count is not None else 0,
+        columns=columns,
+        preview=preview,
+    )
+
+
+def to_session_state(body: dict[str, Any]) -> SessionState:
+    """Build a ``SessionState`` from ``POST /api/projects/{id}/sessions`` response.
+
+    Surfaces ``id`` and ``stream_thread_id`` as typed fields and stashes
+    everything else in ``extra``.
+    """
+    data = unwrap_jsonapi(body)
+    sid = data.get("id")
+    if not isinstance(sid, str):
+        raise RuntimeError(f"create_session: no id in response body: {body!r}")
+    stream_thread_id = data.get("stream_thread_id") or ""
+    extra = {k: v for k, v in data.items() if k not in ("id", "stream_thread_id")}
+    return SessionState(id=sid, stream_thread_id=stream_thread_id, extra=extra)
+
+
+def to_transform_records(body: dict[str, Any]) -> list[TransformRecord]:
+    """Build typed transform records from ``GET /api/datasets/{id}?include_transforms=true``.
+
+    Returns ``[]`` when no transforms are present. Each record's non-essential
+    fields land in ``extra``.
+    """
+    data = unwrap_jsonapi(body)
+    raw = data.get("transforms") or []
+    records: list[TransformRecord] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        records.append(
+            TransformRecord(
+                id=str(item.get("id", "")),
+                kind=str(item.get("kind", "")),
+                params=dict(item.get("params") or {}),
+                created_at=item.get("created_at") if isinstance(item.get("created_at"), str) else None,
+                extra={k: v for k, v in item.items() if k not in ("id", "kind", "params", "created_at")},
+            ),
+        )
+    return records
+
+
+def to_session_events_page(
+    body: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str | None, bool]:
+    """Decompose one page of ``GET /api/sessions/{id}/events`` into (events, cursor, has_more).
+
+    Events stay as ``dict`` because DomainEvents are heterogeneous and their
+    schema lives in ``shared/chat/events.ts`` — out of scope to retype here
+    (design §2.2 / §8.2).
+    """
+    events = body.get("events") or []
+    next_cursor = body.get("next_cursor") if isinstance(body.get("next_cursor"), str) else None
+    has_more = bool(body.get("has_more"))
+    return list(events), next_cursor, has_more
 
 
 # ---------------------------------------------------------------------------
@@ -256,8 +448,7 @@ class DatasetLayerHarness:
             content=json.dumps({"name": name}),
         )
         res.raise_for_status()
-        body = res.json()
-        return _project_id_from_response(body)
+        return to_project_id(res.json())
 
     async def upload_csv(self, csv_path: str | Path, project_id: str | None = None) -> str:
         """Upload a CSV via the backend ``/api/uploads`` endpoint; return dataset_id."""
@@ -275,8 +466,7 @@ class DatasetLayerHarness:
             data={"project_id": target_project},
         )
         res.raise_for_status()
-        body = res.json()
-        return _dataset_id_from_response(body)
+        return to_dataset_id(res.json())
 
     async def chat_turn(
         self,
@@ -339,16 +529,7 @@ class DatasetLayerHarness:
             params={"include_preview": "true", "preview_limit": str(preview_limit)},
         )
         res.raise_for_status()
-        data = _unwrap_jsonapi(res.json())
-        preview = data.get("preview") or data.get("preview_rows") or []
-        columns = data.get("columns") or data.get("schema", {}).get("columns") or []
-        row_count = data.get("row_count") or data.get("rows") or len(preview)
-        return TableState(
-            dataset_id=dataset_id,
-            row_count=int(row_count) if row_count is not None else 0,
-            columns=columns,
-            preview=preview,
-        )
+        return to_table_state(res.json(), dataset_id)
 
     async def assert_distinct_values(self, dataset_id: str, column: str, expected: set[str]) -> None:
         state = await self.get_table_state(dataset_id, preview_limit=100)
@@ -402,9 +583,12 @@ class DatasetLayerHarness:
         )
         res.raise_for_status()
         body = res.json()
-        data = _unwrap_jsonapi(body)
+        data = unwrap_jsonapi(body)
         if not isinstance(data, dict) or "id" not in data:
             raise RuntimeError(f"create_session: unexpected response shape: {body!r}")
+        # Phase 1 (dc-wcy.5): the typed ``to_session_state`` mapper is
+        # introduced + tested; the facade keeps the test-facing ``dict``
+        # surface verbatim. Phase 2 will wire ``SessionState`` through.
         return data
 
     async def list_session_events(
@@ -434,13 +618,9 @@ class DatasetLayerHarness:
                 params=params,
             )
             res.raise_for_status()
-            body = res.json()
-            page_events = body.get("events") or []
+            page_events, next_cursor, has_more = to_session_events_page(res.json())
             out.extend(page_events)
-            if not body.get("has_more"):
-                break
-            next_cursor = body.get("next_cursor")
-            if not next_cursor or next_cursor == cursor:
+            if not has_more or not next_cursor or next_cursor == cursor:
                 break
             cursor = next_cursor
         return out
@@ -537,7 +717,10 @@ class DatasetLayerHarness:
             params={"include_transforms": "true"},
         )
         res.raise_for_status()
-        data = _unwrap_jsonapi(res.json())
+        data = unwrap_jsonapi(res.json())
+        # Phase 1 (dc-wcy.5): the typed ``to_transform_records`` mapper is
+        # introduced + tested; the facade keeps the test-facing ``list[dict]``
+        # surface verbatim. Phase 2 will wire ``TransformRecord`` through.
         return list(data.get("transforms") or [])
 
     # ----- internals --------------------------------------------------------
@@ -550,19 +733,12 @@ class DatasetLayerHarness:
         return self._client
 
     def _backend_headers(self, *, json_body: bool = False) -> dict[str, str]:
-        token = self._pat or self._user_jwt
-        headers = {"Authorization": f"Bearer {token}"}
-        if json_body:
-            headers["Content-Type"] = "application/json"
-        return headers
+        return bearer(self._pat or self._user_jwt, json_body=json_body)
 
     def _agent_headers(self) -> dict[str, str]:
         # Worker's authMiddleware verifies against backend JWKS only — must use the dev JWT,
         # never the auth-proxy-minted PAT.
-        return {
-            "Authorization": f"Bearer {self._user_jwt}",
-            "Content-Type": "application/json",
-        }
+        return bearer(self._user_jwt, json_body=True)
 
     async def _drive_one_turn(
         self,
@@ -685,38 +861,6 @@ def _default_rephrase(original: str, attempt: int) -> str:
         if original in suffix_map:
             return suffix_map[original]
     return f"In other words: {original}"
-
-
-def _project_id_from_response(body: dict[str, Any]) -> str:
-    """Tolerate `{id, ...}` and `{data: {id, ...}}` response shapes."""
-    if isinstance(body.get("data"), dict):
-        body = body["data"]
-    pid = body.get("id")
-    if not isinstance(pid, str):
-        raise RuntimeError(f"create_project: no id in response body: {body!r}")
-    return pid
-
-
-def _dataset_id_from_response(body: dict[str, Any]) -> str:
-    if isinstance(body.get("data"), dict):
-        body = body["data"]
-    did = body.get("id") or body.get("dataset_id")
-    if not isinstance(did, str):
-        raise RuntimeError(f"upload_csv: no dataset id in response body: {body!r}")
-    return did
-
-
-def _unwrap_jsonapi(body: dict[str, Any]) -> dict[str, Any]:
-    """Flatten a JSON:API single-resource envelope to ``{id, **attributes}``.
-
-    Tolerates already-flat responses: if ``data`` isn't a JSON:API resource
-    object (no ``attributes`` field), returns it unchanged. Older endpoints
-    that don't envelope at all also pass through.
-    """
-    data = body.get("data", body) if isinstance(body, dict) else body
-    if isinstance(data, dict) and isinstance(data.get("attributes"), dict):
-        return {"id": data.get("id"), **data["attributes"]}
-    return data if isinstance(data, dict) else {}
 
 
 # ---------------------------------------------------------------------------
