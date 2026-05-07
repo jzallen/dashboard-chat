@@ -360,6 +360,87 @@ def parse_chat_event_frames(body: bytes) -> tuple[list[dict[str, Any]], bool]:
 
 
 # ---------------------------------------------------------------------------
+# Per-API wrapper classes (dc-wcy.6 — inline per Mayor scope override; design §4 Phase 2)
+# ---------------------------------------------------------------------------
+#
+# Per the Mayor's scope override, all wrapper classes live above the facade in
+# this module — no ``_api/`` package, no separate files. Each wrapper centralizes
+# URL composition + auth header construction for one endpoint family. The
+# facade (``DatasetLayerHarness``) composes wrappers via DI in ``__aenter__``.
+
+
+class AuthApi:
+    """Auth-proxy token helpers grouped as a class wrapper (design §4 Phase 2).
+
+    The three operations — fetching a backend dev JWT, minting a PAT, revoking
+    a PAT — are stateless module-level concerns called outside the harness
+    lifecycle (typically from conftest fixtures before the harness exists).
+    Implemented as ``@staticmethod`` so callers can use either the class
+    methods or the module-level re-exports below; conftest's existing
+    ``from .harness import fetch_dev_user_jwt, mint_pat, revoke_pat`` keeps
+    working unchanged.
+    """
+
+    @staticmethod
+    async def fetch_dev_user_jwt(auth_proxy_url: str, *, code: str = "dev-auth-code") -> str:
+        """Obtain a backend-issued dev JWT via the public callback endpoint.
+
+        In ``AUTH_MODE=dev``, ``DevAuthProvider.handle_callback`` returns
+        ``DEV_USER`` + a freshly minted RS256 JWT regardless of the supplied
+        code. The auth-proxy whitelists ``/api/auth/callback`` so this works
+        without prior auth.
+        """
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(
+                f"{auth_proxy_url.rstrip('/')}/api/auth/callback",
+                json={"code": code},
+            )
+            res.raise_for_status()
+            body = res.json()
+        token = body.get("token")
+        if not isinstance(token, str) or not token:
+            raise RuntimeError(f"callback did not return a token: {body!r}")
+        return token
+
+    @staticmethod
+    async def mint_pat(
+        auth_proxy_url: str,
+        user_jwt: str,
+        *,
+        name: str = "dataset-layer-harness",
+        expires_in_seconds: int = 3600,
+    ) -> tuple[str, str]:
+        """Mint a PAT via auth-proxy. Returns (pat_id, token).
+
+        Exercises the headless-tokens flow end-to-end (issuance + signing).
+        Caller is responsible for revocation; the harness conftest revokes at
+        session end.
+        """
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(
+                f"{auth_proxy_url.rstrip('/')}/api/auth/pats",
+                headers=bearer(user_jwt, json_body=True),
+                content=json.dumps({"name": name, "expires_in_seconds": expires_in_seconds}),
+            )
+            res.raise_for_status()
+            body = res.json()
+        pat_id = body.get("id")
+        token = body.get("token")
+        if not isinstance(pat_id, str) or not isinstance(token, str):
+            raise RuntimeError(f"PAT issuance returned unexpected shape: {body!r}")
+        return pat_id, token
+
+    @staticmethod
+    async def revoke_pat(auth_proxy_url: str, user_jwt: str, pat_id: str) -> None:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 404 is acceptable: e.g., already revoked / unknown id.
+            await client.delete(
+                f"{auth_proxy_url.rstrip('/')}/api/auth/pats/{pat_id}",
+                headers=bearer(user_jwt),
+            )
+
+
+# ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
 
@@ -775,69 +856,16 @@ class DatasetLayerHarness:
 
 
 # ---------------------------------------------------------------------------
-# Token helpers — exposed at module scope so conftest fixtures can reuse them
+# Token helpers — module-level re-exports of AuthApi @staticmethod methods
 # ---------------------------------------------------------------------------
+#
+# Conftest fixtures import these names directly (e.g.
+# ``from .harness import fetch_dev_user_jwt``); preserving them as module-level
+# attributes keeps that import surface stable across the wrapper extraction.
 
-
-async def fetch_dev_user_jwt(auth_proxy_url: str, *, code: str = "dev-auth-code") -> str:
-    """Obtain a backend-issued dev JWT via the public callback endpoint.
-
-    In ``AUTH_MODE=dev``, ``DevAuthProvider.handle_callback`` returns
-    ``DEV_USER`` + a freshly minted RS256 JWT regardless of the supplied
-    code. The auth-proxy whitelists ``/api/auth/callback`` so this works
-    without prior auth.
-    """
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.post(
-            f"{auth_proxy_url.rstrip('/')}/api/auth/callback",
-            json={"code": code},
-        )
-        res.raise_for_status()
-        body = res.json()
-    token = body.get("token")
-    if not isinstance(token, str) or not token:
-        raise RuntimeError(f"callback did not return a token: {body!r}")
-    return token
-
-
-async def mint_pat(
-    auth_proxy_url: str,
-    user_jwt: str,
-    *,
-    name: str = "dataset-layer-harness",
-    expires_in_seconds: int = 3600,
-) -> tuple[str, str]:
-    """Mint a PAT via auth-proxy. Returns (pat_id, token).
-
-    Exercises the headless-tokens flow end-to-end (issuance + signing).
-    Caller is responsible for revocation; the harness conftest revokes at
-    session end.
-    """
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.post(
-            f"{auth_proxy_url.rstrip('/')}/api/auth/pats",
-            headers={
-                "Authorization": f"Bearer {user_jwt}",
-                "Content-Type": "application/json",
-            },
-            content=json.dumps({"name": name, "expires_in_seconds": expires_in_seconds}),
-        )
-        res.raise_for_status()
-        body = res.json()
-    pat_id = body.get("id")
-    token = body.get("token")
-    if not isinstance(pat_id, str) or not isinstance(token, str):
-        raise RuntimeError(f"PAT issuance returned unexpected shape: {body!r}")
-    return pat_id, token
-
-
-async def revoke_pat(auth_proxy_url: str, user_jwt: str, pat_id: str) -> None:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        # 404 is acceptable: e.g., already revoked / unknown id.
-        await client.delete(
-            f"{auth_proxy_url.rstrip('/')}/api/auth/pats/{pat_id}",
-            headers={"Authorization": f"Bearer {user_jwt}"},
-        )
+fetch_dev_user_jwt = AuthApi.fetch_dev_user_jwt
+mint_pat = AuthApi.mint_pat
+revoke_pat = AuthApi.revoke_pat
 
 
 # ---------------------------------------------------------------------------
