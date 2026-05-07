@@ -332,7 +332,7 @@ class DatasetLayerHarness:
         assert last_error is not None
         raise last_error
 
-    async def get_table_state(self, dataset_id: str, *, preview_limit: int = 1000) -> TableState:
+    async def get_table_state(self, dataset_id: str, *, preview_limit: int = 100) -> TableState:
         client = self._require_client()
         res = await client.get(
             f"{self._auth_proxy_url}/api/datasets/{dataset_id}",

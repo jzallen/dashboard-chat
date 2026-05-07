@@ -69,6 +69,11 @@ bazel-out
 bazel-testlogs
 bazel-dashboard_chat
 bazel-dashboard-chat
+
+# Gas Town session artifacts (written by gt session-start hook in polecat
+# worktrees; should never be committed). Was causing recurring net-zero
+# WIP+gt-p35 collateral commits on every polecat MR (refinery dc-wisp-nf18).
+CLAUDE.local.md
 .bazel-cache/
 # Local bazel overrides (BuildBuddy API key etc) — see .bazelrc.user.example
 .bazelrc.user
