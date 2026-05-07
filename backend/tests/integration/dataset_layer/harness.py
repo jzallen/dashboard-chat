@@ -130,10 +130,10 @@ class TransformRecord:
 # HTTP helpers (dc-wcy.5 — inline per Mayor scope override)
 # ---------------------------------------------------------------------------
 #
-# Single-purpose Bearer-header builder used by the harness's ``_backend_headers``
-# / ``_agent_headers`` and (in Phase 2) by the per-API wrapper classes. Centralizing
-# this here avoids the same ``{"Authorization": f"Bearer {token}"}`` literal
-# scattered across each future wrapper's constructor. Design ref §3.1.
+# Single-purpose Bearer-header builder used by the per-API wrapper classes
+# below. Centralizing this here avoids the same
+# ``{"Authorization": f"Bearer {token}"}`` literal scattered across each
+# wrapper's constructor. Design ref §3.1.
 
 
 def bearer(token: str, *, json_body: bool = False) -> dict[str, str]:
@@ -658,6 +658,57 @@ class TransformsApi:
         )
 
 
+class ChatApi:
+    """Worker ``/chat`` SSE wrapper — single-turn transport (design §3.2).
+
+    Posts one turn against the agent and parses the v6 SSE response into a
+    ``ChatEventTrace``. Single-turn by design: the retry-with-rephrase budget
+    (AC1.5) and the AC1.4 raw-tool-call invariant live on the harness facade
+    where chat-orchestration policy belongs.
+
+    Worker auth: ``authMiddleware`` verifies tokens against the backend JWKS,
+    so this wrapper takes the dev JWT — never the auth-proxy-minted PAT.
+    """
+
+    def __init__(self, client: httpx.AsyncClient, *, agent_url: str, jwt: str):
+        self._client = client
+        self._agent = agent_url.rstrip("/")
+        self._jwt = jwt
+
+    async def send_turn(
+        self,
+        prompt: str,
+        *,
+        project_id: str | None = None,
+        dataset_id: str | None = None,
+        table_schema: dict[str, Any] | None = None,
+        thread_id: str | None = None,
+    ) -> ChatEventTrace:
+        body: dict[str, Any] = {
+            "messages": [{"role": "user", "content": prompt}],
+            "contextType": "dataset" if dataset_id else None,
+        }
+        if dataset_id:
+            body["contextId"] = dataset_id
+        if table_schema is not None:
+            body["tableSchema"] = table_schema
+        if project_id:
+            body["project_id"] = project_id
+        if thread_id:
+            body["thread_id"] = thread_id
+        res = await self._client.post(
+            f"{self._agent}/chat",
+            headers=bearer(self._jwt, json_body=True),
+            content=json.dumps(body),
+        )
+        if res.status_code != 200:
+            raise AssertionError(
+                f"worker /chat returned {res.status_code}: {res.text[:500]}",
+            )
+        events, raw_tool_call_seen = parse_chat_event_frames(res.content)
+        return ChatEventTrace(events=events, raw_tool_call_seen=raw_tool_call_seen)
+
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
@@ -721,6 +772,7 @@ class DatasetLayerHarness:
         self._datasets: DatasetsApi | None = None
         self._sessions: SessionsApi | None = None
         self._transforms: TransformsApi | None = None
+        self._chat: ChatApi | None = None
 
     # ----- lifecycle --------------------------------------------------------
 
@@ -732,6 +784,9 @@ class DatasetLayerHarness:
         self._datasets = DatasetsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         self._sessions = SessionsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         self._transforms = TransformsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
+        # Worker auth uses the dev JWT (not the PAT) — its authMiddleware
+        # verifies against backend JWKS only.
+        self._chat = ChatApi(self._client, agent_url=self._agent_url, jwt=self._user_jwt)
         if self._owns_project:
             self._project_id = await self.create_project(f"dataset-staging-{_new_ulid_suffix()}")
         return self
@@ -749,6 +804,7 @@ class DatasetLayerHarness:
                 self._datasets = None
                 self._sessions = None
                 self._transforms = None
+                self._chat = None
 
     # ----- public API -------------------------------------------------------
 
@@ -789,12 +845,17 @@ class DatasetLayerHarness:
         rephrased prompt up to ``max_retries`` times if the check raises
         AssertionError. Per AC1.5 the default budget is 2.
         """
+        if self._chat is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
         attempts = max_retries + 1
         last_error: AssertionError | None = None
         current = prompt
         for attempt in range(attempts):
-            trace = await self._drive_one_turn(
+            trace = await self._chat.send_turn(
                 current,
+                project_id=self._project_id,
                 dataset_id=dataset_id,
                 table_schema=table_schema,
                 thread_id=thread_id,
@@ -993,56 +1054,6 @@ class DatasetLayerHarness:
             )
         records = await self._datasets.list_transforms(dataset_id)
         return [_transform_record_to_dict(r) for r in records]
-
-    # ----- internals --------------------------------------------------------
-
-    def _require_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            raise RuntimeError(
-                "DatasetLayerHarness must be used as an async context manager (`async with`)",
-            )
-        return self._client
-
-    def _backend_headers(self, *, json_body: bool = False) -> dict[str, str]:
-        return bearer(self._pat or self._user_jwt, json_body=json_body)
-
-    def _agent_headers(self) -> dict[str, str]:
-        # Worker's authMiddleware verifies against backend JWKS only — must use the dev JWT,
-        # never the auth-proxy-minted PAT.
-        return bearer(self._user_jwt, json_body=True)
-
-    async def _drive_one_turn(
-        self,
-        prompt: str,
-        *,
-        dataset_id: str | None,
-        table_schema: dict[str, Any] | None,
-        thread_id: str | None = None,
-    ) -> ChatEventTrace:
-        client = self._require_client()
-        body: dict[str, Any] = {
-            "messages": [{"role": "user", "content": prompt}],
-            "contextType": "dataset" if dataset_id else None,
-        }
-        if dataset_id:
-            body["contextId"] = dataset_id
-        if table_schema is not None:
-            body["tableSchema"] = table_schema
-        if self._project_id:
-            body["project_id"] = self._project_id
-        if thread_id:
-            body["thread_id"] = thread_id
-        res = await client.post(
-            f"{self._agent_url}/chat",
-            headers=self._agent_headers(),
-            content=json.dumps(body),
-        )
-        if res.status_code != 200:
-            raise AssertionError(
-                f"worker /chat returned {res.status_code}: {res.text[:500]}",
-            )
-        events, raw_tool_call_seen = parse_chat_event_frames(res.content)
-        return ChatEventTrace(events=events, raw_tool_call_seen=raw_tool_call_seen)
 
 
 # ---------------------------------------------------------------------------
