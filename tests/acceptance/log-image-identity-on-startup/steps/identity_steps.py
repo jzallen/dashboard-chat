@@ -110,12 +110,12 @@ def _ensure_repo_root_env(root: Path) -> None:
     """Frontend's `:dist` genrule sources `//:.env` at vite-build time. The
     file is gitignored and absent on a fresh worktree; an empty stub is
     sufficient for the identity test (we only need vite to finish, not for
-    Stream.io / WorkOS env to be populated). Idempotent — never overwrites
-    an existing file.
+    WorkOS env to be populated). Idempotent — never overwrites an existing
+    file.
     """
     env_path = root / ".env"
     if not env_path.exists():
-        env_path.write_text("STREAM_API_KEY=\n")
+        env_path.touch()
 
 
 def _compose_up(service: str) -> None:
