@@ -469,6 +469,32 @@ class ProjectsApi:
         )
 
 
+class UploadsApi:
+    """Backend ``/api/uploads`` wrapper for multipart CSV uploads (design §2.2).
+
+    Distinct from the JSON-bodied wrappers because the upload uses multipart
+    file form data — ``Content-Type`` is set by httpx, not by ``bearer()``.
+    """
+
+    def __init__(self, client: httpx.AsyncClient, *, base_url: str, token: str):
+        self._client = client
+        self._base = base_url.rstrip("/")
+        self._token = token
+
+    async def upload_csv(self, project_id: str, csv_path: str | Path) -> DatasetId:
+        path = Path(csv_path)
+        with path.open("rb") as fh:
+            files = {"file": (path.name, fh.read(), "text/csv")}
+        res = await self._client.post(
+            f"{self._base}/api/uploads",
+            headers=bearer(self._token),
+            files=files,
+            data={"project_id": project_id},
+        )
+        res.raise_for_status()
+        return to_dataset_id(res.json())
+
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
@@ -528,6 +554,7 @@ class DatasetLayerHarness:
         self._client: httpx.AsyncClient | None = None
         # Wrappers built lazily in __aenter__ once the client exists (design §2.2).
         self._projects: ProjectsApi | None = None
+        self._uploads: UploadsApi | None = None
 
     # ----- lifecycle --------------------------------------------------------
 
@@ -535,6 +562,7 @@ class DatasetLayerHarness:
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout))
         backend_token = self._pat or self._user_jwt
         self._projects = ProjectsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
+        self._uploads = UploadsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         if self._owns_project:
             self._project_id = await self.create_project(f"dataset-staging-{_new_ulid_suffix()}")
         return self
@@ -548,6 +576,7 @@ class DatasetLayerHarness:
                 await self._client.aclose()
                 self._client = None
                 self._projects = None
+                self._uploads = None
 
     # ----- public API -------------------------------------------------------
 
@@ -564,18 +593,11 @@ class DatasetLayerHarness:
         target_project = project_id or self._project_id
         if not target_project:
             raise RuntimeError("upload_csv: no project_id; pass one or initialize the harness with one")
-        client = self._require_client()
-        path = Path(csv_path)
-        with path.open("rb") as fh:
-            files = {"file": (path.name, fh.read(), "text/csv")}
-        res = await client.post(
-            f"{self._auth_proxy_url}/api/uploads",
-            headers=self._backend_headers(),
-            files=files,
-            data={"project_id": target_project},
-        )
-        res.raise_for_status()
-        return to_dataset_id(res.json())
+        if self._uploads is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        return await self._uploads.upload_csv(target_project, csv_path)
 
     async def chat_turn(
         self,
