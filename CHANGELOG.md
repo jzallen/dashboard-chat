@@ -1,3 +1,33 @@
+# [1.13.0](https://github.com/jzallen/dashboard-chat/compare/v1.12.0...v1.13.0) (2026-05-07)
+
+
+### Bug Fixes
+
+* **agent:** wire AUTH_PROXY_URL through to chat tool dispatchers (dc-88k) ([ac1b885](https://github.com/jzallen/dashboard-chat/commit/ac1b88574e087639243273799c6008e7c966d443))
+* auto-save uncommitted implementation work (dc-1k8.1, gt-pvx safety net) ([cf5556b](https://github.com/jzallen/dashboard-chat/commit/cf5556bdf89d6e8a095642810ec9830ecbee5ef4))
+* auto-save uncommitted implementation work (dc-dh1, gt-pvx safety net) ([25ea441](https://github.com/jzallen/dashboard-chat/commit/25ea4412913b914a6bff53ad469725cea548d38e))
+* auto-save uncommitted implementation work (dc-qj9.1.1, gt-pvx safety net) ([2ab725a](https://github.com/jzallen/dashboard-chat/commit/2ab725aa189438d15550cc931df789903af69cd6))
+* **bazel:** share conftest via py_library to avoid duplicate-action precompile ([8c29b67](https://github.com/jzallen/dashboard-chat/commit/8c29b67c09d479abfbacad5487753518ef28695d))
+
+
+### Features
+
+* **agent:** emit OpenAPI 3.1 spec via zod-openapi (dc-qj9.3.7) ([a5d98bd](https://github.com/jzallen/dashboard-chat/commit/a5d98bddfc67cb5d7d3fad6c9f092fe5ebc3aee0))
+* **agent:** GROQ_TEMPERATURE env override, default 0.3 (dc-e8i) ([3e024c5](https://github.com/jzallen/dashboard-chat/commit/3e024c55dff2bb4c39a422c166e809b8d3a1aaaf))
+* **agent:** Redis-backed PresentationStateLog for multi-replica deployments (dc-qj9.1.3) ([a0f90d8](https://github.com/jzallen/dashboard-chat/commit/a0f90d8301f8123d35a30d84d9f274fb8afca626)), closes [#5](https://github.com/jzallen/dashboard-chat/issues/5)
+* **auth-proxy:** emit OpenAPI 3.x spec via zod-to-openapi (dc-qj9.3.6) ([a011a28](https://github.com/jzallen/dashboard-chat/commit/a011a2857d67da0b1622d3534cd7ecfa09ee9935))
+* **auth-proxy:** persist RS256 keypair across restarts (dc-0r0) ([f7fa379](https://github.com/jzallen/dashboard-chat/commit/f7fa3791bc149454a257fc30063ca90216b407ed))
+* **auth-proxy:** pluggable SecretsProvider for keypair persistence (dc-qj9.1.1) ([423f97d](https://github.com/jzallen/dashboard-chat/commit/423f97d7cd199337d9697b1735c5b6b01c2f464b))
+* **backend:** warn once when SessionEventReader noop default is in use (dc-c7l) ([9431747](https://github.com/jzallen/dashboard-chat/commit/9431747f5ae30654813cc8501bad8464e11febf1))
+* **chat:** codegen DOMAIN_EVENT_TYPES from Zod schema (dc-qj9.3.1) ([f97dd6c](https://github.com/jzallen/dashboard-chat/commit/f97dd6c6027d58a77e6569a352bd2b7a6cb5911d)), closes [#3](https://github.com/jzallen/dashboard-chat/issues/3) [#1](https://github.com/jzallen/dashboard-chat/issues/1)
+* **chat:** migrate agent SSE pipeline from AI SDK v4 to v6 (dc-p1z) ([a1d8c07](https://github.com/jzallen/dashboard-chat/commit/a1d8c07f6ff6155d550ac06e1892cf579350f316))
+* **replay:** Redis-default + Stream.io-optional SessionEventReader (dc-qj9.1.2) ([0a7fa91](https://github.com/jzallen/dashboard-chat/commit/0a7fa912b1337b14828930d3bba3e2b6fcc97bfa))
+* **sdk:** Client wrapper, smoke test, unit tests for FastAPI surface (dc-qj9.3.2) ([4175aca](https://github.com/jzallen/dashboard-chat/commit/4175aca2f50562cf2db6adf4d40f622a36cdc0a8))
+* **sdk:** scaffold dashboard_chat_sdk + FastAPI codegen pipeline (dc-qj9.3.2) ([6584e5e](https://github.com/jzallen/dashboard-chat/commit/6584e5e2613c1e1dccca8d1a0bb5094466f33f5d))
+* **test:** enable dc-1k8 milestone-1 identity acceptance scenarios (dc-1k8.2) ([39611d5](https://github.com/jzallen/dashboard-chat/commit/39611d548c1083e227b7d32bf06acf7551959545))
+* **test:** full DatasetLayerHarness + demo workload (dc-qj9.2.1) ([147e3ce](https://github.com/jzallen/dashboard-chat/commit/147e3ceb170ae18a6ec3792ed7d5ebbb3a1ac7d8))
+* **test:** replay + idempotency end-to-end test (dc-qj9.2.2) ([fece695](https://github.com/jzallen/dashboard-chat/commit/fece695e5c69a1dc3f9e55d35b5d30714425893c))
+
 # [1.12.0](https://github.com/jzallen/dashboard-chat/compare/v1.11.0...v1.12.0) (2026-04-29)
 
 
