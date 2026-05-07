@@ -25,7 +25,6 @@ from .routers import (
     session_replay_router,
     sessions_router,
     sql_access_router,
-    stream_token_router,
     transforms_router,
     uploads_router,
     views_router,
@@ -141,7 +140,6 @@ async def authorization_error_handler(request: Request, exc: AuthorizationError)
 
 # Include routers
 app.include_router(auth_router)
-app.include_router(stream_token_router)
 app.include_router(datasets_router)
 app.include_router(uploads_router)
 app.include_router(projects_router)

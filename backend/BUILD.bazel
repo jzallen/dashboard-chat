@@ -238,7 +238,6 @@ pytest_tests(
         "tests/integration/test_api.py",
         "tests/integration/test_auth_proxy_m2m.py",
         "tests/integration/test_session_event_replay_redis_live.py",
-        "tests/integration/test_stream_token.py",
     ],
     conftest = ["tests/integration/conftest.py"],
     deps = [":test_lib", ":app"],

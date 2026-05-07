@@ -89,15 +89,13 @@ def _redis_reachable_for_backend() -> bool:
     """Best-effort check: is the backend wired to a non-noop SessionEventReader?
 
     The backend dispatch helper (``event_replay_dispatch.select_session_event_reader``)
-    picks Stream.io if creds are set, then Redis if ``REDIS_URL`` is set,
-    else noop. We can't introspect the backend's settings from here, so we
-    look at the test runner's env — compose dev exports the same
-    ``REDIS_URL`` to the backend service via docker-compose.yml. Fall through
-    to True if we can reach the host:port (the test will surface a false
-    positive as "no events in replay" rather than silently passing).
+    picks Redis if ``REDIS_URL`` is set, else noop. We can't introspect the
+    backend's settings from here, so we look at the test runner's env —
+    compose dev exports the same ``REDIS_URL`` to the backend service via
+    docker-compose.yml. Fall through to True if we can reach the host:port
+    (the test will surface a false positive as "no events in replay" rather
+    than silently passing).
     """
-    if os.environ.get("STREAM_API_KEY") and os.environ.get("STREAM_API_SECRET"):
-        return True
     redis_url = os.environ.get("REDIS_URL")
     if not redis_url:
         return False
@@ -114,9 +112,9 @@ def _redis_reachable_for_backend() -> bool:
 pytestmark = pytest.mark.skipif(
     not _redis_reachable_for_backend(),
     reason=(
-        "G.2 requires a real SessionEventReader adapter (F.2 Redis or Stream.io). "
-        "Set REDIS_URL (compose default: redis://redis:6379/0) or STREAM_API_KEY+SECRET, "
-        "or run `docker compose up -d` so the backend selects the Redis adapter."
+        "G.2 requires a real SessionEventReader adapter (F.2 Redis). "
+        "Set REDIS_URL (compose default: redis://redis:6379/0) or run "
+        "`docker compose up -d` so the backend selects the Redis adapter."
     ),
 )
 
