@@ -44,7 +44,7 @@ function createRequest(body: Record<string, unknown>): Request {
   });
 }
 
-const env = { GROQ_API_KEY: "test-key" };
+const env = { GROQ_API_KEY: "test-key", AUTH_PROXY_URL: "http://auth-proxy.test" };
 
 // ---------------------------------------------------------------------------
 // Tests

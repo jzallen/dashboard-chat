@@ -8,6 +8,13 @@ import type { ThreadEventPersister } from "./threadPersister";
 interface Env {
   GROQ_API_KEY: string;
   /**
+   * Base URL for the auth-proxy that fronts backend tool dispatchers.
+   * Required: tool dispatchers cannot reach the backend without it. Threaded
+   * through from `process.env.AUTH_PROXY_URL` at startup (the entrypoint
+   * fails fast if unset).
+   */
+  AUTH_PROXY_URL: string;
+  /**
    * Sampling temperature for the Groq model (default 0.3). Threaded through
    * from `process.env.GROQ_TEMPERATURE` at startup; the dataset-layer
    * integration harness pins this to 0 for determinism.

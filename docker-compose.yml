@@ -32,6 +32,10 @@ services:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       JWKS_URL: ${JWKS_URL:-}
+      # Tool dispatchers fetch backend endpoints via the auth-proxy. The
+      # service name resolves on the compose network; localhost is unreachable
+      # from inside the container.
+      AUTH_PROXY_URL: ${AUTH_PROXY_URL:-http://auth-proxy:3000}
       # Redis-backed ThreadEventPersister (ADR-017) and PresentationStateLog
       # (F.3). Compose dev runs the Redis path byte-identically to
       # prod-without-Stream.io.

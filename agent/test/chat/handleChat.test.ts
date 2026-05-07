@@ -35,7 +35,7 @@ function createRequest(body: Record<string, unknown>): Request {
   });
 }
 
-const env = { GROQ_API_KEY: "test-key" };
+const env = { GROQ_API_KEY: "test-key", AUTH_PROXY_URL: "http://auth-proxy.test" };
 
 describe("handleChat", () => {
   describe("request validation", () => {
@@ -183,7 +183,7 @@ describe("handleChat", () => {
           contextType: null,
           tableSchema: null,
         }),
-        { GROQ_API_KEY: "test-key", GROQ_TEMPERATURE: 0 },
+        { GROQ_API_KEY: "test-key", AUTH_PROXY_URL: "http://auth-proxy.test", GROQ_TEMPERATURE: 0 },
       );
       const callArgs = (streamText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
       expect(callArgs.temperature).toBe(0);

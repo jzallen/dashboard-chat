@@ -61,7 +61,7 @@ function createRequest(body: Record<string, unknown>): Request {
   });
 }
 
-const env = { GROQ_API_KEY: "test-key" };
+const env = { GROQ_API_KEY: "test-key", AUTH_PROXY_URL: "http://auth-proxy.test" };
 
 describe("handleChat — report context integration", () => {
   it("routes report context through the report tool set (createReport, not sortTable/createView/addColumn)", async () => {

@@ -35,7 +35,7 @@ interface ChatRequest {
 
 interface Env {
   GROQ_API_KEY: string;
-  AUTH_PROXY_URL?: string;
+  AUTH_PROXY_URL: string;
   /**
    * Sampling temperature for the Groq model. Production default is 0.3 —
    * 0 was found too literal (users phrase prompts abstractly and the agent
@@ -116,7 +116,7 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     projectId: project_id ?? undefined,
     contextType: contextType === "report" ? "report" : contextType === "dataset" ? "dataset" : "project",
     backend: backendClient({
-      authProxyUrl: env.AUTH_PROXY_URL ?? "http://localhost:3000",
+      authProxyUrl: env.AUTH_PROXY_URL,
       jwt,
     }),
     emit: (event: ChatEvent) => {

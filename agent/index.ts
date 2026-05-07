@@ -24,9 +24,18 @@ const app = new Hono();
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL;
 
 if (!GROQ_API_KEY) {
   console.error("[agent] GROQ_API_KEY is required but not set");
+  process.exit(1);
+}
+
+if (!AUTH_PROXY_URL) {
+  console.error(
+    "[agent] AUTH_PROXY_URL is required but not set " +
+      "(tool dispatchers cannot reach the backend without it)",
+  );
   process.exit(1);
 }
 
@@ -66,7 +75,13 @@ const { log: presentationStateLog, kind: presentationStateKind } =
   });
 console.debug(`[PresentationStateLog] selected adapter: ${presentationStateKind}`);
 
-const chatEnv = { GROQ_API_KEY, GROQ_TEMPERATURE, threadPersister, presentationStateLog };
+const chatEnv = {
+  GROQ_API_KEY,
+  GROQ_TEMPERATURE,
+  AUTH_PROXY_URL,
+  threadPersister,
+  presentationStateLog,
+};
 const handleChat = createChatHandler(chatEnv);
 
 // ---------------------------------------------------------------------------

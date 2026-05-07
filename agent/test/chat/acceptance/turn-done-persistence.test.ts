@@ -109,6 +109,7 @@ const upstreamFinishStop = (): UIMessageChunk[] => [
 
 const env = (overrides: Record<string, unknown> = {}) => ({
   GROQ_API_KEY: "test-key",
+  AUTH_PROXY_URL: "http://auth-proxy.test",
   ...overrides,
 });
 
