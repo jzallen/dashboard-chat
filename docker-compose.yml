@@ -34,12 +34,14 @@ services:
       JWKS_URL: ${JWKS_URL:-}
       # Tool dispatchers fetch backend endpoints via the auth-proxy. The
       # service name resolves on the compose network; localhost is unreachable
-      # from inside the container.
-      AUTH_PROXY_URL: ${AUTH_PROXY_URL:-http://auth-proxy:3000}
+      # from inside the container. Hardcoded so a host-side .env (used by
+      # pytest) cannot override container-internal values via compose
+      # substitution. (dc-u43)
+      AUTH_PROXY_URL: http://auth-proxy:3000
       # Redis-backed ThreadEventPersister (ADR-017) and PresentationStateLog
       # (F.3). Compose dev runs the Redis path byte-identically to
-      # prod-without-Stream.io.
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # prod-without-Stream.io. Hardcoded — see AUTH_PROXY_URL above.
+      REDIS_URL: redis://redis:6379/0
       PRESENTATION_STATE_MAXLEN: ${PRESENTATION_STATE_MAXLEN:-1000}
     ports:
       - "8787"
@@ -187,7 +189,9 @@ services:
       STREAM_API_SECRET: ${STREAM_API_SECRET:-}
       # SessionEventReader dispatch (ADR-017). With STREAM_API_KEY+SECRET
       # unset (the dev compose default), the api container picks Redis.
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Hardcoded so a host-side .env (used by pytest) cannot override
+      # container-internal values via compose substitution. (dc-u43)
+      REDIS_URL: redis://redis:6379/0
       PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
       PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
       PG_DUCKDB_DATABASE: ${PG_DUCKDB_DATABASE:-dashboard_external}
@@ -198,8 +202,11 @@ services:
       PGBOUNCER_IMAGE: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:1.22}
       PGBOUNCER_PORT_RANGE_START: ${PGBOUNCER_PORT_RANGE_START:-6432}
       PGBOUNCER_PORT_RANGE_END: ${PGBOUNCER_PORT_RANGE_END:-7431}
-      QUERY_ENGINE_HOST: ${QUERY_ENGINE_HOST:-query-engine}
-      QUERY_ENGINE_PORT: ${QUERY_ENGINE_PORT:-5432}
+      # Container-internal — hardcoded so .env host-port overrides (e.g.,
+      # QUERY_ENGINE_PORT=5433 for host pytest) don't leak into the api
+      # container, which talks to query-engine over the compose network. (dc-u43)
+      QUERY_ENGINE_HOST: query-engine
+      QUERY_ENGINE_PORT: "5432"
       QUERY_ENGINE_ADMIN_USER: ${QUERY_ENGINE_ADMIN_USER:-duckdb_admin}
       QUERY_ENGINE_ADMIN_PASSWORD: ${QUERY_ENGINE_ADMIN_PASSWORD:-duckdb_secret}
       QUERY_ENGINE_DATABASE: ${QUERY_ENGINE_DATABASE:-dashboard_external}
@@ -241,8 +248,9 @@ services:
       STREAM_API_SECRET: ${STREAM_API_SECRET:-}
       PGBOUNCER_PORT_RANGE_START: ${PGBOUNCER_PORT_RANGE_START:-6432}
       PGBOUNCER_PORT_RANGE_END: ${PGBOUNCER_PORT_RANGE_END:-7431}
-      QUERY_ENGINE_HOST: ${QUERY_ENGINE_HOST:-query-engine}
-      QUERY_ENGINE_PORT: ${QUERY_ENGINE_PORT:-5432}
+      # Container-internal — see api block above. (dc-u43)
+      QUERY_ENGINE_HOST: query-engine
+      QUERY_ENGINE_PORT: "5432"
       QUERY_ENGINE_ADMIN_USER: ${QUERY_ENGINE_ADMIN_USER:-duckdb_admin}
       QUERY_ENGINE_ADMIN_PASSWORD: ${QUERY_ENGINE_ADMIN_PASSWORD:-duckdb_secret}
       QUERY_ENGINE_DATABASE: ${QUERY_ENGINE_DATABASE:-dashboard_external}
