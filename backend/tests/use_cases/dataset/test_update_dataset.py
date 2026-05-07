@@ -42,6 +42,7 @@ class TestUpdateDataset:
                             created_at=dataset.transforms[0].created_at,
                         )
                     ],
+                    row_count=250,
                 )
                 assert dataset == expected
             case Failure(error):
@@ -76,6 +77,7 @@ class TestUpdateDataset:
                             created_at=dataset.transforms[0].created_at,
                         )
                     ],
+                    row_count=250,
                 )
                 assert dataset == expected
             case Failure(error):

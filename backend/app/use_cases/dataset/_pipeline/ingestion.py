@@ -30,12 +30,17 @@ async def read_raw_file(lake_repo, storage_path: str, upload_id: str) -> bytes:
 
 def analyze_dataframe(
     df: pd.DataFrame, schema_hints: dict[str, str] | None = None
-) -> tuple[dict, list[dict], list[dict]]:
-    """Infer schema, compute column profiles, and generate preview rows.
+) -> tuple[dict, list[dict], list[dict], int]:
+    """Infer schema, compute column profiles, generate preview rows, and snapshot row count.
 
     Args:
         df: The DataFrame to analyze.
         schema_hints: Optional dict of column_name → type to override inference.
+
+    Returns:
+        ``(schema_config, column_profiles, preview_rows, row_count)``. The
+        row count is the dataframe's length at ingestion — surfaced by the
+        dataset GET response so callers don't have to page through previews.
     """
     schema_config = infer_schema_from_dataframe(df)
 
@@ -47,7 +52,8 @@ def analyze_dataframe(
 
     column_profiles = compute_column_profiles(df, schema_config)
     preview_rows = json.loads(df.head(10).to_json(orient="records", date_format="iso"))
-    return schema_config, column_profiles, preview_rows
+    row_count = len(df)
+    return schema_config, column_profiles, preview_rows, row_count
 
 
 async def create_dataset_record(
@@ -60,6 +66,7 @@ async def create_dataset_record(
     preview_rows: list[dict],
     format_context: str | None = None,
     name: str | None = None,
+    row_count: int | None = None,
 ) -> Dataset:
     """Create the dataset metadata record and return a Dataset domain object."""
     dataset_dict = await metadata_repo.create_dataset(
@@ -70,6 +77,7 @@ async def create_dataset_record(
         partition_fields=partition_fields,
         column_profiles=column_profiles,
         format_context=format_context,
+        row_count=row_count,
     )
     return Dataset(
         id=dataset_dict["id"],
@@ -81,6 +89,7 @@ async def create_dataset_record(
         preview_rows=preview_rows,
         column_profiles=dataset_dict["column_profiles"],
         format_context=dataset_dict.get("format_context"),
+        row_count=dataset_dict.get("row_count"),
     )
 
 

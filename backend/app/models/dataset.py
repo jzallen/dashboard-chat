@@ -90,6 +90,7 @@ class Dataset:
         None  # Per-column value stats (sample values, min/max, …) — injected into LLM system prompt
     )
     format_context: str | None = None  # Plugin-provided context for LLM (e.g., HL7v2 column conventions)
+    row_count: int | None = None  # Total row count snapshotted at ingestion (None for legacy datasets)
 
     @classmethod
     def from_record(
@@ -111,6 +112,7 @@ class Dataset:
             preview_rows=preview_rows or [],
             column_profiles=record.column_profiles,
             format_context=getattr(record, "format_context", None),
+            row_count=getattr(record, "row_count", None),
         )
 
     @property
@@ -223,6 +225,7 @@ class Dataset:
             "preview_rows": self.preview_rows,
             "column_profiles": self.column_profiles,
             "format_context": self.format_context,
+            "row_count": self.row_count,
             "staging_sql": self.display_sql,
         }
 

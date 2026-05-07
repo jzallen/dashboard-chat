@@ -31,7 +31,7 @@ async def _create_single_dataset(
     partition_fields: list[str],
 ) -> Dataset:
     """Create one dataset from a single ProcessingResult."""
-    schema_config, column_profiles, preview_rows = analyze_dataframe(result.df, result.schema_hints)
+    schema_config, column_profiles, preview_rows, row_count = analyze_dataframe(result.df, result.schema_hints)
     dataset = await create_dataset_record(
         metadata_repo,
         project_id,
@@ -42,6 +42,7 @@ async def _create_single_dataset(
         preview_rows,
         format_context=result.chat_guidance,
         name=result.name,
+        row_count=row_count,
     )
     await write_parquet(lake_repo, result.df, dataset, partition_fields)
     return dataset

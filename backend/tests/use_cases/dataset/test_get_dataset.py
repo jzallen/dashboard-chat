@@ -42,8 +42,10 @@ class TestGetDataset:
                             created_at=dataset.transforms[0].created_at,
                         )
                     ],
+                    row_count=250,
                 )
                 assert dataset == expected
+                assert dataset.row_count == 250
             case Failure(error):
                 pytest.fail(f"get_dataset should return dataset for valid id, got: {error}")
 

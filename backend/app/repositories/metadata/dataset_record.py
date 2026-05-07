@@ -7,7 +7,7 @@ This is just for database persistence.
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Computed, DateTime, ForeignKey, String, Text, text
+from sqlalchemy import JSON, Computed, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...database import Base
@@ -63,6 +63,10 @@ class DatasetRecord(Base):
 
     # Plugin-provided context injected into LLM system prompt (e.g., HL7v2 column conventions)
     format_context: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    # Total row count snapshotted at ingestion. Nullable for legacy rows
+    # created before this field existed; the GET response surfaces the raw value.
+    row_count: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

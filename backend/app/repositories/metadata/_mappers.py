@@ -84,6 +84,7 @@ def dataset_to_dict(dataset: DatasetRecord) -> dict[str, Any]:
         "partition_fields": dataset.partition_fields,
         "column_profiles": dataset.column_profiles,
         "format_context": dataset.format_context,
+        "row_count": dataset.row_count,
         "created_at": _iso(dataset.created_at),
         "updated_at": _iso(dataset.updated_at),
     }

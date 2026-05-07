@@ -137,6 +137,7 @@ class TestDatasetConstruction:
         assert ds.preview_rows == []
         assert ds.column_profiles is None
         assert ds.format_context is None
+        assert ds.row_count is None
 
     def test_create_dataset_with_all_fields_populates_them(self):
         ds = Dataset(
@@ -344,6 +345,35 @@ class TestFromRecord:
         assert ds.preview_rows == []
         assert ds.column_profiles == {"x": {"min": 0}}
         assert ds.format_context == "HL7v2"
+
+    def test_from_record_passes_row_count_through(self):
+        record = SimpleNamespace(
+            id="ds-rec-row",
+            project_id="p",
+            name="N",
+            description=None,
+            schema_config={},
+            partition_fields=[],
+            transforms=[],
+            column_profiles=None,
+            row_count=250,
+        )
+        ds = Dataset.from_record(record)
+        assert ds.row_count == 250
+
+    def test_from_record_when_row_count_missing_defaults_to_none(self):
+        record = SimpleNamespace(
+            id="ds-rec-no-row",
+            project_id="p",
+            name="N",
+            description=None,
+            schema_config={},
+            partition_fields=[],
+            transforms=[],
+            column_profiles=None,
+        )
+        ds = Dataset.from_record(record)
+        assert ds.row_count is None
 
     def test_from_record_coerces_none_schema_and_partitions_to_defaults(self):
         record = SimpleNamespace(
@@ -686,6 +716,7 @@ class TestSerialize:
         assert result["preview_rows"] == []
         assert result["column_profiles"] is None
         assert result["format_context"] is None
+        assert result["row_count"] is None
         # characterization pin — `staging_sql` key exposes display_sql output
         assert result["staging_sql"] == 'SELECT\n  s.name\nFROM "Simple" AS s'
 
@@ -740,6 +771,7 @@ class TestSerialize:
             preview_rows=[{"a": "val"}],
             column_profiles={"a": {"min": "val"}},
             format_context="HL7v2",
+            row_count=250,
         )
         result = ds.serialize()
 
@@ -748,6 +780,17 @@ class TestSerialize:
         assert result["preview_rows"] == [{"a": "val"}]
         assert result["column_profiles"] == {"a": {"min": "val"}}
         assert result["format_context"] == "HL7v2"
+        assert result["row_count"] == 250
+
+    def test_serialize_exposes_row_count_when_set(self):
+        ds = Dataset(
+            id="ds-1",
+            project_id="p",
+            name="Counted",
+            schema_config=_make_schema({"a": "text"}),
+            row_count=42,
+        )
+        assert ds.serialize()["row_count"] == 42
 
 
 # ---------------------------------------------------------------------------

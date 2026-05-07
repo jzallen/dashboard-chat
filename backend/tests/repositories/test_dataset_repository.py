@@ -36,6 +36,7 @@ class TestCreateDataset:
         assert result["partition_fields"] == []  # default for None input
         assert result["column_profiles"] is None
         assert result["format_context"] is None
+        assert result["row_count"] is None
         assert result["id"] is not None
         # storage_path is a computed column: 'datasets/{project_id}/{id}/'
         assert result["storage_path"] == f"datasets/{PROJECT_1}/{result['id']}/"
@@ -54,6 +55,15 @@ class TestCreateDataset:
         assert result["partition_fields"] == ["year", "month"]
         assert result["column_profiles"] == {"amount": {"type": "number", "unique_count": 50}}
         assert result["format_context"] == "HL7v2"
+
+    async def test_persists_row_count_when_provided(self, repo_with_project):
+        result = await repo_with_project.create_dataset(
+            project_id=PROJECT_1,
+            name="Counted",
+            schema_config={"fields": {}},
+            row_count=250,
+        )
+        assert result["row_count"] == 250
 
 
 class TestGetDataset:

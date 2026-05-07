@@ -144,6 +144,7 @@ class MetadataRepositoryProtocol(Protocol):
         description: str | None = None,
         partition_fields: list[str] | None = None,
         column_profiles: dict[str, Any] | None = None,
+        row_count: int | None = None,
     ) -> dict[str, Any]:
         """Create a new dataset record.
 
@@ -156,6 +157,7 @@ class MetadataRepositoryProtocol(Protocol):
             description: Optional description
             partition_fields: List of field names used for partitioning
             column_profiles: Per-column value statistics
+            row_count: Total rows snapshotted at ingestion (None for legacy datasets)
 
         Returns:
             Created dataset dictionary.

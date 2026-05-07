@@ -39,6 +39,7 @@ async def seeded_db(db_session: AsyncSession):
         project_id=PROJECT_1,
         name="Dataset One",
         schema_config={"fields": {"col1": {"type": "text"}}},
+        row_count=250,
     )
     dataset2 = DatasetRecord(
         id=DATASET_2,

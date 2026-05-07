@@ -100,9 +100,11 @@ class TestCreateDatasetFromUpload:
                     transforms=[],
                     preview_rows=dataset.preview_rows,  # dynamic computed data
                     column_profiles=dataset.column_profiles,  # dynamic profiling data
+                    row_count=3,
                 )
                 assert dataset == expected
                 assert len(dataset.preview_rows) == 3
+                assert dataset.row_count == 3
                 assert set(dataset.schema_config["fields"].keys()) == {"name", "age", "active"}
 
     async def test_create_dataset_when_no_name_provided_defaults_to_new_dataset(

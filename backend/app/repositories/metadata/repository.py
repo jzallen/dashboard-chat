@@ -428,6 +428,7 @@ class MetadataRepository:
         partition_fields: list[str] | None = None,
         column_profiles: dict[str, Any] | None = None,
         format_context: str | None = None,
+        row_count: int | None = None,
     ) -> dict[str, Any]:
         """Create a new dataset record.
 
@@ -441,6 +442,7 @@ class MetadataRepository:
             partition_fields=partition_fields or [],
             column_profiles=column_profiles,
             format_context=format_context,
+            row_count=row_count,
         )
 
         self._session.add(dataset)

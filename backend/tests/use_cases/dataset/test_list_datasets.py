@@ -66,6 +66,7 @@ class TestListDatasets:
                             created_at=datasets[1].transforms[0].created_at,
                         )
                     ],
+                    row_count=250,
                 )
                 assert datasets[1] == expected_second
             case Failure(error):
