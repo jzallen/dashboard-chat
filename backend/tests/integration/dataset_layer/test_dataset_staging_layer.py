@@ -28,18 +28,27 @@ from __future__ import annotations
 import pathlib
 import time
 
+import pandas as pd
 import pytest
 
-from .harness import DatasetLayerHarness
+from .harness import DatasetLayerHarness, TableState
+
+
+def _str_values(state: TableState, column: str) -> pd.Series:
+    """Non-null string values from ``state.df[column]``.
+
+    The API returns mixed types per column (string before normalization,
+    numeric after, ``None`` for missing). Pandas .str accessors raise on
+    numeric-dtype Series, so callers that need string ops must drop both
+    nulls and non-string entries first.
+    """
+    s = state.df[column].dropna()
+    return s[s.map(lambda v: isinstance(v, str))]
+
 
 DEMO_CSV = pathlib.Path(__file__).parent / "fixtures" / "ecommerce-orders.csv"
 
 WALL_CLOCK_BUDGET_SECONDS = 300  # AC1.6
-
-
-def _expected_clean_columns() -> list[str]:
-    """Text columns the demo trims/standardizes — used by op-1's check."""
-    return ["region", "customer_email", "product_category", "payment_method", "shipping_status"]
 
 
 @pytest.mark.asyncio
@@ -70,64 +79,62 @@ async def test_dataset_staging_layer(
         assert state.row_count == 250, f"expected 250 rows on upload, got {state.row_count}"
         assert len(state.columns) == 11, f"expected 11 columns, got {len(state.columns)}"
 
+        # Upload sanity: CsvPlugin strips leading/trailing whitespace on every
+        # text column at upload time. This used to be a chat-cleanable op (op-1
+        # in the original demo workload), but the auto-trim makes a chat-driven
+        # trim redundant — so the assertion lives here at the boundary instead.
+        for col in ("region", "customer_email", "product_category", "payment_method", "shipping_status"):
+            assert await h.assert_no_leading_trailing_whitespace(dataset_id, col), (
+                f"upload sanity: column {col!r} arrived with leading/trailing whitespace; "
+                "CsvPlugin upload-time trim should have stripped it"
+            )
+
         # Each op below asserts its precondition (data ISN'T already cleaned)
         # right before its chat_turn, then asserts the post-state. Without the
         # pre-assertion, a fixture in the desired post-state — or a no-op chat
         # path — passes trivially. See dc-9u1 for the gap analysis.
 
-        # ----- Op 1: trim whitespace ----------------------------------------
-        text_cols = _expected_clean_columns()
-        pre = await h.get_table_state(dataset_id, preview_limit=100)
-        assert any(
-            isinstance(row.get(col), str) and row[col] != row[col].strip() for row in pre.preview for col in text_cols
-        ), "pre-assert op-1: no text column has leading/trailing whitespace; fixture too clean to exercise trim"
-        await h.chat_turn(
-            "Trim whitespace on every text column",
-            dataset_id=dataset_id,
-        )
-        for col in text_cols:
-            await h.assert_no_leading_trailing_whitespace(dataset_id, col)
-
-        # ----- Op 2: standardize region to title case -----------------------
+        # ----- Op 1: standardize region to title case -----------------------
         expected_regions = {"North", "South", "East", "West"}
-        pre = await h.get_table_state(dataset_id, preview_limit=100)
-        seen_regions = {row["region"] for row in pre.preview if isinstance(row.get("region"), str)}
-        assert seen_regions - expected_regions, (
-            "pre-assert op-2: region has no non-canonical values (expected to standardize); "
-            f"got {sorted(seen_regions)!r}"
+        assert not await h.assert_distinct_values(dataset_id, "region", expected_regions), (
+            "pre-assert op-1: region already in canonical set; nothing to standardize"
         )
         await h.chat_turn(
             "Standardize the region column to title case",
             dataset_id=dataset_id,
         )
-        await h.assert_distinct_values(dataset_id, "region", expected_regions)
+        post_state_op1 = await h.get_table_state(dataset_id, preview_limit=100)
+        post_regions = set(post_state_op1.df["region"].dropna())
+        assert post_regions == expected_regions, (
+            f"post-assert op-1: region not in canonical set {sorted(expected_regions)!r}; got {sorted(post_regions)!r}"
+        )
 
-        # ----- Op 3: fix typo + standardize category ------------------------
+        # ----- Op 2: fix typo + standardize category ------------------------
         expected_categories = {"Electronics", "Apparel", "Home Goods", "Books", "Toys"}
+        # Typo presence has no harness predicate equivalent — keep inline.
         pre = await h.get_table_state(dataset_id, preview_limit=100)
         assert any(
             isinstance(row.get("product_category"), str) and "Electornics" in row["product_category"]
             for row in pre.preview
-        ), "pre-assert op-3: 'Electornics' typo not present in product_category; fixture has no typo to fix"
-        seen_categories = {
-            row["product_category"] for row in pre.preview if isinstance(row.get("product_category"), str)
-        }
-        assert seen_categories - expected_categories, (
-            f"pre-assert op-3: product_category already in canonical set; got {sorted(seen_categories)!r}"
+        ), "pre-assert op-2: 'Electornics' typo not present in product_category; fixture has no typo to fix"
+        assert not await h.assert_distinct_values(dataset_id, "product_category", expected_categories), (
+            "pre-assert op-2: product_category already in canonical set"
         )
         await h.chat_turn(
             'The product category has typos — fix "Electornics" to '
             '"Electronics" and standardize everything to title case',
             dataset_id=dataset_id,
         )
-        await h.assert_distinct_values(dataset_id, "product_category", expected_categories)
+        assert await h.assert_distinct_values(dataset_id, "product_category", expected_categories), (
+            f"post-assert op-2: product_category not in canonical set {sorted(expected_categories)!r}"
+        )
 
-        # ----- Op 4: standardize payment_method -----------------------------
+        # ----- Op 3: standardize payment_method -----------------------------
         raw_payment_variants = {"credit_card", "credit-card", "CREDIT_CARD", "paypal", "apple_pay", "bank_transfer"}
         pre = await h.get_table_state(dataset_id, preview_limit=100)
-        seen_payments_pre = {row["payment_method"] for row in pre.preview if "payment_method" in row}
-        assert raw_payment_variants & seen_payments_pre, (
-            f"pre-assert op-4: no raw payment_method variants present; got {sorted(seen_payments_pre)!r}"
+        pre_payments = set(pre.df["payment_method"].dropna())
+        assert raw_payment_variants & pre_payments, (
+            f"pre-assert op-3: no raw payment_method variants present; got {sorted(pre_payments)!r}"
         )
         await h.chat_turn(
             'Standardize payment_method to a single canonical form per method (e.g. "Credit Card" not "credit_card")',
@@ -135,70 +142,80 @@ async def test_dataset_staging_layer(
         )
         # The exact canonical form is LLM-chosen; assert the cardinality + that
         # the historical raw variants have collapsed.
-        payment_state = await h.get_table_state(dataset_id)
-        payment_values = {row["payment_method"] for row in payment_state.preview if "payment_method" in row}
-        assert len(payment_values) <= 5, (
-            f"payment_method should collapse to ≤ 5 distinct values, got {sorted(payment_values)!r}"
+        post = await h.get_table_state(dataset_id)
+        post_payments = set(post.df["payment_method"].dropna())
+        assert len(post_payments) <= 5, (
+            f"post-assert op-3: payment_method should collapse to ≤ 5 distinct values, got {sorted(post_payments)!r}"
         )
-        for raw in raw_payment_variants:
-            assert raw not in payment_values, f"raw payment_method variant {raw!r} still present after standardization"
+        leftover_variants = raw_payment_variants & post_payments
+        assert not leftover_variants, (
+            f"post-assert op-3: raw payment_method variants still present: {sorted(leftover_variants)!r}"
+        )
 
-        # ----- Op 5: standardize shipping_status to title case --------------
+        # ----- Op 4: standardize shipping_status to title case --------------
         expected_shipping = {"Delivered", "Pending", "Shipped", "Cancelled"}
-        pre = await h.get_table_state(dataset_id, preview_limit=100)
-        seen_shipping = {row["shipping_status"] for row in pre.preview if isinstance(row.get("shipping_status"), str)}
-        assert seen_shipping - expected_shipping, (
-            f"pre-assert op-5: shipping_status already in canonical set; got {sorted(seen_shipping)!r}"
+        assert not await h.assert_distinct_values(dataset_id, "shipping_status", expected_shipping), (
+            "pre-assert op-4: shipping_status already in canonical set"
         )
         await h.chat_turn(
             "Standardize shipping_status to title case",
             dataset_id=dataset_id,
         )
-        await h.assert_distinct_values(dataset_id, "shipping_status", expected_shipping)
+        assert await h.assert_distinct_values(dataset_id, "shipping_status", expected_shipping), (
+            f"post-assert op-4: shipping_status not in canonical set {sorted(expected_shipping)!r}"
+        )
 
-        # ----- Op 6: strip $ from unit_price + convert to number ------------
+        # ----- Op 5: strip $ from unit_price + convert to number ------------
         pre = await h.get_table_state(dataset_id, preview_limit=100)
-        assert any(
-            isinstance(row.get("unit_price"), str) and row["unit_price"].lstrip().startswith("$") for row in pre.preview
-        ), "pre-assert op-6: no unit_price has $ prefix; fixture has nothing to strip"
+        assert _str_values(pre, "unit_price").str.lstrip().str.startswith("$").any(), (
+            "pre-assert op-5: no unit_price has $ prefix; fixture has nothing to strip"
+        )
         await h.chat_turn(
             "Strip the dollar sign from unit_price and convert it to a number",
             dataset_id=dataset_id,
         )
-        unit_state = await h.get_table_state(dataset_id)
-        for row in unit_state.preview:
-            val = row.get("unit_price")
-            assert val is None or not (isinstance(val, str) and val.lstrip().startswith("$")), (
-                f"unit_price still has dollar sign after strip: {val!r}"
-            )
+        post = await h.get_table_state(dataset_id)
+        post_unit_strs = _str_values(post, "unit_price")
+        leftover_dollars = post_unit_strs[post_unit_strs.str.lstrip().str.startswith("$")]
+        assert leftover_dollars.empty, (
+            f"post-assert op-5: unit_price still has $ prefix on {len(leftover_dollars)} rows: "
+            f"{leftover_dollars.head().tolist()!r}"
+        )
 
-        # ----- Op 7: convert order_date to ISO ------------------------------
+        # ----- Op 6: convert order_date to ISO ------------------------------
         pre = await h.get_table_state(dataset_id, preview_limit=100)
-        assert any(isinstance(row.get("order_date"), str) and "/" in row["order_date"] for row in pre.preview), (
-            "pre-assert op-7: no order_date has slash (US) format; fixture has nothing to convert"
+        assert _str_values(pre, "order_date").str.contains("/").any(), (
+            "pre-assert op-6: no order_date has slash (US) format; fixture has nothing to convert"
         )
         await h.chat_turn(
             "The order_date column has two different formats. Convert everything to ISO format (YYYY-MM-DD)",
             dataset_id=dataset_id,
         )
-        date_state = await h.get_table_state(dataset_id)
-        for row in date_state.preview:
-            val = row.get("order_date")
-            if isinstance(val, str) and val:
-                assert "/" not in val, f"order_date still has US-format slash: {val!r}"
-                # ISO yyyy-mm-dd starts with a 4-digit year.
-                assert len(val) >= 10 and val[:4].isdigit(), f"order_date not in ISO YYYY-MM-DD form: {val!r}"
+        post = await h.get_table_state(dataset_id)
+        post_dates = _str_values(post, "order_date")
+        post_dates = post_dates[post_dates != ""]
+        leftover_slashes = post_dates[post_dates.str.contains("/")]
+        assert leftover_slashes.empty, (
+            f"post-assert op-6: order_date still has US-format slash on {len(leftover_slashes)} rows: "
+            f"{leftover_slashes.head().tolist()!r}"
+        )
+        non_iso = post_dates[~post_dates.str.match(r"^\d{4}-\d{2}-\d{2}")]
+        assert non_iso.empty, (
+            f"post-assert op-6: order_date not in ISO YYYY-MM-DD form on {len(non_iso)} rows: "
+            f"{non_iso.head().tolist()!r}"
+        )
 
-        # ----- Op 8: fill missing discount_pct with 0 -----------------------
-        pre = await h.get_table_state(dataset_id, preview_limit=100)
-        assert any(row.get("discount_pct") in (None, "") for row in pre.preview), (
-            "pre-assert op-8: discount_pct has no null/empty values; fixture has nothing to fill"
+        # ----- Op 7: fill missing discount_pct with 0 -----------------------
+        assert await h.assert_has_nulls(dataset_id, "discount_pct"), (
+            "pre-assert op-7: discount_pct has no null/empty values; fixture has nothing to fill"
         )
         await h.chat_turn(
             "Fill missing values in discount_pct with 0",
             dataset_id=dataset_id,
         )
-        await h.assert_no_nulls(dataset_id, "discount_pct")
+        assert not await h.assert_has_nulls(dataset_id, "discount_pct"), (
+            "post-assert op-7: discount_pct still has null/empty values after fill"
+        )
 
         # NOTE: ops 9-10 (count by region / product_category) were removed in
         # dc-9u1. A client-side reduce over the preview window never exercised

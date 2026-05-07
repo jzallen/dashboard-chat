@@ -301,12 +301,15 @@ class BaseLakeRepository:
 
         pool = await self._get_query_engine_pool()
         async with pool.acquire() as conn:
-            # Register custom macros needed for title_case, snake_case, kebab_case
+            # Register custom macros needed for title_case, snake_case, kebab_case.
+            # CREATE MACRO is DuckDB DDL; pg_duckdb's planner only intercepts SELECT,
+            # so we must invoke duckdb.raw_query() to register macros against the
+            # per-connection DuckDB instance.
             if operation == "case" and expression_config.get("mode") in ("title", "snake", "kebab"):
                 from ...utils.sql_functions import ALL_MACROS
 
                 for macro_sql in ALL_MACROS:
-                    await conn.execute(macro_sql)
+                    await conn.execute("SELECT duckdb.raw_query($1)", macro_sql)
 
             # Get total count
             total_row = await conn.fetchrow(f"SELECT COUNT(*) AS cnt FROM read_parquet('{s3_path}')")

@@ -44,7 +44,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       PRESENTATION_STATE_MAXLEN: ${PRESENTATION_STATE_MAXLEN:-1000}
     ports:
-      - "8787"
+      # Fixed host port so AGENT_URL in .env stays stable across `compose up`.
+      # Override AGENT_HOST_PORT in .env if 1041 collides. Note: a fixed host
+      # port precludes scaling this service beyond 1 replica.
+      - "${AGENT_HOST_PORT:-1041}:8787"
     depends_on:
       minio:
         condition: service_healthy
@@ -161,7 +164,9 @@ services:
       M2M_ENABLED: ${M2M_ENABLED:-true}
       AUTH_PROXY_KEYPAIR_PATH: /var/lib/auth-proxy/keypair.json
     ports:
-      - "3000"
+      # Fixed host port so AUTH_PROXY_URL in .env stays stable across `compose up`.
+      # Override AUTH_PROXY_HOST_PORT in .env if 1042 collides.
+      - "${AUTH_PROXY_HOST_PORT:-1042}:3000"
     volumes:
       - auth_proxy_secrets:/var/lib/auth-proxy
     depends_on:

@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, NewType
 
 import httpx
+import pandas as pd
 
 # ---------------------------------------------------------------------------
 # Types
@@ -86,6 +87,10 @@ class TableState:
     row_count: int
     columns: list[dict[str, Any]]
     preview: list[dict[str, Any]]
+
+    @property
+    def df(self) -> pd.DataFrame:
+        return pd.DataFrame(self.preview)
 
     def column_type(self, column: str) -> str | None:
         for c in self.columns:
@@ -206,13 +211,25 @@ def to_dataset_id(body: dict[str, Any]) -> DatasetId:
 def to_table_state(body: dict[str, Any], dataset_id: str) -> TableState:
     """Build a ``TableState`` from ``GET /api/datasets/{id}?include_preview=true``.
 
-    Tolerates JSON:API envelopes, the legacy ``preview_rows`` alias, columns
-    nested under ``schema.columns``, and missing row counts (falls back to
-    ``rows`` and finally ``len(preview)``).
+    Tolerates JSON:API envelopes, the legacy ``preview_rows`` alias, missing
+    row counts (falls back to ``rows`` and finally ``len(preview)``), and
+    several spellings of the column-metadata field. The current backend
+    serializes columns as a ``column_profiles`` dict (column name -> profile
+    dict with ``type`` + stats); legacy/alternate shapes (``columns`` list,
+    ``schema.columns`` list, ``schema_config.fields`` dict) are also accepted
+    so the harness keeps working across API revisions.
     """
     data = unwrap_jsonapi(body)
     preview = data.get("preview") or data.get("preview_rows") or []
     columns = data.get("columns") or data.get("schema", {}).get("columns") or []
+    if not columns:
+        profiles = data.get("column_profiles") or {}
+        if isinstance(profiles, dict):
+            columns = [{"name": k, **(v if isinstance(v, dict) else {})} for k, v in profiles.items()]
+    if not columns:
+        fields = data.get("schema_config", {}).get("fields", {}) if isinstance(data.get("schema_config"), dict) else {}
+        if isinstance(fields, dict):
+            columns = [{"name": k, **(v if isinstance(v, dict) else {})} for k, v in fields.items()]
     row_count = data.get("row_count") or data.get("rows") or len(preview)
     return TableState(
         dataset_id=dataset_id,
@@ -737,9 +754,9 @@ class DatasetLayerHarness:
         async def upload_csv(project_id, csv_path): -> str
         async def chat_turn(prompt, *, max_retries=2): -> ChatEventTrace
         async def get_table_state(dataset_id): -> TableState
-        async def assert_distinct_values(dataset_id, column, expected: set[str])
-        async def assert_no_nulls(dataset_id, column)
-        async def assert_column_type(dataset_id, column, expected_type)
+        async def assert_distinct_values(dataset_id, column, expected: set[str]) -> bool
+        async def assert_has_nulls(dataset_id, column) -> bool
+        async def assert_column_type(dataset_id, column, expected_type) -> bool
 
     A pre-existing project_id may be passed in (e.g. from a fixture that
     handles ULID-keyed teardown); otherwise the harness creates one inside
@@ -892,35 +909,24 @@ class DatasetLayerHarness:
             )
         return await self._datasets.get_table_state(dataset_id, preview_limit=preview_limit)
 
-    async def assert_distinct_values(self, dataset_id: str, column: str, expected: set[str]) -> None:
+    async def assert_distinct_values(self, dataset_id: str, column: str, expected: set[str]) -> bool:
         state = await self.get_table_state(dataset_id, preview_limit=100)
-        seen = {row[column] for row in state.preview if column in row}
-        unexpected = seen - expected
-        missing = expected - seen
-        assert not unexpected and not missing, (
-            f"distinct values mismatch for column={column!r}: "
-            f"expected={sorted(expected)!r} got={sorted(seen)!r} "
-            f"unexpected={sorted(unexpected)!r} missing={sorted(missing)!r}"
-        )
+        return set(state.df[column].dropna()) == expected
 
-    async def assert_no_nulls(self, dataset_id: str, column: str) -> None:
+    async def assert_has_nulls(self, dataset_id: str, column: str) -> bool:
         state = await self.get_table_state(dataset_id, preview_limit=100)
-        offenders = [row for row in state.preview if row.get(column) in (None, "")]
-        assert not offenders, f"column {column!r} still has null/empty values after expected fill: {offenders[:3]!r}"
+        col = state.df[column]
+        return bool(col.isna().any() or col.eq("").any())
 
-    async def assert_column_type(self, dataset_id: str, column: str, expected_type: str) -> None:
+    async def assert_column_type(self, dataset_id: str, column: str, expected_type: str) -> bool:
         state = await self.get_table_state(dataset_id)
-        actual = state.column_type(column)
-        assert actual == expected_type, f"column {column!r} type mismatch: expected {expected_type!r} got {actual!r}"
+        return state.column_type(column) == expected_type
 
-    async def assert_no_leading_trailing_whitespace(self, dataset_id: str, column: str) -> None:
+    async def assert_no_leading_trailing_whitespace(self, dataset_id: str, column: str) -> bool:
         state = await self.get_table_state(dataset_id, preview_limit=100)
-        offenders = [
-            row[column]
-            for row in state.preview
-            if isinstance(row.get(column), str) and row[column] != row[column].strip()
-        ]
-        assert not offenders, f"column {column!r} still has leading/trailing whitespace: {offenders[:5]!r}"
+        s = state.df[column].dropna()
+        s = s[s.map(lambda v: isinstance(v, str))]
+        return bool(s.eq(s.str.strip()).all())
 
     # ----- replay + idempotency surfaces (G.2) ------------------------------
 

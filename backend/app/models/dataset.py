@@ -178,11 +178,10 @@ class Dataset:
 
     async def query_preview_rows(self, limit: int = 10) -> list[dict[str, Any]]:
         """Execute the staging SQL (with transforms) via the query engine and return preview rows."""
+        import io
+        import json as _json
+
         from ..database import get_query_engine_pool
-        from ..repositories.lake._pg_duckdb_query import (
-            build_read_parquet_preview_query,
-            decode_wrapped_rows,
-        )
         from ..utils.sql_functions import ALL_MACROS
 
         staging = self.staging_sql
@@ -190,15 +189,36 @@ class Dataset:
             return []
 
         s3_path = self._s3_path()
+        # Ibis emits ``FROM "<dataset.name>"`` (the table is built by name);
+        # rebind that to read_parquet so the transform composition runs
+        # against the actual stored data.
+        transformed_sql = staging.replace(f'"{self.name}"', f"read_parquet('{s3_path}')", 1)
 
         pool = await get_query_engine_pool()
         async with pool.acquire() as conn:
             if self._needs_custom_case_macros():
                 for macro_sql in ALL_MACROS:
-                    await conn.execute(macro_sql)
+                    # CREATE MACRO is DuckDB DDL; Postgres's parser rejects it.
+                    # pg_duckdb exposes duckdb.raw_query() to run DuckDB DDL
+                    # against the per-connection DuckDB instance. Macros only
+                    # persist for the lifetime of this connection.
+                    await conn.execute("SELECT duckdb.raw_query($1)", macro_sql)
 
-            rows = await conn.fetch(build_read_parquet_preview_query(s3_path, limit))
-            return decode_wrapped_rows(rows)
+            # pg_duckdb's planner only binds ``to_json(t)`` to the *direct*
+            # read_parquet alias, and asyncpg's mandatory prepared-statement
+            # Describe phase rejects DuckDB's UNKNOWN type from
+            # ``duckdb.query()``. Route through COPY TO STDOUT instead — the
+            # COPY protocol streams text without Describe, and DuckDB
+            # natively executes the inner query (transforms applied) inside
+            # ``duckdb.query()``.
+            inner = f"SELECT CAST(to_json(t) AS VARCHAR) AS row FROM ({transformed_sql}) t LIMIT {limit}"
+            buf = io.BytesIO()
+            await conn.copy_from_query(
+                "SELECT (r['row'])::text FROM duckdb.query($1) r",
+                inner,
+                output=buf,
+            )
+            return [_json.loads(line) for line in buf.getvalue().decode().splitlines() if line]
 
     def _needs_custom_case_macros(self) -> bool:
         """True if any enabled clean/map transform uses a custom case mode
