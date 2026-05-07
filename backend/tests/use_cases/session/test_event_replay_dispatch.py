@@ -1,9 +1,8 @@
 """Tests for the SessionEventReader dispatch helper (Epic F.2 — ADR-017).
 
-Pins the capability-presence routing rule:
-  STREAM_API_KEY+SECRET → stream_io
-  REDIS_URL             → redis
-  neither               → noop
+Pins the capability-presence routing rule (post Stream.io deletion):
+  REDIS_URL set → redis
+  unset         → noop
 
 ENV-name-based dispatch (NODE_ENV / APP_ENV / etc.) is forbidden by ADR-017;
 these tests would be the first place a regression toward env-keying would
@@ -20,11 +19,11 @@ from app.config import Settings
 from app.use_cases.session import event_replay
 from app.use_cases.session.event_replay import _NoopSessionEventReader, get_session_event_reader
 from app.use_cases.session.event_replay_dispatch import (
+    ReaderKind,
     install_session_event_reader,
     select_session_event_reader,
 )
 from app.use_cases.session.redis_session_event_reader import RedisSessionEventReader
-from app.use_cases.session.stream_io_session_event_reader import StreamIoSessionEventReader
 
 
 @pytest.fixture(autouse=True)
@@ -37,37 +36,15 @@ def _restore_active_reader():
 
 
 def _settings(**overrides) -> Settings:
-    base = {"stream_api_key": "", "stream_api_secret": "", "redis_url": ""}
+    base = {"redis_url": ""}
     base.update(overrides)
     return Settings(**base)
 
 
 class TestSelection:
-    """`select_session_event_reader` is sync, but Stream.io's SDK constructs
-    an aiohttp connector that needs a running event loop. Tests that exercise
-    the Stream.io branch are async; the others stay sync to make the absence
-    of an async dependency visible."""
+    """`select_session_event_reader` is sync. Two-tier dispatch: redis or noop."""
 
-    async def test_picks_stream_io_when_both_creds_set(self):
-        reader, kind = select_session_event_reader(_settings(stream_api_key="k", stream_api_secret="s"))
-        assert kind == "stream_io"
-        assert isinstance(reader, StreamIoSessionEventReader)
-
-    def test_falls_back_to_redis_when_only_stream_key_present(self):
-        """Both Stream.io creds are required to build the SDK client; key
-        alone is not enough to trigger Stream.io selection."""
-        reader, kind = select_session_event_reader(_settings(stream_api_key="k", redis_url="redis://localhost:6379/0"))
-        assert kind == "redis"
-        assert isinstance(reader, RedisSessionEventReader)
-
-    def test_falls_back_to_redis_when_only_stream_secret_present(self):
-        reader, kind = select_session_event_reader(
-            _settings(stream_api_secret="s", redis_url="redis://localhost:6379/0")
-        )
-        assert kind == "redis"
-        assert isinstance(reader, RedisSessionEventReader)
-
-    def test_picks_redis_when_only_redis_url_set(self):
+    def test_picks_redis_when_redis_url_set(self):
         reader, kind = select_session_event_reader(_settings(redis_url="redis://localhost:6379/0"))
         assert kind == "redis"
         assert isinstance(reader, RedisSessionEventReader)
@@ -77,14 +54,15 @@ class TestSelection:
         assert kind == "noop"
         assert isinstance(reader, _NoopSessionEventReader)
 
-    async def test_stream_io_wins_when_both_capabilities_present(self):
-        """Tier ordering matters: Stream.io is the production target, Redis
-        the compose-dev / prod-without-Stream.io fallback."""
-        reader, kind = select_session_event_reader(
-            _settings(stream_api_key="k", stream_api_secret="s", redis_url="redis://localhost:6379/0")
-        )
-        assert kind == "stream_io"
-        assert isinstance(reader, StreamIoSessionEventReader)
+    def test_reader_kind_has_no_stream_io_variant(self):
+        """Pin the post-deletion contract: ReaderKind is two-tier only.
+
+        After Phase 1 of the Stream.io→Redis migration, "stream_io" is no
+        longer a valid ReaderKind. This is the regression net for anyone
+        re-introducing the tier."""
+        # Literal["redis", "noop"] — order is part of the contract surface
+        assert set(ReaderKind.__args__) == {"redis", "noop"}
+        assert "stream_io" not in ReaderKind.__args__
 
 
 class TestInstallation:

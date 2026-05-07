@@ -84,13 +84,7 @@ class Settings(BaseSettings):
     mirth_connect_api_key: str = ""
     mirth_connect_timeout: int = 60
 
-    # Stream.io chat
-    stream_api_key: str = ""
-    stream_api_secret: str = ""
-    # Channel type the worker writes replay messages onto (Epic F.2 — ADR-017).
-    stream_io_channel_type: str = "messaging"
-
-    # Redis — durable replay log when Stream.io is not configured (ADR-017).
+    # Redis — durable replay log for SessionEventReader (ADR-017).
     redis_url: str = ""
 
     # App info

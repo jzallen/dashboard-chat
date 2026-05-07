@@ -43,8 +43,6 @@ dependencies = [
     "bcrypt>=4.0.0",
     # Redis client for SessionEventReader (Epic F.2 — ADR-017)
     "redis>=5.0.0",
-    # Stream.io chat SDK (Epic F.2 — ADR-017; Stream.io reader uses channel.query)
-    "stream-chat>=4.18.0",
 ]
 
 [build-system]
