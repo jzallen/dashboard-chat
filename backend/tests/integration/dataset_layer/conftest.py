@@ -13,8 +13,7 @@ Fixtures:
 * ``dataset_layer_env`` (session) — collects compose URLs (``AUTH_PROXY_URL``,
   ``AGENT_URL``) plus a backend-issued dev JWT from
   ``POST {auth-proxy}/api/auth/callback``. Skip-when-unavailable semantics
-  mirror ``backend/tests/integration/test_lake_preview_live.py`` and the
-  smoke probe at ``test_smoke_chat_cleaning.py``.
+  mirror ``backend/tests/integration/test_lake_preview_live.py``.
 * ``dataset_layer_pat`` (session) — mints a PAT via
   ``POST {auth-proxy}/api/auth/pats`` to validate the headless-tokens flow
   end-to-end; revokes at session end. Skipped when ``M2M_ENABLED`` is not
@@ -23,10 +22,6 @@ Fixtures:
   in try/finally teardown. Cheap (~100ms create / ~1s delete) per
   design §8.
 
-The test_smoke_chat_cleaning.py probe predates these fixtures and uses its
-own narrower env shape (``AGENT_URL``/``BACKEND_URL`` direct, bypassing
-auth-proxy). It is intentionally left untouched — the smoke probe is a
-single-tool shape; this conftest hosts the full-workload fixtures.
 """
 
 from __future__ import annotations

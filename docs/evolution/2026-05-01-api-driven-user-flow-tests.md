@@ -31,7 +31,7 @@ stabilization epic `dc-qj9`:
 
 | Bead | Title | Delivers |
 |---|---|---|
-| `dc-ms8.4` (AC4.3 verification) | Smoke probe for `trim_whitespace` via worker dispatch | `backend/tests/integration/dataset_layer/test_smoke_chat_cleaning.py` (~215 LOC) — single-tool thin slice, skip-when-unavailable |
+| `dc-ms8.4` (AC4.3 verification) | Smoke probe for `trim_whitespace` via worker dispatch | `backend/tests/integration/dataset_layer/test_smoke_chat_cleaning.py` (~215 LOC) — single-tool thin slice, skip-when-unavailable. **Removed 2026-05-07 (`dc-am7`)** — superseded by the full `DatasetLayerHarness` (G.1/G.2 below) which covers `trim_whitespace` end-to-end without operator setup. |
 | `dc-qj9.2.1` (G.1) | Full `DatasetLayerHarness` + demo workload | `harness.py` (~695 LOC) + `conftest.py` (~191 LOC) + `test_dataset_staging_layer.py` (~191 LOC), implementing §7 surface and the §10 worked-example shape |
 | `dc-qj9.2.2` (G.2) | Replay + idempotency end-to-end test | `test_replay_idempotency.py` (~349 LOC), exercising the C.2 replay endpoint and C.3 idempotency keys end-to-end |
 

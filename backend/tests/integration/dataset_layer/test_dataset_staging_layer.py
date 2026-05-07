@@ -6,7 +6,7 @@ backend + worker + query-engine + MinIO per ADR-016). The shape mirrors
 ``docs/evolution/2026-05-01-api-driven-user-flow-tests.md`` §10 and the
 demo script in ``docs/strategy/demo-staging-2026-04-26.md``.
 
-Skip-when-unavailable semantics mirror ``test_smoke_chat_cleaning.py`` and
+Skip-when-unavailable semantics mirror
 ``backend/tests/integration/test_lake_preview_live.py``: the test is a
 permanent guard but only runs when the operator has provisioned the
 compose stack and the four required env vars (``AUTH_PROXY_URL``,
