@@ -115,10 +115,8 @@ services:
       retries: 3
 
   # Redis - durable replay-event log for the SessionEventReader (ADR-017).
-  # Selected when STREAM_API_KEY is not configured (i.e., compose dev and
-  # any prod-without-Stream.io deployment). The agent writes via
-  # RedisThreadPersister.persist (XADD); the api reads via
-  # RedisSessionEventReader.get_events (XRANGE).
+  # The agent writes via RedisThreadPersister.persist (XADD); the api reads
+  # via RedisSessionEventReader.get_events (XRANGE).
   redis:
     image: redis:7-alpine
     container_name: dashboard-redis
@@ -185,12 +183,10 @@ services:
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
       TRUST_PROXY_HEADERS: "true"
-      STREAM_API_KEY: ${STREAM_API_KEY:-}
-      STREAM_API_SECRET: ${STREAM_API_SECRET:-}
-      # SessionEventReader dispatch (ADR-017). With STREAM_API_KEY+SECRET
-      # unset (the dev compose default), the api container picks Redis.
-      # Hardcoded so a host-side .env (used by pytest) cannot override
-      # container-internal values via compose substitution. (dc-u43)
+      # SessionEventReader dispatch (ADR-017): Redis is the only adapter the
+      # api container talks to. Hardcoded so a host-side .env (used by
+      # pytest) cannot override container-internal values via compose
+      # substitution. (dc-u43)
       REDIS_URL: redis://redis:6379/0
       PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
       PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
@@ -244,8 +240,6 @@ services:
       ENVIRONMENT_PROVISIONER: ${ENVIRONMENT_PROVISIONER:-docker}
       MINIO_INTERNAL_ENDPOINT: "minio:9000"
       PGBOUNCER_IMAGE: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer:1.22}
-      STREAM_API_KEY: ${STREAM_API_KEY:-}
-      STREAM_API_SECRET: ${STREAM_API_SECRET:-}
       PGBOUNCER_PORT_RANGE_START: ${PGBOUNCER_PORT_RANGE_START:-6432}
       PGBOUNCER_PORT_RANGE_END: ${PGBOUNCER_PORT_RANGE_END:-7431}
       # Container-internal — see api block above. (dc-u43)

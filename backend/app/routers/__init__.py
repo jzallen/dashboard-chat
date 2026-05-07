@@ -9,7 +9,6 @@ from .reports import router as reports_router
 from .sessions import router as sessions_router
 from .sessions import session_replay_router
 from .sql_access import router as sql_access_router
-from .stream_token import router as stream_token_router
 from .transforms import router as transforms_router
 from .uploads import router as uploads_router
 from .views import router as views_router
@@ -24,7 +23,6 @@ __all__ = [
     "session_replay_router",
     "sessions_router",
     "sql_access_router",
-    "stream_token_router",
     "transforms_router",
     "uploads_router",
     "views_router",
