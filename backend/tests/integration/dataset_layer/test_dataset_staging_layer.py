@@ -201,11 +201,11 @@ async def test_dataset_staging_layer(
         await h.assert_no_nulls(dataset_id, "discount_pct")
 
         # NOTE: ops 9-10 (count by region / product_category) were removed in
-        # dc-9u1. The harness's `count_by` is a client-side reduce over the
-        # preview window — it never exercised the agent path, so asserting
-        # `sum() == 250` was structurally orthogonal to whether chat did
-        # anything. Aggregations belong in views/reports (separate epic), not
-        # the staging layer's product contract.
+        # dc-9u1. A client-side reduce over the preview window never exercised
+        # the agent path, so asserting `sum() == 250` was structurally
+        # orthogonal to whether chat did anything. Aggregations belong in
+        # views/reports (separate epic), not the staging layer's product
+        # contract.
 
     elapsed = time.monotonic() - started
     assert elapsed <= WALL_CLOCK_BUDGET_SECONDS, (
