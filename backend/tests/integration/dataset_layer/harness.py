@@ -611,6 +611,53 @@ class SessionsApi:
         return out
 
 
+class TransformsApi:
+    """Backend ``/api/datasets/{id}/transforms`` mutation wrapper (design §3.3).
+
+    Returns the raw ``httpx.Response`` (intentionally) so C.3 idempotency
+    tests can assert on status + headers + body simultaneously. The wrapper's
+    value is centralizing URL composition, auth, and ``Idempotency-Key``
+    header construction — not hiding the response shape.
+    """
+
+    def __init__(self, client: httpx.AsyncClient, *, base_url: str, token: str):
+        self._client = client
+        self._base = base_url.rstrip("/")
+        self._token = token
+
+    def _headers(self, idempotency_key: str | None) -> dict[str, str]:
+        headers = bearer(self._token, json_body=True)
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+        return headers
+
+    async def post_direct(
+        self,
+        dataset_id: str,
+        body: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> httpx.Response:
+        return await self._client.post(
+            f"{self._base}/api/datasets/{dataset_id}/transforms",
+            headers=self._headers(idempotency_key),
+            content=json.dumps(body),
+        )
+
+    async def patch_direct(
+        self,
+        dataset_id: str,
+        body: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> httpx.Response:
+        return await self._client.patch(
+            f"{self._base}/api/datasets/{dataset_id}/transforms",
+            headers=self._headers(idempotency_key),
+            content=json.dumps(body),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
@@ -673,6 +720,7 @@ class DatasetLayerHarness:
         self._uploads: UploadsApi | None = None
         self._datasets: DatasetsApi | None = None
         self._sessions: SessionsApi | None = None
+        self._transforms: TransformsApi | None = None
 
     # ----- lifecycle --------------------------------------------------------
 
@@ -683,6 +731,7 @@ class DatasetLayerHarness:
         self._uploads = UploadsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         self._datasets = DatasetsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         self._sessions = SessionsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
+        self._transforms = TransformsApi(self._client, base_url=self._auth_proxy_url, token=backend_token)
         if self._owns_project:
             self._project_id = await self.create_project(f"dataset-staging-{_new_ulid_suffix()}")
         return self
@@ -699,6 +748,7 @@ class DatasetLayerHarness:
                 self._uploads = None
                 self._datasets = None
                 self._sessions = None
+                self._transforms = None
 
     # ----- public API -------------------------------------------------------
 
@@ -903,15 +953,11 @@ class DatasetLayerHarness:
         explicit retry semantics. Returns the raw httpx Response so callers
         can assert on status, headers, and body shape.
         """
-        client = self._require_client()
-        headers = self._backend_headers(json_body=True)
-        if idempotency_key is not None:
-            headers["Idempotency-Key"] = idempotency_key
-        return await client.post(
-            f"{self._auth_proxy_url}/api/datasets/{dataset_id}/transforms",
-            headers=headers,
-            content=json.dumps(body),
-        )
+        if self._transforms is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        return await self._transforms.post_direct(dataset_id, body, idempotency_key=idempotency_key)
 
     async def patch_transforms_direct(
         self,
@@ -924,15 +970,11 @@ class DatasetLayerHarness:
         update entry point that stands in for ``DELETE /rows/{id}`` per the
         bead's mutation set).
         """
-        client = self._require_client()
-        headers = self._backend_headers(json_body=True)
-        if idempotency_key is not None:
-            headers["Idempotency-Key"] = idempotency_key
-        return await client.patch(
-            f"{self._auth_proxy_url}/api/datasets/{dataset_id}/transforms",
-            headers=headers,
-            content=json.dumps(body),
-        )
+        if self._transforms is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        return await self._transforms.patch_direct(dataset_id, body, idempotency_key=idempotency_key)
 
     async def list_dataset_transforms(self, dataset_id: str) -> list[dict[str, Any]]:
         """Return the dataset's persisted transforms via GET /api/datasets/{id}.
