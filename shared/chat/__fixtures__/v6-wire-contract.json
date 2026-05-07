@@ -1,0 +1,25 @@
+{
+  "_README": "Single source of truth for the v6 SSE wire-format contract test. Both shared/chat/__fixtures__/v6-wire-contract.ts and shared/chat/__fixtures__/v6_wire_contract.py load this JSON and reconstruct the canonical UTF-8 byte stream by joining `frames` with the v6 separator '\\n\\n'. The `expected_events` array is the contract — every parser (agent, frontend, backend harness) must surface these events in this order from the canonical bytes.",
+  "frames": [
+    "data: {\"type\":\"start\"}",
+    "data: {\"type\":\"text-delta\",\"id\":\"msg-1\",\"delta\":\"Trimming \"}",
+    "data: {\"type\":\"text-delta\",\"id\":\"msg-1\",\"delta\":\"the region column.\"}",
+    "data: {\"type\":\"data-chat-event\",\"id\":\"e-1\",\"data\":{\"type\":\"transform_applied\",\"transform_id\":\"t-1\",\"dataset_id\":\"ds-42\",\"operation\":\"trim\",\"column\":\"region\"}}",
+    "data: {\"type\":\"data-chat-event\",\"id\":\"e-2\",\"data\":{\"type\":\"turn_done\",\"reason\":\"stop\"}}",
+    "data: {\"type\":\"finish\",\"finishReason\":\"stop\"}",
+    "data: [DONE]"
+  ],
+  "expected_events": [
+    {
+      "type": "transform_applied",
+      "transform_id": "t-1",
+      "dataset_id": "ds-42",
+      "operation": "trim",
+      "column": "region"
+    },
+    {
+      "type": "turn_done",
+      "reason": "stop"
+    }
+  ]
+}

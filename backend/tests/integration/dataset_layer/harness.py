@@ -85,41 +85,85 @@ class TableState:
 
 
 # ---------------------------------------------------------------------------
-# SSE frame parser (AI SDK data-stream format — same shape as smoke probe)
+# SSE frame parser (AI SDK v6 UIMessage data-stream format)
 # ---------------------------------------------------------------------------
+#
+# The agent serializes its UIMessageChunk stream via
+# ``JsonToSseTransformStream``, producing v6 frames of the shape::
+#
+#     data: {"type":"text-delta","id":"...","delta":"..."}\n\n
+#     data: {"type":"data-chat-event","id":"...","data":{<ChatEvent>}}\n\n
+#     data: {"type":"data-agent-request","id":"...","data":{<AgentRequest>}}\n\n
+#     data: {"type":"finish","finishReason":"stop",...}\n\n
+#     data: [DONE]\n\n
+#
+# ChatEvents reach the harness via ``data-chat-event`` typed parts (the
+# canonical v6 channel), with the ChatEvent shape carried under
+# ``payload['data']``. Raw Groq tool-call deltas are stripped upstream by
+# the agent's ``pipeChatStream`` and translated into typed ``data-chat-event``
+# parts; if any survive (chunk type ``tool-input-delta`` or similar) we surface
+# that as ``raw_tool_call_seen`` to keep AC1.4 enforceable end-to-end.
+#
+# Reference parsers (TypeScript, identical contract):
+# - ``frontend/src/core/chat/services/chatStream.ts``
+# - ``agent/test/chat/_v6Mocks.ts``
+
+
+_V6_FRAME_SEPARATOR = "\n\n"
+_V6_DATA_PREFIX = "data: "
+_V6_DONE_SENTINEL = "[DONE]"
+_RAW_TOOL_CHUNK_TYPES = frozenset(
+    {
+        "tool-input-start",
+        "tool-input-delta",
+        "tool-input-available",
+        "tool-output-available",
+    },
+)
+
+
+def _parse_v6_sse(body: bytes) -> list[dict[str, Any]]:
+    """Decode a v6 SSE byte stream into a list of UIMessageChunk-shaped dicts.
+
+    Frames are ``data: <json>\\n\\n``. Non-data lines, the ``[DONE]`` sentinel,
+    and malformed JSON payloads are tolerated and skipped.
+    """
+    text = body.decode("utf-8", errors="replace")
+    chunks: list[dict[str, Any]] = []
+    for raw_frame in text.split(_V6_FRAME_SEPARATOR):
+        frame = raw_frame.strip()
+        if not frame or not frame.startswith(_V6_DATA_PREFIX):
+            continue
+        payload_text = frame[len(_V6_DATA_PREFIX) :].strip()
+        if not payload_text or payload_text == _V6_DONE_SENTINEL:
+            continue
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("type"), str):
+            chunks.append(payload)
+    return chunks
 
 
 def parse_chat_event_frames(body: bytes) -> tuple[list[dict[str, Any]], bool]:
-    """Parse the AI SDK data-stream body into (events, raw_tool_call_seen).
+    """Parse the AI SDK v6 SSE body into (events, raw_tool_call_seen).
 
-    The worker emits each ``ChatEvent`` on prefix ``8`` (annotations); raw
-    Groq tool-call deltas appear on prefix ``9``. Per AC1.4, prefix ``9``
-    MUST NOT leak — that would mean the worker dispatcher is no longer the
-    single dispatcher.
+    Surfaces the ``data`` payload of every ``data-chat-event`` typed part as
+    a ChatEvent dict. Sets ``raw_tool_call_seen`` if any unstripped raw
+    tool-call chunk leaks through the SSE — that would mean the agent's
+    ``pipeChatStream`` is no longer the single dispatcher, violating AC1.4.
     """
     events: list[dict[str, Any]] = []
     raw_tool_call_seen = False
-    for line in body.decode("utf-8", errors="replace").split("\n"):
-        if not line:
-            continue
-        prefix, sep, payload = line.partition(":")
-        if not sep or not payload:
-            continue
-        payload = payload.strip()
-        if prefix == "9":
+    for chunk in _parse_v6_sse(body):
+        chunk_type = chunk.get("type")
+        if chunk_type == "data-chat-event":
+            data = chunk.get("data")
+            if isinstance(data, dict) and isinstance(data.get("type"), str):
+                events.append(data)
+        elif chunk_type in _RAW_TOOL_CHUNK_TYPES:
             raw_tool_call_seen = True
-            continue
-        if prefix not in ("2", "8"):
-            continue
-        try:
-            parts = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(parts, list):
-            continue
-        for part in parts:
-            if isinstance(part, dict) and "type" in part:
-                events.append(part)
     return events, raw_tool_call_seen
 
 

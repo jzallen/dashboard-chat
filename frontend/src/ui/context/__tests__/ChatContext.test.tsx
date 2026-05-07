@@ -119,44 +119,63 @@ vi.mock("../../../lib/stream/useEntityContext", () => ({
 // ---- helpers ----
 
 /**
- * Converts legacy-style SSE event objects into AI SDK data stream lines.
- * Supports: content (0:), tool_calls (9:), done (d:), error (1:)
+ * Converts test-friendly event objects into AI SDK v6 UIMessage SSE frames.
+ *
+ * The v6 wire format (served by `JsonToSseTransformStream` and consumed by
+ * `readSSEStream`) is a sequence of `data: <json>\n\n` frames. See
+ * `frontend/src/core/chat/services/chatStream.ts` for the full dispatch table
+ * and `agent/test/chat/_v6Mocks.ts` for the canonical helper this mirrors.
+ *
+ * Supported synthetic event types (input shape stays test-friendly so call
+ * sites read naturally):
+ *
+ *   { type: "content", content: "..." }
+ *     -> data: {"type":"text-delta","id":"msg-1","delta":"..."}
+ *
+ *   { type: "done" }
+ *     -> data: {"type":"finish","finishReason":"stop"}
+ *        followed by the v6 sentinel `data: [DONE]`
+ *
+ *   { type: "error", error: "..." }
+ *     -> data: {"type":"error","errorText":"..."}
  */
 function toDataStreamLines(
   events: Array<{ type: string; [k: string]: unknown }>,
 ): string {
-  const lines: string[] = [];
-  let accumulatedContent = "";
+  const frames: string[] = [];
 
   for (const event of events) {
     switch (event.type) {
       case "content":
-        accumulatedContent += event.content as string;
-        lines.push(`0:${JSON.stringify(event.content)}`);
+        frames.push(
+          `data: ${JSON.stringify({
+            type: "text-delta",
+            id: "msg-1",
+            delta: event.content as string,
+          })}\n\n`,
+        );
         break;
-      case "tool_calls": {
-        const calls = event.tool_calls as Array<{
-          id: string;
-          function: { name: string; arguments: string };
-        }>;
-        const mapped = calls.map((c) => ({
-          toolCallId: c.id,
-          toolName: c.function.name,
-          args: JSON.parse(c.function.arguments),
-        }));
-        lines.push(`9:${JSON.stringify(mapped)}`);
-        break;
-      }
       case "done":
-        lines.push(`d:${JSON.stringify({ finishReason: "stop" })}`);
+        frames.push(
+          `data: ${JSON.stringify({
+            type: "finish",
+            finishReason: "stop",
+          })}\n\n`,
+        );
+        frames.push(`data: [DONE]\n\n`);
         break;
       case "error":
-        lines.push(`1:${JSON.stringify(event.error)}`);
+        frames.push(
+          `data: ${JSON.stringify({
+            type: "error",
+            errorText: event.error as string,
+          })}\n\n`,
+        );
         break;
     }
   }
 
-  return lines.join("\n") + "\n";
+  return frames.join("");
 }
 
 /** Creates a ReadableStream from a string. */
@@ -310,47 +329,17 @@ describe("ChatProvider", () => {
     );
   });
 
-  it("handles SSE tool_calls and executes them", async () => {
-    const toolHandler: ToolHandler = {
-      executeToolCall: vi.fn(() => "applied filter"),
-    };
-
-    mockFetchSSE([
-      { type: "content", content: "Applying filter..." },
-      {
-        type: "tool_calls",
-        tool_calls: [
-          {
-            id: "tc-1",
-            type: "function",
-            function: { name: "addFilter", arguments: '{"col":"a"}' },
-          },
-        ],
-      },
-      { type: "done" },
-    ]);
-
-    renderChat(toolHandler);
-
-    fireEvent.change(screen.getByTestId("chat-input"), {
-      target: { value: "Apply transformation to col a" },
-    });
-    // eslint-disable-next-line testing-library/no-unnecessary-act
-    await act(async () => {
-      fireEvent.submit(screen.getByTestId("submit").closest("form")!);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("loading").textContent).toBe("false");
-    });
-
-    expect(toolHandler.executeToolCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "tc-1",
-        function: { name: "addFilter", arguments: '{"col":"a"}' },
-      }),
-    );
-  });
+  // NOTE: the v4 "handles SSE tool_calls and executes them" scenario was
+  // removed during the AI SDK v6 migration. v6 strips raw `tool-*` UIMessage
+  // chunks at the agent boundary (`agent/lib/chat/pipeChatStream.ts`) and
+  // translates them into typed `data-chat-event` parts; consequently the
+  // frontend's `readSSEStream` always reports `toolCalls: []` to `onDone`
+  // (see `frontend/src/core/chat/services/chatStream.ts`). The user-supplied
+  // `ToolHandler.executeToolCall` is therefore no longer invoked from the
+  // SSE path. Tool-event behavior is covered end-to-end by
+  // `core/chat/__tests__/chatStream.test.ts` (frame dispatch) and
+  // `core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx`
+  // (handler reactions).
 
   it("handles SSE error events gracefully", async () => {
     mockFetchSSE([

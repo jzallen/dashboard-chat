@@ -1,7 +1,9 @@
+import type { UIMessageChunk } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
 import { handleChat } from "../../lib/chat/handleChat";
 import { getConversationalTools } from "../../lib/chat/tools";
+import { agentRequests, chatEvents, mockStreamTextResult, parseSseFrames } from "./_v6Mocks";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -11,18 +13,24 @@ vi.mock("@ai-sdk/groq", () => ({
   createGroq: () => () => "mock-model",
 }));
 
-// Default mock — will be overridden in specific tests via mockImplementation
-const mockStreamText = vi.fn(() => ({
-  toDataStreamResponse: () =>
-    new Response('0:"test"\n', {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    }),
-}));
+// Default mock — overridden per test via mockImplementationOnce.
+const mockStreamText = vi.fn(() =>
+  mockStreamTextResult([
+    { type: "text-start", id: "m1" },
+    { type: "text-delta", id: "m1", delta: "test" },
+    { type: "text-end", id: "m1" },
+    { type: "finish", finishReason: "stop" },
+  ]),
+);
 
-vi.mock("ai", () => ({
-  streamText: (...args: unknown[]) => mockStreamText(...args),
-  tool: vi.fn((opts: unknown) => opts),
-}));
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    streamText: (...args: unknown[]) => mockStreamText(...(args as [unknown])),
+    tool: vi.fn((opts: unknown) => opts),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -34,11 +42,6 @@ function createRequest(body: Record<string, unknown>): Request {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-}
-
-async function readResponseLines(response: Response): Promise<string[]> {
-  const text = await response.text();
-  return text.split("\n").filter((l) => l.length > 0);
 }
 
 const env = { GROQ_API_KEY: "test-key" };
@@ -63,24 +66,19 @@ describe("resolve_dataset tool definition", () => {
   });
 });
 
-describe("r: prefix emission for dataset resolution", () => {
-  it("transforms 9: resolve_dataset tool call into r: prefix", async () => {
-    const resolveToolCall = JSON.stringify([
-      { toolCallId: "tc-1", toolName: "resolve_dataset", args: { name: "patients" } },
-    ]);
-
-    mockStreamText.mockImplementationOnce(() => ({
-      toDataStreamResponse: () =>
-        new Response(
-          [
-            `9:${resolveToolCall}`,
-            `d:${JSON.stringify({ finishReason: "tool-calls" })}`,
-          ]
-            .map((l) => l + "\n")
-            .join(""),
-          { headers: { "Content-Type": "text/plain; charset=utf-8" } },
-        ),
-    }));
+describe("data-agent-request emission for dataset resolution", () => {
+  it("transforms a resolve_dataset tool-input-available chunk into a data-agent-request typed part", async () => {
+    const upstreamChunks: UIMessageChunk[] = [
+      {
+        type: "tool-input-available",
+        toolCallId: "tc-1",
+        toolName: "resolve_dataset",
+        input: { name: "patients" },
+      } as UIMessageChunk,
+      // Anything after this should NOT surface — pipeChatStream pauses the turn.
+      { type: "finish", finishReason: "tool-calls" } as UIMessageChunk,
+    ];
+    mockStreamText.mockImplementationOnce(() => mockStreamTextResult(upstreamChunks));
 
     const response = await handleChat(
       createRequest({
@@ -91,42 +89,35 @@ describe("r: prefix emission for dataset resolution", () => {
       env,
     );
 
-    const lines = await readResponseLines(response);
+    const frames = await parseSseFrames(response);
 
-    // Should contain an r: line with the resolve_dataset request
-    const rLine = lines.find((l) => l.startsWith("r:"));
-    expect(rLine).toBeDefined();
+    // A single data-agent-request frame carries the resolve_dataset request.
+    const requests = agentRequests(frames);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toEqual({
+      type: "resolve_dataset",
+      params: { name: "patients" },
+    });
 
-    const rPayload = JSON.parse(rLine!.slice(2));
-    expect(rPayload.type).toBe("resolve_dataset");
-    expect(rPayload.params.name).toBe("patients");
-
-    // Should contain d: with finishReason "request"
-    const dLine = lines.find((l) => l.startsWith("d:"));
-    expect(dLine).toBeDefined();
-
-    const dPayload = JSON.parse(dLine!.slice(2));
-    expect(dPayload.finishReason).toBe("request");
+    // No turn_done chat-event was emitted — the turn is paused for FE
+    // resolution (paused-turn semantics, dc-x3y.3.1).
+    const events = chatEvents(frames) as Array<{ type: string }>;
+    expect(events.find((e) => e.type === "turn_done")).toBeUndefined();
   });
 
   it("passes through text deltas before resolve_dataset", async () => {
-    const resolveToolCall = JSON.stringify([
-      { toolCallId: "tc-1", toolName: "resolve_dataset", args: { name: "sales" } },
-    ]);
-
-    mockStreamText.mockImplementationOnce(() => ({
-      toDataStreamResponse: () =>
-        new Response(
-          [
-            '0:"Let me find that for you."',
-            `9:${resolveToolCall}`,
-            `d:${JSON.stringify({ finishReason: "tool-calls" })}`,
-          ]
-            .map((l) => l + "\n")
-            .join(""),
-          { headers: { "Content-Type": "text/plain; charset=utf-8" } },
-        ),
-    }));
+    const upstreamChunks: UIMessageChunk[] = [
+      { type: "text-start", id: "m1" } as UIMessageChunk,
+      { type: "text-delta", id: "m1", delta: "Let me find that for you." } as UIMessageChunk,
+      {
+        type: "tool-input-available",
+        toolCallId: "tc-1",
+        toolName: "resolve_dataset",
+        input: { name: "sales" },
+      } as UIMessageChunk,
+      { type: "finish", finishReason: "tool-calls" } as UIMessageChunk,
+    ];
+    mockStreamText.mockImplementationOnce(() => mockStreamTextResult(upstreamChunks));
 
     const response = await handleChat(
       createRequest({
@@ -137,34 +128,40 @@ describe("r: prefix emission for dataset resolution", () => {
       env,
     );
 
-    const lines = await readResponseLines(response);
+    const frames = await parseSseFrames(response);
 
-    // Text delta should be passed through
-    const textLine = lines.find((l) => l.startsWith("0:"));
-    expect(textLine).toBeDefined();
-    expect(textLine).toContain("Let me find that for you.");
+    // The text-delta surfaces ahead of the agent-request frame.
+    const textDeltas = frames.filter((f) => f.type === "text-delta");
+    expect(textDeltas.length).toBeGreaterThan(0);
+    expect(textDeltas.some((d) => d.delta === "Let me find that for you.")).toBe(true);
 
-    // r: line should be present
-    expect(lines.find((l) => l.startsWith("r:"))).toBeDefined();
+    // And the agent-request is present.
+    expect(agentRequests(frames)).toHaveLength(1);
+
+    // Order: text-delta(...) precedes data-agent-request on the wire.
+    const types = frames.map((f) => f.type);
+    const idxText = types.indexOf("text-delta");
+    const idxRequest = types.indexOf("data-agent-request");
+    expect(idxText).toBeGreaterThanOrEqual(0);
+    expect(idxRequest).toBeGreaterThan(idxText);
   });
 
   it("does not intercept non-resolve_dataset tool calls in dataset context", async () => {
-    const sortToolCall = JSON.stringify([
-      { toolCallId: "tc-1", toolName: "sortTable", args: { column: "name", direction: "asc" } },
-    ]);
-
-    mockStreamText.mockImplementationOnce(() => ({
-      toDataStreamResponse: () =>
-        new Response(
-          [
-            `9:${sortToolCall}`,
-            `d:${JSON.stringify({ finishReason: "tool-calls" })}`,
-          ]
-            .map((l) => l + "\n")
-            .join(""),
-          { headers: { "Content-Type": "text/plain; charset=utf-8" } },
-        ),
-    }));
+    // sortTable lives on the dataset tool set. The pipe drops raw tool-* chunks
+    // (the dispatcher is what translates them into typed data-chat-event parts);
+    // here we synthesize a sortTable tool-input-available chunk and assert the
+    // pipe does NOT produce a data-agent-request (only resolve_dataset is the
+    // pause signal).
+    const upstreamChunks: UIMessageChunk[] = [
+      {
+        type: "tool-input-available",
+        toolCallId: "tc-1",
+        toolName: "sortTable",
+        input: { column: "name", direction: "asc" },
+      } as UIMessageChunk,
+      { type: "finish", finishReason: "tool-calls" } as UIMessageChunk,
+    ];
+    mockStreamText.mockImplementationOnce(() => mockStreamTextResult(upstreamChunks));
 
     const response = await handleChat(
       createRequest({
@@ -178,29 +175,36 @@ describe("r: prefix emission for dataset resolution", () => {
       env,
     );
 
-    const lines = await readResponseLines(response);
+    const frames = await parseSseFrames(response);
 
-    // No r: line — this is a normal dataset context
-    expect(lines.find((l) => l.startsWith("r:"))).toBeUndefined();
+    // No agent-request frame — the sortTable tool call is NOT a pause signal.
+    expect(agentRequests(frames)).toHaveLength(0);
 
-    // Normal 9: and d: lines should be present
-    expect(lines.find((l) => l.startsWith("9:"))).toBeDefined();
-    expect(lines.find((l) => l.startsWith("d:"))).toBeDefined();
+    // No raw tool-* parts surface to the FE either (walking-skeleton contract).
+    const rawToolFrames = frames.filter(
+      (f) => typeof f.type === "string" && f.type.startsWith("tool-"),
+    );
+    expect(rawToolFrames).toHaveLength(0);
 
-    const dLine = lines.find((l) => l.startsWith("d:"));
-    const dPayload = JSON.parse(dLine!.slice(2));
-    expect(dPayload.finishReason).toBe("tool-calls");
+    // turn_done IS emitted (the turn naturally finished — finish-reason
+    // "tool-calls" maps to "stop" in the pipe).
+    const events = chatEvents(frames) as Array<{ type: string; reason?: string }>;
+    const turnDone = events.find((e) => e.type === "turn_done");
+    expect(turnDone).toBeDefined();
+    expect(turnDone?.reason).toBe("stop");
   });
 });
 
 describe("thread_id and project_id in request payload", () => {
   it("accepts thread_id and project_id without error", async () => {
-    mockStreamText.mockImplementationOnce(() => ({
-      toDataStreamResponse: () =>
-        new Response('0:"hello"\nd:{"finishReason":"stop"}\n', {
-          headers: { "Content-Type": "text/plain; charset=utf-8" },
-        }),
-    }));
+    mockStreamText.mockImplementationOnce(() =>
+      mockStreamTextResult([
+        { type: "text-start", id: "m1" } as UIMessageChunk,
+        { type: "text-delta", id: "m1", delta: "hello" } as UIMessageChunk,
+        { type: "text-end", id: "m1" } as UIMessageChunk,
+        { type: "finish", finishReason: "stop" } as UIMessageChunk,
+      ]),
+    );
 
     const response = await handleChat(
       createRequest({
@@ -214,17 +218,20 @@ describe("thread_id and project_id in request payload", () => {
     );
 
     expect(response.status).not.toBe(400);
-    const lines = await readResponseLines(response);
-    expect(lines.some((l) => l.startsWith("0:"))).toBe(true);
+    const frames = await parseSseFrames(response);
+    // Some text-delta frame survived to the FE.
+    expect(frames.some((f) => f.type === "text-delta")).toBe(true);
   });
 
   it("works without thread_id and project_id (backward compatible)", async () => {
-    mockStreamText.mockImplementationOnce(() => ({
-      toDataStreamResponse: () =>
-        new Response('0:"hello"\nd:{"finishReason":"stop"}\n', {
-          headers: { "Content-Type": "text/plain; charset=utf-8" },
-        }),
-    }));
+    mockStreamText.mockImplementationOnce(() =>
+      mockStreamTextResult([
+        { type: "text-start", id: "m1" } as UIMessageChunk,
+        { type: "text-delta", id: "m1", delta: "hello" } as UIMessageChunk,
+        { type: "text-end", id: "m1" } as UIMessageChunk,
+        { type: "finish", finishReason: "stop" } as UIMessageChunk,
+      ]),
+    );
 
     const response = await handleChat(
       createRequest({
@@ -241,12 +248,14 @@ describe("thread_id and project_id in request payload", () => {
 
 describe("re-submitted request with resolved dataset schema", () => {
   it("uses dataset tools when re-submitted with dataset context", async () => {
-    mockStreamText.mockImplementationOnce(() => ({
-      toDataStreamResponse: () =>
-        new Response('0:"filtering..."\nd:{"finishReason":"stop"}\n', {
-          headers: { "Content-Type": "text/plain; charset=utf-8" },
-        }),
-    }));
+    mockStreamText.mockImplementationOnce(() =>
+      mockStreamTextResult([
+        { type: "text-start", id: "m1" } as UIMessageChunk,
+        { type: "text-delta", id: "m1", delta: "filtering..." } as UIMessageChunk,
+        { type: "text-end", id: "m1" } as UIMessageChunk,
+        { type: "finish", finishReason: "stop" } as UIMessageChunk,
+      ]),
+    );
 
     const response = await handleChat(
       createRequest({

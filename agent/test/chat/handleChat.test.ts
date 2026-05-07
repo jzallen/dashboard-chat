@@ -1,17 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { handleChat } from "../../lib/chat/handleChat";
+import { mockStreamTextResult } from "./_v6Mocks";
 
-// Mock the AI SDK modules since we can't make real Groq API calls in tests
-vi.mock("ai", () => ({
-  streamText: vi.fn(() => ({
-    toDataStreamResponse: () =>
-      new Response("0:\"test\"\n", {
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      }),
-  })),
-  tool: vi.fn((opts: unknown) => opts),
-}));
+// Mock the AI SDK modules — keep `createUIMessageStream` and
+// `createUIMessageStreamResponse` real so the v6 SSE pipeline runs end-to-end
+// against the synthesized upstream chunks. Only `streamText` (which makes the
+// real Groq call) and `tool` (a thin wrapper) need to be replaced.
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    streamText: vi.fn(() =>
+      mockStreamTextResult([
+        { type: "text-start", id: "m1" },
+        { type: "text-delta", id: "m1", delta: "test" },
+        { type: "text-end", id: "m1" },
+        { type: "finish", finishReason: "stop" },
+      ]),
+    ),
+    tool: vi.fn((opts: unknown) => opts),
+  };
+});
 
 vi.mock("@ai-sdk/groq", () => ({
   createGroq: () => () => "mock-model",

@@ -8,62 +8,26 @@
  * backend/tests/integration/test_lake_preview_live.py.
  *
  * Permanent guard on the protocol contract once the dev compose stack is up.
+ *
+ * Wire-format contract (AI SDK v6, `data-*` UIMessage stream):
+ *   - Transport: `text/event-stream` SSE, frames separated by `\n\n`.
+ *   - Each frame is `data: <UIMessageChunk JSON>` (or `data: [DONE]` sentinel).
+ *   - Custom data parts arrive as `{type: 'data-chat-event', data: ChatEvent}`
+ *     — replaces the v4 `2:`/`8:` annotation lines.
+ *   - Tool deltas arrive as `{type: 'tool-*', ...}` — replaces the v4 `9:` lines.
+ *     The acceptance contract asserts NO raw `tool-*` parts surface (the agent
+ *     must translate tool calls into typed `data-chat-event` parts).
  */
 
 import { describe, expect, it } from "vitest";
 
-import { type ChatEvent,ChatEventSchema } from "../../../lib/chat/events";
+import { consumeChatEvents } from "./_v6SSEParser";
 
 const requiresExternal = !!process.env.GROQ_API_KEY && !!process.env.AGENT_URL;
 
 const DEV_DATASET_ID = process.env.WS_DATASET_ID ?? "";
 const DEV_PROJECT_ID = process.env.WS_PROJECT_ID ?? "";
 const DEV_JWT = process.env.WS_JWT ?? "dev-token-static";
-
-async function consumeChatEvents(body: ReadableStream<Uint8Array>): Promise<{
-  events: ChatEvent[];
-  rawToolCallSeen: boolean;
-}> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const events: ChatEvent[] = [];
-  let rawToolCallSeen = false;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line) continue;
-      const colonIdx = line.indexOf(":");
-      if (colonIdx === -1) continue;
-      const prefix = line.slice(0, colonIdx);
-      const payload = line.slice(colonIdx + 1).trim();
-      if (!payload) continue;
-      if (prefix === "9") {
-        // AC: SSE stream emits no raw Groq tool-call deltas
-        rawToolCallSeen = true;
-        continue;
-      }
-      if (prefix === "2" || prefix === "8") {
-        try {
-          const parts = JSON.parse(payload);
-          if (!Array.isArray(parts)) continue;
-          for (const part of parts) {
-            const result = ChatEventSchema.safeParse(part);
-            if (result.success) events.push(result.data);
-          }
-        } catch {
-          // ignore malformed JSON
-        }
-      }
-    }
-  }
-  return { events, rawToolCallSeen };
-}
 
 describe("walking skeleton — chat-driven trim propagates as a typed event", () => {
   const conditional = requiresExternal ? it : it.skip;

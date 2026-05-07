@@ -21,7 +21,7 @@ import { handleChatEvent } from "@/chat/eventHandler";
 import type { AgentRequest } from "@/chat/services/chatStream";
 import { readSSEStream } from "@/chat/services/chatStream";
 import { fulfillAgentRequest } from "@/chat/services/fulfillRequest";
-import { executeToolCalls, type ToolHandler } from "@/chat/services/toolExecution";
+import { type ToolHandler } from "@/chat/services/toolExecution";
 import { createDataCatalog, type Dataset, type Session } from "@/dataCatalog";
 
 export type { ToolHandler };
@@ -478,7 +478,6 @@ function useChatEngine(): ChatContextValue {
       ]);
 
       const patchAssistant = updateAssistantMessage(setMessages, assistantId);
-      const toolHandler = toolHandlerRef.current;
       const contextType = entityContext.entityType;
       const contextId = entityContext.entityId;
       const tableSchema = (contextType === "dataset" || contextType === "report") ? entityContext.tableSchema : null;
@@ -513,53 +512,13 @@ function useChatEngine(): ChatContextValue {
               thinking: { setVisible: (_v) => {} },
             });
           },
-          onDone: async (accumulatedContent, toolCalls) => {
-            // Stop SSE overlay
+          onDone: (accumulatedContent) => {
+            // v6: tool execution is handled agent-side via `data-chat-event` parts;
+            // `readSSEStream` always reports `toolCalls: []` to `onDone`. The legacy
+            // FE-side execute branch was removed (see chatStream.ts:106-110).
             sseOverlay.stopStreaming();
-
-            if (toolCalls.length > 0 && toolHandler) {
-              const { results, toolResults } = await executeToolCalls(
-                toolCalls,
-                toolHandler,
-              );
-              const toolSummary = results.join(", ");
-              patchAssistant({
-                content: accumulatedContent || `Executed: ${toolSummary}`,
-                tool_calls: toolCalls,
-                isStreaming: false,
-              });
-
-              // Write assistant message to Stream with tool_calls metadata
-              writeToStream(
-                accumulatedContent || (toolResults ? `Executed: ${toolResults.map((r) => r.result).join(", ")}` : ""),
-                "assistant",
-                toolCalls,
-              );
-            } else if (toolCalls.length > 0 && !toolHandler) {
-              // Tool calls returned but no handler — prompt user to navigate to table
-              const datasetId = entityContext.entityId;
-              const navMessage = datasetId
-                ? `Navigate to the table view to execute this operation: /table/${datasetId}`
-                : "Select a dataset first to execute table operations.";
-              patchAssistant({
-                content: accumulatedContent
-                  ? `${accumulatedContent}\n\n${navMessage}`
-                  : navMessage,
-                tool_calls: toolCalls,
-                isStreaming: false,
-              });
-
-              writeToStream(
-                accumulatedContent || navMessage,
-                "assistant",
-                toolCalls,
-              );
-            } else {
-              patchAssistant({ isStreaming: false });
-
-              // Write assistant message to Stream
-              writeToStream(accumulatedContent || "", "assistant");
-            }
+            patchAssistant({ isStreaming: false });
+            writeToStream(accumulatedContent || "", "assistant");
           },
           onRequest: async (agentReq: AgentRequest) => {
             sseOverlay.stopStreaming();

@@ -7,12 +7,9 @@ npm_link_all_packages()
 js_library(
     name = "lib",
     srcs = glob(
-        ["**/*.ts"],
+        ["**/*.ts", "**/*.json"],
         exclude = ["**/*.test.ts"],
-    ) + [
-        "package.json",
-        "tsconfig.json",
-    ],
+    ),
     visibility = ["//visibility:public"],
     deps = [
         ":node_modules",
