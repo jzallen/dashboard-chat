@@ -69,6 +69,8 @@ bazel-out
 bazel-testlogs
 bazel-dashboard-chat
 .bazel-cache/
+# Local bazel overrides (BuildBuddy API key etc) — see .bazelrc.user.example
+.bazelrc.user
 
 # Claude Code worktrees
 .claude/worktrees/
@@ -83,6 +85,7 @@ tmp/
 .gc/
 .beads/*
 !.beads/config.yaml
-!.beads/metadata.json
 hooks/
 .runtime/
+.dolt-data/
+rigs.json

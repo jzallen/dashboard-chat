@@ -41,3 +41,21 @@ build:linux --platforms=@platforms//os:linux
 
 # ─── Platform: macOS ─────────────────────────────────────────────────────────
 build:macos --platforms=@platforms//os:macos
+
+# ─── Remote cache (BuildBuddy free tier) ──────────────────────────────────────
+# Layered with the local --disk_cache above: bazel checks disk first, then
+# remote on miss. Sharing the cache across all clones (mayor + polecats + crew
+# + refinery) eliminates duplicate work in this Gitpod environment.
+#
+# Auth: API key lives in .bazelrc.user (gitignored, see try-import below).
+# Get a key at https://app.buildbuddy.io/settings/api-keys (free tier).
+build --bes_results_url=https://app.buildbuddy.io/invocation/
+build --bes_backend=grpcs://remote.buildbuddy.io
+build --remote_cache=grpcs://remote.buildbuddy.io
+build --remote_timeout=3600
+# Don't fail builds if BuildBuddy is unreachable (e.g. offline laptop)
+build --remote_local_fallback
+
+# ─── Local user overrides (gitignored) ───────────────────────────────────────
+# Put secrets and per-machine tweaks here. See .bazelrc.user.example.
+try-import %workspace%/.bazelrc.user
