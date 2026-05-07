@@ -67,6 +67,7 @@ e2e/.seed-data.json
 bazel-bin
 bazel-out
 bazel-testlogs
+bazel-dashboard_chat
 bazel-dashboard-chat
 .bazel-cache/
 # Local bazel overrides (BuildBuddy API key etc) — see .bazelrc.user.example
