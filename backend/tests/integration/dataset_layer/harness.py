@@ -198,7 +198,6 @@ class DatasetLayerHarness:
         async def assert_distinct_values(dataset_id, column, expected: set[str])
         async def assert_no_nulls(dataset_id, column)
         async def assert_column_type(dataset_id, column, expected_type)
-        async def count_by(dataset_id, column): -> dict[str, int]
 
     A pre-existing project_id may be passed in (e.g. from a fixture that
     handles ULID-keyed teardown); otherwise the harness creates one inside
@@ -380,23 +379,6 @@ class DatasetLayerHarness:
             if isinstance(row.get(column), str) and row[column] != row[column].strip()
         ]
         assert not offenders, f"column {column!r} still has leading/trailing whitespace: {offenders[:5]!r}"
-
-    async def count_by(self, dataset_id: str, column: str) -> dict[str, int]:
-        """Fetch the full preview window and reduce client-side by ``column``.
-
-        For the demo workload (250-row table) the preview window is the full
-        table; if a future workload exceeds the preview window the harness
-        should switch to a server-side aggregate endpoint. Surfaced as a
-        deliberately simple shape per design §7.
-        """
-        state = await self.get_table_state(dataset_id, preview_limit=100)
-        counts: dict[str, int] = {}
-        for row in state.preview:
-            val = row.get(column)
-            if val is None:
-                continue
-            counts[str(val)] = counts.get(str(val), 0) + 1
-        return counts
 
     # ----- replay + idempotency surfaces (G.2) ------------------------------
 
