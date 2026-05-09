@@ -1,6 +1,6 @@
 """Eject-and-test orchestration package — RED scaffold (created by DISTILL).
 
-ADR-018, Option β. Components:
+ADR-019, Option β. Components:
     EjectAndTestOrchestrator   (orchestrator.py)
     DbtRunner                  (runner.py)
     DuckDBProfileSeeder        (seeder.py)

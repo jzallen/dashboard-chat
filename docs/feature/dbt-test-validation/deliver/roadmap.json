@@ -6,13 +6,13 @@
     "phases": 1
   },
   "scope": "Phase 0 only — walking skeleton green; remaining phases (01-05 from distill/roadmap.json) deferred per Mayor checkpoint",
-  "design_ratified_as": "docs/decisions/adr-018-eject-then-test-validation.md",
+  "design_ratified_as": "docs/decisions/adr-019-eject-then-test-validation.md",
   "distill_roadmap": "docs/feature/dbt-test-validation/distill/roadmap.json",
   "phases": [
     {
       "id": "00",
       "name": "Walking skeleton green",
-      "description": "Replace 11 RED scaffolds with thin real implementations sufficient to make the walking skeleton scenario green end-to-end. Outside-In TDD ordering: each step replaces one scaffold module with the minimum implementation needed for the next outer step. Per ADR-018 §Decision Outcome: per-flow eject via dbtRunner Python API, per-turn Pandera, probe() composition root.",
+      "description": "Replace 11 RED scaffolds with thin real implementations sufficient to make the walking skeleton scenario green end-to-end. Outside-In TDD ordering: each step replaces one scaffold module with the minimum implementation needed for the next outer step. Per ADR-019 §Decision Outcome: per-flow eject via dbtRunner Python API, per-turn Pandera, probe() composition root.",
       "estimate_minutes": 240,
       "depends_on": [],
       "steps": [

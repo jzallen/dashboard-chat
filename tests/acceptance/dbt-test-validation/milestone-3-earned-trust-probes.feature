@@ -1,4 +1,4 @@
-# Milestone 3 — earned-trust probes (ADR-018 §4, principle 12).
+# Milestone 3 — earned-trust probes (ADR-019 §4, principle 12).
 #
 # The orchestrator's external dependencies are five places the substrate
 # can lie. Each probe is a fault-injection scenario that forces the lie
@@ -44,7 +44,7 @@ Feature: Earned-trust probes catch the substrate lies before any flow runs
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_run_results_shape"
 
-  # Behavioral enforcement reference (ADR-018 §4 — principle 12 self-application):
+  # Behavioral enforcement reference (ADR-019 §4 — principle 12 self-application):
   # a CI-only test asserts that this entire .feature file produces 5 skip
   # outcomes when the substrate is sabotaged, proving the probe path is
   # actually wired. Implementation lives in DELIVER alongside the

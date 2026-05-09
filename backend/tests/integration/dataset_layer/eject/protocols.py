@@ -1,6 +1,6 @@
 """Protocols for the eject-and-test orchestration boundary.
 
-Per ADR-018 D5 the orchestrator MUST expose ``probe()`` and
+Per ADR-019 D5 the orchestrator MUST expose ``probe()`` and
 ``eject_and_test()``. ``runtime_checkable`` plus ``mypy`` together catch
 the "lite orchestrator without a probe" failure mode at type-check and
 construction time. The orchestrator class in ``orchestrator.py``
@@ -20,7 +20,7 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class EjectOrchestratorProtocol(Protocol):
-    """Subtype boundary for the eject orchestrator (ADR-018 D5)."""
+    """Subtype boundary for the eject orchestrator (ADR-019 D5)."""
 
     async def probe(self, tmp_path: Path) -> Any:
         """Run the 5 earned-trust probes once (cached); return aggregate."""

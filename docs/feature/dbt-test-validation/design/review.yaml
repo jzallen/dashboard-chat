@@ -36,13 +36,13 @@ dimensions:
   - name: adr_coherence
     status: passed
     findings:
-      - "ADR-018 Status: Proposed (correct; awaiting peer review by user)."
+      - "ADR-019 Status: Proposed (correct; awaiting peer review by user)."
       - "Context: 6 paragraphs establishing JOB-001 framing, DIVERGE recommendation, 5 OQs carried forward."
       - "Decision drivers: 6 drivers cited (JOB-001 O4, AC1.6, ADR-016, ADR-007, Earned Trust, Conway's Law)."
       - "Considered options: α/β/γ (3 realizations of C) + B/E/F rejection rationale. Aligns with DIVERGE §2–3."
       - "Decision outcome: Mechanism (per-flow eject + per-turn Pandera), OQ ratifications (OQ1–OQ5), Earned-Trust contract (5 probes + 3-layer enforcement), Why β/not α/not γ/not B-alone."
       - "Consequences: 3 positive (strategic level, O3/O6, probe neutralizes risk), 4 negative (two SSOTs, dbt-CLI integration, AC1.6 not yet measured, test-extras isolation), 3 operational."
-      - "Cross-decision composition: ADR-018 ↔ ADR-007/014/015/016/017 + JOB-001. All relationships documented."
+      - "Cross-decision composition: ADR-019 ↔ ADR-007/014/015/016/017 + JOB-001. All relationships documented."
       - "Open questions: 5 OQs with ownership + default if unresolved."
       - "References: 12 items covering jobs.yaml, constraint ADRs, harness, conftest, export endpoint/use-case, feature spec."
     issues_raised: []
@@ -50,7 +50,7 @@ dimensions:
   - name: oq_traceability
     status: passed
     findings:
-      - "OQ1 (DuckDB topology): design.md §6 + §2 Option α/β/γ; ADR-018 §OQ ratifications. Both cite 'fresh DuckDB seeded with same MinIO Parquet'. MATCHED."
+      - "OQ1 (DuckDB topology): design.md §6 + §2 Option α/β/γ; ADR-019 §OQ ratifications. Both cite 'fresh DuckDB seeded with same MinIO Parquet'. MATCHED."
       - "OQ2 (scope): both state 'per-flow eject for regression flows; per-turn Pandera for fast feedback'. MATCHED."
       - "OQ3 (export test-gating): both accept inversion with probe() as mitigation. MATCHED."
       - "OQ4 (AC1.6 wall-clock): both note ~85–105s estimate, 65% headroom, measurement deferred to DELIVER. MATCHED."
@@ -74,13 +74,13 @@ dimensions:
       - "Ownership clear: 'nw-solution-architect (current author: Morgan)' + placeholder for future System/Domain architects."
       - "Constraint inheritance table: ADR-007/014/015/016/017 constraints listed."
       - "dbt-test-validation subsection: Author, ADR ref, JOB ref, Status, Decision summary, Components table, Integration points, Earned-Trust contract, Enforcement rules, Quality gates checklist."
-      - "Cross-section index: ADR-018 included. Living document framing appropriate."
+      - "Cross-section index: ADR-019 included. Living document framing appropriate."
     issues_raised: []
 
   - name: option_comparison_beta_vs_alpha
     status: passed
     findings:
-      - "β recommended (design.md §7, ADR-018 §Why β over α)."
+      - "β recommended (design.md §7, ADR-019 §Why β over α)."
       - "Key arguments: (1) JOB-001 O3 chat-protocol churn — Pandera decouples from wire schema. (2) JOB-001 O6 workflow-vs-data triage — clear signal separation. (3) Wall-clock ~50ms per-turn invisible. (4) Forward-composable with B's translator."
       - "Dissent trigger from DIVERGE ('team's pandas familiarity') explicitly does NOT fire: 'product ejects to dbt; team IS choosing to speak dbt'."
       - "Verdict: β defensible. α defensible only if AC1.6 profiling exceeds budget OR O3/O6 deemed out-of-scope. Neither holds."
@@ -89,18 +89,18 @@ dimensions:
   - name: probe_earned_trust
     status: conditional_passed
     findings:
-      - "5 specific probes listed (§4 design.md, ADR-018 Earned-Trust contract)."
+      - "5 specific probes listed (§4 design.md, ADR-019 Earned-Trust contract)."
       - "Probe 1 (dbt-CLI presence + version ≥ 1.8). Probe 2 (dbt-duckdb adapter loadable). Probe 3 (export endpoint reachable). Probe 4 (MinIO readable via DuckDB). Probe 5 (run_results.json schema)."
       - "Composition-root invariant: session-scoped fixture invokes probe() once; failure → pytest.skip(reason)."
       - "Three-layer enforcement: subtype (mypy + Protocol), structural (pytest-archon), behavioral (CI gold-test)."
     issues_raised:
       - issue: "Probe 5 uses 'dbt parse' as the canary. Actual eject runs 'dbt deps && dbt build && dbt test' — parse passing doesn't guarantee build/test passing."
         severity: minor
-        location: "design.md §4 probe_run_results_schema; ADR-018 Earned-Trust contract"
+        location: "design.md §4 probe_run_results_schema; ADR-019 Earned-Trust contract"
         recommendation: "Clarify in DELIVER: is 'dbt parse' sufficient, or should probe run full 'dbt build'? Acceptable to defer."
       - issue: "Behavioral enforcement specified as 'CI gold-test that breaks dbt-CLI PATH'. No details on when/how/who/CI integration."
         severity: minor
-        location: "design.md §4 'Self-application' + §11; ADR-018 Earned-Trust contract"
+        location: "design.md §4 'Self-application' + §11; ADR-019 Earned-Trust contract"
         recommendation: "Clarify in DELIVER: pre-push gate, feature flag, or separate CI job? Acceptable to defer."
 
   - name: wall_clock_estimate_oq4
@@ -134,7 +134,7 @@ dimensions:
   - name: minor_observations_for_deliver
     status: info
     findings:
-      - "Ibis vs dbt SQL path distinction: eject-then-test validates customer's dbt-compiled SQL, NOT in-app Ibis runtime SQL. These could diverge. Documented in brief.md but not explicit in design.md/ADR-018."
+      - "Ibis vs dbt SQL path distinction: eject-then-test validates customer's dbt-compiled SQL, NOT in-app Ibis runtime SQL. These could diverge. Documented in brief.md but not explicit in design.md/ADR-019."
       - "Pandera schema authorship scope: defer to DISTILL/DELIVER. Existing predicates transition to Pandera/dbt during the migration."
       - "import-linter: investigated but cannot enforce method-presence. Clarify in DELIVER whether import-linter is mandatory or complementary to test-extras isolation."
     issues_raised: []
@@ -153,7 +153,7 @@ conditional_issues_count: 2
 next_wave_handoff:
   target: "/nw-distill (acceptance-designer) for BDD acceptance tests, OR direct DELIVER if test-first is by-skill"
   artifacts_to_hand_off:
-    - "docs/decisions/adr-018-eject-then-test-validation.md (Proposed)"
+    - "docs/decisions/adr-019-eject-then-test-validation.md (Proposed)"
     - "docs/feature/dbt-test-validation/design/design.md (§7 recommendation + §4 probe spec)"
     - "docs/feature/dbt-test-validation/design/c4-diagrams.md"
     - "docs/feature/dbt-test-validation/design/wave-decisions.md"

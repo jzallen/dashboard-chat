@@ -3,7 +3,7 @@
 # The new validation layers MUST NOT regress existing protocol guards.
 # Two invariants in scope:
 #
-#   - AC1.4 raw-tool-call leak guard (ADR-014, OQ5 in ADR-018): no Groq
+#   - AC1.4 raw-tool-call leak guard (ADR-014, OQ5 in ADR-019): no Groq
 #     tool-call deltas with frame prefix '9:' may leak through the worker
 #     SSE stream. The harness raises today; this scenario asserts the
 #     guard is still raised after eject_and_test() and validate_after()

@@ -4,7 +4,7 @@
 **Wave:** DISTILL (acceptance test design)
 **Date:** 2026-05-09
 **Author:** Quinn (nw-acceptance-designer)
-**Prior wave:** DESIGN (2026-05-08; recommended Option β; ratified as ADR-018 on 2026-05-09)
+**Prior wave:** DESIGN (2026-05-08; recommended Option β; ratified as ADR-019 on 2026-05-09)
 
 ---
 
@@ -16,11 +16,11 @@ DIVERGE recommended Option C primary with Option B as principled dissent
 plus an explicit "composes naturally with B" affordance
 (`recommendation.md` §3). DESIGN realized that as Option β (layered C+B),
 which the DIVERGE recommendation authorized verbatim. Atlas's solution-
-architect-reviewer pass confirmed zero contradictions and ratified ADR-018.
+architect-reviewer pass confirmed zero contradictions and ratified ADR-019.
 
 DISCUSS was intentionally skipped per CLAUDE.md brownfield routing
 (DIVERGE → DESIGN). DEVOPS and SPIKE were never run. Acceptance criteria
-derive from ADR-018 + design.md §4 probe spec + §6 OQ resolutions; story-
+derive from ADR-019 + design.md §4 probe spec + §6 OQ resolutions; story-
 to-scenario traceability is skipped (no stories to trace).
 
 ---
@@ -59,14 +59,14 @@ to-scenario traceability is skipped (no stories to trace).
 * **[DWD-4] Driving port = `DatasetLayerHarness` Python facade.**
   Per architecture/brief.md §"Test architecture", the harness is the
   canonical integration-test entry point for chat-driven dataset
-  workflows. ADR-018 §3 "Reuse Analysis" classifies the harness as
+  workflows. ADR-019 §3 "Reuse Analysis" classifies the harness as
   EXTEND with two new methods: `eject_and_test(project_id)` and
   `validate_after(dataset_id, schema)`. All `@when` step definitions
   invoke these methods on the facade — never the underlying
   `EjectAndTestOrchestrator`, `DuckDBProfileSeeder`, or `RunResultsParser`
   directly. The session-scoped `eject_orchestrator` fixture is the
   ONLY composition site for the orchestrator (composition-root
-  invariant per ADR-018 §4: "wire then probe then use").
+  invariant per ADR-019 §4: "wire then probe then use").
 
 * **[DWD-5] One walking-skeleton scenario, five milestone files, 16 total scenarios.**
   Per the test-design-mandates skill (Walking Skeleton ratio: 2-3 WS
@@ -80,7 +80,7 @@ to-scenario traceability is skipped (no stories to trace).
   failure-modes).
   Per-file counts: WS=1, M1=3, M2=3, M3=5, M4=2, M5=2.
 
-* **[DWD-6] Mandate 7 RED scaffolds at the production paths ADR-018 specifies.**
+* **[DWD-6] Mandate 7 RED scaffolds at the production paths ADR-019 specifies.**
   Scaffolds created at `backend/tests/integration/dataset_layer/eject/`
   (orchestrator + runner + seeder + parser + protocols + probe) and
   `backend/tests/integration/dataset_layer/validation/` (Pandera
@@ -242,5 +242,5 @@ Walking-skeleton MUST go GREEN first.
 * The `.feature` files — scenario SSOT
 * The RED scaffolds at the paths listed above — DELIVER replaces the
   AssertionError bodies with real implementations.
-* ADR-018 + design.md §4 (probe spec) + §6 OQ resolutions —
+* ADR-019 + design.md §4 (probe spec) + §6 OQ resolutions —
   unchanged, governing.

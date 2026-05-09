@@ -1,4 +1,4 @@
-"""Step glue for dbt-test-validation acceptance suite (ADR-018, Option β).
+"""Step glue for dbt-test-validation acceptance suite (ADR-019, Option β).
 
 Strategy C (real local I/O — DWD-1): step bindings invoke the
 `DatasetLayerHarness` Python facade against the running 5-service compose
@@ -127,7 +127,7 @@ def given_harness_ready(requires_compose_stack: None) -> None:
 def given_orchestrator_probed(eject_orchestrator: Any) -> None:
     # The session-scoped fixture invokes probe() once and caches the
     # orchestrator. Probe failure -> pytest.skip with the failing probe
-    # named (ADR-018 §4 invariant). Reaching here means probes passed.
+    # named (ADR-019 §4 invariant). Reaching here means probes passed.
     pass
 
 
@@ -145,7 +145,7 @@ def given_fresh_project(
     """Open a DatasetLayerHarness, create a project, upload the orders CSV.
 
     Wires the harness with the session-probed orchestrator (composition
-    root invariant — ADR-018 §11) so subsequent ``@when`` eject steps can
+    root invariant — ADR-019 §11) so subsequent ``@when`` eject steps can
     delegate through ``harness.eject_and_test``. The harness lifecycle
     spans the full scenario via the ``capture`` fixture's AsyncExitStack;
     project teardown fires at fixture finalize, not when this step returns.

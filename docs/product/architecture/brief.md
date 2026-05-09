@@ -70,11 +70,11 @@ feature's DESIGN wave appends a sub-heading.
   workflows. Runs against the 5-service compose stack (ADR-016). Owns
   retry-with-rephrase budget (AC1.5) and protocol-level invariants
   (AC1.4). Its facade is the surface other validation layers attach to.
-* **Per-flow validation** (planned, ADR-018): the
+* **Per-flow validation** (planned, ADR-019): the
   `EjectAndTestOrchestrator` invokes `dbtRunner.invoke()` (Python API
   from `dbt.cli.main`) for `deps`/`build`/`test` against the
   customer-fidelity export.
-* **Per-turn validation** (planned, ADR-018): a Pandera layer for fast
+* **Per-turn validation** (planned, ADR-019): a Pandera layer for fast
   feedback on staging-data shape.
 
 ### Application-architecture features
@@ -82,7 +82,7 @@ feature's DESIGN wave appends a sub-heading.
 #### `dbt-test-validation` (DESIGN — 2026-05-08)
 
 **Author:** Morgan (nw-solution-architect)
-**ADR:** ADR-018 (Proposed)
+**ADR:** ADR-019 (Proposed)
 **JOB:** JOB-001 (`docs/product/jobs.yaml`)
 **Status:** Awaiting peer review (Atlas) → DELIVER
 
@@ -119,7 +119,7 @@ with the eject step doubling as a drift detector between the SSOTs.
 
 **Earned-Trust contract.** `EjectAndTestOrchestrator.probe()` is mandatory
 and is invoked exactly once per pytest session by a session-scoped fixture.
-Probes 1–5 are enumerated in ADR-018. Composition root invariant: **wire then
+Probes 1–5 are enumerated in ADR-019. Composition root invariant: **wire then
 probe then use**. Probe failure → `pytest.skip(reason)`.
 
 **Architectural enforcement (principle 11).**
@@ -139,7 +139,7 @@ probe then use**. Probe failure → `pytest.skip(reason)`.
 
 - [x] Requirements traced to components (JOB-001 → β layers → orchestrator + Pandera).
 - [x] Component boundaries with clear responsibilities.
-- [x] Technology choices in ADR-018 with alternatives.
+- [x] Technology choices in ADR-019 with alternatives.
 - [x] Quality attributes addressed (see design.md §9).
 - [x] Dependency-inversion compliance (orchestrator behind a Protocol;
       probing fixture is the composition root).
@@ -164,4 +164,4 @@ probe then use**. Probe failure → `pytest.skip(reason)`.
 | ADR-015 | Application | Presentation-state log |
 | ADR-016 | System | 5-service compose stack |
 | ADR-017 | System | SessionEventReader dispatch |
-| ADR-018 | Application | Eject-then-test validation (Proposed) |
+| ADR-019 | Application | Eject-then-test validation (Proposed) |

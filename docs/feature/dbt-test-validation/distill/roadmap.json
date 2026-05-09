@@ -5,7 +5,7 @@
   "produced_on": "2026-05-09",
   "binding_decisions": "docs/feature/dbt-test-validation/distill/wave-decisions.md",
   "upstream_issues": "docs/feature/dbt-test-validation/distill/upstream-issues.md",
-  "design_ratified_as": "docs/decisions/adr-018-eject-then-test-validation.md (Ratified 2026-05-09)",
+  "design_ratified_as": "docs/decisions/adr-019-eject-then-test-validation.md (Ratified 2026-05-09)",
   "acceptance_root": "tests/acceptance/dbt-test-validation/",
   "scaffold_root": "backend/tests/integration/dataset_layer/{eject,validation}/",
   "walking_skeleton_strategy": "C — real local + skip-when-unavailable",
@@ -30,8 +30,8 @@
       "blocks": ["01"],
       "estimated_size": "L",
       "ac_references": [
-        "ADR-018 §Decision outcome (per-flow + per-turn mechanism)",
-        "ADR-018 §Earned-Trust contract (probe() composition root)",
+        "ADR-019 §Decision outcome (per-flow + per-turn mechanism)",
+        "ADR-019 §Earned-Trust contract (probe() composition root)",
         "JOB-001 O1 (fast discovery), O4 (durability across ejection), O6 (workflow vs data triage)"
       ]
     },
@@ -58,7 +58,7 @@
       "blocks": ["02"],
       "estimated_size": "M",
       "ac_references": [
-        "ADR-018 §Earned-Trust contract (5-probe enumeration)",
+        "ADR-019 §Earned-Trust contract (5-probe enumeration)",
         "Atlas (DESIGN review) minor findings #1 + #2"
       ]
     },
@@ -81,8 +81,8 @@
       "blocks": ["03"],
       "estimated_size": "M",
       "ac_references": [
-        "ADR-018 §Decision outcome — drift detector",
-        "ADR-018 §Cross-decision composition (ADR-007 — same MinIO source)",
+        "ADR-019 §Decision outcome — drift detector",
+        "ADR-019 §Cross-decision composition (ADR-007 — same MinIO source)",
         "design.md §13 risk #1 (probe_minio_readable_via_duckdb error messaging)"
       ]
     },
@@ -106,7 +106,7 @@
       "blocks": ["04"],
       "estimated_size": "M-L",
       "ac_references": [
-        "ADR-018 §Decision outcome (β: per-turn Pandera + per-flow eject)",
+        "ADR-019 §Decision outcome (β: per-turn Pandera + per-flow eject)",
         "JOB-001 O3 (chat-protocol churn cost — Pandera decoupled from wire schema)",
         "JOB-001 O6 (workflow vs data triage)",
         "AC1.5 (existing harness retry-with-rephrase budget)"
@@ -131,7 +131,7 @@
       "blocks": ["05"],
       "estimated_size": "S",
       "ac_references": [
-        "ADR-018 §OQ5 (AC1.4 stays at protocol level)",
+        "ADR-019 §OQ5 (AC1.4 stays at protocol level)",
         "ADR-016 (5-service compose, production-fidelity ingress)",
         "ADR-014 (ChatEvent vocabulary stratification)"
       ]
@@ -183,7 +183,7 @@
     "iron_rule": "NEVER modify a failing acceptance test to make it pass. Each phase enables ONE scenario at a time; revert and escalate after 3 failed attempts.",
     "tdd_cycle": "RED_ACCEPTANCE → unskip one scenario → RED_UNIT → write failing unit test → GREEN → minimum implementation → REFACTOR per RPP L1-L6 → next scenario",
     "context_handoff": [
-      "ADR-018 (Ratified)",
+      "ADR-019 (Ratified)",
       "design.md §3 Reuse Analysis + §4 probe spec + §11 enforcement",
       "c4-diagrams.md (visual contract)",
       "wave-decisions.md DWD-1 through DWD-8 (binding decisions)",

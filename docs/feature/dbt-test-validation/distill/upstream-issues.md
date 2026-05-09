@@ -9,7 +9,7 @@
 
 **No upstream issues surfaced during DISTILL.**
 
-ADR-018 was ratified on 2026-05-09 after Atlas's solution-architect-
+ADR-019 was ratified on 2026-05-09 after Atlas's solution-architect-
 reviewer pass; the design document, c4-diagrams, and wave-decisions
 were sufficient to derive every acceptance scenario without a single
 back-propagation question. The driving port (DatasetLayerHarness
@@ -21,7 +21,7 @@ resolution.
 
 The DISCUSS-skip routing per CLAUDE.md brownfield (DIVERGE → DESIGN)
 did NOT cost anything in DISTILL — every acceptance criterion derives
-from ADR-018 + design.md §4 + §6 OQ resolutions, which together carry
+from ADR-019 + design.md §4 + §6 OQ resolutions, which together carry
 all the contract surface DISCUSS would have produced as user-stories
 acceptance criteria.
 

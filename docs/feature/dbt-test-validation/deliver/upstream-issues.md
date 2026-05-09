@@ -2,7 +2,7 @@
 
 **Status:** Phase 0 architecturally complete; walking-skeleton (WS) scenario *not yet green* — three concrete substrate gaps surfaced by running the WS end-to-end. Each is bounded, well-named, and ready for follow-up triage.
 
-The Earned-Trust contract (ADR-018 §4) did its job: every gap below was discovered by a probe failing loudly with a named reason, not by a silent green or a confusing red.
+The Earned-Trust contract (ADR-019 §4) did its job: every gap below was discovered by a probe failing loudly with a named reason, not by a silent green or a confusing red.
 
 ---
 

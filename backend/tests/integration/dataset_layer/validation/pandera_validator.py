@@ -1,11 +1,11 @@
-"""Pandera-based per-turn validator (ADR-018 Option β).
+"""Pandera-based per-turn validator (ADR-019 Option β).
 
 Wraps `pa.DataFrameSchema.validate(df, lazy=True)` to produce a
 structured `ValidationResult` carrying status, column-level error
 messages, and elapsed wall-clock time. The lazy=True flag makes
 Pandera collect every violation rather than failing fast on the
 first — the structured diff feeds retry-with-rephrase diagnostic
-context (per ADR-018 OQ5).
+context (per ADR-019 OQ5).
 
 Per-turn budget: < 200ms (acceptance budget per skill F-004; sub-100ms
 typical per design.md §6 OQ4).

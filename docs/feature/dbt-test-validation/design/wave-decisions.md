@@ -25,14 +25,14 @@
   the seeded DuckDB profile, and `dbtRunnerResult.result` shape (which dbt
   documents as "not fully contracted"). Composition-root invariant: **wire
   then probe then use**. Probe failure → `pytest.skip(reason)` with the
-  failing probe named. (See: `design.md` §4, ADR-018 Decision outcome
+  failing probe named. (See: `design.md` §4, ADR-019 Decision outcome
   §"Earned-Trust contract".)
 
 * **[D3] No topology change to the compose stack.** ADR-016 inherited as a
   hard constraint. The orchestrator runs in-process to pytest, OUTSIDE the
   compose network, invoking `dbtRunner` in-process (Python API) and reading
   MinIO via httpfs from a tmpdir DuckDB. Production-topology fidelity
-  preserved. (See: `design.md` §3 Reuse Analysis, ADR-018 Decision drivers.)
+  preserved. (See: `design.md` §3 Reuse Analysis, ADR-019 Decision drivers.)
 
 * **[D4] Test extras isolation for new dependencies.** `dbt-core`,
   `dbt-duckdb`, and `pandera` are added as `pyproject.toml` test extras —
@@ -75,7 +75,7 @@
   per concurrent call. Triggered by user feedback on Atlas's approval;
   changes are scoped to component spec + probes + behavioral enforcement
   (no recommendation flip). (See: `design.md` §3 `DbtRunner` row, §4
-  probes, §10 contract test, §13 risks #2/#3/#6, ADR-018 Decision
+  probes, §10 contract test, §13 risks #2/#3/#6, ADR-019 Decision
   outcome + Consequences.)
 
 ---
@@ -102,7 +102,7 @@
 - [x] C4 diagrams (L1 + L2 + L3 + sequence) in Mermaid.
 - [x] OQ1–OQ5 resolved with one-line rationale.
 - [x] Recommendation explicit, with weakness flags.
-- [x] ADR draft (ADR-018) — Status / Context / Considered options /
+- [x] ADR draft (ADR-019) — Status / Context / Considered options /
       Decision outcome / Consequences / Cross-decision composition / Open
       questions / References.
 - [x] Architecture brief bootstrapped at
@@ -130,7 +130,7 @@
 * `docs/feature/dbt-test-validation/design/c4-diagrams.md` — L1, L2, L3, sequence (Mermaid).
 * `docs/feature/dbt-test-validation/design/wave-decisions.md` — this file.
 * `docs/feature/dbt-test-validation/design/upstream-changes.md` — formal "no upstream changes" record.
-* `docs/decisions/adr-018-eject-then-test-validation.md` — Proposed ADR.
+* `docs/decisions/adr-019-eject-then-test-validation.md` — Proposed ADR.
 * `docs/product/architecture/brief.md` — bootstrapped with `## Application Architecture` and a `dbt-test-validation` sub-section.
 
 ## Hand-off
@@ -141,7 +141,7 @@ methods, plus the `probe()` skip-with-reason behavior. Then `/nw-deliver`
 (software-crafter) implements via Outside-In TDD.
 
 **Recipient package for DISTILL/DEVOPS:**
-* ADR-018 (architectural decision; constraints).
+* ADR-019 (architectural decision; constraints).
 * β recommendation in `design.md` §7 (mechanism + components).
 * `c4-diagrams.md` (visual contract).
 * This `wave-decisions.md` (decision summary).

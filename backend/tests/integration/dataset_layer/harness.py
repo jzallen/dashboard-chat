@@ -48,7 +48,7 @@ from typing import Any, NewType
 import httpx
 import pandas as pd
 
-# ADR-018, Option β — per-flow eject + per-turn validate are stitched into
+# ADR-019, Option β — per-flow eject + per-turn validate are stitched into
 # the harness facade in step 00-08. Module-level imports keep the symbols
 # monkeypatchable from wiring tests; the actual session-resource (the
 # orchestrator) is constructed by the acceptance suite's session fixture
@@ -791,7 +791,7 @@ class DatasetLayerHarness:
         self._pat = pat
         self._timeout = timeout_seconds
         self._rephrase = rephrase or _default_rephrase
-        # Composition root (ADR-018 §11): the eject orchestrator is wired
+        # Composition root (ADR-019 §11): the eject orchestrator is wired
         # by the acceptance suite's session-scoped ``eject_orchestrator``
         # fixture and injected here. Per-test harness instances share the
         # same probed orchestrator. ``None`` means callers cannot invoke
@@ -943,7 +943,7 @@ class DatasetLayerHarness:
         s = s[s.map(lambda v: isinstance(v, str))]
         return bool(s.eq(s.str.strip()).all())
 
-    # ----- dbt-test-validation extension (ADR-018, Option β) ----------------
+    # ----- dbt-test-validation extension (ADR-019, Option β) ----------------
     # Step 00-08 wires these two methods to the eject-and-test components
     # delivered in steps 00-02..00-07. ``eject_and_test`` delegates to the
     # session-scoped ``EjectAndTestOrchestrator`` (composition root injected
@@ -982,7 +982,7 @@ class DatasetLayerHarness:
                 "DatasetLayerHarness.eject_and_test requires an "
                 "eject_orchestrator to be injected via __init__. The "
                 "acceptance suite's session-scoped `eject_orchestrator` "
-                "fixture is the composition root (ADR-018 §11); see "
+                "fixture is the composition root (ADR-019 §11); see "
                 "tests/acceptance/dbt-test-validation/conftest.py."
             )
         if tmp_path is None:
@@ -1002,7 +1002,7 @@ class DatasetLayerHarness:
         DataFrame against ``schema`` with lazy=True (Pandera collects all
         violations rather than failing fast), and returns a
         ``ValidationResult``. Sub-200ms acceptance budget; sub-100ms typical
-        (design.md §6 OQ4). ADR-018, Option β.
+        (design.md §6 OQ4). ADR-019, Option β.
 
         Returns:
             ValidationResult with status='pass'|'fail' and structured

@@ -1,4 +1,4 @@
-"""Acceptance-test configuration for dbt-test-validation (ADR-018, Option β).
+"""Acceptance-test configuration for dbt-test-validation (ADR-019, Option β).
 
 This conftest sits at the feature-test root so pytest-bdd can locate the
 .feature files and shared step glue under steps/.
@@ -142,7 +142,7 @@ async def eject_orchestrator(
     requires_compose_stack: None,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> AsyncIterator[EjectSessionContext]:
-    """Session-scoped composition root (ADR-018 §4 invariant: wire then probe then use).
+    """Session-scoped composition root (ADR-019 §4 invariant: wire then probe then use).
 
     Constructs the orchestrator with a real ``httpx.AsyncClient``, real
     MinIO credentials from environment, and the same auth-proxy ingress
@@ -151,11 +151,11 @@ async def eject_orchestrator(
     failure, calls ``pytest.skip`` with the failing probe NAMED in the
     reason — substrate breakage becomes a clearly-labelled skip rather
     than a silent green or a confusing red (Earned-Trust contract,
-    ADR-018 §4).
+    ADR-019 §4).
 
     This is the ONLY place in the acceptance suite where the orchestrator
     is constructed — every test that needs it goes through this fixture
-    (architectural enforcement, ADR-018 §11). The yielded
+    (architectural enforcement, ADR-019 §11). The yielded
     ``EjectSessionContext`` carries both the probed orchestrator and the
     session ``tmp_path`` the harness threads into ``eject_and_test``.
     """

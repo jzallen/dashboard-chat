@@ -14,7 +14,7 @@ generates per-project names like ``dataset_staging_<snake-cased ULID>``
 (see ``backend/app/use_cases/project/_dbt/project_yml.py``); a hardcoded
 sentinel would never line up with what dbt looks up at build time.
 
-Failure-mode contract (ADR-018 §Decision Outcome Mechanism step 3):
+Failure-mode contract (ADR-019 §Decision Outcome Mechanism step 3):
 when the caller passes a ``minio_creds`` dict missing a required key,
 ``seed()`` raises ``RuntimeError`` with a debugging-friendly message
 that NAMES the missing key. It does NOT silently substitute an empty

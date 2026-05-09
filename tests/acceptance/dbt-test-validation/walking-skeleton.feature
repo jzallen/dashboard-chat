@@ -1,4 +1,4 @@
-# Walking-skeleton acceptance for dbt-test-validation (ADR-018, Option β).
+# Walking-skeleton acceptance for dbt-test-validation (ADR-019, Option β).
 #
 # Strategy C (real local I/O) per DWD-1: the 5-service compose stack runs
 # real auth-proxy + backend + worker + query-engine + MinIO; real Groq via

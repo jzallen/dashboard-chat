@@ -6,7 +6,7 @@
 **Author:** Morgan (nw-solution-architect)
 **Mode:** Propose
 **Companion artifacts:**
-- ADR: `docs/decisions/adr-018-eject-then-test-validation.md`
+- ADR: `docs/decisions/adr-019-eject-then-test-validation.md`
 - C4 + sequence: `docs/feature/dbt-test-validation/design/c4-diagrams.md`
 - DIVERGE input: `docs/feature/dbt-test-validation/recommendation.md`
 
@@ -53,7 +53,7 @@ weaknesses carried forward: (a) wall-clock pressure under AC1.6 (5 min) and
 unit tests but no end-to-end gate. DIVERGE also surfaced **Option B**
 (Pandera at the staging boundary + dbt-test export translator) as a
 principled dissent at 3.83 and as a layerable companion. DESIGN's job: pick
-the realization, resolve OQ1–OQ5, and ratify as ADR-018.
+the realization, resolve OQ1–OQ5, and ratify as ADR-019.
 
 ---
 
@@ -94,7 +94,7 @@ flow. AC1.4-only flows (which assert protocol invariants only) skip eject.
 **OQ3 (gating sequence).** Accept the inversion. Use the existing 3 use-case
 tests in `test_export_dbt_project.py` as the floor; let eject-then-test
 bring out export bugs as test failures. Document this as a known load-bearing
-dependency in ADR-018.
+dependency in ADR-019.
 
 **OQ4 (wall-clock).** AC1.6 holds for the single existing flow (~85–105s
 end-to-end per c4 sequence diagram). Profile in DELIVER. Revisit at second
@@ -397,24 +397,24 @@ DIVERGE flagged three flip triggers. We re-evaluate them now:
 
 ## 8. Cross-Decision Composition
 
-* **ADR-018 ↔ ADR-007** — Ibis materializes the in-app DuckDB tables; the
+* **ADR-019 ↔ ADR-007** — Ibis materializes the in-app DuckDB tables; the
   exported dbt project's compiled SQL targets a separate DuckDB instance
   reading the same Parquet sources. Two DuckDBs, one source-of-truth (MinIO
   Parquet). The eject step exercises the SQL-generation path that ships;
   it does not reuse Ibis's runtime materialization.
-* **ADR-018 ↔ ADR-014** — Independent. β does NOT add new ChatEvent types
+* **ADR-019 ↔ ADR-014** — Independent. β does NOT add new ChatEvent types
   (Option F was declined precisely on these grounds). The wire schema is
   unchanged.
-* **ADR-018 ↔ ADR-015** — Independent in this iteration. The
+* **ADR-019 ↔ ADR-015** — Independent in this iteration. The
   presentation-state log is orthogonal to data-shape validation. Future
   composition possible: a "presentation-state-after-eject" assertion is
   conceivable but not in JOB-001.
-* **ADR-018 ↔ ADR-016** — Hard constraint inherited. The 5-service compose
+* **ADR-019 ↔ ADR-016** — Hard constraint inherited. The 5-service compose
   stack is unchanged; the orchestrator runs OUTSIDE the compose network.
   Production-topology fidelity is preserved.
-* **ADR-018 ↔ ADR-017** — Independent. SessionEventReader dispatch is
+* **ADR-019 ↔ ADR-017** — Independent. SessionEventReader dispatch is
   orthogonal to dbt-test validation.
-* **ADR-018 ↔ JOB-001** — JOB-001's strategic-level outcome (durability
+* **ADR-019 ↔ JOB-001** — JOB-001's strategic-level outcome (durability
   across ejection) is satisfied by the eject step; the per-turn layer
   satisfies O3/O6 derivative outcomes.
 

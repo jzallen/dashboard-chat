@@ -4,7 +4,7 @@ Consumes the `DbtRunResult` dataclass returned by step 00-03's
 `DbtRunner.run_build_and_test`. Reads `dbtRunnerResult.result` (a list of
 `RunResult` records) directly from memory on the happy path; falls back
 to parsing `<project_dir>/target/run_results.json` only when
-`.result is None` (defensive — see ADR-018 §References, where
+`.result is None` (defensive — see ADR-019 §References, where
 `dbtRunnerResult.result` is documented as "not fully contracted").
 
 Pure utility, no I/O on the happy path. No top-level dbt import — the
@@ -34,7 +34,7 @@ class RunResult:
     """One model-build or test-execution result.
 
     Attributes mirror the subset of `dbt.cli.main.RunResult` that the
-    parser reads (see ADR-018 §4 probe_run_results_shape).
+    parser reads (see ADR-019 §4 probe_run_results_shape).
     """
 
     name: str

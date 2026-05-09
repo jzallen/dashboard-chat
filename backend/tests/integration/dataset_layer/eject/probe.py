@@ -1,6 +1,6 @@
-"""Earned-trust probes (ADR-018 §4) — happy-path implementation (step 00-05).
+"""Earned-trust probes (ADR-019 §4) — happy-path implementation (step 00-05).
 
-Per ADR-018 §4 (principle 12), the orchestrator's external dependencies
+Per ADR-019 §4 (principle 12), the orchestrator's external dependencies
 are five places the substrate can lie. Each probe forces an exercise of
 the specific lie and reports through a per-probe ``ProbeReport``. The
 orchestrator (step 00-06) composes the five into an aggregate report and
@@ -332,7 +332,7 @@ def probe_run_results_shape(probe_project_dir: Path) -> ProbeReport:
     Specifically: ``.success`` is a boolean and ``.result`` is non-None
     (parse returns a Manifest). When dbt 1.x changes that contract, this
     probe fails LOUDLY and the failing-probe name surfaces in the skip
-    reason — exactly the upgrade-time signal ADR-018 §References calls
+    reason — exactly the upgrade-time signal ADR-019 §References calls
     out (``dbtRunnerResult.result is "not fully contracted"``).
     """
     try:

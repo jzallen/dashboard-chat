@@ -1,9 +1,9 @@
 # Milestone 1 — eject-and-test happy path + drift detector + customer-fidelity
 # invariant. Covers the per-flow validation surface that ALL three β/α/γ
-# realizations share (ADR-018 §2).
+# realizations share (ADR-019 §2).
 #
 # The driving port is `DatasetLayerHarness.eject_and_test(project_id)`
-# (architecture/brief.md §"Test architecture"; ADR-018 Decision outcome).
+# (architecture/brief.md §"Test architecture"; ADR-019 Decision outcome).
 # Step glue invokes the harness facade method only; the orchestrator is
 # constructed exclusively by the session-scoped `eject_orchestrator`
 # fixture (composition root invariant — design.md §4 "wire then probe

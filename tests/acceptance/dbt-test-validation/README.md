@@ -1,8 +1,8 @@
-# Acceptance — dbt-test-validation (ADR-018, Option β)
+# Acceptance — dbt-test-validation (ADR-019, Option β)
 
 This directory holds the BDD acceptance suite for the
 `dbt-test-validation` feature. See:
-- `docs/decisions/adr-018-eject-then-test-validation.md` (ratified 2026-05-09)
+- `docs/decisions/adr-019-eject-then-test-validation.md` (ratified 2026-05-09)
 - `docs/feature/dbt-test-validation/design/design.md` (Option β recommendation)
 - `docs/feature/dbt-test-validation/distill/wave-decisions.md` (DISTILL decisions)
 
@@ -89,4 +89,4 @@ uv run pytest -m "walking_skeleton or pending"   # everything (after DELIVER ena
 `@when` steps NEVER import from the orchestrator/seeder/parser/validator
 modules directly. The `eject_orchestrator` session fixture is the only
 construction site for the orchestrator (composition root invariant —
-ADR-018 §4).
+ADR-019 §4).

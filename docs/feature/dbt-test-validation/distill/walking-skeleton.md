@@ -73,7 +73,7 @@ walking-skeleton litmus test.
 
 ## Driving adapter discipline
 
-Per ADR-018 §4 ("wire then probe then use") and the nw-distill skill's
+Per ADR-019 §4 ("wire then probe then use") and the nw-distill skill's
 "Driving Adapter Verification" mandate, the WS scenario MUST exercise
 the user's actual entry point. For this feature the entry point is the
 `DatasetLayerHarness` Python facade — the canonical test-time driver

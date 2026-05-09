@@ -40,13 +40,13 @@ dimensions:
   - name: "wave_decision_reconciliation"
     status: "pass"
     score: 10
-    findings: "DWD-1 through DWD-8 capture all decisions. Zero contradictions with ADR-018 or design.md."
+    findings: "DWD-1 through DWD-8 capture all decisions. Zero contradictions with ADR-019 or design.md."
 
   - name: "adr_018_contract_coverage"
     status: "pass"
     score: 10
     findings: |
-      All 14 ADR-018 contract items mapped to scenarios:
+      All 14 ADR-019 contract items mapped to scenarios:
       - eject happy (M1), drift detector (M1)
       - validate happy + <200ms (M2), AC1.5 retry engagement (M2)
       - 5 probes skip-with-named-reason (M3)
@@ -81,7 +81,7 @@ issues_raised: []
 
 approval_decision: |
   APPROVED — All 10 critique dimensions score 9-10. All 3 mandates pass.
-  Zero blockers, zero violations. ADR-018 contract fully covered with 16
+  Zero blockers, zero violations. ADR-019 contract fully covered with 16
   scenarios across WS + 5 milestones. RED scaffolds correctly disciplined.
 
 handoff_decision: |

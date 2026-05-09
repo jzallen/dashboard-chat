@@ -1,7 +1,7 @@
 [project]
 name = "dashboard-chat-acceptance-dbt-test-validation"
 version = "0.0.1"
-description = "Acceptance tests for dbt-test-validation (ADR-018, Option β)."
+description = "Acceptance tests for dbt-test-validation (ADR-019, Option β)."
 requires-python = ">=3.11"
 dependencies = []
 

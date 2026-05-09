@@ -1,4 +1,4 @@
-"""dbt runner wrapper — Python API path (ADR-018 D9).
+"""dbt runner wrapper — Python API path (ADR-019 D9).
 
 Wraps `dbtRunner().invoke()` from `dbt.cli.main` (stable since dbt 1.5).
 `run_build_and_test()` sequences three in-process invocations — `deps`,
@@ -61,7 +61,7 @@ class DbtRunner:
         """Sequence dbt `deps` -> `build` -> `test` against `project_dir`.
 
         Each phase runs through a fresh `dbtRunner` instance (single
-        invocation per instance — see ADR-018 Consequences for the
+        invocation per instance — see ADR-019 Consequences for the
         concurrency constraint). On any phase failure, raises
         `DbtPhaseError` and chains the underlying exception when present.
         """

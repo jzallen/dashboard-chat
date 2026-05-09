@@ -1,4 +1,4 @@
-# ADR-018: Eject-then-Test as the Dataset-Layer Validation Strategy
+# ADR-019: Eject-then-Test as the Dataset-Layer Validation Strategy
 
 **Status:** Ratified
 **Date:** 2026-05-08
@@ -266,21 +266,21 @@ Three flip triggers from DIVERGE were re-evaluated at DESIGN:
 
 ## Cross-decision composition (intentional)
 
-* **ADR-018 ↔ ADR-007** — Ibis materializes the in-app DuckDB; the eject
+* **ADR-019 ↔ ADR-007** — Ibis materializes the in-app DuckDB; the eject
   step targets a separate DuckDB reading the same MinIO Parquet. Two
   query engines, one source of truth. The eject step exercises the
   SQL-generation path that ships, not Ibis's runtime materialization.
-* **ADR-018 ↔ ADR-014** — Independent. β does NOT add new ChatEvent types
+* **ADR-019 ↔ ADR-014** — Independent. β does NOT add new ChatEvent types
   (Option F was declined precisely on these grounds). The wire schema is
   unchanged.
-* **ADR-018 ↔ ADR-015** — Independent in this iteration. The
+* **ADR-019 ↔ ADR-015** — Independent in this iteration. The
   presentation-state log is orthogonal to data-shape validation. Future
   composition possible (a "presentation-state-after-eject" assertion) but
   not in JOB-001's scope.
-* **ADR-018 ↔ ADR-016** — Hard constraint inherited. The 5-service compose
+* **ADR-019 ↔ ADR-016** — Hard constraint inherited. The 5-service compose
   stack is unchanged; the orchestrator is in-process to pytest, outside the
   compose network. Production-topology fidelity preserved.
-* **ADR-018 ↔ ADR-017** — Independent. SessionEventReader dispatch is
+* **ADR-019 ↔ ADR-017** — Independent. SessionEventReader dispatch is
   orthogonal to dbt-test validation.
 
 ## Open questions

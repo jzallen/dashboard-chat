@@ -1,4 +1,4 @@
-# Milestone 2 — per-turn validation (β only, ADR-018 §2 Option β).
+# Milestone 2 — per-turn validation (β only, ADR-019 §2 Option β).
 #
 # Two scenarios cover the Pandera-per-turn binding point:
 #   - happy path: shape-correct frame validates in well under the budget

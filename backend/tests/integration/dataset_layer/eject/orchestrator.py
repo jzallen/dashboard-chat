@@ -1,16 +1,16 @@
 """Eject-and-test orchestrator — composes probes + seeder + runner + parser.
 
-ADR-018, Option β. The orchestrator owns the per-flow validation cycle:
+ADR-019, Option β. The orchestrator owns the per-flow validation cycle:
     fetch zip -> unzip into tmpdir -> seed profile -> dbtRunner.invoke(deps)
     -> .invoke(build) -> .invoke(test) -> RunResultsParser.parse()
 
-Composition-root invariant (ADR-018 §4): the orchestrator is constructed
+Composition-root invariant (ADR-019 §4): the orchestrator is constructed
 ONLY by the session-scoped ``eject_orchestrator`` pytest fixture (step
 00-08), which invokes ``probe()`` exactly once before any flow uses it.
 Probe failure converts to ``pytest.skip(reason)`` with the failing probe
 NAMED — silent-green is impossible by construction.
 
-Architectural enforcement (ADR-018 D5, §11):
+Architectural enforcement (ADR-019 D5, §11):
     - ``EjectOrchestratorProtocol`` (protocols.py) — subtype layer
     - pytest-archon rule — structural layer
     - CI behavioral test (uninstall dbt-core, expect named probe skip)
@@ -95,7 +95,7 @@ def _exported_env(updates: dict[str, str]) -> Iterator[None]:
 
     dbt evaluates Jinja ``env_var(...)`` calls at parse time by reading
     ``os.environ`` of the running Python process. Because ``dbtRunner``
-    runs in-process (ADR-018 D9), the harness process's environment is
+    runs in-process (ADR-019 D9), the harness process's environment is
     what dbt sees — the seeded ``profiles.yml`` covers the s3_* profile
     fields, but ``sources.yml`` still references env_var('S3_BUCKET'),
     so without this wrapper dbt parse fails with "Env var required but
@@ -165,7 +165,7 @@ class EjectAndTestOrchestrator:
         self._parser = RunResultsParser()
 
     # ------------------------------------------------------------------
-    # probe() — earned-trust contract (ADR-018 §4)
+    # probe() — earned-trust contract (ADR-019 §4)
     # ------------------------------------------------------------------
 
     async def probe(self, tmp_path: Path) -> ProbeSummary:
@@ -292,7 +292,7 @@ class EjectAndTestOrchestrator:
     async def eject_and_test(self, project_id: str, tmp_path: Path) -> EjectTestReport:
         """Drive one per-flow eject-and-test cycle for ``project_id``.
 
-        Flow (ADR-018 §Decision Outcome step 3):
+        Flow (ADR-019 §Decision Outcome step 3):
             1. GET ``/api/projects/{project_id}/export/dbt`` -> zip bytes
             2. Unzip into ``tmp_path / project_id``
             3. Parse the unzipped ``dbt_project.yml`` to extract the
