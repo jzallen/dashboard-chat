@@ -87,7 +87,7 @@ dimensions:
     issues_raised: []
 
   - name: probe_earned_trust
-    status: conditional_passed
+    status: passed
     findings:
       - "5 specific probes listed (§4 design.md, ADR-019 Earned-Trust contract)."
       - "Probe 1 (dbt-CLI presence + version ≥ 1.8). Probe 2 (dbt-duckdb adapter loadable). Probe 3 (export endpoint reachable). Probe 4 (MinIO readable via DuckDB). Probe 5 (run_results.json schema)."
@@ -98,10 +98,12 @@ dimensions:
         severity: minor
         location: "design.md §4 probe_run_results_schema; ADR-019 Earned-Trust contract"
         recommendation: "Clarify in DELIVER: is 'dbt parse' sufficient, or should probe run full 'dbt build'? Acceptable to defer."
+        resolution: "Resolved by DWD-10 (DISTILL wave-decisions.md). dbt parse remains the canary; rationale: probe contract is the dbtRunnerResult.result attribute surface, not full-build output. Walking skeleton (Phase 0) already runs end-to-end build."
       - issue: "Behavioral enforcement specified as 'CI gold-test that breaks dbt-CLI PATH'. No details on when/how/who/CI integration."
         severity: minor
         location: "design.md §4 'Self-application' + §11; ADR-019 Earned-Trust contract"
         recommendation: "Clarify in DELIVER: pre-push gate, feature flag, or separate CI job? Acceptable to defer."
+        resolution: "Resolved by DWD-10 + commit 1954f49. Behavioral test at tests/acceptance/dbt-test-validation/test_behavioral_enforcement.py runs alongside the standard acceptance suite — no separate CI job needed."
 
   - name: wall_clock_estimate_oq4
     status: passed
@@ -148,7 +150,7 @@ dimensions:
     issues_raised: []
 
 blocking_issues_count: 0
-conditional_issues_count: 2
+conditional_issues_count: 0
 
 next_wave_handoff:
   target: "/nw-distill (acceptance-designer) for BDD acceptance tests, OR direct DELIVER if test-first is by-skill"
@@ -160,3 +162,4 @@ next_wave_handoff:
     - "docs/product/architecture/brief.md (Application Architecture section)"
 
 approved_timestamp: "2026-05-09T00:00:00Z"
+phase_1_resolution_timestamp: "2026-05-09"

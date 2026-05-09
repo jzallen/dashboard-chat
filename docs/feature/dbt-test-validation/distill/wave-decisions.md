@@ -124,6 +124,29 @@ to-scenario traceability is skipped (no stories to trace).
   deterministic green requires either always-passing tests — rejected as
   placeholder churn — or scope correction).
 
+* **[DWD-10] Phase 1 (DELIVER) — earned-trust probes scope ratification + behavioral enforcement integration.**
+
+  *Probe scope* (Atlas minor finding #1, `design/review.yaml` lines 97-100):
+  keep `dbt parse` as the canary for `probe_run_results_shape`. The probe
+  contract is the `dbtRunnerResult.result` ATTRIBUTE SURFACE, not the full
+  build output — `dbtRunnerResult.result` for parse exposes the same
+  `.success`/`.result` shape the parser reads. Full `dbt build` already runs
+  end-to-end in the walking skeleton (one model + at least one test, per
+  Phase 0). Adding a build-level probe would duplicate the walking skeleton's
+  coverage at probe-time without strengthening the contract — and would slow
+  session start by ~5-15s. Authored 2026-05-09 in response to Atlas's
+  deferred minor finding.
+
+  *Behavioral enforcement integration* (Atlas minor finding #2,
+  `design/review.yaml` lines 101-104): the third orthogonal enforcement
+  layer of ADR-019 §"Earned-Trust contract" lands as
+  `tests/acceptance/dbt-test-validation/test_behavioral_enforcement.py`. Run
+  alongside the standard acceptance suite — no separate CI job, no feature
+  flag, no pre-push special-case. The pre-push and dedicated-CI gates already
+  invoke the acceptance suite via the existing tooling; the behavioral test
+  is included there. README has a `## Behavioral enforcement` section
+  documenting the run command. Authored 2026-05-09 (commit `1954f49`).
+
 ---
 
 ## Adapter Coverage Table (Mandate 6)

@@ -112,3 +112,19 @@ Each milestone is an independent DELIVER step per the distill roadmap.
 | 16 | `c040a6e` | fix(test/eject): export S3_* env vars before dbtRunner.invoke |
 
 8 Phase-0-roadmap steps + 2 infrastructure commits + 6 hotfixes. Architecture is sound; gaps above are downstream engineering.
+
+---
+
+## Phase 1 commit trail
+
+Phase 1 produced no deferred upstream issues — five M3 scenarios green, behavioral enforcement landed, Atlas's two minor findings closed.
+
+| # | Commit | Purpose |
+|---|---|---|
+| 1 | `bf20e08` | feat(test/dbt-test-validation): unpend M3 probe-1 scenario with named-skip glue |
+| 2 | `d72fa90` | feat(test/dbt-test-validation): unpend M3 probe-2 scenario via dbt-duckdb monkeypatch |
+| 3 | `422eae5` | feat(test/dbt-test-validation): unpend M3 probe-3 scenario via unreachable base URL |
+| 4 | `07e1a43` | feat(test/dbt-test-validation): unpend M3 probe-4 scenario via invalid MinIO creds |
+| 5 | `5b59de1` | feat(test/dbt-test-validation): unpend M3 probe-5 scenario via dbtRunner shape drift |
+| 6 | `1954f49` | feat(test/dbt-test-validation): add behavioral CI gold-test for Earned-Trust contract |
+| 7 | `<this commit>` | docs(dbt-test-validation): record DWD-10 + close Atlas minor findings #1 and #2 |
