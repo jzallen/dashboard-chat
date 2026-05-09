@@ -1,0 +1,127 @@
+{
+  "roadmap": {
+    "project_id": "dbt-test-validation",
+    "created_at": "2026-05-09T00:00:00Z",
+    "total_steps": 8,
+    "phases": 1
+  },
+  "scope": "Phase 0 only — walking skeleton green; remaining phases (01-05 from distill/roadmap.json) deferred per Mayor checkpoint",
+  "design_ratified_as": "docs/decisions/adr-018-eject-then-test-validation.md",
+  "distill_roadmap": "docs/feature/dbt-test-validation/distill/roadmap.json",
+  "phases": [
+    {
+      "id": "00",
+      "name": "Walking skeleton green",
+      "description": "Replace 11 RED scaffolds with thin real implementations sufficient to make the walking skeleton scenario green end-to-end. Outside-In TDD ordering: each step replaces one scaffold module with the minimum implementation needed for the next outer step. Per ADR-018 §Decision Outcome: per-flow eject via dbtRunner Python API, per-turn Pandera, probe() composition root.",
+      "estimate_minutes": 240,
+      "depends_on": [],
+      "steps": [
+        {
+          "id": "00-01",
+          "name": "Add dbt-core dbt-duckdb pandera test extras",
+          "criteria": "backend/pyproject.toml has [project.optional-dependencies] test with dbt-core>=1.8 dbt-duckdb>=1.8 pandera>=0.29; uv sync succeeds; backend/app code does not import dbt or pandera (verified by new unit test); existing backend tests still green.",
+          "test_file": "backend/tests/unit/test_test_extras_isolation.py",
+          "scenario_name": "backend_app_does_not_import_dbt_or_pandera",
+          "estimate_minutes": 20,
+          "depends_on": [],
+          "files_to_modify": [
+            "backend/pyproject.toml",
+            "backend/tests/unit/test_test_extras_isolation.py"
+          ]
+        },
+        {
+          "id": "00-02",
+          "name": "Implement DuckDBProfileSeeder",
+          "criteria": "Seed writes profiles.yml with concrete s3 endpoint and credentials from minio_creds dict; raises RuntimeError naming the missing key when an env_var placeholder is undefined; SCAFFOLD marker removed from seeder.py.",
+          "test_file": "backend/tests/unit/test_duckdb_profile_seeder.py",
+          "scenario_name": "seeder_writes_concrete_profile_or_raises_named_error",
+          "estimate_minutes": 30,
+          "depends_on": ["00-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/eject/seeder.py",
+            "backend/tests/unit/test_duckdb_profile_seeder.py"
+          ]
+        },
+        {
+          "id": "00-03",
+          "name": "Implement DbtRunner via dbtRunner.invoke",
+          "criteria": "DbtRunner.run_build_and_test invokes dbt.cli.main.dbtRunner for deps then build then test sequentially; returns last dbtRunnerResult; raises on failure surfacing dbtRunnerResult.exception; SCAFFOLD marker removed from runner.py; no subprocess.run.",
+          "test_file": "backend/tests/unit/test_dbt_runner.py",
+          "scenario_name": "runner_sequences_deps_build_test_via_python_api",
+          "estimate_minutes": 45,
+          "depends_on": ["00-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/eject/runner.py",
+            "backend/tests/unit/test_dbt_runner.py"
+          ]
+        },
+        {
+          "id": "00-04",
+          "name": "Implement RunResultsParser from dbtRunnerResult",
+          "criteria": "Parser populates EjectTestReport(status,models_built,tests_run,failures) from dbtRunnerResult.result list; status pass when all RunResult.status == success otherwise fail; falls back to target/run_results.json only when .result is None; SCAFFOLD marker removed.",
+          "test_file": "backend/tests/unit/test_run_results_parser.py",
+          "scenario_name": "parser_translates_dbtrunnerresult_to_ejecttestreport",
+          "estimate_minutes": 30,
+          "depends_on": ["00-03"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/eject/parser.py",
+            "backend/tests/unit/test_run_results_parser.py"
+          ]
+        },
+        {
+          "id": "00-05",
+          "name": "Implement five probe functions happy paths",
+          "criteria": "All 5 probes return ProbeReport(ok=True) when substrate healthy; probe_dbt_runner_importable verifies dbt.cli.main import + version >= 1.8; probe_run_results_shape uses dbtRunner parse against fixture project; failure-injection paths deferred to distill Phase 1.",
+          "test_file": "backend/tests/unit/test_probe_happy_paths.py",
+          "scenario_name": "all_five_probes_return_ok_on_healthy_substrate",
+          "estimate_minutes": 45,
+          "depends_on": ["00-02", "00-03", "00-04"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/eject/probe.py",
+            "backend/tests/unit/test_probe_happy_paths.py"
+          ]
+        },
+        {
+          "id": "00-06",
+          "name": "Implement EjectAndTestOrchestrator composing probes seeder runner parser",
+          "criteria": "probe() invokes 5 probes once and aggregates ProbeReport; eject_and_test fetches zip unzips seeds runs parses returns EjectTestReport; EjectOrchestratorProtocol runtime_checkable conformance; SCAFFOLD removed from orchestrator.py and protocols.py.",
+          "test_file": "backend/tests/unit/test_eject_orchestrator.py",
+          "scenario_name": "orchestrator_probes_then_ejects_unzips_seeds_runs_parses",
+          "estimate_minutes": 45,
+          "depends_on": ["00-02", "00-03", "00-04", "00-05"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/eject/orchestrator.py",
+            "backend/tests/unit/test_eject_orchestrator.py"
+          ]
+        },
+        {
+          "id": "00-07",
+          "name": "Implement PanderaValidator and OrdersStaging schema",
+          "criteria": "PanderaValidator.validate returns ValidationResult(status,errors,elapsed_ms); OrdersStaging schema covers minimal columns for walking skeleton fixture; pass case under 200ms with empty errors; fail case returns column-level error messages; SCAFFOLD removed.",
+          "test_file": "backend/tests/unit/test_pandera_validator.py",
+          "scenario_name": "validator_returns_under_200ms_on_shape_correct_frame",
+          "estimate_minutes": 25,
+          "depends_on": ["00-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/validation/pandera_validator.py",
+            "backend/tests/integration/dataset_layer/validation/schemas/orders_staging.py",
+            "backend/tests/unit/test_pandera_validator.py"
+          ]
+        },
+        {
+          "id": "00-08",
+          "name": "Wire harness eject and validate plus acceptance fixture",
+          "criteria": "DatasetLayerHarness.eject_and_test delegates to EjectAndTestOrchestrator; .validate_after delegates to PanderaValidator; session-scoped eject_orchestrator fixture probes once and skips with named reason on failure; AssertionError scaffold bodies removed; walking-skeleton.feature green when compose+GROQ provisioned.",
+          "test_file": "tests/acceptance/dbt-test-validation/walking-skeleton.feature",
+          "scenario_name": "customer_cleans_dataset_ejects_to_dbt_project_and_revalidates_green",
+          "estimate_minutes": 30,
+          "depends_on": ["00-06", "00-07"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/harness.py",
+            "tests/acceptance/dbt-test-validation/conftest.py"
+          ]
+        }
+      ]
+    }
+  ]
+}

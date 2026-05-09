@@ -1,0 +1,193 @@
+{
+  "feature": "dbt-test-validation",
+  "feature_dir": "docs/feature/dbt-test-validation",
+  "produced_by": "DISTILL wave",
+  "produced_on": "2026-05-09",
+  "binding_decisions": "docs/feature/dbt-test-validation/distill/wave-decisions.md",
+  "upstream_issues": "docs/feature/dbt-test-validation/distill/upstream-issues.md",
+  "design_ratified_as": "docs/decisions/adr-018-eject-then-test-validation.md (Ratified 2026-05-09)",
+  "acceptance_root": "tests/acceptance/dbt-test-validation/",
+  "scaffold_root": "backend/tests/integration/dataset_layer/{eject,validation}/",
+  "walking_skeleton_strategy": "C — real local + skip-when-unavailable",
+  "phases": [
+    {
+      "id": "00",
+      "title": "Phase 0 — Walking skeleton green (orchestrator + Pandera scaffolds shipped real)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Replace 11 RED scaffolds with thin real implementations sufficient to make the walking skeleton scenario green end-to-end. Implement EjectAndTestOrchestrator (probe() + eject_and_test()), DuckDBProfileSeeder, DbtRunner (wraps dbtRunner.invoke), RunResultsParser (reads dbtRunnerResult.result), ProbeReport + 5 probe functions (happy paths only — failure injection is Phase 1), PanderaValidator + OrdersStaging schema (minimal, sufficient for one staging shape). Wire DatasetLayerHarness.eject_and_test and .validate_after to delegate to these. Add dbt-core, dbt-duckdb, pandera as test extras in backend/pyproject.toml. Add session-scoped eject_orchestrator pytest fixture (composition root) at tests/acceptance/dbt-test-validation/conftest.py.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/dbt-test-validation/walking-skeleton.feature :: Customer cleans dataset, ejects to dbt project, and re-validates green via the customer's own toolchain"
+      ],
+      "files_changed_estimate": "backend/tests/integration/dataset_layer/eject/{orchestrator,runner,seeder,parser,probe,protocols}.py — replace AssertionError with real impl. backend/tests/integration/dataset_layer/validation/{pandera_validator,schemas/orders_staging}.py — real impl. backend/tests/integration/dataset_layer/harness.py — flesh out eject_and_test/validate_after delegations. backend/pyproject.toml — add test extras. tests/acceptance/dbt-test-validation/conftest.py — orchestrator fixture + skip-when-unavailable wiring. ~600-900 LoC.",
+      "exit_criteria": [
+        "Walking skeleton scenario GREEN when GROQ_API_KEY + compose stack provisioned",
+        "Walking skeleton scenario SKIPS with named reason when env unavailable (no spurious failure)",
+        "Zero __SCAFFOLD__ markers in eject/ and validation/ subpackages",
+        "Existing harness pytest tests (test_dataset_staging_layer.py, test_replay_idempotency.py, test_wire_contract.py, test_harness_sse.py) still green — zero regression",
+        "AC1.6 wall-clock measured on CI runner; recorded in distill/wave-decisions.md as DWD-9 (replaces estimate)",
+        "Reviewer (nw-software-crafter-reviewer) approves: hexagonal boundary respected, AssertionError discipline retired, dbtRunner Python API used (no subprocess.run for dbt invocation)"
+      ],
+      "blocks": ["01"],
+      "estimated_size": "L",
+      "ac_references": [
+        "ADR-018 §Decision outcome (per-flow + per-turn mechanism)",
+        "ADR-018 §Earned-Trust contract (probe() composition root)",
+        "JOB-001 O1 (fast discovery), O4 (durability across ejection), O6 (workflow vs data triage)"
+      ]
+    },
+    {
+      "id": "01",
+      "title": "Phase 1 — Earned-trust probes (5 substrate-lie injections)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Implement the failure-injection paths for all 5 probes. Each probe must (a) detect its specific substrate lie and (b) raise pytest.skip with the probe name in the reason. Probes are: probe_dbt_runner_importable (monkeypatch dbt.cli.main.dbtRunner to raise ImportError), probe_dbt_duckdb_loadable (uninstall adapter or monkeypatch import), probe_export_endpoint_reachable (mock 404/connection refused), probe_minio_readable_via_duckdb (use bad creds in seeded profile), probe_run_results_shape (return malformed dbtRunnerResult). Implement the behavioral CI gold-test (Atlas's deferred minor item) at tests/acceptance/dbt-test-validation/test_behavioral_enforcement.py: uninstalls dbt-core (or monkeypatches dbtRunner to raise ImportError) and asserts the suite skips with the expected probe-failure reason.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/dbt-test-validation/milestone-3-earned-trust-probes.feature :: dbt runner cannot be imported — suite skips with named reason",
+        "tests/acceptance/dbt-test-validation/milestone-3-earned-trust-probes.feature :: dbt-duckdb adapter cannot be loaded — suite skips with named reason",
+        "tests/acceptance/dbt-test-validation/milestone-3-earned-trust-probes.feature :: project export endpoint is unreachable — suite skips with named reason",
+        "tests/acceptance/dbt-test-validation/milestone-3-earned-trust-probes.feature :: datalake cannot be read through seeded profile — suite skips with named reason",
+        "tests/acceptance/dbt-test-validation/milestone-3-earned-trust-probes.feature :: dbt result shape no longer matches what the parser expects — suite skips with named reason"
+      ],
+      "files_changed_estimate": "backend/tests/integration/dataset_layer/eject/probe.py — implement all 5 failure-injection paths with named ProbeReport reasons. tests/acceptance/dbt-test-validation/steps/dbt_test_validation_steps.py — implement monkeypatch fixtures and skip-assertion glue. tests/acceptance/dbt-test-validation/test_behavioral_enforcement.py — new file for Atlas's behavioral CI gold-test. ~250-350 LoC.",
+      "exit_criteria": [
+        "All 5 M3 probe scenarios green",
+        "Phase 0 scenarios still green",
+        "Behavioral CI gold-test runs in pre-push or dedicated CI job; documented in tests/acceptance/dbt-test-validation/README.md",
+        "Atlas's minor finding 2 (behavioral enforcement integration) closed in design/review.yaml or noted as resolved in distill/wave-decisions.md DWD-10",
+        "Probe scope question (Atlas's minor finding 1: dbt parse vs dbt build) resolved in DWD-10 — recommend keeping `dbt parse` as canary since dbtRunnerResult.result shape is the contract probed; full build runs in WS"
+      ],
+      "blocks": ["02"],
+      "estimated_size": "M",
+      "ac_references": [
+        "ADR-018 §Earned-Trust contract (5-probe enumeration)",
+        "Atlas (DESIGN review) minor findings #1 + #2"
+      ]
+    },
+    {
+      "id": "02",
+      "title": "Phase 2 — Eject-and-test full coverage (drift detector + customer fidelity)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Drive the eject-and-test failure paths beyond happy-path. Drift detector: when an exported schema.yml test would fail against the staged data, EjectTestReport(status='fail', failures=[...]) names the failing dbt test. Customer-fidelity invariant: assert that DuckDBProfileSeeder writes a profiles.yml whose s3 endpoint URL + bucket path EQUAL the backend's MinIO config (read from compose env at fixture time). Both scenarios run as @real-io @adapter-integration so format mismatches surface.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/dbt-test-validation/milestone-1-eject-and-test.feature :: Customer's project ejects and validates green when staging data matches schema contract",
+        "tests/acceptance/dbt-test-validation/milestone-1-eject-and-test.feature :: Drift detector — eject fails with named failing test when staging data violates dbt schema contract",
+        "tests/acceptance/dbt-test-validation/milestone-1-eject-and-test.feature :: Customer-fidelity invariant — eject reads same lake path the backend uses"
+      ],
+      "files_changed_estimate": "backend/tests/integration/dataset_layer/eject/parser.py — extract failures from dbtRunnerResult.result for fail-status reports. backend/tests/integration/dataset_layer/eject/seeder.py — surface profiles.yml path-asserting helper for customer-fidelity scenario. tests/acceptance/dbt-test-validation/steps/dbt_test_validation_steps.py — add failing-fixture and path-extraction glue. ~150-250 LoC.",
+      "exit_criteria": [
+        "All 3 M1 scenarios green",
+        "Phase 0 + Phase 1 scenarios still green",
+        "EjectTestReport.failures schema verified against pinned dbt 1.8 + 1.9 (per Atlas DEVOPS handoff: contract test added to tests/contracts/ if not yet present)"
+      ],
+      "blocks": ["03"],
+      "estimated_size": "M",
+      "ac_references": [
+        "ADR-018 §Decision outcome — drift detector",
+        "ADR-018 §Cross-decision composition (ADR-007 — same MinIO source)",
+        "design.md §13 risk #1 (probe_minio_readable_via_duckdb error messaging)"
+      ]
+    },
+    {
+      "id": "03",
+      "title": "Phase 3 — Validate-after (Pandera per-turn layer; β's fast-feedback)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Wire the per-turn Pandera validation layer into chat_turn. validate_after returns ValidationResult quickly. AC1.5 retry-with-rephrase budget engages on Pandera failure (rephrase #1 → if pass, succeed; if fail, rephrase #2 → if pass, succeed; if fail, raise structured error with SSE transcript and Pandera diff). Author OrdersStaging schema with concrete column constraints (regex on email column, accepted_values on region, range on quantity) — moves beyond the Phase-0 minimal stub.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/dbt-test-validation/milestone-2-validate-after.feature :: Shape-correct staging frame validates within budget",
+        "tests/acceptance/dbt-test-validation/milestone-2-validate-after.feature :: Wrong-shape frame engages retry-with-rephrase budget and resolves",
+        "tests/acceptance/dbt-test-validation/milestone-2-validate-after.feature :: Workflow vs data triage signal — Pandera failure differs from dbt-test failure"
+      ],
+      "files_changed_estimate": "backend/tests/integration/dataset_layer/validation/pandera_validator.py — full impl with timing-budget guard. backend/tests/integration/dataset_layer/validation/schemas/orders_staging.py — concrete pa.DataFrameSchema. backend/tests/integration/dataset_layer/harness.py — chat_turn engages Pandera failure into existing AC1.5 rephrase loop (additive, does NOT change existing chat_turn semantics for non-validating callers). ~200-300 LoC.",
+      "exit_criteria": [
+        "All 3 M2 scenarios green",
+        "Phase 0–2 scenarios still green",
+        "AC1.5 retry budget unchanged for non-validating callers (assertion in M2 sets up an isolated dataset; existing scenarios in test_dataset_staging_layer.py exercise the no-validate path)",
+        "Pandera per-turn timing < 200ms verified by skill F-004 budget assertion"
+      ],
+      "blocks": ["04"],
+      "estimated_size": "M-L",
+      "ac_references": [
+        "ADR-018 §Decision outcome (β: per-turn Pandera + per-flow eject)",
+        "JOB-001 O3 (chat-protocol churn cost — Pandera decoupled from wire schema)",
+        "JOB-001 O6 (workflow vs data triage)",
+        "AC1.5 (existing harness retry-with-rephrase budget)"
+      ]
+    },
+    {
+      "id": "04",
+      "title": "Phase 4 — Protocol invariants (AC1.4 retention + ADR-016 ingress assertion)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Verify the protocol-level invariants survive the new layers. AC1.4 raw-tool-call leak guard: chat_turn populates ChatEventTrace with raw_tool_call_seen=False after the new validate_after layer is wired (existing behavior preserved). ADR-016 ingress: orchestrator's HTTP request to the export endpoint goes through the auth-proxy URL (port 8000), NOT directly to backend (port 8001 inside the compose network). Both scenarios are pure assertions on existing behavior + the new orchestrator's URL choice; no new mechanism.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/dbt-test-validation/milestone-4-protocol-invariants.feature :: After a chat workflow completes, no raw tool-call delta leaks into the trace",
+        "tests/acceptance/dbt-test-validation/milestone-4-protocol-invariants.feature :: The eject orchestrator reaches system through production-ingress, not internal ports"
+      ],
+      "files_changed_estimate": "backend/tests/integration/dataset_layer/eject/orchestrator.py — verify ProjectExporter URL resolution uses configured base URL (auth-proxy), document choice in module docstring. tests/acceptance/dbt-test-validation/steps/dbt_test_validation_steps.py — URL-extraction glue + ChatEventTrace assertion. ~80-120 LoC.",
+      "exit_criteria": [
+        "Both M4 scenarios green",
+        "Phase 0–3 scenarios still green",
+        "AC1.4 grep guard still passes for backend/app/ (`rg -wi 'groq|sse|tool_call|tool_calls' backend/app/` returns zero)",
+        "ADR-016 ingress assertion runs against the actual auth-proxy port — verified by capturing the HTTP request URL in test"
+      ],
+      "blocks": ["05"],
+      "estimated_size": "S",
+      "ac_references": [
+        "ADR-018 §OQ5 (AC1.4 stays at protocol level)",
+        "ADR-016 (5-service compose, production-fidelity ingress)",
+        "ADR-014 (ChatEvent vocabulary stratification)"
+      ]
+    },
+    {
+      "id": "05",
+      "title": "Phase 5 — Failure modes (export breakage + retry exhaustion)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Two engineered failure scenarios that complete the testing-inversion safety story. Export breakage: when dbt-project-export ships a profiles.yml referencing an undefined env_var (lit. `env_var('DOES_NOT_EXIST_FOR_TEST')`), DuckDBProfileSeeder raises a debugging-friendly RuntimeError naming the missing variable. Retry exhaustion: when the LLM produces unrephrasable wrong-shape output across 2 rephrases, chat_turn raises a structured error containing the SSE transcript + Pandera diff (per JOB-001 O6 — clear triage signal).",
+      "scenarios_to_unskip": [
+        "tests/acceptance/dbt-test-validation/milestone-5-failure-modes.feature :: Export references undefined credential — seeder fails with named missing variable",
+        "tests/acceptance/dbt-test-validation/milestone-5-failure-modes.feature :: Retry budget is exhausted — chat_turn raises with SSE transcript and Pandera diff"
+      ],
+      "files_changed_estimate": "backend/tests/integration/dataset_layer/eject/seeder.py — named-env-var error path. backend/tests/integration/dataset_layer/harness.py — chat_turn final-failure raises StructuredRetryExhaustion with diff payload. backend/tests/integration/dataset_layer/validation/pandera_validator.py — diff serializer. ~150-200 LoC.",
+      "exit_criteria": [
+        "Both M5 scenarios green",
+        "Phase 0–4 scenarios still green (16/16 acceptance scenarios green)",
+        "Mutation testing (per nw-mutation-test skill) on EjectAndTestOrchestrator + PanderaValidator achieves ≥ 80% kill rate",
+        "All __SCAFFOLD__ markers removed from eject/ and validation/ subpackages",
+        "Final integration suite green: `cd backend && uv run pytest tests/integration/dataset_layer/` + `cd tests/acceptance/dbt-test-validation && uv run pytest` both green",
+        "Polecat MUST file follow-up bead: `/nw-finalize dbt-test-validation` to migrate artifacts to docs/evolution/"
+      ],
+      "blocks": [],
+      "estimated_size": "M",
+      "ac_references": [
+        "design.md §13 risk #1 (probe_minio_readable_via_duckdb error messaging)",
+        "AC1.5 retry budget exhaustion + AC1.9 structured error per `api-driven-user-flow-tests` evolution",
+        "JOB-001 O6 (workflow vs data triage)"
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    {
+      "after_phase": "00",
+      "gate": "Walking skeleton green on real CI runner — record AC1.6 wall-clock measurement; if exceeds 300s, escalate to γ (sampled-eject) per design.md §6 OQ4 contingency"
+    },
+    {
+      "after_phase": "01",
+      "gate": "Behavioral CI gold-test wired into pre-push or dedicated CI job; Atlas's minor findings #1 + #2 closed"
+    },
+    {
+      "after_phase": "05",
+      "gate": "Mutation testing kill rate ≥ 80%; all 16 scenarios green; ready for /nw-finalize"
+    }
+  ],
+  "deliver_dispatch_notes": {
+    "agent": "nw-software-crafter",
+    "paradigm": "Python OOP for stateful orchestration; module-level pure functions for parsers/seeders (per design.md §12 + DWD-7)",
+    "iron_rule": "NEVER modify a failing acceptance test to make it pass. Each phase enables ONE scenario at a time; revert and escalate after 3 failed attempts.",
+    "tdd_cycle": "RED_ACCEPTANCE → unskip one scenario → RED_UNIT → write failing unit test → GREEN → minimum implementation → REFACTOR per RPP L1-L6 → next scenario",
+    "context_handoff": [
+      "ADR-018 (Ratified)",
+      "design.md §3 Reuse Analysis + §4 probe spec + §11 enforcement",
+      "c4-diagrams.md (visual contract)",
+      "wave-decisions.md DWD-1 through DWD-8 (binding decisions)",
+      "Existing harness paradigm reference: backend/tests/integration/dataset_layer/harness.py (recently refactored per refactor-dataset-layer-harness)"
+    ]
+  }
+}

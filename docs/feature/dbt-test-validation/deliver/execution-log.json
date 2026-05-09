@@ -1,0 +1,286 @@
+{
+  "schema_version": "3.0",
+  "feature_id": "dbt-test-validation",
+  "events": [
+    {
+      "sid": "00-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:04:30Z"
+    },
+    {
+      "sid": "00-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: this step is a dependency boundary guard; the unit test IS the acceptance test (RED_UNIT covers it)",
+      "t": "2026-05-09T02:06:49Z"
+    },
+    {
+      "sid": "00-01",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:06:50Z"
+    },
+    {
+      "sid": "00-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:12:05Z"
+    },
+    {
+      "sid": "00-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:13:23Z"
+    },
+    {
+      "sid": "00-02",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:16:27Z"
+    },
+    {
+      "sid": "00-02",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: leaf utility; the unit test IS the acceptance contract (RED_UNIT covers it)",
+      "t": "2026-05-09T02:17:21Z"
+    },
+    {
+      "sid": "00-02",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:17:59Z"
+    },
+    {
+      "sid": "00-02",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:19:49Z"
+    },
+    {
+      "sid": "00-02",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:21:58Z"
+    },
+    {
+      "sid": "00-03",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:28:07Z"
+    },
+    {
+      "sid": "00-03",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: leaf utility wrapping dbt Python API; the unit test IS the acceptance contract (RED_UNIT covers it)",
+      "t": "2026-05-09T02:33:18Z"
+    },
+    {
+      "sid": "00-03",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:34:05Z"
+    },
+    {
+      "sid": "00-03",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:39:18Z"
+    },
+    {
+      "sid": "00-03",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T02:41:27Z"
+    },
+    {
+      "sid": "00-04",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:05:50Z"
+    },
+    {
+      "sid": "00-04",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: leaf parser utility; the unit test IS the acceptance contract (RED_UNIT covers it)",
+      "t": "2026-05-09T03:05:53Z"
+    },
+    {
+      "sid": "00-04",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:06:43Z"
+    },
+    {
+      "sid": "00-04",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:07:49Z"
+    },
+    {
+      "sid": "00-04",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:08:11Z"
+    },
+    {
+      "sid": "00-05",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:11:18Z"
+    },
+    {
+      "sid": "00-05",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: leaf probe utilities; the unit tests ARE the acceptance contract (RED_UNIT covers them)",
+      "t": "2026-05-09T03:11:24Z"
+    },
+    {
+      "sid": "00-05",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:12:25Z"
+    },
+    {
+      "sid": "00-05",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:14:30Z"
+    },
+    {
+      "sid": "00-05",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:15:14Z"
+    },
+    {
+      "sid": "00-07",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:17:05Z"
+    },
+    {
+      "sid": "00-07",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: leaf validator utility; the unit test IS the acceptance contract",
+      "t": "2026-05-09T03:17:10Z"
+    },
+    {
+      "sid": "00-07",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:17:49Z"
+    },
+    {
+      "sid": "00-07",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:19:42Z"
+    },
+    {
+      "sid": "00-07",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:20:29Z"
+    },
+    {
+      "sid": "00-06",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:25:54Z"
+    },
+    {
+      "sid": "00-06",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: orchestrator unit-testable in isolation; the WS acceptance scenario lands in step 00-08",
+      "t": "2026-05-09T03:25:56Z"
+    },
+    {
+      "sid": "00-06",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:25:57Z"
+    },
+    {
+      "sid": "00-06",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:29:24Z"
+    },
+    {
+      "sid": "00-06",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:29:54Z"
+    },
+    {
+      "sid": "00-08",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:34:19Z"
+    },
+    {
+      "sid": "00-08",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:34:34Z"
+    },
+    {
+      "sid": "00-08",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:35:35Z"
+    },
+    {
+      "sid": "00-08",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:38:51Z"
+    },
+    {
+      "sid": "00-08",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-09T03:40:32Z"
+    }
+  ]
+}

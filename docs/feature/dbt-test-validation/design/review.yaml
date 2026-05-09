@@ -1,0 +1,162 @@
+schema_version: 1
+review_protocol: nw-solution-architect-reviewer
+reviewer: Atlas (nw-solution-architect-reviewer, Haiku)
+reviewer_invocation: orchestrator-dispatched (DESIGN wave, Option β proposal)
+feature_id: dbt-test-validation
+date: 2026-05-09
+wave: DESIGN
+
+overall_status: approved
+approval_decision: |
+  APPROVED for handoff. All hard gates passed. No blocking issues.
+  Self-flagged issues are honestly addressed. Dissent triggers are evaluated.
+  Option β is defensible and forward-composable.
+
+dimensions:
+  - name: reuse_analysis
+    status: passed
+    findings:
+      - "Reuse Analysis table (§3) classifies all 13 components with evidence-based justifications."
+      - "EXTEND decisions justified: DatasetLayerHarness (+1-2 facade methods) preserves AAA acceptance-test shape."
+      - "CREATE NEW decisions justified: no 'too many dependencies' hand-wave. Each CREATE NEW (EjectAndTestOrchestrator, DuckDBProfileSeeder, DbtRunner, RunResultsParser, PanderaValidator) fills a unique gap."
+      - "REUSE AS-IS preserved: export endpoint, use case, Ibis subpackage, existing harness facades (ChatApi, TransformsApi, DatasetsApi, SessionsApi)."
+      - "Conway's Law check explicit: single team, single owner, no cross-team handoff."
+    issues_raised: []
+
+  - name: c4_and_topology
+    status: passed
+    findings:
+      - "L1 System Context: harness + SUT (5-service compose) + dbt-CLI subprocess + ephemeral DuckDB. Boundary clear."
+      - "L2 Container: existing harness facades vs. new validation layer (Pandera + EjectAndTestOrchestrator). Relationships explicit."
+      - "L3 Component: orchestrator internals (exporter, unzipper, seeder, runner, parser, probe). Public boundary is single entry point eject_and_test()."
+      - "Sequence diagram (end-to-end per-turn + per-flow): 25 steps, clearly marked β-only variant, AC1.4 guard retained, tmpdir cleanup."
+      - "ADR-016 compliance verified: orchestrator OUTSIDE compose network, no topology change, production-fidelity preserved via MinIO-same-Parquet bridge."
+    issues_raised: []
+
+  - name: adr_coherence
+    status: passed
+    findings:
+      - "ADR-018 Status: Proposed (correct; awaiting peer review by user)."
+      - "Context: 6 paragraphs establishing JOB-001 framing, DIVERGE recommendation, 5 OQs carried forward."
+      - "Decision drivers: 6 drivers cited (JOB-001 O4, AC1.6, ADR-016, ADR-007, Earned Trust, Conway's Law)."
+      - "Considered options: α/β/γ (3 realizations of C) + B/E/F rejection rationale. Aligns with DIVERGE §2–3."
+      - "Decision outcome: Mechanism (per-flow eject + per-turn Pandera), OQ ratifications (OQ1–OQ5), Earned-Trust contract (5 probes + 3-layer enforcement), Why β/not α/not γ/not B-alone."
+      - "Consequences: 3 positive (strategic level, O3/O6, probe neutralizes risk), 4 negative (two SSOTs, dbt-CLI integration, AC1.6 not yet measured, test-extras isolation), 3 operational."
+      - "Cross-decision composition: ADR-018 ↔ ADR-007/014/015/016/017 + JOB-001. All relationships documented."
+      - "Open questions: 5 OQs with ownership + default if unresolved."
+      - "References: 12 items covering jobs.yaml, constraint ADRs, harness, conftest, export endpoint/use-case, feature spec."
+    issues_raised: []
+
+  - name: oq_traceability
+    status: passed
+    findings:
+      - "OQ1 (DuckDB topology): design.md §6 + §2 Option α/β/γ; ADR-018 §OQ ratifications. Both cite 'fresh DuckDB seeded with same MinIO Parquet'. MATCHED."
+      - "OQ2 (scope): both state 'per-flow eject for regression flows; per-turn Pandera for fast feedback'. MATCHED."
+      - "OQ3 (export test-gating): both accept inversion with probe() as mitigation. MATCHED."
+      - "OQ4 (AC1.6 wall-clock): both note ~85–105s estimate, 65% headroom, measurement deferred to DELIVER. MATCHED."
+      - "OQ5 (per-turn assertions): both state AC1.4 guard stays at protocol, data assertions split per-turn (Pandera) + per-flow (dbt-test). MATCHED."
+    issues_raised: []
+
+  - name: constraint_compliance
+    status: passed
+    findings:
+      - "ADR-016 (5-service compose, production-topology fidelity): orchestrator OUTSIDE compose verified. No topology change."
+      - "ADR-007 (Ibis): two DuckDBs (in-app Ibis, eject-time dbt), one source (MinIO Parquet). Independence preserved."
+      - "ADR-014 (ChatEvent stratification): β does NOT add new ChatEvent types. Wire schema unchanged."
+      - "ADR-015 (presentation-state log): orthogonal in this iteration."
+      - "ADR-017 (SessionEventReader): independent."
+    issues_raised: []
+
+  - name: brief_ssot_bootstrap
+    status: passed
+    findings:
+      - "Architecture Brief bootstrapped with Application Architecture section."
+      - "Ownership clear: 'nw-solution-architect (current author: Morgan)' + placeholder for future System/Domain architects."
+      - "Constraint inheritance table: ADR-007/014/015/016/017 constraints listed."
+      - "dbt-test-validation subsection: Author, ADR ref, JOB ref, Status, Decision summary, Components table, Integration points, Earned-Trust contract, Enforcement rules, Quality gates checklist."
+      - "Cross-section index: ADR-018 included. Living document framing appropriate."
+    issues_raised: []
+
+  - name: option_comparison_beta_vs_alpha
+    status: passed
+    findings:
+      - "β recommended (design.md §7, ADR-018 §Why β over α)."
+      - "Key arguments: (1) JOB-001 O3 chat-protocol churn — Pandera decouples from wire schema. (2) JOB-001 O6 workflow-vs-data triage — clear signal separation. (3) Wall-clock ~50ms per-turn invisible. (4) Forward-composable with B's translator."
+      - "Dissent trigger from DIVERGE ('team's pandas familiarity') explicitly does NOT fire: 'product ejects to dbt; team IS choosing to speak dbt'."
+      - "Verdict: β defensible. α defensible only if AC1.6 profiling exceeds budget OR O3/O6 deemed out-of-scope. Neither holds."
+    issues_raised: []
+
+  - name: probe_earned_trust
+    status: conditional_passed
+    findings:
+      - "5 specific probes listed (§4 design.md, ADR-018 Earned-Trust contract)."
+      - "Probe 1 (dbt-CLI presence + version ≥ 1.8). Probe 2 (dbt-duckdb adapter loadable). Probe 3 (export endpoint reachable). Probe 4 (MinIO readable via DuckDB). Probe 5 (run_results.json schema)."
+      - "Composition-root invariant: session-scoped fixture invokes probe() once; failure → pytest.skip(reason)."
+      - "Three-layer enforcement: subtype (mypy + Protocol), structural (pytest-archon), behavioral (CI gold-test)."
+    issues_raised:
+      - issue: "Probe 5 uses 'dbt parse' as the canary. Actual eject runs 'dbt deps && dbt build && dbt test' — parse passing doesn't guarantee build/test passing."
+        severity: minor
+        location: "design.md §4 probe_run_results_schema; ADR-018 Earned-Trust contract"
+        recommendation: "Clarify in DELIVER: is 'dbt parse' sufficient, or should probe run full 'dbt build'? Acceptable to defer."
+      - issue: "Behavioral enforcement specified as 'CI gold-test that breaks dbt-CLI PATH'. No details on when/how/who/CI integration."
+        severity: minor
+        location: "design.md §4 'Self-application' + §11; ADR-018 Earned-Trust contract"
+        recommendation: "Clarify in DELIVER: pre-push gate, feature flag, or separate CI job? Acceptable to defer."
+
+  - name: wall_clock_estimate_oq4
+    status: passed
+    findings:
+      - "Estimate ~85–105s/scenario at M=1 (chat ~70s + eject ~15–35s)."
+      - "Order-of-magnitude only; not empirically measured. Measurement deferred to DELIVER (D8)."
+      - "Headroom: ~65% out of 300s AC1.6 budget."
+      - "Contingency γ (sampled-eject) documented at M ≥ 3 flows."
+    issues_raised: []
+
+  - name: testing_inversion_oq3
+    status: passed
+    findings:
+      - "Inversion accepted: probe() as the safety floor instead of gate-first."
+      - "Three existing use-case tests cover unit-level (happy/not-found/empty) but not runtime substrate."
+      - "probe() directly targets the runtime gaps (MinIO httpfs readability, dbt build completeness, run_results schema)."
+      - "Probe failure → pytest.skip(reason) prevents silent green; three-layer enforcement prevents probe bypass."
+    issues_raised: []
+
+  - name: self_flagged_issues
+    status: passed
+    findings:
+      - "Issue 1 (route): GET /api/projects/{id}/export/dbt — verified in routers/projects.py:54."
+      - "Issue 2 (green test gate): 'partially true' framing correct; 3 use-case tests don't cover runtime substrate; probe() addresses gap."
+      - "Issue 3 (profiles.yml env_var): DuckDBProfileSeeder seeds concrete values."
+      - "Issue 4 (probe load-bearing): 50-line spec, 5 probes, three-layer enforcement."
+      - "Issue 5 (AC1.5 retry interaction): per-turn Pandera failures engage existing rephrase budget, not a new retry concept."
+    issues_raised: []
+
+  - name: minor_observations_for_deliver
+    status: info
+    findings:
+      - "Ibis vs dbt SQL path distinction: eject-then-test validates customer's dbt-compiled SQL, NOT in-app Ibis runtime SQL. These could diverge. Documented in brief.md but not explicit in design.md/ADR-018."
+      - "Pandera schema authorship scope: defer to DISTILL/DELIVER. Existing predicates transition to Pandera/dbt during the migration."
+      - "import-linter: investigated but cannot enforce method-presence. Clarify in DELIVER whether import-linter is mandatory or complementary to test-extras isolation."
+    issues_raised: []
+
+  - name: diverge_peer_review_status
+    status: passed
+    findings:
+      - "DIVERGE peer review (Prism, 2026-05-08, iteration 2): APPROVED without reservation."
+      - "T5 weight locked at 30% BEFORE scoring (anti-cherry-picking gate satisfied)."
+      - "DESIGN review validates DIVERGE outputs were accurate. No upstream revisions required (confirmed by upstream-changes.md)."
+    issues_raised: []
+
+blocking_issues_count: 0
+conditional_issues_count: 2
+
+next_wave_handoff:
+  target: "/nw-distill (acceptance-designer) for BDD acceptance tests, OR direct DELIVER if test-first is by-skill"
+  artifacts_to_hand_off:
+    - "docs/decisions/adr-018-eject-then-test-validation.md (Proposed)"
+    - "docs/feature/dbt-test-validation/design/design.md (§7 recommendation + §4 probe spec)"
+    - "docs/feature/dbt-test-validation/design/c4-diagrams.md"
+    - "docs/feature/dbt-test-validation/design/wave-decisions.md"
+    - "docs/product/architecture/brief.md (Application Architecture section)"
+
+approved_timestamp: "2026-05-09T00:00:00Z"

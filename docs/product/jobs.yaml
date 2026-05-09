@@ -1,0 +1,74 @@
+schema_version: 1
+# SSOT for validated Jobs-to-be-Done across the Dashboard Chat product.
+# Bootstrapped 2026-05-08 by feature `dbt-test-validation` (DIVERGE Phase 1).
+# Ownership: Mayor (Zach Allen). Update via DIVERGE Phase 1 of any future feature.
+
+jobs:
+  - id: JOB-001
+    title: Validate chat-driven workflows across the eject-to-dbt boundary
+    feature_id: dbt-test-validation
+    abstraction_layer: strategic
+    statement: >
+      When a chat-driven user workflow modifies the staging layer of a dataset,
+      I want to validate that the resulting staged data matches the intended
+      outcome contract using assertions that remain valid after the project is
+      ejected to dbt, so I can ship workflow changes (chat protocol, transforms,
+      dispatcher logic) without inventing a parallel validation path inside and
+      outside the application.
+    emotional_layer: >
+      When an integration test fails, I want to know within seconds whether the
+      failure is a workflow problem or a data problem, so I can triage without
+      spelunking through SSE traces and pandas dataframes side-by-side.
+    social_layer: >
+      When I show this codebase to a data engineer hire, I want the test
+      artifacts to look like the validation they already write at their day job
+      (dbt tests, schema contracts, expectations).
+    outcome_statements:
+      - id: O1
+        text: Minimize the time it takes to discover that a chat-driven workflow produced incorrect staged data
+        importance: 9
+        satisfaction: 6
+        score: 12
+        status: marginal
+      - id: O2
+        text: Minimize the likelihood that an assertion holds against the API response but fails against the staged data
+        importance: 8
+        satisfaction: 5
+        score: 11
+        status: marginal
+      - id: O3
+        text: Minimize the effort required to keep the test suite valid when the chat protocol changes
+        importance: 9
+        satisfaction: 3
+        score: 15
+        status: under-served
+      - id: O4
+        text: Maximize the reuse of validation logic between in-application tests and the customer's ejected dbt project
+        importance: 9
+        satisfaction: 2
+        score: 16
+        status: under-served
+      - id: O5
+        text: Minimize the marginal cost of adding the next user-flow test
+        importance: 8
+        satisfaction: 4
+        score: 12
+        status: marginal
+      - id: O6
+        text: Minimize the time it takes to triage a failing test as workflow-vs-data
+        importance: 7
+        satisfaction: 5
+        score: 9
+        status: appropriately-served
+    references:
+      - docs/feature/dbt-test-validation/diverge/job-analysis.md
+      - docs/evolution/2026-05-01-api-driven-user-flow-tests.md
+      - docs/evolution/2026-05-07-refactor-dataset-layer-harness.md
+      - features/dbt-project-export.feature
+      - features/dbt-model-layers.feature
+
+changelog:
+  - date: 2026-05-08
+    feature: dbt-test-validation
+    change: SSOT bootstrap — created jobs.yaml with JOB-001 from DIVERGE Phase 1
+    actor: nw-diverger (Flux)

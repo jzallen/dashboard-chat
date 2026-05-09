@@ -1,0 +1,81 @@
+schema_version: 1
+review_protocol: nw-diverger-reviewer
+reviewer: Prism (nw-diverger-reviewer, Haiku)
+reviewer_invocation: orchestrator-dispatched (re-review post-T1-resolution)
+feature_id: dbt-test-validation
+date: 2026-05-08
+iteration: 2
+
+dimensions:
+  - name: jtbd_rigor
+    status: passed
+    findings:
+      - "Job elevated to strategic/physical level via 5 Whys (terminates at durability across ejection boundary)."
+      - "6 ODI outcome statements, all formatted [Direction]+[Metric]+[Object]+[Context], all pass forbidden-word audit."
+      - "Opportunity scoring included: O4=16 highest, O3=15, O5=12 — drives the brief."
+      - "Disruption candidate (eject-then-test) preserved as Option C, not dismissed in §5 of job-analysis.md."
+      - "Bootstrapped to SSOT (docs/product/jobs.yaml, JOB-001) — greenfield migration handled per orchestrator brief."
+    issues_raised: []
+
+  - name: research_quality
+    status: passed
+    findings:
+      - "12 real tools/approaches catalogued (exceeds 5+ requirement for comprehensive depth)."
+      - "3 non-obvious alternatives surfaced (materialized assertion tables, SSE capture-replay, eject-then-test) — exceeds 1+ requirement."
+      - "Each approach cited with canonical or 2026-current sources; ~16 sources listed in competitive-research.md §6."
+      - "No generic market claims; all fit-to-job assessments grounded in specific tool behaviors or codebase artifacts."
+      - "6 architectural constraints listed with implications (ADR-007/014/015/016, LLM jitter, dbt-project-export existence)."
+    issues_raised: []
+
+  - name: option_diversity
+    status: passed
+    findings:
+      - "6 curated options span brief diversity axes: assertion location (dbt-test SQL, Pandera, exported dbt, Parquet, new event), coupling (tight, loose, decoupled), test author (backend, shared, worker+dbt), cost profile."
+      - "Diversity test applied explicitly in options-raw.md §5."
+      - "User hypothesis (fire-and-forget + dbt SQL = Option E) examined but not privileged: E is #3 under locked T5=30% weights; would rank lower under any durability-focused reweighting."
+      - "Coupling requirements met: ≥2 tighter (F + I/anchor), ≥2 looser (A, B, C, D, G/dropped), ≥1 decoupled (E)."
+      - "No evaluation language in options-raw.md; clean generation/curation separation (H merged into B; I preserved as anchor/dissent material)."
+    issues_raised: []
+
+  - name: taste_application
+    status: passed
+    findings:
+      - "DVF filter applied; no eliminations; all six options scored on all six criteria (DVF + T1–T5)."
+      - "Custom T5 (Durability across ejection) added with explicit rubric — defensible criterion."
+      - "Calculation worksheet included for full audit trail (lines 86–100 of taste-evaluation.md)."
+      - "T5 weight (30%) locked in §2 BEFORE any scoring in §3, with justification grounded in O4=16 (highest-importance outcome from JTBD Phase 1)."
+      - "Arithmetic verified correct: C=4.04, B=3.83, E=3.67, A=3.57, D=2.94, F=2.61."
+      - "Anti-pattern audit (§5) affirms: no cherry-picking, no weight manipulation, no retroactive justification."
+      - "Phase 4 gate check (§6) confirms: weights locked before scoring, all six options scored on all six criteria, recommendation traceable to matrix."
+    issues_raised: []
+
+  - name: recommendation_coherence
+    status: passed
+    findings:
+      - "Under locked weights (T5=30%): C #1 at 4.04; recommendation cites locked matrix without any weight-adjustment caveats."
+      - "Dissent (B at 3.83) properly documented with explicit 'if circumstances change' criteria (dbt-project-export trust, wall-clock budget, team skill)."
+      - "5 OQs enumerated for DESIGN, each with default if unresolved."
+      - "Critical weaknesses flagged: T4=2/5 wall-clock; load-bearing dependency on dbt-project-export correctness."
+      - "Decision statement explicit: 'Proceed with Option C, assuming the team accepts a load-bearing dependency on dbt-project-export correctness' — appropriate firmness."
+      - "Composition opportunity (C+B layering) noted as DESIGN-wave decision, not DIVERGE conflation."
+      - "Next-wave target correct: /nw-design with rationale (ADR ratification needed)."
+    issues_raised: []
+
+overall_status: approved
+overall_summary: |
+  All five dimensions pass cleanly. T-1 (post-hoc weight adjustment) is resolved:
+  T5=30% is locked in §2 of taste-evaluation.md BEFORE scoring in §3, with
+  justification grounded in O4=16 from the JTBD analysis. No post-hoc language
+  remains in the three rewritten artifacts. The recommendation (Option C at 4.04)
+  derives directly from the locked-weight matrix. The dissenting case (Option B
+  at 3.83) is explicitly framed with trigger conditions, not as a competitor
+  framework. All non-taste dimensions (JTBD, Research, Diversity) continue to pass.
+
+  This artifact is ready for handoff to DESIGN without further DIVERGE revision.
+
+handoff_decision: |
+  APPROVED — hand off to /nw-design. Mayor's Option A choice (re-lock T5=30%
+  pre-scoring with JTBD-grounded justification) was executed correctly. All five
+  review dimensions passed. Divergence phase is complete.
+
+iterations_remaining: 0

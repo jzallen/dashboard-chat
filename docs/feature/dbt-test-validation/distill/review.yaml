@@ -1,0 +1,93 @@
+schema_version: "1.0"
+review_protocol: "nw-acceptance-designer-reviewer"
+reviewer: "Sentinel (nw-acceptance-designer-reviewer, Haiku)"
+reviewer_invocation: "orchestrator-dispatched (DISTILL wave, Strategy C, real-local + skip-when-unavailable)"
+feature_id: "dbt-test-validation"
+date: "2026-05-09"
+wave: "DISTILL"
+
+dimensions:
+  - name: "walking_skeleton_integrity"
+    status: "pass"
+    score: 10
+    findings: "Single WS scenario (exactly 1 per mandate) exercises full chat→eject→validate path through DatasetLayerHarness public API against real compose stack, real dbtRunner, real DuckDB, real MinIO. Asserts observable outcomes: EjectTestReport.status, models_built count, tests_run count. No internal state assertions."
+
+  - name: "driving_adapter_coverage"
+    status: "pass"
+    score: 10
+    findings: "eject_and_test() invoked by WS + all 3 M1 scenarios. validate_after() invoked by all 3 M2 scenarios. Probe-skip behavior wired through session fixture in M3 × 5. All entry points via harness facade; orchestrator never constructed in steps."
+
+  - name: "adapter_coverage_table"
+    status: "pass"
+    score: 10
+    findings: "All 6 driven adapters covered by @real-io @adapter-integration scenarios: dbtRunner (WS+M1+M3×2), DuckDBProfileSeeder (WS+M1+M5), ProjectExporter (WS+M3+M4), MinIO (WS+M3), PanderaValidator (M2×3), Filesystem (WS+M1). Zero MISSING rows."
+
+  - name: "red_scaffolding_mandate_7"
+    status: "pass"
+    score: 10
+    findings: "11 scaffold files include __SCAFFOLD__=True. All method bodies raise AssertionError (not NotImplementedError, not pass). No import errors on collection; tests will fail RED, not BROKEN."
+
+  - name: "business_language_purity"
+    status: "pass"
+    score: 9
+    findings: "Scenario titles and steps use business language. Technical terms confined to code comments. Probe names surface intentionally in @then steps because they appear in skip reasons stakeholders read during CI triage — carve-out correctly applied."
+
+  - name: "error_path_coverage"
+    status: "pass"
+    score: 10
+    findings: "9 of 16 scenarios (56%) cover error/edge paths: M1 drift detector, M2 retry exhaustion, M3 probe failures (×5), M5 export breakage and retry exhaustion. Exceeds 40% floor."
+
+  - name: "wave_decision_reconciliation"
+    status: "pass"
+    score: 10
+    findings: "DWD-1 through DWD-8 capture all decisions. Zero contradictions with ADR-018 or design.md."
+
+  - name: "adr_018_contract_coverage"
+    status: "pass"
+    score: 10
+    findings: |
+      All 14 ADR-018 contract items mapped to scenarios:
+      - eject happy (M1), drift detector (M1)
+      - validate happy + <200ms (M2), AC1.5 retry engagement (M2)
+      - 5 probes skip-with-named-reason (M3)
+      - AC1.4 leak retention (M4), ADR-016 ingress (M4)
+      - customer-fidelity (M1), export env-var error (M5), retry exhaustion+diff (M5)
+
+  - name: "skill_f_traps"
+    status: "pass"
+    score: 10
+    findings: "F-001 real-io across all adapters; F-002 timing in @when; F-003 # noqa on sys.path imports; F-004 200ms budget; F-005 @when imports harness + fixtures only, zero internal-component imports."
+
+  - name: "hexagonal_boundary_integrity"
+    status: "pass"
+    score: 10
+    findings: "Zero orchestrator/seeder/runner/parser/validator imports in steps file. eject_orchestrator session fixture is the only construction site. Steps delegate to harness; assertions on observable outcomes only."
+
+mandates:
+  - name: "CM-A-hexagonal-boundary"
+    status: "pass"
+    evidence: "Zero internal-component imports in steps/dbt_test_validation_steps.py. All @when methods call harness facade only."
+  - name: "CM-B-business-language"
+    status: "pass"
+    evidence: "Feature scenarios use domain language. Step definitions delegate to harness; assertions check observable outcomes."
+  - name: "CM-C-user-journey-completeness"
+    status: "pass"
+    evidence: "WS + milestones cover complete user journeys: chat-driven cleaning → eject → re-validate, with happy/fail/fidelity/retry/probe-skip variants."
+
+overall_status: "approved"
+blocking_issues_count: 0
+conditional_issues_count: 0
+issues_raised: []
+
+approval_decision: |
+  APPROVED — All 10 critique dimensions score 9-10. All 3 mandates pass.
+  Zero blockers, zero violations. ADR-018 contract fully covered with 16
+  scenarios across WS + 5 milestones. RED scaffolds correctly disciplined.
+
+handoff_decision: |
+  Ready for /nw-deliver (software-crafter). Walking skeleton goes GREEN
+  first; milestones enabled one-at-a-time via Outside-In TDD. All
+  infrastructure in place. No rework required.
+
+iterations_remaining: 0
+approved_timestamp: "2026-05-09T00:00:00Z"
