@@ -194,3 +194,51 @@ class TestAuthorizationErrorHandler:
         assert body["errors"][0]["status"] == "403"
         assert body["errors"][0]["title"] == "Forbidden"
         assert "Test access denied" in body["errors"][0]["detail"]
+
+
+class TestDomainExceptionHandler:
+    """Global handler maps DomainException (raised anywhere in the request
+    pipeline -- deps, use cases, route handlers) to a structured Problem-
+    Details-shaped HTTP response.
+
+    Pre-fix, exceptions raised inside a FastAPI ``Depends(...)`` (e.g.
+    ``authorize_project_access`` raising ``ProjectNotFound``) bypassed the
+    per-route ``match Failure(error)`` block and bubbled to FastAPI's
+    default handler -> opaque 500. The global handler closes that gap so
+    every domain exception surfaces with its declared status code and
+    metadata.
+    """
+
+    async def test_project_not_found_returns_404_with_structured_body(self):
+        """ProjectNotFound._status_code is 404; the handler must honour it
+        and emit ``{type, title, status, detail}`` matching the shape the
+        per-route ``match Failure(error)`` block already produces."""
+        from app.main import domain_exception_handler
+
+        exc = ProjectNotFound("missing-id")
+        response = await domain_exception_handler(None, exc)
+
+        assert response.status_code == 404
+        import json
+
+        body = json.loads(response.body)
+        assert body["type"] == "PROJECT_NOT_FOUND"
+        assert body["title"] == "Project Not Found"
+        assert body["status"] == 404
+        assert "missing-id" in body["detail"]
+
+    async def test_handler_honours_subclass_status_code(self):
+        """The handler reads ``_status_code`` off the concrete exception,
+        so a 400 subclass (ProjectIdRequired) yields 400, not 500."""
+        from app.main import domain_exception_handler
+        from app.use_cases.project.exceptions import ProjectIdRequired
+
+        exc = ProjectIdRequired()
+        response = await domain_exception_handler(None, exc)
+
+        assert response.status_code == 400
+        import json
+
+        body = json.loads(response.body)
+        assert body["type"] == "PROJECT_ID_REQUIRED"
+        assert body["status"] == 400

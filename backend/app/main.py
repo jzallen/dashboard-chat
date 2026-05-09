@@ -29,6 +29,7 @@ from .routers import (
     uploads_router,
     views_router,
 )
+from .use_cases.exceptions import DomainException
 from .use_cases.query_engine.seed_default_node import seed_default_query_engine_node
 from .use_cases.query_engine.sync_processor import run_sync_processor
 from .use_cases.session.event_replay_dispatch import install_session_event_reader
@@ -135,6 +136,28 @@ async def authorization_error_handler(request: Request, exc: AuthorizationError)
     return JSONResponse(
         status_code=403,
         content=wrap_jsonapi_error(403, "Forbidden", str(exc)),
+    )
+
+
+# Global exception handler for DomainException and subclasses.
+#
+# Exceptions raised inside FastAPI ``Depends(...)`` callables (e.g.
+# ``authorize_project_access`` raising ``ProjectNotFound``) bypass per-route
+# ``match Failure(error)`` blocks because dep-raised exceptions never reach
+# the handler body. Without a global handler, FastAPI's default surfaces
+# them as opaque 500s. This handler honours each subclass's ``_status_code``,
+# ``_type``, and ``_title`` and emits the same Problem-Details-shaped body
+# the per-route handlers already use.
+@app.exception_handler(DomainException)
+async def domain_exception_handler(request: Request, exc: DomainException):
+    return JSONResponse(
+        status_code=exc._status_code,
+        content={
+            "type": exc._type,
+            "title": exc._title,
+            "status": exc._status_code,
+            "detail": str(exc),
+        },
     )
 
 
