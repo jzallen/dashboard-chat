@@ -79,6 +79,44 @@ uv run pytest -m "walking_skeleton or pending"   # everything (after DELIVER ena
 | `PanderaValidator` | YES | milestone-2 (real schema, real frame from harness) |
 | Filesystem (tmp_path zip extraction) | YES | walking-skeleton + milestone-1 |
 
+## Behavioral enforcement (ADR-019 §"Earned-Trust contract")
+
+ADR-019 §4 defines three orthogonal enforcement layers for the probe
+contract:
+
+| Layer | Mechanism |
+|---|---|
+| Subtype | `mypy` + `EjectOrchestratorProtocol` (`backend/tests/integration/dataset_layer/eject/protocols.py`) |
+| Structural | `pytest-archon` rule (deferred to a follow-up wave; tracked in DWD-10) |
+| Behavioral | `test_behavioral_enforcement.py` |
+
+`test_behavioral_enforcement.py` is a single in-process pytest test
+that sabotages probe 1's substrate (`monkeypatch.delattr(dbt.cli.main,
+"dbtRunner")`), constructs a fresh `EjectAndTestOrchestrator`, calls
+`await orchestrator.probe(tmp_path)`, and asserts the resulting
+`ProbeSummary` carries `ok=False` with `probe_dbt_runner_importable` in
+its `failures` list. It then mirrors the conftest's
+`eject_orchestrator` fixture's skip-message construction format and
+asserts the failing-probe name surfaces in that string. Without this
+test, a probe that silently regressed to `ok=True` under a broken
+substrate would let the entire suite green falsely — the test is the
+behavioral guardrail on the meta-property "broken substrate produces a
+named, structured failure".
+
+Run it alongside the rest of the acceptance suite:
+
+```bash
+cd tests/acceptance/dbt-test-validation
+AUTH_PROXY_URL=http://localhost:3000 AGENT_URL=http://localhost:8787 \
+  uv run --project . pytest test_behavioral_enforcement.py
+```
+
+It is part of the standard acceptance suite, not a separate CI job: a
+contributor's pre-push run of the suite (and CI's run of the same)
+includes this test by default. The same `requires_compose_stack`
+gating applies, so a contributor laptop without `docker compose up`
+sees a graceful skip rather than a confusing failure.
+
 ## Driving-port discipline
 
 `@when` steps import only from:
