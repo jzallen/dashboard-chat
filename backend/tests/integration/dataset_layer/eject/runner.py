@@ -3,9 +3,16 @@
 Wraps `dbtRunner().invoke()` from `dbt.cli.main` (stable since dbt 1.5).
 `run_build_and_test()` sequences three in-process invocations — `deps`,
 `build`, `test` — and returns a `DbtRunResult` carrying the
-`dbtRunnerResult` from each phase. On any phase failure, raises
-`DbtPhaseError` whose message names the failing phase and surfaces the
-underlying `dbtRunnerResult.exception` (chained via `raise from`).
+`dbtRunnerResult` from each phase.
+
+Runner-vs-parser contract (ADR-019 §"Earned-Trust contract"):
+
+* Phase failures with ``exception is not None`` raise ``DbtPhaseError``
+  (substrate lies — probe domain). The error chains the underlying
+  exception via ``raise from`` and names the failing phase.
+* Phase failures with ``success=False`` and ``exception is None`` (e.g.,
+  dbt test recorded a fail) return through to the parser, which classifies
+  them via ``EjectTestReport.status`` and ``EjectTestReport.failures``.
 
 No subprocess. Forks/exec are forbidden in this runner; the parser
 (step 00-04) consumes `dbtRunnerResult.result` directly off the returned
@@ -62,8 +69,13 @@ class DbtRunner:
 
         Each phase runs through a fresh `dbtRunner` instance (single
         invocation per instance — see ADR-019 Consequences for the
-        concurrency constraint). On any phase failure, raises
-        `DbtPhaseError` and chains the underlying exception when present.
+        concurrency constraint).
+
+        Phase failures with ``exception is not None`` raise ``DbtPhaseError``
+        (substrate lies — probe domain). Phase failures with ``success=False``
+        and ``exception is None`` (e.g., dbt test recorded a fail) return
+        through to the parser, which classifies them via
+        ``EjectTestReport.status`` and ``EjectTestReport.failures``.
         """
         deps_result = self._invoke("deps", project_dir)
         build_result = self._invoke("build", project_dir)
@@ -86,9 +98,9 @@ class DbtRunner:
                 project_dir,
             ]
         )
-        if not result.success:
-            error = DbtPhaseError(phase, result)
-            if result.exception is not None:
-                raise error from result.exception
-            raise error
+        # Substrate lies (substrate is broken — probe domain) raise; legitimate
+        # test-failure outcomes (success=False with exception=None) return
+        # through to the parser. ADR-019 §"Earned-Trust contract".
+        if result.exception is not None:
+            raise DbtPhaseError(phase, result) from result.exception
         return result
