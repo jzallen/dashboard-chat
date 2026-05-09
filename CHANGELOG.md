@@ -1,3 +1,16 @@
+# [1.16.0](https://github.com/jzallen/dashboard-chat/compare/v1.15.0...v1.16.0) (2026-05-09)
+
+
+### Bug Fixes
+
+* **test/eject:** nest dbt-duckdb s3 settings under profile settings block ([5f84c2d](https://github.com/jzallen/dashboard-chat/commit/5f84c2d42027a53336fd36f9128712652036cf1e))
+* **test/eject:** separate substrate exceptions from test-failure outcomes in runner ([37bdd8c](https://github.com/jzallen/dashboard-chat/commit/37bdd8c1f5147244d59e15f6b83cd8505f255cf4))
+
+
+### Features
+
+* **backend:** export staging models with at least one runnable dbt test ([50e55be](https://github.com/jzallen/dashboard-chat/commit/50e55be29140abdd749e1af161ba8b103b87ab3d))
+
 # [1.15.0](https://github.com/jzallen/dashboard-chat/compare/v1.14.0...v1.15.0) (2026-05-09)
 
 
