@@ -928,6 +928,42 @@ class DatasetLayerHarness:
         s = s[s.map(lambda v: isinstance(v, str))]
         return bool(s.eq(s.str.strip()).all())
 
+    # ----- dbt-test-validation extension (ADR-018, Option β) ----------------
+    # RED scaffolds (DISTILL Mandate 7). DELIVER wires these to the
+    # EjectAndTestOrchestrator (eject_and_test) and PanderaValidator
+    # (validate_after) under backend/tests/integration/dataset_layer/.
+    # Each method raises AssertionError so failing tests classify as RED,
+    # not BROKEN, in the Red Gate Snapshot.
+
+    async def eject_and_test(self, project_id: str | None = None) -> Any:
+        """Per-flow eject-and-test cycle — drives the orchestrator end-to-end.
+
+        Fetches the project export, seeds a DuckDB profile against the
+        running compose stack's MinIO, runs `dbtRunner.invoke()` for
+        deps/build/test, parses the dbtRunnerResult into an
+        EjectTestReport. ADR-018, Option β.
+
+        Returns:
+            EjectTestReport with status='pass'|'fail', models_built,
+            tests_run, failures.
+        """
+        raise AssertionError("Not yet implemented — RED scaffold")
+
+    async def validate_after(self, dataset_id: str, schema: Any) -> Any:
+        """Per-turn shape validation against a Pandera schema.
+
+        Fetches the current TableState for `dataset_id`, validates the
+        DataFrame against `schema` with lazy=True (Pandera collects all
+        violations rather than failing fast), and returns a
+        ValidationResult. Sub-200ms acceptance budget; sub-100ms typical
+        (design.md §6 OQ4). ADR-018, Option β.
+
+        Returns:
+            ValidationResult with status='pass'|'fail' and structured
+            errors (column-level diff for retry-with-rephrase context).
+        """
+        raise AssertionError("Not yet implemented — RED scaffold")
+
     # ----- replay + idempotency surfaces (G.2) ------------------------------
 
     async def create_session(self, project_id: str | None = None) -> dict[str, Any]:
