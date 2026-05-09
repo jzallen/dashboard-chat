@@ -1,3 +1,15 @@
+# [1.17.0](https://github.com/jzallen/dashboard-chat/compare/v1.16.0...v1.17.0) (2026-05-09)
+
+
+### Features
+
+* **test/dbt-test-validation:** add behavioral CI gold-test for Earned-Trust contract ([f4018c7](https://github.com/jzallen/dashboard-chat/commit/f4018c729fcab9719b36d38f17fbb446e9360fc2)), closes [#2](https://github.com/jzallen/dashboard-chat/issues/2)
+* **test/dbt-test-validation:** unpend M3 probe-1 scenario with named-skip glue ([93f025a](https://github.com/jzallen/dashboard-chat/commit/93f025a408fb0dec8870ce99664b4db8d0a138d2))
+* **test/dbt-test-validation:** unpend M3 probe-2 scenario via dbt-duckdb monkeypatch ([906249a](https://github.com/jzallen/dashboard-chat/commit/906249aa93a0408603c8ddd088370e810ab5e04c))
+* **test/dbt-test-validation:** unpend M3 probe-3 scenario via unreachable base URL ([89119c8](https://github.com/jzallen/dashboard-chat/commit/89119c8503679f3c2748ffb37d533f7f2c41138d))
+* **test/dbt-test-validation:** unpend M3 probe-4 scenario via invalid MinIO creds ([2e1c077](https://github.com/jzallen/dashboard-chat/commit/2e1c07704b12acd51dc62dbaf9512f7d936661c5))
+* **test/dbt-test-validation:** unpend M3 probe-5 scenario via dbtRunner shape drift ([41cf915](https://github.com/jzallen/dashboard-chat/commit/41cf915500b57c21b5da9200aa4188a757268f78))
+
 # [1.16.0](https://github.com/jzallen/dashboard-chat/compare/v1.15.0...v1.16.0) (2026-05-09)
 
 
