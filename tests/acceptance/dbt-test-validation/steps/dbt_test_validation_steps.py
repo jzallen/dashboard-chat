@@ -23,14 +23,18 @@ extension method, which raises AssertionError on the scaffold path
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import sys
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
 import pytest
+import pytest_asyncio
 from pytest_bdd import given, parsers, then, when
 
 # Make the backend test harness importable. Acceptance suite lives at the
@@ -39,6 +43,11 @@ from pytest_bdd import given, parsers, then, when
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "backend"))
+
+# WS fixture: small orders dataset matching CsvPlugin's expected upload shape.
+# Defined at module scope so the @given step can resolve it without a fresh
+# Path() construction inside the body — ruff/F-003 friendly.
+_ORDERS_FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "orders.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -68,9 +77,38 @@ class HarnessCapture:
     extras: dict[str, Any] = field(default_factory=dict)
 
 
-@pytest.fixture
-def capture() -> HarnessCapture:
-    return HarnessCapture()
+@pytest_asyncio.fixture
+async def capture(eject_orchestrator: Any) -> AsyncIterator[HarnessCapture]:
+    """Per-scenario capture; pins to the session loop the orchestrator uses.
+
+    pytest-bdd 8.x does not natively await async step functions, so step
+    bodies stay synchronous and drive async work via
+    ``loop.run_until_complete(...)`` on the loop captured here. We must
+    use the SAME loop pytest-asyncio bound the session-scoped
+    ``eject_orchestrator``'s ``httpx.AsyncClient`` to — re-using the
+    orchestrator's client on a different loop raises "Future attached to a
+    different loop" at runtime. Depending on ``eject_orchestrator`` here
+    forces pytest-asyncio to give this fixture the same loop the
+    orchestrator was set up on; ``asyncio.get_running_loop()`` returns
+    that loop while the fixture is awaiting. The loop is then re-used
+    synchronously by the @given/@when steps via
+    ``loop.run_until_complete()``.
+
+    The ``AsyncExitStack`` registers the harness for teardown so its
+    ``__aexit__`` (project delete + httpx client close) fires at fixture
+    finalize, not when the @given step returns.
+    """
+    loop = asyncio.get_running_loop()
+    stack = contextlib.AsyncExitStack()
+    cap = HarnessCapture()
+    cap.extras["_loop"] = loop
+    cap.extras["_stack"] = stack
+    try:
+        yield cap
+    finally:
+        # Close the harness via its registered async context. This runs on
+        # the same session loop pytest-asyncio is driving the fixture on.
+        await stack.aclose()
 
 
 # ---------------------------------------------------------------------------
@@ -100,33 +138,113 @@ def given_orchestrator_probed(eject_orchestrator: Any) -> None:
 
 @given("a fresh project with a small orders dataset uploaded")
 def given_fresh_project(
-    capture: HarnessCapture, requires_compose_stack: None
+    capture: HarnessCapture,
+    requires_compose_stack: None,
+    eject_orchestrator: Any,
 ) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: create project via "
-        "DatasetLayerHarness facade, upload a small orders.csv fixture, "
-        "store project_id and dataset_id on capture"
+    """Open a DatasetLayerHarness, create a project, upload the orders CSV.
+
+    Wires the harness with the session-probed orchestrator (composition
+    root invariant — ADR-018 §11) so subsequent ``@when`` eject steps can
+    delegate through ``harness.eject_and_test``. The harness lifecycle
+    spans the full scenario via the ``capture`` fixture's AsyncExitStack;
+    project teardown fires at fixture finalize, not when this step returns.
+
+    Step functions stay sync because pytest-bdd 8.x does not auto-await
+    async step bodies; async work is driven through ``capture.extras["_loop"]``.
+    """
+    if not _ORDERS_FIXTURE.exists():
+        pytest.fail(
+            f"WS fixture missing at {_ORDERS_FIXTURE}; expected a small "
+            f"orders CSV (matches CsvPlugin upload shape)"
+        )
+
+    # Local import: deferred so this module can load even when the backend
+    # test deps aren't installed (the conftest fixtures gate that path
+    # earlier with skip-when-unavailable).
+    from tests.integration.dataset_layer.harness import (
+        AuthApi,
+        DatasetLayerHarness,
     )
+
+    auth_proxy_url = os.environ.get("AUTH_PROXY_URL", "http://localhost:3000").rstrip("/")
+    agent_url = os.environ.get("AGENT_URL", "http://localhost:8787").rstrip("/")
+
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    stack: contextlib.AsyncExitStack = capture.extras["_stack"]
+
+    async def _setup() -> tuple[Any, str, str]:
+        user_jwt = await AuthApi.fetch_dev_user_jwt(auth_proxy_url)
+        harness = DatasetLayerHarness(
+            auth_proxy_url=auth_proxy_url,
+            agent_url=agent_url,
+            user_jwt=user_jwt,
+            # eject_orchestrator fixture yields an EjectSessionContext
+            # carrying the probed orchestrator and a session_tmp_path.
+            # The harness needs only the orchestrator (it implements
+            # EjectOrchestratorProtocol); session_tmp_path is threaded into
+            # eject_and_test by the @when step.
+            eject_orchestrator=eject_orchestrator.orchestrator,
+        )
+        h = await stack.enter_async_context(harness)
+        # Harness allocates and binds a ULID-keyed project in __aenter__.
+        # Read the bound project_id back through the private attribute —
+        # the public surface offers no getter today; preserving SLF001
+        # silence here keeps lint clean without weakening the harness's
+        # encapsulation in production code.
+        project_id = h._project_id
+        dataset_id = await h.upload_csv(_ORDERS_FIXTURE)
+        capture.extras["harness"] = h
+        capture.extras["user_jwt"] = user_jwt
+        return h, project_id, dataset_id
+
+    _h, project_id, dataset_id = loop.run_until_complete(_setup())
+    capture.project_id = project_id
+    capture.dataset_id = dataset_id
 
 
 @when(parsers.parse('the customer asks the chat to "{prompt}"'))
 def when_customer_asks_chat(
     prompt: str, capture: HarnessCapture, requires_groq: None
 ) -> None:
-    pytest.fail(
-        f"DISTILL scaffold — DELIVER implements: invoke "
-        f"DatasetLayerHarness.chat_turn({prompt!r}) and store the trace "
-        f"on capture.chat_trace"
+    """Drive one chat turn through the harness facade and capture the trace.
+
+    Uses the harness's default ``max_retries=2`` (AC1.5 retry-with-rephrase
+    budget) and stores the resulting ``ChatEventTrace`` on
+    ``capture.chat_trace``. The trace surfaces the AC1.4 raw-tool-call
+    invariant via ``trace.raw_tool_call_seen`` for milestone-4 checks.
+    """
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    harness = capture.extras["harness"]
+    capture.chat_trace = loop.run_until_complete(
+        harness.chat_turn(prompt, dataset_id=capture.dataset_id),
     )
 
 
 @when("the customer ejects the project and re-runs the validations")
-def when_customer_ejects(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: invoke "
-        "DatasetLayerHarness.eject_and_test(project_id) and store the "
-        "report on capture.eject_report; record the export URL the "
-        "orchestrator fetched on capture.fetch_url for milestone-4"
+def when_customer_ejects(
+    capture: HarnessCapture, eject_orchestrator: Any
+) -> None:
+    """Eject + re-validate via the harness's ``eject_and_test`` extension.
+
+    Threads the session-scoped ``tmp_path`` from the orchestrator fixture
+    into the call so unzipped project artefacts share pytest's session
+    tempdir lifecycle (orchestrator.py contract: caller controls tmpdir).
+    Records the auth-proxy ingress URL on ``capture.fetch_url`` so the
+    milestone-4 ADR-016 invariant has an observable to assert (the WS
+    doesn't assert it but the field is captured for downstream scenarios).
+    """
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    harness = capture.extras["harness"]
+    capture.eject_report = loop.run_until_complete(
+        harness.eject_and_test(
+            project_id=capture.project_id,
+            tmp_path=eject_orchestrator.session_tmp_path,
+        ),
+    )
+    auth_proxy_url = os.environ.get("AUTH_PROXY_URL", "http://localhost:3000").rstrip("/")
+    capture.fetch_url = (
+        f"{auth_proxy_url}/api/projects/{capture.project_id}/export/dbt"
     )
 
 
