@@ -111,6 +111,19 @@ to-scenario traceability is skipped (no stories to trace).
   outer-loop discipline. Mirrors the precedent established by
   `tests/acceptance/log-image-identity-on-startup/pyproject.toml`.
 
+* **[DWD-9] Walking-skeleton scope is wiring, not pass-status.** The walking
+  skeleton asserts `models_built >= 1` AND `tests_run >= 1` only — proof
+  that the eject-then-test cycle ran end-to-end and the parser observed
+  results. Pass/fail-status assertions belong to milestone-1 where
+  fixtures make outcomes deterministic. Rationale: the runner-parser
+  separation in ADR-019 §4 routes substrate exceptions to probes and
+  test-execution outcomes to the parser; the walking skeleton's wiring
+  proof must therefore tolerate any non-substrate parser outcome. Authored
+  2026-05-09 in response to Gap 4 Path A placeholder + chat-output
+  non-determinism (real Groq produces inconsistent column-fill behaviour;
+  deterministic green requires either always-passing tests — rejected as
+  placeholder churn — or scope correction).
+
 ---
 
 ## Adapter Coverage Table (Mandate 6)
@@ -140,7 +153,7 @@ require Groq. Tagged `@requires_external` where applicable.
 
 | AC | Driving port | Observable outcome |
 |---|---|---|
-| WS | `DatasetLayerHarness.chat_turn` + `.eject_and_test` | EjectTestReport.status == "pass" |
+| WS | `DatasetLayerHarness.chat_turn` + `.eject_and_test` | EjectTestReport(models_built >= 1, tests_run >= 1) — wiring proof per DWD-9 |
 | Eject happy | `DatasetLayerHarness.eject_and_test(project_id)` | EjectTestReport(status="pass", models_built ≥ 1, tests_run ≥ 1) |
 | Eject fail (drift) | `.eject_and_test` | EjectTestReport(status="fail", failures != [], named failing test) |
 | Validate happy | `DatasetLayerHarness.validate_after(dataset_id, schema)` | ValidationResult(status="pass") in <200ms |

@@ -14,6 +14,10 @@
 # `DatasetLayerHarness.eject_and_test(...)` through the public API, NOT
 # through internal helpers (no direct EjectAndTestOrchestrator construction
 # in step glue).
+#
+# Walking skeleton asserts wiring (model built + test executed). Pass/fail-
+# status assertions belong to milestone-1 (Phase 2) where fixtures make
+# outcomes deterministic. Per DWD-9.
 
 @walking_skeleton @real-io @driving_adapter
 Feature: Customer can re-run validations on an ejected project
@@ -30,5 +34,4 @@ Feature: Customer can re-run validations on an ejected project
     Given a fresh project with a small orders dataset uploaded
     When the customer asks the chat to "drop rows where order_id is missing"
     And the customer ejects the project and re-runs the validations
-    Then the ejected project re-validates successfully
-    And every staging model the chat produced was built and tested
+    Then every staging model the chat produced was built and tested

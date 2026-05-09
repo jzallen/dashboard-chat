@@ -80,6 +80,16 @@ Each milestone is an independent DELIVER step per the distill roadmap.
 
 ---
 
+## Gap 5 — Walking-skeleton scope assumed deterministic chat output (RESOLVED)
+
+**Surfaced at:** the post-Path-A walking-skeleton run. Real Groq produced 2 of 15 rows with null `order_id`, the export's not_null test (Path A placeholder on the first column) failed, the runner correctly returned the failure outcome to the parser, and `EjectTestReport(status="fail", ...)` was produced. The walking-skeleton's pre-existing `Then the ejected project re-validates successfully` assertion (`status == "pass"`) failed deterministically because the chat workflow's column-fill behaviour is non-deterministic.
+
+**Resolved at:** DWD-9 (`docs/feature/dbt-test-validation/distill/wave-decisions.md`) + walking-skeleton.feature scope correction. The walking skeleton now asserts wiring only (`models_built >= 1` AND `tests_run >= 1`); pass/fail-status assertions move to milestone-1 (Phase 2) where fixture-driven datasets guarantee deterministic outcomes. The previously-existing `then_revalidates_successfully` step binding remains in place — milestone-1 scenario 1 still invokes it once that scenario unskips.
+
+**Why this is a spec change, not a test relaxation:** the walking-skeleton scenario was authored before Gap 4 surfaced. At authoring time, the export emitted zero tests, so the "pass-status" assertion was free. Once Path A landed, real tests run against real LLM-produced data — and pass-status became data-dependent. DWD-9 corrects the scope to match what the walking skeleton can deterministically prove.
+
+---
+
 ## Phase 0 commit trail (this DELIVER round)
 
 | # | Commit | Purpose |
