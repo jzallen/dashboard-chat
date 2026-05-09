@@ -271,7 +271,7 @@ def test_probe_minio_readable_via_duckdb_returns_ok_when_substrate_present(tmp_p
         "bucket": os.environ.get("MINIO_TEST_BUCKET", "dashboard-chat.datalake"),
         "region": os.environ.get("MINIO_REGION", "us-east-1"),
     }
-    seeded_profile_path = DuckDBProfileSeeder().seed(tmp_path, minio_creds)
+    seeded_profile_path = DuckDBProfileSeeder().seed(tmp_path, minio_creds, profile_name="probe_profile")
     fixture_key = os.environ.get("MINIO_TEST_FIXTURE_KEY", "probe/fixture.parquet")
 
     report = probe_minio_readable_via_duckdb(

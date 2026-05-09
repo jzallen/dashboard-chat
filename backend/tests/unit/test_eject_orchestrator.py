@@ -15,7 +15,7 @@ has no MinIO bucket + no live backend; their happy paths are covered by
 by Phase 1 distill milestone-3. Probes 1 + 2 run for real here — they are pure
 imports against the dbt-core / dbt-duckdb extras installed by step 00-01.
 
-Test budget: 6 distinct behaviors x 2 = 12. Using 6.
+Test budget: 7 distinct behaviors x 2 = 14. Using 7.
     1. probe() aggregates 5 individual ProbeReports into a ProbeSummary
     2. probe() is cached (idempotent within a session)
     3. eject_and_test happy path returns EjectTestReport
@@ -23,12 +23,16 @@ Test budget: 6 distinct behaviors x 2 = 12. Using 6.
     5. orchestrator.py does not allocate its own tempdir (caller controls)
     6. eject_and_test raises RuntimeError when dbt_project.yml has no profile key
        (substrate-gap defence — the seeder cannot invent a profile name)
+    7. eject_and_test exports S3_* env vars during dbtRunner.invoke and restores
+       afterwards (the exported sources.yml uses env_var('S3_BUCKET'); dbt parse
+       reads os.environ; in-process dbtRunner means harness env IS dbt's env)
 """
 
 from __future__ import annotations
 
 import ast
 import io
+import os
 import textwrap
 import zipfile
 from collections.abc import Awaitable, Callable
@@ -419,4 +423,108 @@ def test_orchestrator_does_not_create_tempdir_internally() -> None:
     assert not offenders, (
         f"orchestrator.py must not allocate its own tmpdir; the caller "
         f"(pytest tmp_path / session fixture) controls it. Found: {offenders}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Behavior 7: eject_and_test exports S3_* env vars across dbtRunner.invoke
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_eject_and_test_exports_s3_env_vars_during_runner_and_restores_after(
+    export_zip_transport: httpx.MockTransport,
+    minio_creds: dict[str, str],
+    stub_auth_minter: Callable[[str], Awaitable[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The exported ``models/staging/sources.yml`` uses Jinja
+    ``env_var('S3_BUCKET')`` (see
+    backend/app/use_cases/project/_dbt/sources_yml.py). dbt evaluates
+    env_var at parse time from ``os.environ``. Because dbtRunner runs
+    in-process (ADR-018 D9), the harness process's environment IS what
+    dbt sees. The orchestrator MUST export the MinIO creds to
+    os.environ across the runner invocation and restore prior values
+    on exit (pytest reuses the harness process across tests; leaking
+    S3_* would corrupt subsequent tests).
+
+    We monkeypatch the runner's ``run_build_and_test`` so we can capture
+    os.environ AT THE MOMENT dbtRunner would execute, without depending
+    on a real dbt invocation that might tolerate missing env vars.
+    """
+    # Pin a pre-existing S3_BUCKET so we can prove restore works (the
+    # orchestrator must restore prior values, not pop indiscriminately).
+    sentinel_prior = "PRE-EXISTING-BUCKET-VALUE"
+    monkeypatch.setenv("S3_BUCKET", sentinel_prior)
+    # And ensure S3_REGION is absent before the test so we can prove
+    # absent-prior is restored to absent (not left set).
+    monkeypatch.delenv("S3_REGION", raising=False)
+
+    captured_env_during_invoke: dict[str, str | None] = {}
+
+    def fake_run_build_and_test(_self: object, _project_dir: str) -> object:
+        # Snapshot the env at the moment dbt would parse — this is the
+        # observable outcome of the env-export contract.
+        captured_env_during_invoke["S3_BUCKET"] = os.environ.get("S3_BUCKET")
+        captured_env_during_invoke["S3_ENDPOINT"] = os.environ.get("S3_ENDPOINT")
+        captured_env_during_invoke["S3_ACCESS_KEY_ID"] = os.environ.get("S3_ACCESS_KEY_ID")
+        captured_env_during_invoke["S3_SECRET_ACCESS_KEY"] = os.environ.get("S3_SECRET_ACCESS_KEY")
+        captured_env_during_invoke["S3_REGION"] = os.environ.get("S3_REGION")
+        # Return a stand-in that the parser can consume. We also patch the
+        # parser below to bypass the real parse path.
+        return object()
+
+    # Patch the runner method on the class so the orchestrator's
+    # composition is preserved (we still test the orchestrator's wiring,
+    # not the runner's internals).
+    from tests.integration.dataset_layer.eject.runner import DbtRunner
+
+    monkeypatch.setattr(DbtRunner, "run_build_and_test", fake_run_build_and_test)
+
+    # Patch the parser to return a deterministic empty report — we don't
+    # care about the report shape here; we care about env state at invoke.
+    from tests.integration.dataset_layer.eject.parser import RunResultsParser
+
+    fake_report = EjectTestReport(
+        status="pass",
+        models_built=[],
+        tests_run=[],
+        failures=[],
+    )
+    monkeypatch.setattr(RunResultsParser, "parse", lambda self, run_result, project_dir: fake_report)
+
+    async with httpx.AsyncClient(transport=export_zip_transport, base_url="http://test-backend.local") as http_client:
+        orch = EjectAndTestOrchestrator(
+            http_client=http_client,
+            base_url="http://test-backend.local",
+            minio_creds=minio_creds,
+            auth_token_minter=stub_auth_minter,
+        )
+
+        await orch.eject_and_test(project_id="proj-env", tmp_path=tmp_path)
+
+    # During invoke: all 5 S3_* vars match the minio_creds the
+    # orchestrator was wired with.
+    assert captured_env_during_invoke == {
+        "S3_BUCKET": minio_creds["bucket"],
+        "S3_ENDPOINT": minio_creds["endpoint_url"],
+        "S3_ACCESS_KEY_ID": minio_creds["access_key"],
+        "S3_SECRET_ACCESS_KEY": minio_creds["secret_key"],
+        "S3_REGION": minio_creds["region"],
+    }, (
+        "during dbtRunner invocation, os.environ must reflect the MinIO "
+        "creds so dbt's env_var('S3_BUCKET') (and friends) resolve at "
+        f"parse time; saw {captured_env_during_invoke!r}"
+    )
+
+    # After: prior value of S3_BUCKET is restored (NOT the minio_creds
+    # one), and S3_REGION is gone (because it had no prior value).
+    assert os.environ.get("S3_BUCKET") == sentinel_prior, (
+        f"S3_BUCKET prior value must be restored after eject_and_test; "
+        f"saw {os.environ.get('S3_BUCKET')!r} (expected {sentinel_prior!r})"
+    )
+    assert "S3_REGION" not in os.environ, (
+        "S3_REGION had no prior value; after eject_and_test it must be "
+        f"absent again (saw {os.environ.get('S3_REGION')!r})"
     )

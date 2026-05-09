@@ -18,9 +18,11 @@ Architectural enforcement (ADR-018 D5, §11):
 
 from __future__ import annotations
 
+import contextlib
+import os
 import textwrap
 import zipfile
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -85,6 +87,35 @@ _PROBE_PROFILES_YML = textwrap.dedent(
     """
 )
 _PROBE_MODEL_SQL = "select 1 as one"
+
+
+@contextlib.contextmanager
+def _exported_env(updates: dict[str, str]) -> Iterator[None]:
+    """Temporarily set ``os.environ`` keys; restore prior state on exit.
+
+    dbt evaluates Jinja ``env_var(...)`` calls at parse time by reading
+    ``os.environ`` of the running Python process. Because ``dbtRunner``
+    runs in-process (ADR-018 D9), the harness process's environment is
+    what dbt sees — the seeded ``profiles.yml`` covers the s3_* profile
+    fields, but ``sources.yml`` still references env_var('S3_BUCKET'),
+    so without this wrapper dbt parse fails with "Env var required but
+    not provided: 'S3_BUCKET'".
+
+    Restore-on-exit is critical: pytest reuses the harness process across
+    tests; leaking S3_* into a subsequent test that doesn't expect them
+    would be a worse failure mode than the one we're fixing.
+    """
+    original: dict[str, str | None] = {k: os.environ.get(k) for k in updates}
+    try:
+        for k, v in updates.items():
+            os.environ[k] = v
+        yield
+    finally:
+        for k, prior in original.items():
+            if prior is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = prior
 
 
 class EjectAndTestOrchestrator:
@@ -281,8 +312,29 @@ class EjectAndTestOrchestrator:
         self._verify_expected_tree(project_dir)
         profile_name = self._extract_profile_name(project_dir)
         self._seeder.seed(project_dir, self._minio_creds, profile_name=profile_name)
-        run_result = self._runner.run_build_and_test(str(project_dir))
+        with _exported_env(self._build_env_overrides()):
+            run_result = self._runner.run_build_and_test(str(project_dir))
         return self._parser.parse(run_result, project_dir=str(project_dir))
+
+    def _build_env_overrides(self) -> dict[str, str]:
+        """Map MinIO creds to the env_var(...) names the export emits.
+
+        The exported ``models/staging/sources.yml`` references
+        ``env_var('S3_BUCKET')`` (see
+        ``backend/app/use_cases/project/_dbt/sources_yml.py``); the
+        exported ``profiles.yml`` references the other s3_* keys
+        (see ``backend/app/use_cases/project/_dbt/profiles_yml.py``).
+        The seeder overwrites profiles.yml with concrete values, but
+        sources.yml's env_var lookups still fire at parse time — so
+        all five vars must be exported before ``dbtRunner.invoke``.
+        """
+        return {
+            "S3_ENDPOINT": self._minio_creds["endpoint_url"],
+            "S3_ACCESS_KEY_ID": self._minio_creds["access_key"],
+            "S3_SECRET_ACCESS_KEY": self._minio_creds["secret_key"],
+            "S3_BUCKET": self._minio_creds["bucket"],
+            "S3_REGION": self._minio_creds["region"],
+        }
 
     @staticmethod
     def _extract_profile_name(project_dir: Path) -> str:
