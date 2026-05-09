@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 # `eject_orchestrator` fixture can construct the real orchestrator (the same
 # sys.path additions the step glue does — keep them in conftest too so the
 # fixture imports resolve regardless of test-collection order).
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "backend"))
 from steps.dbt_test_validation_steps import *  # noqa: E402,F401,F403
