@@ -301,19 +301,21 @@ def _read_s3_config(profile_path: Path) -> dict[str, str]:
     """Pull the s3 settings out of the seeded profiles.yml.
 
     Mirrors :class:`DuckDBProfileSeeder` output keys: ``s3_endpoint``,
-    ``s3_region``, ``s3_access_key_id``, ``s3_secret_access_key``.
+    ``s3_region``, ``s3_access_key_id``, ``s3_secret_access_key`` —
+    nested under ``settings:`` (dbt-duckdb's contract for emitting them
+    as DuckDB SET statements at connect time).
     """
     import yaml
 
     payload = yaml.safe_load(profile_path.read_text())
     # The seeder writes a single top-level project entry; pull its dev output.
     project_block = next(iter(payload.values()))
-    dev = project_block["outputs"]["dev"]
+    settings = project_block["outputs"]["dev"]["settings"]
     return {
-        "endpoint": dev["s3_endpoint"],
-        "region": dev["s3_region"],
-        "access_key": dev["s3_access_key_id"],
-        "secret_key": dev["s3_secret_access_key"],
+        "endpoint": settings["s3_endpoint"],
+        "region": settings["s3_region"],
+        "access_key": settings["s3_access_key_id"],
+        "secret_key": settings["s3_secret_access_key"],
     }
 
 

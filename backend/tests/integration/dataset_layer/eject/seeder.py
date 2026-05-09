@@ -87,6 +87,16 @@ class DuckDBProfileSeeder:
 
         endpoint = self._strip_scheme(minio_creds["endpoint_url"])
 
+        # dbt-duckdb only honours s3_* keys when they are nested under
+        # `settings:` — at that level the adapter emits them as DuckDB
+        # `SET s3_<key>=<value>` statements at connect time. Bare keys at
+        # the output level are silently dropped, leaving DuckDB on its
+        # default config (no endpoint override, vhost URL style) which
+        # then resolves the bucket against AWS public S3 instead of the
+        # MinIO compose service. The export's profiles.yml template uses
+        # the same `settings:` shape — keeping the seeder aligned means
+        # the customer's `dbt build` and the harness's invocation hit
+        # DuckDB the same way.
         profile = {
             profile_name: {
                 "target": "dev",
@@ -95,12 +105,14 @@ class DuckDBProfileSeeder:
                         "type": "duckdb",
                         "path": str(tmpdir / "duckdb.db"),
                         "extensions": ["httpfs"],
-                        "s3_endpoint": endpoint,
-                        "s3_use_ssl": False,
-                        "s3_region": minio_creds["region"],
-                        "s3_access_key_id": minio_creds["access_key"],
-                        "s3_secret_access_key": minio_creds["secret_key"],
-                        "s3_url_style": "path",
+                        "settings": {
+                            "s3_endpoint": endpoint,
+                            "s3_use_ssl": False,
+                            "s3_region": minio_creds["region"],
+                            "s3_access_key_id": minio_creds["access_key"],
+                            "s3_secret_access_key": minio_creds["secret_key"],
+                            "s3_url_style": "path",
+                        },
                     },
                 },
             },

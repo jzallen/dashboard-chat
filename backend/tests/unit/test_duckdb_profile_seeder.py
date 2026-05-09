@@ -73,12 +73,16 @@ class TestSeedHappyPath:
         assert "dev" in outputs
         dev = outputs["dev"]
 
-        # Concrete S3 creds wired through (httpfs extension contract)
-        assert dev["s3_endpoint"] == "minio:9000"  # scheme stripped or kept
-        assert dev["s3_access_key_id"] == "minioadmin"
-        assert dev["s3_secret_access_key"] == "minioadmin"
-        assert dev["s3_region"] == "us-east-1"
-        assert dev["s3_url_style"] == "path"
+        # Concrete S3 creds wired through under `settings:` — dbt-duckdb
+        # emits these as DuckDB SET statements at connect time. Bare keys
+        # at the output level are silently dropped, so the nesting matters.
+        settings = dev["settings"]
+        assert settings["s3_endpoint"] == "minio:9000"  # scheme stripped or kept
+        assert settings["s3_access_key_id"] == "minioadmin"
+        assert settings["s3_secret_access_key"] == "minioadmin"
+        assert settings["s3_region"] == "us-east-1"
+        assert settings["s3_url_style"] == "path"
+        assert settings["s3_use_ssl"] is False
         # DuckDB target file lives inside the seeded tmpdir
         assert str(tmp_path) in dev["path"]
         assert dev["path"].endswith("duckdb.db")
