@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+import httpx
 import pytest
 import pytest_asyncio
 from pytest_bdd import given, parsers, then, when
@@ -48,6 +49,31 @@ sys.path.insert(0, str(_REPO_ROOT / "backend"))
 # Defined at module scope so the @given step can resolve it without a fresh
 # Path() construction inside the body — ruff/F-003 friendly.
 _ORDERS_FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "orders.csv"
+
+
+# ---------------------------------------------------------------------------
+# MinIO creds for fresh probing orchestrators (M3 scenarios)
+# ---------------------------------------------------------------------------
+
+
+def _read_minio_creds_from_env_for_steps() -> dict[str, str]:
+    """Build the orchestrator's ``minio_creds`` dict from environment.
+
+    Mirrors ``conftest.py:_read_minio_creds_from_env`` — duplicated rather
+    than imported because conftest exposes that helper as a private module
+    function, not a fixture, and re-exporting would couple step glue to
+    conftest's internal API. The duplication is deliberate (M3 scenarios
+    need a fresh probing orchestrator per scenario, after the @given
+    monkeypatch lands; the session-scoped ``eject_orchestrator`` fixture
+    probes once at session start against a healthy substrate).
+    """
+    return {
+        "endpoint_url": os.environ.get("S3_ENDPOINT", "http://localhost:9000"),
+        "access_key": os.environ.get("S3_ACCESS_KEY_ID", "minioadmin"),
+        "secret_key": os.environ.get("S3_SECRET_ACCESS_KEY", "minioadmin"),
+        "bucket": os.environ.get("S3_BUCKET", "dashboard-chat.datalake"),
+        "region": os.environ.get("S3_REGION", "us-east-1"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -483,11 +509,23 @@ def then_failure_includes_diff(capture: HarnessCapture) -> None:
 
 
 @given("the dbt runner cannot be imported")
-def given_dbt_runner_broken(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: monkeypatch "
-        "dbt.cli.main.dbtRunner to raise ImportError on construction"
-    )
+def given_dbt_runner_broken(
+    capture: HarnessCapture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sabotage probe 1's substrate: remove ``dbtRunner`` from
+    ``dbt.cli.main`` so ``from dbt.cli.main import dbtRunner`` raises
+    ImportError at probe time. ``monkeypatch.delattr`` reverts on
+    function-scope teardown, so state cannot leak across scenarios.
+
+    Probe 5 (``probe_run_results_shape``) imports ``dbtRunner`` from the
+    same module and will ALSO fail in this scenario; that is fine —
+    the @then assertion uses substring match on the failing-probe list,
+    so ``probe_dbt_runner_importable`` appearing in the failures is the
+    asserted contract regardless of probe 5's outcome.
+    """
+    import dbt.cli.main
+
+    monkeypatch.delattr(dbt.cli.main, "dbtRunner", raising=False)
 
 
 @given("the dbt-duckdb adapter cannot be loaded")
@@ -525,24 +563,66 @@ def given_run_results_shape_drift(capture: HarnessCapture) -> None:
 
 
 @when("the eject orchestrator runs its earned-trust probes")
-def when_orchestrator_probes_run(capture: HarnessCapture) -> None:
-    """Each probe scenario expects pytest.skip to be raised by the session
-    fixture during the failing probe. Because pytest.skip is raised before
-    the @then step runs (it fires from within the orchestrator
-    construction path), the @when step here serves as a documentation
-    anchor; the .skip propagates upward.
+def when_orchestrator_probes_run(
+    capture: HarnessCapture,
+    tmp_path: Path,
+) -> None:
+    """Construct a FRESH probing orchestrator post-@given monkeypatch and
+    capture the would-be skip reason.
 
-    DELIVER wires the actual fault-injection in the matching @given step
-    so that constructing the orchestrator within this @when step raises
-    pytest.skip with the named probe in the reason. Until then, the
-    @given step fails, marking the test RED rather than BROKEN.
+    The session-scoped ``eject_orchestrator`` fixture probes once at
+    session start against a HEALTHY substrate; M3 scenarios need a
+    per-scenario orchestrator built AFTER the @given monkeypatch landed.
+    We mirror the conftest fixture's skip-message construction format so
+    @then assertions verify the SAME reason format the production fixture
+    emits. Stays fixture-format-coupled by design — that IS the contract
+    under test (ADR-019 §4: probe failure -> pytest.skip with the failing
+    probe NAMED in the reason).
+
+    Hexagonal boundary: this step uses the public
+    ``EjectAndTestOrchestrator(...)`` constructor and ``await
+    orchestrator.probe(tmp_path)`` only — no internal helpers
+    (``probe_module.probe_*`` etc.) are imported.
     """
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: invoke the probing "
-        "fixture's construction path with the fault injected by the "
-        "preceding @given step. The expected outcome is "
-        "pytest.skip(reason) where reason names the failing probe."
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    base_url = (
+        capture.extras.get("override_base_url")
+        or os.environ.get("AUTH_PROXY_URL", "http://localhost:3000").rstrip("/")
     )
+    minio_creds = (
+        capture.extras.get("override_minio_creds")
+        or _read_minio_creds_from_env_for_steps()
+    )
+    auth_minter = capture.extras.get("override_auth_minter")  # None -> real minter
+
+    async def _run_probes() -> Any:
+        from tests.integration.dataset_layer.eject.orchestrator import (
+            EjectAndTestOrchestrator,
+        )
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            orch = EjectAndTestOrchestrator(
+                http_client=client,
+                base_url=base_url,
+                minio_creds=minio_creds,
+                auth_token_minter=auth_minter,
+            )
+            return await orch.probe(tmp_path)
+
+    summary = loop.run_until_complete(_run_probes())
+    if not summary.ok:
+        # Mirror conftest's session-fixture skip-message construction so
+        # @then assertions verify the SAME reason format the production
+        # fixture emits. Stays fixture-format-coupled by design — that IS
+        # the contract under test.
+        failing_names = ", ".join(r.name for r in summary.failures) or "<unknown>"
+        failing_reasons = "; ".join(
+            f"{r.name}: {r.reason}" for r in summary.failures
+        )
+        capture.skip_reason = (
+            f"eject orchestrator probe failed ({failing_names}); "
+            f"details: {failing_reasons}"
+        )
 
 
 @then(parsers.parse('the suite skips with the failing probe named "{probe_name}"'))

@@ -13,7 +13,7 @@
 #
 # All scenarios @pending — DELIVER turns them on one at a time.
 
-@earned_trust @probe @real-io @pending
+@earned_trust @probe @real-io
 Feature: Earned-trust probes catch the substrate lies before any flow runs
 
   Background:
@@ -24,21 +24,25 @@ Feature: Earned-trust probes catch the substrate lies before any flow runs
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_dbt_runner_importable"
 
+  @pending
   Scenario: dbt-duckdb adapter cannot be loaded — suite skips with the probe named
     Given the dbt-duckdb adapter cannot be loaded
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_dbt_duckdb_loadable"
 
+  @pending
   Scenario: project export endpoint is unreachable — suite skips with the probe named
     Given the project export endpoint is unreachable
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_export_endpoint_reachable"
 
+  @pending
   Scenario: datalake cannot be read through the seeded profile — suite skips with the probe named
     Given the datalake cannot be read through the seeded profile
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_minio_readable_via_duckdb"
 
+  @pending
   Scenario: dbt result shape no longer matches the parser's expectations — suite skips with the probe named
     Given the dbt result shape no longer matches the parser's expectations
     When the eject orchestrator runs its earned-trust probes
