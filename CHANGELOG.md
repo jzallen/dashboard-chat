@@ -1,3 +1,29 @@
+# [1.15.0](https://github.com/jzallen/dashboard-chat/compare/v1.14.0...v1.15.0) (2026-05-09)
+
+
+### Bug Fixes
+
+* **backend:** map DomainException to structured HTTP response globally ([155f697](https://github.com/jzallen/dashboard-chat/commit/155f697cc72598f39d57613e44d0f7b62ce82e28))
+* **dataset-layer:** apply transforms to preview + stable compose ports ([4dd9ee2](https://github.com/jzallen/dashboard-chat/commit/4dd9ee20f0ade018589d5cf81dae6aff493a2576))
+* **test/dbt-test-validation:** wire acceptance venv to backend test deps ([62529be](https://github.com/jzallen/dashboard-chat/commit/62529be7c6327e7b58688b464b5410d0752cde2f))
+* **test/eject:** export S3_* env vars before dbtRunner.invoke ([dac4c1a](https://github.com/jzallen/dashboard-chat/commit/dac4c1a7e989a1ea49ff1c98663ec1f6298c8995))
+* **test/eject:** pass exported dbt profile name through to seeder ([b227a98](https://github.com/jzallen/dashboard-chat/commit/b227a986fb64b445c092597ba31359001f58c18e))
+* **test/eject:** probe_export_endpoint_reachable accepts 200 OR 404 ([b348c59](https://github.com/jzallen/dashboard-chat/commit/b348c5900b45dde5558dc54d70ef0a740bddc4be))
+* **test/eject:** wire dev JWT auth and MinIO bootstrap into probes ([961dd0a](https://github.com/jzallen/dashboard-chat/commit/961dd0a7b6adbdc2b5a383f06cb032f75152fd81))
+
+
+### Features
+
+* **test/dataset-layer:** wire harness eject_and_test and validate_after ([81ef97a](https://github.com/jzallen/dashboard-chat/commit/81ef97a47f07a5ad05bf0f09b63a372d1e65d2a4))
+* **test/dbt-test-validation:** implement walking-skeleton step bindings ([c896830](https://github.com/jzallen/dashboard-chat/commit/c89683077ae88fb11a49b523e47ece0bbcd676df))
+* **test/eject:** implement DbtRunner via dbt.cli.main.dbtRunner Python API ([b71b690](https://github.com/jzallen/dashboard-chat/commit/b71b690ee4a9ec1cadfd59140a4a3f532db48ce5))
+* **test/eject:** implement DuckDBProfileSeeder writing concrete profiles.yml ([25c71ed](https://github.com/jzallen/dashboard-chat/commit/25c71ed2a2df0487268720c39e33e9580e86d593))
+* **test/eject:** implement EjectAndTestOrchestrator composing all probes ([de36d37](https://github.com/jzallen/dashboard-chat/commit/de36d374e0ac86da298e9dffb84a9c470bab5ee1))
+* **test/eject:** implement five probe happy paths for dbt-test-validation ([7454572](https://github.com/jzallen/dashboard-chat/commit/7454572d8378e00f57c8bc547715f3a9ef839bea))
+* **test/eject:** implement RunResultsParser translating dbtRunnerResult ([eff07f7](https://github.com/jzallen/dashboard-chat/commit/eff07f7e5b702e035b7d2b1169962523ab323a97))
+* **test/validation:** implement PanderaValidator and OrdersStaging schema ([01dd6a2](https://github.com/jzallen/dashboard-chat/commit/01dd6a21f0bd42bf7d3f2105bcf2d20a6b2227da))
+* **test:** add dbt + pandera test extras for dbt-test-validation Phase 0 ([ab6b6ac](https://github.com/jzallen/dashboard-chat/commit/ab6b6acbe8ef83f0dc2d72886b871a2e13ff30ae))
+
 # [1.14.0](https://github.com/jzallen/dashboard-chat/compare/v1.13.0...v1.14.0) (2026-05-07)
 
 
