@@ -579,10 +579,33 @@ def given_export_endpoint_broken(capture: HarnessCapture) -> None:
 
 @given("the datalake cannot be read through the seeded profile")
 def given_minio_unreadable(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: monkeypatch the seeded "
-        "profile to point at a bucket the test creds cannot read"
-    )
+    """Hand the probing orchestrator MinIO creds DuckDB will reject.
+
+    Probe 4 (``probe_minio_readable_via_duckdb``) writes a canary parquet
+    to the seeded bucket via DuckDB's httpfs and then reads it back. With
+    the access_key/secret_key sentinels below, MinIO returns a server-side
+    ``Forbidden`` / ``InvalidAccessKeyId`` at the COPY call; the probe
+    catches it and emits ``ProbeReport(ok=False, name="probe_minio_readable_via_duckdb", ...)``.
+
+    Real endpoint URL is preserved so the failure surfaces as auth, not
+    routing — that is the substrate-lie probe 4 is contracted to catch:
+    env_var(...) substitution producing creds that compile but cannot
+    read (ADR-019 §"Earned-Trust contract", probe 4 row).
+
+    Probes 1, 2, 3, 5 are independent of ``minio_creds`` (probes 1+2 are
+    pure imports; probe 3 dials base_url; probe 5 uses a local tmpdir
+    dbt project), so only probe 4 sees the bad creds in this scenario.
+    The @when foundation step (01-01) reads
+    ``capture.extras["override_minio_creds"]`` and threads it into the
+    fresh orchestrator's constructor — DO NOT modify the @when body.
+    """
+    capture.extras["override_minio_creds"] = {
+        "endpoint_url": os.environ.get("S3_ENDPOINT", "http://localhost:9000"),
+        "access_key": "DC_TEST_INVALID_ACCESS_KEY",
+        "secret_key": "DC_TEST_INVALID_SECRET_KEY",
+        "bucket": os.environ.get("S3_BUCKET", "dashboard-chat.datalake"),
+        "region": os.environ.get("S3_REGION", "us-east-1"),
+    }
 
 
 @given("the dbt result shape no longer matches the parser's expectations")

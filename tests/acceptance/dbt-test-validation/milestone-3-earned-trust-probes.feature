@@ -34,7 +34,6 @@ Feature: Earned-trust probes catch the substrate lies before any flow runs
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_export_endpoint_reachable"
 
-  @pending
   Scenario: datalake cannot be read through the seeded profile — suite skips with the probe named
     Given the datalake cannot be read through the seeded profile
     When the eject orchestrator runs its earned-trust probes
