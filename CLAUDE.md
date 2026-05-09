@@ -55,6 +55,15 @@ cd backend && uv run pytest          # backend only
 npm run test:worker                  # worker only
 ```
 
+Acceptance suites (per-feature, run separately from the standard test commands):
+
+```bash
+# Each suite lives at tests/acceptance/<feature>/ with its own pyproject.toml + venv.
+# Run from inside the suite directory; the --no-project flag skips the workspace
+# uv would otherwise infer from cwd.
+cd tests/acceptance/<feature> && uv run --no-project pytest
+```
+
 **Gates:**
 - Pre-commit runs ruff + eslint auto-fix (fast; preserved).
 - Pre-push Bazel gate removed — Bazel runs in CI only.
