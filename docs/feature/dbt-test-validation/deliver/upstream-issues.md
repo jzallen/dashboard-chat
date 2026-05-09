@@ -6,7 +6,9 @@ The Earned-Trust contract (ADR-019 §4) did its job: every gap below was discove
 
 ---
 
-## Gap 1 — dbt-duckdb S3 endpoint wiring (current WS blocker)
+## Gap 1 — dbt-duckdb S3 endpoint wiring (RESOLVED)
+
+**Resolved at:** seeder fix landing this round — `DuckDBProfileSeeder` now nests the `s3_*` keys under `settings:` (the dbt-duckdb contract for emitting them as DuckDB `SET` statements at connect time). Bare keys at the output level were silently dropped, leaving DuckDB on its default config and resolving the bucket against AWS public S3. The seeded values were always correct; only the YAML nesting was wrong. Walking-skeleton run after the fix shows `dbt build` succeeds end-to-end against MinIO: `1 of 1 OK created sql view model main.stg_new_dataset` and `Done. PASS=2 WARN=0 ERROR=0`.
 
 **Surfaced at:** commit `c040a6e` — env vars exported correctly, dbt parse succeeds, dbt build fails.
 
@@ -46,6 +48,18 @@ Port 1042 is a dynamically-allocated port — probably wiremock or similar, used
 **Status:** unverified post-fix-#5 — the WS now gets past fixture setup so the 500 may have been a transient artifact of pytest fixture-discovery ordering, OR may still surface on a fresh session. Worth re-running the WS with verbose pytest setup logs to confirm whether this is reproducible.
 
 **Triage path:** if reproducible, trace the call: who's calling `POST /api/auth/callback`? It's not on the harness's normal dev-JWT-mint path (which uses `/.well-known/jwks.json`). May be a stale path from a pre-`AUTH_MODE=dev` fixture flow.
+
+---
+
+## Gap 4 — Export emits no dbt tests (PARTIALLY RESOLVED — placeholder shipped, full mapping in Phase 2)
+
+**Surfaced at:** the walking-skeleton run after Gap 1 was fixed. With MinIO wiring corrected, `dbt build` succeeded but the standalone `dbt test` phase reported `Nothing to do. Try checking your model configs and model specification args` because the exported `schema.yml` contained no `tests:` blocks anywhere. The walking-skeleton assertion `len(tests_run) >= 1` correctly caught this — there is no validation outcome to report when there are no tests to run.
+
+**Phase-0 placeholder applied:** `backend/app/use_cases/project/_dbt/schema_yml.py` now emits one `not_null` test on the first column of every staging model. This is the minimum required to prove the eject-then-test cycle actually executes a validation, not a richer mapping of dataset constraints to dbt tests.
+
+**Phase 2 expansion:** the full constraint-driven translation (required → not_null, unique → unique, accepted values → accepted_values, range → dbt_utils.expression_is_true) is now formally part of Phase 2 in `docs/feature/dbt-test-validation/distill/roadmap.json`. The Phase-0 placeholder is removed when Phase 2 lands and is replaced by faithful translation of `dataset.schema_config["fields"][col]["constraints"]`. Phase 2 also handles the `packages.yml` emission required when `dbt_utils` tests are referenced.
+
+**Why this matters:** without exported tests the eject-then-test mechanism is decorative — the validation gate cannot fail (or pass) on real schema-rule violations. Phase 2 makes the gate observable end-to-end.
 
 ---
 

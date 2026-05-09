@@ -64,26 +64,29 @@
     },
     {
       "id": "02",
-      "title": "Phase 2 — Eject-and-test full coverage (drift detector + customer fidelity)",
+      "title": "Phase 2 — Eject-and-test full coverage (constraint-driven test emission + drift detector + customer fidelity)",
       "polecat_command": "/nw-deliver",
-      "scope": "Drive the eject-and-test failure paths beyond happy-path. Drift detector: when an exported schema.yml test would fail against the staged data, EjectTestReport(status='fail', failures=[...]) names the failing dbt test. Customer-fidelity invariant: assert that DuckDBProfileSeeder writes a profiles.yml whose s3 endpoint URL + bucket path EQUAL the backend's MinIO config (read from compose env at fixture time). Both scenarios run as @real-io @adapter-integration so format mismatches surface.",
+      "scope": "Drive the eject-and-test failure paths beyond happy-path. THREE concerns in this phase: (1) Constraint-driven test emission — extend backend/app/use_cases/project/_dbt/schema_yml.py to translate dataset.schema_config constraints (required → not_null, unique → unique, accepted values → accepted_values, range → dbt_utils.expression_is_true with column bounds) into per-column `tests:` blocks in the exported schema.yml. The Phase-0 placeholder (one not_null test on the first column) is replaced with constraint-faithful emission; this is the prerequisite that makes the drift detector observable. Add packages.yml emission for dbt_utils when range/regex tests are used. (2) Drift detector — when an exported schema.yml test would fail against the staged data, EjectTestReport(status='fail', failures=[...]) names the failing dbt test (parser already shapes EjectTestReport.failures; verify it on real failures). (3) Customer-fidelity invariant — assert that DuckDBProfileSeeder writes a profiles.yml whose s3 endpoint URL + bucket path EQUAL the backend's MinIO config (read from compose env at fixture time). All scenarios run as @real-io @adapter-integration so format mismatches surface.",
       "scenarios_to_unskip": [
         "tests/acceptance/dbt-test-validation/milestone-1-eject-and-test.feature :: Customer's project ejects and validates green when staging data matches schema contract",
         "tests/acceptance/dbt-test-validation/milestone-1-eject-and-test.feature :: Drift detector — eject fails with named failing test when staging data violates dbt schema contract",
         "tests/acceptance/dbt-test-validation/milestone-1-eject-and-test.feature :: Customer-fidelity invariant — eject reads same lake path the backend uses"
       ],
-      "files_changed_estimate": "backend/tests/integration/dataset_layer/eject/parser.py — extract failures from dbtRunnerResult.result for fail-status reports. backend/tests/integration/dataset_layer/eject/seeder.py — surface profiles.yml path-asserting helper for customer-fidelity scenario. tests/acceptance/dbt-test-validation/steps/dbt_test_validation_steps.py — add failing-fixture and path-extraction glue. ~150-250 LoC.",
+      "files_changed_estimate": "backend/app/use_cases/project/_dbt/schema_yml.py — replace Phase-0 placeholder with constraint-driven test emission (required/unique/accepted_values/range → dbt schema tests); thread schema_config['fields'][col]['constraints'] through. backend/app/use_cases/project/_dbt/__init__.py — emit packages.yml when dbt_utils tests are referenced. backend/tests/use_cases/project/_dbt/test_yaml_generators.py — unit tests for each constraint → test mapping. backend/tests/integration/dataset_layer/eject/parser.py — verify failures extraction from real dbtRunnerResult.result for fail-status reports. backend/tests/integration/dataset_layer/eject/seeder.py — surface profiles.yml path-asserting helper for customer-fidelity scenario. tests/acceptance/dbt-test-validation/steps/dbt_test_validation_steps.py — add failing-fixture and path-extraction glue. ~300-450 LoC.",
       "exit_criteria": [
         "All 3 M1 scenarios green",
         "Phase 0 + Phase 1 scenarios still green",
-        "EjectTestReport.failures schema verified against pinned dbt 1.8 + 1.9 (per Atlas DEVOPS handoff: contract test added to tests/contracts/ if not yet present)"
+        "EjectTestReport.failures schema verified against pinned dbt 1.8 + 1.9 (per Atlas DEVOPS handoff: contract test added to tests/contracts/ if not yet present)",
+        "schema_yml.py emits one `tests:` entry per dataset constraint declared in schema_config (verified by unit test parameterized over required/unique/accepted_values/range cases)",
+        "Phase-0 placeholder (always-emit not_null on first column) removed — replaced by constraint-driven emission. When a dataset declares zero constraints, schema.yml ships with no tests, and milestone-1 scenario 1 still proves the export path because milestone-1's fixture dataset declares at least one constraint."
       ],
       "blocks": ["03"],
-      "estimated_size": "M",
+      "estimated_size": "M-L",
       "ac_references": [
         "ADR-019 §Decision outcome — drift detector",
         "ADR-019 §Cross-decision composition (ADR-007 — same MinIO source)",
-        "design.md §13 risk #1 (probe_minio_readable_via_duckdb error messaging)"
+        "design.md §13 risk #1 (probe_minio_readable_via_duckdb error messaging)",
+        "JOB-001 O4 (durability across ejection — the export must carry validation, not just shape)"
       ]
     },
     {
