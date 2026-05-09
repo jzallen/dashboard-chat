@@ -57,6 +57,16 @@ def generate_schema_yml(
             }
             for col_name, col_info in fields.items()
         ]
+        # Phase-0 placeholder: emit one `not_null` test on the first
+        # column of every staging model so the exported project ships at
+        # least one runnable dbt test. Without this, `dbt test` is a
+        # no-op, and the eject-then-test feature has no observable
+        # validation outcome to report. The richer constraint-driven
+        # translation (per-field required/unique/accepted_values from
+        # schema_config → dbt schema tests) is tracked as Phase 2 of
+        # docs/feature/dbt-test-validation/distill/roadmap.json.
+        if columns:
+            columns[0]["tests"] = ["not_null"]
         models.append(
             {
                 "name": f"stg_{snake_name}",

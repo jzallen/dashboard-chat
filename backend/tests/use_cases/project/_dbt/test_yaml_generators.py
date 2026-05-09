@@ -151,6 +151,35 @@ class TestSchemaYml:
         parsed = yaml.safe_load(output)
         assert parsed["models"][0]["name"] == "stg_customers"
 
+    def test_generate_schema_yml_attaches_not_null_test_to_first_column(self):
+        """Phase-0 placeholder for the dbt-test-validation feature: every
+        staging model in the export must ship at least one runnable dbt
+        test, otherwise `dbt test` is a no-op and the eject-then-test
+        gate has no observable validation outcome to report. Emit
+        `not_null` on the first column as the minimum viable test;
+        constraint-driven translation lands in Phase 2."""
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "region": {"type": "text"},
+                    "quantity": {"type": "number"},
+                }
+            }
+        )
+        output = generate_schema_yml([("orders", ds)])
+        parsed = yaml.safe_load(output)
+        first_column = parsed["models"][0]["columns"][0]
+        assert first_column["name"] == "region"
+        assert first_column.get("tests") == ["not_null"]
+
+    def test_generate_schema_yml_omits_tests_when_no_columns(self):
+        """A schema-less dataset emits no columns and no tests — the
+        first-column rule must not fabricate a column to attach to."""
+        ds = _make_dataset(schema_config={})
+        output = generate_schema_yml([("empty", ds)])
+        parsed = yaml.safe_load(output)
+        assert parsed["models"][0]["columns"] == []
+
 
 def _make_report(
     report_id: str = "rpt-1",
