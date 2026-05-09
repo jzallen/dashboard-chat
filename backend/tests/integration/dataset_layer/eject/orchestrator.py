@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import yaml
 
 from . import probe as probe_module
 from .parser import EjectTestReport, RunResultsParser
@@ -224,7 +225,14 @@ class EjectAndTestOrchestrator:
     def _invoke_minio_probe(self, tmp_path: Path) -> ProbeReport:
         probe_dir = tmp_path / "probe-profile"
         probe_dir.mkdir(parents=True, exist_ok=True)
-        seeded_profile_path = self._seeder.seed(probe_dir, self._minio_creds)
+        # Probe-time profile: not bound to any real exported dbt project,
+        # so a fixed sentinel name is fine — the probe asserts httpfs can
+        # read parquet, not that dbt's lookup wires through a profile name.
+        seeded_profile_path = self._seeder.seed(
+            probe_dir,
+            self._minio_creds,
+            profile_name="probe_profile",
+        )
         fixture_key = self._minio_creds.get("fixture_key", _PROBE_FIXTURE_KEY_DEFAULT)
         return probe_module.probe_minio_readable_via_duckdb(
             seeded_profile_path=seeded_profile_path,
@@ -256,9 +264,14 @@ class EjectAndTestOrchestrator:
         Flow (ADR-018 §Decision Outcome step 3):
             1. GET ``/api/projects/{project_id}/export/dbt`` -> zip bytes
             2. Unzip into ``tmp_path / project_id``
-            3. Seed ``profiles.yml`` with concrete MinIO credentials
-            4. Run dbt ``deps`` -> ``build`` -> ``test`` via DbtRunner
-            5. Parse the dbtRunnerResult into an EjectTestReport
+            3. Parse the unzipped ``dbt_project.yml`` to extract the
+               ``profile:`` field (the exporter generates project-specific
+               names like ``dataset_staging_<snake-cased ULID>``)
+            4. Seed ``profiles.yml`` with concrete MinIO credentials under
+               that exact profile name — otherwise dbt fails at build time
+               with "Could not find profile named '...'".
+            5. Run dbt ``deps`` -> ``build`` -> ``test`` via DbtRunner
+            6. Parse the dbtRunnerResult into an EjectTestReport
         """
         # Make sure we have a session JWT — the per-flow path may be
         # invoked in a test that doesn't go through ``probe()`` first.
@@ -266,9 +279,31 @@ class EjectAndTestOrchestrator:
         zip_bytes = await self._fetch_zip(project_id)
         project_dir = self._unzip_project(zip_bytes, tmp_path / project_id)
         self._verify_expected_tree(project_dir)
-        self._seeder.seed(project_dir, self._minio_creds)
+        profile_name = self._extract_profile_name(project_dir)
+        self._seeder.seed(project_dir, self._minio_creds, profile_name=profile_name)
         run_result = self._runner.run_build_and_test(str(project_dir))
         return self._parser.parse(run_result, project_dir=str(project_dir))
+
+    @staticmethod
+    def _extract_profile_name(project_dir: Path) -> str:
+        """Read ``profile:`` from the unzipped dbt_project.yml.
+
+        Raises ``RuntimeError`` naming the missing key when the export is
+        malformed — a substrate gap the seeder cannot paper over. dbt's
+        own error ("Could not find profile named '...'") would surface
+        much later, after the seeder has written a profiles.yml under the
+        wrong key; raising here keeps the failure proximate to its cause.
+        """
+        dbt_project_yml = project_dir / "dbt_project.yml"
+        data = yaml.safe_load(dbt_project_yml.read_text()) or {}
+        profile_name = data.get("profile") if isinstance(data, dict) else None
+        if not profile_name or not isinstance(profile_name, str):
+            raise RuntimeError(
+                f"dbt_project.yml at {dbt_project_yml} has no 'profile' key — "
+                "cannot seed profiles.yml without knowing the profile name dbt "
+                "will look up at build time"
+            )
+        return profile_name
 
     async def _fetch_zip(self, project_id: str) -> bytes:
         url = f"{self._base_url}/api/projects/{project_id}/export/dbt"

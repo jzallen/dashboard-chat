@@ -9,7 +9,14 @@ contract is part of the substrate-lie defence layer (ADR-018 §Decision
 Outcome Mechanism step 3): missing keys raise a `RuntimeError` that
 NAMES the missing key, never silently substituting an empty value.
 
-PORT-TO-PORT: the seeder is a leaf utility; `seed(tmpdir, minio_creds)`
+The seeder ALSO accepts a `profile_name` argument so the written
+profiles.yml uses the same top-level key the exported `dbt_project.yml`
+references via its `profile:` field. The exporter generates per-project
+names like `dataset_staging_<snake-cased ULID>` (see
+backend/app/use_cases/project/_dbt/project_yml.py); a hardcoded sentinel
+would never line up with what dbt looks up.
+
+PORT-TO-PORT: the seeder is a leaf utility; `seed(tmpdir, minio_creds, profile_name)`
 IS the driving port. Tests call it directly with a real `tmp_path`.
 """
 
@@ -36,12 +43,13 @@ def _full_creds() -> dict[str, str]:
 
 
 class TestSeedHappyPath:
-    """Behavior 1: seed writes a concrete profiles.yml from minio_creds."""
+    """Behavior 1: seed writes a concrete profiles.yml from minio_creds under
+    the provided profile_name as its single top-level YAML key."""
 
     def test_writes_profiles_yml_with_concrete_s3_credentials(self, tmp_path: Path) -> None:
         seeder = DuckDBProfileSeeder()
 
-        profile_path = seeder.seed(tmp_path, _full_creds())
+        profile_path = seeder.seed(tmp_path, _full_creds(), profile_name="test_profile")
 
         # Returned path is the seeded file inside tmp_path
         assert profile_path == tmp_path / "profiles.yml"
@@ -55,9 +63,12 @@ class TestSeedHappyPath:
             "concrete values; otherwise DuckDB httpfs has nothing to bind"
         )
 
-        # Single top-level project key with a `dev` target pointing at duckdb
+        # Single top-level project key matching profile_name
         assert isinstance(loaded, dict) and len(loaded) == 1
         project_name = next(iter(loaded))
+        assert project_name == "test_profile", (
+            f"top-level YAML key must equal the provided profile_name; got {project_name!r}"
+        )
         outputs = loaded[project_name]["outputs"]
         assert "dev" in outputs
         dev = outputs["dev"]
@@ -72,6 +83,25 @@ class TestSeedHappyPath:
         assert str(tmp_path) in dev["path"]
         assert dev["path"].endswith("duckdb.db")
 
+    def test_top_level_key_matches_profile_name_argument(self, tmp_path: Path) -> None:
+        """The exporter generates project-specific profile names like
+        `dataset_staging_<snake-cased ULID>`. The seeder must honour
+        whatever name the caller passes — a hardcoded sentinel would
+        never line up with dbt's profile lookup."""
+        seeder = DuckDBProfileSeeder()
+
+        profile_path = seeder.seed(
+            tmp_path,
+            _full_creds(),
+            profile_name="dataset_staging_01h_test_ulid",
+        )
+
+        loaded = yaml.safe_load(profile_path.read_text())
+        assert list(loaded.keys()) == ["dataset_staging_01h_test_ulid"], (
+            "profiles.yml must have exactly one top-level key matching "
+            f"the supplied profile_name; got keys={list(loaded.keys())!r}"
+        )
+
 
 class TestSeedErrorPath:
     """Behavior 2: missing required key raises RuntimeError naming the key."""
@@ -82,7 +112,7 @@ class TestSeedErrorPath:
         del creds["endpoint_url"]
 
         with pytest.raises(RuntimeError) as exc_info:
-            seeder.seed(tmp_path, creds)
+            seeder.seed(tmp_path, creds, profile_name="test_profile")
 
         assert "endpoint_url" in str(exc_info.value)
 
@@ -93,7 +123,7 @@ class TestSeedErrorPath:
         del creds[missing_key]
 
         with pytest.raises(RuntimeError) as exc_info:
-            seeder.seed(tmp_path, creds)
+            seeder.seed(tmp_path, creds, profile_name="test_profile")
 
         # The missing key name MUST appear in the message — substrate-lie defense
         assert missing_key in str(exc_info.value), (

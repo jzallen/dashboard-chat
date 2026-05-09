@@ -7,6 +7,13 @@ a profile with placeholders such as ``env_var('S3_ACCESS_KEY_ID')``
 environment substitutes the compose stack's MinIO credentials so
 DuckDB's httpfs extension can actually reach the bucket.
 
+The seeder also honours the caller-supplied ``profile_name`` so the
+written ``profiles.yml`` uses the same top-level key the exported
+``dbt_project.yml`` references via its ``profile:`` field. The exporter
+generates per-project names like ``dataset_staging_<snake-cased ULID>``
+(see ``backend/app/use_cases/project/_dbt/project_yml.py``); a hardcoded
+sentinel would never line up with what dbt looks up at build time.
+
 Failure-mode contract (ADR-018 §Decision Outcome Mechanism step 3):
 when the caller passes a ``minio_creds`` dict missing a required key,
 ``seed()`` raises ``RuntimeError`` with a debugging-friendly message
@@ -30,8 +37,6 @@ _REQUIRED_KEYS: tuple[str, ...] = (
     "region",
 )
 
-_DEFAULT_PROJECT_NAME = "dashboard_chat"
-
 
 class DuckDBProfileSeeder:
     """Generates a concrete ``profiles.yml`` for the ejected dbt project.
@@ -40,10 +45,13 @@ class DuckDBProfileSeeder:
     no async, no subprocess. Its public driving port is :meth:`seed`.
     """
 
-    def __init__(self, project_name: str = _DEFAULT_PROJECT_NAME) -> None:
-        self._project_name = project_name
-
-    def seed(self, tmpdir: Path, minio_creds: Mapping[str, str]) -> Path:
+    def seed(
+        self,
+        tmpdir: Path,
+        minio_creds: Mapping[str, str],
+        *,
+        profile_name: str,
+    ) -> Path:
         """Write ``profiles.yml`` into ``tmpdir`` and return its path.
 
         Parameters
@@ -57,14 +65,22 @@ class DuckDBProfileSeeder:
             ``endpoint_url``, ``access_key``, ``secret_key``, ``bucket``,
             ``region``. Missing any of these raises ``RuntimeError``
             naming the offending key.
+        profile_name:
+            Top-level key under which the profile body is written. Must
+            match the ``profile:`` field of the exported dbt project's
+            ``dbt_project.yml`` — otherwise ``dbt build`` fails with
+            "Could not find profile named '...'".
 
         Raises
         ------
         RuntimeError
-            When ``minio_creds`` is missing a required key. The message
-            names the missing key so debugging is mechanical, not
-            archaeological.
+            When ``minio_creds`` is missing a required key, or when
+            ``profile_name`` is empty. The message names the offending
+            input so debugging is mechanical, not archaeological.
         """
+        if not profile_name:
+            raise RuntimeError("profile seed failed: profile_name must be a non-empty string")
+
         for key in _REQUIRED_KEYS:
             if key not in minio_creds:
                 raise RuntimeError(f"profile seed failed: missing required minio credential '{key}'")
@@ -72,7 +88,7 @@ class DuckDBProfileSeeder:
         endpoint = self._strip_scheme(minio_creds["endpoint_url"])
 
         profile = {
-            self._project_name: {
+            profile_name: {
                 "target": "dev",
                 "outputs": {
                     "dev": {

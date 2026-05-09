@@ -15,12 +15,14 @@ has no MinIO bucket + no live backend; their happy paths are covered by
 by Phase 1 distill milestone-3. Probes 1 + 2 run for real here — they are pure
 imports against the dbt-core / dbt-duckdb extras installed by step 00-01.
 
-Test budget: 5 distinct behaviors x 2 = 10. Using 5.
+Test budget: 6 distinct behaviors x 2 = 12. Using 6.
     1. probe() aggregates 5 individual ProbeReports into a ProbeSummary
     2. probe() is cached (idempotent within a session)
     3. eject_and_test happy path returns EjectTestReport
     4. EjectOrchestratorProtocol runtime_checkable conformance
     5. orchestrator.py does not allocate its own tempdir (caller controls)
+    6. eject_and_test raises RuntimeError when dbt_project.yml has no profile key
+       (substrate-gap defence — the seeder cannot invent a profile name)
 """
 
 from __future__ import annotations
@@ -52,11 +54,18 @@ from tests.integration.dataset_layer.eject.protocols import (
 # ---------------------------------------------------------------------------
 
 
-def _build_fixture_dbt_zip() -> bytes:
-    """Build a tiny valid dbt+duckdb project zip with name='dashboard_chat'.
+_FIXTURE_PROFILE_NAME = "dataset_staging_01h_test_ulid"
 
-    Project name matches ``DuckDBProfileSeeder``'s default so the seeded
-    profile is the one dbt actually loads. The model selects a literal so
+
+def _build_fixture_dbt_zip(profile_name: str = _FIXTURE_PROFILE_NAME) -> bytes:
+    """Build a tiny valid dbt+duckdb project zip mirroring the exporter's shape.
+
+    The exporter generates project-specific profile names (e.g.
+    ``dataset_staging_<snake-cased ULID>``) via
+    backend/app/use_cases/project/_dbt/project_yml.py and references that
+    same name in ``dbt_project.yml`` via the ``profile:`` field. The
+    fixture mirrors that shape so the orchestrator's parse-then-pass logic
+    is exercised against a realistic input. The model selects a literal so
     no MinIO is required during the dbt build phase.
     """
     buf = io.BytesIO()
@@ -64,11 +73,11 @@ def _build_fixture_dbt_zip() -> bytes:
         zf.writestr(
             "dbt_project.yml",
             textwrap.dedent(
-                """\
-                name: 'dashboard_chat'
+                f"""\
+                name: '{profile_name}'
                 version: '1.0.0'
                 config-version: 2
-                profile: 'dashboard_chat'
+                profile: '{profile_name}'
                 model-paths: ["models"]
                 """
             ),
@@ -77,13 +86,33 @@ def _build_fixture_dbt_zip() -> bytes:
         zf.writestr(
             "profiles.yml",
             textwrap.dedent(
-                """\
-                dashboard_chat:
+                f"""\
+                {profile_name}:
                   target: dev
                   outputs:
                     dev:
                       type: duckdb
                       path: ":memory:"
+                """
+            ),
+        )
+        zf.writestr("models/hello.sql", "select 1 as one")
+    return buf.getvalue()
+
+
+def _build_fixture_dbt_zip_without_profile() -> bytes:
+    """Same shape as the happy fixture but with no ``profile:`` key in
+    dbt_project.yml — drives the substrate-gap error path."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "dbt_project.yml",
+            textwrap.dedent(
+                """\
+                name: 'broken_export'
+                version: '1.0.0'
+                config-version: 2
+                model-paths: ["models"]
                 """
             ),
         )
@@ -252,7 +281,13 @@ async def test_eject_and_test_happy_path_returns_eject_test_report(
     """eject_and_test fetches zip -> unzips -> seeds profile -> runs dbt
     deps/build/test -> parses -> returns an EjectTestReport. The fixture
     project has one trivial model and zero tests, so the report has at
-    least one model_built recorded; status is 'pass' since no test failed."""
+    least one model_built recorded; status is 'pass' since no test failed.
+
+    Crucially, this also exercises the parse-profile-from-dbt_project.yml
+    path: the fixture's profile name is project-specific (mirrors the real
+    exporter's `dataset_staging_<ULID>` shape) and the seeder's profiles.yml
+    must be written under THAT name for `dbt build` to find it.
+    """
     async with httpx.AsyncClient(transport=export_zip_transport, base_url="http://test-backend.local") as http_client:
         orch = EjectAndTestOrchestrator(
             http_client=http_client,
@@ -274,6 +309,43 @@ async def test_eject_and_test_happy_path_returns_eject_test_report(
     # just returned a default-empty report).
     assert any("hello" in name for name in report.models_built), (
         f"expected the fixture 'hello' model in models_built; got models_built={report.models_built!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_eject_and_test_raises_when_dbt_project_yml_has_no_profile_key(
+    minio_creds: dict[str, str],
+    stub_auth_minter: Callable[[str], Awaitable[str]],
+    tmp_path: Path,
+) -> None:
+    """Substrate-gap defence: if the exported ``dbt_project.yml`` is missing
+    the ``profile:`` key the seeder cannot synthesize a name for it — dbt
+    would fail at build time with a confusing 'Could not find profile' error.
+    The orchestrator MUST detect this gap and raise a clear RuntimeError
+    naming the missing key, BEFORE invoking the runner."""
+    no_profile_zip = _build_fixture_dbt_zip_without_profile()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=no_profile_zip,
+            headers={"Content-Type": "application/zip"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test-backend.local") as http_client:
+        orch = EjectAndTestOrchestrator(
+            http_client=http_client,
+            base_url="http://test-backend.local",
+            minio_creds=minio_creds,
+            auth_token_minter=stub_auth_minter,
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await orch.eject_and_test(project_id="proj-broken", tmp_path=tmp_path)
+
+    assert "profile" in str(exc_info.value).lower(), (
+        f"RuntimeError must name the missing 'profile' key — substrate-lie defence; got: {exc_info.value!r}"
     )
 
 
