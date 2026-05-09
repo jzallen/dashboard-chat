@@ -39,7 +39,6 @@ Feature: Earned-trust probes catch the substrate lies before any flow runs
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_minio_readable_via_duckdb"
 
-  @pending
   Scenario: dbt result shape no longer matches the parser's expectations — suite skips with the probe named
     Given the dbt result shape no longer matches the parser's expectations
     When the eject orchestrator runs its earned-trust probes

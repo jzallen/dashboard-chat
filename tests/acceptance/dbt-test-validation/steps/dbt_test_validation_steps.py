@@ -609,12 +609,42 @@ def given_minio_unreadable(capture: HarnessCapture) -> None:
 
 
 @given("the dbt result shape no longer matches the parser's expectations")
-def given_run_results_shape_drift(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: monkeypatch dbtRunner to "
-        "return a dbtRunnerResult whose .result is None or whose "
-        "RunResult objects lack .node.name"
-    )
+def given_run_results_shape_drift(
+    capture: HarnessCapture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Force probe 5 to see a malformed ``dbtRunnerResult`` shape.
+
+    Probe 5 (``probe_run_results_shape``) instantiates ``dbtRunner()`` and
+    calls ``runner.invoke(['parse', ...])``, then reads ``.success`` and
+    ``.result`` off the returned object. Replacing ``invoke`` at the CLASS
+    level with a stub that returns an object missing the ``.result``
+    attribute drives the probe down its
+    ``ok=False, reason="dbtRunnerResult missing .result attribute"`` branch
+    — the canonical "dbt minor-version bump changed the RunResult shape"
+    lie the probe is contracted to catch loudly per ADR-019
+    §"Earned-Trust contract" (probe 5 row).
+
+    Probes 1, 2, 3, 4 are unaffected:
+
+    * Probe 1 imports ``dbtRunner`` and reads the dbt-core package version
+      — it never calls ``.invoke()``.
+    * Probes 2 and 4 do not touch ``dbtRunner`` at all.
+    * Probe 3 dials the export endpoint over ``httpx``.
+
+    ``monkeypatch.setattr`` reverts on function-scope teardown, so the
+    patched ``invoke`` cannot leak into other scenarios.
+    """
+    import dbt.cli.main
+
+    class _ShapeDriftResult:
+        success = True
+        # Deliberately no `.result` attribute — that IS the contract drift.
+
+    def _drifted_invoke(self: Any, args: Any, **kwargs: Any) -> Any:
+        return _ShapeDriftResult()
+
+    monkeypatch.setattr(dbt.cli.main.dbtRunner, "invoke", _drifted_invoke)
 
 
 @when("the eject orchestrator runs its earned-trust probes")
