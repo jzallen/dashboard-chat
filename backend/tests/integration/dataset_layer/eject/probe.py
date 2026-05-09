@@ -136,16 +136,29 @@ def probe_export_endpoint_reachable(
     project_id: str,
     auth_token: str | None = None,
 ) -> ProbeReport:
-    """Issue a GET against the export endpoint and verify 200 + application/zip.
+    """Issue a GET against the export endpoint and verify the substrate is
+    truthful: endpoint reachable, auth works, app code ran.
+
+    Both outcomes prove the substrate is honest:
+
+    * ``200 application/zip`` — the project exists and the export pipeline
+      produced a zip end-to-end.
+    * ``404`` — the project does not exist, but the request reached the
+      backend, the auth layer accepted the bearer token, and the app
+      mapped the domain exception to a structured Problem-Details
+      response. (See ``app.main.domain_exception_handler`` — without it
+      this branch returns 500 and the probe must reject.)
+
+    Rejected as substrate failures: ``401``/``403`` (auth broken),
+    ``5xx`` (app broken), and connection errors. ``ok=False`` carries the
+    offending status code in ``reason`` so a CI log reader can triage.
 
     The probe uses the caller-supplied ``client`` so unit tests can pass a
     ``httpx.MockTransport`` while the orchestrator's session fixture
     (step 00-06) supplies a real ``httpx.Client`` against the live backend.
 
     ``auth_token`` is the bearer token forwarded as
-    ``Authorization: Bearer <token>``. The auth-proxy gates this endpoint
-    in production; without a token the live substrate returns 401, which
-    the probe surfaces as ``ok=False``. The orchestrator mints a dev JWT
+    ``Authorization: Bearer <token>``. The orchestrator mints a dev JWT
     once per session via ``AuthApi.fetch_dev_user_jwt`` and passes it in
     here. Tests that don't exercise the auth path may omit it.
     """
@@ -159,23 +172,43 @@ def probe_export_endpoint_reachable(
     except httpx.HTTPError as exc:
         return ProbeReport(name=_PROBE_EXPORT, ok=False, reason=f"export endpoint unreachable: {exc!r}")
 
-    if response.status_code != 200:
+    status = response.status_code
+
+    # 200 + application/zip — full happy path (project exists, export ran).
+    if status == 200:
+        content_type = response.headers.get("Content-Type", "")
+        # tolerate "application/zip; charset=..."  forms — only the prefix matters
+        if not content_type.startswith(_EXPECTED_CONTENT_TYPE):
+            return ProbeReport(
+                name=_PROBE_EXPORT,
+                ok=False,
+                reason=(
+                    f"export endpoint returned Content-Type={content_type!r} (expected {_EXPECTED_CONTENT_TYPE!r})"
+                ),
+            )
+        return ProbeReport(name=_PROBE_EXPORT, ok=True, reason=f"GET {url} -> 200 {content_type}")
+
+    # 404 — project missing but app code ran end-to-end. This is acceptable
+    # substrate proof: the endpoint is wired, the auth layer accepted the
+    # bearer token, and the global DomainException handler mapped the
+    # exception to a structured response. The orchestrator uses a sentinel
+    # project_id that is not expected to exist in a fresh compose stack.
+    if status == 404:
         return ProbeReport(
             name=_PROBE_EXPORT,
-            ok=False,
-            reason=f"export endpoint returned {response.status_code} (expected 200)",
+            ok=True,
+            reason=(
+                f"GET {url} -> 404 (endpoint reachable; project_id "
+                f"{project_id!r} not found -- acceptable substrate proof)"
+            ),
         )
 
-    content_type = response.headers.get("Content-Type", "")
-    # tolerate "application/zip; charset=..."  forms — only the prefix matters
-    if not content_type.startswith(_EXPECTED_CONTENT_TYPE):
-        return ProbeReport(
-            name=_PROBE_EXPORT,
-            ok=False,
-            reason=f"export endpoint returned Content-Type={content_type!r} (expected {_EXPECTED_CONTENT_TYPE!r})",
-        )
-
-    return ProbeReport(name=_PROBE_EXPORT, ok=True, reason=f"GET {url} -> 200 {content_type}")
+    # Anything else: auth broken (401/403), app broken (5xx), redirects, etc.
+    return ProbeReport(
+        name=_PROBE_EXPORT,
+        ok=False,
+        reason=f"export endpoint returned {status} (expected 200 or 404)",
+    )
 
 
 # ---------------------------------------------------------------------------

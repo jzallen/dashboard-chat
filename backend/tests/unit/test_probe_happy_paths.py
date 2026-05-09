@@ -160,6 +160,50 @@ def test_probe_export_endpoint_reachable_returns_ok_on_200_application_zip() -> 
     assert report.name == "probe_export_endpoint_reachable"
 
 
+def test_probe_export_endpoint_reachable_returns_ok_on_404_with_problem_details_body() -> None:
+    """Given a stub HTTP transport returning 404 with the structured
+    Problem-Details body the global ``DomainException`` handler emits
+    (``{type, title, status, detail}``), the probe accepts that as proof
+    that the endpoint was reachable and the application code ran -- the
+    project_id sentinel just doesn't exist in this substrate.
+
+    Probe semantics: "endpoint reachable + auth works + app code ran."
+    Both 200 (project exists, exported successfully) and 404 (project
+    missing, properly mapped to the domain error) prove this. 401/403
+    (auth broken), 5xx (app broken), and connection errors are still
+    failures."""
+    problem_details_body = (
+        b'{"type": "PROJECT_NOT_FOUND", "title": "Project Not Found", '
+        b'"status": 404, "detail": "Project with ID \'probe\' not found"}'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET", f"probe should issue GET; saw {request.method}"
+        return httpx.Response(
+            404,
+            content=problem_details_body,
+            headers={"Content-Type": "application/problem+json"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport, base_url="http://test-backend.local")
+
+    report = probe_export_endpoint_reachable(
+        client=client,
+        base_url="http://test-backend.local",
+        project_id="probe",
+    )
+
+    assert isinstance(report, ProbeReport)
+    assert report.ok is True, f"expected ok=True for 404 substrate proof; got reason={report.reason!r}"
+    assert report.name == "probe_export_endpoint_reachable"
+    # Reason should make it obvious this was the "reachable but missing" branch
+    # so a CI log reader can distinguish it from a 200 happy path.
+    assert "404" in report.reason or "not found" in report.reason.lower(), (
+        f"expected 404/not-found wording in reason; got {report.reason!r}"
+    )
+
+
 def test_probe_export_endpoint_reachable_forwards_auth_token_when_provided() -> None:
     """Given an ``auth_token`` kwarg, the probe sends ``Authorization: Bearer <token>``
     on the GET request. Without auth, the auth-proxy returns 401 and the
