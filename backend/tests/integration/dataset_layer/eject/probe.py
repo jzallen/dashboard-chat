@@ -134,16 +134,28 @@ def probe_export_endpoint_reachable(
     client: httpx.Client,
     base_url: str,
     project_id: str,
+    auth_token: str | None = None,
 ) -> ProbeReport:
     """Issue a GET against the export endpoint and verify 200 + application/zip.
 
     The probe uses the caller-supplied ``client`` so unit tests can pass a
     ``httpx.MockTransport`` while the orchestrator's session fixture
     (step 00-06) supplies a real ``httpx.Client`` against the live backend.
+
+    ``auth_token`` is the bearer token forwarded as
+    ``Authorization: Bearer <token>``. The auth-proxy gates this endpoint
+    in production; without a token the live substrate returns 401, which
+    the probe surfaces as ``ok=False``. The orchestrator mints a dev JWT
+    once per session via ``AuthApi.fetch_dev_user_jwt`` and passes it in
+    here. Tests that don't exercise the auth path may omit it.
     """
-    url = f"{base_url.rstrip('/')}/api/projects/{project_id}/export"
+    # Path mirrors EjectAndTestOrchestrator._fetch_zip — the probe MUST hit
+    # the same endpoint the per-flow cycle uses, otherwise it can pass
+    # against a substrate that would later 404 on the real eject path.
+    url = f"{base_url.rstrip('/')}/api/projects/{project_id}/export/dbt"
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else None
     try:
-        response = client.get(url)
+        response = client.get(url, headers=headers)
     except httpx.HTTPError as exc:
         return ProbeReport(name=_PROBE_EXPORT, ok=False, reason=f"export endpoint unreachable: {exc!r}")
 
@@ -178,15 +190,23 @@ def probe_minio_readable_via_duckdb(
     bucket: str,
     fixture_key: str,
 ) -> ProbeReport:
-    """Open a fresh DuckDB connection and ``read_parquet('s3://<bucket>/<key>')``.
+    """Bootstrap a canary parquet via DuckDB httpfs ``COPY``, then read it back.
 
     ``seeded_profile_path`` is the ``profiles.yml`` produced by
     :class:`tests.integration.dataset_layer.eject.seeder.DuckDBProfileSeeder`
     in step 00-02. The probe parses the s3 settings out of the profile,
-    configures DuckDB's httpfs extension with them, and runs ``SELECT
-    count(*) FROM read_parquet(...)``. Mocking httpfs would test our
-    wrapper, not the substrate; this probe deliberately exercises the
-    real S3 read.
+    configures DuckDB's httpfs extension with them, then:
+
+    1. Writes ``s3://<bucket>/<fixture_key>`` with a single canary row
+       (``COPY (SELECT 1 AS canary) TO ... (FORMAT PARQUET)``).
+    2. Reads it back via ``SELECT count(*) FROM read_parquet(...)`` and
+       verifies the count is 1.
+
+    Both write AND read must succeed for ``ok=True``. Approach A from
+    the dbt-test-validation Phase-0 hotfix: assuming a pre-existing
+    fixture file is fragile (MinIO starts empty); bootstrapping at probe
+    time exercises the full round-trip the eject-then-test flow needs.
+    Mocking httpfs would test our wrapper, not the substrate.
     """
     try:
         import duckdb
@@ -214,6 +234,16 @@ def probe_minio_readable_via_duckdb(
             conn.execute(f"SET s3_secret_access_key='{s3_config['secret_key']}'")
             conn.execute("SET s3_use_ssl=false")
             conn.execute("SET s3_url_style='path'")
+            # Bootstrap: write a 1-row canary parquet. OVERWRITE makes the
+            # probe idempotent across repeated session-fixture runs.
+            try:
+                conn.execute(f"COPY (SELECT 1 AS canary) TO '{s3_uri}' (FORMAT PARQUET, OVERWRITE_OR_IGNORE)")
+            except Exception as write_exc:
+                return ProbeReport(
+                    name=_PROBE_MINIO,
+                    ok=False,
+                    reason=f"DuckDB could not write canary to {s3_uri}: {write_exc!r}",
+                )
             row = conn.execute(f"SELECT count(*) FROM read_parquet('{s3_uri}')").fetchone()
         finally:
             conn.close()
@@ -225,7 +255,13 @@ def probe_minio_readable_via_duckdb(
         )
 
     count = row[0] if row else 0
-    return ProbeReport(name=_PROBE_MINIO, ok=True, reason=f"DuckDB read {s3_uri} ok ({count} rows)")
+    if count != 1:
+        return ProbeReport(
+            name=_PROBE_MINIO,
+            ok=False,
+            reason=f"DuckDB read {s3_uri} returned {count} rows (expected 1 canary row)",
+        )
+    return ProbeReport(name=_PROBE_MINIO, ok=True, reason=f"DuckDB write+read {s3_uri} ok (1 canary row)")
 
 
 def _read_s3_config(profile_path: Path) -> dict[str, str]:

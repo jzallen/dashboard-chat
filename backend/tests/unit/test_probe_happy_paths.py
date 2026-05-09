@@ -160,6 +160,37 @@ def test_probe_export_endpoint_reachable_returns_ok_on_200_application_zip() -> 
     assert report.name == "probe_export_endpoint_reachable"
 
 
+def test_probe_export_endpoint_reachable_forwards_auth_token_when_provided() -> None:
+    """Given an ``auth_token`` kwarg, the probe sends ``Authorization: Bearer <token>``
+    on the GET request. Without auth, the auth-proxy returns 401 and the
+    probe reports ``ok=False`` — this test pins the behaviour that the
+    orchestrator's lazily-minted dev JWT actually reaches the wire."""
+    seen_authorization: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_authorization.append(request.headers.get("Authorization"))
+        return httpx.Response(
+            200,
+            content=_build_zip_bytes(),
+            headers={"Content-Type": "application/zip"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport, base_url="http://test-backend.local")
+
+    report = probe_export_endpoint_reachable(
+        client=client,
+        base_url="http://test-backend.local",
+        project_id="proj-123",
+        auth_token="dev-jwt-abc",
+    )
+
+    assert report.ok is True, f"expected ok=True; got reason={report.reason!r}"
+    assert seen_authorization == ["Bearer dev-jwt-abc"], (
+        f"expected single GET with Bearer header; saw {seen_authorization!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Behavior 4: probe_minio_readable_via_duckdb — real DuckDB httpfs
 # ---------------------------------------------------------------------------

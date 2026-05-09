@@ -29,6 +29,7 @@ import ast
 import io
 import textwrap
 import zipfile
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import httpx
@@ -109,6 +110,23 @@ def minio_creds() -> dict[str, str]:
 
 
 @pytest.fixture
+def stub_auth_minter() -> Callable[[str], Awaitable[str]]:
+    """No-op auth minter for unit tests: returns a fixed dev token without HTTP.
+
+    The orchestrator's ``_ensure_auth_token`` calls this instead of
+    ``AuthApi.fetch_dev_user_jwt`` so the unit tests don't need a live
+    auth-proxy on the wire. The integration path (acceptance suite's
+    ``eject_orchestrator`` fixture) leaves the kwarg unset so the real
+    minter runs against the compose stack.
+    """
+
+    async def _mint(_base_url: str) -> str:
+        return "unit-test-stub-jwt"
+
+    return _mint
+
+
+@pytest.fixture
 def export_zip_transport(fixture_zip_bytes: bytes) -> httpx.MockTransport:
     """httpx MockTransport returning 200/application/zip with the fixture zip."""
 
@@ -155,6 +173,7 @@ async def test_probe_aggregates_5_individual_probes_into_summary(
     export_zip_transport: httpx.MockTransport,
     minio_creds: dict[str, str],
     patched_substrate_probes: None,
+    stub_auth_minter: Callable[[str], Awaitable[str]],
     tmp_path: Path,
 ) -> None:
     """probe() runs all 5 earned-trust probes and returns an aggregate
@@ -164,6 +183,7 @@ async def test_probe_aggregates_5_individual_probes_into_summary(
             http_client=http_client,
             base_url="http://test-backend.local",
             minio_creds=minio_creds,
+            auth_token_minter=stub_auth_minter,
         )
 
         summary = await orch.probe(tmp_path=tmp_path)
@@ -195,6 +215,7 @@ async def test_probe_is_cached_idempotent(
     export_zip_transport: httpx.MockTransport,
     minio_creds: dict[str, str],
     patched_substrate_probes: None,
+    stub_auth_minter: Callable[[str], Awaitable[str]],
     tmp_path: Path,
 ) -> None:
     """ADR-018 §4 — the session fixture invokes probe() exactly once.
@@ -204,6 +225,7 @@ async def test_probe_is_cached_idempotent(
             http_client=http_client,
             base_url="http://test-backend.local",
             minio_creds=minio_creds,
+            auth_token_minter=stub_auth_minter,
         )
 
         first = await orch.probe(tmp_path=tmp_path)
@@ -224,6 +246,7 @@ async def test_probe_is_cached_idempotent(
 async def test_eject_and_test_happy_path_returns_eject_test_report(
     export_zip_transport: httpx.MockTransport,
     minio_creds: dict[str, str],
+    stub_auth_minter: Callable[[str], Awaitable[str]],
     tmp_path: Path,
 ) -> None:
     """eject_and_test fetches zip -> unzips -> seeds profile -> runs dbt
@@ -235,6 +258,7 @@ async def test_eject_and_test_happy_path_returns_eject_test_report(
             http_client=http_client,
             base_url="http://test-backend.local",
             minio_creds=minio_creds,
+            auth_token_minter=stub_auth_minter,
         )
 
         report = await orch.eject_and_test(project_id="proj-001", tmp_path=tmp_path)

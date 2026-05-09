@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import textwrap
 import zipfile
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -110,12 +111,23 @@ class EjectAndTestOrchestrator:
         base_url: str,
         minio_creds: dict[str, str],
         project_id: str | None = None,
+        auth_token_minter: Callable[[str], Awaitable[str]] | None = None,
     ) -> None:
         self._http_client = http_client
         self._base_url = base_url.rstrip("/")
         self._minio_creds = minio_creds
         self._project_id = project_id
         self._probe_cache: ProbeSummary | None = None
+        # Auth state — lazily minted on first probe() call. The auth-proxy
+        # gates /api/projects/{id}/export/dbt; the orchestrator owns the
+        # session-lived dev JWT so the per-flow eject_and_test path and
+        # the earned-trust probe can both authenticate the same way.
+        # ``auth_token_minter`` is injectable for tests that don't have a
+        # live auth-proxy on the wire (the default minter calls the real
+        # ``AuthApi.fetch_dev_user_jwt``). Tests pass an async lambda that
+        # returns a stub token.
+        self._auth_token: str | None = None
+        self._auth_token_minter = auth_token_minter
         self._seeder = DuckDBProfileSeeder()
         self._runner = DbtRunner()
         self._parser = RunResultsParser()
@@ -139,6 +151,11 @@ class EjectAndTestOrchestrator:
         """
         if self._probe_cache is not None:
             return self._probe_cache
+
+        # Mint a dev JWT once per session so the export probe (and the
+        # downstream eject_and_test flow) can authenticate against the
+        # auth-proxy. Cached on self for reuse by _fetch_zip below.
+        await self._ensure_auth_token()
 
         reports: list[ProbeReport] = []
 
@@ -167,6 +184,30 @@ class EjectAndTestOrchestrator:
         self._probe_cache = summary
         return summary
 
+    async def _ensure_auth_token(self) -> str:
+        """Mint a dev JWT against the auth-proxy callback endpoint, once.
+
+        The default minter is ``AuthApi.fetch_dev_user_jwt`` (deferred-imported
+        from ``harness.py`` to keep this module decoupled from the harness's
+        heavyweight imports). Tests can inject ``auth_token_minter`` via
+        the constructor to short-circuit the real HTTP call when no
+        auth-proxy is on the wire.
+
+        Cached on ``self._auth_token`` so the export probe and the per-flow
+        ``_fetch_zip`` share the same session JWT.
+        """
+        if self._auth_token is not None:
+            return self._auth_token
+        if self._auth_token_minter is not None:
+            self._auth_token = await self._auth_token_minter(self._base_url)
+            return self._auth_token
+        # Local import — keeps test-collection lightweight and avoids a
+        # circular dependency through harness.py at module load.
+        from tests.integration.dataset_layer.harness import fetch_dev_user_jwt
+
+        self._auth_token = await fetch_dev_user_jwt(self._base_url)
+        return self._auth_token
+
     def _invoke_export_probe(self) -> ProbeReport:
         # Use the same project_id the orchestrator was wired with when
         # available; otherwise fall back to a sentinel that exercises the
@@ -177,6 +218,7 @@ class EjectAndTestOrchestrator:
                 client=sync_client,
                 base_url=self._base_url,
                 project_id=probe_project_id,
+                auth_token=self._auth_token,
             )
 
     def _invoke_minio_probe(self, tmp_path: Path) -> ProbeReport:
@@ -218,6 +260,9 @@ class EjectAndTestOrchestrator:
             4. Run dbt ``deps`` -> ``build`` -> ``test`` via DbtRunner
             5. Parse the dbtRunnerResult into an EjectTestReport
         """
+        # Make sure we have a session JWT — the per-flow path may be
+        # invoked in a test that doesn't go through ``probe()`` first.
+        await self._ensure_auth_token()
         zip_bytes = await self._fetch_zip(project_id)
         project_dir = self._unzip_project(zip_bytes, tmp_path / project_id)
         self._verify_expected_tree(project_dir)
@@ -227,7 +272,8 @@ class EjectAndTestOrchestrator:
 
     async def _fetch_zip(self, project_id: str) -> bytes:
         url = f"{self._base_url}/api/projects/{project_id}/export/dbt"
-        response = await self._http_client.get(url)
+        headers = {"Authorization": f"Bearer {self._auth_token}"} if self._auth_token else None
+        response = await self._http_client.get(url, headers=headers)
         response.raise_for_status()
         content_type = response.headers.get("Content-Type", "")
         if not content_type.startswith("application/zip"):

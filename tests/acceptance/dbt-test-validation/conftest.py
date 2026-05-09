@@ -122,11 +122,17 @@ def _read_minio_creds_from_env() -> dict[str, str]:
     contributor running ``docker compose up -d`` against the canonical
     .env never has to hand-export credentials.
     """
+    # Default bucket matches the canonical name in ``backend/.env.example``
+    # (``STORAGE_BUCKET=dashboard-chat.datalake``) — that is the bucket the
+    # backend's compose stack actually creates and writes uploads into.
+    # Earlier drafts defaulted to ``dashboard-chat`` which doesn't exist in
+    # the running compose stack, causing the MinIO probe to 404 with
+    # NoSuchBucket. Override with ``S3_BUCKET=...`` for non-default deploys.
     return {
         "endpoint_url": os.environ.get("S3_ENDPOINT", "http://localhost:9000"),
         "access_key": os.environ.get("S3_ACCESS_KEY_ID", "minioadmin"),
         "secret_key": os.environ.get("S3_SECRET_ACCESS_KEY", "minioadmin"),
-        "bucket": os.environ.get("S3_BUCKET", "dashboard-chat"),
+        "bucket": os.environ.get("S3_BUCKET", "dashboard-chat.datalake"),
         "region": os.environ.get("S3_REGION", "us-east-1"),
     }
 
