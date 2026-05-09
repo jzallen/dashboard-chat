@@ -529,11 +529,26 @@ def given_dbt_runner_broken(
 
 
 @given("the dbt-duckdb adapter cannot be loaded")
-def given_dbt_duckdb_broken(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: monkeypatch "
-        "dbt.adapters.duckdb to raise ImportError on import"
-    )
+def given_dbt_duckdb_broken(
+    capture: HarnessCapture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Force the dbt.adapters.duckdb import to fail.
+
+    The probe does ``from dbt.adapters import duckdb as _duckdb_adapter``;
+    Python's import system checks ``sys.modules['dbt.adapters.duckdb']``
+    before re-importing. Setting that key to ``None`` causes the import
+    to raise ``ImportError`` (Python's documented behavior for None
+    entries in sys.modules). Removing the cached attribute on
+    ``dbt.adapters`` covers the case where the package was already
+    imported and bound the submodule attribute. monkeypatch reverts
+    both at function teardown — no leak.
+    """
+    import sys
+
+    import dbt.adapters
+
+    monkeypatch.setitem(sys.modules, "dbt.adapters.duckdb", None)
+    monkeypatch.delattr(dbt.adapters, "duckdb", raising=False)
 
 
 @given("the project export endpoint is unreachable")

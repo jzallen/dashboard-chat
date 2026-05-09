@@ -95,3 +95,6 @@ hooks/
 .runtime/
 .dolt-data/
 rigs.json
+
+# DES Stop hook cwd-relative path workaround (per Step 01-01 recovery report)
+tests/acceptance/dbt-test-validation/docs/

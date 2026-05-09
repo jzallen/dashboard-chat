@@ -24,7 +24,6 @@ Feature: Earned-trust probes catch the substrate lies before any flow runs
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_dbt_runner_importable"
 
-  @pending
   Scenario: dbt-duckdb adapter cannot be loaded — suite skips with the probe named
     Given the dbt-duckdb adapter cannot be loaded
     When the eject orchestrator runs its earned-trust probes
