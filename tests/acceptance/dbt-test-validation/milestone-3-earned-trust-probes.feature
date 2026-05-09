@@ -29,7 +29,6 @@ Feature: Earned-trust probes catch the substrate lies before any flow runs
     When the eject orchestrator runs its earned-trust probes
     Then the suite skips with the failing probe named "probe_dbt_duckdb_loadable"
 
-  @pending
   Scenario: project export endpoint is unreachable — suite skips with the probe named
     Given the project export endpoint is unreachable
     When the eject orchestrator runs its earned-trust probes

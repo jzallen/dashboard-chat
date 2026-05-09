@@ -553,11 +553,28 @@ def given_dbt_duckdb_broken(
 
 @given("the project export endpoint is unreachable")
 def given_export_endpoint_broken(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: monkeypatch the "
-        "ProjectExporter adapter to receive a 5xx / connection-refused "
-        "from a throwaway probe project"
-    )
+    """Point the probing orchestrator at an unbound TCP port so probe 3
+    hits ``httpx.ConnectError`` and reports ok=False with the probe NAMED
+    in the reason (ADR-019 Earned-Trust contract, probe 3 row).
+
+    127.0.0.1:1 is the canonical "definitely-unreachable port" pattern:
+    privileged-and-typically-unbound, no DNS lookup, ECONNREFUSED is
+    immediate. The probe catches the resulting ``httpx.HTTPError`` and
+    emits a structured ``ProbeReport(ok=False, name="probe_export_endpoint_reachable", ...)``.
+
+    The auth-token minter is stubbed because the orchestrator's
+    ``_ensure_auth_token`` defaults to dialing the SAME ``base_url`` (now
+    pointed at the unbound port). Stubbing it ensures only probe 3 sees
+    the bad URL — probes 1, 2, 4, 5 stay on healthy substrate so they
+    can each fail/pass for their own probe-specific reasons rather than
+    all riding on the auth-mint failure.
+    """
+    capture.extras["override_base_url"] = "http://127.0.0.1:1"
+
+    async def _stub_token(_url: str) -> str:
+        return "stub-token-for-unreachable-probe-3"
+
+    capture.extras["override_auth_minter"] = _stub_token
 
 
 @given("the datalake cannot be read through the seeded profile")
