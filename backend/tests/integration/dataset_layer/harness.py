@@ -48,6 +48,14 @@ from typing import Any, NewType
 import httpx
 import pandas as pd
 
+# ADR-018, Option β — per-flow eject + per-turn validate are stitched into
+# the harness facade in step 00-08. Module-level imports keep the symbols
+# monkeypatchable from wiring tests; the actual session-resource (the
+# orchestrator) is constructed by the acceptance suite's session fixture
+# (composition root invariant — wire then probe then use).
+from tests.integration.dataset_layer.eject.protocols import EjectOrchestratorProtocol
+from tests.integration.dataset_layer.validation.pandera_validator import PanderaValidator
+
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
@@ -773,6 +781,7 @@ class DatasetLayerHarness:
         pat: str | None = None,
         timeout_seconds: float = 60.0,
         rephrase: Callable[[str, int], str] | None = None,
+        eject_orchestrator: EjectOrchestratorProtocol | None = None,
     ):
         self._auth_proxy_url = auth_proxy_url.rstrip("/")
         self._agent_url = agent_url.rstrip("/")
@@ -782,6 +791,12 @@ class DatasetLayerHarness:
         self._pat = pat
         self._timeout = timeout_seconds
         self._rephrase = rephrase or _default_rephrase
+        # Composition root (ADR-018 §11): the eject orchestrator is wired
+        # by the acceptance suite's session-scoped ``eject_orchestrator``
+        # fixture and injected here. Per-test harness instances share the
+        # same probed orchestrator. ``None`` means callers cannot invoke
+        # ``eject_and_test`` (the method raises a clear RuntimeError).
+        self._eject_orchestrator = eject_orchestrator
         self._client: httpx.AsyncClient | None = None
         # Wrappers built lazily in __aenter__ once the client exists (design §2.2).
         self._projects: ProjectsApi | None = None
@@ -929,40 +944,72 @@ class DatasetLayerHarness:
         return bool(s.eq(s.str.strip()).all())
 
     # ----- dbt-test-validation extension (ADR-018, Option β) ----------------
-    # RED scaffolds (DISTILL Mandate 7). DELIVER wires these to the
-    # EjectAndTestOrchestrator (eject_and_test) and PanderaValidator
-    # (validate_after) under backend/tests/integration/dataset_layer/.
-    # Each method raises AssertionError so failing tests classify as RED,
-    # not BROKEN, in the Red Gate Snapshot.
+    # Step 00-08 wires these two methods to the eject-and-test components
+    # delivered in steps 00-02..00-07. ``eject_and_test`` delegates to the
+    # session-scoped ``EjectAndTestOrchestrator`` (composition root injected
+    # via __init__ from the acceptance suite's ``eject_orchestrator``
+    # fixture). ``validate_after`` runs the per-turn ``PanderaValidator``
+    # against the current ``TableState.df`` for the supplied dataset.
 
-    async def eject_and_test(self, project_id: str | None = None) -> Any:
+    async def eject_and_test(
+        self,
+        project_id: str | None = None,
+        *,
+        tmp_path: Path | None = None,
+    ) -> Any:
         """Per-flow eject-and-test cycle — drives the orchestrator end-to-end.
 
-        Fetches the project export, seeds a DuckDB profile against the
-        running compose stack's MinIO, runs `dbtRunner.invoke()` for
-        deps/build/test, parses the dbtRunnerResult into an
-        EjectTestReport. ADR-018, Option β.
+        Delegates to the injected ``EjectAndTestOrchestrator``: fetches the
+        project export, seeds a DuckDB profile against the running compose
+        stack's MinIO, runs ``dbtRunner.invoke()`` for deps/build/test, and
+        parses the dbtRunnerResult into an ``EjectTestReport``.
 
-        Returns:
-            EjectTestReport with status='pass'|'fail', models_built,
-            tests_run, failures.
+        ``project_id`` defaults to the harness's currently-bound project so
+        the WS scenario can call ``await harness.eject_and_test()`` without
+        re-supplying the ULID it just created. ``tmp_path`` is REQUIRED —
+        the orchestrator's contract (orchestrator.py docstring) is that the
+        caller controls the tmpdir lifecycle. The acceptance fixture passes
+        a ``tmp_path_factory.mktemp(...)`` allocation; ad-hoc callers may
+        pass a pytest ``tmp_path`` fixture value.
+
+        Raises:
+            RuntimeError: if no ``eject_orchestrator`` was injected at
+                construction (composition-root violation), or if no
+                ``tmp_path`` is supplied.
         """
-        raise AssertionError("Not yet implemented — RED scaffold")
+        if self._eject_orchestrator is None:
+            raise RuntimeError(
+                "DatasetLayerHarness.eject_and_test requires an "
+                "eject_orchestrator to be injected via __init__. The "
+                "acceptance suite's session-scoped `eject_orchestrator` "
+                "fixture is the composition root (ADR-018 §11); see "
+                "tests/acceptance/dbt-test-validation/conftest.py."
+            )
+        if tmp_path is None:
+            raise RuntimeError(
+                "DatasetLayerHarness.eject_and_test requires a `tmp_path` "
+                "(filesystem lifecycle is caller-controlled per orchestrator.py)."
+            )
+        target_project = project_id or self._project_id
+        if not target_project:
+            raise RuntimeError("eject_and_test: no project_id; pass one or initialize the harness with one")
+        return await self._eject_orchestrator.eject_and_test(target_project, tmp_path)
 
     async def validate_after(self, dataset_id: str, schema: Any) -> Any:
         """Per-turn shape validation against a Pandera schema.
 
-        Fetches the current TableState for `dataset_id`, validates the
-        DataFrame against `schema` with lazy=True (Pandera collects all
+        Fetches the current TableState for ``dataset_id``, validates the
+        DataFrame against ``schema`` with lazy=True (Pandera collects all
         violations rather than failing fast), and returns a
-        ValidationResult. Sub-200ms acceptance budget; sub-100ms typical
+        ``ValidationResult``. Sub-200ms acceptance budget; sub-100ms typical
         (design.md §6 OQ4). ADR-018, Option β.
 
         Returns:
             ValidationResult with status='pass'|'fail' and structured
             errors (column-level diff for retry-with-rephrase context).
         """
-        raise AssertionError("Not yet implemented — RED scaffold")
+        state = await self.get_table_state(dataset_id)
+        return PanderaValidator().validate(state.df, schema)
 
     # ----- replay + idempotency surfaces (G.2) ------------------------------
 
