@@ -128,3 +128,46 @@ Phase 1 produced no deferred upstream issues — five M3 scenarios green, behavi
 | 5 | `5b59de1` | feat(test/dbt-test-validation): unpend M3 probe-5 scenario via dbtRunner shape drift |
 | 6 | `1954f49` | feat(test/dbt-test-validation): add behavioral CI gold-test for Earned-Trust contract |
 | 7 | `<this commit>` | docs(dbt-test-validation): record DWD-10 + close Atlas minor findings #1 and #2 |
+
+---
+
+## Phase 3 commit trail
+
+Phase 3 lights up the per-turn Pandera validation layer (ADR-019 Option β's
+fast-feedback half). Three atomic commits, three TDD cycles, no deferred
+upstream issues; backend gate stable at 1328 passed (was 1320 — 8 new unit
+tests across the validator/schema/harness layers), acceptance suite collects
+13 scenarios (was 10) with the M2 trio joining the suite under the same
+Strategy-C skip-when-unavailable contract.
+
+| # | Commit | Purpose |
+|---|---|---|
+| 1 | `ea84b60` | feat(test/validation): add timing-budget guard + tighten OrdersStaging quantity range |
+| 2 | `623dc81` | feat(test/dataset-layer): chat_turn validate_with hook engages AC1.5 rephrase on Pandera failure |
+| 3 | `01900dd` | feat(test/dbt-test-validation): unpend M2 validate-after scenarios with stateful Pandera fixture |
+
+**What landed:**
+
+- `ValidationResult.over_budget` + `PanderaValidator.validate(..., budget_ms=200.0)`
+  — soft signal so callers can flag a budget breach in CI without failing
+  the validation outright. Status semantics stay timing-independent.
+- `OrdersStaging.quantity` tightens from one-sided `>= 0` to two-sided
+  `in_range(1, 10000)`. Mirrors the `accepted_range` dbt test the
+  schema.yml exporter emits — keeps the two SSOTs (Pandera schema +
+  exported schema.yml) in lockstep.
+- `DatasetLayerHarness.chat_turn(validate_with=schema)` — strictly-additive
+  hook that runs `validate_after` after each successful turn and raises
+  `AssertionError` on validation fail (carrying offending column names +
+  the structured per-turn errors diff). Routes through the existing AC1.5
+  rephrase loop; the exhausted-retries wrapper propagates the diff to the
+  final raise.
+- Milestone-2 step glue (S1 + S2 + S3) goes from `pytest.fail` scaffolds
+  to real bodies. Substrate-side `monkeypatch` on `PanderaValidator.validate`
+  drives the deterministic pass/fail/exhaustion path; the driving port stays
+  `harness.chat_turn`/`harness.validate_after` (no internal-class testing).
+- `@pending` lifted from the milestone-2 Feature header.
+
+**Deferred items:** none. Phase 3 closes the validate-after layer's
+acceptance scope; future milestones (M4 protocol invariants, M5 failure
+modes) are independent.
+
