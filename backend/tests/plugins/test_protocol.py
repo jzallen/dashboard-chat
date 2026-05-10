@@ -43,11 +43,17 @@ class TestMultiProcessingResult:
         with pytest.raises(ValueError, match="item 1 is unnamed"):
             MultiProcessingResult(results=results)
 
-    def test_single_unnamed_item_raises(self):
-        """MultiProcessingResult should reject a single unnamed item."""
+    def test_single_unnamed_item_is_allowed(self):
+        """A single unnamed item is the degenerate canonical wrapper (ADR-022 DWD-3).
+
+        The CSV fallback in ``UploadPluginDispatcher`` wraps a nameless
+        ``ProcessingResult`` so the caller can iterate uniformly; the
+        validator only enforces ``name`` when ``len(results) > 1``.
+        """
         results = [ProcessingResult(df=pd.DataFrame({"id": [1]}))]
-        with pytest.raises(ValueError, match="item 0 is unnamed"):
-            MultiProcessingResult(results=results)
+        multi = MultiProcessingResult(results=results)
+        assert len(multi.results) == 1
+        assert multi.results[0].name is None
 
 
 class TestProcessingResultNameField:
