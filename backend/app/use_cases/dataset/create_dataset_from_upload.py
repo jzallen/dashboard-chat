@@ -1,9 +1,8 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from returns.result import Result
 
 from app.models.dataset import Dataset
-from app.plugins import PluginRegistry
 from app.plugins.protocol import ProcessingResult
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
@@ -54,7 +53,7 @@ async def create_dataset_from_upload(
     upload_id: str,
     partition_fields: list[str] | None = None,
     description: str | None = None,
-    plugin_registry: PluginRegistry | None = None,
+    plugin_registry: Any = None,
     choices: dict[str, str] | None = None,
     *,
     repositories: "RepositoryContainer",
