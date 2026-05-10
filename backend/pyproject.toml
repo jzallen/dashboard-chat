@@ -28,6 +28,10 @@ dependencies = [
     "ibis-framework==9.5.0",
     "sqlglot>=25.0.0",
     "pyarrow==17.0.0",
+    # Pinned because ibis-framework 9.5's duckdb backend imports
+    # pyarrow_hotfix unconditionally at module load (CVE-2023-47248
+    # mitigation), and pyarrow 17 no longer auto-installs it.
+    "pyarrow-hotfix>=0.4",
     # HTTP client
     "httpx>=0.26.0",
     # Auth
