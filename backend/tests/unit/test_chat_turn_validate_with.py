@@ -45,7 +45,6 @@ from tests.integration.dataset_layer.validation.pandera_validator import (
     ValidationResult,
 )
 
-
 _TRIVIAL_SCHEMA = pa.DataFrameSchema(columns={"x": pa.Column(int)})
 
 
