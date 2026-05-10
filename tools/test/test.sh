@@ -10,7 +10,9 @@
 #   ./tools/test/test.sh --backend                # standalone (no Bazel daemon)
 #
 # Selectors:
-#   --backend       cd backend && uv run pytest -x --tb=short [--ignore=tests/integration]
+#   --backend       cd backend && (ruff check + ruff format --check) then
+#                   pytest -x --tb=short [--ignore=tests/integration]
+#                   (lint runs first; tests skip if lint fails)
 #   --ui            cd frontend && npx vitest run
 #   --agent         npm run test:agent
 #   --all           shorthand for --backend --ui --agent
@@ -59,12 +61,20 @@ fi
 rc=0
 
 if [ $backend -eq 1 ]; then
-  echo "▶ backend"
-  ignore="--ignore=tests/integration"
-  if [ $integration -eq 1 ]; then
-    ignore=""
+  # Lint first — fail-fast. CI runs `bazel test //... --test_tag_filters=lint`
+  # which invokes ruff against the whole backend; gating on the same checks
+  # here keeps the merge-queue and CI in lock-step (otherwise lint failures
+  # slip through the queue and break main as discovered after Phase 3).
+  echo "▶ backend lint"
+  ( cd backend && uv run ruff check . && uv run ruff format --check . ) || rc=$?
+  if [ $rc -eq 0 ]; then
+    echo "▶ backend tests"
+    ignore="--ignore=tests/integration"
+    if [ $integration -eq 1 ]; then
+      ignore=""
+    fi
+    ( cd backend && uv run pytest -x --tb=short $ignore ) || rc=$?
   fi
-  ( cd backend && uv run pytest -x --tb=short $ignore ) || rc=$?
 fi
 
 if [ $ui -eq 1 ] && [ $rc -eq 0 ]; then
