@@ -54,7 +54,10 @@ import pandas as pd
 # orchestrator) is constructed by the acceptance suite's session fixture
 # (composition root invariant — wire then probe then use).
 from tests.integration.dataset_layer.eject.protocols import EjectOrchestratorProtocol
-from tests.integration.dataset_layer.validation.pandera_validator import PanderaValidator
+from tests.integration.dataset_layer.validation.pandera_validator import (
+    PanderaValidator,
+    serialize_diff,
+)
 
 # ---------------------------------------------------------------------------
 # Types
@@ -85,6 +88,56 @@ class ChatEventTrace:
     def turn_done(self) -> dict[str, Any] | None:
         done = self.of_type("turn_done")
         return done[-1] if done else None
+
+
+class StructuredRetryExhaustion(AssertionError):
+    """Raised by ``chat_turn`` when the AC1.5 retry-with-rephrase budget is
+    exhausted (Phase 5, ADR-019 Option β failure-mode coverage).
+
+    Subclasses ``AssertionError`` so existing call sites that catch
+    AssertionError keep working — pre-Phase-5 callers see the formatted
+    message via ``str(exc)`` exactly as before. New Phase-5 callers can
+    introspect the structured fields to drive triage / dashboards / etc.
+
+    Attributes
+    ----------
+    prompt:
+        The original prompt the chat turn was driving (rephrases applied
+        on retry are derived from this).
+    attempts:
+        How many ``send_turn`` attempts were made before exhaustion.
+    validation_diff:
+        Structured per-turn diff from the LAST validation failure (parsed
+        via ``serialize_diff`` from the last ``ValidationResult``). Empty
+        list when no validation failure was the trigger (e.g. user-supplied
+        ``post_turn_check`` failed without a Pandera validation engaging).
+    sse_transcript:
+        ChatEvents from the LAST attempt's trace. Surfaces the
+        agent's actual output for post-mortem.
+    """
+
+    def __init__(
+        self,
+        *,
+        prompt: str,
+        attempts: int,
+        validation_diff: list[dict[str, Any]] | None = None,
+        sse_transcript: list[dict[str, Any]] | None = None,
+        underlying: BaseException | None = None,
+    ) -> None:
+        self.prompt = prompt
+        self.attempts = attempts
+        self.validation_diff = list(validation_diff) if validation_diff else []
+        self.sse_transcript = list(sse_transcript) if sse_transcript else []
+        self.underlying = underlying
+        event_types = [e.get("type") for e in self.sse_transcript]
+        message = (
+            f"chat_turn failed after {attempts} attempts (prompt={prompt!r}): "
+            f"{underlying}\n"
+            f"validation diff: {self.validation_diff!r}\n"
+            f"last event types: {event_types!r}"
+        )
+        super().__init__(message)
 
 
 @dataclasses.dataclass
@@ -899,10 +952,15 @@ class DatasetLayerHarness:
         # and any user-supplied post_turn_check (runs only when validation
         # passes). The closure captures dataset_id + validate_with so each
         # attempt re-fetches the table state via validate_after.
+        # ``last_validation_diff`` is a one-element holder the validation
+        # closure appends to on each FAIL — chat_turn reads it to populate
+        # ``StructuredRetryExhaustion.validation_diff`` on exhaustion.
+        last_validation_diff: list[list[dict[str, Any]]] = []
         effective_check = self._compose_post_turn_check(
             dataset_id=dataset_id,
             validate_with=validate_with,
             user_check=post_turn_check,
+            diff_holder=last_validation_diff,
         )
 
         attempts = max_retries + 1
@@ -933,9 +991,12 @@ class DatasetLayerHarness:
                 if attempt + 1 < attempts:
                     current = self._rephrase(prompt, attempt + 1)
                     continue
-                raise AssertionError(
-                    f"chat_turn failed after {attempts} attempts (prompt={prompt!r}): {e}\n"
-                    f"Last event types: {[e.get('type') for e in trace.events]!r}",
+                raise StructuredRetryExhaustion(
+                    prompt=prompt,
+                    attempts=attempts,
+                    validation_diff=last_validation_diff[-1] if last_validation_diff else None,
+                    sse_transcript=trace.events,
+                    underlying=e,
                 ) from e
         # Unreachable but keeps the type checker honest:
         assert last_error is not None
@@ -947,6 +1008,7 @@ class DatasetLayerHarness:
         dataset_id: str | None,
         validate_with: Any | None,
         user_check: Callable[[ChatEventTrace], Awaitable[None] | None] | None,
+        diff_holder: list[list[dict[str, Any]]] | None = None,
     ) -> Callable[[ChatEventTrace], Awaitable[None] | None] | None:
         """Compose validate_with + user_check into a single post-turn closure.
 
@@ -957,6 +1019,11 @@ class DatasetLayerHarness:
         the structured diff (the per-turn errors list), so the outer
         chat_turn exhaustion wrapper propagates that context. The user
         check runs only after validation passes.
+
+        ``diff_holder`` is a one-element-list capture container the
+        validation closure appends to on each FAIL. ``chat_turn`` uses
+        the latest entry to populate
+        ``StructuredRetryExhaustion.validation_diff`` on exhaustion.
         """
         if validate_with is None:
             return user_check
@@ -974,6 +1041,8 @@ class DatasetLayerHarness:
                 # the exhausted-retries wrapper carries it through.
                 columns = sorted({err.split(":", 1)[0] for err in errors if ":" in err})
                 column_str = ", ".join(columns) if columns else "<unknown>"
+                if diff_holder is not None:
+                    diff_holder.append(serialize_diff(result))
                 raise AssertionError(
                     f"per-turn validation failed for column(s) {column_str}; diff: {errors!r}",
                 )

@@ -38,6 +38,7 @@ import pytest
 from tests.integration.dataset_layer.harness import (
     ChatEventTrace,
     DatasetLayerHarness,
+    StructuredRetryExhaustion,
     TableState,
 )
 from tests.integration.dataset_layer.validation import pandera_validator as pv_module
@@ -195,3 +196,110 @@ class TestChatTurnValidateWithHook:
         )
         # And three send_turn attempts were made before exhaustion.
         assert send_turn_mock.await_count == 3
+
+
+class TestStructuredRetryExhaustion:
+    """Phase 5: chat_turn raises ``StructuredRetryExhaustion`` (a subclass
+    of AssertionError) on retry-budget exhaustion, carrying the per-turn
+    validation diff payload + the SSE event transcript.
+
+    The structured exception lets callers programmatically introspect the
+    failure rather than parsing the formatted message — e.g. the
+    milestone-5 ``then_failure_includes_diff`` binding observes
+    ``str(exc)`` today, but the structured ``.validation_diff`` attribute
+    is the spec contract per the Phase 5 roadmap.
+    """
+
+    def test_exhaustion_raises_structured_subclass_of_assertion_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Subclass relationship preserves the existing M2 scenario 3
+        ``pytest.raises(AssertionError)`` contract.
+        """
+        harness, _, _, _ = _make_harness_with_stubs()
+        always_fail = ValidationResult(
+            status="fail",
+            errors=["region: failed check 'isin' (value='Mars')"],
+            elapsed_ms=2.0,
+            over_budget=False,
+        )
+        _patch_validator(monkeypatch, [always_fail, always_fail, always_fail])
+
+        with pytest.raises(StructuredRetryExhaustion) as excinfo:
+            asyncio.run(
+                harness.chat_turn(
+                    "hello",
+                    dataset_id="ds-stub",
+                    validate_with=_TRIVIAL_SCHEMA,
+                    max_retries=2,
+                )
+            )
+
+        assert isinstance(excinfo.value, AssertionError), (
+            "StructuredRetryExhaustion must subclass AssertionError so "
+            "existing pytest.raises(AssertionError) call sites keep working"
+        )
+
+    def test_exhaustion_carries_structured_validation_diff(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        harness, _, _, _ = _make_harness_with_stubs()
+        always_fail = ValidationResult(
+            status="fail",
+            errors=[
+                "region: failed check 'isin' (value='Mars')",
+                "quantity: failed check 'in_range(1, 10000)' (value=0)",
+            ],
+            elapsed_ms=2.0,
+            over_budget=False,
+        )
+        _patch_validator(monkeypatch, [always_fail, always_fail, always_fail])
+
+        with pytest.raises(StructuredRetryExhaustion) as excinfo:
+            asyncio.run(
+                harness.chat_turn(
+                    "hello",
+                    dataset_id="ds-stub",
+                    validate_with=_TRIVIAL_SCHEMA,
+                    max_retries=2,
+                )
+            )
+
+        exc = excinfo.value
+        assert exc.prompt == "hello"
+        assert exc.attempts == 3
+        assert isinstance(exc.validation_diff, list)
+        # Each entry parsed via serialize_diff — column / check / value fields.
+        diff_columns = [entry.get("column") for entry in exc.validation_diff]
+        assert "region" in diff_columns, f"expected region in diff: {exc.validation_diff!r}"
+        assert "quantity" in diff_columns, f"expected quantity in diff: {exc.validation_diff!r}"
+
+    def test_exhaustion_carries_sse_transcript_from_last_attempt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        harness, send_turn_mock, _, _ = _make_harness_with_stubs()
+        # Inject a non-trivial trace on each send so the transcript is
+        # observable on the final raise.
+        send_turn_mock.return_value = ChatEventTrace(
+            events=[
+                {"type": "turn_started"},
+                {"type": "turn_done"},
+            ],
+            raw_tool_call_seen=False,
+        )
+        always_fail = ValidationResult(
+            status="fail",
+            errors=["region: failed check 'isin' (value='Mars')"],
+            elapsed_ms=2.0,
+            over_budget=False,
+        )
+        _patch_validator(monkeypatch, [always_fail, always_fail, always_fail])
+
+        with pytest.raises(StructuredRetryExhaustion) as excinfo:
+            asyncio.run(
+                harness.chat_turn(
+                    "hello",
+                    dataset_id="ds-stub",
+                    validate_with=_TRIVIAL_SCHEMA,
+                    max_retries=2,
+                )
+            )
+
+        exc = excinfo.value
+        event_types = [e.get("type") for e in exc.sse_transcript]
+        assert "turn_started" in event_types
+        assert "turn_done" in event_types
