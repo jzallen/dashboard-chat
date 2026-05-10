@@ -10,6 +10,13 @@ alias(
     tags = ["manual"],
 )
 
+# Selector-driven test dispatcher. See //tools/test:test for selector flags.
+alias(
+    name = "test",
+    actual = "//tools/test:test",
+    tags = ["manual"],
+)
+
 exports_files([
     "docker-compose.yml",
     ".env",
