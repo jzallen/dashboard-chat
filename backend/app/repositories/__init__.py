@@ -15,7 +15,8 @@ from .external_access import AccessRecordView as AccessRecordView
 from .external_access import AccessRecordWithHash as AccessRecordWithHash
 from .external_access import ExternalAccessRepository
 from .lake import LakeRepository, MinIOLakeRepository
-from .metadata import MetadataRepository
+from .metadata import MetadataRepository, ProjectRepository
+from .metadata._legacy_facade import _LegacyMetadataFacade
 from .outbox import OutboxRepository
 from .query_engine_node import QueryEngineNodeRepository
 
@@ -70,7 +71,8 @@ class RepositoryContainer:
 
     def __init__(self, db: RestrictedSession, overrides: dict[str, Callable[[], object]] | None = None) -> Self:
         self._registry: dict[str, Callable[[], object]] = {
-            "metadata_repository": partial(MetadataRepository, db),
+            "metadata_repository": partial(_LegacyMetadataFacade, db),
+            "project_repository": partial(ProjectRepository, db),
             "lake_repository": MinIOLakeRepository,
             "outbox_repository": partial(OutboxRepository, db),
             "external_access_repository": partial(ExternalAccessRepository, db),
@@ -91,6 +93,10 @@ class RepositoryContainer:
     @property
     def metadata(self) -> MetadataRepository:
         return self["metadata_repository"]  # type: ignore[return-value]
+
+    @property
+    def projects(self) -> ProjectRepository:
+        return self["project_repository"]  # type: ignore[return-value]
 
     @property
     def lake(self) -> LakeRepository:

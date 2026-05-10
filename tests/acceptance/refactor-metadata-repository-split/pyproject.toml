@@ -1,0 +1,58 @@
+# <!-- DES-ENFORCEMENT : exempt -->
+[project]
+name = "dashboard-chat-acceptance-refactor-metadata-repository-split"
+version = "0.0.1"
+description = "Acceptance tests for refactor-metadata-repository-split (ADR-020)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-bdd>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    # DWD-1 in this feature's distill/wave-decisions.md: real I/O via SQLite.
+    # The repository layer's "real adapter" is the SQLAlchemy session bound
+    # to an in-memory SQLite engine — the same engine
+    # backend/tests/conftest.py uses for the per-aggregate test files. No
+    # compose stack is required, so this suite has no asyncpg / no MinIO
+    # / no httpx dependency. We install backend as an editable path dep so
+    # ``from app.repositories import RepositoryContainer`` resolves and
+    # transitive imports (boto3 for the unused LakeRepository registration,
+    # pydantic_settings for config, etc.) come along for the ride.
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.19",
+    "uuid-utils>=0.6.0",
+    "dashboard-chat-backend",
+]
+
+[tool.uv.sources]
+dashboard-chat-backend = { path = "../../../backend", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+# Mirrors tests/acceptance/extract-dataset-query-port/pyproject.toml so the
+# session-scoped db_engine + repository_container fixtures share a loop with
+# the test functions that consume them. Without alignment, function-scoped
+# async fixtures get fresh per-test loops and the second test that consumes
+# the engine hits "Event loop is closed."
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "walking_skeleton: walking-skeleton scenario (real-IO end-to-end smoke through both new and legacy entry points)",
+    "real-io: scenario uses the real SQLAlchemy + SQLite adapter (no in-memory doubles for the repository layer)",
+    "aggregate_split: scenario asserts per-aggregate parity between the new repo property and the legacy facade",
+    "facade_removal: scenario asserts post-Phase-03 behaviour after _LegacyMetadataFacade is deleted",
+    "driving_port: scenario invokes through RepositoryContainer (its public properties or the legacy .metadata facade)",
+    "pending: scenario authored but not yet enabled — DELIVER unpends per phase per roadmap.json's scenarios_to_unskip",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    # Default: skip @pending scenarios. Walking skeleton runs first; the
+    # milestone-1 outline rows + milestone-2 facade-removal scenarios all
+    # carry @pending and unpend per the roadmap phases.
+    "-m", "not pending",
+]

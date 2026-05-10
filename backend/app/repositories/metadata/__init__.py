@@ -370,6 +370,13 @@ class MetadataRepositoryProtocol(Protocol):
         ...
 
 
+from .project_repository import ProjectRepository as ProjectRepository  # noqa: E402
+from .project_repository import ProjectRepositoryProtocol as ProjectRepositoryProtocol  # noqa: E402
 from .repository import MetadataRepository as MetadataRepository  # noqa: E402
 
-__all__ = ["MetadataRepository", "MetadataRepositoryProtocol"]
+__all__ = [
+    "MetadataRepository",
+    "MetadataRepositoryProtocol",
+    "ProjectRepository",
+    "ProjectRepositoryProtocol",
+]
