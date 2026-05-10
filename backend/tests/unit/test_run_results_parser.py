@@ -215,10 +215,15 @@ def test_parse_filters_test_and_hook_records_out_of_build_phase() -> None:
     so passing tests inside build do not pollute the model list AND do
     not get classified as build failures (status="pass" not in _BUILD_OK).
 
-    The drift-detector + happy-path acceptance scenarios both exercise
-    `dbt build` end-to-end against real DuckDB; the parser must classify
-    correctly or every M1 happy-path eject reports status="fail" with a
-    spurious build-failure entry naming the test that actually passed.
+    Symmetrically, `dbt test` invokes on-run-start/on-run-end hooks
+    alongside the tests it runs; those hook records carry status="success"
+    which a naive parser would treat as a test failure (status="success"
+    is not in _TEST_OK={"pass"}). The drift-detector + happy-path
+    acceptance scenarios both exercise `dbt build` AND `dbt test`
+    end-to-end against real DuckDB; the parser must classify both phases
+    correctly or every M1 happy-path eject reports status="fail" with
+    spurious failure entries naming the test that actually passed and
+    the hook that actually succeeded.
     """
     run_result = _fake_dbt_run_result(
         build_results=[
@@ -235,6 +240,10 @@ def test_parse_filters_test_and_hook_records_out_of_build_phase() -> None:
             ),
         ],
         test_results=[
+            # `dbt test` runs the project's on-run-start hook before the
+            # tests; it lands in test_result.result with status="success"
+            # which a naive parser would misclassify as a test failure.
+            _fake_run_result("hook.proj.on_run_start", "success", resource_type="operation"),
             _fake_run_result(
                 "test.proj.not_null_stg_orders_region",
                 "pass",
@@ -254,7 +263,10 @@ def test_parse_filters_test_and_hook_records_out_of_build_phase() -> None:
     assert report.models_built == ["model.proj.stg_orders"], (
         f"models_built should contain only model-shaped records, got {report.models_built!r}"
     )
-    assert report.tests_run == ["test.proj.not_null_stg_orders_region"]
+    # Only the test lands in tests_run — the hook is filtered out.
+    assert report.tests_run == ["test.proj.not_null_stg_orders_region"], (
+        f"tests_run should contain only test records, got {report.tests_run!r}"
+    )
     assert report.failures == []
 
 

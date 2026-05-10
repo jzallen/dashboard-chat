@@ -28,13 +28,18 @@ from typing import Any
 _BUILD_OK = frozenset({"success"})
 _TEST_OK = frozenset({"pass"})
 
-# `dbt build` returns a single result list mixing models, snapshots, seeds,
-# tests, and hooks. The parser separates concerns by reading only
-# model-shaped resources from build_result and reading tests from
-# test_result. Without this filter, a passing test record (status="pass")
-# inside build_result would be classified as a build failure (status not in
-# {"success"}) and pollute `models_built` with the test name.
+# dbt sequences hooks (on-run-start / on-run-end) inside every phase's
+# result list, alongside the resources that phase actually exercised.
+# `dbt build` mixes hooks + models + snapshots + seeds + tests; `dbt test`
+# mixes hooks + tests. The parser separates concerns by filtering to the
+# resource types that belong to each phase. Without these filters, a
+# passing test record inside build_result (status="pass") would be
+# misclassified as a build failure (status not in {"success"}) and
+# pollute `models_built`; an `on-run-start` hook inside test_result
+# (status="success") would be misclassified as a failed test (status
+# not in {"pass"}) and report a spurious failure.
 _BUILD_RESOURCE_TYPES = frozenset({"model", "snapshot", "seed"})
+_TEST_RESOURCE_TYPES = frozenset({"test"})
 
 
 @dataclass(frozen=True)
@@ -131,7 +136,7 @@ class RunResultsParser:
         test = getattr(runner_result, "test_result", None)
         records = getattr(test, "result", None) if test is not None else None
         if records is not None:
-            return [_to_run_result(r) for r in records]
+            return [_to_run_result(r) for r in records if _is_test_resource(r)]
         return self._load_fallback_records(project_dir)
 
     @staticmethod
@@ -175,24 +180,51 @@ def _to_run_result(record: Any) -> RunResult:
     )
 
 
-def _is_build_resource(record: Any) -> bool:
-    """Return True iff a dbt build result record represents a model-shaped node.
+def _resource_type(record: Any) -> str | None:
+    """Best-effort extraction of `record.node.resource_type`.
 
-    `dbt build` returns mixed records — models, snapshots, seeds, tests,
-    and hooks all land in `build_result.result`. The parser tracks tests
-    via the separate `test_result` invocation and counts only model-like
-    nodes as built models. When `node.resource_type` is unavailable
-    (older dbt versions or fakes that don't carry it), default to True
-    so the existing "all records are models" behavior is preserved for
-    callers that haven't grown the attribute yet.
+    Returns None when the record exposes no node (impossible under real
+    dbt, possible under hand-built fakes that omit it for brevity).
     """
     node = getattr(record, "node", None)
     if node is None:
-        return True
+        return None
     resource_type = getattr(node, "resource_type", None)
     if resource_type is None:
+        return None
+    return str(resource_type)
+
+
+def _is_build_resource(record: Any) -> bool:
+    """Return True iff `record` belongs in the build phase's report.
+
+    `dbt build` mixes models, snapshots, seeds, tests, and hooks. The
+    parser counts only model-like nodes as built models; tests get
+    counted via the separate `dbt test` invocation. When resource_type
+    is unavailable (older dbt versions or fakes that omit it), default
+    to True so the existing "treat as model" semantic is preserved for
+    callers that haven't grown the attribute yet.
+    """
+    rt = _resource_type(record)
+    if rt is None:
         return True
-    return str(resource_type) in _BUILD_RESOURCE_TYPES
+    return rt in _BUILD_RESOURCE_TYPES
+
+
+def _is_test_resource(record: Any) -> bool:
+    """Return True iff `record` belongs in the test phase's report.
+
+    `dbt test` runs the project's hooks (`on-run-start`/`on-run-end`)
+    alongside the actual tests; the hook records carry status="success"
+    which would be misread as a test failure under
+    `_TEST_OK = {"pass"}`. Filtering to resource_type=="test" excludes
+    them. Records without a resource_type default to True so existing
+    fakes (which carry only `node.name`) continue to be treated as tests.
+    """
+    rt = _resource_type(record)
+    if rt is None:
+        return True
+    return rt in _TEST_RESOURCE_TYPES
 
 
 def _from_json_record(record: dict) -> RunResult:

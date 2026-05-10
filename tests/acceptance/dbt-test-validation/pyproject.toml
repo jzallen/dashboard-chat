@@ -25,6 +25,15 @@ dev = [
 testpaths = ["."]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+# The session-scoped `eject_orchestrator` fixture (conftest.py) opens an
+# `httpx.AsyncClient` once per session. Without aligning the default
+# fixture loop to "session", function-scoped async fixtures (e.g.
+# `capture`) get fresh per-test loops, so the second test that consumes
+# the orchestrator hits "Event loop is closed" on the orchestrator's
+# already-bound client. Session-scoped default keeps the loop stable
+# across all tests in the suite.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 markers = [
     "walking_skeleton: walking-skeleton scenario (real-IO end-to-end smoke)",
     "real-io: scenario uses real adapters (real compose stack, real dbtRunner, real DuckDB, real MinIO)",
