@@ -28,6 +28,14 @@ from typing import Any
 _BUILD_OK = frozenset({"success"})
 _TEST_OK = frozenset({"pass"})
 
+# `dbt build` returns a single result list mixing models, snapshots, seeds,
+# tests, and hooks. The parser separates concerns by reading only
+# model-shaped resources from build_result and reading tests from
+# test_result. Without this filter, a passing test record (status="pass")
+# inside build_result would be classified as a build failure (status not in
+# {"success"}) and pollute `models_built` with the test name.
+_BUILD_RESOURCE_TYPES = frozenset({"model", "snapshot", "seed"})
+
 
 @dataclass(frozen=True)
 class RunResult:
@@ -107,6 +115,8 @@ class RunResultsParser:
         models_built: list[str] = []
         failures: list[RunResult] = []
         for record in records:
+            if not _is_build_resource(record):
+                continue
             converted = _to_run_result(record)
             models_built.append(converted.name)
             if converted.status not in _BUILD_OK:
@@ -163,6 +173,26 @@ def _to_run_result(record: Any) -> RunResult:
         message=str(getattr(record, "message", "") or ""),
         execution_time_ms=float(getattr(record, "execution_time", 0.0) or 0.0),
     )
+
+
+def _is_build_resource(record: Any) -> bool:
+    """Return True iff a dbt build result record represents a model-shaped node.
+
+    `dbt build` returns mixed records — models, snapshots, seeds, tests,
+    and hooks all land in `build_result.result`. The parser tracks tests
+    via the separate `test_result` invocation and counts only model-like
+    nodes as built models. When `node.resource_type` is unavailable
+    (older dbt versions or fakes that don't carry it), default to True
+    so the existing "all records are models" behavior is preserved for
+    callers that haven't grown the attribute yet.
+    """
+    node = getattr(record, "node", None)
+    if node is None:
+        return True
+    resource_type = getattr(node, "resource_type", None)
+    if resource_type is None:
+        return True
+    return str(resource_type) in _BUILD_RESOURCE_TYPES
 
 
 def _from_json_record(record: dict) -> RunResult:

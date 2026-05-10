@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 from tests.integration.dataset_layer.eject.parser import (
     EjectTestReport,
@@ -39,10 +40,19 @@ def _fake_run_result(
     failures: int = 0,
     message: str = "",
     execution_time: float = 0.0,
+    resource_type: str | None = None,
 ) -> SimpleNamespace:
-    """Mirror the dbt 1.8 `RunResult` attribute surface the parser reads."""
+    """Mirror the dbt 1.8 `RunResult` attribute surface the parser reads.
+
+    `resource_type` defaults to None so existing tests preserve the
+    "no resource_type → treat as model" semantic; pass "test" / "operation"
+    to mirror dbt build's mixed-record output.
+    """
+    node_attrs: dict[str, Any] = {"name": name}
+    if resource_type is not None:
+        node_attrs["resource_type"] = resource_type
     return SimpleNamespace(
-        node=SimpleNamespace(name=name),
+        node=SimpleNamespace(**node_attrs),
         status=status,
         failures=failures,
         message=message,
@@ -196,6 +206,56 @@ def test_parse_surfaces_failing_test_name_for_drift_detector_scenario() -> None:
     assert failure.status == "fail"
     assert failure.failures == 2
     assert "configured to fail" in failure.message
+
+
+def test_parse_filters_test_and_hook_records_out_of_build_phase() -> None:
+    """`dbt build` returns a mixed record list — models (status="success"),
+    tests (status="pass"), and hooks (status="success" with resource_type
+    "operation"). `models_built` must include only model-shaped records
+    so passing tests inside build do not pollute the model list AND do
+    not get classified as build failures (status="pass" not in _BUILD_OK).
+
+    The drift-detector + happy-path acceptance scenarios both exercise
+    `dbt build` end-to-end against real DuckDB; the parser must classify
+    correctly or every M1 happy-path eject reports status="fail" with a
+    spurious build-failure entry naming the test that actually passed.
+    """
+    run_result = _fake_dbt_run_result(
+        build_results=[
+            _fake_run_result("hook.proj.on_run_start", "success", resource_type="operation"),
+            _fake_run_result("model.proj.stg_orders", "success", resource_type="model"),
+            # The same test record dbt records inside build_result when
+            # build runs the project's tests inline. status="pass" is the
+            # dbt convention for tests; a naive parser would treat this as
+            # a build failure because "pass" ∉ _BUILD_OK.
+            _fake_run_result(
+                "test.proj.not_null_stg_orders_region",
+                "pass",
+                resource_type="test",
+            ),
+        ],
+        test_results=[
+            _fake_run_result(
+                "test.proj.not_null_stg_orders_region",
+                "pass",
+                resource_type="test",
+            ),
+        ],
+    )
+
+    report = RunResultsParser().parse(run_result)
+
+    assert report.status == "pass", (
+        f"expected status='pass' for an all-green build+test run, got {report.status!r} "
+        f"with failures={report.failures!r}"
+    )
+    # Only the model lands in models_built — the hook and the inline test
+    # belong to other phases of the report.
+    assert report.models_built == ["model.proj.stg_orders"], (
+        f"models_built should contain only model-shaped records, got {report.models_built!r}"
+    )
+    assert report.tests_run == ["test.proj.not_null_stg_orders_region"]
+    assert report.failures == []
 
 
 def test_parse_falls_back_to_run_results_json_when_result_is_none(tmp_path: Path) -> None:
