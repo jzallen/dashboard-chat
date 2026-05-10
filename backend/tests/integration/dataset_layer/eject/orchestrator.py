@@ -334,9 +334,7 @@ class EjectAndTestOrchestrator:
         # scheme-stripped host:port form — matches what's on disk in the
         # customer-facing profiles.yml, not the original env URL.
         report.seeded_profile_bucket = self._minio_creds["bucket"]
-        report.seeded_profile_endpoint = DuckDBProfileSeeder._strip_scheme(
-            self._minio_creds["endpoint_url"]
-        )
+        report.seeded_profile_endpoint = DuckDBProfileSeeder._strip_scheme(self._minio_creds["endpoint_url"])
         return report
 
     def _build_env_overrides(self) -> dict[str, str]:

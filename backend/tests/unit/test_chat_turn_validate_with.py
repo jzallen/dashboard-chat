@@ -109,9 +109,7 @@ class TestChatTurnValidateWithHook:
         # validate_with is None — no table-state fetch, no validation.
         assert get_table_state_mock.await_count == 0
 
-    def test_validate_with_set_and_pass_returns_trace_after_one_attempt(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_validate_with_set_and_pass_returns_trace_after_one_attempt(self, monkeypatch: pytest.MonkeyPatch) -> None:
         harness, send_turn_mock, get_table_state_mock, _ = _make_harness_with_stubs()
         counter = _patch_validator(
             monkeypatch,
@@ -131,9 +129,7 @@ class TestChatTurnValidateWithHook:
         assert get_table_state_mock.await_count == 1
         assert counter[0] == 1
 
-    def test_validate_with_engages_rephrase_loop_on_first_failure(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_validate_with_engages_rephrase_loop_on_first_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         harness, send_turn_mock, get_table_state_mock, _ = _make_harness_with_stubs()
         counter = _patch_validator(
             monkeypatch,

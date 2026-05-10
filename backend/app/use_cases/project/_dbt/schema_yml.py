@@ -52,13 +52,9 @@ def _build_constraint_tests(constraints: dict[str, Any] | None) -> list[Any]:
 
     range_spec = constraints.get("range") or {}
     if "min" in range_spec and range_spec["min"] is not None:
-        tests.append(
-            {"dbt_utils.expression_is_true": {"expression": f">= {range_spec['min']}"}}
-        )
+        tests.append({"dbt_utils.expression_is_true": {"expression": f">= {range_spec['min']}"}})
     if "max" in range_spec and range_spec["max"] is not None:
-        tests.append(
-            {"dbt_utils.expression_is_true": {"expression": f"<= {range_spec['max']}"}}
-        )
+        tests.append({"dbt_utils.expression_is_true": {"expression": f"<= {range_spec['max']}"}})
 
     return tests
 
@@ -74,10 +70,7 @@ def schema_uses_dbt_utils(datasets: list[tuple[str, Dataset]]) -> bool:
         fields = dataset.schema_config.get("fields", {}) if dataset.schema_config else {}
         for col_info in fields.values():
             tests = _build_constraint_tests(col_info.get("constraints"))
-            if any(
-                isinstance(t, dict) and any(k.startswith("dbt_utils.") for k in t)
-                for t in tests
-            ):
+            if any(isinstance(t, dict) and any(k.startswith("dbt_utils.") for k in t) for t in tests):
                 return True
     return False
 
@@ -133,10 +126,7 @@ def generate_schema_yml(
     models = []
     for snake_name, dataset in datasets:
         fields = dataset.schema_config.get("fields", {}) if dataset.schema_config else {}
-        columns = [
-            _build_staging_column(col_name, col_info)
-            for col_name, col_info in fields.items()
-        ]
+        columns = [_build_staging_column(col_name, col_info) for col_name, col_info in fields.items()]
         models.append(
             {
                 "name": f"stg_{snake_name}",

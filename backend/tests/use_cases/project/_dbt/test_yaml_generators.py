@@ -208,9 +208,7 @@ class TestSchemaYml:
         output = generate_schema_yml([("users", ds)])
         parsed = yaml.safe_load(output)
         col = parsed["models"][0]["columns"][0]
-        assert col["tests"] == [
-            {"accepted_values": {"values": ["active", "inactive"]}}
-        ]
+        assert col["tests"] == [{"accepted_values": {"values": ["active", "inactive"]}}]
 
     def test_generate_schema_yml_translates_range_min_only_to_expression_is_true(self):
         ds = _make_dataset(
@@ -223,9 +221,7 @@ class TestSchemaYml:
         output = generate_schema_yml([("users", ds)])
         parsed = yaml.safe_load(output)
         col = parsed["models"][0]["columns"][0]
-        assert col["tests"] == [
-            {"dbt_utils.expression_is_true": {"expression": ">= 18"}}
-        ]
+        assert col["tests"] == [{"dbt_utils.expression_is_true": {"expression": ">= 18"}}]
 
     def test_generate_schema_yml_translates_range_max_only_to_expression_is_true(self):
         ds = _make_dataset(
@@ -238,9 +234,7 @@ class TestSchemaYml:
         output = generate_schema_yml([("users", ds)])
         parsed = yaml.safe_load(output)
         col = parsed["models"][0]["columns"][0]
-        assert col["tests"] == [
-            {"dbt_utils.expression_is_true": {"expression": "<= 100"}}
-        ]
+        assert col["tests"] == [{"dbt_utils.expression_is_true": {"expression": "<= 100"}}]
 
     def test_generate_schema_yml_translates_range_min_and_max_to_two_expressions(self):
         ds = _make_dataset(
@@ -308,9 +302,7 @@ class TestSchemaYml:
             "empty-range",
         ],
     )
-    def test_generate_schema_yml_omits_tests_key_when_constraints_falsy_or_missing(
-        self, constraints
-    ):
+    def test_generate_schema_yml_omits_tests_key_when_constraints_falsy_or_missing(self, constraints):
         field: dict = {"type": "text"}
         if constraints is not None:
             field["constraints"] = constraints

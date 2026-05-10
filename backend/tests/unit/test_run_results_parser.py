@@ -196,9 +196,7 @@ def test_parse_surfaces_failing_test_name_for_drift_detector_scenario() -> None:
     assert report.status == "fail"
     assert report.models_built == ["stg_orders"]
     assert report.tests_run == ["not_null_stg_orders_order_id"]
-    assert len(report.failures) == 1, (
-        f"expected exactly one failure entry, got {report.failures!r}"
-    )
+    assert len(report.failures) == 1, f"expected exactly one failure entry, got {report.failures!r}"
     failure = report.failures[0]
     # The customer-visible triage signal: the dbt test name verbatim.
     assert failure.name == "not_null_stg_orders_order_id"

@@ -975,8 +975,7 @@ class DatasetLayerHarness:
                 columns = sorted({err.split(":", 1)[0] for err in errors if ":" in err})
                 column_str = ", ".join(columns) if columns else "<unknown>"
                 raise AssertionError(
-                    f"per-turn validation failed for column(s) {column_str}; "
-                    f"diff: {errors!r}",
+                    f"per-turn validation failed for column(s) {column_str}; diff: {errors!r}",
                 )
             if user_check is not None:
                 user_result = user_check(trace)
@@ -1049,8 +1048,7 @@ class DatasetLayerHarness:
         )
         if res.status_code != 200:
             raise AssertionError(
-                f"PATCH /api/datasets/{dataset_id} returned {res.status_code}: "
-                f"{res.text[:500]}",
+                f"PATCH /api/datasets/{dataset_id} returned {res.status_code}: {res.text[:500]}",
             )
 
     async def eject_and_test(

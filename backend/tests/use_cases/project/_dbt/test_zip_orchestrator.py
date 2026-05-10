@@ -221,9 +221,9 @@ class TestZipContents:
 
         parsed = _yaml.safe_load(zf.read("packages.yml").decode("utf-8"))
         packages = parsed["packages"]
-        assert any(
-            p.get("package") == "dbt-labs/dbt_utils" for p in packages
-        ), f"Expected dbt-labs/dbt_utils in packages, got: {packages}"
+        assert any(p.get("package") == "dbt-labs/dbt_utils" for p in packages), (
+            f"Expected dbt-labs/dbt_utils in packages, got: {packages}"
+        )
         dbt_utils_entry = next(p for p in packages if p["package"] == "dbt-labs/dbt_utils")
         assert dbt_utils_entry["version"] == [">=1.1.0", "<2.0.0"]
 
@@ -256,9 +256,7 @@ class TestZipContents:
         Phase-0 placeholder (which would have forced a packages.yml via a
         always-emitted `not_null`) is gone, AND that absent constraints
         produce no dbt_utils dependency."""
-        ds = _make_dataset(
-            schema_config={"fields": {"col_a": {"type": "text"}}}
-        )
+        ds = _make_dataset(schema_config={"fields": {"col_a": {"type": "text"}}})
         project = _make_project("Test", datasets=[ds])
 
         zip_bytes = generate_dbt_project_zip(project, "test")
