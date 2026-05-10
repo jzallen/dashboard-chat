@@ -1,0 +1,22 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+# Selector-driven test dispatcher. Thin wrapper that invokes pytest / vitest /
+# npm in the source tree — does NOT depend on any py_library, js_library, or
+# oci_image target, so `bazel run //tools/test` involves no compilation.
+#
+# Two invocation paths:
+#   1. `bazel run //tools/test -- --backend`    — developer convenience
+#   2. `./tools/test/test.sh --backend`          — refinery / merge queue gate
+#
+# The merge queue uses path 2 to avoid Bazel-daemon spin-up per merge.
+sh_binary(
+    name = "test",
+    srcs = ["test.sh"],
+    visibility = ["//visibility:public"],
+    tags = [
+        "manual",      # never built/run as part of //... or //...
+        "no-sandbox",  # tests need to read the live source tree
+    ],
+)
+
+exports_files(["test.sh"])
