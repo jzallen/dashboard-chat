@@ -20,7 +20,6 @@ Feature: Per-flow eject-and-test gives the customer-fidelity validation gate
     Given the dataset-layer harness is ready against the running compose stack
     And the eject orchestrator has passed its earned-trust probes
 
-  @pending
   Scenario: Customer's project ejects and validates green when staging is correct
     Given a fresh project with a small orders dataset uploaded
     And a chat workflow has produced a staging model that is shape-correct
@@ -36,7 +35,6 @@ Feature: Per-flow eject-and-test gives the customer-fidelity validation gate
     Then the ejected project re-validates as failed
     And the report names the failing validation by name
 
-  @pending
   Scenario: Customer-fidelity invariant — eject reads the same lake the app reads
     Given a fresh project with a small orders dataset uploaded
     And a chat workflow has produced a staging model that is shape-correct

@@ -304,10 +304,56 @@ def then_models_built_and_tested(capture: HarnessCapture) -> None:
 
 @given("a chat workflow has produced a staging model that is shape-correct")
 def given_shape_correct_staging(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: drive the harness through "
-        "a chat workflow that yields a shape-correct staging frame"
-    )
+    """Inject a deterministic always-passing constraint via the dataset API.
+
+    Per DWD-9 the M1 happy-path / customer-fidelity scenarios use
+    deterministic fixture-driven setup — NO LLM chat turn — so the green
+    signal is reproducible across CI runs. The orders.csv fixture has
+    15/15 rows with a non-empty ``region`` value (column 4); patching the
+    dataset's ``schema_config`` to add ``constraints.required: true`` on
+    ``region`` forces the schema.yml exporter (step 02-01) to emit a
+    ``not_null_stg_orders_region`` dbt test that passes against the upload.
+    The eject orchestrator then runs deps/build/test and the parser
+    surfaces ``status='pass'`` with at least one model built and one test
+    executed — satisfying both the happy-path AND customer-fidelity
+    scenarios (which share this @given).
+
+    Driving-port discipline: the patch routes through
+    ``DatasetLayerHarness.set_dataset_schema_config``, which exercises
+    the real ``DatasetUpdate`` Pydantic schema and metadata-repository
+    update path. Mirrors the drift-detector @given's structure (lines
+    313-364) — the only difference is the targeted column (region vs
+    order_id) and the column's data shape (no nulls vs deliberate nulls).
+    """
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    harness = capture.extras["harness"]
+    dataset_id = capture.dataset_id
+    user_jwt = capture.extras["user_jwt"]
+    auth_proxy_url = os.environ.get("AUTH_PROXY_URL", "http://localhost:3000").rstrip("/")
+
+    async def _inject_required_on_region() -> None:
+        # Fetch current schema_config, mutate only the region entry.
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            res = await client.get(
+                f"{auth_proxy_url}/api/datasets/{dataset_id}",
+                headers={"Authorization": f"Bearer {user_jwt}"},
+            )
+            res.raise_for_status()
+            body = res.json()
+        data = body.get("data", body) if isinstance(body, dict) else {}
+        if isinstance(data, dict) and isinstance(data.get("attributes"), dict):
+            data = data["attributes"]
+        current = data.get("schema_config") or {"fields": {}}
+        fields = dict(current.get("fields") or {})
+        region_entry = dict(fields.get("region") or {"type": "text"})
+        region_constraints = dict(region_entry.get("constraints") or {})
+        region_constraints["required"] = True
+        region_entry["constraints"] = region_constraints
+        fields["region"] = region_entry
+        new_schema_config = {**current, "fields": fields}
+        await harness.set_dataset_schema_config(dataset_id, new_schema_config)
+
+    loop.run_until_complete(_inject_required_on_region())
 
 
 @given("a chat workflow has produced a staging model whose exported tests would fail")
@@ -402,20 +448,47 @@ def then_failing_validation_named(capture: HarnessCapture) -> None:
 
 @then("the seeded read path points at the same datalake bucket the running app uses")
 def then_seeded_bucket_matches_app(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: assert the seeded "
-        "profiles.yml bucket path equals the running backend's "
-        "configured MinIO bucket. Read both sides through observable "
-        "outputs (eject_report.seeded_profile_bucket and the backend's "
-        "GET /api/health/storage response)"
+    """Customer-fidelity invariant (ADR-019): the value the orchestrator
+    handed the seeder MUST be the SAME bucket the running backend reads from
+    via Ibis-DuckDB. Both sides observe the same env var
+    (``S3_BUCKET``) — backend at startup, harness via the conftest fixture
+    threaded into the orchestrator. ``eject_report.seeded_profile_bucket``
+    is populated by the orchestrator after parse, so this assertion proves
+    the seeder did not lose / rewrite the value the orchestrator wired.
+    """
+    assert capture.eject_report is not None, "no eject report captured"
+    seeded_bucket = getattr(capture.eject_report, "seeded_profile_bucket", "")
+    expected_bucket = _read_minio_creds_from_env_for_steps()["bucket"]
+    assert seeded_bucket == expected_bucket, (
+        f"seeded_profile_bucket {seeded_bucket!r} does not match the "
+        f"backend's MinIO bucket {expected_bucket!r} — substrate-divergence "
+        f"would silently green-light the eject against the wrong lake "
+        "(ADR-019 customer-fidelity invariant)"
     )
 
 
 @then("the seeded read endpoint matches the running app's storage endpoint")
 def then_seeded_endpoint_matches_app(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: same as the bucket "
-        "assertion above, but for the S3 endpoint URL"
+    """Same fidelity invariant for the S3 endpoint. The seeder writes the
+    host:port form (scheme stripped — ``DuckDBProfileSeeder._strip_scheme``)
+    and the orchestrator mirrors that form on the report. The env value
+    is typically a URL (``http://localhost:9000``); strip the scheme on the
+    expected side to compare apples-to-apples against the on-disk
+    profiles.yml form.
+    """
+    assert capture.eject_report is not None, "no eject report captured"
+    seeded_endpoint = getattr(capture.eject_report, "seeded_profile_endpoint", "")
+    raw_endpoint = _read_minio_creds_from_env_for_steps()["endpoint_url"]
+    expected_endpoint = raw_endpoint
+    for scheme in ("http://", "https://"):
+        if expected_endpoint.startswith(scheme):
+            expected_endpoint = expected_endpoint[len(scheme):]
+            break
+    assert seeded_endpoint == expected_endpoint, (
+        f"seeded_profile_endpoint {seeded_endpoint!r} does not match the "
+        f"backend's storage endpoint {expected_endpoint!r} (raw env: "
+        f"{raw_endpoint!r}) — the seeder must mirror the same host:port "
+        "the in-app DuckDB resolves to (ADR-019 customer-fidelity invariant)"
     )
 
 

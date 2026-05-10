@@ -314,7 +314,18 @@ class EjectAndTestOrchestrator:
         self._seeder.seed(project_dir, self._minio_creds, profile_name=profile_name)
         with _exported_env(self._build_env_overrides()):
             run_result = self._runner.run_build_and_test(str(project_dir))
-        return self._parser.parse(run_result, project_dir=str(project_dir))
+        report = self._parser.parse(run_result, project_dir=str(project_dir))
+        # Customer-fidelity invariant (ADR-019 cross-decision composition with
+        # ADR-007): the report mirrors what the seeder wrote into profiles.yml
+        # so acceptance tests can prove the test substrate reaches the SAME
+        # MinIO lake the running app reads via Ibis. Endpoint is the
+        # scheme-stripped host:port form — matches what's on disk in the
+        # customer-facing profiles.yml, not the original env URL.
+        report.seeded_profile_bucket = self._minio_creds["bucket"]
+        report.seeded_profile_endpoint = DuckDBProfileSeeder._strip_scheme(
+            self._minio_creds["endpoint_url"]
+        )
+        return report
 
     def _build_env_overrides(self) -> dict[str, str]:
         """Map MinIO creds to the env_var(...) names the export emits.

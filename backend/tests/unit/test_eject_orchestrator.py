@@ -15,7 +15,7 @@ has no MinIO bucket + no live backend; their happy paths are covered by
 by Phase 1 distill milestone-3. Probes 1 + 2 run for real here — they are pure
 imports against the dbt-core / dbt-duckdb extras installed by step 00-01.
 
-Test budget: 7 distinct behaviors x 2 = 14. Using 7.
+Test budget: 8 distinct behaviors x 2 = 16. Using 8.
     1. probe() aggregates 5 individual ProbeReports into a ProbeSummary
     2. probe() is cached (idempotent within a session)
     3. eject_and_test happy path returns EjectTestReport
@@ -26,6 +26,10 @@ Test budget: 7 distinct behaviors x 2 = 14. Using 7.
     7. eject_and_test exports S3_* env vars during dbtRunner.invoke and restores
        afterwards (the exported sources.yml uses env_var('S3_BUCKET'); dbt parse
        reads os.environ; in-process dbtRunner means harness env IS dbt's env)
+    8. eject_and_test populates EjectTestReport.seeded_profile_bucket and
+       seeded_profile_endpoint from the same minio_creds the orchestrator was
+       constructed with — pins the customer-fidelity invariant (ADR-019:
+       the test substrate reaches the same lake the running app reads)
 """
 
 from __future__ import annotations
@@ -527,4 +531,57 @@ async def test_eject_and_test_exports_s3_env_vars_during_runner_and_restores_aft
     assert "S3_REGION" not in os.environ, (
         "S3_REGION had no prior value; after eject_and_test it must be "
         f"absent again (saw {os.environ.get('S3_REGION')!r})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Behavior 8: eject_and_test populates seeded_profile_bucket / endpoint on the
+# returned EjectTestReport — customer-fidelity invariant (ADR-019).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_eject_and_test_populates_seeded_profile_bucket_and_endpoint(
+    export_zip_transport: httpx.MockTransport,
+    minio_creds: dict[str, str],
+    stub_auth_minter: Callable[[str], Awaitable[str]],
+    tmp_path: Path,
+) -> None:
+    """The orchestrator owns ``minio_creds`` (constructor arg) and hands them
+    to the seeder; the seeder mirrors them into the customer-facing
+    ``profiles.yml``. To prove the seeder did not lose / rewrite that data,
+    the orchestrator MUST also surface them on the returned ``EjectTestReport``
+    so acceptance tests can compare what the seeder wrote against the
+    backend's MinIO config (ADR-019 cross-decision composition with ADR-007:
+    the ejected dbt project reads the SAME MinIO Parquet the in-app DuckDB
+    reads via Ibis).
+
+    Endpoint format contract: the seeded ``profiles.yml`` stores the host:port
+    form (scheme stripped — see ``DuckDBProfileSeeder._strip_scheme``). The
+    EjectTestReport mirrors what's in profiles.yml, NOT the original env URL,
+    so downstream callers can compare apples-to-apples against the file the
+    customer ships.
+    """
+    async with httpx.AsyncClient(transport=export_zip_transport, base_url="http://test-backend.local") as http_client:
+        orch = EjectAndTestOrchestrator(
+            http_client=http_client,
+            base_url="http://test-backend.local",
+            minio_creds=minio_creds,
+            auth_token_minter=stub_auth_minter,
+        )
+
+        report = await orch.eject_and_test(project_id="proj-fidelity", tmp_path=tmp_path)
+
+    # Bucket round-trips verbatim — the seeder uses the same key the
+    # orchestrator was wired with.
+    assert report.seeded_profile_bucket == minio_creds["bucket"], (
+        f"expected seeded_profile_bucket to mirror the minio_creds bucket "
+        f"({minio_creds['bucket']!r}); got {report.seeded_profile_bucket!r}"
+    )
+    # Endpoint is the host:port form the seeder wrote into profiles.yml
+    # (scheme stripped). Original was 'http://minio.test.local:9000'.
+    assert report.seeded_profile_endpoint == "minio.test.local:9000", (
+        f"expected seeded_profile_endpoint to be the scheme-stripped "
+        f"host:port form 'minio.test.local:9000'; "
+        f"got {report.seeded_profile_endpoint!r}"
     )
