@@ -1,3 +1,4 @@
+import pytest
 import yaml
 
 from app.models.dataset import Dataset
@@ -151,13 +152,179 @@ class TestSchemaYml:
         parsed = yaml.safe_load(output)
         assert parsed["models"][0]["name"] == "stg_customers"
 
-    def test_generate_schema_yml_attaches_not_null_test_to_first_column(self):
-        """Phase-0 placeholder for the dbt-test-validation feature: every
-        staging model in the export must ship at least one runnable dbt
-        test, otherwise `dbt test` is a no-op and the eject-then-test
-        gate has no observable validation outcome to report. Emit
-        `not_null` on the first column as the minimum viable test;
-        constraint-driven translation lands in Phase 2."""
+    def test_generate_schema_yml_omits_tests_when_no_columns(self):
+        """A schema-less dataset emits no columns and no tests — the
+        first-column rule must not fabricate a column to attach to."""
+        ds = _make_dataset(schema_config={})
+        output = generate_schema_yml([("empty", ds)])
+        parsed = yaml.safe_load(output)
+        assert parsed["models"][0]["columns"] == []
+
+    # --- Phase 2: constraint-driven dbt test emission --------------------
+    #
+    # The Phase-0 placeholder ("always emit not_null on the first column")
+    # is replaced by a real translation from `schema_config["fields"][col]
+    # ["constraints"]` into per-column dbt tests. See ADR-019 Phase 2 and
+    # docs/feature/dbt-test-validation/distill/roadmap.json step 02-01.
+
+    def test_generate_schema_yml_translates_required_to_not_null(self):
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "email": {"type": "text", "constraints": {"required": True}},
+                }
+            }
+        )
+        output = generate_schema_yml([("users", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert col["name"] == "email"
+        assert col["tests"] == ["not_null"]
+
+    def test_generate_schema_yml_translates_unique_to_unique(self):
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "user_id": {"type": "text", "constraints": {"unique": True}},
+                }
+            }
+        )
+        output = generate_schema_yml([("users", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert col["tests"] == ["unique"]
+
+    def test_generate_schema_yml_translates_accepted_values_to_accepted_values_test(self):
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "status": {
+                        "type": "select",
+                        "constraints": {"accepted_values": ["active", "inactive"]},
+                    },
+                }
+            }
+        )
+        output = generate_schema_yml([("users", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert col["tests"] == [
+            {"accepted_values": {"values": ["active", "inactive"]}}
+        ]
+
+    def test_generate_schema_yml_translates_range_min_only_to_expression_is_true(self):
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "age": {"type": "number", "constraints": {"range": {"min": 18}}},
+                }
+            }
+        )
+        output = generate_schema_yml([("users", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert col["tests"] == [
+            {"dbt_utils.expression_is_true": {"expression": ">= 18"}}
+        ]
+
+    def test_generate_schema_yml_translates_range_max_only_to_expression_is_true(self):
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "score": {"type": "number", "constraints": {"range": {"max": 100}}},
+                }
+            }
+        )
+        output = generate_schema_yml([("users", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert col["tests"] == [
+            {"dbt_utils.expression_is_true": {"expression": "<= 100"}}
+        ]
+
+    def test_generate_schema_yml_translates_range_min_and_max_to_two_expressions(self):
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "score": {
+                        "type": "number",
+                        "constraints": {"range": {"min": 0, "max": 100}},
+                    },
+                }
+            }
+        )
+        output = generate_schema_yml([("users", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert col["tests"] == [
+            {"dbt_utils.expression_is_true": {"expression": ">= 0"}},
+            {"dbt_utils.expression_is_true": {"expression": "<= 100"}},
+        ]
+
+    def test_generate_schema_yml_emits_combined_constraint_tests_in_deterministic_order(self):
+        """Order: not_null, unique, accepted_values, expression_is_true (min, max)."""
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "code": {
+                        "type": "select",
+                        "constraints": {
+                            "required": True,
+                            "unique": True,
+                            "accepted_values": ["A", "B"],
+                            "range": {"min": 1, "max": 9},
+                        },
+                    },
+                }
+            }
+        )
+        output = generate_schema_yml([("widgets", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert col["tests"] == [
+            "not_null",
+            "unique",
+            {"accepted_values": {"values": ["A", "B"]}},
+            {"dbt_utils.expression_is_true": {"expression": ">= 1"}},
+            {"dbt_utils.expression_is_true": {"expression": "<= 9"}},
+        ]
+
+    @pytest.mark.parametrize(
+        "constraints",
+        [
+            None,  # No constraints key at all
+            {},  # Empty constraints dict
+            {"required": False},  # Falsy required
+            {"unique": False},  # Falsy unique
+            {"accepted_values": []},  # Empty accepted_values list
+            {"range": {}},  # Empty range dict
+        ],
+        ids=[
+            "no-constraints-key",
+            "empty-dict",
+            "falsy-required",
+            "falsy-unique",
+            "empty-accepted-values",
+            "empty-range",
+        ],
+    )
+    def test_generate_schema_yml_omits_tests_key_when_constraints_falsy_or_missing(
+        self, constraints
+    ):
+        field: dict = {"type": "text"}
+        if constraints is not None:
+            field["constraints"] = constraints
+        ds = _make_dataset(schema_config={"fields": {"name": field}})
+        output = generate_schema_yml([("things", ds)])
+        parsed = yaml.safe_load(output)
+        col = parsed["models"][0]["columns"][0]
+        assert "tests" not in col
+
+    def test_generate_schema_yml_when_zero_constraints_across_columns_emits_no_tests_at_all(self):
+        """The Phase-0 placeholder is gone: a multi-column dataset with no
+        constraints on any column produces a staging model with NO `tests:`
+        keys anywhere. This is the contract that allows constraint-free
+        projects to skip `dbt deps` and ship lean."""
         ds = _make_dataset(
             schema_config={
                 "fields": {
@@ -168,17 +335,8 @@ class TestSchemaYml:
         )
         output = generate_schema_yml([("orders", ds)])
         parsed = yaml.safe_load(output)
-        first_column = parsed["models"][0]["columns"][0]
-        assert first_column["name"] == "region"
-        assert first_column.get("tests") == ["not_null"]
-
-    def test_generate_schema_yml_omits_tests_when_no_columns(self):
-        """A schema-less dataset emits no columns and no tests — the
-        first-column rule must not fabricate a column to attach to."""
-        ds = _make_dataset(schema_config={})
-        output = generate_schema_yml([("empty", ds)])
-        parsed = yaml.safe_load(output)
-        assert parsed["models"][0]["columns"] == []
+        for col in parsed["models"][0]["columns"]:
+            assert "tests" not in col
 
 
 def _make_report(

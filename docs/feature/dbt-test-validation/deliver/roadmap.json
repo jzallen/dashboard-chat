@@ -2,10 +2,10 @@
   "roadmap": {
     "project_id": "dbt-test-validation",
     "created_at": "2026-05-09T00:00:00Z",
-    "total_steps": 8,
-    "phases": 1
+    "total_steps": 11,
+    "phases": 2
   },
-  "scope": "Phase 0 only — walking skeleton green; remaining phases (01-05 from distill/roadmap.json) deferred per Mayor checkpoint",
+  "scope": "Phase 0 (walking skeleton green) and Phase 2 (eject-and-test full coverage: constraint-driven test emission, drift detector, customer-fidelity invariant). Phase 1 (earned-trust probes) was delivered separately; Phases 03-05 from distill/roadmap.json deferred.",
   "design_ratified_as": "docs/decisions/adr-019-eject-then-test-validation.md",
   "distill_roadmap": "docs/feature/dbt-test-validation/distill/roadmap.json",
   "phases": [
@@ -119,6 +119,59 @@
           "files_to_modify": [
             "backend/tests/integration/dataset_layer/harness.py",
             "tests/acceptance/dbt-test-validation/conftest.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Eject-and-test full coverage",
+      "description": "Distill phase 02 — three concerns: (1) constraint-driven dbt test emission replacing the Phase-0 placeholder so the drift detector becomes observable; (2) drift detector — eject failure surfaces the failing dbt test by name in EjectTestReport.failures; (3) customer-fidelity invariant — DuckDBProfileSeeder writes a profiles.yml whose s3 endpoint URL + bucket equal the backend's MinIO config.",
+      "estimate_minutes": 180,
+      "depends_on": ["00"],
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Constraint-driven dbt test emission with conditional packages.yml",
+          "criteria": "schema_yml.py translates dataset.schema_config.fields[col].constraints into per-column tests blocks (required→not_null, unique→unique, accepted_values→accepted_values, range→dbt_utils.expression_is_true). Phase-0 always-emit-not_null-on-first-column placeholder removed. generate_dbt_project_zip emits packages.yml referencing dbt-labs/dbt_utils iff at least one model uses a dbt_utils test. Existing schema_yml unit tests still pass.",
+          "test_file": "backend/tests/use_cases/project/_dbt/test_yaml_generators.py",
+          "scenario_name": "schema_yml_emits_constraint_driven_tests_and_orchestrator_emits_packages_yml",
+          "estimate_minutes": 60,
+          "depends_on": [],
+          "files_to_modify": [
+            "backend/app/use_cases/project/_dbt/schema_yml.py",
+            "backend/app/use_cases/project/_dbt/__init__.py",
+            "backend/tests/use_cases/project/_dbt/test_yaml_generators.py",
+            "backend/tests/use_cases/project/_dbt/test_zip_orchestrator.py"
+          ]
+        },
+        {
+          "id": "02-02",
+          "name": "Drift detector — failing dbt test named in EjectTestReport.failures",
+          "criteria": "RunResultsParser.parse extracts the failing test name from dbtRunnerResult.result records when status != pass. EjectTestReport.failures[*].name carries the dbt test identifier (e.g. not_null_stg_orders_region). Acceptance step glue for milestone-1 drift-detector scenario asserts the failing-name path. Unit test pins the parser-shape contract on a synthesized failing RunResult.",
+          "test_file": "backend/tests/unit/test_run_results_parser.py",
+          "scenario_name": "parser_names_failing_test_in_failures_for_drift_detector",
+          "estimate_minutes": 45,
+          "depends_on": ["02-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/eject/parser.py",
+            "backend/tests/unit/test_run_results_parser.py",
+            "tests/acceptance/dbt-test-validation/steps/dbt_test_validation_steps.py"
+          ]
+        },
+        {
+          "id": "02-03",
+          "name": "Customer-fidelity invariant — seeded profile equals backend MinIO config",
+          "criteria": "DuckDBProfileSeeder exposes the seeded s3 endpoint and bucket through observable surfaces (helper read of the written profiles.yml is acceptable since the seeder owns the file). EjectTestReport.seeded_profile_bucket and .seeded_profile_endpoint are populated by the orchestrator's per-flow eject_and_test from the same minio_creds the seeder consumed. Acceptance step glue for milestone-1 customer-fidelity scenario asserts the seeded values equal the backend's MinIO bucket + endpoint (read at fixture time from the same compose env vars).",
+          "test_file": "backend/tests/unit/test_eject_orchestrator.py",
+          "scenario_name": "orchestrator_populates_seeded_profile_bucket_and_endpoint_on_eject_report",
+          "estimate_minutes": 45,
+          "depends_on": ["02-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/eject/orchestrator.py",
+            "backend/tests/integration/dataset_layer/eject/seeder.py",
+            "backend/tests/unit/test_eject_orchestrator.py",
+            "tests/acceptance/dbt-test-validation/steps/dbt_test_validation_steps.py"
           ]
         }
       ]

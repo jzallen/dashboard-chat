@@ -198,6 +198,75 @@ class TestZipContents:
         plugin_macro_files = [n for n in names if n.startswith("macros/plugin_")]
         assert plugin_macro_files == []
 
+    def test_generate_zip_when_range_constraint_present_writes_packages_yml_with_dbt_utils(self):
+        """Phase 2: a dataset with any range constraint emits dbt_utils tests,
+        which require dbt_utils to be installed via `dbt deps`. The zip MUST
+        ship a top-level packages.yml referencing dbt-labs/dbt_utils so the
+        eject-then-test cycle's `dbt deps` step succeeds."""
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "score": {"type": "number", "constraints": {"range": {"min": 0, "max": 100}}},
+                }
+            }
+        )
+        project = _make_project("Test", datasets=[ds])
+
+        zip_bytes = generate_dbt_project_zip(project, "test")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+        names = set(zf.namelist())
+
+        assert "packages.yml" in names
+        import yaml as _yaml
+
+        parsed = _yaml.safe_load(zf.read("packages.yml").decode("utf-8"))
+        packages = parsed["packages"]
+        assert any(
+            p.get("package") == "dbt-labs/dbt_utils" for p in packages
+        ), f"Expected dbt-labs/dbt_utils in packages, got: {packages}"
+        dbt_utils_entry = next(p for p in packages if p["package"] == "dbt-labs/dbt_utils")
+        assert dbt_utils_entry["version"] == [">=1.1.0", "<2.0.0"]
+
+    def test_generate_zip_when_only_non_range_constraints_present_omits_packages_yml(self):
+        """When the only emitted tests are core dbt tests (not_null, unique,
+        accepted_values), `dbt deps` is unnecessary and packages.yml is NOT
+        written. This keeps simple projects from being forced through an
+        extra package-install step."""
+        ds = _make_dataset(
+            schema_config={
+                "fields": {
+                    "email": {"type": "text", "constraints": {"required": True, "unique": True}},
+                    "status": {
+                        "type": "select",
+                        "constraints": {"accepted_values": ["A", "B"]},
+                    },
+                }
+            }
+        )
+        project = _make_project("Test", datasets=[ds])
+
+        zip_bytes = generate_dbt_project_zip(project, "test")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+        names = set(zf.namelist())
+
+        assert "packages.yml" not in names
+
+    def test_generate_zip_when_no_constraints_at_all_omits_packages_yml(self):
+        """A constraint-free project ships no packages.yml — confirms the
+        Phase-0 placeholder (which would have forced a packages.yml via a
+        always-emitted `not_null`) is gone, AND that absent constraints
+        produce no dbt_utils dependency."""
+        ds = _make_dataset(
+            schema_config={"fields": {"col_a": {"type": "text"}}}
+        )
+        project = _make_project("Test", datasets=[ds])
+
+        zip_bytes = generate_dbt_project_zip(project, "test")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+        names = set(zf.namelist())
+
+        assert "packages.yml" not in names
+
     def test_generate_zip_with_plugin_macros_includes_macro_files(self):
         class FakePlugin:
             name = "test_plugin"

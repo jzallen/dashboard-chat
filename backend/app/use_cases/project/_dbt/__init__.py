@@ -13,10 +13,11 @@ from .marts import generate_mart_sql
 from .model_sql import generate_model_sql
 from .naming import deduplicate_names
 from .naming import to_snake_case as to_snake_case
+from .packages_yml import generate_packages_yml
 from .profiles_yml import generate_profiles_yml
 from .project_yml import generate_project_yml
 from .readme import generate_readme
-from .schema_yml import generate_schema_yml
+from .schema_yml import generate_schema_yml, schema_uses_dbt_utils
 from .sources_yml import generate_sources_yml
 
 if TYPE_CHECKING:
@@ -137,6 +138,12 @@ def generate_dbt_project_zip(
         zf.writestr("profiles.yml", generate_profiles_yml(project_name_snake))
         zf.writestr("models/staging/sources.yml", generate_sources_yml(project_name_snake, dataset_pairs))
         zf.writestr("models/schema.yml", generate_schema_yml(dataset_pairs, reports=report_pairs))
+        # Emit packages.yml only when at least one staging column requires
+        # a dbt_utils macro (i.e., a range constraint exists). Otherwise
+        # the eject-then-test cycle would have to run `dbt deps` for a
+        # no-op install. See ADR-019 Phase 2 / roadmap step 02-01.
+        if schema_uses_dbt_utils(dataset_pairs):
+            zf.writestr("packages.yml", generate_packages_yml())
         zf.writestr("macros/custom_functions.sql", generate_macros_sql())
         zf.writestr(
             "scripts/bootstrap_db.sql",
