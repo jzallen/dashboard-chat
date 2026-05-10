@@ -837,22 +837,41 @@ class TestDisplayNameToFilename:
 class _FakeConnection:
     """Minimal asyncpg-connection stand-in.
 
-    Records every ``execute`` / ``fetch`` call so tests can pin (a) whether
-    custom macros were registered, and (b) the exact SELECT the Dataset
-    handed to the driver.
+    Records every ``execute`` / ``fetch`` / ``copy_from_query`` call so tests
+    can pin (a) whether custom macros were registered, and (b) the exact SQL
+    the Dataset handed to the driver.
     """
 
     def __init__(self, fetch_rows: list[dict[str, Any]] | None = None) -> None:
         self.executed_sql: list[str] = []
+        # Each entry is the positional args after ``sql`` for parameterized
+        # queries (production routes macro registration through pg_duckdb's
+        # ``raw_query($1)`` shim, so the macro body lands in ``$1`` rather
+        # than as the executed SQL itself).
+        self.executed_args: list[tuple[Any, ...]] = []
         self.fetched_sql: list[str] = []
+        # Each entry is (outer_sql, inner_sql) capturing the COPY route
+        # production switched to in dc-f8m to bypass asyncpg's Describe phase.
+        self.copy_from_query_calls: list[tuple[str, str]] = []
         self._fetch_rows = fetch_rows or []
 
-    async def execute(self, sql: str) -> None:
+    async def execute(self, sql: str, *args: Any) -> None:
         self.executed_sql.append(sql)
+        self.executed_args.append(args)
 
     async def fetch(self, sql: str) -> list[dict[str, Any]]:
         self.fetched_sql.append(sql)
         return list(self._fetch_rows)
+
+    async def copy_from_query(self, sql: str, inner_sql: str, *, output) -> None:
+        """Record the call and stream each ``_fetch_rows`` entry's ``row``
+        value as one buffer line, mirroring the COPY-to-stdout protocol the
+        real asyncpg connection produces against pg_duckdb's ``duckdb.query``.
+        """
+        self.copy_from_query_calls.append((sql, inner_sql))
+        for r in self._fetch_rows:
+            line = r["row"] if isinstance(r, dict) and "row" in r else str(r)
+            output.write(line.encode() + b"\n")
 
 
 class _FakePool:
@@ -937,14 +956,21 @@ class TestQueryPreviewRows:
 
         rows = await ds.query_preview_rows(limit=5)
 
-        # characterization pin — exact SQL sent through
-        # ``build_read_parquet_preview_query``.
-        assert connection.fetched_sql == [
-            "SELECT to_json(t) AS row FROM read_parquet('s3://test-bucket/datasets/proj-y/ds-x/**/*.parquet') t LIMIT 5"
-        ]
+        # characterization pin — production now routes through pg_duckdb's
+        # ``duckdb.query`` via COPY-to-stdout (dc-f8m) to bypass asyncpg's
+        # Describe phase rejecting DuckDB's UNKNOWN type. The outer SQL is a
+        # constant pg_duckdb wrapper; the inner SQL embeds the staged read.
+        assert len(connection.copy_from_query_calls) == 1
+        outer_sql, inner_sql = connection.copy_from_query_calls[0]
+        assert outer_sql == "SELECT (r['row'])::text FROM duckdb.query($1) r"
+        assert inner_sql == (
+            "SELECT CAST(to_json(t) AS VARCHAR) AS row "
+            "FROM (SELECT * FROM read_parquet('s3://test-bucket/datasets/proj-y/ds-x/**/*.parquet') AS \"t0\") t "
+            "LIMIT 5"
+        )
         # No macros needed: no clean/map transforms with snake/kebab/title mode
         assert connection.executed_sql == []
-        # Rows are decoded from the single ``row`` JSON column.
+        # Rows are decoded from the COPY output buffer (one JSON per line).
         assert rows == [{"a": 1}, {"a": 2}]
 
     @pytest.mark.asyncio
@@ -971,7 +997,11 @@ class TestQueryPreviewRows:
         await ds.query_preview_rows(limit=10)
 
         # Macros must be registered exactly once, in ALL_MACROS order.
-        assert connection.executed_sql == list(ALL_MACROS)
+        # Production routes each macro through pg_duckdb's ``raw_query($1)``
+        # shim (CREATE MACRO is DuckDB DDL that Postgres's parser rejects),
+        # so the macro body lands in the positional args, not the SQL.
+        assert connection.executed_sql == ["SELECT duckdb.raw_query($1)"] * len(ALL_MACROS)
+        assert [args[0] for args in connection.executed_args] == list(ALL_MACROS)
 
     @pytest.mark.asyncio
     async def test_query_preview_rows_does_not_register_macros_for_builtin_case_modes(
