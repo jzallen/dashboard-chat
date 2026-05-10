@@ -64,6 +64,8 @@ Acceptance suites (per-feature, run separately from the standard test commands):
 cd tests/acceptance/<feature> && uv run --no-project pytest
 ```
 
+The gastown headless merge queue (rig: `dashboard_chat`) gates merges with `./tools/test/test.sh --backend` per `merge_queue.test_command`. The dispatcher script (`tools/test/test.sh`) supports `--backend`, `--ui`, `--agent`, `--all`, `--integration`, `--acceptance=<feature>` selectors. Acceptance suites run locally by the agent or human before submission — not in the queue.
+
 **Gates:**
 - Pre-commit runs ruff + eslint auto-fix (fast; preserved).
 - Pre-push Bazel gate removed — Bazel runs in CI only.
