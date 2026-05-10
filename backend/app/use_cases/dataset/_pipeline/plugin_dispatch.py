@@ -32,9 +32,9 @@ class UploadPluginDispatcher:
 
     def __init__(
         self,
-        registry: "PluginRegistry | None",
-        lake_repo: "LakeRepository",
-        outbox_repo: "OutboxRepository",
+        registry: PluginRegistry | None,
+        lake_repo: LakeRepository,
+        outbox_repo: OutboxRepository,
         timeout: float = DEFAULT_PLUGIN_TIMEOUT_SECONDS,
     ) -> None:
         self._registry = registry
