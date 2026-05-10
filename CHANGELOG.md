@@ -1,3 +1,11 @@
+## [1.17.1](https://github.com/jzallen/dashboard-chat/compare/v1.17.0...v1.17.1) (2026-05-10)
+
+
+### Bug Fixes
+
+* **backend/tests:** align _FakeConnection with copy_from_query path ([72d8350](https://github.com/jzallen/dashboard-chat/commit/72d8350771de5a13c6127c88bf678292e310ee28))
+* **backend:** pin pyarrow-hotfix for ibis-duckdb backend ([f1489ae](https://github.com/jzallen/dashboard-chat/commit/f1489ae2509c7c3934986e8a995616c44557c2e7))
+
 # [1.17.0](https://github.com/jzallen/dashboard-chat/compare/v1.16.0...v1.17.0) (2026-05-09)
 
 
