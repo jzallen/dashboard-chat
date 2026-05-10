@@ -14,6 +14,18 @@ Architectural enforcement (ADR-019 D5, §11):
     - ``EjectOrchestratorProtocol`` (protocols.py) — subtype layer
     - pytest-archon rule — structural layer
     - CI behavioral test (uninstall dbt-core, expect named probe skip)
+
+Ingress invariant (ADR-016, milestone-4 protocol assertion): every HTTP
+request the orchestrator makes — both the earned-trust export probe and
+the per-flow ``_fetch_zip`` — resolves through ``self._base_url``, which
+the session fixture wires from ``AUTH_PROXY_URL`` (the auth-proxy
+ingress). The orchestrator NEVER dials the backend's internal port
+directly. Single point of resolution: ``url = f"{self._base_url}/..."``
+in ``_fetch_zip`` (and the equivalent in ``_invoke_export_probe``). This
+keeps test-time substrate identical to production-fidelity ingress; the
+acceptance suite's milestone-4 scenario asserts on the resulting URL to
+catch regressions where a future contributor introduces a backend-direct
+shortcut.
 """
 
 from __future__ import annotations

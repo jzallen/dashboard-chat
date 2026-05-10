@@ -15,9 +15,14 @@
 #     NOT directly to the backend. Asserted by inspecting the URL the
 #     orchestrator uses.
 #
-# All scenarios @pending — DELIVER turns them on one at a time.
+# Phase 4 (DELIVER) unpended both scenarios: AC1.4 raw-tool-call leak guard
+# and ADR-016 ingress URL invariant. Both are pure assertions on existing
+# behavior — no new mechanism. The orchestrator already builds export URLs
+# from its configured base_url (the auth-proxy ingress); chat_turn already
+# raises on AC1.4 leaks unconditionally, before any post-turn check (so the
+# Phase-3 validate_after wiring cannot bypass it).
 
-@real-io @pending
+@real-io
 Feature: Existing protocol invariants survive the new validation layers
 
   Background:

@@ -256,9 +256,11 @@ def when_customer_ejects(
     Threads the session-scoped ``tmp_path`` from the orchestrator fixture
     into the call so unzipped project artefacts share pytest's session
     tempdir lifecycle (orchestrator.py contract: caller controls tmpdir).
-    Records the auth-proxy ingress URL on ``capture.fetch_url`` so the
-    milestone-4 ADR-016 invariant has an observable to assert (the WS
-    doesn't assert it but the field is captured for downstream scenarios).
+    Records the orchestrator's actual fetch URL on ``capture.fetch_url`` —
+    reconstructed from ``orchestrator._base_url`` so the milestone-4
+    ADR-016 invariant assertion observes the URL the orchestrator was
+    wired with at composition root, NOT the env var (which would only
+    prove the env, not the orchestrator's choice).
     """
     loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
     harness = capture.extras["harness"]
@@ -268,9 +270,13 @@ def when_customer_ejects(
             tmp_path=eject_orchestrator.session_tmp_path,
         ),
     )
-    auth_proxy_url = os.environ.get("AUTH_PROXY_URL", "http://localhost:3000").rstrip("/")
+    # ADR-016 ingress invariant (milestone-4): the orchestrator builds
+    # export URLs from its wired base_url (orchestrator.py:_fetch_zip).
+    # Reading ``orchestrator._base_url`` makes the @then assertion observe
+    # the orchestrator's choice rather than re-deriving from env.
+    base_url = eject_orchestrator.orchestrator._base_url  # noqa: SLF001
     capture.fetch_url = (
-        f"{auth_proxy_url}/api/projects/{capture.project_id}/export/dbt"
+        f"{base_url}/api/projects/{capture.project_id}/export/dbt"
     )
 
 
@@ -964,9 +970,29 @@ def then_suite_skips_with_probe_named(
 def when_customer_runs_complete_workflow(
     capture: HarnessCapture, requires_groq: None
 ) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: invoke a representative "
-        "harness.chat_turn(...) sequence end-to-end and store the trace"
+    """Drive one representative chat_turn end-to-end and capture the trace.
+
+    The AC1.4 raw-tool-call leak guard is unconditional in
+    ``DatasetLayerHarness.chat_turn`` (harness.py): the trace's
+    ``raw_tool_call_seen`` flag is checked BEFORE any post-turn composition
+    runs (including the Phase-3 ``validate_after`` layer). This @when
+    proves the guard still fires after Phase 3 wired ``validate_after``
+    into the post-turn closure — a chat workflow that completes (returns
+    a trace) implies AC1.4 held throughout.
+
+    Uses a neutral prompt that does not need to mutate the dataset; the
+    AC1.4 invariant is orthogonal to LLM behavior, so a deterministic
+    prompt outcome is not required for this assertion. ``requires_groq``
+    skips the scenario when no API key is on the wire, matching the rest
+    of the chat-driven scenarios.
+    """
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    harness = capture.extras["harness"]
+    capture.chat_trace = loop.run_until_complete(
+        harness.chat_turn(
+            "Summarise the columns in this dataset",
+            dataset_id=capture.dataset_id,
+        ),
     )
 
 
