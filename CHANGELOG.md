@@ -1,3 +1,24 @@
+# [1.19.0](https://github.com/jzallen/dashboard-chat/compare/v1.18.0...v1.19.0) (2026-05-10)
+
+
+### Bug Fixes
+
+* **backend/eject:** parser ignores test/hook records inside dbt build phase ([c8ae682](https://github.com/jzallen/dashboard-chat/commit/c8ae682b3c3b0e1253e391d319feeaf20b886c1d))
+* **eject:** also filter dbt hooks out of test phase + align acceptance loop scope ([215101e](https://github.com/jzallen/dashboard-chat/commit/215101e2c9ec1862b2f089b1ffa59e4d253156a7))
+* **test/dbt-test-validation:** sort imports per ruff I001 ([54fa4f1](https://github.com/jzallen/dashboard-chat/commit/54fa4f16d55a4388c76e61b348830dc89d4ceba5))
+
+
+### Features
+
+* **backend/dbt-export:** emit constraint-driven dbt tests + packages.yml ([858a33e](https://github.com/jzallen/dashboard-chat/commit/858a33e9017f6db37db7765ab01c8822381f07c7))
+* **backend/eject:** name failing dbt test in EjectTestReport for drift detector ([f497b69](https://github.com/jzallen/dashboard-chat/commit/f497b69aaf30147a561245ee7de2b03dde0f2a6e))
+* **backend/eject:** seeded profile mirrors backend MinIO config ([ce6c0cf](https://github.com/jzallen/dashboard-chat/commit/ce6c0cf8a65b9d728279bed1a6f5794840c988fa))
+* **test/dataset-layer:** chat_turn validate_with hook engages AC1.5 rephrase on Pandera failure ([623dc81](https://github.com/jzallen/dashboard-chat/commit/623dc8165337bc179f7807636f0e09c492675ec8))
+* **test/dbt-test-validation:** unpend M2 validate-after scenarios with stateful Pandera fixture ([01900dd](https://github.com/jzallen/dashboard-chat/commit/01900dd3c694abf0dd7615044c594f8ce9c7e2b9))
+* **test/dbt-test-validation:** unpend M4 protocol invariant scenarios ([3c5bbd6](https://github.com/jzallen/dashboard-chat/commit/3c5bbd68c4012a1a61c2b599db7c8a346a1db78c))
+* **test/validation:** add timing-budget guard + tighten OrdersStaging quantity range ([ea84b60](https://github.com/jzallen/dashboard-chat/commit/ea84b60672df4e9c7a83d781eabc2b7701260378))
+* **tools:** include ruff check + format in --backend gate ([a6e4bd0](https://github.com/jzallen/dashboard-chat/commit/a6e4bd077b965da1fd4d98f585ac51f7721cda53))
+
 # [1.18.0](https://github.com/jzallen/dashboard-chat/compare/v1.17.1...v1.18.0) (2026-05-10)
 
 
