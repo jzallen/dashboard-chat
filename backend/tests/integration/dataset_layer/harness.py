@@ -868,6 +868,7 @@ class DatasetLayerHarness:
         thread_id: str | None = None,
         max_retries: int = 2,
         post_turn_check: Callable[[ChatEventTrace], Awaitable[None] | None] | None = None,
+        validate_with: Any | None = None,
     ) -> ChatEventTrace:
         """Drive one chat turn end-to-end.
 
@@ -876,11 +877,34 @@ class DatasetLayerHarness:
         close), then runs ``post_turn_check`` if supplied. Retries with a
         rephrased prompt up to ``max_retries`` times if the check raises
         AssertionError. Per AC1.5 the default budget is 2.
+
+        ``validate_with`` (Phase 3, ADR-019 Option β) is strictly additive:
+        when set to a ``pa.DataFrameSchema``, the harness runs
+        ``validate_after(dataset_id, validate_with)`` after each successful
+        turn and raises AssertionError on validation fail — engaging the
+        same rephrase loop. The AssertionError message names the offending
+        columns AND embeds the per-turn errors list (the structured diff)
+        so the chat_turn-exhaustion wrapper propagates that diagnostic
+        context to the caller. ``validate_with`` is mutually-orthogonal to
+        ``post_turn_check``: when both are set, validation runs first; the
+        user check runs only when validation passes. ``validate_with=None``
+        (default) preserves the prior behavior exactly.
         """
         if self._chat is None:
             raise RuntimeError(
                 "DatasetLayerHarness must be used as an async context manager (`async with`)",
             )
+
+        # Compose the effective post_turn_check from validate_with (runs first)
+        # and any user-supplied post_turn_check (runs only when validation
+        # passes). The closure captures dataset_id + validate_with so each
+        # attempt re-fetches the table state via validate_after.
+        effective_check = self._compose_post_turn_check(
+            dataset_id=dataset_id,
+            validate_with=validate_with,
+            user_check=post_turn_check,
+        )
+
         attempts = max_retries + 1
         last_error: AssertionError | None = None
         current = prompt
@@ -897,10 +921,10 @@ class DatasetLayerHarness:
                     "raw Groq tool-call delta (frame prefix '9:') leaked through SSE — "
                     "AC1.4 invariant violated; the worker is no longer the single dispatcher",
                 )
-            if post_turn_check is None:
+            if effective_check is None:
                 return trace
             try:
-                result = post_turn_check(trace)
+                result = effective_check(trace)
                 if asyncio.iscoroutine(result):
                     await result
                 return trace
@@ -916,6 +940,50 @@ class DatasetLayerHarness:
         # Unreachable but keeps the type checker honest:
         assert last_error is not None
         raise last_error
+
+    def _compose_post_turn_check(
+        self,
+        *,
+        dataset_id: str | None,
+        validate_with: Any | None,
+        user_check: Callable[[ChatEventTrace], Awaitable[None] | None] | None,
+    ) -> Callable[[ChatEventTrace], Awaitable[None] | None] | None:
+        """Compose validate_with + user_check into a single post-turn closure.
+
+        Returns ``None`` if neither is supplied (preserving the
+        original "no check" path so the caller can short-circuit). If
+        ``validate_with`` is supplied, validation runs FIRST: a fail
+        raises AssertionError carrying the offending column names AND
+        the structured diff (the per-turn errors list), so the outer
+        chat_turn exhaustion wrapper propagates that context. The user
+        check runs only after validation passes.
+        """
+        if validate_with is None:
+            return user_check
+        if dataset_id is None:
+            raise RuntimeError(
+                "chat_turn(validate_with=...) requires dataset_id to be set",
+            )
+
+        async def _check(trace: ChatEventTrace) -> None:
+            result = await self.validate_after(dataset_id, validate_with)
+            if getattr(result, "status", None) == "fail":
+                errors = list(getattr(result, "errors", []) or [])
+                # Surface offending columns + structured diff so the
+                # rephrase loop has actionable diagnostic context AND
+                # the exhausted-retries wrapper carries it through.
+                columns = sorted({err.split(":", 1)[0] for err in errors if ":" in err})
+                column_str = ", ".join(columns) if columns else "<unknown>"
+                raise AssertionError(
+                    f"per-turn validation failed for column(s) {column_str}; "
+                    f"diff: {errors!r}",
+                )
+            if user_check is not None:
+                user_result = user_check(trace)
+                if asyncio.iscoroutine(user_result):
+                    await user_result
+
+        return _check
 
     async def get_table_state(self, dataset_id: str, *, preview_limit: int = 100) -> TableState:
         if self._datasets is None:

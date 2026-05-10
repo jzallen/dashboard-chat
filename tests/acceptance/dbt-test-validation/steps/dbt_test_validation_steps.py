@@ -501,15 +501,31 @@ def then_seeded_endpoint_matches_app(capture: HarnessCapture) -> None:
     "the customer asks the harness to validate the staging frame against the orders schema"
 )
 def when_validate_after(capture: HarnessCapture) -> None:
-    """capsys-equivalent timing measurement happens HERE, in @when, not in
-    @then. Skill F-002: capsys (and other step-scoped capture fixtures) are
-    only available in the step that requests them."""
+    """Drive the per-turn validate-after through the harness facade.
+
+    Routes the call through ``DatasetLayerHarness.validate_after`` —
+    the driving port for Phase 3's Pandera-per-turn layer. The harness
+    fetches the current TableState for the dataset (over the auth-proxy
+    ingress) and runs the schema with lazy=True; the returned
+    ``ValidationResult`` carries status, structured errors, and elapsed
+    wall-clock time. Timing is measured around the @when call rather
+    than relying on result.elapsed_ms only — so the @then budget
+    assertion observes the same wall-clock the customer would.
+
+    Skill F-002: capsys (and other step-scoped capture fixtures) are
+    only available in the step that requests them — keep the timing
+    block scoped here.
+    """
+    from tests.integration.dataset_layer.validation.schemas.orders_staging import (
+        OrdersStaging,
+    )
+
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    harness = capture.extras["harness"]
     start = time.monotonic()
     try:
-        pytest.fail(
-            "DISTILL scaffold — DELIVER implements: invoke "
-            "DatasetLayerHarness.validate_after(dataset_id, OrdersStaging) "
-            "and store the result on capture.validation_result"
+        capture.validation_result = loop.run_until_complete(
+            harness.validate_after(capture.dataset_id, OrdersStaging),
         )
     finally:
         capture.validation_elapsed_ms = (time.monotonic() - start) * 1000.0
