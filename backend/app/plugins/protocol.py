@@ -50,9 +50,13 @@ class MultiProcessingResult:
     def __post_init__(self) -> None:
         if not self.results:
             raise ValueError("MultiProcessingResult requires at least one result")
-        for i, r in enumerate(self.results):
-            if r.name is None:
-                raise ValueError(f"All items in MultiProcessingResult must have a name (item {i} is unnamed)")
+        # Names are only required when the wrapper holds multiple results — single-result
+        # wrapping (the dispatcher's canonicalization of a CSV-fallback ProcessingResult)
+        # produces an unnamed degenerate, and that has to remain legal.
+        if len(self.results) > 1:
+            for i, r in enumerate(self.results):
+                if r.name is None:
+                    raise ValueError(f"All items in MultiProcessingResult must have a name (item {i} is unnamed)")
 
 
 @runtime_checkable
