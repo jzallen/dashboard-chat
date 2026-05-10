@@ -35,7 +35,8 @@ def _clean_orders_frame(rows: int = 100) -> pd.DataFrame:
             "region": [regions[i % 4] for i in range(rows)],
             "customer_email": [f"customer{i}@example.com" for i in range(rows)],
             "product_category": [f"category-{i % 5}" for i in range(rows)],
-            "quantity": list(range(rows)),
+            # quantity is constrained to in_range(1, 10000); avoid 0.
+            "quantity": [(i % 10) + 1 for i in range(rows)],
         }
     )
 

@@ -48,7 +48,11 @@ OrdersStaging = pa.DataFrameSchema(
         ),
         "quantity": pa.Column(
             int,
-            checks=pa.Check.greater_than_or_equal_to(0),
+            # Two-sided range: the upper bound (10000) is a defensible domain
+            # cap — any single-line-item quantity above it is almost certainly
+            # data corruption, not a genuine bulk order. Mirrors the
+            # accepted_range dbt test the schema.yml exporter would emit.
+            checks=pa.Check.in_range(min_value=1, max_value=10000),
             nullable=False,
         ),
     },

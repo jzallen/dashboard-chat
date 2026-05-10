@@ -29,18 +29,28 @@ class ValidationResult:
     `status` is the binary outcome consumed by the harness's chat-turn
     loop. `errors` carries column-level diagnostic messages built from
     Pandera's `failure_cases` frame. `elapsed_ms` lets callers and tests
-    enforce the per-turn timing budget.
+    enforce the per-turn timing budget. `over_budget` flips True when
+    `elapsed_ms` exceeds the supplied `budget_ms` — a soft signal (status
+    semantics are independent of timing) so callers can surface a budget
+    breach in CI without failing the validation outright.
     """
 
     status: Literal["pass", "fail"]
     errors: list[str] = field(default_factory=list)
     elapsed_ms: float = 0.0
+    over_budget: bool = False
 
 
 class PanderaValidator:
     """Validates a DataFrame against a `pa.DataFrameSchema`."""
 
-    def validate(self, df: pd.DataFrame, schema: pa.DataFrameSchema) -> ValidationResult:
+    def validate(
+        self,
+        df: pd.DataFrame,
+        schema: pa.DataFrameSchema,
+        *,
+        budget_ms: float = 200.0,
+    ) -> ValidationResult:
         start = time.perf_counter()
         try:
             schema.validate(df, lazy=True)
@@ -50,10 +60,16 @@ class PanderaValidator:
                 status="fail",
                 errors=_format_failure_cases(exc.failure_cases),
                 elapsed_ms=elapsed_ms,
+                over_budget=elapsed_ms > budget_ms,
             )
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
-        return ValidationResult(status="pass", errors=[], elapsed_ms=elapsed_ms)
+        return ValidationResult(
+            status="pass",
+            errors=[],
+            elapsed_ms=elapsed_ms,
+            over_budget=elapsed_ms > budget_ms,
+        )
 
 
 def _format_failure_cases(failure_cases: pd.DataFrame) -> list[str]:
