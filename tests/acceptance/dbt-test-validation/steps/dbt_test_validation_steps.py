@@ -312,11 +312,56 @@ def given_shape_correct_staging(capture: HarnessCapture) -> None:
 
 @given("a chat workflow has produced a staging model whose exported tests would fail")
 def given_exported_tests_would_fail(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: drive the harness through "
-        "a chat workflow that yields a staging frame violating one of the "
-        "schema.yml assertions in the exported project"
-    )
+    """Inject a deterministic data-violating constraint via the dataset API.
+
+    Per DWD-9 (docs/feature/dbt-test-validation/distill/wave-decisions.md)
+    the milestone-1 scenarios use deterministic fixture-driven data,
+    NOT an LLM chat turn — LLM jitter would make the drift signal
+    flaky. The orders.csv fixture deliberately contains 2 rows with an
+    empty ``order_id`` (lines starting with a comma); patching the
+    dataset's schema_config to add ``constraints.required: true`` on
+    ``order_id`` forces the schema.yml exporter (step 02-01) to emit a
+    ``not_null`` dbt test that the data violates. The eject orchestrator
+    then runs deps/build/test and the parser surfaces
+    ``not_null_stg_orders_order_id`` in the failure list (step 02-02).
+
+    Driving-port discipline: the patch routes through
+    ``DatasetLayerHarness.set_dataset_schema_config``, which exercises
+    the real ``DatasetUpdate`` Pydantic schema and metadata-repository
+    update path.
+    """
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    harness = capture.extras["harness"]
+    dataset_id = capture.dataset_id
+    user_jwt = capture.extras["user_jwt"]
+    auth_proxy_url = os.environ.get("AUTH_PROXY_URL", "http://localhost:3000").rstrip("/")
+
+    async def _inject_required_on_order_id() -> None:
+        # Fetch current schema_config so we preserve all inferred fields
+        # and only mutate the order_id entry. Using a fresh client keeps
+        # this independent of any mutation the harness's wrapper might do.
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            res = await client.get(
+                f"{auth_proxy_url}/api/datasets/{dataset_id}",
+                headers={"Authorization": f"Bearer {user_jwt}"},
+            )
+            res.raise_for_status()
+            body = res.json()
+        # Tolerate both flat and JSON:API shapes.
+        data = body.get("data", body) if isinstance(body, dict) else {}
+        if isinstance(data, dict) and isinstance(data.get("attributes"), dict):
+            data = data["attributes"]
+        current = data.get("schema_config") or {"fields": {}}
+        fields = dict(current.get("fields") or {})
+        order_id_entry = dict(fields.get("order_id") or {"type": "text"})
+        order_id_constraints = dict(order_id_entry.get("constraints") or {})
+        order_id_constraints["required"] = True
+        order_id_entry["constraints"] = order_id_constraints
+        fields["order_id"] = order_id_entry
+        new_schema_config = {**current, "fields": fields}
+        await harness.set_dataset_schema_config(dataset_id, new_schema_config)
+
+    loop.run_until_complete(_inject_required_on_order_id())
 
 
 @then("the report names at least one model that was built")

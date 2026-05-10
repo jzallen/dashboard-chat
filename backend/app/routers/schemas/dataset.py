@@ -51,10 +51,20 @@ class DatasetCreate(BaseModel):
 
 
 class DatasetUpdate(BaseModel):
-    """Schema for updating a Dataset's metadata."""
+    """Schema for updating a Dataset's metadata.
+
+    ``schema_config`` is a free-form dict (kept loose because the field
+    constraint vocabulary is owned by the dbt-test-validation feature
+    and evolves independently of this router; see
+    ``backend/tests/integration/dataset_layer/eject/schema_yml.py``).
+    The acceptance suite's drift-detector scenario PATCHes this field
+    to inject deterministic constraints (DWD-9: fixture-driven, no LLM
+    jitter on M1 scenarios).
+    """
 
     name: str | None = None
     description: str | None = None
+    schema_config: dict[str, Any] | None = None
 
 
 class DatasetResponse(DatasetBase):

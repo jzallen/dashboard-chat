@@ -83,6 +83,33 @@ class TestUpdateDataset:
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 
+    async def test_update_dataset_when_schema_config_provided_persists_constraints(self, seeded_db: AsyncSession):
+        """update_dataset must round-trip a schema_config dict so the
+        dbt-test-validation acceptance suite can inject deterministic
+        per-column constraints (e.g. ``required: true``) for the
+        drift-detector scenario without needing an LLM turn (DWD-9)."""
+        set_session(seeded_db)
+
+        new_schema_config = {
+            "fields": {
+                "col1": {
+                    "type": "text",
+                    "constraints": {"required": True},
+                },
+            },
+        }
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"schema_config": new_schema_config},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.schema_config == new_schema_config
+            case Failure(error):
+                pytest.fail(f"update_dataset should succeed, got: {error}")
+
     async def test_update_dataset_when_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
         """update_dataset should return Failure when dataset not found."""
         set_session(seeded_db)

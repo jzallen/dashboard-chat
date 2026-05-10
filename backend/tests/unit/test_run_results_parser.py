@@ -160,6 +160,44 @@ def test_parse_returns_fail_when_a_model_build_errors() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_parse_surfaces_failing_test_name_for_drift_detector_scenario() -> None:
+    """Step 02-02 contract pin: the drift-detector acceptance scenario
+    requires the failing dbt test's NAME to surface verbatim in
+    `EjectTestReport.failures[*].name` so the customer can triage which
+    assertion failed (JOB-001 O6). This pins the `_to_run_result` adapter:
+    if anyone changes the parser to drop the `node.name` field (e.g. uses
+    `record.unique_id` only), this test breaks loudly.
+    """
+    failing_test = _fake_run_result(
+        name="not_null_stg_orders_order_id",
+        status="fail",
+        failures=2,
+        message="Got 2 results, configured to fail if != 0",
+        execution_time=0.04,
+    )
+    successful_build = _fake_run_result(name="stg_orders", status="success")
+    run_result = _fake_dbt_run_result(
+        build_results=[successful_build],
+        test_results=[failing_test],
+    )
+
+    report = RunResultsParser().parse(run_result)
+
+    assert report.status == "fail"
+    assert report.models_built == ["stg_orders"]
+    assert report.tests_run == ["not_null_stg_orders_order_id"]
+    assert len(report.failures) == 1, (
+        f"expected exactly one failure entry, got {report.failures!r}"
+    )
+    failure = report.failures[0]
+    # The customer-visible triage signal: the dbt test name verbatim.
+    assert failure.name == "not_null_stg_orders_order_id"
+    # Diagnostic context the orchestrator forwards to CI logs:
+    assert failure.status == "fail"
+    assert failure.failures == 2
+    assert "configured to fail" in failure.message
+
+
 def test_parse_falls_back_to_run_results_json_when_result_is_none(tmp_path: Path) -> None:
     """ADR-018 §References notes `dbtRunnerResult.result` is 'not fully
     contracted'. When the test phase's `.result` is None, parser falls

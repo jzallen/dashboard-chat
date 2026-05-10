@@ -951,6 +951,40 @@ class DatasetLayerHarness:
     # fixture). ``validate_after`` runs the per-turn ``PanderaValidator``
     # against the current ``TableState.df`` for the supplied dataset.
 
+    async def set_dataset_schema_config(
+        self,
+        dataset_id: str,
+        schema_config: dict[str, Any],
+    ) -> None:
+        """PATCH a dataset's ``schema_config`` through the auth-proxy.
+
+        Used by the dbt-test-validation acceptance suite's drift-detector
+        scenario (DWD-9: deterministic fixture-driven setup, no LLM
+        turn) to inject per-column constraints (e.g. ``required: true``)
+        that the schema.yml exporter then translates into dbt tests.
+        Routes through ``/api/datasets/{dataset_id}`` exactly like the
+        UI would, exercising the real DatasetUpdate Pydantic schema and
+        the real metadata-repository update path. Raises if the backend
+        rejects the patch — a 4xx here means the schema_config field is
+        not exposed by ``DatasetUpdate``, which is the wiring contract
+        this method pins.
+        """
+        if self._client is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        backend_token = self._pat or self._user_jwt
+        res = await self._client.patch(
+            f"{self._auth_proxy_url}/api/datasets/{dataset_id}",
+            headers=bearer(backend_token, json_body=True),
+            content=json.dumps({"schema_config": schema_config}),
+        )
+        if res.status_code != 200:
+            raise AssertionError(
+                f"PATCH /api/datasets/{dataset_id} returned {res.status_code}: "
+                f"{res.text[:500]}",
+            )
+
     async def eject_and_test(
         self,
         project_id: str | None = None,

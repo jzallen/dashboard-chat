@@ -9,15 +9,18 @@
 # fixture (composition root invariant — design.md §4 "wire then probe
 # then use").
 #
-# All scenarios @pending — DELIVER turns them on one at a time.
+# Scenarios are toggled @pending one at a time as DELIVER lands sub-tasks.
+# Step 02-02 unpends the drift-detector scenario; the happy-path and
+# customer-fidelity scenarios remain @pending until 02-03+.
 
-@real-io @adapter-integration @pending
+@real-io @adapter-integration
 Feature: Per-flow eject-and-test gives the customer-fidelity validation gate
 
   Background:
     Given the dataset-layer harness is ready against the running compose stack
     And the eject orchestrator has passed its earned-trust probes
 
+  @pending
   Scenario: Customer's project ejects and validates green when staging is correct
     Given a fresh project with a small orders dataset uploaded
     And a chat workflow has produced a staging model that is shape-correct
@@ -33,6 +36,7 @@ Feature: Per-flow eject-and-test gives the customer-fidelity validation gate
     Then the ejected project re-validates as failed
     And the report names the failing validation by name
 
+  @pending
   Scenario: Customer-fidelity invariant — eject reads the same lake the app reads
     Given a fresh project with a small orders dataset uploaded
     And a chat workflow has produced a staging model that is shape-correct
