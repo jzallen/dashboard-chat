@@ -19,7 +19,7 @@
 #
 # All scenarios @pending — DELIVER turns them on one at a time.
 
-@real-io @adapter-integration @pending
+@real-io @adapter-integration
 Feature: Per-turn validation gives sub-200ms feedback on staging shape
 
   Background:
