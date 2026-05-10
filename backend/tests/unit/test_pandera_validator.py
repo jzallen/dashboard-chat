@@ -21,6 +21,7 @@ import pandas as pd
 from tests.integration.dataset_layer.validation.pandera_validator import (
     PanderaValidator,
     ValidationResult,
+    serialize_diff,
 )
 from tests.integration.dataset_layer.validation.schemas.orders_staging import (
     OrdersStaging,
@@ -81,3 +82,53 @@ class TestPanderaValidator:
         assert any("customer_email" in err for err in result.errors), (
             f"expected customer_email error, got: {result.errors}"
         )
+
+
+class TestSerializeDiff:
+    """Phase 5: serialize_diff converts a fail-status ValidationResult into a
+    structured diff payload suitable for ``StructuredRetryExhaustion``.
+
+    The harness's chat_turn carries this through to the exhausted-retries
+    raise so callers (and the failure-context @then bindings) can introspect
+    the failure shape, not just the formatted message.
+    """
+
+    def test_pass_result_serializes_to_empty_list(self) -> None:
+        result = ValidationResult(status="pass", errors=[], elapsed_ms=1.0, over_budget=False)
+
+        assert serialize_diff(result) == []
+
+    def test_fail_result_parses_each_error_into_structured_entry(self) -> None:
+        result = ValidationResult(
+            status="fail",
+            errors=[
+                "region: failed check 'isin' (value='Mars')",
+                "customer_email: failed check 'str_matches' (value='not-an-email')",
+            ],
+            elapsed_ms=2.0,
+            over_budget=False,
+        )
+
+        diff = serialize_diff(result)
+
+        assert diff == [
+            {"column": "region", "check": "isin", "value": "'Mars'"},
+            {"column": "customer_email", "check": "str_matches", "value": "'not-an-email'"},
+        ]
+
+    def test_unparseable_error_falls_through_with_raw_message(self) -> None:
+        """A future Pandera version might emit a different format; the
+        serializer keeps the raw string so the diff payload never silently
+        drops information.
+        """
+        result = ValidationResult(
+            status="fail",
+            errors=["some unexpected error format that doesn't match"],
+            elapsed_ms=1.0,
+            over_budget=False,
+        )
+
+        diff = serialize_diff(result)
+
+        assert len(diff) == 1
+        assert diff[0]["raw"] == "some unexpected error format that doesn't match"

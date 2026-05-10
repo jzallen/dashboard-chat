@@ -171,3 +171,74 @@ Strategy-C skip-when-unavailable contract.
 acceptance scope; future milestones (M4 protocol invariants, M5 failure
 modes) are independent.
 
+---
+
+## Phase 5 commit trail
+
+Phase 5 closes the failure-mode coverage. Two atomic commits, two TDD
+cycles, no deferred upstream issues; backend gate stable at 1338 passed
+(was 1332 — six new unit tests across the seeder/validator/harness
+layers), acceptance suite collects 17 scenarios (was 16) with both M5
+scenarios joining under the same Strategy-C skip-when-unavailable
+contract.
+
+| # | Commit | Purpose |
+|---|---|---|
+| 1 | `5f8d02a` | feat(test/eject): seeder rejects unknown env_var refs in exported profiles.yml |
+| 2 | `5f931f1` | feat(test/dataset-layer): chat_turn raises StructuredRetryExhaustion on retry-budget exhaustion |
+| 3 | `<this commit>` | docs(dbt-test-validation): record Phase 5 commit trail |
+
+**What landed:**
+
+- `DuckDBProfileSeeder.seed()` scans the unzipped export's
+  `profiles.yml` (when present at `tmpdir/profiles.yml`) for
+  `env_var('NAME')` references. Names not in the seeder's
+  `_KNOWN_EXPORT_ENV_VARS` set raise `RuntimeError` listing the
+  unfamiliar var(s). Defaults in the env_var() call do NOT excuse an
+  unknown name — the maintainer must explicitly acknowledge each ref.
+  Probe-time seeding (no existing profiles.yml) is unaffected. This
+  is the design.md §13 Risk #1 substrate-lie defense: a future change
+  to `backend/app/use_cases/project/_dbt/profiles_yml.py` that adds a
+  new credential reference would otherwise be silently dropped by the
+  seeder's overwrite, leaving the customer's real `dbt build` to fail
+  later with a confusing error far from the edit.
+- `harness.StructuredRetryExhaustion` — new exception subclassing
+  `AssertionError` so existing `pytest.raises(AssertionError)` call
+  sites keep working. Carries `prompt`, `attempts`,
+  `validation_diff` (structured per-turn diff from the LAST
+  validation failure) and `sse_transcript` (ChatEvents from the
+  LAST attempt's trace) as typed attributes — JOB-001 O6 triage
+  signal.
+- `pandera_validator.serialize_diff(result)` — module-level helper
+  that parses `ValidationResult.errors` into structured
+  `{column, check, value}` entries (or a `raw` fallback when the
+  message format drifts). Used by the harness's chat_turn loop to
+  populate `StructuredRetryExhaustion.validation_diff`.
+- Milestone-5 step glue (S1 + S2) goes from `pytest.fail` scaffolds
+  to real bodies. The S1 @given monkeypatches
+  `EjectAndTestOrchestrator._unzip_project` to inject
+  `env_var('DC_TEST_UNSET_CREDENTIAL')` into the unzipped
+  profiles.yml; the @when (shared with WS / M1 / M4) now wraps
+  `harness.eject_and_test` in try/except RuntimeError so the @then
+  bindings observe the loud failure on `capture.seeder_error`. S2
+  reuses the existing M2-scenario-3 step glue + the new
+  StructuredRetryExhaustion exception's formatted message, which
+  preserves the "diff: …" substring the @then assertion checks.
+- `@pending` lifted from both M5 scenarios.
+
+**Deferred items:** none Phase-5-internal.
+
+**E2E verification gap (compose unavailability in the crew workspace):**
+The acceptance suite collects all 17 scenarios cleanly and runs the
+Strategy-C skip path on this crew clone — the parent workspace's
+compose containers exist (exited) but starting them would interfere
+with `/workspaces/dashboard-chat`'s own state, which the task brief
+explicitly puts out-of-scope. Both M5 scenarios are unit-test
+verified end-to-end (12 seeder unit tests + 6 validator + 7 harness =
+25 tests gate the implementation correctness), and the merge-queue
+gate (`./tools/test/test.sh --backend`, 1338 passed / 1 skipped)
+covers the regression surface. Full E2E acceptance verification
+should run once on a compose-having environment before
+`/nw-finalize`; the Phase 5 manual review gate (mutation testing ≥
+80%) explicitly carries that step.
+

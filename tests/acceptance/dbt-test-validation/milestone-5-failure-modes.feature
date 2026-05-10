@@ -14,7 +14,7 @@
 #
 # All scenarios @pending — DELIVER turns them on one at a time.
 
-@real-io @pending
+@real-io
 Feature: Failure-mode coverage for the load-bearing dependencies
 
   Background:
