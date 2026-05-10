@@ -1,3 +1,11 @@
+# [1.18.0](https://github.com/jzallen/dashboard-chat/compare/v1.17.1...v1.18.0) (2026-05-10)
+
+
+### Features
+
+* **tools:** add tools/test dispatcher script ([946d538](https://github.com/jzallen/dashboard-chat/commit/946d53874e4194408e03fa16842f0755f248e961))
+* **tools:** expose //:test alias for tools/test ([b91d3f6](https://github.com/jzallen/dashboard-chat/commit/b91d3f6c1a943be7c2a9938a4dc94801e8d20852))
+
 ## [1.17.1](https://github.com/jzallen/dashboard-chat/compare/v1.17.0...v1.17.1) (2026-05-10)
 
 
