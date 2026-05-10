@@ -17,9 +17,12 @@ dev = [
     # test_create_dataset_from_upload.py uses for the existing 15
     # tests — that is the substrate Iron Rule binds the refactor to
     # preserve. No compose stack required (DWD-9 in DESIGN's
-    # wave-decisions.md). The SQLAlchemy + aiosqlite + boto3 + pandas
-    # cluster below is the complete real-IO surface this acceptance
-    # suite needs.
+    # wave-decisions.md). The walking skeleton drives `create_dataset_from_upload`
+    # end-to-end, so the acceptance venv installs the backend package
+    # itself (which pulls FastAPI/Pydantic/etc. transitively); the
+    # `--no-project` flag in the README skips uv's workspace inference,
+    # not this suite's own dependency-group install.
+    "dashboard-chat-backend",
     "sqlalchemy>=2.0",
     "aiosqlite>=0.19",
     "boto3>=1.34",
@@ -27,6 +30,9 @@ dev = [
     "pandas>=2.0",
     "returns>=0.22",
 ]
+
+[tool.uv.sources]
+dashboard-chat-backend = { path = "../../../backend", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["."]
