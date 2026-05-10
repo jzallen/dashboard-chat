@@ -14,7 +14,7 @@
 #
 # All scenarios @pending — DELIVER turns them on one at a time.
 
-@real-io @pending
+@real-io
 Feature: Failure-mode coverage for the load-bearing dependencies
 
   Background:
@@ -28,6 +28,7 @@ Feature: Failure-mode coverage for the load-bearing dependencies
     Then the seeder fails with an error that names the missing credential variable
     And the orchestrator does not silently substitute an empty value
 
+  @pending
   Scenario: Retry budget is exhausted — chat workflow fails with the validation diff visible
     Given a fresh project with a small orders dataset uploaded
     And the chat workflow will produce a wrong-shape staging frame on every attempt

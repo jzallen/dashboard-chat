@@ -261,15 +261,26 @@ def when_customer_ejects(
     ADR-016 invariant assertion observes the URL the orchestrator was
     wired with at composition root, NOT the env var (which would only
     prove the env, not the orchestrator's choice).
+
+    Captures any seeder-raised ``RuntimeError`` on ``capture.seeder_error``
+    rather than letting it propagate. The milestone-5 export-breakage
+    scenario asserts that the seeder fails LOUDLY with a named missing
+    credential — the @then bindings observe the captured exception. For
+    the WS / M1 / M4 scenarios where the seeder is expected to succeed,
+    the absence of an exception is implicit (capture.eject_report is
+    populated as before).
     """
     loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
     harness = capture.extras["harness"]
-    capture.eject_report = loop.run_until_complete(
-        harness.eject_and_test(
-            project_id=capture.project_id,
-            tmp_path=eject_orchestrator.session_tmp_path,
-        ),
-    )
+    try:
+        capture.eject_report = loop.run_until_complete(
+            harness.eject_and_test(
+                project_id=capture.project_id,
+                tmp_path=eject_orchestrator.session_tmp_path,
+            ),
+        )
+    except RuntimeError as exc:
+        capture.seeder_error = exc
     # ADR-016 ingress invariant (milestone-4): the orchestrator builds
     # export URLs from its wired base_url (orchestrator.py:_fetch_zip).
     # Reading ``orchestrator._base_url`` makes the @then assertion observe
@@ -1043,12 +1054,51 @@ def then_not_fetched_from_backend(capture: HarnessCapture) -> None:
 @given(
     "the project export will reference a credential variable that is not set in the environment"
 )
-def given_export_references_unset_var(capture: HarnessCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: monkeypatch the export "
-        "endpoint's profiles.yml template to include "
-        "{{ env_var('DC_TEST_UNSET_CREDENTIAL') }} and ensure that env "
-        "var is unset in the pytest process"
+def given_export_references_unset_var(
+    capture: HarnessCapture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inject ``env_var('DC_TEST_UNSET_CREDENTIAL')`` into the unzipped
+    profiles.yml so the seeder's substrate-lie defense surfaces the
+    unfamiliar var name in its RuntimeError.
+
+    The backend's export template lives in a separate process — the
+    pragmatic injection point is the orchestrator's ``_unzip_project``
+    static method, which we wrap to ALSO append a tampered env_var
+    reference after the real unzip completes. This simulates the export
+    template growing a new credential reference the seeder has not been
+    updated to handle (Phase 5 §design.md §13 Risk #1).
+
+    ``monkeypatch.delenv(... raising=False)`` ensures the var is NOT in
+    ``os.environ``; the seeder's known-set check would still raise even
+    if the var were set, but unsetting it documents the scenario's
+    intent: a credential the runtime cannot provide.
+    """
+    from tests.integration.dataset_layer.eject.orchestrator import (
+        EjectAndTestOrchestrator,
+    )
+
+    monkeypatch.delenv("DC_TEST_UNSET_CREDENTIAL", raising=False)
+
+    real_unzip = EjectAndTestOrchestrator._unzip_project
+
+    def tampered_unzip(zip_bytes: bytes, target_dir: Path) -> Path:
+        result = real_unzip(zip_bytes, target_dir)
+        profiles_path = result / "profiles.yml"
+        original = profiles_path.read_text() if profiles_path.exists() else ""
+        # Append the test injection AFTER the real export's content so
+        # parsing still succeeds — only the env_var() ref scan triggers
+        # on the new line.
+        injection = (
+            "\n# Phase 5 test injection — exercises seeder env_var defense.\n"
+            "_dc_test_injection: \"{{ env_var('DC_TEST_UNSET_CREDENTIAL') }}\"\n"
+        )
+        profiles_path.write_text(original + injection)
+        return result
+
+    monkeypatch.setattr(
+        EjectAndTestOrchestrator,
+        "_unzip_project",
+        staticmethod(tampered_unzip),
     )
 
 

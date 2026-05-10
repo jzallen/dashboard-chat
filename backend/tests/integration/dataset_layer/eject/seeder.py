@@ -20,10 +20,23 @@ when the caller passes a ``minio_creds`` dict missing a required key,
 that NAMES the missing key. It does NOT silently substitute an empty
 value — that is exactly the substrate-lie pattern the
 ``probe_minio_readable_via_duckdb`` Phase-0 probe defends against.
+
+Export-contract defense (Phase 5, design.md §13 Risk #1): when the
+unzipped export contains a ``profiles.yml`` referencing an
+``env_var(...)`` name the seeder does not recognise, ``seed()`` raises
+``RuntimeError`` naming the unfamiliar var. The seeder OVERWRITES the
+exported profile in full — without this check, a future change to
+``backend/app/use_cases/project/_dbt/profiles_yml.py`` that adds a new
+credential reference would be silently dropped, leaving the customer's
+real ``dbt build`` to fail later with a confusing error far from the
+edit. Either extend ``_KNOWN_EXPORT_ENV_VARS`` (when the seeder's
+overwrite covers the new var implicitly) or extend the substitution
+logic itself.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -36,6 +49,36 @@ _REQUIRED_KEYS: tuple[str, ...] = (
     "bucket",
     "region",
 )
+
+# Env vars the seeder explicitly handles. S3_* values land in the
+# settings: block as concrete substitutions (from minio_creds); the
+# postgres PG_* references are removed entirely because the seeder
+# writes only the dev output. Updating this set is a deliberate
+# substrate-contract change — see module docstring.
+_KNOWN_EXPORT_ENV_VARS: frozenset[str] = frozenset(
+    {
+        # Substituted via settings: block from minio_creds.
+        "S3_REGION",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "S3_ENDPOINT",
+        "S3_URL_STYLE",
+        "S3_USE_SSL",
+        "S3_BUCKET",
+        # Postgres target removed by the seeder's overwrite.
+        "PG_HOST",
+        "PG_PORT",
+        "PG_USER",
+        "PG_PASSWORD",
+        "PG_DATABASE",
+        "PG_SCHEMA",
+    }
+)
+
+# Capture group 1 is the env_var NAME. Defaults / filters after the name
+# are intentionally not parsed — the seeder's contract is "every name
+# must be acknowledged," independent of runtime defaults.
+_ENV_VAR_REF_PATTERN = re.compile(r"env_var\(\s*['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]")
 
 
 class DuckDBProfileSeeder:
@@ -85,6 +128,10 @@ class DuckDBProfileSeeder:
             if key not in minio_creds:
                 raise RuntimeError(f"profile seed failed: missing required minio credential '{key}'")
 
+        existing_profile = tmpdir / "profiles.yml"
+        if existing_profile.exists():
+            self._validate_existing_export(existing_profile.read_text())
+
         endpoint = self._strip_scheme(minio_creds["endpoint_url"])
 
         # dbt-duckdb only honours s3_* keys when they are nested under
@@ -129,3 +176,34 @@ class DuckDBProfileSeeder:
             if endpoint_url.startswith(scheme):
                 return endpoint_url[len(scheme) :]
         return endpoint_url
+
+    @staticmethod
+    def _validate_existing_export(profiles_text: str) -> None:
+        """Surface unfamiliar ``env_var(...)`` refs in the unzipped export.
+
+        Phase 5 substrate-contract defense (design.md §13 Risk #1). The
+        seeder is about to OVERWRITE this file in full — any env_var ref
+        the seeder doesn't recognise would be silently dropped, so flag
+        it loudly here. See module docstring for how to extend the
+        recognised set when the export legitimately grows a new ref.
+        """
+        unfamiliar: list[str] = []
+        seen: set[str] = set()
+        for match in _ENV_VAR_REF_PATTERN.finditer(profiles_text):
+            name = match.group(1)
+            if name in seen:
+                continue
+            seen.add(name)
+            if name not in _KNOWN_EXPORT_ENV_VARS:
+                unfamiliar.append(name)
+        if unfamiliar:
+            names = ", ".join(unfamiliar)
+            raise RuntimeError(
+                "profile seed failed: exported profiles.yml references "
+                f"env_var(s) the seeder does not recognise: {names}. "
+                "The seeder overwrites profiles.yml in full, so unrecognised "
+                "credential references would be silently dropped — extend "
+                "_KNOWN_EXPORT_ENV_VARS in seeder.py (when the overwrite "
+                "covers the new var implicitly) or extend the seeder's "
+                "substitution logic."
+            )
