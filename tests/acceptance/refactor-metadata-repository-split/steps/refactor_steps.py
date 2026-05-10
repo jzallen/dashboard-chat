@@ -16,11 +16,21 @@ Driving-port discipline (Mandate 1):
 """
 from __future__ import annotations
 
+import asyncio
+import uuid
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 import pytest
+import pytest_asyncio
 from pytest_bdd import given, parsers, then, when
+
+# Fields generated per-row that are expected to differ between the two
+# parallel create_project calls in the walking-skeleton scenario.
+_GENERATED_PROJECT_FIELDS = frozenset({"id", "created_at", "updated_at"})
+
+_T = TypeVar("_T")
 
 
 # ---------------------------------------------------------------------------
@@ -47,9 +57,24 @@ class RefactorCapture:
     extras: dict[str, Any] = field(default_factory=dict)
 
 
-@pytest.fixture
-def capture() -> RefactorCapture:
-    return RefactorCapture()
+@pytest_asyncio.fixture
+async def capture() -> RefactorCapture:
+    """Per-scenario capture; pins to the session loop pytest-asyncio drives.
+
+    pytest-bdd 8.x does not auto-await async step functions, so step bodies
+    stay synchronous and drive async work via
+    ``loop.run_until_complete(...)`` through :func:`_run`. The loop is
+    captured here while the fixture is awaited.
+    """
+    cap = RefactorCapture()
+    cap.extras["_loop"] = asyncio.get_running_loop()
+    return cap
+
+
+def _run(capture: RefactorCapture, coro: Coroutine[Any, Any, _T]) -> _T:
+    """Drive a coroutine on the session loop pinned by the capture fixture."""
+    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
+    return loop.run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -59,19 +84,8 @@ def capture() -> RefactorCapture:
 
 @given("a fresh SQLite-backed repository container")
 def given_fresh_container(capture: RefactorCapture, repository_container) -> None:
-    """Bind the session-scoped container fixture into the capture object.
-
-    DISTILL scaffold: until DELIVER lands the per-aggregate properties +
-    `_LegacyMetadataFacade`, this step does not yet route to anything new —
-    we just stash the container reference. Implementation flips on in
-    Phase 00 of DELIVER.
-    """
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: bind the SQLite-backed "
-        "RepositoryContainer fixture into capture.container so subsequent "
-        "@when steps can read both .projects (new) and .metadata (legacy "
-        "facade) off the same container instance."
-    )
+    """Bind the session-scoped container fixture into the capture object."""
+    capture.container = repository_container
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +94,18 @@ def given_fresh_container(capture: RefactorCapture, repository_container) -> Non
 
 
 @given(parsers.parse('an organization "{org_name}" exists in the database'))
-def given_organization_exists(capture: RefactorCapture, org_name: str) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: insert an OrganizationRecord "
-        "with the given name into the test database (same db_session "
-        "machinery the existing repository tests use)."
-    )
+def given_organization_exists(capture: RefactorCapture, db_session, org_name: str) -> None:
+    """Seed an OrganizationRecord and record its id for downstream steps."""
+    from app.repositories.metadata import OrganizationRecord
+
+    org_id = str(uuid.uuid4())
+
+    async def _seed() -> None:
+        db_session.add(OrganizationRecord(id=org_id, name=org_name))
+        await db_session.flush()
+
+    _run(capture, _seed())
+    capture.extras["org_id"] = org_id
 
 
 @when(
@@ -94,11 +114,17 @@ def given_organization_exists(capture: RefactorCapture, org_name: str) -> None:
     )
 )
 def when_create_project_via_new_repo(capture: RefactorCapture, project_name: str) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: invoke "
-        "capture.container.projects.create_project(name=project_name, ...) "
-        "and store the returned dict in capture.new_repo_results['create']."
+    """Drive create_project through the new ``.projects`` container property."""
+    result = _run(
+        capture,
+        capture.container.projects.create_project(
+            name=project_name,
+            description="initial",
+            org_id=capture.extras["org_id"],
+            created_by="acceptance-user",
+        ),
     )
+    capture.new_repo_results["create"] = result
 
 
 @when(
@@ -107,54 +133,75 @@ def when_create_project_via_new_repo(capture: RefactorCapture, project_name: str
     )
 )
 def when_create_project_via_facade(capture: RefactorCapture, project_name: str) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: invoke "
-        "capture.container.metadata.create_project(name=project_name, ...) "
-        "(legacy facade) and store the returned dict in "
-        "capture.legacy_repo_results['create']. The facade SHOULD route to "
-        "the same ProjectRepository instance the new property exposes."
+    """Drive create_project through the legacy ``.metadata`` facade.
+
+    The facade's ``create_project`` delegates to a ``ProjectRepository``
+    bound to the same session, so both routes hit the same SQLite engine.
+    """
+    result = _run(
+        capture,
+        capture.container.metadata.create_project(
+            name=project_name,
+            description="initial",
+            org_id=capture.extras["org_id"],
+            created_by="acceptance-user",
+        ),
     )
+    capture.legacy_repo_results["create"] = result
 
 
 @then("both projects carry the same observable dictionary shape")
 def then_projects_match_shape(capture: RefactorCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: assert that the keysets of "
-        "capture.new_repo_results['create'] and "
-        "capture.legacy_repo_results['create'] are equal, and that every "
-        "key common to both holds an equal value EXCEPT 'id', "
-        "'created_at', 'updated_at' (per-row generated, expected to differ)."
+    new = capture.new_repo_results["create"]
+    legacy = capture.legacy_repo_results["create"]
+    assert set(new.keys()) == set(legacy.keys()), (
+        f"keysets diverge: new={set(new.keys())} legacy={set(legacy.keys())}"
     )
+    for key in new.keys() & legacy.keys():
+        if key in _GENERATED_PROJECT_FIELDS:
+            continue
+        assert new[key] == legacy[key], f"value for {key!r} diverged: new={new[key]!r} legacy={legacy[key]!r}"
 
 
 @then("both projects are readable through their respective entry points")
 def then_projects_readable(capture: RefactorCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: read each project back via "
-        "capture.container.projects.get_project(id) and "
-        "capture.container.metadata.get_project(id); assert each returns a "
-        "non-None dict whose 'id' matches the create call."
-    )
+    new_id = capture.new_repo_results["create"]["id"]
+    legacy_id = capture.legacy_repo_results["create"]["id"]
+
+    new_read = _run(capture, capture.container.projects.get_project(new_id))
+    legacy_read = _run(capture, capture.container.metadata.get_project(legacy_id))
+
+    assert new_read is not None and new_read["id"] == new_id
+    assert legacy_read is not None and legacy_read["id"] == legacy_id
 
 
-@then(
-    "updating each project's description through its entry point persists identically"
-)
+@then("updating each project's description through its entry point persists identically")
 def then_updates_persist(capture: RefactorCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: update each project's "
-        "description through its entry point; assert each re-read returns "
-        "the new description."
-    )
+    new_id = capture.new_repo_results["create"]["id"]
+    legacy_id = capture.legacy_repo_results["create"]["id"]
+
+    _run(capture, capture.container.projects.update_project(new_id, {"description": "via-new"}))
+    _run(capture, capture.container.metadata.update_project(legacy_id, {"description": "via-legacy"}))
+
+    new_read = _run(capture, capture.container.projects.get_project(new_id))
+    legacy_read = _run(capture, capture.container.metadata.get_project(legacy_id))
+
+    assert new_read["description"] == "via-new"
+    assert legacy_read["description"] == "via-legacy"
 
 
 @then("deleting each project through its entry point removes it from the database")
 def then_deletes_remove(capture: RefactorCapture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: delete each project through "
-        "its entry point; assert each subsequent get_project returns None "
-        "and project_exists returns False."
-    )
+    new_id = capture.new_repo_results["create"]["id"]
+    legacy_id = capture.legacy_repo_results["create"]["id"]
+
+    assert _run(capture, capture.container.projects.delete_project(new_id)) is True
+    assert _run(capture, capture.container.metadata.delete_project(legacy_id)) is True
+
+    assert _run(capture, capture.container.projects.get_project(new_id)) is None
+    assert _run(capture, capture.container.metadata.get_project(legacy_id)) is None
+    assert _run(capture, capture.container.projects.project_exists(new_id)) is False
+    assert _run(capture, capture.container.metadata.project_exists(legacy_id)) is False
 
 
 # ---------------------------------------------------------------------------

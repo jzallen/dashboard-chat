@@ -16,11 +16,18 @@ dev = [
     # to an in-memory SQLite engine — the same engine
     # backend/tests/conftest.py uses for the per-aggregate test files. No
     # compose stack is required, so this suite has no asyncpg / no MinIO
-    # / no httpx dependency. The SQLAlchemy + aiosqlite pair below is the
-    # complete real-IO surface this acceptance suite needs.
+    # / no httpx dependency. We install backend as an editable path dep so
+    # ``from app.repositories import RepositoryContainer`` resolves and
+    # transitive imports (boto3 for the unused LakeRepository registration,
+    # pydantic_settings for config, etc.) come along for the ride.
     "sqlalchemy>=2.0",
     "aiosqlite>=0.19",
+    "uuid-utils>=0.6.0",
+    "dashboard-chat-backend",
 ]
+
+[tool.uv.sources]
+dashboard-chat-backend = { path = "../../../backend", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["."]
