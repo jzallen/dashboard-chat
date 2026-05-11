@@ -1,0 +1,143 @@
+{
+  "roadmap": {
+    "project_id": "refactor-dataset-layer-harness",
+    "created_at": "2026-05-07T06:32:46Z",
+    "total_steps": 7,
+    "phases": 3
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Characterize and prepare HTTP funnel",
+      "description": "Establish the regression baseline using the existing dataset_layer integration suite, then introduce a single internal HTTP funnel inside DatasetLayerHarness so all backend/agent calls flow through one set of helpers. No public signatures change; no API client class yet. This phase de-risks the extraction by reducing 24 ad-hoc httpx call sites to ~4 internal helpers.",
+      "estimate_minutes": 45,
+      "depends_on": [],
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Baseline integration suite and inventory call sites",
+          "criteria": "Running `uv run --env-file ../.env pytest tests/integration/dataset_layer/ -v -rs -o \"addopts=\"` produces a recorded green/skip count; harness call-site inventory committed as a comment block.",
+          "test_file": "backend/tests/integration/dataset_layer/harness.py",
+          "scenario_name": "baseline_green_count_recorded",
+          "estimate_minutes": 15,
+          "depends_on": [],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/harness.py"
+          ]
+        },
+        {
+          "id": "01-02",
+          "name": "Funnel all httpx calls through internal _get/_post/_patch/_delete helpers",
+          "criteria": "Every HTTP call in DatasetLayerHarness routes through one of four private helpers that own headers and URL composition; integration suite stays green at the recorded count.",
+          "test_file": "backend/tests/integration/dataset_layer/harness.py",
+          "scenario_name": "internal_http_funnel_in_place",
+          "estimate_minutes": 30,
+          "depends_on": ["01-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/harness.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Extract DatasetLayerApiClient",
+      "description": "Lift the HTTP funnel and all API methods (project, upload, dataset, session, transforms) into a sibling _api_client.py module. DatasetLayerHarness becomes a thin facade that owns lifecycle plus assertions plus chat orchestration and delegates raw HTTP to the injected client. Public signatures of the harness remain identical so existing tests need no changes. Designed to merge cleanly with dc-v5u (row_count) and dc-9u1 (new test methods) by exposing get_table_state through the API client surface.",
+      "estimate_minutes": 100,
+      "depends_on": ["01"],
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Create _api_client.py with HTTP funnel and headers",
+          "criteria": "New backend/tests/integration/dataset_layer/_api_client.py contains DatasetLayerApiClient owning httpx client, headers, and the four HTTP helpers; harness composes it via __init__ injection with a real default; suite green.",
+          "test_file": "backend/tests/integration/dataset_layer/harness.py",
+          "scenario_name": "api_client_owns_http_funnel",
+          "estimate_minutes": 30,
+          "depends_on": ["01-02"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/_api_client.py",
+            "backend/tests/integration/dataset_layer/harness.py"
+          ]
+        },
+        {
+          "id": "02-02",
+          "name": "Move project, upload, dataset, session, transforms methods into the API client",
+          "criteria": "create_project, upload_csv, get_table_state, create_session, list_session_events, post/patch_transforms_direct, list_dataset_transforms live on DatasetLayerApiClient; harness methods delegate one-to-one with unchanged signatures; suite green.",
+          "test_file": "backend/tests/integration/dataset_layer/harness.py",
+          "scenario_name": "harness_delegates_api_methods",
+          "estimate_minutes": 40,
+          "depends_on": ["02-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/_api_client.py",
+            "backend/tests/integration/dataset_layer/harness.py"
+          ]
+        },
+        {
+          "id": "02-03",
+          "name": "Strict type annotations and docstrings on API client",
+          "criteria": "Every public DatasetLayerApiClient method has a precise return type (no bare Any where a typed dict suffices) and a one-line docstring; suite green; harness.py under 400 lines, _api_client.py under 350 lines.",
+          "test_file": "backend/tests/integration/dataset_layer/harness.py",
+          "scenario_name": "api_client_typed_and_documented",
+          "estimate_minutes": 30,
+          "depends_on": ["02-02"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/_api_client.py",
+            "backend/tests/integration/dataset_layer/harness.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Tame chat orchestration conditionals",
+      "description": "Apply Refactoring Priority Premise L1-L2 to the chat orchestration hotspots (chat_turn lines 282-333, _drive_one_turn lines 585+). Extract retry/rephrase loop and event-collection logic into named methods, replace nested error handling with guard clauses. Public chat_turn signature remains unchanged. No L3+ moves unless a polymorphism opportunity is obvious and low-risk.",
+      "estimate_minutes": 65,
+      "depends_on": ["02"],
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Extract retry/rephrase loop into named helpers",
+          "criteria": "_drive_one_turn body and chat_turn retry loop split into _build_chat_request, _collect_chat_events, _should_retry, _next_prompt; each helper under 25 lines; suite green.",
+          "test_file": "backend/tests/integration/dataset_layer/harness.py",
+          "scenario_name": "chat_turn_helpers_extracted",
+          "estimate_minutes": 35,
+          "depends_on": ["02-03"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/harness.py"
+          ]
+        },
+        {
+          "id": "03-02",
+          "name": "Replace nested conditionals with guard clauses",
+          "criteria": "chat_turn and helpers use early-return guard clauses for raw_tool_call_seen, missing post_turn_check, and exhausted attempts; nesting depth drops to two; suite green; harness.py still under 400 lines.",
+          "test_file": "backend/tests/integration/dataset_layer/harness.py",
+          "scenario_name": "guard_clauses_replace_nested_ifs",
+          "estimate_minutes": 30,
+          "depends_on": ["03-01"],
+          "files_to_modify": [
+            "backend/tests/integration/dataset_layer/harness.py"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "backend/tests/integration/dataset_layer/"
+    ],
+    "test_directories": [
+      "backend/tests/integration/dataset_layer/"
+    ],
+    "excluded_patterns": [
+      "__init__.py",
+      "__pycache__/**",
+      "test_*.py",
+      "conftest.py"
+    ]
+  },
+  "validation": {
+    "status": "pending",
+    "reviewer": "mayor",
+    "approved_at": "pending"
+  }
+}
