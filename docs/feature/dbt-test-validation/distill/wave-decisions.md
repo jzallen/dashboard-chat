@@ -124,6 +124,20 @@ to-scenario traceability is skipped (no stories to trace).
   deterministic green requires either always-passing tests — rejected as
   placeholder churn — or scope correction).
 
+  *Walking-skeleton setup is fixture-driven, not chat-driven (added
+  2026-05-11 post-DELIVER).* Troubleshooter triage confirmed the chat
+  layer has zero production paths that write `schema_config.constraints`
+  — no prompt, no tool, no dispatcher, no use case references the field
+  — so a chat-asks `@when` could never satisfy `tests_run >= 1`. The WS
+  scenario was hardened to reuse milestone-1's shape-correct `@given`,
+  which PATCHes `region required: true` via
+  `DatasetLayerHarness.set_dataset_schema_config`. This makes the
+  schema.yml exporter emit a `not_null_stg_orders_region` dbt test that
+  deterministically passes against the orders.csv fixture. The
+  constraint field is fixture-only by design until a chat-write path
+  exists; chat-driven wiring coverage (no test assertion) is a candidate
+  follow-up scenario tagged `@chat_smoke`.
+
 * **[DWD-10] Phase 1 (DELIVER) — earned-trust probes scope ratification + behavioral enforcement integration.**
 
   *Probe scope* (Atlas minor finding #1, `design/review.yaml` lines 97-100):
