@@ -13,6 +13,7 @@
     {
       "id": "01",
       "title": "Phase 01 — MR-1 ViewIbisCompiler replaces ViewSQLGenerator (closes Gap 1)",
+      "status": "completed",
       "polecat_command": "/nw-deliver",
       "scope": "Replace `backend/app/use_cases/view/sql_generator.py`'s f-string compiler with a `ViewIbisCompiler` that consumes the same `View` domain object and emits SQL via `ibis.to_sql(dialect='duckdb')`. Promote `ViewFilter`, `ViewColumn`, `ViewJoin` from frozen dataclasses to a Pydantic model set, with `ViewFilter` modeled as a discriminated union over `operator` (per-operator value typing: str for comparisons / LIKE, list for IN / NOT IN, None for IS NULL / IS NOT NULL). Adjust `backend/app/use_cases/view/create_view.py:_parse_filters` to call Pydantic parsing instead of dict→dataclass conversion. The `value` field flows through ibis literals — closes the injection vector at sql_generator.py:160. Re-export `ViewSQLGenerator` as a thin shim over the new compiler for one release (per ADR-026 §References → MR-1 file scope, plus the research doc §6 first-MR-shape). Walking skeleton scenario and all five milestone-1 scenarios unpend.",
       "scenarios_to_unskip": [

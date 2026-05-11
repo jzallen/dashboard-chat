@@ -2,16 +2,25 @@
 
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
 from returns.result import Result
 
-from app.models.view import DisplayType, View, ViewColumn, ViewFilter, ViewGrain, ViewJoin
+from app.models.view import (
+    DisplayType,
+    View,
+    ViewColumn,
+    ViewFilterVariant,
+    ViewGrain,
+    ViewJoin,
+    parse_view_filter,
+)
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.view.dependency_service import DependencyService
-from app.use_cases.view.exceptions import ViewNotFound
+from app.use_cases.view.exceptions import InvalidViewFilter, ViewNotFound
 from app.use_cases.view.grain_service import assign_grain_roles
-from app.use_cases.view.sql_generator import ViewSQLGenerator
+from app.use_cases.view.sql_generator import ViewIbisCompiler
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -93,9 +102,9 @@ async def update_view(
             filters=parsed_filters,
             grain=parsed_grain,
         )
-        generator = ViewSQLGenerator()
+        compiler = ViewIbisCompiler()
         if parsed_columns:
-            update_data["sql_definition"] = generator.generate_executable(temp_view)
+            update_data["sql_definition"] = compiler.generate_executable(temp_view)
 
     updated = await repositories.metadata.update_view(view_id, **update_data)
     if updated is None:
@@ -131,16 +140,39 @@ def _parse_joins(raw: list[dict]) -> list[ViewJoin]:
     ]
 
 
-def _parse_filters(raw: list[dict]) -> list[ViewFilter]:
-    return [
-        ViewFilter(
-            source_ref=f["source_ref"],
-            column=f["column"],
-            operator=f["operator"],
-            value=f.get("value"),
-        )
-        for f in raw
-    ]
+def _parse_filters(raw: list[dict]) -> list[ViewFilterVariant]:
+    parsed: list[ViewFilterVariant] = []
+    for raw_filter in raw:
+        try:
+            parsed.append(
+                parse_view_filter(
+                    {
+                        "source_ref": raw_filter["source_ref"],
+                        "column": raw_filter["column"],
+                        "operator": raw_filter["operator"],
+                        "value": raw_filter.get("value"),
+                    }
+                )
+            )
+        except ValidationError as err:
+            rejected = _rejected_field(err)
+            raise InvalidViewFilter(_format_validation_error(err), rejected_field=rejected) from err
+    return parsed
+
+
+def _rejected_field(err: ValidationError) -> str:
+    for entry in err.errors():
+        if entry.get("type") == "union_tag_invalid":
+            return "operator"
+        loc = entry.get("loc") or ()
+        if loc:
+            return str(loc[-1])
+    return "operator"
+
+
+def _format_validation_error(err: ValidationError) -> str:
+    primary = err.errors()[0] if err.errors() else {"msg": str(err)}
+    return primary.get("msg", str(err))
 
 
 def _parse_grain(raw: dict | None) -> ViewGrain | None:
@@ -173,7 +205,7 @@ def _join_to_dict(j: ViewJoin) -> dict:
     }
 
 
-def _filter_to_dict(f: ViewFilter) -> dict:
+def _filter_to_dict(f: ViewFilterVariant) -> dict:
     return {
         "source_ref": f.source_ref,
         "column": f.column,
