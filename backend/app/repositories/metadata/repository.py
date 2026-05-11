@@ -24,11 +24,11 @@ from app.utils.sql_safety import validate_condition_sql
 from ..exceptions import MetadataRepositoryError
 from . import _mappers
 from ._pagination import paginate_by_id, paginate_composite
-from ._queries import ProjectsWithDatasetsQuery
 from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
 from .project_memory_record import ProjectMemoryRecord
 from .project_record import ProjectRecord
+from .project_repository import ProjectsWithDatasetsQuery
 from .report_record import ReportRecord
 from .session_record import SessionRecord
 from .transform_record import TransformRecord
