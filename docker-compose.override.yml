@@ -1,0 +1,13 @@
+# Local development override — rebuild auth-proxy from source for the
+# user-flow-state-machines feature (DELIVER step 01-01 adds /flow-state/*
+# routing per ADR-030 §SD1). Once the Bazel image regeneration pipeline
+# picks up the change, this override becomes a no-op.
+#
+# Compose auto-merges this with docker-compose.yml. Disable by removing
+# the file or by passing `-f docker-compose.yml` without -f for this one.
+
+services:
+  auth-proxy:
+    build: ./auth-proxy
+    image: dashboard-chat/auth-proxy:flow-state-dev
+    pull_policy: build

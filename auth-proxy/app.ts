@@ -17,6 +17,7 @@ import {
 } from "./lib/pat.ts";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
+const FLOW_STATE_URL = process.env.FLOW_STATE_URL || "http://flow-state:8788";
 
 const app = new Hono();
 
@@ -174,6 +175,54 @@ app.delete("/api/auth/pats/:id", async (c) => {
   return c.body(null, 204);
 });
 
+// Flow-state tier — multi-upstream routing per ADR-030 §SD1.
+// Routed BEFORE the catch-all backend proxy. In AUTH_MODE=dev the flow-state
+// tier is accessed without a Bearer token (the dev user identity is implied);
+// in production this branch verifies the token and forwards identity headers
+// just like the backend branch. The `/flow-state` path prefix is stripped
+// before forwarding so the upstream sees its own routes (`/health`,
+// `/flow/:machine/begin`, etc.).
+app.all("/flow-state/*", async (c) => {
+  const path = c.req.path;
+  const strippedPath = path.replace(/^\/flow-state/, "") || "/";
+
+  const incomingHeaders = new Headers();
+  c.req.raw.headers.forEach((value, key) => {
+    if (!IDENTITY_HEADERS.includes(key.toLowerCase())) {
+      incomingHeaders.set(key, value);
+    }
+  });
+
+  // In dev mode, inject hardcoded DEV_USER identity headers without
+  // requiring a Bearer token. This mirrors how the agent uses headers
+  // injected by auth-proxy upstream. The walking skeleton runs in dev mode.
+  const authMode = process.env.AUTH_MODE || "dev";
+  if (authMode === "dev") {
+    incomingHeaders.set("X-User-Id", "dev-user-001");
+    incomingHeaders.set("X-Org-Id", "dev-org-001");
+    incomingHeaders.set("X-User-Email", "dev@localhost");
+  } else {
+    // Production: require a verified token, just like the catch-all branch.
+    const authHeader = c.req.header("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return c.json(
+        { error: "Missing or invalid Authorization header" },
+        401,
+      );
+    }
+    try {
+      const identity = await verifyToken(authHeader.slice(7));
+      incomingHeaders.set("X-User-Id", identity.userId);
+      incomingHeaders.set("X-Org-Id", identity.orgId);
+      incomingHeaders.set("X-User-Email", identity.email);
+    } catch {
+      return c.json({ error: "Invalid or expired token" }, 401);
+    }
+  }
+
+  return proxyToUpstream(c, FLOW_STATE_URL, strippedPath, incomingHeaders);
+});
+
 // All other requests: authenticate then proxy
 app.all("*", async (c) => {
   const path = c.req.path;
@@ -253,6 +302,35 @@ async function proxyRequest(c: { req: { raw: Request; url: string } }, headers: 
   const targetUrl = `${BACKEND_URL}${url.pathname}${url.search}`;
 
   // Remove host header so the backend sees its own host
+  headers.delete("host");
+
+  const response = await fetch(targetUrl, {
+    method: c.req.raw.method,
+    headers,
+    body: c.req.raw.body,
+    // @ts-expect-error Node.js fetch supports duplex for streaming bodies
+    duplex: "half",
+  });
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: response.headers,
+  });
+}
+
+/**
+ * Proxy to an arbitrary upstream with the given path. Used by the
+ * multi-upstream routing rules added in ADR-030 §SD1 (flow-state tier).
+ */
+async function proxyToUpstream(
+  c: { req: { raw: Request; url: string } },
+  upstreamBaseUrl: string,
+  upstreamPath: string,
+  headers: Headers,
+) {
+  const url = new URL(c.req.url);
+  const targetUrl = `${upstreamBaseUrl}${upstreamPath}${url.search}`;
+
   headers.delete("host");
 
   const response = await fetch(targetUrl, {

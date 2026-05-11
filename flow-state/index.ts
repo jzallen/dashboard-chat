@@ -1,63 +1,172 @@
-// SCAFFOLD: true
-//
 // Flow-State Tier — Hono server entry point.
 //
-// RED scaffold per Mandate 7 (DISTILL wave 2026-05-11). All four routes
-// from `docs/feature/user-flow-state-machines/design/handoff-design-to-distill.md`
-// §"Endpoints to assert against" are wired here but return:
+// Routes (per `design/handoff-design-to-distill.md` §"Endpoints"):
+//   GET  /health                              — liveness check
+//   POST /flow/:machine/begin                 — begin a flow, returns projection
+//   POST /flow/:machine/event                 — send event to existing flow
+//   GET  /flow/:machine/projection?flow_id=…  — read current projection
 //
-//   HTTP 501 Not Implemented
-//   { __SCAFFOLD__: true, message: "Not yet implemented — RED scaffold" }
+// Wiring: composition root creates the FlowEventLog adapter via
+// capability-presence dispatch (REDIS_URL set → Redis tier; unset → noop),
+// builds the LoginAndOrgSetup machine deps, and constructs the orchestrator.
 //
-// This makes the acceptance tests classify as RED (failing for the right
-// reason — production code does not yet exist) rather than BROKEN
-// (failing for an import or wiring error).
-//
-// DELIVER replaces these stubs incrementally per `roadmap.json` steps 1-6.
+// Auth: this tier trusts the X-User-Id / X-Org-Id / X-User-Email headers
+// injected by auth-proxy upstream (ADR-016). It does NOT re-verify JWTs.
+// In AUTH_MODE=dev the headers identify the dev user.
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
-export const __SCAFFOLD__ = true;
+import { FlowOrchestrator } from "./lib/orchestrator.ts";
+import { selectFlowEventLog } from "./lib/persistence/redis.ts";
+import { createWorkOSUserInfoActor } from "./lib/machines/login-and-org-setup.ts";
 
-const SCAFFOLD_BODY = {
-  __SCAFFOLD__: true,
-  message: "Not yet implemented — RED scaffold",
-} as const;
+const PORT = parseInt(process.env.PORT ?? "8788", 10);
+const REDIS_URL = process.env.REDIS_URL;
+const WORKOS_URL = process.env.FAKE_WORKOS_URL ?? "http://fake-workos:14299";
+
+const eventLog = selectFlowEventLog(REDIS_URL);
+const orchestrator = new FlowOrchestrator({
+  eventLog,
+  loginMachineDeps: {
+    workosUserInfo: createWorkOSUserInfoActor(WORKOS_URL),
+  },
+});
 
 const app = new Hono();
 
-app.get("/health", (c) => c.json({ status: "scaffold", __SCAFFOLD__: true }));
+app.get("/health", (c) => c.json({ status: "ok" }));
 
-// Begin a new flow instance for the given machine name.
-// Contract: { correlation_id, projection } returned on success.
-app.post("/flow/:machine/begin", (c) => c.json(SCAFFOLD_BODY, 501));
+app.post("/flow/:machine/begin", async (c) => {
+  const machine = c.req.param("machine");
+  const correlation_id =
+    c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+  let body: {
+    persona_email?: string;
+    persona_display_name?: string;
+  };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (!body.persona_email) {
+    return c.json({ error: "persona_email required" }, 400);
+  }
 
-// Send an event to an existing flow.
-// Contract: { projection } returned on success.
-app.post("/flow/:machine/event", (c) => c.json(SCAFFOLD_BODY, 501));
+  // Principal: in dev mode auth-proxy injects X-User-Id. Otherwise derive
+  // from the persona email (deterministic, multi-tenant-safe per ADR-030).
+  const principal_id =
+    c.req.header("X-User-Id") || derivePrincipalId(body.persona_email);
 
-// Read the current projection for a given flow_id.
-// Contract: FlowProjection object returned on success.
-app.get("/flow/:machine/projection", (c) => c.json(SCAFFOLD_BODY, 501));
+  try {
+    const projection = await orchestrator.begin({
+      machine,
+      principal_id,
+      persona_email: body.persona_email,
+      persona_display_name: body.persona_display_name ?? "",
+      correlation_id,
+    });
+    return c.json(projection);
+  } catch (err) {
+    return c.json(
+      { error: "begin_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
 
-// Freeze + thaw routes (US-005 cross-machine coordination).
-app.post("/flow/:machine/freeze", (c) => c.json(SCAFFOLD_BODY, 501));
-app.post("/flow/:machine/thaw", (c) => c.json(SCAFFOLD_BODY, 501));
+app.post("/flow/:machine/event", async (c) => {
+  const machine = c.req.param("machine");
+  const correlation_id =
+    c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+  let body: {
+    flow_id?: string;
+    type?: string;
+    payload?: Record<string, unknown>;
+  };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (!body.flow_id || !body.type) {
+    return c.json({ error: "flow_id and type required" }, 400);
+  }
 
-// SSE projection stream (Slice 3 requirement; deferred behind the others).
-app.get("/flow/:machine/projection/stream", (c) =>
-  c.json(SCAFFOLD_BODY, 501),
-);
+  try {
+    const projection = await orchestrator.send({
+      machine,
+      flow_id: body.flow_id,
+      type: body.type,
+      payload: body.payload ?? {},
+      correlation_id,
+    });
+    return c.json(projection);
+  } catch (err) {
+    return c.json(
+      { error: "event_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
 
-const PORT = parseInt(process.env.PORT ?? "8788", 10);
+app.get("/flow/:machine/projection", async (c) => {
+  const flow_id = c.req.query("flow_id");
+  if (!flow_id) {
+    return c.json({ error: "flow_id required" }, 400);
+  }
+  try {
+    const projection = await orchestrator.getProjection(flow_id);
+    return c.json(projection);
+  } catch (err) {
+    return c.json(
+      { error: "projection_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
 
-if (process.env.FLOW_STATE_AUTOSTART !== "false") {
-  serve({ fetch: app.fetch, port: PORT });
-  // eslint-disable-next-line no-console
-  console.log(
-    `[flow-state] SCAFFOLD listening on :${PORT} — all routes return 501`,
-  );
+function derivePrincipalId(email: string): string {
+  // Replace non-alphanum with underscore; gives a stable principal_id from
+  // a persona email without exposing the email in the URL/key. Matches the
+  // shape "user_<localpart>" used in `tests/.../fixtures/personas.ts`.
+  const local = email.split("@")[0]?.replace(/[^a-zA-Z0-9]/g, "_") ?? "anon";
+  return `user_${local}`;
 }
 
-export { app };
+function cryptoRandomId(): string {
+  // Hono's runtime exposes globalThis.crypto; randomUUID is in Node 19+.
+  return globalThis.crypto?.randomUUID?.() ?? `corr-${Date.now()}`;
+}
+
+if (process.env.FLOW_STATE_AUTOSTART !== "false") {
+  // Probe Redis early so the container hard-fails per ADR-030 §SD3 if
+  // REDIS_URL is set but the server cannot round-trip XADD/XRANGE/DEL.
+  eventLog
+    .probe()
+    .then(() => {
+      serve({ fetch: app.fetch, port: PORT });
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({
+          event: "flow.startup",
+          port: PORT,
+          redis_url_set: Boolean(REDIS_URL),
+          workos_url: WORKOS_URL,
+        }),
+      );
+    })
+    .catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(
+        JSON.stringify({
+          event: "flow.startup.fatal",
+          error: (err as Error).message,
+        }),
+      );
+      process.exit(1);
+    });
+}
+
+export { app, orchestrator };

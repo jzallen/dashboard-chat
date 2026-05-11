@@ -11,7 +11,7 @@
 // roadmap.json.
 
 import { Before, After, Given, Then, When } from "@cucumber/cucumber";
-import { expect } from "@vitest/expect";
+import { expect } from "expect";
 
 import { FakeWorkOS } from "./fake-workos.ts";
 import { MAYA } from "./fixtures/personas.ts";
