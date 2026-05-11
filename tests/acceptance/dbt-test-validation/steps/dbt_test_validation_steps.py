@@ -301,7 +301,7 @@ def then_revalidates_successfully(capture: HarnessCapture) -> None:
     )
 
 
-@then("every staging model the chat produced was built and tested")
+@then("every staging model in the eject was built and tested")
 def then_models_built_and_tested(capture: HarnessCapture) -> None:
     assert capture.eject_report is not None, "no eject report captured"
     models_built = getattr(capture.eject_report, "models_built", []) or []
