@@ -67,8 +67,98 @@ jobs:
       - features/dbt-project-export.feature
       - features/dbt-model-layers.feature
 
+  - id: JOB-002
+    title: Drive every user flow through a server-owned state machine that UI and tests share
+    feature_id: user-flow-state-machines
+    abstraction_layer: strategic
+    statement: >
+      When a Dashboard Chat user moves through any of the product's flows
+      (auth, org setup, project/session management, upload, preview,
+      transforms, view/report, dbt export), I want the flow's state to be
+      owned by a single server-driven state machine — drivable from the
+      Node server, projected to the UI, and assertable by a TS headless
+      harness — so that the presentation layer is a thin consumer of a
+      single source of truth instead of N React state machines that
+      re-derive flow logic and drift from production.
+    emotional_layer: >
+      When I add a new user flow OR a new flow test, I want the marginal
+      cost to be defining one new machine — not editing N coordinated
+      places (FE component state, FE test setup, Python integration
+      harness, agent prompts).
+    social_layer: >
+      When I show this codebase to a new contributor, I want flow state
+      to look like one obvious file per flow — not a spelunk through
+      React components, TanStack Query keys, and Python harness adapters
+      to reconstruct what "logged in and org set up" means.
+    outcome_statements:
+      # Scoring is provisional — DISCUSS-derived, not ODI-rigorous. A
+      # formal DIVERGE pass (if/when revisited) would interview real
+      # users to confirm importance + measure satisfaction. For now
+      # importance reflects developer + user impact intuition and
+      # satisfaction reflects current observable state.
+      - id: O1
+        text: Minimize the time it takes to add a new user flow's headless test
+        importance: 9
+        satisfaction: 2
+        score: 16
+        status: under-served
+      - id: O2
+        text: Minimize the divergence between what the UI shows and what a headless test asserts
+        importance: 9
+        satisfaction: 3
+        score: 15
+        status: under-served
+      - id: O3
+        text: Minimize the cost of changing one flow's transition rules (one place, not N)
+        importance: 8
+        satisfaction: 3
+        score: 13
+        status: under-served
+      - id: O4
+        text: Minimize the time-to-recovery when a flow hits an unexpected state (visible error UI + same error from the harness)
+        importance: 7
+        satisfaction: 4
+        score: 10
+        status: marginal
+      - id: O5
+        text: Maximize the reuse of flow assertions between the in-app dev TS harness and the acceptance Python integration suite
+        importance: 8
+        satisfaction: 4
+        score: 12
+        status: marginal
+    composition_with_other_jobs:
+      - related_job: JOB-001
+        relationship: >
+          Compositional — JOB-001's under-served outcomes O3 (effort to keep
+          tests valid when chat protocol changes), O4 (reuse of validation
+          logic between in-app tests and ejected dbt), and O5 (marginal cost
+          of next user-flow test) are directly improved by JOB-002. The
+          existing Python integration harness (DatasetLayerHarness) remains
+          the backend+agent contract guard for JOB-001; the new TS harness
+          composed on top of the state-machine layer is the user-flow surface
+          for JOB-002. Both observe the same server-owned machines.
+    references:
+      - docs/feature/user-flow-state-machines/discuss/wave-decisions.md
+      - docs/feature/user-flow-state-machines/discuss/journey-inventory.md
+      - docs/feature/user-flow-state-machines/discuss/journey-login-and-org-setup-visual.md
+      - docs/feature/user-flow-state-machines/discuss/journey-login-and-org-setup.yaml
+      - docs/feature/user-flow-state-machines/discuss/story-map.md
+      - docs/feature/user-flow-state-machines/discuss/user-stories.md
+      - docs/feature/user-flow-state-machines/discuss/outcome-kpis.md
+      - docs/feature/user-flow-state-machines/discuss/shared-artifacts-registry.md
+      - docs/product/journeys/login-and-org-setup.yaml
+      - docs/product/journeys/_inventory.md
+      - docs/decisions/adr-015-headless-presentation-state-retrieval.md
+
 changelog:
   - date: 2026-05-08
     feature: dbt-test-validation
     change: SSOT bootstrap — created jobs.yaml with JOB-001 from DIVERGE Phase 1
     actor: nw-diverger (Flux)
+  - date: 2026-05-11
+    feature: user-flow-state-machines
+    change: >
+      Added JOB-002 from DISCUSS wave (no DIVERGE — see wave-decisions.md
+      for why DIVERGE was skipped). JOB-002 is compositional with JOB-001's
+      under-served outcomes O3, O4, O5.
+    actor: nw-product-owner (Luna)
