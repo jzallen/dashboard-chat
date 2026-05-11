@@ -30,10 +30,14 @@ The acceptance tests are **parallel** to the existing harness tests at
 - `milestone-3-earned-trust-probes.feature` — 5 probe scenarios that
   force substrate lies and assert `pytest.skip` with the failing probe
   named. `@pending`.
-- `milestone-4-protocol-invariants.feature` — AC1.4 raw-tool-call leak
-  retention + ADR-016 ingress compliance. `@pending`.
 - `milestone-5-failure-modes.feature` — testing-inversion safety
   (export breakage) + retry exhaustion. `@pending`.
+
+> Milestone 4 (AC1.4 raw-tool-call leak guard + ADR-016 ingress URL
+> invariant) was reclassified out of this suite to
+> `backend/tests/integration/dataset_layer/protocol_invariants/` per
+> ADR-024 Phase 2 — those invariants are chat-protocol-shaped, not
+> data-shaped.
 - `steps/dbt_test_validation_steps.py` — pytest-bdd glue. The walking-
   skeleton has wired bindings (against scaffold raises); milestone
   bindings are added as DELIVER enables each scenario.
@@ -74,7 +78,7 @@ uv run pytest -m "walking_skeleton or pending"   # everything (after DELIVER ena
 |---|---|---|
 | `dbtRunner` (`dbt.cli.main`) | YES | walking-skeleton (real `dbtRunner` invoke) + milestone-1 + milestone-3 probe 1 + milestone-3 probe 5 |
 | `DuckDBProfileSeeder` | YES | walking-skeleton (real seeded profile) + milestone-1 customer-fidelity + milestone-5 export-breakage |
-| `ProjectExporter` (HTTP) | YES | walking-skeleton + milestone-3 probe 3 + milestone-4 ADR-016 ingress |
+| `ProjectExporter` (HTTP) | YES | walking-skeleton + milestone-3 probe 3 (ADR-016 ingress moved to `backend/tests/integration/dataset_layer/protocol_invariants/`) |
 | MinIO (Parquet via httpfs) | YES | walking-skeleton + milestone-3 probe 4 |
 | `PanderaValidator` | YES | milestone-2 (real schema, real frame from harness) |
 | Filesystem (tmp_path zip extraction) | YES | walking-skeleton + milestone-1 |

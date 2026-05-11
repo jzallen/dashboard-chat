@@ -99,7 +99,6 @@ class HarnessCapture:
     chat_error: Optional[BaseException] = None
     seeder_error: Optional[BaseException] = None
     skip_reason: Optional[str] = None
-    fetch_url: Optional[str] = None
     extras: dict[str, Any] = field(default_factory=dict)
 
 
@@ -237,8 +236,7 @@ def when_customer_asks_chat(
 
     Uses the harness's default ``max_retries=2`` (AC1.5 retry-with-rephrase
     budget) and stores the resulting ``ChatEventTrace`` on
-    ``capture.chat_trace``. The trace surfaces the AC1.4 raw-tool-call
-    invariant via ``trace.raw_tool_call_seen`` for milestone-4 checks.
+    ``capture.chat_trace``.
     """
     loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
     harness = capture.extras["harness"]
@@ -256,19 +254,14 @@ def when_customer_ejects(
     Threads the session-scoped ``tmp_path`` from the orchestrator fixture
     into the call so unzipped project artefacts share pytest's session
     tempdir lifecycle (orchestrator.py contract: caller controls tmpdir).
-    Records the orchestrator's actual fetch URL on ``capture.fetch_url`` —
-    reconstructed from ``orchestrator._base_url`` so the milestone-4
-    ADR-016 invariant assertion observes the URL the orchestrator was
-    wired with at composition root, NOT the env var (which would only
-    prove the env, not the orchestrator's choice).
 
     Captures any seeder-raised ``RuntimeError`` on ``capture.seeder_error``
     rather than letting it propagate. The milestone-5 export-breakage
     scenario asserts that the seeder fails LOUDLY with a named missing
     credential — the @then bindings observe the captured exception. For
-    the WS / M1 / M4 scenarios where the seeder is expected to succeed,
-    the absence of an exception is implicit (capture.eject_report is
-    populated as before).
+    the WS / M1 scenarios where the seeder is expected to succeed, the
+    absence of an exception is implicit (capture.eject_report is populated
+    as before).
     """
     loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
     harness = capture.extras["harness"]
@@ -281,14 +274,6 @@ def when_customer_ejects(
         )
     except RuntimeError as exc:
         capture.seeder_error = exc
-    # ADR-016 ingress invariant (milestone-4): the orchestrator builds
-    # export URLs from its wired base_url (orchestrator.py:_fetch_zip).
-    # Reading ``orchestrator._base_url`` makes the @then assertion observe
-    # the orchestrator's choice rather than re-deriving from env.
-    base_url = eject_orchestrator.orchestrator._base_url  # noqa: SLF001
-    capture.fetch_url = (
-        f"{base_url}/api/projects/{capture.project_id}/export/dbt"
-    )
 
 
 @then("the ejected project re-validates successfully")
@@ -969,80 +954,6 @@ def then_suite_skips_with_probe_named(
     assert probe_name in expected, (
         f"expected skip reason to name probe {probe_name!r}, "
         f"got: {expected!r}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Milestone 4 — protocol invariants
-# ---------------------------------------------------------------------------
-
-
-@when("the customer runs a complete chat workflow")
-def when_customer_runs_complete_workflow(
-    capture: HarnessCapture, requires_groq: None
-) -> None:
-    """Drive one representative chat_turn end-to-end and capture the trace.
-
-    The AC1.4 raw-tool-call leak guard is unconditional in
-    ``DatasetLayerHarness.chat_turn`` (harness.py): the trace's
-    ``raw_tool_call_seen`` flag is checked BEFORE any post-turn composition
-    runs (including the Phase-3 ``validate_after`` layer). This @when
-    proves the guard still fires after Phase 3 wired ``validate_after``
-    into the post-turn closure — a chat workflow that completes (returns
-    a trace) implies AC1.4 held throughout.
-
-    Uses a neutral prompt that does not need to mutate the dataset; the
-    AC1.4 invariant is orthogonal to LLM behavior, so a deterministic
-    prompt outcome is not required for this assertion. ``requires_groq``
-    skips the scenario when no API key is on the wire, matching the rest
-    of the chat-driven scenarios.
-    """
-    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
-    harness = capture.extras["harness"]
-    capture.chat_trace = loop.run_until_complete(
-        harness.chat_turn(
-            "Summarise the columns in this dataset",
-            dataset_id=capture.dataset_id,
-        ),
-    )
-
-
-@then("the chat trace contains no raw tool-call frames")
-def then_no_raw_tool_call_frames(capture: HarnessCapture) -> None:
-    assert capture.chat_trace is not None, "no chat trace captured"
-    # AC1.4 invariant: the harness raises on a leak today; this assertion
-    # is the acceptance-side guard that the new validation layers do not
-    # bypass that guard.
-    raw_seen = getattr(capture.chat_trace, "raw_tool_call_seen", None)
-    assert raw_seen is False, (
-        f"raw tool-call delta leaked through (AC1.4 violation); "
-        f"raw_tool_call_seen={raw_seen!r}"
-    )
-
-
-@then("the project export was fetched through the production-ingress URL")
-def then_fetched_via_ingress(capture: HarnessCapture) -> None:
-    """ADR-016: the orchestrator MUST reach the SUT through the auth-proxy
-    ingress (default localhost:3000), not through the backend's internal
-    port. The orchestrator records the URL it used on
-    capture.fetch_url; this @then asserts it matches the configured ingress.
-    """
-    assert capture.fetch_url is not None, "no export fetch URL captured"
-    auth_proxy_url = os.environ.get("AUTH_PROXY_URL", "http://localhost:3000")
-    assert capture.fetch_url.startswith(auth_proxy_url), (
-        f"export fetch URL {capture.fetch_url!r} does not start with "
-        f"auth-proxy ingress {auth_proxy_url!r}"
-    )
-
-
-@then("the project export was not fetched directly from a backend internal port")
-def then_not_fetched_from_backend(capture: HarnessCapture) -> None:
-    assert capture.fetch_url is not None
-    # Backend internal port is 8000 in the local topology; ADR-016
-    # forbids tests from talking to it directly.
-    assert ":8000/" not in capture.fetch_url, (
-        f"export fetch URL {capture.fetch_url!r} talks to backend "
-        f"internal port 8000 — ADR-016 violation"
     )
 
 
