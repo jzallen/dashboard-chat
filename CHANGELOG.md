@@ -1,3 +1,12 @@
+# [1.20.0](https://github.com/jzallen/dashboard-chat/compare/v1.19.0...v1.20.0) (2026-05-11)
+
+
+### Features
+
+* **backend:** introduce UploadPluginDispatcher and relax MultiProcessingResult validator ([95e09b5](https://github.com/jzallen/dashboard-chat/commit/95e09b5ee339672df3f9d3988771ac9236a1016e))
+* **test/dataset-layer:** chat_turn raises StructuredRetryExhaustion on retry-budget exhaustion ([5f931f1](https://github.com/jzallen/dashboard-chat/commit/5f931f1abd00e3864a531df6049aff995c3d8117))
+* **test/eject:** seeder rejects unknown env_var refs in exported profiles.yml ([5f8d02a](https://github.com/jzallen/dashboard-chat/commit/5f8d02a9dbfbacc604ead04ae65fd1cd778d3aa5))
+
 # [1.19.0](https://github.com/jzallen/dashboard-chat/compare/v1.18.0...v1.19.0) (2026-05-10)
 
 
