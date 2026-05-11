@@ -1,3 +1,11 @@
+# [1.21.0](https://github.com/jzallen/dashboard-chat/compare/v1.20.0...v1.21.0) (2026-05-11)
+
+
+### Features
+
+* **backend/_dbt:** emit s3_use_ssl env_var in exported profiles.yml ([ad0861b](https://github.com/jzallen/dashboard-chat/commit/ad0861bc995f0aaa8b5ce731f174695dc1ac4cfc))
+* **repositories/metadata:** introduce ProjectsWithDatasetsQuery (ADR-025) ([591617f](https://github.com/jzallen/dashboard-chat/commit/591617f7e3a2c3ee42109aa17a6892791756d716))
+
 # [1.20.0](https://github.com/jzallen/dashboard-chat/compare/v1.19.0...v1.20.0) (2026-05-11)
 
 
