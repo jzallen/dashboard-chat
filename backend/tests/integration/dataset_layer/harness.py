@@ -48,12 +48,12 @@ from typing import Any, NewType
 import httpx
 import pandas as pd
 
-# ADR-019, Option β — per-flow eject + per-turn validate are stitched into
-# the harness facade in step 00-08. Module-level imports keep the symbols
-# monkeypatchable from wiring tests; the actual session-resource (the
-# orchestrator) is constructed by the acceptance suite's session fixture
-# (composition root invariant — wire then probe then use).
-from tests.integration.dataset_layer.eject.protocols import EjectOrchestratorProtocol
+# ADR-019 Option β / ADR-024: per-turn validation is stitched into the
+# harness facade via ``validate_after`` and the ``chat_turn(validate_with=...)``
+# hook (DR-5). The eject-and-test composition retired in ADR-024 Phase 4;
+# the v2 procedural driver under ``tests/acceptance/dbt-test-validation-v2/``
+# is the customer-fidelity surface now. Module-level imports keep the
+# validator monkeypatchable from wiring tests.
 from tests.integration.dataset_layer.validation.pandera_validator import (
     PanderaValidator,
     serialize_diff,
@@ -834,7 +834,6 @@ class DatasetLayerHarness:
         pat: str | None = None,
         timeout_seconds: float = 60.0,
         rephrase: Callable[[str, int], str] | None = None,
-        eject_orchestrator: EjectOrchestratorProtocol | None = None,
     ):
         self._auth_proxy_url = auth_proxy_url.rstrip("/")
         self._agent_url = agent_url.rstrip("/")
@@ -844,12 +843,6 @@ class DatasetLayerHarness:
         self._pat = pat
         self._timeout = timeout_seconds
         self._rephrase = rephrase or _default_rephrase
-        # Composition root (ADR-019 §11): the eject orchestrator is wired
-        # by the acceptance suite's session-scoped ``eject_orchestrator``
-        # fixture and injected here. Per-test harness instances share the
-        # same probed orchestrator. ``None`` means callers cannot invoke
-        # ``eject_and_test`` (the method raises a clear RuntimeError).
-        self._eject_orchestrator = eject_orchestrator
         self._client: httpx.AsyncClient | None = None
         # Wrappers built lazily in __aenter__ once the client exists (design §2.2).
         self._projects: ProjectsApi | None = None
@@ -1079,13 +1072,13 @@ class DatasetLayerHarness:
         s = s[s.map(lambda v: isinstance(v, str))]
         return bool(s.eq(s.str.strip()).all())
 
-    # ----- dbt-test-validation extension (ADR-019, Option β) ----------------
-    # Step 00-08 wires these two methods to the eject-and-test components
-    # delivered in steps 00-02..00-07. ``eject_and_test`` delegates to the
-    # session-scoped ``EjectAndTestOrchestrator`` (composition root injected
-    # via __init__ from the acceptance suite's ``eject_orchestrator``
-    # fixture). ``validate_after`` runs the per-turn ``PanderaValidator``
-    # against the current ``TableState.df`` for the supplied dataset.
+    # ----- dbt-test-validation extension (ADR-019 Option β / ADR-024) -------
+    # Per-turn validation: ``validate_after`` runs the ``PanderaValidator``
+    # against the current ``TableState.df`` for the supplied dataset. The
+    # ``chat_turn(validate_with=...)`` hook (DR-5) composes ``validate_after``
+    # into the rephrase loop. The retired eject-and-test composition (Phase 4)
+    # has been replaced by the procedural driver under
+    # ``tests/acceptance/dbt-test-validation-v2/``.
 
     async def set_dataset_schema_config(
         self,
@@ -1119,50 +1112,6 @@ class DatasetLayerHarness:
             raise AssertionError(
                 f"PATCH /api/datasets/{dataset_id} returned {res.status_code}: {res.text[:500]}",
             )
-
-    async def eject_and_test(
-        self,
-        project_id: str | None = None,
-        *,
-        tmp_path: Path | None = None,
-    ) -> Any:
-        """Per-flow eject-and-test cycle — drives the orchestrator end-to-end.
-
-        Delegates to the injected ``EjectAndTestOrchestrator``: fetches the
-        project export, seeds a DuckDB profile against the running compose
-        stack's MinIO, runs ``dbtRunner.invoke()`` for deps/build/test, and
-        parses the dbtRunnerResult into an ``EjectTestReport``.
-
-        ``project_id`` defaults to the harness's currently-bound project so
-        the WS scenario can call ``await harness.eject_and_test()`` without
-        re-supplying the ULID it just created. ``tmp_path`` is REQUIRED —
-        the orchestrator's contract (orchestrator.py docstring) is that the
-        caller controls the tmpdir lifecycle. The acceptance fixture passes
-        a ``tmp_path_factory.mktemp(...)`` allocation; ad-hoc callers may
-        pass a pytest ``tmp_path`` fixture value.
-
-        Raises:
-            RuntimeError: if no ``eject_orchestrator`` was injected at
-                construction (composition-root violation), or if no
-                ``tmp_path`` is supplied.
-        """
-        if self._eject_orchestrator is None:
-            raise RuntimeError(
-                "DatasetLayerHarness.eject_and_test requires an "
-                "eject_orchestrator to be injected via __init__. The "
-                "acceptance suite's session-scoped `eject_orchestrator` "
-                "fixture is the composition root (ADR-019 §11); see "
-                "tests/acceptance/dbt-test-validation/conftest.py."
-            )
-        if tmp_path is None:
-            raise RuntimeError(
-                "DatasetLayerHarness.eject_and_test requires a `tmp_path` "
-                "(filesystem lifecycle is caller-controlled per orchestrator.py)."
-            )
-        target_project = project_id or self._project_id
-        if not target_project:
-            raise RuntimeError("eject_and_test: no project_id; pass one or initialize the harness with one")
-        return await self._eject_orchestrator.eject_and_test(target_project, tmp_path)
 
     async def validate_after(self, dataset_id: str, schema: Any) -> Any:
         """Per-turn shape validation against a Pandera schema.
