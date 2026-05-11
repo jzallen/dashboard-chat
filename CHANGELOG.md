@@ -1,3 +1,10 @@
+## [1.23.1](https://github.com/jzallen/dashboard-chat/compare/v1.23.0...v1.23.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **frontend)+docs(ssot:** route chat agent through nginx proxy; bootstrap SSOT for user-flow-state-machines ([4f2cbfc](https://github.com/jzallen/dashboard-chat/commit/4f2cbfc87b8b9284de1b2a86258636a955a15b13))
+
 # [1.23.0](https://github.com/jzallen/dashboard-chat/compare/v1.22.0...v1.23.0) (2026-05-11)
 
 
