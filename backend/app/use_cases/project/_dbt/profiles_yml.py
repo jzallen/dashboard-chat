@@ -21,6 +21,7 @@ def generate_profiles_yml(project_name_snake: str) -> str:
                         "s3_access_key_id": "{{ env_var('S3_ACCESS_KEY_ID') }}",
                         "s3_secret_access_key": "{{ env_var('S3_SECRET_ACCESS_KEY') }}",
                         "s3_endpoint": "{{ env_var('S3_ENDPOINT', '') }}",
+                        "s3_use_ssl": "{{ env_var('S3_USE_SSL', 'true') | as_bool }}",
                         "s3_url_style": "{{ env_var('S3_URL_STYLE', 'vhost') }}",
                     },
                 },
