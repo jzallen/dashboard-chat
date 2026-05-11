@@ -1,0 +1,27 @@
+{
+  "name": "dashboard-chat-flow-state",
+  "version": "0.0.0-SCAFFOLD",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch index.ts",
+    "build": "tsc --noEmit",
+    "test": "vitest --config vitest.config.ts",
+    "test:run": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@dashboard-chat/shared-chat": "*",
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.7.0",
+    "ioredis": "^5.4.0",
+    "xstate": "^5.18.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "ioredis-mock": "^8.9.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.15"
+  },
+  "//SCAFFOLD": "RED scaffold per Mandate 7 (DISTILL wave). Routes return 501 with __SCAFFOLD__:true marker. Replaced by DELIVER outside-in TDD per roadmap.json."
+}
