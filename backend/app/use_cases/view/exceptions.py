@@ -35,3 +35,22 @@ class CircularDependency(DomainException):
 
     def __init__(self, view_id: str):
         super().__init__(f"Circular dependency detected involving view '{view_id}'")
+
+
+class InvalidViewFilter(DomainException):
+    """Raised when a view filter fails validation at the use-case boundary.
+
+    ADR-026 MR-1 makes ``ViewFilter`` a Pydantic discriminated union over
+    ``operator``; malformed operators (e.g. ``DELETE_ALL``) or values of the
+    wrong arity surface here as a structured 400 with a ``rejected_field``
+    pointer so the agent / controller can render a named-field error rather
+    than a generic 500.
+    """
+
+    _type = "INVALID_VIEW_FILTER"
+    _title = "Invalid View Filter"
+    _status_code = 400
+
+    def __init__(self, message: str, rejected_field: str = "operator"):
+        super().__init__(message)
+        self.rejected_field = rejected_field

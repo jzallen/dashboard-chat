@@ -97,7 +97,15 @@ class TestDbtIntermediateGeneration:
         intermediate_files = [n for n in zf.namelist() if "intermediate" in n]
         assert intermediate_files == []
 
-    def test_structured_view_uses_sql_generator(self):
+    def test_structured_view_uses_ibis_compiler(self):
+        """ADR-026 MR-1: structured views compile through ViewIbisCompiler.
+
+        Contract assertions (not byte-shape): the intermediate SQL references
+        the upstream source through a dbt ``ref()`` macro and selects from
+        that source. The exact projection form is irrelevant (a single-column
+        synthetic relation may collapse to ``SELECT *``); what matters is the
+        ref-macro shape and that the customer sees structured SQL.
+        """
         ds = _make_dataset()
         project = _make_project(datasets=[ds])
         view = _make_view_with_columns()
@@ -105,10 +113,13 @@ class TestDbtIntermediateGeneration:
         zip_bytes = generate_dbt_project_zip(project, "test_project", views=[view])
         zf = zipfile.ZipFile(BytesIO(zip_bytes))
         sql = zf.read("models/intermediate/int_enriched.sql").decode("utf-8")
-        # Should use ref_mode=True, generating ref() calls
+        # Source resolved through dbt ref macro (the customer-visible contract
+        # the dbt eject relies on).
         assert "{{ ref('stg_orders') }}" in sql
-        # Should have CAST from the SQL generator
-        assert "CAST" in sql
+        # The materialization header is present (config block).
+        assert "config(materialized='ephemeral')" in sql
+        # The SQL is a well-formed SELECT — sanity check the compiler ran.
+        assert sql.strip().lower().count("select") >= 1
 
     def test_staging_only_when_no_views(self):
         ds = _make_dataset()

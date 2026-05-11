@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from app.models.view import DisplayType, GrainRole, ViewColumn, ViewGrain
 
 
@@ -23,7 +21,7 @@ def assign_grain_roles(
       - All others -> None
     """
     if grain is None:
-        return [replace(c, grain_role=None) for c in columns]
+        return [c.model_copy(update={"grain_role": None}) for c in columns]
 
     time_types = {DisplayType.date, DisplayType.time, DisplayType.datetime}
     dimension_types = {DisplayType.text, DisplayType.category, DisplayType.serial}
@@ -46,5 +44,5 @@ def assign_grain_roles(
         ):
             role = GrainRole.Metric
 
-        result.append(replace(col, grain_role=role))
+        result.append(col.model_copy(update={"grain_role": role}))
     return result

@@ -11,8 +11,11 @@ if TYPE_CHECKING:
 def generate_intermediate_sql(view_name_snake: str, view: View, ref_name_map: dict[str, str]) -> str:
     """Generate intermediate model SQL for a View.
 
-    If the view has structured columns, uses ViewSQLGenerator with ref_mode=True.
-    Otherwise falls back to the legacy ID-replacement approach.
+    If the view has structured columns, the SQL flows through
+    :class:`ViewIbisCompiler` (ADR-026 MR-1). Otherwise we fall back to the
+    legacy ``view.sql_definition`` text path with post-render ref-id
+    substitution; ADR-026 MR-2 retires the legacy branch entirely by replacing
+    the post-render replacement with an ibis-source plugin.
 
     Args:
         view_name_snake: Snake-cased view name.
@@ -26,10 +29,13 @@ def generate_intermediate_sql(view_name_snake: str, view: View, ref_name_map: di
     config_line = f"{{{{ config(materialized='{view.materialization}') }}}}"
 
     if view.columns:
-        from app.use_cases.view.sql_generator import ViewSQLGenerator
+        from app.use_cases.view.sql_generator import ViewIbisCompiler
 
-        sql = ViewSQLGenerator().generate_executable(view, ref_mode=True)
+        sql = ViewIbisCompiler().generate_executable(view, ref_mode=True)
     else:
+        # MR-2 will replace this post-render regex with an ibis-source plugin
+        # so dbt-ref macro emission becomes a first-class compiler output
+        # rather than a string substitution after the fact.
         sql = view.sql_definition
         for ref in view.source_refs:
             ref_id = ref["id"]
