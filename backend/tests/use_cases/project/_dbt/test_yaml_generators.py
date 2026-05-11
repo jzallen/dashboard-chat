@@ -71,7 +71,31 @@ class TestProfilesYml:
         assert "s3_access_key_id" in dev["settings"]
         assert "s3_secret_access_key" in dev["settings"]
         assert "s3_endpoint" in dev["settings"]
+        assert "s3_use_ssl" in dev["settings"]
         assert "s3_url_style" in dev["settings"]
+
+    def test_generate_profiles_yml_dev_target_exposes_s3_use_ssl_env_var(self):
+        """ADR-024 Phase 0: MinIO-running customers should not have to patch
+        the exported profiles.yml post-unzip. Expose `s3_use_ssl` as a Jinja
+        `env_var(...)` reference with default `true` (preserving AWS-S3
+        behavior) so an operator can set `S3_USE_SSL=false` against MinIO."""
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        s3_use_ssl = parsed["my_project"]["outputs"]["dev"]["settings"]["s3_use_ssl"]
+        assert "env_var('S3_USE_SSL'" in s3_use_ssl
+        assert "'true'" in s3_use_ssl
+        assert "as_bool" in s3_use_ssl
+
+    def test_generate_profiles_yml_dev_target_orders_s3_use_ssl_between_endpoint_and_url_style(self):
+        """The DuckDB profile seeder treats `s3_*` keys as positional context
+        for readers; keeping `s3_use_ssl` between `s3_endpoint` and
+        `s3_url_style` makes the rendered profile easy to scan and matches
+        the seeder's own ordering in tests/integration."""
+        parsed = yaml.safe_load(generate_profiles_yml("my_project"))
+        keys = list(parsed["my_project"]["outputs"]["dev"]["settings"].keys())
+        endpoint_idx = keys.index("s3_endpoint")
+        use_ssl_idx = keys.index("s3_use_ssl")
+        url_style_idx = keys.index("s3_url_style")
+        assert endpoint_idx < use_ssl_idx < url_style_idx
 
     def test_generate_profiles_yml_postgres_target_embeds_no_real_credentials(self):
         parsed = yaml.safe_load(generate_profiles_yml("my_project"))
