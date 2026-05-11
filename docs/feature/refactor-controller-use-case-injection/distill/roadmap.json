@@ -1,0 +1,214 @@
+{
+  "feature": "refactor-controller-use-case-injection",
+  "feature_dir": "docs/feature/refactor-controller-use-case-injection",
+  "produced_by": "DISTILL wave",
+  "produced_on": "2026-05-10",
+  "binding_decisions": "docs/feature/refactor-controller-use-case-injection/distill/wave-decisions.md",
+  "upstream_issues": "docs/feature/refactor-controller-use-case-injection/distill/upstream-issues.md",
+  "design_ratified_as": "docs/decisions/adr-023-controller-use-case-injection.md (Proposed 2026-05-10)",
+  "acceptance_root": "tests/acceptance/refactor-controller-use-case-injection/",
+  "scaffold_root": "tests/acceptance/refactor-controller-use-case-injection/steps/controller_di_steps.py",
+  "walking_skeleton_strategy": "real I/O via the production controller class — the only adapter is the Python kwarg-default-binding mechanism; no compose stack, no DB, no external substrate",
+  "characterization_tests_existing": [
+    "backend/tests/controllers/test_http_controller.py (25 patches against http_controller.<aggregate>_use_cases aliases)",
+    "backend/tests/controllers/test_organization_controller_char.py (7 patches; smallest char-test file — chosen as walking-skeleton migration target)",
+    "backend/tests/controllers/test_dataset_controller_char.py (16 patches; multi-factory case — dataset_use_cases + upload_use_cases + search_datasets_uc)",
+    "backend/tests/controllers/test_project_controller_char.py (9 patches)",
+    "backend/tests/controllers/test_analytics_controller_char.py (25 patches; covers BOTH ViewController + ReportController — Seam 5a/5b)",
+    "backend/tests/controllers/test_sql_access_controller_char.py (14 patches)",
+    "backend/tests/controllers/test_query_engine_controller_char.py (9 patches)",
+    "backend/tests/controllers/test_conversation_controller_char.py (submodule-alias case — create_session_uc, list_sessions_uc, list_session_events_uc, update_session_uc, get_project_memory_uc)"
+  ],
+  "phases": [
+    {
+      "id": "00",
+      "title": "Phase 0 — Walking skeleton: OrganizationController migrated end-to-end",
+      "polecat_command": "/nw-deliver",
+      "scope": "Mikado step 1+2 of DESIGN DWD-2, scoped to OrganizationController only. (1) Add module-private `_default_organization_uc()` factory to backend/app/controllers/organization_controller.py whose body performs the deferred `from app.use_cases import organization` import. (2) Add `*, _use_cases=_default_organization_uc` keyword-only parameter to both public methods on OrganizationController (post_organization, get_my_organization). (3) Replace the existing `_uc()` getter call expressions in those methods with `_use_cases().<method>(...)`. (4) Rewrite the 7 patches in backend/tests/controllers/test_organization_controller_char.py from `@patch('app.controllers.http_controller.organization_use_cases')` to passing `_use_cases=lambda: mock_uc` as a keyword argument; assertion lines remain byte-identical (DESIGN DWD-6 Iron Rule). (5) The 18-line alias block in http_controller.py is NOT yet deleted — other controllers' tests still patch it. The `from app.use_cases import organization as organization_use_cases` line stays until Phase 01 completes the rollout. (6) Wire the walking-skeleton acceptance scenario green by replacing the pytest.fail bodies in steps/controller_di_steps.py for the WS scenario only (the four step bodies under the 'Walking skeleton — get_my_organization with fake injected' header).",
+      "scenarios_to_unskip": [
+        "tests/acceptance/refactor-controller-use-case-injection/walking-skeleton.feature :: Engineer injects a fake use-case factory into get_my_organization and the controller returns the fake's data"
+      ],
+      "files_changed_estimate": "backend/app/controllers/organization_controller.py — replace `_uc()` getter with `_default_organization_uc` factory; add `*, _use_cases=_default_organization_uc` to 2 methods (-5 LOC, +10 LOC; ~10 LOC delta). backend/tests/controllers/test_organization_controller_char.py — rewrite 7 patches as kwarg injections (mechanical L1 transform; ~25 LOC delta in fixture mechanism, zero assertion edits per DESIGN DWD-6). tests/acceptance/refactor-controller-use-case-injection/steps/controller_di_steps.py — replace pytest.fail bodies for the WS scenario's 4 step bindings (~25 LOC of step bodies). Total: ~60 LOC across 3 files. Estimated size: S.",
+      "exit_criteria": [
+        "Walking-skeleton scenario GREEN: OrganizationController.get_my_organization invoked with `_use_cases=lambda: fake` returns the fake's data in the JSON:API envelope, and the fake's get_organization mock recorded the engineer's user identity",
+        "Pre-existing test_organization_controller_char.py 7 tests still GREEN through the new `_use_cases=lambda: mock_uc` mechanism (Iron Rule audit: assertion lines byte-identical to origin/main; only fixture-mechanism lines changed)",
+        "All other backend tests still GREEN — the alias block on http_controller.py is intact, so untouched controllers still work via `_uc()` getter + module patch",
+        "OrganizationController's two methods both have `_use_cases` as keyword-only, defaulting to `_default_organization_uc`",
+        "`grep 'def _uc()' backend/app/controllers/organization_controller.py` returns nothing (the getter for THIS controller is gone)",
+        "`grep 'def _default_organization_uc' backend/app/controllers/organization_controller.py` returns one match",
+        "`./tools/test/test.sh --backend` GREEN",
+        "Reviewer (nw-software-crafter-reviewer) approves: hexagonal boundary respected (the controller method is the entry point), Iron Rule preserved (assertion lines identical), DESIGN DWD-1 satisfied for organization aggregate"
+      ],
+      "blocks": ["01"],
+      "estimated_size": "S",
+      "ac_references": [
+        "ADR-023 §Decision outcome (Option α chosen)",
+        "ADR-023 §Mechanism (the `_default_<aggregate>_uc` factory + `_use_cases` kwarg pattern)",
+        "design.md §2 α — Argument injection with default factory",
+        "design.md §5 Migration / call-site impact (the mechanical patch→kwarg rewrite shape)",
+        "DESIGN wave-decisions.md DWD-1 (kwarg-injection is the binding decision), DWD-2 (Mikado step 1: start with the smallest surface), DWD-6 (Iron Rule binding for the bulk test rewrite)",
+        "DISTILL wave-decisions.md DWD-1 (`_use_cases` is the canonical kwarg name), DWD-2 (walking-skeleton scope: OrganizationController.get_my_organization), DWD-3 (real-IO strategy), DWD-4 (Iron Rule encoding)"
+      ]
+    },
+    {
+      "id": "01",
+      "title": "Phase 1 — Milestone 1: kwarg injection rolled out to remaining 7 controllers",
+      "polecat_command": "/nw-deliver",
+      "scope": "Mikado steps 1+2 of DESIGN DWD-2 applied to the remaining 7 per-aggregate controllers. (1) Add `_default_<aggregate>_uc` factory + `*, _use_cases=_default_<aggregate>_uc` keyword-only parameter to every public method on the 5 simple controllers: report_controller (5 methods), project_controller (5 methods), query_engine_controller (3 methods), sql_access_controller (5 methods), view_controller (5 methods). (2) For dataset_controller (multi-factory case per upstream-changes.md §3): add three factories `_default_dataset_uc`, `_default_upload_uc`, `_default_search_uc` and route each of the 10 public methods to its matching factory via `_use_cases=_default_<role>_uc`. (3) For conversation_controller (submodule-alias case): add five factories `_default_get_project_memory_uc`, `_default_create_session_uc`, `_default_list_sessions_uc`, `_default_list_session_events_uc`, `_default_update_session_uc` and route each of the 5 public methods to its matching factory. (4) Replace the existing `_uc()` getter call expressions in every method body with `_use_cases().<method>(...)`. (5) Wire milestone-1-kwarg-injection.feature scenarios green by replacing the pytest.fail bodies in steps/controller_di_steps.py under the 'Milestone 1' header (Scenario Outline + multi-factory + submodule-aliased + injected-failure scenarios). (6) The alias block in http_controller.py is NOT yet deleted — Phase 02 finishes the test rewrite and Phase 02's terminal commit deletes the alias block + the 8 `_uc()` getters atomically. NOTE: per DISTILL DWD-6, this Phase 01 introduces the factories + kwargs but does NOT yet delete the alias block; the per-controller test rewrites are interleaved here (ahead of the bulk Phase 02 sweep) only when needed to keep `./tools/test/test.sh --backend` green between commits.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-1-kwarg-injection.feature :: <controller> exposes a `_use_cases` keyword-only parameter with the per-aggregate factory as default (Scenario Outline; 6 examples)",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-1-kwarg-injection.feature :: A test-supplied factory replaces the default at call time on every simple per-aggregate controller",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-1-kwarg-injection.feature :: Routers calling controllers without the `_use_cases` kwarg get the default factory",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-1-kwarg-injection.feature :: dataset_controller exposes three named factories — one per distinct use-case dependency",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-1-kwarg-injection.feature :: conversation_controller exposes a factory per submodule-aliased use case",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-1-kwarg-injection.feature :: Injecting a factory that raises propagates the failure to the caller",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-1-kwarg-injection.feature :: Injecting a factory whose returned module lacks the expected method surfaces an attribute error"
+      ],
+      "files_changed_estimate": "backend/app/controllers/report_controller.py — factory + 5 method kwargs (~12 LOC delta). backend/app/controllers/project_controller.py — factory + 5 method kwargs (~12 LOC). backend/app/controllers/query_engine_controller.py — factory + 3 method kwargs (~9 LOC). backend/app/controllers/sql_access_controller.py — factory + 5 method kwargs (~12 LOC). backend/app/controllers/view_controller.py — factory + 5 method kwargs (~12 LOC). backend/app/controllers/dataset_controller.py — 3 factories + 10 method kwargs (~25 LOC). backend/app/controllers/conversation_controller.py — 5 factories + 5 method kwargs (~17 LOC). tests/acceptance/refactor-controller-use-case-injection/steps/controller_di_steps.py — replace pytest.fail bodies for Milestone-1 scenarios (~120 LOC of step bodies). Total: ~220 LOC across 8 files. Estimated size: M.",
+      "exit_criteria": [
+        "All 7 simple/multi-factory/submodule milestone-1 scenarios GREEN (Scenario Outline counted as 1 scenario but matrices over 6 controllers)",
+        "Phase 00 walking-skeleton scenario still GREEN",
+        "Every per-aggregate controller defines at least one `_default_*_uc` factory: 1×report, 1×project, 1×query_engine, 1×sql_access, 1×organization, 1×view, 3×dataset, 5×conversation = 14 total factories per upstream-changes.md §6",
+        "Every public method on every per-aggregate controller has a `_use_cases` keyword-only parameter whose default is one of the per-aggregate factories",
+        "`grep -n 'def _uc()' backend/app/controllers/*_controller.py` returns nothing (all 8 getters deleted, replaced by `_default_*_uc` factories)",
+        "`./tools/test/test.sh --backend` GREEN (the alias block on http_controller.py remains intact during this phase to keep all unmigrated test patches working — Phase 02 deletes it atomically with the test rewrite)",
+        "mypy backend/app GREEN",
+        "Reviewer (nw-software-crafter-reviewer) approves: every controller's structural shape matches DESIGN §2 α; multi-factory and submodule-alias cases handled per upstream-changes.md §3"
+      ],
+      "blocks": ["02"],
+      "estimated_size": "M",
+      "ac_references": [
+        "ADR-023 §Mechanism (the per-aggregate factory pattern)",
+        "design.md §2 α — Argument injection with default factory",
+        "design.md §5 Migration / call-site impact (controller-side surface estimate)",
+        "upstream-changes.md §1 (file-by-file change estimate; per-controller LOC deltas)",
+        "upstream-changes.md §3 (multi-factory case for dataset_controller; submodule-alias case for conversation_controller)",
+        "DESIGN wave-decisions.md DWD-1 (signature pattern), DWD-3 (FastAPI Depends non-interaction — the kwarg only matters at the controller boundary)",
+        "DISTILL wave-decisions.md DWD-3 (real-IO via Python call mechanics), DWD-6 (Phase ordering)"
+      ]
+    },
+    {
+      "id": "02",
+      "title": "Phase 2 — Milestone 2: bundled test rewrite + atomic alias-block deletion",
+      "polecat_command": "/nw-deliver",
+      "scope": "DESIGN DWD-2's exit criterion + Mikado step 5. (1) Bulk-rewrite the remaining patches in backend/tests/controllers/ (test_http_controller.py: 25 patches; test_dataset_controller_char.py: 16 patches; test_project_controller_char.py: 9 patches; test_analytics_controller_char.py: 25 patches; test_sql_access_controller_char.py: 14 patches; test_query_engine_controller_char.py: 9 patches; test_conversation_controller_char.py: N patches). Each rewrite: remove `@patch('app.controllers.http_controller.<x>_use_cases')` decorator, remove `mock_uc` parameter from method signature, add local `mock_uc = MagicMock()` inside the test body, pass `_use_cases=lambda: mock_uc` (or the matching factory-role kwarg for multi-factory dataset tests) on the controller call. Iron Rule per DESIGN DWD-6: assertion lines (`assert ...`, `assert_awaited_once_with(...)`, `assert_called_with(...)`) are byte-identical before and after. (2) Once every test is migrated, atomically: (a) delete the 18-line alias block in backend/app/controllers/http_controller.py (lines 26-41 today: every `from app.use_cases import * as *_use_cases` and every submodule-alias `from app.use_cases.* import * as *_uc`); (b) update the http_controller.py docstring to remove the 'Do NOT remove any of the module-level aliases' warning. (3) The HTTPController class itself, the `_serialize` / `_error_response` re-exports, and all 41 router call-sites are NOT touched — DESIGN DWD-4 + DWD-5 binding. (4) Wire milestone-2-test-migration.feature scenarios green by replacing pytest.fail bodies in steps/controller_di_steps.py under the 'Milestone 2' header.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: Zero `@patch` references to the legacy use-case aliases remain under backend/tests/controllers/",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: The 18-line alias block in http_controller.py is absent",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: The eight `_uc()` getter functions in per-aggregate controllers are absent",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: Every migrated test file's assertions are byte-identical to the pre-migration assertions (Iron Rule)",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: Every migrated test file passes when the test runner is invoked against it",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: A characterization test that previously patched the alias still pins the same status code through the kwarg path",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: Submodule-aliased test sites in test_conversation_controller_char.py migrate to the matching factory kwarg",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-2-test-migration.feature :: Multi-factory test sites in test_dataset_controller_char.py migrate to the matching factory kwarg"
+      ],
+      "files_changed_estimate": "backend/app/controllers/http_controller.py — DELETE 18-line alias block (L26-41), update docstring to remove the 'Do NOT remove' warning (-25 LOC). backend/tests/controllers/test_http_controller.py — rewrite 25 patches (mechanical; ~80 LOC delta in fixture mechanism, zero assertion edits). backend/tests/controllers/test_dataset_controller_char.py — rewrite 16 patches (~50 LOC delta). backend/tests/controllers/test_project_controller_char.py — rewrite 9 patches (~30 LOC). backend/tests/controllers/test_analytics_controller_char.py — rewrite 25 patches (~80 LOC). backend/tests/controllers/test_sql_access_controller_char.py — rewrite 14 patches (~45 LOC). backend/tests/controllers/test_query_engine_controller_char.py — rewrite 9 patches (~30 LOC). backend/tests/controllers/test_conversation_controller_char.py — rewrite N patches (~varies). tests/acceptance/refactor-controller-use-case-injection/steps/controller_di_steps.py — replace pytest.fail bodies for Milestone-2 scenarios (~150 LOC of step bodies). Total: ~500 LOC across ~10 files (mostly mechanical fixture-mechanism changes). Estimated size: M.",
+      "exit_criteria": [
+        "All 8 milestone-2 scenarios GREEN",
+        "Phase 00 + Phase 01 scenarios still GREEN (no regression)",
+        "`grep -rn '@patch.*app\\.controllers\\.http_controller\\..*_use_cases' backend/tests/` returns ZERO matches",
+        "`grep -n 'from app.use_cases import .* as .*_use_cases' backend/app/controllers/http_controller.py` returns ZERO matches",
+        "`grep -n 'from app.use_cases\\.\\(session\\|memory\\|dataset\\) import .* as .*_uc' backend/app/controllers/http_controller.py` returns ZERO matches (submodule aliases gone too)",
+        "`grep -n 'Do NOT remove any of the module-level aliases' backend/app/controllers/http_controller.py` returns ZERO matches (docstring warning removed)",
+        "Iron Rule audit (DESIGN DWD-6 + DISTILL DWD-4): for every migrated test file, the assertion lines (matching the regex `^\\s*(assert |.*\\.assert_(awaited|called)_)`) are byte-identical to their origin/main counterparts; only fixture-mechanism lines changed",
+        "`./tools/test/test.sh --backend` GREEN",
+        "mypy backend/app GREEN (the `HTTPController` class still type-checks against per-aggregate controller signatures even though the alias block is gone)",
+        "Routers under backend/app/routers/ have ZERO diff against origin/main (DESIGN DWD-4 binding: 41 call-sites untouched)",
+        "Reviewer (nw-software-crafter-reviewer) approves: Iron Rule preserved across all ~105 migrated tests; the L1 transform is the only change; no assertion edits"
+      ],
+      "blocks": ["03"],
+      "estimated_size": "M",
+      "ac_references": [
+        "ADR-023 §Confirmation (the four CI-checkable assertions: zero patches; alias block gone; `_uc()` getters gone; pytest-archon green — last is Phase 03)",
+        "design.md §5 Migration (test-rewrite shape: before/after example)",
+        "DESIGN wave-decisions.md DWD-2 (bundled test migration is binding; 105 patches + alias block + `_uc()` getters all delete in this feature; CI exit criteria), DWD-6 (Iron Rule)",
+        "upstream-changes.md §1 (per-test-file patch counts), §6 (reviewer checklist booleans 6-8)",
+        "DISTILL wave-decisions.md DWD-4 (Iron Rule encoding), DWD-6 (Phase ordering — atomic deletion at end of Phase 02)"
+      ]
+    },
+    {
+      "id": "03",
+      "title": "Phase 3 — Milestone 3: pytest-archon architectural enforcement (Rules A/B/C)",
+      "polecat_command": "/nw-deliver",
+      "scope": "DESIGN DWD-2 step 4 + DESIGN DWD-8 (the three-rule architectural fence). (1) Create backend/tests/architecture/test_controller_imports.py with three pytest-archon rules. (2) Rule A (anti-regression): `app.controllers.http_controller` MUST NOT import any name from `app.use_cases` at module level. Detects re-introduction of the alias block. (3) Rule B (positive structural assertion): every per-aggregate controller module under backend/app/controllers/ MUST define at least one `_default_*_uc` callable AND every public method on its controller class MUST have a keyword-only `_use_cases` parameter whose default is one of those callables. AST walk over `<aggregate>_controller.py` files. Detects accidental removal of the injection point. (4) Rule C (γ-prevention): no source file under backend/app/routers/ MAY contain `Depends(<X>Controller` for any controller class. Negative grep over routers. Captures the FastAPI Depends non-interaction guarantee per DESIGN DWD-3. (5) Wire milestone-3-architectural-enforcement.feature scenarios green by replacing pytest.fail bodies in steps/controller_di_steps.py under the 'Milestone 3' header. The synthetic-violator scenarios construct candidate files in tmp_path and feed them through the same pytest-archon machinery; the clean-tree scenarios run the rule against the legitimate post-refactor source.",
+      "scenarios_to_unskip": [
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: Rule A flags a synthetic re-introduction of a module-level use-case alias on http_controller",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: Rule A stays silent against the legitimate post-refactor http_controller.py",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: Rule B flags a synthetic per-aggregate controller missing the `_default_<aggregate>_uc` factory",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: Rule B flags a synthetic per-aggregate controller method missing the `_use_cases` keyword-only parameter",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: Rule B stays silent against every legitimate per-aggregate controller",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: Rule C flags a synthetic router that wires a controller via FastAPI `Depends`",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: Rule C stays silent against every legitimate router (FastAPI Depends non-interaction per DWD-3)",
+        "tests/acceptance/refactor-controller-use-case-injection/milestone-3-architectural-enforcement.feature :: The architectural rule never references `_use_cases` as a use-case-function parameter (Risk 2 mitigation per DESIGN §7)"
+      ],
+      "files_changed_estimate": "backend/tests/architecture/test_controller_imports.py — NEW FILE (~80 LOC: three pytest-archon rule declarations + their fixtures). backend/pyproject.toml — confirm pytest-archon is in test deps (already added by ADR-020 / ADR-022 work; no change expected). tests/acceptance/refactor-controller-use-case-injection/steps/controller_di_steps.py — replace pytest.fail bodies for Milestone-3 scenarios (~120 LOC of step bodies). Total: ~200 LOC. Estimated size: S.",
+      "exit_criteria": [
+        "All 8 milestone-3 scenarios GREEN (each rule fires on its synthetic violator AND stays silent on the legitimate codebase)",
+        "Phase 00 + Phase 01 + Phase 02 scenarios still GREEN (full 22-scenario suite green)",
+        "backend/tests/architecture/test_controller_imports.py exists and runs as part of `./tools/test/test.sh --backend`",
+        "Rule A — clean tree: passes (zero use-case imports at http_controller module level)",
+        "Rule A — synthetic violator: rule output names the candidate file AND identifies the offending alias",
+        "Rule B — clean tree: passes (every per-aggregate controller has its factory + every method has `_use_cases` kwarg)",
+        "Rule B — synthetic violator (missing factory): rule output names the candidate file AND the missing factory function",
+        "Rule B — synthetic violator (missing kwarg): rule output names the candidate file AND the offending method",
+        "Rule C — clean tree: passes (no router contains `Depends(<X>Controller`); the rule additionally confirms ≥41 direct static-method invocations across routers per DESIGN §7's audit",
+        "Rule C — synthetic violator: rule output names the candidate file AND identifies the controller wired via Depends",
+        "Risk-2 sub-rule: zero use-case functions under backend/app/use_cases/ declare a `_use_cases` parameter (prevents kwarg-name collision)",
+        "`./tools/test/test.sh --backend` GREEN end-to-end",
+        "mypy backend/app GREEN",
+        "__SCAFFOLD__ marker REMOVED from tests/acceptance/refactor-controller-use-case-injection/steps/controller_di_steps.py (every step body now real; scaffold complete)",
+        "ADR-023 status amended Proposed → Accepted (with Sentinel reviewer pass + post-merge audit confirmation)",
+        "Polecat MUST file follow-up bead: /nw-finalize refactor-controller-use-case-injection to migrate artifacts to docs/evolution/",
+        "Reviewer (nw-software-crafter-reviewer) approves: pytest-archon rules are active fences (verified by synthetic-violator scenarios), no spurious failures (verified by clean-tree scenarios)"
+      ],
+      "blocks": [],
+      "estimated_size": "S",
+      "ac_references": [
+        "ADR-023 §Architectural enforcement (Principle 11) — Rules 1+2",
+        "ADR-023 §Confirmation (the pytest-archon assertion)",
+        "design.md §7 Risk 1 (FastAPI Depends non-interaction; this is the load-bearing reason to reject γ — Rule C enforces it structurally)",
+        "design.md §7 Risk 2 (Risk-2 sub-rule prevents `_use_cases` collision with use-case parameters)",
+        "design.md §7 Risk 4 (Rule B prevents future contributor from removing `_use_cases` thinking it's unused)",
+        "DESIGN wave-decisions.md DWD-3 (FastAPI Depends non-interaction is documented and enforced — Rule C is the structural enforcement layer), DWD-8 (single-layer pytest-archon rule; no Protocol layer because no Protocol; no behavioural layer because no substrate)",
+        "DISTILL wave-decisions.md DWD-5 (synthetic-violator harness convention)"
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    {
+      "after_phase": "00",
+      "gate": "Walking-skeleton scenario green; OrganizationController migrated; assertion-byte audit on test_organization_controller_char.py confirms Iron Rule preserved (compare migrated assertions to origin/main snapshot)"
+    },
+    {
+      "after_phase": "01",
+      "gate": "All 7 per-aggregate controllers have factory+kwarg; alias block + 8 `_uc()` getters STILL PRESENT (deletion is Phase 02 terminal commit); milestone-1 scenarios green; backend test suite green"
+    },
+    {
+      "after_phase": "02",
+      "gate": "Bulk test rewrite complete; alias block deleted; 8 `_uc()` getters deleted atomically; Iron-Rule audit passes (zero assertion edits across ~105 migrated tests; DESIGN DWD-6 binding); reviewer-checklist booleans 1-12 from DESIGN upstream-changes.md §6 all true"
+    },
+    {
+      "after_phase": "03",
+      "gate": "All 22 acceptance scenarios green; pytest-archon Rules A/B/C in place; ADR-023 promoted Proposed → Accepted; ready for /nw-finalize"
+    }
+  ],
+  "deliver_dispatch_notes": {
+    "agent": "nw-software-crafter",
+    "paradigm": "Python — module-private factory functions + keyword-only-with-default parameter pattern (Option α per ADR-023). No new classes; controllers remain stateless `@staticmethod` collections per their existing shape. The `_default_<aggregate>_uc` factory bodies are 2-line lazy-import stubs that mirror the existing `_uc()` getter bodies byte-for-byte (only the function name and the consumer-side wiring change). Per DISTILL DWD-3, the only adapter exercised is the Python kwarg-default-binding mechanism — there is no substrate, no DB, no compose stack involved.",
+    "iron_rule": "NEVER modify a characterization-test assertion line to make the kwarg-injection refactor green. Per DESIGN DWD-6 + DISTILL DWD-4, the migration is a known L1 test-refactoring transform: substitute fixture mechanism without altering assertions. Allowed diffs in any test file: removed `@patch(...)` decorators; removed `mock_uc` parameter names from method signatures; added local `mock_uc = MagicMock()` lines; added `_use_cases=lambda: mock_uc` kwarg arguments. Assertion lines (`assert ...`, `assert_awaited_once_with(...)`, `assert_called_with(...)`) MUST be byte-identical to origin/main. After 3 failed attempts to keep a single test green, revert and escalate; do NOT modify the assertion.",
+    "tdd_cycle": "RED_ACCEPTANCE → unskip one scenario → RED_UNIT (the per-aggregate controller's existing characterization tests serve as the unit-level safety net during Phase 00/01) → GREEN → minimum implementation (factory + kwarg per the controller method that the unskipped scenario exercises) → REFACTOR per RPP L1-L6 → next scenario. Phase 02's bulk test rewrite is mechanical L1 (no new RED unit tests; the existing test bodies define the GREEN target). Phase 03 introduces fresh RED unit-level pytest-archon rules.",
+    "context_handoff": [
+      "ADR-023 (Proposed; promote to Accepted in Phase 03 per Sentinel's review)",
+      "design/design.md §2 α (chosen) + §3 Reuse Analysis + §5 Migration / call-site impact + §7 Risks 1-5",
+      "design/c4-diagrams.md (Sequence — production call path + test-mode variant)",
+      "design/wave-decisions.md DWD-1 through DWD-9 (binding decisions)",
+      "design/upstream-changes.md §1 (per-file change estimates), §3 (multi-factory + submodule-alias cases), §6 (reviewer checklist)",
+      "distill/wave-decisions.md DWD-1 through DWD-9 (this DISTILL — including the kwarg-rename canonicalisation and walking-skeleton scope)",
+      "distill/upstream-issues.md (back-propagation status: 0 substitutions applied to DESIGN; rename was already in effect)",
+      "backend/app/controllers/http_controller.py — alias block being eliminated (L26-41 today)",
+      "backend/app/controllers/{report,project,query_engine,sql_access,organization,view,dataset,conversation}_controller.py — files modified",
+      "backend/tests/controllers/*.py — 7 char-test files where the bulk rewrite happens",
+      "backend/app/routers/*.py — DESIGN DWD-4 binding: ZERO diff allowed (41 call-sites untouched)"
+    ]
+  }
+}

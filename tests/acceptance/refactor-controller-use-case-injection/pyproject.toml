@@ -1,0 +1,50 @@
+# <!-- DES-ENFORCEMENT : exempt -->
+[project]
+name = "dashboard-chat-acceptance-refactor-controller-use-case-injection"
+version = "0.0.1"
+description = "Acceptance tests for refactor-controller-use-case-injection (ADR-023)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-bdd>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    # DWD-1 in this feature's distill/wave-decisions.md: the only "real
+    # adapter" this refactor exercises is the Python kwarg-default-
+    # binding mechanism on the production controller classes. There is
+    # no compose stack, no database, no external dependency. The
+    # `returns` library is required so step bodies can construct
+    # Success(...)/Failure(...) values that match the controllers'
+    # match/case shape.
+    "returns>=0.22",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+# Mirrors tests/acceptance/refactor-metadata-repository-split/pyproject.toml
+# so async fixtures and async test bodies share an event loop. Without
+# alignment, function-scoped async fixtures get fresh per-test loops and
+# subsequent tests in the same module hit "Event loop is closed."
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "walking_skeleton: walking-skeleton scenario (real-IO end-to-end smoke through the production controller class as a driving port)",
+    "real-io: scenario uses the production controller class without unittest.mock.patch on module-level aliases",
+    "driving_adapter: scenario invokes through the per-aggregate controller staticmethod (the same call shape backend/app/routers/<aggregate>s.py uses)",
+    "kwarg_injection: scenario asserts the structural + behavioural correctness of the `_use_cases` keyword-only parameter and the `_default_<aggregate>_uc` factory",
+    "test_migration: scenario asserts the bundled test rewrite landed (zero @patch references, alias block deleted, _uc() getters deleted, assertions byte-identical)",
+    "architectural_enforcement: scenario asserts the pytest-archon rule fires on synthetic violators and stays silent on the legitimate codebase",
+    "pending: scenario authored but not yet enabled — DELIVER unpends per phase per roadmap.json's scenarios_to_unskip",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    # Default: skip @pending scenarios. Walking skeleton runs first;
+    # milestone-1, milestone-2, and milestone-3 scenarios all carry
+    # @pending and unpend per the roadmap phases.
+    "-m", "not pending",
+]
