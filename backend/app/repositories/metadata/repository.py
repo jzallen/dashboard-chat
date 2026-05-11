@@ -23,6 +23,7 @@ from app.utils.sql_safety import validate_condition_sql
 
 from ..exceptions import MetadataRepositoryError
 from . import _mappers
+from ._pagination import paginate_by_id, paginate_composite
 from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
 from .project_memory_record import ProjectMemoryRecord
@@ -302,11 +303,11 @@ class MetadataRepository:
         query = query.limit(limit + 1)
 
         result = await self._session.execute(query)
-        sessions = list(result.scalars().all())
-
-        has_more = len(sessions) > limit
-        sessions = sessions[:limit]
-        next_cursor = self._encode_session_cursor(sessions[-1]) if has_more and sessions else None
+        sessions, next_cursor, has_more = paginate_composite(
+            list(result.scalars().all()),
+            limit,
+            self._encode_session_cursor,
+        )
 
         return [_mappers.session_to_dict(s) for s in sessions], next_cursor, has_more
 
@@ -361,8 +362,7 @@ class MetadataRepository:
             query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
 
         if cursor is not None:
-            cursor_id = decode_cursor(cursor)
-            query = query.where(DatasetRecord.id < cursor_id)
+            query = query.where(DatasetRecord.id < decode_cursor(cursor))
 
         query = query.order_by(DatasetRecord.id.desc())
 
@@ -370,15 +370,7 @@ class MetadataRepository:
             query = query.limit(limit + 1)
 
         result = await self._session.execute(query)
-        records = list(result.scalars().all())
-
-        if limit is not None:
-            has_more = len(records) > limit
-            records = records[:limit]
-            next_cursor = encode_cursor(records[-1].id) if has_more and records else None
-            return records, next_cursor, has_more
-
-        return records, None, False
+        return paginate_by_id(list(result.scalars().all()), limit)
 
     @handle_repository_exceptions
     async def get_dataset(
