@@ -1,0 +1,49 @@
+[project]
+name = "dashboard-chat-acceptance-extract-dataset-query-port"
+version = "0.0.1"
+description = "Acceptance tests for extract-dataset-query-port (ADR-021)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-bdd>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    # Strategy C real-IO dependencies: the walking-skeleton scenario
+    # exercises a real asyncpg pool against the running query-engine
+    # service (Postgres + pg_duckdb in the compose stack). Adapter unit
+    # tests for the relocated _FakeConnection ladder do not need asyncpg
+    # — they exercise the adapter against an in-process recording stand-in
+    # that satisfies the connection protocol surface. asyncpg is listed
+    # so the WS scenario imports do not depend on the backend's runtime
+    # venv being loaded.
+    "asyncpg>=0.29",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+# Mirror dbt-test-validation/pyproject.toml's session loop scope: the
+# session-scoped query_engine_pool fixture opens a real asyncpg pool
+# against the running compose stack once per session. Without aligning
+# the default fixture loop to "session", function-scoped async fixtures
+# get fresh per-test loops and the second test that consumes the pool
+# hits "Event loop is closed."
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "walking_skeleton: walking-skeleton scenario (real-IO end-to-end smoke against the new port)",
+    "real-io: scenario uses real adapters (real compose stack, real asyncpg, real pg_duckdb, real MinIO)",
+    "adapter-integration: scenario covers the new PgDuckDBQueryEngineAdapter with real or recording I/O",
+    "driving_port: scenario invokes the customer's actual entry point (QueryEnginePort.execute_dataset_preview)",
+    "pending: scenario authored but not yet enabled — DELIVER turns these on one at a time",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    # Default: skip @pending scenarios. DELIVER unpends per phase per
+    # roadmap.json's scenarios_to_unskip list.
+    "-m", "not pending",
+]
