@@ -44,7 +44,7 @@
 # Phase 02 unpends these scenarios as MR-1 implementation drives them
 # RED → GREEN one at a time per nwave Outside-In TDD.
 
-@milestone_1 @driving_adapter @pending
+@milestone_1 @driving_adapter
 Feature: The view-creation surface compiles to safe deterministic SQL and rejects unsafe input by construction
   As an analyst composing views through structured tool calls,
   I want the system to compile my view definition into safe, deterministic SQL
