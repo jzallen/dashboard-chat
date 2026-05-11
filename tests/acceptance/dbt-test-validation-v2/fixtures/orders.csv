@@ -1,0 +1,16 @@
+order_id,order_date,customer_email,region,product_category,product_name,quantity,unit_price,discount_pct,payment_method,shipping_status
+ORD-00001,2025-02-22,rowan.kim@sample.net,North,Apparel,Denim Jacket,3,81.92,25,Credit Card,pending
+ORD-00002,2025-08-27,jamie.clark@example.com,North,Electronics,4K Webcam,2,81.60,10,paypal,cancelled
+ORD-00003,2025-10-26,casey.smith@example.com,North,Electronics,Mechanical Keyboard,7,31.72,0,credit-card,delivered
+ORD-00004,2025-03-14,alex.smith@sample.net,North,Toys,Toy Car Set,3,51.67,0,credit_card,cancelled
+ORD-00005,2025-06-17,rowan.lee@example.com,West,Electronics,USB-C Charger,6,380.02,0,credit_card,delivered
+,2025-11-13,casey.walker@testmail.org,West,Toys,Building Blocks,2,17.27,0,applepay,cancelled
+ORD-00007,2025-03-26,quinn.nguyen@testmail.org,North,Apparel,Wool Socks,1,13.45,0,credit_card,delivered
+ORD-00008,2025-03-25,drew.hall@example.com,East,Toys,Puzzle 1000pc,8,33.12,5,Apple Pay,shipped
+ORD-00009,2025-08-24,alex.moore@example.com,East,Home Goods,Desk Lamp,6,105.05,15,credit_card,cancelled
+ORD-00010,2025-10-07,jordan.hall@example.com,East,Home Goods,Cutting Board,6,129.21,25,Bank Transfer,shipped
+,2025-04-11,taylor.wilson@testmail.org,North,Home Goods,Desk Lamp,4,22.84,20,credit-card,shipped
+ORD-00012,2025-03-07,blake.garcia@example.com,West,Electronics,4K Webcam,6,306.33,20,credit_card,cancelled
+ORD-00013,2025-11-09,jamie.young@example.com,South,Toys,Toy Car Set,2,53.05,0,bank_transfer,pending
+ORD-00014,2025-05-16,riley.young@testmail.org,North,Toys,Building Blocks,5,45.17,25,credit_card,delivered
+ORD-00015,2025-05-11,quinn.garcia@example.com,North,Toys,Puzzle 1000pc,5,38.87,0,Credit Card,shipped
