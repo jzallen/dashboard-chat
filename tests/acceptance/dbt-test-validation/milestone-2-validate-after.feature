@@ -1,23 +1,22 @@
 # Milestone 2 — per-turn validation (β only, ADR-019 §2 Option β).
 #
-# Two scenarios cover the Pandera-per-turn binding point:
+# After ADR-024 Phase 3, this milestone retains ONE scenario:
 #   - happy path: shape-correct frame validates in well under the budget
-#   - retry interaction: when the LLM produces a wrong-shape frame, the
-#     existing AC1.5 retry-with-rephrase budget engages; on success after
-#     rephrase the chat_turn completes; on exhaustion the chat_turn raises
-#     with structured diagnostic context.
 #
-# Driving ports: `DatasetLayerHarness.validate_after(dataset_id, schema)`
-# for direct shape validation, and `DatasetLayerHarness.chat_turn(...)`
-# for the retry interaction (the harness owns the retry budget; the
-# Pandera check is engaged inside the harness's existing post_turn_check
-# mechanism).
+# The retry-interaction scenarios (rephrase-success, exhaustion-with-diff)
+# were reclassified to `backend/tests/unit/test_retry_semantics.py` —
+# they were unit tests wearing acceptance-test clothing (the v1 step
+# glue already monkeypatched `PanderaValidator.validate` to drive
+# deterministic pass/fail/exhaustion paths). M5.2's structured-exception
+# scenario was merged into the same unit file. M2.1 stays here until
+# Phase 4 retires the v1 suite.
+#
+# Driving port: `DatasetLayerHarness.validate_after(dataset_id, schema)`
+# for direct shape validation.
 #
 # Timing budget: the per-turn check is documented in design.md §6 OQ4 as
 # "<100ms typical." The acceptance-side budget is 200ms (skill F-004:
 # fixtures use ≥200ms to avoid false flakes under parallel load).
-#
-# All scenarios @pending — DELIVER turns them on one at a time.
 
 @real-io @adapter-integration
 Feature: Per-turn validation gives sub-200ms feedback on staging shape
@@ -32,18 +31,3 @@ Feature: Per-turn validation gives sub-200ms feedback on staging shape
     When the customer asks the harness to validate the staging frame against the orders schema
     Then the validation reports a successful result
     And the validation completes within 200 milliseconds
-
-  Scenario: Wrong-shape frame engages the retry-with-rephrase budget on first rephrase success
-    Given a fresh project with a small orders dataset uploaded
-    And the chat workflow will produce a wrong-shape staging frame on its first attempt
-    And the chat workflow will produce a shape-correct staging frame on its first rephrase
-    When the customer runs the chat workflow with retries permitted
-    Then the chat workflow completes successfully on the first rephrase
-    And the per-turn validation eventually reports a successful result
-
-  Scenario: Wrong-shape frame exhausts the retry budget and raises with diagnostic context
-    Given a fresh project with a small orders dataset uploaded
-    And the chat workflow will produce a wrong-shape staging frame on every attempt
-    When the customer runs the chat workflow with retries permitted
-    Then the chat workflow raises after the retry budget is exhausted
-    And the diagnostic context names the offending column

@@ -28,7 +28,7 @@ import contextlib
 import os
 import sys
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -554,182 +554,14 @@ def then_validation_under_budget(capture: HarnessCapture) -> None:
     )
 
 
-def _install_pandera_validator_stub(
-    capture: HarnessCapture,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    fail_on: Callable[[int], bool],
-) -> None:
-    """Substrate-side injection: patch PanderaValidator.validate with a
-    stateful stub keyed off ``capture.extras["pandera_attempt"]``.
-
-    Same monkeypatch pattern milestone-3 probe scenarios use to inject
-    deterministic substrate behavior. The driving port (harness.chat_turn
-    via validate_with=OrdersStaging) is preserved — only the leaf
-    PanderaValidator is substituted so the @when prompt/Groq jitter does
-    not influence the validation outcome.
-
-    ``fail_on(attempt)`` returns True when this attempt should yield a
-    fail result (with a region-column diagnostic), False for pass.
-    Attempts are 1-indexed; counter increments on every validate() call.
-
-    Each call also stores the most-recent ValidationResult on
-    ``capture.validation_result`` so the @then "eventually reports a
-    successful result" assertion observes the LAST result the harness
-    saw.
-    """
-    from tests.integration.dataset_layer.validation import pandera_validator as pv_module
-    from tests.integration.dataset_layer.validation.pandera_validator import (
-        ValidationResult,
-    )
-
-    capture.extras["pandera_attempt"] = 0
-
-    def _stub_validate(self: Any, df: Any, schema: Any, *, budget_ms: float = 200.0) -> Any:
-        capture.extras["pandera_attempt"] += 1
-        attempt = capture.extras["pandera_attempt"]
-        if fail_on(attempt):
-            result = ValidationResult(
-                status="fail",
-                errors=["region: failed check 'isin' (value='Mars')"],
-                elapsed_ms=5.0,
-                over_budget=False,
-            )
-        else:
-            result = ValidationResult(
-                status="pass",
-                errors=[],
-                elapsed_ms=3.0,
-                over_budget=False,
-            )
-        capture.validation_result = result
-        return result
-
-    monkeypatch.setattr(pv_module.PanderaValidator, "validate", _stub_validate)
-
-
-@given("the chat workflow will produce a wrong-shape staging frame on its first attempt")
-def given_wrong_shape_first(
-    capture: HarnessCapture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Install a Pandera stub that fails attempt 1 (S2 first half).
-
-    The S2 scenario also pairs with ``given_correct_shape_after_rephrase``
-    below; both @givens chain through ``capture.extras["pandera_attempt"]``
-    so the stub for "fail then pass" is the union of the two predicates.
-    Installing once here covers BOTH @given fragments — the second
-    @given is a no-op marker that documents the intended behavior.
-    """
-    _install_pandera_validator_stub(
-        capture,
-        monkeypatch,
-        fail_on=lambda attempt: attempt == 1,
-    )
-
-
-@given(
-    "the chat workflow will produce a shape-correct staging frame on its first rephrase"
-)
-def given_correct_shape_after_rephrase(capture: HarnessCapture) -> None:
-    """Documentary @given — the predicate installed by
-    ``given_wrong_shape_first`` already encodes "attempt 2+ passes".
-    Asserting the stub is in place here protects against the S2
-    scenario being reordered.
-    """
-    assert "pandera_attempt" in capture.extras, (
-        "S2 scenarios must run given_wrong_shape_first BEFORE this @given"
-    )
-
-
-@given("the chat workflow will produce a wrong-shape staging frame on every attempt")
-def given_wrong_shape_always(
-    capture: HarnessCapture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Install a Pandera stub that fails on every attempt (S3)."""
-    _install_pandera_validator_stub(
-        capture,
-        monkeypatch,
-        fail_on=lambda attempt: True,
-    )
-
-
-@when("the customer runs the chat workflow with retries permitted")
-def when_run_chat_with_retries(
-    capture: HarnessCapture, requires_groq: None
-) -> None:
-    """Drive harness.chat_turn with validate_with=OrdersStaging.
-
-    The Pandera validator is monkey-patched in the @given step so the
-    pass/fail sequence is deterministic; the prompt content does not
-    affect the validation outcome. ``requires_groq`` is preserved
-    because chat_turn still posts to the worker /chat endpoint over the
-    real compose stack — only the validator leaf is substituted.
-
-    Captures either the trace (S2 success) or the raised AssertionError
-    (S3 exhaustion) on the capture object so the @then bindings can
-    assert on observable outcomes.
-    """
-    from tests.integration.dataset_layer.validation.schemas.orders_staging import (
-        OrdersStaging,
-    )
-
-    loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
-    harness = capture.extras["harness"]
-    prompt = "Validate the staging frame against the orders schema"
-    try:
-        capture.chat_trace = loop.run_until_complete(
-            harness.chat_turn(
-                prompt,
-                dataset_id=capture.dataset_id,
-                validate_with=OrdersStaging,
-                max_retries=2,
-            ),
-        )
-    except AssertionError as e:
-        capture.chat_error = e
-
-
-@then("the chat workflow completes successfully on the first rephrase")
-def then_chat_completes_after_rephrase(capture: HarnessCapture) -> None:
-    assert capture.chat_error is None, (
-        f"chat_turn unexpectedly raised: {capture.chat_error!r}"
-    )
-    assert capture.chat_trace is not None, "no chat trace captured"
-
-
-@then("the per-turn validation eventually reports a successful result")
-def then_validation_eventually_passes(capture: HarnessCapture) -> None:
-    assert capture.validation_result is not None
-    assert getattr(capture.validation_result, "status", None) == "pass"
-
-
-@then("the chat workflow raises after the retry budget is exhausted")
-def then_chat_raises_after_exhaustion(capture: HarnessCapture) -> None:
-    assert capture.chat_error is not None, (
-        "chat_turn was expected to raise after retry exhaustion but did not"
-    )
-
-
-@then("the diagnostic context names the offending column")
-def then_diagnostic_names_column(capture: HarnessCapture) -> None:
-    assert capture.chat_error is not None
-    msg = str(capture.chat_error)
-    # Observable outcome: the error message itself is a user-visible
-    # surface. We assert it carries the structured-diagnostic context the
-    # Pandera lazy-validation path produces.
-    assert "column" in msg.lower(), (
-        f"expected the failure message to name a column; got: {msg!r}"
-    )
-
-
-@then("the failure context includes the validation diff")
-def then_failure_includes_diff(capture: HarnessCapture) -> None:
-    assert capture.chat_error is not None
-    msg = str(capture.chat_error)
-    assert "diff" in msg.lower() or "expected" in msg.lower(), (
-        f"expected the failure message to include a validation diff; "
-        f"got: {msg!r}"
-    )
+# Retry-semantics @given/@when/@then bindings (M2.2, M2.3, M5.2) and the
+# `_install_pandera_validator_stub` helper were removed by ADR-024 Phase 3.
+# The reclassified contracts now live at
+# `backend/tests/unit/test_retry_semantics.py` — pure unit tests that
+# monkeypatch `PanderaValidator.validate` directly without the compose
+# stack or a real chat round-trip. M5.2's structured-exception scenario
+# was merged into the same unit file (both v1 scenarios drove the same
+# `StructuredRetryExhaustion` path through `chat_turn`).
 
 
 # ---------------------------------------------------------------------------
