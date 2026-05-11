@@ -1,0 +1,33 @@
+[project]
+name = "dashboard-chat-acceptance-dbt-test-validation-v2"
+version = "0.0.1"
+description = "Acceptance tests for dbt-test-validation (ADR-024, v2 driver)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    # The v2 driver invokes dbtRunner in-process against a temp DuckDB
+    # project so the customer-fidelity cycle (deps -> build -> test)
+    # runs in the same Python process as the test.
+    "dbt-core>=1.8",
+    "dbt-duckdb>=1.8",
+    "pyyaml>=6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "real_io: scenario uses real adapters (compose stack, real dbtRunner, real DuckDB, real MinIO)",
+    "walking_skeleton: walking-skeleton scenario (end-to-end smoke)",
+    "slow: scenario is expected to take >10s wall-clock",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
