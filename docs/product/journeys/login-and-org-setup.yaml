@@ -1,0 +1,244 @@
+schema_version: 1
+# SSOT journey contract for Login + Org Setup.
+#
+# This file is the canonical reference. Feature-level perspectives
+# (emotional analysis, TUI mockups, additional Gherkin) live in the
+# feature's discuss/ directory:
+#
+#   docs/feature/user-flow-state-machines/discuss/
+#     ├── journey-login-and-org-setup-visual.md
+#     └── journey-login-and-org-setup.yaml
+#
+# This file holds only what other features need to **rely on** when
+# composing with this journey: the named states, the transitions, the
+# shared artifacts, and the integration checkpoints.
+
+journey:
+  id: J-001
+  name: "Login + Org Setup"
+  goal: >
+    Reach a state where the app knows who the user is and which org
+    they are operating against, with that state reflected identically
+    in the FE shell, the chat session, and any headless harness
+    watching the flow.
+
+  job_references:
+    - id: JOB-002
+      relationship: "primary — this journey is the seed implementation of JOB-002's pattern"
+    - id: JOB-001
+      relationship: "compositional — JOB-001's under-served outcomes O3 (effort to keep tests valid) and O5 (marginal cost of next user-flow test) directly benefit"
+
+  primary_personas:
+    - id: PERSONA-NEW-CONTRIBUTOR
+      name: "Maya Chen"
+      role: "new contributor to a data team"
+      context: "WorkOS-managed identity through her employer; no Dashboard Chat org yet"
+    - id: PERSONA-RETURNING-USER
+      name: "(returning user)"
+      role: "any persona returning after JWT expiry"
+      context: "Has an org binding; encounters the expired_token side-state mid-session"
+
+state_machine:
+  initial: "anonymous"
+  states:
+    - id: "anonymous"
+      kind: "initial"
+      description: "No session, no token. Visible: login page with Sign-in CTA."
+      transitions:
+        - on: "sign_in_clicked"
+          to: "authenticating"
+
+    - id: "authenticating"
+      kind: "in-flight"
+      description: "WorkOS round-trip + JWT issuance + JWKS verification in flight."
+      emits:
+        - event: "auth_started"
+          payload_includes: ["correlation_id"]
+      transitions:
+        - on: "callback_resolved_with_org"
+          to: "ready"
+        - on: "callback_resolved_without_org"
+          to: "authenticated_no_org"
+        - on: "transient_failure"
+          to: "error_recoverable"
+
+    - id: "authenticated_no_org"
+      kind: "interactive"
+      description: "Identity known; org binding required. Visible: welcome page with org-name form."
+      emits:
+        - event: "org_required"
+      transitions:
+        - on: "org_form_submitted"
+          to: "creating_org"
+
+    - id: "creating_org"
+      kind: "in-flight"
+      description: "Writing org row, then re-issuing JWT with org_id claim."
+      emits:
+        - event: "org_creation_started"
+      transitions:
+        - on: "org_created_and_jwt_reissued"
+          to: "ready"
+        - on: "validation_failed"
+          to: "authenticated_no_org"
+        - on: "transient_failure"
+          to: "error_recoverable"
+
+    - id: "ready"
+      kind: "terminal-for-this-machine"
+      description: "App shell rendered. user.display_name + org.name visible. First session pre-created."
+      emits:
+        - event: "ready_reached"
+          payload_includes: ["user.display_name", "org.name", "session.current"]
+      transitions:
+        - on: "token_expired"
+          to: "expired_token"
+
+    - id: "error_recoverable"
+      kind: "recoverable-error"
+      description: "Transient failure surfaced with correlation id + retry CTA."
+      emits:
+        - event: "auth_recoverable_error"
+          payload_includes: ["correlation_id", "underlying_cause_tag"]
+      transitions:
+        - on: "auth_retry_clicked"
+          to: "authenticating"
+        - on: "retries_exhausted"
+          to: "error_terminal"
+
+    - id: "expired_token"
+      kind: "side-state-from-ready"
+      description: "Silent re-auth attempt; chat mutations frozen across all flows."
+      emits:
+        - event: "token_expired"
+          payload_includes: ["correlation_id_of_original_request"]
+      transitions:
+        - on: "silent_reauth_ok"
+          to: "ready"
+        - on: "silent_reauth_failed"
+          to: "error_recoverable"
+
+    - id: "error_terminal"
+      kind: "terminal-error"
+      description: "Three failed retries. Visible: contact-support CTA."
+      transitions: []
+
+shared_artifacts:
+  user.email:
+    source_of_truth: "machine state (populated from WorkOS callback profile at authenticating → authenticated_no_org transition)"
+    consumers:
+      - "welcome page header (J-001 step 3a)"
+      - "downstream session metadata (J-002)"
+      - "any future invitation flow"
+    owner: "J-001 — login-and-org-setup"
+    integration_risk: "MEDIUM — re-derived FE state slices for email today; consolidate to machine state."
+
+  user.display_name:
+    source_of_truth: "machine state (populated from WorkOS profile)"
+    consumers:
+      - "app shell user chip (every journey's app shell)"
+      - "comment/audit attribution in future flows"
+    owner: "J-001 — login-and-org-setup"
+    integration_risk: "HIGH — current FE re-fetches this in multiple places; consolidate."
+
+  org.name:
+    source_of_truth: "machine state (populated at ready transition; immutable per session)"
+    consumers:
+      - "app shell org chip (every journey)"
+      - "project tree heading (J-002)"
+    owner: "J-001 — login-and-org-setup"
+    integration_risk: "HIGH — multi-tenant identity; mismatch is a security smell, not a cosmetic bug."
+
+  org.id:
+    source_of_truth: "JWT org_id claim, derived from machine state"
+    consumers:
+      - "every backend write (multi-tenant scoping)"
+      - "machine state internal"
+    owner: "J-001 — login-and-org-setup"
+    integration_risk: "HIGH — multi-tenant scoping; any divergence between JWT claim and machine state is a failed transition."
+
+  correlation_id:
+    source_of_truth: "machine state (minted at entry to authenticating; carried through to error_recoverable; carried through to expired_token from the ORIGINATING request, not a new auth attempt)"
+    consumers:
+      - "log threading (backend, worker, FE)"
+      - "error_recoverable visible reference (J-001 step 5)"
+      - "TS harness assertions"
+    owner: "J-001 — login-and-org-setup"
+    integration_risk: "MEDIUM — debugging surface; misattribution makes support harder, not impossible."
+
+  session.current:
+    source_of_truth: "machine state (set at ready entry by pre-creating a first session)"
+    consumers:
+      - "J-002 entry contract"
+    owner: "J-001 — login-and-org-setup"
+    integration_risk: "MEDIUM — if null, J-002 must handle empty-state cleanly."
+
+integration_checkpoints:
+  - id: IC-1
+    between: ["anonymous", "authenticating"]
+    must_hold: "A correlation_id is minted and attached to every event emitted during this attempt."
+
+  - id: IC-2
+    between: ["authenticating", "ready"]
+    must_hold: "The JWT carries an org_id claim equal to machine.org.id. Diverging values fail the transition; the machine does not enter ready with mismatched identity."
+
+  - id: IC-3
+    between: ["authenticated_no_org", "creating_org"]
+    must_hold: "Org name passed server-side validation (length, character set, uniqueness within tenant). Validation failures transition back to authenticated_no_org with inline form error."
+
+  - id: IC-4
+    between: ["creating_org", "ready"]
+    must_hold: "Both writes are visible: the org row exists in Postgres AND the new JWT (with org_id claim) is held by the FE. If org row exists but JWT re-issue failed, the machine retries the re-issue idempotently before transitioning."
+
+  - id: IC-5
+    between: ["any", "expired_token"]
+    must_hold: "The 401 that triggered the transition carries the same correlation_id as the originating request. The harness can match a 401 to the originating chat turn."
+
+  - id: IC-6
+    between: ["expired_token", "ready"]
+    must_hold: "Silent re-auth was attempted exactly once. On success, in-flight requests replay with the new JWT. On failure, transition is to error_recoverable carrying the ORIGINAL request's correlation_id."
+
+failure_modes:
+  - tag: "workos_profile_corrupt"
+    description: "WorkOS callback returns no profile or a profile missing required fields"
+    transition: "→ error_recoverable"
+
+  - tag: "jwks_not_warm"
+    description: "Backend JWKS endpoint cold; JWT verification on the worker fails immediately after auth-proxy mints (THE friction we just lived through)"
+    transition: "→ error_recoverable (transient flag)"
+
+  - tag: "cookie_blocked"
+    description: "Browser blocks third-party cookies; session cookie does not round-trip"
+    transition: "→ error_recoverable (specific copy variant)"
+
+  - tag: "org_validation_failed"
+    description: "Org name duplicate within tenant, illegal characters, too long"
+    transition: "→ authenticated_no_org (inline error)"
+
+  - tag: "jwt_reissue_failed_after_org_create"
+    description: "Org row created but JWT re-issue fails; the user owns an org but cannot access it yet"
+    transition: "→ machine retries idempotently; if exhausted, → error_recoverable with cleanup hook"
+
+  - tag: "token_expired_midflight"
+    description: "JWT expires while another flow has an in-flight request"
+    transition: "→ expired_token (with correlation_id of original request)"
+
+testing_surface:
+  ts_harness:
+    description: "The TS harness (new in this feature) drives this machine via the same endpoints the FE consumes."
+    operations:
+      - "begin_auth(persona) → returns correlation_id"
+      - "assert_state(expected) → reads machine projection"
+      - "force_transient_failure(tag) → drives error_recoverable"
+      - "submit_org(name) → drives creating_org"
+      - "assert_jwt_carries_org_claim() → IC-2 / IC-4 verification"
+      - "expire_token() → drives expired_token"
+
+  python_harness:
+    description: "Existing DatasetLayerHarness retains its current surface for auth (fetch_dev_user_jwt, mint_pat). It does NOT need to grow to cover J-001 — the TS harness owns J-001 end-to-end."
+    note: "JOB-001's contract remains: Python harness asserts backend+agent integration; TS harness asserts user-flow integration. Both watch the same server-owned state machine."
+
+changelog:
+  - date: "2026-05-11"
+    feature: "user-flow-state-machines"
+    change: "Bootstrapped journeys/ SSOT; J-001 contract added."

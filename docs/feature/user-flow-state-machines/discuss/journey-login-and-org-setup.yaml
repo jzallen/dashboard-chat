@@ -1,0 +1,424 @@
+schema_version: 1
+
+journey:
+  name: "Login + Org Setup"
+  goal: >
+    Reach a state where the app knows who the user is and which org they
+    are operating against, with that state reflected identically in the
+    FE shell, the chat session, and any headless harness watching the
+    flow.
+  persona: "Maya Chen — new contributor with WorkOS identity, no org in Dashboard Chat yet"
+  job_reference: "JOB-002 (draft) — Drive every user flow through a server-owned state machine that UI and tests share"
+
+  emotional_arc:
+    start: "Curious — opens the app, sees a clean Sign-in page"
+    middle: "Mildly anxious during round-trip + JWT issuance; reassured by visible progress and honest copy"
+    end: "Confident-and-oriented — sees org name and own name in the shell, first session pre-created"
+
+steps:
+  - id: 1
+    name: "Anonymous"
+    state_machine_state: "anonymous"
+    command: "open /login or root URL"
+
+    tui_mockup: |
+      +-- maya.dashboard-chat.app -----------------------------------+
+      |               Dashboard Chat                                 |
+      |          Talk to your tables. Ship dbt.                      |
+      |              +-------------------+                           |
+      |              |  Sign in          |                           |
+      |              +-------------------+                           |
+      |          Use your work account through ${idp.display_name}   |
+      +--------------------------------------------------------------+
+
+    shared_artifacts:
+      - name: "product.name"
+        source: "package.json / config — currently inconsistent across header, login page, and email templates"
+        displayed_as: "${product.name}"
+        consumers: ["login page header", "browser title", "any future welcome email"]
+      - name: "idp.display_name"
+        source: "AUTH_MODE-derived config (currently hardcoded 'WorkOS' in the FE)"
+        displayed_as: "${idp.display_name}"
+        consumers: ["login page subtitle"]
+
+    emotional_state:
+      entry: "Curious — wants to see if this is the right tool"
+      exit: "Decisive — committed to trying it"
+
+    integration_checkpoint: |
+      No state to validate yet — this is the entry point.
+
+    failure_modes:
+      - "User on a stale browser tab where the FE bundle is older than the auth-proxy expects"
+      - "AUTH_MODE config diverged between FE bundle and backend at deploy time (e.g., FE says WorkOS, backend says dev)"
+
+    gherkin: |
+      Scenario: A new visitor sees an honest entry point
+        Given Maya Chen visits Dashboard Chat for the first time
+        And no auth cookie or local token is present
+        When the page renders
+        Then the page displays a single "Sign in" call to action
+        And the page identifies the IDP it will use ("WorkOS")
+
+  - id: 2
+    name: "Authenticating (round-trip in flight)"
+    state_machine_state: "authenticating"
+    command: "click Sign in → WorkOS round-trip → /auth/callback?code=..."
+
+    tui_mockup: |
+      +-- /auth/callback?code=... -----------------------------------+
+      |    +-----------------------------+                           |
+      |    |  Checking your identity...  |                           |
+      |    |  This usually takes about   |                           |
+      |    |  two seconds.               |                           |
+      |    |  [-----------=====-]  ~75%  |                           |
+      |    +-----------------------------+                           |
+      +--------------------------------------------------------------+
+
+    shared_artifacts:
+      - name: "correlation_id"
+        source: "Minted at entry to authenticating state by the server-owned machine"
+        displayed_as: "${correlation_id}"
+        consumers: ["this step (internal/logged)", "error_recoverable step (visible)", "TS harness assertions"]
+
+    emotional_state:
+      entry: "Brief anxiety — round-trip feels uncontrolled"
+      exit: "Reassured by visible progress + honest copy"
+
+    integration_checkpoint: |
+      A correlation_id has been minted and is attached to every event
+      emitted by the machine during this attempt. The TS harness, if
+      watching, can subscribe to the machine and read the
+      auth_started event to learn this id.
+
+    failure_modes:
+      - "WorkOS callback returns no profile (corrupt code, IdP outage) — transition to error_recoverable"
+      - "JWKS endpoint cold (the recent friction) — JWT verification fails on the worker; transition to error_recoverable with a transient flag"
+      - "Cookie round-trip fails (browser blocks third-party cookies) — transition to error_recoverable with a specific copy variant"
+
+    gherkin: |
+      Scenario: The user sees visible progress during the round-trip
+        Given Maya Chen has clicked "Sign in"
+        And the WorkOS round-trip is in flight
+        When the callback URL renders
+        Then a "Checking your identity..." panel is visible within 100ms
+        And an honest time estimate is displayed
+        And no raw error or blank page is shown even if the round-trip is slow
+
+      Scenario: A correlation id is minted at entry to authenticating
+        Given Maya Chen has clicked "Sign in"
+        When the machine transitions into authenticating
+        Then an auth_started event carries a correlation_id
+        And subsequent events in this attempt carry the same correlation_id
+
+  - id: 3a
+    name: "Authenticated but no org (new user)"
+    state_machine_state: "authenticated_no_org"
+    command: "callback succeeds; profile has no org binding"
+
+    tui_mockup: |
+      +-- /welcome --------------------------------------------------+
+      |  Logged in as ${user.email}                                  |
+      |                                                              |
+      |             Welcome to Dashboard Chat                        |
+      |  Let's set up your organization. This is the workspace       |
+      |  your teammates will share.                                  |
+      |                                                              |
+      |  +----------------------------------+                        |
+      |  | Organization name                |                        |
+      |  | +-------------------------+      |                        |
+      |  | | (input)                 |      |                        |
+      |  | +-------------------------+      |                        |
+      |  +----------------------------------+                        |
+      |               +------------------+                           |
+      |               |  Create          |                           |
+      |               +------------------+                           |
+      |                                                              |
+      |  Need to join an existing org? Ask your admin to invite you. |
+      +--------------------------------------------------------------+
+
+    shared_artifacts:
+      - name: "user.email"
+        source: "WorkOS callback profile; materialized into machine state at the authenticating → authenticated_no_org transition"
+        displayed_as: "${user.email}"
+        consumers: ["welcome page header (this step)", "downstream session metadata", "any future invitation flow"]
+
+    emotional_state:
+      entry: "Oriented — the email pre-fill says 'we know who you are'"
+      exit: "Mid-task focus — typing the org name"
+
+    integration_checkpoint: |
+      The machine's user.email field is populated and equal to the
+      WorkOS profile email. The JWT minted on callback carries no
+      org_id claim (or carries a sentinel "pending" value, depending
+      on DESIGN). The "Need to join an existing org?" footer is
+      visible to defuse fear of accidentally creating a duplicate.
+
+    failure_modes:
+      - "WorkOS profile is missing the email field — transition to error_recoverable (rare; WorkOS shape contract)"
+
+    gherkin: |
+      Scenario: A new user lands on the org-setup form with their email pre-filled
+        Given Maya Chen has just authenticated via WorkOS
+        And her WorkOS profile has no Dashboard Chat org binding
+        When the callback resolves
+        Then the welcome page is shown
+        And Maya's email "maya.chen@acme-data.example" is displayed in the header
+        And an organization-name input is the only focusable form field
+        And a "Need to join an existing org?" hint is visible below the submit button
+
+  - id: 3b
+    name: "Creating org (writing + re-issuing JWT)"
+    state_machine_state: "creating_org"
+    command: "submit org name → POST /api/orgs → JWT re-issued with org claim"
+
+    tui_mockup: |
+      +-- /welcome --------------------------------------------------+
+      |  +----------------------------------+                        |
+      |  | Organization name                |                        |
+      |  | +-------------------------+      |                        |
+      |  | | Acme Data               |  []  | <- disabled input      |
+      |  | +-------------------------+      |                        |
+      |  +----------------------------------+                        |
+      |               +------------------+                           |
+      |               |  Creating...     |  <- spinner               |
+      |               +------------------+                           |
+      |  Setting up your workspace. We're issuing your access        |
+      |  token...                                                    |
+      +--------------------------------------------------------------+
+
+    shared_artifacts:
+      - name: "org.name"
+        source: "Form input, validated server-side, materialized into machine state on POST success"
+        displayed_as: "${org.name}"
+        consumers: ["this step (form)", "app shell org chip", "every multi-tenant scoped query"]
+      - name: "org.id"
+        source: "POST /api/orgs response; embedded in the re-issued JWT as the org_id claim"
+        displayed_as: "${org.id} (internal)"
+        consumers: ["JWT claim", "machine state", "every backend write"]
+
+    emotional_state:
+      entry: "Hopeful — committed to the org name"
+      exit: "Confident — the spinner resolves into the app shell"
+
+    integration_checkpoint: |
+      Two writes have happened: the org row in Postgres, and the new
+      JWT issued by auth-proxy carrying the org_id claim. The machine
+      must not transition to ready until BOTH are visible. If the org
+      row exists but the JWT re-issue fails, the machine retries the
+      re-issue (idempotent on org id) before surfacing UI.
+
+    failure_modes:
+      - "Org name validation fails (duplicate within tenant, illegal characters, too long) — return to authenticated_no_org with inline form error"
+      - "Org row created but JWT re-issue fails — machine retries the re-issue; if exhausted, transitions to error_recoverable with a specific 'partial setup' copy variant and a cleanup hook"
+
+    gherkin: |
+      Scenario: Submitting a valid org name leads to ready state with the JWT carrying the claim
+        Given Maya is on the welcome page
+        And she has typed "Acme Data" as the org name
+        When she clicks Create
+        Then the machine transitions through creating_org and into ready
+        And the JWT held by the FE carries the new org's id as the org_id claim
+        And the app shell shows "Acme Data" in the top-left chip
+
+      Scenario: An org-name validation failure stays in authenticated_no_org with inline feedback
+        Given Maya is on the welcome page
+        And another user in her tenant has already taken the name "Acme Data"
+        When Maya submits "Acme Data" as the org name
+        Then the machine returns to authenticated_no_org
+        And the form shows an inline error: "That name is already in use in your organization"
+        And no JWT re-issue is attempted
+
+  - id: 4
+    name: "Ready (app shell, first session pre-created)"
+    state_machine_state: "ready"
+    command: "machine reaches ready; FE renders app shell"
+
+    tui_mockup: |
+      +-- /  --------------------------------------------------------+
+      | [${org.name}]  Projects ... Datasets  [M] ${user.display_name} ▾ |
+      +--------------------------------------------------------------+
+      | Side Nav         |  Main pane                                |
+      |                  |  No projects yet. Create your first one   |
+      |  [+] Project     |  to start chatting with your data.        |
+      |                  |        +--------------------+             |
+      |                  |        |  Create project    |             |
+      |                  |        +--------------------+             |
+      +--------------------------------------------------------------+
+
+    shared_artifacts:
+      - name: "user.display_name"
+        source: "Machine state (from WorkOS profile)"
+        displayed_as: "${user.display_name}"
+        consumers: ["app shell user chip", "every flow's app shell", "comment/audit attribution in future flows"]
+      - name: "session.current"
+        source: "Machine state — set at ready entry by pre-creating a first session"
+        displayed_as: "(internal)"
+        consumers: ["transition into project-and-session-mgmt flow"]
+
+    emotional_state:
+      entry: "Anticipatory — the shell paint is the first 'real app' moment"
+      exit: "Confident-and-oriented — knows where they are and what to do next"
+
+    integration_checkpoint: |
+      Three machine fields are populated: user.display_name, org.name,
+      session.current. The next flow (project-and-session-mgmt) reads
+      session.current as its entry contract. Across the app shell,
+      org.name and user.display_name come from THIS machine — no other
+      slice of FE state holds them.
+
+    failure_modes:
+      - "Session pre-creation fails (backend transient) — machine still transitions to ready, but session.current is null; the FE shows an inline 'create your first session' affordance instead of pre-selecting one"
+
+    gherkin: |
+      Scenario: Reaching ready shows the org and user identity consistently
+        Given Maya has just completed org setup
+        When the app shell renders
+        Then the top-left chip shows "Acme Data"
+        And the top-right chip shows "Maya Chen"
+        And both values are read from the same machine state (no other FE state slice holds them)
+
+      Scenario: Ready state pre-creates a first session
+        Given Maya has just reached ready
+        When she opens her first project
+        Then the project view selects a pre-created session by default
+        And the chat panel renders an empty-state prompt rather than a blank thread
+
+  - id: 5
+    name: "Error recoverable"
+    state_machine_state: "error_recoverable"
+    command: "any transient failure during authenticating or creating_org"
+
+    tui_mockup: |
+      +-- /auth/callback?code=... -----------------------------------+
+      |  +-----------------------------------+                       |
+      |  |  We could not verify your identity|                       |
+      |  |  right now.                       |                       |
+      |  |  This is usually a brief network  |                       |
+      |  |  issue and resolves with a retry. |                       |
+      |  |       +-----------------+         |                       |
+      |  |       |  Try again      |         |                       |
+      |  |       +-----------------+         |                       |
+      |  |  If it keeps happening, share     |                       |
+      |  |  this reference with support:     |                       |
+      |  |  ${correlation_id}                |                       |
+      |  +-----------------------------------+                       |
+      +--------------------------------------------------------------+
+
+    shared_artifacts:
+      - name: "correlation_id"
+        source: "Carried forward from authenticating step"
+        displayed_as: "${correlation_id}"
+        consumers: ["this step (visible)", "support tooling", "TS harness assertions"]
+
+    emotional_state:
+      entry: "Frustrated, possibly confused"
+      exit: "Reoriented — given a path forward (retry) and a reference (correlation id)"
+
+    integration_checkpoint: |
+      The machine carries the correlation_id from the originating
+      attempt forward into this state. The "Try again" button emits
+      auth_retry, which transitions back to authenticating WITH THE
+      SAME correlation_id (so a retry-of-a-retry can be threaded in
+      logs). Three failed retries escalate to a non-recoverable
+      state.
+
+    failure_modes:
+      - "User abandons; correlation_id is the only thing the support team has to find the failure"
+
+    gherkin: |
+      Scenario: A transient failure shows a recoverable error with the correlation id
+        Given the WorkOS callback returned a code
+        But the backend JWKS endpoint returned 503 during JWT verification
+        When the machine transitions into error_recoverable
+        Then the user sees an empathetic message explaining what happened
+        And a "Try again" button is the primary call to action
+        And the correlation_id is visibly displayed for support reference
+        And no raw error code or stack trace is shown
+
+      Scenario: Clicking "Try again" re-enters authenticating with the same correlation id
+        Given Maya is in error_recoverable with correlation_id "R-7a4f-901c"
+        When she clicks "Try again"
+        Then the machine transitions to authenticating
+        And the new attempt is logged with the same correlation_id "R-7a4f-901c"
+
+  - id: 6
+    name: "Expired token (mid-session re-auth)"
+    state_machine_state: "expired_token"
+    command: "any 401 from backend or worker carrying a JWT-expiry signal"
+
+    tui_mockup: |
+      +-- /projects/acme-revenue-2026 -------------------------------+
+      | [${org.name}]  Projects ... [M] ${user.display_name} ▾       |
+      +--------------------------------------------------------------+
+      | Side Nav         |  +-- Session: Revenue Q1 ---------------+ |
+      |                  |  |  > what's the average rev by region  | |
+      |                  |  |  ! Refreshing your session...        | |
+      |                  |  +--------------------------------------+ |
+      +--------------------------------------------------------------+
+
+    shared_artifacts:
+      - name: "correlation_id"
+        source: "From the original failed request (NOT from a new auth attempt)"
+        displayed_as: "(internal)"
+        consumers: ["log threading", "harness assertions"]
+
+    emotional_state:
+      entry: "Mild interruption — chat input briefly disabled"
+      exit: "Restored — the in-flight request replays; the banner clears"
+
+    integration_checkpoint: |
+      Every other flow's machine freezes its mutations while this
+      state is active. Silent re-auth is attempted exactly once
+      before surfacing UI (so the FE does not show the banner for
+      sub-second refreshes). On success, in-flight requests replay
+      with the new JWT. On failure, the machine transitions to
+      error_recoverable with the original request's correlation_id.
+
+    failure_modes:
+      - "Silent re-auth fails — escalate to error_recoverable carrying the original request's correlation_id, not the auth attempt's"
+      - "User navigates away during re-auth — the freeze must clean up so the user does not return to a stale frozen UI"
+
+    gherkin: |
+      Scenario: A token expires mid-chat-turn and the in-flight request replays after silent re-auth
+        Given Maya is in a chat session with an in-flight transform request
+        And her JWT has just expired
+        When the worker returns 401
+        Then the machine transitions to expired_token
+        And a non-blocking "Refreshing your session..." banner appears
+        And silent re-auth is attempted
+        And on success the in-flight transform request replays with the new JWT
+        And the banner clears within 2 seconds
+
+      Scenario: Silent re-auth failure surfaces the original correlation id
+        Given Maya is in expired_token after an in-flight request returned 401
+        And silent re-auth fails
+        When the machine transitions to error_recoverable
+        Then the correlation_id displayed is the one from the original failed request, not from the silent re-auth attempt
+
+integration_validation:
+  shared_artifact_consistency:
+    - artifact: "org.name"
+      must_match_across: [4, 6]
+      failure_message: "The org name shown in the app shell during normal operation must equal the org name shown in the app shell during a token-refresh event — both come from the same machine state."
+    - artifact: "user.display_name"
+      must_match_across: [4, 6]
+      failure_message: "The user display name shown in the app shell must be identical across normal operation and token-refresh — both come from the same machine state, not from independent FE slices."
+    - artifact: "correlation_id"
+      must_match_across: [2, 5]
+      failure_message: "The correlation id displayed in error_recoverable must equal the correlation_id minted at the entry to authenticating for this attempt."
+    - artifact: "org.id"
+      must_match_across: [3b, 4]
+      failure_message: "The org_id claim in the JWT (set during creating_org) must equal the machine's org.id when reaching ready. Diverging values is a failed transition, not a silent shrug."
+
+  emotional_arc_coherence:
+    - "Curious (1) → mildly anxious (2) is honest because visible progress is shown."
+    - "Mildly anxious (2) → oriented (3a) is supported by the email-prefill that says 'we know who you are.'"
+    - "Hopeful (3b) → confident (4) is supported by the org and user chips appearing simultaneously in the shell."
+    - "Frustrated (5) → reoriented is supported by the correlation_id giving the user something concrete to share."
+    - "Mild interruption (6) → restored is supported by the silent-re-auth-first policy."
+
+changelog:
+  - date: "2026-05-11"
+    feature: "user-flow-state-machines"
+    change: "Initial deep-dive journey artifact for login-and-org-setup."
