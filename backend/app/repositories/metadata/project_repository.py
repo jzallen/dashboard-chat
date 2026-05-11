@@ -12,10 +12,11 @@ from typing import TYPE_CHECKING, Any, Protocol
 from sqlalchemy import exists, select
 from sqlalchemy.orm import selectinload
 
-from app.utils.pagination import decode_cursor, encode_cursor
+from app.utils.pagination import decode_cursor
 
 from . import _mappers
 from ._base import handle_repository_exceptions
+from ._pagination import paginate_by_id
 from .dataset_record import DatasetRecord
 from .project_record import ProjectRecord
 
@@ -88,23 +89,14 @@ class ProjectRepository:
         if org_id is not None:
             query = query.where(ProjectRecord.org_id == org_id)
         if cursor is not None:
-            cursor_id = decode_cursor(cursor)
-            query = query.where(ProjectRecord.id < cursor_id)
+            query = query.where(ProjectRecord.id < decode_cursor(cursor))
         query = query.order_by(ProjectRecord.id.desc())
 
         if limit is not None:
             query = query.limit(limit + 1)
 
         result = await self._session.execute(query)
-        projects = list(result.scalars().all())
-
-        if limit is not None:
-            has_more = len(projects) > limit
-            projects = projects[:limit]
-        else:
-            has_more = False
-
-        next_cursor = encode_cursor(projects[-1].id) if has_more and projects else None
+        projects, next_cursor, has_more = paginate_by_id(list(result.scalars().all()), limit)
 
         items = [
             {
