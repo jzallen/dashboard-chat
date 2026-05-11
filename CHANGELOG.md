@@ -1,3 +1,12 @@
+# [1.22.0](https://github.com/jzallen/dashboard-chat/compare/v1.21.0...v1.22.0) (2026-05-11)
+
+
+### Features
+
+* **tests/acceptance/dbt-test-validation-v2:** customer fidelity + M5.1 env-var rejection ([f099fcb](https://github.com/jzallen/dashboard-chat/commit/f099fcb17d2e955331be1cfea263d25e57e618c5))
+* **tests/acceptance/dbt-test-validation-v2:** M1.1 happy path + M1.2 drift detector ([bad5e77](https://github.com/jzallen/dashboard-chat/commit/bad5e7741f5861858c54aaa1319a854f2bc6ef30))
+* **tests/acceptance/dbt-test-validation-v2:** scaffold suite + walking skeleton ([b2a44ea](https://github.com/jzallen/dashboard-chat/commit/b2a44ea74307746ad70a91485b31b366625c0613))
+
 # [1.21.0](https://github.com/jzallen/dashboard-chat/compare/v1.20.0...v1.21.0) (2026-05-11)
 
 
