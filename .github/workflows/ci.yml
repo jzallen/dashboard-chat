@@ -4,10 +4,19 @@ on:
     branches: [main]
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'CHANGELOG.md'
+      - '.gitignore'
 
+# Concurrency: feature branches cancel in-progress on new push (saves runner
+# minutes during iteration); main lets every merge's CI run to completion so
+# each shipped change has authoritative verification rather than being
+# stranded by a superseding merge.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   HUSKY: 0
