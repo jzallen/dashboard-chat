@@ -1,7 +1,8 @@
 # ADR-024: Rebalance dbt-test-validation — Thin dbt-test Driver + Pandera Fast-Feedback Split
 
-**Status:** Proposed — partially supersedes ADR-019
+**Status:** Accepted — partially supersedes ADR-019
 **Date:** 2026-05-11
+**Accepted:** 2026-05-11 — all 5 phases merged on `origin/main` (Phase 0 `eb0cf40`, Phase 1 `ef42247`, Phase 2 `9797aa2`, Phase 3 `f73b2d5`, Phase 4 `b241afe`); promotion gated on Phase 4 green per migration-roadmap acceptance criterion.
 **Bead:** TBD (assigned at DELIVER kickoff for Phase 0)
 **Companion artifacts:**
 - Prior decision: [ADR-019 — Eject-then-Test as the Dataset-Layer Validation Strategy](./adr-019-eject-then-test-validation.md)

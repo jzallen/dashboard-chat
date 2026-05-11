@@ -631,11 +631,11 @@ and the evolution doc before Phase 4 is done would make the docs lie.
 
 | Surface | Before | After |
 |---|---|---|
-| Test infra LOC carrying customer-fidelity acceptance | ~3,850 | ~400 |
-| Customer-fidelity scenarios | 5 (WS + M1 + M5.1) via BDD-facade | 5 via procedure-driver |
+| Test infra LOC carrying customer-fidelity acceptance | ~3,850 | ~545 (v2 driver) |
+| Customer-fidelity scenarios | 5 (WS + M1 + M5.1) via BDD-facade | 5 via procedure-driver at `tests/acceptance/dbt-test-validation-v2/` |
 | Pandera per-turn scenarios | 1 (M2.1) via BDD-facade | 1 via integration-test in `validation/` |
-| Chat-protocol invariants | 2 (M4) via BDD-facade | 2 via integration unit tests in `chat_protocol/` |
-| Retry semantics | 3 (M2.2 + M2.3 + M5.2) via BDD-facade | 2-3 via unit tests in `unit/dataset_layer/` |
+| Chat-protocol invariants | 2 (M4) via BDD-facade | 1 in `protocol_invariants/` (raw-tool-call leak guard); ingress URL invariant retired with orchestrator per [phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md) — coupling was the invariant |
+| Retry semantics | 3 (M2.2 + M2.3 + M5.2) via BDD-facade | 3 unit tests in `backend/tests/unit/test_retry_semantics.py` (flat path — see [phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)) |
 | Earned-Trust probe scenarios | 5 (M3) via BDD-facade | 0 (substrate lies surface inline at point of use) |
 | Behavioral-enforcement gold-test | 1 file (136 LOC) | 0 (no orchestrator to enforce) |
 | `EjectAndTestOrchestrator` family | 1,445 LOC | 0 |
@@ -643,7 +643,7 @@ and the evolution doc before Phase 4 is done would make the docs lie.
 | Harness `validate_with` hook | preserved (per DR-5) | preserved |
 | Harness `StructuredRetryExhaustion` | preserved (per DR-5) | preserved |
 | Exported `profiles.yml` `s3_use_ssl` support | absent (customer workaround) | native (Phase 0) |
-| Net test infra LOC delta | — | **~-3,000 LOC** |
+| Net test infra LOC delta | — | **~-5,000 to -5,300 LOC** (revised post-Phase-4-blocker — see [phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)) |
 | JOB-001 / O4 strategic level | satisfied | satisfied |
 | AC1.6 wall-clock | ~85-105 s | improved (no probe phase at session start) |
 | ADR-016 compose-stack fidelity | preserved | preserved |
