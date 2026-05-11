@@ -39,7 +39,13 @@ export class UserFlowHarness {
     private readonly persona: PersonaConfig,
   ) {}
 
-  async begin_auth(_personaName: string): Promise<FlowProjection> {
+  async begin_auth(
+    _personaName: string,
+    options: {
+      existing_org_names?: string[];
+      harness_force_reissue_failures?: number;
+    } = {},
+  ): Promise<FlowProjection> {
     const machine = this.config.defaultMachine ?? "login-and-org-setup";
     const res = await request(
       `${this.config.authProxyUrl}/flow-state/flow/${machine}/begin`,
@@ -49,6 +55,8 @@ export class UserFlowHarness {
         body: JSON.stringify({
           persona_email: this.persona.email,
           persona_display_name: this.persona.display_name,
+          existing_org_names: options.existing_org_names,
+          harness_force_reissue_failures: options.harness_force_reissue_failures,
         }),
       },
     );

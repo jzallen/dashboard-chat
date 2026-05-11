@@ -152,6 +152,12 @@ services:
       FAKE_WORKOS_URL: ${FAKE_WORKOS_URL:-http://host.docker.internal:14299}
       AUTH_MODE: ${AUTH_MODE:-dev}
       FLOW_EVENT_MAXLEN: ${FLOW_EVENT_MAXLEN:-1000}
+      # Backend URL the create-org-and-reissue actor calls on Maya's behalf.
+      # Default targets the api service on the compose network.
+      BACKEND_URL: ${FLOW_STATE_BACKEND_URL:-http://api:8000}
+      # Enable per-request harness knobs (forced reissue failures, etc.)
+      # for the acceptance suite. Production deployments leave this unset.
+      NWAVE_HARNESS_KNOBS: ${NWAVE_HARNESS_KNOBS:-true}
     ports:
       # Fixed host port so FLOW_STATE_URL stays stable across compose up.
       - "${FLOW_STATE_HOST_PORT:-1043}:8788"

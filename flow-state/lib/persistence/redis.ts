@@ -13,6 +13,9 @@ import type { FlowEvent } from "../projection.ts";
 export interface FlowEventLog {
   append(flow_id: string, event: FlowEvent): Promise<void>;
   read(flow_id: string): Promise<FlowEvent[]>;
+  /** Drop the entire event stream for this flow. Used when `begin` resets a
+   *  prior auth attempt — a fresh sign-in is a fresh flow. */
+  reset(flow_id: string): Promise<void>;
   probe(): Promise<void>;
   close(): Promise<void>;
 }
@@ -63,6 +66,10 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
       return entries.map(([, fields]) => deserialize(fields));
     },
 
+    async reset(flow_id: string): Promise<void> {
+      await client.del(streamKey(flow_id));
+    },
+
     async probe(): Promise<void> {
       const probeKey = `flow:__probe__:${Date.now()}`;
       const probeEvent: FlowEvent = {
@@ -100,6 +107,10 @@ export function createNoopFlowEventLog(): FlowEventLog {
 
     async read(flow_id: string): Promise<FlowEvent[]> {
       return store.get(flow_id) ?? [];
+    },
+
+    async reset(flow_id: string): Promise<void> {
+      store.delete(flow_id);
     },
 
     async probe(): Promise<void> {

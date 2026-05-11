@@ -11,7 +11,10 @@
 import { createActor, type AnyActorRef } from "xstate";
 
 import {
+  createForcedFailureOrgAndReissueActor,
   createLoginAndOrgSetupMachine,
+  type CreateOrgAndReissueInput,
+  type CreateOrgAndReissueOutput,
   type LoginMachineDeps,
 } from "./machines/login-and-org-setup.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
@@ -22,6 +25,19 @@ import { resolveActiveScope } from "./active-scope.ts";
 export interface OrchestratorDeps {
   eventLog: FlowEventLog;
   loginMachineDeps: LoginMachineDeps;
+  /**
+   * Async function form of the org-create step. Used by the harness-knob
+   * wrapper to sequence create + reissue with forced failures injected at
+   * the reissue boundary. Optional — production builds may pass only
+   * `loginMachineDeps`. When the knob is exercised and this is unset, the
+   * wrapper falls back to a no-op that throws.
+   */
+  createOrgFn?: (
+    input: CreateOrgAndReissueInput,
+  ) => Promise<{ org_id: string; org_name: string }>;
+  reissueOrgJwtFn?: (
+    input: { org_id: string; correlation_id: string },
+  ) => Promise<void>;
   log?: (record: Record<string, unknown>) => void;
 }
 
@@ -31,6 +47,16 @@ export interface BeginFlowInput {
   persona_email: string;
   persona_display_name: string;
   correlation_id: string;
+  /** Optional seed for the duplicate-org-name fixture path (slice-1). */
+  existing_org_names?: string[];
+  /**
+   * Test-only harness knob: pre-load the machine with N forced failures of
+   * the createOrgAndReissue actor (the (N+1)-th call succeeds). Implements
+   * the `@jwt_reissue_failed_after_org_create` slice-1 scenarios. Has no
+   * effect in production builds — the orchestrator only reads it when
+   * NWAVE_HARNESS_KNOBS=true is set in the environment.
+   */
+  harness_force_reissue_failures?: number;
 }
 
 export interface SendEventInput {
@@ -59,24 +85,63 @@ export class FlowOrchestrator {
     const flow_id = `${input.machine}:${input.principal_id}`;
     const start = Date.now();
 
-    // Idempotent: if an actor already exists, reuse it.
-    let actor = this.actors.get(flow_id);
-    if (!actor) {
-      const machine = createLoginAndOrgSetupMachine(this.deps.loginMachineDeps);
-      actor = createActor(machine, {
-        input: { correlation_id: input.correlation_id },
-      });
-      this.actors.set(flow_id, actor);
-      actor.start();
-      this.logTransition({
-        flow_id,
-        from_state: null,
-        to_state: "anonymous",
+    // Re-clicking sign-in is the entry to a NEW auth attempt — reset the
+    // prior actor (if any) and event log so we don't replay a stale flow.
+    // The persisted event log is the source of truth; the actor is a
+    // process-local cache. Without this reset, a second sign-in inherits
+    // the previous attempt's terminal state and never re-enters
+    // `authenticating`.
+    const existing = this.actors.get(flow_id);
+    if (existing) {
+      existing.stop();
+      this.actors.delete(flow_id);
+    }
+    await this.deps.eventLog.reset(flow_id);
+
+    // Harness knob: wrap createOrgAndReissue with a failure-injecting
+    // counter for slice-1 scenarios that exercise the retry budget. The
+    // knob is gated by NWAVE_HARNESS_KNOBS so production builds ignore
+    // the field even if a caller tries to set it.
+    const harnessKnobsEnabled = process.env.NWAVE_HARNESS_KNOBS === "true";
+    const forceFailures = harnessKnobsEnabled
+      ? input.harness_force_reissue_failures ?? 0
+      : 0;
+    const machineDeps: LoginMachineDeps =
+      forceFailures > 0
+        ? {
+            ...this.deps.loginMachineDeps,
+            createOrgAndReissue: createForcedFailureOrgAndReissueActor(
+              this.deps.createOrgFn ??
+                (async () => {
+                  throw new Error("no real createOrgFn wired");
+                }),
+              this.deps.reissueOrgJwtFn ??
+                (async () => {
+                  throw new Error("no real reissueOrgJwtFn wired");
+                }),
+              forceFailures,
+            ),
+          }
+        : this.deps.loginMachineDeps;
+
+    const machine = createLoginAndOrgSetupMachine(machineDeps);
+    const actor = createActor(machine, {
+      input: {
         correlation_id: input.correlation_id,
         principal_id: input.principal_id,
-        duration_ms: 0,
-      });
-    }
+        existing_org_names: input.existing_org_names,
+      },
+    });
+    this.actors.set(flow_id, actor);
+    actor.start();
+    this.logTransition({
+      flow_id,
+      from_state: null,
+      to_state: "anonymous",
+      correlation_id: input.correlation_id,
+      principal_id: input.principal_id,
+      duration_ms: 0,
+    });
 
     // Append sign_in_clicked event to the log and dispatch it.
     const signInEvent: FlowEvent = {
@@ -156,7 +221,51 @@ export class FlowOrchestrator {
     actor.send({ type: input.type, ...input.payload } as never);
     await waitForSettledState(actor);
 
+    // After settle, observe terminal-for-now state and append projection-
+    // shaping events for the event-sourced read model. The reducer in
+    // `projection.ts` is the SSOT for state-derivation from events.
+    const snapshot = actor.getSnapshot();
+    const stateValue = snapshot.value as string;
     const principal_id = parsePrincipal(input.flow_id);
+
+    if (stateValue === "ready") {
+      const orgCtx = (snapshot.context as { org: { id: string | null; name: string | null } }).org;
+      await this.deps.eventLog.append(input.flow_id, {
+        ts: new Date().toISOString(),
+        type: "org_created_and_jwt_reissued",
+        payload: { org: orgCtx },
+        correlation_id: input.correlation_id,
+      });
+    } else if (stateValue === "error_recoverable") {
+      const ctx = snapshot.context as {
+        underlying_cause_tag: string | null;
+        org: { id: string | null; name: string | null };
+      };
+      await this.deps.eventLog.append(input.flow_id, {
+        ts: new Date().toISOString(),
+        type: "reissue_failed_partial",
+        payload: {
+          underlying_cause_tag: ctx.underlying_cause_tag ?? "partial-setup",
+          org: ctx.org,
+        },
+        correlation_id: input.correlation_id,
+      });
+    } else if (stateValue === "authenticated_no_org") {
+      // org_form_submitted with an invalid name → stay in
+      // authenticated_no_org but attach the validation error to context.
+      const ctx = snapshot.context as {
+        org_validation_error: { kind: string; message: string } | null;
+      };
+      if (ctx.org_validation_error) {
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "validation_failed",
+          payload: { error: ctx.org_validation_error },
+          correlation_id: input.correlation_id,
+        });
+      }
+    }
+
     return this.projectionFor(
       input.flow_id,
       principal_id,
@@ -210,6 +319,7 @@ function parsePrincipal(flow_id: string): string {
   return parts[1] ?? "";
 }
 
+
 /**
  * Wait for the XState actor to leave any transient state (i.e., to settle
  * out of an `invoke`'d promise). Subscribes once, resolves on the first
@@ -221,10 +331,13 @@ function parsePrincipal(flow_id: string): string {
  */
 function waitForSettledState(
   actor: AnyActorRef,
-  timeoutMs = 5000,
+  timeoutMs = 10000,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const TRANSIENT_STATES = new Set(["authenticating"]);
+    // States that contain `invoke` blocks — caller waits for them to leave.
+    // `creating_org` retries internally up to REISSUE_BUDGET; we wait for
+    // it to settle into `ready` or `error_recoverable`.
+    const TRANSIENT_STATES = new Set(["authenticating", "creating_org"]);
     const snapshot = actor.getSnapshot();
     if (!TRANSIENT_STATES.has(snapshot.value as string)) {
       resolve();

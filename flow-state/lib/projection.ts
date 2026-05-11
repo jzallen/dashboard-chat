@@ -41,6 +41,7 @@ interface ReducedContext {
   org: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
   retries: number;
+  org_validation_error: { kind: string; message: string } | null;
 }
 
 function initialContext(): ReducedContext {
@@ -49,6 +50,7 @@ function initialContext(): ReducedContext {
     org: { id: null, name: null },
     underlying_cause_tag: null,
     retries: 0,
+    org_validation_error: null,
   };
 }
 
@@ -87,6 +89,61 @@ function reduce(
     return {
       state: "error_recoverable",
       context: { ...context, underlying_cause_tag: cause },
+    };
+  }
+
+  if (event.type === "org_form_submitted") {
+    // Submission enters creating_org transiently; the projection observed
+    // after settle reflects the terminal state (ready / authenticated_no_org
+    // / error_recoverable). Until that next event lands, the reducer shows
+    // creating_org so a concurrent reader can see the "Creating..." state.
+    return {
+      state: "creating_org",
+      context: { ...context, org_validation_error: null },
+    };
+  }
+
+  if (event.type === "validation_failed") {
+    const err =
+      (event.payload.error as ReducedContext["org_validation_error"]) ?? null;
+    return {
+      state: "authenticated_no_org",
+      context: { ...context, org_validation_error: err },
+    };
+  }
+
+  if (event.type === "org_created_and_jwt_reissued") {
+    const orgPayload =
+      (event.payload.org as Partial<ReducedContext["org"]>) ?? {};
+    return {
+      state: "ready",
+      context: {
+        ...context,
+        org: {
+          id: orgPayload.id ?? null,
+          name: orgPayload.name ?? null,
+        },
+        org_validation_error: null,
+        underlying_cause_tag: null,
+      },
+    };
+  }
+
+  if (event.type === "reissue_failed_partial") {
+    const cause =
+      (event.payload.underlying_cause_tag as string | undefined) ?? "partial-setup";
+    const orgPayload =
+      (event.payload.org as Partial<ReducedContext["org"]>) ?? {};
+    return {
+      state: "error_recoverable",
+      context: {
+        ...context,
+        underlying_cause_tag: cause,
+        org: {
+          id: orgPayload.id ?? context.org.id,
+          name: orgPayload.name ?? context.org.name,
+        },
+      },
     };
   }
 

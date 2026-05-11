@@ -11,3 +11,10 @@ services:
     build: ./auth-proxy
     image: dashboard-chat/auth-proxy:flow-state-dev
     pull_policy: build
+
+  # Rebuild backend from source so DELIVER step 01-02 ships
+  # POST /api/auth/reissue without waiting for the Bazel image refresh.
+  api:
+    build: ./backend
+    image: dashboard-chat/api:flow-state-dev
+    pull_policy: build

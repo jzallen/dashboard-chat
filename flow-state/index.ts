@@ -19,18 +19,42 @@ import { Hono } from "hono";
 
 import { FlowOrchestrator } from "./lib/orchestrator.ts";
 import { selectFlowEventLog } from "./lib/persistence/redis.ts";
-import { createWorkOSUserInfoActor } from "./lib/machines/login-and-org-setup.ts";
+import {
+  createOrgAndReissueActor,
+  createOrgFn,
+  createWorkOSUserInfoActor,
+  reissueOrgJwtFn,
+} from "./lib/machines/login-and-org-setup.ts";
 
 const PORT = parseInt(process.env.PORT ?? "8788", 10);
 const REDIS_URL = process.env.REDIS_URL;
 const WORKOS_URL = process.env.FAKE_WORKOS_URL ?? "http://fake-workos:14299";
+// In dev mode the flow-state tier calls the backend directly (compose-network
+// hostname `api:8000`). The backend's middleware trusts the identity headers
+// we inject. In production this routes through auth-proxy with a real bearer.
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://api:8000";
+
+// Identity that the flow-state tier presents to the backend when it acts on
+// behalf of a flow's principal. In AUTH_MODE=dev this is the dev user; in
+// production a service-to-service M2M token replaces these headers.
+const DEFAULT_PRINCIPAL_HEADERS = {
+  "x-user-id": "dev-user-001",
+  "x-org-id": "dev-org-001",
+  "x-user-email": "dev@localhost",
+};
 
 const eventLog = selectFlowEventLog(REDIS_URL);
 const orchestrator = new FlowOrchestrator({
   eventLog,
   loginMachineDeps: {
     workosUserInfo: createWorkOSUserInfoActor(WORKOS_URL),
+    createOrgAndReissue: createOrgAndReissueActor(
+      BACKEND_URL,
+      DEFAULT_PRINCIPAL_HEADERS,
+    ),
   },
+  createOrgFn: createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+  reissueOrgJwtFn: reissueOrgJwtFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
 });
 
 const app = new Hono();
@@ -44,6 +68,8 @@ app.post("/flow/:machine/begin", async (c) => {
   let body: {
     persona_email?: string;
     persona_display_name?: string;
+    existing_org_names?: string[];
+    harness_force_reissue_failures?: number;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -66,6 +92,8 @@ app.post("/flow/:machine/begin", async (c) => {
       persona_email: body.persona_email,
       persona_display_name: body.persona_display_name ?? "",
       correlation_id,
+      existing_org_names: body.existing_org_names,
+      harness_force_reissue_failures: body.harness_force_reissue_failures,
     });
     return c.json(projection);
   } catch (err) {

@@ -14,14 +14,20 @@ _AUDIENCE = "dev-client"
 _ISSUER = "http://localhost:8000"
 
 
-def _mint_jwt() -> str:
-    """Create a signed RS256 JWT with dev user claims."""
+def _mint_jwt(*, user: "AuthUser | None" = None, org_id: str | None = None) -> str:
+    """Create a signed RS256 JWT with dev user claims.
+
+    Defaults to DEV_USER claims; callers may override `user` (e.g. the
+    /api/auth/reissue endpoint) and/or `org_id` (e.g. to mint a token
+    carrying a freshly-created org claim per ADR-029 invariant 4).
+    """
     now = int(time.time())
+    subject = user or DEV_USER
     payload = {
-        "sub": DEV_USER.id,
-        "email": DEV_USER.email,
-        "org_id": DEV_USER.org_id,
-        "name": DEV_USER.name,
+        "sub": subject.id,
+        "email": subject.email,
+        "org_id": org_id if org_id is not None else subject.org_id,
+        "name": subject.name,
         "iat": now,
         "exp": now + _TOKEN_LIFETIME,
         "aud": _AUDIENCE,
@@ -73,3 +79,13 @@ class DevAuthProvider:
 
     async def get_logout_url(self) -> str:
         return "/"
+
+    async def reissue_with_org(self, user: AuthUser, org_id: str) -> tuple[str, str, int]:
+        """Re-mint a dev token for `user` carrying `org_id` as the org claim.
+
+        Idempotent: callers may invoke repeatedly with the same org_id and
+        always receive a fresh access/refresh token pair. The dev refresh
+        token rotates via a monotonically increasing suffix so callers can
+        distinguish successive reissues in tests.
+        """
+        return _mint_jwt(user=user, org_id=org_id), "dev-refresh-token-001", _TOKEN_LIFETIME

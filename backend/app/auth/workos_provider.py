@@ -144,3 +144,14 @@ class WorkOSAuthProvider:
 
     async def get_logout_url(self) -> str:
         return "/"
+
+    async def reissue_with_org(self, user: AuthUser, org_id: str) -> tuple[str, str, int]:
+        """Re-mint a WorkOS-signed access token carrying `org_id`.
+
+        Not yet implemented for slice 1 -- the acceptance suite runs in
+        AUTH_MODE=dev (DWD-2 Strategy C) and uses DevAuthProvider. Real
+        WorkOS reissuance is wired when production WorkOS integration
+        lands; until then this raises so the dev path is exercised
+        exclusively.
+        """
+        raise NotImplementedError("WorkOS reissue_with_org not yet implemented")

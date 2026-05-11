@@ -62,9 +62,18 @@ export class FakeWorkOS {
     app.get("/oauth/userinfo", (c) => {
       const code = c.req.header("x-fake-workos-code") ?? "default";
       const fixture = this.profileFixtures.get(code);
+      // Honor explicit corruption causes BEFORE applying defaults. A
+      // null/missing email in the fixture means the upstream really did
+      // omit the field.
+      const sub = `workos|${fixture?.email ?? code}`;
+      const profile: Record<string, unknown> = { sub };
+      if (fixture?.cause === "missing_email") {
+        // Explicit corruption: emit a profile with no email key.
+        if (fixture.display_name) profile.name = fixture.display_name;
+        return c.json(profile);
+      }
       const email = fixture?.email ?? "default-user@example.com";
       const name = fixture?.display_name ?? "Default User";
-      const profile: Record<string, unknown> = { sub: `workos|${email}` };
       if (email !== null) profile.email = email;
       if (name !== null) profile.name = name;
       return c.json(profile);

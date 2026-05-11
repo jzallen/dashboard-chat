@@ -18,6 +18,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class ReissueRequest(BaseModel):
+    org_id: str
+
+
 @router.get("/login")
 async def login(redirect_uri: str | None = None, organization_id: str | None = None):
     """Get login URL to redirect user to."""
@@ -98,6 +102,47 @@ async def logout(request: Request):
 
     url = await provider.get_logout_url()
     return {"url": url}
+
+
+@router.post("/reissue")
+async def reissue(request: Request, body: ReissueRequest):
+    """Re-mint the user's access token carrying the supplied org_id claim.
+
+    Resolution for ADR-029 invariant 4 (UI-1): once Maya finishes org setup
+    the access token Maya holds must carry the new org_id so subsequent
+    requests pass through with the right scope. Idempotent: if the user's
+    current token already carries this org_id we still re-mint a fresh
+    token with the same claim (the caller may simply need a refresh).
+
+    In AUTH_MODE=dev we re-mint a dev token bound to DEV_USER. In
+    AUTH_MODE=workos this raises NotImplementedError -- the real WorkOS
+    re-issuance lands when production WorkOS integration is wired
+    (out of scope for slice 1; the dev path is sufficient for the
+    acceptance suite per DWD-2 Strategy C).
+    """
+    try:
+        user = get_auth_user()
+    except RuntimeError:
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+
+    if not body.org_id or not body.org_id.strip():
+        return JSONResponse({"detail": "org_id is required"}, status_code=400)
+
+    from app.auth.dev_provider import DevAuthProvider
+
+    provider = get_auth_provider()
+    if not isinstance(provider, DevAuthProvider):
+        return JSONResponse(
+            {"detail": "reissue is only implemented for the dev provider"},
+            status_code=501,
+        )
+
+    access_token, refresh_token, expires_in = await provider.reissue_with_org(user, body.org_id)
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_in": expires_in,
+    }
 
 
 @router.get("/me")
