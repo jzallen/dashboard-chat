@@ -476,7 +476,7 @@ atomic sub-MRs by file family.
 - Acceptance: backend gate green; v2 suite still green; M2.1 lives at its
   new home and passes.
 
-**Sub-MR 4c — Delete eject infrastructure**:
+**Sub-MR 4c — Delete eject infrastructure + structural unit tests + protocol-invariant coupling** (EXPANDED 2026-05-11 per [adr-024-phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)):
 - Delete: `backend/tests/integration/dataset_layer/eject/` entire package
   (`__init__.py`, `protocols.py`, `parser.py`, `orchestrator.py`,
   `probe.py`, `seeder.py`, `runner.py`) — 1,445 LOC.
@@ -494,10 +494,17 @@ atomic sub-MRs by file family.
 - Edit: `backend/tests/unit/test_test_extras_isolation.py` — sanity-check
   the guard still passes (no `backend/app/**` imports of dbt-* or pandera);
   no changes expected.
-- Delete (if exists): `backend/tests/unit/dataset_layer/test_eject_protocol.py` or equivalent ArchUnit-style structural test asserting `EjectAndTestOrchestrator` has a `probe()` method — the orchestrator no longer exists. Verify and delete.
-- LOC: -1,595 to -1,695.
+- Delete: `backend/tests/integration/dataset_layer/protocol_invariants/test_ingress_url_invariant.py` (108 LOC) — structurally coupled to `EjectAndTestOrchestrator`. The ADR-016 production-ingress URL invariant the test asserts is satisfied by the v2 driver's construction (built only from `auth_proxy_url`, no internal-port fallback); the test is *about* the orchestrator's URL composition and dies with the orchestrator. The sibling `protocol_invariants/test_raw_tool_call_leak_guard.py` (Phase 2's other product) stays — it drives chat through `harness.chat_turn` and does not import eject.
+- Delete (6 structural unit tests under `backend/tests/unit/`, ~1,886 LOC total — paths are flat, NOT `backend/tests/unit/dataset_layer/` as the original roadmap implied):
+  - `test_eject_orchestrator.py` (587 LOC) — `EjectAndTestOrchestrator.probe()` + `eject_and_test()` happy + sad paths.
+  - `test_dbt_runner.py` (242 LOC) — `DbtRunner.run_build_and_test()` against real dbt.
+  - `test_run_results_parser.py` (311 LOC) — `RunResultsParser.parse()` shape contract.
+  - `test_duckdb_profile_seeder.py` (244 LOC) — `DuckDBProfileSeeder` mapping `minio_creds` → `profiles.yml`.
+  - `test_probe_happy_paths.py` (304 LOC) — the 5 earned-trust probes (substrate liveness checks).
+- Reshape: `backend/tests/unit/test_harness_eject_validate_wiring.py` (198 LOC) — drop the 3 `eject_and_test`-wiring tests; keep the 1 `validate_after`-wiring test (DR-5; still referenced by Phase 3 retry tests and M2.1's port). Rename in place to `test_harness_validate_after_wiring.py` — in-place rename is the safer default; the surviving test composes with `backend/tests/unit/` fixtures (not the integration-layer conftest), so moving it under `backend/tests/integration/dataset_layer/validation/` would force a fixture port. Net ~-130 LOC.
+- LOC: -3,481 to -3,581 (-1,595 to -1,695 original + -1,886 unit tests + -108 ingress invariant - ~-108 reshape).
 - MR size: L (split per file family if desired).
-- Acceptance: backend gate green; v2 suite still green; reclassified unit tests still green; M2.1 at new home still green; no module imports `backend.tests.integration.dataset_layer.eject` anywhere.
+- Acceptance: backend gate green; v2 suite still green; reclassified unit tests still green; M2.1 at new home still green; no module imports `backend.tests.integration.dataset_layer.eject` anywhere; pre-flight grep for `EjectAndTestOrchestrator|eject_and_test|from.*\.eject` against `*.py` returns ZERO matches.
 
 **Sub-MR 4d — Shrink dataset_layer test step glue (only if remaining)**:
 - After sub-MRs 4a/4b/4c, the `tests/acceptance/dbt-test-validation/` directory should be empty or near-empty. If empty, delete the directory.
@@ -505,11 +512,15 @@ atomic sub-MRs by file family.
 - MR size: S.
 - Acceptance: backend gate green; v2 suite green; directory `tests/acceptance/dbt-test-validation/` is gone.
 
-**Total Phase 4 LOC** (across sub-MRs): roughly -3,200 to -3,400 deletion,
-+30-50 addition (M2.1 port) → net ~-3,150 to -3,350 deletion.
+**Total Phase 4 LOC** (across sub-MRs, post-2026-05-11 expansion): roughly
+-5,200 to -5,400 deletion, +30-50 addition (M2.1 port) → net ~-5,150 to
+-5,350 deletion. (Pre-expansion estimate was -3,200 to -3,400 deletion;
+the expansion added ~1,886 LOC from six structural unit tests and
+108 LOC from the ingress invariant test — see [adr-024-phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md).)
 
-**Net migration LOC** (after Phases 1-4): -3,000 to -3,300 (matches the
-spike's claim of ~3,000 LOC net deletion).
+**Net migration LOC** (after Phases 1-4): -5,000 to -5,300 (revised; the
+spike's "~3,000 LOC net deletion" claim measured only the integration-
+test surface — the unit-test layer was undercounted).
 
 **Reversibility per sub-MR**: Each sub-MR is independently revertable.
 The order 4a → 4b → 4c → 4d is recommended; reversing requires reversing
@@ -543,6 +554,17 @@ coverage after Phases 1-3 moved everything), then the eject infrastructure
 - **Mitigation**: M2.1 moves in sub-MR 4b BEFORE 4c deletes the
   orchestrator. M2.1 uses `validate_with=schema` on `chat_turn` per DR-5;
   that hook stays. M2.1's port should be a clean lift.
+
+### Why the original scope was off — note for future reclassifications
+
+The pre-flight grep that produced [adr-024-phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)
+surfaced ~2,000 LOC the roadmap did not enumerate. Two distinct gaps:
+
+1. **The path drift**: The roadmap referenced `backend/tests/unit/dataset_layer/test_eject_protocol.py` as a possible structural test. The actual unit tests live at `backend/tests/unit/test_*.py` (flat), and there are six of them (not one), totalling ~1,886 LOC. The original survey scoped only the integration-test layer.
+
+2. **The reclassification couldn't actually decouple `test_ingress_url_invariant.py`**: Phase 2's outcome was "M4 protocol invariants moved to a chat-protocol home." The ingress URL invariant *is* an assertion about `EjectAndTestOrchestrator._base_url` — the coupling is the invariant. Moving the file out of the v1 acceptance suite did not (and could not) decouple the test from the orchestrator. A "reclassified" test that still imports the orchestrator is still part of the orchestrator's blast radius; the reclassification was a directory move, not a re-derivation against a different seam. For future similar reclassifications: if the reclassified test imports the same symbol it tested before, it has not actually been decoupled, and it will need to be re-derived (or deleted) when the original seam is retired. **The reclassification target seam must be load-bearing, not just topographical.**
+
+The v2 driver's `base_url` is built only from `auth_proxy_url` with no internal-port fallback, so the invariant the deleted test asserted is satisfied by construction. If a future incident motivates separately asserting the URL composition, write a 10-line test against the v2 driver's exported `base_url`; this is far cheaper than a fixture-heavy orchestrator-coupled assertion.
 
 ---
 
