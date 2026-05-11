@@ -257,21 +257,29 @@ read as a sentence.
 
 ### Location
 
-`backend/app/repositories/<aggregate>/_queries/<snake_case_name>.py`.
+Co-locate with the repository module while the aggregate has one query
+class; extract to a `_queries/` subpackage when the second arrives. The
+rule is:
 
-* Underscore-prefixed `_queries/` directory → repository-internal, not part
-  of the public repository surface (same precedent as `_pagination.py`,
-  `_mappers.py`, `_base.py` post-ADR-020).
-* **One query class per file.** Reading the directory listing answers
-  "what non-trivial reads does this aggregate support?".
-* `_queries/__init__.py` re-exports the classes for one-line imports from
-  the repository module.
+* **1 query class** → defined inline in the repository module
+  (`backend/app/repositories/<aggregate>/<aggregate>_repository.py`).
+  Python prefers flat files until they become painful; a one-file
+  subpackage is structural over-design that reads as Java/C# scar
+  tissue, not Python convention.
+* **2+ query classes** → extract all of them to
+  `backend/app/repositories/<aggregate>/_queries/<snake_case_name>.py`
+  (one class per file), re-exported from `_queries/__init__.py`.
+  Underscore-prefixed `_queries/` signals repository-internal, same
+  precedent as `_pagination.py`, `_mappers.py`, `_base.py`.
 
-For the ratifying instance: `backend/app/repositories/metadata/_queries/projects_with_datasets.py`,
-re-exported from `backend/app/repositories/metadata/_queries/__init__.py`. The
-module basename omits the `_query` suffix because the parent `_queries/`
-directory already conveys the role; the class name retains the `Query` suffix
-so call sites read fluently.
+The class name retains the `Query` suffix in either layout so call sites
+read fluently (`ProjectsWithDatasetsQuery().with_org_scope(...)...`).
+
+For the ratifying instance: `ProjectsWithDatasetsQuery` lives inline in
+`backend/app/repositories/metadata/project_repository.py` (one query
+class for the Project aggregate today). If/when a sibling joins
+(`ProjectsByMemberQuery`, etc.), both move to `_queries/` in the same MR
+that introduces the second.
 
 ### Contract — what each query class owns
 
