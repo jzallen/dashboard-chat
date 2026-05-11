@@ -1,0 +1,170 @@
+{
+  "feature": "ibis-as-only-sql-compiler",
+  "feature_dir": "docs/feature/ibis-as-only-sql-compiler",
+  "produced_by": "DISTILL wave",
+  "produced_on": "2026-05-11",
+  "binding_decisions": "docs/feature/ibis-as-only-sql-compiler/distill/wave-decisions.md",
+  "upstream_issues": "docs/feature/ibis-as-only-sql-compiler/distill/upstream-issues.md",
+  "design_ratified_as": "docs/decisions/adr-026-ibis-as-only-sql-compiler.md (Accepted 2026-05-11, merge `ef65252`)",
+  "acceptance_root": "docs/feature/ibis-as-only-sql-compiler/distill/",
+  "scaffold_root": "tests/acceptance/ibis-as-only-sql-compiler/ (created in Phase 01 alongside step-glue)",
+  "walking_skeleton_strategy": "C — real local + skip-when-unavailable (per DWD-1; matches the v2 driver pattern established by dbt-test-validation)",
+  "phases": [
+    {
+      "id": "01",
+      "title": "Phase 01 — MR-1 ViewIbisCompiler replaces ViewSQLGenerator (closes Gap 1)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Replace `backend/app/use_cases/view/sql_generator.py`'s f-string compiler with a `ViewIbisCompiler` that consumes the same `View` domain object and emits SQL via `ibis.to_sql(dialect='duckdb')`. Promote `ViewFilter`, `ViewColumn`, `ViewJoin` from frozen dataclasses to a Pydantic model set, with `ViewFilter` modeled as a discriminated union over `operator` (per-operator value typing: str for comparisons / LIKE, list for IN / NOT IN, None for IS NULL / IS NOT NULL). Adjust `backend/app/use_cases/view/create_view.py:_parse_filters` to call Pydantic parsing instead of dict→dataclass conversion. The `value` field flows through ibis literals — closes the injection vector at sql_generator.py:160. Re-export `ViewSQLGenerator` as a thin shim over the new compiler for one release (per ADR-026 §References → MR-1 file scope, plus the research doc §6 first-MR-shape). Walking skeleton scenario and all five milestone-1 scenarios unpend.",
+      "scenarios_to_unskip": [
+        "docs/feature/ibis-as-only-sql-compiler/distill/walking-skeleton.feature :: An analyst creates a 'west_orders' view filtering region = 'west' and the customer's dbt eject contains the same filter",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-1-view-ibis-compiler.feature :: SELECT-FROM-JOIN-WHERE structure is preserved when a view with one filter and one join compiles via the new compiler",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-1-view-ibis-compiler.feature :: A filter value containing a SQL-injection payload is treated as a string literal, never as SQL syntax",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-1-view-ibis-compiler.feature :: Every operator the analyst's filter tool surfaces renders deterministically through the new compiler (Scenario Outline, 12 example rows)",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-1-view-ibis-compiler.feature :: The customer's dbt export of a compiled view is evaluation-equivalent to the legacy generator's output",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-1-view-ibis-compiler.feature :: A view filter submitted with a malformed operator is rejected by the validation boundary before reaching the compiler"
+      ],
+      "files_changed_estimate": "backend/app/use_cases/view/sql_generator.py — replaced by ViewIbisCompiler class (same module path; old class re-exported as deprecated alias). backend/app/use_cases/view/create_view.py — _parse_filters / _parse_joins / _parse_columns call Pydantic. backend/app/models/view.py — ViewFilter becomes a Pydantic discriminated union; ViewColumn / ViewJoin become Pydantic models (compatible serialize/from_record surface preserved). backend/tests/use_cases/view/test_sql_generator.py — adapted to the new compiler (regression suite stays). tests/acceptance/ibis-as-only-sql-compiler/* — new acceptance suite scaffold (pyproject.toml, conftest.py, step-glue, README) created alongside the feature files this DISTILL wave produced. ~600–900 LoC.",
+      "exit_criteria": [
+        "All walking-skeleton + milestone-1 scenarios GREEN (or SKIP with named reason for any environment-dependent slot)",
+        "Existing `backend/tests/use_cases/view/test_sql_generator.py` suite still green after migration to the new compiler",
+        "Injection vector at `backend/app/use_cases/view/sql_generator.py:160` is gone (verified by grep: zero f-string interpolation of `f.value` in the view-tier SQL emission path)",
+        "ViewSQLGenerator deprecation alias documented in module docstring; callers can switch incrementally",
+        "Reviewer (nw-software-crafter-reviewer) approves: hexagonal boundary preserved (use-case decorator stack intact per CLAUDE.md), no internal class mocks, ibis literal escaping is the closure mechanism for Gap 1 (not a Pydantic value-validator)",
+        "Mutation testing on the new ViewIbisCompiler achieves ≥ 80% kill rate per nw-mutation-test skill"
+      ],
+      "blocks": ["02", "03", "05"],
+      "estimated_size": "M",
+      "ac_references": [
+        "ADR-026 §Decision outcome (Option B chosen; MR-1 first)",
+        "ADR-026 §Consequences → Positive → Closes Gap 1",
+        "ADR-026 §MR roadmap row MR-1",
+        "Research doc §3 Gap 1",
+        "Research doc §6 First MR shape"
+      ]
+    },
+    {
+      "id": "02",
+      "title": "Phase 02 — MR-2 dbt intermediate ibis-source plugin (replaces post-render regex)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Replace the post-render `sql.replace(ref_id, \"{{ ref('...') }}\")` substitution at `backend/app/use_cases/project/_dbt/intermediate.py:34-38` with an ibis-native rendering path. The chosen shape per ADR-026 §Decision outcome item 1 is an ibis `Source` subclass / custom-backend hook that renders dbt-ref placeholders as `{{ ref('...') }}` macros directly in the compiled SQL. The legacy ref-mode branch at `intermediate.py:32-38` (reached only via `view.sql_definition` fallback today) goes away. The exact subclass shape — `Source` vs custom-backend hook — is MR-2 design scope; the ibis extensibility docs at https://ibis-project.org/concepts/backends and https://ibis-project.org/how-to/extending/ are the starting point. NO new acceptance scenarios — this is a pure refactor with the walking skeleton + milestone-1 dbt-eject-equivalence scenario covering the customer-visible invariant.",
+      "scenarios_to_unskip": [],
+      "files_changed_estimate": "backend/app/use_cases/project/_dbt/intermediate.py — drops the post-render regex; calls into the new ibis-source plugin module. backend/app/use_cases/project/_dbt/ibis_dbt_source.py — new module containing the Source / backend hook. backend/tests/use_cases/project/_dbt/test_intermediate.py — characterization tests for the new emission path. ~150–250 LoC.",
+      "exit_criteria": [
+        "Walking-skeleton + milestone-1 scenarios still GREEN after the refactor — the dbt-eject-equivalence scenario is the contract this MR rides",
+        "`backend/app/use_cases/project/_dbt/intermediate.py:34-38` no longer contains the `sql.replace(...)` regex round-trip",
+        "Characterization tests added for the ibis-source plugin (per CLAUDE.md brownfield: characterization tests before touching legacy)",
+        "Reviewer approves: dbt-macro shape is byte-faithful for the cases the legacy regex covers (verified by parameterized characterization tests)"
+      ],
+      "blocks": [],
+      "estimated_size": "S",
+      "ac_references": [
+        "ADR-026 §Decision outcome item 1 (dbt macro emission via ibis-source plugin)",
+        "ADR-026 §MR roadmap row MR-2",
+        "Research doc §6 step 2"
+      ]
+    },
+    {
+      "id": "03",
+      "title": "Phase 03 — MR-3 ReportIbisCompiler + dispatcher wiring + sqlDefinition removal (closes Gap 2)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Build the `ReportIbisCompiler` and wire the dormant `addDimension` / `addMeasure` dispatchers on the backend. The compiler consumes the report's structured columns_metadata (dimensions + measures) and emits SQL via `ibis.Table.group_by(dims).aggregate(measures)` rendered through `ibis.to_sql(dialect='duckdb')`. Remove `createReport.sqlDefinition` from the agent's tool schema (`agent/lib/chat/reportToolDefinitions.ts:53-78`); remove `sql_definition: str` from the backend use case (`backend/app/use_cases/report/create_report.py:24,77`) and emit a structured deprecation error if any legacy caller supplies it. Remove the free-text `expr` fields from `addDimension` (line 101) and `addMeasure` (line 123) in the same module. Per ADR-026 §Decision outcome item 2: pre-production codebase, no backfill, no grandfather, no flag-gate; clear any existing report rows with raw SQL as part of the MR.",
+      "scenarios_to_unskip": [
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-2-report-ibis-compiler.feature :: An analyst composes a dimension and a measure and the compiled report SQL aggregates correctly",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-2-report-ibis-compiler.feature :: A report-creation call carrying the deprecated free-form SQL field is rejected with a structured error",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-2-report-ibis-compiler.feature :: A report submitted with measures but no dimensions is rejected as a report-modeling violation",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-2-report-ibis-compiler.feature :: Two dimensions and three measures compose into a correctly aggregated report",
+        "docs/feature/ibis-as-only-sql-compiler/distill/milestone-2-report-ibis-compiler.feature :: A measure-creation call carrying a free-form expression field is rejected at the agent's tool-schema layer before reaching the backend"
+      ],
+      "files_changed_estimate": "backend/app/use_cases/report/report_ibis_compiler.py — new module. backend/app/use_cases/report/create_report.py — drop sql_definition, accept dimensions/measures/joins (matching the tool surface). backend/app/use_cases/report/dispatchers/ — new dispatchers for addDimension / addMeasure (mirror the existing report-creation entry point). agent/lib/chat/reportToolDefinitions.ts — drop createReport.sqlDefinition; drop addDimension.expr; drop addMeasure.expr. backend/migrations/versions/<rev>_clear_legacy_report_sql.py — one-time data clear for pre-production reports with raw SQL. backend/tests/use_cases/report/test_report_ibis_compiler.py — unit suite for the new compiler. tests/acceptance/ibis-as-only-sql-compiler/steps/ — extend step-glue for milestone-2 scenarios. ~800–1200 LoC.",
+      "exit_criteria": [
+        "All milestone-2 scenarios GREEN (5 scenarios)",
+        "Walking-skeleton + milestone-1 scenarios still GREEN — zero regression",
+        "`createReport.sqlDefinition` field removed from `agent/lib/chat/reportToolDefinitions.ts` (verified by grep)",
+        "`expr` fields removed from `addDimension` and `addMeasure` tool definitions (verified by grep)",
+        "`backend/app/use_cases/report/create_report.py` no longer accepts `sql_definition: str` parameter",
+        "Reviewer approves: dispatcher wiring obeys the existing decorator stack (@handle_returns / @with_repositories); ibis literal escaping closes Gap 2 by construction; no sqlglot post-hoc AST validation introduced",
+        "Mutation testing on the new ReportIbisCompiler achieves ≥ 80% kill rate"
+      ],
+      "blocks": ["05"],
+      "estimated_size": "L",
+      "ac_references": [
+        "ADR-026 §Decision outcome items 2 and 3",
+        "ADR-026 §Consequences → Positive → Closes Gap 2",
+        "ADR-026 §MR roadmap row MR-3",
+        "Research doc §3 Gap 2",
+        "Research doc §5 worked example (revenue by region)"
+      ]
+    },
+    {
+      "id": "04",
+      "title": "Phase 04 — MR-4 lake-repo quote_ident hygiene (closes Gap 3)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Apply `quote_ident()` consistently in `backend/app/repositories/lake/repository.py:214-247` (preview / count / typeof) and `:266-277` (cleaning-transform preview SQL). Brings the lake layer in line with `backend/app/use_cases/query_engine/sync_processor.py`. Internal-only — column names come from `dataset.schema_config`, not directly from the user, so blast radius is narrow, but the hygiene gap is real per research doc §3 Gap 3. NO new acceptance scenarios — closed by existing repository unit tests; no customer-facing surface changes.",
+      "scenarios_to_unskip": [],
+      "files_changed_estimate": "backend/app/repositories/lake/repository.py — apply quote_ident at the two ranges. backend/tests/repositories/lake/test_repository.py — add tests for column names containing edge characters (escaped double quotes). ~50–80 LoC.",
+      "exit_criteria": [
+        "All sites in `backend/app/repositories/lake/repository.py` between lines 214-277 use `quote_ident()` for column-name interpolation (verified by grep)",
+        "Walking-skeleton + milestone-1 + milestone-2 scenarios still GREEN",
+        "Existing lake repository tests still green",
+        "Reviewer approves: hygiene fix matches the sync_processor.py style"
+      ],
+      "blocks": [],
+      "estimated_size": "S",
+      "ac_references": [
+        "ADR-026 §MR roadmap row MR-4",
+        "Research doc §3 Gap 3"
+      ]
+    },
+    {
+      "id": "05",
+      "title": "Phase 05 — MR-5 model_sql.py reconciliation (eliminates parallel-compiler hazard)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Have `backend/app/use_cases/project/_dbt/model_sql.py:13-207` *consume* `dataset_sql.build_staging_sql()` rather than re-derive the cleaning operations as dbt CTEs with literal escaping. Eliminates the known parallel-compiler divergence hazard (`model_sql.py` re-implements the ibis pipeline's MUTATE → FILTER → RENAME stages as dbt CTEs with `.replace(\"'\", \"''\")` defenses; today both compilers must stay in sync as new cleaning operations are added). After this MR, the ibis pipeline at `backend/app/models/dataset_sql.py` is the single source of staging-tier SQL truth. NO new acceptance scenarios — the existing staging-tier suite covers it; this is a behavior-preserving refactor that removes the parallel-compiler.",
+      "scenarios_to_unskip": [],
+      "files_changed_estimate": "backend/app/use_cases/project/_dbt/model_sql.py — refactor to consume `dataset_sql.build_staging_sql()`; delete the parallel cleaning-op compiler. backend/app/models/dataset_sql.py — ensure `build_staging_sql()` is callable in the dbt-export composition root. backend/tests/use_cases/project/_dbt/test_model_sql.py — characterization tests around the existing staging-tier dbt CTE shape (per CLAUDE.md brownfield) before the refactor; then assert equivalence after. ~200–350 LoC, net deletion.",
+      "exit_criteria": [
+        "`backend/app/use_cases/project/_dbt/model_sql.py:13-207` no longer contains the per-operation CTE-emission helpers (_fill_null_to_sql, _map_values_to_sql, etc.) — replaced by a single call into the ibis-staging-SQL pipeline",
+        "Characterization tests pass against the pre-refactor shape; equivalence tests pass post-refactor (per CLAUDE.md brownfield Feathers practice)",
+        "Walking-skeleton + milestone-1 + milestone-2 scenarios still GREEN",
+        "Existing staging-tier dbt-export tests still green — zero regression on customer-visible SQL",
+        "Reviewer approves: parallel-compiler hazard eliminated; ibis pipeline at `backend/app/models/dataset_sql.py` is now the unique staging-tier compiler"
+      ],
+      "blocks": [],
+      "estimated_size": "S",
+      "ac_references": [
+        "ADR-026 §Consequences → Positive → Reconciles model_sql.py with the ibis pipeline",
+        "ADR-026 §MR roadmap row MR-5",
+        "Research doc §1.6 Path 10",
+        "Research doc §6 step 5"
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    {
+      "after_phase": "01",
+      "gate": "Walking-skeleton + milestone-1 GREEN on real CI runner. Injection-vector contract is the security-critical assertion; verify ibis literal escaping is the closure mechanism (not a Pydantic `value` validator). If the implementer reaches for a `.replace(\"'\", \"''\")` defense or a sqlglot AST pass, escalate per the wave-decisions DWD-4 rationale."
+    },
+    {
+      "after_phase": "03",
+      "gate": "All milestone-2 scenarios GREEN. createReport.sqlDefinition removed from both surfaces (agent tool schema + backend use case). Free-text `expr` fields removed from addDimension / addMeasure. No backfill/grandfather/flag-gate — pre-production codebase per ADR-026 §Decision outcome item 2."
+    },
+    {
+      "after_phase": "05",
+      "gate": "Parallel-compiler hazard closed: `model_sql.py` consumes `dataset_sql.build_staging_sql()` instead of re-deriving. All 11 scenarios GREEN. Mutation testing kill rate ≥ 80% on both new compilers (ViewIbisCompiler, ReportIbisCompiler). Ready for `/nw-finalize ibis-as-only-sql-compiler`."
+    }
+  ],
+  "deliver_dispatch_notes": {
+    "agent": "nw-software-crafter",
+    "paradigm": "Python OOP for stateful orchestration (compilers, dispatchers); module-level pure functions for ibis expression builders (no hidden state in the compilation surface). Per CLAUDE.md Backend conventions: @handle_returns / @with_repositories decorator stack unchanged; RepositoryContainer / RestrictedSession discipline unchanged; org-scoping unchanged. ADR-026 sits BELOW all of these at the SQL-compilation layer per §Decision drivers → CLAUDE.md constraints honored.",
+    "iron_rule": "NEVER modify a failing acceptance test to make it pass. Each phase enables ONE scenario at a time; revert and escalate after 3 failed attempts. For pre-existing tests in `backend/tests/use_cases/view/` that interrogate the f-string compiler's exact byte output, triage via nw-test-refactoring-catalog L1–L3 before deleting or rewriting — these test the legacy mechanism, not the contract, so rewrites at L2 (contract-mirroring) are expected.",
+    "tdd_cycle": "RED_ACCEPTANCE → unpend one scenario → RED_UNIT → write failing unit test → GREEN → minimum implementation → REFACTOR per RPP L1–L6 → next scenario. Phase 01 begins with the walking skeleton (simplest customer journey through the ibis-compiled view path); phase 03 begins with the dimension+measure happy path (simplest customer journey through the ibis-compiled report path).",
+    "context_handoff": [
+      "ADR-026 (Accepted, immutable)",
+      "docs/research/deterministic-sql-construction-architecture.md §3 (the three gaps) and §5 (where agent dynamism lives — informs the dispatcher boundaries)",
+      "docs/research/ibis-cel-deterministic-sql.md (rejected CEL; preserved because the worked examples are still load-bearing for §5)",
+      "wave-decisions.md DWD-1 through DWD-5 (binding strategy/location/contract/boundary decisions)",
+      "ADR-007 (precedent — ibis ratified for staging tier; do not re-litigate)",
+      "CLAUDE.md Backend conventions (decorator stack discipline; the SQL-compilation layer sits below this)"
+    ]
+  }
+}
