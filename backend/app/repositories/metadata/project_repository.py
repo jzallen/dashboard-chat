@@ -10,14 +10,11 @@ calls here so existing call sites continue to work via ``repositories.metadata``
 from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import exists, select
-from sqlalchemy.orm import selectinload
-
-from app.utils.pagination import decode_cursor
 
 from . import _mappers
 from ._base import handle_repository_exceptions
 from ._pagination import paginate_by_id
-from .dataset_record import DatasetRecord
+from ._queries import ProjectsWithDatasetsQuery
 from .project_record import ProjectRecord
 
 if TYPE_CHECKING:
@@ -77,24 +74,14 @@ class ProjectRepository:
         Returns (items, next_cursor, has_more). Pass limit=None for
         unpaginated results (internal callers).
         """
-        query = select(ProjectRecord).options(
-            selectinload(ProjectRecord.datasets).load_only(
-                DatasetRecord.id,
-                DatasetRecord.name,
-                DatasetRecord.description,
-                DatasetRecord.project_id,
-                DatasetRecord.schema_config,
-            )
+        query = (
+            ProjectsWithDatasetsQuery()
+            .with_org_scope(org_id)
+            .with_cursor(cursor)
+            .with_default_ordering()
+            .with_limit_probe(limit)
+            .compile()
         )
-        if org_id is not None:
-            query = query.where(ProjectRecord.org_id == org_id)
-        if cursor is not None:
-            query = query.where(ProjectRecord.id < decode_cursor(cursor))
-        query = query.order_by(ProjectRecord.id.desc())
-
-        if limit is not None:
-            query = query.limit(limit + 1)
-
         result = await self._session.execute(query)
         projects, next_cursor, has_more = paginate_by_id(list(result.scalars().all()), limit)
 
