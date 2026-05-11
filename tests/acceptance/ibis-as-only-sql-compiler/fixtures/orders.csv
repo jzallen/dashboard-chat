@@ -1,0 +1,10 @@
+order_id,region,amount,status
+ORD-001,west,1500,open
+ORD-002,west,750,open
+ORD-003,west,1200,pending
+ORD-004,east,500,open
+ORD-005,east,2200,closed
+ORD-006,central,300,pending
+ORD-007,central,1800,open
+ORD-008,east,1100,closed
+ORD-009,west,400,archived

@@ -1,0 +1,36 @@
+[project]
+name = "dashboard-chat-acceptance-ibis-as-only-sql-compiler"
+version = "0.0.1"
+description = "Acceptance tests for ADR-026 MR-1 — ViewIbisCompiler replaces ViewSQLGenerator."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    # DuckDB runs the compiled view SQL against the seeded fixture so the
+    # walking-skeleton and injection-vector contracts can assert row-level
+    # equivalence (per DWD-3 + DWD-4). Pinned alongside backend's runtime
+    # pyproject.toml to avoid backend/test ABI drift.
+    "duckdb>=1.0.0",
+    "pyyaml>=6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "real_io: scenario uses real adapters (compose stack + real DuckDB)",
+    "walking_skeleton: walking-skeleton scenario gating MR-1 GREEN",
+    "milestone_1: milestone-1 scenarios (ADR-026 MR-1)",
+    "security_invariant: SQL-injection closure contract (Gap 1)",
+    "input_validation_contract: rejected-input contract at validation boundary",
+    "slow: scenario expected to take >10s wall-clock",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
