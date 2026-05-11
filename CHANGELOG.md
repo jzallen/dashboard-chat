@@ -1,3 +1,17 @@
+# [1.23.0](https://github.com/jzallen/dashboard-chat/compare/v1.22.0...v1.23.0) (2026-05-11)
+
+
+### Features
+
+* **backend/models:** ViewFilter as Pydantic discriminated union (ADR-026 MR-1) ([fdc8e1e](https://github.com/jzallen/dashboard-chat/commit/fdc8e1e0f696a47c327e7b17a3eb1aa23d5320f8))
+* **backend/use_cases/view:** ViewIbisCompiler replaces ViewSQLGenerator (ADR-026 MR-1) ([21fda79](https://github.com/jzallen/dashboard-chat/commit/21fda79a23c6c4d3547fa5d937d476b594048f1c))
+* **distill:** milestone-2 report-ibis-compiler scenarios + roadmap.json ([0ef1c21](https://github.com/jzallen/dashboard-chat/commit/0ef1c2110f3ddf64f4e6fec91b64304e8ba9ec04))
+* **distill:** unpend walking-skeleton + milestone-1 scenarios (ADR-026 MR-1) ([49981a2](https://github.com/jzallen/dashboard-chat/commit/49981a2dc9cede19056a891d819bd1d448435012))
+* **distill:** walking-skeleton + milestone-1 view-ibis-compiler scenarios ([bd1056a](https://github.com/jzallen/dashboard-chat/commit/bd1056a12e64b9067bcf669610f429f1027fc1c3))
+* **tests/acceptance/ibis-as-only-sql-compiler:** scaffold suite + step glue for milestone-1 (ADR-026 MR-1) ([b0e9567](https://github.com/jzallen/dashboard-chat/commit/b0e9567ed45c593ac9141ba884ba63b5c0750900))
+* **tests/integration/chat_protocol:** port M4 protocol invariants out of dbt-test-validation (ADR-024 Phase 2) ([607198e](https://github.com/jzallen/dashboard-chat/commit/607198e7bb7c15fb1e845989d347c1f8e85d2598))
+* **tests/unit:** port retry semantics out of dbt-test-validation (ADR-024 Phase 3) ([1fa2950](https://github.com/jzallen/dashboard-chat/commit/1fa295079683e8d4155530d097a1a17f6f0b0d20))
+
 # [1.22.0](https://github.com/jzallen/dashboard-chat/compare/v1.21.0...v1.22.0) (2026-05-11)
 
 
