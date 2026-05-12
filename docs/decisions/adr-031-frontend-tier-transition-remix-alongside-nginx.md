@@ -1,6 +1,6 @@
 # ADR-031: Frontend Tier Transition — Remix Runs Alongside nginx, Not in Place of It
 
-**Status:** Accepted (ratified 2026-05-11)
+**Status:** Accepted (ratified 2026-05-11) · partially superseded by [ADR-034](adr-034-frontend-coexistence-via-rrv7-framework-mode.md) (§1 topology, §3 what-Remix-owns, §4 migration sequence)
 **Date:** 2026-05-11
 **Originating wave:** DESIGN — `user-flow-state-machines` (system-scope pass)
 **Author:** Titan (nw-system-designer)
