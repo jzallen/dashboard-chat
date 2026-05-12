@@ -7,7 +7,7 @@ description: Use when the user wants to dispatch ANY long-running nwave-ai wave 
 
 ## Overview
 
-Recipe for dispatching any nwave-ai wave (`nw-*` skill) as a **detached headless Claude process** running inside a **gastown crew workspace** on its own branch. When the wave produces code that needs validation, the worker submits via the **headless merge queue**. When the wave produces documents only (research, design, review), the worker commits to its branch for human-driven PR or direct merge.
+Recipe for dispatching any nwave-ai wave (`nw-*` skill) as a **detached headless Claude process** running inside a **gastown crew workspace** on its own branch. The worker submits via the **headless merge queue** (`gt mq submit`) regardless of wave type — the refinery's content-aware `--auto` gate decides whether to run backend tests (code touch) or skip the gate (docs-only diff). This is the project's trunk-based workflow: short-lived branches, refinery-arbitrated merges, no upstream GitHub PRs as a primary mechanism.
 
 Use this when:
 
@@ -115,9 +115,9 @@ See also `gastown/SKILL.md` §"Headless Mode — Which Characters Are Actually R
 - If every changed file matches the docs-only allowlist (`docs/**`, `.claude/skills/**`, `.claude/settings.json`, `README*`, `CHANGELOG*`, `*.md`), it exits 0 — no tests run, the refinery merges in seconds.
 - Otherwise it falls through to `--backend` (ruff + pytest) as the safe default.
 
-This means workers never need to choose between MQ vs PR — they always submit via `gt mq submit` and the gate self-classifies. A worker whose commits are pure docs (finalize, research, review) gets near-instant landings; a worker whose commits touch `backend/` gets the full backend gate. Mixed commits run full tests. See `tools/test/test.sh` `--auto` selector for the exact allowlist.
+This means workers never need to choose how to land work — they always submit via `gt mq submit` and the gate self-classifies. A worker whose commits are pure docs (finalize, research, review) gets near-instant landings; a worker whose commits touch `backend/` gets the full backend gate. Mixed commits run full tests. See `tools/test/test.sh` `--auto` selector for the exact allowlist.
 
-**Do not** use `gh pr create` from a worker. PRs are only appropriate for human-driven review of work the refinery cannot evaluate (e.g. infrastructure changes, the rare case where you want a second pair of eyes before merge). For everything else, `gt mq submit` is the single entry point.
+**Do not use `gh pr create` from a worker.** This project is trunk-based: every change lands on `main` via the merge queue. The "PR" vocabulary in older ADRs refers to merge requests (`gt mq submit` → MR bead, e.g. `dc-wisp-…`), not GitHub Pull Requests. If you find yourself reaching for `gh pr create`, you are off-pattern — re-route through `gt mq submit`.
 
 ## Prerequisites
 
@@ -225,7 +225,7 @@ Begin by invoking the nw-<wave> skill and following its orchestration.
   skill's evidence-quality standards (cross-reference 2+ sources per claim, label
   speculation, link primary sources over secondary).
 
-- When done: commit the doc on this branch, push, do NOT open a PR yourself —
+- When done: commit the doc on this branch, push, and submit via `gt mq submit` —
   surface the doc path in the final log so a human can review.
 ```
 
@@ -468,7 +468,7 @@ For pure-docs waves (research, design, review) that typically finish in 30–90 
 
 ## Handoff: every wave submits via the refinery
 
-Every wave — code or docs — submits to the merge queue. The refinery's gate (`./tools/test/test.sh --auto`) is content-aware and skips tests when the diff is docs-only (see Choosing the Wave §"Single funnel through MQ"). Workers never decide between MQ and PR — they always submit.
+Every wave — code or docs — submits to the merge queue. The refinery's gate (`./tools/test/test.sh --auto`) is content-aware and skips tests when the diff is docs-only (see Choosing the Wave §"Single funnel through MQ"). This is the project's trunk-based workflow: there is no PR step; the MR (`gt mq submit` output) is the merge unit.
 
 ```bash
 cd ~/gt/<rig>/crew/<worker-name>
@@ -491,9 +491,9 @@ gt refinery queue
 gt mq status <mr-id>
 ```
 
-**Do NOT use `gh pr create` from a worker.** PRs are reserved for human-driven review of work the refinery cannot evaluate (e.g. infrastructure or shared-service changes where you want a second pair of eyes). For ordinary wave output — code, docs, ADRs, research, finalize archives — the MQ is the single entry point.
+**Do NOT use `gh pr create` from a worker.** This project is trunk-based; the MQ is the only entry point for landing work on `main`. If a change genuinely cannot be evaluated by the refinery and needs human review before landing, raise that with the project overseer as an out-of-band conversation — do not create a GitHub PR to force the review path.
 
-## Cleanup After Merge / PR Closure
+## Cleanup After Merge
 
 Per saved memory feedback, remove the crew workspace once the work has landed:
 

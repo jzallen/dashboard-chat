@@ -66,7 +66,7 @@ ui-presentation:
 ```nginx
 # Migrated routes go to Remix.
 # Today: /login, /org/$org, /org/$org/project/$project.
-# Expands as the strangler-fig migration proceeds (one PR per route family).
+# Expands as the strangler-fig migration proceeds (one MR per route family).
 location ~ ^/(login|org)(/|$) {
     resolver 127.0.0.11 valid=10s;
     set $remix_upstream http://ui-presentation:3001;
@@ -106,11 +106,11 @@ Remix does NOT own:
 
 | Phase | Routes on Remix | Routes on SPA | Trigger |
 |---|---|---|---|
-| 1 (PR-0) | `/login`, `/org/$org` | All others | This feature's DELIVER |
+| 1 (MR-0) | `/login`, `/org/$org` | All others | This feature's DELIVER |
 | 2 | + `/org/$org/project/$project` | All others | Next J-002 DESIGN |
 | 3..N | One route family per migration | The rest | Per future flow's DESIGN |
 | N+1 | All routes | none | When SPA fallback has no consumers |
-| Cleanup | n/a | (SPA removed; nginx routes everything to Remix; only static assets stay in nginx) | Final cleanup PR |
+| Cleanup | n/a | (SPA removed; nginx routes everything to Remix; only static assets stay in nginx) | Final cleanup MR |
 
 At every phase, both the SPA and Remix coexist; nginx is the routing arbiter. Rollback at any phase is a one-line `nginx.conf` revert.
 
@@ -131,13 +131,13 @@ Total addition: ~150 MB per host. Cheap.
 
 ### 7. Auth path (resolves SQ-6 from system-architecture.md)
 
-- The browser sends Bearer token in Authorization header (PR-0 behavior; cookie migration in Phase B post-feature).
+- The browser sends Bearer token in Authorization header (MR-0 behavior; cookie migration in Phase B post-feature).
 - nginx forwards the header to `ui-presentation` (default `proxy_set_header` behavior includes upstream forwarding).
 - Remix loaders read `request.headers.get("Authorization")` and use it as the Bearer when calling auth-proxy.
 - Auth-proxy verifies (unchanged behavior).
 - Auth-proxy forwards identity headers to the ui-state tier.
 
-Phase B (post-feature, separate ADR) migrates to HTTP-only cookies. The architecture supports either; PR-0 commits to Bearer to minimize migration scope.
+Phase B (post-feature, separate ADR) migrates to HTTP-only cookies. The architecture supports either; MR-0 commits to Bearer to minimize migration scope.
 
 ### 8. Compose acceptance test impact
 
@@ -159,7 +159,7 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 
 - **One additional container in compose.** ~150 MB RAM, same Bazel pattern. Cheap.
 - **Two containers to monitor in the frontend tier.** Operators must health-check both. Mitigated by clear container naming (`frontend` for nginx, `ui-presentation` for Node) and per-container `/health` endpoints.
-- **nginx config grows over time** as more routes migrate to Remix. Each route family adds a `location ~ ^/(family)(/|$)` rule. Mitigated by clear naming and a single review point per migration PR.
+- **nginx config grows over time** as more routes migrate to Remix. Each route family adds a `location ~ ^/(family)(/|$)` rule. Mitigated by clear naming and a single review point per migration MR.
 - **The "frontend" mental model splits into "static SPA + Remix server."** Until the SPA is fully retired, both are live. Mitigated by the per-route migration sequence in §4 and a public migration tracker (DELIVER concern).
 
 ### Cross-decision composition
@@ -171,9 +171,9 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 
 ## Open questions
 
-1. **Should the `frontend` and `ui-presentation` containers eventually merge** (e.g., via a unified ingress that does both static asset serving and Remix SSR)? Reasonable long-term direction, but not a PR-0 concern. Revisit when the strangler-fig migration completes (phase N+1).
+1. **Should the `frontend` and `ui-presentation` containers eventually merge** (e.g., via a unified ingress that does both static asset serving and Remix SSR)? Reasonable long-term direction, but not a MR-0 concern. Revisit when the strangler-fig migration completes (phase N+1).
 
-2. **CDN insertion** (TLS termination, edge caching, geographic routing). Out of scope for PR-0; relevant when production deployment scale grows. The architecture supports it: nginx → CDN insertion (CDN in front, nginx as origin) is a standard pattern.
+2. **CDN insertion** (TLS termination, edge caching, geographic routing). Out of scope for MR-0; relevant when production deployment scale grows. The architecture supports it: nginx → CDN insertion (CDN in front, nginx as origin) is a standard pattern.
 
 3. **HTTP/2 + HTTP/3 push for Remix asset payloads.** Today's nginx config is HTTP/1.1 by default; Remix's payloads can benefit from HTTP/2 multiplexing. Optimization for later; not feature-blocking.
 

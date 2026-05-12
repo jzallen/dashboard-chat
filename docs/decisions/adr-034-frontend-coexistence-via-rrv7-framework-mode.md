@@ -97,8 +97,8 @@ frontend/
 
 | Phase | What lands | Visible behavior change | Reversibility |
 |---|---|---|---|
-| **PR-0** | RRv7 framework-mode plumbing (vite plugin, ssr.ts, root.tsx, routes.ts declaring existing routes as library-mode), Hono SSR container, Dockerfile, Bazel target, compose service, nginx rule, dissolve `ui-presentation/` | **None.** App renders identically. Bundle size essentially unchanged. SSR is on but every route is library-mode so the SSR pass is a thin pass-through. | Delete the new Bazel target + the SSR container + the nginx rule + revert the four new files. |
-| **Phase 1+ (one PR per route)** | A route module gains a `loader` export. That route now SSRs. The component file under `frontend/src/ui/components/` is unchanged — it receives `useLoaderData()` instead of fetching client-side. | Only the migrated route changes (SSR'd HTML, server-fetched initial state). All other routes unchanged. | Remove the `loader` export from the route file. Route reverts to library-mode. |
+| **MR-0** | RRv7 framework-mode plumbing (vite plugin, ssr.ts, root.tsx, routes.ts declaring existing routes as library-mode), Hono SSR container, Dockerfile, Bazel target, compose service, nginx rule, dissolve `ui-presentation/` | **None.** App renders identically. Bundle size essentially unchanged. SSR is on but every route is library-mode so the SSR pass is a thin pass-through. | Delete the new Bazel target + the SSR container + the nginx rule + revert the four new files. |
+| **Phase 1+ (one MR per route)** | A route module gains a `loader` export. That route now SSRs. The component file under `frontend/src/ui/components/` is unchanged — it receives `useLoaderData()` instead of fetching client-side. | Only the migrated route changes (SSR'd HTML, server-fetched initial state). All other routes unchanged. | Remove the `loader` export from the route file. Route reverts to library-mode. |
 | **Final (optional)** | The SPA shell in `main.tsx` is dropped if every route is framework-mode. The `BrowserRouter` in App.tsx goes away. | None visible. The framework-mode root is the only root. | Add `BrowserRouter` back. |
 
 Migration order is **driven by which routes most need SSR** (auth pages for UX, shareable URLs for metadata, etc.), not by "what's mechanically easy to extract." A route is migrated when it needs SSR; routes that don't need SSR can stay library-mode forever. There is no "must migrate all routes" deadline.
@@ -124,7 +124,7 @@ The `/api/channels/:id/presentation-state` → agent direct rule is **load-beari
 
 - **§1 (Topology — two services with two React trees).** Replaced with: one Node SSR runtime + the existing nginx static-serving container. Both render from one React tree.
 - **§3 (What Remix owns).** Replaced with: RRv7 framework-mode loaders own server-side data fetching for migrated routes; RRv7 library mode owns client-side rendering for non-migrated routes; both are the same router in the same component tree.
-- **§4 (Strangler-fig migration sequence — phased route family table).** Replaced with: PR-0 is no-behavior-change plumbing; subsequent PRs add one `loader` at a time as routes need SSR. No phase-N+1 SPA retirement deadline — routes can stay library-mode indefinitely if they don't need SSR.
+- **§4 (Strangler-fig migration sequence — phased route family table).** Replaced with: MR-0 is no-behavior-change plumbing; subsequent MRs add one `loader` at a time as routes need SSR. No phase-N+1 SPA retirement deadline — routes can stay library-mode indefinitely if they don't need SSR.
 - **§"Considered options" R1/R2/R3.** Subsumed by the option space above (which adds RRv7 framework mode, single-Hono mixed routing, federation, and islands as comparanda).
 
 ## Consequences
@@ -152,9 +152,9 @@ The `/api/channels/:id/presentation-state` → agent direct rule is **load-beari
 
 ## Open questions
 
-1. **Is there an SSR data-fetching concern with the agent's SSE-streamed chat and the `presentation-state` endpoints?** Routes that include the chat surface (e.g., an eventual `/chat/:channelId`) would have RRv7 loaders trying to render server-side, but the chat stream is intrinsically client-side (SSE). Pragmatic answer: those routes opt out of SSR via `clientLoader` only. Flag during the relevant route's migration PR; not a blocker for PR-0.
+1. **Is there an SSR data-fetching concern with the agent's SSE-streamed chat and the `presentation-state` endpoints?** Routes that include the chat surface (e.g., an eventual `/chat/:channelId`) would have RRv7 loaders trying to render server-side, but the chat stream is intrinsically client-side (SSE). Pragmatic answer: those routes opt out of SSR via `clientLoader` only. Flag during the relevant route's migration MR; not a blocker for MR-0.
 
-2. **Should the SSR build artifact ship in the same npm workspace as the SPA, or as a sibling workspace?** RRv7's Vite plugin assumes single-workspace. The current `frontend/` is already one workspace. Default: keep as one workspace; PR-0 confirms.
+2. **Should the SSR build artifact ship in the same npm workspace as the SPA, or as a sibling workspace?** RRv7's Vite plugin assumes single-workspace. The current `frontend/` is already one workspace. Default: keep as one workspace; MR-0 confirms.
 
 3. **What happens to ADR-015's `/api/channels/:id/presentation-state` rule under future route migrations?** Unchanged today. If a future Remix-rendered route needs to call `presentation-state` from its loader, the loader fetches it through auth-proxy (per ADR-031 §7 inheritance), not direct. Re-evaluate if a route actually needs it server-side.
 
@@ -162,9 +162,9 @@ The `/api/channels/:id/presentation-state` → agent direct rule is **load-beari
 
 The forward and reverse migrations are symmetric:
 
-- **Forward (per phase):** Add a `loader` export to a route module file. Verify the route SSRs. PR-sized change.
-- **Reverse (per phase):** Remove the `loader` export. Verify the route renders client-only. PR-sized change.
-- **Forward (PR-0 plumbing):** Add four new files + nginx rule + compose service + Bazel target.
+- **Forward (per phase):** Add a `loader` export to a route module file. Verify the route SSRs. MR-sized change.
+- **Reverse (per phase):** Remove the `loader` export. Verify the route renders client-only. MR-sized change.
+- **Forward (MR-0 plumbing):** Add four new files + nginx rule + compose service + Bazel target.
 - **Reverse (rip out framework mode entirely):** Remove those same four files + the nginx rule + the compose service + the Bazel target. The SPA continues to work as a client-only React app from the existing `dist/client/` bundle served by nginx.
 
 ## Method note
