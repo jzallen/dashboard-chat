@@ -95,3 +95,9 @@ hooks/
 .runtime/
 .dolt-data/
 rigs.json
+
+# Gas Town (added by gt)
+.claude/
+.logs/
+state.json
+CLAUDE.md
