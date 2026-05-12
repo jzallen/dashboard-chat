@@ -1,3 +1,12 @@
+# [1.24.0](https://github.com/jzallen/dashboard-chat/compare/v1.23.1...v1.24.0) (2026-05-12)
+
+
+### Features
+
+* **flow-state,backend:** slice 1 error paths + /api/auth/reissue endpoint ([4762079](https://github.com/jzallen/dashboard-chat/commit/4762079ca1c020bbbcf6259eb3ee58716490b137))
+* **flow-state:** slice 1 scope-resolver endpoint + acceptance steps ([1dacc38](https://github.com/jzallen/dashboard-chat/commit/1dacc38548e6f7400253ccb3ab3c5e4141c025fd))
+* **flow-state:** walking skeleton end-to-end sign-in to authenticated_no_org ([b523cd1](https://github.com/jzallen/dashboard-chat/commit/b523cd16d5350456d4eb51e2a9c12c2d1f7182e0))
+
 ## [1.23.1](https://github.com/jzallen/dashboard-chat/compare/v1.23.0...v1.23.1) (2026-05-11)
 
 
