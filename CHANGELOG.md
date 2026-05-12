@@ -1,3 +1,12 @@
+# [1.25.0](https://github.com/jzallen/dashboard-chat/compare/v1.24.0...v1.25.0) (2026-05-12)
+
+
+### Features
+
+* **backend:** extend ReportIbisCompiler for multi-dim multi-measure composition ([f1f3ffa](https://github.com/jzallen/dashboard-chat/commit/f1f3ffa21459aa6c0652b8608665519aa9d0c642))
+* **backend:** introduce ReportIbisCompiler for structured report SQL (MR-3) ([6c81978](https://github.com/jzallen/dashboard-chat/commit/6c8197863a531bd2a8f8414a82d9496e37c98645))
+* **backend:** reject reports with measures but no dimensions (MR-3) ([ddddca7](https://github.com/jzallen/dashboard-chat/commit/ddddca7ce2bfa58b2bd1c1804f95790273341708))
+
 # [1.24.0](https://github.com/jzallen/dashboard-chat/compare/v1.23.1...v1.24.0) (2026-05-12)
 
 
