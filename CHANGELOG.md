@@ -1,3 +1,15 @@
+# [1.27.0](https://github.com/jzallen/dashboard-chat/compare/v1.26.0...v1.27.0) (2026-05-12)
+
+
+### Bug Fixes
+
+* **backend:** quote_ident on lake-repo column-type query (ADR-026 MR-4) ([b737f4f](https://github.com/jzallen/dashboard-chat/commit/b737f4f1bda1f6b85ae3d0abbf79b49fcad3a5db))
+
+
+### Features
+
+* **flow-state:** cross-machine freeze + replay for US-005 ([d8d0d34](https://github.com/jzallen/dashboard-chat/commit/d8d0d34343025a75dd008e89ed4f007fd4684e41))
+
 # [1.26.0](https://github.com/jzallen/dashboard-chat/compare/v1.25.0...v1.26.0) (2026-05-12)
 
 
