@@ -28,6 +28,28 @@ Do NOT use this for:
 
 **Implication:** the prompt to the headless session must explicitly instruct the model to invoke the skill by name (e.g. "Begin by invoking the nw-design skill"). Leading the prompt with `/nw-<wave> <slug>` is fine as a header — the model treats it as an instruction — but the imperative must also appear in the body so it can't be missed.
 
+## Terminology Hygiene — Headless Mode Vocabulary
+
+This skill operates inside the **gastown headless merge queue** topology — Dolt + Refinery only, no Mayor / Witness / Deacon / polecats / convoys. The gastown skill (which you may also have loaded) defines a richer in-world vocabulary that does NOT apply here. When narrating worker status, dispatch, or coordination from this skill, **drop the gastown persona for processes that aren't running.**
+
+Concretely, when operating workers via this skill:
+
+| Avoid (full-gastown term) | Use instead (headless term) |
+|---|---|
+| "convoy" / "the convoy landed" | "dispatch" / "today's worker set" / "the workers landed" |
+| "I nudged the polecat" | "I sent a resume directive" / "the overseer message in `claude -p --resume`" |
+| "slinging work" | "launching a crew session" / "starting the tmux session" |
+| "the engine" / "engine room" | "the refinery + Dolt" |
+| "Mayor coordinated …" | (skip — there is no Mayor in this mode) |
+| "Witness caught the stuck worker …" | "I noticed the worker stalled (you are the watchdog in headless mode)" |
+| "the polecat finished" | "the crew session emitted its final summary and `claude -p` exited" |
+
+What IS real and addressable in headless mode: the Refinery, Dolt, the MQ queue, MR beads (`<prefix>-wisp-*`), rig identity beads (`<prefix>-rig-*`), agent beads created by `gt crew add`. Everything else gastown-named in this mode is non-operational and should not appear in narration.
+
+Crew workspaces from `gt crew add` are real (full git clones under `~/gt/<rig>/crew/<name>/`), but they are NOT the daemon-supervised crew of full gastown — they are workspaces you populate with a `claude -p` session via tmux. Refer to them as "crew sessions" or "crew workers", not as "polecats" or as part of a "convoy".
+
+See also `gastown/SKILL.md` §"Headless Mode — Which Characters Are Actually Running" for the parallel callout on the gastown side.
+
 ## Choosing the Wave
 
 | Wave | Typical inputs | Typical outputs | Needs MQ submit? | Branch strategy |

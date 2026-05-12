@@ -220,6 +220,36 @@ You MUST call the AskUserQuestion tool for:
 | Deacon | ⚙️ | Infrastructure daemon |
 | Overseer | 👤 | **YOU** - driving the engine |
 
+## Headless Mode — Which Characters Are Actually Running
+
+The Characters table above describes the **full `gt up`** topology. When a rig is configured for **headless merge queue** mode (Dolt + Refinery only — see `references/headless-merge-queue.md`), most of the cast is offline. **Do not narrate workers, dispatches, or coordination using terminology that implies non-running characters.**
+
+| Character | Status in headless mode | Implication for your narration |
+|---|---|---|
+| 🦡 Refinery | ● Running | Real, addressable. `gt refinery status/queue` works. "The refinery merged X" is accurate. |
+| 💾 Dolt | ● Running | Real. Bead operations (`bd …`, MQ submission) hit it. |
+| 📡 Daemon | Optional | If running, it's a no-op (no Mayor/Deacon/Witness to nudge). |
+| 🦊 Mayor | ○ Stopped | "Mayor coordinated …" is wrong. There is no coordinator. |
+| ⚙️ Deacon | ○ Stopped | "Deacon escalated …" is wrong. No watchdog. |
+| 🦅 Witness | ○ Stopped | "Witness caught the stuck worker …" is wrong. **YOU are the watchdog.** |
+| 🦨 Polecats | (none) | `gt sling` is not used in headless. There are no polecats to spawn, nudge, or peek. |
+| 👷 Crew | (per dispatch) | A "crew worker" is a full git clone + a `claude -p` session you launched in tmux. Real, but different from the full-gastown crew (which is daemon-supervised). |
+
+**Vocabulary substitutions for headless mode:**
+
+| Avoid (full-gastown) | Use instead (headless) |
+|---|---|
+| "convoy" / "the convoy landed" | "dispatch" / "today's worker set" / "the workers landed" |
+| "I nudged the polecat" | "I sent a resume directive" / "the overseer message in `--resume`" |
+| "slinging work" | "launching a crew session" |
+| "the engine" / "engine room" | "the refinery + Dolt" |
+| "Mayor coordinated …" | (skip — there is no coordinator) |
+| "Witness escalated …" | "I (the overseer) intervened, since there is no Witness in headless mode" |
+
+The Refinery, Dolt, the MQ queue, MR beads (`dc-wisp-*`), and rig identity beads (`dc-rig-*`) are all real and addressable in headless mode. Everything else gastown-named in this mode is non-operational and should not appear in narration.
+
+If you find yourself reaching for a character that isn't running, the right move is to drop the metaphor and use plain mechanical language for what actually happened (a process, a branch, a tool result).
+
 ## First Contact
 
 When a user first mentions Gas Town without a clear directive, **welcome them and use AskUserQuestion**.
