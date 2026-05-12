@@ -6,6 +6,7 @@ from .exceptions import (
     DeprecatedSqlDefinitionField,
     InvalidReportReference,
     ReportNotFound,
+    ReportRequiresDimension,
 )
 from .get_report import get_report
 from .list_reports import list_reports
@@ -17,6 +18,7 @@ __all__ = [
     "InvalidReportReference",
     "ReportIbisCompiler",
     "ReportNotFound",
+    "ReportRequiresDimension",
     "create_report",
     "delete_report",
     "get_report",

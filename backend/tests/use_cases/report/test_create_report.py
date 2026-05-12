@@ -26,6 +26,7 @@ from app.use_cases.report.column_validation import InvalidColumnMetadata
 from app.use_cases.report.exceptions import (
     DeprecatedSqlDefinitionField,
     InvalidReportReference,
+    ReportRequiresDimension,
 )
 from app.use_cases.view.exceptions import InvalidSourceReference
 from tests.uuidv7_fixtures import DATASET_1, PROJECT_1, VIEW_1
@@ -210,6 +211,47 @@ class TestCreateReport:
                 assert isinstance(error, InvalidColumnMetadata)
             case Success(_):
                 pytest.fail("create_report should fail with invalid column metadata")
+
+    async def test_create_report_rejects_measures_without_dimensions(self, seeded_db: AsyncSession):
+        """create_report should reject reports with measures but no dimensions.
+
+        Per ADR-026 §"Decision outcome" item 2 + DWD-5: a structurally-valid
+        ``columns_metadata`` carrying one or more ``role=measure`` entries
+        AND zero ``role=dimension`` entries is a report-MODELING violation —
+        a dimensionless aggregation has no GROUP BY semantics and the compiler
+        must never see it. The use-case layer (NOT a Pydantic validator)
+        owns this rejection so the analyst sees a NAMED structured error.
+
+        Entity-only columns_metadata (no dims, no measures) remains
+        structurally valid — only measures-without-dimensions is the
+        violation. See ``test_create_report_with_invalid_columns_metadata``
+        for the still-passing entity-only path.
+
+        The rejection happens AFTER source-ref validation and AFTER
+        ``validate_columns_metadata`` (so semantic role/type validation runs
+        first) BUT BEFORE compiler invocation.
+        """
+        set_session(seeded_db)
+
+        result = await create_report(
+            project_id=PROJECT_1,
+            name="loose_count",
+            report_type="fact",
+            source_refs=[{"id": DATASET_1, "type": "dataset"}],
+            columns_metadata=[_COUNT_MEASURE],
+        )
+
+        match result:
+            case Failure(error):
+                assert isinstance(error, ReportRequiresDimension), (
+                    f"expected ReportRequiresDimension, got {type(error).__name__}: {error}"
+                )
+                # The message explains the modeling rule to the analyst.
+                assert "dimension" in str(error).lower(), (
+                    f"modeling-violation message must explain the dimension requirement: {error}"
+                )
+            case Success(_):
+                pytest.fail("create_report must reject measures without dimensions")
 
     async def test_create_report_rejects_deprecated_sql_definition(self, seeded_db: AsyncSession):
         """create_report should reject the deprecated sql_definition input.

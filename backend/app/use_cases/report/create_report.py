@@ -21,6 +21,7 @@ from app.use_cases.report.column_validation import validate_columns_metadata
 from app.use_cases.report.exceptions import (
     DeprecatedSqlDefinitionField,
     InvalidReportReference,
+    ReportRequiresDimension,
 )
 from app.use_cases.report.report_ibis_compiler import ReportIbisCompiler
 from app.use_cases.view.dependency_service import DependencyService
@@ -88,6 +89,9 @@ async def create_report(
         InvalidSourceReference: If any source refs point to non-existent entities.
         InvalidReportReference: If source refs contain report-type references.
         InvalidColumnMetadata: If columns_metadata contains invalid role/type pairs.
+        ReportRequiresDimension: If columns_metadata contains measures but no
+            dimensions (modeling violation per DWD-5). Raised AFTER semantic-
+            role validation but BEFORE compiler invocation.
     """
     # Deprecation rejection runs FIRST — before any DB / dependency work —
     # so the rejection path has zero side effects (no report row, no
@@ -113,14 +117,25 @@ async def create_report(
     if cols:
         validate_columns_metadata(cols)
 
+    # ADR-026 §"Decision outcome" item 2 + DWD-5: a structurally-valid
+    # columns_metadata carrying measures but zero dimensions is a report-
+    # MODELING violation (a dimensionless aggregation has no GROUP BY
+    # grain). Reject at the use-case boundary with a NAMED structured
+    # error BEFORE compiler invocation; the compiler must never see a
+    # dimensionless aggregation. Entity-only columns_metadata (no dims,
+    # no measures) remains structurally valid — only measures-without-
+    # dimensions is the violation.
+    has_measure = any(c.get("semantic_role") == "measure" for c in cols)
+    has_dimension = any(c.get("semantic_role") == "dimension" for c in cols)
+    if has_measure and not has_dimension:
+        raise ReportRequiresDimension()
+
     # Per ADR-026 MR-3: the storage ``sql_definition`` is ALWAYS derived by
     # :class:`ReportIbisCompiler` from structured columns_metadata. When
     # cols carry any role=dimension or role=measure entry the compiler
     # composes an aggregation; otherwise the storage column gets an empty
     # string (the no-aggregation case — pure entity-only or fully empty
-    # columns_metadata. Step 03-04 introduces the modeling-violation
-    # rejection for measures-without-dimensions; until then a bare
-    # entity-only report is a structurally valid persistence shape).
+    # columns_metadata).
     if any(c.get("semantic_role") in _AGGREGATING_ROLES for c in cols):
         schema = await _derive_source_schema(repositories, refs)
         compiler = ReportIbisCompiler()

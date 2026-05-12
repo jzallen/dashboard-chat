@@ -26,6 +26,37 @@ class InvalidReportReference(DomainException):
         super().__init__("Reports cannot reference other reports (no mart-to-mart dependencies)")
 
 
+class ReportRequiresDimension(DomainException):
+    """Raised when a report is submitted with measures but no dimensions.
+
+    Per ADR-026 §"Decision outcome" item 2 + DWD-5 the report-creation use
+    case rejects a structurally-valid-but-meaningless aggregation — one or
+    more ``role=measure`` columns combined with zero ``role=dimension``
+    columns — at the use-case boundary with a NAMED structured error.
+
+    A dimensionless aggregation has no GROUP BY semantics; the compiler
+    must never see it. A future legitimate scalar-mart use case (a single
+    global metric) is a typed variant, NOT a relaxation of this contract.
+
+    The rejection lives at the use-case boundary (not the schema layer) so
+    the analyst sees a structured error naming the modeling rule. Entity-
+    only columns_metadata remains structurally valid — only measures-
+    without-dimensions is the violation.
+    """
+
+    _type = "REPORT_REQUIRES_DIMENSION"
+    _title = "Report Requires Dimension"
+    _status_code = 400
+
+    def __init__(self):
+        super().__init__(
+            "A report requires at least one dimension to group by. The "
+            "submitted columns_metadata contains one or more measures but "
+            "zero dimensions — add a dimension column (e.g., a categorical "
+            "or time field) to define the aggregation grain."
+        )
+
+
 class DeprecatedSqlDefinitionField(DomainException):
     """Raised when a caller supplies the deprecated free-form ``sql_definition``.
 
