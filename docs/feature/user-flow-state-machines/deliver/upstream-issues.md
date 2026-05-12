@@ -82,3 +82,28 @@ tickets. Each entry records:
   outside this feature's DELIVER scope). When that ticket lands, remove
   the `@skip` tags from the affected @us-003 / @us-004 / @us-005 /
   @us-006 scenarios and re-run; the step glue is already in place.
+
+---
+
+## DI-4 — Step 01-03 execution-log gap (cross-worker handoff)
+
+- Surfaced in: orchestrator integrity check at start of Step 03-01.
+- Symptom: `execution-log.json` records `01-03` PREPARE / RED_ACCEPTANCE /
+  RED_UNIT but lacks GREEN / COMMIT. The implementation (active-scope
+  resolver, deep-link endpoint, scope-resolver vitest) is present on
+  disk and shipped to `main` per the upstream Slice-1 merge (crew worker
+  `maya`); only the local DES log entries were never written.
+- Impact: `verify_deliver_integrity` flags 01-03 as `3/5 phases`. The
+  Refinery merge-queue gate (`./tools/test/test.sh --backend`) is
+  unaffected because backend regression coverage runs there, not via
+  DES. The flag does NOT block Slice 3 from shipping.
+- Resolution path: `/nw-finalize` handles. Two clean options for the
+  finalize session:
+  1. Re-execute 01-03 GREEN + COMMIT phases via the DES CLI from a
+     dispatched crafter that confirms the implementation already on
+     disk satisfies the AC, then logs the missing phases.
+  2. Mark the 01-03 partial as approved-skip with a CHECKPOINT_PENDING
+     reason quoting the upstream maya-shipped commits.
+  The orchestrator chose option (2) deferral for Step 03-01 dispatch so
+  the architectural payoff (US-005 freeze + replay) could land without
+  burning the dispatch budget on retroactive log cleanup.
