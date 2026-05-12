@@ -19,7 +19,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from ...config import get_settings
-from ...utils.sql_safety import validate_identifier
+from ...utils.sql_safety import quote_ident, validate_identifier
 from ..exceptions import LakeRepositoryError
 from ._pg_duckdb_query import build_read_parquet_preview_query, decode_wrapped_rows
 
@@ -244,7 +244,9 @@ class BaseLakeRepository:
         s3_path = self._build_s3_path(storage_path)
         pool = await self._get_query_engine_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(f"SELECT typeof(\"{column}\") AS col_type FROM read_parquet('{s3_path}') LIMIT 1")
+            row = await conn.fetchrow(
+                f"SELECT typeof({quote_ident(column)}) AS col_type FROM read_parquet('{s3_path}') LIMIT 1"
+            )
             return str(row["col_type"]).lower()
 
     async def preview_cleaning_operation(

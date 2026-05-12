@@ -1,0 +1,144 @@
+{
+  "roadmap": {
+    "project_id": "ibis-as-only-sql-compiler",
+    "created_at": "2026-05-12T04:30:00Z",
+    "total_steps": 5,
+    "phases": 1,
+    "validation": {
+      "status": "approved",
+      "approved_by": "DELIVER orchestrator (azurite worker) — decomposition matches distill Phase 03 scope + ADR-026 §Decision outcome items 2/3 + MR-3 row; step 03-06 deferred to MR-3.5 per deliver/wave-decisions.md DWD-DELIVER-1",
+      "approved_on": "2026-05-12"
+    },
+    "source_plan": "docs/feature/ibis-as-only-sql-compiler/distill/roadmap.json",
+    "scope_note": "Phase 03 only (MR-3). Phases 01 + 02 already on main (21fda79 / f7a6363 / ada7c0a / 03a1cdf). Step 03-06 (backend addDimension/addMeasure dispatchers) deferred to follow-up MR-3.5 per deliver/wave-decisions.md DWD-DELIVER-1 — milestone-2 acceptance contract is fully observable through steps 03-01..03-05. Phase 04 + 05 ship on later crew clones."
+  },
+  "implementation_scope": {
+    "source_directories": [
+      "backend/app/use_cases/report/",
+      "backend/app/routers/schemas/",
+      "backend/app/routers/",
+      "backend/app/controllers/",
+      "backend/migrations/versions/",
+      "backend/tests/use_cases/report/",
+      "agent/lib/chat/",
+      "agent/test/chat/",
+      "tests/acceptance/ibis-as-only-sql-compiler/"
+    ]
+  },
+  "phases": [
+    {
+      "id": "03",
+      "name": "MR-3 ReportIbisCompiler + dispatcher wiring + sqlDefinition removal (closes Gap 2)",
+      "description": "Build ReportIbisCompiler; rewire create_report to compile from structured dims/measures (closing the free-text vector); reject deprecated sqlDefinition + measures-without-dimensions at use-case boundary; strip sqlDefinition + expr from agent tool schemas; migrate pre-prod report SQL.",
+      "default_agent": "nw-software-crafter",
+      "default_deps_strategy": "sequential",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "ReportIbisCompiler module + driver/acceptance scaffold + aggregation scenario GREEN",
+          "agent": "nw-software-crafter",
+          "deps": [],
+          "scenario": "milestone-2 aggregation contract: one dimension + one measure compiles to GROUP BY dim AGG(col) SQL",
+          "test_file": "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_aggregation.py",
+          "scenario_name": "An analyst composes a dimension and a measure and the compiled report SQL aggregates correctly",
+          "criteria": "New module backend/app/use_cases/report/report_ibis_compiler.py exposes a pure ReportIbisCompiler.generate_executable(*, source_refs, columns_metadata, schema) function-or-class returning DuckDB-dialect SQL produced via ibis.Table.group_by(dims).aggregate(measures) + ibis.to_sql(dialect='duckdb'); Unit tests in backend/tests/use_cases/report/test_report_ibis_compiler.py cover one-dim+one-count, all six measure semantic_types (sum/count/count_distinct/avg/min/max), and the ibis-literal-escaping invariant (no f-string interpolation of names anywhere); ViewAcceptanceDriver gains create_report (POST), evaluate_report_sql, and read_mart_sql helpers (mirrors create_view shape) under tests/acceptance/ibis-as-only-sql-compiler/driver.py; test_milestone_2_aggregation.py drives the @milestone_2 aggregation scenario from RED to GREEN via the compose stack — compiled SQL contains GROUP BY region + COUNT(order_id), dbt eject contains mart_orders_by_region whose SQL also groups by region, evaluating against fixture orders returns one row per distinct region; create_report uses ReportIbisCompiler to derive sql_definition when columns_metadata carries any role=dimension or role=measure column (storage column stays string, populated by the compiler); Backend gate ./tools/test/test.sh --backend stays GREEN; Step-ID trailer present on commit",
+          "files_to_modify": [
+            "backend/app/use_cases/report/report_ibis_compiler.py",
+            "backend/app/use_cases/report/create_report.py",
+            "backend/app/use_cases/report/__init__.py",
+            "backend/tests/use_cases/report/test_report_ibis_compiler.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/driver.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/conftest.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_aggregation.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/fixtures/orders.csv"
+          ],
+          "implementation_notes": "READ FIRST: ViewIbisCompiler at backend/app/use_cases/view/sql_generator.py (the shape mirror) — note _build_ibis_table assembles a per-source schema from columns / filters / joins. Reports have a different shape: source_refs (datasets or views), columns_metadata with role=entity|dimension|measure + semantic_type. The compiler needs the source schema (column dtypes) to build the ibis.table(...) base — fetch this from the existing dataset/view schema_config the way create_view does (use ProjectService / DependencyService precedent). For unit tests, pass an explicit schema dict; for the use-case wiring, derive the schema from the fetched source via repositories.metadata. Driver pattern: driver.create_report mirrors driver.create_view — POST /api/projects/{pid}/reports with body { name, report_type, source_refs, columns_metadata, materialization } (NO sql_definition once step 03-01 lands the new compiler — but during this step, the legacy parameter still exists; PASS sql_definition='' from the driver). Acceptance test reads response.data.attributes.sql_definition and asserts predicate_present(sql, 'group by', '\"region\"') and predicate_present(sql, 'count', '\"order_id\"'). DuckDB evaluation: register orders fixture under both 'orders' (compose backend produces the raw dataset name) and 'stg_orders' (dbt mart references the staging model). PROHIBITED per DWD-4: never interpolate column names via f-strings outside an ibis literal context. Use ibis.table({ ... }, name=source_name) for the base and getattr(table, col_name) for dim selection. For measures, use the ibis aggregation methods: sum=col.sum(), count=col.count(), count_distinct=col.nunique(), avg=col.mean(), min=col.min(), max=col.max(). orders.csv fixture must exist with columns order_id, region (and optionally amount, quarter for step 03-02)."
+        },
+        {
+          "id": "03-02",
+          "name": "Multi-dimension multi-measure composition scenario GREEN",
+          "agent": "nw-software-crafter",
+          "deps": ["03-01"],
+          "scenario": "milestone-2 composition contract: two dimensions + three measures (count, sum, avg) compose into correctly aggregated SQL",
+          "test_file": "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_composition.py",
+          "scenario_name": "Two dimensions and three measures compose into a correctly aggregated report",
+          "criteria": "test_milestone_2_composition.py drives the @milestone_2 composition scenario RED→GREEN: report 'regional_quarterly_summary' with categorical dimensions region+quarter and measures count(order_id), sum(amount), avg(amount); compiled SQL contains GROUP BY region, quarter and the three aggregations; evaluating against orders fixture returns one row per distinct region-quarter pair with each measure computed independently; ReportIbisCompiler unit tests extended for multi-dim/multi-measure including the all-three-aggregations-on-the-same-column edge case; If orders.csv lacks columns quarter or amount, the fixture is extended with those columns and the dataset upload path through the driver picks them up; Backend gate still GREEN; Step-ID trailer present",
+          "files_to_modify": [
+            "backend/app/use_cases/report/report_ibis_compiler.py",
+            "backend/tests/use_cases/report/test_report_ibis_compiler.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_composition.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/fixtures/orders.csv"
+          ],
+          "implementation_notes": "READ FIRST: the step 03-01 compiler implementation; the fixture file at fixtures/orders.csv. Multi-measure on same column: avg(amount) and sum(amount) must each get a deterministic alias the analyst can read (e.g. 'amount_avg', 'amount_sum') — derive from the columns_metadata entry's name field, not the source column. The columns_metadata entry shape per the agent's tool schema: { name: '<output column>', semantic_role: 'measure', semantic_type: 'sum', source_column?: '<input col>' } — the compiler must use entry.name for the alias and entry.source_column (or entry.name as fallback) for the input. Evaluation assertion can be tolerant about row order — assert {(region, quarter): {alias: value}} set equality rather than list equality. orders.csv extension keeps walking-skeleton + milestone-1 backwards compatible — existing columns order_id, region remain; add amount (decimal), quarter (text) without breaking the existing reads."
+        },
+        {
+          "id": "03-03",
+          "name": "Deprecation contract: drop sqlDefinition input + structured rejection + pre-prod migration",
+          "agent": "nw-software-crafter",
+          "deps": ["03-02"],
+          "scenario": "milestone-2 deprecation contract: createReport rejects free-form sql_definition with structured error",
+          "test_file": "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_deprecation_contract.py",
+          "scenario_name": "A report-creation call carrying the deprecated free-form SQL field is rejected with a structured error",
+          "criteria": "New DomainException DeprecatedSqlDefinitionField in backend/app/use_cases/report/exceptions.py raised by create_report when caller supplies sql_definition (any non-None / non-empty value); ReportCreate Pydantic schema and create_report use-case signature stop accepting sql_definition as an input parameter — the storage column is populated only via the compiler; ProjectService / use-case decorator stack unchanged (@handle_returns / @with_repositories); router schemas/report.py ReportCreate drops sql_definition; controller passes the supplied sql_definition (if present in the request body) into a dedicated deprecation-rejection path that returns 400 with type/title/message identifying 'sql_definition' as the deprecated field; New migration backend/migrations/versions/<rev>_clear_legacy_report_sql.py one-time clears sql_definition='' for all existing reports (pre-prod, per ADR-026 §Decision outcome item 2 — no backfill, no flag-gate); Existing test_create_report.py tests adapted (these tests pass sql_definition='SELECT * FROM source' as a literal — under brownfield triage L1 catalog they are legacy-mechanism tests; rewrite to pass columns_metadata with at least one dimension column and assert compiled sql_definition contains SELECT/FROM via the new compiler); Walking-skeleton + milestone-1 + 03-01 + 03-02 acceptance scenarios still GREEN; Step-ID trailer present",
+          "files_to_modify": [
+            "backend/app/use_cases/report/create_report.py",
+            "backend/app/use_cases/report/exceptions.py",
+            "backend/app/routers/schemas/report.py",
+            "backend/app/controllers/report_controller.py",
+            "backend/app/routers/reports.py",
+            "backend/migrations/versions/26_05_12_clear_legacy_report_sql.py",
+            "backend/tests/use_cases/report/test_create_report.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_deprecation_contract.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/driver.py"
+          ],
+          "implementation_notes": "READ FIRST: backend/migrations/env.py for SQLite/PostgreSQL compatibility rules; backend/migrations/versions/ for the existing revision naming convention; the alembic-migration skill at .claude/skills/alembic-migration. The migration is a one-shot UPDATE reports SET sql_definition='' — safe for pre-prod since the compiler regenerates on next create_report. Downgrade is intentionally a no-op (you can't reconstruct the original SQL). Controller deprecation path: the router can keep accepting the field at HTTP layer (Pydantic schema can have a temporary 'reject if present' validator OR simpler — keep sql_definition as an optional field in ReportCreate, pass it through to the use case, and have the use case raise DeprecatedSqlDefinitionField when truthy). Either approach satisfies the contract that the analyst SEES a named deprecation error; per DWD-5 the use-case boundary is the cleanest place. Driver gains driver.try_create_report mirroring try_create_view to capture 4xx envelopes. Acceptance test asserts status 400 + body.error.type == 'DEPRECATED_SQL_DEFINITION_FIELD' (or whatever the DomainException _type emits) + body.error.message names 'sql_definition'. test_create_report.py rewrites: the test_create_report_with_required_fields and test_create_report_with_all_fields tests should now pass columns_metadata=[{name: 'order_id', semantic_role: 'measure', semantic_type: 'count', source_column: 'order_id'}, {name: 'region', semantic_role: 'dimension', semantic_type: 'categorical', source_column: 'region'}] and assert the report's sql_definition contains GROUP BY. Tests that explicitly assert the LITERAL string 'SELECT * FROM source' are legacy-mechanism tests at L1 — rewrite them to assert the new contract."
+        },
+        {
+          "id": "03-04",
+          "name": "Modeling-violation rejection: measures without dimensions",
+          "agent": "nw-software-crafter",
+          "deps": ["03-03"],
+          "scenario": "milestone-2 modeling-violation contract: report with measures but no dimensions is rejected at use-case boundary",
+          "test_file": "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_modeling_violation.py",
+          "scenario_name": "A report submitted with measures but no dimensions is rejected as a report-modeling violation",
+          "criteria": "New DomainException ReportRequiresDimension in exceptions.py with _type=REPORT_REQUIRES_DIMENSION raised by create_report when columns_metadata contains at least one role=measure but zero role=dimension entries; Use-case boundary (NOT schema/Pydantic) per DWD-5 rationale; Error message explains 'a report requires at least one dimension to group by'; test_milestone_2_modeling_violation.py drives the scenario RED→GREEN — creating 'loose_count' with one count measure on order_id and no dimensions returns 400 with the structured modeling-violation error; Backend unit test added in test_create_report.py for the same contract at the use-case level; Walking-skeleton + milestone-1 + 03-01..03-03 scenarios still GREEN; Step-ID trailer present",
+          "files_to_modify": [
+            "backend/app/use_cases/report/create_report.py",
+            "backend/app/use_cases/report/exceptions.py",
+            "backend/tests/use_cases/report/test_create_report.py",
+            "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_modeling_violation.py"
+          ],
+          "implementation_notes": "Position the check AFTER source_refs validation and AFTER columns_metadata semantic validation but BEFORE compiler invocation — the compiler should never see a dimensionless report. Entities (role=entity) are not dimensions for grouping purposes; the count is over role=dimension specifically. Existing tests use columns_metadata=[{name: 'id', semantic_role: 'entity', semantic_type: 'primary'}] which has no measures and no dimensions; those tests must remain green (no measure → no violation). The boundary contract per DWD-5: if a future scalar-mart use case surfaces, the answer is a typed variant — NOT relaxing this check."
+        },
+        {
+          "id": "03-05",
+          "name": "Agent tool-schema cleanup: drop createReport.sqlDefinition + addDimension.expr + addMeasure.expr; schema-violation scenario GREEN",
+          "agent": "nw-software-crafter",
+          "deps": ["03-04"],
+          "scenario": "milestone-2 input-surface contract: agent tool schema rejects free-form expr field on addMeasure before reaching backend",
+          "test_file": "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_schema_violation.py",
+          "scenario_name": "A measure-creation call carrying a free-form expression field is rejected at the agent's tool-schema layer before reaching the backend",
+          "criteria": "agent/lib/chat/reportToolDefinitions.ts: createReport tool parameters drop the sqlDefinition field entirely (Zod schema no longer includes it); addDimension tool parameters drop the expr field entirely; addMeasure tool parameters drop the expr field entirely; A unit test in agent/test/chat/ (new file reportToolDefinitions.test.ts OR extension of an existing test) asserts that Zod schema parsing of { name: 'x', semanticType: 'sum', expr: '...' } against the addMeasure tool's parameters fails the .parse / .safeParse with a schema violation naming 'expr' as unrecognized — i.e. the schema is strict OR explicitly does not include the field; Acceptance test at test_milestone_2_schema_violation.py drives the agent-schema rejection contract: the test imports the tool definition via a Node child process or via a TS-test-harness pattern that drives reportToolDefinitions.getReportTools() directly, verifies addMeasure's parameter schema does not accept expr, and verifies that the backend is never invoked (no HTTP call recorded); Walking-skeleton + milestone-1 + 03-01..03-04 scenarios still GREEN; Backend gate still GREEN; Worker test gate (npm run test:worker) GREEN; Step-ID trailer present",
+          "files_to_modify": [
+            "agent/lib/chat/reportToolDefinitions.ts",
+            "agent/test/chat/reportToolDefinitions.test.ts",
+            "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_schema_violation.py"
+          ],
+          "implementation_notes": "READ FIRST: existing zod schema patterns at agent/lib/chat/viewToolDefinitions.ts (if exists) or other tool-definition modules; agent/test/chat/ for the test harness pattern. Zod object schemas are by default 'strict' enough that unrecognized keys pass parse but are dropped — for the contract to be 'schema rejects expr', use z.object({...}).strict() so unknown fields produce a parse error. Update the createReport schema similarly (.strict()) to enforce sqlDefinition removal at the parse boundary, not just by omission. The acceptance test for the schema-violation scenario CAN be a Python test that invokes a thin Node subprocess executing a check-script — OR — equivalent: a Python test that asserts the TS source no longer contains 'expr:' or 'sqlDefinition:' in the createReport/addDimension/addMeasure tool definitions (file-content assertion at minimum). The contract is OBSERVABLE-BY-ANALYST: the agent's tool surface NO LONGER OFFERS the field. A grep-based assertion is faithful to the contract per the @input_surface_contract docblock — the field does not exist; the backend is never invoked because no schema-violation gets past parse."
+        }
+      ]
+    }
+  ],
+  "exit_criteria_phase_03": [
+    "All 5 milestone-2 scenarios GREEN (compose stack)",
+    "Walking-skeleton + 5 milestone-1 scenarios still GREEN — zero regression",
+    "createReport.sqlDefinition field absent from agent/lib/chat/reportToolDefinitions.ts (grep)",
+    "expr field absent from addDimension and addMeasure tool definitions (grep)",
+    "backend/app/use_cases/report/create_report.py does not accept sql_definition: str parameter (signature check)",
+    "Reviewer approves: dispatcher wiring obeys @handle_returns / @with_repositories; ibis literal escaping closes Gap 2 by construction; no sqlglot AST validation; no .replace(\"'\",\"''\") defenses",
+    "Mutation testing on the new ReportIbisCompiler ≥ 80% kill rate (per-feature strategy)",
+    "Backend gate ./tools/test/test.sh --backend GREEN",
+    "Acceptance suite tests/acceptance/ibis-as-only-sql-compiler/ GREEN end-to-end"
+  ],
+  "manual_review_gate_after_phase_03": "All milestone-2 scenarios GREEN. createReport.sqlDefinition removed from both surfaces (agent tool schema + backend use case). Free-text expr fields removed from addDimension/addMeasure. No backfill/grandfather/flag-gate — pre-production codebase per ADR-026 §Decision outcome item 2. ReportIbisCompiler is the unique report-tier SQL compiler."
+}
