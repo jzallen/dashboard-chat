@@ -11,5 +11,11 @@
     "security-guidance@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true
   },
-  "teammateMode": "auto"
+  "teammateMode": "auto",
+  "permissions": {
+    "deny": [
+      "Edit(.husky/pre-commit)",
+      "Write(.husky/pre-commit)"
+    ]
+  }
 }
