@@ -14,7 +14,7 @@
       "scenarios_to_unskip": [
         "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 0 — scaffolding contract :: ChatEventSchema parses every event the worker may emit",
         "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 0 — scaffolding contract :: Worker forwards JWT via auth-proxy when calling backend",
-        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 0 — MockSSESource contract :: all 5 scenarios"
+        "reverse-proxy/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 0 — MockSSESource contract :: all 5 scenarios"
       ],
       "files_changed_estimate": "agent: events.ts, backend-client.ts, dispatchers/index.ts, handleChat.ts (modify); fixtures/groq-replay.ts. frontend: events.ts, dispatcher.ts, eventHandler.ts, mockSSESource.ts. ~400-500 LoC.",
       "exit_criteria": [
@@ -32,11 +32,11 @@
       "id": "pr1",
       "title": "PR 1 — Cleaning tools migrated to worker dispatch (UNBLOCKS api-driven-user-flow-tests)",
       "polecat_command": "/nw-deliver",
-      "scope": "Implement agent/lib/chat/dispatchers/cleaning.ts: trimWhitespace, standardizeCase, fillNulls, mapValues, applyCleaningTransform. All emit transform_applied. Add transform_applied + error_occurred + turn_done cases to frontend eventHandler.ts. Delete corresponding cleaning-tool branches in frontend/src/core/toolCalls/executeToolCall.ts. Un-skip the walking skeleton.",
+      "scope": "Implement agent/lib/chat/dispatchers/cleaning.ts: trimWhitespace, standardizeCase, fillNulls, mapValues, applyCleaningTransform. All emit transform_applied. Add transform_applied + error_occurred + turn_done cases to frontend eventHandler.ts. Delete corresponding cleaning-tool branches in reverse-proxy/src/core/toolCalls/executeToolCall.ts. Un-skip the walking skeleton.",
       "scenarios_to_unskip": [
         "agent/test/chat/acceptance/walking-skeleton.test.ts :: walking skeleton (single scenario)",
         "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 1 — cleaning tools dispatch via worker (3 scenarios)",
-        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 1 — cleaning event reactions (3 scenarios)"
+        "reverse-proxy/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 1 — cleaning event reactions (3 scenarios)"
       ],
       "files_changed_estimate": "agent: dispatchers/cleaning.ts (new), tools.ts (remove cleaning defs), handleChat.ts (attach dispatchers). frontend: eventHandler.ts (3 cases), executeToolCall.ts (delete cleaning branches). ~300-400 LoC.",
       "exit_criteria": [
@@ -57,7 +57,7 @@
       "scope": "Implement agent/lib/chat/dispatchers/mutations.ts: addRow, deleteRow, renameColumn, undoCleaningTransform, reEnableCleaningTransform. Emit row_added / row_deleted / column_renamed / transform_undone (with mode) / transform_re_enabled. Add corresponding cases to frontend eventHandler.ts. Delete mutation branches in executeToolCall.ts.",
       "scenarios_to_unskip": [
         "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 2 — row and column mutations dispatch via worker (6 scenarios)",
-        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 2 — mutation event reactions (2 scenarios)"
+        "reverse-proxy/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 2 — mutation event reactions (2 scenarios)"
       ],
       "files_changed_estimate": "agent: dispatchers/mutations.ts (new), tools.ts (remove mutation defs), handleChat.ts (attach dispatchers). frontend: eventHandler.ts (5 cases), executeToolCall.ts (delete mutation branches). ~350-450 LoC.",
       "exit_criteria": [
@@ -74,12 +74,12 @@
       "id": "pr3",
       "title": "PR 3 — UI directives migrated; legacy code deleted",
       "polecat_command": "/nw-deliver",
-      "scope": "Implement agent/lib/chat/dispatchers/ui.ts: sortTable, filterTable, replaceColumnFilters, clearFilters. UI-only — no backend calls. Emit sort_directive / filter_directive / filters_cleared. Add cases to frontend eventHandler.ts. Modify direct-UI click handlers (column header sort/filter) to call applyDirective. DELETE frontend/src/core/toolCalls/executeToolCall.ts entirely. Remove default-throws from eventHandler.ts (every variant now handled). Final cleanup of any legacy parser branches in chatStream.ts.",
+      "scope": "Implement agent/lib/chat/dispatchers/ui.ts: sortTable, filterTable, replaceColumnFilters, clearFilters. UI-only — no backend calls. Emit sort_directive / filter_directive / filters_cleared. Add cases to frontend eventHandler.ts. Modify direct-UI click handlers (column header sort/filter) to call applyDirective. DELETE reverse-proxy/src/core/toolCalls/executeToolCall.ts entirely. Remove default-throws from eventHandler.ts (every variant now handled). Final cleanup of any legacy parser branches in chatStream.ts.",
       "scenarios_to_unskip": [
         "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: PR 3 — UI directives dispatch via worker (3 scenarios)",
         "agent/test/chat/acceptance/worker-tool-dispatch.test.ts :: structural — backend stays chat-unaware (1 scenario)",
-        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 3 — UI directive event reactions (4 scenarios)",
-        "frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: AC2.1 — exhaustiveness via TS types"
+        "reverse-proxy/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: PR 3 — UI directive event reactions (4 scenarios)",
+        "reverse-proxy/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx :: AC2.1 — exhaustiveness via TS types"
       ],
       "files_changed_estimate": "agent: dispatchers/ui.ts (new), tools.ts (remove UI defs), handleChat.ts. frontend: eventHandler.ts (3 cases + remove default-throws), executeToolCall.ts (delete entire file), direct-UI click handlers (modify to call applyDirective). ~300-400 LoC + significant deletions.",
       "exit_criteria": [

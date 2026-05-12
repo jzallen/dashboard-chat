@@ -10,7 +10,7 @@ DISTILL surfaced two gaps that DESIGN didn't address. Neither contradicts DISCUS
 
 **Reality**: `package.json` declares `workspaces: ["frontend", "agent", "auth-proxy"]`. There is no `shared/` directory at the repo root and no `shared/chat/` package. CLAUDE.md mentions `shared/chat/` aspirationally but no such code exists. Frontend types and agent types currently live in their respective trees with no cross-import.
 
-**Resolution (DISTILL-time, see TWD-8)**: scaffolds live in `agent/lib/chat/events.ts` (canonical Zod schema) and `frontend/src/core/chat/events.ts` (re-export from agent OR verbatim duplicate). DISTILL's acceptance scenarios assert **runtime schema equivalence** (every worker-emitted event parses against the FE schema, vice versa) so the location decision is movable at DELIVER time without test churn.
+**Resolution (DISTILL-time, see TWD-8)**: scaffolds live in `agent/lib/chat/events.ts` (canonical Zod schema) and `reverse-proxy/src/core/chat/events.ts` (re-export from agent OR verbatim duplicate). DISTILL's acceptance scenarios assert **runtime schema equivalence** (every worker-emitted event parses against the FE schema, vice versa) so the location decision is movable at DELIVER time without test churn.
 
 **Polecat options at DELIVER time**:
 1. Verbatim duplicate + a one-line sync test (`expect(agentSchema).toEqual(frontendSchema)`). Smallest change.

@@ -123,7 +123,7 @@ vi.mock("../../../lib/stream/useEntityContext", () => ({
  *
  * The v6 wire format (served by `JsonToSseTransformStream` and consumed by
  * `readSSEStream`) is a sequence of `data: <json>\n\n` frames. See
- * `frontend/src/core/chat/services/chatStream.ts` for the full dispatch table
+ * `reverse-proxy/src/core/chat/services/chatStream.ts` for the full dispatch table
  * and `agent/test/chat/_v6Mocks.ts` for the canonical helper this mirrors.
  *
  * Supported synthetic event types (input shape stays test-friendly so call
@@ -334,7 +334,7 @@ describe("ChatProvider", () => {
   // chunks at the agent boundary (`agent/lib/chat/pipeChatStream.ts`) and
   // translates them into typed `data-chat-event` parts; consequently the
   // frontend's `readSSEStream` always reports `toolCalls: []` to `onDone`
-  // (see `frontend/src/core/chat/services/chatStream.ts`). The user-supplied
+  // (see `reverse-proxy/src/core/chat/services/chatStream.ts`). The user-supplied
   // `ToolHandler.executeToolCall` is therefore no longer invoked from the
   // SSE path. Tool-event behavior is covered end-to-end by
   // `core/chat/__tests__/chatStream.test.ts` (frame dispatch) and

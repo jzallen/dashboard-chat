@@ -10,7 +10,7 @@
 The chat event vocabulary at `shared/chat/events.ts` (post-F2 SSOT promotion in commit `5eafffa`, bead `dc-bj2.2`) is a single Zod discriminated union. It mixes two semantically different classes of records:
 
 - **Domain events** — outcomes of actions taken against backend state. Examples: `transform_applied`, `row_added`, `column_renamed`, `tool_call_failed`, `turn_done`. Every domain event is a fact about a state change a downstream consumer may want to react to, persist, or replay.
-- **UI directives** — instructions to the FE renderer that have no backend correlate. Examples: `sort_directive`, `filter_directive`, `filters_cleared`. Every UI directive is ephemeral and exists only to drive TanStack table render state via `applyDirective` (`frontend/src/core/chat/dispatcher.ts`).
+- **UI directives** — instructions to the FE renderer that have no backend correlate. Examples: `sort_directive`, `filter_directive`, `filters_cleared`. Every UI directive is ephemeral and exists only to drive TanStack table render state via `applyDirective` (`reverse-proxy/src/core/chat/dispatcher.ts`).
 
 Phase 1 Epic D (api-driven-user-flow-tests) needs a Python harness that asserts on the SSE stream. A headless consumer wants to filter "domain events only" — directives that don't change backend state are uninteresting noise to a state-assertion test. With the current single-union shape there is no schema-level signal distinguishing the two classes; the consumer would need a hand-maintained allowlist of variant types.
 
@@ -132,9 +132,9 @@ Doubles the protocol surface. FE clients must subscribe to two streams and merge
 ## References
 
 - Wire schema home: `shared/chat/events.ts` (post-F2; commit `5eafffa`, bead `dc-bj2.2`).
-- FE exhaustive switch: `frontend/src/core/chat/eventHandler.ts`.
-- Directive applier: `frontend/src/core/chat/dispatcher.ts` :: `applyDirective`.
-- Cross-schema sync test removed by F2: `frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx:112-134` (pre-F2 form).
+- FE exhaustive switch: `reverse-proxy/src/core/chat/eventHandler.ts`.
+- Directive applier: `reverse-proxy/src/core/chat/dispatcher.ts` :: `applyDirective`.
+- Cross-schema sync test removed by F2: `reverse-proxy/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx:112-134` (pre-F2 form).
 - Codegen spike scratch workspace (not committed): `/tmp/codegen-spike/` on dave's prior session.
 - Phase 0 DIVERGE source: mail `dc-wisp-vp79` (mayor GO), `dc-wisp-ctyh` (dave's reply with the three ADRs).
 - Ratification trail: `dc-wisp-z02g` ("RATIFIED ✓ Selected option (two parallel unions in shared/chat) is approved as written. No changes."), `dc-wisp-n6ar` (caveat dropped), `dc-66o` (OQ #3 closing inline approved).

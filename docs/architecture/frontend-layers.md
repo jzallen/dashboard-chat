@@ -36,7 +36,7 @@ BrowserRouter
 - `StreamProvider` must wrap `ChatProvider` because chat persistence writes to Stream channels
 - `AuthProvider` is outermost because all downstream providers need the auth token
 
-**Source:** `frontend/App.tsx` → `frontend/src/ui/components/AppShell/index.tsx`
+**Source:** `reverse-proxy/App.tsx` → `reverse-proxy/src/ui/components/AppShell/index.tsx`
 
 ### Provider Responsibilities
 
@@ -74,7 +74,7 @@ User types message
 7. Component re-renders with updated messages / table state
 ```
 
-**Source:** `frontend/src/ui/context/ChatContext/hooks/useChatEngine.tsx` — `submitText()` function
+**Source:** `reverse-proxy/src/ui/context/ChatContext/hooks/useChatEngine.tsx` — `submitText()` function
 
 ### Context Routing
 
@@ -93,7 +93,7 @@ setContext(type: "dataset" | "view" | "report" | null, id: string | null)
 
 When `contextType` is null and the user mentions a dataset, the agent calls `resolve_dataset`. The frontend intercepts this via the custom `"r:"` SSE prefix, searches for the dataset via `/api/projects/{projectId}/datasets/search?q=name`, sets the context, and re-submits the message.
 
-**Source:** `frontend/src/core/chat/services/fulfillRequest.ts`
+**Source:** `reverse-proxy/src/core/chat/services/fulfillRequest.ts`
 
 ### Tool Handler Registration
 
@@ -126,7 +126,7 @@ The agent uses the **Vercel AI SDK data stream protocol**. Each SSE line has a n
 
 The `"r:"` prefix is a custom extension not part of the standard AI SDK protocol. The agent injects it by transforming the SSE stream when a `resolve_dataset` tool call is detected (see `agent/lib/chat/handleChat.ts`).
 
-**Source:** `frontend/src/core/chat/services/chatStream.ts` — `readSSEStream()`
+**Source:** `reverse-proxy/src/core/chat/services/chatStream.ts` — `readSSEStream()`
 
 ## Tool Execution Pipeline
 
@@ -168,7 +168,7 @@ if (isSyncTool(parsed)) {
 return { success: true, message: "Filter applied" };
 ```
 
-**Source:** `frontend/src/core/toolCalls/executeToolCall.ts`, `frontend/src/core/toolCalls/types.ts`
+**Source:** `reverse-proxy/src/core/toolCalls/executeToolCall.ts`, `reverse-proxy/src/core/toolCalls/types.ts`
 
 ## Data Fetching (TanStack Query)
 
@@ -198,7 +198,7 @@ export const viewKeys = {
 };
 ```
 
-**Source:** `frontend/src/lib/queryKeys.ts`
+**Source:** `reverse-proxy/src/lib/queryKeys.ts`
 
 ### Stale Time Configuration
 
@@ -210,7 +210,7 @@ export const viewKeys = {
 | Transforms | 10s | Chat tool calls invalidate after mutations |
 | Session list | 10s | New sessions should appear when created |
 
-**Source:** `frontend/src/ui/hooks/queryConfig.ts`
+**Source:** `reverse-proxy/src/ui/hooks/queryConfig.ts`
 
 ### Mutation Pattern
 
@@ -255,7 +255,7 @@ The factory accepts an injected `fetchFn` that wraps `fetch()` with auth headers
 
 **Types exported:** `Dataset`, `Project`, `View`, `Report`, `Session`, `QueryEngineDetail`, `SqlAccessStatus`, `ApiError`
 
-**Source:** `frontend/src/core/dataCatalog/client.ts`
+**Source:** `reverse-proxy/src/core/dataCatalog/client.ts`
 
 ## Path Aliases
 
@@ -269,7 +269,7 @@ The factory accepts an injected `fetchFn` that wraps `fetch()` with auth headers
 | `@/stream` | `src/lib/stream` | Stream.io SDK integration |
 | `@/queryTranslation` | `src/lib/queryTranslation` | Query builder translation logic |
 
-**Source:** `frontend/tsconfig.json`, `frontend/vite.config.ts`
+**Source:** `reverse-proxy/tsconfig.json`, `reverse-proxy/vite.config.ts`
 
 ## State Management Philosophy
 

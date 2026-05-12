@@ -545,7 +545,7 @@ And the harness can read the same correlation_id the FE would display
 
 - Depends on US-001 (machine + projection).
 - The correlation-id format is the same one the backend and worker already log under `X-Correlation-Id`; the machine becomes the issuer rather than a passive carrier.
-- Copy variants live in a single source file (e.g., `frontend/src/auth/copy.ts`) keyed by `underlying_cause_tag`; adding a new tag without copy is a TS compile error.
+- Copy variants live in a single source file (e.g., `reverse-proxy/src/auth/copy.ts`) keyed by `underlying_cause_tag`; adding a new tag without copy is a TS compile error.
 
 ### Story Size
 

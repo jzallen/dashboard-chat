@@ -22,7 +22,7 @@ Outcome: a developer can add a chat tool, change FE reaction to a chat event, or
   - `dispatchers/{cleaning,mutations,ui}.ts`: per-family `tool.execute` implementations. Cleaning + mutations call backend via `backend-client.ts` (auth-proxy URL, JWT forwarded verbatim). UI dispatchers emit directives without any backend call.
   - `dispatchers/index.ts`: registry.
   - `handleChat.ts`: attaches dispatchers per `DispatchContext`. `transformStreamForResolveDataset` survives unchanged as a documented asymmetry.
-- **Frontend (`frontend/src/core/chat/`)**
+- **Frontend (`reverse-proxy/src/core/chat/`)**
   - `eventHandler.ts`: exhaustive switch with `default: const _: never = event;` (AC2.1 compile-time guarantee).
   - `dispatcher.ts` (`applyDirective`): single body shared by SSE-driven and click-driven sort/filter/clear-filters.
   - Click handlers in `DatasetView` / `TableView` register a `TableApi` on `ChatContext` and now call `applyDirective` instead of inline TanStack mutations.
@@ -98,7 +98,7 @@ Outcome: a developer can add a chat tool, change FE reaction to a chat event, or
 
 - Architecture: `docs/architecture/worker-tool-dispatch-refactor/design.md`
 - Walking skeleton spec: `docs/scenarios/worker-tool-dispatch-refactor/walking-skeleton.md`
-- Acceptance scenarios: `agent/test/chat/acceptance/worker-tool-dispatch.test.ts`, `frontend/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx`
+- Acceptance scenarios: `agent/test/chat/acceptance/worker-tool-dispatch.test.ts`, `reverse-proxy/src/core/chat/__tests__/acceptance/fe-event-vocabulary.test.tsx`
 
 ## Commits (PR 0 → PR 3)
 

@@ -10,4 +10,4 @@ SCRIPT_DIR="$(cd "$(dirname "${THIS_FILE}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
-exec npx eslint frontend/src
+exec npx eslint reverse-proxy/src

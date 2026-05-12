@@ -60,7 +60,7 @@ loader, driving `vitest`-style assertions via `expect` from
    Vitest's runner — adds an extra abstraction for a feature that
    doesn't share Vitest's unit-test fixtures.
 3. The existing TS test surface in the repo is Vitest-only; adding
-   cucumber-node here does not perturb agent/, auth-proxy/, frontend/
+   cucumber-node here does not perturb agent/, auth-proxy/, reverse-proxy/
    suites.
 4. Cucumber's `World` class is the natural container for harness +
    compose handles + correlation-id state; mirrors `pytest-bdd`'s

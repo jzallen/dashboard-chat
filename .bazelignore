@@ -1,6 +1,6 @@
 .claude
 node_modules
-frontend/node_modules
+reverse-proxy/node_modules
 agent/node_modules
 auth-proxy/node_modules
 shared/chat/node_modules

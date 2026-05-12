@@ -24,15 +24,15 @@
   - `agent/lib/chat/backend-client.ts` — auth-proxy-aware HTTP wrapper (PR 0)
   - `agent/lib/chat/dispatchers/{cleaning,mutations,ui}.ts` — per-family dispatch logic (PRs 1–3)
   - `shared/chat/events.ts` — re-export of schema for cross-workspace import (PR 0)
-  - `frontend/src/core/chat/dispatcher.ts` — `applyDirective` shared body (PR 0)
-  - `frontend/src/core/chat/eventHandler.ts` — SSE event switch (PR 0; populated PRs 1–3)
-  - `frontend/src/core/chat/__tests__/mockSSESource.ts` — test helper (PR 0)
+  - `reverse-proxy/src/core/chat/dispatcher.ts` — `applyDirective` shared body (PR 0)
+  - `reverse-proxy/src/core/chat/eventHandler.ts` — SSE event switch (PR 0; populated PRs 1–3)
+  - `reverse-proxy/src/core/chat/__tests__/mockSSESource.ts` — test helper (PR 0)
 - **Key extended components**:
   - `agent/lib/chat/handleChat.ts` — gains DispatchContext plumbing; dispatchers attached per `contextType`
   - `agent/lib/chat/tools.ts` — schemas remain (Groq still needs them); execute callbacks attached via dispatcher modules
-  - `frontend/src/core/chat/services/chatStream.ts` — annotation channel parser; legacy path coexists during migration window then removed in PR 3
+  - `reverse-proxy/src/core/chat/services/chatStream.ts` — annotation channel parser; legacy path coexists during migration window then removed in PR 3
 - **Key deleted components** (in PR 3):
-  - `frontend/src/core/toolCalls/executeToolCall.ts` — the imperative dispatcher this refactor obsoletes
+  - `reverse-proxy/src/core/toolCalls/executeToolCall.ts` — the imperative dispatcher this refactor obsoletes
 
 ## Reuse Analysis
 
@@ -41,12 +41,12 @@
 | Worker chat handler | `agent/lib/chat/handleChat.ts` | Already handles streaming; needs to grow tool dispatch | EXTEND | Add DispatchContext plumbing; attach `execute` callbacks. ~50 LOC change. |
 | Worker tool schemas | `agent/lib/chat/tools.ts` | Tools still need Zod schemas for Groq tool-calling | EXTEND | Schemas stay; `execute` callbacks attached via dispatcher modules at registration time |
 | `transformStreamForResolveDataset` | `agent/lib/chat/handleChat.ts` (existing) | Bespoke handling for `resolve_dataset` | EXTEND (preserve as-is) | One-off pattern; absorbing into the event vocabulary would require modeling "FE resubmit-with-context" as an event type — out of proportion to value. Keep documented |
-| FE imperative tool dispatcher | `frontend/src/core/toolCalls/executeToolCall.ts` | The thing this refactor obsoletes | DELETE in PR 3 | Replaced by `eventHandler.ts` + `applyDirective`; not extended |
-| FE chat stream consumer | `frontend/src/core/chat/services/chatStream.ts` | Currently parses raw AI SDK stream | EXTEND | Add annotation-channel parsing; forward to `eventHandler`. Legacy path coexists during migration |
-| FE column-sort click handlers | `frontend/src/components/.../{table headers}` | Today set TanStack state inline | MODIFY (PR 3) | Call `applyDirective({kind:"sort", ...})` instead. Convergence point with chat directives |
+| FE imperative tool dispatcher | `reverse-proxy/src/core/toolCalls/executeToolCall.ts` | The thing this refactor obsoletes | DELETE in PR 3 | Replaced by `eventHandler.ts` + `applyDirective`; not extended |
+| FE chat stream consumer | `reverse-proxy/src/core/chat/services/chatStream.ts` | Currently parses raw AI SDK stream | EXTEND | Add annotation-channel parsing; forward to `eventHandler`. Legacy path coexists during migration |
+| FE column-sort click handlers | `reverse-proxy/src/components/.../{table headers}` | Today set TanStack state inline | MODIFY (PR 3) | Call `applyDirective({kind:"sort", ...})` instead. Convergence point with chat directives |
 | Auth-proxy | `auth-proxy/app.ts` | Existing token verification + identity-header proxy | EXTEND (no code change) | Use as-is. Worker dispatches go through it. Same topology as production |
 | `shared/chat/` workspace | `shared/chat/*` | Existing cross-workspace shared code dir | EXTEND | Add `events.ts` here. No new workspace |
-| Vitest test runner | `frontend/vitest.config.*.ts` | Existing FE test infra | EXTEND | `MockSSESource` is a vitest-native helper. No new runner |
+| Vitest test runner | `reverse-proxy/vitest.config.*.ts` | Existing FE test infra | EXTEND | `MockSSESource` is a vitest-native helper. No new runner |
 | Pytest backend integration tests | `backend/tests/integration/` | Pattern carries forward to downstream worker tests | EXTEND (in `api-driven-user-flow-tests`) | Not in scope here; flagged for the unblocked feature |
 
 **Zero unjustified `CREATE NEW`.** Every new file fills a genuine protocol-surface gap (events schema, dispatchers, mock source) that no existing component provides.

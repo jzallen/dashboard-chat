@@ -8,8 +8,8 @@ Your role is to implement features, fix bugs, and maintain code quality using th
 
 | Layer | Technology | Config |
 |-------|-----------|--------|
-| Frontend | React 18, TypeScript, Vite, TanStack Query/Table, Tailwind CSS | @frontend/vite.config.ts |
-| Frontend Tests | Vitest, Testing Library, Happy DOM | @frontend/vitest.config.ts |
+| Frontend | React 18, TypeScript, Vite, TanStack Query/Table, Tailwind CSS | @reverse-proxy/vite.config.ts |
+| Frontend Tests | Vitest, Testing Library, Happy DOM | @reverse-proxy/vitest.config.ts |
 | Backend | FastAPI, SQLAlchemy (async), Pydantic, DuckDB, Alembic | @backend/pyproject.toml |
 | Backend Tests | pytest, pytest-asyncio (auto mode), moto (S3 mock) | @backend/pyproject.toml |
 | Worker | Hono, Node.js 20, TypeScript | @package.json |
@@ -60,7 +60,7 @@ result = await some_use_case(
 projectKeys.detail(id)  // → ["projects", id]
 datasetKeys.detail(id)  // → ["datasets", id]
 
-// Hooks in frontend/src/lib/ui/hooks/
+// Hooks in reverse-proxy/src/lib/ui/hooks/
 useProjectQuery(projectId)
 useDatasetQuery(datasetId)
 usePrefetchDataset()
@@ -69,7 +69,7 @@ usePrefetchDataset()
 Mutations use optimistic updates (update both project + dataset caches). Dataset name is derived: `fullDataset?.name ?? sparseEntry?.name` (no local state for names).
 
 ### Frontend: Path Aliases
-Configured in @frontend/vite.config.ts:
+Configured in @reverse-proxy/vite.config.ts:
 - `@/table-tools` → `../shared/table-tools` (or `src/lib/table-tools`)
 - `@/chat` → `../shared/chat`
 - `@/raqb` → `src/lib/raqb`
@@ -89,14 +89,14 @@ Backend patterns:
 - @backend/app/database.py — Session context var, engine setup
 
 Frontend patterns:
-- @frontend/src/lib/ui/hooks/useProjectQuery.ts — Query hook pattern
-- @frontend/src/lib/ui/hooks/useDatasetQuery.ts — Query hook with prefetch
-- @frontend/src/lib/ui/context/ChatContext.tsx — SSE streaming context
-- @frontend/src/lib/api/client.ts — API client with auth headers
+- @reverse-proxy/src/lib/ui/hooks/useProjectQuery.ts — Query hook pattern
+- @reverse-proxy/src/lib/ui/hooks/useDatasetQuery.ts — Query hook with prefetch
+- @reverse-proxy/src/lib/ui/context/ChatContext.tsx — SSE streaming context
+- @reverse-proxy/src/lib/api/client.ts — API client with auth headers
 
 Test examples:
 - @backend/tests/use_cases/dataset/conftest.py — Test fixtures (db_session, seeded_db, mock_s3)
-- @frontend/src/test/setup.ts — Frontend test setup
+- @reverse-proxy/src/test/setup.ts — Frontend test setup
 
 ## Running Tests
 
@@ -106,8 +106,8 @@ cd backend && python -m pytest                          # all
 cd backend && python -m pytest tests/path -k test_name  # specific
 
 # Frontend
-cd frontend && npx vitest run                           # all
-cd frontend && npx vitest run src/path/to/file.test.tsx # specific
+cd reverse-proxy && npx vitest run                           # all
+cd reverse-proxy && npx vitest run src/path/to/file.test.tsx # specific
 
 # Worker
 npm run test:worker
@@ -172,5 +172,5 @@ When asked to use an agent team, use these teammates:
 
 ### 4. frontend-impl
 **When to use**: Implementing frontend features — new components, hooks, API client methods, and their tests. Use when you need to focus on backend while frontend work proceeds in parallel.
-**Typical tasks**: "Add a useDeleteDataset mutation hook following the pattern in @frontend/src/lib/ui/hooks/useDatasetQuery.ts", "Create a confirmation dialog component for destructive actions"
+**Typical tasks**: "Add a useDeleteDataset mutation hook following the pattern in @reverse-proxy/src/lib/ui/hooks/useDatasetQuery.ts", "Create a confirmation dialog component for destructive actions"
 **Tools**: Full toolset for reading, writing, and testing frontend code

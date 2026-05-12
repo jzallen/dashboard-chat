@@ -15,7 +15,7 @@ signatures and instead extend `DispatchContext`.
 
 UI directives are render instructions with no backend correlate. They are
 ephemeral by definition: emitted on the SSE stream and applied by the FE's
-`applyDirective` (`frontend/src/core/chat/dispatcher.ts`). Per ADR-015 they are
+`applyDirective` (`reverse-proxy/src/core/chat/dispatcher.ts`). Per ADR-015 they are
 **also** mirrored into a per-channel reflect-only log so headless consumers can
 reconstruct table presentation state without a browser.
 
@@ -23,15 +23,15 @@ Wiring a new UI dispatcher requires:
 
 1. **Extend the schema** in `shared/chat/events.ts`. Add the new variant to
    `UiDirectiveSchema`. The FE re-exports the schema; do not redeclare types in
-   `frontend/`.
+   `reverse-proxy/`.
 
 2. **Extend the FE applier**. Add the `kind` mapping in
-   `frontend/src/core/chat/eventHandler.ts` and the `applyDirective` switch in
-   `frontend/src/core/chat/dispatcher.ts` so the FE actually renders the change.
+   `reverse-proxy/src/core/chat/eventHandler.ts` and the `applyDirective` switch in
+   `reverse-proxy/src/core/chat/dispatcher.ts` so the FE actually renders the change.
 
 3. **Extend the headless reducer** in `shared/chat/applyDirective.ts`. Mirror
    the FE's TanStack semantics so the contract test
-   (`frontend/src/core/chat/__tests__/applyDirective-contract.test.ts`)
+   (`reverse-proxy/src/core/chat/__tests__/applyDirective-contract.test.ts`)
    continues to assert `reducer(log) ≡ FE TableApi capture`.
 
 4. **Write the dispatcher** alongside the existing UI dispatchers in `ui.ts`.
@@ -67,7 +67,7 @@ Wiring a new UI dispatcher requires:
 6. **Test** the dispatcher in
    `agent/test/chat/acceptance/worker-tool-dispatch.test.ts` (the worker side)
    and the corresponding FE handler in
-   `frontend/src/core/chat/__tests__/`.
+   `reverse-proxy/src/core/chat/__tests__/`.
 
 Domain events (`row_added`, `transform_applied`, …) follow a different path —
 they go through `BackendClient.post` in `mutations.ts` / `cleaning.ts` and are

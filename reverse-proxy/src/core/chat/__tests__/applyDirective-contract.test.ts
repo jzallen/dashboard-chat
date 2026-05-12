@@ -2,7 +2,7 @@
  * Contract test for ADR-015 / dc-x3y.2.2.
  *
  * Asserts that applying the FE's TanStack-bound `applyDirective`
- * (frontend/src/core/chat/dispatcher.ts) to a sequence of UI directives
+ * (reverse-proxy/src/core/chat/dispatcher.ts) to a sequence of UI directives
  * produces the same `{sorting, columnFilters}` state as applying the
  * shared headless reducer
  * (`@dashboard-chat/shared-chat/applyDirective`) to the same sequence.

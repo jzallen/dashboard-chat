@@ -7,7 +7,7 @@ harness's parser to that v6 wire format using a synthetic byte stream — it
 runs without the live compose stack so the parser contract is guarded
 independently of step 03-01's live verification.
 
-Reference v6 frame shapes (from frontend/src/core/chat/services/chatStream.ts
+Reference v6 frame shapes (from reverse-proxy/src/core/chat/services/chatStream.ts
 and agent/test/chat/_v6Mocks.ts):
 
     data: {"type":"text-delta","id":"...","delta":"..."}\\n\\n

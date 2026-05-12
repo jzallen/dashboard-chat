@@ -25,7 +25,7 @@ env:
 jobs:
   # ── Lint (Bazel) ──────────────────────────────────────────────────────────
   # Runs first so formatting/lint failures fail fast without paying test costs.
-  # Targets: //frontend:lint, //agent:lint, //backend:lint
+  # Targets: //reverse-proxy:lint, //agent:lint, //backend:lint
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +47,7 @@ jobs:
         run: bazel test //... --test_tag_filters=lint --nocache_test_results --config=ci
 
   # ── Frontend tests (Bazel) ────────────────────────────────────────────────
-  test-frontend:
+  test-reverse-proxy:
     needs: [lint]
     runs-on: ubuntu-latest
     steps:
@@ -55,10 +55,10 @@ jobs:
       - uses: bazel-contrib/setup-bazel@0.9.1
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}-frontend
+          disk-cache: ${{ github.workflow }}-reverse-proxy
           repository-cache: true
       - name: Run frontend tests
-        run: bazel test //frontend/... --test_tag_filters=-lint --nocache_test_results --config=ci
+        run: bazel test //reverse-proxy/... --test_tag_filters=-lint --nocache_test_results --config=ci
 
   # ── Agent tests (Bazel) ───────────────────────────────────────────────────
   test-agent:
@@ -108,7 +108,7 @@ jobs:
   # ── Release (semantic-release) ────────────────────────────────────────────
   # Runs only on push to main (not on pull_request events)
   release:
-    needs: [lint, test-frontend, test-agent, test-backend, test-auth-proxy]
+    needs: [lint, test-reverse-proxy, test-agent, test-backend, test-auth-proxy]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     permissions:

@@ -70,12 +70,12 @@ The `DispatchContext` carries the per-request state — JWT (forwarded to `backe
 
 ## 2. FE subscriber mechanics
 
-The FE today has `frontend/src/core/toolCalls/executeToolCall.ts` — the imperative dispatcher this refactor obsoletes. Replace with two pieces:
+The FE today has `reverse-proxy/src/core/toolCalls/executeToolCall.ts` — the imperative dispatcher this refactor obsoletes. Replace with two pieces:
 
 ### 2.1 The reducer (one entry point, two entry-point handlers)
 
 ```typescript
-// frontend/src/core/chat/dispatcher.ts (new, PR 0 scaffolding)
+// reverse-proxy/src/core/chat/dispatcher.ts (new, PR 0 scaffolding)
 type Directive =
   | { kind: "sort"; column: string; direction: "asc" | "desc" }
   | { kind: "filter"; column: string; filters: Filter[] }
@@ -98,7 +98,7 @@ This is the shared body Q3 (a) called for. Two callers:
 ### 2.2 The SSE event handler
 
 ```typescript
-// frontend/src/core/chat/eventHandler.ts (new, PR 0 scaffolding)
+// reverse-proxy/src/core/chat/eventHandler.ts (new, PR 0 scaffolding)
 import { applyDirective } from "./dispatcher";
 
 export function handleChatEvent(
@@ -141,14 +141,14 @@ The `default: const _exhaustive: never = event` line gives Story 2 / AC2.1 its c
 
 ### 2.3 SSE consumer wiring
 
-`frontend/src/core/chat/services/chatStream.ts` currently consumes the raw AI SDK data stream and hands tool calls to `executeToolCall`. After this refactor: it parses the AI SDK stream's annotation slot, extracts `ChatEvent` objects, and forwards each to `handleChatEvent`. The chat-text-delta slot continues to feed the chat panel renderer untouched (Q2 / D9 — assistant text streaming preserved).
+`reverse-proxy/src/core/chat/services/chatStream.ts` currently consumes the raw AI SDK data stream and hands tool calls to `executeToolCall`. After this refactor: it parses the AI SDK stream's annotation slot, extracts `ChatEvent` objects, and forwards each to `handleChatEvent`. The chat-text-delta slot continues to feed the chat panel renderer untouched (Q2 / D9 — assistant text streaming preserved).
 
 ## 3. Event vocabulary — full schema
 
 Refining the Shape B sketch from `discuss/wave-decisions.md`. Two name changes, otherwise as locked:
 
 ```typescript
-// agent/lib/chat/events.ts (new, PR 0 scaffolding — copied verbatim into frontend/src/core/chat/events.ts)
+// agent/lib/chat/events.ts (new, PR 0 scaffolding — copied verbatim into reverse-proxy/src/core/chat/events.ts)
 import { z } from "zod";
 
 export const ChatEventSchema = z.discriminatedUnion("type", [
@@ -231,7 +231,7 @@ The schema lives in **one file shared by worker and frontend** via npm workspace
 ## 4. `MockSSESource` test helper (Story 3 / AC3.1)
 
 ```typescript
-// frontend/src/core/chat/__tests__/mockSSESource.ts (new, PR 0 scaffolding)
+// reverse-proxy/src/core/chat/__tests__/mockSSESource.ts (new, PR 0 scaffolding)
 import type { ChatEvent } from "../events";
 
 export class MockSSESource {
@@ -261,7 +261,7 @@ export class MockSSESource {
 The chat-panel component takes its SSE source via prop / context, so tests can inject a `MockSSESource` while production uses the real `chatStream.ts` parser. Example test:
 
 ```typescript
-// frontend/src/components/chat/__tests__/chatPanel.test.tsx (PR 1 sample)
+// reverse-proxy/src/components/chat/__tests__/chatPanel.test.tsx (PR 1 sample)
 import { render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MockSSESource } from "@/core/chat/__tests__/mockSSESource";
@@ -305,11 +305,11 @@ Per Q5 locked answer: scaffolding pre-PR + 3 family-grouped PRs. No feature flag
 - `shared/chat/events.ts` (NEW or extend existing shared types) — re-export so FE imports the same source.
 - `agent/lib/chat/backend-client.ts` (NEW) — thin `fetch` wrapper that knows the auth-proxy URL and forwards JWT.
 - `agent/lib/chat/dispatchers/index.ts` (NEW, empty registry — populated in PR 1–3).
-- `frontend/src/core/chat/events.ts` (NEW) — re-export from shared.
-- `frontend/src/core/chat/dispatcher.ts` (NEW) — `applyDirective` shared body.
-- `frontend/src/core/chat/eventHandler.ts` (NEW) — `handleChatEvent` switch with NO event types handled yet (every case throws "not migrated"). Builds in pieces as PRs land.
-- `frontend/src/core/chat/__tests__/mockSSESource.ts` (NEW) — test helper.
-- `frontend/src/core/chat/services/chatStream.ts` (MODIFY) — start parsing the annotation channel; extract `ChatEvent`s; forward to `handleChatEvent`. Legacy raw-tool-call path coexists during migration window.
+- `reverse-proxy/src/core/chat/events.ts` (NEW) — re-export from shared.
+- `reverse-proxy/src/core/chat/dispatcher.ts` (NEW) — `applyDirective` shared body.
+- `reverse-proxy/src/core/chat/eventHandler.ts` (NEW) — `handleChatEvent` switch with NO event types handled yet (every case throws "not migrated"). Builds in pieces as PRs land.
+- `reverse-proxy/src/core/chat/__tests__/mockSSESource.ts` (NEW) — test helper.
+- `reverse-proxy/src/core/chat/services/chatStream.ts` (MODIFY) — start parsing the annotation channel; extract `ChatEvent`s; forward to `handleChatEvent`. Legacy raw-tool-call path coexists during migration window.
 - `agent/lib/chat/handleChat.ts` (MODIFY) — wire `DispatchContext` plumbing; `execute` callbacks attached per-context but stub-only initially.
 
 This PR ships no behavior change in production; it's load-bearing infrastructure for PRs 1–3.
@@ -354,14 +354,14 @@ After PR 3: `agent/lib/chat/tools.ts` retains schema definitions (Groq still nee
 | Worker (legacy) | `agent/lib/chat/tools.ts` | MODIFY (extract schemas) | MODIFY (remove cleaning tool defs) | MODIFY (remove mutation tool defs) | MODIFY (remove UI tool defs) |
 | Worker tests | `agent/__tests__/dispatchers/{cleaning,mutations,ui}.test.ts` | — | NEW | NEW | NEW |
 | Shared | `shared/chat/events.ts` (or workspace re-export) | NEW | — | — | — |
-| FE | `frontend/src/core/chat/events.ts` | NEW (import from shared) | — | — | — |
-| FE | `frontend/src/core/chat/dispatcher.ts` | NEW (`applyDirective`) | — | — | — |
-| FE | `frontend/src/core/chat/eventHandler.ts` | NEW (skeleton) | MODIFY (add transform_applied case) | MODIFY (add row/column cases) | MODIFY (add ui cases; remove default-throws) |
-| FE | `frontend/src/core/chat/services/chatStream.ts` | MODIFY (parse annotations; forward to eventHandler) | — | — | MODIFY (delete legacy parser) |
-| FE (legacy) | `frontend/src/core/toolCalls/executeToolCall.ts` | — | MODIFY (remove cleaning branches) | MODIFY (remove mutation branches) | DELETE |
+| FE | `reverse-proxy/src/core/chat/events.ts` | NEW (import from shared) | — | — | — |
+| FE | `reverse-proxy/src/core/chat/dispatcher.ts` | NEW (`applyDirective`) | — | — | — |
+| FE | `reverse-proxy/src/core/chat/eventHandler.ts` | NEW (skeleton) | MODIFY (add transform_applied case) | MODIFY (add row/column cases) | MODIFY (add ui cases; remove default-throws) |
+| FE | `reverse-proxy/src/core/chat/services/chatStream.ts` | MODIFY (parse annotations; forward to eventHandler) | — | — | MODIFY (delete legacy parser) |
+| FE (legacy) | `reverse-proxy/src/core/toolCalls/executeToolCall.ts` | — | MODIFY (remove cleaning branches) | MODIFY (remove mutation branches) | DELETE |
 | FE | direct-UI handlers (column sort/filter clicks) | — | — | — | MODIFY (call `applyDirective` instead of inline state set) |
-| FE tests | `frontend/src/core/chat/__tests__/mockSSESource.ts` | NEW | — | — | — |
-| FE tests | `frontend/src/components/chat/__tests__/chatPanel.test.tsx` | NEW (skeleton) | MODIFY (transform_applied test) | MODIFY (row/column tests) | MODIFY (ui directive tests) |
+| FE tests | `reverse-proxy/src/core/chat/__tests__/mockSSESource.ts` | NEW | — | — | — |
+| FE tests | `reverse-proxy/src/components/chat/__tests__/chatPanel.test.tsx` | NEW (skeleton) | MODIFY (transform_applied test) | MODIFY (row/column tests) | MODIFY (ui directive tests) |
 
 **No backend changes in any PR.** Plug-n-play property preserved.
 

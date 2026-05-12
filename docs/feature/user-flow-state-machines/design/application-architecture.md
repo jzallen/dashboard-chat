@@ -154,7 +154,7 @@ function ChatView() {
 
 ### Option D: Remix + XState server-side (RECOMMENDED)
 
-**Architecture sketch.** Replace `frontend/main.tsx` + `frontend/App.tsx` with a Remix app. Vite stays as the build tool. The new `ui-state` Hono tier still exists (Remix doesn't replace it — XState lives there because it must NOT live in the agent per D8). Each route file has a `loader` function that calls into the ui-state tier's projection endpoint server-side; the loader's return value IS the FE's data. `useRouteLoaderData("root")` exposes `active_scope` at every nested layout.
+**Architecture sketch.** Replace `reverse-proxy/main.tsx` + `reverse-proxy/App.tsx` with a Remix app. Vite stays as the build tool. The new `ui-state` Hono tier still exists (Remix doesn't replace it — XState lives there because it must NOT live in the agent per D8). Each route file has a `loader` function that calls into the ui-state tier's projection endpoint server-side; the loader's return value IS the FE's data. `useRouteLoaderData("root")` exposes `active_scope` at every nested layout.
 
 **`active_scope` propagation** (Option D):
 

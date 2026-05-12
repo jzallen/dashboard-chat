@@ -6,7 +6,7 @@ description: Use when you need to understand where code lives, find the right di
 # Project Structure
 
 ```
-frontend/src/
+reverse-proxy/src/
   lib/
     api/          # API client (fetch wrapper with auth)
     auth/         # AuthProvider, useAuth hook

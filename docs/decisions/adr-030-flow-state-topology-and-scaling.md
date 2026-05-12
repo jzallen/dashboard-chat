@@ -13,7 +13,7 @@
 
 ADR-027 establishes that the `ui-state/` tier is a new Hono service peer to the agent. It does NOT specify:
 
-- **Topology**: where the tier physically sits in the request graph (behind auth-proxy? Behind frontend nginx? Direct host port?)
+- **Topology**: where the tier physically sits in the request graph (behind auth-proxy? Behind reverse-proxy nginx? Direct host port?)
 - **Scaling shape**: how many replicas; sticky vs round-robin; stateless rehydration vs in-process actors.
 
 These two questions are **inseparable**. XState v5's actor model places actors in-process: cross-process `system.get(actor_id).send(...)` is not a v5 primitive. Multi-replica deployment therefore requires either (a) sticky routing per `flow_id`, (b) stateless tiers with per-request Redis rehydration, or (c) single replica.
@@ -187,5 +187,5 @@ So a `freeze` event on `loginAndOrgSetup:user-001` MUST NOT affect `loginAndOrgS
 - System-architecture.md (this wave's system-scope deliverable)
 - `auth-proxy/app.ts` (current single-upstream behavior — line 19, line 178)
 - `docker-compose.yml` (agent fixed-port pattern at line 48)
-- `frontend/nginx.conf` (current de-facto multi-upstream router)
+- `reverse-proxy/nginx.conf` (current de-facto multi-upstream router)
 - ADR-016 (auth-proxy ingress claim), ADR-018 (Redis dispatch), ADR-027 (tier + framework), ADR-028 (XState v5 actor model)

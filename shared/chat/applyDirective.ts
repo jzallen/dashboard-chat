@@ -1,7 +1,7 @@
 /**
  * Headless reference reducer for ADR-015's reflect-only directive log.
  *
- * Mirrors the FE's TanStack-bound `applyDirective` (frontend/src/core/chat/dispatcher.ts)
+ * Mirrors the FE's TanStack-bound `applyDirective` (reverse-proxy/src/core/chat/dispatcher.ts)
  * by producing the same sort/columnFilters values the FE writes into TanStack
  * via `setSorting`/`setColumnFilters`/`resetColumnFilters`. Headless consumers
  * (Phase 1 Epic D Python harness, future SDKs, replay tooling) reduce a

@@ -51,7 +51,7 @@ Three new build-system files, four `oci_image` rules extended, three service ent
 | Backend | `backend/BUILD.bazel`, `backend/app/version.py`, `backend/app/main.py` | `version_layer` in `oci_image.tars`; FastAPI lifespan emits identity |
 | Auth-proxy | `auth-proxy/BUILD.bazel`, `auth-proxy/version.ts`, `auth-proxy/index.ts` | Same pattern, top-of-file identity log |
 | Agent | `agent/BUILD.bazel`, `agent/version.ts`, `agent/index.ts` | Same pattern |
-| Frontend | `frontend/BUILD.bazel`, `frontend/docker-entrypoint.sh` (NEW, ~12 LOC) | nginx wrapper: read JSON, echo identity line, copy to `/usr/share/nginx/html/_meta.json`, `exec` nginx |
+| Frontend | `reverse-proxy/BUILD.bazel`, `reverse-proxy/docker-entrypoint.sh` (NEW, ~12 LOC) | nginx wrapper: read JSON, echo identity line, copy to `/usr/share/nginx/html/_meta.json`, `exec` nginx |
 
 `STABLE_*` workspace-status keys (not volatile) keep the Bazel cache warm — only the small `version_layer` rebuilds per commit; dependent build actions stay cached.
 
@@ -134,7 +134,7 @@ The walking skeleton runs by default; milestone scenarios run via the full accep
 
 - **Brownfield characterization is the right default for instrumentation features.** The implementation pre-existed the DISTILL artifact; trying to red-then-green a feature whose code was already written would have produced theatre tests. DLD-5 made this explicit; the walking-skeleton scenario verified the contract against the running code.
 - **`STABLE_*` stamp keys are non-negotiable for cache hygiene.** Volatile `BUILD_*` keys would invalidate dependent actions on every commit and undermine K3 (zero startup regressions). The `version_layer` is the only artifact that rebuilds per commit.
-- **Frontend asymmetry deserves its own milestone.** The entrypoint shim (`frontend/docker-entrypoint.sh`) is structurally different from the three Python/TS startup loggers — separating it into milestone-2 with its own AC scenarios kept the per-service step glue clean.
+- **Frontend asymmetry deserves its own milestone.** The entrypoint shim (`reverse-proxy/docker-entrypoint.sh`) is structurally different from the three Python/TS startup loggers — separating it into milestone-2 with its own AC scenarios kept the per-service step glue clean.
 - **Cross-service consistency (AC3.1) requires `SOURCE_DATE_EPOCH` pinning.** Four separate `bazel run` invocations would otherwise stamp four different `STABLE_BUILD_TIMESTAMP` values. Helper `_capture_four_service_identities` pins to HEAD commit time so the identity-comparison assertion is structurally satisfied, not racy.
 - **Manual finalize workaround documented in `dc-444`.** The polecat-work formula does not write `deliver/execution-log.json`; nw-finalize's Pre-Dispatch Gate halts on the missing file. Workaround: synthesize the log from bead history (dc-1k8.1–dc-1k8.5) before invoking finalize. Out of scope for this feature (`dc-444` tracks the skill-side fix).
 

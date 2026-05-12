@@ -11,7 +11,7 @@ All server state is managed through TanStack Query. Query keys, stale times, and
 
 ## Key Factories
 
-Defined in `frontend/src/lib/queryKeys.ts`. Always add new domains here — **never hardcode query key strings inline**.
+Defined in `reverse-proxy/src/lib/queryKeys.ts`. Always add new domains here — **never hardcode query key strings inline**.
 
 ```typescript
 export const myKeys = {
@@ -50,7 +50,7 @@ export function useMyThingList(scopeId: string) {
 
 ## Stale Times
 
-Add new entries to `QUERY_STALE_TIMES` in `frontend/src/ui/hooks/queryConfig.ts`:
+Add new entries to `QUERY_STALE_TIMES` in `reverse-proxy/src/ui/hooks/queryConfig.ts`:
 
 ```typescript
 export const QUERY_STALE_TIMES = {
@@ -192,8 +192,8 @@ describe("useMyThing", () => {
 
 ## Reference Files
 
-- `frontend/src/lib/queryKeys.ts` — key factories (add new domains here)
-- `frontend/src/ui/hooks/queryConfig.ts` — stale times
-- `frontend/src/ui/hooks/useDatasetQuery.ts` — query hook example
-- `frontend/src/ui/hooks/useDatasetMutations.ts` — mutation with optimistic updates
-- `frontend/src/ui/hooks/__tests__/useDatasetMutations.test.tsx` — test pattern
+- `reverse-proxy/src/lib/queryKeys.ts` — key factories (add new domains here)
+- `reverse-proxy/src/ui/hooks/queryConfig.ts` — stale times
+- `reverse-proxy/src/ui/hooks/useDatasetQuery.ts` — query hook example
+- `reverse-proxy/src/ui/hooks/useDatasetMutations.ts` — mutation with optimistic updates
+- `reverse-proxy/src/ui/hooks/__tests__/useDatasetMutations.test.tsx` — test pattern

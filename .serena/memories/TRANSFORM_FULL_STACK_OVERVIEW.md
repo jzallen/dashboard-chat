@@ -569,9 +569,9 @@ class QueryBuilderJSON(dict):
 
 ---
 
-## 7. FRONTEND TOOL EXECUTION (`frontend/src/lib/table-tools/executeToolCall.ts`)
+## 7. FRONTEND TOOL EXECUTION (`reverse-proxy/src/lib/table-tools/executeToolCall.ts`)
 
-**Location**: `/workspaces/dashboard-chat/frontend/src/lib/table-tools/executeToolCall.ts`
+**Location**: `/workspaces/dashboard-chat/reverse-proxy/src/lib/table-tools/executeToolCall.ts`
 
 ### Current Tool Handlers (NOT Transform-aware yet)
 
@@ -840,9 +840,9 @@ Be concise. Confirm what action you're taking.`;
 
 ---
 
-## 9. FRONTEND API CLIENT FOR DATASETS (`frontend/src/lib/api/datasets.ts`)
+## 9. FRONTEND API CLIENT FOR DATASETS (`reverse-proxy/src/lib/api/datasets.ts`)
 
-**Location**: `/workspaces/dashboard-chat/frontend/src/lib/api/datasets.ts`
+**Location**: `/workspaces/dashboard-chat/reverse-proxy/src/lib/api/datasets.ts`
 
 ### Transform-Related APIs
 
@@ -917,9 +917,9 @@ export async function toggleTransform(
 
 ---
 
-## 10. FRONTEND RAQB TYPES (`frontend/src/lib/raqb/types.ts`)
+## 10. FRONTEND RAQB TYPES (`reverse-proxy/src/lib/raqb/types.ts`)
 
-**Location**: `/workspaces/dashboard-chat/frontend/src/lib/raqb/types.ts`
+**Location**: `/workspaces/dashboard-chat/reverse-proxy/src/lib/raqb/types.ts`
 
 ### RAQB Tree Structure
 
@@ -1181,9 +1181,9 @@ trimWhitespace, standardizeCase, renameColumn, fillNulls, mapValues, applyCleani
 | **Routes** | Transform routes | `backend/app/routers/transforms.py` | HTTP endpoints |
 | **Use Cases** | Transform creation/update | `backend/app/use_cases/transform.py` | Business logic |
 | **Repository** | MetadataRepository | `backend/app/repositories/metadata/repository.py` | Data access layer |
-| **Frontend API** | Datasets client | `frontend/src/lib/api/datasets.ts` | API calls (batch operations) |
-| **Frontend Tools** | Tool execution | `frontend/src/lib/table-tools/executeToolCall.ts` | Apply tool calls to table state |
-| **Frontend Types** | RAQB types | `frontend/src/lib/raqb/types.ts` | Query builder JSON structure |
+| **Frontend API** | Datasets client | `reverse-proxy/src/lib/api/datasets.ts` | API calls (batch operations) |
+| **Frontend Tools** | Tool execution | `reverse-proxy/src/lib/table-tools/executeToolCall.ts` | Apply tool calls to table state |
+| **Frontend Types** | RAQB types | `reverse-proxy/src/lib/raqb/types.ts` | Query builder JSON structure |
 | **Chat** | Prompt generation | `shared/chat/prompts.ts` | System prompt + tool definitions |
 | **Chat** | Types | `shared/chat/types.ts` | TableSchema, ToolDefinition |
 | **Chat** | Handler | `shared/chat/handleChat.ts` | SSE streaming logic |

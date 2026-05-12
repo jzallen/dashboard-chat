@@ -11,11 +11,11 @@
 
 ## Context
 
-ADR-027 selected Remix v2 as the frontend framework (over Option B's plain SPA fallback). Morgan's `application-architecture.md` §2 shows the new container as `Frontend (Remix on Vite)` — implying the existing `frontend` container's process model changes from "nginx serving static `dist/` + reverse-proxy" to "Node running Remix server."
+ADR-027 selected Remix v2 as the frontend framework (over Option B's plain SPA fallback). Morgan's `application-architecture.md` §2 shows the new container as `Frontend (Remix on Vite)` — implying the existing `reverse-proxy` container's process model changes from "nginx serving static `dist/` + reverse-proxy" to "Node running Remix server."
 
 That implication has system-level consequences Morgan's application-scope pass did not enumerate:
 
-1. The current `frontend/nginx.conf` does **four** routing things, not one. It's the SPA static server AND a reverse-proxy for `/api/*` (→ auth-proxy), `/worker/*` (→ agent direct), `/api/channels/:id/presentation-state` (→ agent direct per ADR-015), `/health` (→ auth-proxy), AND it does gzip + static-asset caching + late-binding DNS resolution.
+1. The current `reverse-proxy/nginx.conf` does **four** routing things, not one. It's the SPA static server AND a reverse-proxy for `/api/*` (→ auth-proxy), `/worker/*` (→ agent direct), `/api/channels/:id/presentation-state` (→ agent direct per ADR-015), `/health` (→ auth-proxy), AND it does gzip + static-asset caching + late-binding DNS resolution.
 2. The ADR-015 routing rule (`/api/channels/:id/presentation-state` → agent direct) is **load-bearing** — it's the only way headless harnesses retrieve the directive log. It must not be lost.
 3. Replacing nginx with Remix's Node server means re-implementing all four routing rules + gzip + caching + DNS-late-binding in JavaScript. Doable, but unnecessary churn for no system-level benefit.
 
@@ -24,18 +24,18 @@ The decision is what physical deployment shape the Remix server takes vis-à-vis
 ## Decision drivers
 
 - **Preserve mature, working infrastructure.** nginx's reverse-proxy semantics, gzip, caching, and late-binding DNS resolution are mature and work today. Replacing them is unnecessary work with no payoff.
-- **ADR-015's routing rule is load-bearing.** `frontend/nginx.conf:16-23` proxies `/api/channels/:id/presentation-state` to the agent directly (bypassing auth-proxy). This is a deliberate architectural decision per ADR-015 / `dc-x3y.2.2`; reimplementing it in Remix loaders is a regression risk.
+- **ADR-015's routing rule is load-bearing.** `reverse-proxy/nginx.conf:16-23` proxies `/api/channels/:id/presentation-state` to the agent directly (bypassing auth-proxy). This is a deliberate architectural decision per ADR-015 / `dc-x3y.2.2`; reimplementing it in Remix loaders is a regression risk.
 - **Strangler-fig migration shape.** The current SPA is comprehensive; Remix migration is route-by-route. The migration is far easier if both the SPA and Remix can run simultaneously, with nginx routing specific paths to one or the other.
 - **Reversibility.** If Remix turns out to be a problem (lock-in, perf, team learning curve), rolling back should be a config change, not a re-architecture.
 - **Build pipeline impact.** `make up` builds Bazel-managed images; adding a new image is the same pattern as the existing four (frontend, agent, auth-proxy, api). Adding a new image is cheaper than rewriting the frontend image.
 
 ## Considered options
 
-1. **Option R1 — Remix Node server replaces nginx outright.** `frontend/` container becomes a Node process running Remix's compiled server. Static asset serving, SPA fallback, reverse-proxy, gzip, caching: all reimplemented in Remix or surrounding middleware.
+1. **Option R1 — Remix Node server replaces nginx outright.** `reverse-proxy/` container becomes a Node process running Remix's compiled server. Static asset serving, SPA fallback, reverse-proxy, gzip, caching: all reimplemented in Remix or surrounding middleware.
 
 2. **Option R2 — Remix Node server runs BEHIND nginx in the same container.** nginx routes `/` and Remix-owned routes to a localhost Node process (Remix). nginx keeps `/api/`, `/worker/`, `/health`, `/assets/`. Two processes in one container, managed by `s6-overlay` or similar.
 
-3. **Option R3 — Remix container as a separate compose service.** A new `ui-presentation` container runs Remix's Node server. nginx in the existing `frontend` container is unchanged except for one new upstream rule (proxy migrated routes to `ui-presentation:3001`). The two containers can be deployed and rolled back independently. **Selected.**
+3. **Option R3 — Remix container as a separate compose service.** A new `ui-presentation` container runs Remix's Node server. nginx in the existing `reverse-proxy` container is unchanged except for one new upstream rule (proxy migrated routes to `ui-presentation:3001`). The two containers can be deployed and rolled back independently. **Selected.**
 
 ## Decision outcome
 
@@ -55,13 +55,13 @@ ui-presentation:
     NODE_ENV: ${NODE_ENV:-production}
   expose:
     - "3001"
-  # No host-port mapping — only reachable from the frontend nginx container.
+  # No host-port mapping — only reachable from the reverse-proxy nginx container.
   depends_on:
     auth-proxy:
       condition: service_started
 ```
 
-`frontend/nginx.conf` gains a single new rule:
+`reverse-proxy/nginx.conf` gains a single new rule:
 
 ```nginx
 # Migrated routes go to Remix.
@@ -116,7 +116,7 @@ At every phase, both the SPA and Remix coexist; nginx is the routing arbiter. Ro
 
 ### 5. Build pipeline impact
 
-Bazel build graph gains one new target: `//ui-presentation:image`. Same pattern as the existing `//frontend:image`, `//agent:image`, `//auth-proxy:image`, `//api:image`. No new image build patterns; no new tooling.
+Bazel build graph gains one new target: `//ui-presentation:image`. Same pattern as the existing `//reverse-proxy:image`, `//agent:image`, `//auth-proxy:image`, `//api:image`. No new image build patterns; no new tooling.
 
 The existing `frontend` Bazel target is unchanged — it still builds an nginx image with `dist/` static output. Build time grows by ~30-60 seconds for the new image; the two images build in parallel.
 
@@ -165,7 +165,7 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 ### Cross-decision composition
 
 - **ADR-031 ↔ ADR-027**: ADR-027 selected Remix; ADR-031 specifies how Remix lands in compose without disturbing nginx.
-- **ADR-031 ↔ ADR-015**: ADR-031 preserves the `frontend/nginx.conf` `/api/channels/:id/presentation-state` rule verbatim. ADR-015 is honored.
+- **ADR-031 ↔ ADR-015**: ADR-031 preserves the `reverse-proxy/nginx.conf` `/api/channels/:id/presentation-state` rule verbatim. ADR-015 is honored.
 - **ADR-031 ↔ ADR-016**: the compose acceptance stack grows to 7 services; ADR-016's "test topology = production topology" principle continues to apply.
 - **ADR-031 ↔ ADR-030**: Remix loaders call auth-proxy; auth-proxy routes `/ui-state/*` to the new tier per ADR-030.
 
@@ -180,7 +180,7 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 ## References
 
 - System-architecture.md §4 (full trade-off analysis of R1/R2/R3)
-- `frontend/nginx.conf` (current routing rules, including ADR-015's load-bearing rule at lines 16-23)
+- `reverse-proxy/nginx.conf` (current routing rules, including ADR-015's load-bearing rule at lines 16-23)
 - `docker-compose.yml` (current frontend container definition at lines 3-10)
 - Morgan's `application-architecture.md` §2 (the Remix-on-Vite implication this ADR clarifies)
 - ADR-015 (presentation-state log routing), ADR-016 (compose topology fidelity), ADR-027 (Remix framework selection)

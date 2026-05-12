@@ -7,14 +7,14 @@ description: Use when working with npm workspaces, Turborepo, uv/pyproject.toml,
 
 ## npm Workspaces
 
-Three packages in root `package.json`: `frontend`, `worker`, `shared/chat`. Single `npm install` at root installs all. Cross-workspace deps use `"dashboard-chat-shared": "*"`. Root `package-lock.json` is the single lockfile.
+Four packages in root `package.json`: `reverse-proxy`, `agent`, `auth-proxy`, `shared/chat`. Single `npm install` at root installs all. Cross-workspace deps use `"@dashboard-chat/shared-chat": "*"`. Root `package-lock.json` is the single lockfile.
 
 ## Turborepo
 
 Task orchestration via `turbo.json`:
 ```bash
-npm run build              # turbo run build (frontend only — worker has no build step)
-npm run test               # turbo run test:run (frontend + worker in parallel)
+npm run build              # turbo run build (reverse-proxy only — agent has no build step)
+npm run test               # turbo run test:run (reverse-proxy + agent in parallel)
 npm run test:all           # JS tests via turbo + backend via uv run pytest
 ```
 - `build` is cached by content hash; `test:run` and `dev` are never cached

@@ -134,7 +134,7 @@ genrule(
     outs = ["dist.tar"],
     cmd = """
         set -a && . .env && set +a && \
-        cd frontend && \
+        cd reverse-proxy && \
         VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx vite build --outDir ../$$TMPDIR/dist --emptyOutDir && \
         tar -cf - -C ../$$TMPDIR dist > ../$(OUTS)
     """,
@@ -334,7 +334,7 @@ genrule(
 
 version_layer(
     name = "version_layer",
-    image_tag = "dashboard-chat/frontend:bazel",
+    image_tag = "dashboard-chat/reverse-proxy:bazel",
 )
 
 genrule(
@@ -370,7 +370,7 @@ oci_image(
 oci_load(
     name = "image_tar",
     image = ":image",
-    repo_tags = ["dashboard-chat/frontend:bazel"],
+    repo_tags = ["dashboard-chat/reverse-proxy:bazel"],
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

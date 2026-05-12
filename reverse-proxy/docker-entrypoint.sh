@@ -14,7 +14,7 @@
 # nginx anyway.
 set -eu
 
-SERVICE="dashboard-frontend"
+SERVICE="dashboard-reverse-proxy"
 VERSION_FILE="/etc/dashboard-chat/version.json"
 META_FILE="/usr/share/nginx/html/_meta.json"
 UNKNOWN="unknown"

@@ -95,7 +95,7 @@ def _bazel_image_load(target: str) -> None:
     crafter wires this up per-service as scenarios are enabled.
     """
     root = _repo_root()
-    if target == "//frontend:image_tar":
+    if target == "//reverse-proxy:image_tar":
         _ensure_repo_root_env(root)
     subprocess.run(
         ["bazel", "run", target],
@@ -234,9 +234,9 @@ def _frontend_capture(
     bindings are insufficient. The compose teardown is registered via
     ``request.addfinalizer`` so the scenario cleans up after itself.
     """
-    capture.image = "dashboard-chat/frontend:bazel"
+    capture.image = "dashboard-chat/reverse-proxy:bazel"
     capture.service = "frontend"
-    _bazel_image_load("//frontend:image_tar")
+    _bazel_image_load("//reverse-proxy:image_tar")
     capture.workspace_status_sha = _read_workspace_status_sha()
     _compose_up_services(["auth-proxy", "agent", "frontend"])
     request.addfinalizer(lambda: _compose_down("frontend"))
@@ -307,7 +307,7 @@ def given_freshly_built_image(
         "dashboard-chat/api:bazel":        "//backend:image_tar",
         "dashboard-chat/agent:bazel":      "//agent:image_tar",
         "dashboard-chat/auth-proxy:bazel": "//auth-proxy:image_tar",
-        "dashboard-chat/frontend:bazel":   "//frontend:image_tar",
+        "dashboard-chat/reverse-proxy:bazel":   "//reverse-proxy:image_tar",
     }
     if image not in target_map:
         pytest.fail(f"unknown image tag for bazel build: {image}")
@@ -771,7 +771,7 @@ def given_frontend_running(
     requires_real_io: None,
     request: pytest.FixtureRequest,
 ) -> None:
-    assert service_id == "dashboard-frontend", (
+    assert service_id == "dashboard-reverse-proxy", (
         f"unexpected frontend service identifier: {service_id!r}"
     )
     _frontend_capture(capture, request)
@@ -899,14 +899,14 @@ _FOUR_SERVICES: Dict[str, str] = {
     "api":        "dashboard-api",
     "agent":      "dashboard-agent",
     "auth-proxy": "dashboard-auth-proxy",
-    "frontend":   "dashboard-frontend",
+    "frontend":   "dashboard-reverse-proxy",
 }
 
 _FOUR_IMAGE_TARGETS: Dict[str, str] = {
     "api":        "//backend:image_tar",
     "agent":      "//agent:image_tar",
     "auth-proxy": "//auth-proxy:image_tar",
-    "frontend":   "//frontend:image_tar",
+    "frontend":   "//reverse-proxy:image_tar",
 }
 
 
@@ -938,7 +938,7 @@ def _bazel_image_load_with_env(target: str, extra_env: Dict[str, str]) -> None:
     timestamp parity (see `_head_commit_epoch`).
     """
     root = _repo_root()
-    if target == "//frontend:image_tar":
+    if target == "//reverse-proxy:image_tar":
         _ensure_repo_root_env(root)
     env = {**os.environ, **extra_env}
     subprocess.run(

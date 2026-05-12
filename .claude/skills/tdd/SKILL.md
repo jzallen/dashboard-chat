@@ -59,34 +59,34 @@ Run all backend tests:
 bazel test //backend:tests
 ```
 
-### Frontend (`frontend/`)
+### Frontend (`reverse-proxy/`)
 
 Each vitest config covers a module group:
 
 | Source path | Bazel target |
 |---|---|
-| `src/lib/api/`, `src/lib/` (non-UI) | `//frontend:test_lib` |
-| `src/lib/auth/` | `//frontend:test_core_auth` |
-| `src/lib/ui/context/` (chat) | `//frontend:test_core_chat` |
-| `src/lib/ui/` (data catalog) | `//frontend:test_core_datacatalog` |
-| `src/lib/table-tools/` | `//frontend:test_core_toolcalls` |
-| `src/lib/ui/hooks/` | `//frontend:test_ui_hooks` |
-| `src/lib/ui/context/` (non-chat) | `//frontend:test_ui_context` |
-| `src/lib/ui/components/` | `//frontend:test_ui_components` |
+| `src/lib/api/`, `src/lib/` (non-UI) | `//reverse-proxy:test_lib` |
+| `src/lib/auth/` | `//reverse-proxy:test_core_auth` |
+| `src/lib/ui/context/` (chat) | `//reverse-proxy:test_core_chat` |
+| `src/lib/ui/` (data catalog) | `//reverse-proxy:test_core_datacatalog` |
+| `src/lib/table-tools/` | `//reverse-proxy:test_core_toolcalls` |
+| `src/lib/ui/hooks/` | `//reverse-proxy:test_ui_hooks` |
+| `src/lib/ui/context/` (non-chat) | `//reverse-proxy:test_ui_context` |
+| `src/lib/ui/components/` | `//reverse-proxy:test_ui_components` |
 
 Run a single target:
 ```bash
-bazel test //frontend:test_core_auth
+bazel test //reverse-proxy:test_core_auth
 ```
 
 Run a single test file directly (faster iteration):
 ```bash
-cd frontend && npx vitest run src/lib/auth/AuthProvider.test.tsx
+cd reverse-proxy && npx vitest run src/lib/auth/AuthProvider.test.tsx
 ```
 
 Run all frontend tests:
 ```bash
-bazel test //frontend:test
+bazel test //reverse-proxy:test
 ```
 
 ### Worker (`worker/`)
@@ -102,7 +102,7 @@ npm run test:worker
 
 Changes to `shared/chat/` affect both frontend and worker — run both:
 ```bash
-bazel test //frontend:test //worker:test
+bazel test //reverse-proxy:test //worker:test
 ```
 
 ## Full Suite (final verification)

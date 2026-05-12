@@ -22,7 +22,7 @@ to Redis Streams via the ADR-018 capability-presence dispatch, and
 serves a JSON projection at `GET /ui-state/api/flows/{id}/projection`
 plus an SSE push channel at `…/projection/stream`. The FE consumes the
 projection through Remix route loaders (`ui-presentation`, running
-alongside the existing nginx `frontend` container per ADR-031); the TS
+alongside the existing nginx `reverse-proxy` container per ADR-031); the TS
 `UserFlowHarness` consumes the same projection over HTTP — neither
 re-derives state.
 

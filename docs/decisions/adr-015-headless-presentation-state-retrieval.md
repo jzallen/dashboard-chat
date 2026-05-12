@@ -7,7 +7,7 @@
 
 ## Context
 
-The TanStack table on the FE renders sort, filter, and column-visibility state directly from local React state. UI directives emitted by the worker (`sort_directive`, `filter_directive`, `filters_cleared`) are applied via `applyDirective` (`frontend/src/core/chat/dispatcher.ts`) into that local state. There is currently no headless way to retrieve the current sort/filter/visibility configuration of a channel — a Python harness, a future SDK consumer, or a future replay tool has no entry point.
+The TanStack table on the FE renders sort, filter, and column-visibility state directly from local React state. UI directives emitted by the worker (`sort_directive`, `filter_directive`, `filters_cleared`) are applied via `applyDirective` (`reverse-proxy/src/core/chat/dispatcher.ts`) into that local state. There is currently no headless way to retrieve the current sort/filter/visibility configuration of a channel — a Python harness, a future SDK consumer, or a future replay tool has no entry point.
 
 Phase 1 Epic D (api-driven-user-flow-tests) needs to assert on table presentation state in headless tests without driving a browser. Without a retrieval endpoint, those assertions either run against a Playwright-driven FE (heavy, slow, brittle) or are skipped entirely.
 
@@ -81,7 +81,7 @@ Concretely:
 The user's framing was "the list of events that tell the UI how to render the tanstack table." Folded in verbatim as the load-bearing decision principle:
 
 - Worker already produces directives; appending to a log is structurally cheaper than computing snapshot projections.
-- Directive algebra lives in `frontend/src/core/chat/dispatcher.ts`'s `applyDirective`; replicating it server-side is duplicate-the-FE-reducer work without a clear consumer need today.
+- Directive algebra lives in `reverse-proxy/src/core/chat/dispatcher.ts`'s `applyDirective`; replicating it server-side is duplicate-the-FE-reducer work without a clear consumer need today.
 - An append-only log composes with **Epic C's SSE-replay infrastructure by design** — same shape, different stream.
 - Server-side projections are additive; if a snapshot endpoint becomes warranted, layer it on top of the log without breaking the log endpoint. **Don't build it preemptively.**
 
@@ -193,7 +193,7 @@ A server-side projection (snapshot) endpoint can be added later as a separate en
 
 - User framing: *"the list of events that tell the UI how to render the tanstack table"* — `dc-wisp-dowv`.
 - Wire schema: ADR-014 `UiDirectiveSchema` (`shared/chat/events.ts`).
-- Existing FE applier: `frontend/src/core/chat/dispatcher.ts` :: `applyDirective`.
+- Existing FE applier: `reverse-proxy/src/core/chat/dispatcher.ts` :: `applyDirective`.
 - Test invariant guarded: `agent/test/chat/acceptance/worker-tool-dispatch.test.ts:502-550` ("no backend call" — guards `BackendClient.post`).
 - Phase 0 DIVERGE source: mail `dc-wisp-vp79` (mayor GO), `dc-wisp-ctyh` (dave's reply with the three ADRs).
 - Ratification trail: `dc-wisp-z02g` (deferred for naming collision), `dc-wisp-dowv` (mayor + user ratified rename + event-log shape), `dc-wisp-8agq` (dave's update reply), `dc-wisp-n6ar` (mayor confirmed ratified).

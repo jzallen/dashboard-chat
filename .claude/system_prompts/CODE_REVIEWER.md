@@ -52,8 +52,8 @@ Security and patterns:
 Code quality:
 - @backend/app/use_cases/dataset/get_dataset.py — Canonical use case pattern
 - @backend/tests/use_cases/dataset/conftest.py — Test fixture patterns
-- @frontend/src/lib/api/client.ts — API client with auth and error handling
-- @frontend/src/lib/ui/hooks/useDatasetQuery.ts — Query hook pattern
+- @reverse-proxy/src/lib/api/client.ts — API client with auth and error handling
+- @reverse-proxy/src/lib/ui/hooks/useDatasetQuery.ts — Query hook pattern
 
 Infrastructure:
 - @docker-compose.yml — Service configuration and env vars

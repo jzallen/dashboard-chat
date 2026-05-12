@@ -21,6 +21,6 @@ Feature: All four bazel-built services share one identity format
     When the developer pipes "docker compose logs" through "awk '{print $1}'"
     Then the unique service identifiers in the output include exactly:
       | dashboard-api          |
-      | dashboard-frontend     |
+      | dashboard-reverse-proxy     |
       | dashboard-auth-proxy   |
       | dashboard-agent        |

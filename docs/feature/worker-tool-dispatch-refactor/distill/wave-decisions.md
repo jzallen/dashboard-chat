@@ -72,10 +72,10 @@ Scaffolds to produce in DISTILL (one per file the DESIGN names as NEW in PR 0):
 | `agent/lib/chat/dispatchers/cleaning.ts` | agent | (PR 1) `makeApplyCleaningTransformDispatcher`, etc. |
 | `agent/lib/chat/dispatchers/mutations.ts` | agent | (PR 2) skeletons |
 | `agent/lib/chat/dispatchers/ui.ts` | agent | (PR 3) skeletons |
-| `frontend/src/core/chat/events.ts` | frontend | re-export from agent OR duplicate; see TWD-8 |
-| `frontend/src/core/chat/dispatcher.ts` | frontend | `applyDirective`, `Directive` |
-| `frontend/src/core/chat/eventHandler.ts` | frontend | `handleChatEvent` |
-| `frontend/src/core/chat/__tests__/mockSSESource.ts` | frontend | `MockSSESource` |
+| `reverse-proxy/src/core/chat/events.ts` | frontend | re-export from agent OR duplicate; see TWD-8 |
+| `reverse-proxy/src/core/chat/dispatcher.ts` | frontend | `applyDirective`, `Directive` |
+| `reverse-proxy/src/core/chat/eventHandler.ts` | frontend | `handleChatEvent` |
+| `reverse-proxy/src/core/chat/__tests__/mockSSESource.ts` | frontend | `MockSSESource` |
 
 All bodies throw the RED-scaffold error. PR-1/2/3 scaffolds are stubs only — DISTILL's job is to make tests RED, not to predict implementations.
 
@@ -83,7 +83,7 @@ All bodies throw the RED-scaffold error. PR-1/2/3 scaffolds are stubs only — D
 
 DESIGN §3 references `shared/chat/events.ts` as a single source of truth shared via npm workspace import. **No `shared/` workspace exists** in the repo (`package.json` `workspaces: [frontend, agent, auth-proxy]`). This is an upstream-design assumption that doesn't hold.
 
-DISTILL's binding decision: scaffolds live in `agent/lib/chat/events.ts` (canonical) and `frontend/src/core/chat/events.ts` (re-export pattern: `export * from "../../../../agent/lib/chat/events"` via a relative path, OR a verbatim copy with a sync test). The acceptance scenarios assert **schema equivalence at runtime** rather than at the file-location level — the assertion shape is "every event the worker emits parses against the FE's schema, and vice versa." This makes the location decision DELIVER-time, not DISTILL-time.
+DISTILL's binding decision: scaffolds live in `agent/lib/chat/events.ts` (canonical) and `reverse-proxy/src/core/chat/events.ts` (re-export pattern: `export * from "../../../../agent/lib/chat/events"` via a relative path, OR a verbatim copy with a sync test). The acceptance scenarios assert **schema equivalence at runtime** rather than at the file-location level — the assertion shape is "every event the worker emits parses against the FE's schema, and vice versa." This makes the location decision DELIVER-time, not DISTILL-time.
 
 **Flagged for DESIGN follow-up** in `distill/upstream-issues.md`.
 

@@ -10,7 +10,7 @@ ProjectNav shows a skeleton loader inside OrgView even though:
 ### What the Frontend Expects
 The frontend `Project` interface requires a `datasets` array:
 ```typescript
-// frontend/src/lib/api/projects.ts
+// reverse-proxy/src/lib/api/projects.ts
 export interface Project {
   id: string;
   name: string;
@@ -57,16 +57,16 @@ if include_datasets:
 ## Why the Skeleton Shows
 
 ### Component Chain
-1. **AppShell** (`frontend/src/lib/ui/components/AppShell/index.tsx`, line 34):
+1. **AppShell** (`reverse-proxy/src/lib/ui/components/AppShell/index.tsx`, line 34):
    - Calls `useOrgProjectsQuery()` which fetches `/api/projects`
    - The query succeeds and returns project data (unwrapped by API client)
    - But the returned projects have `undefined` datasets
 
-2. **SideNav** (`frontend/src/lib/ui/components/SideNav/index.tsx`, line 65):
+2. **SideNav** (`reverse-proxy/src/lib/ui/components/SideNav/index.tsx`, line 65):
    - Receives `projects={projects ?? []}` from AppShell
    - When in "org" mode, passes projects to `OrgBody`
 
-3. **OrgBody** (`frontend/src/lib/ui/components/SideNav/index.tsx`, lines 89-99):
+3. **OrgBody** (`reverse-proxy/src/lib/ui/components/SideNav/index.tsx`, lines 89-99):
    - **Skeleton condition: `if (projects.length === 0)`**
    - However, since projects are received but with missing `datasets` field
    - The `ProjectNavItem` still renders but with incomplete data
@@ -75,7 +75,7 @@ if include_datasets:
 ### The Real Issue
 The condition that shows the skeleton is:
 ```typescript
-// frontend/src/lib/ui/components/SideNav/index.tsx, lines 89-99
+// reverse-proxy/src/lib/ui/components/SideNav/index.tsx, lines 89-99
 if (projects.length === 0) {
     return (
         <>

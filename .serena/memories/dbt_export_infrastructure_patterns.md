@@ -195,7 +195,7 @@ if dataset_record.project and hasattr(dataset_record.project, 'org_id'):
 
 ## 4. Frontend API Client
 
-### Base Client Pattern (from `frontend/src/lib/api/client.ts`)
+### Base Client Pattern (from `reverse-proxy/src/lib/api/client.ts`)
 - **API URL**: From `import.meta.env.VITE_API_URL` (defaults to "" = same origin)
 - **Auth Headers**: `getAuthHeaders()` returns `{ Authorization: "Bearer <token>" }`
 - **Error Handling**: 
@@ -431,7 +431,7 @@ Contains: id, name, description, condition_json (RAQB), condition_sql, status (e
 - [ ] Handle errors: ProjectNotFound (404), AuthorizationError (403)
 
 ### Frontend
-- [ ] Add export function to `frontend/src/lib/api/projects.ts`
+- [ ] Add export function to `reverse-proxy/src/lib/api/projects.ts`
 - [ ] Use fetch with auth headers, handle blob download
 - [ ] Add UI button to export dbt project
 
@@ -485,7 +485,7 @@ class AuthorizationError(DomainException):
 - **Auth**: `/workspaces/dashboard-chat/backend/app/auth/middleware.py`
 - **Models**: `/workspaces/dashboard-chat/backend/app/models/{project,dataset}.py`
 - **S3 Client**: `/workspaces/dashboard-chat/backend/app/repositories/lake/repository.py`
-- **Frontend Client**: `/workspaces/dashboard-chat/frontend/src/lib/api/client.ts`
+- **Frontend Client**: `/workspaces/dashboard-chat/reverse-proxy/src/lib/api/client.ts`
 - **Feature Spec**: `/workspaces/dashboard-chat/features/dbt-project-export.feature`
 
 ### Test Patterns

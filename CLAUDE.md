@@ -6,10 +6,10 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 
 ## Architecture
 
-- **Frontend** (`frontend/`) — React 18 + Vite + TanStack Query/Table + Tailwind CSS
+- **Frontend** (`reverse-proxy/`) — React 18 + Vite + TanStack Query/Table + Tailwind CSS
 - **Backend** (`backend/`) — FastAPI + SQLAlchemy (async) + DuckDB + Alembic migrations
 - **Worker** (`worker/`) — Hono (Node.js) chat API with SSE streaming via Groq
-- **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `frontend/`. Future cross-cutting chat types/handlers/prompts go here.
+- **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `reverse-proxy/`. Future cross-cutting chat types/handlers/prompts go here.
 
 ## Development Methodology — nwave-ai waves
 
@@ -50,7 +50,7 @@ This project uses **nwave-ai** as its SDLC framework (see [ADR-013](docs/decisio
 
 ```bash
 npm run test:all                     # ALL tests: JS (turbo) + backend (pytest)
-cd frontend && npx vitest run        # frontend only
+cd reverse-proxy && npx vitest run        # frontend only
 cd backend && uv run pytest          # backend only
 npm run test:worker                  # worker only
 ```

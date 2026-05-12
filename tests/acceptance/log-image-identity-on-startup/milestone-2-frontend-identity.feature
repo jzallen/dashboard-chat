@@ -3,19 +3,19 @@
 # The frontend is an nginx-served static SPA: no native application
 # startup log. Its identity surface is the entrypoint-shim stdout line
 # AND a machine-readable HTTP endpoint at /_meta.json (DESIGN §6:
-# `frontend/docker-entrypoint.sh` writes both surfaces).
+# `reverse-proxy/docker-entrypoint.sh` writes both surfaces).
 
 @real-io @slow
 Feature: Frontend container exposes build identity via stdout and HTTP
 
   Scenario: Identity line on container stdout (AC2.1)
-    Given the bazel image "dashboard-chat/frontend:bazel" has been freshly built
+    Given the bazel image "dashboard-chat/reverse-proxy:bazel" has been freshly built
     When the "frontend" service is started via "docker compose up -d"
     Then within the first 50 lines of "docker compose logs frontend" there is exactly one line matching the canonical identity regex
-    And the line begins with the service identifier "dashboard-frontend"
+    And the line begins with the service identifier "dashboard-reverse-proxy"
 
   Scenario: Identity available over HTTP at /_meta.json (AC2.2)
-    Given "dashboard-frontend" is running and serving the SPA
+    Given "dashboard-reverse-proxy" is running and serving the SPA
     When the developer issues "GET /_meta.json"
     Then the response status is 200
     And the response body is JSON of shape {image, sha, dirty, built}

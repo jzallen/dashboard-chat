@@ -35,13 +35,13 @@ echo "==> Loading Bazel-built OCI images..."
 # oci_load produces shell scripts that call docker load
 if [[ -f "bazel-bin/backend/image_tar.sh" ]]; then
     bash bazel-bin/backend/image_tar.sh
-    bash bazel-bin/frontend/image_tar.sh
+    bash bazel-bin/reverse-proxy/image_tar.sh
     bash bazel-bin/worker/image_tar.sh
     [[ -f "bazel-bin/auth-proxy/image_tar.sh" ]] && bash bazel-bin/auth-proxy/image_tar.sh
 else
     # If running via bazel test, build and load images
     bazel run //backend:image_tar
-    bazel run //frontend:image_tar
+    bazel run //reverse-proxy:image_tar
     bazel run //worker:image_tar
     bazel run //auth-proxy:image_tar 2>/dev/null || true
 fi

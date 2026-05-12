@@ -5,11 +5,11 @@ set -euo pipefail
 (cd backend && uv run ruff format . && uv run ruff check --fix .)
 
 # Auto-fix JS/TS lint issues (run per-package to match Bazel lint targets)
-npx eslint --fix frontend/src agent/
+npx eslint --fix reverse-proxy/src agent/
 
 # Re-stage any files modified by the auto-fixers
 git add -u
 
-# Verify nothing unfixable remains (same commands as //frontend:lint, //agent:lint, //backend:lint)
-npx eslint frontend/src agent/
+# Verify nothing unfixable remains (same commands as //reverse-proxy:lint, //agent:lint, //backend:lint)
+npx eslint reverse-proxy/src agent/
 (cd backend && uv run ruff check . && uv run ruff format --check .)

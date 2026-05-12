@@ -24,7 +24,7 @@ Feature: Uninstrumented or corrupt version.json degrades gracefully
       | api        | dashboard-chat/api:bazel       |
       | agent      | dashboard-chat/agent:bazel     |
       | auth-proxy | dashboard-chat/auth-proxy:bazel|
-      | frontend   | dashboard-chat/frontend:bazel  |
+      | frontend   | dashboard-chat/reverse-proxy:bazel  |
 
   Scenario: Corrupt version.json yields "unknown" tokens, no crash
     Given the bazel image "dashboard-chat/api:bazel" has been freshly built
@@ -33,7 +33,7 @@ Feature: Uninstrumented or corrupt version.json degrades gracefully
     And the identity line in "docker compose logs api" contains sha=unknown and built=unknown
 
   Scenario: Frontend "/_meta.json" still serves a fallback when version.json is absent
-    Given the bazel image "dashboard-chat/frontend:bazel" has been freshly built
+    Given the bazel image "dashboard-chat/reverse-proxy:bazel" has been freshly built
     When the "frontend" container is started with "/etc/dashboard-chat/version.json" overridden by "/dev/null"
     Then "GET /_meta.json" returns 200
     And the response body is JSON with sha="unknown" and built="unknown"

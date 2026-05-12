@@ -115,23 +115,23 @@ The system-scope pass surfaced four design points in Morgan's deliverable that n
 
 ### Change 9 — Container diagram: Remix as a separate container, not a replacement for nginx
 
-**Morgan's state**: `application-architecture.md` §2 C4 Container diagram shows `Container(frontend, "Frontend (Remix on Vite)", ...)` — implying the single existing `frontend` container's process model changes from nginx-serving-static to Node-running-Remix.
+**Morgan's state**: `application-architecture.md` §2 C4 Container diagram shows `Container(frontend, "Frontend (Remix on Vite)", ...)` — implying the single existing `reverse-proxy` container's process model changes from nginx-serving-static to Node-running-Remix.
 
-**Titan's state**: **Remix runs as a NEW separate container** (`ui-presentation`). nginx in the existing `frontend` container is byte-unchanged. nginx gains one new upstream rule for migrated routes; ALL existing rules — including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule — are preserved verbatim. Ratified in **ADR-031**.
+**Titan's state**: **Remix runs as a NEW separate container** (`ui-presentation`). nginx in the existing `reverse-proxy` container is byte-unchanged. nginx gains one new upstream rule for migrated routes; ALL existing rules — including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule — are preserved verbatim. Ratified in **ADR-031**.
 
 **Why this matters at system scope**: replacing nginx means re-implementing four routing rules + gzip + asset caching + late-binding DNS resolution in JavaScript. Doable, but unnecessary churn with no system-level payoff. The strangler-fig migration is also far cleaner with two containers (per-route rollback is a one-line nginx.conf revert) than with a single rewritten container.
 
-**Source**: `frontend/nginx.conf` (6 routing rules); ADR-015 §"Decision outcome" (the presentation-state routing rule is load-bearing).
+**Source**: `reverse-proxy/nginx.conf` (6 routing rules); ADR-015 §"Decision outcome" (the presentation-state routing rule is load-bearing).
 
 ### Change 10 — "Auth-proxy is sole ingress" is aspirational today; ADR-030 makes it honored for the new tier from day 1
 
 **Morgan's state**: `application-architecture.md` §"Key callouts" claims "Auth-proxy is the only ingress for the FE, the harness, the ui-state tier, the agent, and the backend. ADR-016 is honored."
 
-**Titan's state**: this is **mechanically not true for the agent today** — the agent is reached via `frontend/nginx.conf:35-47` (`/worker/` rule, direct to `agent:8787`) and via `frontend/nginx.conf:16-23` (`/api/channels/:id/presentation-state` rule, direct to `agent:8787`). Auth-proxy is the sole ingress for the backend, not for the agent.
+**Titan's state**: this is **mechanically not true for the agent today** — the agent is reached via `reverse-proxy/nginx.conf:35-47` (`/worker/` rule, direct to `agent:8787`) and via `reverse-proxy/nginx.conf:16-23` (`/api/channels/:id/presentation-state` rule, direct to `agent:8787`). Auth-proxy is the sole ingress for the backend, not for the agent.
 
 **Resolution**: ADR-030 ratifies routing the **ui-state tier** behind auth-proxy from day 1 (honoring ADR-016 for the new tier). The agent's bypass is documented as a pre-existing inconsistency; ADR-030 does not perpetuate it but also does not fix it (out of scope). The ui-state tier sits behind auth-proxy correctly from PR-0.
 
-**Source**: `auth-proxy/app.ts:19` (single `BACKEND_URL`); `frontend/nginx.conf:16-47` (`/worker/` + `/api/channels/:id/presentation-state` bypass routes).
+**Source**: `auth-proxy/app.ts:19` (single `BACKEND_URL`); `reverse-proxy/nginx.conf:16-47` (`/worker/` + `/api/channels/:id/presentation-state` bypass routes).
 
 ### Change 11 — `flow_id` schema mandates `principal_id` for per-user flows
 

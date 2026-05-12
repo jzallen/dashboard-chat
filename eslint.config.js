@@ -49,8 +49,8 @@ export default [
   // react-hooks rules catch misused hooks (rules-of-hooks) and stale closures
   // (exhaustive-deps) — high value for complex components like ChatContext
   {
-    files: ["frontend/src/**/*.{ts,tsx}"],
-    ignores: ["frontend/src/test/**"],
+    files: ["reverse-proxy/src/**/*.{ts,tsx}"],
+    ignores: ["reverse-proxy/src/test/**"],
     plugins: {
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
@@ -69,8 +69,8 @@ export default [
   // ── TanStack Query rules for frontend ───────────────────────────────
   // Catches missing query key dependencies and unstable query client creation
   {
-    files: ["frontend/src/**/*.{ts,tsx}"],
-    ignores: ["frontend/src/test/**"],
+    files: ["reverse-proxy/src/**/*.{ts,tsx}"],
+    ignores: ["reverse-proxy/src/test/**"],
     plugins: { "@tanstack/query": tanstackQuery },
     rules: {
       "@tanstack/query/exhaustive-deps": "warn",
@@ -81,7 +81,7 @@ export default [
   // ── Frontend test files ─────────────────────────────────────────────
   // Testing Library best practices: prefer screen queries, avoid unnecessary act()
   {
-    files: ["frontend/src/**/*.test.{ts,tsx}", "frontend/src/**/__tests__/**/*.{ts,tsx}", "frontend/src/test/**/*.{ts,tsx}"],
+    files: ["reverse-proxy/src/**/*.test.{ts,tsx}", "reverse-proxy/src/**/__tests__/**/*.{ts,tsx}", "reverse-proxy/src/test/**/*.{ts,tsx}"],
     plugins: { "testing-library": testingLibrary },
     rules: {
       "testing-library/await-async-queries": "error",

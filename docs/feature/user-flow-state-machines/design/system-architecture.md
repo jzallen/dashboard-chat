@@ -188,7 +188,7 @@ Where does `ui-state/` *physically* sit?
 
 | Placement | Verdict | Reason |
 |---|---|---|
-| Behind the frontend nginx (parallel to `/api/`, `/worker/` rules) | Considered | Today's nginx is the de-facto multi-upstream router; adding `/ui-state/` is a 5-line nginx.conf change. But this **bypasses auth-proxy**, which violates ADR-016 if the tier handles privileged operations. |
+| Behind the reverse-proxy nginx (parallel to `/api/`, `/worker/` rules) | Considered | Today's nginx is the de-facto multi-upstream router; adding `/ui-state/` is a 5-line nginx.conf change. But this **bypasses auth-proxy**, which violates ADR-016 if the tier handles privileged operations. |
 | Behind auth-proxy as a second upstream | **RECOMMENDED** | Honors ADR-016 ("auth-proxy is the sole production ingress for backend and worker"). The ui-state tier handles privileged operations (writing FlowEvents that mutate scope state; invoking backend writes on transitions); it must sit behind auth-proxy. |
 | Direct host port via auth-proxy + new ingress | Overkill | No external system consumes the tier; an additional ingress adds operational mass for no value at this scale. |
 | Co-tenanted in the auth-proxy container | **REJECTED** | Auth-proxy is stateless and does one thing well (JWT verification + identity-header injection). The ui-state tier is hot, stateful (in-process actor tree), and runs business logic. Co-tenancy muddles two responsibilities. Mirrors the rejection of `agent/` as host per D8. |
@@ -202,13 +202,13 @@ Where does `ui-state/` *physically* sit?
 - Line 19: `const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";`
 - Line 178: `app.all("*", ...)` proxies all unmatched paths to `BACKEND_URL`.
 
-The agent today is reached via the **frontend container's nginx** (`frontend/nginx.conf:35-47`, the `/worker/` rule), **NOT** via auth-proxy. The ADR-016 statement that "auth-proxy is the sole production ingress for backend and worker" is **aspirational, not currently honored for the agent in compose dev.**
+The agent today is reached via the **frontend container's nginx** (`reverse-proxy/nginx.conf:35-47`, the `/worker/` rule), **NOT** via auth-proxy. The ADR-016 statement that "auth-proxy is the sole production ingress for backend and worker" is **aspirational, not currently honored for the agent in compose dev.**
 
 Morgan's design assumes the auth-proxy will forward `/ui-state/*` to the new tier. To honor that:
 
 - **Option (a)**: Extend auth-proxy to be multi-upstream. Add an upstream table (`/api/*` → backend, `/ui-state/*` → ui-state, `/worker/*` → agent). This is a small Hono-routes change (~30 lines + tests) but is a **policy-shaped change** to auth-proxy's responsibility (it grows from "the auth-and-proxy gateway for backend" to "the auth-and-proxy gateway for all internal services"). Recommended.
 
-- **Option (b)**: Add `/ui-state/*` to `frontend/nginx.conf` (mirror the `/worker/` rule). This is byte-trivial but means the ui-state tier sits in front of auth-proxy in the routing topology, violating ADR-016 the same way the agent already does. Not recommended.
+- **Option (b)**: Add `/ui-state/*` to `reverse-proxy/nginx.conf` (mirror the `/worker/` rule). This is byte-trivial but means the ui-state tier sits in front of auth-proxy in the routing topology, violating ADR-016 the same way the agent already does. Not recommended.
 
 ADR-030 ratifies **Option (a)** — extend auth-proxy. This decision has retroactive cleanup value: the agent's `/worker/` route can later be migrated behind the same multi-upstream auth-proxy, restoring ADR-016 fidelity. Out of scope for THIS feature, but the door is now open.
 
@@ -417,13 +417,13 @@ ADR-030 §"Observability" ratifies the above. (Optional standalone ADR for SQ-4 
 
 ## 4. SQ-5: Frontend tier transition — Remix replaces nginx?
 
-This is the most consequential system-level question. Morgan's design says: "Replace `frontend/main.tsx` + `frontend/App.tsx` with Remix" — implying that the `frontend/` container's process model changes from "nginx serving static `dist/` + reverse-proxy" to "Node running Remix server."
+This is the most consequential system-level question. Morgan's design says: "Replace `reverse-proxy/main.tsx` + `reverse-proxy/App.tsx` with Remix" — implying that the `reverse-proxy/` container's process model changes from "nginx serving static `dist/` + reverse-proxy" to "Node running Remix server."
 
 That implication has system-level consequences that need to be made explicit and weighed.
 
 ### 4.1 What nginx does today (audit)
 
-From `frontend/nginx.conf` and `docker-compose.yml`:
+From `reverse-proxy/nginx.conf` and `docker-compose.yml`:
 
 1. **Serves the SPA** — static `dist/` files, SPA fallback (`try_files $uri $uri/ /index.html`).
 2. **Reverse-proxies `/api/`** → `http://auth-proxy:3000/api/`.
@@ -449,10 +449,10 @@ From `frontend/nginx.conf` and `docker-compose.yml`:
 Browser → frontend container (Remix on Node) → auth-proxy / agent (via fetch from loaders)
 ```
 
-- The `frontend/` container runs `node ./build/index.js` (Remix's compiled server).
+- The `reverse-proxy/` container runs `node ./build/index.js` (Remix's compiled server).
 - Remix's request handler owns: SPA route resolution, loader execution, static asset serving (`@remix-run/node` ships `createReadableStreamFromReadable` for assets, OR a thin `serve-static` in front).
 - **Lost**: nginx's mature reverse-proxy semantics (`resolver` for late-binding DNS; gzip + caching; chunked-transfer + buffering controls for SSE).
-- **Lost (most subtle)**: the `frontend/nginx.conf` line 16-23 rule that routes `/api/channels/:id/presentation-state` to agent — this was a deliberate nginx-level routing decision (ADR-015 / `dc-x3y.2.2`). Remix loaders would have to reproduce this routing logic in JavaScript.
+- **Lost (most subtle)**: the `reverse-proxy/nginx.conf` line 16-23 rule that routes `/api/channels/:id/presentation-state` to agent — this was a deliberate nginx-level routing decision (ADR-015 / `dc-x3y.2.2`). Remix loaders would have to reproduce this routing logic in JavaScript.
 
 #### Option R2 — Remix Node server runs BEHIND nginx (nginx as reverse proxy)
 
@@ -462,7 +462,7 @@ Browser → frontend container (nginx) → Remix Node server (sidecar in same co
                                     → agent
 ```
 
-- Two processes in the `frontend/` container (or two containers: `frontend-nginx` + `ui-presentation`).
+- Two processes in the `reverse-proxy/` container (or two containers: `frontend-nginx` + `ui-presentation`).
 - nginx keeps items 2-7 above.
 - Remix only handles items 1 (SPA routes + loaders).
 - nginx routes `/` (and Remix-owned routes) → Remix Node server on internal port (e.g., `localhost:3001`).
@@ -505,13 +505,13 @@ Morgan's `application-architecture.md` §2 implies R1 (Remix server replaces ngi
 
 **Pushback**: there is no system-level reason to replace nginx. The nginx config is mature, handles four routing concerns that Remix would have to reimplement, and contains a load-bearing ADR-015 routing rule. Replacing it is unnecessary churn.
 
-**Recommendation: Option R3** — Remix runs as a new compose service (e.g., `ui-presentation`); nginx in the existing `frontend` container stays and gains a `/` → `remix:3001` upstream rule.
+**Recommendation: Option R3** — Remix runs as a new compose service (e.g., `ui-presentation`); nginx in the existing `reverse-proxy` container stays and gains a `/` → `remix:3001` upstream rule.
 
 **Sharpest argument**: Option R3 is the **only option with a clean strangler-fig path**. We can deploy the Remix container alongside the existing nginx-static SPA, route specific routes through Remix (`/login`, `/org/$org`, etc.) progressively, and retire the SPA fallback when the migration completes. R1 demands a big-bang container replacement; R2 forces nginx + Node into the same container's lifecycle. R3 is the option Morgan's design also implicitly supports — her ADR-027 §"Reversibility" notes that "the load-bearing piece (ui-state tier) is framework-independent" — the same reasoning applies to the FE migration.
 
-**TLS, gzip, caching**: unchanged. nginx in the `frontend` container keeps doing those. In production behind a CDN (future concern; out of scope), the CDN handles TLS and caching anyway.
+**TLS, gzip, caching**: unchanged. nginx in the `reverse-proxy` container keeps doing those. In production behind a CDN (future concern; out of scope), the CDN handles TLS and caching anyway.
 
-**Container build pipeline**: `make up` builds three Bazel-managed images (frontend nginx-static, ui-presentation Node, ui-state Node). Same shape as the existing build of (frontend, agent, auth-proxy, api). Net additive: +1 image, same pattern.
+**Container build pipeline**: `make up` builds three Bazel-managed images (reverse-proxy nginx-static, ui-presentation Node, ui-state Node). Same shape as the existing build of (frontend, agent, auth-proxy, api). Net additive: +1 image, same pattern.
 
 ### 4.6 Frontend transition — final directive
 
@@ -523,7 +523,7 @@ Morgan's `application-architecture.md` §2 implies R1 (Remix server replaces ngi
 | Who handles ADR-015's `/api/channels/:id/presentation-state` rule? | nginx, unchanged |
 | Who handles gzip + static asset caching? | nginx, unchanged |
 | Who handles SPA fallback? | nginx for legacy routes; Remix for migrated routes |
-| Process model change in `frontend/` | NONE — nginx-only, single process |
+| Process model change in `reverse-proxy/` | NONE — nginx-only, single process |
 | New container | `ui-presentation` (Node), separate from the existing `frontend` |
 | Migration path | Strangler-fig: nginx routes `/login`, `/org/*` to Remix; the rest stays on SPA; migrated route-by-route over 4-6 weeks |
 | `make up` flow survives? | YES — adds one more Bazel image target |
@@ -843,4 +843,4 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 - **NEW ADR-030**: Topology + scaling — ui-state tier behind auth-proxy, single replica
 - **NEW ADR-031**: Frontend tier transition — Remix runs alongside, not in place of, nginx
 - ADR-016 (auth-proxy ingress), ADR-018 (Redis-only dispatch), ADR-015 (presentation-state log), ADR-001 (Hono over Express)
-- `docker-compose.yml`, `frontend/nginx.conf`, `auth-proxy/app.ts`
+- `docker-compose.yml`, `reverse-proxy/nginx.conf`, `auth-proxy/app.ts`

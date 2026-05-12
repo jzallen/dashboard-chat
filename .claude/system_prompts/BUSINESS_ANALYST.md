@@ -35,7 +35,7 @@ Always consult these files for current state:
 - @backend/app/routers/datasets.py — Dataset API endpoints
 - @backend/app/routers/projects.py — Project API endpoints
 - @backend/app/routers/organizations.py — Organization API endpoints
-- @frontend/src/lib/ui/components/AppShell.tsx — Main application shell and navigation
+- @reverse-proxy/src/lib/ui/components/AppShell.tsx — Main application shell and navigation
 - @shared/chat/prompts.ts — AI system prompts and tool definitions (what the chat can do)
 
 ## Your Responsibilities

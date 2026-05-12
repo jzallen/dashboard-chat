@@ -1,9 +1,10 @@
 services:
-  # Frontend - nginx serving Vite build
-  frontend:
-    image: dashboard-chat/frontend:bazel
+  # Reverse-Proxy - nginx serving Vite build + routing /api, /worker,
+  # /api/channels/:id/presentation-state, /ui-state/* (post-ADR-032).
+  reverse-proxy:
+    image: dashboard-chat/reverse-proxy:bazel
     pull_policy: never
-    container_name: dashboard-frontend
+    container_name: dashboard-reverse-proxy
     ports:
       - "5173:80"
     depends_on:
@@ -19,7 +20,7 @@ services:
   # Multi-replica usage (compose acceptance test):
   #     docker compose up -d --scale agent=2
   # We deliberately omit `container_name` and the fixed host port so
-  # `--scale=N` works without name/port conflicts. The frontend's nginx
+  # `--scale=N` works without name/port conflicts. The reverse-proxy's nginx
   # routes to the `agent:8787` service name over the compose network and
   # rides docker's round-robin DNS across replicas; the test orchestrator
   # uses `docker compose port --index N agent 8787` to hit each replica.

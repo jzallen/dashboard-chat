@@ -65,7 +65,7 @@ backend dataset-layer integration harness) must read the new shape. The
 `ChatEvent` payload contract is unchanged; only the envelope migrates.
 
 - **02-01** — `29d0245` — Migrate
-  `frontend/src/core/chat/services/chatStream.ts`. Numeric-prefix parser
+  `reverse-proxy/src/core/chat/services/chatStream.ts`. Numeric-prefix parser
   removed; replaced with a `data:`-framed JSON dispatcher. `text-delta`
   -> `handlers.onContent` (accumulating); `data-chat-event` ->
   `handlers.onChatEvent` after `ChatEventSchema.safeParse`. The legacy
@@ -88,13 +88,13 @@ backend dataset-layer integration harness) must read the new shape. The
 ### Phase 03 — Full-stack verification (1.5 hrs, 2 steps)
 
 - **03-01** — `dfcedd0` + `9fa37ac` + `a2389aa` — Bazel sweep. `bazel
-  test //agent/...` PASS (2/2). `bazel test //frontend/...` 8/9 GREEN
+  test //agent/...` PASS (2/2). `bazel test //reverse-proxy/...` 8/9 GREEN
   after RPP L1 dead-code removal in
   `useChatEngine.tsx` (deleted both v4 `toolCalls.length > 0` branches
   — v6 surfaces tool calls via typed parts, the v4 raw-array path is
   structurally unreachable) and migration of the `ChatContext.test.tsx`
   v4 helper to v6 frames. `shared/chat/BUILD.bazel` `js_library` glob
-  extended to `**/*.json` so `//frontend:test_core_chat` can import the
+  extended to `**/*.json` so `//reverse-proxy:test_core_chat` can import the
   contract fixture. Backend dataset-layer synthetic suite 6/6 PASS;
   live compose-dependent suite (3 tests) deferred to maintainer (no
   compose stack / GROQ key in polecat sandbox). `bazel test
@@ -151,7 +151,7 @@ carries the same `ChatEvent` shape it always has — validated by
 - **`agent/lib/chat/pipeChatStream.ts`** — New file. Houses the
   `createUIMessageStream` writer logic so `handleChat.ts` stays a thin
   orchestrator. Unit-tested at the agent emit boundary.
-- **`frontend/src/core/chat/services/chatStream.ts`** — Before: parsed
+- **`reverse-proxy/src/core/chat/services/chatStream.ts`** — Before: parsed
   `prefix:json\n` lines via numeric-prefix branch. After: parses
   `data: {...}\n\n` SSE frames and dispatches on the `type` field
   (`text-delta` -> content accumulation; `data-chat-event` ->
@@ -160,13 +160,13 @@ carries the same `ChatEvent` shape it always has — validated by
   string-sliced `8:` annotation frames out of the SSE body. After: pulls
   ChatEvents from `data-chat-event` parts of the JSON-decoded v6 SSE
   frames; same JSON:API unwrap and ChatEvent assertion behavior.
-- **`frontend/src/ui/context/ChatContext/hooks/useChatEngine.tsx`** —
+- **`reverse-proxy/src/ui/context/ChatContext/hooks/useChatEngine.tsx`** —
   Both v4 `toolCalls.length > 0` branches deleted (RPP L1 dead-code
   removal). After 01-02's migration the agent emits typed
   `data-chat-event` parts; the v4 raw-array path is unreachable.
 - **`shared/chat/BUILD.bazel`** — `js_library` glob extended to
   `**/*.json` so the new SSOT v6 wire-contract fixture is shipped in
-  the workspace npm package consumed by `//frontend:test_core_chat`.
+  the workspace npm package consumed by `//reverse-proxy:test_core_chat`.
 
 ## What did NOT change
 
@@ -197,8 +197,8 @@ The bead's six ACs:
   step 01-02 against the migrated `handleChat.ts`.
 - **AC3 — agent unit suite passes**. PASS. `//agent:test` GREEN with
   every `streamText` mock returning v6 UIMessage parts.
-- **AC4 — frontend tests pass**. PASS in scope. `//frontend:test_core_chat`
-  84/84 GREEN; `//frontend:test_ui_context` GREEN after the
+- **AC4 — frontend tests pass**. PASS in scope. `//reverse-proxy:test_core_chat`
+  84/84 GREEN; `//reverse-proxy:test_ui_context` GREEN after the
   `ChatContext.test.tsx` v4 helper migration in `9fa37ac`.
 - **AC5 — full bazel sweep clean**. PARTIAL.
   Frontend + agent are GREEN. Backend `bazel test //backend/...` exposes
@@ -222,7 +222,7 @@ The bead's six ACs:
   bazel run //api:image_tar && docker load -i bazel-bin/api/image_tar/tarball.tar
   docker compose up -d auth-proxy api agent minio query-engine redis
   docker compose ps                       # note remapped ports; update AGENT_URL/AUTH_PROXY_URL in .env
-  cd frontend && npm run dev
+  cd reverse-proxy && npm run dev
   # In browser: upload a small CSV, send "trim region column" in chat.
   # Verify in devtools Network tab on /chat SSE response:
   #   [a] HTTP 200

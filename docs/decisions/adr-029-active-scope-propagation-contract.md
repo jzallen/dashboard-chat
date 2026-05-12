@@ -106,7 +106,7 @@ ESLint rule (`eslint-plugin-dashboard-chat-ui-state`, custom):
 ### 3. Propagation mechanism — Option B (BFF + SPA, fallback)
 
 ```tsx
-// frontend/src/scope/ScopeProvider.tsx
+// reverse-proxy/src/scope/ScopeProvider.tsx
 export function ScopeProvider({ children }: { children: React.ReactNode }) {
   const flowId = useCurrentFlowId(); // derived from route via a thin adapter
   const { data, isLoading } = useFlowProjection(flowId); // TanStack Query under the hood

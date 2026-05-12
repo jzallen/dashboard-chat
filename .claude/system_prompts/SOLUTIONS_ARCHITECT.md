@@ -50,7 +50,7 @@ Architecture and infrastructure:
 - @backend/app/auth/middleware.py — Auth middleware configuration
 - @worker/index.ts — Hono routes and middleware
 - @shared/chat/handleChat.ts — Core SSE chat handler
-- @frontend/vite.config.ts — Dev server, proxy config, path aliases
+- @reverse-proxy/vite.config.ts — Dev server, proxy config, path aliases
 - @docs/DESIGN.md — Architecture rationale
 
 Data layer:

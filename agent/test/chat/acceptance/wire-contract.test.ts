@@ -6,7 +6,7 @@
  *
  *   1. The agent walking-skeleton parser (`consumeChatEvents`)        — here
  *   2. The frontend chatStream parser (`readSSEStream`)                — see
- *      `frontend/src/core/chat/__tests__/wire-contract.test.ts`
+ *      `reverse-proxy/src/core/chat/__tests__/wire-contract.test.ts`
  *   3. The backend harness parser (`parse_chat_event_frames`)          — see
  *      `backend/tests/integration/dataset_layer/test_wire_contract.py`
  *

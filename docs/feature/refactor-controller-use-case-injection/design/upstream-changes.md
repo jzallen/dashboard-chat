@@ -47,7 +47,7 @@ The following are **load-bearing on the assumption they don't change**. Any revi
 | `backend/tests/use_cases/**/*.py` | Use-case tests don't depend on controller patches. |
 | `backend/tests/integration/*.py` | Integration tests use real use-case modules and don't patch controllers. |
 | `backend/tests/repositories/*.py` | Below the controller boundary. |
-| `frontend/**/*` | No frontend impact. Response envelopes are byte-identical. |
+| `reverse-proxy/**/*` | No frontend impact. Response envelopes are byte-identical. |
 | `worker/**/*` | No worker impact. |
 | `shared/chat/**/*` | No chat-event-schema impact. |
 | Migrations (`backend/migrations/versions/*`) | No DB change. |

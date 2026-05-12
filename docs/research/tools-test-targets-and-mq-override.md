@@ -84,7 +84,7 @@ if [ $backend -eq 1 ]; then
   [ $integration -eq 1 ] && ignore=""
   ( cd backend && uv run pytest -x --tb=short $ignore ) || rc=$?
 fi
-[ $ui -eq 1 ]    && ( cd frontend && npx vitest run )    || rc=${rc:-$?}
+[ $ui -eq 1 ]    && ( cd reverse-proxy && npx vitest run )    || rc=${rc:-$?}
 [ $agent -eq 1 ] && ( npm run test:agent )                || rc=${rc:-$?}
 [ -n "$acceptance" ] && ( cd "tests/acceptance/$acceptance" && uv run --no-project pytest ) || rc=${rc:-$?}
 exit $rc
@@ -116,8 +116,8 @@ Expand to `--backend --ui --agent` once the UI/agent suites stabilise under refi
 
 ## 4. Trade-offs
 
-- **Not covered by `//tools/test`:** Bazel-native test caching, hermetic execution, remote execution. Tests run against the source tree using each subsystem's own venv/node_modules. If you later want incremental gating, the existing `//backend:tests` and `//frontend:test` test_suites do that — keep them.
-- **CI service targets vs. tools targets:** `//backend:image_tar`, `//frontend:image_tar`, `//agent:image_tar`, `//auth-proxy:image_tar` exist for GitHub Actions container builds and **must stay untouched**. `//tools/test:test` is only for local dev + merge-queue gating. Do not cross-wire them.
+- **Not covered by `//tools/test`:** Bazel-native test caching, hermetic execution, remote execution. Tests run against the source tree using each subsystem's own venv/node_modules. If you later want incremental gating, the existing `//backend:tests` and `//reverse-proxy:test` test_suites do that — keep them.
+- **CI service targets vs. tools targets:** `//backend:image_tar`, `//reverse-proxy:image_tar`, `//agent:image_tar`, `//auth-proxy:image_tar` exist for GitHub Actions container builds and **must stay untouched**. `//tools/test:test` is only for local dev + merge-queue gating. Do not cross-wire them.
 - **Suite duplication risk:** `npm run test:all` already exists. The new script is a near-duplicate with selectors. Acceptable because (a) `test:all` can't subset, (b) refinery wants a single entry point, (c) we avoid teaching refinery about `npm`/`turbo`.
 - **No-rollback note:** this change has no production blast radius — it's dev tooling. Rollback = `git revert` of the introducing commit + revert of `merge_queue.test_command` to its current value.
 

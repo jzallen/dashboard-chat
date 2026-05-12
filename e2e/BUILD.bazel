@@ -6,7 +6,7 @@ sh_test(
     data = [
         "//auth-proxy:image_tar",
         "//backend:image_tar",
-        "//frontend:image_tar",
+        "//reverse-proxy:image_tar",
         "//worker:image_tar",
         "//:docker-compose.yml",
     ] + glob([

@@ -14,7 +14,7 @@
 #   --backend       cd backend && (ruff check + ruff format --check) then
 #                   pytest -x --tb=short [--ignore=tests/integration]
 #                   (lint runs first; tests skip if lint fails)
-#   --ui            cd frontend && npx vitest run
+#   --ui            cd reverse-proxy && npx vitest run
 #   --agent         npm run test:agent
 #   --all           shorthand for --backend --ui --agent
 #   --integration   include backend tests/integration/ (default: excluded)
@@ -125,7 +125,7 @@ fi
 
 if [ $ui -eq 1 ] && [ $rc -eq 0 ]; then
   echo "▶ ui"
-  ( cd frontend && npx vitest run ) || rc=$?
+  ( cd reverse-proxy && npx vitest run ) || rc=$?
 fi
 
 if [ $agent -eq 1 ] && [ $rc -eq 0 ]; then

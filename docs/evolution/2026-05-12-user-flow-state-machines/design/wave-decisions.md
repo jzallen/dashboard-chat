@@ -36,9 +36,9 @@ survivors with explicit cuts. One recommendation made with explicit rationale.
 | `presentationStateRoutes.ts` (Hono sub-app exposing the log) | `agent/lib/chat/presentationStateRoutes.ts` | **Cannot reuse — wrong host** | This sub-app lives in `agent/`, which D8 has fenced off. The ui-state-machine tier exposes its own equivalent route handler in its own host. |
 | `auth-proxy/app.ts` (Hono on Node, sole production ingress) | `auth-proxy/app.ts` | **Considered as host — REJECTED** | The auth-proxy's responsibility is JWT verification + identity-header injection. Adding stateful flow-machine ownership to it would muddle two concerns (auth ingress vs flow orchestration) and create a hot-path stateful service where the existing one is stateless. The auth-proxy stays as it is. |
 | `backend/tests/integration/dataset_layer/harness.py` (`DatasetLayerHarness`) | same | **Compose alongside, NOT duplicate** | This Python harness is the JOB-001 backend+agent contract guard. The new TS `UserFlowHarness` is the JOB-002 user-flow surface. Both read from the SAME projection endpoint (the flow-event log + projection). Composition: a JOB-001 acceptance test can call the TS harness for auth+org setup and then call the Python harness for chat-turn validation. No duplication — different responsibilities. |
-| `AuthContext.tsx` / `AuthProvider.tsx` (React Context for token + user state) | `frontend/src/ui/context/AuthContext/` | **Strangler-fig replace** | This is the precise re-derivation surface the feature aims to remove. Phase-1 of US-001 keeps it; phase-2 migrates consumers to read `state.user` from the flow projection; phase-3 deletes the context. Sequenced in `migration-plan.md` (DELIVER). |
-| `App.tsx` (React Router v6 routes; `RequireAuth` / `RequireOrg` guards) | `frontend/App.tsx` | **Replace with route-loader-shaped guards** | The route guards currently derive `isAuthenticated` + `user?.org_id` from React Context. In the recommended option, route loaders own this resolution server-side. React Router stays; the guards' implementation moves from context-read to loader-data-read. |
-| `ChatView/index.tsx` reads `projectId` from useParams + an effect that fetches project metadata | `frontend/src/ui/components/ChatView/index.tsx` | **Migration target — the canonical drift case** | The "ChatView project-context race" the user named in Round-2 is the canonical bug class this feature retires. ChatView reads `active_scope.project_id` from the projection; no useParams-then-fetch. |
+| `AuthContext.tsx` / `AuthProvider.tsx` (React Context for token + user state) | `reverse-proxy/src/ui/context/AuthContext/` | **Strangler-fig replace** | This is the precise re-derivation surface the feature aims to remove. Phase-1 of US-001 keeps it; phase-2 migrates consumers to read `state.user` from the flow projection; phase-3 deletes the context. Sequenced in `migration-plan.md` (DELIVER). |
+| `App.tsx` (React Router v6 routes; `RequireAuth` / `RequireOrg` guards) | `reverse-proxy/App.tsx` | **Replace with route-loader-shaped guards** | The route guards currently derive `isAuthenticated` + `user?.org_id` from React Context. In the recommended option, route loaders own this resolution server-side. React Router stays; the guards' implementation moves from context-read to loader-data-read. |
+| `ChatView/index.tsx` reads `projectId` from useParams + an effect that fetches project metadata | `reverse-proxy/src/ui/components/ChatView/index.tsx` | **Migration target — the canonical drift case** | The "ChatView project-context race" the user named in Round-2 is the canonical bug class this feature retires. ChatView reads `active_scope.project_id` from the projection; no useParams-then-fetch. |
 | Backend `POST /api/orgs`, `POST /api/auth/callback`, `POST /api/auth/reissue` (if it exists; otherwise add) | `backend/app/routers/` | **Behind-port consumers** | The ui-state-machine tier invokes these as ordinary HTTP clients. No backend change required for US-001/US-002 except possibly adding an idempotent JWT-reissue endpoint (US-002 AC). That endpoint is a small backend ADR-shaped delta; this feature's design names the contract; the implementation is a backend leaf. |
 
 **Reuse summary**: every infrastructure pattern this feature needs already exists in the codebase under a different vocabulary. The work is **lifting the pattern** (ADR-015's directive log + ADR-018's capability-presence dispatch) **to a new vocabulary** (flow events + projections), not building new primitives. **Net new infrastructure: one Node tier, one Redis key prefix, one route family. Everything else is precedent.**
@@ -143,11 +143,11 @@ Morgan's decisions D1–D9 above set the application-scope architecture. Titan's
 | `/api/auth/*` | auth-proxy local |
 | `/ui-state/*` | ui-state tier (NEW) |
 | `/api/*` | backend (existing default) |
-| `/worker/*` | (future — out of PR-0 scope; agent currently reached via frontend nginx) |
+| `/worker/*` | (future — out of PR-0 scope; agent currently reached via reverse-proxy nginx) |
 
 Ratified in ADR-030.
 
-**Sharpest argument**: ADR-016 declares auth-proxy the sole ingress for privileged operations. The ui-state tier mutates state (writes FlowEvents, invokes backend POSTs); it must sit behind auth-proxy. Co-tenanting in auth-proxy was rejected (mirrors the D8 rejection of `agent/` as host — auth-proxy does one thing well; ui-state is hot and stateful). Routing through frontend nginx was rejected (bypasses auth-proxy; contradicts ADR-016).
+**Sharpest argument**: ADR-016 declares auth-proxy the sole ingress for privileged operations. The ui-state tier mutates state (writes FlowEvents, invokes backend POSTs); it must sit behind auth-proxy. Co-tenanting in auth-proxy was rejected (mirrors the D8 rejection of `agent/` as host — auth-proxy does one thing well; ui-state is hot and stateful). Routing through reverse-proxy nginx was rejected (bypasses auth-proxy; contradicts ADR-016).
 
 ### SD2 — Scaling shape (resolves SQ-2)
 
@@ -175,7 +175,7 @@ Scaling-ceiling triggers documented in ADR-030 §3. Migration to Option γ (stic
 
 ### SD5 — Frontend tier transition (resolves SQ-5)
 
-**Remix runs alongside nginx, NOT in place of it.** nginx in the existing `frontend` container is byte-unchanged. A NEW container `ui-presentation` runs Remix's Node server. nginx gains one new rule (`location ~ ^/(login|org)(/|$)` → `ui-presentation:3001`); existing rules including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule are preserved verbatim.
+**Remix runs alongside nginx, NOT in place of it.** nginx in the existing `reverse-proxy` container is byte-unchanged. A NEW container `ui-presentation` runs Remix's Node server. nginx gains one new rule (`location ~ ^/(login|org)(/|$)` → `ui-presentation:3001`); existing rules including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule are preserved verbatim.
 
 Strangler-fig migration: one route family per PR. Rollback per route is a one-line nginx.conf revert. Ratified in ADR-031.
 
@@ -225,7 +225,7 @@ Existing flows (chat, dataset operations) are UNAFFECTED by ui-state outages. Ve
 ### Pushbacks on Morgan's design (documented in `upstream-changes.md`)
 
 1. Container diagram implied Remix replaces nginx; system-scope pass clarifies separate container (ADR-031).
-2. "Auth-proxy is sole ingress" is aspirational today — agent currently bypasses via frontend nginx. ADR-030 documents this and routes the new tier correctly from day 1.
+2. "Auth-proxy is sole ingress" is aspirational today — agent currently bypasses via reverse-proxy nginx. ADR-030 documents this and routes the new tier correctly from day 1.
 3. `flow_id` schema in ADR-027 §3 was multi-tenant-unsafe — amended to mandate `principal_id`.
 4. Replica count was implicit in Morgan's design — made explicit as single-replica with documented ceiling.
 5. Compose acceptance count: not "5+1=6" but "5+2=7" (ui-presentation is its own container).

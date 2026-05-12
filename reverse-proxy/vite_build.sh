@@ -5,5 +5,5 @@ set -euo pipefail
 # Output directory is passed as first argument
 OUT_DIR="$1"
 
-cd frontend
+cd reverse-proxy
 NODE_ENV=production npx vite build --outDir "../${OUT_DIR}" --emptyOutDir

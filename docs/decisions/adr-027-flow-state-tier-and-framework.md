@@ -87,7 +87,7 @@ The tier is reachable only through auth-proxy (ADR-016). The tier does not own J
 
 ### 2. The Frontend Framework
 
-**Remix v2 (with the Remix Vite plugin).** `frontend/main.tsx` and `frontend/App.tsx` are replaced by a Remix routes tree. Vite stays as the build tool. The chat SSE integration is unchanged (the FE component continues to connect to the agent's `/chat` endpoint via the auth-proxy).
+**Remix v2 (with the Remix Vite plugin).** `reverse-proxy/main.tsx` and `reverse-proxy/App.tsx` are replaced by a Remix routes tree. Vite stays as the build tool. The chat SSE integration is unchanged (the FE component continues to connect to the agent's `/chat` endpoint via the auth-proxy).
 
 Route layouts express `active_scope` inheritance:
 

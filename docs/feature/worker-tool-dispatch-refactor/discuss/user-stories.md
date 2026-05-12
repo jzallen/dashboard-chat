@@ -88,7 +88,7 @@ Decision enabled: developer decides whether a new tool needs FE work (only if it
 
 ### Elevator Pitch
 Before: Testing "what happens when a transform is applied during chat" requires a real worker boot, real Groq call (non-deterministic, costs money), and a real backend with the expected dataset state — or extensive mocking that diverges from production over time.
-After: run `npx vitest run frontend/.../chat-panel.test.tsx` → sees `PASSED chat-panel reacts to transform_applied event[invalidates dataset query, shows toast]` in <1s.
+After: run `npx vitest run reverse-proxy/.../chat-panel.test.tsx` → sees `PASSED chat-panel reacts to transform_applied event[invalidates dataset query, shows toast]` in <1s.
 Decision enabled: FE developer decides whether their event-handling change is correct without leaving their editor or spending Groq credits.
 
 ### Acceptance Criteria
@@ -166,7 +166,7 @@ Decision enabled: blocked feature `api-driven-user-flow-tests` becomes thin and 
 | 2 | Acceptance criteria testable | ✓ | All AC reduce to a runnable test, a grep, or an observable UX behavior |
 | 3 | Dependencies identified | ✓ | Worker, FE, FE test infra; no backend changes; no new infrastructure |
 | 4 | Sized | ✓ | One feature window; DESIGN's migration-plan answer (Q5) determines whether ships in one PR or several |
-| 5 | Discoverable to all touchpoints | ✓ | Worker (`agent/`), FE (chat panel + tool dispatcher), FE tests (`frontend/.../*.test.tsx`), downstream test feature (`api-driven-user-flow-tests`) |
+| 5 | Discoverable to all touchpoints | ✓ | Worker (`agent/`), FE (chat panel + tool dispatcher), FE tests (`reverse-proxy/.../*.test.tsx`), downstream test feature (`api-driven-user-flow-tests`) |
 | 6 | Out-of-scope explicit | ✓ | See "Out of Scope" |
 | 7 | KPIs measurable | ✓ | See `outcome-kpis.md` |
 | 8 | No hidden coupling | ✓ | Backend is explicitly out of scope; the only coupling is worker↔FE protocol surface, which is the deliverable |

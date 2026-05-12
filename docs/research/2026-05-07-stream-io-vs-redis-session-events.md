@@ -79,17 +79,17 @@ chat backbone, not just a replay store:
 
 | File | Lines | Role |
 |---|---|---|
-| `frontend/package.json` | 22, 23 | `stream-chat ^9.35.1`, `stream-chat-react ^13.14.1` deps |
-| `frontend/src/stream-chat.d.ts` | 1–3 | Module-augmentation declarations |
-| `frontend/src/lib/stream/StreamProvider.tsx` | 1–89 | Top-level `<Chat>` provider, JWT auth via `/api/stream/stream-token` |
-| `frontend/src/lib/stream/useStreamClient.ts` | 1–9 | `useContext` access to the `StreamChat` instance |
-| `frontend/src/lib/stream/useSessionContext.ts` | 1–81 | Channel create/resume/query — backbone of session navigation |
-| `frontend/src/lib/stream/channelId.ts` | (helper) | Deterministic channel ids |
-| `frontend/src/lib/stream/useEntityContext.ts`, `useSSEOverlay.ts` | (helpers) | Channel-scoped state |
-| `frontend/src/ui/components/AppShell/index.tsx` | (consumer) | Mounts `StreamProvider` |
-| `frontend/src/ui/components/TablePanel/OperationsLog.tsx` | 2, 24, 31, 37–141 | Reads `channel.state.messages`, subscribes to `message.new` for live tool-call display |
-| `frontend/src/ui/context/ChatContext/hooks/useChatEngine.tsx` | 15, 29–30, 105, 114, 123, 200–326 | Core chat engine — uses `streamClient`, watches channels, hydrates messages from `channel.state.messages` |
-| `frontend/src/ui/context/__tests__/ChatContextState.test.tsx`, `ChatContext.test.tsx`, `useChatEngine.test.tsx`, `OperationsLog.test.tsx`, `__tests__/useSessionContext.test.ts` | (tests) | All exercise Stream.io contracts |
+| `reverse-proxy/package.json` | 22, 23 | `stream-chat ^9.35.1`, `stream-chat-react ^13.14.1` deps |
+| `reverse-proxy/src/stream-chat.d.ts` | 1–3 | Module-augmentation declarations |
+| `reverse-proxy/src/lib/stream/StreamProvider.tsx` | 1–89 | Top-level `<Chat>` provider, JWT auth via `/api/stream/stream-token` |
+| `reverse-proxy/src/lib/stream/useStreamClient.ts` | 1–9 | `useContext` access to the `StreamChat` instance |
+| `reverse-proxy/src/lib/stream/useSessionContext.ts` | 1–81 | Channel create/resume/query — backbone of session navigation |
+| `reverse-proxy/src/lib/stream/channelId.ts` | (helper) | Deterministic channel ids |
+| `reverse-proxy/src/lib/stream/useEntityContext.ts`, `useSSEOverlay.ts` | (helpers) | Channel-scoped state |
+| `reverse-proxy/src/ui/components/AppShell/index.tsx` | (consumer) | Mounts `StreamProvider` |
+| `reverse-proxy/src/ui/components/TablePanel/OperationsLog.tsx` | 2, 24, 31, 37–141 | Reads `channel.state.messages`, subscribes to `message.new` for live tool-call display |
+| `reverse-proxy/src/ui/context/ChatContext/hooks/useChatEngine.tsx` | 15, 29–30, 105, 114, 123, 200–326 | Core chat engine — uses `streamClient`, watches channels, hydrates messages from `channel.state.messages` |
+| `reverse-proxy/src/ui/context/__tests__/ChatContextState.test.tsx`, `ChatContext.test.tsx`, `useChatEngine.test.tsx`, `OperationsLog.test.tsx`, `__tests__/useSessionContext.test.ts` | (tests) | All exercise Stream.io contracts |
 | Build artefacts | `pnpm-lock.yaml` 154–7513, `package-lock.json` 137, 138, 1746, 11281, 11290 (transitive scope `@stream-io/*`) | Lockfile entries |
 
 This is **entirely outside Mayor's stated scope** (the session event reader). It is

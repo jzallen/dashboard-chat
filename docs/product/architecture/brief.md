@@ -61,7 +61,7 @@ The frontend's nginx is the de-facto multi-upstream router today (proxies `/api/
 
 **Persistence stance.** Redis Streams via ADR-018 inheritance. New key prefix `ui-state:{flow_id}:events` where `flow_id = <machine-name>:<principal_id>` for per-user flows (mandatory for multi-tenant safety). XADD per transition; snapshot every 50 events. Probe contract: XADD/XRANGE/DEL round-trip; HARD-fail at startup if Redis is unreachable. Redis blast radius grows: three key prefixes (`ui-state:`, `session:`, `presentation-state:`) now share one Redis container — operator runbook should add Redis HA before the next service joins the substrate.
 
-**Frontend tier transition.** A NEW `ui-presentation` container runs Remix's Node server alongside the existing nginx-static `frontend` container. nginx is byte-unchanged except for one new upstream rule for migrated routes (`/login`, `/org/$org` in PR-0). The strangler-fig migration runs one route family per PR; rollback per route is a one-line nginx.conf revert. ADR-015's load-bearing `/api/channels/:id/presentation-state` rule is preserved verbatim.
+**Frontend tier transition.** A NEW `ui-presentation` container runs Remix's Node server alongside the existing nginx-static `reverse-proxy` container. nginx is byte-unchanged except for one new upstream rule for migrated routes (`/login`, `/org/$org` in PR-0). The strangler-fig migration runs one route family per PR; rollback per route is a one-line nginx.conf revert. ADR-015's load-bearing `/api/channels/:id/presentation-state` rule is preserved verbatim.
 
 **New containers introduced:**
 
@@ -128,7 +128,7 @@ feature's DESIGN wave appends a sub-heading.
 
 ### Component boundaries (current)
 
-* **Frontend** (`frontend/`) — React 18 + Vite + TanStack Query/Table.
+* **Frontend** (`reverse-proxy/`) — React 18 + Vite + TanStack Query/Table.
   Renders chat-driven directives via `applyDirective` (ADR-015 reference
   reducer in `shared/chat/`).
 * **Worker** (`worker/`, also `agent/`) — Hono SSE chat API. Emits typed
@@ -257,8 +257,8 @@ probe then use**. Probe failure → `pytest.skip(reason)`.
 | `RedisFlowEventLog` | Adapter satisfying `FlowEventLog` port; Redis Streams (XADD/XRANGE); `ui-state:{id}:events` key prefix | `ui-state/lib/adapters/redisFlowEventLog.ts` |
 | `ReplayBuffer` | Bounded queue (5s timeout, 16 max); flushed on THAW | `ui-state/lib/orchestrator/replayBuffer.ts` |
 | `UserFlowHarness` (TS) | First-class TS harness for J-001 flows; reads same projection FE consumes | `tests/acceptance/user-flow-state-machines/harness/UserFlowHarness.ts` |
-| Remix FE migration (if Option D ratified) | Replace `frontend/main.tsx` + `App.tsx` with Remix routes tree; `useScope()` helper backed by `useRouteLoaderData` | `frontend/app/` (Remix convention) |
-| `<ScopeProvider>` (if Option B ratified) | React Context + TanStack-Query-backed projection consumer | `frontend/src/scope/ScopeProvider.tsx` |
+| Remix FE migration (if Option D ratified) | Replace `reverse-proxy/main.tsx` + `App.tsx` with Remix routes tree; `useScope()` helper backed by `useRouteLoaderData` | `reverse-proxy/app/` (Remix convention) |
+| `<ScopeProvider>` (if Option B ratified) | React Context + TanStack-Query-backed projection consumer | `reverse-proxy/src/scope/ScopeProvider.tsx` |
 
 **Integration points (new):**
 
