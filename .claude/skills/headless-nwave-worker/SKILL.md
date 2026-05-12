@@ -90,30 +90,34 @@ See also `gastown/SKILL.md` §"Headless Mode — Which Characters Are Actually R
 
 ## Choosing the Wave
 
-| Wave | Typical inputs | Typical outputs | Needs MQ submit? | Branch strategy |
+| Wave | Typical inputs | Typical outputs | Handoff | Branch strategy |
 |---|---|---|---|---|
-| `nw-discover` | None | Discovery report, evidence inventory | No | `research/<slug>` or `discover/<slug>` |
-| `nw-research` | Question / topic | Cited research doc in `docs/research/` | No | `research/<slug>` |
-| `nw-diverge` | Validated problem | 3–5 design directions in `docs/feature/<slug>/diverge/` | No | `discuss/<slug>` |
-| `nw-discuss` | Stories (or obvious) | JTBD job stories, journeys, BDD AC, US-* in `docs/feature/<slug>/discuss/` | No | `discuss/<slug>` |
-| `nw-design` | Discuss artifacts | ADRs, C4 diagrams, `application-architecture.md`, `system-architecture.md` | No | `design/<slug>` |
-| `nw-distill` | Design ratified | RED acceptance tests, `roadmap.json` | No (artifacts) | `distill/<slug>` |
-| `nw-spike` | Hypothesis | Probe report + optional walking skeleton | Yes if walking skeleton committed | `spike/<slug>` |
-| `nw-deliver` | DISTILL roadmap | Implementation code, all commits green | **Yes** | `crew/<worker>` |
-| `nw-bugfix` | Bug report | Regression test + fix | **Yes** | `fix/<slug>` |
-| `nw-refactor` | RPP target | Refactor-only code changes | **Yes** | `refactor/<slug>` |
-| `nw-review` | Artifact to review | Critique report (graded) | No | `review/<slug>` or comment-only |
-| `nw-hotspot` | Git history | Hotspot map / churn analysis | No | `research/<slug>` |
-| `nw-document` | Feature artifacts | DIVIO/Diataxis docs | No (artifacts) | `docs/<slug>` |
-| `nw-mikado` | Refactor target | Mikado roadmap + visual tracking | Eventually yes (per phase) | `refactor/<slug>` |
-| `nw-finalize` | All waves complete | Archive to `docs/evolution/` | No | `finalize/<slug>` |
-| `nw-mutation-test` | Implementation done | Mutation kill-rate report | No | `mutation/<slug>` |
+| `nw-discover` | None | Discovery report, evidence inventory | `gt mq submit` | `research/<slug>` or `discover/<slug>` |
+| `nw-research` | Question / topic | Cited research doc in `docs/research/` | `gt mq submit` | `research/<slug>` |
+| `nw-diverge` | Validated problem | 3–5 design directions in `docs/feature/<slug>/diverge/` | `gt mq submit` | `discuss/<slug>` |
+| `nw-discuss` | Stories (or obvious) | JTBD job stories, journeys, BDD AC, US-* in `docs/feature/<slug>/discuss/` | `gt mq submit` | `discuss/<slug>` |
+| `nw-design` | Discuss artifacts | ADRs, C4 diagrams, `application-architecture.md`, `system-architecture.md` | `gt mq submit` | `design/<slug>` |
+| `nw-distill` | Design ratified | RED acceptance tests, `roadmap.json` | `gt mq submit` | `distill/<slug>` |
+| `nw-spike` | Hypothesis | Probe report + optional walking skeleton | `gt mq submit` | `spike/<slug>` |
+| `nw-deliver` | DISTILL roadmap | Implementation code, all commits green | `gt mq submit` | `crew/<worker>` |
+| `nw-bugfix` | Bug report | Regression test + fix | `gt mq submit` | `fix/<slug>` |
+| `nw-refactor` | RPP target | Refactor-only code changes | `gt mq submit` | `refactor/<slug>` |
+| `nw-review` | Artifact to review | Critique report (graded) | `gt mq submit` | `review/<slug>` |
+| `nw-hotspot` | Git history | Hotspot map / churn analysis | `gt mq submit` | `research/<slug>` |
+| `nw-document` | Feature artifacts | DIVIO/Diataxis docs | `gt mq submit` | `docs/<slug>` |
+| `nw-mikado` | Refactor target | Mikado roadmap + visual tracking | `gt mq submit` (per phase) | `refactor/<slug>` |
+| `nw-finalize` | All waves complete | Archive to `docs/evolution/` | `gt mq submit` | `finalize/<slug>` |
+| `nw-mutation-test` | Implementation done | Mutation kill-rate report | `gt mq submit` | `mutation/<slug>` |
 
-**Rule of thumb for MQ:**
+**Single funnel through MQ.** Every wave — code or docs — submits via `gt mq submit`. The refinery's gate is `./tools/test/test.sh --auto`, which is content-aware:
 
-- Wave produces **code** that should pass the test gate → submit via `gt mq submit`.
-- Wave produces **docs / artifacts only** → commit on branch, push, open PR for human review (or merge directly on trusted research branches per project policy).
-- When in doubt: never bypass the test gate for code changes; never put docs through the MQ unless they include code that should be tested.
+- The gate diffs the branch against `origin/main`.
+- If every changed file matches the docs-only allowlist (`docs/**`, `.claude/skills/**`, `.claude/settings.json`, `README*`, `CHANGELOG*`, `*.md`), it exits 0 — no tests run, the refinery merges in seconds.
+- Otherwise it falls through to `--backend` (ruff + pytest) as the safe default.
+
+This means workers never need to choose between MQ vs PR — they always submit via `gt mq submit` and the gate self-classifies. A worker whose commits are pure docs (finalize, research, review) gets near-instant landings; a worker whose commits touch `backend/` gets the full backend gate. Mixed commits run full tests. See `tools/test/test.sh` `--auto` selector for the exact allowlist.
+
+**Do not** use `gh pr create` from a worker. PRs are only appropriate for human-driven review of work the refinery cannot evaluate (e.g. infrastructure changes, the rare case where you want a second pair of eyes before merge). For everything else, `gt mq submit` is the single entry point.
 
 ## Prerequisites
 
@@ -328,7 +332,7 @@ Begin by invoking the nw-<wave> skill and following its orchestration.
 <details>
 <summary><b>nw-bugfix / nw-spike / nw-refactor / nw-document / nw-mikado / nw-hotspot</b></summary>
 
-Follow the same pattern: state inputs, outputs, exit criteria, and whether the wave commits code (→ MQ submit) or docs only (→ branch push for PR).
+Follow the same pattern: state inputs, outputs, exit criteria. All waves hand off via `gt mq submit` — the refinery's `--auto` gate decides whether to run backend tests based on the diff (see Handoff section).
 
 </details>
 
@@ -462,9 +466,9 @@ For pure-docs waves (research, design, review) that typically finish in 30–90 
 | PID dead, log ends with normal completion + commits on branch | Done | Proceed to handoff |
 | "Iron Rule" / "3 failed attempts" / "revert" / "escalate" in log | Worker hit safety brake | Read context, surface to user — do not auto-resume |
 
-## Handoff: MQ Submit vs Direct Commit
+## Handoff: every wave submits via the refinery
 
-### Code-producing waves (deliver, bugfix, refactor, spike-with-skeleton)
+Every wave — code or docs — submits to the merge queue. The refinery's gate (`./tools/test/test.sh --auto`) is content-aware and skips tests when the diff is docs-only (see Choosing the Wave §"Single funnel through MQ"). Workers never decide between MQ and PR — they always submit.
 
 ```bash
 cd ~/gt/<rig>/crew/<worker-name>
@@ -475,27 +479,19 @@ gt mq submit                         # auto-detects branch + rig from cwd
 gt refinery queue                    # confirm MR enqueued
 ```
 
-The Refinery rebases onto latest `main`, runs the rig's `merge_queue.test_command` (currently `./tools/test/test.sh --backend`), and merges on green. Monitor:
+The Refinery rebases onto latest `main`, runs the rig's `merge_queue.test_command` (currently `./tools/test/test.sh --auto`), and merges on green. The `--auto` selector prints which path it took:
+
+- `tools/test --auto: docs-only diff — skipping test gate` → instant merge after rebase.
+- `tools/test --auto: code changes detected — running --backend` → full ruff + pytest gate.
+
+Monitor:
 
 ```bash
 gt refinery queue
 gt mq status <mr-id>
 ```
 
-### Docs-only waves (research, discuss, design, distill, review, hotspot, document)
-
-```bash
-cd ~/gt/<rig>/crew/<worker-name>
-git status
-git log --oneline -5
-git push -u origin <branch>
-# Then EITHER open a PR for human review:
-gh pr create --title "..." --body "..."
-# OR (for trusted research branches per project policy) merge directly:
-# This is human-driven — don't auto-merge from the skill.
-```
-
-**Never put docs through `gt mq submit`** unless the docs include code changes that should pass the test gate.
+**Do NOT use `gh pr create` from a worker.** PRs are reserved for human-driven review of work the refinery cannot evaluate (e.g. infrastructure or shared-service changes where you want a second pair of eyes). For ordinary wave output — code, docs, ADRs, research, finalize archives — the MQ is the single entry point.
 
 ## Cleanup After Merge / PR Closure
 
@@ -656,11 +652,10 @@ tmux -L gt-0c0ae3 new-session -d -s "${SESSION}-r1" \
    --output-format stream-json --verbose 'Continue.' \
    >> .logs/nw-${WAVE}.log 2>&1"
 
-# 7. Handoff (pick one)
+# 7. Handoff — every wave goes through MQ; refinery's --auto gate
+#    self-classifies docs-only vs code and skips backend tests for docs.
 git push -u origin <branch>
-gt mq submit                          # code waves
-# OR
-gh pr create --title "..." --body "..."  # docs waves
+gt mq submit
 
 # 8. After landing
 tmux -L gt-0c0ae3 kill-session -t "$SESSION" 2>/dev/null
