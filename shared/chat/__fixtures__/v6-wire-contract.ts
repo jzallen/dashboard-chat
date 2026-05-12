@@ -8,7 +8,7 @@
  *
  * Consumers:
  *   - `agent/test/chat/acceptance/wire-contract.test.ts`
- *   - `reverse-proxy/src/core/chat/__tests__/wire-contract.test.ts`
+ *   - `frontend/src/core/chat/__tests__/wire-contract.test.ts`
  *
  * Editing rule: only modify `v6-wire-contract.json`. Both loaders are pure
  * derivations; never hand-edit the bytes here.

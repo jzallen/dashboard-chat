@@ -1,5 +1,5 @@
 {
-  "name": "dashboard-chat-reverse-proxy",
+  "name": "dashboard-chat-frontend",
   "version": "1.0.0",
   "type": "module",
   "private": true,

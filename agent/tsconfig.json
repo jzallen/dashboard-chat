@@ -12,7 +12,7 @@
     "isolatedModules": true,
     "baseUrl": "..",
     "paths": {
-      "@/raqb": ["reverse-proxy/src/lib/raqb"],
+      "@/raqb": ["frontend/src/lib/raqb"],
       "@shared/*": ["shared/*"]
     }
   },

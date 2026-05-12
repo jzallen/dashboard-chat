@@ -134,7 +134,7 @@ genrule(
     outs = ["dist.tar"],
     cmd = """
         set -a && . .env && set +a && \
-        cd reverse-proxy && \
+        cd frontend && \
         VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx vite build --outDir ../$$TMPDIR/dist --emptyOutDir && \
         tar -cf - -C ../$$TMPDIR dist > ../$(OUTS)
     """,

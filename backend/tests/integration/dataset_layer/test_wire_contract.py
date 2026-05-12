@@ -7,7 +7,7 @@ frontend contract tests consume, and asserts that the harness's
 
 See also:
   - ``agent/test/chat/acceptance/wire-contract.test.ts`` (agent parser)
-  - ``reverse-proxy/src/core/chat/__tests__/wire-contract.test.ts`` (frontend
+  - ``frontend/src/core/chat/__tests__/wire-contract.test.ts`` (frontend
     parser)
 
 If any one of these three tests fails while the others pass, the parsers

@@ -1,6 +1,6 @@
 # ADR-032: Service Tier Renaming — `frontend`/`frontend-remix`/`flow-state` → `reverse-proxy`/`ui-presentation`/`ui-state`
 
-**Status:** Implemented (rename landed on branch `refactor/service-tier-rename`; merged into `main` via the gastown headless merge queue — see commit footer below)
+**Status:** Implemented, partially superseded by [ADR-033](adr-033-source-tree-topology-separation.md) (source-tree directory rename for `frontend/`→`reverse-proxy/` reverted; compose service name and all other renames stand)
 **Date:** 2026-05-12 (ratified) · 2026-05-12 (implemented)
 **Originating wave:** ad-hoc review (out-of-band of the user-flow-state-machines feature waves)
 **Companion artifacts:**
@@ -104,6 +104,21 @@ The rename is straightforward to revert if it turns out to cause more confusion 
 ## Method note
 
 This ADR is rated as an architectural decision proper (per ADR-027/030/031 conventions) rather than a chore because it specifies what each service tier IS responsible for, with names as the carrier. The naming itself is the surface change; the substantive content is the role-based partitioning of UI presentation vs UI state vs reverse-proxy concerns — which was implicit in 027/031 but never named at the topology level.
+
+## Amendment 2026-05-12 — Source-Tree vs Topology Layer Separation (ADR-033)
+
+This ADR conflated two layers that should be decided independently:
+
+- **Topology-layer naming** (docker-compose service names, container names, OCI image tags) — the runtime role of each container.
+- **Source-tree naming** (top-level repository directories) — the body of source code that lives in each directory.
+
+The topology-layer rationale is sound and stands: `reverse-proxy`, `ui-presentation`, `ui-state` accurately describe runtime container roles.
+
+The source-tree-layer rename for `frontend/` → `reverse-proxy/` is reverted under [ADR-033](adr-033-source-tree-topology-separation.md) on the grounds that the directory's content (a React 18 SPA whose nginx packaging is one file out of hundreds) is what the source-tree name should describe. The compose service name `reverse-proxy` (correct at the topology layer) is unchanged; the Bazel build target now lives at `//frontend:image_tar` and produces the `dashboard-chat/reverse-proxy:bazel` image consumed by compose. The two layers' names diverging is intentional — see ADR-033 §"Decision outcome."
+
+The source-tree names for `ui-presentation/` and `ui-state/` are retained. `ui-presentation/` is scaffold-only today and the strangler-fig migration (ADR-031) will land real Remix code matching the name. `ui-state/` is structurally a backend-for-frontend service (Hono + Redis), architecturally a sibling of `agent/` and `auth-proxy/`; its source-tree name describes its consumer surface rather than its layer — see [ADR-033](adr-033-source-tree-topology-separation.md) §"Open questions" for the live tension.
+
+Implementation: see ADR-033 §"Migration plan" and the merge commit for branch `refactor/source-tree-honesty`.
 
 ## Implementation log
 

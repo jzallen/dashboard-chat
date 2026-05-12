@@ -6,13 +6,15 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 
 ## Architecture
 
-- **Reverse-Proxy** (`reverse-proxy/`) — nginx serving the Vite-built React 18 SPA + routing rules for `/api/*`, `/worker/*`, `/api/channels/:id/presentation-state`, `/health`, `/ui-state/*`. Formerly named `frontend/` (ADR-032).
-- **UI-Presentation** (`ui-presentation/`) — Remix v2 SSR for migrated routes (strangler-fig per ADR-031). Formerly named `frontend-remix/` (ADR-032).
-- **UI-State** (`ui-state/`) — Hono + XState v5 actor system holding flow state across machines (ADR-027/028/030). Formerly named `flow-state/` (ADR-032); Redis key prefix is `ui-state:` (was `flow:`).
+Source-tree directories are named for the **body of source they contain**. Docker-compose service names are named for the **runtime role of the container**. The two layers are decoupled (ADR-033). When they differ, the divergence is intentional and the source-tree name is the canonical reference.
+
+- **Frontend** (`frontend/`) — React 18 SPA (Vite build) + nginx config. The Bazel-built image runs as the `reverse-proxy` compose service whose runtime role is reverse-proxy ingress + static asset serving + routing rules for `/api/*`, `/worker/*`, `/api/channels/:id/presentation-state`, `/health`, `/ui-state/*`. (Source-tree name reverted from `reverse-proxy/` per ADR-033 after the conflation was identified in ADR-032.)
+- **UI-Presentation** (`ui-presentation/`) — Remix v2 SSR for migrated routes (strangler-fig per ADR-031). Currently scaffold-only; the compose service lands when the first route group cuts over.
+- **UI-State** (`ui-state/`) — Hono + XState v5 actor system holding flow state across machines (ADR-027/028/030). Architecturally a **backend-for-frontend service** (Hono + Redis), sibling of `agent/` and `auth-proxy/`; named for its consumer surface rather than its layer. Redis key prefix `ui-state:`.
 - **Backend** (`backend/`) — FastAPI + SQLAlchemy (async) + DuckDB + Alembic migrations
 - **Agent** (`agent/`) — Hono (Node.js) chat API with SSE streaming via Groq
 - **Auth-Proxy** (`auth-proxy/`) — Hono ingress: JWT verification, M2M token mint, identity-header injection, multi-upstream routing
-- **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `reverse-proxy/`. Future cross-cutting chat types/handlers/prompts go here.
+- **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `frontend/`. Future cross-cutting chat types/handlers/prompts go here.
 
 ## Development Methodology — nwave-ai waves
 
@@ -53,7 +55,7 @@ This project uses **nwave-ai** as its SDLC framework (see [ADR-013](docs/decisio
 
 ```bash
 npm run test:all                     # ALL tests: JS (turbo) + backend (pytest)
-cd reverse-proxy && npx vitest run   # reverse-proxy (SPA) only
+cd frontend && npx vitest run        # frontend (SPA) only
 cd backend && uv run pytest          # backend only
 npm run test:agent                   # agent only
 ```
@@ -77,7 +79,7 @@ The gastown headless merge queue (rig: `dashboard_chat`) gates merges with `./to
 ## Quick Commands
 
 ```bash
-npm run build                        # turbo build (reverse-proxy only)
+npm run build                        # turbo build (frontend only)
 npm run dev                          # start all services
 ```
 

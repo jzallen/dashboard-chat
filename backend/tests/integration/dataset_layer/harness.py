@@ -407,7 +407,7 @@ def to_session_events_page(
 # that as ``raw_tool_call_seen`` to keep AC1.4 enforceable end-to-end.
 #
 # Reference parsers (TypeScript, identical contract):
-# - ``reverse-proxy/src/core/chat/services/chatStream.ts``
+# - ``frontend/src/core/chat/services/chatStream.ts``
 # - ``agent/test/chat/_v6Mocks.ts``
 
 

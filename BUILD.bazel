@@ -30,7 +30,7 @@ filegroup(
     tags = ["manual"],
     srcs = [
         "//backend:image_tar",
-        "//reverse-proxy:image_tar",
+        "//frontend:image_tar",
         "//agent:image_tar",
         "//auth-proxy:image_tar",
     ],
