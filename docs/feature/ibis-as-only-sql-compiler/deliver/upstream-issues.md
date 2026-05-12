@@ -7,57 +7,32 @@ are escalated, not silently expanded.
 
 ## Phase 05 / Step 05-01 (MR-5 — model_sql → ibis pipeline)
 
-### Pre-existing: `pandera` not installed → `./tools/test/test.sh --backend` fails
+### Resolved: `pandera` install hygiene in local workspace
 
-**Symptom**: from a clean `fcdc156` checkout (Phase 05 scaffold commit,
-pre-MR-5), `./tools/test/test.sh --backend` fails during pytest collection:
+`pandera>=0.29` is declared in
+[`backend/pyproject.toml`](../../../../backend/pyproject.toml) under
+`[project.optional-dependencies] test`. The crafter's local venv had not
+been synced with the `test` extra (`uv sync --all-extras` fixes it), so
+pytest collection failed on the six `tests/unit/test_*pandera*.py` /
+`test_harness_validate_after_wiring.py` / `test_orders_staging_schema.py`
+/ `test_retry_semantics.py` / `test_chat_turn_validate_with.py` files
+that import pandera transitively.
 
-```
-tests/test_mappers.py:20: in <module>
-    from backend.tests.integration.dataset_layer.harness import (
-tests/integration/dataset_layer/harness.py:57: in <module>
-    from tests.integration.dataset_layer.validation.pandera_validator import (
-tests/integration/dataset_layer/validation/pandera_validator.py:28: in <module>
-    import pandera.errors as pa_errors
-E   ModuleNotFoundError: No module named 'pandera'
-```
+After `uv sync --all-extras`, `./tools/test/test.sh --backend` runs
+end-to-end with **1400 passed, 0 failed** on commit `d417700`. The
+Refinery's CI environment installs `[project.optional-dependencies] test`
+from `pyproject.toml`, so the MQ gate is not affected — the local
+fail-fast was a workspace-setup issue, not a code issue.
 
-**Reproducer**:
+**Reproducer of the fix**:
 ```bash
-git checkout fcdc156
-./tools/test/test.sh --backend
+cd backend && uv sync --all-extras
+cd .. && ./tools/test/test.sh --backend
+# 1400 passed, 191 warnings
 ```
 
-The same failure occurs.
-
-**Scope assessment**: NOT in scope for MR-5. The failure is in
-`tests/test_mappers.py` which imports from `tests/integration/...` —
-neither file lives in `files_to_modify` for step 05-01, and the missing
-`pandera` package is a separate environment-provisioning concern.
-
-**Routing**: should be filed as a separate issue against the test-harness
-provisioning (likely `dc-wcy.x` for the dataset-layer harness phase, or a
-new `chore(backend): add pandera to dev deps` PR). Not blocking MR-5.
-
-**Local verification path for MR-5**: instead of the gate script's
-fail-fast, run pytest directly excluding the two pre-broken paths:
-
-```bash
-cd backend && uv run pytest --tb=short --ignore=tests/integration --ignore=tests/test_mappers.py
-```
-
-This produces: `1344 passed, 6 errors` where the 6 errors are all the
-same `pandera`-missing import error on test files unrelated to MR-5
-(`tests/unit/test_chat_turn_validate_with.py`,
-`tests/unit/test_harness_validate_after_wiring.py`,
-`tests/unit/test_orders_staging_schema.py`,
-`tests/unit/test_pandera_validator.py`,
-`tests/unit/test_pandera_validator_budget.py`,
-`tests/unit/test_retry_semantics.py`). All six errors reproduce on
-baseline `fcdc156` and are NOT caused by MR-5.
-
-After MR-5 the same `1344 passed, 6 errors` (now `1345 passed` after the
-characterization-test additions, `6 errors` unchanged) holds.
+No upstream issue remains — note preserved here only for future workers
+hitting the same pandera-missing collection error.
 
 ### Out-of-scope file touched: `test_export_dbt_project.py` (L2 rewrite)
 
