@@ -1,3 +1,15 @@
+# [1.28.0](https://github.com/jzallen/dashboard-chat/compare/v1.27.0...v1.28.0) (2026-05-12)
+
+
+### Bug Fixes
+
+* **tests:** update log-image-identity acceptance suite for compose service rename ([8070d01](https://github.com/jzallen/dashboard-chat/commit/8070d014152cfb02ff14e212201cc1bc5af8d283))
+
+
+### Features
+
+* **refinery:** content-aware --auto gate skips tests for docs-only diffs ([289308a](https://github.com/jzallen/dashboard-chat/commit/289308aaf8f4399695233e2290ded363ba477d8f))
+
 # [1.27.0](https://github.com/jzallen/dashboard-chat/compare/v1.26.0...v1.27.0) (2026-05-12)
 
 
