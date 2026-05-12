@@ -235,16 +235,16 @@ def _frontend_capture(
     ``request.addfinalizer`` so the scenario cleans up after itself.
     """
     capture.image = "dashboard-chat/reverse-proxy:bazel"
-    capture.service = "frontend"
+    capture.service = "reverse-proxy"
     _bazel_image_load("//reverse-proxy:image_tar")
     capture.workspace_status_sha = _read_workspace_status_sha()
-    _compose_up_services(["auth-proxy", "agent", "frontend"])
-    request.addfinalizer(lambda: _compose_down("frontend"))
+    _compose_up_services(["auth-proxy", "agent", "reverse-proxy"])
+    request.addfinalizer(lambda: _compose_down("reverse-proxy"))
 
-    line = _wait_for_log_match("frontend", IDENTITY_REGEX)
+    line = _wait_for_log_match("reverse-proxy", IDENTITY_REGEX)
     assert line is not None, (
         f"no identity line matching {IDENTITY_REGEX.pattern!r} in first 50 "
-        "lines of `docker compose logs frontend` within 30s"
+        "lines of `docker compose logs reverse-proxy` within 30s"
     )
     capture.matched_line = line
     parts = dict(token.split("=", 1) for token in line.split() if "=" in token)
@@ -320,14 +320,14 @@ def when_service_started(
     service: str, capture: IdentityCapture, request: pytest.FixtureRequest
 ) -> None:
     capture.service = service
-    if service == "frontend":
+    if service == "reverse-proxy":
         # Frontend's nginx config proxies to `auth-proxy` and `agent`, and
         # the `/api/` + `/health` location blocks resolve those names at
         # config-parse time (no `resolver` directive on them today). Without
         # those upstreams already present, nginx exits and the container
         # never serves anything. Bring them up alongside frontend so the
         # static identity surface (stdout + /_meta.json) is reachable.
-        _compose_up_services(["auth-proxy", "agent", "frontend"])
+        _compose_up_services(["auth-proxy", "agent", "reverse-proxy"])
     else:
         _compose_up(service)
     request.addfinalizer(lambda: _compose_down(service))
@@ -899,14 +899,14 @@ _FOUR_SERVICES: Dict[str, str] = {
     "api":        "dashboard-api",
     "agent":      "dashboard-agent",
     "auth-proxy": "dashboard-auth-proxy",
-    "frontend":   "dashboard-reverse-proxy",
+    "reverse-proxy":   "dashboard-reverse-proxy",
 }
 
 _FOUR_IMAGE_TARGETS: Dict[str, str] = {
     "api":        "//backend:image_tar",
     "agent":      "//agent:image_tar",
     "auth-proxy": "//auth-proxy:image_tar",
-    "frontend":   "//reverse-proxy:image_tar",
+    "reverse-proxy":   "//reverse-proxy:image_tar",
 }
 
 
@@ -1137,7 +1137,7 @@ def _write_compose_override(service: str, host_path: str) -> Path:
             "    environment:\n"
             "      GROQ_API_KEY: dc-1k8-milestone4-stub\n"
         )
-    elif service == "frontend":
+    elif service == "reverse-proxy":
         # Frontend stack brings up agent; ensure agent stays alive too.
         overlay += (
             "  agent:\n"
@@ -1245,7 +1245,7 @@ def _start_with_version_override(
     capture.service = service
     services_to_start = (
         [*_MILESTONE_4_FRONTEND_PEERS, service]
-        if service == "frontend"
+        if service == "reverse-proxy"
         else [service]
     )
     override = _write_compose_override(service, host_path)

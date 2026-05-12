@@ -10,8 +10,8 @@ Feature: Frontend container exposes build identity via stdout and HTTP
 
   Scenario: Identity line on container stdout (AC2.1)
     Given the bazel image "dashboard-chat/reverse-proxy:bazel" has been freshly built
-    When the "frontend" service is started via "docker compose up -d"
-    Then within the first 50 lines of "docker compose logs frontend" there is exactly one line matching the canonical identity regex
+    When the "reverse-proxy" service is started via "docker compose up -d"
+    Then within the first 50 lines of "docker compose logs reverse-proxy" there is exactly one line matching the canonical identity regex
     And the line begins with the service identifier "dashboard-reverse-proxy"
 
   Scenario: Identity available over HTTP at /_meta.json (AC2.2)
