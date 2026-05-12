@@ -98,9 +98,24 @@ export type CreateOrgAndReissueActor = ReturnType<
   typeof fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>
 >;
 
+/**
+ * Silent re-auth actor — invoked from `expired_token`. On success the
+ * machine transitions back to `ready`; on failure it falls through to
+ * `error_recoverable` with tag `silent-reauth-failed`. Per ADR-028 this
+ * actor's input/output are minimal because the re-auth credential lookup
+ * is handled by auth-proxy (the flow-state tier only learns about the
+ * outcome).
+ */
+export type SilentReauthActor = ReturnType<
+  typeof fromPromise<{ ok: true }, { correlation_id: string }>
+>;
+
 export interface LoginMachineDeps {
   workosUserInfo: WorkOSUserInfoActor;
   createOrgAndReissue: CreateOrgAndReissueActor;
+  /** Optional — when absent, expired_token has no invocation (matches the
+   *  pre-Step-03-01 behavior of an empty state body). */
+  silentReauth?: SilentReauthActor;
 }
 
 const REISSUE_BUDGET = 3;
@@ -122,6 +137,14 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
     actors: {
       workosUserInfo: deps.workosUserInfo,
       createOrgAndReissue: deps.createOrgAndReissue,
+      // Fallback noop actor — never resolves. The `expired_token` invoke
+      // only fires when `deps.silentReauth` is provided; if a caller forgets
+      // to wire it AND drives the machine into expired_token, the actor sits
+      // pending rather than blowing up the chart. This is also what we want
+      // for the orchestrator-level freeze tests that don't care about reauth.
+      silentReauth:
+        deps.silentReauth ??
+        (fromPromise(async () => new Promise<{ ok: true }>(() => {})) as SilentReauthActor),
     },
     guards: {
       orgNameValid: ({ context, event }) => {
@@ -347,7 +370,28 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
           ],
         },
       },
-      expired_token: {},
+      expired_token: {
+        // Per ADR-028 §"Decision outcome": the silent-reauth path is an
+        // invoked actor on `expired_token`. Success returns Maya to `ready`
+        // with her existing context intact; failure falls through to
+        // `error_recoverable` tagged `silent-reauth-failed`, which drives
+        // the recoverable-error page worded for the sign-in-again case.
+        invoke: {
+          src: "silentReauth",
+          input: ({ context }) => ({
+            correlation_id: context.correlation_id,
+          }),
+          onDone: {
+            target: "ready",
+          },
+          onError: {
+            target: "error_recoverable",
+            actions: assign({
+              underlying_cause_tag: () => "silent-reauth-failed" as const,
+            }),
+          },
+        },
+      },
       error_terminal: {},
     },
   });

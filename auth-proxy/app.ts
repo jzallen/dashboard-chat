@@ -286,7 +286,7 @@ async function emitKpiEventsForResponse(
   let body: {
     state?: unknown;
     correlation_id?: unknown;
-    context?: { underlying_cause_tag?: unknown };
+    context?: { underlying_cause_tag?: unknown; silent_reauth_ok?: unknown };
   };
   try {
     body = (await response.json()) as typeof body;
@@ -300,6 +300,7 @@ async function emitKpiEventsForResponse(
     typeof body?.context?.underlying_cause_tag === "string"
       ? body.context.underlying_cause_tag
       : undefined;
+  const silentReauthOk = body?.context?.silent_reauth_ok === true;
 
   if (inboundEventType === "retry_clicked") {
     emitKpiEvent({
@@ -314,12 +315,32 @@ async function emitKpiEventsForResponse(
       correlation_id: correlationId,
       underlying_cause_tag: tag,
     });
+    // Step 03-01: silent re-auth failure surfaces as error_recoverable with
+    // tag "silent-reauth-failed". Emit the dedicated KPI so dashboards can
+    // separate this from the org-create reissue failures.
+    if (tag === "silent-reauth-failed") {
+      emitKpiEvent({
+        event: "silent_reauth_failed",
+        correlation_id: correlationId,
+        underlying_cause_tag: tag,
+      });
+    }
   }
   if (state === "ready") {
     emitKpiEvent({
       event: "ready_reached",
       correlation_id: correlationId,
     });
+    // Step 03-01: when the projection signals silent_reauth_ok in context,
+    // emit the KPI alongside ready_reached. The flag is set by the
+    // orchestrator only on the specific ready transition that follows an
+    // expired_token → silent reauth success path (not on initial ready).
+    if (silentReauthOk) {
+      emitKpiEvent({
+        event: "silent_reauth_ok",
+        correlation_id: correlationId,
+      });
+    }
   }
 }
 

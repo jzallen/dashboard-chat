@@ -249,8 +249,9 @@ describe("closed-union underlying_cause_tag (compile-time)", () => {
       "cookie-blocked",
       "partial-setup",
       "workos-profile-corrupt",
+      "silent-reauth-failed",
     ];
-    expect(all).toHaveLength(4);
+    expect(all).toHaveLength(5);
     // Type-level exhaustiveness: this never-check fails to compile if a
     // future member is added without updating the runtime list above.
     const _exhaustive: Exclude<
@@ -259,7 +260,86 @@ describe("closed-union underlying_cause_tag (compile-time)", () => {
       | "cookie-blocked"
       | "partial-setup"
       | "workos-profile-corrupt"
+      | "silent-reauth-failed"
     > = undefined as never;
     void _exhaustive;
+  });
+});
+
+// --------------------------------------------------------------------------
+// Step 03-01 extensions — expired_token state + silent reauth (US-005)
+// --------------------------------------------------------------------------
+//
+// Behavior budget extension:
+//   B5 — expired_token invokes silent reauth; success transitions back to ready.
+//   B6 — silent reauth failure transitions to error_recoverable with tag
+//        "silent-reauth-failed".
+
+describe("expired_token invokes silent reauth (B5)", () => {
+  it("returns to ready when silent reauth succeeds", async () => {
+    // Build a machine with a silentReauth actor that immediately resolves.
+    const silentReauthOk = fromPromise(async () => ({ ok: true as const }));
+    const machine = createLoginAndOrgSetupMachine({
+      workosUserInfo: workosOk(),
+      createOrgAndReissue: fromPromise<
+        CreateOrgAndReissueOutput,
+        CreateOrgAndReissueInput
+      >(async (args) => ({
+        org_id: "org-acme-data",
+        org_name: args.input.org_name,
+      })),
+      silentReauth: silentReauthOk,
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "sign_in_clicked",
+      persona_email: MAYA_PROFILE.email,
+      persona_display_name: MAYA_PROFILE.display_name,
+    });
+    await waitFor(actor, (s) => s.value === "authenticated_no_org");
+    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
+    await waitFor(actor, (s) => s.value === "ready");
+    actor.send({ type: "__harness_expire_token__" });
+    await waitFor(actor, (s) => s.value === "expired_token");
+    // Silent reauth invoke kicks off automatically on entry; success → ready.
+    await waitFor(actor, (s) => s.value === "ready");
+    expect(actor.getSnapshot().value).toBe("ready");
+  });
+});
+
+describe("expired_token routes failed silent reauth to error_recoverable (B6)", () => {
+  it("tags the failure as silent-reauth-failed", async () => {
+    const silentReauthFails = fromPromise(async () => {
+      throw new Error("identity session expired");
+    });
+    const machine = createLoginAndOrgSetupMachine({
+      workosUserInfo: workosOk(),
+      createOrgAndReissue: fromPromise<
+        CreateOrgAndReissueOutput,
+        CreateOrgAndReissueInput
+      >(async (args) => ({
+        org_id: "org-acme-data",
+        org_name: args.input.org_name,
+      })),
+      silentReauth: silentReauthFails,
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "sign_in_clicked",
+      persona_email: MAYA_PROFILE.email,
+      persona_display_name: MAYA_PROFILE.display_name,
+    });
+    await waitFor(actor, (s) => s.value === "authenticated_no_org");
+    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
+    await waitFor(actor, (s) => s.value === "ready");
+    actor.send({ type: "__harness_expire_token__" });
+    await waitFor(actor, (s) => s.value === "expired_token");
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    expect(actor.getSnapshot().value).toBe("error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
+      "silent-reauth-failed",
+    );
   });
 });

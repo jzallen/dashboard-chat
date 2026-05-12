@@ -15,7 +15,8 @@ export type UnderlyingCauseTag =
   | "transient"
   | "cookie-blocked"
   | "partial-setup"
-  | "workos-profile-corrupt";
+  | "workos-profile-corrupt"
+  | "silent-reauth-failed";
 
 export type OrgNameValidationError =
   | { kind: "empty" }
@@ -122,6 +123,7 @@ function isUnderlyingCauseTag(value: string): value is UnderlyingCauseTag {
     value === "transient" ||
     value === "cookie-blocked" ||
     value === "partial-setup" ||
-    value === "workos-profile-corrupt"
+    value === "workos-profile-corrupt" ||
+    value === "silent-reauth-failed"
   );
 }
