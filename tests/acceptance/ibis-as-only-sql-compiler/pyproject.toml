@@ -29,6 +29,7 @@ markers = [
     "milestone_2: milestone-2 scenarios (ADR-026 MR-3 — ReportIbisCompiler)",
     "security_invariant: SQL-injection closure contract (Gap 1)",
     "input_validation_contract: rejected-input contract at validation boundary",
+    "deprecation_contract: deprecated-input contract rejected with structured error (ADR-026 §Decision-outcome item 2)",
     "slow: scenario expected to take >10s wall-clock",
 ]
 addopts = [

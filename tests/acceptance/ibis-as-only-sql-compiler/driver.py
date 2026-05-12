@@ -50,6 +50,20 @@ class ViewCreateError:
     body: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ReportCreateError:
+    """Captured HTTP error response when ``create_report`` is expected to fail.
+
+    Mirrors :class:`ViewCreateError` for the report-creation path: scenarios
+    that probe the structured rejection contracts (deprecation, missing
+    dimensions, …) read ``status_code`` and ``body`` off this dataclass rather
+    than catching an HTTP exception.
+    """
+
+    status_code: int
+    body: dict[str, Any]
+
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -260,6 +274,62 @@ class ViewAcceptanceDriver:
             )
             res.raise_for_status()
         return res.json()["data"]
+
+    def try_create_report(
+        self,
+        jwt: str,
+        project_id: str,
+        *,
+        name: str,
+        report_type: str,
+        source_refs: list[dict[str, str]],
+        columns_metadata: list[dict[str, Any]] | None = None,
+        materialization: str = "view",
+        sql_definition: str | None = None,
+        description: str | None = None,
+        domain: str = "Organization",
+    ) -> ReportCreateError | dict[str, Any]:
+        """Like :meth:`create_report` but returns the error envelope on 4xx.
+
+        Used by scenarios that need to observe the structured rejection body
+        (e.g., the deprecation-contract scenario where a free-form
+        ``sql_definition`` triggers a 400).
+        """
+        body: dict[str, Any] = {
+            "name": name,
+            "report_type": report_type,
+            "source_refs": source_refs,
+            "columns_metadata": columns_metadata or [],
+            "materialization": materialization,
+            "domain": domain,
+        }
+        if sql_definition is not None:
+            body["sql_definition"] = sql_definition
+        if description is not None:
+            body["description"] = description
+        with httpx.Client(timeout=self._timeout) as client:
+            res = client.post(
+                f"{self._auth_proxy_url}/api/projects/{project_id}/reports",
+                headers=_bearer(jwt, json_body=True),
+                json=body,
+            )
+        if res.status_code >= 400:
+            try:
+                err_body = res.json()
+            except Exception:
+                err_body = {"error": res.text}
+            return ReportCreateError(status_code=res.status_code, body=err_body)
+        return res.json()["data"]
+
+    def list_reports(self, jwt: str, project_id: str) -> list[dict[str, Any]]:
+        with httpx.Client(timeout=self._timeout) as client:
+            res = client.get(
+                f"{self._auth_proxy_url}/api/projects/{project_id}/reports",
+                headers=_bearer(jwt),
+            )
+            res.raise_for_status()
+        body = res.json()
+        return body.get("data", []) if isinstance(body, dict) else []
 
     # -- dbt eject -----------------------------------------------------
 

@@ -1,4 +1,13 @@
-"""Create report use case."""
+"""Create report use case.
+
+ADR-026 MR-3 / Phase 03-03: the storage ``sql_definition`` column is now
+ALWAYS derived by :class:`ReportIbisCompiler` from structured
+``columns_metadata`` (dimensions + measures). There is no caller-supplied
+SQL path remaining — the ``sql_definition`` parameter on this use-case
+function exists exclusively to surface a NAMED structured rejection
+(:class:`DeprecatedSqlDefinitionField`) when a legacy caller still supplies
+it (DWD-5: rejection at the use-case boundary, not at the schema layer).
+"""
 
 from typing import TYPE_CHECKING
 
@@ -9,7 +18,10 @@ from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project.project_service import ProjectService
 from app.use_cases.report.column_validation import validate_columns_metadata
-from app.use_cases.report.exceptions import InvalidReportReference
+from app.use_cases.report.exceptions import (
+    DeprecatedSqlDefinitionField,
+    InvalidReportReference,
+)
 from app.use_cases.report.report_ibis_compiler import ReportIbisCompiler
 from app.use_cases.view.dependency_service import DependencyService
 
@@ -37,7 +49,6 @@ _AGGREGATING_ROLES = {"dimension", "measure"}
 async def create_report(
     project_id: str,
     name: str,
-    sql_definition: str,
     report_type: str,
     source_refs: list[dict] | None = None,
     description: str | None = None,
@@ -45,6 +56,7 @@ async def create_report(
     columns_metadata: list[dict] | None = None,
     materialization: str = "view",
     project: dict | None = None,
+    sql_definition: str | None = None,
     *,
     repositories: "RepositoryContainer",
 ) -> Result[Report, str]:
@@ -53,21 +65,36 @@ async def create_report(
     Args:
         project_id: The parent project UUID.
         name: Report display name.
-        sql_definition: SQL query defining the transformation.
         report_type: Either "fact" or "dimension".
         source_refs: List of source references (dataset or view IDs).
         description: Optional description.
         domain: Business domain (default: Organization).
-        columns_metadata: Semantic column metadata.
+        columns_metadata: Semantic column metadata. ``semantic_role`` of
+            ``dimension`` / ``measure`` drives :class:`ReportIbisCompiler`
+            to derive the stored SQL end-to-end.
         materialization: dbt materialization strategy.
+        sql_definition: DEPRECATED. Reserved exclusively for the structured
+            rejection path — any truthy value triggers
+            :class:`DeprecatedSqlDefinitionField`. Per ADR-026 §"Decision
+            outcome" item 2 the storage SQL is now ALWAYS derived from
+            ``columns_metadata``.
 
     Raises:
+        DeprecatedSqlDefinitionField: If ``sql_definition`` is supplied (any
+            truthy value). Raised BEFORE project/source-ref work so the
+            compiler is never invoked and no repository write occurs.
         ProjectNotFound: If project does not exist.
         AuthorizationError: If user's org does not own the project.
         InvalidSourceReference: If any source refs point to non-existent entities.
         InvalidReportReference: If source refs contain report-type references.
         InvalidColumnMetadata: If columns_metadata contains invalid role/type pairs.
     """
+    # Deprecation rejection runs FIRST — before any DB / dependency work —
+    # so the rejection path has zero side effects (no report row, no
+    # compiler invocation). This is the use-case boundary that DWD-5 names.
+    if sql_definition:
+        raise DeprecatedSqlDefinitionField()
+
     if project is None:
         svc = ProjectService(repositories)
         project = await svc.fetch_project(project_id)
@@ -86,27 +113,30 @@ async def create_report(
     if cols:
         validate_columns_metadata(cols)
 
-    # Per ADR-026 MR-3: when columns_metadata carries any role=dimension or
-    # role=measure entry, derive sql_definition via ReportIbisCompiler. The
-    # storage column stays string-typed; the compiler is the producer. When
-    # cols is empty OR only has entity entries, fall back to the supplied
-    # sql_definition param (step 03-03 rips out the param entirely).
+    # Per ADR-026 MR-3: the storage ``sql_definition`` is ALWAYS derived by
+    # :class:`ReportIbisCompiler` from structured columns_metadata. When
+    # cols carry any role=dimension or role=measure entry the compiler
+    # composes an aggregation; otherwise the storage column gets an empty
+    # string (the no-aggregation case — pure entity-only or fully empty
+    # columns_metadata. Step 03-04 introduces the modeling-violation
+    # rejection for measures-without-dimensions; until then a bare
+    # entity-only report is a structurally valid persistence shape).
     if any(c.get("semantic_role") in _AGGREGATING_ROLES for c in cols):
         schema = await _derive_source_schema(repositories, refs)
         compiler = ReportIbisCompiler()
-        effective_sql = compiler.generate_executable(
+        compiled_sql = compiler.generate_executable(
             source_refs=refs,
             columns_metadata=cols,
             schema=schema,
         )
     else:
-        effective_sql = sql_definition
+        compiled_sql = ""
 
     report_dict = await repositories.metadata.create_report(
         project_id=project_id,
         org_id=project["org_id"],
         name=name,
-        sql_definition=effective_sql,
+        sql_definition=compiled_sql,
         report_type=report_type,
         source_refs=refs,
         description=description,
