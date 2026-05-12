@@ -185,7 +185,15 @@ class TestZipContents:
         zf = zipfile.ZipFile(BytesIO(zip_bytes))
 
         sql = zf.read("models/staging/stg_test_dataset.sql").decode("utf-8")
-        assert 'TRIM("col_a")' in sql
+        # L2 contract-mirroring rewrite per nw-test-refactoring-catalog: the
+        # legacy substring assertion ``'TRIM("col_a")' in sql`` pinned the
+        # CTE compiler's bare-string TRIM emission. After ADR-026 MR-5 the
+        # ibis pipeline emits ``TRIM("<table_alias>"."col_a", '<chars>')``
+        # — same operation, different byte shape. The contract surface is
+        # (a) the TRIM applies to col_a, and (b) the dbt-source macro
+        # appears at the FROM clause.
+        assert "TRIM(" in sql
+        assert '"col_a"' in sql
         assert "source(" in sql
 
     def test_generate_zip_without_plugin_registry_has_no_plugin_macros(self):

@@ -1,12 +1,18 @@
-"""Ibis dbt-source plugin — emits ``{{ ref(...) }}`` macros during compilation.
+"""Ibis dbt-source/dbt-ref plugin — emits dbt macros during compilation.
 
-Per ADR-026 §"Decision outcome" item 1 and the MR-2 row of §"MR roadmap", the
-dbt intermediate layer's dbt-ref macros must be emitted by the compiler
-DIRECTLY rather than by post-render string substitution. This module is the
-ibis-native rendering path that retires the legacy
-``_rewrite_sources_to_dbt_refs`` regex previously living in
-``app.use_cases.view.sql_generator`` and the ``sql.replace(ref_id, ...)`` loop
-previously living in ``app.use_cases.project._dbt.intermediate``.
+Per ADR-026 §"Decision outcome" item 1 and the MR-2 / MR-5 rows of §"MR
+roadmap", the dbt staging and intermediate layers' dbt macros must be
+emitted by the compiler DIRECTLY rather than by post-render string
+substitution. This module is the ibis-native rendering path that retires:
+
+* The legacy ``_rewrite_sources_to_dbt_refs`` regex previously living in
+  ``app.use_cases.view.sql_generator`` (MR-2).
+* The ``sql.replace(ref_id, ...)`` loop previously living in
+  ``app.use_cases.project._dbt.intermediate`` (MR-2).
+* The parallel CTE compiler ``model_sql.py`` (MR-5) — its
+  per-operation emission helpers are retired in favor of
+  :class:`IbisDbtSourceDuckDBCompiler` rendering the
+  ``app.models.dataset_sql.build_ibis_table`` pipeline.
 
 DWD-4 (hard constraint from the DISTILL wave-decisions):
 
@@ -98,6 +104,55 @@ class IbisDbtRefDuckDBCompiler(DuckDBCompiler):
         the rendered output is byte-faithful with what the legacy
         post-render regex produced — same pretty-printing, same casing,
         same quoting on non-source identifiers.
+        """
+        sql_ast = self.to_sqlglot(expr.unbind())
+        queries = sql_ast if isinstance(sql_ast, list) else [sql_ast]
+        return ";\n".join(query.sql(dialect=self.dialect, pretty=True) for query in queries)
+
+
+class IbisDbtSourceDuckDBCompiler(DuckDBCompiler):
+    """DuckDB compiler that renders the source table as a ``{{ source(...) }}``
+    macro.
+
+    Mirrors :class:`IbisDbtRefDuckDBCompiler` exactly but emits
+    ``{{ source('<project>', '<dataset>') }}`` at the source-table position.
+    Per ADR-026 MR-5, the staging-tier dbt model references its upstream raw
+    dataset via the ``source`` macro — this compiler is the byte-faithful
+    closure mechanism that retires ``model_sql.py``'s legacy CTE-emission
+    helpers.
+
+    There is exactly one unbound source table per dbt staging model (the
+    raw dataset). The compiler is constructed with the
+    ``(project_snake, dataset_snake)`` pair the macro should render with;
+    the unbound table's ``name`` is ignored because the staging model has a
+    single source by construction.
+    """
+
+    def __init__(self, project_snake: str, dataset_snake: str) -> None:
+        super().__init__()
+        self._project_snake = project_snake
+        self._dataset_snake = dataset_snake
+
+    def visit_UnboundTable(self, op: Any, *, name: str, schema: Any, namespace: Any) -> sg.exp.Table:
+        """Emit the source table as a ``{{ source('<proj>', '<ds>') }}`` macro.
+
+        ``name`` is the ibis table name (the ``name=`` argument to
+        ``ibis.table(...)``); for the staging-tier path it is always the
+        single raw dataset name. The compiler ignores it and uses the
+        ``(project_snake, dataset_snake)`` pair supplied at construction
+        time so the dbt source macro renders with the snake-cased names
+        the dbt project's ``sources.yml`` expects.
+        """
+        macro = "{{ source('" + self._project_snake + "', '" + self._dataset_snake + "') }}"
+        return sg.exp.Table(this=sg.exp.Identifier(this=macro, quoted=False))
+
+    def render(self, expr: ibis.Expr) -> str:
+        """Compile an ibis expression to a SQL string with the source macro inlined.
+
+        Mirrors :meth:`IbisDbtRefDuckDBCompiler.render` so the staging-tier
+        output is structurally identical to the intermediate-tier output —
+        same pretty-printing, same casing, same quoting on non-source
+        identifiers.
         """
         sql_ast = self.to_sqlglot(expr.unbind())
         queries = sql_ast if isinstance(sql_ast, list) else [sql_ast]

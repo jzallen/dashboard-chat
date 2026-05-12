@@ -1,9 +1,47 @@
+"""Staging-tier dbt SQL compilation — thin orchestrator over the ibis pipeline.
+
+Per ADR-026 §"Decision outcome" item 1 and the MR-5 row of §"MR roadmap",
+``generate_model_sql`` is now a thin orchestrator that:
+
+1. Filters ``dataset.transforms`` for enabled rows.
+2. Returns a byte-faithful ``SELECT * FROM {{ source(...) }}`` passthrough
+   when no enabled transforms remain (the dbt staging-tier passthrough
+   contract).
+3. Otherwise builds the ibis Table via :func:`app.models.dataset_sql.build_ibis_table`
+   and renders it through
+   :class:`app.use_cases.project._dbt.ibis_dbt_source.IbisDbtSourceDuckDBCompiler`
+   which emits ``{{ source('<project>', '<dataset>') }}`` at the source-table
+   position.
+
+The retired per-operation CTE-emission helpers (``_fill_null_to_sql``,
+``_map_values_to_sql``, ``_transform_to_sql``, ``_case_to_sql``, ``_is_numeric``,
+``_build_cleaned_cte``, ``_build_alias_select``, ``_get_schema_columns``) were
+the parallel SQL emission path ADR-026 retires. Their tests
+(``test_model_sql.py``) interrogated the legacy CTE mechanism (``WITH source
+AS`` / ``cleaned AS`` / ``filtered AS``); they are rewritten at L2
+(contract-mirroring) per nw-test-refactoring-catalog so they pin the
+dbt-staging-SQL contract — row-equivalence under DuckDB and the
+``{{ source(...) }}`` macro position — rather than the legacy CTE byte shape.
+
+DWD-4 (hard constraint): NO ``.replace("'", "''")`` defenses live here.
+Ibis literal escaping IS the closure mechanism for SQL injection.
+
+The single internal helper :func:`_normalize_alias_to_snake` pre-snake-cases
+the alias names BEFORE they reach the ibis pipeline so the dbt staging
+model's column headers stay snake-cased (the legacy contract). This is the
+only dbt-export-specific normalization the orchestrator applies; everything
+else delegates to ``app.models.dataset_sql``.
+"""
+
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from app.utils.sql_safety import quote_ident
+from app.models import dataset_sql
+
+from .ibis_dbt_source import IbisDbtSourceDuckDBCompiler
 
 if TYPE_CHECKING:
     from app.models.dataset import Dataset
@@ -11,197 +49,80 @@ if TYPE_CHECKING:
 
 
 def generate_model_sql(project_name_snake: str, dataset_name_snake: str, dataset: Dataset) -> str:
-    """Generate CTE-based dbt SQL for a dataset's transforms.
+    """Generate dbt staging SQL for a dataset's transforms.
 
-    Builds a pipeline of CTEs: source -> cleaned -> filtered -> final
-    based on which transform types are present and enabled.
+    Returns either:
+
+    * The simple passthrough ``"SELECT * FROM {{ source(...) }}"`` when no
+      enabled transforms remain (byte-faithful with the legacy compiler).
+    * The ibis-rendered staging pipeline with the source macro at the FROM
+      clause when transforms are present.
+
+    The dbt-source macro is the customer-visible contract — staging models
+    reference their upstream raw dataset via ``{{ source('<project>',
+    '<dataset>') }}``.
     """
     enabled = [t for t in (dataset.transforms or []) if t.is_enabled]
-
-    clean_transforms = sorted(
-        [t for t in enabled if t.transform_type in ("clean", "map") and t.expression_config],
-        key=lambda t: getattr(t, "created_at", "") or "",
-    )
-    filter_transforms = [t for t in enabled if t.transform_type == "filter" and t.condition_sql]
-    alias_transforms = [t for t in enabled if t.transform_type == "alias" and t.expression_config]
-
     source_ref = f"{{{{ source('{project_name_snake}', '{dataset_name_snake}') }}}}"
 
-    if not clean_transforms and not filter_transforms and not alias_transforms:
+    if not enabled:
         return f"SELECT * FROM {source_ref}"
 
-    schema_columns = _get_schema_columns(dataset)
+    # Production filter transforms always carry condition_json (the metadata
+    # DB column is NOT NULL); the new ibis path reads condition_json via
+    # apply_filter_predicates in dataset_sql. Alias names are normalized to
+    # snake_case here so the dbt staging model's column headers stay
+    # snake-cased (the legacy contract).
+    structured_transforms = [_normalize_alias_to_snake(t) for t in enabled]
 
-    ctes: list[str] = []
-    last_cte = "source"
+    schema_config = dataset.schema_config or {}
+    if not schema_config.get("fields"):
+        # The legacy emit produced "<expr>, *" when no schema fields existed
+        # — an undocumented escape hatch. The new contract requires
+        # schema-present datasets; emit an error comment for visibility.
+        return (
+            "-- Error generating SQL: dataset has transforms but no "
+            "schema_config.fields; cannot generate dbt staging SQL"
+        )
 
-    # source CTE is always present when we have transforms
-    ctes.append(f"source AS (\n    SELECT * FROM {source_ref}\n)")
-
-    # cleaned CTE
-    if clean_transforms:
-        cleaned_sql = _build_cleaned_cte(clean_transforms, schema_columns, last_cte)
-        ctes.append(f"cleaned AS (\n{cleaned_sql}\n)")
-        last_cte = "cleaned"
-
-    # filtered CTE
-    if filter_transforms:
-        where_clauses = [t.condition_sql for t in filter_transforms]
-        where_sql = "\n      AND ".join(where_clauses)
-        ctes.append(f"filtered AS (\n    SELECT *\n    FROM {last_cte}\n    WHERE {where_sql}\n)")
-        last_cte = "filtered"
-
-    # final SELECT
-    if alias_transforms:
-        final_sql = _build_alias_select(alias_transforms, schema_columns, last_cte)
-    else:
-        final_sql = f"SELECT * FROM {last_cte}"
-
-    cte_block = ",\n\n".join(ctes)
-    return f"WITH {cte_block}\n\n{final_sql}"
-
-
-def _get_schema_columns(dataset: Dataset) -> list[str] | None:
-    """Extract ordered column names from schema_config, or None if unavailable."""
-    fields = (dataset.schema_config or {}).get("fields", {})
-    if fields:
-        return list(fields.keys())
-    return None
-
-
-def _build_cleaned_cte(
-    transforms: list[Transform],
-    schema_columns: list[str] | None,
-    source_cte: str,
-) -> str:
-    """Build the cleaned CTE body."""
-    # Map column -> transform expression
-    col_exprs: dict[str, str] = {}
-    for t in transforms:
-        expr = _transform_to_sql(t)
-        if expr is not None:
-            col_exprs[t.target_column] = expr
-
-    if schema_columns:
-        # List all columns explicitly
-        select_parts = []
-        for col in schema_columns:
-            if col in col_exprs:
-                select_parts.append(f"    {col_exprs[col]}")
-            else:
-                select_parts.append(f"    {quote_ident(col)}")
-        select_body = ",\n".join(select_parts)
-    else:
-        # No schema: list transform expressions then *
-        parts = [f"    {expr}" for expr in col_exprs.values()]
-        parts.append("    *")
-        select_body = ",\n".join(parts)
-
-    return f"    SELECT\n{select_body}\n    FROM {source_cte}"
-
-
-def _build_alias_select(
-    alias_transforms: list[Transform],
-    schema_columns: list[str] | None,
-    source_cte: str,
-) -> str:
-    """Build the final SELECT with alias renames."""
-    # Map original column -> alias snake name
-    aliases: dict[str, str] = {}
-    for t in alias_transforms:
-        config = t.expression_config or {}
-        alias_name = config.get("alias") or config.get("alias_name", "")
-        if alias_name:
-            alias_snake = re.sub(r"[^a-z0-9]+", "_", alias_name.lower()).strip("_")
-            aliases[t.target_column] = alias_snake
-
-    if schema_columns:
-        select_parts = []
-        for col in schema_columns:
-            if col in aliases:
-                select_parts.append(f"    {quote_ident(col)} AS {quote_ident(aliases[col])}")
-            else:
-                select_parts.append(f"    {quote_ident(col)}")
-        select_body = ",\n".join(select_parts)
-    else:
-        parts = [f"    {quote_ident(col)} AS {quote_ident(alias)}" for col, alias in aliases.items()]
-        parts.append("    *")
-        select_body = ",\n".join(parts)
-
-    return f"SELECT\n{select_body}\nFROM {source_cte}"
-
-
-def _transform_to_sql(t: Transform) -> str | None:
-    """Convert a single clean/map transform to a SQL expression.
-
-    Returns the expression string (e.g. 'TRIM(col) AS col') or None for unsupported.
-    """
-    config = t.expression_config or {}
-    operation = config.get("operation", "")
-    col = t.target_column
-
-    qcol = quote_ident(col)
-
-    if operation == "trim":
-        return f"TRIM({qcol}) AS {qcol}"
-    elif operation == "case":
-        return _case_to_sql(config, col)
-    elif operation == "fill_null":
-        return _fill_null_to_sql(config, col)
-    elif operation == "map_values":
-        return _map_values_to_sql(config, col)
-    else:
-        return f"-- unsupported operation: {operation} for column {col}"
-
-
-_CASE_MODE_SQL = {
-    "upper": "UPPER",
-    "lower": "LOWER",
-    "title": "title_case",
-    "snake": "snake_case",
-    "kebab": "kebab_case",
-}
-
-
-def _case_to_sql(config: dict, col: str) -> str:
-    mode = config.get("mode", "")
-    func = _CASE_MODE_SQL.get(mode)
-    qcol = quote_ident(col)
-    if func:
-        return f"{func}({qcol}) AS {qcol}"
-    return f"-- unsupported case mode: {mode} for column {col}"
-
-
-def _is_numeric(value: str) -> bool:
-    """Check if a string value represents a number."""
     try:
-        float(value)
-        return True
-    except (ValueError, TypeError):
-        return False
+        table = dataset_sql.build_ibis_table(
+            dataset.name,
+            schema_config,
+            structured_transforms,
+            table_name=dataset.name,
+        )
+        compiler = IbisDbtSourceDuckDBCompiler(
+            project_snake=project_name_snake,
+            dataset_snake=dataset_name_snake,
+        )
+        return compiler.render(table)
+    except Exception as e:
+        # The legacy compiler emitted a "-- unsupported operation: ..." comment
+        # for unknown clean operations. The ibis pipeline rejects them at the
+        # CleaningExpression validation gate; preserve the visible-error
+        # contract by wrapping the failure in a SQL comment.
+        return f"-- Error generating SQL: {e!s}"
 
 
-def _fill_null_to_sql(config: dict, col: str) -> str:
-    fill_value = config.get("fill_value", "")
-    qcol = quote_ident(col)
-    if _is_numeric(str(fill_value)):
-        return f"COALESCE({qcol}, {fill_value}) AS {qcol}"
-    else:
-        escaped = str(fill_value).replace("'", "''")
-        return f"COALESCE({qcol}, '{escaped}') AS {qcol}"
+def _normalize_alias_to_snake(transform: Transform) -> Transform:
+    """Pre-snake-case the alias name before reaching the ibis pipeline.
 
+    The dbt staging model contract: column headers are snake_case. The
+    legacy compiler snake-cased the alias before emission; the ibis
+    ``rename`` step preserves whatever string it receives, so the
+    orchestrator snake-cases the alias upstream of the ibis call to keep
+    the contract byte-faithful with the legacy emit.
 
-def _map_values_to_sql(config: dict, col: str) -> str:
-    mappings = config.get("mappings", [])
-    qcol = quote_ident(col)
-    if not mappings:
-        return f"{qcol}"
+    No-op for non-alias transforms.
+    """
+    if transform.transform_type != "alias" or not transform.expression_config:
+        return transform
 
-    when_parts = []
-    for m in mappings:
-        from_val = m.get("from", "").replace("'", "''")
-        to_val = m.get("to", "").replace("'", "''")
-        when_parts.append(f"WHEN {qcol} = '{from_val}' THEN '{to_val}'")
+    config = dict(transform.expression_config)
+    alias_name = config.get("alias") or config.get("alias_name", "")
+    if not alias_name:
+        return transform
 
-    case_body = " ".join(when_parts)
-    return f"CASE {case_body} ELSE {qcol} END AS {qcol}"
+    config["alias"] = re.sub(r"[^a-z0-9]+", "_", alias_name.lower()).strip("_")
+    return replace(transform, expression_config=config)

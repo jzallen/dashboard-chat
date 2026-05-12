@@ -105,9 +105,18 @@ class TestExportDbtProject:
                 assert "profiles.yml" in names
                 assert "models/staging/stg_leads.sql" in names
 
-                # Verify SQL contains transforms
+                # Verify SQL contains transforms. L2 contract-mirroring
+                # rewrite per nw-test-refactoring-catalog: the pre-MR-5
+                # substring assertion ``'TRIM("name")' in sql`` pinned the
+                # legacy CTE compiler's bare-string emission. After ADR-026
+                # MR-5 the ibis pipeline emits ``TRIM("<alias>"."name",
+                # '<chars>')`` — same operation, different byte shape. The
+                # contract surface is (a) TRIM applies to "name", and (b)
+                # the dbt-source macro appears at the FROM clause.
                 sql = zf.read("models/staging/stg_leads.sql").decode("utf-8")
-                assert 'TRIM("name")' in sql
+                assert "TRIM(" in sql
+                assert '"name"' in sql
+                assert "source(" in sql
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 

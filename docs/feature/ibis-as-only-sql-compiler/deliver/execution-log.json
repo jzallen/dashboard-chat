@@ -211,6 +211,34 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-05-12T07:26:36Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-12T21:14:15Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: Phase 05 is a behavior-preserving refactor per ADR-026 \u00a7MR roadmap row MR-5; no new acceptance scenario per distill/roadmap.json. The new characterization tests (RED_UNIT) + the existing walking-skeleton + milestone-1 + milestone-2 acceptance suites at tests/acceptance/ibis-as-only-sql-compiler/ provide the regression net.",
+      "t": "2026-05-12T21:14:20Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-12T21:18:06Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-12T21:26:12Z"
     }
   ]
 }
