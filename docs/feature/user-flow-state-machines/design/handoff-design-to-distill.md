@@ -200,7 +200,7 @@ The compose acceptance test stack grows from 5 services to 7 (per ADR-030 + ADR-
 4. query-engine
 5. MinIO
 6. **ui-state** (NEW — per ADR-030)
-7. **frontend-remix** (NEW — per ADR-031; runs alongside the existing `frontend` nginx container, strangler-fig per route)
+7. **ui-presentation** (NEW — per ADR-031; runs alongside the existing `frontend` nginx container, strangler-fig per route)
 
 Redis (already present) is unchanged but is now consumed by three logs (agent's thread-event, agent's presentation-state, ui-state's flow-event) with distinct key prefixes.
 

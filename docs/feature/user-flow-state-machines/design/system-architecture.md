@@ -462,7 +462,7 @@ Browser → frontend container (nginx) → Remix Node server (sidecar in same co
                                     → agent
 ```
 
-- Two processes in the `frontend/` container (or two containers: `frontend-nginx` + `frontend-remix`).
+- Two processes in the `frontend/` container (or two containers: `frontend-nginx` + `ui-presentation`).
 - nginx keeps items 2-7 above.
 - Remix only handles items 1 (SPA routes + loaders).
 - nginx routes `/` (and Remix-owned routes) → Remix Node server on internal port (e.g., `localhost:3001`).
@@ -505,13 +505,13 @@ Morgan's `application-architecture.md` §2 implies R1 (Remix server replaces ngi
 
 **Pushback**: there is no system-level reason to replace nginx. The nginx config is mature, handles four routing concerns that Remix would have to reimplement, and contains a load-bearing ADR-015 routing rule. Replacing it is unnecessary churn.
 
-**Recommendation: Option R3** — Remix runs as a new compose service (e.g., `frontend-remix`); nginx in the existing `frontend` container stays and gains a `/` → `remix:3001` upstream rule.
+**Recommendation: Option R3** — Remix runs as a new compose service (e.g., `ui-presentation`); nginx in the existing `frontend` container stays and gains a `/` → `remix:3001` upstream rule.
 
 **Sharpest argument**: Option R3 is the **only option with a clean strangler-fig path**. We can deploy the Remix container alongside the existing nginx-static SPA, route specific routes through Remix (`/login`, `/org/$org`, etc.) progressively, and retire the SPA fallback when the migration completes. R1 demands a big-bang container replacement; R2 forces nginx + Node into the same container's lifecycle. R3 is the option Morgan's design also implicitly supports — her ADR-027 §"Reversibility" notes that "the load-bearing piece (ui-state tier) is framework-independent" — the same reasoning applies to the FE migration.
 
 **TLS, gzip, caching**: unchanged. nginx in the `frontend` container keeps doing those. In production behind a CDN (future concern; out of scope), the CDN handles TLS and caching anyway.
 
-**Container build pipeline**: `make up` builds three Bazel-managed images (frontend nginx-static, frontend-remix Node, ui-state Node). Same shape as the existing build of (frontend, agent, auth-proxy, api). Net additive: +1 image, same pattern.
+**Container build pipeline**: `make up` builds three Bazel-managed images (frontend nginx-static, ui-presentation Node, ui-state Node). Same shape as the existing build of (frontend, agent, auth-proxy, api). Net additive: +1 image, same pattern.
 
 ### 4.6 Frontend transition — final directive
 
@@ -524,7 +524,7 @@ Morgan's `application-architecture.md` §2 implies R1 (Remix server replaces ngi
 | Who handles gzip + static asset caching? | nginx, unchanged |
 | Who handles SPA fallback? | nginx for legacy routes; Remix for migrated routes |
 | Process model change in `frontend/` | NONE — nginx-only, single process |
-| New container | `frontend-remix` (Node), separate from the existing `frontend` |
+| New container | `ui-presentation` (Node), separate from the existing `frontend` |
 | Migration path | Strangler-fig: nginx routes `/login`, `/org/*` to Remix; the rest stays on SPA; migrated route-by-route over 4-6 weeks |
 | `make up` flow survives? | YES — adds one more Bazel image target |
 
@@ -538,7 +538,7 @@ The auth-path question is partly resolved by §1.7 (auth-proxy gains multi-upstr
 
 ### 5.1 Does Remix server-side talk to auth-proxy on behalf of the user?
 
-**YES.** The Remix loader runs server-side (in the `frontend-remix` container) and makes a fetch to `auth-proxy:3000/ui-state/...`. The loader extracts the user's Bearer token from the **request cookie or Authorization header** that the browser sent it (per Remix convention) and forwards it.
+**YES.** The Remix loader runs server-side (in the `ui-presentation` container) and makes a fetch to `auth-proxy:3000/ui-state/...`. The loader extracts the user's Bearer token from the **request cookie or Authorization header** that the browser sent it (per Remix convention) and forwards it.
 
 This is **JWT delegation**: the user's JWT flows through Remix's loader as a Bearer header to auth-proxy. Auth-proxy verifies the token as it does today; no new auth surface.
 
@@ -655,7 +655,7 @@ C4Container
 
   Container_Boundary(c1, "Dashboard Chat") {
     Container(frontend, "Frontend (nginx)", "nginx", "Static SPA + reverse proxy. Single process. UNCHANGED.")
-    Container(remix, "Frontend-Remix (NEW container)", "Remix v2 on Node", "Server-side route loaders; reads projections via auth-proxy")
+    Container(remix, "UI-Presentation (NEW container)", "Remix v2 on Node", "Server-side route loaders; reads projections via auth-proxy")
     Container(authproxy, "Auth-Proxy (UPDATED)", "Hono + jose", "Sole production ingress for backend, agent, AND ui-state. Gains multi-upstream routing (ADR-030).")
     Container(flowstate, "UI-State Tier (NEW)", "Hono + XState v5 — single replica", "Owns flow machines; exposes projection endpoints; emits FlowEvent log. Crash→Redis rehydration.")
     Container(agent, "Agent (Hono + Groq)", "Hono + Groq SDK", "Chat brain. UNCHANGED. Receives X-Active-Scope header.")
@@ -689,7 +689,7 @@ C4Container
 
 **Key system-scope deltas from Morgan's diagram:**
 
-1. **`frontend-remix`** is a separate container (was implicit/missing in Morgan's diagram).
+1. **`ui-presentation`** is a separate container (was implicit/missing in Morgan's diagram).
 2. **`frontend` (nginx)** is explicit as a separate, unchanged container — not collapsed into "frontend (Remix on Vite)" as in Morgan's diagram.
 3. **auth-proxy** annotated as "UPDATED" — it gains multi-upstream routing.
 4. **ui-state** annotated as "single replica" — the scaling stance is on the diagram.
@@ -712,7 +712,7 @@ flowchart TB
         N[nginx<br/>1 process<br/>~10MB RAM]
       end
 
-      subgraph FR["Frontend-Remix Container (NEW) — internal :3001"]
+      subgraph FR["UI-Presentation Container (NEW) — internal :3001"]
         RX[Remix Node Server<br/>1 process<br/>~150MB RAM]
       end
 
@@ -776,7 +776,7 @@ flowchart TB
 - **Replica count**: ui-state = 1 (mandatory by XState v5 in-process actor model + estimation headroom). Others unchanged.
 - **Volumes**: ui-state has NO persistent volume — Redis is the persistence substrate.
 - **Host ports**: `1041` (agent), `1042` (auth-proxy), `1043` (ui-state — new). Pattern continues.
-- **Compose acceptance test** (ADR-016 mirror): grows from 5 services to 7 (add `frontend-remix` + `ui-state`).
+- **Compose acceptance test** (ADR-016 mirror): grows from 5 services to 7 (add `ui-presentation` + `ui-state`).
 
 ---
 
@@ -792,7 +792,7 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 | Throughput ceiling | 100 QPS projection reads per replica (at 50% CPU) | Documented in this file §1.5; alarm triggers at 60 QPS sustained. |
 | Network paths | 1 hop from FE to auth-proxy; 2 hops from FE through Remix to auth-proxy; 3 hops from FE through Remix through auth-proxy to ui-state. Each hop adds ~1ms in compose, ~5-10ms across cloud zones. | Observability: every hop logs with the same `X-Correlation-Id`; mean inter-hop latency derived. |
 | Operational runbook | 1. probe failure on startup → check Redis. 2. tier OOM → unlikely at planning horizon; if happens, dump heap, inspect actor count. 3. high CPU → scaling-ceiling alarm; trigger Option γ migration plan. | Out of scope for this wave; DEVOPS handoff captures runbook items. |
-| Deploy surface | +1 service in compose (ui-state), +1 service in compose (frontend-remix), +1 Bazel image kind per. ~30 min of devops work to add. | Operator checklist in ADR-030. |
+| Deploy surface | +1 service in compose (ui-state), +1 service in compose (ui-presentation), +1 Bazel image kind per. ~30 min of devops work to add. | Operator checklist in ADR-030. |
 
 ---
 
@@ -804,7 +804,7 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 | SQ-2 | Scaling: 1 replica (XState v5 in-process actors + estimation headroom). Scaling-ceiling triggers documented. | ADR-030 |
 | SQ-3 | Persistence: Redis Streams, ADR-018 inherited; key prefix `ui-state:{flow_id}:events`; XADD per transition; snapshot every 50 events | ADR-027 §3 (inherited; no new ADR) |
 | SQ-4 | Observability: structured JSON to stdout per transition; FlowEventLog is audit SSOT; `/health/probes` + `/health/actors`; metrics derived from logs; OTel deferred | ADR-030 §"Observability" (folded in; no standalone ADR) |
-| SQ-5 | Frontend tier: NEW `frontend-remix` container; nginx in `frontend` UNCHANGED; strangler-fig route migration | ADR-031 |
+| SQ-5 | Frontend tier: NEW `ui-presentation` container; nginx in `frontend` UNCHANGED; strangler-fig route migration | ADR-031 |
 | SQ-6 | Auth path: Bearer delegation through Remix loaders; tier trusts auth-proxy headers (no token re-verification); Cookie migration in Phase B (future ADR) | derives from SQ-1 + ADR-016 + ADR-031 |
 | SQ-7 | Failover: ui-state is SPOF for sign-in + scope transitions; not SPOF for chat or backend; MTTR ~30s; no new SPOF vs today | covered in §6 |
 | SQ-8 | Estimation: 1 replica, <5% CPU, ~200 MB RAM, 1,000 Redis ops/sec — all at 10x with orders-of-magnitude headroom | §0 |
@@ -831,7 +831,7 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 
 4. **Replicas implied vs single-replica required** (`application-architecture.md` is silent on replica count). The XState v5 actor model + estimation jointly imply **single replica only** at the planning horizon; this is a system-level constraint Morgan's design did not state. ADR-030 makes it explicit.
 
-5. **Compose service count** (Morgan claims "was 5; +1 for ui-state" → 6). With the frontend-remix container added (per ADR-031), it's actually **+2 → 7**. Updated in §9 above.
+5. **Compose service count** (Morgan claims "was 5; +1 for ui-state" → 6). With the ui-presentation container added (per ADR-031), it's actually **+2 → 7**. Updated in §9 above.
 
 ---
 

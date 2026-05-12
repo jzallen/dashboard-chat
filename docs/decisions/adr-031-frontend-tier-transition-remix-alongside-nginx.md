@@ -35,7 +35,7 @@ The decision is what physical deployment shape the Remix server takes vis-à-vis
 
 2. **Option R2 — Remix Node server runs BEHIND nginx in the same container.** nginx routes `/` and Remix-owned routes to a localhost Node process (Remix). nginx keeps `/api/`, `/worker/`, `/health`, `/assets/`. Two processes in one container, managed by `s6-overlay` or similar.
 
-3. **Option R3 — Remix container as a separate compose service.** A new `frontend-remix` container runs Remix's Node server. nginx in the existing `frontend` container is unchanged except for one new upstream rule (proxy migrated routes to `frontend-remix:3001`). The two containers can be deployed and rolled back independently. **Selected.**
+3. **Option R3 — Remix container as a separate compose service.** A new `ui-presentation` container runs Remix's Node server. nginx in the existing `frontend` container is unchanged except for one new upstream rule (proxy migrated routes to `ui-presentation:3001`). The two containers can be deployed and rolled back independently. **Selected.**
 
 ## Decision outcome
 
@@ -45,8 +45,8 @@ Compose addition:
 
 ```yaml
 # docker-compose.yml addition
-frontend-remix:
-  image: dashboard-chat/frontend-remix:bazel
+ui-presentation:
+  image: dashboard-chat/ui-presentation:bazel
   pull_policy: never
   environment:
     AUTH_PROXY_URL: http://auth-proxy:3000
@@ -69,7 +69,7 @@ frontend-remix:
 # Expands as the strangler-fig migration proceeds (one PR per route family).
 location ~ ^/(login|org)(/|$) {
     resolver 127.0.0.11 valid=10s;
-    set $remix_upstream http://frontend-remix:3001;
+    set $remix_upstream http://ui-presentation:3001;
     proxy_pass $remix_upstream;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -116,7 +116,7 @@ At every phase, both the SPA and Remix coexist; nginx is the routing arbiter. Ro
 
 ### 5. Build pipeline impact
 
-Bazel build graph gains one new target: `//frontend-remix:image`. Same pattern as the existing `//frontend:image`, `//agent:image`, `//auth-proxy:image`, `//api:image`. No new image build patterns; no new tooling.
+Bazel build graph gains one new target: `//ui-presentation:image`. Same pattern as the existing `//frontend:image`, `//agent:image`, `//auth-proxy:image`, `//api:image`. No new image build patterns; no new tooling.
 
 The existing `frontend` Bazel target is unchanged — it still builds an nginx image with `dist/` static output. Build time grows by ~30-60 seconds for the new image; the two images build in parallel.
 
@@ -125,14 +125,14 @@ The existing `frontend` Bazel target is unchanged — it still builds an nginx i
 | Service | Before | After |
 |---|---|---|
 | `frontend` (nginx) | ~10 MB | ~10 MB (unchanged) |
-| `frontend-remix` (NEW) | n/a | ~150 MB (Node + Remix runtime + libs) |
+| `ui-presentation` (NEW) | n/a | ~150 MB (Node + Remix runtime + libs) |
 
 Total addition: ~150 MB per host. Cheap.
 
 ### 7. Auth path (resolves SQ-6 from system-architecture.md)
 
 - The browser sends Bearer token in Authorization header (PR-0 behavior; cookie migration in Phase B post-feature).
-- nginx forwards the header to `frontend-remix` (default `proxy_set_header` behavior includes upstream forwarding).
+- nginx forwards the header to `ui-presentation` (default `proxy_set_header` behavior includes upstream forwarding).
 - Remix loaders read `request.headers.get("Authorization")` and use it as the Bearer when calling auth-proxy.
 - Auth-proxy verifies (unchanged behavior).
 - Auth-proxy forwards identity headers to the ui-state tier.
@@ -141,7 +141,7 @@ Phase B (post-feature, separate ADR) migrates to HTTP-only cookies. The architec
 
 ### 8. Compose acceptance test impact
 
-The compose acceptance stack grows from 5 services (ADR-016: backend + worker + auth-proxy + query-engine + MinIO) to **7 services** (add `ui-state` per ADR-030 + `frontend-remix` per this ADR).
+The compose acceptance stack grows from 5 services (ADR-016: backend + worker + auth-proxy + query-engine + MinIO) to **7 services** (add `ui-state` per ADR-030 + `ui-presentation` per this ADR).
 
 Per ADR-016, this is a topology change worth annotating: the test stack must include both new services to verify production-fidelity ingress paths. The compose acceptance test's structural assertions (per Morgan's `application-architecture.md` §10 enforcement layer) MUST verify all 7 services start byte-identically.
 
@@ -151,14 +151,14 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 
 - **Zero churn to a working nginx config.** The existing 6 routing rules (including ADR-015's load-bearing one) are untouched. Risk of regression in proxy semantics, gzip, caching, or DNS late-binding is eliminated.
 - **Strangler-fig migration is mechanically clean.** Each route migration is a 5-line nginx.conf change + a new Remix route file. Rollback per route is a one-line revert.
-- **Independent restart and roll-forward shapes.** `frontend` and `frontend-remix` containers restart independently; a deploy bug in one doesn't take down the other.
+- **Independent restart and roll-forward shapes.** `frontend` and `ui-presentation` containers restart independently; a deploy bug in one doesn't take down the other.
 - **Build pipeline parallelism.** Bazel can build the two images concurrently.
-- **Reversibility is structural.** If Remix proves wrong, the entire `frontend-remix` container is deleted, and the corresponding nginx routes revert to the SPA fallback. The ui-state tier (the load-bearing piece per ADR-027) is framework-independent and unaffected.
+- **Reversibility is structural.** If Remix proves wrong, the entire `ui-presentation` container is deleted, and the corresponding nginx routes revert to the SPA fallback. The ui-state tier (the load-bearing piece per ADR-027) is framework-independent and unaffected.
 
 ### Negative / accepted trade-offs
 
 - **One additional container in compose.** ~150 MB RAM, same Bazel pattern. Cheap.
-- **Two containers to monitor in the frontend tier.** Operators must health-check both. Mitigated by clear container naming (`frontend` for nginx, `frontend-remix` for Node) and per-container `/health` endpoints.
+- **Two containers to monitor in the frontend tier.** Operators must health-check both. Mitigated by clear container naming (`frontend` for nginx, `ui-presentation` for Node) and per-container `/health` endpoints.
 - **nginx config grows over time** as more routes migrate to Remix. Each route family adds a `location ~ ^/(family)(/|$)` rule. Mitigated by clear naming and a single review point per migration PR.
 - **The "frontend" mental model splits into "static SPA + Remix server."** Until the SPA is fully retired, both are live. Mitigated by the per-route migration sequence in §4 and a public migration tracker (DELIVER concern).
 
@@ -171,7 +171,7 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 
 ## Open questions
 
-1. **Should the `frontend` and `frontend-remix` containers eventually merge** (e.g., via a unified ingress that does both static asset serving and Remix SSR)? Reasonable long-term direction, but not a PR-0 concern. Revisit when the strangler-fig migration completes (phase N+1).
+1. **Should the `frontend` and `ui-presentation` containers eventually merge** (e.g., via a unified ingress that does both static asset serving and Remix SSR)? Reasonable long-term direction, but not a PR-0 concern. Revisit when the strangler-fig migration completes (phase N+1).
 
 2. **CDN insertion** (TLS termination, edge caching, geographic routing). Out of scope for PR-0; relevant when production deployment scale grows. The architecture supports it: nginx → CDN insertion (CDN in front, nginx as origin) is a standard pattern.
 

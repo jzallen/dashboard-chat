@@ -13,7 +13,7 @@ Earlier entries are flat single-file summaries
 ## Index
 
 - [2026-05-12-ibis-as-only-sql-compiler/](2026-05-12-ibis-as-only-sql-compiler/FINALIZE.md) — ibis end-to-end across staging/view/report/intermediate tiers; closes Gap 1 (injection), Gap 2 (freeform SQL in report tools), Gap 3 (lake-repo `quote_ident`); ratifies ADR-026.
-- [2026-05-12-user-flow-state-machines/](2026-05-12-user-flow-state-machines/FINALIZE.md) — server-owned flow state machines + scope chain; new `ui-state` Hono tier + `frontend-remix`; ratifies ADR-027..031.
+- [2026-05-12-user-flow-state-machines/](2026-05-12-user-flow-state-machines/FINALIZE.md) — server-owned flow state machines + scope chain; new `ui-state` Hono tier + `ui-presentation`; ratifies ADR-027..031.
 - [2026-05-11-dbt-test-validation.md](2026-05-11-dbt-test-validation.md) — dbt test validation feature.
 - [2026-05-07-agent-ai-sdk-v6-migration.md](2026-05-07-agent-ai-sdk-v6-migration.md) — agent migration to AI SDK v6.
 - [2026-05-07-refactor-dataset-layer-harness.md](2026-05-07-refactor-dataset-layer-harness.md) — dataset-layer harness refactor.

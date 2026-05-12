@@ -38,7 +38,7 @@ C4Container
 
   Container_Boundary(c1, "Dashboard Chat") {
     Container(frontend, "Frontend (nginx)", "nginx:alpine", "Static SPA bundle + reverse proxy for /api, /worker, /api/channels/:id/presentation-state. Unchanged. See ADR-031.")
-    Container(remix, "Frontend-Remix (NEW)", "React 18 + Remix v2 on Node", "Server-side route loaders; reads active_scope and projects state via ui-state tier. Migrated routes only (strangler-fig per ADR-031).")
+    Container(remix, "UI-Presentation (NEW)", "React 18 + Remix v2 on Node", "Server-side route loaders; reads active_scope and projects state via ui-state tier. Migrated routes only (strangler-fig per ADR-031).")
     Container(authproxy, "Auth-Proxy", "Hono + jose", "Production ingress for backend + ui-state tier (ADR-016 aspirational for agent — see ADR-030 §1.7); verifies JWT; injects identity headers")
     Container(flowstate, "UI-State Tier (NEW)", "Hono + XState v5 actor model", "Owns flow machines; exposes projection endpoints; emits FlowEvent log")
     Container(agent, "Agent (Hono + Groq)", "Hono + Groq SDK", "Chat brain — SSE streaming, tool dispatch, ADR-015 directive log. Unchanged.")

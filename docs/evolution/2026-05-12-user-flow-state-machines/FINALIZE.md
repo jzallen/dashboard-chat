@@ -21,7 +21,7 @@ authenticated_no_org → creating_org → ready, with `error_recoverable`,
 to Redis Streams via the ADR-018 capability-presence dispatch, and
 serves a JSON projection at `GET /ui-state/api/flows/{id}/projection`
 plus an SSE push channel at `…/projection/stream`. The FE consumes the
-projection through Remix route loaders (`frontend-remix`, running
+projection through Remix route loaders (`ui-presentation`, running
 alongside the existing nginx `frontend` container per ADR-031); the TS
 `UserFlowHarness` consumes the same projection over HTTP — neither
 re-derives state.
@@ -176,7 +176,7 @@ separate feature once Praxis review concludes.
   multi-upstream routing rule (`/ui-state/*`). Persists FlowEvents to
   Redis Streams (key prefix `ui-state:{machine}:{principal_id}:events`;
   XADD per transition; snapshot every 50 events).
-- **New compose service**: `frontend-remix` (React 18 + Remix v2 on
+- **New compose service**: `ui-presentation` (React 18 + Remix v2 on
   Node; host port for migrated routes). Runs ALONGSIDE the existing
   `frontend` nginx container per ADR-031 strangler-fig; nginx is
   byte-unchanged and gains one new upstream rule.
@@ -184,7 +184,7 @@ separate feature once Praxis review concludes.
   local, `/ui-state/*` → ui-state tier, `/api/*` → backend default).
 - **Compose acceptance stack count**: grew from 5 services to **7**
   (auth-proxy, agent, backend, query-engine, MinIO, ui-state,
-  frontend-remix). The compose acceptance test verifies byte-identical
+  ui-presentation). The compose acceptance test verifies byte-identical
   startup of all 7.
 - **Pre-existing inconsistency surfaced (not fixed)**: the agent is
   reached via nginx directly today (`/worker/` + the ADR-015 presentation-state
@@ -260,7 +260,7 @@ finalize wave. Each is recorded with its owner / next action.
   `deferredToUi2` and remain @skip pending the
   [UI-2 ticket from DISTILL](distill/upstream-issues.md).
 - **What HAS shipped**: unit-level coverage of the banner component
-  (`frontend-remix/app/routes/expired-token-banner.test.tsx`) — the
+  (`ui-presentation/app/routes/expired-token-banner.test.tsx`) — the
   non-blocking aria semantics (`role="status"`,
   `aria-live="polite"`) are tested; the cross-tab focus-management
   browser behaviour is NOT exercised end-to-end.
@@ -317,7 +317,7 @@ finalize wave. Each is recorded with its owner / next action.
 ### UI-3 — Option D vs Option B FE framework ratification
 
 - **Owner**: User (DESIGN ratification — implicitly resolved by
-  shipping `frontend-remix`).
+  shipping `ui-presentation`).
 - **Status**: this feature shipped Option D (Remix loaders). Recorded
   here for traceability; no further action.
 
@@ -435,10 +435,10 @@ when it lands, not from the temporary workspace.
   + DI-4 flag).
 - **Tests**: `tests/acceptance/user-flow-state-machines/` (Cucumber
   step glue, 23 scenarios @skip per DI-1), plus vitest suites under
-  `ui-state/`, `auth-proxy/`, `frontend-remix/`, and
+  `ui-state/`, `auth-proxy/`, `ui-presentation/`, and
   `harness/user-flow-harness.test.ts`.
 - **Production code**: `ui-state/` (new Hono + XState v5 service),
-  `frontend-remix/` (new Remix container), `auth-proxy/` (multi-upstream
+  `ui-presentation/` (new Remix container), `auth-proxy/` (multi-upstream
   routing table extension).
 - **Architecture artifacts (archived here)**:
   - [`discuss/`](discuss/) — JTBD, journeys, US-001..US-005 stories

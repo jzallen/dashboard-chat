@@ -52,18 +52,18 @@ The walking skeleton (slice 1 step 1) is NOT affected — Maya reaches
 
 ---
 
-## UI-2 — `frontend-remix` deferred until Slice 2
+## UI-2 — `ui-presentation` deferred until Slice 2
 
 **Severity**: MEDIUM
 **Owner**: DELIVER (slice 2 ticket)
 **Where**: `roadmap.json` step 4 / 5
 
-The compose stack includes `frontend-remix` per ADR-031, but Slice 1's
+The compose stack includes `ui-presentation` per ADR-031, but Slice 1's
 walking skeleton drives the ui-state tier directly via the TS
 harness over HTTP through auth-proxy — no browser, no Remix loader
 executed. This is correct for the walking skeleton (it answers "can a
 new user accomplish org setup via the server-owned flow?"), but it
-means `frontend-remix` is not adapter-integration-tested until Slice 2.
+means `ui-presentation` is not adapter-integration-tested until Slice 2.
 
 Slice 2 step 4 (US-003 recoverable error UX) is the first scenario
 that requires the browser to render from the Remix loader. Slice 3

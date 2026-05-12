@@ -55,7 +55,7 @@ tickets. Each entry records:
     `silent_reauth_failed` KPI emissions on the proxied `/ui-state/*`
     surface, gated on the projection's `silent_reauth_ok` flag and the
     `silent-reauth-failed` underlying_cause_tag respectively.
-  - `frontend-remix/app/routes/expired-token-banner.test.tsx` (new):
+  - `ui-presentation/app/routes/expired-token-banner.test.tsx` (new):
     "Refreshing your session..." banner — non-blocking aria semantics
     (role="status", aria-live="polite") rendered when projection state is
     `expired_token`; absent otherwise.

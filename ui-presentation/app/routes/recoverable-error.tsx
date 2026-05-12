@@ -1,6 +1,6 @@
 // Remix-style route module for the recoverable-error page (US-003).
 //
-// Per ADR-031 this lives in `frontend-remix/` alongside (not replacing)
+// Per ADR-031 this lives in `ui-presentation/` alongside (not replacing)
 // the existing Vite frontend. Step 02-01 ships only the component shape
 // and copy table — wiring this module into the compose stack lands in a
 // later step.

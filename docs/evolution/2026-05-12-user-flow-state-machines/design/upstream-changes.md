@@ -117,7 +117,7 @@ The system-scope pass surfaced four design points in Morgan's deliverable that n
 
 **Morgan's state**: `application-architecture.md` §2 C4 Container diagram shows `Container(frontend, "Frontend (Remix on Vite)", ...)` — implying the single existing `frontend` container's process model changes from nginx-serving-static to Node-running-Remix.
 
-**Titan's state**: **Remix runs as a NEW separate container** (`frontend-remix`). nginx in the existing `frontend` container is byte-unchanged. nginx gains one new upstream rule for migrated routes; ALL existing rules — including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule — are preserved verbatim. Ratified in **ADR-031**.
+**Titan's state**: **Remix runs as a NEW separate container** (`ui-presentation`). nginx in the existing `frontend` container is byte-unchanged. nginx gains one new upstream rule for migrated routes; ALL existing rules — including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule — are preserved verbatim. Ratified in **ADR-031**.
 
 **Why this matters at system scope**: replacing nginx means re-implementing four routing rules + gzip + asset caching + late-binding DNS resolution in JavaScript. Doable, but unnecessary churn with no system-level payoff. The strangler-fig migration is also far cleaner with two containers (per-route rollback is a one-line nginx.conf revert) than with a single rewritten container.
 
@@ -160,7 +160,7 @@ This is a correctness invariant, parallel to ADR-029 invariant 1 (`active_scope.
 
 **Morgan's state**: `application-architecture.md` §11 claims "(was 5; +1 for ui-state)" → 6 services.
 
-**Titan's state**: with the frontend-remix container added per ADR-031, the count is **5+2 → 7 services** in the compose acceptance stack.
+**Titan's state**: with the ui-presentation container added per ADR-031, the count is **5+2 → 7 services** in the compose acceptance stack.
 
 ADR-016 (compose-stack acceptance test parity with production) requires the test stack to include all 7 services. Compose acceptance test's structural assertions must verify byte-identical startup of all 7.
 

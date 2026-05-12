@@ -61,16 +61,16 @@ The frontend's nginx is the de-facto multi-upstream router today (proxies `/api/
 
 **Persistence stance.** Redis Streams via ADR-018 inheritance. New key prefix `ui-state:{flow_id}:events` where `flow_id = <machine-name>:<principal_id>` for per-user flows (mandatory for multi-tenant safety). XADD per transition; snapshot every 50 events. Probe contract: XADD/XRANGE/DEL round-trip; HARD-fail at startup if Redis is unreachable. Redis blast radius grows: three key prefixes (`ui-state:`, `session:`, `presentation-state:`) now share one Redis container — operator runbook should add Redis HA before the next service joins the substrate.
 
-**Frontend tier transition.** A NEW `frontend-remix` container runs Remix's Node server alongside the existing nginx-static `frontend` container. nginx is byte-unchanged except for one new upstream rule for migrated routes (`/login`, `/org/$org` in PR-0). The strangler-fig migration runs one route family per PR; rollback per route is a one-line nginx.conf revert. ADR-015's load-bearing `/api/channels/:id/presentation-state` rule is preserved verbatim.
+**Frontend tier transition.** A NEW `ui-presentation` container runs Remix's Node server alongside the existing nginx-static `frontend` container. nginx is byte-unchanged except for one new upstream rule for migrated routes (`/login`, `/org/$org` in PR-0). The strangler-fig migration runs one route family per PR; rollback per route is a one-line nginx.conf revert. ADR-015's load-bearing `/api/channels/:id/presentation-state` rule is preserved verbatim.
 
 **New containers introduced:**
 
 | Container | Role | Replica | Host port |
 |---|---|---|---|
 | `ui-state` | Hono + XState v5 — ui-state machines, projection endpoints | 1 (mandatory) | 1043:8788 |
-| `frontend-remix` | Remix v2 on Node — server-side route loaders for migrated routes | 1 | (internal only; not exposed) |
+| `ui-presentation` | Remix v2 on Node — server-side route loaders for migrated routes | 1 | (internal only; not exposed) |
 
-Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`ui-state`, +`frontend-remix`).
+Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`ui-state`, +`ui-presentation`).
 
 **Observability stance.** Per-transition structured JSON to stdout (event=`flow.transition`, with machine_id, from_state, to_state, sequence_id, correlation_id, principal_id, org_id, duration_ms). FREEZE/THAW emit their own events (`flow.freeze.broadcast`, `flow.thaw.broadcast`). Health endpoints: `/health`, `/health/probes`, `/health/actors` (aggregate counts only). Metrics derived from logs by external aggregator; no in-tier metrics endpoint at PR-0. OpenTelemetry deferred — system-wide decision, not feature-local. Correlation-ID propagation MANDATORY on every request, every outgoing call, every FlowEvent record.
 

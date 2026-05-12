@@ -172,7 +172,7 @@ So a `freeze` event on `loginAndOrgSetup:user-001` MUST NOT affect `loginAndOrgS
 - **ADR-030 ↔ ADR-018**: persistence inherits ADR-018 verbatim (Redis-or-noop). The probe contract (XADD/XRANGE/DEL round-trip on startup) is mandatory per the Earned Trust principle.
 - **ADR-030 ↔ ADR-027**: ADR-030 ratifies the specific topology + scaling shape ADR-027 left open. ADR-030 amends ADR-027 §3's `flow_id` schema to mandate `principal_id` for per-user flows (multi-tenant correctness).
 - **ADR-030 ↔ ADR-028**: ADR-028's in-process actor model is what makes single-replica the right answer at planning horizon. ADR-030 documents the constraint and the migration path when it no longer holds.
-- **ADR-030 ↔ ADR-031**: ADR-031's frontend-remix container talks to the ui-state tier via auth-proxy, per ADR-030's routing table.
+- **ADR-030 ↔ ADR-031**: ADR-031's ui-presentation container talks to the ui-state tier via auth-proxy, per ADR-030's routing table.
 
 ## Open questions
 

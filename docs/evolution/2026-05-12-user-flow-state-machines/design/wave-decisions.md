@@ -175,7 +175,7 @@ Scaling-ceiling triggers documented in ADR-030 §3. Migration to Option γ (stic
 
 ### SD5 — Frontend tier transition (resolves SQ-5)
 
-**Remix runs alongside nginx, NOT in place of it.** nginx in the existing `frontend` container is byte-unchanged. A NEW container `frontend-remix` runs Remix's Node server. nginx gains one new rule (`location ~ ^/(login|org)(/|$)` → `frontend-remix:3001`); existing rules including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule are preserved verbatim.
+**Remix runs alongside nginx, NOT in place of it.** nginx in the existing `frontend` container is byte-unchanged. A NEW container `ui-presentation` runs Remix's Node server. nginx gains one new rule (`location ~ ^/(login|org)(/|$)` → `ui-presentation:3001`); existing rules including ADR-015's load-bearing `/api/channels/:id/presentation-state` rule are preserved verbatim.
 
 Strangler-fig migration: one route family per PR. Rollback per route is a one-line nginx.conf revert. Ratified in ADR-031.
 
@@ -183,7 +183,7 @@ Strangler-fig migration: one route family per PR. Rollback per route is a one-li
 
 ### SD6 — Auth path (resolves SQ-6 — derives from SD1 + SD5 + ADR-016)
 
-- Browser sends Bearer token; nginx forwards to `frontend-remix`; Remix loaders forward to auth-proxy; auth-proxy verifies; auth-proxy injects identity headers; ui-state tier trusts headers (no double verification).
+- Browser sends Bearer token; nginx forwards to `ui-presentation`; Remix loaders forward to auth-proxy; auth-proxy verifies; auth-proxy injects identity headers; ui-state tier trusts headers (no double verification).
 - Cookie migration deferred to Phase B (post-feature, separate ADR when needed).
 
 ### SD7 — Failover / SPOF (resolves SQ-7 — derives from SD2)
@@ -228,4 +228,4 @@ Existing flows (chat, dataset operations) are UNAFFECTED by ui-state outages. Ve
 2. "Auth-proxy is sole ingress" is aspirational today — agent currently bypasses via frontend nginx. ADR-030 documents this and routes the new tier correctly from day 1.
 3. `flow_id` schema in ADR-027 §3 was multi-tenant-unsafe — amended to mandate `principal_id`.
 4. Replica count was implicit in Morgan's design — made explicit as single-replica with documented ceiling.
-5. Compose acceptance count: not "5+1=6" but "5+2=7" (frontend-remix is its own container).
+5. Compose acceptance count: not "5+1=6" but "5+2=7" (ui-presentation is its own container).

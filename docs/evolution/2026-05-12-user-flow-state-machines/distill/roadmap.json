@@ -138,7 +138,7 @@
       "scaffolds_to_replace": [
         "ui-state/lib/active-scope.ts — resolveActiveScope() implementing I1-I5",
         "ui-state/lib/active-scope.ts — scope_reconciled FlowEvent emission for stale-link case",
-        "frontend-remix root + nested route loaders that consume the projection",
+        "ui-presentation root + nested route loaders that consume the projection",
         "backend cross-tenant guard returning 403 with named diagnostic"
       ],
       "acceptance": "Scope contract is the single source of truth. The pure function `resolveActiveScope` is unit-tested with zero fixtures (CM-D). The four scenarios exercise the contract via the driving port."
@@ -178,7 +178,7 @@
       "scaffolds_to_replace": [
         "ui-state/lib/machines/login-and-org-setup.ts — error_recoverable state with underlying_cause_tag",
         "ui-state/lib/machines/login-and-org-setup.ts — retry-budget tracking (3 attempts → error_terminal)",
-        "frontend-remix — RecoverableError component, copy variants table keyed by underlying_cause_tag",
+        "ui-presentation — RecoverableError component, copy variants table keyed by underlying_cause_tag",
         "auth-proxy — surface auth_recoverable_error_shown / auth_retry_clicked / ready_reached events"
       ],
       "acceptance": "Slice 2 scenarios green; correlation_id threads through every retry; closed-vocabulary discriminated union for underlying_cause_tag (TS compile-time enforcement). @kpi scenario verifies emittable observability signals (K3)."
@@ -270,7 +270,7 @@
       "scaffolds_to_replace": [
         "ui-state/lib/machines/login-and-org-setup.ts — expired_token side-state with silent re-auth invocation",
         "ui-state/lib/orchestrator.ts — broadcastFreeze + broadcastThaw + replay buffer (5s timeout, 16 max)",
-        "frontend-remix — non-blocking 'Refreshing your session...' banner with focus management",
+        "ui-presentation — non-blocking 'Refreshing your session...' banner with focus management",
         "auth-proxy — silent_reauth_ok / silent_reauth_failed event surface"
       ],
       "acceptance": "Slice 3 scenarios green; cross-machine FREEZE exercised end-to-end via the actor tree pattern (ADR-028). Journey invariants (IC-1..6) covered as property tests. Slice 3 may pull in Playwright for browser-level focus management (see upstream-issues UI-2)."
@@ -335,7 +335,7 @@
     {
       "id": "UI-2",
       "severity": "MEDIUM",
-      "summary": "frontend-remix browser scenarios in Slice 2/3 may need Playwright driver alongside Cucumber",
+      "summary": "ui-presentation browser scenarios in Slice 2/3 may need Playwright driver alongside Cucumber",
       "owner": "DELIVER slice-2 ticket"
     },
     {

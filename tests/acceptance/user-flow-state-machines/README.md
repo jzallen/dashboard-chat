@@ -18,7 +18,7 @@ harness/                     # TS UserFlowHarness (first-class US-004 deliverabl
 
 Real local adapters with a fake WorkOS over loopback HTTP. See DWD-2.
 Compose stack: auth-proxy + agent + backend + query-engine + MinIO +
-ui-state (NEW) + frontend-remix (NEW) = 7 services.
+ui-state (NEW) + ui-presentation (NEW) = 7 services.
 
 ## Running locally
 
@@ -26,7 +26,7 @@ ui-state (NEW) + frontend-remix (NEW) = 7 services.
 cd tests/acceptance/user-flow-state-machines
 
 # Bring up the 7-service compose stack (DELIVER lands the compose profile
-# once ui-state and frontend-remix images exist; today the scaffold builds
+# once ui-state and ui-presentation images exist; today the scaffold builds
 # the ui-state image to 501).
 npm install
 npm run compose:up

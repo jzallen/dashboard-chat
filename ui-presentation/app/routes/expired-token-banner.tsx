@@ -1,6 +1,6 @@
 // Remix-style component module for the ExpiredTokenBanner (US-005).
 //
-// Per ADR-031 this lives in `frontend-remix/` alongside (not replacing)
+// Per ADR-031 this lives in `ui-presentation/` alongside (not replacing)
 // the existing Vite frontend. Step 03-01 ships only the component shape —
 // wiring this into the live projection-subscription stream lands in a
 // later step (the UI-2 ticket referenced in DI-1).

@@ -14,7 +14,7 @@
 //   - ui-state/lib/orchestrator.test.ts (FREEZE/THAW + replay buffer)
 //   - ui-state/lib/machines/login-and-org-setup.test.ts (silent reauth)
 //   - auth-proxy/app.test.ts (silent_reauth_ok / silent_reauth_failed KPIs)
-//   - frontend-remix/app/routes/expired-token-banner.test.tsx (banner UX)
+//   - ui-presentation/app/routes/expired-token-banner.test.tsx (banner UX)
 //
 // Bodies that would require Playwright (banner focus management, browser
 // visibility) remain as deferred stubs marked "deferred to UI-2 ticket".

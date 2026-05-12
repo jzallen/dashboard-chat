@@ -85,7 +85,7 @@ fake**, declared per `nw-test-design-mandates` Dimension 9a.
 | backend (FastAPI) | **REAL** — runs in compose | The `POST /api/orgs` + `POST /api/auth/reissue` consumers are part of US-002's happy path. |
 | Redis | **REAL** — runs in compose | Capability-presence dispatch (`REDIS_URL` set) must exercise the Redis branch in WS, not noop fallback. |
 | WorkOS | **FAKE (in-process Hono)** | External SaaS; we own no production credentials in CI; fake speaks the same OIDC token + profile shape via a small local Hono server. |
-| frontend-remix | DEFERRED to Slice 2 | Slice 1 drives the ui-state tier via the TS harness (HTTP). The browser/FE participates from Slice 2 onward; Slice 1 still routes through `auth-proxy` (driving port). |
+| ui-presentation | DEFERRED to Slice 2 | Slice 1 drives the ui-state tier via the TS harness (HTTP). The browser/FE participates from Slice 2 onward; Slice 1 still routes through `auth-proxy` (driving port). |
 
 **Litmus test (per Dim 9d)**: "If I deleted the real `auth-proxy`
 adapter, would the WS still pass?" → No. The WS POSTs through
@@ -95,7 +95,7 @@ the right reason (wiring).
 
 **Containers**: Docker Compose; the acceptance test stack grows to **7
 services** per the amended handoff (auth-proxy + agent + backend +
-query-engine + MinIO + ui-state (NEW) + frontend-remix (NEW)).
+query-engine + MinIO + ui-state (NEW) + ui-presentation (NEW)).
 Compose bring-up sequenced from `steps/fixtures/compose.ts` with a
 docker-readiness probe per service (Redis PING; auth-proxy /health;
 ui-state /health; backend /health; MinIO /minio/health/live).
@@ -184,7 +184,7 @@ matrix:
 |---|---|---|
 | `clean` | Empty Redis; fresh Postgres schema; no pre-existing org for the persona | `walking-skeleton.feature` Scenario 1 |
 | `with-pre-commit` | Compose stack restarted mid-flow; ui-state-tier reads existing FlowEvent log from Redis | `slice-3-expired-token-freeze.feature` (also covers Redis-rehydration on restart, mirroring ADR-030's failover acceptance) |
-| `with-stale-config` | One nginx upstream rule still pointing at the old `frontend` for a route migrated to `frontend-remix` | `slice-1-error-paths.feature` Scenario 6 (stale-route-still-works graceful-degrade) |
+| `with-stale-config` | One nginx upstream rule still pointing at the old `frontend` for a route migrated to `ui-presentation` | `slice-1-error-paths.feature` Scenario 6 (stale-route-still-works graceful-degrade) |
 
 A DEVOPS-produced `environments.yaml` will replace this default matrix
 in the next gate.
@@ -236,10 +236,10 @@ Recorded in `distill/upstream-issues.md`:
    reaches `authenticated_no_org`, not `ready`). The Slice 1 remaining
    scenarios for US-002 happy path DO depend on it; the roadmap step
    for that scenario includes a 10-minute spike to confirm presence.
-3. **UI-2** (MEDIUM): `frontend-remix` container is part of the
+3. **UI-2** (MEDIUM): `ui-presentation` container is part of the
    compose stack per ADR-031 but Slice 1 WS does not exercise the
    browser — only `auth-proxy` and `ui-state` are hit. Slice 2
-   begins exercising `frontend-remix` via real HTTP from the harness;
+   begins exercising `ui-presentation` via real HTTP from the harness;
    Slice 3 requires full browser to verify the cross-machine FREEZE
    banner (this may push Slice 3 to use Playwright; documented but
    deferred until DELIVER's first slice-3 ticket).
