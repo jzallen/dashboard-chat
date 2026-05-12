@@ -17,6 +17,8 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
+import { resolveActiveScope } from "./lib/active-scope.ts";
+import type { ResourceType } from "./lib/active-scope.ts";
 import { FlowOrchestrator } from "./lib/orchestrator.ts";
 import { selectFlowEventLog } from "./lib/persistence/redis.ts";
 import {
@@ -134,6 +136,117 @@ app.post("/flow/:machine/event", async (c) => {
   } catch (err) {
     return c.json(
       { error: "event_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
+// Deep-link / scope-resolution endpoint per ADR-029 (Step 01-03).
+//
+// The HTTP layer is the canonical place where route params meet the JWT.
+// `resolveActiveScope` is invoked here; the resulting scope is appended to
+// the flow's event log as a `deep_link_opened` event so subsequent
+// projection reads observe the same authoritative scope.
+//
+// Wire shape (POST body):
+//   {
+//     flow_id: string,                                  // existing flow
+//     route: {
+//       org?: string, project?: string,
+//       resource_type?: "dataset"|"view"|"report",
+//       resource_id?: string,
+//     },
+//     project_name?: string,                            // server-known name (current)
+//     bookmarked_project_name?: string,                 // URL-carried name (possibly stale)
+//   }
+//
+// Headers (injected by auth-proxy):
+//   X-User-Id, X-Org-Id, X-User-Email
+//
+// Returns: the updated FlowProjection envelope.
+app.post("/flow/:machine/open-deep-link", async (c) => {
+  const machine = c.req.param("machine");
+  const correlation_id =
+    c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+  let body: {
+    flow_id?: string;
+    route?: {
+      org?: string;
+      project?: string;
+      resource_type?: ResourceType;
+      resource_id?: string;
+    };
+    project_name?: string;
+    bookmarked_project_name?: string;
+  };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (!body.flow_id) {
+    return c.json({ error: "flow_id required" }, 400);
+  }
+
+  // The auth-proxy injects identity headers. In dev mode X-Org-Id is
+  // "dev-org-001"; in prod it's the verified JWT's org_id claim.
+  const principalId = c.req.header("X-User-Id") ?? "";
+  const orgId = c.req.header("X-Org-Id") ?? null;
+
+  const route = body.route ?? {};
+  const resolution = resolveActiveScope(
+    route,
+    { sub: principalId, org_id: orgId },
+    {
+      bookmarked_project_name: body.bookmarked_project_name ?? null,
+      current_project_name: body.project_name ?? null,
+    },
+  );
+
+  try {
+    if (!resolution.ok) {
+      // I1 / I4: cross-tenant URL. Surface the named diagnostic via a
+      // scope_access_denied event. The projection's `state` flips to
+      // `access_denied` and `scope_resolution_error.reason` names the cause.
+      const projection = await orchestrator.appendDeepLinkEvents({
+        machine,
+        flow_id: body.flow_id,
+        correlation_id,
+        events: [
+          {
+            type: "scope_access_denied",
+            payload: { reason: "cross-tenant access" },
+          },
+        ],
+      });
+      return c.json(projection);
+    }
+
+    // Successful resolution: emit deep_link_opened. If reconciled (I5), the
+    // event payload carries reconciled=true; the reducer surfaces a
+    // scope_reconciled signal in the projection that an accompanying test
+    // agent can observe.
+    const projection = await orchestrator.appendDeepLinkEvents({
+      machine,
+      flow_id: body.flow_id,
+      correlation_id,
+      events: [
+        {
+          type: "deep_link_opened",
+          payload: {
+            scope: resolution.scope,
+            project: route.project
+              ? { id: route.project, name: body.project_name ?? null }
+              : null,
+            reconciled: resolution.reconciled,
+          },
+        },
+      ],
+    });
+    return c.json(projection);
+  } catch (err) {
+    return c.json(
+      { error: "open_deep_link_failed", message: (err as Error).message },
       500,
     );
   }

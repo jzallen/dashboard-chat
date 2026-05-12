@@ -20,7 +20,6 @@ import {
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import { resolveActiveScope } from "./active-scope.ts";
 
 export interface OrchestratorDeps {
   eventLog: FlowEventLog;
@@ -278,22 +277,59 @@ export class FlowOrchestrator {
     return this.projectionFor(flow_id, principal_id, "");
   }
 
+  /**
+   * Append projection-shaping events without dispatching them to the XState
+   * actor. Used by the deep-link endpoint (Step 01-03): the ScopeResolver
+   * runs at the HTTP edge, and its outcome is recorded as a
+   * `deep_link_opened` or `scope_access_denied` event so subsequent
+   * projection reads observe the resolved scope.
+   *
+   * The reducer in `projection.ts` is the SSOT for state derivation; the
+   * XState actor does NOT need to know about scope events because scope is
+   * orthogonal to the login statechart.
+   */
+  async appendDeepLinkEvents(input: {
+    machine: string;
+    flow_id: string;
+    correlation_id: string;
+    events: Array<{ type: string; payload: Record<string, unknown> }>;
+  }): Promise<FlowProjection> {
+    if (input.machine !== "login-and-org-setup") {
+      throw new Error(`Unknown machine: ${input.machine}`);
+    }
+    for (const ev of input.events) {
+      const flowEvent: FlowEvent = {
+        ts: new Date().toISOString(),
+        type: ev.type,
+        payload: ev.payload,
+        correlation_id: input.correlation_id,
+      };
+      await this.deps.eventLog.append(input.flow_id, flowEvent);
+    }
+    const principal_id = parsePrincipal(input.flow_id);
+    return this.projectionFor(
+      input.flow_id,
+      principal_id,
+      input.correlation_id,
+    );
+  }
+
   private async projectionFor(
     flow_id: string,
-    principal_id: string,
+    _principal_id: string,
     correlation_id: string,
   ): Promise<FlowProjection> {
     const events = await this.deps.eventLog.read(flow_id);
     const projection = buildProjection(flow_id, events);
-    const scope = resolveActiveScope(
-      {},
-      { sub: principal_id, org_id: null },
-      {},
-    );
+    // The projection reducer is the SSOT for active_scope. The orchestrator
+    // does not re-compute scope from JWT here — deep_link_opened events
+    // carry the resolved scope, and the reducer derives an org-only scope
+    // for flows that haven't opened a deep link yet. Per ADR-029 the
+    // resolver is invoked at the HTTP edge (index.ts) where route params
+    // and JWT claims are observable, not in the per-flow projection.
     return {
       ...projection,
       correlation_id: correlation_id || projection.correlation_id,
-      active_scope: scope.ok ? scope.scope : projection.active_scope,
     };
   }
 

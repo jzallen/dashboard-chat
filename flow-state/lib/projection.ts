@@ -10,7 +10,7 @@
 // the orchestrator + persistence layer a clear contract: events go in, the
 // projection is the public read shape.
 
-import type { ActiveScope } from "./active-scope.ts";
+import type { ActiveScope, ResourceType } from "./active-scope.ts";
 
 export interface FlowEvent {
   ts: string;
@@ -39,18 +39,37 @@ const EMPTY_SCOPE: ActiveScope = {
 interface ReducedContext {
   user: { email: string | null; display_name: string | null };
   org: { id: string | null; name: string | null };
+  /**
+   * Per ADR-029, the projection's `context.project` carries the
+   * authoritative (current) project name as known to the user's machine.
+   * Populated by deep_link_opened / scope_reconciled events.
+   */
+  project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
   retries: number;
   org_validation_error: { kind: string; message: string } | null;
+  /** Per ADR-029 I5: true when last deep-link reconciliation rewrote the
+   *  bookmarked project name. The acceptance test agent inspects this. */
+  scope_reconciled: boolean;
+  /** Per ADR-029 I4: surfaced when a deep link to a foreign tenant's
+   *  resource is rejected. Carries the named diagnostic. */
+  scope_resolution_error: { reason: string } | null;
+  /** The resolved scope from the most recent deep_link_opened event. The
+   *  projection-level `active_scope` field is derived from this. */
+  resolved_scope: ActiveScope | null;
 }
 
 function initialContext(): ReducedContext {
   return {
     user: { email: null, display_name: null },
     org: { id: null, name: null },
+    project: { id: null, name: null },
     underlying_cause_tag: null,
     retries: 0,
     org_validation_error: null,
+    scope_reconciled: false,
+    scope_resolution_error: null,
+    resolved_scope: null,
   };
 }
 
@@ -147,6 +166,52 @@ function reduce(
     };
   }
 
+  if (event.type === "deep_link_opened") {
+    // Payload shape (mirrors `open_deep_link` handler in `index.ts`):
+    //   { scope: ActiveScope, project: { id, name } | null, reconciled: bool }
+    const payload = event.payload as {
+      scope?: ActiveScope;
+      project?: { id: string | null; name: string | null } | null;
+      reconciled?: boolean;
+    };
+    const newProject = payload.project ?? null;
+    return {
+      state,
+      context: {
+        ...context,
+        resolved_scope: payload.scope ?? null,
+        project: newProject
+          ? { id: newProject.id, name: newProject.name }
+          : context.project,
+        scope_reconciled: Boolean(payload.reconciled),
+        scope_resolution_error: null,
+      },
+    };
+  }
+
+  if (event.type === "scope_reconciled") {
+    // Defensive: a separate scope_reconciled event (vs. embedded in
+    // deep_link_opened.reconciled) may be appended by future flows. Both
+    // shapes land at the same projection field.
+    return {
+      state,
+      context: { ...context, scope_reconciled: true },
+    };
+  }
+
+  if (event.type === "scope_access_denied") {
+    const payload = event.payload as { reason?: string };
+    return {
+      state: "access_denied",
+      context: {
+        ...context,
+        scope_resolution_error: {
+          reason: payload.reason ?? "cross-tenant access",
+        },
+      },
+    };
+  }
+
   // Unknown event: no-op. Keeps the reducer total without crashing on
   // events introduced by later steps.
   return { state, context };
@@ -170,13 +235,32 @@ export function buildProjection(
     correlationId = event.correlation_id;
   }
 
+  // Build the projection-level active_scope from the reduced context.
+  // Precedence: resolved_scope (from deep_link_opened) > derived from org.
+  let scope: ActiveScope = EMPTY_SCOPE;
+  if (context.resolved_scope) {
+    scope = context.resolved_scope;
+  } else if (context.org.id) {
+    // Once Maya has an org but hasn't opened a deep link, the scope is
+    // org-only — project_id stays null per I2 (no project context yet).
+    scope = {
+      org_id: context.org.id,
+      project_id: null,
+      resource_type: null,
+      resource_id: null,
+    };
+  }
+
   return {
     flow_id,
     state,
     context: context as unknown as Record<string, unknown>,
-    active_scope: EMPTY_SCOPE,
+    active_scope: scope,
     sequence_id: events.length,
     last_event_at: lastEventAt,
     correlation_id: correlationId,
   };
 }
+
+// Re-export ResourceType so callers don't need a separate import path.
+export type { ResourceType };

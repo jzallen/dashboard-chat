@@ -11,7 +11,7 @@ Feature: Maya's active scope reflects her real tenant, project, and resource on 
   I want the organization, project, and resource I see in the shell to match what the app actually uses
   So that I never act on a stale link or cross into another tenant's data.
 
-  @skip @us-002 @happy-path @real-io @clean
+  @us-002 @happy-path @real-io @clean
   Scenario: Maya's app shell shows organization, name, and project on first paint after deep-linking to a project
     Given Maya has organization "Acme Data" with project "Q4 Analytics" already set up
     When Maya opens the deep link to project "Q4 Analytics" cold

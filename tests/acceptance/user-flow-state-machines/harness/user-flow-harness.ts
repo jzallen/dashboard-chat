@@ -85,6 +85,66 @@ export class UserFlowHarness {
     return this.send_event("__harness_expire_token__", {});
   }
 
+  /**
+   * Open a deep link with the given route params, optionally supplying the
+   * server-known current project name and a (possibly stale) bookmarked
+   * name. Routes through auth-proxy → flow-state /open-deep-link, which
+   * runs the ScopeResolver and appends a deep_link_opened (or
+   * scope_access_denied) event to the flow.
+   */
+  async open_deep_link(input: {
+    route: {
+      org?: string;
+      project?: string;
+      resource_type?: "dataset" | "view" | "report";
+      resource_id?: string;
+    };
+    project_name?: string;
+    bookmarked_project_name?: string;
+  }): Promise<FlowProjection> {
+    if (!this.flowId) {
+      throw new Error("No active flow; call begin_auth() first");
+    }
+    const machine = this.config.defaultMachine ?? "login-and-org-setup";
+    const res = await request(
+      `${this.config.authProxyUrl}/flow-state/flow/${machine}/open-deep-link`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: this.flowId,
+          route: input.route,
+          project_name: input.project_name,
+          bookmarked_project_name: input.bookmarked_project_name,
+        }),
+      },
+    );
+    const body = (await res.body.json()) as unknown;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `open_deep_link expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    this.lastProjection = body as FlowProjection;
+    return this.lastProjection;
+  }
+
+  /**
+   * Assert that the most recent deep-link resolution emitted a
+   * scope_reconciled signal (I5 from ADR-029). Reads context.scope_reconciled
+   * from the projection, which the reducer sets when a deep_link_opened
+   * event carried `reconciled: true`.
+   */
+  async assert_scope_reconciled(): Promise<void> {
+    const projection = await this.get_projection();
+    const ctx = projection.context as { scope_reconciled?: boolean };
+    if (!ctx.scope_reconciled) {
+      throw new Error(
+        `assert_scope_reconciled failed: context.scope_reconciled is ${ctx.scope_reconciled}, expected true`,
+      );
+    }
+  }
+
   async assert_state(expected: string): Promise<void> {
     const projection = await this.get_projection();
     if (projection.state !== expected) {
