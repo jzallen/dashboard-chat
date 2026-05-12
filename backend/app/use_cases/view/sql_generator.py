@@ -12,8 +12,13 @@ expression layer, never through string interpolation.
 to ``ViewIbisCompiler``. Per ADR-026 §"MR roadmap" → MR-1 row and §"First MR
 shape" in the source research doc, the shim survives for one release so
 callers (controllers, dbt-eject intermediate model wrapper, update_view
-use case) can switch incrementally. MR-2 retires the dbt-ref shim entirely
-by replacing the post-render replacement with an ibis-source plugin.
+use case) can switch incrementally.
+
+ADR-026 MR-2 retires the post-render ``_rewrite_sources_to_dbt_refs`` regex:
+``generate_executable(view, ref_mode=True)`` now delegates to the ibis-source
+plugin at ``app.use_cases.project._dbt.ibis_dbt_source``, which emits
+``{{ ref('...') }}`` macros DIRECTLY during sqlglot serialization. The
+post-render substitution helper has been removed from this module.
 """
 
 from __future__ import annotations
@@ -97,11 +102,12 @@ class ViewIbisCompiler:
     bound through ``ViewFilter.value`` reaches the rendered SQL via ibis's
     literal escaping — the closure mechanism for ADR-026 Gap 1.
 
-    ``ref_mode=True`` swaps source-table identifiers for dbt ``{{ ref(...) }}``
-    macros in the rendered SQL. The substitution is post-render today; ADR-026
-    MR-2 replaces it with an ibis-source plugin. The intermediate-model
-    wrapper at ``backend/app/use_cases/project/_dbt/intermediate.py`` is the
-    sole consumer of ``ref_mode=True`` and is the seam MR-2 reworks.
+    ``ref_mode=True`` delegates to the ibis-source plugin at
+    ``app.use_cases.project._dbt.ibis_dbt_source`` so dbt ``{{ ref(...) }}``
+    macros are emitted by the compiler DIRECTLY, not patched in after
+    rendering (ADR-026 MR-2). The intermediate-model wrapper at
+    ``backend/app/use_cases/project/_dbt/intermediate.py`` is the sole
+    consumer of ``ref_mode=True``.
     """
 
     BACKEND_TYPE_MAP: ClassVar[dict[str, str]] = dict(_DISPLAY_TO_BACKEND_TYPE)
@@ -120,12 +126,12 @@ class ViewIbisCompiler:
 
         Args:
             view: View domain object.
-            ref_mode: When True, source table identifiers are replaced with
-                dbt ``{{ ref('...') }}`` macros so the SQL is suitable for the
-                customer's dbt project. Consumed today by the intermediate
-                model wrapper; MR-2 retires this branch by emitting macros
-                through an ibis-source plugin rather than post-render
-                substitution.
+            ref_mode: When True, the ibis-source plugin at
+                ``app.use_cases.project._dbt.ibis_dbt_source`` emits dbt
+                ``{{ ref('...') }}`` macros at source-table positions
+                DIRECTLY during compilation (ADR-026 MR-2). The customer's
+                dbt project receives macros as a first-class compiler output
+                rather than a post-render substitution.
 
         Returns:
             DuckDB-dialect SQL string. ``SELECT *`` from a synthetic empty
@@ -137,11 +143,13 @@ class ViewIbisCompiler:
             # tests that exercise this empty edge keep their contract.
             return "SELECT *"
 
-        table = _build_ibis_table(view)
-        sql = ibis.to_sql(table, dialect="duckdb")
         if ref_mode:
-            sql = _rewrite_sources_to_dbt_refs(sql, view)
-        return sql
+            from app.use_cases.project._dbt.ibis_dbt_source import render_view_with_dbt_refs
+
+            return render_view_with_dbt_refs(view)
+
+        table = _build_ibis_table(view)
+        return ibis.to_sql(table, dialect="duckdb")
 
     def generate_display(self, view: View) -> str:
         """Render display SQL — a prefix comment plus the executable SQL.
@@ -367,23 +375,3 @@ def _resolve_column(source_table: ibis.Table, current_expr: ibis.Table, column: 
         return current_expr[column]
     except Exception:  # pragma: no cover — ibis raises a typed error subclass
         return source_table[column]
-
-
-def _rewrite_sources_to_dbt_refs(sql: str, view: View) -> str:
-    """Replace source-table identifiers in rendered SQL with dbt ``{{ ref(...) }}`` macros.
-
-    Brownfield substitution: ibis renders source tables as quoted identifiers
-    (``"orders"``). ADR-026 MR-2 retires this branch by emitting macros via an
-    ibis-source plugin. For MR-1 we substitute by source name, matching the
-    legacy generator's ref-mode shape (``stg_<snake>`` for datasets,
-    ``int_<snake>`` for views). The substitution is bounded — only the source
-    names that appear in ``view.source_refs`` are touched.
-    """
-    for ref in view.source_refs:
-        name = ref.get("name", ref["id"])
-        ref_type = ref.get("type", "dataset")
-        snake = name.lower().replace(" ", "_")
-        prefix = "int_" if ref_type == "view" else "stg_"
-        replacement = "{{ ref('" + prefix + snake + "') }}"
-        sql = sql.replace(f'"{name}"', replacement)
-    return sql

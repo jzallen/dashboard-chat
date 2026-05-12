@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.use_cases.project._dbt.ibis_dbt_source import substitute_ref_ids_in_text
+
 if TYPE_CHECKING:
     from app.models.view import View
 
@@ -11,11 +13,20 @@ if TYPE_CHECKING:
 def generate_intermediate_sql(view_name_snake: str, view: View, ref_name_map: dict[str, str]) -> str:
     """Generate intermediate model SQL for a View.
 
-    If the view has structured columns, the SQL flows through
-    :class:`ViewIbisCompiler` (ADR-026 MR-1). Otherwise we fall back to the
-    legacy ``view.sql_definition`` text path with post-render ref-id
-    substitution; ADR-026 MR-2 retires the legacy branch entirely by replacing
-    the post-render replacement with an ibis-source plugin.
+    Both branches emit dbt ``{{ ref(...) }}`` macros via the ibis-source
+    plugin at ``app.use_cases.project._dbt.ibis_dbt_source`` (ADR-026 MR-2):
+
+    * Structured-columns path — :class:`ViewIbisCompiler` delegates to
+      :func:`render_view_with_dbt_refs`, which constructs a
+      :class:`IbisDbtRefDuckDBCompiler` and renders macros DIRECTLY at
+      source-table positions.
+    * Legacy text path — when the view has no structured columns we fall
+      back to :func:`substitute_ref_ids_in_text` over the raw
+      ``view.sql_definition``. Production callers (``create_view`` /
+      ``update_view``) still produce views without columns, so this path
+      remains alive after MR-2; the substitution helper lives in the
+      ibis_dbt_source module so this file performs no post-render string
+      mutation of its own.
 
     Args:
         view_name_snake: Snake-cased view name.
@@ -33,14 +44,6 @@ def generate_intermediate_sql(view_name_snake: str, view: View, ref_name_map: di
 
         sql = ViewIbisCompiler().generate_executable(view, ref_mode=True)
     else:
-        # MR-2 will replace this post-render regex with an ibis-source plugin
-        # so dbt-ref macro emission becomes a first-class compiler output
-        # rather than a string substitution after the fact.
-        sql = view.sql_definition
-        for ref in view.source_refs:
-            ref_id = ref["id"]
-            if ref_id in ref_name_map:
-                model_name = ref_name_map[ref_id]
-                sql = sql.replace(ref_id, f"{{{{ ref('{model_name}') }}}}")
+        sql = substitute_ref_ids_in_text(view.sql_definition, view, ref_name_map)
 
     return f"{config_line}\n\n{sql}"
