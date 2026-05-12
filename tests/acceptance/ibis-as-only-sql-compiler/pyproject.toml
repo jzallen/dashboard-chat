@@ -26,6 +26,7 @@ markers = [
     "real_io: scenario uses real adapters (compose stack + real DuckDB)",
     "walking_skeleton: walking-skeleton scenario gating MR-1 GREEN",
     "milestone_1: milestone-1 scenarios (ADR-026 MR-1)",
+    "milestone_2: milestone-2 scenarios (ADR-026 MR-3 — ReportIbisCompiler)",
     "security_invariant: SQL-injection closure contract (Gap 1)",
     "input_validation_contract: rejected-input contract at validation boundary",
     "slow: scenario expected to take >10s wall-clock",

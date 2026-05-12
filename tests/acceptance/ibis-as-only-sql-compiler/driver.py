@@ -218,6 +218,49 @@ class ViewAcceptanceDriver:
             res.raise_for_status()
         return res.json()["data"]
 
+    # -- reports -------------------------------------------------------
+
+    def create_report(
+        self,
+        jwt: str,
+        project_id: str,
+        *,
+        name: str,
+        report_type: str,
+        source_refs: list[dict[str, str]],
+        columns_metadata: list[dict[str, Any]] | None = None,
+        materialization: str = "view",
+        sql_definition: str = "",
+        description: str | None = None,
+        domain: str = "Organization",
+    ) -> dict[str, Any]:
+        """POST a structured report definition to the production endpoint.
+
+        Mirrors :meth:`create_view`: the driver hands the request body to the
+        backend through the same HTTP boundary the analyst hits, then returns
+        the JSON-API ``data`` object so callers can read ``attributes`` for
+        the compiled SQL / metadata.
+        """
+        body: dict[str, Any] = {
+            "name": name,
+            "sql_definition": sql_definition,
+            "report_type": report_type,
+            "source_refs": source_refs,
+            "columns_metadata": columns_metadata or [],
+            "materialization": materialization,
+            "domain": domain,
+        }
+        if description is not None:
+            body["description"] = description
+        with httpx.Client(timeout=self._timeout) as client:
+            res = client.post(
+                f"{self._auth_proxy_url}/api/projects/{project_id}/reports",
+                headers=_bearer(jwt, json_body=True),
+                json=body,
+            )
+            res.raise_for_status()
+        return res.json()["data"]
+
     # -- dbt eject -----------------------------------------------------
 
     def export_dbt_zip(self, jwt: str, project_id: str) -> bytes:
@@ -228,6 +271,53 @@ class ViewAcceptanceDriver:
             )
             res.raise_for_status()
             return res.content
+
+    def read_mart_sql(self, zip_bytes: bytes, mart_name: str) -> str:
+        """Read one mart model SQL file out of the dbt export.
+
+        Mart models live at ``models/marts/<domain>/<prefix>_<snake_name>.sql``
+        where ``<prefix>`` is ``fct`` or ``dim`` depending on report_type.
+        This helper is tolerant of dbt-naming evolution and the report-type
+        prefix: it scans ``models/marts/**`` for any file matching
+        ``{mart_name}.sql``, ``mart_{mart_name}.sql``, ``fct_{mart_name}.sql``
+        or ``dim_{mart_name}.sql``.
+        """
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            names = zf.namelist()
+            candidate_basenames = {
+                f"{mart_name}.sql",
+                f"mart_{mart_name}.sql",
+                f"fct_{mart_name}.sql",
+                f"dim_{mart_name}.sql",
+            }
+            for entry in names:
+                if not entry.startswith("models/marts/"):
+                    continue
+                basename = entry.rsplit("/", 1)[-1]
+                if basename in candidate_basenames:
+                    return zf.read(entry).decode("utf-8")
+        raise RuntimeError(
+            f"mart model not found in export; looked for {sorted(candidate_basenames)!r} under models/marts/, "
+            f"export contains {[n for n in names if 'marts' in n]!r}"
+        )
+
+    def evaluate_report_sql(
+        self,
+        sql: str,
+        *,
+        seed_relations: dict[str, Path],
+        source_name_map: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Evaluate compiled report ``sql`` against in-memory DuckDB.
+
+        Functionally equivalent to :meth:`evaluate_view_sql`; named separately
+        so report-side tests can read in domain terms.
+        """
+        return self.evaluate_view_sql(
+            sql,
+            seed_relations=seed_relations,
+            source_name_map=source_name_map,
+        )
 
     def read_intermediate_sql(self, zip_bytes: bytes, intermediate_name: str) -> str:
         """Read one ``models/intermediate/<name>.sql`` file out of the export.
