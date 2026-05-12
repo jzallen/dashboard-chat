@@ -23,7 +23,8 @@
   "devDependencies": {
     "ts-node": "^10.9.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.6"
   },
   "//layout": "TS acceptance suite per docs/feature/user-flow-state-machines/distill/wave-decisions.md §DWD-1. Standalone workspace, peer to the Python acceptance suites under tests/acceptance/. Run from inside this directory; not part of the root turbo graph (mirrors `cd tests/acceptance/<feature> && uv run --no-project pytest` posture)."
 }

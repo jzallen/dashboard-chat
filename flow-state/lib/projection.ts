@@ -57,6 +57,10 @@ interface ReducedContext {
   /** The resolved scope from the most recent deep_link_opened event. The
    *  projection-level `active_scope` field is derived from this. */
   resolved_scope: ActiveScope | null;
+  /** Per ADR-029 invariant 4: the access_token minted at the
+   *  org_created_and_jwt_reissued boundary. The TS harness's
+   *  assert_jwt_carries_org_claim reads this. */
+  access_token: string | null;
 }
 
 function initialContext(): ReducedContext {
@@ -70,6 +74,7 @@ function initialContext(): ReducedContext {
     scope_reconciled: false,
     scope_resolution_error: null,
     resolved_scope: null,
+    access_token: null,
   };
 }
 
@@ -134,6 +139,8 @@ function reduce(
   if (event.type === "org_created_and_jwt_reissued") {
     const orgPayload =
       (event.payload.org as Partial<ReducedContext["org"]>) ?? {};
+    const accessToken =
+      (event.payload.access_token as string | undefined) ?? null;
     return {
       state: "ready",
       context: {
@@ -144,7 +151,15 @@ function reduce(
         },
         org_validation_error: null,
         underlying_cause_tag: null,
+        access_token: accessToken,
       },
+    };
+  }
+
+  if (event.type === "token_expired") {
+    return {
+      state: "expired_token",
+      context: { ...context },
     };
   }
 

@@ -61,6 +61,26 @@ const orchestrator = new FlowOrchestrator({
 
 const app = new Hono();
 
+/**
+ * Closed list of event types the harness uses to drive the machine into
+ * recoverable-error and expired-token states. Per DWD-1, these are gated by
+ * NWAVE_HARNESS_KNOBS=true: production deployments leave the env var unset,
+ * so the route refuses to dispatch the event with a clear error.
+ */
+const HARNESS_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "__harness_force_failure__",
+  "__harness_expire_token__",
+]);
+
+/**
+ * Wire the flow-state routes onto the supplied Hono app, using the supplied
+ * orchestrator as the state owner. Extracted so tests can build a scenario-
+ * scoped app + orchestrator pair without invoking the production composition
+ * root (which probes Redis, binds the port, and constructs the WorkOS / backend
+ * adapters).
+ */
+export function wireRoutes(app: Hono, orchestrator: FlowOrchestrator): void {
+
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 app.post("/flow/:machine/begin", async (c) => {
@@ -122,6 +142,22 @@ app.post("/flow/:machine/event", async (c) => {
   }
   if (!body.flow_id || !body.type) {
     return c.json({ error: "flow_id and type required" }, 400);
+  }
+
+  // Harness-event gating (DWD-1): the `__harness_*` events drive the machine
+  // into states that have no production-callable entry. Production deployments
+  // leave NWAVE_HARNESS_KNOBS unset → the route refuses the event with a
+  // clear error so a malicious caller can't bypass real flow logic.
+  if (HARNESS_EVENT_TYPES.has(body.type)) {
+    if (process.env.NWAVE_HARNESS_KNOBS !== "true") {
+      return c.json(
+        {
+          error:
+            "harness knob disabled: __harness_* events require NWAVE_HARNESS_KNOBS=true (dev-mode only)",
+        },
+        403,
+      );
+    }
   }
 
   try {
@@ -267,6 +303,11 @@ app.get("/flow/:machine/projection", async (c) => {
     );
   }
 });
+
+} // end wireRoutes
+
+// Production composition: wire routes onto the module-level app + orchestrator.
+wireRoutes(app, orchestrator);
 
 function derivePrincipalId(email: string): string {
   // Replace non-alphanum with underscore; gives a stable principal_id from

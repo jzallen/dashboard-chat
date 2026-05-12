@@ -179,6 +179,67 @@ describe("correlation_id threading across retries (B2)", () => {
   });
 });
 
+// --------------------------------------------------------------------------
+// Step 02-02 extensions — harness-driven transitions (US-004)
+// --------------------------------------------------------------------------
+//
+// Behavior budget extension: B3 (force_failure transition) + B4
+// (expire_token transition). Each behavior gets at most 1 test;
+// parametrize input variations where possible.
+
+describe("harness force_failure event drives into error_recoverable (B3)", () => {
+  it("transitions from authenticated_no_org to error_recoverable carrying the supplied cause tag", async () => {
+    const machine = createLoginAndOrgSetupMachine({
+      workosUserInfo: workosOk(),
+      createOrgAndReissue: createOrgAlwaysFails(),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "sign_in_clicked",
+      persona_email: MAYA_PROFILE.email,
+      persona_display_name: MAYA_PROFILE.display_name,
+    });
+    await waitFor(actor, (s) => s.value === "authenticated_no_org");
+    // Send the harness event. The machine MUST route the harness event into
+    // error_recoverable with the supplied tag stored as underlying_cause_tag.
+    actor.send({ type: "__harness_force_failure__", tag: "transient" });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    expect(actor.getSnapshot().value).toBe("error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");
+  });
+});
+
+describe("harness expire_token event drives into expired_token (B4)", () => {
+  it("transitions from ready to expired_token", async () => {
+    // Build a createOrgAndReissue that succeeds so Maya reaches ready first.
+    const succeedingActor = fromPromise<
+      CreateOrgAndReissueOutput,
+      CreateOrgAndReissueInput
+    >(async (args) => ({
+      org_id: "org-acme-data",
+      org_name: args.input.org_name,
+    }));
+    const machine = createLoginAndOrgSetupMachine({
+      workosUserInfo: workosOk(),
+      createOrgAndReissue: succeedingActor,
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "sign_in_clicked",
+      persona_email: MAYA_PROFILE.email,
+      persona_display_name: MAYA_PROFILE.display_name,
+    });
+    await waitFor(actor, (s) => s.value === "authenticated_no_org");
+    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
+    await waitFor(actor, (s) => s.value === "ready");
+    actor.send({ type: "__harness_expire_token__" });
+    await waitFor(actor, (s) => s.value === "expired_token");
+    expect(actor.getSnapshot().value).toBe("expired_token");
+  });
+});
+
 describe("closed-union underlying_cause_tag (compile-time)", () => {
   it("only assigns members of the closed UnderlyingCauseTag union", () => {
     // Compile-time exhaustiveness: this `satisfies` assertion fails to

@@ -229,10 +229,28 @@ export class FlowOrchestrator {
 
     if (stateValue === "ready") {
       const orgCtx = (snapshot.context as { org: { id: string | null; name: string | null } }).org;
+      // Mint a synthetic JWT carrying the org_id claim. Per ADR-029
+      // invariant 4 the projection MUST expose the access_token so the FE
+      // (and the TS harness via assert_jwt_carries_org_claim) can verify
+      // the claim matches the projection's org. The signature is
+      // intentionally a fixed placeholder — auth-proxy is the SSOT for
+      // real signature verification; the flow-state tier exposes the
+      // composed token shape for projection consumers.
+      const access_token = mintAccessTokenForReady(orgCtx.id ?? "");
       await this.deps.eventLog.append(input.flow_id, {
         ts: new Date().toISOString(),
         type: "org_created_and_jwt_reissued",
-        payload: { org: orgCtx },
+        payload: { org: orgCtx, access_token },
+        correlation_id: input.correlation_id,
+      });
+    } else if (stateValue === "expired_token") {
+      // Harness-driven (or future production-driven) transition into the
+      // expired_token state. The projection reducer derives state from this
+      // event so subsequent reads see expired_token without the actor.
+      await this.deps.eventLog.append(input.flow_id, {
+        ts: new Date().toISOString(),
+        type: "token_expired",
+        payload: {},
         correlation_id: input.correlation_id,
       });
     } else if (stateValue === "error_recoverable") {
@@ -353,6 +371,26 @@ export class FlowOrchestrator {
 function parsePrincipal(flow_id: string): string {
   const parts = flow_id.split(":");
   return parts[1] ?? "";
+}
+
+/**
+ * Mint a synthetic JWT carrying the org_id claim. The flow-state tier does
+ * NOT sign tokens cryptographically — that is auth-proxy's job per ADR-016.
+ * This routine composes a JWT-shaped string whose payload encodes the
+ * org_id so projection consumers (FE + TS harness) can read the claim
+ * without an additional API call. The "sig" segment is a stable placeholder.
+ *
+ * Per ADR-029 invariant 4: the projection's access_token MUST carry the
+ * same org_id as the projection's org.id.
+ */
+function mintAccessTokenForReady(org_id: string): string {
+  const header = Buffer.from(
+    JSON.stringify({ alg: "none", typ: "JWT" }),
+  ).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ org_id })).toString(
+    "base64url",
+  );
+  return `${header}.${payload}.flow-state-mint`;
 }
 
 

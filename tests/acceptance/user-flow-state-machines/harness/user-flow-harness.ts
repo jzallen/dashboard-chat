@@ -70,11 +70,45 @@ export class UserFlowHarness {
     this.correlationId = projection.correlation_id;
     this.flowId = projection.flow_id;
     this.lastProjection = projection;
+    this.capture_jwt_from(projection);
     return projection;
   }
 
   async submit_org(name: string): Promise<FlowProjection> {
-    return this.send_event("org_form_submitted", { org_name: name });
+    const projection = await this.send_event("org_form_submitted", {
+      org_name: name,
+    });
+    // Per ADR-029 invariant 4, on the transition to `ready` the projection
+    // carries the JWT carrying Maya's org_id claim. Capture it so
+    // assert_jwt_carries_org_claim has something to decode.
+    this.capture_jwt_from(projection);
+    return projection;
+  }
+
+  /**
+   * Attach this harness to an existing flow without driving begin_auth.
+   * Used by US-004's composition scenario: a sibling harness reads the
+   * existing user-flow projection rather than re-running sign-in. The
+   * sibling owns its own assertion surface (e.g. dataset operations) but
+   * shares the auth+org context the primary harness established.
+   */
+  attach_to_flow(flow_id: string, correlation_id: string): void {
+    this.flowId = flow_id;
+    this.correlationId = correlation_id;
+  }
+
+  /**
+   * Read the access_token out of the projection's context (the flow-state
+   * tier mints one on the org_created_and_jwt_reissued transition). Idempotent
+   * and tolerant of projections that don't yet carry one — leaves `this.jwt`
+   * unchanged in that case so assert_jwt_carries_org_claim can surface the
+   * canonical "harness has no JWT" diagnostic.
+   */
+  private capture_jwt_from(projection: FlowProjection): void {
+    const ctx = projection.context as { access_token?: string };
+    if (typeof ctx.access_token === "string" && ctx.access_token.length > 0) {
+      this.jwt = ctx.access_token;
+    }
   }
 
   async force_transient_failure(tag: UnderlyingCauseTag): Promise<FlowProjection> {
@@ -168,6 +202,45 @@ export class UserFlowHarness {
     if (diffs.length > 0) {
       throw new Error(`assert_scope failed:\n${diffs.join("\n")}`);
     }
+  }
+
+  /**
+   * Invoke the chat agent via auth-proxy and surface the agent's scope
+   * diagnostic as a test failure when the active scope is incomplete (no
+   * project_id). Per ADR-029 §4 the agent rejects invocations missing
+   * `org_id` or `project_id` with a 400 carrying the named diagnostic
+   *   `agent invocation missing scope: missing org_id or project_id`.
+   * The harness re-throws that diagnostic so the test naming machinery
+   * points at the scope contract, not at the chat agent's internals.
+   */
+  async assert_chat_turn_invokable_for_active_project(): Promise<void> {
+    if (!this.flowId) {
+      throw new Error("No active flow; call begin_auth() first");
+    }
+    const projection = await this.get_projection();
+    const scope = projection.active_scope;
+    const res = await request(
+      `${this.config.authProxyUrl}/agent/chat-turn`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-active-scope": JSON.stringify(scope),
+        },
+        body: JSON.stringify({ flow_id: this.flowId }),
+      },
+    );
+    const body = (await res.body.json()) as { error?: string };
+    if (res.statusCode === 200) {
+      return;
+    }
+    // The chat agent's missing-scope diagnostic is the contract surface; the
+    // harness re-throws it verbatim so the failing test names the scope
+    // contract.
+    const diagnostic = body.error ?? `status ${res.statusCode}`;
+    throw new Error(
+      `assert_chat_turn_invokable_for_active_project failed: ${diagnostic}`,
+    );
   }
 
   async assert_jwt_carries_org_claim(): Promise<void> {
