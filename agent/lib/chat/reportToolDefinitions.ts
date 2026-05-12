@@ -53,29 +53,35 @@ export function getReportTools() {
     createReport: tool({
       description:
         "Create a new report from one or more source datasets or views. Sources must be datasets or views — never other reports.",
-      parameters: z.object({
-        name: z.string().describe("Name for the new report"),
-        sqlDefinition: z.string().describe("SQL query defining the report"),
-        reportType: z
-          .enum(REPORT_TYPES)
-          .describe("Report type: 'fact' for metrics/events, 'dimension' for descriptive attributes"),
-        sourceRefs: z
-          .array(
-            z.object({
-              id: z.string().describe("Source dataset or view ID"),
-              type: z
-                .enum(["dataset", "view"])
-                .describe("Source type — must be 'dataset' or 'view', never 'report'"),
-            }),
-          )
-          .describe("Array of source references"),
-        domain: z.string().describe("Business domain (e.g. 'Finance', 'Sales', 'Organization')"),
-        description: z.string().optional().describe("Optional description"),
-        materialization: z
-          .enum(MATERIALIZATION_STRATEGIES)
-          .optional()
-          .describe("Materialization strategy (default: 'view')"),
-      }),
+      // ADR-026 §Decision-outcome item 2 (and DWD-4): the report's SQL is
+      // composed by the ReportIbisCompiler from columns_metadata. The
+      // free-form `sqlDefinition` field is removed from this tool surface;
+      // .strict() turns an LLM call carrying the dropped field into a
+      // parse-time `unrecognized_keys` error rather than a silent strip.
+      parameters: z
+        .object({
+          name: z.string().describe("Name for the new report"),
+          reportType: z
+            .enum(REPORT_TYPES)
+            .describe("Report type: 'fact' for metrics/events, 'dimension' for descriptive attributes"),
+          sourceRefs: z
+            .array(
+              z.object({
+                id: z.string().describe("Source dataset or view ID"),
+                type: z
+                  .enum(["dataset", "view"])
+                  .describe("Source type — must be 'dataset' or 'view', never 'report'"),
+              }),
+            )
+            .describe("Array of source references"),
+          domain: z.string().describe("Business domain (e.g. 'Finance', 'Sales', 'Organization')"),
+          description: z.string().optional().describe("Optional description"),
+          materialization: z
+            .enum(MATERIALIZATION_STRATEGIES)
+            .optional()
+            .describe("Materialization strategy (default: 'view')"),
+        })
+        .strict(),
     }),
     renameReport: tool({
       description: "Rename the current report",
@@ -92,18 +98,23 @@ export function getReportTools() {
     addDimension: tool({
       description:
         "Add a dimension column to the report's columns_metadata. Dimensions are categorical or time-based grouping attributes.",
-      parameters: z.object({
-        name: z.string().describe("Column name"),
-        semanticType: z
-          .enum(SEMANTIC_TYPES_DIMENSION)
-          .describe("Semantic type: 'categorical' or 'time'"),
-        description: z.string().optional().describe("Column description"),
-        expr: z.string().optional().describe("Optional SQL expression"),
-        timeGranularity: z
-          .enum(TIME_GRANULARITIES)
-          .optional()
-          .describe("Time granularity (required for time dimensions)"),
-      }),
+      // ADR-026 §Decision-outcome item 3: no free-text `expr` field on the
+      // tool surface. Future semantic computations land as typed
+      // ComputedField variants. .strict() makes the absence enforceable at
+      // parse time.
+      parameters: z
+        .object({
+          name: z.string().describe("Column name"),
+          semanticType: z
+            .enum(SEMANTIC_TYPES_DIMENSION)
+            .describe("Semantic type: 'categorical' or 'time'"),
+          description: z.string().optional().describe("Column description"),
+          timeGranularity: z
+            .enum(TIME_GRANULARITIES)
+            .optional()
+            .describe("Time granularity (required for time dimensions)"),
+        })
+        .strict(),
     }),
     removeDimension: tool({
       description: "Remove a dimension column from the report's columns_metadata",
@@ -114,14 +125,19 @@ export function getReportTools() {
     addMeasure: tool({
       description:
         "Add a measure column to the report's columns_metadata. Measures are numeric aggregations.",
-      parameters: z.object({
-        name: z.string().describe("Column name"),
-        semanticType: z
-          .enum(SEMANTIC_TYPES_MEASURE)
-          .describe("Aggregation type: sum, count, count_distinct, avg, min, max"),
-        description: z.string().optional().describe("Column description"),
-        expr: z.string().optional().describe("Optional SQL expression for the measure"),
-      }),
+      // ADR-026 §Decision-outcome item 3: no free-text `expr` field on the
+      // tool surface. Future semantic computations land as typed
+      // ComputedField variants. .strict() makes the absence enforceable at
+      // parse time.
+      parameters: z
+        .object({
+          name: z.string().describe("Column name"),
+          semanticType: z
+            .enum(SEMANTIC_TYPES_MEASURE)
+            .describe("Aggregation type: sum, count, count_distinct, avg, min, max"),
+          description: z.string().optional().describe("Column description"),
+        })
+        .strict(),
     }),
     removeMeasure: tool({
       description: "Remove a measure column from the report's columns_metadata",
