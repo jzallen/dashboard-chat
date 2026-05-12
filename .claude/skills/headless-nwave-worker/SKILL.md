@@ -270,46 +270,75 @@ Follow the same pattern: state inputs, outputs, exit criteria, and whether the w
 
 ### Step 4 — Launch detached headless Claude
 
-**Mechanics are identical regardless of wave.** Use `setsid` + `stream-json` + `--verbose` for proper detachment and live event tracking.
+**Mechanics are identical regardless of wave.** Use `tmux` as the durability layer plus `stream-json` + `--verbose` for live event tracking.
+
+**Critical context: where are you launching from?**
+
+- **From a user terminal** (or a CI runner): `setsid bash -c "...claude -p..." &` works because nothing sweeps the new session.
+- **From inside another Claude Code session** (you, right now, in 99% of cases): `setsid` is NOT enough. The parent Claude Code harness reaps descendant processes when the Bash-tool invocation ends, regardless of whether they're in a new session. Spawned `claude -p` workers die within minutes — the symptom is a final assistant block with `stop_reason: None` mid-tool-call, no `result` event, and `ps -p` empty. Use **`tmux`** to escape the harness's process tree entirely.
+
+This project already runs a long-lived gastown-managed tmux server at `-L gt-0c0ae3` (keeps refinery/deacon/dogs alive). Hitch the worker onto it:
 
 ```bash
 cd /home/node/gt/<rig>/crew/<worker-name>
 WAVE=<wave-name>      # e.g. design, distill, deliver, review, research
-setsid bash -c "cat .logs/nw-${WAVE}-prompt.txt \
+SESSION=nw-${WAVE}-<worker-name>     # tmux session name; must be unique
+
+# Compose the runner script (tmux's send-keys/new-session args are picky
+# about quoting; using a file avoids the entire problem).
+cat > .logs/nw-${WAVE}-run.sh <<EOF
+#!/usr/bin/env bash
+set -e
+cd $(pwd)
+cat .logs/nw-${WAVE}-prompt.txt \
   | claude -p \
       --dangerously-skip-permissions \
       --output-format stream-json \
       --verbose \
-  > .logs/nw-${WAVE}.log 2>&1" \
-  </dev/null >/dev/null 2>&1 &
+  > .logs/nw-${WAVE}.log 2>&1
+EOF
+chmod +x .logs/nw-${WAVE}-run.sh
 
-# Capture the REAL claude PID (not the bash wrapper)
+# Launch inside the gastown tmux server. -d = detached, no attach.
+tmux -L gt-0c0ae3 new-session -d -s "$SESSION" "./.logs/nw-${WAVE}-run.sh"
+
+# Let it settle
 sleep 3
-REAL_PID=$(pgrep -f "claude -p --dangerously-skip-permissions --output-format stream-json" | head -1)
+
+# Capture the REAL claude PID (the only process owned by this tmux session
+# whose cmd starts with 'claude -p')
+REAL_PID=$(pgrep -f "^claude -p" -P "$(tmux -L gt-0c0ae3 list-panes -t "$SESSION" -F '#{pane_pid}')" 2>/dev/null | head -1)
+[ -z "$REAL_PID" ] && REAL_PID=$(pgrep -f "^claude -p --dangerously-skip-permissions --output-format stream-json --verbose$" | head -1)
 echo "$REAL_PID" > .logs/nw-${WAVE}.pid
 
-# Extract session_id from the init event
+# Extract session_id from the first system/init event in the log
 SID=$(grep -oE '"session_id":"[^"]+"' .logs/nw-${WAVE}.log | head -1 | cut -d'"' -f4)
 echo "$SID" > .logs/nw-${WAVE}.session_id
+echo "$SESSION" > .logs/nw-${WAVE}.tmux
 
 # Audit trail
-echo "$(date -Iseconds) | pid=$REAL_PID sid=$SID wave=$WAVE | dispatched" \
+echo "$(date -Iseconds) | pid=$REAL_PID sid=$SID tmux=$SESSION wave=$WAVE | dispatched" \
   >> .logs/nw-${WAVE}.history
 
 ps -p "$REAL_PID" -o pid,etime,cmd | head -3
+tmux -L gt-0c0ae3 list-sessions | grep "$SESSION"
 ```
 
 **Why these flags:**
 
 | Flag | Reason |
 |---|---|
-| `setsid` | Fully detaches from controlling terminal; survives parent shell exit. `nohup &` alone can leave the process tied to harness PIDs. |
+| `tmux -L gt-0c0ae3 new-session -d` | The hard durability boundary. tmux's server is the worker's new parent; it survives the harness's process sweep when your Bash-tool turn ends. `setsid` alone does not — harness reaping reaches across new sessions. |
+| Runner script (`.logs/<wave>-run.sh`) | Sidesteps tmux argument-quoting hell. The script is committed to disk, easy to re-launch, and clearly auditable. |
 | `--dangerously-skip-permissions` | Headless cannot prompt for permissions; without this it would block on every Bash/Edit. |
 | `--output-format stream-json` | Streams every event in real time. `text` only writes the final result — useless for monitoring. |
 | `--verbose` | Required by Claude Code when using `stream-json` in `-p` mode. |
-| `</dev/null` | Detaches stdin so the wrapper bash doesn't keep the harness Bash tool alive. |
 
-**Pitfall**: the first `$!` from `bash -c '...' &` captures the *bash wrapper PID*, not the claude binary. Always re-resolve via `pgrep -f 'claude -p --output-format stream-json'` after a 2–3 second settle.
+**Pitfalls:**
+
+- The runner script's `cd $(pwd)` is evaluated WHEN THE HERE-DOC IS WRITTEN. If you move the crew workspace or generate the script then `cd` elsewhere before launching, it'll break. Re-generate the script after any move.
+- `pgrep -f "^claude -p"` (anchored) avoids matching your *own* bash command line, which is the trap the `setsid`-era recipe fell into.
+- One tmux session per worker. If `$SESSION` collides with an existing session, `tmux new-session -d` errors out — pick a fresh name or `tmux kill-session -t "$SESSION"` first.
 
 ### Step 5 — Confirm session is alive
 
@@ -425,10 +454,52 @@ grep -iE '(error|exception|failure)' .logs/nw-<wave>.log | tail -10
 
 Common causes:
 
-- **Missing project `.claude/` in crew clone**: `gt crew add` clones the repo (full clone, not worktree), which should bring `.claude/` along. Verify with `ls .claude/skills/`. If missing, the crew was created against the wrong remote — check `git remote -v` in the crew dir.
+- **Harness sweep killed it** (most common when launched from inside Claude Code without tmux): symptom is `stop_reason: None` on the final assistant block, mid-tool-call. The process is gone from `ps`. Diagnose by checking the final assistant message — if it was about to call a tool when it died, you got swept. Re-launch via tmux (see Step 4) and resume the session (see below).
+- **Missing project `.claude/` in crew clone**: `gt crew add` clones the repo (full clone, not worktree), which should bring `.claude/` along. Verify with `ls .claude/skills/`. If missing, the crew was created against the wrong remote — check `git remote -v` in the crew dir. The bare repo at `~/gt/<rig>/.repo.git/` may also be stale relative to `origin/main` — fix by pulling into `refinery/rig/` so the bare repo's `main` advances.
 - **JWKS / env mismatch**: crew clones may need `.env` symlinked or copied from the user's primary checkout if the wave needs env-dependent tooling. Per saved memory `feedback_env_profiles_outside_repo.md`, env files live at `~/.dashboard-chat/envs/`; symlink the right profile into the crew clone if needed.
-- **Out of tokens / rate limit**: log shows 429s. Pause and resume later.
+- **Out of tokens / rate limit**: log shows 429s. Pause and resume later. Note: `rate_limit_event` entries with `status: "allowed"` are advisory metadata, not the cause of death.
 - **Skill not found**: confirm `nw-<wave>` appears in the global skills index. Run `claude` interactively and check for the skill if uncertain.
+
+### Resuming a dead session (preserves all prior turns)
+
+Claude Code persists every headless session's transcript to disk by default. If a worker dies — for any reason — you can resume it exactly where it left off, keeping all 30/50/100 turns of orientation and tool results. The model picks up with the full context, not from scratch.
+
+```bash
+cd ~/gt/<rig>/crew/<worker-name>
+WAVE=<wave-name>
+SID=$(cat .logs/nw-${WAVE}.session_id)
+SESSION=nw-${WAVE}-<worker-name>-r1     # bump the suffix on each resume so tmux session names stay unique
+
+# New runner that resumes the session. The prompt is just "Continue." —
+# the session transcript already contains the full original task.
+cat > .logs/nw-${WAVE}-resume.sh <<EOF
+#!/usr/bin/env bash
+set -e
+cd $(pwd)
+claude -p --resume "$SID" \
+    --dangerously-skip-permissions \
+    --output-format stream-json \
+    --verbose \
+    'Continue from where you left off. The previous session ended mid-tool-call due to external process termination; the work plan and context are preserved in this session.' \
+  >> .logs/nw-${WAVE}.log 2>&1
+EOF
+chmod +x .logs/nw-${WAVE}-resume.sh
+
+tmux -L gt-0c0ae3 new-session -d -s "$SESSION" "./.logs/nw-${WAVE}-resume.sh"
+sleep 3
+
+# Capture the new PID
+NEW_PID=$(pgrep -f "^claude -p --resume" | head -1)
+echo "$NEW_PID" > .logs/nw-${WAVE}.pid
+echo "$(date -Iseconds) | pid=$NEW_PID sid=$SID tmux=$SESSION wave=$WAVE | resumed" \
+  >> .logs/nw-${WAVE}.history
+```
+
+The session_id stays the same across resumes — Claude appends to the same transcript. The `.log` file gets appended too (`>>`, not `>`), so monitoring keeps working.
+
+If you'd rather start fresh on a new session (e.g. the orientation went badly): just re-run the original Step 4 launch with a fresh prompt — no `--resume`.
+
+### Session hangs (no progress, no exit)
 
 ### Session hangs (no progress, no exit)
 
@@ -490,23 +561,43 @@ cd ~/gt/<rig>/crew/<worker>
 mkdir -p .logs
 $EDITOR .logs/nw-<wave>-prompt.txt    # base template + wave-specific overlay
 
-# 4. Dispatch detached
+# 4. Dispatch detached (tmux — required when launched from inside Claude Code)
 WAVE=<wave>
-setsid bash -c "cat .logs/nw-${WAVE}-prompt.txt | claude -p \
+SESSION=nw-${WAVE}-<worker>
+cat > .logs/nw-${WAVE}-run.sh <<EOF
+#!/usr/bin/env bash
+set -e
+cd $(pwd)
+cat .logs/nw-${WAVE}-prompt.txt | claude -p \
   --dangerously-skip-permissions --output-format stream-json --verbose \
-  > .logs/nw-${WAVE}.log 2>&1" </dev/null >/dev/null 2>&1 &
+  > .logs/nw-${WAVE}.log 2>&1
+EOF
+chmod +x .logs/nw-${WAVE}-run.sh
+tmux -L gt-0c0ae3 new-session -d -s "$SESSION" "./.logs/nw-${WAVE}-run.sh"
 sleep 3
-echo $(pgrep -f 'claude -p --output-format stream-json' | head -1) > .logs/nw-${WAVE}.pid
+pgrep -f "^claude -p --dangerously-skip-permissions" | head -1 \
+  > .logs/nw-${WAVE}.pid
+grep -oE '"session_id":"[^"]+"' .logs/nw-${WAVE}.log | head -1 \
+  | cut -d'"' -f4 > .logs/nw-${WAVE}.session_id
 
 # 5. Monitor
 ps -p $(cat .logs/nw-${WAVE}.pid) -o pid,etime,pcpu,cmd
+tmux -L gt-0c0ae3 list-sessions | grep $SESSION
 
-# 6. Handoff (pick one)
+# 6. Resume if it died (preserves all prior turns)
+SID=$(cat .logs/nw-${WAVE}.session_id)
+tmux -L gt-0c0ae3 new-session -d -s "${SESSION}-r1" \
+  "claude -p --resume $SID --dangerously-skip-permissions \
+   --output-format stream-json --verbose 'Continue.' \
+   >> .logs/nw-${WAVE}.log 2>&1"
+
+# 7. Handoff (pick one)
 git push -u origin <branch>
 gt mq submit                          # code waves
 # OR
 gh pr create --title "..." --body "..."  # docs waves
 
-# 7. After landing
+# 8. After landing
+tmux -L gt-0c0ae3 kill-session -t "$SESSION" 2>/dev/null
 gt crew remove <worker> --force
 ```
