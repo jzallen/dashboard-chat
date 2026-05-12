@@ -24,9 +24,47 @@ Do NOT use this for:
 
 ## Mental Model
 
-**`/nw-<wave>` is a SKILL NAME, not a slash-command file.** There is no `~/.claude/commands/nw-deliver.md`. nwave-ai installs skills at `~/.claude/skills/nw-*/` and `~/.local/share/uv/tools/nwave-ai/.../skills/nw-*/`. Claude Code's interactive UI recognizes `/<skill-name>` as a Skill invocation. Headless Claude (`claude -p '<prompt>'`) has **no slash-command UI**, but the model still has the Skill tool and every installed skill is loadable by name.
+**`/nw-<wave>` is a SKILL NAME, not a slash-command file.** There is no `~/.claude/commands/nw-deliver.md`. nwave-ai installs skills at `~/.claude/skills/nw-*/` and `~/.local/share/uv/tools/nwave-ai/.../skills/nw-*/`. Claude Code's interactive UI recognizes `/<skill-name>` as a Skill invocation, and so does headless `claude -p` — **but only for skills whose frontmatter has `user-invocable: true`** (or omits the field; default is true).
 
-**Implication:** the prompt to the headless session must explicitly instruct the model to invoke the skill by name (e.g. "Begin by invoking the nw-design skill"). Leading the prompt with `/nw-<wave> <slug>` is fine as a header — the model treats it as an instruction — but the imperative must also appear in the body so it can't be missed.
+This matters because **`claude -p` parses a leading `/<word>` as a slash-command attempt before the model ever runs**. If the slash command can't be resolved, the session exits silently with `num_turns: 0`, `result: ""`, no API call billed — looks identical to a malformed prompt. Diagnostic signature in the stream-json log:
+
+```json
+{"type":"result","subtype":"success","duration_ms":33,"num_turns":0,
+ "result":"","total_cost_usd":0,"usage":{"input_tokens":0,...}}
+```
+
+If you see `duration_ms < 100` AND `num_turns: 0` right after the init event, the prompt's leading slash was rejected at the CLI layer.
+
+**Two common ways this bites you:**
+
+1. **Skill is `user-invocable: false`.** Some nwave-ai skills (e.g. `nw-finalize`, `nw-finalize`-orchestration helpers, `nw-deliver-orchestration`) are dispatch-only and don't appear in the session's `slash_commands` list. Confirm by grepping the skill's frontmatter at `~/.claude/skills/<name>/SKILL.md` or `~/.local/share/uv/tools/nwave-ai/.../skills/<name>/SKILL.md`:
+
+   ```bash
+   grep -E '^(name|user-invocable):' ~/.claude/skills/<name>/SKILL.md
+   ```
+
+   If `user-invocable: false`, **do not lead the prompt with `/<name>`** — it will be rejected.
+
+2. **Skill isn't installed at all** (e.g. a wave the project's CLAUDE.md aspires to but the local nwave-ai release predates). Same failure shape. Check `~/.claude/skills/.nwave-manifest.json` (`installed_skills` array) and the live session's `slash_commands` field in the init event.
+
+**The safe pattern (works for both invocable and non-invocable skills):**
+
+- Lead the prompt with a plain imperative header, not a slash command — e.g. `Archive the user-flow-state-machines feature to docs/evolution/.` or `Begin the DELIVER wave for ibis-as-only-sql-compiler Phase 05.`
+- In the body, **always** include an explicit instruction to invoke the skill by name: "Begin by invoking the nw-deliver skill and following its orchestration." For non-invocable skills, point at the SKILL.md by absolute path: "Read the SKILL.md at `/home/node/.local/share/uv/tools/nwave-ai/.../skills/nw-finalize/SKILL.md` and follow its orchestration."
+- A leading `/nw-<wave>` line IS still fine when the skill is confirmed user-invocable (e.g. `/nw-deliver`, `/nw-design`, `/nw-distill`) — the model receives it as the first user turn. But the imperative in the body remains the load-bearing instruction; the slash-command line is convenience.
+
+**Pre-flight check before dispatching any wave:**
+
+```bash
+# Is the wave's skill user-invocable in this env?
+SKILL=nw-<wave>
+for p in ~/.claude/skills/$SKILL/SKILL.md \
+         ~/.local/share/uv/tools/nwave-ai/lib/python*/site-packages/nWave/skills/$SKILL/SKILL.md; do
+  [ -f "$p" ] && grep -H -E '^(name|user-invocable):' "$p"
+done
+```
+
+If the grep prints `user-invocable: false`, switch to the plain-imperative prompt form before launching.
 
 ## Terminology Hygiene — Headless Mode Vocabulary
 
@@ -141,10 +179,10 @@ mkdir -p ~/gt/<rig>/crew/<worker-name>/.logs
 
 Write to `~/gt/<rig>/crew/<worker-name>/.logs/nw-<wave>-prompt.txt`. Use the base template below; overlay the wave-specific block.
 
-**Base template (every wave):**
+**Base template (every wave).** The header line uses a plain imperative — *not* `/<wave>` — so the prompt survives even if the target skill is `user-invocable: false` (see Mental Model). The "Begin by invoking …" footer is the load-bearing instruction either way.
 
 ```text
-/nw-<wave> <feature-slug-or-target>
+<one-line plain imperative header — e.g. "Run the DELIVER wave for <slug> Phase <N>.">
 
 Context:
 
@@ -162,7 +200,11 @@ Context:
 <wave-specific block — see below>
 
 Begin by invoking the nw-<wave> skill and following its orchestration.
+# If the skill is user-invocable: false, replace the line above with:
+#   Read the SKILL.md at <absolute-path-to-skill> and follow its orchestration.
 ```
+
+**When `/nw-<wave>` IS safe as the header:** if the pre-flight grep confirms the skill is user-invocable (or omits the field — default true), you can lead with `/nw-<wave> <target>` and the slash command resolves cleanly. The footer imperative remains the load-bearing instruction; the slash line is convenience. When in doubt, prefer the plain-imperative form — it works for every wave, never short-circuits at turn 0.
 
 **Wave-specific overlays** — pick the matching block:
 
@@ -476,6 +518,7 @@ grep -iE '(error|exception|failure)' .logs/nw-<wave>.log | tail -10
 
 Common causes:
 
+- **Leading `/<wave>` rejected at the CLI layer** (turn-0 exit): symptom is a `result` event right after init with `duration_ms` under ~100, `num_turns: 0`, `result: ""`, and `total_cost_usd: 0`. No API call was billed. The prompt's first line referenced a slash command that doesn't resolve in this env — usually a `user-invocable: false` skill (e.g. `nw-finalize`) or a skill missing from the installed nwave-ai release. Fix: rewrite the prompt with a plain-imperative header and point at the skill's SKILL.md by path in the body. See Mental Model §"Two common ways this bites you" for the pre-flight grep.
 - **Harness sweep killed it** (most common when launched from inside Claude Code without tmux): symptom is `stop_reason: None` on the final assistant block, mid-tool-call. The process is gone from `ps`. Diagnose by checking the final assistant message — if it was about to call a tool when it died, you got swept. Re-launch via tmux (see Step 4) and resume the session (see below).
 - **Missing project `.claude/` in crew clone**: `gt crew add` clones the repo (full clone, not worktree), which should bring `.claude/` along. Verify with `ls .claude/skills/`. If missing, the crew was created against the wrong remote — check `git remote -v` in the crew dir. The bare repo at `~/gt/<rig>/.repo.git/` may also be stale relative to `origin/main` — fix by pulling into `refinery/rig/` so the bare repo's `main` advances.
 - **JWKS / env mismatch**: crew clones may need `.env` symlinked or copied from the user's primary checkout if the wave needs env-dependent tooling. Per saved memory `feedback_env_profiles_outside_repo.md`, env files live at `~/.dashboard-chat/envs/`; symlink the right profile into the crew clone if needed.
