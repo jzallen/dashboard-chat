@@ -1,3 +1,11 @@
+# [1.26.0](https://github.com/jzallen/dashboard-chat/compare/v1.25.0...v1.26.0) (2026-05-12)
+
+
+### Features
+
+* **flow-state,acceptance-harness:** US-004 UserFlowHarness public surface (Step 02-02) ([05f5b73](https://github.com/jzallen/dashboard-chat/commit/05f5b732e03bc83dea7e50369ffb895afed837bc))
+* **flow-state,auth-proxy,frontend-remix:** US-003 recoverable error UX ([590ad30](https://github.com/jzallen/dashboard-chat/commit/590ad307336e41fe75f39d3b975d2debadffafa4))
+
 # [1.25.0](https://github.com/jzallen/dashboard-chat/compare/v1.24.0...v1.25.0) (2026-05-12)
 
 
