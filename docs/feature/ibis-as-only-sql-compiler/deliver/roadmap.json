@@ -2,15 +2,15 @@
   "roadmap": {
     "project_id": "ibis-as-only-sql-compiler",
     "created_at": "2026-05-12T04:30:00Z",
-    "total_steps": 6,
+    "total_steps": 5,
     "phases": 1,
     "validation": {
       "status": "approved",
-      "approved_by": "DELIVER orchestrator (azurite worker) — decomposition matches distill Phase 03 scope + ADR-026 §Decision outcome items 2/3 + MR-3 row",
+      "approved_by": "DELIVER orchestrator (azurite worker) — decomposition matches distill Phase 03 scope + ADR-026 §Decision outcome items 2/3 + MR-3 row; step 03-06 deferred to MR-3.5 per deliver/wave-decisions.md DWD-DELIVER-1",
       "approved_on": "2026-05-12"
     },
     "source_plan": "docs/feature/ibis-as-only-sql-compiler/distill/roadmap.json",
-    "scope_note": "Phase 03 only (MR-3). Phases 01 + 02 already on main (21fda79 / f7a6363 / ada7c0a / 03a1cdf). Phase 04 + 05 ship on later crew clones."
+    "scope_note": "Phase 03 only (MR-3). Phases 01 + 02 already on main (21fda79 / f7a6363 / ada7c0a / 03a1cdf). Step 03-06 (backend addDimension/addMeasure dispatchers) deferred to follow-up MR-3.5 per deliver/wave-decisions.md DWD-DELIVER-1 — milestone-2 acceptance contract is fully observable through steps 03-01..03-05. Phase 04 + 05 ship on later crew clones."
   },
   "implementation_scope": {
     "source_directories": [
@@ -125,28 +125,6 @@
             "tests/acceptance/ibis-as-only-sql-compiler/test_milestone_2_schema_violation.py"
           ],
           "implementation_notes": "READ FIRST: existing zod schema patterns at agent/lib/chat/viewToolDefinitions.ts (if exists) or other tool-definition modules; agent/test/chat/ for the test harness pattern. Zod object schemas are by default 'strict' enough that unrecognized keys pass parse but are dropped — for the contract to be 'schema rejects expr', use z.object({...}).strict() so unknown fields produce a parse error. Update the createReport schema similarly (.strict()) to enforce sqlDefinition removal at the parse boundary, not just by omission. The acceptance test for the schema-violation scenario CAN be a Python test that invokes a thin Node subprocess executing a check-script — OR — equivalent: a Python test that asserts the TS source no longer contains 'expr:' or 'sqlDefinition:' in the createReport/addDimension/addMeasure tool definitions (file-content assertion at minimum). The contract is OBSERVABLE-BY-ANALYST: the agent's tool surface NO LONGER OFFERS the field. A grep-based assertion is faithful to the contract per the @input_surface_contract docblock — the field does not exist; the backend is never invoked because no schema-violation gets past parse."
-        },
-        {
-          "id": "03-06",
-          "name": "Backend addDimension / addMeasure dispatcher use cases + routes",
-          "agent": "nw-software-crafter",
-          "deps": ["03-05"],
-          "scenario": "milestone-2 wires dormant tool dispatchers — closes the per-tool composition surface as backend use cases",
-          "test_file": "backend/tests/use_cases/report/test_dispatchers.py",
-          "scenario_name": "addDimension and addMeasure mutate report columns_metadata through dedicated use cases",
-          "criteria": "New module(s) backend/app/use_cases/report/dispatchers/__init__.py + add_dimension.py + add_measure.py exposing add_dimension and add_measure use cases with the @handle_returns / @with_repositories decorator stack; Both fetch the report, validate the project ownership via ProjectService, append the column to columns_metadata (rejecting duplicate names with a domain exception), and call repositories.metadata.update_report; New route POST /api/projects/{project_id}/reports/{report_id}/dimensions and POST /api/projects/{project_id}/reports/{report_id}/measures wired through HTTPController; New controller methods ReportController.post_dimension / post_measure; New ReportDimensionAdd / ReportMeasureAdd Pydantic request schemas; Unit tests at backend/tests/use_cases/report/test_dispatchers.py cover happy path, duplicate-name rejection, and report-not-found rejection; Walking-skeleton + milestone-1 + 03-01..03-05 scenarios still GREEN; Backend gate GREEN; Step-ID trailer present",
-          "files_to_modify": [
-            "backend/app/use_cases/report/dispatchers/__init__.py",
-            "backend/app/use_cases/report/dispatchers/add_dimension.py",
-            "backend/app/use_cases/report/dispatchers/add_measure.py",
-            "backend/app/use_cases/report/exceptions.py",
-            "backend/app/use_cases/report/__init__.py",
-            "backend/app/routers/schemas/report.py",
-            "backend/app/routers/reports.py",
-            "backend/app/controllers/report_controller.py",
-            "backend/tests/use_cases/report/test_dispatchers.py"
-          ],
-          "implementation_notes": "READ FIRST: backend/app/use_cases/view/update_view.py for the mirror pattern; backend/app/controllers/http_controller.py for the registry of use cases (the dispatchers must be importable through it). The dispatchers mutate columns_metadata IN-PLACE then call update_report-style persistence — but reuse update_report use case via composition rather than re-implementing the validation pipeline. The use case body is short: fetch report, validate access, append the new dimension/measure dict, call update_report internally (or repositories.metadata.update_report). Duplicate-name rejection: raise DuplicateReportColumn from exceptions.py. The HTTP routes nest under /reports/{report_id}/(dimensions|measures) — POST with body { name, semanticType, timeGranularity? } for dimension and { name, semanticType, sourceColumn? } for measure. After adding the column, the next call to GET /reports/{report_id} returns sql_definition recompiled by ReportIbisCompiler. Note: the recompile happens via update_report's columns_metadata branch — extend update_report to invoke ReportIbisCompiler when columns_metadata changes, mirroring create_report's pattern. This recompile-on-mutation closes the loop so the tool composition is a real composition surface."
         }
       ]
     }
