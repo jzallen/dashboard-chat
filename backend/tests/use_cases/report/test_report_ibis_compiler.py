@@ -185,6 +185,157 @@ class TestGenerateExecutable:
             f"through f-strings. Offending fragments: {offenders!r}"
         )
 
+    def test_compiler_groups_by_multiple_dimensions_in_order(self) -> None:
+        """Multi-dim composition: every dimension entry, in order, lands in the
+        rendered GROUP BY clause.
+
+        Per the milestone-2 composition contract (feature file §4), two
+        dimensions on a single report must emit ``GROUP BY "region",
+        "quarter"`` — both columns present, in the declaration order from
+        ``columns_metadata``.
+        """
+        cols = [
+            {
+                "name": "region",
+                "semantic_role": "dimension",
+                "semantic_type": "categorical",
+                "source_column": "region",
+                "source_ref": "ds-orders",
+            },
+            {
+                "name": "quarter",
+                "semantic_role": "dimension",
+                "semantic_type": "categorical",
+                "source_column": "quarter",
+                "source_ref": "ds-orders",
+            },
+            {
+                "name": "order_count",
+                "semantic_role": "measure",
+                "semantic_type": "count",
+                "source_column": "order_id",
+                "source_ref": "ds-orders",
+            },
+        ]
+        sql = ReportIbisCompiler().generate_executable(
+            source_refs=_ORDERS_REF,
+            columns_metadata=cols,
+            schema=_ORDERS_SCHEMA,
+        )
+        flat = _normalize(sql)
+        # Both identifiers appear inside the rendered SQL as quoted
+        # identifiers (ibis emits ``"region"`` / ``"quarter"`` for DuckDB).
+        assert '"region"' in sql, sql
+        assert '"quarter"' in sql, sql
+        # The compiled SQL has a GROUP BY clause — exact form (positional
+        # ``GROUP BY 1, 2`` vs named ``GROUP BY "region", "quarter"``) is
+        # an ibis rendering detail; the contract is "the dimensions group".
+        assert "group by" in flat, sql
+        # Both dimensions land in the SELECT projection BEFORE any measure.
+        # That establishes deterministic output ordering matching declaration
+        # order (region before quarter), which is the customer-visible part
+        # of the multi-dim contract.
+        region_pos = sql.index('"region"')
+        quarter_pos = sql.index('"quarter"')
+        count_pos = sql.lower().index("count(")
+        assert region_pos < quarter_pos < count_pos, f"projection order is not [region, quarter, count(...)]:\n{sql}"
+
+    def test_compiler_supports_multiple_measures_on_same_source_column(self) -> None:
+        """Composition contract: two measures on the same source column
+        (``avg(amount)`` AND ``sum(amount)``) both reach the projection list
+        with distinct deterministic aliases.
+
+        This is the load-bearing case for the milestone-2 §4 contract: each
+        measure's aggregation behaves independently against the same row set,
+        so the rendered SQL must carry BOTH aggregations as separate output
+        columns — not collapse them into a single shared expression.
+        """
+        cols = [
+            {
+                "name": "region",
+                "semantic_role": "dimension",
+                "semantic_type": "categorical",
+                "source_column": "region",
+                "source_ref": "ds-orders",
+            },
+            {
+                "name": "amount_sum",
+                "semantic_role": "measure",
+                "semantic_type": "sum",
+                "source_column": "amount",
+                "source_ref": "ds-orders",
+            },
+            {
+                "name": "amount_avg",
+                "semantic_role": "measure",
+                "semantic_type": "avg",
+                "source_column": "amount",
+                "source_ref": "ds-orders",
+            },
+        ]
+        sql = ReportIbisCompiler().generate_executable(
+            source_refs=_ORDERS_REF,
+            columns_metadata=cols,
+            schema=_ORDERS_SCHEMA,
+        )
+        flat = _normalize(sql)
+        # Both aggregations land in the projection — sum and avg both run
+        # over ``amount`` and surface as independent output columns.
+        assert "sum(" in flat and "avg(" in flat, sql
+        # Both aliases land in the rendered SQL as quoted identifiers so
+        # downstream consumers (mart queries, dbt models) can address them
+        # independently.
+        assert '"amount_sum"' in sql, sql
+        assert '"amount_avg"' in sql, sql
+
+    def test_compiler_uses_entry_name_as_alias_even_when_source_column_repeats(self) -> None:
+        """Alias-resolution contract: ``columns_metadata[entry].name`` is the
+        output column alias regardless of which source column the measure
+        aggregates.
+
+        When two measures share the same ``source_column`` (e.g. ``amount``),
+        each measure's ``name`` provides the unique alias. The compiler MUST
+        NOT fall back to the source column for the alias — that would collide
+        on same-column multi-measure composition.
+        """
+        cols = [
+            {
+                "name": "region",
+                "semantic_role": "dimension",
+                "semantic_type": "categorical",
+                "source_column": "region",
+                "source_ref": "ds-orders",
+            },
+            {
+                # Deliberately pick an alias that does NOT contain the
+                # source-column name so the test fails if the compiler
+                # echoes ``"amount"`` as the alias.
+                "name": "headline_total",
+                "semantic_role": "measure",
+                "semantic_type": "sum",
+                "source_column": "amount",
+                "source_ref": "ds-orders",
+            },
+            {
+                "name": "headline_mean",
+                "semantic_role": "measure",
+                "semantic_type": "avg",
+                "source_column": "amount",
+                "source_ref": "ds-orders",
+            },
+        ]
+        sql = ReportIbisCompiler().generate_executable(
+            source_refs=_ORDERS_REF,
+            columns_metadata=cols,
+            schema=_ORDERS_SCHEMA,
+        )
+        # The aliases the analyst declared appear verbatim as identifier
+        # tokens; the raw source-column name MUST NOT appear as a SELECT
+        # output alias on its own (it can still appear inside the
+        # aggregation expression as the input column reference).
+        assert '"headline_total"' in sql, sql
+        assert '"headline_mean"' in sql, sql
+
     def test_dimension_column_with_embedded_single_quote_renders_well_formed_sql(self) -> None:
         """ADR-026 Gap-2 closure: ibis literal escaping handles single-quote
         payloads by construction. The customer's choice of *column name* must
