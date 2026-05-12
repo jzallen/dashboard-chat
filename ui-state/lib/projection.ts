@@ -4,11 +4,11 @@
 // The TS acceptance harness reads this shape; the FE renders from this shape;
 // the acceptance tests assert against this shape. Single source of truth.
 //
-// Design choice: the projection is built by replaying events through a tiny
-// reducer rather than by snapshotting the XState machine. This keeps the
-// projection a PURE function (testable without an XState runtime) and gives
-// the orchestrator + persistence layer a clear contract: events go in, the
-// projection is the public read shape.
+// Design choice: the projection is built by replaying events through a
+// dispatch table (`EVENT_HANDLERS`) rather than by snapshotting the XState
+// machine. This keeps the projection a PURE function (testable without an
+// XState runtime) and gives the orchestrator + persistence layer a clear
+// contract: events go in, the projection is the public read shape.
 
 import type { ActiveScope, ResourceType } from "./active-scope.ts";
 
@@ -79,64 +79,80 @@ function initialContext(): ReducedContext {
 }
 
 /**
- * Reduce a single event into (state, context). Pure.
+ * Signature every entry in `EVENT_HANDLERS` must satisfy. Each handler
+ * receives the current (state, context) and the event being applied, and
+ * returns the next (state, context). Handlers are pure: same inputs, same
+ * outputs, no side effects.
  *
- * Step 01-01 covers anonymous → authenticating → authenticated_no_org.
- * Subsequent steps extend the reducer with creating_org / ready / error
- * branches per the J-001 state chart.
+ * Handlers may ignore any of the three arguments (use `_state` / `_context`
+ * / `_event` to silence the unused-arg lint). Returning the inputs unchanged
+ * is a valid no-op.
  */
-function reduce(
+type EventHandler = (
   state: string,
   context: ReducedContext,
   event: FlowEvent,
-): { state: string; context: ReducedContext } {
-  if (event.type === "sign_in_clicked") {
-    return { state: "authenticating", context };
-  }
+) => { state: string; context: ReducedContext };
 
-  if (event.type === "auth_callback_resolved") {
+/**
+ * Dispatch table — strategy pattern. Each entry handles one event.type.
+ * Adding a new event type means adding one entry here; no changes to
+ * `applyEvent` or `buildProjection` are needed.
+ *
+ * Order below mirrors the J-001 state-chart progression so the file reads
+ * as the flow's narrative: anonymous → authenticating → authenticated_no_org
+ * → creating_org → ready → expired_token → (error states), then ADR-029
+ * deep-link scope-resolution events.
+ */
+const EVENT_HANDLERS: Record<string, EventHandler> = {
+  sign_in_clicked: (_state, context, _event) => ({
+    state: "authenticating",
+    context,
+  }),
+
+  auth_callback_resolved: (_state, context, event) => {
     const userPayload =
       (event.payload.user as Partial<ReducedContext["user"]>) ?? {};
-    const next: ReducedContext = {
-      ...context,
-      user: {
-        email: userPayload.email ?? null,
-        display_name: userPayload.display_name ?? null,
+    return {
+      state: "authenticated_no_org",
+      context: {
+        ...context,
+        user: {
+          email: userPayload.email ?? null,
+          display_name: userPayload.display_name ?? null,
+        },
       },
     };
-    return { state: "authenticated_no_org", context: next };
-  }
+  },
 
-  if (event.type === "auth_failed") {
+  auth_failed: (_state, context, event) => {
     const cause =
       (event.payload.underlying_cause_tag as string | undefined) ?? null;
     return {
       state: "error_recoverable",
       context: { ...context, underlying_cause_tag: cause },
     };
-  }
+  },
 
-  if (event.type === "org_form_submitted") {
-    // Submission enters creating_org transiently; the projection observed
-    // after settle reflects the terminal state (ready / authenticated_no_org
-    // / error_recoverable). Until that next event lands, the reducer shows
-    // creating_org so a concurrent reader can see the "Creating..." state.
-    return {
-      state: "creating_org",
-      context: { ...context, org_validation_error: null },
-    };
-  }
+  // Submission enters creating_org transiently; the projection observed after
+  // settle reflects the terminal state (ready / authenticated_no_org /
+  // error_recoverable). Until that next event lands, the table shows
+  // creating_org so a concurrent reader can see the "Creating..." state.
+  org_form_submitted: (_state, context, _event) => ({
+    state: "creating_org",
+    context: { ...context, org_validation_error: null },
+  }),
 
-  if (event.type === "validation_failed") {
+  validation_failed: (_state, context, event) => {
     const err =
       (event.payload.error as ReducedContext["org_validation_error"]) ?? null;
     return {
       state: "authenticated_no_org",
       context: { ...context, org_validation_error: err },
     };
-  }
+  },
 
-  if (event.type === "org_created_and_jwt_reissued") {
+  org_created_and_jwt_reissued: (_state, context, event) => {
     const orgPayload =
       (event.payload.org as Partial<ReducedContext["org"]>) ?? {};
     const accessToken =
@@ -154,18 +170,17 @@ function reduce(
         access_token: accessToken,
       },
     };
-  }
+  },
 
-  if (event.type === "token_expired") {
-    return {
-      state: "expired_token",
-      context: { ...context },
-    };
-  }
+  token_expired: (_state, context, _event) => ({
+    state: "expired_token",
+    context: { ...context },
+  }),
 
-  if (event.type === "reissue_failed_partial") {
+  reissue_failed_partial: (_state, context, event) => {
     const cause =
-      (event.payload.underlying_cause_tag as string | undefined) ?? "partial-setup";
+      (event.payload.underlying_cause_tag as string | undefined) ??
+      "partial-setup";
     const orgPayload =
       (event.payload.org as Partial<ReducedContext["org"]>) ?? {};
     return {
@@ -179,11 +194,11 @@ function reduce(
         },
       },
     };
-  }
+  },
 
-  if (event.type === "deep_link_opened") {
-    // Payload shape (mirrors `open_deep_link` handler in `index.ts`):
-    //   { scope: ActiveScope, project: { id, name } | null, reconciled: bool }
+  // Payload shape (mirrors `open_deep_link` handler in `index.ts`):
+  //   { scope: ActiveScope, project: { id, name } | null, reconciled: bool }
+  deep_link_opened: (state, context, event) => {
     const payload = event.payload as {
       scope?: ActiveScope;
       project?: { id: string | null; name: string | null } | null;
@@ -202,19 +217,17 @@ function reduce(
         scope_resolution_error: null,
       },
     };
-  }
+  },
 
-  if (event.type === "scope_reconciled") {
-    // Defensive: a separate scope_reconciled event (vs. embedded in
-    // deep_link_opened.reconciled) may be appended by future flows. Both
-    // shapes land at the same projection field.
-    return {
-      state,
-      context: { ...context, scope_reconciled: true },
-    };
-  }
+  // Defensive: a separate scope_reconciled event (vs. embedded in
+  // deep_link_opened.reconciled) may be appended by future flows. Both
+  // shapes land at the same projection field.
+  scope_reconciled: (state, context, _event) => ({
+    state,
+    context: { ...context, scope_reconciled: true },
+  }),
 
-  if (event.type === "scope_access_denied") {
+  scope_access_denied: (_state, context, event) => {
     const payload = event.payload as { reason?: string };
     return {
       state: "access_denied",
@@ -225,11 +238,23 @@ function reduce(
         },
       },
     };
-  }
+  },
+};
 
-  // Unknown event: no-op. Keeps the reducer total without crashing on
-  // events introduced by later steps.
-  return { state, context };
+/**
+ * Apply a single event to the running (state, context). Looks up the
+ * event.type in EVENT_HANDLERS; unknown types are a no-op (the reducer
+ * stays total without crashing on events introduced by later steps).
+ *
+ * Pure. Called by `buildProjection` in the replay loop.
+ */
+function applyEvent(
+  state: string,
+  context: ReducedContext,
+  event: FlowEvent,
+): { state: string; context: ReducedContext } {
+  const handler = EVENT_HANDLERS[event.type];
+  return handler ? handler(state, context, event) : { state, context };
 }
 
 export function buildProjection(
@@ -243,14 +268,14 @@ export function buildProjection(
   let correlationId = "";
 
   for (const event of events) {
-    const reduced = reduce(state, context, event);
-    state = reduced.state;
-    context = reduced.context;
+    const next = applyEvent(state, context, event);
+    state = next.state;
+    context = next.context;
     lastEventAt = event.ts;
     correlationId = event.correlation_id;
   }
 
-  // Build the projection-level active_scope from the reduced context.
+  // Build the projection-level active_scope from the running context.
   // Precedence: resolved_scope (from deep_link_opened) > derived from org.
   let scope: ActiveScope = EMPTY_SCOPE;
   if (context.resolved_scope) {
