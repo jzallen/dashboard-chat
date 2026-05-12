@@ -1,5 +1,5 @@
 # Local development override — rebuild auth-proxy from source for the
-# user-flow-state-machines feature (DELIVER step 01-01 adds /flow-state/*
+# user-flow-state-machines feature (DELIVER step 01-01 adds /ui-state/*
 # routing per ADR-030 §SD1). Once the Bazel image regeneration pipeline
 # picks up the change, this override becomes a no-op.
 #
@@ -9,12 +9,12 @@
 services:
   auth-proxy:
     build: ./auth-proxy
-    image: dashboard-chat/auth-proxy:flow-state-dev
+    image: dashboard-chat/auth-proxy:ui-state-dev
     pull_policy: build
 
   # Rebuild backend from source so DELIVER step 01-02 ships
   # POST /api/auth/reissue without waiting for the Bazel image refresh.
   api:
     build: ./backend
-    image: dashboard-chat/api:flow-state-dev
+    image: dashboard-chat/api:ui-state-dev
     pull_policy: build

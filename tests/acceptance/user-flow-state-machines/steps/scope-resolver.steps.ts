@@ -1,7 +1,7 @@
 // Step definitions for `features/slice-1-scope-resolver.feature` (step 01-03).
 //
 // All step bodies drive through the harness (`open_deep_link`,
-// `assert_scope_reconciled`) — no test imports from flow-state/lib/**
+// `assert_scope_reconciled`) — no test imports from ui-state/lib/**
 // (CM-A). The harness routes through auth-proxy:1042 (driving port).
 //
 // Scenarios covered:
@@ -42,7 +42,7 @@ Before({ tags: "@scope-resolver" }, async function (this: UserFlowWorld) {
     email: MAYA.email,
     display_name: MAYA.display_name,
   });
-  await wait_for_health(`${AUTH_PROXY_URL}/flow-state/health`);
+  await wait_for_health(`${AUTH_PROXY_URL}/ui-state/health`);
 });
 
 After({ tags: "@scope-resolver" }, async function (this: UserFlowWorld) {

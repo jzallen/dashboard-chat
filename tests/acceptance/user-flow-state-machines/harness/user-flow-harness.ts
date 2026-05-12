@@ -6,7 +6,7 @@
 // contract Maya-shaped + Rajesh-shaped tests need.
 //
 // All harness methods route through auth-proxy (CM-A: driving port only).
-// No method imports from flow-state/lib/**.
+// No method imports from ui-state/lib/**.
 
 import { request } from "undici";
 
@@ -48,7 +48,7 @@ export class UserFlowHarness {
   ): Promise<FlowProjection> {
     const machine = this.config.defaultMachine ?? "login-and-org-setup";
     const res = await request(
-      `${this.config.authProxyUrl}/flow-state/flow/${machine}/begin`,
+      `${this.config.authProxyUrl}/ui-state/flow/${machine}/begin`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -98,7 +98,7 @@ export class UserFlowHarness {
   }
 
   /**
-   * Read the access_token out of the projection's context (the flow-state
+   * Read the access_token out of the projection's context (the ui-state
    * tier mints one on the org_created_and_jwt_reissued transition). Idempotent
    * and tolerant of projections that don't yet carry one — leaves `this.jwt`
    * unchanged in that case so assert_jwt_carries_org_claim can surface the
@@ -122,7 +122,7 @@ export class UserFlowHarness {
   /**
    * Open a deep link with the given route params, optionally supplying the
    * server-known current project name and a (possibly stale) bookmarked
-   * name. Routes through auth-proxy → flow-state /open-deep-link, which
+   * name. Routes through auth-proxy → ui-state /open-deep-link, which
    * runs the ScopeResolver and appends a deep_link_opened (or
    * scope_access_denied) event to the flow.
    */
@@ -141,7 +141,7 @@ export class UserFlowHarness {
     }
     const machine = this.config.defaultMachine ?? "login-and-org-setup";
     const res = await request(
-      `${this.config.authProxyUrl}/flow-state/flow/${machine}/open-deep-link`,
+      `${this.config.authProxyUrl}/ui-state/flow/${machine}/open-deep-link`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -265,7 +265,7 @@ export class UserFlowHarness {
     }
     const machine = this.config.defaultMachine ?? "login-and-org-setup";
     const res = await request(
-      `${this.config.authProxyUrl}/flow-state/flow/${machine}/projection?flow_id=${encodeURIComponent(this.flowId)}`,
+      `${this.config.authProxyUrl}/ui-state/flow/${machine}/projection?flow_id=${encodeURIComponent(this.flowId)}`,
       { method: "GET" },
     );
     const body = (await res.body.json()) as unknown;
@@ -291,7 +291,7 @@ export class UserFlowHarness {
     }
     const machine = this.config.defaultMachine ?? "login-and-org-setup";
     const res = await request(
-      `${this.config.authProxyUrl}/flow-state/flow/${machine}/event`,
+      `${this.config.authProxyUrl}/ui-state/flow/${machine}/event`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },

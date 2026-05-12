@@ -2,7 +2,7 @@
 
 > **Wave**: DESIGN (propose mode)
 > **Architect**: Morgan (nw-solution-architect)
-> **Companion**: `wave-decisions.md` (decisions D1–D9); ADR-027 (flow-state tier + projection contract), ADR-028 (XState v5 actor model), ADR-029 (`active_scope` propagation contract).
+> **Companion**: `wave-decisions.md` (decisions D1–D9); ADR-027 (ui-state tier + projection contract), ADR-028 (XState v5 actor model), ADR-029 (`active_scope` propagation contract).
 
 This document is the propose-mode deliverable. It narrows the 5-option matrix to 2 survivors, presents each with full trade-offs, and recommends one with explicit rationale. It also specifies the `active_scope` propagation contract as a concrete artifact.
 
@@ -12,7 +12,7 @@ This document is the propose-mode deliverable. It narrows the 5-option matrix to
 
 ```mermaid
 C4Context
-  title System Context — Dashboard Chat with Flow-State Layer
+  title System Context — Dashboard Chat with UI-State Layer
   Person(user, "End User", "Maya Chen (new contributor) and returning users")
   Person(dev, "Developer", "Writes acceptance tests for user flows")
   System(dc, "Dashboard Chat", "Chat-driven data table operations")
@@ -32,15 +32,15 @@ The system-context diagram is unchanged from prior architecture. The new tier is
 
 ```mermaid
 C4Container
-  title Container Diagram — Dashboard Chat with Flow-State Tier (recommended: Option D, Remix)
+  title Container Diagram — Dashboard Chat with UI-State Tier (recommended: Option D, Remix)
   Person(user, "End User")
   Person(dev, "Developer (test author)")
 
   Container_Boundary(c1, "Dashboard Chat") {
     Container(frontend, "Frontend (nginx)", "nginx:alpine", "Static SPA bundle + reverse proxy for /api, /worker, /api/channels/:id/presentation-state. Unchanged. See ADR-031.")
-    Container(remix, "Frontend-Remix (NEW)", "React 18 + Remix v2 on Node", "Server-side route loaders; reads active_scope and projects state via flow-state tier. Migrated routes only (strangler-fig per ADR-031).")
-    Container(authproxy, "Auth-Proxy", "Hono + jose", "Production ingress for backend + flow-state tier (ADR-016 aspirational for agent — see ADR-030 §1.7); verifies JWT; injects identity headers")
-    Container(flowstate, "Flow-State Tier (NEW)", "Hono + XState v5 actor model", "Owns flow machines; exposes projection endpoints; emits FlowEvent log")
+    Container(remix, "Frontend-Remix (NEW)", "React 18 + Remix v2 on Node", "Server-side route loaders; reads active_scope and projects state via ui-state tier. Migrated routes only (strangler-fig per ADR-031).")
+    Container(authproxy, "Auth-Proxy", "Hono + jose", "Production ingress for backend + ui-state tier (ADR-016 aspirational for agent — see ADR-030 §1.7); verifies JWT; injects identity headers")
+    Container(flowstate, "UI-State Tier (NEW)", "Hono + XState v5 actor model", "Owns flow machines; exposes projection endpoints; emits FlowEvent log")
     Container(agent, "Agent (Hono + Groq)", "Hono + Groq SDK", "Chat brain — SSE streaming, tool dispatch, ADR-015 directive log. Unchanged.")
     Container(backend, "Backend (FastAPI)", "FastAPI + SQLAlchemy + Ibis", "Owns dataset/project state; transforms; dbt export. Unchanged.")
     ContainerDb(redis, "Redis", "Redis 7", "Flow-event log + ADR-018 session-event log + ADR-015 directive log")
@@ -69,17 +69,17 @@ C4Container
 ```
 
 **Key callouts in the diagram**:
-- **The Flow-State Tier is a NEW container.** Hono + XState v5, deployed alongside the agent in the same compose topology. It is NOT the agent.
-- **Auth-proxy is the only ingress** for the FE, the harness, the flow-state tier, the agent, and the backend. ADR-016 is honored.
-- **Redis is the shared durability substrate.** Three logs coexist with distinct key prefixes: `flow:{flow_id}:events` (this feature), `session:{session_id}:events` (ADR-018), `presentation-state:{channel_id}` (ADR-015).
-- **The agent is unchanged.** D8 is honored mechanically — no new responsibility, no new endpoint, no integration with the flow-state tier except via the same auth-proxy ingress.
+- **The UI-State Tier is a NEW container.** Hono + XState v5, deployed alongside the agent in the same compose topology. It is NOT the agent.
+- **Auth-proxy is the only ingress** for the FE, the harness, the ui-state tier, the agent, and the backend. ADR-016 is honored.
+- **Redis is the shared durability substrate.** Three logs coexist with distinct key prefixes: `ui-state:{flow_id}:events` (this feature), `session:{session_id}:events` (ADR-018), `presentation-state:{channel_id}` (ADR-015).
+- **The agent is unchanged.** D8 is honored mechanically — no new responsibility, no new endpoint, no integration with the ui-state tier except via the same auth-proxy ingress.
 
-## 3. C4 Component (L3) — Flow-State Tier internals
+## 3. C4 Component (L3) — UI-State Tier internals
 
 ```mermaid
 C4Component
-  title Component Diagram — Flow-State Tier (Hono + XState v5)
-  Container_Boundary(fst, "Flow-State Tier") {
+  title Component Diagram — UI-State Tier (Hono + XState v5)
+  Container_Boundary(fst, "UI-State Tier") {
     Component(routes, "Flow Routes", "Hono", "HTTP surface: POST /api/flows/{id}/events, GET /api/flows/{id}/projection, GET /api/flows/{id}/projection/stream")
     Component(orchestrator, "Flow Orchestrator", "XState v5 root actor", "Spawns and supervises per-flow actor instances; routes FREEZE/THAW to children")
     Component(loginmachine, "LoginAndOrgSetupMachine", "XState v5 statechart", "States: anonymous → authenticating → authenticated_no_org → creating_org → ready; side-states: expired_token, error_recoverable, error_terminal")
@@ -148,20 +148,20 @@ function ChatView() {
 
 **Lock-in risk**: LOW. The tier is plain Hono + XState. If the team later moves to Remix or Next.js, the projection endpoint is unchanged; only the FE consumer changes.
 
-**Test surface**: TS harness drives the flow-state tier's HTTP surface directly. `harness.user_flow.begin_auth("maya")` POSTs `/api/flows/login-and-org-setup/events` with `{ event: "sign_in_clicked" }` then polls `/api/flows/{id}/projection` until state is `authenticated_no_org`. `assert_scope(...)` GETs the projection and diffs `active_scope` against the expected shape with named-column diff output.
+**Test surface**: TS harness drives the ui-state tier's HTTP surface directly. `harness.user_flow.begin_auth("maya")` POSTs `/api/flows/login-and-org-setup/events` with `{ event: "sign_in_clicked" }` then polls `/api/flows/{id}/projection` until state is `authenticated_no_org`. `assert_scope(...)` GETs the projection and diffs `active_scope` against the expected shape with named-column diff output.
 
 **Trade-off summary**: smallest FE delta. Scope drift risk remains MEDIUM because every component still has to opt into `useScope()`. One missed opt-in = one drift.
 
 ### Option D: Remix + XState server-side (RECOMMENDED)
 
-**Architecture sketch.** Replace `frontend/main.tsx` + `frontend/App.tsx` with a Remix app. Vite stays as the build tool. The new `flow-state` Hono tier still exists (Remix doesn't replace it — XState lives there because it must NOT live in the agent per D8). Each route file has a `loader` function that calls into the flow-state tier's projection endpoint server-side; the loader's return value IS the FE's data. `useRouteLoaderData("root")` exposes `active_scope` at every nested layout.
+**Architecture sketch.** Replace `frontend/main.tsx` + `frontend/App.tsx` with a Remix app. Vite stays as the build tool. The new `ui-state` Hono tier still exists (Remix doesn't replace it — XState lives there because it must NOT live in the agent per D8). Each route file has a `loader` function that calls into the ui-state tier's projection endpoint server-side; the loader's return value IS the FE's data. `useRouteLoaderData("root")` exposes `active_scope` at every nested layout.
 
 **`active_scope` propagation** (Option D):
 
 ```ts
 // app/root.tsx  (Remix root route)
 export async function loader({ request }: LoaderFunctionArgs) {
-  const projection = await flowStateClient(request).getProjection("login-and-org-setup");
+  const projection = await uiStateClient(request).getProjection("login-and-org-setup");
   return json({ active_scope: projection.active_scope, user: projection.context.user });
 }
 export function useScope() {
@@ -171,9 +171,9 @@ export function useScope() {
 // app/routes/org.$org.project.$project.tsx
 export async function loader({ params, request }: LoaderFunctionArgs) {
   // Nested loader can override or augment scope from URL params; the
-  // ScopeResolver in the flow-state tier reconciles route params with
+  // ScopeResolver in the ui-state tier reconciles route params with
   // machine context and returns the AUTHORITATIVE active_scope.
-  const projection = await flowStateClient(request).getProjection("project-session-mgmt", {
+  const projection = await uiStateClient(request).getProjection("project-session-mgmt", {
     intent_org_id: params.org,
     intent_project_id: params.project,
   });
@@ -187,7 +187,7 @@ function ChatView() {
 }
 ```
 
-**How XState fits**: server-only, in the flow-state tier. Remix loaders are the HTTP-shaped interface to the tier. The FE consumes loader data. The same projection endpoint Option B exposes is what Remix's loaders consume — the only difference is *who calls it* (FE in Option B, Remix server in Option D) and *how the scope is propagated downward* (Context in Option B, loader data in Option D).
+**How XState fits**: server-only, in the ui-state tier. Remix loaders are the HTTP-shaped interface to the tier. The FE consumes loader data. The same projection endpoint Option B exposes is what Remix's loaders consume — the only difference is *who calls it* (FE in Option B, Remix server in Option D) and *how the scope is propagated downward* (Context in Option B, loader data in Option D).
 
 **Effort**: 4–6 weeks. Confidence: MEDIUM-HIGH (Remix migration from React Router v6 is well-documented; the chat SSE integration needs verification — Remix supports SSE responses but our existing agent SSE flow stays in the agent unchanged).
 
@@ -197,9 +197,9 @@ function ChatView() {
 - **Chat SSE**: LOW — the FE's SSE client (currently connecting to the agent through nginx) is unchanged. Remix does not own the SSE connection; the FE component does.
 - **Test harness**: same as Option B — the harness drives HTTP, not the FE.
 
-**Lock-in risk**: MEDIUM. Remix is mature (v2.7+, 2024), Shopify-owned, Vite-integrated. The lock-in is at the routing layer, not the data layer. Reversibility: if Remix becomes unmaintained or the team decides to migrate to Next.js, the route-level loaders can be ported to Next.js `app/` route handlers in 1-2 weeks because the flow-state tier (the load-bearing piece) is framework-independent.
+**Lock-in risk**: MEDIUM. Remix is mature (v2.7+, 2024), Shopify-owned, Vite-integrated. The lock-in is at the routing layer, not the data layer. Reversibility: if Remix becomes unmaintained or the team decides to migrate to Next.js, the route-level loaders can be ported to Next.js `app/` route handlers in 1-2 weeks because the ui-state tier (the load-bearing piece) is framework-independent.
 
-**Test surface**: identical to Option B. The TS harness reads the same projection endpoint. **The harness does NOT drive Remix loaders** — it talks directly to the flow-state tier. This is important: the harness and the FE are peers; both read the same SSOT.
+**Test surface**: identical to Option B. The TS harness reads the same projection endpoint. **The harness does NOT drive Remix loaders** — it talks directly to the ui-state tier. This is important: the harness and the FE are peers; both read the same SSOT.
 
 **Trade-off summary**: largest FE delta. Scope drift risk LOW by construction (`useRouteLoaderData` is the only path; missing the opt-in is a TypeScript error, not a silent bug). Closest match to the user's stated mental model ("FE reloads after API call → same state as backend").
 
@@ -214,7 +214,7 @@ function ChatView() {
 | Routing migration | None | Full (React Router → Remix routes) |
 | Auth-proxy compatibility | Same | Same |
 | Chat SSE compatibility | Unchanged | Unchanged |
-| Test-harness shape | Same (drives flow-state HTTP) | Same |
+| Test-harness shape | Same (drives ui-state HTTP) | Same |
 | Reversibility | HIGH (plain SPA stays) | MEDIUM (Remix lock-in at routing layer) |
 | Lock-in risk | LOW | MEDIUM |
 | Sequential migration path | Strangler-fig per component | Route-by-route |
@@ -229,13 +229,13 @@ sequenceDiagram
   actor User as Maya
   participant FE as Frontend (Remix on Vite)
   participant AP as Auth-Proxy
-  participant FS as Flow-State Tier
+  participant FS as UI-State Tier
   participant BE as Backend
   participant R as Redis
   User->>FE: GET /org/acme-data/project/q4-analytics
-  FE->>AP: GET /flow-state/projection?flow=project-session-mgmt&intent_org=acme-data&intent_project=q4-analytics
+  FE->>AP: GET /ui-state/projection?flow=project-session-mgmt&intent_org=acme-data&intent_project=q4-analytics
   AP->>FS: forward (with identity headers)
-  FS->>R: XRANGE flow:project-session-mgmt:events
+  FS->>R: XRANGE ui-state:project-session-mgmt:events
   R-->>FS: FlowEvent[]
   FS->>FS: ProjectionBuilder.fold(events) + ScopeResolver.resolve(route, jwt, ctx)
   FS->>BE: (if project not in cache) GET /api/projects/{id}
@@ -255,7 +255,7 @@ sequenceDiagram
   actor User as Maya
   participant FE as Frontend
   participant Agent as Agent (chat brain, unchanged)
-  participant FS as Flow-State Tier
+  participant FS as UI-State Tier
   participant AP as Auth-Proxy
   participant R as Redis
   User->>FE: types "what's the average rev by region"
@@ -267,7 +267,7 @@ sequenceDiagram
   FS->>FS: LoginAndOrgSetupMachine transitions to expired_token
   FS->>FS: Orchestrator sends FREEZE to ALL spawned actors (transforms, dataset, view, report)
   FS->>FS: ReplayBuffer queues the original chat request (5s budget, 16 max)
-  FS->>R: XADD flow:*:events { type: "freeze", reason: "expired_token" }
+  FS->>R: XADD ui-state:*:events { type: "freeze", reason: "expired_token" }
   FS->>AP: POST /auth-proxy silent re-auth attempt
   AP-->>FS: { token: <new JWT>, expires_in: 3600 }
   FS->>FS: LoginAndOrgSetupMachine transitions expired_token → ready
@@ -290,19 +290,19 @@ The cross-machine freeze is mechanically the XState v5 actor model's `send`-to-c
 | Security | Sole ingress is auth-proxy. JWT verified before any flow event is accepted. `active_scope.org_id` MUST equal JWT's `org_id` claim — divergence is a 403. | Acceptance test attempts cross-tenant write; asserts 403 + named "scope mismatch" diagnostic. |
 | Maintainability | One file per flow machine; one component per concern in the tier; projection is a pure function. Strict dependency-inversion: `eventlog` is a port; Redis is one adapter; tests use an in-memory adapter. | ArchUnit-style enforcement: `pytest-archon`-equivalent for TS via `dependency-cruiser` config in the tier; ADR-027 §"Enforcement". |
 | Testability | TS harness reads SAME projection FE reads — no parallel state. Personas seeded in fixtures; one-file change to add a persona. | US-004 AC verifies this end-to-end. |
-| Observability | Every FlowEvent carries `correlation_id`. `correlation_id` threads across FE → auth-proxy → flow-state tier → backend → agent via `X-Correlation-Id` header. Redis-persisted log IS the audit trail. | DEVOPS handoff (ADR-027 §"Observability"); KPI K4 (recoverable-error correlation rate) instrumentable from the FlowEventLog directly. |
+| Observability | Every FlowEvent carries `correlation_id`. `correlation_id` threads across FE → auth-proxy → ui-state tier → backend → agent via `X-Correlation-Id` header. Redis-persisted log IS the audit trail. | DEVOPS handoff (ADR-027 §"Observability"); KPI K4 (recoverable-error correlation rate) instrumentable from the FlowEventLog directly. |
 | Portability | Tier is Hono on Node; runs the same in `npm run dev`, compose, and any container runtime. No platform-specific APIs. | Compose acceptance test (ADR-016 mirror) verifies the tier starts byte-identically in compose and in CI. |
 
 ## 8. External integrations (annotated for DEVOPS handoff)
 
 | Integration | Direction | Contract testing recommendation |
 |---|---|---|
-| Flow-state tier → WorkOS (OIDC code exchange during `authenticating`) | Outbound | **Pact consumer-driven contract** (Pact-JS in CI) against pinned WorkOS schema. The flow-state tier consumes WorkOS's `/v1/sso/token` and `/v1/users/{id}` endpoints; if WorkOS changes response shape, the tier's parser must catch at build time, not in production. |
-| Flow-state tier → auth-proxy (silent re-auth during `expired_token`) | Outbound | Contract test via the auth-proxy's existing OpenAPI document (`auth-proxy/lib/openapi.ts`) — the tier validates its mock-server against that spec. |
-| Flow-state tier → backend (`POST /api/orgs`, `POST /api/auth/reissue` if added) | Outbound | Contract test via FastAPI's OpenAPI document — the tier validates its mock-server against the live spec. |
+| UI-state tier → WorkOS (OIDC code exchange during `authenticating`) | Outbound | **Pact consumer-driven contract** (Pact-JS in CI) against pinned WorkOS schema. The ui-state tier consumes WorkOS's `/v1/sso/token` and `/v1/users/{id}` endpoints; if WorkOS changes response shape, the tier's parser must catch at build time, not in production. |
+| UI-state tier → auth-proxy (silent re-auth during `expired_token`) | Outbound | Contract test via the auth-proxy's existing OpenAPI document (`auth-proxy/lib/openapi.ts`) — the tier validates its mock-server against that spec. |
+| UI-state tier → backend (`POST /api/orgs`, `POST /api/auth/reissue` if added) | Outbound | Contract test via FastAPI's OpenAPI document — the tier validates its mock-server against the live spec. |
 
 **Annotation for `platform-architect` (DEVOPS handoff)**:
-> Contract tests recommended for Flow-State Tier → WorkOS — consumer-driven contracts via Pact-JS in CI acceptance stage to detect WorkOS API breaking changes before production. Internal contracts (auth-proxy, backend) are covered by their existing OpenAPI documents; the flow-state tier's mock-server validation step should run those specs in CI.
+> Contract tests recommended for UI-State Tier → WorkOS — consumer-driven contracts via Pact-JS in CI acceptance stage to detect WorkOS API breaking changes before production. Internal contracts (auth-proxy, backend) are covered by their existing OpenAPI documents; the ui-state tier's mock-server validation step should run those specs in CI.
 
 ## 9. Earned Trust — probes per adapter
 
@@ -331,24 +331,24 @@ Language-appropriate tooling for the TypeScript tier:
 | Import graph | `dependency-cruiser` (`.dependency-cruiser.cjs`) | `routes/` may import from `orchestrator/`; `orchestrator/` may import from `machines/`; `machines/` may NOT import from `routes/`. Reverse dependency = build error. |
 | Subtype | TypeScript `strict` + `Probed` interface | All adapter exports satisfy `Probed`. Compile-time. |
 | Structural | AST pre-commit hook (`scripts/check-adapters.ts`) | Every `*Adapter.ts` exports a class with `probe(): Promise<ProbeResult>`. |
-| Behavioral | CI gold-test (`flow-state/test/composition-root.test.ts`) | Process startup with `--probe-strict` emits one `health.probes.passed` event per adapter. |
+| Behavioral | CI gold-test (`ui-state/test/composition-root.test.ts`) | Process startup with `--probe-strict` emits one `health.probes.passed` event per adapter. |
 
 For the Remix FE (Option D):
 
 | Layer | Tool | Rule |
 |---|---|---|
-| Import graph | `dependency-cruiser` | FE may NOT import from `flow-state/` internals; only from a published `@dashboard-chat/flow-state-client` package shape. |
+| Import graph | `dependency-cruiser` | FE may NOT import from `ui-state/` internals; only from a published `@dashboard-chat/ui-state-client` package shape. |
 | Type | TypeScript strict | `useRouteLoaderData` return types are reified; missing fields = compile error. |
 | Linting | `eslint-plugin-remix` | Enforce loader-data-only access pattern; flag direct `useParams` reads of scope-relevant params (force route through ScopeResolver). |
 
 ## 11. Deployment
 
-The flow-state tier deploys alongside the agent in the same compose topology:
+The ui-state tier deploys alongside the agent in the same compose topology:
 
 ```yaml
 # docker-compose.yml additions (illustrative — not committed in this wave)
-flow-state:
-  image: dashboard-chat/flow-state:bazel
+ui-state:
+  image: dashboard-chat/ui-state:bazel
   pull_policy: never
   environment:
     AUTH_MODE: ${AUTH_MODE:-dev}
@@ -359,17 +359,17 @@ flow-state:
     REDIS_URL: redis://redis:6379/0
     FLOW_EVENT_MAXLEN: ${FLOW_EVENT_MAXLEN:-1000}
   ports:
-    - "${FLOW_STATE_HOST_PORT:-1043}:8788"
+    - "${UI_STATE_HOST_PORT:-1043}:8788"
   depends_on:
     redis:
       condition: service_healthy
 ```
 
-The auth-proxy's nginx-style routing forwards `/flow-state/*` to this service. No new compose container types — same Node image base as the agent. The compose acceptance test (per ADR-016 mirror) verifies the 6-service stack (was 5; +1 for flow-state) starts byte-identically.
+The auth-proxy's nginx-style routing forwards `/ui-state/*` to this service. No new compose container types — same Node image base as the agent. The compose acceptance test (per ADR-016 mirror) verifies the 6-service stack (was 5; +1 for ui-state) starts byte-identically.
 
 ## 12. Recommendation
 
-**Option D (Remix + XState v5 server-side + new flow-state Node tier).**
+**Option D (Remix + XState v5 server-side + new ui-state Node tier).**
 
 **Single sharpest argument**: it is the smallest framework choice that mechanically eliminates the scope-chain drift class. The "ChatView project-context race" the user named is impossible by construction under Option D — there is no path by which a component can read `project_id` from anywhere other than `useRouteLoaderData("root").active_scope`, because the alternative paths (`useParams`, `useAuth()`, ad-hoc fetches) are flagged at compile time or by lint and have no value to read.
 

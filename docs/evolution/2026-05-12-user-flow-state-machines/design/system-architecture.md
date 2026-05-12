@@ -6,7 +6,7 @@
 > **New ADRs**: ADR-030 (topology + scaling), ADR-031 (frontend tier transition).
 
 This document is the system-scope counterpart to Morgan's application-scope
-deliverable. Morgan picked the host tier (`flow-state/` as a peer Hono
+deliverable. Morgan picked the host tier (`ui-state/` as a peer Hono
 container), the engine (XState v5 actor model), the FE framework (Remix), and
 the `active_scope` propagation contract. This document pressure-tests those
 choices against system-level concerns: topology, scaling shape, persistence
@@ -97,7 +97,7 @@ XState v5 actors live **in-process**. The orchestrator's `system.get(actor_id).s
 - A `FREEZE` broadcast from replica A reaches its local actors only, not actors on replica B.
 - Therefore, **either** all requests for a given user's flow tree route to the same replica (sticky session), **or** there is only one replica.
 
-The auth-proxy's nginx forwarding is round-robin DNS over the compose network (see `docker-compose.yml` agent comment line 23: *"rides docker's round-robin DNS across replicas"*). It is **not sticky**. So multi-replica deployment of the flow-state tier requires either:
+The auth-proxy's nginx forwarding is round-robin DNS over the compose network (see `docker-compose.yml` agent comment line 23: *"rides docker's round-robin DNS across replicas"*). It is **not sticky**. So multi-replica deployment of the ui-state tier requires either:
 
 - a) Sticky routing layer (consistent hashing on `flow_id` or `user_id`), OR
 - b) Stateless tier with per-request actor rehydration from Redis, OR
@@ -110,22 +110,22 @@ The estimation in §0 says one container at 10x fits in 200 MB of RAM and uses 1
 #### Option α — Single replica, behind auth-proxy
 
 ```
-Browser → frontend(nginx) → auth-proxy → flow-state (1 replica) → Redis
+Browser → frontend(nginx) → auth-proxy → ui-state (1 replica) → Redis
                                        → api (backend)
                                        → agent
 ```
 
-- Flow-state tier deployed as 1 replica in compose (`scale: 1`).
-- Auth-proxy gains an upstream-routing rule for `/flow-state/*`.
+- UI-state tier deployed as 1 replica in compose (`scale: 1`).
+- Auth-proxy gains an upstream-routing rule for `/ui-state/*`.
 - Actor tree lives in one process; no rehydration cost on the hot path.
 - Crash recovery: rehydrate from Redis FlowEventLog on cold start.
 
 #### Option β — Multiple replicas, stateless (Redis-rehydrate per request)
 
 ```
-Browser → frontend(nginx) → auth-proxy → flow-state replica 1 → Redis
-                                      → flow-state replica 2 → Redis
-                                      → flow-state replica N → Redis
+Browser → frontend(nginx) → auth-proxy → ui-state replica 1 → Redis
+                                      → ui-state replica 2 → Redis
+                                      → ui-state replica N → Redis
 ```
 
 - Each replica is stateless. On every POST event, the replica:
@@ -140,7 +140,7 @@ Browser → frontend(nginx) → auth-proxy → flow-state replica 1 → Redis
 #### Option γ — Multiple replicas with sticky routing (consistent hash on `flow_id`)
 
 ```
-Browser → frontend(nginx) → auth-proxy/sticky-router → flow-state replica K → Redis
+Browser → frontend(nginx) → auth-proxy/sticky-router → ui-state replica K → Redis
 ```
 
 - Routes requests for the same `flow_id` always to the same replica.
@@ -175,23 +175,23 @@ The HA cost of Option α is bounded: a tier crash forces a cold restart with Flo
 
 | Trigger | Indicator | Action |
 |---|---|---|
-| CPU > 60% sustained | `flow_state.cpu_utilization` p95 alarm | Migrate to Option γ (sticky); pre-write the rehydration helper |
-| RAM > 200 MB sustained | `flow_state.heap_used_bytes` alarm | Migrate to Option γ |
-| Active actors > 10,000 | `flow_state.actors_active` alarm | Migrate to Option γ |
+| CPU > 60% sustained | `ui_state.cpu_utilization` p95 alarm | Migrate to Option γ (sticky); pre-write the rehydration helper |
+| RAM > 200 MB sustained | `ui_state.heap_used_bytes` alarm | Migrate to Option γ |
+| Active actors > 10,000 | `ui_state.actors_active` alarm | Migrate to Option γ |
 | Required SLO > 99.5% | Product decision | Migrate to Option γ; consider Option β if cross-machine FREEZE proves rare |
 
 The Option γ migration is non-destructive — the tier's FlowEventLog is already event-sourced; sticky routing is an auth-proxy concern; the actor model unchanged. **Estimated migration cost: 1-2 weeks engineering, including the sticky-routing logic in auth-proxy.**
 
 ### 1.6 Topology placement detail (the SQ-1 sub-question)
 
-Where does `flow-state/` *physically* sit?
+Where does `ui-state/` *physically* sit?
 
 | Placement | Verdict | Reason |
 |---|---|---|
-| Behind the frontend nginx (parallel to `/api/`, `/worker/` rules) | Considered | Today's nginx is the de-facto multi-upstream router; adding `/flow-state/` is a 5-line nginx.conf change. But this **bypasses auth-proxy**, which violates ADR-016 if the tier handles privileged operations. |
-| Behind auth-proxy as a second upstream | **RECOMMENDED** | Honors ADR-016 ("auth-proxy is the sole production ingress for backend and worker"). The flow-state tier handles privileged operations (writing FlowEvents that mutate scope state; invoking backend writes on transitions); it must sit behind auth-proxy. |
+| Behind the frontend nginx (parallel to `/api/`, `/worker/` rules) | Considered | Today's nginx is the de-facto multi-upstream router; adding `/ui-state/` is a 5-line nginx.conf change. But this **bypasses auth-proxy**, which violates ADR-016 if the tier handles privileged operations. |
+| Behind auth-proxy as a second upstream | **RECOMMENDED** | Honors ADR-016 ("auth-proxy is the sole production ingress for backend and worker"). The ui-state tier handles privileged operations (writing FlowEvents that mutate scope state; invoking backend writes on transitions); it must sit behind auth-proxy. |
 | Direct host port via auth-proxy + new ingress | Overkill | No external system consumes the tier; an additional ingress adds operational mass for no value at this scale. |
-| Co-tenanted in the auth-proxy container | **REJECTED** | Auth-proxy is stateless and does one thing well (JWT verification + identity-header injection). The flow-state tier is hot, stateful (in-process actor tree), and runs business logic. Co-tenancy muddles two responsibilities. Mirrors the rejection of `agent/` as host per D8. |
+| Co-tenanted in the auth-proxy container | **REJECTED** | Auth-proxy is stateless and does one thing well (JWT verification + identity-header injection). The ui-state tier is hot, stateful (in-process actor tree), and runs business logic. Co-tenancy muddles two responsibilities. Mirrors the rejection of `agent/` as host per D8. |
 
 **Selected**: behind auth-proxy. This requires the auth-proxy to gain multi-upstream routing capability (see §1.7).
 
@@ -204,11 +204,11 @@ Where does `flow-state/` *physically* sit?
 
 The agent today is reached via the **frontend container's nginx** (`frontend/nginx.conf:35-47`, the `/worker/` rule), **NOT** via auth-proxy. The ADR-016 statement that "auth-proxy is the sole production ingress for backend and worker" is **aspirational, not currently honored for the agent in compose dev.**
 
-Morgan's design assumes the auth-proxy will forward `/flow-state/*` to the new tier. To honor that:
+Morgan's design assumes the auth-proxy will forward `/ui-state/*` to the new tier. To honor that:
 
-- **Option (a)**: Extend auth-proxy to be multi-upstream. Add an upstream table (`/api/*` → backend, `/flow-state/*` → flow-state, `/worker/*` → agent). This is a small Hono-routes change (~30 lines + tests) but is a **policy-shaped change** to auth-proxy's responsibility (it grows from "the auth-and-proxy gateway for backend" to "the auth-and-proxy gateway for all internal services"). Recommended.
+- **Option (a)**: Extend auth-proxy to be multi-upstream. Add an upstream table (`/api/*` → backend, `/ui-state/*` → ui-state, `/worker/*` → agent). This is a small Hono-routes change (~30 lines + tests) but is a **policy-shaped change** to auth-proxy's responsibility (it grows from "the auth-and-proxy gateway for backend" to "the auth-and-proxy gateway for all internal services"). Recommended.
 
-- **Option (b)**: Add `/flow-state/*` to `frontend/nginx.conf` (mirror the `/worker/` rule). This is byte-trivial but means the flow-state tier sits in front of auth-proxy in the routing topology, violating ADR-016 the same way the agent already does. Not recommended.
+- **Option (b)**: Add `/ui-state/*` to `frontend/nginx.conf` (mirror the `/worker/` rule). This is byte-trivial but means the ui-state tier sits in front of auth-proxy in the routing topology, violating ADR-016 the same way the agent already does. Not recommended.
 
 ADR-030 ratifies **Option (a)** — extend auth-proxy. This decision has retroactive cleanup value: the agent's `/worker/` route can later be migrated behind the same multi-upstream auth-proxy, restoring ADR-016 fidelity. Out of scope for THIS feature, but the door is now open.
 
@@ -223,8 +223,8 @@ This section gives the **concrete contract spec** beyond what ADR-027 enumerated
 ### 2.1 Key prefix and schema
 
 ```
-flow:{flow_id}:events    → Redis Stream (XADD/XRANGE/DEL)
-flow:{flow_id}:snapshot  → Redis String (optional fast-path; see §2.4)
+ui-state:{flow_id}:events    → Redis Stream (XADD/XRANGE/DEL)
+ui-state:{flow_id}:snapshot  → Redis String (optional fast-path; see §2.4)
 ```
 
 Per ADR-027 §3: `flow_id` format is `{flow-machine-name}:{principal_id}` for per-user flows; `{flow-machine-name}` alone for singleton flows. **Decision**: ADR-027's "flow_id" should always include `principal_id` for per-user flows; this is necessary for multi-tenant correctness (one user's expired_token freeze MUST NOT freeze another user's flows). This is an enhancement to ADR-027's specification, not a contradiction; see §6 "Upstream challenges."
@@ -255,7 +255,7 @@ Per ADR-027 §3: `flow_id` format is `{flow-machine-name}:{principal_id}` for pe
 
 ### 2.4 Snapshot fast-path (additive optimization, deferred to DELIVER)
 
-If projection-build cost grows (folding 1,000 events through XState's reducer takes >5ms p95), introduce a `flow:{flow_id}:snapshot` Redis String containing the latest full machine snapshot. Build path:
+If projection-build cost grows (folding 1,000 events through XState's reducer takes >5ms p95), introduce a `ui-state:{flow_id}:snapshot` Redis String containing the latest full machine snapshot. Build path:
 
 1. Read `:snapshot` → start from that.
 2. Read `:events` with cursor > snapshot's sequence_id.
@@ -267,7 +267,7 @@ This is a **deferred optimization**. PR-0 uses pure event-sourced fold. Estimati
 
 ```ts
 async probe(): Promise<ProbeResult> {
-  const k = `flow:_probe:${Date.now()}`;
+  const k = `ui-state:_probe:${Date.now()}`;
   await this.redis.xadd(k, "*", "_probe", "1");           // (a) XADD round-trip
   const r = await this.redis.xrange(k, "-", "+");         // (b) XRANGE readback
   if (r.length !== 1) return failure("xrange-empty");
@@ -376,11 +376,11 @@ These are derived from the structured log; an aggregator (Vector, Promtail) extr
 
 | Metric | Type | Labels | Source event |
 |---|---|---|---|
-| `flow_state_transitions_total` | counter | machine_id, to_state | `flow.transition` |
-| `flow_state_transition_duration_ms` | histogram | machine_id | `flow.transition` |
-| `flow_state_actors_active` | gauge | machine_id | `/health/actors` poll |
-| `flow_state_freeze_events_total` | counter | reason | `flow.freeze.broadcast` |
-| `flow_state_replay_buffer_size` | gauge | | `/health/actors` poll |
+| `ui_state_transitions_total` | counter | machine_id, to_state | `flow.transition` |
+| `ui_state_transition_duration_ms` | histogram | machine_id | `flow.transition` |
+| `ui_state_actors_active` | gauge | machine_id | `/health/actors` poll |
+| `ui_state_freeze_events_total` | counter | reason | `flow.freeze.broadcast` |
+| `ui_state_replay_buffer_size` | gauge | | `/health/actors` poll |
 | `flow_state_replay_abandoned_total` | counter | reason | `flow.replay.abandoned` event |
 | `flow_state_probe_failures_total` | counter | adapter | probe failure event |
 
@@ -397,7 +397,7 @@ This is the same `X-Correlation-Id` ADR-015 introduced for the directive log; th
 
 ### 3.6 OpenTelemetry — deliberately deferred
 
-The tier emits stdout JSON. **OpenTelemetry tracing is deferred** until the operator running this stack adopts an OTel collector for the rest of the system. Adding OTel to one tier in isolation buys nothing; adding it to all four Node services (agent, auth-proxy, flow-state, backend) is a separate decision. ADR-030 §"Open questions" lists this for revisit.
+The tier emits stdout JSON. **OpenTelemetry tracing is deferred** until the operator running this stack adopts an OTel collector for the rest of the system. Adding OTel to one tier in isolation buys nothing; adding it to all four Node services (agent, auth-proxy, ui-state, backend) is a separate decision. ADR-030 §"Open questions" lists this for revisit.
 
 ### 3.7 Observability — final directive
 
@@ -507,11 +507,11 @@ Morgan's `application-architecture.md` §2 implies R1 (Remix server replaces ngi
 
 **Recommendation: Option R3** — Remix runs as a new compose service (e.g., `frontend-remix`); nginx in the existing `frontend` container stays and gains a `/` → `remix:3001` upstream rule.
 
-**Sharpest argument**: Option R3 is the **only option with a clean strangler-fig path**. We can deploy the Remix container alongside the existing nginx-static SPA, route specific routes through Remix (`/login`, `/org/$org`, etc.) progressively, and retire the SPA fallback when the migration completes. R1 demands a big-bang container replacement; R2 forces nginx + Node into the same container's lifecycle. R3 is the option Morgan's design also implicitly supports — her ADR-027 §"Reversibility" notes that "the load-bearing piece (flow-state tier) is framework-independent" — the same reasoning applies to the FE migration.
+**Sharpest argument**: Option R3 is the **only option with a clean strangler-fig path**. We can deploy the Remix container alongside the existing nginx-static SPA, route specific routes through Remix (`/login`, `/org/$org`, etc.) progressively, and retire the SPA fallback when the migration completes. R1 demands a big-bang container replacement; R2 forces nginx + Node into the same container's lifecycle. R3 is the option Morgan's design also implicitly supports — her ADR-027 §"Reversibility" notes that "the load-bearing piece (ui-state tier) is framework-independent" — the same reasoning applies to the FE migration.
 
 **TLS, gzip, caching**: unchanged. nginx in the `frontend` container keeps doing those. In production behind a CDN (future concern; out of scope), the CDN handles TLS and caching anyway.
 
-**Container build pipeline**: `make up` builds three Bazel-managed images (frontend nginx-static, frontend-remix Node, flow-state Node). Same shape as the existing build of (frontend, agent, auth-proxy, api). Net additive: +1 image, same pattern.
+**Container build pipeline**: `make up` builds three Bazel-managed images (frontend nginx-static, frontend-remix Node, ui-state Node). Same shape as the existing build of (frontend, agent, auth-proxy, api). Net additive: +1 image, same pattern.
 
 ### 4.6 Frontend transition — final directive
 
@@ -538,11 +538,11 @@ The auth-path question is partly resolved by §1.7 (auth-proxy gains multi-upstr
 
 ### 5.1 Does Remix server-side talk to auth-proxy on behalf of the user?
 
-**YES.** The Remix loader runs server-side (in the `frontend-remix` container) and makes a fetch to `auth-proxy:3000/flow-state/...`. The loader extracts the user's Bearer token from the **request cookie or Authorization header** that the browser sent it (per Remix convention) and forwards it.
+**YES.** The Remix loader runs server-side (in the `frontend-remix` container) and makes a fetch to `auth-proxy:3000/ui-state/...`. The loader extracts the user's Bearer token from the **request cookie or Authorization header** that the browser sent it (per Remix convention) and forwards it.
 
 This is **JWT delegation**: the user's JWT flows through Remix's loader as a Bearer header to auth-proxy. Auth-proxy verifies the token as it does today; no new auth surface.
 
-### 5.2 Does the flow-state tier verify tokens itself?
+### 5.2 Does the ui-state tier verify tokens itself?
 
 **NO.** The tier trusts auth-proxy's injected identity headers (`X-User-Id`, `X-Org-Id`, `X-User-Email`), exactly like the backend and the agent do today. The tier does NOT replicate auth-proxy's JWT verification — that would split the source of truth.
 
@@ -573,14 +573,14 @@ This is implementation-level migration detail, but the system-level consequence 
 
 ## 6. SQ-7: Failover / SPOF analysis
 
-### 6.1 If `flow-state/` is down
+### 6.1 If `ui-state/` is down
 
-| Component | Behavior when flow-state is down |
+| Component | Behavior when ui-state is down |
 |---|---|
 | FE Remix loaders | Loader fails → Remix `ErrorBoundary` renders → graceful 503 page with "flow service unavailable" |
-| Chat (agent) | **UNAFFECTED** — agent has no dependency on flow-state. Existing chat flows degraded only if they need `active_scope` (per ADR-029, the scope header must be present; agent rejects scope-less invocations with 400). |
-| Dataset preview (backend) | **UNAFFECTED** — backend is independent of flow-state. |
-| `active_scope` propagation | Loaders fail; FE shows error page. Once flow-state recovers, loaders succeed; state rehydrates from FlowEventLog. |
+| Chat (agent) | **UNAFFECTED** — agent has no dependency on ui-state. Existing chat flows degraded only if they need `active_scope` (per ADR-029, the scope header must be present; agent rejects scope-less invocations with 400). |
+| Dataset preview (backend) | **UNAFFECTED** — backend is independent of ui-state. |
+| `active_scope` propagation | Loaders fail; FE shows error page. Once ui-state recovers, loaders succeed; state rehydrates from FlowEventLog. |
 | User experience | Sign-in flow is broken. Existing in-session pages already loaded continue to work (SPA cache). |
 
 **SPOF assessment**: the tier is a SPOF for **new sign-ins** and **scope transitions** (project switching, etc.) but is NOT a SPOF for **active chat** or **dataset operations**. This matches Morgan's claim in `application-architecture.md` §"The agent is unchanged" — the architecture is correctly decoupled.
@@ -590,7 +590,7 @@ This is implementation-level migration detail, but the system-level consequence 
 1. Tier crashes (panic, OOM, deploy).
 2. Compose `restart: on-failure` (or `unless-stopped`) restarts the container.
 3. Tier startup: `probe()` runs; Redis connectivity verified.
-4. Actor rehydration: on first GET projection per flow_id, the tier reads `flow:{flow_id}:events` from Redis and replays through the XState reducer to reconstruct the actor.
+4. Actor rehydration: on first GET projection per flow_id, the tier reads `ui-state:{flow_id}:events` from Redis and replays through the XState reducer to reconstruct the actor.
 5. **No global rehydration on startup** — actors rehydrate lazily on first projection request. This bounds startup time to ~5-10 seconds regardless of active-flow count.
 
 Mean time to recovery (MTTR): **~30 seconds** — container restart (~10s) + first user navigation triggers rehydration (~1s/flow). For 99.5% SLO, this is fine. For 99.9%+, see §1.5 scaling-ceiling triggers.
@@ -610,11 +610,11 @@ Mean time to recovery (MTTR): **~30 seconds** — container restart (~10s) + fir
 
 | Component | Is it a SPOF for THIS feature? | Mitigation |
 |---|---|---|
-| flow-state tier | YES (sign-in, scope transitions) | Container restart + Redis rehydration; MTTR ~30s |
+| ui-state tier | YES (sign-in, scope transitions) | Container restart + Redis rehydration; MTTR ~30s |
 | Redis | YES (persistence substrate) | Already a SPOF for ADR-018 + ADR-015; not a new exposure |
 | auth-proxy | YES (token verification + tier ingress) | Already a SPOF per ADR-016; not a new exposure |
 | backend (api) | NO (tier only calls backend for org creation; transient failure → error_recoverable) | n/a |
-| agent | NO (no dependency from flow-state to agent) | n/a |
+| agent | NO (no dependency from ui-state to agent) | n/a |
 | WorkOS | NO — soft-fail in probe; `authenticating` degrades to `error_recoverable` | n/a |
 
 **No new SPOF compared to today's stack.** The tier inherits Redis + auth-proxy + backend SPOFs; it does not introduce a novel one.
@@ -645,19 +645,19 @@ Already done in §0. Repeating headline numbers for the deliverable table:
 
 ## 8. Updated C4 Container diagram (post system-scope pass)
 
-This amends Morgan's `application-architecture.md` §2 with the system-scope clarifications: Remix as a separate container, nginx unchanged, auth-proxy multi-upstream, single-replica flow-state.
+This amends Morgan's `application-architecture.md` §2 with the system-scope clarifications: Remix as a separate container, nginx unchanged, auth-proxy multi-upstream, single-replica ui-state.
 
 ```mermaid
 C4Container
-  title Container Diagram — Dashboard Chat with Flow-State Tier (system-scope, post Titan pass)
+  title Container Diagram — Dashboard Chat with UI-State Tier (system-scope, post Titan pass)
   Person(user, "End User")
   Person(dev, "Developer (test author)")
 
   Container_Boundary(c1, "Dashboard Chat") {
     Container(frontend, "Frontend (nginx)", "nginx", "Static SPA + reverse proxy. Single process. UNCHANGED.")
     Container(remix, "Frontend-Remix (NEW container)", "Remix v2 on Node", "Server-side route loaders; reads projections via auth-proxy")
-    Container(authproxy, "Auth-Proxy (UPDATED)", "Hono + jose", "Sole production ingress for backend, agent, AND flow-state. Gains multi-upstream routing (ADR-030).")
-    Container(flowstate, "Flow-State Tier (NEW)", "Hono + XState v5 — single replica", "Owns flow machines; exposes projection endpoints; emits FlowEvent log. Crash→Redis rehydration.")
+    Container(authproxy, "Auth-Proxy (UPDATED)", "Hono + jose", "Sole production ingress for backend, agent, AND ui-state. Gains multi-upstream routing (ADR-030).")
+    Container(flowstate, "UI-State Tier (NEW)", "Hono + XState v5 — single replica", "Owns flow machines; exposes projection endpoints; emits FlowEvent log. Crash→Redis rehydration.")
     Container(agent, "Agent (Hono + Groq)", "Hono + Groq SDK", "Chat brain. UNCHANGED. Receives X-Active-Scope header.")
     Container(backend, "Backend (FastAPI)", "FastAPI + SQLAlchemy + Ibis", "Owns dataset/project state. UNCHANGED.")
     ContainerDb(redis, "Redis 7", "Redis", "FlowEventLog + ADR-018 session log + ADR-015 directive log — three key prefixes")
@@ -674,10 +674,10 @@ C4Container
   Rel(frontend, authproxy, "Proxies /api/* to (existing behavior)")
   Rel(frontend, agent, "Proxies /worker/* + /api/channels/:id/presentation-state to (legacy nginx rules)")
   Rel(remix, authproxy, "Loader fetches go through (Bearer-delegated)")
-  Rel(authproxy, flowstate, "NEW upstream rule: /flow-state/* (ADR-030)")
+  Rel(authproxy, flowstate, "NEW upstream rule: /ui-state/* (ADR-030)")
   Rel(authproxy, agent, "Proxies (future migration; not in PR-0)")
   Rel(authproxy, backend, "Proxies /api/*")
-  Rel(flowstate, redis, "XADD/XRANGE — flow:{id}:events")
+  Rel(flowstate, redis, "XADD/XRANGE — ui-state:{id}:events")
   Rel(flowstate, backend, "POST /api/orgs, POST /api/auth/reissue")
   Rel(flowstate, workos, "OIDC token exchange")
   Rel(agent, redis, "XADD — session:{id}:events + ADR-015 directive log")
@@ -692,7 +692,7 @@ C4Container
 1. **`frontend-remix`** is a separate container (was implicit/missing in Morgan's diagram).
 2. **`frontend` (nginx)** is explicit as a separate, unchanged container — not collapsed into "frontend (Remix on Vite)" as in Morgan's diagram.
 3. **auth-proxy** annotated as "UPDATED" — it gains multi-upstream routing.
-4. **flow-state** annotated as "single replica" — the scaling stance is on the diagram.
+4. **ui-state** annotated as "single replica" — the scaling stance is on the diagram.
 5. **Redis** annotation lists all three key prefixes coexisting.
 
 ---
@@ -720,7 +720,7 @@ flowchart TB
         APX[Hono + jose<br/>1 process / scalable<br/>~80MB RAM<br/>MULTI-UPSTREAM ROUTING]
       end
 
-      subgraph FS["Flow-State Container (NEW) — port 1043:8788"]
+      subgraph FS["UI-State Container (NEW) — port 1043:8788"]
         FX[Hono + XState v5<br/>1 replica ONLY<br/>~200MB RAM at 10x<br/>actor tree in-process]
       end
 
@@ -745,10 +745,10 @@ flowchart TB
     N -->|/api/*| APX
     N -->|/worker/*<br/>/api/channels/:id/presentation-state| AGX
     RX -->|loader fetch<br/>Bearer-delegated| APX
-    APX -->|/flow-state/*<br/>NEW upstream| FX
+    APX -->|/ui-state/*<br/>NEW upstream| FX
     APX -->|/api/*| APIX
     APX -->|future: /worker/*| AGX
-    FX -->|XADD/XRANGE<br/>flow:{id}:events| R
+    FX -->|XADD/XRANGE<br/>ui-state:{id}:events| R
     FX -->|POST /api/orgs| APIX
     FX -.->|OIDC| W[(WorkOS)]
     AGX -->|XADD<br/>session:{id}:events<br/>presentation-state| R
@@ -773,10 +773,10 @@ flowchart TB
 
 - **Routing layer**: nginx in `frontend` is the de-facto multi-upstream router today; auth-proxy will share that role for the new tier per ADR-030.
 - **Stickiness**: not needed (single replica per §1.4 recommendation).
-- **Replica count**: flow-state = 1 (mandatory by XState v5 in-process actor model + estimation headroom). Others unchanged.
-- **Volumes**: flow-state has NO persistent volume — Redis is the persistence substrate.
-- **Host ports**: `1041` (agent), `1042` (auth-proxy), `1043` (flow-state — new). Pattern continues.
-- **Compose acceptance test** (ADR-016 mirror): grows from 5 services to 7 (add `frontend-remix` + `flow-state`).
+- **Replica count**: ui-state = 1 (mandatory by XState v5 in-process actor model + estimation headroom). Others unchanged.
+- **Volumes**: ui-state has NO persistent volume — Redis is the persistence substrate.
+- **Host ports**: `1041` (agent), `1042` (auth-proxy), `1043` (ui-state — new). Pattern continues.
+- **Compose acceptance test** (ADR-016 mirror): grows from 5 services to 7 (add `frontend-remix` + `ui-state`).
 
 ---
 
@@ -786,13 +786,13 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 
 | Attribute | Strategy | Verification |
 |---|---|---|
-| Availability | Single replica → MTTR ~30s; SLO target 99.5% baseline. Scaling-ceiling triggers (§1.5) define migration to Option γ. | Compose acceptance test simulates `docker compose restart flow-state` mid-flow; asserts the user-visible flow recovers within 60s. |
+| Availability | Single replica → MTTR ~30s; SLO target 99.5% baseline. Scaling-ceiling triggers (§1.5) define migration to Option γ. | Compose acceptance test simulates `docker compose restart ui-state` mid-flow; asserts the user-visible flow recovers within 60s. |
 | Latency budget — projection read | p95 < 80ms (Redis XRANGE + in-process fold + Hono response) | Synthetic load test (5 RPS for 60s) in CI acceptance; assert p95 < 80ms. |
 | Latency budget — event write | p95 < 50ms (Hono parse + XState transition + Redis XADD + response) | Same load test; assert XADD p95 < 50ms. |
 | Throughput ceiling | 100 QPS projection reads per replica (at 50% CPU) | Documented in this file §1.5; alarm triggers at 60 QPS sustained. |
-| Network paths | 1 hop from FE to auth-proxy; 2 hops from FE through Remix to auth-proxy; 3 hops from FE through Remix through auth-proxy to flow-state. Each hop adds ~1ms in compose, ~5-10ms across cloud zones. | Observability: every hop logs with the same `X-Correlation-Id`; mean inter-hop latency derived. |
+| Network paths | 1 hop from FE to auth-proxy; 2 hops from FE through Remix to auth-proxy; 3 hops from FE through Remix through auth-proxy to ui-state. Each hop adds ~1ms in compose, ~5-10ms across cloud zones. | Observability: every hop logs with the same `X-Correlation-Id`; mean inter-hop latency derived. |
 | Operational runbook | 1. probe failure on startup → check Redis. 2. tier OOM → unlikely at planning horizon; if happens, dump heap, inspect actor count. 3. high CPU → scaling-ceiling alarm; trigger Option γ migration plan. | Out of scope for this wave; DEVOPS handoff captures runbook items. |
-| Deploy surface | +1 service in compose (flow-state), +1 service in compose (frontend-remix), +1 Bazel image kind per. ~30 min of devops work to add. | Operator checklist in ADR-030. |
+| Deploy surface | +1 service in compose (ui-state), +1 service in compose (frontend-remix), +1 Bazel image kind per. ~30 min of devops work to add. | Operator checklist in ADR-030. |
 
 ---
 
@@ -800,24 +800,24 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 
 | SQ | Decision | ADR |
 |---|---|---|
-| SQ-1 | Topology: flow-state sits behind auth-proxy (which gains multi-upstream routing) | ADR-030 |
+| SQ-1 | Topology: ui-state sits behind auth-proxy (which gains multi-upstream routing) | ADR-030 |
 | SQ-2 | Scaling: 1 replica (XState v5 in-process actors + estimation headroom). Scaling-ceiling triggers documented. | ADR-030 |
-| SQ-3 | Persistence: Redis Streams, ADR-018 inherited; key prefix `flow:{flow_id}:events`; XADD per transition; snapshot every 50 events | ADR-027 §3 (inherited; no new ADR) |
+| SQ-3 | Persistence: Redis Streams, ADR-018 inherited; key prefix `ui-state:{flow_id}:events`; XADD per transition; snapshot every 50 events | ADR-027 §3 (inherited; no new ADR) |
 | SQ-4 | Observability: structured JSON to stdout per transition; FlowEventLog is audit SSOT; `/health/probes` + `/health/actors`; metrics derived from logs; OTel deferred | ADR-030 §"Observability" (folded in; no standalone ADR) |
 | SQ-5 | Frontend tier: NEW `frontend-remix` container; nginx in `frontend` UNCHANGED; strangler-fig route migration | ADR-031 |
 | SQ-6 | Auth path: Bearer delegation through Remix loaders; tier trusts auth-proxy headers (no token re-verification); Cookie migration in Phase B (future ADR) | derives from SQ-1 + ADR-016 + ADR-031 |
-| SQ-7 | Failover: flow-state is SPOF for sign-in + scope transitions; not SPOF for chat or backend; MTTR ~30s; no new SPOF vs today | covered in §6 |
+| SQ-7 | Failover: ui-state is SPOF for sign-in + scope transitions; not SPOF for chat or backend; MTTR ~30s; no new SPOF vs today | covered in §6 |
 | SQ-8 | Estimation: 1 replica, <5% CPU, ~200 MB RAM, 1,000 Redis ops/sec — all at 10x with orders-of-magnitude headroom | §0 |
 
 ---
 
 ## 12. Top-3 system risks (DEVOPS handoff)
 
-1. **The auth-proxy must learn multi-upstream routing in PR-0.** Today it is single-upstream (`BACKEND_URL` only). ADR-030 specifies the extension — a small Hono routes table change — but this is a behavior change to a production-critical service. **Mitigation**: contract tests against auth-proxy's `openapi.json` (already required per Morgan's ADR-027 §6); compose acceptance test verifies the new `/flow-state/*` rule end-to-end before merge.
+1. **The auth-proxy must learn multi-upstream routing in PR-0.** Today it is single-upstream (`BACKEND_URL` only). ADR-030 specifies the extension — a small Hono routes table change — but this is a behavior change to a production-critical service. **Mitigation**: contract tests against auth-proxy's `openapi.json` (already required per Morgan's ADR-027 §6); compose acceptance test verifies the new `/ui-state/*` rule end-to-end before merge.
 
-2. **Single-replica flow-state tier is a deliberate, bounded SPOF for sign-in.** MTTR ~30s on crash. Acceptable for current SLO posture (99.5%) but **becomes unacceptable if business SLO tightens to 99.9%+**. The scaling-ceiling triggers (§1.5) define the migration path to Option γ (sticky multi-replica). **Mitigation**: cite SLO target explicitly in DEVOPS runbook; pre-write the rehydration helper code so the Option γ migration is shovel-ready.
+2. **Single-replica ui-state tier is a deliberate, bounded SPOF for sign-in.** MTTR ~30s on crash. Acceptable for current SLO posture (99.5%) but **becomes unacceptable if business SLO tightens to 99.9%+**. The scaling-ceiling triggers (§1.5) define the migration path to Option γ (sticky multi-replica). **Mitigation**: cite SLO target explicitly in DEVOPS runbook; pre-write the rehydration helper code so the Option γ migration is shovel-ready.
 
-3. **Redis as a shared substrate has now grown three key prefixes** (`flow:`, `session:`, `presentation-state:`) — and a single Redis container backs all three. **A Redis outage takes down sign-in, chat replay, AND directive log simultaneously.** This is not a new SPOF (Redis was a SPOF before this feature), but the **blast radius grows**. **Mitigation**: (a) per-prefix maxLen prevents one log from starving another; (b) the operator runbook should add Redis HA (Sentinel or Cluster) before the next service joins the substrate; (c) the probe at each tier independently verifies its own key prefix's reachability — they fail-fast independently.
+3. **Redis as a shared substrate has now grown three key prefixes** (`ui-state:`, `session:`, `presentation-state:`) — and a single Redis container backs all three. **A Redis outage takes down sign-in, chat replay, AND directive log simultaneously.** This is not a new SPOF (Redis was a SPOF before this feature), but the **blast radius grows**. **Mitigation**: (a) per-prefix maxLen prevents one log from starving another; (b) the operator runbook should add Redis HA (Sentinel or Cluster) before the next service joins the substrate; (c) the probe at each tier independently verifies its own key prefix's reachability — they fail-fast independently.
 
 ---
 
@@ -831,7 +831,7 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 
 4. **Replicas implied vs single-replica required** (`application-architecture.md` is silent on replica count). The XState v5 actor model + estimation jointly imply **single replica only** at the planning horizon; this is a system-level constraint Morgan's design did not state. ADR-030 makes it explicit.
 
-5. **Compose service count** (Morgan claims "was 5; +1 for flow-state" → 6). With the frontend-remix container added (per ADR-031), it's actually **+2 → 7**. Updated in §9 above.
+5. **Compose service count** (Morgan claims "was 5; +1 for ui-state" → 6). With the frontend-remix container added (per ADR-031), it's actually **+2 → 7**. Updated in §9 above.
 
 ---
 
@@ -840,7 +840,7 @@ This table complements Morgan's `application-architecture.md` §7 (ISO 25010) by
 - Morgan's `application-architecture.md` (companion application-scope deliverable)
 - `wave-decisions.md` D1..D9 + appended `## System Decisions`
 - ADR-027 (host tier + framework), ADR-028 (XState v5 actor model), ADR-029 (active_scope contract)
-- **NEW ADR-030**: Topology + scaling — flow-state tier behind auth-proxy, single replica
+- **NEW ADR-030**: Topology + scaling — ui-state tier behind auth-proxy, single replica
 - **NEW ADR-031**: Frontend tier transition — Remix runs alongside, not in place of, nginx
 - ADR-016 (auth-proxy ingress), ADR-018 (Redis-only dispatch), ADR-015 (presentation-state log), ADR-001 (Hono over Express)
 - `docker-compose.yml`, `frontend/nginx.conf`, `auth-proxy/app.ts`

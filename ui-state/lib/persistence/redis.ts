@@ -1,5 +1,5 @@
 // RedisFlowEventLog — capability-presence-dispatched adapter satisfying the
-// FlowEventLog port. Key prefix: `flow:{flow_id}:events` where
+// FlowEventLog port. Key prefix: `ui-state:{flow_id}:events` where
 // flow_id = "<machine-name>:<principal_id>" per ADR-030 §SD3.
 //
 // Probe contract: XADD/XRANGE/DEL round-trip on a probe key. HARD-fail at
@@ -21,7 +21,7 @@ export interface FlowEventLog {
 }
 
 function streamKey(flow_id: string): string {
-  return `flow:${flow_id}:events`;
+  return `ui-state:${flow_id}:events`;
 }
 
 function serialize(event: FlowEvent): string[] {
@@ -71,7 +71,7 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
     },
 
     async probe(): Promise<void> {
-      const probeKey = `flow:__probe__:${Date.now()}`;
+      const probeKey = `ui-state:__probe__:${Date.now()}`;
       const probeEvent: FlowEvent = {
         ts: new Date().toISOString(),
         type: "probe",

@@ -1,4 +1,4 @@
-# ADR-030: Flow-State Tier Topology and Scaling Stance
+# ADR-030: UI-State Tier Topology and Scaling Stance
 
 **Status:** Accepted (ratified 2026-05-11)
 **Date:** 2026-05-11
@@ -11,28 +11,28 @@
 
 ## Context
 
-ADR-027 establishes that the `flow-state/` tier is a new Hono service peer to the agent. It does NOT specify:
+ADR-027 establishes that the `ui-state/` tier is a new Hono service peer to the agent. It does NOT specify:
 
 - **Topology**: where the tier physically sits in the request graph (behind auth-proxy? Behind frontend nginx? Direct host port?)
 - **Scaling shape**: how many replicas; sticky vs round-robin; stateless rehydration vs in-process actors.
 
 These two questions are **inseparable**. XState v5's actor model places actors in-process: cross-process `system.get(actor_id).send(...)` is not a v5 primitive. Multi-replica deployment therefore requires either (a) sticky routing per `flow_id`, (b) stateless tiers with per-request Redis rehydration, or (c) single replica.
 
-A separate finding makes the topology decision urgent: **today's auth-proxy is single-upstream** (`auth-proxy/app.ts:19` hardcodes `BACKEND_URL`; line 178's `app.all("*")` forwards everything to that one upstream). ADR-016 claims "auth-proxy is the sole production ingress for backend and worker" but the agent (`/worker/*`) is reached via the frontend container's nginx directly today. Adding the flow-state tier behind auth-proxy (per ADR-016 spirit) requires extending auth-proxy to support multi-upstream routing — a small but visible change to a production-critical service.
+A separate finding makes the topology decision urgent: **today's auth-proxy is single-upstream** (`auth-proxy/app.ts:19` hardcodes `BACKEND_URL`; line 178's `app.all("*")` forwards everything to that one upstream). ADR-016 claims "auth-proxy is the sole production ingress for backend and worker" but the agent (`/worker/*`) is reached via the frontend container's nginx directly today. Adding the ui-state tier behind auth-proxy (per ADR-016 spirit) requires extending auth-proxy to support multi-upstream routing — a small but visible change to a production-critical service.
 
 ## Decision drivers
 
 - **Estimation governs choice.** Back-of-envelope (system-architecture.md §0): single 256 MB container at 1 CPU handles 10x load with 2-3 orders of magnitude headroom on every dimension (RAM, CPU, Redis QPS, projection QPS, SSE connections). The capacity case for multi-replica does not exist at the planning horizon.
 - **XState v5 actor in-process semantics.** Multi-replica requires either cross-process actor coordination (re-implementation via Redis pub/sub — a load-bearing piece of synthetic infrastructure with no consumer outside this feature) or sticky routing (auth-proxy gains a sticky-routing layer + per-flow rebalance on crash).
-- **ADR-016 fidelity.** The flow-state tier handles privileged operations (mutating flow state; invoking backend writes during transitions). It MUST sit behind auth-proxy.
-- **Auth-proxy concerns separation.** Auth-proxy is stateless and does JWT verification + identity-header injection. Adding stateful flow-machine ownership to it would muddle two concerns. Auth-proxy MUST NOT host the flow-state tier in-process.
+- **ADR-016 fidelity.** The ui-state tier handles privileged operations (mutating flow state; invoking backend writes during transitions). It MUST sit behind auth-proxy.
+- **Auth-proxy concerns separation.** Auth-proxy is stateless and does JWT verification + identity-header injection. Adding stateful flow-machine ownership to it would muddle two concerns. Auth-proxy MUST NOT host the ui-state tier in-process.
 - **Reversibility.** The single-replica decision must be reversible. Migrating to multi-replica should be a feature-isolated change, not a re-architecture.
 
 ## Considered options
 
 ### Topology (SQ-1)
 
-1. **Behind the frontend's nginx as a `/flow-state/*` upstream.** Bypasses auth-proxy. Contradicts ADR-016 for privileged-operation traffic. Rejected.
+1. **Behind the frontend's nginx as a `/ui-state/*` upstream.** Bypasses auth-proxy. Contradicts ADR-016 for privileged-operation traffic. Rejected.
 2. **Behind auth-proxy as a second upstream.** Honors ADR-016. Requires auth-proxy to learn multi-upstream routing. **Selected.**
 3. **Co-tenanted in the auth-proxy container.** Muddles auth-proxy's single concern. Rejected — same rationale as rejecting `agent/` as a host (D8).
 4. **Direct host port via a new ingress.** Operational mass with no value at this scale. Rejected.
@@ -47,13 +47,13 @@ A separate finding makes the topology decision urgent: **today's auth-proxy is s
 
 ### 1. Topology: behind auth-proxy, with auth-proxy extended to multi-upstream
 
-**The flow-state tier sits behind auth-proxy.** Auth-proxy gains a routing table mapping path prefixes to upstream URLs:
+**The ui-state tier sits behind auth-proxy.** Auth-proxy gains a routing table mapping path prefixes to upstream URLs:
 
 | Path prefix | Upstream | Behavior |
 |---|---|---|
 | `/api/auth/*` | (auth-proxy local) | Token + PAT lifecycle (existing) |
 | `/api/*` | `BACKEND_URL` | Default — existing behavior preserved |
-| `/flow-state/*` | `FLOW_STATE_URL` (NEW env var) | New rule for this feature |
+| `/ui-state/*` | `UI_STATE_URL` (NEW env var) | New rule for this feature |
 | `/worker/*` | `AGENT_URL` (NEW env var, FUTURE) | Out of scope for PR-0; door is open |
 
 The auth-proxy `app.all("*", ...)` handler grows from "proxy to BACKEND_URL" to "proxy to the upstream matching the path prefix." The change is ~30 lines of Hono routing + tests. The auth-proxy's auth verification logic is unchanged.
@@ -62,12 +62,12 @@ Auth-proxy upstream rule selection is **purely path-prefix-based, deterministic,
 
 ### 2. Scaling shape: single replica, with documented ceiling
 
-The flow-state tier deploys as **exactly one replica** in compose (and in any production equivalent until the scaling-ceiling triggers fire):
+The ui-state tier deploys as **exactly one replica** in compose (and in any production equivalent until the scaling-ceiling triggers fire):
 
 ```yaml
 # docker-compose.yml addition
-flow-state:
-  image: dashboard-chat/flow-state:bazel
+ui-state:
+  image: dashboard-chat/ui-state:bazel
   pull_policy: never
   environment:
     AUTH_MODE: ${AUTH_MODE:-dev}
@@ -79,7 +79,7 @@ flow-state:
     FLOW_EVENT_MAXLEN: ${FLOW_EVENT_MAXLEN:-1000}
   ports:
     # Fixed host port (per agent precedent) — precludes scaling > 1 replica
-    - "${FLOW_STATE_HOST_PORT:-1043}:8788"
+    - "${UI_STATE_HOST_PORT:-1043}:8788"
   depends_on:
     redis:
       condition: service_healthy
@@ -95,9 +95,9 @@ The single-replica decision is revisited when ANY of the following fire:
 
 | Trigger | Indicator | Action |
 |---|---|---|
-| CPU > 60% sustained for >5 min | `flow_state.cpu_utilization_p95` alarm | Begin Option γ migration |
-| RAM > 200 MB sustained | `flow_state.heap_used_bytes` alarm | Begin Option γ migration |
-| Active actors > 10,000 | `flow_state.actors_active` alarm | Begin Option γ migration |
+| CPU > 60% sustained for >5 min | `ui_state.cpu_utilization_p95` alarm | Begin Option γ migration |
+| RAM > 200 MB sustained | `ui_state.heap_used_bytes` alarm | Begin Option γ migration |
+| Active actors > 10,000 | `ui_state.actors_active` alarm | Begin Option γ migration |
 | Required SLO > 99.5% | Product decision | Begin Option γ migration |
 | Cross-region deployment introduced | Topology decision | Re-evaluate (per-region replica may suffice) |
 
@@ -114,7 +114,7 @@ On tier crash:
 
 Compose acceptance test (ADR-016 mirror) MUST assert:
 
-- `docker compose restart flow-state` mid-flow → flow recovers within 60s.
+- `docker compose restart ui-state` mid-flow → flow recovers within 60s.
 - During the restart window, projection reads return 503 (the FE's `ErrorBoundary` handles).
 - After the restart, the next projection read rehydrates from Redis and reflects the pre-crash state.
 
@@ -142,7 +142,7 @@ OpenTelemetry deliberately DEFERRED — system-wide decision, not feature-local.
 
 ### 6. `flow_id` schema clarification (amends ADR-027 §3)
 
-ADR-027 §3 implies `flow_id` may be machine-name only (`flow:loginAndOrgSetup:events`). This is **multi-tenant-unsafe** for per-user flows. ADR-030 amends:
+ADR-027 §3 implies `flow_id` may be machine-name only (`ui-state:loginAndOrgSetup:events`). This is **multi-tenant-unsafe** for per-user flows. ADR-030 amends:
 
 - Singleton flows (none in PR-0): `flow_id = <machine-name>`.
 - Per-user flows (all PR-0 flows): `flow_id = <machine-name>:<principal_id>`.
@@ -162,17 +162,17 @@ So a `freeze` event on `loginAndOrgSetup:user-001` MUST NOT affect `loginAndOrgS
 ### Negative / accepted trade-offs
 
 - **Single-replica SPOF for sign-in and scope transitions.** MTTR ~30s. Acceptable for 99.5% SLO; revisit per ceiling triggers.
-- **Auth-proxy code change is in PR-0's critical path.** Multi-upstream routing is small but auth-proxy is production-critical; needs careful review + contract tests. Mitigated by: contract tests against `auth-proxy/openapi.json` (Morgan's ADR-027 §6 already requires this); compose acceptance test verifies the new `/flow-state/*` rule end-to-end.
-- **Fixed host port `1043` precludes `--scale=N` for the flow-state tier**, by design. If the team wants multi-replica later, this becomes a compose-config change (drop the fixed port) plus the auth-proxy sticky-routing change.
-- **Redis blast radius grows.** Redis now backs three logs (`flow:`, `session:`, `presentation-state:`). A Redis outage takes down all three; Redis was already a SPOF, but the consequence widens. Mitigation: operator runbook should add Redis HA before the next service joins the substrate.
+- **Auth-proxy code change is in PR-0's critical path.** Multi-upstream routing is small but auth-proxy is production-critical; needs careful review + contract tests. Mitigated by: contract tests against `auth-proxy/openapi.json` (Morgan's ADR-027 §6 already requires this); compose acceptance test verifies the new `/ui-state/*` rule end-to-end.
+- **Fixed host port `1043` precludes `--scale=N` for the ui-state tier**, by design. If the team wants multi-replica later, this becomes a compose-config change (drop the fixed port) plus the auth-proxy sticky-routing change.
+- **Redis blast radius grows.** Redis now backs three logs (`ui-state:`, `session:`, `presentation-state:`). A Redis outage takes down all three; Redis was already a SPOF, but the consequence widens. Mitigation: operator runbook should add Redis HA before the next service joins the substrate.
 
 ### Cross-decision composition
 
-- **ADR-030 ↔ ADR-016**: ADR-030 honors ADR-016's "auth-proxy is sole ingress" spirit by routing the new tier through auth-proxy. ADR-030 also documents that today the agent bypasses auth-proxy (via frontend-nginx's `/worker/` rule) — this is a pre-existing inconsistency that ADR-030 does not fix but does not perpetuate (the flow-state tier sits behind auth-proxy from day 1).
+- **ADR-030 ↔ ADR-016**: ADR-030 honors ADR-016's "auth-proxy is sole ingress" spirit by routing the new tier through auth-proxy. ADR-030 also documents that today the agent bypasses auth-proxy (via frontend-nginx's `/worker/` rule) — this is a pre-existing inconsistency that ADR-030 does not fix but does not perpetuate (the ui-state tier sits behind auth-proxy from day 1).
 - **ADR-030 ↔ ADR-018**: persistence inherits ADR-018 verbatim (Redis-or-noop). The probe contract (XADD/XRANGE/DEL round-trip on startup) is mandatory per the Earned Trust principle.
 - **ADR-030 ↔ ADR-027**: ADR-030 ratifies the specific topology + scaling shape ADR-027 left open. ADR-030 amends ADR-027 §3's `flow_id` schema to mandate `principal_id` for per-user flows (multi-tenant correctness).
 - **ADR-030 ↔ ADR-028**: ADR-028's in-process actor model is what makes single-replica the right answer at planning horizon. ADR-030 documents the constraint and the migration path when it no longer holds.
-- **ADR-030 ↔ ADR-031**: ADR-031's frontend-remix container talks to the flow-state tier via auth-proxy, per ADR-030's routing table.
+- **ADR-030 ↔ ADR-031**: ADR-031's frontend-remix container talks to the ui-state tier via auth-proxy, per ADR-030's routing table.
 
 ## Open questions
 

@@ -254,7 +254,7 @@ The user directive (verbatim):
 
 * The `agent/` (Hono worker) keeps its current scope: SSE streaming via Groq
   + tool dispatch + ADR-015's narrow per-channel UI directive log. It is
-  **not** a candidate host for the flow-state-machine layer.
+  **not** a candidate host for the ui-state-machine layer.
 * Original OQ-1 ("Where does the state-machine layer live?") and OQ-2 ("What
   runs the machines?") collapse into a single question framed around
   **SSR-style frameworks where API endpoints and presentation share state

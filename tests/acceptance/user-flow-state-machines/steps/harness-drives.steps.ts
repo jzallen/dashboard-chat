@@ -10,9 +10,9 @@
 //   - The six @us-004 scenarios therefore remain @skip after this step.
 //
 // All step bodies drive through the harness (CM-A: tests use the driving
-// port only — no flow-state/lib/** imports here). Vitest-level coverage of
+// port only — no ui-state/lib/** imports here). Vitest-level coverage of
 // the same harness methods lives in `harness/user-flow-harness.test.ts`
-// and `flow-state/index.test.ts`.
+// and `ui-state/index.test.ts`.
 
 import { Given, Then, When } from "@cucumber/cucumber";
 import { expect } from "expect";
@@ -84,7 +84,7 @@ Given(
   /^the harness has begun Maya's sign-in with reference code "([^"]+)"$/,
   async function (this: UserFlowWorld, _code: string) {
     // The reference code is the correlation_id surfaced by begin_auth; the
-    // flow-state tier mints it. The test agent records the minted code via
+    // ui-state tier mints it. The test agent records the minted code via
     // get_last_correlation_id for downstream cross-checks.
     const harness = this.use_harness_for("maya");
     await harness.begin_auth("maya");

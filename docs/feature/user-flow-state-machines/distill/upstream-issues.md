@@ -17,7 +17,7 @@ that owns the resolution.
 **Where**: `docs/product/kpi-contracts.yaml` (to be created)
 
 `discuss/outcome-kpis.md` enumerates K1-K5 with measurement plans, but
-no machine-readable contract exists for what events the flow-state
+no machine-readable contract exists for what events the ui-state
 tier MUST emit. `@kpi`-tagged scenarios in this suite currently
 assert the *name* of the event the tier emits (e.g.
 `welcome_page_rendered`), not its shape against a pinned schema.
@@ -59,7 +59,7 @@ The walking skeleton (slice 1 step 1) is NOT affected — Maya reaches
 **Where**: `roadmap.json` step 4 / 5
 
 The compose stack includes `frontend-remix` per ADR-031, but Slice 1's
-walking skeleton drives the flow-state tier directly via the TS
+walking skeleton drives the ui-state tier directly via the TS
 harness over HTTP through auth-proxy — no browser, no Remix loader
 executed. This is correct for the walking skeleton (it answers "can a
 new user accomplish org setup via the server-owned flow?"), but it
@@ -81,7 +81,7 @@ Playwright driver alongside Cucumber for those scenarios.
 
 Per `design/handoff-design-to-distill.md`, the acceptance tests are
 framework-agnostic — they drive the four-piece contract on the
-flow-state tier, which is identical under both Option D (Remix
+ui-state tier, which is identical under both Option D (Remix
 loaders) and Option B (ScopeProvider). DISTILL ships against either
 choice. Resolution does not block this wave.
 

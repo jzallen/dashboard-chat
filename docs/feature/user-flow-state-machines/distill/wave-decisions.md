@@ -5,7 +5,7 @@
 > **Acceptance Designer**: Quinn (nw-acceptance-designer)
 > **Inherited from DESIGN**: 5 artifacts under `docs/feature/user-flow-state-machines/design/`
 > **Anchor**: `design/handoff-design-to-distill.md` (four-piece contract: endpoints + ActiveScope schema + flow events + projection shape)
-> **Companion deliverables**: `features/*.feature`, `steps/*.ts`, `harness/UserFlowHarness.ts`, `roadmap.json`, `flow-state/` RED scaffold.
+> **Companion deliverables**: `features/*.feature`, `steps/*.ts`, `harness/UserFlowHarness.ts`, `roadmap.json`, `ui-state/` RED scaffold.
 
 ---
 
@@ -32,7 +32,7 @@ tests/acceptance/user-flow-state-machines/
     slice-3-expired-token-freeze.feature
     journey-invariants.feature
   steps/
-    flow-state-client.ts          # HTTP client; the four-piece contract
+    ui-state-client.ts          # HTTP client; the four-piece contract
     fake-workos.ts                # in-process WorkOS fake (Hono)
     walking-skeleton.steps.ts
     error-paths.steps.ts
@@ -81,24 +81,24 @@ fake**, declared per `nw-test-design-mandates` Dimension 9a.
 | Adapter | Real or fake? | Rationale |
 |---|---|---|
 | auth-proxy (Hono) | **REAL** — runs in compose | Production ingress; mocking it would skip the very wiring this WS proves. |
-| flow-state tier (NEW Hono) | **REAL** — runs in compose | The seam under test. Mocking it makes the WS a unit test. |
+| ui-state tier (NEW Hono) | **REAL** — runs in compose | The seam under test. Mocking it makes the WS a unit test. |
 | backend (FastAPI) | **REAL** — runs in compose | The `POST /api/orgs` + `POST /api/auth/reissue` consumers are part of US-002's happy path. |
 | Redis | **REAL** — runs in compose | Capability-presence dispatch (`REDIS_URL` set) must exercise the Redis branch in WS, not noop fallback. |
 | WorkOS | **FAKE (in-process Hono)** | External SaaS; we own no production credentials in CI; fake speaks the same OIDC token + profile shape via a small local Hono server. |
-| frontend-remix | DEFERRED to Slice 2 | Slice 1 drives the flow-state tier via the TS harness (HTTP). The browser/FE participates from Slice 2 onward; Slice 1 still routes through `auth-proxy` (driving port). |
+| frontend-remix | DEFERRED to Slice 2 | Slice 1 drives the ui-state tier via the TS harness (HTTP). The browser/FE participates from Slice 2 onward; Slice 1 still routes through `auth-proxy` (driving port). |
 
 **Litmus test (per Dim 9d)**: "If I deleted the real `auth-proxy`
 adapter, would the WS still pass?" → No. The WS POSTs through
 `auth-proxy:3000` and asserts identity headers were injected before the
-flow-state tier saw the request. Removing auth-proxy fails the test for
+ui-state tier saw the request. Removing auth-proxy fails the test for
 the right reason (wiring).
 
 **Containers**: Docker Compose; the acceptance test stack grows to **7
 services** per the amended handoff (auth-proxy + agent + backend +
-query-engine + MinIO + flow-state (NEW) + frontend-remix (NEW)).
+query-engine + MinIO + ui-state (NEW) + frontend-remix (NEW)).
 Compose bring-up sequenced from `steps/fixtures/compose.ts` with a
 docker-readiness probe per service (Redis PING; auth-proxy /health;
-flow-state /health; backend /health; MinIO /minio/health/live).
+ui-state /health; backend /health; MinIO /minio/health/live).
 
 ---
 
@@ -107,15 +107,15 @@ flow-state /health; backend /health; MinIO /minio/health/live).
 Per Mandate 1 (CM-A): every scenario invokes through HTTP to
 `auth-proxy` (`http://localhost:1042`), which is the user-facing
 driving adapter declared in `design/application-architecture.md` §2.
-The flow-state tier's port (`1043:8788`) is **never** invoked
+The ui-state tier's port (`1043:8788`) is **never** invoked
 directly by any test. The TS harness `UserFlowHarness` and the
 fake-workos server are the ONLY HTTP clients tests construct;
-neither imports from `flow-state/lib/**` source.
+neither imports from `ui-state/lib/**` source.
 
 Verification grep planned for handoff (CM-A evidence):
 
 ```bash
-grep -rE 'from .*flow-state/lib' tests/acceptance/user-flow-state-machines/ || echo OK
+grep -rE 'from .*ui-state/lib' tests/acceptance/user-flow-state-machines/ || echo OK
 ```
 
 ---
@@ -123,15 +123,15 @@ grep -rE 'from .*flow-state/lib' tests/acceptance/user-flow-state-machines/ || e
 ## DWD-4 — Mandate 4 (pure function extraction)
 
 Per CM-D, the following pure functions are pre-identified for the
-flow-state tier; DELIVER's crafter implements them BEFORE wrapping in
+ui-state tier; DELIVER's crafter implements them BEFORE wrapping in
 XState side effects:
 
 | Pure function | Inputs | Outputs | Lives in |
 |---|---|---|---|
-| `resolveActiveScope(route, jwt, machineContext)` | route params + JWT claims + machine context | `ActiveScope` | `flow-state/lib/active-scope.ts` |
-| `buildProjection(events, snapshot)` | `FlowEvent[]` + optional snapshot | `FlowProjection` | `flow-state/lib/projection.ts` |
-| `validateOrgName(name)` | string | `Result<ValidatedName, ValidationError>` | `flow-state/lib/machines/login-and-org-setup.ts` (validators) |
-| `classifyFailure(error)` | unknown error | `UnderlyingCauseTag` | `flow-state/lib/machines/login-and-org-setup.ts` (classifiers) |
+| `resolveActiveScope(route, jwt, machineContext)` | route params + JWT claims + machine context | `ActiveScope` | `ui-state/lib/active-scope.ts` |
+| `buildProjection(events, snapshot)` | `FlowEvent[]` + optional snapshot | `FlowProjection` | `ui-state/lib/projection.ts` |
+| `validateOrgName(name)` | string | `Result<ValidatedName, ValidationError>` | `ui-state/lib/machines/login-and-org-setup.ts` (validators) |
+| `classifyFailure(error)` | unknown error | `UnderlyingCauseTag` | `ui-state/lib/machines/login-and-org-setup.ts` (classifiers) |
 
 Tests for these pure functions live as unit tests next to the source
 (DELIVER's inner loop); they have ZERO fixture dependency.
@@ -166,7 +166,7 @@ this is logged as a warning and noted in `upstream-issues.md`:
 
 > **REC-1**: Create `docs/product/kpi-contracts.yaml` during DEVOPS.
 > Until then, `@kpi`-tagged scenarios in this suite assert that the
-> flow-state tier *emits the metric event* named in `outcome-kpis.md`
+> ui-state tier *emits the metric event* named in `outcome-kpis.md`
 > — they do not yet assert event shape against a contract.
 
 Each `@kpi` scenario in the suite references its K-id in a comment
@@ -183,7 +183,7 @@ matrix:
 | Env | Preconditions baked into Given | Walking skeleton with coverage |
 |---|---|---|
 | `clean` | Empty Redis; fresh Postgres schema; no pre-existing org for the persona | `walking-skeleton.feature` Scenario 1 |
-| `with-pre-commit` | Compose stack restarted mid-flow; flow-state-tier reads existing FlowEvent log from Redis | `slice-3-expired-token-freeze.feature` (also covers Redis-rehydration on restart, mirroring ADR-030's failover acceptance) |
+| `with-pre-commit` | Compose stack restarted mid-flow; ui-state-tier reads existing FlowEvent log from Redis | `slice-3-expired-token-freeze.feature` (also covers Redis-rehydration on restart, mirroring ADR-030's failover acceptance) |
 | `with-stale-config` | One nginx upstream rule still pointing at the old `frontend` for a route migrated to `frontend-remix` | `slice-1-error-paths.feature` Scenario 6 (stale-route-still-works graceful-degrade) |
 
 A DEVOPS-produced `environments.yaml` will replace this default matrix
@@ -193,30 +193,30 @@ in the next gate.
 
 ## DWD-8 — RED-ready scaffolding (Mandate 7)
 
-The flow-state tier source code does not yet exist. DISTILL scaffolds
-the minimum production stubs under `flow-state/` so that:
+The ui-state tier source code does not yet exist. DISTILL scaffolds
+the minimum production stubs under `ui-state/` so that:
 
 1. TS imports across the codebase resolve (no `MODULE_NOT_FOUND`).
 2. HTTP requests to the four routes return `501 Not Implemented` with
    a `__SCAFFOLD__: true` marker in the JSON body — tests classify as
    RED (failing-for-the-right-reason), not BROKEN.
-3. The Docker Compose build succeeds (`flow-state/Dockerfile` +
+3. The Docker Compose build succeeds (`ui-state/Dockerfile` +
    `BUILD.bazel` stubs).
 
 Scaffolded files (10 total):
 
 | File | Purpose |
 |---|---|
-| `flow-state/package.json` | Hono + xstate@5 deps; `__SCAFFOLD__` in version notes |
-| `flow-state/tsconfig.json` | ESNext + bundler resolution; matches agent/ |
-| `flow-state/index.ts` | Hono server skeleton; 4 routes return 501 |
-| `flow-state/lib/machines/login-and-org-setup.ts` | XState v5 `setup()` stub |
-| `flow-state/lib/orchestrator.ts` | actor-system stub |
-| `flow-state/lib/active-scope.ts` | `ScopeResolver` stub (the pure-function shape from DWD-4) |
-| `flow-state/lib/projection.ts` | `buildProjection` stub + `FlowProjection` type |
-| `flow-state/lib/persistence/redis.ts` | XADD/XRANGE wrapper stub |
-| `flow-state/Dockerfile` | builds the scaffold |
-| `flow-state/BUILD.bazel` | compose-buildable scaffold target |
+| `ui-state/package.json` | Hono + xstate@5 deps; `__SCAFFOLD__` in version notes |
+| `ui-state/tsconfig.json` | ESNext + bundler resolution; matches agent/ |
+| `ui-state/index.ts` | Hono server skeleton; 4 routes return 501 |
+| `ui-state/lib/machines/login-and-org-setup.ts` | XState v5 `setup()` stub |
+| `ui-state/lib/orchestrator.ts` | actor-system stub |
+| `ui-state/lib/active-scope.ts` | `ScopeResolver` stub (the pure-function shape from DWD-4) |
+| `ui-state/lib/projection.ts` | `buildProjection` stub + `FlowProjection` type |
+| `ui-state/lib/persistence/redis.ts` | XADD/XRANGE wrapper stub |
+| `ui-state/Dockerfile` | builds the scaffold |
+| `ui-state/BUILD.bazel` | compose-buildable scaffold target |
 
 Every TS file exports `export const __SCAFFOLD__ = true;` and every
 runtime entry-point throws `Error("Not yet implemented — RED scaffold")`
@@ -238,7 +238,7 @@ Recorded in `distill/upstream-issues.md`:
    for that scenario includes a 10-minute spike to confirm presence.
 3. **UI-2** (MEDIUM): `frontend-remix` container is part of the
    compose stack per ADR-031 but Slice 1 WS does not exercise the
-   browser — only `auth-proxy` and `flow-state` are hit. Slice 2
+   browser — only `auth-proxy` and `ui-state` are hit. Slice 2
    begins exercising `frontend-remix` via real HTTP from the harness;
    Slice 3 requires full browser to verify the cross-machine FREEZE
    banner (this may push Slice 3 to use Playwright; documented but
@@ -270,7 +270,7 @@ Recorded in `distill/upstream-issues.md`:
 - [x] Business-language purity: zero `HTTP`, `JSON`, `Redis`, `JWT
       claim` terms inside Gherkin (verified by grep; technical terms
       live in step methods only).
-- [x] Mandate 7 RED scaffolds present under `flow-state/`.
+- [x] Mandate 7 RED scaffolds present under `ui-state/`.
 - [x] `roadmap.json` sequences three slices into 6 steps; each step
       names its `.feature` scenarios + production scaffolds to
       replace.

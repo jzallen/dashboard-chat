@@ -59,8 +59,8 @@ Feature: Maya's chat survives a mid-question token expiry without re-typing
     And Maya sees the recoverable-error page worded for the sign-in-again case
 
   @skip @us-005 @degraded @with-pre-commit
-  Scenario: Maya's signed-in session survives a flow-state restart
+  Scenario: Maya's signed-in session survives a ui-state restart
     Given Maya is signed in and her organization "Acme Data" is set up
-    When the flow-state service is restarted while Maya is mid-session
+    When the ui-state service is restarted while Maya is mid-session
     Then within 60 seconds Maya can continue without re-signing-in
     And Maya's active organization remains "Acme Data"

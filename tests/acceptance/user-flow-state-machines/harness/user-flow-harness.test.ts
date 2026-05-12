@@ -155,7 +155,7 @@ function readyProjection(
 }
 
 describe("B1 — begin_auth captures jwt from projection.context.access_token", () => {
-  it("stores the access_token returned by the flow-state tier on this.jwt", async () => {
+  it("stores the access_token returned by the ui-state tier on this.jwt", async () => {
     const flow_id = "login-and-org-setup:user_maya";
     const accessToken = jwtWithOrgId("org-acme-data");
     installStub([

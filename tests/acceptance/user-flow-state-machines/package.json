@@ -7,8 +7,8 @@
     "test": "cucumber-js",
     "test:smoke": "cucumber-js --tags '@walking_skeleton'",
     "test:enabled": "cucumber-js --tags 'not @skip'",
-    "compose:up": "docker compose -f ../../../docker-compose.yml --profile flow-state up -d",
-    "compose:down": "docker compose -f ../../../docker-compose.yml --profile flow-state down -v"
+    "compose:up": "docker compose -f ../../../docker-compose.yml --profile ui-state up -d",
+    "compose:down": "docker compose -f ../../../docker-compose.yml --profile ui-state down -v"
   },
   "dependencies": {
     "@cucumber/cucumber": "^12.0.0",

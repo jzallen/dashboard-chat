@@ -1,11 +1,11 @@
 // Fake WorkOS — in-process Hono server that speaks enough of the OIDC token-
-// exchange + user-profile shape to drive the flow-state tier through the
+// exchange + user-profile shape to drive the ui-state tier through the
 // `authenticating` transition.
 //
 // Strategy C (DWD-2) treats every adapter except WorkOS as REAL. WorkOS is
 // the fake because (a) we own no CI credentials, (b) testing against real
 // WorkOS would couple the suite to external infra. The fake is a real HTTP
-// server (loopback) so the flow-state tier exercises its real WorkOSClient
+// server (loopback) so the ui-state tier exercises its real WorkOSClient
 // adapter wiring; the network call is real, only the upstream identity is
 // fake.
 

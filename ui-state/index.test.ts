@@ -1,4 +1,4 @@
-// Vitest tests for the flow-state HTTP tier (Step 02-02 / US-004).
+// Vitest tests for the ui-state HTTP tier (Step 02-02 / US-004).
 //
 // Exercises the `__harness_force_failure__` and `__harness_expire_token__`
 // event handler branches end-to-end against the in-process Hono app via

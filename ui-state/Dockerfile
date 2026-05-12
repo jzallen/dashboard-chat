@@ -1,4 +1,4 @@
-# Flow-State Tier — production image.
+# UI-State Tier — production image.
 #
 # Per ADR-030 §SD2, this tier is single-replica (XState v5 actors are
 # in-process). The image bundles Hono + xstate + ioredis and runs via tsx

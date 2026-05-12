@@ -37,22 +37,22 @@ tickets. Each entry records:
 - Vitest coverage (Step 02-02 surface):
   - `tests/acceptance/user-flow-state-machines/harness/user-flow-harness.test.ts`
     exercises the seven public harness methods + composition primitive.
-  - `flow-state/index.test.ts` exercises the `__harness_force_failure__`
+  - `ui-state/index.test.ts` exercises the `__harness_force_failure__`
     and `__harness_expire_token__` HTTP handlers (knob-gated per DWD-1)
     plus the access_token-in-projection contract.
-  - `flow-state/lib/machines/login-and-org-setup.test.ts` extends B3/B4
+  - `ui-state/lib/machines/login-and-org-setup.test.ts` extends B3/B4
     machine-level transitions for the harness events.
 - Vitest coverage (Step 03-01 surface, US-005):
-  - `flow-state/lib/orchestrator.test.ts` (new): cross-machine FREEZE/THAW
+  - `ui-state/lib/orchestrator.test.ts` (new): cross-machine FREEZE/THAW
     broadcast, bounded replay buffer (5s timeout, 16-event cap), origin
     actor exemption, and the expired_token → freeze / ready → thaw
     auto-signalling on the orchestrator's `send()` path.
-  - `flow-state/lib/machines/login-and-org-setup.test.ts` extends B5/B6
+  - `ui-state/lib/machines/login-and-org-setup.test.ts` extends B5/B6
     for the silent re-auth invocation on `expired_token` (success → ready,
     failure → error_recoverable with `silent-reauth-failed` tag). The
     closed-union exhaustiveness test now includes `silent-reauth-failed`.
   - `auth-proxy/app.test.ts` extends with `silent_reauth_ok` and
-    `silent_reauth_failed` KPI emissions on the proxied `/flow-state/*`
+    `silent_reauth_failed` KPI emissions on the proxied `/ui-state/*`
     surface, gated on the projection's `silent_reauth_ok` flag and the
     `silent-reauth-failed` underlying_cause_tag respectively.
   - `frontend-remix/app/routes/expired-token-banner.test.tsx` (new):

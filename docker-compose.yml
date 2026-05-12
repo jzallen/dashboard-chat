@@ -134,16 +134,16 @@ services:
       timeout: 3s
       retries: 5
 
-  # Flow-State Tier — XState v5 actors + Redis-backed FlowEvent log.
+  # UI-State Tier — XState v5 actors + Redis-backed FlowEvent log.
   # Per ADR-030 §SD2: mandatory single replica (actors are in-process).
-  # Per ADR-030 §SD1: reachable only via auth-proxy at /flow-state/*.
+  # Per ADR-030 §SD1: reachable only via auth-proxy at /ui-state/*.
   #
-  # Built locally from ./flow-state/Dockerfile — no Bazel image yet for this
+  # Built locally from ./ui-state/Dockerfile — no Bazel image yet for this
   # new tier; the Bazel-built `:bazel` tag pattern will land in a follow-up.
-  flow-state:
-    build: ./flow-state
-    container_name: dashboard-flow-state
-    profiles: ["flow-state", "full"]
+  ui-state:
+    build: ./ui-state
+    container_name: dashboard-ui-state
+    profiles: ["ui-state", "full"]
     environment:
       PORT: "8788"
       REDIS_URL: redis://redis:6379/1
@@ -154,13 +154,13 @@ services:
       FLOW_EVENT_MAXLEN: ${FLOW_EVENT_MAXLEN:-1000}
       # Backend URL the create-org-and-reissue actor calls on Maya's behalf.
       # Default targets the api service on the compose network.
-      BACKEND_URL: ${FLOW_STATE_BACKEND_URL:-http://api:8000}
+      BACKEND_URL: ${UI_STATE_BACKEND_URL:-http://api:8000}
       # Enable per-request harness knobs (forced reissue failures, etc.)
       # for the acceptance suite. Production deployments leave this unset.
       NWAVE_HARNESS_KNOBS: ${NWAVE_HARNESS_KNOBS:-true}
     ports:
-      # Fixed host port so FLOW_STATE_URL stays stable across compose up.
-      - "${FLOW_STATE_HOST_PORT:-1043}:8788"
+      # Fixed host port so UI_STATE_URL stays stable across compose up.
+      - "${UI_STATE_HOST_PORT:-1043}:8788"
     extra_hosts:
       # Lets the container resolve host.docker.internal on Linux (needed for
       # the in-process fake WorkOS server running on the host).
@@ -194,9 +194,9 @@ services:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       BACKEND_URL: http://api:8000
-      # Upstream for the /flow-state/* multi-upstream rule (ADR-030 §SD1).
+      # Upstream for the /ui-state/* multi-upstream rule (ADR-030 §SD1).
       # Container-internal; .env host-port overrides do not leak in.
-      FLOW_STATE_URL: http://flow-state:8788
+      UI_STATE_URL: http://ui-state:8788
       JWKS_URL: ${JWKS_URL:-}
       PORT: "3000"
       M2M_ENABLED: ${M2M_ENABLED:-true}

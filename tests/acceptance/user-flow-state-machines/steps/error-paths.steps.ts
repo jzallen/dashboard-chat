@@ -1,8 +1,8 @@
 // Step definitions for `features/slice-1-error-paths.feature` (step 01-02).
 //
-// All step bodies drive through the harness or the FlowStateClient — both
+// All step bodies drive through the harness or the UiStateClient — both
 // hit `auth-proxy:1042` (CM-A driving port).  Tests never import from
-// flow-state/lib/**.
+// ui-state/lib/**.
 //
 // As DELIVER unskips each scenario in turn, the matching step phrases are
 // moved out of `deferred-steps.ts` and implemented here. Phrases that
@@ -99,7 +99,7 @@ Then(
     // is in flight. The poll runs at most 100ms.
     let observed: string | null = null;
     const deadline = startedAt + 100;
-    // In dev mode auth-proxy injects X-User-Id=dev-user-001; flow-state
+    // In dev mode auth-proxy injects X-User-Id=dev-user-001; ui-state
     // keys flows by `<machine>:<principal_id>`. The walking skeleton's
     // initial sign-in writes the begin event before workos returns, so the
     // projection is readable during the slow window.
@@ -107,7 +107,7 @@ Then(
     while (Date.now() < deadline) {
       try {
         const res = await fetch(
-          `${AUTH_PROXY_URL}/flow-state/flow/login-and-org-setup/projection?flow_id=${encodeURIComponent(flowId)}`,
+          `${AUTH_PROXY_URL}/ui-state/flow/login-and-org-setup/projection?flow_id=${encodeURIComponent(flowId)}`,
         );
         if (res.ok) {
           const body = (await res.json()) as { state?: string };
@@ -449,7 +449,7 @@ Given(
   "Maya's identity route has been migrated to the new frontend",
   function (this: UserFlowWorld) {
     // No-op precondition: the migration is already done in step 01-01 (the
-    // walking skeleton's success proves /flow-state/* is wired to the new
+    // walking skeleton's success proves /ui-state/* is wired to the new
     // tier). This Given exists to document the precondition explicitly.
     this.bag.identity_route_migrated = true;
   },
@@ -475,11 +475,11 @@ Then(
     // The "legacy frontend" is whatever the auth-proxy's catch-all proxies
     // to for unmigrated paths. The contract we assert through the driving
     // port: a request to an unmigrated path produces a different shape
-    // than `/flow-state/*` -- proving the migrated path was carved out
+    // than `/ui-state/*` -- proving the migrated path was carved out
     // surgically, not by replacing the whole upstream.
     const legacyPath = this.bag.legacy_route_path as string;
     const res = await fetch(`${AUTH_PROXY_URL}${legacyPath}`);
-    // The legacy path SHOULD NOT return a flow-state projection envelope.
+    // The legacy path SHOULD NOT return a ui-state projection envelope.
     const text = await res.text();
     expect(text).not.toMatch(/"flow_id"/);
     expect(text).not.toMatch(/"active_scope"/);

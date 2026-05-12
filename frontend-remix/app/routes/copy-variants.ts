@@ -1,11 +1,11 @@
 // Copy variants table for the recoverable-error page, keyed by the
-// closed-vocabulary UnderlyingCauseTag union shared with the flow-state
+// closed-vocabulary UnderlyingCauseTag union shared with the ui-state
 // machine. Each variant is jargon-free per US-003 — Maya sees what
 // happened, what to do, and a reference she can share with support.
 // Per the @us-003 scenarios, no raw error/status code is exposed.
 //
 // The union is intentionally redeclared here (not imported from
-// flow-state/) so the frontend module stays decoupled from the
+// ui-state/) so the frontend module stays decoupled from the
 // state-machine internals — the wire shape is the contract.
 
 export type UnderlyingCauseTag =

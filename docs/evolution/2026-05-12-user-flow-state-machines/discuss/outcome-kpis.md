@@ -13,7 +13,7 @@ By the end of the slice 1-3 carpaccio, **every state transition in
 the login + org-setup flow is owned by a single server-driven
 machine, is visible to a TS harness via the same projection the FE
 reads, and surfaces a correlation id on every recoverable failure**
-— eliminating the four-place flow-state duplication the team has
+— eliminating the four-place ui-state duplication the team has
 been debugging for the last week.
 
 ### Outcome KPIs

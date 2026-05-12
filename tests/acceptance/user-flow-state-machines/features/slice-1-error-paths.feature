@@ -16,7 +16,7 @@ Feature: Sign-in and org-setup error paths are honest and recoverable
 
   Background:
     Given a clean environment with no organization yet owned by Maya
-    And the flow-state services are healthy and reachable through the production ingress
+    And the ui-state services are healthy and reachable through the production ingress
 
   @us-001 @us-002 @real-io @clean
   Scenario: Maya sees the checking-identity panel while sign-in takes 1.8 seconds

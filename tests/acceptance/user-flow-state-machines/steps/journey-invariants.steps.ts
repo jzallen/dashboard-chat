@@ -8,7 +8,7 @@
 //   - The six @us-006 scenarios therefore remain @skip after this step.
 //
 // All step bodies drive through the harness (CM-A: tests use the driving
-// port only — no flow-state/lib/** imports here). The journey invariants
+// port only — no ui-state/lib/** imports here). The journey invariants
 // are also covered (in spirit) by the orchestrator + machine vitest suites:
 // correlation_id threading is B2 in login-and-org-setup.test.ts;
 // scope-resolver invariants in scope-resolver.steps.ts (Step 01-03).

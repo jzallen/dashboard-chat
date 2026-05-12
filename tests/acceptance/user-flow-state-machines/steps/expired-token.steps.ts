@@ -9,10 +9,10 @@
 //   - The seven @us-005 scenarios therefore remain @skip after this step.
 //
 // All step bodies drive through the harness (CM-A: tests use the driving
-// port only — no flow-state/lib/** imports here). Vitest-level coverage of
+// port only — no ui-state/lib/** imports here). Vitest-level coverage of
 // the same surface lives in:
-//   - flow-state/lib/orchestrator.test.ts (FREEZE/THAW + replay buffer)
-//   - flow-state/lib/machines/login-and-org-setup.test.ts (silent reauth)
+//   - ui-state/lib/orchestrator.test.ts (FREEZE/THAW + replay buffer)
+//   - ui-state/lib/machines/login-and-org-setup.test.ts (silent reauth)
 //   - auth-proxy/app.test.ts (silent_reauth_ok / silent_reauth_failed KPIs)
 //   - frontend-remix/app/routes/expired-token-banner.test.tsx (banner UX)
 //
@@ -75,7 +75,7 @@ Given(
   "the identity session itself has expired so silent renewal will fail",
   function (this: UserFlowWorld) {
     // Future: the harness ticket adds force_silent_reauth_failure(); for
-    // now record intent. The flow-state machine wires the failure path via
+    // now record intent. The ui-state machine wires the failure path via
     // a silentReauth actor that rejects with "identity session expired".
     this.bag.silent_reauth_will_fail = true;
   },
@@ -129,12 +129,12 @@ When("Maya's access expires", async function (this: UserFlowWorld) {
 });
 
 When(
-  "the flow-state service is restarted while Maya is mid-session",
+  "the ui-state service is restarted while Maya is mid-session",
   function (this: UserFlowWorld) {
     // Rehydration scenario — requires docker-compose orchestration of the
-    // flow-state container restart. Deferred to UI-2 ticket; the
-    // Redis-backed event log is exercised by flow-state/index.test.ts.
-    deferredToUi2(this, "flow-state restart mid-session");
+    // ui-state container restart. Deferred to UI-2 ticket; the
+    // Redis-backed event log is exercised by ui-state/index.test.ts.
+    deferredToUi2(this, "ui-state restart mid-session");
   },
 );
 
@@ -174,7 +174,7 @@ Then(
   async function (this: UserFlowWorld) {
     if (!this.harness) throw new Error("harness not initialized");
     const projection = await this.harness.get_projection();
-    // The flow-state machine routes silent reauth failure into
+    // The ui-state machine routes silent reauth failure into
     // error_recoverable with tag "silent-reauth-failed". The recoverable-
     // error page is keyed off that tag; UX is exercised in
     // recoverable-error.test.tsx via a parametrized variant suite.

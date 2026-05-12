@@ -103,7 +103,7 @@ export type CreateOrgAndReissueActor = ReturnType<
  * machine transitions back to `ready`; on failure it falls through to
  * `error_recoverable` with tag `silent-reauth-failed`. Per ADR-028 this
  * actor's input/output are minimal because the re-auth credential lookup
- * is handled by auth-proxy (the flow-state tier only learns about the
+ * is handled by auth-proxy (the ui-state tier only learns about the
  * outcome).
  */
 export type SilentReauthActor = ReturnType<

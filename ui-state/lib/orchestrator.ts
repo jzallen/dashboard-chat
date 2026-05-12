@@ -337,7 +337,7 @@ export class FlowOrchestrator {
       // (and the TS harness via assert_jwt_carries_org_claim) can verify
       // the claim matches the projection's org. The signature is
       // intentionally a fixed placeholder — auth-proxy is the SSOT for
-      // real signature verification; the flow-state tier exposes the
+      // real signature verification; the ui-state tier exposes the
       // composed token shape for projection consumers.
       const access_token = mintAccessTokenForReady(orgCtx.id ?? "");
       // If this ready transition came FROM expired_token, mark the event
@@ -598,7 +598,7 @@ function parsePrincipal(flow_id: string): string {
 }
 
 /**
- * Mint a synthetic JWT carrying the org_id claim. The flow-state tier does
+ * Mint a synthetic JWT carrying the org_id claim. The ui-state tier does
  * NOT sign tokens cryptographically — that is auth-proxy's job per ADR-016.
  * This routine composes a JWT-shaped string whose payload encodes the
  * org_id so projection consumers (FE + TS harness) can read the claim
@@ -614,7 +614,7 @@ function mintAccessTokenForReady(org_id: string): string {
   const payload = Buffer.from(JSON.stringify({ org_id })).toString(
     "base64url",
   );
-  return `${header}.${payload}.flow-state-mint`;
+  return `${header}.${payload}.ui-state-mint`;
 }
 
 

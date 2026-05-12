@@ -9,10 +9,10 @@ itself an acceptance-test target (`slice-2-harness-drives-transitions.feature`).
 
 ## The four-piece contract
 
-Every harness method drives the flow-state tier via these four wire
+Every harness method drives the ui-state tier via these four wire
 contracts (from `docs/feature/user-flow-state-machines/design/handoff-design-to-distill.md`):
 
-1. **Endpoints** — reached through `auth-proxy:1042/flow-state/*`:
+1. **Endpoints** — reached through `auth-proxy:1042/ui-state/*`:
    - `POST /flow/<machine>/begin` → starts a machine; returns `{ correlation_id, projection }`
    - `POST /flow/<machine>/event` → sends an event; returns `{ projection }`
    - `GET  /flow/<machine>/projection?flow_id=<machine>:<principal>` → reads current projection
@@ -41,8 +41,8 @@ await harness.assert_scope({ org_id: "...", project_id: "..." })
 
 ## Boundary rules
 
-- Tests never `import` from `flow-state/lib/**` — they call HTTP only.
+- Tests never `import` from `ui-state/lib/**` — they call HTTP only.
 - The harness routes through `auth-proxy`, never directly at the
-  flow-state tier port. This is the driving port (CM-A).
+  ui-state tier port. This is the driving port (CM-A).
 - The harness owns no domain logic — every call delegates to the
-  flow-state tier. Business logic lives in production code (CM-B/CM-D).
+  ui-state tier. Business logic lives in production code (CM-B/CM-D).

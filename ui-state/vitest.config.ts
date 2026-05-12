@@ -9,7 +9,7 @@ export default defineConfig({
     // when index.ts is imported by `index.test.ts`. The autostart guard in
     // index.ts respects this env var.
     env: {
-      FLOW_STATE_AUTOSTART: "false",
+      UI_STATE_AUTOSTART: "false",
     },
   },
 });

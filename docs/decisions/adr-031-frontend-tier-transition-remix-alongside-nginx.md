@@ -135,13 +135,13 @@ Total addition: ~150 MB per host. Cheap.
 - nginx forwards the header to `frontend-remix` (default `proxy_set_header` behavior includes upstream forwarding).
 - Remix loaders read `request.headers.get("Authorization")` and use it as the Bearer when calling auth-proxy.
 - Auth-proxy verifies (unchanged behavior).
-- Auth-proxy forwards identity headers to the flow-state tier.
+- Auth-proxy forwards identity headers to the ui-state tier.
 
 Phase B (post-feature, separate ADR) migrates to HTTP-only cookies. The architecture supports either; PR-0 commits to Bearer to minimize migration scope.
 
 ### 8. Compose acceptance test impact
 
-The compose acceptance stack grows from 5 services (ADR-016: backend + worker + auth-proxy + query-engine + MinIO) to **7 services** (add `flow-state` per ADR-030 + `frontend-remix` per this ADR).
+The compose acceptance stack grows from 5 services (ADR-016: backend + worker + auth-proxy + query-engine + MinIO) to **7 services** (add `ui-state` per ADR-030 + `frontend-remix` per this ADR).
 
 Per ADR-016, this is a topology change worth annotating: the test stack must include both new services to verify production-fidelity ingress paths. The compose acceptance test's structural assertions (per Morgan's `application-architecture.md` §10 enforcement layer) MUST verify all 7 services start byte-identically.
 
@@ -153,7 +153,7 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 - **Strangler-fig migration is mechanically clean.** Each route migration is a 5-line nginx.conf change + a new Remix route file. Rollback per route is a one-line revert.
 - **Independent restart and roll-forward shapes.** `frontend` and `frontend-remix` containers restart independently; a deploy bug in one doesn't take down the other.
 - **Build pipeline parallelism.** Bazel can build the two images concurrently.
-- **Reversibility is structural.** If Remix proves wrong, the entire `frontend-remix` container is deleted, and the corresponding nginx routes revert to the SPA fallback. The flow-state tier (the load-bearing piece per ADR-027) is framework-independent and unaffected.
+- **Reversibility is structural.** If Remix proves wrong, the entire `frontend-remix` container is deleted, and the corresponding nginx routes revert to the SPA fallback. The ui-state tier (the load-bearing piece per ADR-027) is framework-independent and unaffected.
 
 ### Negative / accepted trade-offs
 
@@ -167,7 +167,7 @@ Per ADR-016, this is a topology change worth annotating: the test stack must inc
 - **ADR-031 ↔ ADR-027**: ADR-027 selected Remix; ADR-031 specifies how Remix lands in compose without disturbing nginx.
 - **ADR-031 ↔ ADR-015**: ADR-031 preserves the `frontend/nginx.conf` `/api/channels/:id/presentation-state` rule verbatim. ADR-015 is honored.
 - **ADR-031 ↔ ADR-016**: the compose acceptance stack grows to 7 services; ADR-016's "test topology = production topology" principle continues to apply.
-- **ADR-031 ↔ ADR-030**: Remix loaders call auth-proxy; auth-proxy routes `/flow-state/*` to the new tier per ADR-030.
+- **ADR-031 ↔ ADR-030**: Remix loaders call auth-proxy; auth-proxy routes `/ui-state/*` to the new tier per ADR-030.
 
 ## Open questions
 

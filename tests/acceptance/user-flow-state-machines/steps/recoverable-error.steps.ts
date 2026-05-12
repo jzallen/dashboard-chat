@@ -9,7 +9,7 @@
 //     therefore remain @skip after this step.
 //
 // All step bodies drive through the harness (CM-A: tests use the driving
-// port only — no flow-state/lib/** imports here). The harness's
+// port only — no ui-state/lib/** imports here). The harness's
 // `force_transient_failure(tag)` knob is the canonical way to surface a
 // specific UnderlyingCauseTag without coupling to internal actors.
 
@@ -25,7 +25,7 @@ import type { UserFlowWorld } from "./world.ts";
 const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL ?? "http://localhost:1042";
 
 /**
- * Forward a retry_clicked event through auth-proxy to flow-state.
+ * Forward a retry_clicked event through auth-proxy to ui-state.
  *
  * The harness's `send_event` is private (the directive forbids modifying
  * its public surface in this step), so we go through the same HTTP path
@@ -36,7 +36,7 @@ const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL ?? "http://localhost:1042";
 async function retry_via_harness(harness: UserFlowHarness): Promise<FlowProjection> {
   const projection = await harness.get_projection();
   const res = await request(
-    `${AUTH_PROXY_URL}/flow-state/flow/login-and-org-setup/event`,
+    `${AUTH_PROXY_URL}/ui-state/flow/login-and-org-setup/event`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -105,7 +105,7 @@ Given(
     await harness.begin_auth("MAYA");
     await harness.force_transient_failure("transient");
     // Two user retries — the harness's send_event path forwards
-    // retry_clicked through auth-proxy → flow-state.
+    // retry_clicked through auth-proxy → ui-state.
     await retry_via_harness(harness);
     await retry_via_harness(harness);
     const projection = await harness.get_projection();

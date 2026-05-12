@@ -11,7 +11,7 @@
 ## TL;DR
 
 DESIGN ratified:
-- **Topology**: new Hono Node tier (`flow-state/`), reachable via auth-proxy only. The agent is unchanged (D8 honored).
+- **Topology**: new Hono Node tier (`ui-state/`), reachable via auth-proxy only. The agent is unchanged (D8 honored).
 - **FE framework**: **Remix v2** (Option D) with Vite. Option B (BFF + plain SPA) is the structural fallback if the team defers Remix migration.
 - **Engine**: XState v5 with the actor model. Cross-machine FREEZE/THAW is the actor-tree broadcast pattern.
 - **Persistence**: Redis Streams, capability-presence dispatch inherited from ADR-018. No new env var.
@@ -19,7 +19,7 @@ DESIGN ratified:
 - **Scope contract**: `ActiveScope` typed object, server-resolved at the route boundary, propagated via `useRouteLoaderData("root")` (Option D) or `<ScopeProvider>` (Option B).
 
 Three ADRs proposed:
-- **ADR-027**: flow-state tier + framework decision.
+- **ADR-027**: ui-state tier + framework decision.
 - **ADR-028**: XState v5 actor model.
 - **ADR-029**: `active_scope` propagation contract.
 
@@ -31,12 +31,12 @@ Three ADRs proposed:
 
 | Endpoint | Owner | Used by |
 |---|---|---|
-| `POST /api/flows/{flow_id}/events` | Flow-State Tier | FE (Option D loader actions, Option B `useMutation`), TS harness |
-| `GET /api/flows/{flow_id}/projection` | Flow-State Tier | FE (loaders), TS harness, acceptance tests |
-| `GET /api/flows/{flow_id}/projection/stream` | Flow-State Tier | FE live updates (SSE) |
-| `POST /api/auth/reissue` (if not already present) | Backend or auth-proxy | Flow-State Tier (during `creating_org → ready` JWT re-issue) |
-| Existing: `POST /api/orgs` | Backend | Flow-State Tier |
-| Existing: WorkOS OIDC token exchange | WorkOS (external) | Flow-State Tier |
+| `POST /api/flows/{flow_id}/events` | UI-State Tier | FE (Option D loader actions, Option B `useMutation`), TS harness |
+| `GET /api/flows/{flow_id}/projection` | UI-State Tier | FE (loaders), TS harness, acceptance tests |
+| `GET /api/flows/{flow_id}/projection/stream` | UI-State Tier | FE live updates (SSE) |
+| `POST /api/auth/reissue` (if not already present) | Backend or auth-proxy | UI-State Tier (during `creating_org → ready` JWT re-issue) |
+| Existing: `POST /api/orgs` | Backend | UI-State Tier |
+| Existing: WorkOS OIDC token exchange | WorkOS (external) | UI-State Tier |
 
 ### 2. ActiveScope schema (ADR-029)
 
@@ -130,7 +130,7 @@ These run against the same harness; they're the cross-state contracts (e.g., "co
 
 DELIVER will write code in two paradigms:
 
-1. **TypeScript / functional** (flow-state tier + Remix FE). Pure functions for scope-resolver and projection-builder. XState actors are the side-effect boundary; their `invoke` calls hit adapters that satisfy the `Probed` interface. Composition over inheritance throughout.
+1. **TypeScript / functional** (ui-state tier + Remix FE). Pure functions for scope-resolver and projection-builder. XState actors are the side-effect boundary; their `invoke` calls hit adapters that satisfy the `Probed` interface. Composition over inheritance throughout.
 2. **TypeScript / functional** (TS harness). Vitest. Adapters mocked at the port boundary via XState's `.provide({ actors: { ... } })` injection.
 
 No backend or Python changes are required for US-001/US-002 except the possible addition of `POST /api/auth/reissue` (idempotent JWT re-issue). If that endpoint already exists, no backend ADR is needed. DISTILL should verify by spike or by reading `backend/app/routers/auth.py`.
@@ -144,7 +144,7 @@ No backend or Python changes are required for US-001/US-002 except the possible 
 2. State equals `authenticated_no_org`; `state.user.email = "maya.chen@acme-data.example"`.
 
 This drives:
-- Flow-State Tier scaffold (one machine, one orchestrator, one event log adapter, one route file).
+- UI-State Tier scaffold (one machine, one orchestrator, one event log adapter, one route file).
 - Redis dispatch (capability-presence; falls back to noop in unit tests).
 - `Probed` interface across adapters with stub probes.
 - TS harness scaffold + the `begin_auth` and `assert_state` calls.
@@ -167,7 +167,7 @@ This drives:
 |---|---|---|---|
 | O1 | Whether `POST /api/auth/reissue` already exists in the backend | LOW | A spike-read of `backend/app/routers/auth.py` resolves this in 10 minutes. If absent, the endpoint is a backend ADR-shaped delta (small). |
 | O2 | Whether the user ratifies Option D or selects Option B | HIGH | Materially affects the FE migration scope. ADR-027 is written for either; the difference is the propagation primitive in §"Decision outcome / 2 + 3". |
-| O3 | Whether to ship the `eslint-plugin-dashboard-chat-flow-state` custom rule in the same MR as the first machine | MEDIUM | Without the lint, drift can creep in during the migration window. With it, the migration is enforced. Recommend: ship the lint before the second machine lands. |
+| O3 | Whether to ship the `eslint-plugin-dashboard-chat-ui-state` custom rule in the same MR as the first machine | MEDIUM | Without the lint, drift can creep in during the migration window. With it, the migration is enforced. Recommend: ship the lint before the second machine lands. |
 | O4 | WCAG `role="alertdialog"` for recoverable-error panel (US-003) | LOW | Implementation-level; out of scope for DESIGN; DISTILL's acceptance test should assert focus management. |
 | O5 | Whether the `scope_reconciled` event needs a UI surface (toast) in this feature, or is observability-only | LOW | DESIGN ships observability-only (ADR-029 §"Open Q3"). If user wants a UI surface, this is an additive future. |
 
@@ -179,15 +179,15 @@ For `platform-architect` (DEVOPS wave, on the path to deployment):
 
 ### External integrations requiring contract tests
 
-- **Flow-State Tier → WorkOS** (OIDC `/v1/sso/token`, `/v1/users/{id}`)
+- **UI-State Tier → WorkOS** (OIDC `/v1/sso/token`, `/v1/users/{id}`)
   - Recommended: consumer-driven contracts via **Pact-JS** in CI acceptance stage.
   - Rationale: WorkOS is an external API the tier consumes; minor-version drift in WorkOS's response shape would cause production auth failures undetectable by unit tests.
 
-- **Flow-State Tier → auth-proxy** (`POST /api/auth/reissue`)
+- **UI-State Tier → auth-proxy** (`POST /api/auth/reissue`)
   - Recommended: validate the tier's mock-server against `auth-proxy/lib/openapi.ts` in CI.
   - Rationale: internal contract; OpenAPI-based contract test is sufficient.
 
-- **Flow-State Tier → Backend** (`POST /api/orgs`, `POST /api/auth/reissue` if backend-owned)
+- **UI-State Tier → Backend** (`POST /api/orgs`, `POST /api/auth/reissue` if backend-owned)
   - Recommended: validate the tier's mock-server against FastAPI's OpenAPI document in CI.
   - Rationale: same as above; both consumers and providers live in the repo, so OpenAPI is the single contract.
 
@@ -199,14 +199,14 @@ The compose acceptance test stack grows from 5 services to 7 (per ADR-030 + ADR-
 3. backend (api)
 4. query-engine
 5. MinIO
-6. **flow-state** (NEW — per ADR-030)
+6. **ui-state** (NEW — per ADR-030)
 7. **frontend-remix** (NEW — per ADR-031; runs alongside the existing `frontend` nginx container, strangler-fig per route)
 
-Redis (already present) is unchanged but is now consumed by three logs (agent's thread-event, agent's presentation-state, flow-state's flow-event) with distinct key prefixes.
+Redis (already present) is unchanged but is now consumed by three logs (agent's thread-event, agent's presentation-state, ui-state's flow-event) with distinct key prefixes.
 
 ### Instrumentation list (inherited from DISCUSS `outcome-kpis.md`)
 
-DISCUSS produced an 8-FE-event + 2-auth-proxy-event instrumentation list and 3 dashboards. DESIGN does not modify this list. Adds for the flow-state tier:
+DISCUSS produced an 8-FE-event + 2-auth-proxy-event instrumentation list and 3 dashboards. DESIGN does not modify this list. Adds for the ui-state tier:
 
 - `flow_event_appended` (per FlowEvent persisted to Redis)
 - `projection_served` (per `GET /api/flows/{id}/projection`)
@@ -223,9 +223,9 @@ DISCUSS produced an 8-FE-event + 2-auth-proxy-event instrumentation list and 3 d
 |---|---|---|
 | RD1 | Remix migration may surface chat-SSE incompatibilities not visible from DESIGN | DELIVER carpaccio slice 1 deliberately defers FE changes; slice 2 is the SSE-touching slice. If a regression surfaces, the team can choose Option B at slice 2 without re-architecting slice 1. |
 | RD2 | XState v5 actor-tree API may be a learning curve | Mitigate by code-review-gating the first machine + orchestrator; subsequent machines copy the pattern. ADR-028 references the canonical v5 docs. |
-| RD3 | The `eslint-plugin-dashboard-chat-flow-state` custom rule has not been written | Treat as a small DELIVER scaffolding task before slice 2 (see O3 above). |
+| RD3 | The `eslint-plugin-dashboard-chat-ui-state` custom rule has not been written | Treat as a small DELIVER scaffolding task before slice 2 (see O3 above). |
 | RD4 | `POST /api/auth/reissue` endpoint may not exist | Spike at slice 1 kickoff; if absent, write a small backend ADR (auth-proxy-owned endpoint vs backend-owned) and add the endpoint in slice 2. |
-| RD5 | Cross-tier observability (correlation_id threading) requires the auth-proxy to forward `X-Correlation-Id` to the flow-state tier | This already works for backend + agent; the auth-proxy's forward rules need one line for `/flow-state/*`. DEVOPS scope. |
+| RD5 | Cross-tier observability (correlation_id threading) requires the auth-proxy to forward `X-Correlation-Id` to the ui-state tier | This already works for backend + agent; the auth-proxy's forward rules need one line for `/ui-state/*`. DEVOPS scope. |
 
 ---
 

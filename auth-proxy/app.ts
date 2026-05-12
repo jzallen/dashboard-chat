@@ -17,7 +17,7 @@ import {
 } from "./lib/pat.ts";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
-const FLOW_STATE_URL = process.env.FLOW_STATE_URL || "http://flow-state:8788";
+const UI_STATE_URL = process.env.UI_STATE_URL || "http://ui-state:8788";
 
 const app = new Hono();
 
@@ -175,16 +175,16 @@ app.delete("/api/auth/pats/:id", async (c) => {
   return c.body(null, 204);
 });
 
-// Flow-state tier — multi-upstream routing per ADR-030 §SD1.
-// Routed BEFORE the catch-all backend proxy. In AUTH_MODE=dev the flow-state
+// UI-state tier — multi-upstream routing per ADR-030 §SD1.
+// Routed BEFORE the catch-all backend proxy. In AUTH_MODE=dev the ui-state
 // tier is accessed without a Bearer token (the dev user identity is implied);
 // in production this branch verifies the token and forwards identity headers
-// just like the backend branch. The `/flow-state` path prefix is stripped
+// just like the backend branch. The `/ui-state` path prefix is stripped
 // before forwarding so the upstream sees its own routes (`/health`,
 // `/flow/:machine/begin`, etc.).
-app.all("/flow-state/*", async (c) => {
+app.all("/ui-state/*", async (c) => {
   const path = c.req.path;
-  const strippedPath = path.replace(/^\/flow-state/, "") || "/";
+  const strippedPath = path.replace(/^\/ui-state/, "") || "/";
 
   const incomingHeaders = new Headers();
   c.req.raw.headers.forEach((value, key) => {
@@ -229,7 +229,7 @@ app.all("/flow-state/*", async (c) => {
 
   const response = await proxyToUpstream(
     c,
-    FLOW_STATE_URL,
+    UI_STATE_URL,
     strippedPath,
     incomingHeaders,
   );
@@ -251,7 +251,7 @@ app.all("/flow-state/*", async (c) => {
 
 /**
  * Read the inbound JSON body (if any) and return the event `type` for
- * `/flow-state/flow/*\/event` requests. Returns null for `begin` (which
+ * `/ui-state/flow/*\/event` requests. Returns null for `begin` (which
  * has no type) or non-JSON bodies. Cloning is necessary because Hono's
  * downstream `proxyToUpstream` reads `c.req.raw.body` too — a stream can
  * only be consumed once. We tee via `Request.clone()`.
@@ -270,7 +270,7 @@ async function peekInboundEventType(req: Request): Promise<string | null> {
 
 /**
  * Inspect the upstream response and emit any matching KPI K3 events to
- * stdout as JSON lines. The flow-state tier's projection envelope shape
+ * stdout as JSON lines. The ui-state tier's projection envelope shape
  * is `{ state, correlation_id, context: { underlying_cause_tag? } }`.
  * Events:
  *   - state === "error_recoverable"  → auth_recoverable_error_shown
@@ -452,7 +452,7 @@ async function proxyRequest(c: { req: { raw: Request; url: string } }, headers: 
 
 /**
  * Proxy to an arbitrary upstream with the given path. Used by the
- * multi-upstream routing rules added in ADR-030 §SD1 (flow-state tier).
+ * multi-upstream routing rules added in ADR-030 §SD1 (ui-state tier).
  */
 async function proxyToUpstream(
   c: { req: { raw: Request; url: string } },

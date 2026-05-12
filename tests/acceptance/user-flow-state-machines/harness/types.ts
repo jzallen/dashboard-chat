@@ -1,9 +1,9 @@
 // Types that mirror the four-piece contract from
 // `docs/feature/user-flow-state-machines/design/handoff-design-to-distill.md`.
 //
-// These re-declare (rather than import from) the flow-state/ scaffold types
+// These re-declare (rather than import from) the ui-state/ scaffold types
 // so the acceptance suite cannot accidentally couple to production internals.
-// CM-A: tests never `from "flow-state/lib/..."` import.
+// CM-A: tests never `from "ui-state/lib/..."` import.
 
 export type ResourceType = "dataset" | "view" | "report";
 

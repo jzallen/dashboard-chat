@@ -97,7 +97,7 @@ issues_identified:
       remediation_status: "accepted."
 
   priority_validation:
-    q1_largest_bottleneck: "YES — the recent JWKS warm-up + dev-token shape debugging is direct evidence that flow-state duplication is a real, recurring cost. The orchestrator's prompt names this explicitly."
+    q1_largest_bottleneck: "YES — the recent JWKS warm-up + dev-token shape debugging is direct evidence that ui-state duplication is a real, recurring cost. The orchestrator's prompt names this explicitly."
     q2_simple_alternatives: "ADEQUATE — wave-decisions.md §R1 enumerates DIVERGE skipping rationale; DESIGN owns option comparison for the framework. No simpler alternative is plausibly equivalent."
     q3_constraint_prioritization: "CORRECT — the tiered-depth strategy explicitly prevents 8-flow oversize from dominating. Right-sized story-map is the result of a deliberate constraint."
     q4_data_justified: "NO_DATA — three of five KPIs have no current instrumentation (K1, K2, K3 baselines are developer recall). The remediation is named: instrument before/with the framework. Not a verdict-blocker for DISCUSS, but a clear DEVOPS deliverable."

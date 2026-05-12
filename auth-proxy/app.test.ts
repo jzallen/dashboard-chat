@@ -1,6 +1,6 @@
 // Unit tests for the auth-proxy KPI K3 event emission on the
-// /flow-state/* proxied surface. Per ADR-030 §SD4 the auth-proxy emits
-// three JSON events to stdout when it observes flow-state transitions:
+// /ui-state/* proxied surface. Per ADR-030 §SD4 the auth-proxy emits
+// three JSON events to stdout when it observes ui-state transitions:
 //
 //   - auth_recoverable_error_shown  — upstream returned state=error_recoverable
 //   - auth_retry_clicked            — caller forwarded a retry_clicked event
@@ -15,7 +15,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock jose before importing app (no JWT verification needed for dev-mode
-// flow-state path; AUTH_MODE defaults to "dev").
+// ui-state path; AUTH_MODE defaults to "dev").
 vi.mock("jose", () => ({
   createRemoteJWKSet: vi.fn(() => vi.fn()),
   jwtVerify: vi.fn(),
@@ -68,7 +68,7 @@ function captureStdout(): {
   };
 }
 
-describe("KPI K3 event emission on /flow-state/* (B4)", () => {
+describe("KPI K3 event emission on /ui-state/* (B4)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.AUTH_MODE = "dev";
@@ -82,7 +82,7 @@ describe("KPI K3 event emission on /flow-state/* (B4)", () => {
         correlation_id: "R-7a4f-901c",
         context: { underlying_cause_tag: "partial-setup" },
       },
-      "/flow-state/flow/login-and-org-setup/begin",
+      "/ui-state/flow/login-and-org-setup/begin",
       "partial-setup",
     ],
     [
@@ -92,7 +92,7 @@ describe("KPI K3 event emission on /flow-state/* (B4)", () => {
         correlation_id: "R-7a4f-901c",
         context: {},
       },
-      "/flow-state/flow/login-and-org-setup/event",
+      "/ui-state/flow/login-and-org-setup/event",
       undefined,
     ],
   ])(
@@ -132,7 +132,7 @@ describe("KPI K3 event emission on /flow-state/* (B4)", () => {
   // Step 03-01 — silent reauth KPI events (US-005)
   // ------------------------------------------------------------------------
   //
-  // The auth-proxy observes the projection coming back from the flow-state
+  // The auth-proxy observes the projection coming back from the ui-state
   // tier and emits an additional pair of KPI events for the silent-reauth
   // outcome:
   //   - state === "ready"             AND context.silent_reauth_ok === true
@@ -157,7 +157,7 @@ describe("KPI K3 event emission on /flow-state/* (B4)", () => {
     const capture = captureStdout();
     try {
       const res = await makeRequest(
-        "/flow-state/flow/login-and-org-setup/event",
+        "/ui-state/flow/login-and-org-setup/event",
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -187,7 +187,7 @@ describe("KPI K3 event emission on /flow-state/* (B4)", () => {
     const capture = captureStdout();
     try {
       const res = await makeRequest(
-        "/flow-state/flow/login-and-org-setup/event",
+        "/ui-state/flow/login-and-org-setup/event",
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -224,7 +224,7 @@ describe("KPI K3 event emission on /flow-state/* (B4)", () => {
     const capture = captureStdout();
     try {
       const res = await makeRequest(
-        "/flow-state/flow/login-and-org-setup/event",
+        "/ui-state/flow/login-and-org-setup/event",
         {
           method: "POST",
           headers: { "content-type": "application/json" },

@@ -55,11 +55,11 @@ The frontend's nginx is the de-facto multi-upstream router today (proxies `/api/
 **Feature design:** `docs/feature/user-flow-state-machines/design/{system-architecture.md, application-architecture.md, wave-decisions.md, upstream-changes.md}`
 **Status:** Proposed → awaiting system-designer-reviewer + user ratification of single-replica + multi-upstream auth-proxy → DISTILL
 
-**Topology decision summary.** The new flow-state tier sits **behind auth-proxy**, which gains a multi-upstream routing table (`/api/auth/*` → local; `/flow-state/*` → flow-state; `/api/*` → backend; future `/worker/*` → agent). Auth-proxy keeps its single concern (auth verification + identity injection); it gains a path-prefix routing layer (~30 lines of Hono routes + tests). The flow-state tier is the first tier to be routed through auth-proxy for privileged operations, honoring ADR-016 from day 1 (the agent's bypass is documented as a pre-existing inconsistency).
+**Topology decision summary.** The new ui-state tier sits **behind auth-proxy**, which gains a multi-upstream routing table (`/api/auth/*` → local; `/ui-state/*` → ui-state; `/api/*` → backend; future `/worker/*` → agent). Auth-proxy keeps its single concern (auth verification + identity injection); it gains a path-prefix routing layer (~30 lines of Hono routes + tests). The ui-state tier is the first tier to be routed through auth-proxy for privileged operations, honoring ADR-016 from day 1 (the agent's bypass is documented as a pre-existing inconsistency).
 
-**Scaling decision summary.** The flow-state tier deploys as **exactly one replica** in compose (fixed host port `1043:8788`, mirroring the agent's pattern). XState v5's in-process actor model precludes cross-replica FREEZE/THAW without Redis pub/sub re-implementation; back-of-envelope estimation shows a single 256MB container handles 10x load (1,000 concurrent users; 3,000 active actors; 1,000 Redis XADDs/sec) with 2-3 orders of magnitude headroom on every dimension. Scaling-ceiling triggers (CPU>60%, RAM>200MB, actors>10K, SLO target >99.5%) are documented; migration to multi-replica sticky-routing (Option γ) is pre-costed at 1-2 weeks.
+**Scaling decision summary.** The ui-state tier deploys as **exactly one replica** in compose (fixed host port `1043:8788`, mirroring the agent's pattern). XState v5's in-process actor model precludes cross-replica FREEZE/THAW without Redis pub/sub re-implementation; back-of-envelope estimation shows a single 256MB container handles 10x load (1,000 concurrent users; 3,000 active actors; 1,000 Redis XADDs/sec) with 2-3 orders of magnitude headroom on every dimension. Scaling-ceiling triggers (CPU>60%, RAM>200MB, actors>10K, SLO target >99.5%) are documented; migration to multi-replica sticky-routing (Option γ) is pre-costed at 1-2 weeks.
 
-**Persistence stance.** Redis Streams via ADR-018 inheritance. New key prefix `flow:{flow_id}:events` where `flow_id = <machine-name>:<principal_id>` for per-user flows (mandatory for multi-tenant safety). XADD per transition; snapshot every 50 events. Probe contract: XADD/XRANGE/DEL round-trip; HARD-fail at startup if Redis is unreachable. Redis blast radius grows: three key prefixes (`flow:`, `session:`, `presentation-state:`) now share one Redis container — operator runbook should add Redis HA before the next service joins the substrate.
+**Persistence stance.** Redis Streams via ADR-018 inheritance. New key prefix `ui-state:{flow_id}:events` where `flow_id = <machine-name>:<principal_id>` for per-user flows (mandatory for multi-tenant safety). XADD per transition; snapshot every 50 events. Probe contract: XADD/XRANGE/DEL round-trip; HARD-fail at startup if Redis is unreachable. Redis blast radius grows: three key prefixes (`ui-state:`, `session:`, `presentation-state:`) now share one Redis container — operator runbook should add Redis HA before the next service joins the substrate.
 
 **Frontend tier transition.** A NEW `frontend-remix` container runs Remix's Node server alongside the existing nginx-static `frontend` container. nginx is byte-unchanged except for one new upstream rule for migrated routes (`/login`, `/org/$org` in PR-0). The strangler-fig migration runs one route family per PR; rollback per route is a one-line nginx.conf revert. ADR-015's load-bearing `/api/channels/:id/presentation-state` rule is preserved verbatim.
 
@@ -67,14 +67,14 @@ The frontend's nginx is the de-facto multi-upstream router today (proxies `/api/
 
 | Container | Role | Replica | Host port |
 |---|---|---|---|
-| `flow-state` | Hono + XState v5 — flow-state machines, projection endpoints | 1 (mandatory) | 1043:8788 |
+| `ui-state` | Hono + XState v5 — ui-state machines, projection endpoints | 1 (mandatory) | 1043:8788 |
 | `frontend-remix` | Remix v2 on Node — server-side route loaders for migrated routes | 1 | (internal only; not exposed) |
 
-Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`flow-state`, +`frontend-remix`).
+Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`ui-state`, +`frontend-remix`).
 
 **Observability stance.** Per-transition structured JSON to stdout (event=`flow.transition`, with machine_id, from_state, to_state, sequence_id, correlation_id, principal_id, org_id, duration_ms). FREEZE/THAW emit their own events (`flow.freeze.broadcast`, `flow.thaw.broadcast`). Health endpoints: `/health`, `/health/probes`, `/health/actors` (aggregate counts only). Metrics derived from logs by external aggregator; no in-tier metrics endpoint at PR-0. OpenTelemetry deferred — system-wide decision, not feature-local. Correlation-ID propagation MANDATORY on every request, every outgoing call, every FlowEvent record.
 
-**SPOF assessment.** The flow-state tier is a SPOF for sign-in + scope transitions (MTTR ~30s on crash; lazy Redis rehydration on first projection read). It is NOT a SPOF for chat (agent independent), dataset operations (backend independent), or any other in-progress flow. Failover verified in compose acceptance test (`docker compose restart flow-state` mid-flow → recovery <60s). No NEW SPOF compared to today's stack; existing SPOFs (Redis, auth-proxy, backend) are inherited.
+**SPOF assessment.** The ui-state tier is a SPOF for sign-in + scope transitions (MTTR ~30s on crash; lazy Redis rehydration on first projection read). It is NOT a SPOF for chat (agent independent), dataset operations (backend independent), or any other in-progress flow. Failover verified in compose acceptance test (`docker compose restart ui-state` mid-flow → recovery <60s). No NEW SPOF compared to today's stack; existing SPOFs (Redis, auth-proxy, backend) are inherited.
 
 **Quality gates passed (this DESIGN wave, system-scope pass).**
 
@@ -98,7 +98,7 @@ Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`fl
 | ADR-016 | Auth-proxy sole production ingress (for backend; aspirational for agent today) |
 | ADR-017 | SessionEventReader capability-presence dispatch (superseded by ADR-018) |
 | ADR-018 | Redis-only SessionEventReader (supersedes ADR-017) |
-| ADR-030 | Flow-state tier topology + single-replica scaling (Proposed) |
+| ADR-030 | UI-state tier topology + single-replica scaling (Proposed) |
 | ADR-031 | Frontend tier transition — Remix alongside nginx, not replacing (Proposed) |
 
 ---
@@ -244,18 +244,18 @@ probe then use**. Probe failure → `pytest.skip(reason)`.
 **DESIGN deliverables:** `docs/feature/user-flow-state-machines/design/{wave-decisions.md, application-architecture.md, handoff-design-to-distill.md, upstream-changes.md}`
 **Status:** Proposed → awaiting solution-architect-reviewer (Atlas) + user ratification of Option D vs B → DISTILL
 
-**Decision summary.** Introduce a NEW Hono Node tier (`flow-state/`), peer to the agent in compose, that owns XState v5 actor-tree flow machines and exposes per-flow JSON projections at `GET /api/flows/{flow_id}/projection`. Recommend **Remix v2** as the FE framework (Option D from DISCUSS's 5-option matrix); **Option B** (BFF + plain SPA, React Router stays) is the structural fallback. Five-option matrix narrowed to two survivors (B + D); A, C, E cut with documented rationale (see ADR-027).
+**Decision summary.** Introduce a NEW Hono Node tier (`ui-state/`), peer to the agent in compose, that owns XState v5 actor-tree flow machines and exposes per-flow JSON projections at `GET /api/flows/{flow_id}/projection`. Recommend **Remix v2** as the FE framework (Option D from DISCUSS's 5-option matrix); **Option B** (BFF + plain SPA, React Router stays) is the structural fallback. Five-option matrix narrowed to two survivors (B + D); A, C, E cut with documented rationale (see ADR-027).
 
 **New components introduced:**
 
 | Component | Role | Location (planned) |
 |---|---|---|
-| Flow-State Tier | NEW Hono service hosting XState v5 actor tree; owns flow machines, projection endpoints, scope resolver, replay buffer | `flow-state/` (new top-level workspace) |
-| `LoginAndOrgSetupMachine` | Seed XState v5 actor implementing J-001 (US-001 through US-005) | `flow-state/lib/machines/loginAndOrgSetup.ts` |
-| `FlowOrchestrator` | Root actor; spawns + supervises flow machines; broadcasts FREEZE/THAW | `flow-state/lib/orchestrator.ts` |
-| `ScopeResolver` | Pure function `(route, jwt, machineContext) → ActiveScope`; enforces ADR-029 invariants | `flow-state/lib/scope/resolver.ts` |
-| `RedisFlowEventLog` | Adapter satisfying `FlowEventLog` port; Redis Streams (XADD/XRANGE); `flow:{id}:events` key prefix | `flow-state/lib/adapters/redisFlowEventLog.ts` |
-| `ReplayBuffer` | Bounded queue (5s timeout, 16 max); flushed on THAW | `flow-state/lib/orchestrator/replayBuffer.ts` |
+| UI-State Tier | NEW Hono service hosting XState v5 actor tree; owns flow machines, projection endpoints, scope resolver, replay buffer | `ui-state/` (new top-level workspace) |
+| `LoginAndOrgSetupMachine` | Seed XState v5 actor implementing J-001 (US-001 through US-005) | `ui-state/lib/machines/loginAndOrgSetup.ts` |
+| `FlowOrchestrator` | Root actor; spawns + supervises flow machines; broadcasts FREEZE/THAW | `ui-state/lib/orchestrator.ts` |
+| `ScopeResolver` | Pure function `(route, jwt, machineContext) → ActiveScope`; enforces ADR-029 invariants | `ui-state/lib/scope/resolver.ts` |
+| `RedisFlowEventLog` | Adapter satisfying `FlowEventLog` port; Redis Streams (XADD/XRANGE); `ui-state:{id}:events` key prefix | `ui-state/lib/adapters/redisFlowEventLog.ts` |
+| `ReplayBuffer` | Bounded queue (5s timeout, 16 max); flushed on THAW | `ui-state/lib/orchestrator/replayBuffer.ts` |
 | `UserFlowHarness` (TS) | First-class TS harness for J-001 flows; reads same projection FE consumes | `tests/acceptance/user-flow-state-machines/harness/UserFlowHarness.ts` |
 | Remix FE migration (if Option D ratified) | Replace `frontend/main.tsx` + `App.tsx` with Remix routes tree; `useScope()` helper backed by `useRouteLoaderData` | `frontend/app/` (Remix convention) |
 | `<ScopeProvider>` (if Option B ratified) | React Context + TanStack-Query-backed projection consumer | `frontend/src/scope/ScopeProvider.tsx` |
@@ -264,16 +264,16 @@ probe then use**. Probe failure → `pytest.skip(reason)`.
 
 | Integration | Direction | Contract |
 |---|---|---|
-| Auth-proxy → Flow-State Tier | `/flow-state/*` forward rules | Auth-proxy injects identity headers + `X-Correlation-Id`; tier trusts them. No new auth surface. |
-| Flow-State Tier → Backend | `POST /api/orgs`, `POST /api/auth/reissue` (verify present; small backend delta if absent) | OpenAPI-contract-validated in CI. |
-| Flow-State Tier → WorkOS | OIDC token exchange during `authenticating` transitions | **Contract test recommended** (Pact-JS) for response shape pinning. |
-| Flow-State Tier → Redis | XADD `flow:{id}:events`; XRANGE for projection fold | Capability-presence dispatched (ADR-018 inheritance); same Redis container. |
-| FE / Harness → Flow-State Tier (via auth-proxy) | `GET /api/flows/{id}/projection`, `POST /api/flows/{id}/events`, SSE `/projection/stream` | JSON projection schema in ADR-027 §4. |
+| Auth-proxy → UI-State Tier | `/ui-state/*` forward rules | Auth-proxy injects identity headers + `X-Correlation-Id`; tier trusts them. No new auth surface. |
+| UI-State Tier → Backend | `POST /api/orgs`, `POST /api/auth/reissue` (verify present; small backend delta if absent) | OpenAPI-contract-validated in CI. |
+| UI-State Tier → WorkOS | OIDC token exchange during `authenticating` transitions | **Contract test recommended** (Pact-JS) for response shape pinning. |
+| UI-State Tier → Redis | XADD `ui-state:{id}:events`; XRANGE for projection fold | Capability-presence dispatched (ADR-018 inheritance); same Redis container. |
+| FE / Harness → UI-State Tier (via auth-proxy) | `GET /api/flows/{id}/projection`, `POST /api/flows/{id}/events`, SSE `/projection/stream` | JSON projection schema in ADR-027 §4. |
 | Agent (chat brain — unchanged) | Receives `X-Active-Scope` header from auth-proxy on every chat turn | Per ADR-029 §"Agent integration contract"; D8 honored (agent does not derive scope; it receives). |
 
 **External integrations annotated for DEVOPS handoff:**
 
-> Contract tests recommended for Flow-State Tier → WorkOS — consumer-driven contracts via Pact-JS in CI acceptance stage. Internal contracts (auth-proxy, backend) covered by their existing OpenAPI documents; tier's mock-server validates against those specs.
+> Contract tests recommended for UI-State Tier → WorkOS — consumer-driven contracts via Pact-JS in CI acceptance stage. Internal contracts (auth-proxy, backend) covered by their existing OpenAPI documents; tier's mock-server validates against those specs.
 
 **Earned-Trust contract.** Every adapter satisfies a `Probed` TypeScript interface. Composition-root invariant: **wire then probe then use**. Probes:
 - `RedisFlowEventLog`: XADD/XRANGE/DEL round-trip on startup.
@@ -282,7 +282,7 @@ probe then use**. Probe failure → `pytest.skip(reason)`.
 - `WorkOSClient`: OIDC discovery (SOFT-fail; degrades `authenticating` to `error_recoverable`).
 Probe failure for HARD adapters → process exits with `health.startup.refused` structured event.
 
-**Architectural enforcement (principle 11).** Three semantically orthogonal layers in the tier: (a) TypeScript `Probed` interface + composition-root subtype check; (b) AST pre-commit hook walking `*Adapter.ts` files; (c) CI gold-test exercising probe round-trip at startup. `dependency-cruiser` for import-graph rules. `eslint-plugin-dashboard-chat-flow-state` (custom) flags direct `useParams` reads of scope-relevant params on the FE.
+**Architectural enforcement (principle 11).** Three semantically orthogonal layers in the tier: (a) TypeScript `Probed` interface + composition-root subtype check; (b) AST pre-commit hook walking `*Adapter.ts` files; (c) CI gold-test exercising probe round-trip at startup. `dependency-cruiser` for import-graph rules. `eslint-plugin-dashboard-chat-ui-state` (custom) flags direct `useParams` reads of scope-relevant params on the FE.
 
 **Quality gates passed (this DESIGN wave).**
 
@@ -315,8 +315,8 @@ Probe failure for HARD adapters → process exits with `health.startup.refused` 
 | ADR-018 | System | Redis-only SessionEventReader (supersedes 017) |
 | ADR-019 | Application | Eject-then-test validation (Proposed) |
 | ADR-024 | Application | Rebalance dbt-test-validation (Proposed; partially supersedes 019) |
-| ADR-027 | Application | Flow-state tier + Remix framework (Proposed) |
+| ADR-027 | Application | UI-state tier + Remix framework (Proposed) |
 | ADR-028 | Application | XState v5 with actor model (Proposed) |
 | ADR-029 | Application | `active_scope` propagation contract (Proposed) |
-| ADR-030 | System | Flow-state tier topology + single-replica scaling (Proposed) |
+| ADR-030 | System | UI-state tier topology + single-replica scaling (Proposed) |
 | ADR-031 | System | Frontend tier transition — Remix alongside nginx (Proposed) |

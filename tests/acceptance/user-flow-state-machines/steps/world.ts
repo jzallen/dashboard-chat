@@ -7,7 +7,7 @@ import { setWorldConstructor, World } from "@cucumber/cucumber";
 
 import { UserFlowHarness } from "../harness/user-flow-harness.ts";
 import { FakeWorkOS } from "./fake-workos.ts";
-import { FlowStateClient } from "./flow-state-client.ts";
+import { UiStateClient } from "./ui-state-client.ts";
 import { PERSONAS } from "./fixtures/personas.ts";
 
 const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL ?? "http://localhost:1042";
@@ -19,7 +19,7 @@ const FAKE_WORKOS_PORT = parseInt(
 export class UserFlowWorld extends World {
   harness: UserFlowHarness | null = null;
   fakeWorkOS: FakeWorkOS | null = null;
-  flowStateClient: FlowStateClient = new FlowStateClient(AUTH_PROXY_URL);
+  uiStateClient: UiStateClient = new UiStateClient(AUTH_PROXY_URL);
   currentPersona: keyof typeof PERSONAS | null = null;
   // Loose bag for per-scenario stash (correlation ids, fixture handles, etc.).
   bag: Record<string, unknown> = {};

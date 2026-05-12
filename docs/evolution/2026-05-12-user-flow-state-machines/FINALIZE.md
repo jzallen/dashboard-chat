@@ -13,13 +13,13 @@
 
 ## 1. Summary
 
-A user-flow state-machine tier (`flow-state/`) was added as a new
+A user-flow state-machine tier (`ui-state/`) was added as a new
 single-replica Hono service behind `auth-proxy`. It owns the
 `login-and-org-setup` machine (anonymous → authenticating →
 authenticated_no_org → creating_org → ready, with `error_recoverable`,
 `error_terminal`, and `expired_token` side-states), persists `FlowEvent`s
 to Redis Streams via the ADR-018 capability-presence dispatch, and
-serves a JSON projection at `GET /flow-state/api/flows/{id}/projection`
+serves a JSON projection at `GET /ui-state/api/flows/{id}/projection`
 plus an SSE push channel at `…/projection/stream`. The FE consumes the
 projection through Remix route loaders (`frontend-remix`, running
 alongside the existing nginx `frontend` container per ADR-031); the TS
@@ -105,7 +105,7 @@ observability `@kpi` scenario) are authored as step glue with @skip per
 `expire_token()`, and `assert_scope({...})`. Every call reads / writes
 the same projection the FE consumes (no parallel state); the harness
 routes through `auth-proxy` (no test-only backdoor); the
-flow-state tier exposes `__harness_force_failure__` /
+ui-state tier exposes `__harness_force_failure__` /
 `__harness_expire_token__` event handlers gated to dev mode. The
 `assert_scope` named-column diff formatter reuses the shape from
 `DatasetLayerHarness.assert_exactly_once_via_replay`.
@@ -131,7 +131,7 @@ session…" banner is `role="status"` + `aria-live="polite"` (US-003's
 time).
 **KPI surface**: `token_expired_event`, `silent_reauth_ok`,
 `silent_reauth_failed`; "duplicate request" detector.
-**AC coverage**: `flow-state/lib/orchestrator.test.ts` covers FREEZE /
+**AC coverage**: `ui-state/lib/orchestrator.test.ts` covers FREEZE /
 THAW broadcast, replay-buffer bounds, origin-actor exemption, and the
 expired_token → freeze / ready → thaw auto-signalling. Seven Cucumber
 scenarios at `features/slice-3-expired-token-freeze.feature` plus the
@@ -145,10 +145,10 @@ glue per [DI-3](#deferred-items).
 
 | ADR | Title | Status | Where it lives in this archive |
 |---|---|---|---|
-| ADR-027 | Flow-state tier + projection contract (JSON + SSE; full-state-per-event) | Accepted | `design/wave-decisions.md` §D5c, `design/application-architecture.md`, `design/handoff-design-to-distill.md` §4 |
+| ADR-027 | UI-state tier + projection contract (JSON + SSE; full-state-per-event) | Accepted | `design/wave-decisions.md` §D5c, `design/application-architecture.md`, `design/handoff-design-to-distill.md` §4 |
 | ADR-028 | XState v5 actor model (cross-machine FREEZE/THAW native idiom) | Accepted | `design/wave-decisions.md` §D5a |
 | ADR-029 | `active_scope` propagation contract (server-resolved + invariants I1–I5) | Accepted | `design/wave-decisions.md` §D5d, `design/handoff-design-to-distill.md` §2 |
-| ADR-030 | Topology + scaling (flow-state behind auth-proxy; single replica with documented ceiling triggers; `flow_id = {machine}:{principal_id}` multi-tenant safety) | Accepted | `design/system-architecture.md` §SD1–SD8, `design/wave-decisions.md` "System Decisions" |
+| ADR-030 | Topology + scaling (ui-state behind auth-proxy; single replica with documented ceiling triggers; `flow_id = {machine}:{principal_id}` multi-tenant safety) | Accepted | `design/system-architecture.md` §SD1–SD8, `design/wave-decisions.md` "System Decisions" |
 | ADR-031 | Frontend tier transition (Remix alongside nginx; strangler-fig per route) | Accepted | `design/system-architecture.md` §SD5, `design/upstream-changes.md` "Change 9" |
 
 ADRs are referenced from the archived design subtree. Standalone
@@ -171,25 +171,25 @@ separate feature once Praxis review concludes.
 
 ## 4. Architecture deltas
 
-- **New compose service**: `flow-state` (Hono + XState v5; host port
+- **New compose service**: `ui-state` (Hono + XState v5; host port
   `1043:8788`; single replica). Behind `auth-proxy` via the new
-  multi-upstream routing rule (`/flow-state/*`). Persists FlowEvents to
-  Redis Streams (key prefix `flow:{machine}:{principal_id}:events`;
+  multi-upstream routing rule (`/ui-state/*`). Persists FlowEvents to
+  Redis Streams (key prefix `ui-state:{machine}:{principal_id}:events`;
   XADD per transition; snapshot every 50 events).
 - **New compose service**: `frontend-remix` (React 18 + Remix v2 on
   Node; host port for migrated routes). Runs ALONGSIDE the existing
   `frontend` nginx container per ADR-031 strangler-fig; nginx is
   byte-unchanged and gains one new upstream rule.
 - **Auth-proxy extension**: multi-upstream routing table (`/api/auth/*`
-  local, `/flow-state/*` → flow-state tier, `/api/*` → backend default).
+  local, `/ui-state/*` → ui-state tier, `/api/*` → backend default).
 - **Compose acceptance stack count**: grew from 5 services to **7**
-  (auth-proxy, agent, backend, query-engine, MinIO, flow-state,
+  (auth-proxy, agent, backend, query-engine, MinIO, ui-state,
   frontend-remix). The compose acceptance test verifies byte-identical
   startup of all 7.
 - **Pre-existing inconsistency surfaced (not fixed)**: the agent is
   reached via nginx directly today (`/worker/` + the ADR-015 presentation-state
   route), bypassing `auth-proxy`. ADR-030 documents this; the
-  flow-state tier sits behind auth-proxy correctly from PR-0 but the
+  ui-state tier sits behind auth-proxy correctly from PR-0 but the
   agent's bypass is out of scope for this feature.
 
 ---
@@ -307,7 +307,7 @@ finalize wave. Each is recorded with its owner / next action.
 - **Owner**: DEVOPS (platform-architect).
 - **Why**: `discuss/outcome-kpis.md` enumerates K1–K5 with measurement
   plans, but no machine-readable contract exists for what events the
-  flow-state tier MUST emit. `@kpi`-tagged scenarios in the suite
+  ui-state tier MUST emit. `@kpi`-tagged scenarios in the suite
   currently assert the *name* of the event the tier emits (e.g.
   `welcome_page_rendered`), not its shape against a pinned schema.
 - **Follow-on action**: create `docs/product/kpi-contracts.yaml` with
@@ -435,9 +435,9 @@ when it lands, not from the temporary workspace.
   + DI-4 flag).
 - **Tests**: `tests/acceptance/user-flow-state-machines/` (Cucumber
   step glue, 23 scenarios @skip per DI-1), plus vitest suites under
-  `flow-state/`, `auth-proxy/`, `frontend-remix/`, and
+  `ui-state/`, `auth-proxy/`, `frontend-remix/`, and
   `harness/user-flow-harness.test.ts`.
-- **Production code**: `flow-state/` (new Hono + XState v5 service),
+- **Production code**: `ui-state/` (new Hono + XState v5 service),
   `frontend-remix/` (new Remix container), `auth-proxy/` (multi-upstream
   routing table extension).
 - **Architecture artifacts (archived here)**:

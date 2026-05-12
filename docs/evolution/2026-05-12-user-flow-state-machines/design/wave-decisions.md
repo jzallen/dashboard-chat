@@ -18,7 +18,7 @@ survivors with explicit cuts. One recommendation made with explicit rationale.
 
 | # | Source | Constraint |
 |---|---|---|
-| C1 | DISCUSS D8 | The `agent/` (Hono worker) is the chat brain only. The flow-state-machine layer does NOT live there. |
+| C1 | DISCUSS D8 | The `agent/` (Hono worker) is the chat brain only. The ui-state-machine layer does NOT live there. |
 | C2 | DISCUSS D9 | `active_scope = { org_id, project_id, resource_type?, resource_id? }` must flow through every render/API/agent call without manual per-component plumbing. |
 | C3 | DISCUSS commitment | React + XState are committed building blocks. The framework choice is the open variable. |
 | C4 | ADR-014 | ChatEvent vocabulary stratified; transitions emit `DomainEvent`, UI renders from projection. |
@@ -30,16 +30,16 @@ survivors with explicit cuts. One recommendation made with explicit rationale.
 
 | Existing component | Path | Reuse decision | Rationale |
 |---|---|---|---|
-| `InProcessPresentationStateLog` / `RedisPresentationStateLog` | `agent/lib/chat/presentationState.ts` + `redisPresentationState.ts` | **Pattern reuse, NOT extend** | The append-only `UiDirective[]` log is the *shape* the flow-state-machine projection mirrors. We do NOT extend it (that would mix domain events with directives, violating ADR-014). We replicate the pattern under a new vocabulary (`FlowEvent[]`). |
+| `InProcessPresentationStateLog` / `RedisPresentationStateLog` | `agent/lib/chat/presentationState.ts` + `redisPresentationState.ts` | **Pattern reuse, NOT extend** | The append-only `UiDirective[]` log is the *shape* the ui-state-machine projection mirrors. We do NOT extend it (that would mix domain events with directives, violating ADR-014). We replicate the pattern under a new vocabulary (`FlowEvent[]`). |
 | `selectThreadPersister` capability-presence dispatch | `agent/lib/chat/threadPersisterDispatch.ts` | **Pattern reuse** | The dispatch shape (`REDIS_URL` set → Redis; unset → noop) is verbatim reused for `selectFlowEventStore`. No new env var. |
 | `RedisThreadPersister` (XADD/XRANGE writer) | `agent/lib/chat/redisThreadPersister.ts` | **Adapter precedent** | The flow-event log uses identical Redis Streams primitives. The implementation is independent (different key prefix, different schema), but the integration shape (lazyConnect, maxRetriesPerRequest, maxLen) is the precedent. |
-| `presentationStateRoutes.ts` (Hono sub-app exposing the log) | `agent/lib/chat/presentationStateRoutes.ts` | **Cannot reuse — wrong host** | This sub-app lives in `agent/`, which D8 has fenced off. The flow-state-machine tier exposes its own equivalent route handler in its own host. |
+| `presentationStateRoutes.ts` (Hono sub-app exposing the log) | `agent/lib/chat/presentationStateRoutes.ts` | **Cannot reuse — wrong host** | This sub-app lives in `agent/`, which D8 has fenced off. The ui-state-machine tier exposes its own equivalent route handler in its own host. |
 | `auth-proxy/app.ts` (Hono on Node, sole production ingress) | `auth-proxy/app.ts` | **Considered as host — REJECTED** | The auth-proxy's responsibility is JWT verification + identity-header injection. Adding stateful flow-machine ownership to it would muddle two concerns (auth ingress vs flow orchestration) and create a hot-path stateful service where the existing one is stateless. The auth-proxy stays as it is. |
 | `backend/tests/integration/dataset_layer/harness.py` (`DatasetLayerHarness`) | same | **Compose alongside, NOT duplicate** | This Python harness is the JOB-001 backend+agent contract guard. The new TS `UserFlowHarness` is the JOB-002 user-flow surface. Both read from the SAME projection endpoint (the flow-event log + projection). Composition: a JOB-001 acceptance test can call the TS harness for auth+org setup and then call the Python harness for chat-turn validation. No duplication — different responsibilities. |
 | `AuthContext.tsx` / `AuthProvider.tsx` (React Context for token + user state) | `frontend/src/ui/context/AuthContext/` | **Strangler-fig replace** | This is the precise re-derivation surface the feature aims to remove. Phase-1 of US-001 keeps it; phase-2 migrates consumers to read `state.user` from the flow projection; phase-3 deletes the context. Sequenced in `migration-plan.md` (DELIVER). |
 | `App.tsx` (React Router v6 routes; `RequireAuth` / `RequireOrg` guards) | `frontend/App.tsx` | **Replace with route-loader-shaped guards** | The route guards currently derive `isAuthenticated` + `user?.org_id` from React Context. In the recommended option, route loaders own this resolution server-side. React Router stays; the guards' implementation moves from context-read to loader-data-read. |
 | `ChatView/index.tsx` reads `projectId` from useParams + an effect that fetches project metadata | `frontend/src/ui/components/ChatView/index.tsx` | **Migration target — the canonical drift case** | The "ChatView project-context race" the user named in Round-2 is the canonical bug class this feature retires. ChatView reads `active_scope.project_id` from the projection; no useParams-then-fetch. |
-| Backend `POST /api/orgs`, `POST /api/auth/callback`, `POST /api/auth/reissue` (if it exists; otherwise add) | `backend/app/routers/` | **Behind-port consumers** | The flow-state-machine tier invokes these as ordinary HTTP clients. No backend change required for US-001/US-002 except possibly adding an idempotent JWT-reissue endpoint (US-002 AC). That endpoint is a small backend ADR-shaped delta; this feature's design names the contract; the implementation is a backend leaf. |
+| Backend `POST /api/orgs`, `POST /api/auth/callback`, `POST /api/auth/reissue` (if it exists; otherwise add) | `backend/app/routers/` | **Behind-port consumers** | The ui-state-machine tier invokes these as ordinary HTTP clients. No backend change required for US-001/US-002 except possibly adding an idempotent JWT-reissue endpoint (US-002 AC). That endpoint is a small backend ADR-shaped delta; this feature's design names the contract; the implementation is a backend leaf. |
 
 **Reuse summary**: every infrastructure pattern this feature needs already exists in the codebase under a different vocabulary. The work is **lifting the pattern** (ADR-015's directive log + ADR-018's capability-presence dispatch) **to a new vocabulary** (flow events + projections), not building new primitives. **Net new infrastructure: one Node tier, one Redis key prefix, one route family. Everything else is precedent.**
 
@@ -50,7 +50,7 @@ survivors with explicit cuts. One recommendation made with explicit rationale.
 | A. Vanilla SPA + client-side XState | **CUT** | Does not solve JOB-002 (server still does not own flow state). On scope-chain expressibility it scores HIGH drift risk — this is the exact shape that produced the ChatView project-context race the user named. The cheapest delta is the cheapest mismatch. |
 | B. New BFF Node service + XState server-side + React SPA reads projection | **SURVIVOR ("Option B")** | Smallest topology delta after the cut of A. Vite SPA stays; React Router stays; one new Node tier. Scope flows through projection, but FE still wires it manually at every component. |
 | C. Inertia.js (Hono adapter) + XState server-side | **CUT** | The Hono Inertia adapter (`@inertiajs/server` does not have a Hono variant in 2026-05; the maintained adapters are Laravel/Rails/Adonis/Express/Phoenix). Picking Inertia requires either (a) maintaining an Inertia-Hono shim ourselves, (b) introducing Express, or (c) moving the new tier off Hono. Each path adds lock-in risk for an unproven adapter combination. The user's "FE reloads after API call → same state as backend" mental model can be met by Option D's loader pattern with less lock-in. |
-| D. Remix + XState server-side | **SURVIVOR ("Option D")** | Largest mental-model match to "FE reloads after API call → same state as backend" within React + Vite ecosystem. Loaders run on every navigation; the loader IS the flow-state-projection read. `useRouteLoaderData` expresses scope inheritance cleanly. Compatible with Vite (Remix has first-class Vite support since v2.7). |
+| D. Remix + XState server-side | **SURVIVOR ("Option D")** | Largest mental-model match to "FE reloads after API call → same state as backend" within React + Vite ecosystem. Loaders run on every navigation; the loader IS the ui-state-projection read. `useRouteLoaderData` expresses scope inheritance cleanly. Compatible with Vite (Remix has first-class Vite support since v2.7). |
 | E. Next.js App Router + XState server-side | **CUT** | Biggest mental-model shift (Server Components + Server Actions). Replaces Vite. The frontend SSE/streaming integration (chat) requires rework. Effort 6-12 weeks (per DISCUSS estimate) is disproportionate to the JOB-002 outcome given two cheaper options remain. The parallel-routes ergonomic win exists but is not load-bearing for our scope shape. |
 
 **Two survivors**: **B (new Node BFF)** and **D (Remix)**.
@@ -65,7 +65,7 @@ ADR-028 ratifies XState v5 with actor model.
 
 ### D5b — Persistence backend
 
-**Redis Streams via capability-presence dispatch** (mirrors ADR-018 verbatim). Same env var (`REDIS_URL`), same Tier 1/Tier 2 split, same Redis container in compose. New key prefix (`flow:{flow_id}:events`); maxLen parameterized identically. **No new infra; no new ADR for persistence** — ADR-018's policy is inherited by reference.
+**Redis Streams via capability-presence dispatch** (mirrors ADR-018 verbatim). Same env var (`REDIS_URL`), same Tier 1/Tier 2 split, same Redis container in compose. New key prefix (`ui-state:{flow_id}:events`); maxLen parameterized identically. **No new infra; no new ADR for persistence** — ADR-018's policy is inherited by reference.
 
 ### D5c — Projection wire format
 
@@ -86,7 +86,7 @@ ADR-027 ratifies the projection contract.
 
 ### D5e — Cross-machine `expired_token` freeze + replay-buffer contract
 
-**Single `AuthMachine` actor is the freeze emitter; every other flow actor declares a `FREEZE`/`THAW` handler that pauses outgoing mutations**. Replay buffer is bounded (5s timeout, 16 max queued mutations) and lives in the flow-state tier (not the FE). ADR-027 §"Cross-machine freeze" specifies the contract.
+**Single `AuthMachine` actor is the freeze emitter; every other flow actor declares a `FREEZE`/`THAW` handler that pauses outgoing mutations**. Replay buffer is bounded (5s timeout, 16 max queued mutations) and lives in the ui-state tier (not the FE). ADR-027 §"Cross-machine freeze" specifies the contract.
 
 ## D6 — Recommendation
 
@@ -101,7 +101,7 @@ ADR-027 ratifies the projection contract.
 | Component | Library | License | Version | Maturity |
 |---|---|---|---|---|
 | State-machine engine | XState (`xstate@^5`) | MIT | 5.x | Mature; 5+ years; active maintenance |
-| Web framework (new flow-state tier) | Hono (`hono@^4`) | MIT | 4.x | Already in repo (agent, auth-proxy); zero new dependency risk |
+| Web framework (new ui-state tier) | Hono (`hono@^4`) | MIT | 4.x | Already in repo (agent, auth-proxy); zero new dependency risk |
 | (If Option D ratified) FE framework | Remix (`@remix-run/react@^2`) + Vite plugin | MIT | 2.7+ | First-class Vite support since 2024 |
 | Persistence (Tier 1) | ioredis (`ioredis`) | MIT | already vendored | Same client the agent uses for `RedisThreadPersister` |
 | Test harness | Vitest + `@dashboard-chat/shared-chat` types | MIT | already vendored | No new test framework |
@@ -112,7 +112,7 @@ ADR-027 ratifies the projection contract.
 
 | # | Constraint | Effect on acceptance tests |
 |---|---|---|
-| T1 | The flow-state tier is reachable via `auth-proxy` only | Acceptance tests route through auth-proxy port; no direct hit to the flow-state tier's port. |
+| T1 | The ui-state tier is reachable via `auth-proxy` only | Acceptance tests route through auth-proxy port; no direct hit to the ui-state tier's port. |
 | T2 | Projection endpoint is the shared SSOT between FE and TS harness | A test that asserts FE behavior MUST also be asserted via the projection endpoint; divergence is a test failure (one-way mock). |
 | T3 | `active_scope` is read from projection only, never from URL params | Tests that simulate "stale URL → fresh scope" assert that the scope resolver wins. |
 | T4 | XState v5 actor model is the cross-machine signaling layer | The `FREEZE` test scenario for US-005 exercises the actor-tree pattern, not a hand-rolled pub/sub. |
@@ -123,7 +123,7 @@ ADR-027 ratifies the projection contract.
 |---|---|---|---|
 | Inertia.js was the user's signaled lean | **Reframed, not overridden** | Inertia is cut for adapter-maturity reasons. The user's underlying preference (SSR-shaped + scope-via-shared-props) is honored by Option D (Remix), which expresses the same idea via loaders. | `application-architecture.md` §"Option C cut" + `upstream-changes.md` |
 | OQ-2 ("what runs the machines") was deferred from DISCUSS | **Resolved here** | XState v5 actor model. | ADR-028 |
-| OQ-5 (cross-machine freeze) was deferred from DISCUSS | **Resolved here** | Actor-tree FREEZE/THAW; bounded replay buffer in flow-state tier. | ADR-027 §"Cross-machine freeze" |
+| OQ-5 (cross-machine freeze) was deferred from DISCUSS | **Resolved here** | Actor-tree FREEZE/THAW; bounded replay buffer in ui-state tier. | ADR-027 §"Cross-machine freeze" |
 | OQ-7 (WCAG `role="alertdialog"`) | Carried to DELIVER | This is an implementation-level concern; not an architectural decision. | Noted in `handoff-design-to-distill.md` |
 
 No DISCUSS story is invalidated. US-001 through US-005 land exactly as written, with implementation details now ratified.
@@ -136,18 +136,18 @@ Morgan's decisions D1–D9 above set the application-scope architecture. Titan's
 
 ### SD1 — Topology placement (resolves SQ-1)
 
-**The flow-state tier sits behind auth-proxy.** Auth-proxy gains a multi-upstream routing table:
+**The ui-state tier sits behind auth-proxy.** Auth-proxy gains a multi-upstream routing table:
 
 | Path prefix | Upstream |
 |---|---|
 | `/api/auth/*` | auth-proxy local |
-| `/flow-state/*` | flow-state tier (NEW) |
+| `/ui-state/*` | ui-state tier (NEW) |
 | `/api/*` | backend (existing default) |
 | `/worker/*` | (future — out of PR-0 scope; agent currently reached via frontend nginx) |
 
 Ratified in ADR-030.
 
-**Sharpest argument**: ADR-016 declares auth-proxy the sole ingress for privileged operations. The flow-state tier mutates state (writes FlowEvents, invokes backend POSTs); it must sit behind auth-proxy. Co-tenanting in auth-proxy was rejected (mirrors the D8 rejection of `agent/` as host — auth-proxy does one thing well; flow-state is hot and stateful). Routing through frontend nginx was rejected (bypasses auth-proxy; contradicts ADR-016).
+**Sharpest argument**: ADR-016 declares auth-proxy the sole ingress for privileged operations. The ui-state tier mutates state (writes FlowEvents, invokes backend POSTs); it must sit behind auth-proxy. Co-tenanting in auth-proxy was rejected (mirrors the D8 rejection of `agent/` as host — auth-proxy does one thing well; ui-state is hot and stateful). Routing through frontend nginx was rejected (bypasses auth-proxy; contradicts ADR-016).
 
 ### SD2 — Scaling shape (resolves SQ-2)
 
@@ -159,10 +159,10 @@ Scaling-ceiling triggers documented in ADR-030 §3. Migration to Option γ (stic
 
 **Redis Streams via ADR-018 inheritance** — exactly as Morgan specified. Contract spec made explicit:
 
-- Key prefix: `flow:{flow_id}:events` where `flow_id = <machine-name>:<principal_id>` for per-user flows (multi-tenant safety; amends ADR-027 §3).
+- Key prefix: `ui-state:{flow_id}:events` where `flow_id = <machine-name>:<principal_id>` for per-user flows (multi-tenant safety; amends ADR-027 §3).
 - XADD per transition; full machine context snapshot every 50 events.
 - Probe contract: XADD/XRANGE/DEL round-trip on startup; HARD-fail if any step fails.
-- Snapshot fast-path (`flow:{id}:snapshot` Redis String) is an additive optimization deferred to DELIVER if projection-build cost exceeds budget.
+- Snapshot fast-path (`ui-state:{id}:snapshot` Redis String) is an additive optimization deferred to DELIVER if projection-build cost exceeds budget.
 
 ### SD4 — Observability (resolves SQ-4 — directive, folded into ADR-030)
 
@@ -183,20 +183,20 @@ Strangler-fig migration: one route family per PR. Rollback per route is a one-li
 
 ### SD6 — Auth path (resolves SQ-6 — derives from SD1 + SD5 + ADR-016)
 
-- Browser sends Bearer token; nginx forwards to `frontend-remix`; Remix loaders forward to auth-proxy; auth-proxy verifies; auth-proxy injects identity headers; flow-state tier trusts headers (no double verification).
+- Browser sends Bearer token; nginx forwards to `frontend-remix`; Remix loaders forward to auth-proxy; auth-proxy verifies; auth-proxy injects identity headers; ui-state tier trusts headers (no double verification).
 - Cookie migration deferred to Phase B (post-feature, separate ADR when needed).
 
 ### SD7 — Failover / SPOF (resolves SQ-7 — derives from SD2)
 
 | Component | Is it a NEW SPOF for this feature? | MTTR |
 |---|---|---|
-| flow-state tier | YES — but ONLY for sign-in + scope transitions | ~30s (container restart + lazy Redis rehydration on first projection read) |
+| ui-state tier | YES — but ONLY for sign-in + scope transitions | ~30s (container restart + lazy Redis rehydration on first projection read) |
 | Redis | NO — already a SPOF for ADR-018 + ADR-015. Blast radius grows: 3 logs now share one Redis. | unchanged |
 | auth-proxy | NO — already a SPOF per ADR-016 | unchanged |
 | backend (api) | NO | n/a |
 | agent | NO — fully decoupled per Morgan's D8 | n/a |
 
-Existing flows (chat, dataset operations) are UNAFFECTED by flow-state outages. Verified in compose acceptance test (`docker compose restart flow-state` mid-flow → recovery <60s).
+Existing flows (chat, dataset operations) are UNAFFECTED by ui-state outages. Verified in compose acceptance test (`docker compose restart ui-state` mid-flow → recovery <60s).
 
 ### SD8 — Estimation (resolves SQ-8 — see `system-architecture.md` §0)
 

@@ -30,7 +30,7 @@ choice; see Round-2 option matrix below) and **two smaller decisions**
 > **Hard constraint (Round-2, user-imposed)**: the `agent/` (Hono worker)
 > stays dedicated to the chat-brain interface — SSE streaming via Groq + tool
 > dispatch + ADR-015's narrow per-channel UI directive log. It is **not** a
-> candidate host for the flow-state-machine layer. The user's mental model is
+> candidate host for the ui-state-machine layer. The user's mental model is
 > SSR-shaped: "API endpoints and presentation could use the same state
 > machines, so the frontend just reloads after an API call and should see the
 > same state as the backend." React + XState are committed as building
@@ -144,7 +144,7 @@ either; the framework choice is the DESIGN-wave deliverable. The PO surfaces
 the user's preference shape; the architect picks the framework.
 
 **Anti-preference (recorded)**: the user explicitly does not want the
-flow-state-machine layer to live inside the agent/worker. Option A's
+ui-state-machine layer to live inside the agent/worker. Option A's
 client-side XState is also a known anti-preference in the sense that it does
 not resolve the JOB-002 divergence problem the user named.
 

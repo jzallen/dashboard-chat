@@ -1,10 +1,10 @@
 # SCAFFOLD: true
 #
-# Flow-State Tier — RED scaffold Bazel target.
+# UI-State Tier — RED scaffold Bazel target.
 # DELIVER replaces with the production build per the agent/BUILD.bazel pattern.
 
 filegroup(
-    name = "flow_state_scaffold",
+    name = "ui_state_scaffold",
     srcs = glob(["**/*.ts", "Dockerfile", "package.json", "tsconfig.json"]),
     visibility = ["//visibility:public"],
 )

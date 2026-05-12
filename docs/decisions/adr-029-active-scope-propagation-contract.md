@@ -7,18 +7,18 @@
 - DISCUSS Round-2 D9 directive: `docs/feature/user-flow-state-machines/discuss/wave-decisions.md` §"Round-2 iteration / D9"
 - Shared artifacts registry (`active_scope` entry, HIGH risk): `docs/feature/user-flow-state-machines/discuss/shared-artifacts-registry.md`
 - DESIGN application-architecture: `docs/feature/user-flow-state-machines/design/application-architecture.md`
-- Sibling ADRs: ADR-027 (flow-state tier + framework), ADR-028 (XState v5 actor model)
+- Sibling ADRs: ADR-027 (ui-state tier + framework), ADR-028 (XState v5 actor model)
 
 ## Context
 
 The DISCUSS Round-2 directive D9 surfaced an implicit but load-bearing requirement: every user flow except login operates inside a specific `active_scope = { org_id, project_id, resource_type?, resource_id? }`. The framework chosen in DESIGN MUST express this scope inheritance cleanly without manual per-component plumbing. The canonical drift case the directive names is the "ChatView project-context race" — `useParams("projectId")` racing a separate `/api/projects/{id}` fetch racing a TanStack Query cache, all re-deriving what should be a single source of truth.
 
-ADR-027 picks the host (the flow-state Node tier) and the FE framework (Remix; or Option B's plain SPA as fallback). ADR-028 picks the engine (XState v5 actor model). This ADR specifies the **data-flow contract** that makes scope propagation a single-source-of-truth concern by construction.
+ADR-027 picks the host (the ui-state Node tier) and the FE framework (Remix; or Option B's plain SPA as fallback). ADR-028 picks the engine (XState v5 actor model). This ADR specifies the **data-flow contract** that makes scope propagation a single-source-of-truth concern by construction.
 
 ## Decision drivers
 
 - **Single source of truth.** `active_scope` resolves at exactly one place per request. No FE component reads it from anywhere else.
-- **Server-resolved.** The resolution site is the flow-state tier, not the FE. The FE's role is consumption, not derivation.
+- **Server-resolved.** The resolution site is the ui-state tier, not the FE. The FE's role is consumption, not derivation.
 - **Multi-tenant safety.** `active_scope.org_id` MUST equal the JWT's `org_id` claim. Cross-tenant inconsistency is a 403, not a silent state.
 - **Stale-link safety.** If a URL says project A but the user's machine context says project B, the ScopeResolver wins; the FE receives the authoritative scope and renders accordingly, OR a transition to a named error state surfaces the mismatch.
 - **Agent integration.** The chat agent receives `org_id` + `project_id` from the same `active_scope` on every turn (per Round-2 D8). The agent does not re-derive scope.
@@ -39,7 +39,7 @@ The propagation mechanism varies by framework choice (see ADR-027). This ADR spe
 
 ```ts
 // Shared type — re-exported from a single location.
-// Lives in shared/flow-state/scope.ts; imported by FE, flow-state tier, and TS harness.
+// Lives in shared/ui-state/scope.ts; imported by FE, ui-state tier, and TS harness.
 export type ActiveScope = {
   org_id: string;                         // always present once authenticated
   project_id: string | null;              // null in login flow only
@@ -48,7 +48,7 @@ export type ActiveScope = {
 };
 ```
 
-Invariants enforced by the ScopeResolver in the flow-state tier:
+Invariants enforced by the ScopeResolver in the ui-state tier:
 
 1. `active_scope.org_id` always equals the verified JWT's `org_id` claim. Mismatch is a 403 from the projection endpoint with diagnostic `scope mismatch: jwt.org_id != requested.org_id`.
 2. `active_scope.project_id` is non-null whenever the requesting flow's machine state requires a project context.
@@ -61,7 +61,7 @@ Invariants enforced by the ScopeResolver in the flow-state tier:
 ```ts
 // app/root.tsx — loader runs server-side on every navigation
 export async function loader({ request }: LoaderFunctionArgs) {
-  const projection = await flowStateClient(request).getProjection("login-and-org-setup");
+  const projection = await uiStateClient(request).getProjection("login-and-org-setup");
   return json({
     active_scope: projection.active_scope,
     user: projection.context.user,
@@ -70,7 +70,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 // app/lib/useScope.ts — typed accessor
 import { useRouteLoaderData } from "@remix-run/react";
-import type { ActiveScope } from "@dashboard-chat/flow-state-client";
+import type { ActiveScope } from "@dashboard-chat/ui-state-client";
 
 export function useScope(): ActiveScope {
   const data = useRouteLoaderData<{ active_scope: ActiveScope }>("root");
@@ -80,7 +80,7 @@ export function useScope(): ActiveScope {
 
 // app/routes/org.$org.project.$project.tsx — nested loader augments + reconciles
 export async function loader({ params, request }: LoaderFunctionArgs) {
-  const projection = await flowStateClient(request).getProjection("project-session-mgmt", {
+  const projection = await uiStateClient(request).getProjection("project-session-mgmt", {
     intent_org_id: params.org,
     intent_project_id: params.project,
   });
@@ -99,7 +99,7 @@ function ChatView() {
 }
 ```
 
-ESLint rule (`eslint-plugin-dashboard-chat-flow-state`, custom):
+ESLint rule (`eslint-plugin-dashboard-chat-ui-state`, custom):
 - Forbid `useParams<"orgId" | "projectId" | "datasetId" | "viewId" | "reportId">()` reads outside route-loader scope.
 - Forbid direct `useAuth()`-style reads of identity fields once the migration is complete; suggest `useScope()` instead.
 
@@ -142,7 +142,7 @@ The auth-proxy is the injection site. The FE (Remix loader, Option D) or the TS 
 X-Active-Scope: {"org_id":"org-...","project_id":"proj-...","resource_type":null,"resource_id":null}
 ```
 
-(Implementation detail: the header is set by Remix's loader on outgoing fetch calls via a shared `flowStateClient(request)` helper; it is NOT set by FE components individually.)
+(Implementation detail: the header is set by Remix's loader on outgoing fetch calls via a shared `uiStateClient(request)` helper; it is NOT set by FE components individually.)
 
 ### 5. TS harness integration contract
 

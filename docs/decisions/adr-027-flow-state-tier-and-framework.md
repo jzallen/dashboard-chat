@@ -1,4 +1,4 @@
-# ADR-027: Flow-State Tier as a Dedicated Hono Service; Remix as the FE Framework
+# ADR-027: UI-State Tier as a Dedicated Hono Service; Remix as the FE Framework
 
 **Status:** Accepted (ratified 2026-05-11 — user selected Option D over Option B)
 **Date:** 2026-05-11
@@ -65,16 +65,16 @@ B is structurally viable and is the smallest topology delta after A is cut. It i
 - **Scope-chain drift LOW by construction**: `useRouteLoaderData("root").active_scope` is the only legal read path. Alternative paths (`useParams`, `useAuth()`, ad-hoc `fetch`) are flagged at compile time or by lint.
 - **Mental-model match**: Remix loaders re-run on every navigation; that IS "FE reloads after API call → same state as backend."
 - **Adapter maturity**: Remix v2.7+ has first-class Vite support since 2024. Shopify-owned. MIT.
-- **Reversibility**: the load-bearing piece is the flow-state Node tier, which is framework-independent. If Remix becomes a problem, the loaders port to Next.js `app/` route handlers in 1-2 weeks; the tier is unchanged.
+- **Reversibility**: the load-bearing piece is the ui-state Node tier, which is framework-independent. If Remix becomes a problem, the loaders port to Next.js `app/` route handlers in 1-2 weeks; the tier is unchanged.
 
 ## Decision outcome
 
-### 1. The Flow-State Tier (NEW Node service)
+### 1. The UI-State Tier (NEW Node service)
 
-A new Hono service (`flow-state/`) deploys alongside the agent in the same compose topology. It owns:
+A new Hono service (`ui-state/`) deploys alongside the agent in the same compose topology. It owns:
 
 - **XState v5 actors** for each user flow (J-001 first; J-002 through J-007 added as DISCUSS passes complete).
-- **Per-flow event log** (Redis Streams; key prefix `flow:{flow_id}:events`).
+- **Per-flow event log** (Redis Streams; key prefix `ui-state:{flow_id}:events`).
 - **Projection endpoints**:
   - `GET /api/flows/{flow_id}/projection` — JSON projection of the current flow state.
   - `GET /api/flows/{flow_id}/projection/stream` — SSE push channel for live updates.
@@ -97,14 +97,14 @@ Route layouts express `active_scope` inheritance:
 
 ### 3. Persistence
 
-Inherited from ADR-018 verbatim: Redis Streams when `REDIS_URL` is set; noop fallback otherwise. No new env var. Same compose Redis container. New key prefix: `flow:{flow_id}:events`. MaxLen parameterized via `FLOW_EVENT_MAXLEN` (default 1000).
+Inherited from ADR-018 verbatim: Redis Streams when `REDIS_URL` is set; noop fallback otherwise. No new env var. Same compose Redis container. New key prefix: `ui-state:{flow_id}:events`. MaxLen parameterized via `FLOW_EVENT_MAXLEN` (default 1000).
 
 **`flow_id` schema (amended per ADR-030 §2.1 — multi-tenant safety):**
 
-- **Per-user flows** (the default case in PR-0): `flow_id = <machine-name>:<principal_id>` (e.g., `flow:loginAndOrgSetup:user-001`)
-- **Singleton flows** (none in PR-0): `flow_id = <machine-name>` (e.g., `flow:globalMaintenance`)
+- **Per-user flows** (the default case in PR-0): `flow_id = <machine-name>:<principal_id>` (e.g., `ui-state:loginAndOrgSetup:user-001`)
+- **Singleton flows** (none in PR-0): `flow_id = <machine-name>` (e.g., `ui-state:globalMaintenance`)
 
-**Rationale:** Per-user flows MUST include `principal_id` to prevent cross-user pollution — a `FREEZE` event broadcast on `flow:loginAndOrgSetup:events` would otherwise match every user's login flow. This is a correctness invariant parallel to ADR-029 invariant 1 (org_id matches JWT claim). Discovered during the system-scope DESIGN pass; ratified into the tier contract by ADR-030.
+**Rationale:** Per-user flows MUST include `principal_id` to prevent cross-user pollution — a `FREEZE` event broadcast on `ui-state:loginAndOrgSetup:events` would otherwise match every user's login flow. This is a correctness invariant parallel to ADR-029 invariant 1 (org_id matches JWT claim). Discovered during the system-scope DESIGN pass; ratified into the tier contract by ADR-030.
 
 ### 4. Projection wire format (JSON)
 
@@ -127,7 +127,7 @@ The FE and the TS harness consume identical JSON. No parallel state. No FE-inter
 On entry to the `expired_token` state, the `LoginAndOrgSetupMachine` emits a `FREEZE` event through the orchestrator actor; the orchestrator broadcasts `send(FREEZE)` to every spawned child actor (XState v5 actor-model `system.get(...)` enumeration). Each flow machine declares a `FREEZE` handler that pauses outgoing mutations.
 
 The replay buffer:
-- Lives in the flow-state tier (NOT the FE).
+- Lives in the ui-state tier (NOT the FE).
 - Bounded: 5 second wall-clock timeout from FREEZE; 16 max queued mutations per flow.
 - Per-mutation entry: `{ flow_id, intent_event, original_correlation_id, queued_at }`.
 - Flush on THAW: each queued intent re-sent to its flow with the original `correlation_id`.
@@ -146,7 +146,7 @@ Per principle 12, every driven adapter has a `probe()`. Composition root invaria
 
 Three-layer enforcement (per principle 12):
 - **Subtype**: TypeScript `Probed` interface; composition root signature requires `Probed & FlowEventLog`.
-- **Structural**: AST pre-commit hook walks `flow-state/lib/adapters/*.ts`; every export class must have a `probe` method.
+- **Structural**: AST pre-commit hook walks `ui-state/lib/adapters/*.ts`; every export class must have a `probe` method.
 - **Behavioral**: CI gold-test runs `npm start --probe-strict`; asserts one `health.probes.passed` event per registered adapter.
 
 `import-linter` was investigated and rejected per principle 12 — its contracts are import-graph-only with no API for method-presence enforcement.
@@ -158,8 +158,8 @@ Three-layer enforcement (per principle 12):
 | Import graph (tier) | `dependency-cruiser` | `routes/` imports `orchestrator/`; `orchestrator/` imports `machines/`; reverse = build error. |
 | Subtype | TypeScript `strict` | All adapter exports satisfy `Probed`. |
 | Structural | AST pre-commit (`scripts/check-adapters.ts`) | Every `*Adapter.ts` exports class with `probe()`. |
-| Behavioral | CI gold-test (`flow-state/test/composition-root.test.ts`) | Startup emits `health.probes.passed` per adapter. |
-| FE Import graph | `dependency-cruiser` | FE may NOT import flow-state internals; only `@dashboard-chat/flow-state-client`. |
+| Behavioral | CI gold-test (`ui-state/test/composition-root.test.ts`) | Startup emits `health.probes.passed` per adapter. |
+| FE Import graph | `dependency-cruiser` | FE may NOT import ui-state internals; only `@dashboard-chat/ui-state-client`. |
 | FE Lint | `eslint-plugin-remix` + custom rule | Flag direct `useParams` reads of scope-relevant params. |
 
 ## Consequences
@@ -168,10 +168,10 @@ Three-layer enforcement (per principle 12):
 
 - JOB-002 outcomes O1 (time to add a flow's headless test), O2 (UI/harness divergence), O3 (one-place transition rule change) become mechanically true.
 - The "ChatView project-context race" is impossible by construction in Option D.
-- The flow-state tier and the agent share a deployment shape; ops cognitive load is bounded.
+- The ui-state tier and the agent share a deployment shape; ops cognitive load is bounded.
 - Redis log infrastructure is reused; no new persistence concept.
 - ADR-015 (presentation-state log) is the precedent the new vocabulary mirrors; testers familiar with that pattern recognize the shape immediately.
-- Reversibility: the load-bearing piece (flow-state tier) is framework-independent; Remix replaceability is bounded to the FE.
+- Reversibility: the load-bearing piece (ui-state tier) is framework-independent; Remix replaceability is bounded to the FE.
 
 ### Negative / accepted trade-offs
 
@@ -183,14 +183,14 @@ Three-layer enforcement (per principle 12):
 ### Cross-decision composition
 
 - **ADR-027 ↔ ADR-014** — Flow transitions emit `DomainEvent`s (per ADR-014's parallel-unions); UI projections are derived. Cross-machine signals (`FREEZE`, `THAW`) are `DomainEvent`s, NOT `UiDirective`s.
-- **ADR-027 ↔ ADR-015** — The flow-event log is the same shape as the directive log under a different vocabulary. The two logs coexist in Redis with distinct key prefixes. The reference reducer in `shared/chat/` is the precedent; this feature ships `shared/flow-state/` alongside.
-- **ADR-027 ↔ ADR-016** — The flow-state tier is reachable only through auth-proxy; the compose stack grows from 5 to 6 services; the acceptance compose-mirror test is amended accordingly (`docker-compose.yml` adds the tier; the auth-proxy's forward rules add `/flow-state/*`).
+- **ADR-027 ↔ ADR-015** — The flow-event log is the same shape as the directive log under a different vocabulary. The two logs coexist in Redis with distinct key prefixes. The reference reducer in `shared/chat/` is the precedent; this feature ships `shared/ui-state/` alongside.
+- **ADR-027 ↔ ADR-016** — The ui-state tier is reachable only through auth-proxy; the compose stack grows from 5 to 6 services; the acceptance compose-mirror test is amended accordingly (`docker-compose.yml` adds the tier; the auth-proxy's forward rules add `/ui-state/*`).
 - **ADR-027 ↔ ADR-018** — The capability-presence dispatch pattern is inherited verbatim. The new tier's `selectFlowEventStore` mirrors `selectThreadPersister`. Same env var; same Redis container; same compose acceptance gate.
 - **ADR-027 ↔ ADR-028 + ADR-029** — siblings in this wave. ADR-028 ratifies XState v5 actor model as the engine; ADR-029 ratifies the `active_scope` propagation contract. ADR-027 is the topology + framework decision; the others are the engine and the data-flow contracts.
 
 ## Open questions
 
-1. **Should the flow-state tier be a Bazel target or a plain npm workspace?** Recommendation: Bazel target (mirrors agent + auth-proxy). Decision deferred to DELIVER kickoff.
+1. **Should the ui-state tier be a Bazel target or a plain npm workspace?** Recommendation: Bazel target (mirrors agent + auth-proxy). Decision deferred to DELIVER kickoff.
 
 2. **Per-org partitioning of the flow-event log.** PR-0 uses per-flow-id keys. If the tier needs to enumerate flows for a single org (e.g., "what flows is this org running?"), a secondary index becomes necessary. Not in this feature's scope; revisit when a consumer asks.
 

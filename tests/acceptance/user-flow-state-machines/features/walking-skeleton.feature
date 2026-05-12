@@ -4,7 +4,7 @@
 #
 # This skeleton proves the server-owned `login-and-org-setup` machine
 # threads end-to-end: a new contributor arrives, signs in through real
-# auth-proxy → real flow-state tier → real Redis (FlowEvent log), with
+# auth-proxy → real ui-state tier → real Redis (FlowEvent log), with
 # WorkOS faked over loopback HTTP. The skeleton answers the user-value
 # question (Mandate 3): "Can a brand-new contributor see the app
 # recognize her identity?"
@@ -24,7 +24,7 @@ Feature: Maya signs in for the first time and lands on the welcome page with her
   Background:
     Given a clean environment with no organization yet owned by Maya
     And the fake identity provider is configured to recognize Maya's profile
-    And the flow-state services are healthy and reachable through the production ingress
+    And the ui-state services are healthy and reachable through the production ingress
 
   Scenario: Maya completes sign-in and the welcome page recognizes her by name
     Given Maya has never used Dashboard Chat before

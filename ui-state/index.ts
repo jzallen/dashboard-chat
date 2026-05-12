@@ -1,4 +1,4 @@
-// Flow-State Tier — Hono server entry point.
+// UI-State Tier — Hono server entry point.
 //
 // Routes (per `design/handoff-design-to-distill.md` §"Endpoints"):
 //   GET  /health                              — liveness check
@@ -31,12 +31,12 @@ import {
 const PORT = parseInt(process.env.PORT ?? "8788", 10);
 const REDIS_URL = process.env.REDIS_URL;
 const WORKOS_URL = process.env.FAKE_WORKOS_URL ?? "http://fake-workos:14299";
-// In dev mode the flow-state tier calls the backend directly (compose-network
+// In dev mode the ui-state tier calls the backend directly (compose-network
 // hostname `api:8000`). The backend's middleware trusts the identity headers
 // we inject. In production this routes through auth-proxy with a real bearer.
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://api:8000";
 
-// Identity that the flow-state tier presents to the backend when it acts on
+// Identity that the ui-state tier presents to the backend when it acts on
 // behalf of a flow's principal. In AUTH_MODE=dev this is the dev user; in
 // production a service-to-service M2M token replaces these headers.
 const DEFAULT_PRINCIPAL_HEADERS = {
@@ -73,7 +73,7 @@ const HARNESS_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Wire the flow-state routes onto the supplied Hono app, using the supplied
+ * Wire the ui-state routes onto the supplied Hono app, using the supplied
  * orchestrator as the state owner. Extracted so tests can build a scenario-
  * scoped app + orchestrator pair without invoking the production composition
  * root (which probes Redis, binds the port, and constructs the WorkOS / backend
@@ -322,7 +322,7 @@ function cryptoRandomId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `corr-${Date.now()}`;
 }
 
-if (process.env.FLOW_STATE_AUTOSTART !== "false") {
+if (process.env.UI_STATE_AUTOSTART !== "false") {
   // Probe Redis early so the container hard-fails per ADR-030 §SD3 if
   // REDIS_URL is set but the server cannot round-trip XADD/XRANGE/DEL.
   eventLog

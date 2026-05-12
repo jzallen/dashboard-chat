@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 const exec_async = promisify(exec);
 
 const COMPOSE_FILE = "../../../docker-compose.yml";
-const PROFILE = "flow-state"; // future compose profile that brings up the 7-service stack
+const PROFILE = "ui-state"; // future compose profile that brings up the 7-service stack
 
 export async function compose_up(): Promise<void> {
   await exec_async(

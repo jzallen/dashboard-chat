@@ -1,4 +1,4 @@
-# ADR-028: XState v5 with the Actor Model as the Flow-State Engine
+# ADR-028: XState v5 with the Actor Model as the UI-State Engine
 
 **Status:** Accepted (ratified 2026-05-11)
 **Date:** 2026-05-11
@@ -6,7 +6,7 @@
 **Companion artifacts:**
 - DISCUSS handoff: `docs/feature/user-flow-state-machines/discuss/handoff-design.md` (OQ-2 deferred)
 - DESIGN application-architecture: `docs/feature/user-flow-state-machines/design/application-architecture.md`
-- Sibling ADRs: ADR-027 (flow-state tier + framework), ADR-029 (`active_scope` propagation contract)
+- Sibling ADRs: ADR-027 (ui-state tier + framework), ADR-029 (`active_scope` propagation contract)
 
 ## Context
 
@@ -40,7 +40,7 @@ US-005 has a load-bearing requirement: on `expired_token`, **all other flow mach
 
 Concretely:
 
-- **One root orchestrator actor** per process: spawned at composition-root in the flow-state tier. Owns the actor tree.
+- **One root orchestrator actor** per process: spawned at composition-root in the ui-state tier. Owns the actor tree.
 - **Per-flow actors** spawned by the orchestrator as flows are activated for a session: `LoginAndOrgSetupMachine`, `ProjectSessionMachine` (J-002, future), `TransformMachine` (J-005, future), etc.
 - **Cross-machine signaling**: orchestrator listens for `token_expired` events from `LoginAndOrgSetupMachine`; broadcasts `FREEZE` to all other spawned children via `system.get(<actor_id>).send({ type: 'FREEZE' })`. On `THAW`, same broadcast.
 - **Replay buffer** is a property of the orchestrator (NOT of any machine). It captures intent events that arrive at child actors during the freeze window and re-sends them on THAW.
@@ -56,7 +56,7 @@ Concretely:
 `setup` API + typed events + `assign` + `provide` for adapter injection at test time:
 
 ```ts
-// flow-state/lib/machines/loginAndOrgSetup.ts
+// ui-state/lib/machines/loginAndOrgSetup.ts
 export const loginAndOrgSetupMachine = setup({
   types: {
     context: {} as LoginContext,
@@ -100,7 +100,7 @@ Tests inject mock actors via `.provide({ actors: { verifyJwt: fromPromise(/* moc
 ### Negative / accepted trade-offs
 
 - **Learning curve**: the team's current XState exposure is zero (no `xstate` import exists in the repo today). The v5 actor model is a non-trivial first encounter. Mitigation: ship US-001 as the seed; one machine, one orchestrator, one freeze test — review-gates the pattern before US-002 lands.
-- **`v5` maturity vs ecosystem inertia**: most XState examples online are v4. Mitigation: maintain a `flow-state/docs/xstate-v5-cookbook.md` with our chosen idioms; v5 docs are official and complete.
+- **`v5` maturity vs ecosystem inertia**: most XState examples online are v4. Mitigation: maintain a `ui-state/docs/xstate-v5-cookbook.md` with our chosen idioms; v5 docs are official and complete.
 - **Lock-in to v5 actor-model API surface**: if v5's actor API changes between minor versions, our orchestrator may need to adjust. Mitigation: pin major version; review the changelog at each minor bump; the actor-model API is the most-used surface of v5 and stable in practice.
 
 ## Open questions

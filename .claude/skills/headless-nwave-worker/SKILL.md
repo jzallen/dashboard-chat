@@ -135,7 +135,7 @@ This means workers never need to choose between MQ vs PR — they always submit 
 
 | Wave | Required input artifacts |
 |---|---|
-| nw-research / nw-discover | A specific, non-trivial question. Bad: "research auth". Good: "evaluate Remix vs Next.js App Router for our flow-state tier given ADR-027 constraints." |
+| nw-research / nw-discover | A specific, non-trivial question. Bad: "research auth". Good: "evaluate Remix vs Next.js App Router for our ui-state tier given ADR-027 constraints." |
 | nw-discuss | An existing problem statement or DIVERGE output. For brownfield, ADR backlog defines the problem. |
 | nw-design | DISCUSS artifacts in `docs/feature/<slug>/discuss/` |
 | nw-distill | DESIGN ratified, ADRs accepted, `docs/feature/<slug>/design/` populated |

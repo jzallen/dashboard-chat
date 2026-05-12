@@ -1,11 +1,11 @@
 // Step definitions for the walking skeleton scenario.
 //
-// All step bodies route through the harness or the FlowStateClient — both
+// All step bodies route through the harness or the UiStateClient — both
 // of which hit `auth-proxy:1042` (driving port). No step opens an in-
 // process backdoor.
 //
 // On first execution the production code is the RED scaffold from
-// `flow-state/`: the four routes return 501. The walking skeleton's
+// `ui-state/`: the four routes return 501. The walking skeleton's
 // expected failure mode is therefore "expected 200, got 501" — RED for
 // the right reason. DELIVER replaces the scaffold step by step per
 // roadmap.json.
@@ -42,7 +42,7 @@ Given(
     // The clean env is provided by compose bring-up + per-scenario Redis
     // namespace flush (delegated to compose helpers in real DELIVER).
     // For the scaffold phase, we just stash the assertion that Maya has
-    // no org -- the flow-state tier will report her starting state on
+    // no org -- the ui-state tier will report her starting state on
     // begin_auth.
     this.bag.clean_env = true;
   },
@@ -61,9 +61,9 @@ Given(
 );
 
 Given(
-  "the flow-state services are healthy and reachable through the production ingress",
+  "the ui-state services are healthy and reachable through the production ingress",
   async function (this: UserFlowWorld) {
-    await wait_for_health(`${AUTH_PROXY_URL}/flow-state/health`);
+    await wait_for_health(`${AUTH_PROXY_URL}/ui-state/health`);
   },
 );
 
