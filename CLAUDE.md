@@ -6,9 +6,12 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 
 ## Architecture
 
-- **Frontend** (`reverse-proxy/`) — React 18 + Vite + TanStack Query/Table + Tailwind CSS
+- **Reverse-Proxy** (`reverse-proxy/`) — nginx serving the Vite-built React 18 SPA + routing rules for `/api/*`, `/worker/*`, `/api/channels/:id/presentation-state`, `/health`, `/ui-state/*`. Formerly named `frontend/` (ADR-032).
+- **UI-Presentation** (`ui-presentation/`) — Remix v2 SSR for migrated routes (strangler-fig per ADR-031). Formerly named `frontend-remix/` (ADR-032).
+- **UI-State** (`ui-state/`) — Hono + XState v5 actor system holding flow state across machines (ADR-027/028/030). Formerly named `flow-state/` (ADR-032); Redis key prefix is `ui-state:` (was `flow:`).
 - **Backend** (`backend/`) — FastAPI + SQLAlchemy (async) + DuckDB + Alembic migrations
-- **Worker** (`worker/`) — Hono (Node.js) chat API with SSE streaming via Groq
+- **Agent** (`agent/`) — Hono (Node.js) chat API with SSE streaming via Groq
+- **Auth-Proxy** (`auth-proxy/`) — Hono ingress: JWT verification, M2M token mint, identity-header injection, multi-upstream routing
 - **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `reverse-proxy/`. Future cross-cutting chat types/handlers/prompts go here.
 
 ## Development Methodology — nwave-ai waves
@@ -50,9 +53,9 @@ This project uses **nwave-ai** as its SDLC framework (see [ADR-013](docs/decisio
 
 ```bash
 npm run test:all                     # ALL tests: JS (turbo) + backend (pytest)
-cd reverse-proxy && npx vitest run        # frontend only
+cd reverse-proxy && npx vitest run   # reverse-proxy (SPA) only
 cd backend && uv run pytest          # backend only
-npm run test:worker                  # worker only
+npm run test:agent                   # agent only
 ```
 
 Acceptance suites (per-feature, run separately from the standard test commands):
@@ -74,7 +77,7 @@ The gastown headless merge queue (rig: `dashboard_chat`) gates merges with `./to
 ## Quick Commands
 
 ```bash
-npm run build                        # turbo build (frontend only)
+npm run build                        # turbo build (reverse-proxy only)
 npm run dev                          # start all services
 ```
 

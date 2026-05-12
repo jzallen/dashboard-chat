@@ -1,7 +1,7 @@
 # ADR-032: Service Tier Renaming — `frontend`/`frontend-remix`/`flow-state` → `reverse-proxy`/`ui-presentation`/`ui-state`
 
-**Status:** Accepted (ratified 2026-05-12)
-**Date:** 2026-05-12
+**Status:** Implemented (rename landed on branch `refactor/service-tier-rename`; merged into `main` via the gastown headless merge queue — see commit footer below)
+**Date:** 2026-05-12 (ratified) · 2026-05-12 (implemented)
 **Originating wave:** ad-hoc review (out-of-band of the user-flow-state-machines feature waves)
 **Companion artifacts:**
 - Sibling ADRs (this thread): ADR-027 (flow-state tier and framework), ADR-030 (flow-state topology and scaling), ADR-031 (frontend-tier transition — Remix alongside nginx)
@@ -104,3 +104,24 @@ The rename is straightforward to revert if it turns out to cause more confusion 
 ## Method note
 
 This ADR is rated as an architectural decision proper (per ADR-027/030/031 conventions) rather than a chore because it specifies what each service tier IS responsible for, with names as the carrier. The naming itself is the surface change; the substantive content is the role-based partitioning of UI presentation vs UI state vs reverse-proxy concerns — which was implicit in 027/031 but never named at the topology level.
+
+## Implementation log
+
+**Branch:** `refactor/service-tier-rename` (based on `main` HEAD `289308a`)
+
+**Atomic-MR commit chain** (three rename commits + this docs-status commit, landed as one merge queue submission per the §"Scope of the rename PR" guidance to avoid half-renamed states):
+
+1. `refactor: rename flow-state tier to ui-state (ADR-032)` — directory, npm package, Redis prefix, env vars, HTTP path `/flow-state/*` → `/ui-state/*`, container name, compose profile, internal `FlowStateClient` class.
+2. `refactor: rename frontend-remix tier to ui-presentation (ADR-032)` — directory, npm package, Title-case prose; framework choice (Remix v2) unchanged.
+3. `refactor: rename frontend tier to reverse-proxy (ADR-032)` — directory, npm package, container name, compose service name, Docker image, Bazel labels, CI job, npm scripts, agent tsconfig path alias, e2e script, lockfiles.
+4. `docs: mark ADR-032 implemented + cascade rename to CLAUDE.md and architecture docs` (this commit) — ADR-032 status flip, CLAUDE.md architecture section, ADR-027/028/029/030/031 cascade updates already merged into commits 1–3 via the docs subtree.
+
+**Redis prefix migration**: applied as a simple string rename per ADR-026 §Decision outcome's pre-production stance — no compatibility shim, no two-deploy dance, no flag-gate. The single source file is `ui-state/lib/persistence/redis.ts` (was `flow-state/lib/persistence/redis.ts`).
+
+**TypeScript path aliases**: a thorough grep of all `tsconfig.json` files confirmed that no `@flow-state/*`, `@frontend-remix/*`, or `@reverse-proxy/*` path aliases existed prior to this rename — the services are referenced via relative paths and Bazel labels, not `paths` entries. The only path alias touching a renamed directory was `agent/tsconfig.json`'s `"@/raqb": ["frontend/src/lib/raqb"]`, which was updated to `["reverse-proxy/src/lib/raqb"]` in commit 3.
+
+**ADR filenames preserved**: `adr-027-flow-state-tier-and-framework.md` and `adr-030-flow-state-topology-and-scaling.md` were NOT renamed on disk — ADR filenames are stable identifiers used for cross-reference (this ADR-032 cites them by old slug). Their content was lightly updated to use the new tier names.
+
+**Follow-ups out of scope (tracked on `review/topology-complexity` branch per Finding #4 of `docs/research/review-topology-complexity-2026-05-12.md`):** ADR-030 capacity assumptions reconciliation, auth-proxy multi-upstream story, Redis-HA bead, rebuttal table to topology-complexity critique. Those four items reference current (post-rename) names already since they'll be authored after this MR merges.
+
+**Post-merge note**: this commit cannot know its own rebased SHA on `main`. After the refinery merges the rename branch, the implementer should update the **Status** line to cite the resulting `main` SHA (or leave the textual reference and rely on `git log --follow` for the rename trail).
