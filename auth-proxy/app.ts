@@ -220,8 +220,119 @@ app.all("/flow-state/*", async (c) => {
     }
   }
 
-  return proxyToUpstream(c, FLOW_STATE_URL, strippedPath, incomingHeaders);
+  // Capture the inbound event type BEFORE we consume the body for proxying.
+  // Per ADR-030 §SD4 the auth-proxy emits KPI K3 events on transitions:
+  //   - auth_retry_clicked: identified from the inbound event payload
+  //   - auth_recoverable_error_shown: identified from the upstream projection
+  //   - ready_reached: identified from the upstream projection
+  const inboundEventType = await peekInboundEventType(c.req.raw);
+
+  const response = await proxyToUpstream(
+    c,
+    FLOW_STATE_URL,
+    strippedPath,
+    incomingHeaders,
+  );
+
+  // Inspect the upstream response body (clone so we don't consume the
+  // stream the caller will receive). Best-effort: invalid JSON, opaque
+  // responses, etc. are silently ignored — these events are observational.
+  // Awaited so that the events land in stdout before we return to the
+  // caller (matters for test spies and for tail-and-ship log pipelines
+  // that batch on response close).
+  try {
+    await emitKpiEventsForResponse(response.clone(), inboundEventType);
+  } catch {
+    // Silent — KPI emission is best-effort and must not break the proxy.
+  }
+
+  return response;
 });
+
+/**
+ * Read the inbound JSON body (if any) and return the event `type` for
+ * `/flow-state/flow/*\/event` requests. Returns null for `begin` (which
+ * has no type) or non-JSON bodies. Cloning is necessary because Hono's
+ * downstream `proxyToUpstream` reads `c.req.raw.body` too — a stream can
+ * only be consumed once. We tee via `Request.clone()`.
+ */
+async function peekInboundEventType(req: Request): Promise<string | null> {
+  try {
+    const cloned = req.clone();
+    const contentType = (cloned.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("application/json")) return null;
+    const json = (await cloned.json()) as { type?: unknown };
+    return typeof json?.type === "string" ? json.type : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Inspect the upstream response and emit any matching KPI K3 events to
+ * stdout as JSON lines. The flow-state tier's projection envelope shape
+ * is `{ state, correlation_id, context: { underlying_cause_tag? } }`.
+ * Events:
+ *   - state === "error_recoverable"  → auth_recoverable_error_shown
+ *   - state === "ready"              → ready_reached
+ *   - inbound type === "retry_clicked" → auth_retry_clicked
+ */
+async function emitKpiEventsForResponse(
+  response: Response,
+  inboundEventType: string | null,
+): Promise<void> {
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/json")) return;
+  let body: {
+    state?: unknown;
+    correlation_id?: unknown;
+    context?: { underlying_cause_tag?: unknown };
+  };
+  try {
+    body = (await response.json()) as typeof body;
+  } catch {
+    return;
+  }
+  const correlationId =
+    typeof body?.correlation_id === "string" ? body.correlation_id : undefined;
+  const state = typeof body?.state === "string" ? body.state : undefined;
+  const tag =
+    typeof body?.context?.underlying_cause_tag === "string"
+      ? body.context.underlying_cause_tag
+      : undefined;
+
+  if (inboundEventType === "retry_clicked") {
+    emitKpiEvent({
+      event: "auth_retry_clicked",
+      correlation_id: correlationId,
+      underlying_cause_tag: tag,
+    });
+  }
+  if (state === "error_recoverable") {
+    emitKpiEvent({
+      event: "auth_recoverable_error_shown",
+      correlation_id: correlationId,
+      underlying_cause_tag: tag,
+    });
+  }
+  if (state === "ready") {
+    emitKpiEvent({
+      event: "ready_reached",
+      correlation_id: correlationId,
+    });
+  }
+}
+
+function emitKpiEvent(payload: {
+  event: string;
+  correlation_id?: string;
+  underlying_cause_tag?: string;
+}): void {
+  // stdout-JSON observability per ADR-030 §SD4. One event per line so
+  // downstream log shippers can tail-and-split without buffering.
+  const line = JSON.stringify(payload);
+  process.stdout.write(`${line}\n`);
+}
 
 // All other requests: authenticate then proxy
 app.all("*", async (c) => {

@@ -49,6 +49,10 @@ export interface LoginMachineContext {
   underlying_cause_tag: UnderlyingCauseTag | null;
   retries: number;
   reissue_attempts: number;
+  /** Counts USER-initiated retries from error_recoverable. The 4th total
+   *  attempt at the same underlying_cause_tag escalates to error_terminal
+   *  (3 user retries from the user's POV including the original failure). */
+  retry_budget_used: number;
   org_validation_error: OrgValidationInlineError | null;
   existing_org_names: string[];
 }
@@ -99,6 +103,9 @@ export interface LoginMachineDeps {
 }
 
 const REISSUE_BUDGET = 3;
+/** User-retry budget on error_recoverable. The 4th total attempt at the
+ *  same underlying_cause_tag (= 3 user retries) escalates to error_terminal. */
+const USER_RETRY_BUDGET = 3;
 
 export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
   return setup({
@@ -126,6 +133,8 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
       },
       reissueBudgetExhausted: ({ context }) =>
         context.reissue_attempts + 1 >= REISSUE_BUDGET,
+      userRetryBudgetExhausted: ({ context }) =>
+        context.retry_budget_used + 1 >= USER_RETRY_BUDGET,
     },
     actions: {
       recordOrgValidationError: assign({
@@ -154,6 +163,12 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
       incrementReissueAttempts: assign({
         reissue_attempts: ({ context }) => context.reissue_attempts + 1,
       }),
+      incrementUserRetryBudget: assign({
+        retry_budget_used: ({ context }) => context.retry_budget_used + 1,
+      }),
+      resetReissueAttempts: assign({
+        reissue_attempts: () => 0,
+      }),
       tagPartialSetup: assign({
         underlying_cause_tag: () => "partial-setup" as const,
       }),
@@ -179,6 +194,7 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
       underlying_cause_tag: null,
       retries: 0,
       reissue_attempts: 0,
+      retry_budget_used: 0,
       org_validation_error: null,
       existing_org_names: input.existing_org_names ?? [],
     }),
@@ -288,9 +304,27 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
       ready: {},
       error_recoverable: {
         on: {
-          retry_clicked: {
-            target: "creating_org",
-          },
+          retry_clicked: [
+            {
+              // 4th total attempt at the same cause tag (= 3 user retries
+              // counted). Escalate to error_terminal so the UI moves Maya
+              // to a contact-support page (no further retry CTA).
+              guard: "userRetryBudgetExhausted",
+              target: "error_terminal",
+              actions: "incrementUserRetryBudget",
+            },
+            {
+              target: "creating_org",
+              actions: [
+                "incrementUserRetryBudget",
+                // Re-enter the internal create+reissue path fresh. The
+                // correlation_id in context is NEVER overwritten — every
+                // retry threads through with Maya's original reference
+                // code (verified by the B2 unit test).
+                "resetReissueAttempts",
+              ],
+            },
+          ],
         },
       },
       expired_token: {},

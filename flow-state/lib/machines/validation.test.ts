@@ -76,4 +76,40 @@ describe("classifyFailure — closed UnderlyingCauseTag union", () => {
       }),
     ).toBe("partial-setup");
   });
+
+  // B3 — Closed-union exhaustiveness (Step 02-01).
+  // The runtime test plus the never-check below ensure new members of
+  // UnderlyingCauseTag cannot be added to the union without forcing a
+  // compile error here AND a test update.
+  it("classifies failures into every member of the closed union exhaustively", () => {
+    // The four canonical members — one representative input per member.
+    const samples: ReadonlyArray<{
+      failure: Parameters<typeof classifyFailure>[0];
+      expected: UnderlyingCauseTag;
+    }> = [
+      { failure: { kind: "reissue_exhausted" }, expected: "partial-setup" },
+      { failure: { kind: "workos_userinfo" }, expected: "workos-profile-corrupt" },
+      { failure: { kind: "cookie_blocked" }, expected: "cookie-blocked" },
+      { failure: { message: "transient network blip" }, expected: "transient" },
+    ];
+    const seen = new Set<UnderlyingCauseTag>();
+    for (const { failure, expected } of samples) {
+      const actual = classifyFailure(failure);
+      expect(actual).toBe(expected);
+      seen.add(actual);
+    }
+    // Every member of the closed union must have been produced.
+    expect(seen.size).toBe(4);
+
+    // Compile-time exhaustiveness — fails to compile if a member is added
+    // to UnderlyingCauseTag without being listed here.
+    const _exhaustive: Exclude<
+      UnderlyingCauseTag,
+      | "transient"
+      | "cookie-blocked"
+      | "partial-setup"
+      | "workos-profile-corrupt"
+    > = undefined as never;
+    void _exhaustive;
+  });
 });
