@@ -98,3 +98,9 @@ rigs.json
 
 # DES Stop hook cwd-relative path workaround (per Step 01-01 recovery report)
 tests/acceptance/dbt-test-validation/docs/
+
+# Gas Town (added by gt)
+.claude/
+.logs/
+state.json
+CLAUDE.md
