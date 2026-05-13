@@ -428,6 +428,8 @@ web-ssr:
 
 **No host port mapping.** Reachable only from `reverse-proxy` over the compose network. Mirrors the `ui-state` pattern (also has `expose: 3001`-style internal port + no `ports:` mapping).
 
+**Horizontal scaling property (explicit).** Like `ui-state`, `web-ssr` is designed for horizontal scaling: no session affinity, no fixed host port, and no `container_name` in the compose entry. Each instance is identical and stateless — request handlers construct their own request-scoped `QueryClient` (DWD-2), loaders read `Authorization` from the inbound request, and no state is held across requests. `docker compose up -d --scale web-ssr=N` is the supported scale-out path, matching `agent` and `auth-proxy`.
+
 ### 6.5 System-level deferral
 
 This document covers the application-level shape of `:ssr_image`. The full Bazel target definitions, the `nginx.conf` location-block ordering, and the `docker-compose.yml` insertion **belong to the DELIVER wave**, not this DESIGN. The shape above is the spec DISTILL can write acceptance tests against.
@@ -575,7 +577,7 @@ Per the wave brief, the following are explicitly out of scope:
 
 - **Implementation of MR-0** — DELIVER's job.
 - **Tests** — DISTILL's job. See `handoff-design-to-distill.md` for the BDD scenarios DISTILL formalizes.
-- **`vite.config.ts` exact edit** — system-level deferred to DELIVER.
+- **`vite.config.ts` exact line edits** — the decision to remove `@vitejs/plugin-react` and add `reactRouter()` is locked in §10 (non-negotiable load-bearing MR-0 edit). What's deferred to DELIVER is only the exact line positions, surrounding syntax, and any additional `build.outDir` / `optimizeDeps` configuration the RRv7 plugin happens to require.
 - **`BUILD.bazel` exact additions** — system-level deferred to DELIVER.
 - **`nginx.conf` exact additions** — system-level deferred to DELIVER.
 - **`docker-compose.yml` exact additions** — system-level deferred to DELIVER.
