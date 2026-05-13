@@ -1,3 +1,15 @@
+# [1.32.0](https://github.com/jzallen/dashboard-chat/compare/v1.31.0...v1.32.0) (2026-05-13)
+
+
+### Bug Fixes
+
+* **frontend:** wire RRv7 build output through Bazel + Hono SSR runtime ([94dbd1a](https://github.com/jzallen/dashboard-chat/commit/94dbd1a85eb9687f8f6547db39e83a386abe4025))
+
+
+### Features
+
+* **frontend,auth-proxy:** wire loader timeout + SLOW_MODE substrate for frontend-coexistence Phase 04 ([377eb45](https://github.com/jzallen/dashboard-chat/commit/377eb45b1ee69c8c9b516046eccbf14a5c9f9223))
+
 # [1.31.0](https://github.com/jzallen/dashboard-chat/compare/v1.30.0...v1.31.0) (2026-05-13)
 
 
