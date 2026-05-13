@@ -176,6 +176,34 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-05-13T02:16:50Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T02:47:57Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "APPROVED_SKIP: @bearer-forward acceptance scenario un-skips in Step 02-03 (per DD-9 step decomposition). Step 02-01 lands only the SERVER-SIDE precondition (auth-proxy capture + endpoint + nginx routing); loader (02-02) and un-skip (02-03) follow.",
+      "t": "2026-05-13T02:48:09Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T02:49:20Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T02:50:21Z"
     }
   ]
 }

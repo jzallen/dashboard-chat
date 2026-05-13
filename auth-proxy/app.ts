@@ -19,6 +19,13 @@ import {
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
 const UI_STATE_URL = process.env.UI_STATE_URL || "http://ui-state:8788";
 
+// Test-mirror cell for the frontend-coexistence acceptance suite (DD-10,
+// Phase 02). Captures the most-recent `Authorization` header observed on
+// `/ui-state/*` proxy calls so the `@bearer-forward` scenario can verify
+// the SSR loader forwarded the browser's bearer verbatim. Dev-mode gated:
+// in production both the capture branch and the read endpoint are 404.
+let lastSeenAuthorization: string | null = null;
+
 const app = new Hono();
 
 // Health endpoint — handled locally, not proxied
@@ -185,6 +192,15 @@ app.delete("/api/auth/pats/:id", async (c) => {
 app.all("/ui-state/*", async (c) => {
   const path = c.req.path;
   const strippedPath = path.replace(/^\/ui-state/, "") || "/";
+
+  // Test-mirror capture (DD-10, Phase 02). In non-production modes, record
+  // the inbound Authorization header so the `@bearer-forward` acceptance
+  // scenario can read it back via `GET /test/last-seen-authorization`. The
+  // capture is the raw header value (including the "Bearer " prefix) or
+  // null when the header is absent.
+  if ((process.env.AUTH_MODE || "dev") !== "production") {
+    lastSeenAuthorization = c.req.header("Authorization") ?? null;
+  }
 
   const incomingHeaders = new Headers();
   c.req.raw.headers.forEach((value, key) => {
@@ -354,6 +370,18 @@ function emitKpiEvent(payload: {
   const line = JSON.stringify(payload);
   process.stdout.write(`${line}\n`);
 }
+
+// Test-mirror read endpoint (DD-10, Phase 02). Returns the most-recent
+// `Authorization` header observed on `/ui-state/*` proxy calls as plain text.
+// Returns the empty string when no /ui-state/* request has been seen yet.
+// Dev-mode gated: in production this endpoint is 404 so the test surface
+// never leaks into deployed environments.
+app.get("/test/last-seen-authorization", (c) => {
+  if ((process.env.AUTH_MODE || "dev") === "production") {
+    return c.json({ error: "not_found" }, 404);
+  }
+  return c.text(lastSeenAuthorization ?? "");
+});
 
 // All other requests: authenticate then proxy
 app.all("*", async (c) => {

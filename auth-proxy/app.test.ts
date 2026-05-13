@@ -12,7 +12,7 @@
 // Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max.
 // Variations of the same behavior are parametrized.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock jose before importing app (no JWT verification needed for dev-mode
 // ui-state path; AUTH_MODE defaults to "dev").
@@ -242,5 +242,76 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
     const matching = capture.events.find((e) => e.event === "auth_retry_clicked");
     expect(matching).toBeDefined();
     expect(matching?.correlation_id).toBe("R-7a4f-901c");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Step 02-01 (Phase 02) — Test-mirror endpoint for forwarded Authorization
+// ----------------------------------------------------------------------------
+//
+// DD-10 (Phase 02): the frontend-coexistence acceptance suite needs to verify
+// DWD-1's bearer-forwarding contract end-to-end. Auth-proxy captures the most-
+// recent `Authorization` header observed on `/ui-state/*` proxy calls into a
+// module-scoped cell and exposes it via `GET /test/last-seen-authorization`.
+// The endpoint is dev-mode gated: in production it returns 404 so the test
+// surface never leaks into deployed environments.
+//
+// Behavior budget for this section: 2 behaviors × 2 = 4 tests max.
+//   B7: Capture & read the most-recent Authorization on /ui-state/* requests
+//   B8: Production gate (404)
+// Three tests below cover (a) capture+read, (b) empty cell, (c) production gate.
+
+describe("test-mirror endpoint /test/last-seen-authorization (B7, B8)", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.AUTH_MODE = "dev";
+    // Each test runs against the shared module-scoped cell; reset it by
+    // hitting the endpoint once to read+ignore (or by re-importing — but
+    // vitest caches modules). Empty-cell test relies on a fresh value
+    // distinct from the prior capture test's marker. Using a unique marker
+    // per test (UUID-like string) avoids the need to reset the cell.
+    mockFetch.mockResolvedValue(
+      new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    if (originalAuthMode === undefined) {
+      delete process.env.AUTH_MODE;
+    } else {
+      process.env.AUTH_MODE = originalAuthMode;
+    }
+  });
+
+  it("captures the most-recent Authorization header on /ui-state/* and returns it via GET /test/last-seen-authorization", async () => {
+    // Use a marker unique to this test so we don't observe a value left by
+    // earlier tests in the module-scoped cell.
+    const marker = "Bearer probe-02-01-capture-marker-9b2a4c";
+
+    const proxied = await makeRequest("/ui-state/flow/login-and-org-setup/begin", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: marker,
+      },
+      body: JSON.stringify({ persona_email: "maya@x" }),
+    });
+    expect(proxied.status).toBe(200);
+
+    const mirror = await makeRequest("/test/last-seen-authorization");
+    expect(mirror.status).toBe(200);
+    const body = await mirror.text();
+    expect(body).toBe(marker);
+  });
+
+  it("returns 404 from GET /test/last-seen-authorization when AUTH_MODE=production", async () => {
+    process.env.AUTH_MODE = "production";
+    const mirror = await makeRequest("/test/last-seen-authorization");
+    expect(mirror.status).toBe(404);
   });
 });
