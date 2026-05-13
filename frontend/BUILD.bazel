@@ -100,7 +100,6 @@ js_library(
 js_library(
     name = "app_shell",
     srcs = [
-        "App.tsx",
         "main.tsx",
     ],
     deps = [":node_modules"],
