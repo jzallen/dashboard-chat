@@ -26,6 +26,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from driver import FrontendCoexistenceDriver  # noqa: E402
 
+# Phase 03 reversibility pinned refs (see deliver/wave-decisions.md DD-15).
+# PRE_SLICE_2_REF = pre-Slice-2 commit (the byte-equivalent baseline `/login` reverts to).
+# POST_SLICE_2_REF = Slice-2 commit (the `/login` loader-bearing state MR-2 mirrors against).
+os.environ.setdefault("PRE_SLICE_2_REF", "cc7e517")
+os.environ.setdefault("POST_SLICE_2_REF", "d052896")
+# POST_MR_2_REF intentionally stays unset; the test default is "HEAD" which is
+# the correct value for any local run after MR-2 lands.
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

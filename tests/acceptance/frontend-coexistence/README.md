@@ -54,10 +54,19 @@ uv run --no-project pytest -m walking_skeleton
 | `AUTH_PROXY_URL` | `http://localhost:1042` | the bearer-forwarding scenario | host port `auth-proxy` binds; matches the convention `tests/acceptance/user-flow-state-machines/` uses |
 | `MIGRATED_ROUTE_PATH` | `/login` | Phases 02, 03, 04 | the route DELIVER picks for the first per-route migration |
 | `AUTH_PROXY_TEST_MIRROR_PATH` | `/auth-proxy/test/last-seen-authorization` | bearer-forwarding scenario | mirror endpoint that records the most-recent inbound Authorization header value; DELIVER wires this in Phase 02 per DI-U-2 |
-| `PRE_SLICE_2_REF` | (unset) | reversibility scenarios | git ref of the commit just before Slice-2 lands |
-| `POST_SLICE_2_REF` | (unset) | reversibility mirror-diff scenario | git ref of the Slice-2 merge commit |
+| `PRE_SLICE_2_REF` | `cc7e517` | reversibility scenarios | git ref of the commit just before Slice-2 lands (pinned at MR-2 close; see `docs/feature/frontend-coexistence/deliver/wave-decisions.md` DD-15) |
+| `POST_SLICE_2_REF` | `d052896` | reversibility mirror-diff scenario | git ref of the Slice-2 merge commit (pinned at MR-2 close; see DD-15) |
 | `POST_MR_2_REF` | `HEAD` | reversibility mirror-diff scenario | git ref of the MR-2 merge commit |
 | `MIGRATED_ROUTE_MODULE_PATH` | `frontend/app/routes/login.tsx` | reversibility mirror-diff scenario | the route module file whose `loader` was added then removed |
+
+`CHAT_ROUTE_PATH` (no env var — embedded in the test): the
+`test_chat_route_ssr_response_is_html_shell_no_client_loader_output`
+scenario probes `/chat/test-channel-id` directly. The chat-bearing route
+family in this codebase is `frontend/app/routes/chat.tsx`, mounted twice
+under `<AppShell>` per `frontend/app/routes.ts` (index `/` and
+`route("chat/:channelId", ..., {id: "chat-with-channel"})`). Probing
+`/chat/:channelId` validates the export-shape invariant for both mounts
+because they serve the same module — see DD-14.
 
 ## Pytest markers
 

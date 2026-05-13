@@ -17,9 +17,6 @@ import pytest
 from driver import FrontendCoexistenceDriver
 
 pytestmark = [
-    pytest.mark.skip(
-        reason="DISTILL: pending DELIVER phase 03 (Slice-3 / MR-2 — reversibility + chat opt-out) per roadmap.json",
-    ),
     pytest.mark.real_io,
     pytest.mark.slice_3,
 ]
@@ -149,6 +146,15 @@ def test_no_route_loader_fetches_presentation_state_directly(
 # ───────────────────────────── Optional ESLint rule (DELIVER may add) ─────────────────────────────
 
 
+@pytest.mark.skip(
+    reason=(
+        "DELIVER-deferred per DD-15: optional ESLint rule "
+        "`no-loader-with-chat-import` not shipped in MR-2. DESIGN DWD-3 "
+        "§How-to-apply item 3 named the rule as optional; DELIVER opts not "
+        "to ship it. The contract scenario remains in the .feature SSOT as "
+        "a placeholder for a future MR. See deliver/wave-decisions.md DD-15."
+    ),
+)
 @pytest.mark.needs_repo_post_mr0_state
 def test_optional_eslint_rule_flags_loader_co_located_with_chat_import(
     requires_repo_post_mr0_state: None,

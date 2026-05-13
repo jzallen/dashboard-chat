@@ -23,9 +23,6 @@ import pytest
 from driver import FrontendCoexistenceDriver
 
 pytestmark = [
-    pytest.mark.skip(
-        reason="DISTILL: pending DELIVER phase 03 (Slice-3 / MR-2 — reversibility + chat opt-out) per roadmap.json",
-    ),
     pytest.mark.real_io,
     pytest.mark.slice_3,
 ]

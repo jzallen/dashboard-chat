@@ -441,3 +441,204 @@ DELIVER-time selection). Out of scope for `crew/obsidian` MR-1.
 - DESIGN DWD-2 (TanStack Query SSR): `../design/wave-decisions.md`
 - DESIGN DWD-7 (AppShell inner QueryProvider removed in Phase 02): `../design/wave-decisions.md`
 - ADR-029 (active_scope): `docs/decisions/adr-029-active-scope-propagation-contract.md`
+
+---
+
+# DELIVER Wave Decisions — `frontend-coexistence` Phase 03 (MR-2)
+
+## DD-13 (Phase 03): step decomposition — 3 sequential crafter dispatches
+
+**Issue**: Phase 03 atomic scope (one MR) but DELIVER's TDD discipline runs
+per-step crafter dispatches with DES markers. Mirrors DD-2 (Phase 01) and
+DD-9 (Phase 02): one merge-request worth of scope decomposed into atomic
+steps so each crafter dispatch lands a coherent slice and the merge queue
+squashes / lands them together as MR-2.
+
+**Decision**: Phase 03 lands as **3 sequential atomic crafter steps**:
+
+| Step ID | Scope | Files | Scenarios this step turns observable |
+|---|---|---|---|
+| `03-01` | Revert `/login` to library-mode byte-equivalent shim (the forward Slice-2 `loader` export goes away; component file is byte-identical to pre-Slice-2). Mechanism: `git show <pre-slice-2-sha>:login.tsx > login.tsx`. | `frontend/app/routes/login.tsx` (loader export removed; component body unchanged) | Wires preconditions for `test_route_component_file_byte_unchanged_across_migrate_then_revert` and `test_slice_2_and_mr_2_diffs_are_mirror_images` (un-skip lands in 03-03) |
+| `03-02` | Add a `clientLoader`-only export to `frontend/app/routes/chat.tsx` per DWD-3. NO server `loader`. The route is mounted twice in `routes.ts` (index `/` and `route("chat/:channelId", ...)`); both mounts serve the same module. | `frontend/app/routes/chat.tsx` (clientLoader added; no loader export) | Wires preconditions for `test_no_chat_bearing_route_exports_server_loader`, `test_chat_route_ssr_response_is_html_shell_no_client_loader_output`, `test_no_route_loader_fetches_presentation_state_directly` (un-skip lands in 03-03) |
+| `03-03` | Un-skip Phase 03 scenarios + pin reversibility refs + exit-gates | `tests/acceptance/frontend-coexistence/test_route_reverts_to_library_mode_when_loader_removed.py` (module-level `pytest.mark.skip` removed) · `tests/acceptance/frontend-coexistence/test_chat_route_bypasses_ssr_via_clientloader.py` (module-level `pytest.mark.skip` removed; optional-ESLint test re-skipped at function level with DD-15 reason) · `tests/acceptance/frontend-coexistence/conftest.py` (`os.environ.setdefault` for PRE_SLICE_2_REF, POST_SLICE_2_REF) · `tests/acceptance/frontend-coexistence/README.md` (env-var table reflects pinned defaults; CHAT_ROUTE_PATH paragraph) · `docs/feature/frontend-coexistence/deliver/wave-decisions.md` (DD-13..DD-15 appended) | All 8 Phase 03 `scenarios_to_unskip` go from `@skip` to live; the 1 deferred ESLint scenario stays `@skip` with a named DD-15 reason. Repo-state scenarios PASS; compose-stack scenarios PASS-or-SKIP-clean (Strategy C per DI-1). |
+
+**Iron Rule reminder**: at any step, if a crafter cannot turn a scenario GREEN,
+the orchestrator does not modify the failing test. After 3 failed attempts,
+revert + escalate.
+
+**Source**: project policy "Sequential DELIVER dispatch is REQUIRED" · DD-2 /
+DD-9 precedent · `roadmap.json` Phase 03 scope.
+
+---
+
+## DD-14 (Phase 03): CHAT_ROUTE_PATH choice — `/chat/:channelId` served by `frontend/app/routes/chat.tsx`
+
+**Issue**: `roadmap.json` Phase 03 scope names "one chat-bearing route family
+(e.g., the `/chat/:channelId` route under `<AppShell>`)" as the migration
+target for the DWD-3 clientLoader-only opt-out. The roadmap leaves the exact
+path open ("e.g.,"). DELIVER must pick a concrete probe path and a concrete
+file the `test_no_chat_bearing_route_exports_server_loader` assertion lands
+against.
+
+**Decision**: The chat-bearing route module is `frontend/app/routes/chat.tsx`.
+It is mounted **twice** under `<AppShell>` per `frontend/app/routes.ts:18-20`:
+
+1. `index("routes/chat.tsx")` — the home route at `/`.
+2. `route("chat/:channelId", "routes/chat.tsx", {id: "chat-with-channel"})` —
+   the per-channel route at `/chat/<channelId>`.
+
+DELIVER chooses **`/chat/:channelId`** (specifically `/chat/test-channel-id`
+in the test harness) as the SSR-shell probe path for
+`test_chat_route_ssr_response_is_html_shell_no_client_loader_output`. The
+index `/` is NOT the probe target because both mounts serve the same module
+file — exercising one mount validates the export-shape invariant for both,
+and the `/chat/:channelId` path is the named example in the `.feature` SSOT.
+
+**Rationale**:
+
+- DWD-3 codifies an architectural shape (no server `loader` on a chat-bearing
+  module); the test surface is the file-system grep over the source tree
+  plus one HTTP probe to confirm the SSR pass produces a marker-free shell.
+- Both mounts share one module file, so the grep-based scenario
+  (`test_no_chat_bearing_route_exports_server_loader`) covers both
+  simultaneously — it scans every file importing `ChatView`.
+- `/chat/:channelId` is the path the `.feature` example names; using it keeps
+  the test text and the Gherkin SSOT in sync.
+- The `/` mount continues to work identically (same module, same
+  `clientLoader`); manual smoke verifies it post-MR-2.
+
+**How applied**:
+
+- Step 03-02 added the `clientLoader` export to `frontend/app/routes/chat.tsx`;
+  no server `loader` was added. The component body imports `ChatView` from
+  `@/chat`.
+- Step 03-03's `test_chat_route_ssr_response_is_html_shell_no_client_loader_output`
+  embeds `/chat/test-channel-id` as the probe path. No env var is introduced
+  because the path is fixed by the route declaration in `routes.ts`.
+- `frontend/app/routes.ts` is byte-unchanged across MR-2 — both mounts
+  preceded Slice 3 and remain unmodified (`git diff main -- frontend/app/routes.ts`
+  produces no output).
+
+**Source**: `roadmap.json` Phase 03 scope (the "e.g.,"-qualified path) ·
+`frontend/app/routes.ts:18-20` (the two mounts of `routes/chat.tsx`) ·
+DESIGN DWD-3 (chat opt-out via clientLoader-only).
+
+---
+
+## DD-15 (Phase 03): reversibility mechanism + optional ESLint rule deferred
+
+Two related sub-decisions in one entry — both bear on the contract surface of
+Phase 03 and the harness pinning that step 03-03 finalizes.
+
+### Sub-1: Reversibility mechanism — option 1 (`git show <pre-slice-2-sha>:login.tsx > login.tsx`)
+
+**Issue**: The brief for step 03-01 named two mechanisms for restoring
+`frontend/app/routes/login.tsx` to its pre-Slice-2 byte-equivalent state:
+
+- **Option 1**: `git show <pre-slice-2-sha>:frontend/app/routes/login.tsx > frontend/app/routes/login.tsx`
+  (overwrite with the canonical byte content from history).
+- **Option 2**: Read the Slice-2 diff and manually apply the inverse edit
+  (remove the `loader` export, restore the original imports / default
+  export to their pre-Slice-2 shape).
+
+**Decision**: DELIVER picks **option 1**. The crafter at step 03-01 ran:
+
+```sh
+git show cc7e517:frontend/app/routes/login.tsx > frontend/app/routes/login.tsx
+```
+
+after which:
+
+```sh
+git diff cc7e517 -- frontend/app/routes/login.tsx
+```
+
+produced empty output (byte-equivalence proved by zero diff).
+
+**Rationale**:
+
+- Cheapest mechanism that satisfies the byte-equivalence contract
+  `test_route_component_file_byte_unchanged_across_migrate_then_revert`
+  encodes.
+- Option 2 (diff-then-edit) would require inferring the inverse diff manually
+  and risks transcription drift — a missed whitespace character or import-line
+  reordering would silently violate byte equivalence and only surface when the
+  acceptance scenario flagged the net diff at MR-2 close.
+- Git history is the canonical source of the pre-Slice-2 content. Restoring
+  from history is non-lossy by construction; restoring by manual edit is
+  lossy unless every keystroke matches.
+
+### Sub-2: Optional ESLint rule `no-loader-with-chat-import` — DEFERRED
+
+**Issue**: DESIGN DWD-3 §"How to apply" item 3 names an **optional** ESLint
+rule that flags any route module exporting a `loader` AND importing
+`ChatView`. The `.feature` SSOT encodes the contract scenario
+(`test_optional_eslint_rule_flags_loader_co_located_with_chat_import`).
+DISTILL DI-U-4 flagged the rule as DELIVER-owned (ship-or-defer choice).
+
+**Decision**: The rule is **deferred to a follow-up MR**. The
+`test_optional_eslint_rule_flags_loader_co_located_with_chat_import`
+function is re-skipped at the function level with a named DD-15 reason:
+
+```python
+@pytest.mark.skip(reason="DELIVER-deferred per DD-15: optional ESLint rule "
+                         "`no-loader-with-chat-import` not shipped in MR-2. ...")
+```
+
+The `pytest.fail(...)` body inside the test function is **unchanged** (Iron
+Rule). The skip marker simply documents why the contract scenario cannot
+progress in this MR.
+
+**Rationale**:
+
+- DWD-3 explicitly tags the rule as **optional**; shipping it requires
+  building a custom ESLint plugin + ESLint config update + a fixture-based
+  unit test that runs `eslint` against a known-violating fixture. None of
+  that is load-bearing for the architectural-shape contract DWD-3 codifies.
+- The grep-style assertion in `test_no_chat_bearing_route_exports_server_loader`
+  already covers the same architectural invariant at the file-system level
+  (any route module importing `ChatView` must NOT export `loader`). The
+  ESLint rule would be a developer-experience nicety (IDE feedback in the
+  editor) — strictly redundant with the acceptance scenario at the
+  repo-state level.
+- DD-12 (Phase 02) set the precedent: contract scenarios whose realization
+  requires a separate engineering investment stay `@skip` with a named
+  DD-NN reason rather than ship under-tested or block the MR. DD-15 mirrors
+  that pattern exactly.
+
+**Recommended owner**: a follow-up MR scoped to "frontend lint hardening"
+(out of scope for MR-2). The contract scenario remains in the `.feature`
+SSOT as a placeholder for that future MR.
+
+**How applied**:
+
+- Step 03-03 removed the module-level `pytest.mark.skip(...)` from
+  `test_chat_route_bypasses_ssr_via_clientloader.py` and added a
+  function-level `@pytest.mark.skip(reason="DELIVER-deferred per DD-15: ...")`
+  on `test_optional_eslint_rule_flags_loader_co_located_with_chat_import`.
+- The function body (the `pytest.fail("rule is configured; DELIVER provides
+  the eslint-runner fixture. ...")` placeholder) is preserved verbatim.
+- `tests/acceptance/frontend-coexistence/conftest.py` pins the
+  reversibility refs as `os.environ.setdefault` defaults: `PRE_SLICE_2_REF=cc7e517`,
+  `POST_SLICE_2_REF=d052896`. `POST_MR_2_REF` remains unset; the
+  test default is `HEAD`.
+- `tests/acceptance/frontend-coexistence/README.md`'s env-var table reflects
+  the pinned defaults instead of "(unset)".
+
+**Source**: DESIGN DWD-3 §"How to apply" item 3 (the optional ESLint rule) ·
+DISTILL DI-U-4 (DELIVER-owned ship-or-defer flag) · DD-12 deferral pattern ·
+`roadmap.json` Phase 03 `scenarios_deferred_within_phase`.
+
+---
+
+## Cross-references — Phase 03
+
+- `roadmap.json` Phase 03: `../distill/roadmap.json` (lines 105–139)
+- `route-reverts-to-library-mode-when-loader-removed.feature`: `../distill/`
+- `chat-route-bypasses-ssr-via-clientloader.feature`: `../distill/`
+- DESIGN DWD-3 (chat opt-out via clientLoader-only): `../design/wave-decisions.md`
+- DESIGN application-architecture.md §7 (chat/SSE pattern), §9.2 (per-route reverse): `../design/application-architecture.md`
+- ADR-015 (presentation-state nginx rule — byte-unchanged): `docs/decisions/adr-015-presentation-state-nginx-rule.md`
+- ADR-034 §Reversibility: `docs/decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md`
+- DISTILL DI-U-4 (optional ESLint rule ship-or-defer): `../distill/wave-decisions.md`
+- DD-12 deferral pattern (Phase 02 precedent): `#dd-12-phase-02-pytestfail-placeholder-scenarios-deferred-in-phase`
