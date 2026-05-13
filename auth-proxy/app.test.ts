@@ -315,3 +315,107 @@ describe("test-mirror endpoint /test/last-seen-authorization (B7, B8)", () => {
     expect(mirror.status).toBe(404);
   });
 });
+
+// ----------------------------------------------------------------------------
+// Step 04-01 (Phase 04) — SLOW_MODE_DELAY_MS induction mechanism (DD-18)
+// ----------------------------------------------------------------------------
+//
+// The frontend-coexistence Phase 04 acceptance suite verifies the loader
+// timeout invariant (DD-16). To deterministically induce a slow upstream the
+// auth-proxy's `/ui-state/*` handler observes the `SLOW_MODE_DELAY_MS` env
+// var and sleeps the configured ms BEFORE proceeding when set in a non-
+// production AUTH_MODE. Production-gated so this surface cannot leak into
+// deployed environments.
+//
+// Behavior budget for this section: 2 behaviors × 2 = 4 tests max.
+//   B9: When set in dev mode, /ui-state/* delays by the configured ms.
+//   B10: Production gate / unset gate — no delay when off.
+// Three tests below cover (a) delay-on, (b) delay-off (unset), (c) prod gate.
+
+describe("SLOW_MODE_DELAY_MS on /ui-state/* (frontend-coexistence Slice-4)", () => {
+  const originalSlowMode = process.env.SLOW_MODE_DELAY_MS;
+  const originalAuthMode = process.env.AUTH_MODE;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockFetch.mockResolvedValue(
+      new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    if (originalSlowMode === undefined) {
+      delete process.env.SLOW_MODE_DELAY_MS;
+    } else {
+      process.env.SLOW_MODE_DELAY_MS = originalSlowMode;
+    }
+    if (originalAuthMode === undefined) {
+      delete process.env.AUTH_MODE;
+    } else {
+      process.env.AUTH_MODE = originalAuthMode;
+    }
+  });
+
+  it("delays /ui-state/* responses by SLOW_MODE_DELAY_MS when set", async () => {
+    process.env.SLOW_MODE_DELAY_MS = "200";
+    process.env.AUTH_MODE = "dev";
+    const { app: freshApp } = await import("./app.ts");
+    const start = Date.now();
+    const res = await freshApp.fetch(
+      new Request(
+        "http://localhost/ui-state/flow/login-and-org-setup/projection",
+        { method: "GET" },
+      ),
+    );
+    const elapsed = Date.now() - start;
+    expect(res.status).toBe(200);
+    expect(elapsed).toBeGreaterThanOrEqual(200);
+  });
+
+  it("does not delay when SLOW_MODE_DELAY_MS is unset", async () => {
+    delete process.env.SLOW_MODE_DELAY_MS;
+    process.env.AUTH_MODE = "dev";
+    const { app: freshApp } = await import("./app.ts");
+    const start = Date.now();
+    const res = await freshApp.fetch(
+      new Request(
+        "http://localhost/ui-state/flow/login-and-org-setup/projection",
+        { method: "GET" },
+      ),
+    );
+    const elapsed = Date.now() - start;
+    expect(res.status).toBe(200);
+    expect(elapsed).toBeLessThan(100);
+  });
+
+  it("ignores SLOW_MODE_DELAY_MS when AUTH_MODE=production", async () => {
+    process.env.SLOW_MODE_DELAY_MS = "500";
+    process.env.AUTH_MODE = "production";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    // Production branch requires a verified Bearer; stub jwtVerify to succeed.
+    const jose = await import("jose");
+    vi.mocked(jose.jwtVerify).mockResolvedValue({
+      payload: { sub: "u-1", org_id: "o-1", email: "u@x" },
+      protectedHeader: { alg: "RS256" },
+    } as never);
+    const { app: freshApp } = await import("./app.ts");
+    const start = Date.now();
+    const res = await freshApp.fetch(
+      new Request(
+        "http://localhost/ui-state/flow/login-and-org-setup/projection",
+        {
+          method: "GET",
+          headers: { Authorization: "Bearer test-token" },
+        },
+      ),
+    );
+    const elapsed = Date.now() - start;
+    expect(res.status).toBe(200);
+    expect(elapsed).toBeLessThan(100);
+    delete process.env.WORKOS_CLIENT_ID;
+  });
+});

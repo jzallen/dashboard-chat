@@ -190,6 +190,15 @@ app.delete("/api/auth/pats/:id", async (c) => {
 // before forwarding so the upstream sees its own routes (`/health`,
 // `/flow/:machine/begin`, etc.).
 app.all("/ui-state/*", async (c) => {
+  // SLOW_MODE_DELAY_MS — frontend-coexistence Slice-4 / MR-3 induction
+  // mechanism (DD-18). When set AND AUTH_MODE !== "production", the
+  // /ui-state/* handler sleeps the configured ms before proceeding.
+  // Production-gated so this surface cannot leak into deployed environments.
+  const slowModeDelayMs = parseInt(process.env.SLOW_MODE_DELAY_MS ?? "0", 10);
+  if (slowModeDelayMs > 0 && (process.env.AUTH_MODE || "dev") !== "production") {
+    await new Promise((r) => setTimeout(r, slowModeDelayMs));
+  }
+
   const path = c.req.path;
   const strippedPath = path.replace(/^\/ui-state/, "") || "/";
 

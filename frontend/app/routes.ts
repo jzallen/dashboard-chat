@@ -11,6 +11,8 @@ import type { RouteConfig } from "@react-router/dev/routes";
 import { index, layout, route } from "@react-router/dev/routes";
 
 export default [
+  // Test-only probe route — frontend-coexistence Phase 04 / DD-16. Dev-mode gated; 404 in production.
+  route("/_test/loader-probe", "routes/_test-loader-probe.tsx"),
   route("/login", "routes/login.tsx"),
   route("/logout", "routes/logout.tsx"),
   route("/auth/callback", "routes/auth-callback.tsx"),
