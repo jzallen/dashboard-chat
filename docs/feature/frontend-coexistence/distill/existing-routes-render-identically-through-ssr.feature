@@ -56,7 +56,7 @@ Feature: Every pre-MR-0 route continues to render identically from the browser's
     When a request is sent to "/some-unmatched-path"
     Then the response is produced by web-ssr (RRv7 returns its 404 route render)
 
-  @visual-parity @needs-playwright
+  @visual-parity @html-shape-reduced
   Scenario: The DOM after hydration is structurally equivalent pre/post MR-0 for the entry routes
     Given a recorded DOM fingerprint of the SPA at "/" after hydration in the pre-MR-0 topology
     When a browser opens "/" against the post-MR-0 topology and waits for hydration to complete

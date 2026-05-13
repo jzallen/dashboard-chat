@@ -16,9 +16,6 @@ import pytest
 from driver import FrontendCoexistenceDriver
 
 pytestmark = [
-    pytest.mark.skip(
-        reason="DISTILL: pending DELIVER phase 01 (MR-0 plumbing) per roadmap.json",
-    ),
     pytest.mark.real_io,
     pytest.mark.slice_1,
 ]

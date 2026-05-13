@@ -32,9 +32,6 @@ import pytest
 from driver import FrontendCoexistenceDriver
 
 pytestmark = [
-    pytest.mark.skip(
-        reason="DISTILL: pending DELIVER phase 01 (MR-0 plumbing) per roadmap.json",
-    ),
     pytest.mark.real_io,
     pytest.mark.slice_1,
 ]
@@ -123,19 +120,27 @@ def test_catch_all_route_proxies_to_web_ssr(
 
 
 @pytest.mark.needs_compose_stack
-@pytest.mark.needs_playwright
 def test_dom_fingerprint_pre_post_mr0_matches(
     requires_compose_stack: None,
     driver: FrontendCoexistenceDriver,
 ) -> None:
-    """DOM after hydration is structurally equivalent pre/post MR-0 for `/`.
+    """DOM fingerprint reduced to HTML-shape assertion at MR-0 per DD-1.
 
-    DELIVER decides the implementation strategy (playwright-python vs
-    e2e/ move vs HTML-shape reduction) — see distill/wave-decisions.md DI-2.
+    The walking-skeleton scenario (`test_rrv7_handler_serves_html_shell_for_root_request`)
+    already asserts the structural shape of the SSR response at `/` via
+    `driver.response_is_html_shell(probe)`. This scenario is the entry-route variant
+    of that assertion — at MR-0 every route is library-mode, so the SSR'd HTML
+    for `/` is structurally equivalent to nginx's pre-MR-0 `try_files index.html`
+    shell (well-formed HTML5, `<div id="root">`, `<script>` reference, no error page).
+
+    DELIVER deferred the full DOM fingerprint to `e2e/` if/when a regression
+    demands browser-level fidelity — see deliver/wave-decisions.md DD-1.
     """
-    pytest.fail(
-        "needs-playwright: DELIVER chooses implementation strategy when "
-        "un-skipping. See distill/wave-decisions.md DI-2 + roadmap.json phase 01.",
+    probe = driver.get("/")
+    assert driver.response_is_html_shell(probe), (
+        f"DOM-fingerprint (HTML-shape reduction) failed for /: response is not a "
+        f"well-formed HTML shell. status={probe.status}, content_type={probe.content_type!r}, "
+        f"body head: {probe.body[:500]!r}"
     )
 
 

@@ -144,7 +144,12 @@ services:
   ui-state:
     build: ./ui-state
     container_name: dashboard-ui-state
-    profiles: ["ui-state", "full"]
+    # Default-profile service post-MR-0 — `ui-state` is part of the application's
+    # baseline runtime topology (reachable via auth-proxy at /ui-state/* per
+    # ADR-030 §SD1). Previously profile-gated to ["ui-state", "full"]; promotion
+    # to default profile aligns with the DISTILL post-MR-0 topology invariant
+    # (see tests/acceptance/frontend-coexistence/test_compose_topology_gains_one_service.py
+    # and deliver/upstream-issues.md DD-U-3).
     environment:
       PORT: "8788"
       REDIS_URL: redis://redis:6379/1

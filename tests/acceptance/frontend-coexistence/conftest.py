@@ -26,7 +26,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from driver import FrontendCoexistenceDriver  # noqa: E402
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _service_reachable(url: str, timeout: float = 0.5) -> bool:
