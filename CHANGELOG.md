@@ -1,3 +1,10 @@
+# [1.35.0](https://github.com/jzallen/dashboard-chat/compare/v1.34.0...v1.35.0) (2026-05-13)
+
+
+### Features
+
+* **ui-state:** land J-002 MR-2 session list + resume with dataset restoration ([0505a70](https://github.com/jzallen/dashboard-chat/commit/0505a70feeec4fc433f03e83f9cf96a83652e185))
+
 # [1.34.0](https://github.com/jzallen/dashboard-chat/compare/v1.33.0...v1.34.0) (2026-05-13)
 
 
