@@ -1,3 +1,15 @@
+# [1.31.0](https://github.com/jzallen/dashboard-chat/compare/v1.30.0...v1.31.0) (2026-05-13)
+
+
+### Features
+
+* **frontend:** chat-bearing route opts out of SSR via clientLoader (DWD-3) ([7a62843](https://github.com/jzallen/dashboard-chat/commit/7a6284353585d8efed8b7a667b5e3abecdaacc94))
+
+
+### Reverts
+
+* **frontend:** /login back to library-mode shim for Phase 03 reversibility proof ([b508537](https://github.com/jzallen/dashboard-chat/commit/b5085378e3385bc97bb4da648ca83e2e13848919))
+
 # [1.30.0](https://github.com/jzallen/dashboard-chat/compare/v1.29.0...v1.30.0) (2026-05-13)
 
 
