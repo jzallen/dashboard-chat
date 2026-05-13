@@ -1,3 +1,12 @@
+# [1.33.0](https://github.com/jzallen/dashboard-chat/compare/v1.32.0...v1.33.0) (2026-05-13)
+
+
+### Features
+
+* **ui-state:** land J-002 harness j002 namespace + US-202 last-used resolution + IC-J002-1 ([12b9e45](https://github.com/jzallen/dashboard-chat/commit/12b9e45bce95e94fa2acf67201d8df0949a8c047)), closes [#4](https://github.com/jzallen/dashboard-chat/issues/4)
+* **ui-state:** land J-002 substrate + walking-skeleton ([514c2ae](https://github.com/jzallen/dashboard-chat/commit/514c2aeb8886e708c412ccd17f244ac274097a28))
+* **ui-state:** land US-204 cold deep-link resolution + scope_mismatch_terminal ([54dc239](https://github.com/jzallen/dashboard-chat/commit/54dc23910243c0955e48bde751339b12560d8ed0))
+
 # [1.32.0](https://github.com/jzallen/dashboard-chat/compare/v1.31.0...v1.32.0) (2026-05-13)
 
 
