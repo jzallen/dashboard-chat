@@ -211,6 +211,21 @@ services:
     depends_on:
       - api
 
+  # SSR runtime — Hono + RRv7 SSR handler. Per ADR-034 (frontend-coexistence MR-0).
+  # No host port: reachable only from reverse-proxy over the compose network.
+  # Supports `docker compose up -d --scale web-ssr=N` per application-architecture.md §6.4.
+  web-ssr:
+    image: dashboard-chat/web-ssr:bazel
+    pull_policy: never
+    environment:
+      AUTH_PROXY_URL: http://auth-proxy:3000
+      NODE_ENV: ${NODE_ENV:-production}
+    expose:
+      - "3001"
+    depends_on:
+      auth-proxy:
+        condition: service_started
+
   # FastAPI backend - works with DuckDB (local) or PostgreSQL (full)
   api:
     image: dashboard-chat/api:bazel

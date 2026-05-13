@@ -374,3 +374,74 @@ oci_load(
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
+
+# ─── SSR OCI Image (web-ssr) ─────────────────────────────────────────────────
+#
+# Hono + RRv7 SSR runtime. Mirrors agent/BUILD.bazel:56-104's pattern:
+# esbuild bundles `ssr.ts` to a single ESM `ssr.mjs`, then oci_image stacks
+# the bundle + version layer on `@node_20_slim`. The genrule additionally
+# invokes `vite build` so the RRv7 plugin emits the SSR server bundle that
+# `ssr.ts` imports at runtime (`./build/server/index.js`).
+#
+# Layer layout inside ssr_dist.tar:
+#   /app/frontend/ssr.mjs           — esbuild output (Hono entry)
+#   /app/frontend/build/server/...  — vite build SSR output (RRv7 plugin)
+#   /app/frontend/build/client/...  — vite build client output (included for completeness;
+#                                     the reverse-proxy image is the primary serving surface
+#                                     but the SSR runtime needs the manifest for asset URLs)
+#
+# Per DWD-5 (frontend-coexistence). Per DESIGN application-architecture.md §6.2.
+
+genrule(
+    name = "ssr_dist",
+    srcs = [
+        ":sources",
+        "ssr.ts",
+        "//:.env",
+    ],
+    outs = ["ssr_dist.tar"],
+    # `--banner:js` polyfills CommonJS `require` inside the ESM bundle so any
+    # transitively-bundled CJS deps can still load Node built-ins at runtime —
+    # same rationale as agent/BUILD.bazel:69-75.
+    cmd = """
+        set -a && . .env && set +a && \
+        cd frontend && \
+        NODE_ENV=production npx vite build && \
+        npx esbuild ssr.ts --bundle --platform=node --format=esm \
+            --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" \
+            --outfile=../$$TMPDIR/app/frontend/ssr.mjs && \
+        mkdir -p ../$$TMPDIR/app/frontend/build && \
+        cp -r build/server ../$$TMPDIR/app/frontend/build/server && \
+        cp -r build/client ../$$TMPDIR/app/frontend/build/client && \
+        tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
+    """,
+    tags = ["no-sandbox", "manual"],
+    visibility = ["//visibility:public"],
+)
+
+version_layer(
+    name = "ssr_version_layer",
+    image_tag = "dashboard-chat/web-ssr:bazel",
+)
+
+oci_image(
+    name = "ssr_image",
+    base = "@node_20_slim",
+    tars = [
+        ":ssr_dist",
+        ":ssr_version_layer",
+    ],
+    workdir = "/app",
+    entrypoint = ["node", "frontend/ssr.mjs"],
+    exposed_ports = ["3001"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "ssr_image_tar",
+    image = ":ssr_image",
+    repo_tags = ["dashboard-chat/web-ssr:bazel"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
