@@ -1,3 +1,18 @@
+# [1.29.0](https://github.com/jzallen/dashboard-chat/compare/v1.28.0...v1.29.0) (2026-05-13)
+
+
+### Bug Fixes
+
+* **bazel:** remove deleted App.tsx from app_shell js_library srcs ([08423b8](https://github.com/jzallen/dashboard-chat/commit/08423b8aadeab5839333d5be84602f4085506c7b))
+* **bazel:** update .bazelignore from reverse-proxy/ to frontend/node_modules ([ca7106e](https://github.com/jzallen/dashboard-chat/commit/ca7106e5455ed3cb43e8e80dbcd1040c5ceae2b4))
+* **deps:** regenerate package-lock.json to match post-rename package.json ([c218a90](https://github.com/jzallen/dashboard-chat/commit/c218a90724a6562784751b833c30b8f3724ee1d3))
+* **deps:** update pnpm-workspace.yaml + regen pnpm-lock.yaml post-rename ([0313ad2](https://github.com/jzallen/dashboard-chat/commit/0313ad2e693578663c605e2b1288f2dd209c4eff))
+
+
+### Features
+
+* **frontend:** land web-ssr Bazel image + nginx catch-all + compose service ([2cdf11d](https://github.com/jzallen/dashboard-chat/commit/2cdf11d780cdb460de792adf10be6a197db80250))
+
 # [1.28.0](https://github.com/jzallen/dashboard-chat/compare/v1.27.0...v1.28.0) (2026-05-12)
 
 
