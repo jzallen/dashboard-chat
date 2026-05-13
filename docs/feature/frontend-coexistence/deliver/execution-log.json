@@ -274,6 +274,13 @@
       "s": "EXECUTED",
       "d": "PASS: DWD-7 cleanup landed \u2014 AppShell drops inner <QueryProvider> wrap (and its import); frontend/src/ui/providers/QueryProvider.tsx deleted; empty providers/ directory removed. Stale comments in frontend/app/root.tsx and frontend/app/routes/app-shell.tsx updated to reflect post-Phase-02 reality. Quality gates: vitest 595 passed (matches baseline); vite build OK; acceptance suite slice_2 3 passed/9 skipped/0 failed; full acceptance 13 passed/31 skipped/0 failed.",
       "t": "2026-05-13T03:02:12Z"
+    },
+    {
+      "sid": "02-03",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: commit d73acd5 \u2014 refactor(frontend): drop AppShell inner QueryProvider; un-skip Phase 02 scenarios. Step-ID: 02-03. 7 files changed, 51 insertions(+), 37 deletions(-); frontend/src/ui/providers/QueryProvider.tsx deleted. Pre-commit (ruff + eslint auto-fix) passed (8 pre-existing warnings, 0 errors). All 11 quality gates pass: acceptance test passes (3 file-system PASS); vitest 595 passed; vite build OK; no test skips outside Strategy-C + DD-12 deferral; test budget N/A (structural refactor); no mocks inside hexagon.",
+      "t": "2026-05-13T03:03:08Z"
     }
   ]
 }
