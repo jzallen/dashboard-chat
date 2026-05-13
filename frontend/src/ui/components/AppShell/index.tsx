@@ -6,7 +6,6 @@ import { StreamProvider } from "@/stream/StreamProvider";
 import { ChatProvider } from "../../context/ChatContext";
 import { useOrgProjectsQuery, useOrgQuery } from "../../hooks/useOrgQuery";
 import { useProjectQuery } from "../../hooks/useProjectQuery";
-import { QueryProvider } from "../../providers/QueryProvider";
 import { SideNav } from "../SideNav";
 import { UnifiedNav } from "../SideNav/UnifiedNav";
 import styles from "./AppShell.module.css";
@@ -56,9 +55,7 @@ export function AppShell() {
   return (
     <RequireAuth>
       <RequireOrg>
-        <QueryProvider>
-          <AppShellInner />
-        </QueryProvider>
+        <AppShellInner />
       </RequireOrg>
     </RequireAuth>
   );

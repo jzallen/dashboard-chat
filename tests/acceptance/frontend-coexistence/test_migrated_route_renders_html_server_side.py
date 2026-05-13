@@ -24,9 +24,6 @@ import pytest
 from driver import FrontendCoexistenceDriver
 
 pytestmark = [
-    pytest.mark.skip(
-        reason="DISTILL: pending DELIVER phase 02 (Slice-2 / MR-1 — first per-route migration) per roadmap.json",
-    ),
     pytest.mark.real_io,
     pytest.mark.slice_2,
     pytest.mark.needs_compose_stack,
@@ -108,6 +105,9 @@ def test_ssr_response_contains_dehydrated_state_marker(
     )
 
 
+@pytest.mark.skip(
+    reason="DELIVER-deferred per DD-12 (Phase 02): pytest.fail placeholder; harness mechanism (Playwright / fixture-driven upstream / etc.) is a separate engineering investment scoped to a follow-up MR. See deliver/wave-decisions.md DD-12.",
+)
 def test_browser_does_not_duplicate_fetch_after_hydration(
     requires_compose_stack: None,
     driver: FrontendCoexistenceDriver,
@@ -131,6 +131,9 @@ def test_browser_does_not_duplicate_fetch_after_hydration(
     )
 
 
+@pytest.mark.skip(
+    reason="DELIVER-deferred per DD-12 (Phase 02): pytest.fail placeholder; harness mechanism (Playwright / fixture-driven upstream / etc.) is a separate engineering investment scoped to a follow-up MR. See deliver/wave-decisions.md DD-12.",
+)
 def test_loader_thrown_response_surfaces_as_error_render(
     requires_compose_stack: None,
     driver: FrontendCoexistenceDriver,

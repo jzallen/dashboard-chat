@@ -44,8 +44,8 @@ export function Layout({ children }: { children: ReactNode }) {
 }
 
 export default function Root() {
-  // DWD-7: QueryClient defaults mirror frontend/src/ui/providers/QueryProvider.tsx
-  // so AppShell-internal <QueryProvider> coexistence is behavior-neutral at MR-0.
+  // DWD-7: request-scoped QueryClient — this is now the sole client identity
+  // after Phase 02 dropped the AppShell-internal <QueryProvider> wrap.
   const [queryClient] = useState(
     () =>
       new QueryClient({

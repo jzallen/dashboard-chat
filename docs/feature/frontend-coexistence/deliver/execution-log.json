@@ -239,6 +239,41 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-05-13T02:56:22Z"
+    },
+    {
+      "sid": "02-02",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T02:56:48Z"
+    },
+    {
+      "sid": "02-03",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS: Read AppShell/index.tsx, providers/QueryProvider.tsx, 2 test files, conftest.py, distill feature file (inner-provider-removed scenario), wave-decisions.md DD-12 verbatim reason confirmed. Pre-flight greps confirm: QueryProvider component imported only by AppShell; queryClient named export from providers/QueryProvider.tsx has zero consumers; all other queryClient references are local test variables, useQueryClient hooks, or local QueryClient instances. Safe to delete providers/QueryProvider.tsx outright. Note: frontend/app/routes/app-shell.tsx contains a comment referencing the inner <QueryProvider /> which becomes stale after this step.",
+      "t": "2026-05-13T02:59:49Z"
+    },
+    {
+      "sid": "02-03",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "APPROVED_SKIP: this step is a structural refactor (drop a provider wrap + delete a no-consumer module + un-skip pytest markers). No new unit-testable behavior. The vitest suite is the regression boundary; the acceptance suite is the contract boundary.",
+      "t": "2026-05-13T02:59:57Z"
+    },
+    {
+      "sid": "02-03",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: 9 Phase 02 scenarios un-skipped at module level; 3 placeholders re-marked at function level with DD-12 verbatim reason. Acceptance suite run (compose stack down \u2014 Strategy C): slice_2 marker = 3 PASSED (file-system: test_no_loader_imports_auth_provider_as_value, test_no_loader_calls_use_auth, test_appshell_inner_query_provider_is_removed) + 9 SKIPPED (6 stack-down via requires_compose_stack fixture, 3 DD-12-deferred with named reason) + 0 FAILED. Full suite = 13 PASSED / 31 SKIPPED / 0 FAILED (+3 vs Phase 01 baseline of 10P/34S/0F). Iron Rule honored: pytest.fail bodies of the 3 deferred placeholders preserved verbatim, only @skip decorators added.",
+      "t": "2026-05-13T03:02:09Z"
+    },
+    {
+      "sid": "02-03",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: DWD-7 cleanup landed \u2014 AppShell drops inner <QueryProvider> wrap (and its import); frontend/src/ui/providers/QueryProvider.tsx deleted; empty providers/ directory removed. Stale comments in frontend/app/root.tsx and frontend/app/routes/app-shell.tsx updated to reflect post-Phase-02 reality. Quality gates: vitest 595 passed (matches baseline); vite build OK; acceptance suite slice_2 3 passed/9 skipped/0 failed; full acceptance 13 passed/31 skipped/0 failed.",
+      "t": "2026-05-13T03:02:12Z"
     }
   ]
 }
