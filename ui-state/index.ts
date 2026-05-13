@@ -65,6 +65,15 @@ function forceCreateProjectFailureFlag(): boolean {
   return false;
 }
 
+// J-002 harness knob: header-gated set of project ids whose list_sessions
+// the resolver should treat as 5xx-failed. Used by the US-202 degraded path
+// scenario (`X-Force-List-Sessions-Failure: <id>[, <id>]`). Consumed once
+// per `/begin` call — cleared after the resolver has run.
+const forceListSessionsFailures = new Set<string>();
+function shouldFailListSessions(project_id: string): boolean {
+  return forceListSessionsFailures.has(project_id);
+}
+
 const orchestrator = new FlowOrchestrator({
   eventLog,
   loginMachineDeps: {
@@ -78,6 +87,7 @@ const orchestrator = new FlowOrchestrator({
     resolveInitialScope: resolveInitialScopeActor(
       BACKEND_URL,
       DEFAULT_PRINCIPAL_HEADERS,
+      shouldFailListSessions,
     ),
     createProject: createProjectActor(
       BACKEND_URL,
@@ -160,6 +170,17 @@ app.post("/flow/:machine/begin", async (c) => {
       (body.persona_display_name ?? "").split(/\s+/)[0] ||
       (userEmail ? userEmail.split("@")[0] : "") ||
       "";
+    // J-002 harness knob — header-gated: the resolver treats listed project
+    // ids' list_sessions calls as 5xx-failed. Comma-separated ids. Cleared
+    // each /begin so test scenarios don't leak state.
+    forceListSessionsFailures.clear();
+    const forceFailHeader = c.req.header("X-Force-List-Sessions-Failure");
+    if (forceFailHeader && machine === "project-and-chat-session-management") {
+      for (const raw of forceFailHeader.split(",")) {
+        const id = raw.trim();
+        if (id) forceListSessionsFailures.add(id);
+      }
+    }
     try {
       const projection = await orchestrator.beginIfNotStarted({
         machine,

@@ -116,6 +116,12 @@ export interface J002MachineContext {
   // Observability counters:
   scope_reconciled_count: number;
   stale_intents_dropped_count: number;
+
+  // Last-used resolution degraded set (OQ-J002-5). Populated on
+  // resolving_initial_scope's onDone when one or more `list_sessions` calls
+  // 5xx-failed. The orchestrator reads this on settle to emit a
+  // `last_used_resolution_degraded` event with `partial_result: true`.
+  last_used_degraded_project_ids: string[];
 }
 
 export type J002Event =
@@ -135,7 +141,11 @@ export type J002Event =
   | { type: "THAW" };
 
 export type ResolveInitialScopeOutput =
-  | { project: ProjectSummary }
+  | {
+      project: ProjectSummary;
+      most_recent_session_per_project?: Record<string, string>;
+      degraded_project_ids?: string[];
+    }
   | { no_projects: true }
   | { cross_tenant: true };
 
@@ -249,6 +259,7 @@ export function createProjectAndChatSessionMachine(deps: J002MachineDeps) {
       project_validation_error: null,
       scope_reconciled_count: 0,
       stale_intents_dropped_count: 0,
+      last_used_degraded_project_ids: [],
     }),
     states: {
       resolving_initial_scope: {
@@ -294,6 +305,16 @@ export function createProjectAndChatSessionMachine(deps: J002MachineDeps) {
                 project: ({ event }) => {
                   const out = event.output as { project: ProjectSummary };
                   return { id: out.project.id, name: out.project.name };
+                },
+                most_recent_session_per_project: ({ event, context }) => {
+                  const out = event.output as {
+                    most_recent_session_per_project?: Record<string, string>;
+                  };
+                  return out.most_recent_session_per_project ?? context.most_recent_session_per_project;
+                },
+                last_used_degraded_project_ids: ({ event }) => {
+                  const out = event.output as { degraded_project_ids?: string[] };
+                  return out.degraded_project_ids ?? [];
                 },
               }),
             },
@@ -403,6 +424,7 @@ export function createProjectAndChatSessionMachine(deps: J002MachineDeps) {
 export function resolveInitialScopeFn(
   backendUrl: string,
   principalHeaders: Record<string, string>,
+  shouldFailListSessions: (project_id: string) => boolean = () => false,
 ): (input: ResolveInitialScopeInput) => Promise<ResolveInitialScopeOutput> {
   return async (input) => {
     const resp = await fetch(`${backendUrl}/api/projects`, {
@@ -451,17 +473,129 @@ export function resolveInitialScopeFn(
     if (items.length === 0) {
       return { no_projects: true };
     }
-    // First-project heuristic for MR-1; MR-2 lands the last-used resolution.
-    const head = items[0];
-    return { project: { id: head.id, name: head.name } };
+
+    // ─── Last-used resolution (OQ-J002-5 / DWD-9 / 01-02) ───────────────────
+    // Fire N parallel `list_sessions(project_id, limit=1)` reads. For each
+    // project, capture the most-recent session's last_active_at (or NULL if
+    // empty). Pick the project carrying the freshest last_active_at; ties
+    // broken by lexicographic-smaller `id`. Projects whose `list_sessions`
+    // call 5xx-fails are omitted from the map AND surfaced as
+    // `degraded_project_ids` so the orchestrator can emit a
+    // `last_used_resolution_degraded` event.
+    const probes = await Promise.all(
+      items.map(async (p) => {
+        // Test-only knob: simulate a 5xx list_sessions for this project.
+        if (shouldFailListSessions(p.id)) {
+          return { id: p.id, name: p.name, last_active_at: null as string | null, degraded: true };
+        }
+        try {
+          const sResp = await fetch(
+            `${backendUrl}/api/projects/${encodeURIComponent(p.id)}/sessions?page%5Bsize%5D=1`,
+            {
+              method: "GET",
+              headers: {
+                "x-correlation-id": "j002-list-sessions",
+                ...principalHeaders,
+              },
+            },
+          );
+          if (!sResp.ok) {
+            // 4xx OR 5xx — treat as degraded; omit from the map.
+            return { id: p.id, name: p.name, last_active_at: null as string | null, degraded: sResp.status >= 500 };
+          }
+          const sBody = (await sResp.json()) as
+            | { items?: Array<{ last_active_at?: string }> }
+            | { data?: Array<{ attributes?: { last_active_at?: string }; last_active_at?: string }> }
+            | Array<{ last_active_at?: string }>;
+          const rawSessions = Array.isArray(sBody)
+            ? sBody
+            : "data" in sBody && Array.isArray(sBody.data)
+              ? sBody.data
+              : "items" in sBody && Array.isArray(sBody.items)
+                ? sBody.items
+                : [];
+          if (rawSessions.length === 0) {
+            return { id: p.id, name: p.name, last_active_at: null, degraded: false };
+          }
+          const first = rawSessions[0] as {
+            last_active_at?: string;
+            attributes?: { last_active_at?: string };
+          };
+          const ts =
+            first.last_active_at ??
+            first.attributes?.last_active_at ??
+            null;
+          return { id: p.id, name: p.name, last_active_at: ts, degraded: false };
+        } catch {
+          // Network / transport error — degraded.
+          return { id: p.id, name: p.name, last_active_at: null as string | null, degraded: true };
+        }
+      }),
+    );
+
+    const most_recent_session_per_project: Record<string, string> = {};
+    const degraded_project_ids: string[] = [];
+    for (const probe of probes) {
+      if (probe.degraded) {
+        degraded_project_ids.push(probe.id);
+        continue;
+      }
+      if (probe.last_active_at) {
+        most_recent_session_per_project[probe.id] = probe.last_active_at;
+      }
+    }
+
+    // Pick: among projects with a non-null last_active_at, pick the freshest
+    // (lex-larger ISO timestamp wins; tie → lex-smaller `id`). Among projects
+    // with NULL last_active_at (no sessions), fall back to lex-smaller `name`.
+    const withSessions = probes.filter((p) => !p.degraded && p.last_active_at !== null);
+    const withoutSessions = probes.filter((p) => !p.degraded && p.last_active_at === null);
+
+    let pick: { id: string; name: string } | null = null;
+    if (withSessions.length > 0) {
+      const sorted = [...withSessions].sort((a, b) => {
+        // Primary: last_active_at DESC.
+        const ta = a.last_active_at ?? "";
+        const tb = b.last_active_at ?? "";
+        if (ta !== tb) return tb.localeCompare(ta);
+        // Tie-break: lex-smaller id WINS (deterministic across cold restarts).
+        return a.id.localeCompare(b.id);
+      });
+      const head = sorted[0];
+      pick = { id: head.id, name: head.name };
+    } else if (withoutSessions.length > 0) {
+      // No sessions anywhere → lex-smallest by NAME.
+      const sorted = [...withoutSessions].sort((a, b) => a.name.localeCompare(b.name));
+      const head = sorted[0];
+      pick = { id: head.id, name: head.name };
+    } else {
+      // Every project was degraded — fall back to lex-smallest by name from
+      // the raw items list so we still land in `project_selected` (the user
+      // sees something rather than the welcome shell). The
+      // `last_used_resolution_degraded` event still fires for every project.
+      const sortedItems = [...items].sort((a, b) => a.name.localeCompare(b.name));
+      const head = sortedItems[0];
+      pick = { id: head.id, name: head.name };
+    }
+
+    return {
+      project: pick,
+      most_recent_session_per_project,
+      ...(degraded_project_ids.length > 0 ? { degraded_project_ids } : {}),
+    };
   };
 }
 
 export function resolveInitialScopeActor(
   backendUrl: string,
   principalHeaders: Record<string, string>,
+  shouldFailListSessions: (project_id: string) => boolean = () => false,
 ): ResolveInitialScopeActor {
-  const fn = resolveInitialScopeFn(backendUrl, principalHeaders);
+  const fn = resolveInitialScopeFn(
+    backendUrl,
+    principalHeaders,
+    shouldFailListSessions,
+  );
   return fromPromise<ResolveInitialScopeOutput, ResolveInitialScopeInput>(
     ({ input }) => fn(input),
   );

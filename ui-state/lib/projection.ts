@@ -68,6 +68,12 @@ interface ReducedContext {
   user_first_name: string | null;
   pending_project_name: string;
   project_validation_error: { kind: string; message: string } | null;
+  /** Per OQ-J002-5: per-project last_active_at map captured by
+   *  resolveInitialScope. Empty when J-002 hasn't resolved yet. */
+  most_recent_session_per_project: Record<string, string>;
+  /** Per OQ-J002-5 degraded path: ids of projects whose list_sessions
+   *  call 5xx-failed during last-used resolution. */
+  last_used_resolution_degraded: { failed_project_ids: string[]; partial_result: boolean } | null;
 }
 
 function initialContext(): ReducedContext {
@@ -85,6 +91,8 @@ function initialContext(): ReducedContext {
     user_first_name: null,
     pending_project_name: "",
     project_validation_error: null,
+    most_recent_session_per_project: {},
+    last_used_resolution_degraded: null,
   };
 }
 
@@ -343,6 +351,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     const payload = event.payload as {
       org_id?: string;
       project?: { id: string | null; name: string | null };
+      most_recent_session_per_project?: Record<string, string>;
     };
     return {
       state: "project_selected",
@@ -353,6 +362,26 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           name: context.org.name,
         },
         project: payload.project ?? context.project,
+        most_recent_session_per_project:
+          payload.most_recent_session_per_project ??
+          context.most_recent_session_per_project,
+      },
+    };
+  },
+
+  last_used_resolution_degraded: (state, context, event) => {
+    const payload = event.payload as {
+      failed_project_ids?: string[];
+      partial_result?: boolean;
+    };
+    return {
+      state,
+      context: {
+        ...context,
+        last_used_resolution_degraded: {
+          failed_project_ids: payload.failed_project_ids ?? [],
+          partial_result: payload.partial_result ?? true,
+        },
       },
     };
   },

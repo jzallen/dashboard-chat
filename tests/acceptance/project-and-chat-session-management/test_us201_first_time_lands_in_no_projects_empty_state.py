@@ -345,25 +345,61 @@ def test_transient_create_project_failure_lands_in_error_recoverable_with_compos
     assert body["context"].get("pending_project_name") == project_name
 
 
-@pytest.mark.skip(
-    reason=(
-        "DELIVER-deferred to MR-1 sub-step 01-02 — un-skip when the TS harness "
-        "extension `harness.j002.create_first_project` lands at "
-        "tests/acceptance/user-flow-state-machines/harness/. Sub-step 01-01 "
-        "lands the substrate but does NOT extend the TS harness."
-    )
-)
 @pytest.mark.harness
 @pytest.mark.needs_ts_harness
 def test_ts_harness_drives_no_projects_path_end_to_end(
     requires_compose_stack: None,
     requires_ts_harness: None,
+    requires_node: None,
+    clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
     """The TS `UserFlowHarness` drives the no-projects path end-to-end.
 
-    Composes `harness.user_flow.begin_auth("maya-first-time")` with
-    `harness.j002.create_first_project("Q4 Analytics")`; asserts via
-    `harness.j002.assert_scope({project_id: <q4-id>})`.
+    Spawns J-002 → no_projects_empty_state, then calls
+    `harness.j002.create_first_project("Q4 Analytics")` → project_selected,
+    then asserts `harness.j002.assert_scope({project_id: <new-id>})`. Routed
+    through auth-proxy per DD-3 / DWD-3 — never imports ui-state internals.
     """
-    pytest.fail("not yet implemented")
+    import json as _json
+    import os
+    import subprocess
+
+    DEV_PRINCIPAL_ID = "dev-user-001"
+    PROJECT_NAME = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
+
+    script = (
+        "import { userFlowHarness } from './harness/user-flow-harness.ts';\n"
+        "const h = userFlowHarness({\n"
+        f"  authProxyUrl: 'http://localhost:1042',\n"
+        f"  fakeWorkOSUrl: 'http://localhost:14299',\n"
+        f"  principalId: '{DEV_PRINCIPAL_ID}',\n"
+        "});\n"
+        "const initial = await h.j002.begin('Maya Chen');\n"
+        "if (initial.state !== 'no_projects_empty_state') {\n"
+        "  throw new Error('expected no_projects_empty_state on begin; got ' + initial.state);\n"
+        "}\n"
+        f"const after = await h.j002.create_first_project('{PROJECT_NAME}');\n"
+        "if (after.state !== 'project_selected') {\n"
+        "  throw new Error('expected project_selected after create; got ' + after.state);\n"
+        "}\n"
+        "const projId = after.active_scope.project_id;\n"
+        "if (!projId) throw new Error('active_scope.project_id is null after create');\n"
+        "await h.j002.assert_scope({ project_id: projId, org_id: 'dev-org-001' });\n"
+        "console.log(JSON.stringify({ok: true, project_id: projId}));\n"
+    )
+
+    result = subprocess.run(
+        ["node", "--import", "tsx", "--input-type=module", "-e", script],
+        cwd=str(driver.repo_root / "tests" / "acceptance" / "user-flow-state-machines"),
+        capture_output=True, text=True, timeout=30, check=False,
+        env={"PATH": os.environ.get("PATH", "")},
+    )
+    assert result.returncode == 0, (
+        f"harness no-projects path failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    last_line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "{}"
+    payload = _json.loads(last_line)
+    assert payload.get("ok") is True
+    assert payload.get("project_id")

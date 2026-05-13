@@ -328,3 +328,234 @@ function decodeJwtOrgIdUnchecked(jwt: string): string | null {
     return null;
   }
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// harness.j002 namespace — J-002 (project-and-chat-session-management).
+// Added by MR-1 sub-step 01-02. The namespace mirrors the J-001
+// UserFlowHarness shape: an object exposing ops that drive the J-002 surface
+// (via the auth-proxy → ui-state HTTP path, never via ui-state imports).
+//
+// Per DD-3 + DWD-3: the harness routes all traffic through auth-proxy. The
+// J-002 surface is the orchestrator's J-002 flow_id namespace:
+//   `project-and-chat-session-management:<principal_id>`
+//
+// REC-2 decision: this harness is INVOKED via inline ESM scripts (Option B).
+// driver.py's `run_ts_harness` constructs an inline ESM string that
+// `import { j002Harness } from ...` + drives the ops + emits JSON on stdout.
+// See `docs/feature/project-and-chat-session-management/deliver/wave-decisions.md`.
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface J002HarnessConfig {
+  authProxyUrl: string;
+  principalId: string;
+}
+
+export interface J002OpenDeepLinkIntent {
+  project_id?: string;
+  session_id?: string;
+  resource_id?: string;
+  resource_type?: "dataset" | "view" | "report";
+}
+
+export class J002Harness {
+  private readonly flowId: string;
+  private readonly machine = "project-and-chat-session-management";
+
+  constructor(private readonly config: J002HarnessConfig) {
+    this.flowId = `${this.machine}:${this.config.principalId}`;
+  }
+
+  /** Spawn / re-attach J-002 for this principal. Returns the projection. */
+  async begin(personaDisplayName: string = "Maya Chen"): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/begin`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          persona_display_name: personaDisplayName,
+          principal_id: this.config.principalId,
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.begin expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
+  /** Submit `switching_project_intent` for the named project. */
+  async open_project(project_id: string): Promise<FlowProjection> {
+    return this.sendEvent("switching_project_intent", { new_project_id: project_id });
+  }
+
+  /** Open a deep link with the given intent. */
+  async open_deep_link(intent: J002OpenDeepLinkIntent): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/open-deep-link`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: this.flowId,
+          principal_id: this.config.principalId,
+          intent_project_id: intent.project_id,
+          intent_session_id: intent.session_id,
+          intent_resource_id: intent.resource_id,
+          intent_resource_type: intent.resource_type,
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.open_deep_link expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
+  /** Submit `create_project_submitted` with the given name. Assumes the
+   *  machine is currently in `no_projects_empty_state`. */
+  async create_first_project(name: string): Promise<FlowProjection> {
+    return this.sendEvent("create_project_submitted", { org_name: name });
+  }
+
+  /** Read the current J-002 projection. */
+  async get_projection(): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/projection?flow_id=${encodeURIComponent(this.flowId)}`,
+      { method: "GET" },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.get_projection expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
+  /** Assert that the resolver picked the project with the given id OR name.
+   *  Accepts either an id (UUID-shaped) or a name (free-text); resolution
+   *  rule: if `expected` matches `context.project.id` OR `context.project.name`,
+   *  the assertion succeeds. Reads from the projection — never queries the
+   *  backend directly.  */
+  async assert_initial_project(expected: string): Promise<void> {
+    const projection = await this.get_projection();
+    const project = (projection.context as { project?: { id: string | null; name: string | null } }).project ?? {
+      id: null,
+      name: null,
+    };
+    const matches = project.id === expected || project.name === expected;
+    if (!matches) {
+      throw new Error(
+        `j002.assert_initial_project failed: expected ${JSON.stringify(expected)}; ` +
+          `got context.project={id:${JSON.stringify(project.id)}, name:${JSON.stringify(project.name)}}`,
+      );
+    }
+  }
+
+  /** Assert that the active_scope matches the expected (partial) shape. */
+  async assert_scope(expected: Partial<ActiveScope>): Promise<void> {
+    const projection = await this.get_projection();
+    const actual = projection.active_scope;
+    const diffs: string[] = [];
+    for (const key of Object.keys(expected) as (keyof ActiveScope)[]) {
+      if (actual[key] !== expected[key]) {
+        diffs.push(
+          `${String(key).padEnd(14)} expected: ${String(expected[key]).padEnd(28)} actual: ${String(actual[key])}`,
+        );
+      }
+    }
+    if (diffs.length > 0) {
+      throw new Error(`j002.assert_scope failed:\n${diffs.join("\n")}`);
+    }
+  }
+
+  /** Assert state === "scope_mismatch_terminal" AND
+   *  context.underlying_cause_tag === expected_cause. */
+  async assert_scope_mismatch(expected_cause: string): Promise<void> {
+    const projection = await this.get_projection();
+    if (projection.state !== "scope_mismatch_terminal") {
+      throw new Error(
+        `j002.assert_scope_mismatch failed: state=${JSON.stringify(projection.state)}, expected scope_mismatch_terminal`,
+      );
+    }
+    const cause = (projection.context as { underlying_cause_tag?: string }).underlying_cause_tag ?? null;
+    if (cause !== expected_cause) {
+      throw new Error(
+        `j002.assert_scope_mismatch failed: underlying_cause_tag=${JSON.stringify(cause)}, expected ${JSON.stringify(expected_cause)}`,
+      );
+    }
+  }
+
+  private async sendEvent(
+    type: string,
+    payload: Record<string, unknown>,
+  ): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/event`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: this.flowId,
+          type,
+          payload,
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.${type} expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+}
+
+/**
+ * Top-level harness export carrying both the J-001 (`user_flow`) and J-002
+ * (`j002`) namespaces. Test scripts construct this once per scenario:
+ *
+ *   const h = userFlowHarness({
+ *     authProxyUrl: "http://localhost:1042",
+ *     fakeWorkOSUrl: "http://localhost:14299",
+ *     principalId: "dev-user-001",
+ *   });
+ *   await h.j002.begin();
+ *   await h.j002.assert_initial_project("Q4 Analytics");
+ */
+export interface UserFlowHarnessShape {
+  user_flow: UserFlowHarness;
+  j002: J002Harness;
+}
+
+export function userFlowHarness(config: {
+  authProxyUrl: string;
+  fakeWorkOSUrl: string;
+  principalId?: string;
+  persona?: PersonaConfig;
+}): UserFlowHarnessShape {
+  const principalId = config.principalId ?? "dev-user-001";
+  const persona = config.persona ?? {
+    id: principalId,
+    email: "maya.chen@acme-data.example",
+    display_name: "Maya Chen",
+  };
+  return {
+    user_flow: new UserFlowHarness(
+      { authProxyUrl: config.authProxyUrl, fakeWorkOSUrl: config.fakeWorkOSUrl },
+      persona,
+    ),
+    j002: new J002Harness({
+      authProxyUrl: config.authProxyUrl,
+      principalId,
+    }),
+  };
+}

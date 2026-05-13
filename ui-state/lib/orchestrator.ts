@@ -389,6 +389,8 @@ export class FlowOrchestrator {
       underlying_cause_tag?: string | null;
       pending_project_name?: string;
       project_validation_error?: { kind: string; message: string } | null;
+      most_recent_session_per_project?: Record<string, string>;
+      last_used_degraded_project_ids?: string[];
     };
 
     // Initial event — marks the J-002 actor as started for projection consumers.
@@ -402,6 +404,23 @@ export class FlowOrchestrator {
       },
       correlation_id: input.correlation_id,
     });
+
+    // OQ-J002-5: when resolveInitialScope's invoke captured one or more 5xx
+    // failures on list_sessions, emit the degraded event so projection
+    // consumers can surface a banner / metric. Emitted BEFORE the terminal
+    // event so the projection reducer sees them in causal order.
+    const degradedIds = ctx.last_used_degraded_project_ids ?? [];
+    if (degradedIds.length > 0) {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "last_used_resolution_degraded",
+        payload: {
+          failed_project_ids: degradedIds,
+          partial_result: true,
+        },
+        correlation_id: input.correlation_id,
+      });
+    }
 
     // Terminal-for-now event reflecting settle.
     if (stateValue === "no_projects_empty_state") {
@@ -421,6 +440,8 @@ export class FlowOrchestrator {
         payload: {
           org_id: ctx.org_id ?? input.org_id ?? "",
           project: ctx.project,
+          most_recent_session_per_project:
+            ctx.most_recent_session_per_project ?? {},
         },
         correlation_id: input.correlation_id,
       });
