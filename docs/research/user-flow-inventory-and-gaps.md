@@ -24,7 +24,7 @@ ADR-028:94 frames the cross-machine actor model's payoff: "Cross-machine freeze 
 - ADRs: `docs/decisions/adr-{027,028,029,030,034}-*.md`
 - Product SSOT: `docs/product/journeys/_inventory.md`
 - Frontend routes: `frontend/app/routes.ts`, `frontend/app/routes/*.tsx`
-- Frontend-coexistence wave: `docs/feature/frontend-coexistence/distill/roadmap.json`
+- Frontend-coexistence wave: `docs/evolution/2026-05-13-frontend-coexistence/distill/roadmap.json` (archived 2026-05-13)
 - Agent tool surfaces: `agent/lib/chat/{tools.ts,viewToolDefinitions.ts,reportToolDefinitions.ts,dispatchers/index.ts}`
 - Backend use cases: `backend/app/use_cases/{dataset,project,session,organization,view,report,sql_access,query_engine,upload,memory}/*`
 - Product Gherkin: `features/*.feature`
@@ -171,7 +171,7 @@ Use cases like `backend/app/use_cases/project/create_project.py`, `backend/app/u
 | ADR-029 | `docs/decisions/adr-029-active-scope-propagation-contract.md` | architecture decision | Y |
 | ADR-030 | `docs/decisions/adr-030-flow-state-topology-and-scaling.md` | architecture decision | Y |
 | Frontend routes | `frontend/app/routes.ts` | code (route declarations) | Y |
-| Frontend-coexistence roadmap | `docs/feature/frontend-coexistence/distill/roadmap.json` | wave artifact | Y |
+| Frontend-coexistence roadmap | `docs/evolution/2026-05-13-frontend-coexistence/distill/roadmap.json` | archived wave artifact (finalized 2026-05-13) | Y |
 | Agent tool definitions | `agent/lib/chat/tools.ts`, `viewToolDefinitions.ts`, `reportToolDefinitions.ts` | code (tool schemas) | Y |
 | Agent dispatchers | `agent/lib/chat/dispatchers/index.ts` | code | Y |
 | Backend use cases | `backend/app/use_cases/{dataset,project,session,organization,view,report,sql_access,query_engine,upload,memory}/*` | code | Y |

@@ -448,5 +448,5 @@ A future DEVOPS `environments.yaml` will replace this default matrix.
 - DESIGN (binding): `docs/feature/project-and-chat-session-management/design/{application-architecture,wave-decisions,c4-diagrams,handoff-design-to-distill,review-by-solution-architect,review-by-system-designer}.md`
 - DISCUSS (binding): `docs/feature/project-and-chat-session-management/discuss/{wave-decisions,handoff-design,journey-project-and-chat-session-management.yaml,outcome-kpis,shared-artifacts-registry,stories/US-{201..210}.md,slices/slice-{01..06}-*.md}`
 - J-001 DISTILL (template): `docs/evolution/2026-05-12-user-flow-state-machines/distill/`
-- `frontend-coexistence` DISTILL (pattern): `docs/feature/frontend-coexistence/distill/`
+- `frontend-coexistence` DISTILL (pattern, archived 2026-05-13): `docs/evolution/2026-05-13-frontend-coexistence/distill/`
 - ADRs (binding): ADR-014/015/016/018/027/028/029/030/031 §7/034

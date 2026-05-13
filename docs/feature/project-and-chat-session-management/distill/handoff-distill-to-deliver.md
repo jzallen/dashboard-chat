@@ -274,4 +274,4 @@ After MR-6 is GREEN: J-002 is feature-complete. The user-flow archive at `docs/e
 - DISCUSS (binding): `docs/feature/project-and-chat-session-management/discuss/`
 - ADRs: ADR-014/015/016/018/027/028/029/030/031 §7/034
 - J-001 archive (template): `docs/evolution/2026-05-12-user-flow-state-machines/`
-- `frontend-coexistence` DISTILL (pattern): `docs/feature/frontend-coexistence/distill/`
+- `frontend-coexistence` DISTILL (pattern, archived 2026-05-13): `docs/evolution/2026-05-13-frontend-coexistence/distill/`
