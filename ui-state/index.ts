@@ -28,6 +28,7 @@ import {
 import {
   createProjectActor,
   resolveInitialScopeActor,
+  switchProjectActor,
 } from "./lib/machines/project-context.ts";
 import {
   createSessionEagerlyActor,
@@ -113,6 +114,8 @@ const orchestrator = new FlowOrchestrator({
       DEFAULT_PRINCIPAL_HEADERS,
       forceCreateProjectFailureFlag,
     ),
+    // MR-4 — atomic project switching (US-207 + IC-J002-4).
+    switchProject: switchProjectActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
   },
   // Session-chat (DWD-13 §2B) — MR-2 wires loadSessionList + resumeSession.
   // Presence of this object (vs `undefined`) is the orchestrator's signal

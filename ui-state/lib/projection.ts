@@ -459,6 +459,68 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
+  // ─────────────── MR-4 — project switching (US-207 + IC-J002-4) ────────
+  // Per DESIGN §2A the project-context machine owns the `switching_project`
+  // state. The IC-J002-4 invariant — session_id + resource_* MUST be
+  // cleared BEFORE the new project's loading_session_list fires — is
+  // enforced HERE in the projection layer (the cross-machine view): on
+  // `switching_project_started` the projection writes nulls atomically.
+  // Session-chat re-enters loading_session_list via the orchestrator's
+  // project_ready re-broadcast on settle (`project_switched`).
+
+  switching_project_started: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      intent_project_id?: string | null;
+    };
+    return {
+      state: "switching_project",
+      context: {
+        ...context,
+        org: {
+          id: payload.org_id ?? context.org.id,
+          name: context.org.name,
+        },
+        intent_project_id:
+          payload.intent_project_id ?? context.intent_project_id,
+        // IC-J002-4 atomic invalidation — write nulls in the SAME projection
+        // tick the `switching_project` state surfaces. SSE consumers see the
+        // (state, session_id=null, resource=null) tuple together.
+        session_id: null,
+        transcript: [],
+        resource: { type: null, id: null },
+        session_dataset_unavailable: false,
+        intent_session_id: null,
+        intent_resource_id: null,
+        intent_resource_type: null,
+      },
+    };
+  },
+
+  project_switched: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      project?: { id: string | null; name: string | null };
+    };
+    return {
+      state: "project_selected",
+      context: {
+        ...context,
+        org: {
+          id: payload.org_id ?? context.org.id,
+          name: context.org.name,
+        },
+        project: payload.project ?? context.project,
+        // Session-chat half resets through the project_ready re-broadcast;
+        // the projection-side fields are already cleared by
+        // switching_project_started. Clear scope_resolution_error so a prior
+        // scope_mismatch_terminal banner doesn't survive the switch.
+        scope_resolution_error: null,
+        underlying_cause_tag: null,
+      },
+    };
+  },
+
   scope_mismatch_displayed: (_state, context, event) => {
     const payload = event.payload as {
       org_id?: string;

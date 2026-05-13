@@ -106,4 +106,45 @@ export default [
   {
     files: ["shared/**/*.ts"],
   },
+
+  // ── DWD-3 single-writer guard for X-Active-Scope ────────────────────
+  // The X-Active-Scope header is the agent's authoritative scope contract
+  // (ADR-029 §4 + DWD-3). It MUST be set exclusively by
+  // `activeScopeHeader(projection)` exported from
+  // `frontend/app/lib/ui-state-client.ts` so the header value's
+  // construction has a single audit point. Manual sets via `headers:{...}`
+  // would let stale projections leak into chat turns mid-switch, breaking
+  // the IC-J002-4 atomicity contract.
+  //
+  // The rule flags any literal containing "X-Active-Scope" (case-insensitive)
+  // outside the small allowlist of files that legitimately produce/consume
+  // it (the writer, the agent reader, the harness, and tests).
+  {
+    files: [
+      "frontend/**/*.{ts,tsx}",
+      "ui-state/**/*.{ts,tsx}",
+      "auth-proxy/**/*.{ts,tsx}",
+    ],
+    ignores: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      // Single writer:
+      "frontend/app/lib/ui-state-client.ts",
+      // Type-only declarations + tests are allowed:
+      "frontend/src/test/**",
+      "frontend/app/**/__tests__/**",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Literal[value=/^[Xx]-[Aa]ctive-[Ss]cope$/], TemplateElement[value.raw=/[Xx]-[Aa]ctive-[Ss]cope/]",
+          message:
+            "Manual X-Active-Scope header writes are forbidden (DWD-3). " +
+            "Use activeScopeHeader(projection) from frontend/app/lib/ui-state-client.ts.",
+        },
+      ],
+    },
+  },
 ];

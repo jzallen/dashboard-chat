@@ -36,6 +36,7 @@ export type ProjectContextState =
   | "no_projects_empty_state"
   | "creating_project"
   | "project_selected"
+  | "switching_project"
   | "scope_mismatch_terminal"
   | "error_recoverable";
 
@@ -116,6 +117,14 @@ export type ProjectContextEvent =
       intent_resource_id?: string;
       intent_resource_type?: ResourceType;
     }
+  // MR-4 — atomic project switching. Fired by a loader (mid-session
+  // deep-link to a different project) OR by the chat-view's
+  // project-picker. The machine invokes `switchProject` which validates
+  // the target via the backend's `GET /api/projects/:id`; the IC-J002-4
+  // invalidation contract (session_id + resource_* cleared BEFORE the
+  // new project's loading_session_list fires) is enforced at the
+  // projection layer via the `switching_project_started` event handler.
+  | { type: "switching_project_intent"; new_project_id: string }
   | { type: "FREEZE"; origin_correlation_id?: string }
   | { type: "THAW" };
 
@@ -149,9 +158,36 @@ export type CreateProjectActor = ReturnType<
   typeof fromPromise<ProjectSummary, CreateProjectInput>
 >;
 
+/**
+ * MR-4 — switchProject actor. Given a target `new_project_id`, validates
+ * the user's access via `GET /api/projects/:id` and returns the new
+ * ProjectSummary on success. The error variants mirror resolveInitialScope:
+ * `{ access_revoked: true }` (403; named diagnostic surfaces in
+ * scope_mismatch_terminal), `{ project_not_found: true }` (404). Other
+ * errors throw and land in `error_recoverable`.
+ */
+export type SwitchProjectOutput =
+  | { project: ProjectSummary }
+  | { access_revoked: true }
+  | { project_not_found: true };
+
+export interface SwitchProjectInput {
+  new_project_id: string;
+  correlation_id: string;
+  principal_id: string;
+}
+
+export type SwitchProjectActor = ReturnType<
+  typeof fromPromise<SwitchProjectOutput, SwitchProjectInput>
+>;
+
 export interface ProjectContextMachineDeps {
   resolveInitialScope: ResolveInitialScopeActor;
   createProject: CreateProjectActor;
+  /** Optional: MR-4 atomic project switching. When omitted, the
+   *  `switching_project_intent` event is dropped (no-op) — keeps the
+   *  machine backward-compatible with MR-1..MR-3 deployments. */
+  switchProject?: SwitchProjectActor;
 }
 
 /** Trim + length-check the project name; returns null if valid. */
@@ -187,6 +223,17 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
     actors: {
       resolveInitialScope: deps.resolveInitialScope,
       createProject: deps.createProject,
+      // MR-4 — fromPromise fallback when deps.switchProject is absent (legacy
+      // MR-1..MR-3 deployments). The fallback throws so test setups that
+      // never wired it surface a named diagnostic rather than silently
+      // succeeding.
+      switchProject:
+        deps.switchProject ??
+        fromPromise<SwitchProjectOutput, SwitchProjectInput>(async () => {
+          throw new Error(
+            "switchProject actor not wired — MR-4 deps.switchProject is required",
+          );
+        }),
     },
     guards: {
       projectNameValid: ({ event }) => {
@@ -381,12 +428,84 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         },
       },
       project_selected: {
-        // Terminal-for-MR-1 (future MRs add transitions to switching_project,
-        // session_active, etc.). The walking-skeleton's "project chip rendered"
+        // MR-1 entry — the walking-skeleton's "project chip rendered"
         // assertion reads context.project on entry. Per DESIGN §3.2.B the
         // orchestrator's priorState watcher observes entry to this state and
         // broadcasts `project_ready` to session-chat (idempotent on same
         // project_id; invalidates session_id+resource_* on different project_id).
+        //
+        // MR-4 — `switching_project_intent` moves the machine into
+        // `switching_project`. The IC-J002-4 invalidation contract
+        // (session_id + resource_* cleared BEFORE the new project's
+        // loading_session_list fires) is enforced via the
+        // `switching_project_started` event handler in projection.ts;
+        // session-chat reacts by zeroing its own context fields.
+        on: {
+          switching_project_intent: {
+            target: "switching_project",
+            actions: assign({
+              intent_project_id: ({ event }) =>
+                event.type === "switching_project_intent"
+                  ? event.new_project_id
+                  : null,
+            }),
+          },
+        },
+      },
+      switching_project: {
+        // Entry — orchestrator-side emission of `switching_project_started`
+        // happens in orchestrator.ts (state-watcher branch). The event
+        // payload carries the target project_id so the projection layer
+        // can write the invalidation atomically.
+        invoke: {
+          src: "switchProject",
+          input: ({ context }) => ({
+            new_project_id: context.intent_project_id ?? "",
+            correlation_id: context.correlation_id,
+            principal_id: context.principal_id,
+          }),
+          onDone: [
+            {
+              guard: ({ event }) =>
+                (event.output as { access_revoked?: true }).access_revoked === true,
+              target: "scope_mismatch_terminal",
+              actions: assign({
+                underlying_cause_tag: () => "access_revoked" as const,
+              }),
+            },
+            {
+              guard: ({ event }) =>
+                (event.output as { project_not_found?: true }).project_not_found === true,
+              target: "scope_mismatch_terminal",
+              actions: assign({
+                underlying_cause_tag: () => "project_not_found" as const,
+              }),
+            },
+            {
+              target: "project_selected",
+              actions: assign({
+                project: ({ event }) => {
+                  const out = event.output as { project: ProjectSummary };
+                  return { id: out.project.id, name: out.project.name };
+                },
+                // Clear the intent — settled.
+                intent_project_id: () => null,
+                intent_session_id: () => null,
+                intent_resource_id: () => null,
+                intent_resource_type: () => null,
+                underlying_cause_tag: () => null,
+                scope_reconciled_count: ({ context }) =>
+                  context.scope_reconciled_count + 1,
+              }),
+            },
+          ],
+          onError: {
+            target: "error_recoverable",
+            actions: assign({
+              underlying_cause_tag: () => "transient" as const,
+            }),
+          },
+        },
       },
       scope_mismatch_terminal: {
         on: {
@@ -702,6 +821,61 @@ export function createProjectActor(
 ): CreateProjectActor {
   const fn = createProjectFn(backendUrl, principalHeaders, forceFailure);
   return fromPromise<ProjectSummary, CreateProjectInput>(({ input }) =>
+    fn(input),
+  );
+}
+
+/**
+ * MR-4 — switchProjectFn implementation. Mirrors resolveInitialScopeFn's
+ * deep-link fast-path: `GET /api/projects/:id` distinguishes 200 (settled),
+ * 403 (access_revoked / cross-tenant), 404 (project_not_found). All other
+ * non-2xx statuses throw and land in error_recoverable.
+ */
+export function switchProjectFn(
+  backendUrl: string,
+  principalHeaders: Record<string, string>,
+): (input: SwitchProjectInput) => Promise<SwitchProjectOutput> {
+  return async (input) => {
+    if (!input.new_project_id) {
+      throw new Error("switchProject: new_project_id is required");
+    }
+    const resp = await fetch(
+      `${backendUrl}/api/projects/${encodeURIComponent(input.new_project_id)}`,
+      {
+        method: "GET",
+        headers: {
+          "x-correlation-id": input.correlation_id,
+          ...principalHeaders,
+        },
+      },
+    );
+    if (resp.status === 403) return { access_revoked: true };
+    if (resp.status === 404) return { project_not_found: true };
+    if (!resp.ok) {
+      throw new Error(`switch_project get_project failed: ${resp.status}`);
+    }
+    const body = (await resp.json()) as
+      | { id?: string; name?: string }
+      | { data?: { id?: string; name?: string; attributes?: { name?: string } } };
+    const id =
+      (body as { id?: string }).id ??
+      (body as { data?: { id?: string } }).data?.id ??
+      input.new_project_id;
+    const name =
+      (body as { name?: string }).name ??
+      (body as { data?: { name?: string } }).data?.name ??
+      (body as { data?: { attributes?: { name?: string } } }).data?.attributes?.name ??
+      "Untitled";
+    return { project: { id, name } };
+  };
+}
+
+export function switchProjectActor(
+  backendUrl: string,
+  principalHeaders: Record<string, string>,
+): SwitchProjectActor {
+  const fn = switchProjectFn(backendUrl, principalHeaders);
+  return fromPromise<SwitchProjectOutput, SwitchProjectInput>(({ input }) =>
     fn(input),
   );
 }

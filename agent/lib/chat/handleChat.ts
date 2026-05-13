@@ -17,10 +17,22 @@ import {
 } from "./presentationState";
 import { getConversationalSystemPrompt, getReportSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "./prompts";
 import { getReportTools } from "./reportToolDefinitions";
+import { requestLog } from "./requestLog";
+import {
+  assertScopeHeaderFallbackSunset,
+  buildScopeHeaderFallbackEvent,
+  extractActiveScope,
+} from "./scope";
 import { noopThreadPersister, type ThreadEventPersister } from "./threadPersister";
 import { getConversationalTools, getTools } from "./tools";
 import type { TableSchema } from "./types";
 import { getViewTools } from "./viewToolDefinitions";
+
+// DWD-3 compile-time sunset: defense-in-depth. If the agent boots with the
+// flag still on past the sunset date, crash at module load — BEFORE the HTTP
+// server binds. agent/index.ts also calls this; two import-sites so a future
+// refactor that drops one doesn't silently extend the migration window.
+assertScopeHeaderFallbackSunset();
 
 type ContextType = "dataset" | "view" | "report" | null;
 
@@ -82,6 +94,50 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     });
   }
 
+  // DWD-3 + ADR-029 §4 — every chat turn MUST carry an active scope. The
+  // header is set EXCLUSIVELY by uiStateClient.activeScopeHeader on the FE
+  // (the lint rule forbids manual header sets elsewhere). During the
+  // migration window the body's project_id is honored as a fallback;
+  // SCOPE_HEADER_FALLBACK_SUNSET enforces flag removal.
+  const scopeResult = extractActiveScope(request, {
+    project_id,
+    contextType,
+    contextId,
+  });
+  if (!scopeResult.ok) {
+    requestLog.append({
+      ts: new Date().toISOString(),
+      scope: null,
+      session_id: thread_id ?? null,
+      thread_id: thread_id ?? null,
+      status: scopeResult.status,
+    });
+    return new Response(JSON.stringify({ error: scopeResult.error }), {
+      status: scopeResult.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const { scope, used_body_fallback } = scopeResult;
+  if (used_body_fallback) {
+    // K-J002-5 observability — the fallback path is the migration-window
+    // signal. The team watches the rate trend to zero before flipping the
+    // flag off (and then removing this path at the sunset date).
+    const event = buildScopeHeaderFallbackEvent(request);
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        ...event,
+      }),
+    );
+  }
+  requestLog.append({
+    ts: new Date().toISOString(),
+    scope,
+    session_id: thread_id ?? null,
+    thread_id: thread_id ?? null,
+    status: 200,
+  });
+
   // Fork system prompt and tools based on contextType
   let systemPrompt: string;
   let tools: ToolSet | undefined;
@@ -112,8 +168,19 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
   const presentationStateLog = env.presentationStateLog ?? inProcessPresentationStateLog;
   const dispatchCtx: DispatchContext = {
     jwt,
-    datasetId: contextType === "dataset" ? contextId ?? undefined : undefined,
-    projectId: project_id ?? undefined,
+    // Resource shape: when the active scope carries a dataset resource, use
+    // it; otherwise fall back to the body's contextId for forward-compat
+    // with the legacy body-shape during the migration window.
+    datasetId:
+      scope.resource_type === "dataset"
+        ? scope.resource_id ?? undefined
+        : contextType === "dataset"
+          ? contextId ?? undefined
+          : undefined,
+    // DWD-3 / IC-J002-7: projectId now flows from X-Active-Scope, never from
+    // the body post-sunset. project_id from body is only present here
+    // because extractActiveScope already consumed it via the fallback path.
+    projectId: scope.project_id,
     contextType: contextType === "report" ? "report" : contextType === "dataset" ? "dataset" : "project",
     backend: backendClient({
       authProxyUrl: env.AUTH_PROXY_URL,

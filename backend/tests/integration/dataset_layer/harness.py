@@ -761,6 +761,7 @@ class ChatApi:
         dataset_id: str | None = None,
         table_schema: dict[str, Any] | None = None,
         thread_id: str | None = None,
+        active_scope: dict[str, Any] | None = None,
     ) -> ChatEventTrace:
         body: dict[str, Any] = {
             "messages": [{"role": "user", "content": prompt}],
@@ -774,9 +775,16 @@ class ChatApi:
             body["project_id"] = project_id
         if thread_id:
             body["thread_id"] = thread_id
+        headers = bearer(self._jwt, json_body=True)
+        if active_scope is not None:
+            # DWD-3 — every chat turn from a J-002 state MUST carry the
+            # X-Active-Scope header. Tests can pin the scope explicitly
+            # via `active_scope=`; absence drops back to the migration-
+            # window body fallback (when the flag is on at the agent).
+            headers = {**headers, "X-Active-Scope": json.dumps(active_scope)}
         res = await self._client.post(
             f"{self._agent}/chat",
-            headers=bearer(self._jwt, json_body=True),
+            headers=headers,
             content=json.dumps(body),
         )
         if res.status_code != 200:
@@ -785,6 +793,31 @@ class ChatApi:
             )
         events, raw_tool_call_seen = parse_chat_event_frames(res.content)
         return ChatEventTrace(events=events, raw_tool_call_seen=raw_tool_call_seen)
+
+    async def send_turn_raw(
+        self,
+        body: dict[str, Any],
+        *,
+        active_scope: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """Lower-level US-208 entry point.
+
+        Returns the raw httpx.Response so error-path tests can assert on
+        status codes (400 / 403) without going through SSE parsing.
+        Callers supply the full body shape; the X-Active-Scope header is
+        attached when ``active_scope`` is non-None.
+        """
+        headers = bearer(self._jwt, json_body=True)
+        if active_scope is not None:
+            headers = {**headers, "X-Active-Scope": json.dumps(active_scope)}
+        if extra_headers:
+            headers = {**headers, **extra_headers}
+        return await self._client.post(
+            f"{self._agent}/chat",
+            headers=headers,
+            content=json.dumps(body),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -994,6 +1027,47 @@ class DatasetLayerHarness:
         # Unreachable but keeps the type checker honest:
         assert last_error is not None
         raise last_error
+
+    async def chat_turn_with_scope_header(
+        self,
+        scope: dict[str, Any],
+        message: str,
+        *,
+        thread_id: str | None = None,
+        extra_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """US-208 — drive one chat turn with an explicit X-Active-Scope header.
+
+        Returns the raw httpx.Response so the caller can assert status,
+        body, and headers. Error-path tests use this to verify the agent's
+        400 / 403 rejection diagnostics.
+
+        ``scope`` is the JSON object encoded into the X-Active-Scope header
+        value: ``{org_id, project_id, resource_type?, resource_id?}``.
+        ``message`` is the user prompt.
+
+        Body shape mirrors ``send_turn``'s minimum: messages array + optional
+        contextType / contextId / thread_id / table_schema. Callers can
+        merge extra body fields via ``extra_body``.
+        """
+        if self._chat is None:
+            raise RuntimeError(
+                "DatasetLayerHarness must be used as an async context manager (`async with`)",
+            )
+        body: dict[str, Any] = {
+            "messages": [{"role": "user", "content": message}],
+            "contextType": None,
+        }
+        if thread_id:
+            body["thread_id"] = thread_id
+        if extra_body:
+            body.update(extra_body)
+        return await self._chat.send_turn_raw(
+            body,
+            active_scope=scope,
+            extra_headers=extra_headers,
+        )
 
     def _compose_post_turn_check(
         self,

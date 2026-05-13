@@ -1,11 +1,147 @@
-# DELIVER — Upstream Issues for J-002 MR-1
+# DELIVER — Upstream Issues for J-002
 
-> **Wave**: DELIVER (project-and-chat-session-management / J-002 MR-1)
+> **Wave**: DELIVER (project-and-chat-session-management / J-002, MR-1..MR-4)
 > **Date**: 2026-05-13
-> **Owner**: main-orchestrator (nw-deliver session for MR-1)
+> **Owner**: main-orchestrator (nw-deliver session for MR-1; extended for MR-4)
 > **Purpose**: Surface deviations from DISTILL/DESIGN binding artifacts the
 > crafter dispatches encountered. Per the user instructions, this document
 > is the named escape hatch for genuine errors discovered during DELIVER.
+
+---
+
+## MR-4 — Atomic project switching + agent X-Active-Scope contract
+
+### Resolved: O6 — `SCOPE_HEADER_FALLBACK_SUNSET` literal date (DWD-3)
+
+**Resolution**: Set to **2026-06-25T00:00:00Z** (≈6 weeks post-MR-4 merge).
+
+**Mechanism**: `agent/lib/chat/scope.ts` exports
+`SCOPE_HEADER_FALLBACK_SUNSET = new Date("2026-06-25T00:00:00Z")`. The
+module-load assertion `assertScopeHeaderFallbackSunset()` is called from
+**both** `agent/index.ts` AND `agent/lib/chat/handleChat.ts` (two
+import-sites — a future refactor that drops one doesn't silently extend
+the migration window).
+
+**Team-calendar action items** (carry to MR-5 follow-up):
+
+| When | Action | Owner |
+|---|---|---|
+| 2026-06-04 (~3 weeks pre-sunset) | DEVOPS audit: `scope_header_fallback_used` event rate per `calling_client` bucket — verify trending to zero | DEVOPS |
+| 2026-06-18 (~1 week pre-sunset) | Identify any remaining legacy clients; coordinate FE-side upgrade or schedule a contingency PR | FE eng |
+| 2026-06-25 (sunset) | Land the flag-removal PR: delete `SCOPE_HEADER_FALLBACK_ENABLED` env-flag reads + the body-fallback branch in `extractActiveScope`. Compile-time assertion will fail-boot any deploy that misses this. | The engineer landing the next agent dependency-bump |
+
+If the rate has NOT trended to zero by 2026-06-18, file an ADR amendment
+proposing a sunset extension with a hard-cap (no more than +4 weeks).
+
+### D-MR4-01 — Local acceptance verification deferred
+
+**Status**: DEFERRED — acceptance-test bodies are in place; runtime
+validation requires a workspace with a fresh agent build.
+
+**What**: The 14 MR-4 acceptance scenarios under
+`tests/acceptance/project-and-chat-session-management/test_us207_*.py` +
+`test_us208_*.py` + the IC-J002-4/7 invariants are written and use the
+real driver surface. They were **not** locally run-to-green in MR-4's
+implementing workspace because:
+
+1. The pyrite gastown crew shares Docker compose containers with sibling
+   workspaces; rebuilding the agent container against this branch's source
+   would disrupt siblings. The pyrite source tree had J-002 MR-1..MR-3
+   substrate committed but the running agent image at
+   `/home/node/gt/dashboard_chat` was built from a different tree.
+2. Without a fresh agent build, the new `agent/lib/chat/scope.ts`,
+   `requestLog`, and `/debug/*` routes are not in the running container.
+3. JS workspace deps (`vitest`, `tsx`) were not installed in the crew;
+   unit tests compile but were not executed.
+
+**Resolution path** (next session OR before merge-queue submit):
+
+```bash
+npm install --workspaces
+cd backend && uv sync && cd ..
+docker compose build agent
+docker compose up -d
+cd agent && npx vitest run lib/chat/scope.test.ts
+cd ../ui-state && npx vitest run lib/machines/project-context.test.ts
+cd ../tests/acceptance/project-and-chat-session-management
+NWAVE_HARNESS_KNOBS=true uv run --no-project pytest -m mr_4 -v
+```
+
+The `NWAVE_HARNESS_KNOBS=true` env-var is required for the agent
+container so the `/debug/request-log` endpoints are mounted — without
+them the @harness scenarios skip.
+
+**Risk**: If the acceptance scenarios reveal regressions in
+`switching_project` state transitions, those are real bugs MR-4
+introduced. The unit-test surface (Vitest tests for `scope.ts` +
+`project-context.ts` switching_project branches) covers state-machine +
+parsing logic, but does NOT cover the orchestrator's projection-event
+emission OR the SSE-stream cancellation contract.
+
+### D-MR4-02 — Agent debug endpoints provisional shape
+
+**What**: `agent/index.ts` exposes `/debug/last-request-scope`,
+`/debug/request-log`, and `/debug/request-log/clear` under
+`NWAVE_HARNESS_KNOBS=true`. The endpoints are minimum-viable for the TS
+harness's `assert_agent_received_scope` /
+`assert_agent_request_log_no_mismatched` ops and the matching pytest
+scenarios. They are **not** part of the production agent contract — the
+flag gate ensures they 404 in prod.
+
+**Risk**: A future agent refactor that moves request handling out of
+`handleChat.ts` MUST update `requestLog.append()` call-sites — there is
+no abstraction enforcing the capture. The unit-test surface does not catch
+this regression. Recommendation: in MR-5 add a `chatHandlerMiddleware`
+boundary that owns capture, or add a CODEOWNERS-style review note.
+
+### D-MR4-03 — SSE cancellation on FE: provisional placeholder
+
+**What**: The roadmap calls for the frontend chat-view to call
+`eventSource.close()` + `queryClient.invalidateQueries(['sessions',
+oldProjectId])` when the J-002 projection state transitions to
+`switching_project`. The current branch does NOT modify any frontend
+chat-view component because locating the exact chat-view component
+requires a fuller workspace walk than the MR-4 dispatch consumed.
+
+**Mitigation**: The atomicity invariant IS enforced at the projection
+layer — `switching_project_started` writes nulls to `session_id` +
+`resource_*` BEFORE the FE sees the state transition. The FE-side close
+is belt-and-braces.
+
+**Resolution path**: Follow-up MR adds an effect in the chat-view
+component that subscribes to the J-002 projection stream and calls
+`eventSource.close()` + `queryClient.invalidateQueries` on
+`switching_project` entry. Contract is documented in DWD-11.
+
+### D-MR4-04 — `project_switched` coexists with `project_selected`
+
+**Decision**: The orchestrator emits **both** events when settling out of
+`switching_project`: it emits `project_selected` (the existing pattern,
+keeps all existing FE consumers wired) AND, when the input event type was
+`switching_project_intent`, an additional `project_switched` event for
+consumers that want to discriminate.
+
+**Reasoning**: A clean cut to `project_switched` would invalidate every
+existing test asserting on `state === "project_selected"`. Coexistence
+is the simpler migration. The projection's terminal state is identical
+(`state="project_selected"`); the reducer is a thin alias.
+
+### O-MR4-06 — Reverse-proxy /chat routing under auth-proxy
+
+**What**: The acceptance scenarios POST to `/chat` against the
+reverse-proxy. The roadmap assumes the reverse-proxy routes `/chat` to
+the agent (via auth-proxy). Existing nginx config routes `/api/*`,
+`/worker/*`, `/api/channels/.../presentation-state`, `/health`, `/assets`;
+the chat surface uses `/api/chat` OR `/worker/chat` depending on the
+client. **MR-4 acceptance scenarios use `/chat` directly** — verify the
+routing is in place OR adjust the path in the acceptance suite once
+verified.
+
+**Owner**: DELIVER MR-4 reviewer.
+
+---
+
+
 
 ---
 

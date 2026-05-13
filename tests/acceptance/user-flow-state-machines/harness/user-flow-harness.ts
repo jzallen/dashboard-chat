@@ -674,6 +674,133 @@ export class J002Harness {
     return body;
   }
 
+  // ──────────────── MR-4 ops (US-207 + US-208 + IC-J002-4/7) ────────────
+  //
+  // The new ops live in `j002.*` per the DESIGN handoff §"TS UserFlowHarness
+  // extensions". `switch_project` drives the project-context machine's
+  // `switching_project_intent` event; the agent-related assertions read
+  // the agent's request log via the harness debug endpoint.
+
+  /** US-207 — drive `switching_project_intent` for the named project. */
+  async switch_project(target_project_id: string): Promise<FlowProjection> {
+    return this.sendEvent("switching_project_intent", {
+      new_project_id: target_project_id,
+    });
+  }
+
+  /** US-208 — verify the agent's most recent chat-turn received an
+   *  `X-Active-Scope` header matching the expected shape. Reads via the
+   *  agent's harness-only `/debug/request-log` endpoint, which is enabled
+   *  by `NWAVE_HARNESS_KNOBS=true`. Throws when the agent did not receive
+   *  any chat turn yet, when the most recent turn lacked the header, or
+   *  when any of the expected fields disagree.
+   *
+   *  The endpoint contract (provisional; pending agent debug-endpoint
+   *  wiring): GET /agent/debug/last-request-scope → 200 with body
+   *  `{ scope: ActiveScope } | { scope: null, reason: string }`. When
+   *  the endpoint is not yet wired, the harness throws with a named
+   *  diagnostic so the failing test points at the missing seam. */
+  async assert_agent_received_scope(
+    expected: Partial<ActiveScope>,
+  ): Promise<void> {
+    const res = await request(
+      `${this.config.authProxyUrl}/agent/debug/last-request-scope`,
+      { method: "GET" },
+    );
+    if (res.statusCode === 404) {
+      throw new Error(
+        "j002.assert_agent_received_scope failed: agent debug endpoint not " +
+          "found (NWAVE_HARNESS_KNOBS=true required; agent build must include " +
+          "debug routes).",
+      );
+    }
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.assert_agent_received_scope failed: debug endpoint returned ${res.statusCode}`,
+      );
+    }
+    const body = (await res.body.json()) as {
+      scope?: ActiveScope | null;
+      reason?: string;
+    };
+    if (!body.scope) {
+      throw new Error(
+        `j002.assert_agent_received_scope failed: agent has no recorded scope; reason=${JSON.stringify(body.reason ?? "unknown")}`,
+      );
+    }
+    const diffs: string[] = [];
+    for (const key of Object.keys(expected) as (keyof ActiveScope)[]) {
+      if (body.scope[key] !== expected[key]) {
+        diffs.push(
+          `${String(key).padEnd(14)} expected: ${String(expected[key]).padEnd(28)} actual: ${String(body.scope[key])}`,
+        );
+      }
+    }
+    if (diffs.length > 0) {
+      throw new Error(
+        `j002.assert_agent_received_scope failed:\n${diffs.join("\n")}`,
+      );
+    }
+  }
+
+  /** US-207 / IC-J002-4 — verify the agent never received a chat turn
+   *  carrying a mismatched (project_id, session_id) pair. The agent's
+   *  request log carries every turn; the harness reads it and walks the
+   *  rows asserting that no row pairs an old project_id with a new
+   *  session_id (or vice versa) during a switch window.
+   *
+   *  Returns silently on success. */
+  async assert_agent_request_log_no_mismatched(): Promise<void> {
+    const res = await request(
+      `${this.config.authProxyUrl}/agent/debug/request-log`,
+      { method: "GET" },
+    );
+    if (res.statusCode === 404) {
+      throw new Error(
+        "j002.assert_agent_request_log_no_mismatched failed: agent debug endpoint not found",
+      );
+    }
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.assert_agent_request_log_no_mismatched failed: ${res.statusCode}`,
+      );
+    }
+    const body = (await res.body.json()) as {
+      entries?: Array<{
+        scope?: ActiveScope | null;
+        session_id?: string | null;
+      }>;
+    };
+    const entries = body.entries ?? [];
+    // For each project_id we've seen, the set of session_ids paired with
+    // that project_id should not overlap with the set paired with any
+    // other project_id. A mismatched pair surfaces as an overlap.
+    const seen: Record<string, Set<string>> = {};
+    for (const entry of entries) {
+      const projectId = entry.scope?.project_id;
+      const sessionId = entry.session_id ?? null;
+      if (!projectId || !sessionId) continue;
+      seen[projectId] ??= new Set<string>();
+      seen[projectId].add(sessionId);
+    }
+    const projectIds = Object.keys(seen);
+    for (let i = 0; i < projectIds.length; i++) {
+      for (let j = i + 1; j < projectIds.length; j++) {
+        const a = seen[projectIds[i]];
+        const b = seen[projectIds[j]];
+        for (const sessionId of a) {
+          if (b.has(sessionId)) {
+            throw new Error(
+              `j002.assert_agent_request_log_no_mismatched failed: ` +
+                `session_id=${sessionId} appears in BOTH project=${projectIds[i]} ` +
+                `AND project=${projectIds[j]} (cross-tenant / mid-switch leak)`,
+            );
+          }
+        }
+      }
+    }
+  }
+
   /** Assert state === "scope_mismatch_terminal" AND
    *  context.underlying_cause_tag === expected_cause. */
   async assert_scope_mismatch(expected_cause: string): Promise<void> {

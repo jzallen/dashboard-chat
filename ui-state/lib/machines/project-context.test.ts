@@ -32,7 +32,21 @@ import {
   type ProjectSummary,
   type ResolveInitialScopeActor,
   type ResolveInitialScopeOutput,
+  type SwitchProjectActor,
+  type SwitchProjectOutput,
 } from "./project-context.ts";
+
+function switchTo(output: SwitchProjectOutput): SwitchProjectActor {
+  return fromPromise(async () => output);
+}
+
+function switchFails(message: string): SwitchProjectActor {
+  return fromPromise<SwitchProjectOutput, { new_project_id: string; correlation_id: string; principal_id: string }>(
+    async () => {
+      throw new Error(message);
+    },
+  );
+}
 
 const MAYA_INPUT = {
   correlation_id: "R-7a4f-901c",
@@ -324,5 +338,105 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     expect(ctx.intent_session_id).toBeNull();
     expect(ctx.intent_resource_id).toBeNull();
     expect(ctx.intent_resource_type).toBeNull();
+  });
+});
+
+describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
+  it("switching_project_intent moves project_selected → switching_project", async () => {
+    const initial: ProjectSummary = { id: "proj-A", name: "Project A" };
+    const target: ProjectSummary = { id: "proj-B", name: "Project B" };
+    const machine = createProjectContextMachine({
+      resolveInitialScope: resolveTo({ project: initial }),
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+      switchProject: switchTo({ project: target }),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    expect(actor.getSnapshot().context.project.id).toBe("proj-A");
+    actor.send({
+      type: "switching_project_intent",
+      new_project_id: "proj-B",
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.project.id).toBe("proj-B");
+    expect(ctx.project.name).toBe("Project B");
+    // After settle, intent_project_id should be cleared.
+    expect(ctx.intent_project_id).toBeNull();
+  });
+
+  it("switchProject access_revoked → scope_mismatch_terminal with cause access_revoked", async () => {
+    const initial: ProjectSummary = { id: "proj-A", name: "Project A" };
+    const machine = createProjectContextMachine({
+      resolveInitialScope: resolveTo({ project: initial }),
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+      switchProject: switchTo({ access_revoked: true }),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    actor.send({
+      type: "switching_project_intent",
+      new_project_id: "p-revoked",
+    });
+    await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe("access_revoked");
+  });
+
+  it("switchProject project_not_found → scope_mismatch_terminal", async () => {
+    const initial: ProjectSummary = { id: "proj-A", name: "Project A" };
+    const machine = createProjectContextMachine({
+      resolveInitialScope: resolveTo({ project: initial }),
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+      switchProject: switchTo({ project_not_found: true }),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    actor.send({
+      type: "switching_project_intent",
+      new_project_id: "p-gone",
+    });
+    await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe("project_not_found");
+  });
+
+  it("switchProject transient failure → error_recoverable", async () => {
+    const initial: ProjectSummary = { id: "proj-A", name: "Project A" };
+    const machine = createProjectContextMachine({
+      resolveInitialScope: resolveTo({ project: initial }),
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+      switchProject: switchFails("transient backend 500"),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    actor.send({
+      type: "switching_project_intent",
+      new_project_id: "p-flaky",
+    });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");
   });
 });

@@ -1192,6 +1192,36 @@ export class FlowOrchestrator {
           input.correlation_id,
           projectContext,
         );
+        // MR-4 — when the entry was a switch settle (the prior state was
+        // `switching_project`), also emit a `project_switched` projection
+        // event so SSE consumers can distinguish "initial select" from
+        // "switch settle". The orchestrator can't read XState's prior state
+        // directly; we discriminate by input.type since switching_project_intent
+        // is the ONLY event that lifts switching_project → project_selected.
+        if (input.type === "switching_project_intent") {
+          await this.deps.eventLog.append(input.flow_id, {
+            ts: new Date().toISOString(),
+            type: "project_switched",
+            payload: {
+              org_id: projectContext.org_id ?? "",
+              project: projectContext.project,
+            },
+            correlation_id: input.correlation_id,
+          });
+        }
+      } else if (stateValue === "switching_project") {
+        // MR-4 / IC-J002-4 — emit `switching_project_started` atomically with
+        // the state surface so SSE consumers see (state=switching_project,
+        // session_id=null, resource=null) in the same projection tick.
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "switching_project_started",
+          payload: {
+            org_id: projectContext.org_id ?? "",
+            intent_project_id: projectContext.intent_project_id ?? null,
+          },
+          correlation_id: input.correlation_id,
+        });
       } else if (stateValue === "error_recoverable") {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
