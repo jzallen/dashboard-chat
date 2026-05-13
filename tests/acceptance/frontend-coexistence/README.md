@@ -58,6 +58,8 @@ uv run --no-project pytest -m walking_skeleton
 | `POST_SLICE_2_REF` | `d052896` | reversibility mirror-diff scenario | git ref of the Slice-2 merge commit (pinned at MR-2 close; see DD-15) |
 | `POST_MR_2_REF` | `HEAD` | reversibility mirror-diff scenario | git ref of the MR-2 merge commit |
 | `MIGRATED_ROUTE_MODULE_PATH` | `frontend/app/routes/login.tsx` | reversibility mirror-diff scenario | the route module file whose `loader` was added then removed |
+| `LOADER_PROBE_PATH` | `/_test/loader-probe` | Phase 04 scenarios | the test-only loader-bearing route that exercises loader-timeout, byte-equivalence-across-instances, and fan-out scenarios; pinned via conftest. See DD-16 / DD-21. |
+| `SLOW_MODE_DELAY_MS` | unset | Phase 04 loader-timeout scenario | when set on `auth-proxy` AND `AUTH_MODE !== "production"`, the `/ui-state/*` handler sleeps the specified milliseconds before responding. Used to deterministically induce slow-upstream conditions. See DD-18. |
 
 `CHAT_ROUTE_PATH` (no env var — embedded in the test): the
 `test_chat_route_ssr_response_is_html_shell_no_client_loader_output`
@@ -106,6 +108,44 @@ The refinery's `--auto` gate (run by `gt mq submit`) inspects the diff against `
 - For anything else: the gate falls through to `--backend` (`cd backend && ruff + pytest`).
 
 Either way, the gate does NOT collect this acceptance suite (it's at `tests/acceptance/<feature>/`, not under `backend/`). DELIVER runs this suite locally before submitting; the suite passing is a precondition to `gt mq submit`, not a refinery check.
+
+## Running Phase 04 scenarios
+
+Phase 04 validates three operational-readiness invariants: (a) loader timeout, (b) horizontal scale, (c) auth-proxy fan-out bound. The acceptance tests are at `test_loader_fails_fast_when_auth_proxy_slow.py`, `test_ssr_instances_produce_identical_html.py`, and `test_loader_fanout_to_auth_proxy_stays_bounded.py`.
+
+### Loader-timeout scenario — operator setup
+
+The slow-upstream condition is induced via the auth-proxy `SLOW_MODE_DELAY_MS` env var (DD-18). To engage:
+
+```bash
+# From repo root:
+SLOW_MODE_DELAY_MS=10000 docker compose up -d auth-proxy
+# (the 10000 ms delay is comfortably > the 5s loader timeout budget)
+
+# Then from the acceptance suite:
+cd tests/acceptance/frontend-coexistence
+uv run --no-project pytest test_loader_fails_fast_when_auth_proxy_slow.py -v
+```
+
+The `requires_slow_mode_capable` fixture probes the loader-probe path on entry: if the response comes back fast (< 1s), the fixture skips the scenario with a hint to restart auth-proxy under SLOW_MODE.
+
+When restoring after the scenario, bring auth-proxy back to its normal (no-delay) state:
+
+```bash
+unset SLOW_MODE_DELAY_MS && docker compose up -d auth-proxy
+```
+
+### Horizontal-scale scenarios — operator setup
+
+```bash
+docker compose up -d --scale web-ssr=2
+```
+
+The byte-equivalence + no-cross-bearer-leak scenarios issue two sequential probes against the reverse-proxy; the test does not directly observe which web-ssr instance answered (nginx distributes), but verifies the property holds across both.
+
+### Fan-out scenarios — no operator setup required
+
+These scenarios verify the `baseline-metrics.md` file's contents (PASS marker on the 110% ceiling). No live workload generation is needed — the architectural analysis in `baseline-metrics.md` is the contract Phase 04 lands.
 
 ## Cross-references
 

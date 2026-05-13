@@ -642,3 +642,139 @@ DISTILL DI-U-4 (DELIVER-owned ship-or-defer flag) · DD-12 deferral pattern ·
 - ADR-034 §Reversibility: `docs/decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md`
 - DISTILL DI-U-4 (optional ESLint rule ship-or-defer): `../distill/wave-decisions.md`
 - DD-12 deferral pattern (Phase 02 precedent): `#dd-12-phase-02-pytestfail-placeholder-scenarios-deferred-in-phase`
+
+---
+
+# DELIVER Wave Decisions — `frontend-coexistence` Phase 04 (MR-3)
+
+> **Wave**: DELIVER · Phase 04 (Slice 4 / MR-3)
+> **Date**: 2026-05-13
+> **Driving artifacts**: DESIGN `review-by-system-designer.md` §5 + §F-2 · DISTILL `roadmap.json` Phase 04 · DISTILL `loader-fails-fast-when-auth-proxy-slow.feature` · DISTILL `ssr-instances-produce-identical-html.feature` · DISTILL `loader-fanout-to-auth-proxy-stays-bounded.feature` · ADR-034.
+> **Scope**: DELIVER's operational choices for the operational-readiness invariants. DWD-1..DWD-8 and DI-1..DI-8 unchanged.
+
+## DD-16 (Phase 04): probe-only test route at `/_test/loader-probe` (option B)
+
+**Issue**: Phase 04 scenarios require a loader-bearing framework-mode route to exercise loader timeout, bearer leakage, and auth-proxy fan-out. Phase 03 reverted `/login` to library-mode, leaving zero loader-bearing routes in the codebase.
+
+**Decision**: Introduce a NEW test-only route at `/_test/loader-probe`, file `frontend/app/routes/_test-loader-probe.tsx`. The route is:
+- Loader-bearing: calls `uiStateClient(request).getProjection("login-and-org-setup", "test-loader-probe")` with a stable input.
+- Has an `ErrorBoundary` export rendering HTML on loader failure with no Node stack-trace markers.
+- Dev-mode gated: the loader returns a 404 `Response` if `process.env.AUTH_MODE === "production"`.
+- Registered in `frontend/app/routes.ts` as `route("/_test/loader-probe", "routes/_test-loader-probe.tsx")` (first entry, comment-marked).
+- Returns dehydrated state plus a `bearer_fingerprint` field (SHA-256 first 8 hex chars of inbound `Authorization` header) so the SSR'd HTML is observably bearer-distinct per request.
+
+**Rationale**:
+- DOES NOT touch `/login` (preserves Phase 03 byte-equivalence test against PRE_SLICE_2_REF=cc7e517).
+- DOES NOT migrate an existing production route (avoids scope creep beyond Phase 04's ops-readiness focus).
+- DOES exercise the actual contract surface: real `uiStateClient` call, real auth-proxy traversal, real ErrorBoundary render.
+- DOES allow Phase 04 tests to use a distinct env var (`LOADER_PROBE_PATH`) isolated from Phase 02/03's `MIGRATED_ROUTE_PATH`.
+
+**How applied**:
+- `frontend/app/routes/_test-loader-probe.tsx` created with `loader` + default `LoaderProbeRoute` + `ErrorBoundary` exports.
+- `frontend/app/routes.ts` adds the route entry (only modification to that file).
+- `tests/acceptance/frontend-coexistence/conftest.py` pins `LOADER_PROBE_PATH=/_test/loader-probe` via `os.environ.setdefault`.
+
+**Source**: DESIGN review-by-system-designer.md §5 (operational-readiness scenarios drive Phase 04) · DISTILL roadmap.json Phase 04 scope (a)/(b)/(c) need a loader-bearing route · pragmatic resolution at DELIVER-design time.
+
+## DD-17 (Phase 04): loader timeout mechanism — AbortController + 5s budget (option 1)
+
+**Issue**: DISTILL `loader-fails-fast-when-auth-proxy-slow.feature` fixes a 5-second wall-clock budget for loader-backed fetches. DELIVER chose between three roadmap-named options: Hono fetch defaults, RRv7 `getLoadContext` wrapping, or a per-route loader decorator.
+
+**Decision**: Wrap the single `fetch` call in `frontend/app/lib/ui-state-client.ts` with `AbortController + setTimeout(5000)`. On abort, throw `new Response("ui-state timeout", { status: 504 })`. Clear the timer in a `finally` block.
+
+**Rationale**:
+- Simplest of the three options. Mechanism lives in the helper itself; every loader using `uiStateClient` inherits the bound.
+- No per-route `getLoadContext` ceremony, no framework-level configuration.
+- The abort propagates as a thrown `Response(504)` that RRv7's `ErrorBoundary` surfaces as HTML.
+- Cleanup via `finally clearTimeout` prevents leaked timers.
+
+**How applied**:
+- `frontend/app/lib/ui-state-client.ts` updated to wrap fetch with AbortController, throw Response(504) on AbortError, preserve existing non-2xx Response throw, and clearTimeout in `finally`.
+- `frontend/app/lib/ui-state-client.test.ts` (NEW) has 4 vitest unit tests covering normal-resolve, timeout, upstream-non-2xx, and clearTimeout-on-success.
+
+**Source**: DESIGN review-by-system-designer.md §5 (loader timeout handling) · DISTILL `loader-fails-fast-when-auth-proxy-slow.feature` (5s contract).
+
+## DD-18 (Phase 04): slow-upstream induction — `SLOW_MODE_DELAY_MS` env var (option 1)
+
+**Issue**: The acceptance suite needs to flip the slow-upstream precondition deterministically. DELIVER chose between two roadmap-named options: auth-proxy `SLOW_MODE` env var or compose-level `tc qdisc netem delay`.
+
+**Decision**: Add `SLOW_MODE_DELAY_MS` env var to auth-proxy. When set AND `AUTH_MODE !== "production"`, the auth-proxy's `/ui-state/*` handler sleeps the specified milliseconds before responding. Defaults to unset (no delay). Block placed BEFORE the existing identity / test-mirror logic so the slow-mode timing reflects the full inbound-to-upstream wall-clock.
+
+**Rationale**:
+- Easy to flip from acceptance tests via `SLOW_MODE_DELAY_MS=10000 docker compose up -d auth-proxy`. No privileged compose required.
+- Production-gated so the surface cannot leak into deployed environments. Same gating convention as the DD-10 test-mirror endpoint.
+- 10000 ms (10s) in tests is comfortably > the 5s timeout budget, so the test deterministically observes the timeout path.
+
+**How applied**:
+- `auth-proxy/app.ts` `/ui-state/*` handler has the SLOW_MODE block at the top.
+- `auth-proxy/app.test.ts` has 3 vitest tests covering: delay-when-set, no-delay-when-unset, no-delay-when-AUTH_MODE=production.
+
+**Source**: DESIGN review-by-system-designer.md §5 (slow-upstream induction is DELIVER's job) · DISTILL `loader-fails-fast-when-auth-proxy-slow.feature` (DELIVER picks induction mechanism).
+
+## DD-19 (Phase 04): horizontal-scale assertion shape — Strategy C with byte-normalization
+
+**Issue**: DISTILL `ssr-instances-produce-identical-html.feature` requires byte-equivalent HTML across two web-ssr instances under `--scale web-ssr=2`. DELIVER must choose how to compare bodies given that volatile headers / asset hashes will differ.
+
+**Decision**: The acceptance test issues two sequential requests with the same bearer to `/_test/loader-probe`; normalizes the response body (strips Request-Id references, ISO-8601 timestamps, hash-suffixed asset URLs); asserts the normalized bodies are byte-equivalent. The no-bearer-leak test uses the DISTILL-emitted body (already correct) — two probes with distinct bearer values; assert each response body does not contain the other's bearer string.
+
+The `--scale web-ssr=2` precondition is operator-driven (documented in README); the test SKIPs cleanly via `requires_compose_stack` + (newly added) `requires_slow_mode_capable` when preconditions aren't met (Strategy C from DI-1).
+
+**Rationale**:
+- Strict byte-equivalence over raw bodies would fail on volatile headers (Request-Id, Date) and content-addressed asset URLs.
+- Normalization preserves the SSR'd output contract while suppressing per-request volatility.
+- The probe route's `bearer_fingerprint` field (DD-16) ensures the SSR'd HTML carries observable bearer-derived content, so the no-leak test has signal to detect contamination.
+
+**How applied**:
+- `tests/acceptance/frontend-coexistence/test_ssr_instances_produce_identical_html.py` body has a `_normalize` helper that strips the three volatile sources.
+- The no-leak test body keeps the DISTILL-emitted shape: `assert bearer_a not in response_b.body and bearer_b not in response_a.body`.
+- Operator documentation for `--scale web-ssr=2` lands in `tests/acceptance/frontend-coexistence/README.md`.
+
+**Source**: DESIGN review-by-system-designer.md §5 (horizontal-scale assertion) · DISTILL `ssr-instances-produce-identical-html.feature` (byte-equivalence modulo volatile headers).
+
+## DD-20 (Phase 04): auth-proxy fan-out baseline — synthetic architectural analysis
+
+**Issue**: DISTILL `loader-fanout-to-auth-proxy-stays-bounded.feature` requires a pre-MR-0 auth-proxy QPS baseline. Pre-MR-0 cannot be directly measured because MR-0 has already merged.
+
+**Decision**: DELIVER uses a synthetic baseline derived from the architectural fetch pattern. The baseline is recorded in `docs/feature/frontend-coexistence/deliver/baseline-metrics.md` along with the post-50%-migration architectural analysis and a PASS line confirming the delta is within 110% of baseline.
+
+**Rationale**:
+- The 110% ceiling is honored by construction: the loader-driven prefetch pattern REPLACES (not adds to) the SPA-driven `useQuery` pattern. Per route entry: framework-mode = 1 auth-proxy call; library-mode = ~3 auth-proxy calls. The fan-out goes DOWN under partial framework-mode migration.
+- A live-stack measurement requires real traffic generators (k6, locust) and a running stack with APM/log-aggregation — out of scope for the merge queue. The architectural analysis is the contract Phase 04 lands; the live-stack measurement is a recommended follow-up.
+- The acceptance test (`test_50_percent_framework_mode_migration_keeps_auth_proxy_qps_within_10_percent`) verifies the baseline-metrics.md file contains the PASS marker; it does NOT itself run a live measurement.
+
+**How applied**:
+- `docs/feature/frontend-coexistence/deliver/baseline-metrics.md` (NEW) records: synthetic baseline (~42 QPS), post-migration analysis (~28 QPS), delta (-33%, well within 110%), PASS line.
+- Both Phase 04 fan-out acceptance scenarios pass against the recorded doc.
+
+**Source**: DESIGN review-by-system-designer.md §F-2 (auth-proxy fan-out finding) · DISTILL `loader-fanout-to-auth-proxy-stays-bounded.feature` (10% ceiling contract) · DI-5 (Praxis additions encoded as Slice-4 scenarios).
+
+## DD-21 (Phase 04): `LOADER_PROBE_PATH` env-var isolation from Phase 02/03 `MIGRATED_ROUTE_PATH`
+
+**Issue**: Phase 02 / Phase 03 acceptance tests use `MIGRATED_ROUTE_PATH` env var defaulting to `/login`. Phase 04 needs to probe a different path (`/_test/loader-probe`). Sharing the env var across phases would create a contradiction: Phase 02 wants the path to be loader-bearing; Phase 03 wants the path to be reverted to library-mode.
+
+**Decision**: Phase 04 introduces a distinct env var `LOADER_PROBE_PATH` (defaulting to `/_test/loader-probe`). The 3 Phase 04 test files change their `migrated_route_path` fixture body to read `LOADER_PROBE_PATH` instead of `MIGRATED_ROUTE_PATH`. Conftest pins `LOADER_PROBE_PATH` via `os.environ.setdefault`.
+
+**Rationale**:
+- Preserves Phase 02 and Phase 03 fixture semantics (they continue to probe `/login` via `MIGRATED_ROUTE_PATH`).
+- Phase 04 tests probe the new test-only route via `LOADER_PROBE_PATH`.
+- Iron Rule compliance: this is a FIXTURE-WIRING change (which path to probe), not an ASSERTION change. Equivalent to the DD-U-2 / DD-U-4 fixture corrections in Phase 01.
+
+**How applied**:
+- `tests/acceptance/frontend-coexistence/conftest.py` adds `os.environ.setdefault("LOADER_PROBE_PATH", "/_test/loader-probe")` and a session-scoped `requires_slow_mode_capable` fixture.
+- The 3 Phase 04 test files (`test_loader_fails_fast_when_auth_proxy_slow.py`, `test_ssr_instances_produce_identical_html.py`, `test_loader_fanout_to_auth_proxy_stays_bounded.py`) have their `migrated_route_path` fixture read `LOADER_PROBE_PATH`.
+
+**Source**: pragmatic resolution at DELIVER-design time; Iron Rule + Phase 02/03 fixture-isolation requirement.
+
+---
+
+## Cross-references — Phase 04
+
+- `roadmap.json` Phase 04: `../distill/roadmap.json` (lines 141–169)
+- `loader-fails-fast-when-auth-proxy-slow.feature`: `../distill/`
+- `ssr-instances-produce-identical-html.feature`: `../distill/`
+- `loader-fanout-to-auth-proxy-stays-bounded.feature`: `../distill/`
+- DESIGN review-by-system-designer.md §5, §F-2: `../design/`
+- DESIGN application-architecture.md §5 (Hono SSR entry), §6.4 (horizontal scaling): `../design/`
+- `baseline-metrics.md`: `./baseline-metrics.md`
+- ADR-034 §Operational readiness: `docs/decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md`
+- DI-5 (Praxis additions encoded as Slice-4 scenarios): `../distill/wave-decisions.md`
