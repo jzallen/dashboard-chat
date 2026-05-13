@@ -1,0 +1,362 @@
+{
+  "feature_id": "project-and-chat-session-management",
+  "journey_id": "J-002",
+  "wave": "DISTILL",
+  "produced_at": "2026-05-13",
+  "acceptance_designer": "nw-acceptance-designer (J-002 DISTILL wave)",
+  "walking_skeleton_strategy": "C — real local adapters (compose stack) + skip-when-unavailable",
+  "framework": "pytest + httpx + subprocess (per DD-1)",
+  "test_suite_path": "tests/acceptance/project-and-chat-session-management/",
+  "feature_ssot_path": "docs/feature/project-and-chat-session-management/distill/features/",
+  "driving_port_url": "http://localhost:5173 (reverse-proxy)",
+  "totals": {
+    "scenarios_pytest": 65,
+    "gherkin_scenarios": 65,
+    "walking_skeleton": 1,
+    "happy_path": 26,
+    "error_path_tagged": 15,
+    "boundary_tagged": 14,
+    "degraded_tagged": 1,
+    "property_tagged": 9,
+    "harness_tagged": 10,
+    "praxis_f4_tagged": 1,
+    "praxis_f5_tagged": 1,
+    "error_path_plus_property_ratio_pct": 60,
+    "error_path_ratio_pct_excluding_property": 46
+  },
+  "slices": [
+    {
+      "slice": 1,
+      "mr": 1,
+      "title": "Walking-skeleton substrate + initial scope resolution + cold deep-links",
+      "user_stories": ["US-201", "US-202", "US-204"],
+      "integration_checkpoints": ["IC-J002-1", "IC-J002-2"],
+      "kpi_targets": ["K-J002-4 (north-star — foundation)"],
+      "step_id": 1
+    },
+    {
+      "slice": 2,
+      "mr": 2,
+      "title": "Session list visibility + resume with dataset restoration",
+      "user_stories": ["US-203", "US-205"],
+      "integration_checkpoints": ["IC-J002-3"],
+      "kpi_targets": [],
+      "step_id": 2
+    },
+    {
+      "slice": 3,
+      "mr": 3,
+      "title": "New-session lifecycle (lazy creation; eager on first message)",
+      "user_stories": ["US-206"],
+      "integration_checkpoints": [],
+      "kpi_targets": [],
+      "step_id": 3
+    },
+    {
+      "slice": 4,
+      "mr": 4,
+      "title": "Atomic project switching + agent X-Active-Scope contract (K-J002-4 north-star)",
+      "user_stories": ["US-207", "US-208"],
+      "integration_checkpoints": ["IC-J002-4", "IC-J002-7"],
+      "kpi_targets": ["K-J002-4", "K-J002-5"],
+      "step_id": 4
+    },
+    {
+      "slice": 5,
+      "mr": 5,
+      "title": "Dataset context switching via agent and direct selection",
+      "user_stories": ["US-209"],
+      "integration_checkpoints": ["IC-J002-5"],
+      "kpi_targets": [],
+      "step_id": 5
+    },
+    {
+      "slice": 6,
+      "mr": 6,
+      "title": "Cross-machine FREEZE/THAW participation + Praxis F-4 stale-intent filter",
+      "user_stories": ["US-210"],
+      "integration_checkpoints": ["IC-J002-6"],
+      "kpi_targets": ["K-J002-6"],
+      "step_id": 6
+    }
+  ],
+  "steps": [
+    {
+      "id": 1,
+      "title": "MR-1 — Walking skeleton + Slice 1 substrate (US-201, US-202, US-204)",
+      "slice": 1,
+      "mr": 1,
+      "estimated_size": "L (~3 days)",
+      "blocks": [],
+      "scenarios_to_unskip": [
+        {"file": "test_us201_first_time_lands_in_no_projects_empty_state.py", "name": "test_first_sign_in_foregrounds_the_no_projects_welcome_panel", "tags": ["@walking_skeleton", "@happy_path", "@us-201"]},
+        {"file": "test_us201_first_time_lands_in_no_projects_empty_state.py", "name": "test_creating_first_project_lands_in_project_selected", "tags": ["@happy_path", "@us-201"]},
+        {"file": "test_us201_first_time_lands_in_no_projects_empty_state.py", "name": "test_empty_project_name_keeps_machine_in_no_projects_empty_state", "tags": ["@error_path", "@boundary", "@us-201"]},
+        {"file": "test_us201_first_time_lands_in_no_projects_empty_state.py", "name": "test_transient_create_project_failure_lands_in_error_recoverable_with_composer_preserved", "tags": ["@error_path", "@us-201"]},
+        {"file": "test_us201_first_time_lands_in_no_projects_empty_state.py", "name": "test_ts_harness_drives_no_projects_path_end_to_end", "tags": ["@harness", "@us-201"]},
+        {"file": "test_us202_returning_user_lands_in_last_used_project.py", "name": "test_resolution_picks_project_carrying_most_recent_session", "tags": ["@happy_path", "@us-202"]},
+        {"file": "test_us202_returning_user_lands_in_last_used_project.py", "name": "test_projects_with_no_sessions_fall_back_to_lexicographic_smallest_name", "tags": ["@happy_path", "@us-202"]},
+        {"file": "test_us202_returning_user_lands_in_last_used_project.py", "name": "test_tie_broken_last_active_picks_lexicographic_smaller_project_id_deterministically", "tags": ["@boundary", "@property", "@us-202"]},
+        {"file": "test_us202_returning_user_lands_in_last_used_project.py", "name": "test_transient_list_sessions_failure_during_last_used_resolution_emits_degraded_event", "tags": ["@error_path", "@degraded", "@us-202"]},
+        {"file": "test_us202_returning_user_lands_in_last_used_project.py", "name": "test_ts_harness_asserts_initial_project_resolution", "tags": ["@harness", "@us-202"]},
+        {"file": "test_us204_cold_deep_link_resolves_active_scope_before_paint.py", "name": "test_cold_deep_link_to_project_resolves_active_scope_before_paint", "tags": ["@happy_path", "@us-204"]},
+        {"file": "test_us204_cold_deep_link_resolves_active_scope_before_paint.py", "name": "test_cross_tenant_deep_link_lands_in_scope_mismatch_terminal", "tags": ["@error_path", "@us-204"]},
+        {"file": "test_us204_cold_deep_link_resolves_active_scope_before_paint.py", "name": "test_deep_link_to_deleted_project_surfaces_same_panel_with_project_not_found_cause", "tags": ["@error_path", "@boundary", "@us-204"]},
+        {"file": "test_us204_cold_deep_link_resolves_active_scope_before_paint.py", "name": "test_back_to_projects_cta_re_enters_resolving_initial_scope_with_intent_cleared", "tags": ["@happy_path", "@us-204"]},
+        {"file": "test_us204_cold_deep_link_resolves_active_scope_before_paint.py", "name": "test_deep_link_with_intent_resource_carries_through_to_session_active", "tags": ["@happy_path", "@us-204"]},
+        {"file": "test_us204_cold_deep_link_resolves_active_scope_before_paint.py", "name": "test_ts_harness_drives_deep_link_resolution_for_both_happy_and_cross_tenant", "tags": ["@harness", "@us-204"]},
+        {"file": "test_journey_invariants_j002.py", "name": "test_ic_j002_1_entry_from_j001_ready_reads_org_id_from_j001_projection", "tags": ["@property", "@praxis_f5", "@mr_1", "@ic-j002-1"]},
+        {"file": "test_journey_invariants_j002.py", "name": "test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id", "tags": ["@property", "@mr_1", "@ic-j002-2"]}
+      ],
+      "files_changed_estimate": [
+        "ui-state/lib/machines/project-and-chat-session-management.ts (NEW — 5 states subset: resolving_initial_scope, no_projects_empty_state, creating_project, project_selected, scope_mismatch_terminal + error_recoverable)",
+        "ui-state/lib/orchestrator.ts (EXTEND — MachineRegistry strategy table per DWD-8; j001_ready broadcast hook per DWD-6)",
+        "ui-state/lib/projection.ts (EXTEND — EVENT_HANDLERS for j002_resolution_started, project_selected, no_projects_displayed, project_created, scope_mismatch_displayed, deep_link_opened payload extension)",
+        "ui-state/index.ts (EXTEND — 5 new HTTP routes for /ui-state/flow/project-and-chat-session-management/*)",
+        "frontend/app/root.tsx (EXTEND — root loader reading J-001 projection for active_scope.org_id per DWD-4 §6.1)",
+        "frontend/app/routes/project-detail.tsx (NEW or EXTEND — loader for /projects/:projectId + /projects/:projectId/datasets/:datasetId)",
+        "frontend/app/routes/projects.tsx (NEW or EXTEND — loader for /projects)",
+        "frontend/app/lib/ui-state-client.ts (EXTEND — getJ002Projection, postJ002Event, activeScopeHeader)",
+        "tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts (EXTEND — harness.j002.* namespace: open_project, open_deep_link, create_first_project, assert_initial_project, assert_scope, assert_scope_mismatch)"
+      ],
+      "exit_criteria": [
+        "Walking-skeleton scenario (test_first_sign_in_foregrounds_the_no_projects_welcome_panel) is GREEN against the local compose stack",
+        "All 18 MR-1 scenarios listed above are GREEN (no @pytest.mark.skip)",
+        "harness.j002.* namespace is exported and callable from node subprocess",
+        "Praxis F-5 property test asserts org_id consistency across J-001 ↔ J-002 ↔ JWT",
+        "Verification: `grep -rE 'from .*ui-state/lib' tests/acceptance/project-and-chat-session-management/ || echo OK` returns OK"
+      ],
+      "blocks_resolution_of": ["MR-2 substrate dependency: machine registry + j001_ready broadcast"],
+      "praxis_concerns_resolved": ["F-3 loader fan-out coordination with Phase 04 (slate crew check before MR-1 lands)", "F-5 IC-J002-1 property — first GREEN here"]
+    },
+    {
+      "id": 2,
+      "title": "MR-2 — Slice 2 session list + resume (US-203, US-205)",
+      "slice": 2,
+      "mr": 2,
+      "estimated_size": "L (~3 days)",
+      "blocks": [1],
+      "scenarios_to_unskip": [
+        {"file": "test_us203_session_list_renders_most_recent_first.py", "name": "test_session_list_renders_sorted_most_recent_first", "tags": ["@happy_path", "@us-203"]},
+        {"file": "test_us203_session_list_renders_most_recent_first.py", "name": "test_recent_sessions_nav_caps_at_five_rows", "tags": ["@happy_path", "@us-203"]},
+        {"file": "test_us203_session_list_renders_most_recent_first.py", "name": "test_zero_sessions_project_enters_no_sessions_empty_state_sub_shape", "tags": ["@boundary", "@us-203"]},
+        {"file": "test_us203_session_list_renders_most_recent_first.py", "name": "test_session_list_is_paginated_for_projects_with_more_than_thirty_sessions", "tags": ["@happy_path", "@us-203"]},
+        {"file": "test_us203_session_list_renders_most_recent_first.py", "name": "test_session_created_in_other_tab_refreshes_list_within_one_second", "tags": ["@happy_path", "@us-203"]},
+        {"file": "test_us203_session_list_renders_most_recent_first.py", "name": "test_ts_harness_asserts_session_list_ordering", "tags": ["@harness", "@us-203"]},
+        {"file": "test_us205_session_resume_restores_transcript_and_dataset.py", "name": "test_resuming_session_restores_transcript_and_dataset_chip_on_same_first_paint", "tags": ["@happy_path", "@us-205"]},
+        {"file": "test_us205_session_resume_restores_transcript_and_dataset.py", "name": "test_resuming_session_with_null_dataset_enters_conversational_mode", "tags": ["@happy_path", "@us-205"]},
+        {"file": "test_us205_session_resume_restores_transcript_and_dataset.py", "name": "test_resuming_session_with_deleted_dataset_degrades_gracefully_to_conversational", "tags": ["@degraded", "@us-205"]},
+        {"file": "test_us205_session_resume_restores_transcript_and_dataset.py", "name": "test_resuming_nonexistent_session_returns_silently_to_session_list_visible", "tags": ["@error_path", "@us-205"]},
+        {"file": "test_us205_session_resume_restores_transcript_and_dataset.py", "name": "test_ts_harness_asserts_resume_contract", "tags": ["@harness", "@us-205"]},
+        {"file": "test_journey_invariants_j002.py", "name": "test_ic_j002_3_resuming_session_to_session_active_materializes_atomically", "tags": ["@property", "@mr_2", "@ic-j002-3"]}
+      ],
+      "files_changed_estimate": [
+        "backend/migrations/versions/009_add_session_active_dataset_id.py (NEW — DWD-2 schema migration; nullable column + index)",
+        "backend/app/use_cases/session/update_session.py (EXTEND — allowlist active_dataset_id per DWD-2)",
+        "backend/app/repositories/metadata/session_record.py (EXTEND — column declaration)",
+        "ui-state/lib/machines/project-and-chat-session-management.ts (EXTEND — 4 more states: loading_session_list, session_list_visible, resuming_session, session_active read-only path)",
+        "ui-state/lib/projection.ts (EXTEND — EVENT_HANDLERS for session_list_load_started, session_list_loaded, session_list_displayed, session_resume_started, session_resumed, session_dataset_unavailable, last_used_resolution_degraded)",
+        "ui-state/lib/persistence/redis.ts (EXTEND — subscribe() method using XREAD BLOCK for SSE projection-stream per DWD-9)",
+        "ui-state/index.ts (NEW — GET /ui-state/flow/project-and-chat-session-management/projection/stream SSE route)",
+        "frontend/app/routes/chat.tsx (NEW or EXTEND — loader for / index + /chat/:channelId)",
+        "frontend/app/routes/sessions.tsx (NEW or EXTEND — loader for /sessions)",
+        "tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts (EXTEND — resume_session, get_session_list, get_transcript, assert_session_active, assert_session_list_includes)"
+      ],
+      "exit_criteria": [
+        "Migration 009 applied to dev + prod environments BEFORE this MR enters the queue",
+        "All 12 MR-2 scenarios are GREEN",
+        "IC-J002-3 atomic-materialization property test asserts transcript AND active_scope.resource_* both visible on session_active entry",
+        "SSE cross-tab refresh works within 1s budget",
+        "harness.j002.resume_session / get_session_list / get_transcript callable"
+      ],
+      "blocks_resolution_of": ["MR-3 (new session lifecycle reuses resuming_session)", "MR-5 (active_dataset_id write path)"],
+      "praxis_concerns_resolved": []
+    },
+    {
+      "id": 3,
+      "title": "MR-3 — Slice 3 new-session lifecycle (US-206)",
+      "slice": 3,
+      "mr": 3,
+      "estimated_size": "M (~2 days)",
+      "blocks": [2],
+      "scenarios_to_unskip": [
+        {"file": "test_us206_new_session_is_lazily_created_on_first_message.py", "name": "test_clicking_new_session_lands_in_welcome_state_with_no_backend_write", "tags": ["@happy_path", "@us-206"]},
+        {"file": "test_us206_new_session_is_lazily_created_on_first_message.py", "name": "test_sending_first_message_eagerly_creates_session_with_title_from_message", "tags": ["@happy_path", "@us-206"]},
+        {"file": "test_us206_new_session_is_lazily_created_on_first_message.py", "name": "test_navigating_away_from_welcome_state_leaves_no_ghost_session_row", "tags": ["@boundary", "@happy_path", "@us-206"]},
+        {"file": "test_us206_new_session_is_lazily_created_on_first_message.py", "name": "test_clicking_existing_session_from_welcome_state_cancels_new_session_intent", "tags": ["@happy_path", "@us-206"]},
+        {"file": "test_us206_new_session_is_lazily_created_on_first_message.py", "name": "test_transient_create_session_failure_preserves_composer_text_across_retry", "tags": ["@error_path", "@us-206"]},
+        {"file": "test_us206_new_session_is_lazily_created_on_first_message.py", "name": "test_ts_harness_drives_new_session_lifecycle_end_to_end", "tags": ["@harness", "@us-206"]}
+      ],
+      "files_changed_estimate": [
+        "ui-state/lib/machines/project-and-chat-session-management.ts (EXTEND — +1 state: session_active_no_messages; createSessionEagerly invoke; pending_first_message context field for retry preservation)",
+        "ui-state/lib/projection.ts (EXTEND — EVENT_HANDLERS for session_welcome_displayed)",
+        "frontend chat-view component (EXTEND — first-message handler awaits projection.session_id before POST /chat; composer-state preservation across error_recoverable per app-arch §6.4)",
+        "tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts (EXTEND — start_new_session, send_first_message)"
+      ],
+      "exit_criteria": [
+        "All 6 MR-3 scenarios are GREEN",
+        "No ghost session rows are created on navigate-away (assertion via backend session-count query)",
+        "Composer text preserved across error_recoverable → retry boundary"
+      ],
+      "blocks_resolution_of": [],
+      "praxis_concerns_resolved": []
+    },
+    {
+      "id": 4,
+      "title": "MR-4 — Slice 4 project switching + agent contract (US-207, US-208) — K-J002-4 North Star",
+      "slice": 4,
+      "mr": 4,
+      "estimated_size": "L (~3 days)",
+      "blocks": [1, 2, 3],
+      "scenarios_to_unskip": [
+        {"file": "test_us207_project_switching_is_atomic.py", "name": "test_switching_projects_atomically_retargets_active_scope_within_300ms_p95", "tags": ["@happy_path", "@us-207"]},
+        {"file": "test_us207_project_switching_is_atomic.py", "name": "test_chat_turn_in_flight_during_project_switch_is_cancelled_before_new_loader_runs", "tags": ["@error_path", "@property", "@us-207"]},
+        {"file": "test_us207_project_switching_is_atomic.py", "name": "test_deep_link_mid_session_switches_projects_via_loader", "tags": ["@happy_path", "@us-207"]},
+        {"file": "test_us207_project_switching_is_atomic.py", "name": "test_switching_to_access_revoked_project_surfaces_named_diagnostic", "tags": ["@error_path", "@us-207"]},
+        {"file": "test_us207_project_switching_is_atomic.py", "name": "test_ts_harness_asserts_atomic_switching_and_sse_cancellation", "tags": ["@harness", "@us-207"]},
+        {"file": "test_us208_agent_chat_turn_carries_active_scope.py", "name": "test_chat_turn_from_session_active_carries_x_active_scope_with_org_and_project", "tags": ["@happy_path", "@us-208"]},
+        {"file": "test_us208_agent_chat_turn_carries_active_scope.py", "name": "test_agent_rejects_chat_turn_missing_org_id_with_400", "tags": ["@error_path", "@us-208"]},
+        {"file": "test_us208_agent_chat_turn_carries_active_scope.py", "name": "test_agent_rejects_chat_turn_missing_project_id_with_400", "tags": ["@error_path", "@us-208"]},
+        {"file": "test_us208_agent_chat_turn_carries_active_scope.py", "name": "test_agent_rejects_chat_turn_with_org_id_mismatch_to_jwt_with_403", "tags": ["@error_path", "@us-208"]},
+        {"file": "test_us208_agent_chat_turn_carries_active_scope.py", "name": "test_ts_harness_asserts_agent_received_scope_on_every_turn", "tags": ["@harness", "@us-208"]},
+        {"file": "test_us208_agent_chat_turn_carries_active_scope.py", "name": "test_during_migration_window_agent_falls_back_to_body_project_id_with_observability_event", "tags": ["@degraded", "@us-208"]},
+        {"file": "test_us208_agent_chat_turn_carries_active_scope.py", "name": "test_compile_time_sunset_check_fails_agent_startup_after_date_with_flag_on", "tags": ["@error_path", "@boundary", "@us-208"]},
+        {"file": "test_journey_invariants_j002.py", "name": "test_ic_j002_4_switching_project_invalidates_session_and_resource_before_new_load", "tags": ["@property", "@mr_4", "@ic-j002-4"]},
+        {"file": "test_journey_invariants_j002.py", "name": "test_ic_j002_7_every_chat_turn_from_j002_state_carries_x_active_scope_header", "tags": ["@property", "@mr_4", "@ic-j002-7"]}
+      ],
+      "files_changed_estimate": [
+        "ui-state/lib/machines/project-and-chat-session-management.ts (EXTEND — +1 state: switching_project; switchProject invoke; entry-action invalidates session_id + resource_* per IC-J002-4)",
+        "ui-state/lib/projection.ts (EXTEND — EVENT_HANDLERS for switching_project_started, project_switched)",
+        "frontend/app/lib/ui-state-client.ts (EXTEND — activeScopeHeader called by ALL loader outbound fetches per DWD-3)",
+        "frontend chat-view component (EXTEND — eventSource.close() on projection.state === 'switching_project'; queryClient.invalidateQueries(['sessions', oldProjectId]) per DWD-11)",
+        "agent/lib/chat/scope.ts (NEW — extractActiveScope helper per DWD-3 + app-arch §4.1)",
+        "agent/lib/chat/handleChat.ts (EXTEND — header-only scope read + body fallback + compile-time sunset)",
+        "agent/index.ts (EXTEND — module-load assertion for SCOPE_HEADER_FALLBACK_SUNSET per DWD-3)",
+        "Custom ESLint rule extension (per DWD-3 corollary) forbidding manual X-Active-Scope writes outside uiStateClient.activeScopeHeader",
+        "tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts (EXTEND — switch_project, assert_agent_received_scope, assert_agent_request_log_no_mismatched)",
+        "backend/tests/integration/dataset_layer/harness.py (EXTEND — chat_turn_with_scope_header per US-208 + DESIGN handoff §Python harness)"
+      ],
+      "exit_criteria": [
+        "All 14 MR-4 scenarios are GREEN",
+        "K-J002-4 north-star instrumentation lands (per DEVOPS handoff annotations)",
+        "Compile-time sunset check fires on past-date + flag-true (verified via test that sets SCOPE_HEADER_FALLBACK_SUNSET to a past date)",
+        "Migration-window flag SCOPE_HEADER_FALLBACK_ENABLED defaults TRUE; the engineer sets the literal sunset date in this MR",
+        "IC-J002-4 + IC-J002-7 properties hold"
+      ],
+      "blocks_resolution_of": ["MR-5 (active_scope header writer is the source for resource_*)"],
+      "praxis_concerns_resolved": ["F-1 j001_ready broadcast hook (already addressed in MR-1; reinforced here for switching_project)", "F-2 deprecation window mechanics (compile-time check first lands here)"]
+    },
+    {
+      "id": 5,
+      "title": "MR-5 — Slice 5 dataset context switching (US-209)",
+      "slice": 5,
+      "mr": 5,
+      "estimated_size": "M (~2 days)",
+      "blocks": [2, 4],
+      "scenarios_to_unskip": [
+        {"file": "test_us209_dataset_context_switching.py", "name": "test_agent_resolve_dataset_then_user_pick_switches_scope_and_persists", "tags": ["@happy_path", "@us-209"]},
+        {"file": "test_us209_dataset_context_switching.py", "name": "test_resubmitted_chat_turn_carries_new_x_active_scope_after_dataset_attaches", "tags": ["@happy_path", "@us-209"]},
+        {"file": "test_us209_dataset_context_switching.py", "name": "test_direct_dataset_selection_updates_active_scope_and_persists", "tags": ["@happy_path", "@us-209"]},
+        {"file": "test_us209_dataset_context_switching.py", "name": "test_cross_tenant_dataset_pick_rejected_with_prior_scope_preserved", "tags": ["@error_path", "@us-209"]},
+        {"file": "test_us209_dataset_context_switching.py", "name": "test_concurrent_dataset_picks_serialize_via_xstate_semantics_most_recent_wins", "tags": ["@boundary", "@property", "@us-209"]},
+        {"file": "test_us209_dataset_context_switching.py", "name": "test_ts_harness_drives_both_attach_paths_and_asserts_scope", "tags": ["@harness", "@us-209"]},
+        {"file": "test_journey_invariants_j002.py", "name": "test_ic_j002_5_dataset_resolved_by_agent_produces_exactly_one_scope_update", "tags": ["@property", "@mr_5", "@ic-j002-5"]}
+      ],
+      "files_changed_estimate": [
+        "ui-state/lib/machines/project-and-chat-session-management.ts (EXTEND — +1 state: switching_dataset_context; switchDatasetContext invoke per app-arch §2.3; +2 event handlers in session_active for dataset_resolved_by_agent + dataset_picked_directly)",
+        "ui-state/lib/projection.ts (EXTEND — EVENT_HANDLERS for switching_dataset_context_started, dataset_attached, dataset_access_denied)",
+        "frontend chat-view component (EXTEND — one-line emit on data-agent-request typed-part handler → postJ002Event({type: dataset_resolved_by_agent, ...}))",
+        "backend update_session path exercised by switchDatasetContext invoke (no code change; landed in MR-2)"
+      ],
+      "exit_criteria": [
+        "All 7 MR-5 scenarios are GREEN",
+        "Migration 009's column write path exercised end-to-end",
+        "IC-J002-5 property test asserts exactly-one scope update per dataset_resolved_by_agent event",
+        "Cross-tenant pick preserves prior resource_* unchanged"
+      ],
+      "blocks_resolution_of": ["MR-6 (Praxis F-4 needs both intent paths working)"],
+      "praxis_concerns_resolved": []
+    },
+    {
+      "id": 6,
+      "title": "MR-6 — Slice 6 cross-machine FREEZE/THAW + Praxis F-4 (US-210)",
+      "slice": 6,
+      "mr": 6,
+      "estimated_size": "L (~3 days)",
+      "blocks": [1, 2, 3, 4, 5],
+      "scenarios_to_unskip": [
+        {"file": "test_us210_freeze_thaw_replay.py", "name": "test_token_expiry_during_session_resume_pauses_and_replays_with_original_correlation", "tags": ["@happy_path", "@us-210"]},
+        {"file": "test_us210_freeze_thaw_replay.py", "name": "test_token_expiry_during_project_switch_replays_after_thaw", "tags": ["@happy_path", "@us-210"]},
+        {"file": "test_us210_freeze_thaw_replay.py", "name": "test_multiple_intents_queued_during_freeze_replay_serially_in_fifo_with_stale_drop", "tags": ["@boundary", "@us-210"]},
+        {"file": "test_us210_freeze_thaw_replay.py", "name": "test_replay_buffer_timeout_transitions_to_error_recoverable", "tags": ["@error_path", "@boundary", "@us-210"]},
+        {"file": "test_us210_freeze_thaw_replay.py", "name": "test_freeze_during_session_active_no_messages_preserves_welcome_view_no_flicker", "tags": ["@happy_path", "@us-210"]},
+        {"file": "test_us210_freeze_thaw_replay.py", "name": "test_praxis_f4_concurrent_dataset_picks_during_freeze_fifo_replay_with_staleness_guard", "tags": ["@praxis_f4", "@boundary", "@property", "@us-210"]},
+        {"file": "test_us210_freeze_thaw_replay.py", "name": "test_ts_harness_drives_freeze_thaw_end_to_end", "tags": ["@harness", "@us-210"]},
+        {"file": "test_journey_invariants_j002.py", "name": "test_ic_j002_6_freeze_pauses_outgoing_mutations_intents_queue_replay_on_thaw", "tags": ["@property", "@mr_6", "@ic-j002-6"]}
+      ],
+      "files_changed_estimate": [
+        "ui-state/lib/machines/project-and-chat-session-management.ts (EXTEND — top-level on.FREEZE handler + freeze state + history-target THAW via last_live_state per DWD-6; per-intent stale-intent guards per DWD-7)",
+        "ui-state/lib/projection.ts (EXTEND — EVENT_HANDLERS for j002_frozen, j002_thawed, stale_intent_dropped_after_thaw, replay_abandoned)",
+        "tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts (EXTEND — freeze, thaw, assert_stale_intent_dropped, assert_no_stale_intents_dropped)"
+      ],
+      "exit_criteria": [
+        "All 8 MR-6 scenarios are GREEN — including Praxis F-4",
+        "IC-J002-6 property test asserts FREEZE → mutations paused → THAW → replay",
+        "Praxis F-4 scenario asserts FIFO replay + per-intent staleness guard for dataset picks",
+        "5s replay-buffer timeout → error_recoverable with originating user-action preserved"
+      ],
+      "blocks_resolution_of": [],
+      "praxis_concerns_resolved": ["F-4 stale-intent filter for concurrent dataset picks (encoded as explicit scenario)"]
+    }
+  ],
+  "mandate_compliance_evidence": {
+    "CM-A_driving_port": {
+      "verification": "grep -rE 'from .*ui-state/lib' tests/acceptance/project-and-chat-session-management/",
+      "expected": "no matches",
+      "rationale": "Tests invoke through reverse-proxy HTTP only. No test imports production internals (DD-3)."
+    },
+    "CM-B_business_language": {
+      "verification": "grep -iE '(REST|endpoint|HTTP status|JWT claim|Redis key|XADD|XREAD)' docs/feature/project-and-chat-session-management/distill/features/*.feature",
+      "expected": "no matches inside Gherkin Scenario/Given/When/Then lines",
+      "rationale": "Technical terms live in driver.py and step methods only."
+    },
+    "CM-C_walking_skeletons_and_focused": {
+      "walking_skeletons": 1,
+      "focused_scenarios": 64,
+      "rationale": "One walking-skeleton scenario proves the seam end-to-end through reverse-proxy; the remaining 64 are focused boundary tests per story."
+    },
+    "CM-D_pure_function_extraction": {
+      "pure_functions": [
+        {"name": "resolveActiveScope", "location": "ui-state/lib/active-scope.ts (REUSED from J-001 — no changes by J-002 per DESIGN Reuse Analysis)"},
+        {"name": "buildProjection + EVENT_HANDLERS", "location": "ui-state/lib/projection.ts (EXTENDED with J-002 entries)"},
+        {"name": "extractActiveScope", "location": "agent/lib/chat/scope.ts (NEW per DWD-3)"}
+      ],
+      "rationale": "Each pure function is unit-tested with zero fixture cost in DELIVER's inner loop. Only the thin adapter layer is parametrized by env."
+    }
+  },
+  "adapter_coverage_table": [
+    {"adapter": "uiStateClient HTTP", "real_io_scenario": "test_us201::walking_skeleton + every MR-1..MR-6 happy-path", "infrastructure_failure_scenario": "test_us202::test_transient_list_sessions_failure_during_last_used_resolution_emits_degraded_event"},
+    {"adapter": "MachineRegistry + FlowOrchestrator", "real_io_scenario": "test_us201::walking_skeleton", "infrastructure_failure_scenario": "test_journey_invariants::test_ic_j002_6 (freeze)"},
+    {"adapter": "EVENT_HANDLERS projection extension", "real_io_scenario": "test_us201::walking_skeleton (state field read-back)", "infrastructure_failure_scenario": "test_us203::test_session_created_in_other_tab (SSE stream)"},
+    {"adapter": "ScopeResolver (active-scope.ts I4)", "real_io_scenario": "test_us204::test_cross_tenant_deep_link", "infrastructure_failure_scenario": "test_us209::test_cross_tenant_dataset_pick_rejected"},
+    {"adapter": "Backend create_project / list_projects / list_sessions / create_session / update_session", "real_io_scenario": "test_us201::test_creating_first_project + test_us202::* + test_us206::* + test_us205::* + test_us209::*", "infrastructure_failure_scenario": "test_us201::test_transient_create_project_failure + test_us202::test_transient_list_sessions_failure"},
+    {"adapter": "Migration 009 active_dataset_id column", "real_io_scenario": "test_us205::test_resuming_session_restores_transcript_and_dataset (read path) + test_us209::test_direct_dataset_selection_updates_active_scope (write path)", "infrastructure_failure_scenario": "test_us205::test_resuming_session_with_deleted_dataset (degraded)"},
+    {"adapter": "Redis Streams subscribe() for SSE projection-stream", "real_io_scenario": "test_us203::test_session_created_in_other_tab_refreshes_list_within_one_second", "infrastructure_failure_scenario": "(deferred to DELIVER — Redis disconnect mid-stream is a unit-test concern per DESIGN risk RD2)"},
+    {"adapter": "Agent extractActiveScope middleware", "real_io_scenario": "test_us208::test_chat_turn_from_session_active_carries_x_active_scope_*", "infrastructure_failure_scenario": "test_us208::test_agent_rejects_chat_turn_missing_org_id + test_us208::test_agent_rejects_chat_turn_missing_project_id + test_us208::test_agent_rejects_chat_turn_with_org_id_mismatch"},
+    {"adapter": "Agent compile-time sunset check (DWD-3)", "real_io_scenario": "test_us208::test_compile_time_sunset_check_fails_agent_startup_after_date_with_flag_on (startup-test)", "infrastructure_failure_scenario": "(same — fail-fast IS the test)"},
+    {"adapter": "RRv7 loaders (5 routes per DWD-4)", "real_io_scenario": "test_us201::* + test_us202::* + test_us204::* + test_us205::* (SSR'd HTML responses from reverse-proxy)", "infrastructure_failure_scenario": "test_us204::test_cross_tenant_deep_link (loader-thrown response surfaces named diagnostic)"},
+    {"adapter": "uiStateClient.activeScopeHeader writer", "real_io_scenario": "test_us208::* + test_journey_invariants::test_ic_j002_7", "infrastructure_failure_scenario": "(ESLint rule enforces single-writer; not a runtime infrastructure concern)"},
+    {"adapter": "TS UserFlowHarness harness.j002.* namespace", "real_io_scenario": "every @harness @needs_ts_harness scenario (10 total)", "infrastructure_failure_scenario": "harness availability is gated by `requires_ts_harness` fixture"},
+    {"adapter": "Orchestrator j001_ready broadcast hook (DWD-6, RD1)", "real_io_scenario": "test_journey_invariants::test_ic_j002_1 (+ Praxis F-5)", "infrastructure_failure_scenario": "(unit-test concern — orchestrator regression in MR-1)"},
+    {"adapter": "Orchestrator FREEZE/THAW broadcast + replay buffer", "real_io_scenario": "test_us210::test_token_expiry_during_session_resume + test_journey_invariants::test_ic_j002_6", "infrastructure_failure_scenario": "test_us210::test_replay_buffer_timeout_transitions_to_error_recoverable"},
+    {"adapter": "J-002 per-intent stale-intent guards (DWD-7)", "real_io_scenario": "test_us210::test_multiple_intents_queued_during_freeze_replay_serially + test_us210::test_praxis_f4_*", "infrastructure_failure_scenario": "(same — stale-drop IS the test)"}
+  ],
+  "open_items_reference": "See docs/feature/project-and-chat-session-management/distill/upstream-issues.md for the full open-items list. DESIGN's O1–O7 are validated; O7 (loader fan-out) is the only MEDIUM that DELIVER must coordinate before MR-1.",
+  "praxis_review_resolutions": {
+    "F-1_j001_ready_broadcast_hook_lineage": "Addressed inline by DESIGN (review §7 ✅). MR-1 lands the hook alongside the MachineRegistry refactor per DWD-6.",
+    "F-2_deprecation_window_mechanics": "Addressed inline by DESIGN (review §7 ✅). MR-4 lands the compile-time sunset check per DWD-3.",
+    "F-3_loader_fanout_coordination": "Addressed inline by DESIGN (review §7 ✅). DISTILL flags as O7 in upstream-issues.md; DELIVER coordinates with slate crew before MR-1.",
+    "F-4_stale_intent_filter_concurrent_dataset_picks": "DISTILL-resolved per DD-4. Encoded as test_us210::test_praxis_f4_* + Gherkin SSOT @praxis_f4 in features/us-210-freeze-thaw-replay.feature. Un-skips at MR-6.",
+    "F-5_org_id_inheritance_window": "DISTILL-resolved per DD-5. Encoded as test_journey_invariants::test_ic_j002_1_* (@praxis_f5) + Gherkin SSOT @praxis_f5 in features/journey-invariants-j002.feature. Un-skips at MR-1."
+  }
+}

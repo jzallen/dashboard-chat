@@ -1,0 +1,49 @@
+[project]
+name = "dashboard-chat-acceptance-project-and-chat-session-management"
+version = "0.0.1"
+description = "Acceptance tests for J-002 — project + chat session management (DISTILL)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    "pyyaml>=6.0",
+    # The TS UserFlowHarness extension `harness.j002.*` is exercised via
+    # subprocess; no Python binding is required at DISTILL. DELIVER may add
+    # additional clients (e.g., for the SSE projection stream) when those
+    # scenarios un-skip.
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "real_io: scenario uses real adapters (the local compose stack + real HTTP + real backend + real ui-state + real Redis)",
+    "walking_skeleton: the single end-to-end scenario gating MR-1 GREEN",
+    "mr_1: MR-1 — Slice 1 (substrate + walking skeleton; US-201, US-202, US-204)",
+    "mr_2: MR-2 — Slice 2 (session list + resume; US-203, US-205)",
+    "mr_3: MR-3 — Slice 3 (new-session lifecycle; US-206)",
+    "mr_4: MR-4 — Slice 4 (project switching + agent contract; US-207, US-208)",
+    "mr_5: MR-5 — Slice 5 (dataset context switching; US-209)",
+    "mr_6: MR-6 — Slice 6 (cross-machine FREEZE/THAW; US-210)",
+    "happy_path: nominal flow — no failure injection",
+    "error_path: explicit failure injection or rejection scenario",
+    "boundary: edge case / parameterized boundary scenario",
+    "degraded: graceful-degradation path (partial success)",
+    "property: cross-state invariant — IC-J002-1..IC-J002-7",
+    "kpi: scenario that asserts an observable used by an outcome KPI",
+    "harness: scenario driven primarily through the TS UserFlowHarness `harness.j002.*` namespace",
+    "needs_compose_stack: scenario requires the local compose topology to be reachable on host ports",
+    "needs_ts_harness: scenario requires the TS UserFlowHarness with the `harness.j002.*` namespace (lands in MR-1 DELIVER)",
+    "praxis_f4: Praxis review §3 F-4 — concurrent dataset picks during FREEZE; FIFO replay + stale-intent guard",
+    "praxis_f5: Praxis review §3 F-5 — IC-J002-1 property — context.org_id consistency across J-001 and J-002 projections",
+    "slow: scenario expected to take >10s wall-clock",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
