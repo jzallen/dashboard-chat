@@ -1,0 +1,38 @@
+[project]
+name = "dashboard-chat-acceptance-frontend-coexistence"
+version = "0.0.1"
+description = "Acceptance tests for ADR-034 — RRv7 framework-mode coexistence (MR-0 + Slices 2..4)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    "pyyaml>=6.0",
+    # No playwright at DISTILL — see distill/wave-decisions.md DI-2 + DI-6.
+    # DELIVER may add `playwright-python` when un-skipping the DOM-fingerprint
+    # scenario (test_mr0_plumbing.py::test_dom_fingerprint_pre_post_mr0_matches).
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "real_io: scenario uses real adapters (the local compose stack + real HTTP + real filesystem)",
+    "walking_skeleton: the single end-to-end scenario gating MR-0 GREEN",
+    "slice_1: Slice 1 / MR-0 — RRv7 plumbing scenarios",
+    "slice_2: Slice 2 / MR-1 — first per-route migration scenarios",
+    "slice_3: Slice 3 / MR-2 — reversibility + chat-bearing opt-out scenarios",
+    "slice_4: Slice 4 / MR-3 — operational-readiness scenarios (Praxis review §5 additions)",
+    "needs_playwright: scenario requires browser DOM inspection; DELIVER decides implementation (playwright-python vs e2e/ vs HTML-shape reduction)",
+    "needs_compose_stack: scenario requires the post-MR-0 local compose topology to be reachable",
+    "needs_repo_post_mr0_state: scenario requires the repo file tree to reflect post-MR-0 state (App.tsx deleted, ui-presentation/ gone, etc.)",
+    "slow: scenario expected to take >10s wall-clock",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]

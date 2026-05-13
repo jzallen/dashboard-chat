@@ -1,0 +1,182 @@
+{
+  "feature": "frontend-coexistence",
+  "feature_dir": "docs/feature/frontend-coexistence",
+  "produced_by": "DISTILL wave",
+  "produced_on": "2026-05-13",
+  "binding_decisions": "docs/feature/frontend-coexistence/distill/wave-decisions.md",
+  "upstream_issues": "docs/feature/frontend-coexistence/distill/upstream-issues.md",
+  "design_ratified_as": "docs/decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md (Accepted 2026-05-12)",
+  "design_handoff": "docs/feature/frontend-coexistence/design/handoff-design-to-distill.md",
+  "design_wave_decisions": "docs/feature/frontend-coexistence/design/wave-decisions.md (DWD-1..DWD-8 — immutable)",
+  "design_review_system": "docs/feature/frontend-coexistence/design/review-by-system-designer.md (Praxis PASS + 3 additions encoded as Slice-4 scenarios)",
+  "acceptance_root": "docs/feature/frontend-coexistence/distill/ (Gherkin .feature SSOT — 10 files)",
+  "scaffold_root": "tests/acceptance/frontend-coexistence/ (pytest + httpx + subprocess; standalone pyproject.toml + venv per CLAUDE.md acceptance-suite convention)",
+  "walking_skeleton_strategy": "C — real local + skip-when-unavailable (per DI-1; mirrors `tests/acceptance/ibis-as-only-sql-compiler/` Strategy-C pattern)",
+  "test_framework": "pytest + httpx + subprocess (no pytest-bdd, no Playwright at MR-0; DELIVER may add playwright-python when un-skipping the DOM-fingerprint scenario per DI-2)",
+  "phases": [
+    {
+      "id": "01",
+      "title": "Phase 01 — Slice 1 / MR-0: RRv7 framework-mode plumbing (zero behavior change)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Land the RRv7 framework-mode substrate as one atomic MR per ADR-034 §\"Migration sequence\" row 1. New files: `frontend/app/root.tsx`, `frontend/app/routes.ts`, `frontend/app/lib/ui-state-client.ts`, `frontend/ssr.ts`. `git mv` the five scaffold files from `ui-presentation/app/routes/` to `frontend/app/routes/`. DELETE `frontend/App.tsx`. REWRITE `frontend/main.tsx` to the RRv7 `<HydratedRouter />` hydration entry. Update `frontend/vite.config.ts` (add `reactRouter()` plugin AND remove `@vitejs/plugin-react` — load-bearing per DESIGN F-2 inline resolution). Update `frontend/tsconfig.json` to include `app/**/*`. Update `frontend/src/ui/components/AppShell/index.tsx` to move RequireAuth/RequireOrg guards in. DELETE `ui-presentation/` directory (including its package.json, tsconfig.json, vitest.config.ts, package-lock.json). REMOVE `ui-presentation` from root `package.json` workspaces. System-level: add `:ssr_dist` + `:ssr_image` + `:ssr_image_tar` to `frontend/BUILD.bazel`; modify `frontend/nginx.conf` to proxy_pass catch-all to `web-ssr:3001`; insert `web-ssr:` block in `docker-compose.yml`. Walking-skeleton scenario unpends; §3.1, §3.5, §3.7, §3.8 scenarios unpend.",
+      "scenarios_to_unskip": [
+        "docs/feature/frontend-coexistence/distill/rrv7-handler-renders-existing-routes.feature :: The RRv7 SSR handler serves a 200 text/html shell for `/` (walking skeleton)",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: The five existing nginx rules continue to route to their pre-MR-0 upstreams",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: The catch-all location proxies all non-static, non-API routes to web-ssr",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: The `ui-presentation/` directory no longer exists in the repo",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: The root `package.json` \"workspaces\" array no longer contains `ui-presentation`",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: The five scaffold files from ui-presentation are addressable at their new location under frontend/app/routes/",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: `frontend/App.tsx` no longer exists in the repo",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: No source file in `frontend/` imports `BrowserRouter`",
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: `frontend/main.tsx` is the RRv7 hydration entry mounting `<HydratedRouter>`",
+        "docs/feature/frontend-coexistence/distill/compose-topology-gains-one-service.feature :: The compose topology lists web-ssr as a new service alongside the existing six application services",
+        "docs/feature/frontend-coexistence/distill/compose-topology-gains-one-service.feature :: The new web-ssr service does not expose a host port (only an internal port)"
+      ],
+      "scenarios_deferred_within_phase": [
+        "docs/feature/frontend-coexistence/distill/existing-routes-render-identically-through-ssr.feature :: The DOM after hydration is structurally equivalent pre/post MR-0 (tagged @needs-playwright — DELIVER picks playwright-python vs e2e/ move vs HTML-shape reduction per DI-2)"
+      ],
+      "files_changed_estimate": "frontend/app/root.tsx (new, ~80L), frontend/app/routes.ts (new, ~25L), frontend/app/lib/ui-state-client.ts (new, ~30L), frontend/ssr.ts (new, ~40L), frontend/app/routes/{copy-variants.ts,expired-token-banner.tsx,expired-token-banner.test.tsx,recoverable-error.tsx,recoverable-error.test.tsx} (git-mv from ui-presentation/, ~150L combined), frontend/App.tsx (DELETED), frontend/main.tsx (rewritten, ~10L), frontend/package.json (+@react-router/dev, +@react-router/node, +hono, +@hono/node-server), frontend/vite.config.ts (+reactRouter(), -@vitejs/plugin-react), frontend/tsconfig.json (+app/**/*), frontend/src/ui/components/AppShell/index.tsx (RequireAuth/RequireOrg moved in, ~30L), ui-presentation/ DELETED, root package.json (-ui-presentation workspace), CLAUDE.md (architecture section collapse, ~10L), frontend/BUILD.bazel (+:ssr_dist +:ssr_image +:ssr_image_tar, ~60L), frontend/nginx.conf (proxy_pass catch-all rule, ~10L), docker-compose.yml (web-ssr: block, ~12L). Total ~600-800 LoC across ~16 files.",
+      "exit_criteria": [
+        "All Phase 01 `scenarios_to_unskip` (11 scenarios) are GREEN against the local compose stack",
+        "Phase 01 deferred DOM-fingerprint scenario has a documented implementation decision (playwright-python vs e2e/ vs HTML-shape) and either unpends or is explicitly tagged as moved to e2e/",
+        "Existing `frontend/` vitest suite still passes (`cd frontend && npx vitest run`) — no regression in unit tests for the 5 migrated scaffold files",
+        "`docker compose config` parses without error against the modified `docker-compose.yml`",
+        "`frontend/BUILD.bazel`'s new `:ssr_image_tar` builds successfully (`bazel build //frontend:ssr_image_tar` or local equivalent)",
+        "Reviewer (nw-software-crafter-reviewer) approves: hexagonal boundary preserved, no internal class mocks, DWD-1/DWD-2/DWD-6 invariants encoded in code (AuthProvider client-only, request-scoped QueryClient pattern in root.tsx, App.tsx truly gone)",
+        "MR-0's diff matches handoff §1 (\"MR-0 scope — exact file-level list\") byte-for-byte at the file-list level — no file outside §1's list is touched"
+      ],
+      "blocks": ["02", "03", "04"],
+      "estimated_size": "L",
+      "ac_references": [
+        "ADR-034 §Decision outcome → Topology",
+        "ADR-034 §Migration sequence row 1 (MR-0 is no-behavior-change plumbing)",
+        "ADR-034 §What's in the source tree",
+        "DESIGN wave-decisions.md DWD-1 (AuthProvider client-only)",
+        "DESIGN wave-decisions.md DWD-4 (ui-presentation/ dissolution in MR-0)",
+        "DESIGN wave-decisions.md DWD-5 (Bazel oci_image for web-ssr)",
+        "DESIGN wave-decisions.md DWD-6 (App.tsx deleted; main.tsx rewritten)",
+        "DESIGN wave-decisions.md DWD-7 (AppShell inner QueryProvider deferred to Phase 02)",
+        "DESIGN wave-decisions.md DWD-8 (nginx rule ordering preserved)",
+        "DESIGN handoff §1 (MR-0 scope — exact file-level list)",
+        "DESIGN application-architecture.md §3 (composition root shape), §5 (Hono SSR entry), §6 (build pipeline)",
+        "DISTILL wave-decisions.md DI-3 (Carpaccio slicing — Slice 1 / MR-0), DI-4 (walking-skeleton shape)"
+      ]
+    },
+    {
+      "id": "02",
+      "title": "Phase 02 — Slice 2 / MR-1: first per-route migration (loader + dehydratedState + AppShell inner QueryProvider removal)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Migrate one route to framework mode by adding a server `loader` that calls `uiStateClient(request).getProjection(...)` and returns `{ dehydratedState: dehydrate(client) }`. Likely target is `/login` per DESIGN's worked example (`application-architecture.md` §2 migration playbook) — DELIVER may pick a different route based on product priority; whatever DELIVER picks becomes `MIGRATED_ROUTE_PATH` for the acceptance suite. The route component wraps its tree in `<HydrationBoundary state={dehydratedState}>`. After this MR lands, `AppShell` no longer wraps children in `<QueryProvider>` (DWD-7); the module-scoped `queryClient` export at `frontend/src/ui/providers/QueryProvider.tsx` is deleted or made a no-op. The auth-proxy test-mirror endpoint (for DI-2's bearer-forwarding assertion) is wired in this phase if it is not already present.",
+      "scenarios_to_unskip": [
+        "docs/feature/frontend-coexistence/distill/migrated-route-renders-html-server-side.feature :: The SSR response contains the server-rendered component output",
+        "docs/feature/frontend-coexistence/distill/migrated-route-renders-html-server-side.feature :: The browser hydrates the loader's prefetched data into its singleton QueryClient without re-fetching",
+        "docs/feature/frontend-coexistence/distill/migrated-route-renders-html-server-side.feature :: A loader-thrown Response surfaces as that response's status",
+        "docs/feature/frontend-coexistence/distill/migrated-route-renders-html-server-side.feature :: A loader that fetches active_scope from ui-state produces an SSR'd payload usable by `useScope()`",
+        "docs/feature/frontend-coexistence/distill/migrated-route-renders-html-server-side.feature :: After Slice-2 lands, the AppShell inner `<QueryProvider>` wrap is removed",
+        "docs/feature/frontend-coexistence/distill/loader-forwards-bearer-to-auth-proxy.feature :: A loader-driven request preserves the browser's Authorization header end-to-end",
+        "docs/feature/frontend-coexistence/distill/loader-forwards-bearer-to-auth-proxy.feature :: No loader function references AuthProvider as a value used inside the loader body",
+        "docs/feature/frontend-coexistence/distill/loader-forwards-bearer-to-auth-proxy.feature :: No loader function calls `useAuth()` or `useContext()`",
+        "docs/feature/frontend-coexistence/distill/loader-forwards-bearer-to-auth-proxy.feature :: AuthProvider's render path produces no error during SSR (every route)",
+        "docs/feature/frontend-coexistence/distill/loader-forwards-bearer-to-auth-proxy.feature :: After hydration the client AuthProvider reads sessionStorage and exposes the user identity",
+        "docs/feature/frontend-coexistence/distill/loader-forwards-bearer-to-auth-proxy.feature :: Two concurrent SSR requests with different probe bearers do not leak across responses"
+      ],
+      "files_changed_estimate": "frontend/app/routes/<migrated-route>.tsx (new, ~50L — or moved from `frontend/src/ui/components/<Component>/index.tsx` per DESIGN's worked-example pattern), frontend/src/ui/components/AppShell/index.tsx (drop inner <QueryProvider> wrap, ~5L removed), frontend/src/ui/providers/QueryProvider.tsx (delete module-scoped queryClient export, ~10L removed — or delete the whole module), auth-proxy/index.ts or new test-mirror endpoint (~30L if needed for bearer-forwarding probe). Optional: `frontend/.eslintrc.*` config for the no-loader-with-chat-import rule (deferred). Total ~50-100 LoC.",
+      "exit_criteria": [
+        "All Phase 02 `scenarios_to_unskip` (11 scenarios) are GREEN against the local compose stack",
+        "`MIGRATED_ROUTE_PATH` env var is documented in `tests/acceptance/frontend-coexistence/README.md` and named explicitly in the suite's harness setup",
+        "`frontend/src/ui/providers/QueryProvider.tsx`'s module-scoped queryClient is gone (verified by grep: no `export const queryClient` or `queryClient = new QueryClient()` at module scope)",
+        "Existing `frontend/` vitest suite still passes (`cd frontend && npx vitest run`) — no regression",
+        "Browser smoke test against the local stack: opening `<MIGRATED_ROUTE_PATH>` in a browser produces visible pre-rendered content (route component output present in initial HTML payload, not just `<div id=\"root\">`)",
+        "Reviewer (nw-software-crafter-reviewer) approves: request-scoped QueryClient pattern correctly implemented, DWD-1 (no useAuth/useContext inside loader) honored, DWD-2 (dehydrate/HydrationBoundary) honored"
+      ],
+      "blocks": ["03"],
+      "estimated_size": "M",
+      "ac_references": [
+        "DESIGN wave-decisions.md DWD-1 (loader auth forwarding)",
+        "DESIGN wave-decisions.md DWD-2 (TanStack Query SSR via dehydrate)",
+        "DESIGN wave-decisions.md DWD-7 (AppShell inner QueryProvider removed in this MR)",
+        "DESIGN application-architecture.md §2 (migration playbook), §4.2 (QueryClient request-scoping)",
+        "ADR-029 §2 (active_scope propagation contract — Option D)",
+        "ADR-031 §7 (auth path — Bearer forwarding, inherited)",
+        "DISTILL wave-decisions.md DI-3 (Carpaccio slicing — Slice 2 / MR-1)"
+      ]
+    },
+    {
+      "id": "03",
+      "title": "Phase 03 — Slice 3 / MR-2: reversibility + chat-bearing clientLoader-only opt-out",
+      "polecat_command": "/nw-deliver",
+      "scope": "Two related changes in one atomic MR. (a) Revert the Slice-2 migrated route back to library-mode by removing its `loader` export — keeping the route module file as a pure component. The component file must be byte-identical to its pre-Slice-2 state (the only diff across migrate+revert is the `loader` export added then removed). The route reverts to library-mode behavior: the SSR response is an HTML shell with no pre-rendered loader data; the route fetches its data client-side after hydration. (b) Migrate one chat-bearing route family (e.g., the `/chat/:channelId` route under `<AppShell>`) into framework mode by exporting a `clientLoader` only — NO server `loader`. The ADR-015 `/api/channels/:id/presentation-state` nginx rule remains byte-unchanged. After this phase, the suite has live evidence of both reversibility (forward + reverse) and the DWD-3 clientLoader-only opt-out.",
+      "scenarios_to_unskip": [
+        "docs/feature/frontend-coexistence/distill/route-reverts-to-library-mode-when-loader-removed.feature :: The reverted route's response is a library-mode shell with no pre-rendered loader data",
+        "docs/feature/frontend-coexistence/distill/route-reverts-to-library-mode-when-loader-removed.feature :: The reverted route's HTML body does NOT contain the dehydratedState payload",
+        "docs/feature/frontend-coexistence/distill/route-reverts-to-library-mode-when-loader-removed.feature :: The route COMPONENT file is byte-unchanged across migrate-then-revert",
+        "docs/feature/frontend-coexistence/distill/route-reverts-to-library-mode-when-loader-removed.feature :: The forward (Slice-2) and reverse (MR-2) diffs are mirror images",
+        "docs/feature/frontend-coexistence/distill/chat-route-bypasses-ssr-via-clientloader.feature :: A route module whose component tree imports `ChatView` does NOT export a server `loader`",
+        "docs/feature/frontend-coexistence/distill/chat-route-bypasses-ssr-via-clientloader.feature :: A chat-bearing route's SSR response is an HTML shell — no clientLoader output server-side",
+        "docs/feature/frontend-coexistence/distill/chat-route-bypasses-ssr-via-clientloader.feature :: `/api/channels/:id/presentation-state` reaches `agent` directly per ADR-015 (preserved unchanged)",
+        "docs/feature/frontend-coexistence/distill/chat-route-bypasses-ssr-via-clientloader.feature :: No `loader` export in `frontend/app/routes/*.tsx` fetches `/api/channels/.../presentation-state` directly"
+      ],
+      "scenarios_deferred_within_phase": [
+        "docs/feature/frontend-coexistence/distill/chat-route-bypasses-ssr-via-clientloader.feature :: Optional ESLint rule `no-loader-with-chat-import` flags violations (skip unless DELIVER opts to ship the rule)"
+      ],
+      "files_changed_estimate": "frontend/app/routes/<reverted-route>.tsx (remove loader export, ~30L removed), frontend/app/routes/chat.<channelId>.tsx (new or moved from existing ChatView component path, ~30-50L), MR-2 records PRE_SLICE_2_REF, POST_SLICE_2_REF, and POST_MR_2_REF as git refs for the reversibility assertions (commit message or `roadmap-execution-notes.md` artifact under deliver/). Total ~60-100 LoC.",
+      "exit_criteria": [
+        "All Phase 03 `scenarios_to_unskip` (8 scenarios) are GREEN against the local compose stack",
+        "PRE_SLICE_2_REF, POST_SLICE_2_REF, POST_MR_2_REF env vars are documented in `tests/acceptance/frontend-coexistence/README.md` with their values pinned at the merge of MR-2 (so future runs of the reversibility tests are reproducible)",
+        "Browser smoke test: opening `/chat/<channelId>` produces a chat surface that streams SSE from agent (manual verification — the ADR-015 path)",
+        "Browser smoke test: opening the reverted Slice-2 route produces the same UX as it did pre-Slice-2 (no SSR'd pre-paint, client-side fetch after hydration)",
+        "Reviewer (nw-software-crafter-reviewer) approves: DWD-3 (no server loader on chat-bearing route module), ADR-015 (nginx rule byte-unchanged), reversibility symmetry holds"
+      ],
+      "blocks": [],
+      "estimated_size": "M",
+      "ac_references": [
+        "ADR-034 §Reversibility",
+        "ADR-015 (presentation-state nginx rule — byte-unchanged)",
+        "DESIGN wave-decisions.md DWD-3 (chat opt-out via clientLoader-only)",
+        "DESIGN application-architecture.md §7 (chat/SSE pattern), §9.2 (per-route reverse)",
+        "ADR-031 §7 (auth path inheritance — informs the no-direct-presentation-state-loader scenario)",
+        "DISTILL wave-decisions.md DI-3 (Carpaccio slicing — Slice 3 / MR-2)"
+      ]
+    },
+    {
+      "id": "04",
+      "title": "Phase 04 — Slice 4 / MR-3: operational readiness (Praxis review §5 additions)",
+      "polecat_command": "/nw-deliver",
+      "scope": "Three operational-readiness invariants validated end-to-end. (a) Loader timeout handling: configure `web-ssr`'s fetch defaults (Hono fetch options or RRv7 handler `getLoadContext` wrapping) so loaders that wait on a slow upstream surface a 500/504 within ≤ 5 seconds wall-clock. Provide a slow-upstream induction mechanism (either an auth-proxy `SLOW_MODE` env toggle or a compose-level `tc qdisc netem delay` shim) so the acceptance test can flip the precondition deterministically. (b) Horizontal scale: bring the compose stack up with `--scale web-ssr=2`; assert two sequential requests to the same (route, bearer) produce byte-equivalent HTML; assert distinct bearers do not leak across instances. (c) Auth-proxy fan-out bound: measure the pre-MR-0 baseline auth-proxy QPS under a representative request mix; replay against a 50% framework-mode migration profile; assert the post-migration QPS is ≤ 110% of the baseline. Record the baseline under `docs/feature/frontend-coexistence/deliver/baseline-metrics.md`.",
+      "scenarios_to_unskip": [
+        "docs/feature/frontend-coexistence/distill/loader-fails-fast-when-auth-proxy-slow.feature :: A loader-backed route responds with 5xx within 5 seconds when auth-proxy is slow",
+        "docs/feature/frontend-coexistence/distill/loader-fails-fast-when-auth-proxy-slow.feature :: The timeout-derived error response is rendered through the route's ErrorBoundary, not a stack trace",
+        "docs/feature/frontend-coexistence/distill/ssr-instances-produce-identical-html.feature :: Two sequential requests to the same (route, bearer) produce byte-equivalent HTML under --scale web-ssr=2",
+        "docs/feature/frontend-coexistence/distill/ssr-instances-produce-identical-html.feature :: Distinct bearers' SSR responses do not contaminate each other across instances",
+        "docs/feature/frontend-coexistence/distill/loader-fanout-to-auth-proxy-stays-bounded.feature :: A 50% framework-mode migration profile keeps auth-proxy QPS within 10% of the pre-MR-0 baseline",
+        "docs/feature/frontend-coexistence/distill/loader-fanout-to-auth-proxy-stays-bounded.feature :: The pre-MR-0 baseline auth-proxy QPS is recorded under deliver/baseline-metrics.md"
+      ],
+      "files_changed_estimate": "frontend/ssr.ts (loader-timeout configuration on the createRequestHandler getLoadContext or via a Hono middleware that wraps fetch with AbortController, ~20L), auth-proxy/index.ts or compose-level shim (slow-upstream induction, ~30L; the env-toggle approach is cleaner — auth-proxy checks `process.env.SLOW_MODE_DELAY_MS` and `setTimeout`s before responding), docker-compose.yml (no change, but the test harness uses `--scale web-ssr=2`), tests/acceptance/frontend-coexistence/conftest.py (add `requires_web_ssr_scale_2` fixture that brings the stack up with `--scale web-ssr=2` and tears it down at session end, ~40L), docs/feature/frontend-coexistence/deliver/baseline-metrics.md (new — recorded auth-proxy QPS baseline + measurement methodology, ~50L). Total ~120-180 LoC.",
+      "exit_criteria": [
+        "All Phase 04 `scenarios_to_unskip` (6 scenarios) are GREEN against the local compose stack",
+        "`docs/feature/frontend-coexistence/deliver/baseline-metrics.md` exists and records: (a) the pre-MR-0 auth-proxy baseline QPS measurement with a unit (e.g., `42 QPS over 60s`), (b) the measurement methodology (which routes were hit, what workload generator, total request count, time window), (c) the post-50%-migration measurement and the calculated delta vs baseline, (d) a clear PASS/FAIL line stating the delta is within the 10% ceiling",
+        "Slow-upstream induction is documented in `tests/acceptance/frontend-coexistence/README.md` (how to enable it locally)",
+        "Browser smoke test: under `--scale web-ssr=2`, opening the migrated route works (no visible quirks)",
+        "Reviewer (nw-software-crafter-reviewer + nw-platform-architect-reviewer) approves: bounded-timeout pattern is correctly implemented (no leaked AbortControllers, no orphaned promises), horizontal-scale property is preserved (request-scoped state confirmed)"
+      ],
+      "blocks": [],
+      "estimated_size": "M",
+      "ac_references": [
+        "Praxis review (review-by-system-designer.md) §5 — loader timeout, horizontal scale, fan-out bound",
+        "Praxis review §3 F-2 — auth-proxy fan-out under migration profile (MEDIUM, encoded here)",
+        "Praxis review §3 F-3 — horizontal scaling pattern explicit (LOW, resolved inline in application-architecture.md §6.4; encoded here as a runtime check)",
+        "Praxis review §3 F-4 — RAM baseline (LOW, validated by DELIVER measurement; informs the baseline-metrics.md artifact)",
+        "DESIGN application-architecture.md §6.4 (horizontal-scale property explicit)",
+        "DISTILL wave-decisions.md DI-3 (Carpaccio slicing — Slice 4 / MR-3), DI-5 (Praxis additions encoded as Slice-4 scenarios)"
+      ]
+    }
+  ],
+  "notes_for_deliver": [
+    "Iron Rule: never modify a failing test to make it pass. After 3 failed attempts on a step, revert and escalate via clear failure output. See CLAUDE.md `tdd` skill mandate.",
+    "Outside-In TDD: write/update the acceptance test (un-skip + run RED) first; drive a unit test from the smallest failing step; make it green with minimum code; refactor per RPP L1–L6.",
+    "Trunk-based: every MR lands via `gt mq submit --branch <feature-branch>` from the rig workspace `/home/node/gt/dashboard_chat`. The refinery's `--auto` gate runs `./tools/test/test.sh --auto`. DO NOT use `gh pr create`.",
+    "Each phase's `scenarios_to_unskip` lists the scenario titles verbatim as they appear in the .feature file. DELIVER removes the `pytest.mark.skip(...)` from the corresponding test functions in `tests/acceptance/frontend-coexistence/test_*.py` before running the suite.",
+    "The acceptance suite is invoked via `cd tests/acceptance/frontend-coexistence && uv run --no-project pytest`. The `--auto` gate's fall-through (`--backend`) does NOT run this suite; the agent or human runs it locally before submitting.",
+    "When a phase reveals an upstream gap (a binding decision from DESIGN that doesn't fit the implementation reality, or a missing dependency the design didn't anticipate), append a finding to `docs/feature/frontend-coexistence/deliver/upstream-issues.md` and surface it in the MR description. DO NOT silently modify DESIGN artifacts."
+  ]
+}
