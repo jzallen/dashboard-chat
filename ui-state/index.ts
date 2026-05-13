@@ -30,7 +30,7 @@ import {
 import {
   createProjectActor,
   resolveInitialScopeActor,
-} from "./lib/machines/project-and-chat-session-management.ts";
+} from "./lib/machines/project-context.ts";
 
 const PORT = parseInt(process.env.PORT ?? "8788", 10);
 const REDIS_URL = process.env.REDIS_URL;
@@ -83,7 +83,7 @@ const orchestrator = new FlowOrchestrator({
       DEFAULT_PRINCIPAL_HEADERS,
     ),
   },
-  projectFlowMachineDeps: {
+  projectContextMachineDeps: {
     resolveInitialScope: resolveInitialScopeActor(
       BACKEND_URL,
       DEFAULT_PRINCIPAL_HEADERS,
@@ -95,6 +95,12 @@ const orchestrator = new FlowOrchestrator({
       forceCreateProjectFailureFlag,
     ),
   },
+  // Session-chat (DWD-13 §2B) — MR-1.5 stub has no live invokes; the deps
+  // interface is intentionally empty until MR-2 adds loadSessionList /
+  // resumeSession / createSessionEagerly / switchDatasetContext. Presence
+  // of this object (vs `undefined`) is the orchestrator's signal to fire
+  // the `project_ready` broadcast hook on project-context `project_selected`.
+  sessionChatMachineDeps: {},
   createOrgFn: createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
   reissueOrgJwtFn: reissueOrgJwtFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
 });

@@ -1,8 +1,13 @@
-// ProjectAndChatSessionMachine — XState v5 statechart for J-002.
+// ProjectContextMachine — XState v5 statechart for J-002's project-context half.
 //
-// Per `docs/feature/project-and-chat-session-management/design/application-architecture.md` §2
-// the J-002 machine ultimately carries 12 narrative states + `error_recoverable` +
-// `freeze`. Sub-step 01-01 (substrate + walking skeleton) lands the MR-1 surface:
+// Per `docs/feature/project-and-chat-session-management/design/application-architecture.md`
+// §2A (post-DWD-13 SRP amendment) this machine owns "Which project am I in?" —
+// initial scope resolution, project creation, mid-flow project switching (MR-4),
+// cross-tenant terminal failure, and the deep-link entry path. It owns the
+// `org_id` + `project_id` halves of `active_scope`.
+//
+// MR-1 surface (lifted verbatim from the pre-split file at `cd4103e`, types
+// renamed to drop the J002/ProjectFlow prefixes per DWD-13):
 //
 //   resolving_initial_scope (initial) ─┬─→ project_selected
 //                                       ├─→ no_projects_empty_state
@@ -15,20 +20,18 @@
 //   scope_mismatch_terminal            ─→ resolving_initial_scope (back_to_projects_clicked)
 //   error_recoverable                  ─→ creating_project        (retry_clicked; preserves pending_project_name)
 //
-// Later MRs extend with `loading_session_list`, `session_list_visible`, `resuming_session`,
-// `session_active_no_messages`, `session_active`, `switching_dataset_context`,
-// `switching_project`, and the cross-machine `freeze` side-state (MR-6).
+// MR-4 will add `switching_project`; MR-6 will add `freeze` + top-level FREEZE handler.
 //
-// ADR-028 §"No machine imports another machine" is honored: this file does NOT
-// import from `login-and-org-setup.ts`. Cross-machine entry happens via the
-// orchestrator broadcasting `j001_ready` after J-001's `priorState` watcher
-// observes a transition into `ready`.
+// ADR-028:46-48 invariant: this file does NOT import from `session-chat.ts` or
+// `login-and-org-setup.ts`. The orchestrator mediates all cross-machine entry
+// (`j001_ready` from login → project-context; `project_ready` from project-context
+// → session-chat).
 
 import { assign, fromPromise, setup } from "xstate";
 
 import type { ActiveScope, ResourceType } from "../active-scope.ts";
 
-export type ProjectFlowState =
+export type ProjectContextState =
   | "resolving_initial_scope"
   | "no_projects_empty_state"
   | "creating_project"
@@ -41,23 +44,12 @@ export interface ProjectSummary {
   name: string;
 }
 
-export interface SessionSummary {
-  id: string;
-  title: string | null;
-  last_active_at: string;
-  active_dataset_id: string | null;
-}
-
-export type ProjectFlowCauseTag =
+export type ProjectContextCauseTag =
   | "no_projects"
   | "transient"
   | "project_not_found"
   | "cross_tenant"
   | "access_revoked"
-  | "dataset_not_found"
-  | "dataset_access_denied"
-  | "session_not_found"
-  | "list_sessions_degraded"
   | "replay_abandoned";
 
 export interface ProjectValidationError {
@@ -65,14 +57,7 @@ export interface ProjectValidationError {
   message: string;
 }
 
-export interface TranscriptMessage {
-  id: string;
-  role: "user" | "assistant" | "tool";
-  content: string;
-  ts: string;
-}
-
-export interface ProjectFlowMachineContext {
+export interface ProjectContextMachineContext {
   correlation_id: string;
   principal_id: string;
 
@@ -83,28 +68,19 @@ export interface ProjectFlowMachineContext {
   // Authoritative project context — populated on project_selected entry:
   project: { id: string | null; name: string | null };
 
-  // Session-list scaffolding — populated by later MRs (kept here so the
-  // projection shape stays stable across MRs and avoids migration churn).
-  session_list: SessionSummary[];
-  session_list_next_cursor: string | null;
-  most_recent_session_per_project: Record<string, string>;
-
-  // Active session + transcript — populated by MR-2+:
-  session_id: string | null;
-  transcript: TranscriptMessage[];
-
-  // Active resource (dataset) — populated by MR-5:
-  resource: { type: ResourceType | null; id: string | null };
-
-  // Intent payloads — populated on deep-link / switching events:
+  // Deep-link intent payloads — populated on open_deep_link; cleared on settle.
+  // Per DESIGN §3.4: project-context CARRIES intent_session_id /
+  // intent_resource_id / intent_resource_type TRANSIENTLY between open_deep_link
+  // and project_selected, where the orchestrator forwards them to session-chat
+  // via the `project_ready` payload.
   intent_project_id: string | null;
   intent_session_id: string | null;
   intent_resource_id: string | null;
   intent_resource_type: ResourceType | null;
 
   // Cross-state plumbing:
-  underlying_cause_tag: ProjectFlowCauseTag | null;
-  last_live_state: ProjectFlowState | null;
+  underlying_cause_tag: ProjectContextCauseTag | null;
+  last_live_state: ProjectContextState | null;
   retries: number;
   /** Composer text preserved across creating_project ↔ error_recoverable. */
   pending_project_name: string;
@@ -117,6 +93,9 @@ export interface ProjectFlowMachineContext {
   scope_reconciled_count: number;
   stale_intents_dropped_count: number;
 
+  // Per OQ-J002-5: per-project last_active_at map captured by resolveInitialScope.
+  most_recent_session_per_project: Record<string, string>;
+
   // Last-used resolution degraded set (OQ-J002-5). Populated on
   // resolving_initial_scope's onDone when one or more `list_sessions` calls
   // 5xx-failed. The orchestrator reads this on settle to emit a
@@ -124,7 +103,7 @@ export interface ProjectFlowMachineContext {
   last_used_degraded_project_ids: string[];
 }
 
-export type ProjectFlowEvent =
+export type ProjectContextEvent =
   | { type: "j001_ready"; org_id: string; user_first_name: string }
   | { type: "create_project_clicked" }
   | { type: "create_project_submitted"; org_name: string }
@@ -170,7 +149,7 @@ export type CreateProjectActor = ReturnType<
   typeof fromPromise<ProjectSummary, CreateProjectInput>
 >;
 
-export interface ProjectFlowMachineDeps {
+export interface ProjectContextMachineDeps {
   resolveInitialScope: ResolveInitialScopeActor;
   createProject: CreateProjectActor;
 }
@@ -192,11 +171,11 @@ export function validateProjectName(
   return null;
 }
 
-export function createProjectAndChatSessionMachine(deps: ProjectFlowMachineDeps) {
+export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
   return setup({
     types: {
-      context: {} as ProjectFlowMachineContext,
-      events: {} as ProjectFlowEvent,
+      context: {} as ProjectContextMachineContext,
+      events: {} as ProjectContextEvent,
       input: {} as {
         correlation_id: string;
         principal_id: string;
@@ -235,7 +214,7 @@ export function createProjectAndChatSessionMachine(deps: ProjectFlowMachineDeps)
       }),
     },
   }).createMachine({
-    id: "project-and-chat-session-management",
+    id: "project-context",
     initial: "resolving_initial_scope",
     // Root-level open_deep_link handler — available from ANY state. Per
     // app-arch §2.3 / DWD-9: a cold deep-link can arrive while the machine
@@ -264,12 +243,6 @@ export function createProjectAndChatSessionMachine(deps: ProjectFlowMachineDeps)
       org_id: input.org_id ?? "",
       user_first_name: input.user_first_name ?? null,
       project: { id: null, name: null },
-      session_list: [],
-      session_list_next_cursor: null,
-      most_recent_session_per_project: {},
-      session_id: null,
-      transcript: [],
-      resource: { type: null, id: null },
       intent_project_id: input.intent_project_id ?? null,
       intent_session_id: null,
       intent_resource_id: null,
@@ -281,6 +254,7 @@ export function createProjectAndChatSessionMachine(deps: ProjectFlowMachineDeps)
       project_validation_error: null,
       scope_reconciled_count: 0,
       stale_intents_dropped_count: 0,
+      most_recent_session_per_project: {},
       last_used_degraded_project_ids: [],
     }),
     states: {
@@ -409,7 +383,10 @@ export function createProjectAndChatSessionMachine(deps: ProjectFlowMachineDeps)
       project_selected: {
         // Terminal-for-MR-1 (future MRs add transitions to switching_project,
         // session_active, etc.). The walking-skeleton's "project chip rendered"
-        // assertion reads context.project on entry.
+        // assertion reads context.project on entry. Per DESIGN §3.2.B the
+        // orchestrator's priorState watcher observes entry to this state and
+        // broadcasts `project_ready` to session-chat (idempotent on same
+        // project_id; invalidates session_id+resource_* on different project_id).
       },
       scope_mismatch_terminal: {
         on: {

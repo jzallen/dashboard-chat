@@ -1,6 +1,7 @@
-// Unit tests for the ProjectAndChatSessionManagement (J-002) XState machine.
+// Unit tests for the ProjectContext (J-002 project half) XState machine.
 //
-// Behavior budget for sub-step 01-01 (substrate + walking skeleton):
+// Behaviors covered (post-DWD-13 SRP split — lifted from
+// `project-and-chat-session-management.test.ts` MR-1 budget):
 //   B1 — resolveInitialScope → no_projects_empty_state when backend returns empty.
 //   B2 — resolveInitialScope → project_selected when backend returns ≥1 project.
 //   B3 — creating_project → project_selected on success.
@@ -9,7 +10,7 @@
 //   B5 — empty project name (whitespace-only) keeps machine in
 //         no_projects_empty_state with inline validation error.
 //
-// Sub-step 01-03 (US-204 cold deep-link + scope_mismatch_terminal):
+// US-204 deep-link behaviors (sub-step 01-03):
 //   B6 — resolveInitialScope with intent_project_id + {cross_tenant: true}
 //         → scope_mismatch_terminal with cause "cross_tenant".
 //   B7 — resolveInitialScope with intent_project_id + {project_not_found: true}
@@ -19,7 +20,6 @@
 //   B9 — back_to_projects_clicked from scope_mismatch_terminal clears
 //         context.intent_* (all four) and transitions to resolving_initial_scope.
 //
-// Test count budget: 9 distinct behaviors × 2 = 18 unit tests max.
 // All tests are port-to-port at the machine's driving port (XState actor's
 // public `send` / snapshot surface). No internal-class assertions.
 
@@ -27,12 +27,12 @@ import { describe, expect, it } from "vitest";
 import { createActor, fromPromise } from "xstate";
 
 import {
-  createProjectAndChatSessionMachine,
+  createProjectContextMachine,
   type CreateProjectActor,
   type ProjectSummary,
   type ResolveInitialScopeActor,
   type ResolveInitialScopeOutput,
-} from "./project-and-chat-session-management.ts";
+} from "./project-context.ts";
 
 const MAYA_INPUT = {
   correlation_id: "R-7a4f-901c",
@@ -82,9 +82,9 @@ async function waitFor(
   });
 }
 
-describe("ProjectAndChatSessionMachine (J-002) — substrate behaviors", () => {
+describe("ProjectContextMachine — substrate behaviors", () => {
   it("settles in no_projects_empty_state when resolveInitialScope returns empty", async () => {
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ no_projects: true }),
       createProject: createProjectOk({ id: "p-1", name: "ignored" }),
     });
@@ -104,7 +104,7 @@ describe("ProjectAndChatSessionMachine (J-002) — substrate behaviors", () => {
 
   it("settles in project_selected when resolveInitialScope returns a project", async () => {
     const project: ProjectSummary = { id: "proj-q4", name: "Q4 Analytics" };
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ project }),
       createProject: createProjectOk({ id: "ignored", name: "ignored" }),
     });
@@ -123,7 +123,7 @@ describe("ProjectAndChatSessionMachine (J-002) — substrate behaviors", () => {
 
   it("transitions creating_project → project_selected on successful create", async () => {
     const created: ProjectSummary = { id: "proj-new", name: "Q4 Analytics" };
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ no_projects: true }),
       createProject: createProjectOk(created),
     });
@@ -146,7 +146,7 @@ describe("ProjectAndChatSessionMachine (J-002) — substrate behaviors", () => {
   });
 
   it("transient create-project failure transitions to error_recoverable; composer text preserved", async () => {
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ no_projects: true }),
       createProject: createProjectFails("transient backend 500"),
     });
@@ -170,7 +170,7 @@ describe("ProjectAndChatSessionMachine (J-002) — substrate behaviors", () => {
   });
 
   it("empty project name keeps machine in no_projects_empty_state with validation error", async () => {
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ no_projects: true }),
       createProject: createProjectOk({ id: "ignored", name: "ignored" }),
     });
@@ -196,9 +196,9 @@ describe("ProjectAndChatSessionMachine (J-002) — substrate behaviors", () => {
 
 // ─────────────────── Sub-step 01-03: US-204 deep-link behaviors ──────────────
 
-describe("ProjectAndChatSessionMachine (J-002) — US-204 deep-link behaviors", () => {
+describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
   it("B6: cross-tenant resolveInitialScope output lands in scope_mismatch_terminal with cause cross_tenant", async () => {
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ cross_tenant: true }),
       createProject: createProjectOk({ id: "ignored", name: "ignored" }),
     });
@@ -217,7 +217,7 @@ describe("ProjectAndChatSessionMachine (J-002) — US-204 deep-link behaviors", 
   });
 
   it("B7: project_not_found resolveInitialScope output lands in scope_mismatch_terminal with cause project_not_found", async () => {
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ project_not_found: true }),
       createProject: createProjectOk({ id: "ignored", name: "ignored" }),
     });
@@ -253,7 +253,7 @@ describe("ProjectAndChatSessionMachine (J-002) — US-204 deep-link behaviors", 
       }
       return { project };
     });
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveActor,
       createProject: createProjectOk({ id: "ignored", name: "ignored" }),
     });
@@ -297,7 +297,7 @@ describe("ProjectAndChatSessionMachine (J-002) — US-204 deep-link behaviors", 
       }
       return { no_projects: true };
     });
-    const machine = createProjectAndChatSessionMachine({
+    const machine = createProjectContextMachine({
       resolveInitialScope: resolveActor,
       createProject: createProjectOk({ id: "ignored", name: "ignored" }),
     });

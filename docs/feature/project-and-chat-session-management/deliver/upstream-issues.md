@@ -114,3 +114,66 @@ O7 (Phase 04 auth-proxy capacity coordination) is RESOLVED — the user instruct
 - DESIGN wave-decisions: `docs/feature/project-and-chat-session-management/design/wave-decisions.md` (DWD-1..DWD-12)
 - DELIVER roadmap: `docs/feature/project-and-chat-session-management/deliver/roadmap.json`
 - 01-01 commit: `d773fcf` — feat(ui-state): land J-002 substrate + walking-skeleton
+
+---
+
+## MR-1.5 (machine-split refactor) — 2026-05-13
+
+### REC-2: wire-protocol back-compat preserved through MR-1.5 (DESIGN §1 deviation)
+
+**Status**: DECIDED — documented in `review-by-software-crafter-mr1-5.md` §REC-2
+
+**The conflict**:
+- DESIGN §1 + §3.1 aspirationally mandate TWO new HTTP URL families on the wire: `/ui-state/flow/project-context/{begin,event,projection,open-deep-link}` and `/ui-state/flow/session-chat/{...}`.
+- DWD-13 §"MR-to-machine implementation guidance" + RD13-4 also says "**all MR-1 acceptance tests pass against the post-split code with zero modification**" and the harness gains a `harness.j002.assert_state_in(machine, state)` API while legacy assertions continue to work.
+- The MR-1 acceptance test bodies (`tests/acceptance/project-and-chat-session-management/test_*.py`) and the `J002Harness` (`tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts:362`) HARDCODE the URL `/ui-state/flow/project-and-chat-session-management/*` and the flow_id prefix `project-and-chat-session-management:<principal>`.
+- The Iron Rule forbids modifying acceptance tests to make them pass after a refactor.
+
+**The call**: MR-1.5 keeps `project-and-chat-session-management` as the **wire-protocol** machine name (HTTP URL prefix, Redis event-log key prefix, flow_id prefix). The source-tree splits cleanly per DESIGN §2A + §2B into `ui-state/lib/machines/project-context.ts` and `ui-state/lib/machines/session-chat.ts`. The orchestrator's `MACHINE_REGISTRY` aliases the wire name to the new `createProjectContextMachine` factory; `SESSION_CHAT_WIRE_NAME = "session-chat"` is the canonical new machine name (no alias needed — no existing scenario references it). Per-machine projection endpoints under `/ui-state/flow/session-chat/*` are available out of the box via the parameterised `:machine` Hono routes.
+
+**Action**: MR-2's crafter MAY introduce the DESIGN-§1 `/ui-state/flow/project-context/*` URL family alongside the legacy name once new acceptance scenarios require it. Adding a second registry alias is a one-line change. The wire-protocol migration window can be coordinated with the DISTILL revisit MR DWD-13 RD13-4 anticipates.
+
+### Pre-existing US-204 SSR failures NOT introduced by MR-1.5
+
+**Status**: INFRASTRUCTURE — not a MR-1.5 regression; surface to web-ssr / Bazel team
+
+**Observation**: Two MR-1 acceptance scenarios fail identically on `main` (b20bbd2) and the post-split branch:
+- `test_us204_cold_deep_link_resolves_active_scope_before_paint.py::test_cold_deep_link_to_project_resolves_active_scope_before_paint`
+- `test_us204_cold_deep_link_resolves_active_scope_before_paint.py::test_deep_link_with_intent_resource_carries_through_to_session_active`
+
+Both probe `GET /projects/:projectId/datasets/:datasetId` through the reverse-proxy. The SSR'd HTML renders the no-projects welcome panel instead of the project chip with the resolved `project_id`. The page body shows `j002_state: "no_projects_empty_state"` and `org_id: ""` even though a project was just created via the backend.
+
+**Root-cause hypothesis** (NOT verified — out of MR-1.5 scope): the web-ssr's `routes/project-detail.tsx` loader fetches the J-002 projection via `uiStateClient.openProjectDeepLink(principalId, intent)`. The outbound fetch from web-ssr → auth-proxy → ui-state may not be carrying the expected identity headers (X-User-Id / X-Org-Id) so the resolver runs with `org_id = ""` and falls into `no_projects_empty_state`. OR the bundled FE assets served by web-ssr (`assets/AuthProvider-zJgZo7Z5.css`) are stale relative to the loader source.
+
+**Action**: Surface to the platform team. The walking-skeleton dataset-row `dc-wisp-b52` ratified the Bazel-image stack; this may be a stale-build edge case there. MR-1.5 is BEHAVIOR-NEUTRAL — both failures reproduce verbatim against the unchanged main HEAD. Per the brief's exit criteria ("Pre-existing api/agent failures are NOT your problem") MR-1.5 ships unblocked by these two.
+
+**Evidence**: re-run on main:
+```
+$ git stash; docker compose build --quiet ui-state && docker compose up -d ui-state
+$ cd tests/acceptance/project-and-chat-session-management
+$ uv run --no-project pytest -v -m mr_1 -k test_us204
+======== 2 failed, 4 passed, 59 deselected in 1.58s ========
+```
+Re-run on the post-split branch: same 2 failed, 16 passed total.
+
+### Open: per-machine projection URL families not exposed at MR-1.5
+
+**Status**: DEFERRED to MR-2
+
+DESIGN §6.1's new frontend client methods (`getProjectContextProjection`, `getSessionChatProjection`, `getJ002Projection` composer) are NOT added in MR-1.5. The existing `uiStateClient.getProjection(PROJECT_FLOW_MACHINE, flowId)` continues to read the project-context projection via the legacy wire name. MR-2 lands the session-chat-aware composer alongside the first session-chat content (loading_session_list / session_list_visible).
+
+### Open: projection.ts namespacing deferred to MR-2
+
+**Status**: DEFERRED to MR-2
+
+DESIGN §7.3 calls for namespacing the projection `EVENT_HANDLERS` dispatch table per-machine and routing by flow_id prefix. MR-1.5 leaves `projection.ts` byte-unchanged because event-type domains between project-context and session-chat are disjoint by construction (no collision); MR-2 will introduce session-chat event handlers (`session_list_loaded` etc.) and re-architect the dispatch table at that point.
+
+### Open: `test_ic_j002_1_*` greps a now-deleted file path (degenerate pass)
+
+**Status**: NON-BLOCKING — test passes by absence; semantic invariant still holds
+
+`tests/acceptance/project-and-chat-session-management/test_journey_invariants_j002.py:145` invariant IC-J002-1 #3 calls `driver.grep_repo(r"/api/orgs/me", paths=["ui-state/lib/machines/project-and-chat-session-management.ts"])`. The path no longer exists post-split — `grep_repo` returns `[]` because the root doesn't exist (driver.py:218 `if not root.exists(): continue`). The assertion `matches == []` still holds, but for the wrong reason.
+
+The underlying semantic property ("J-002 machine source does not fetch /api/orgs/me") IS preserved: the new `ui-state/lib/machines/project-context.ts` does not fetch that endpoint (lifted verbatim from the pre-split file which also didn't). MR-2's DISTILL revisit (per DWD-13 RD13-4 "DISTILL revisit MR may follow") should update the path to `["ui-state/lib/machines/project-context.ts", "ui-state/lib/machines/session-chat.ts"]` so the test fails LOUDLY if a future regression introduces a /api/orgs/me fetch.
+
+Per the IRON RULE this MR-1.5 refactor leaves the test untouched. Documenting the degenerate pass so MR-2 closes the gap.

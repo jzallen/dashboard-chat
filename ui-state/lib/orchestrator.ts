@@ -26,23 +26,52 @@ import {
   type LoginMachineDeps,
 } from "./machines/login-and-org-setup.ts";
 import {
-  createProjectAndChatSessionMachine,
-  type ProjectFlowMachineDeps,
-} from "./machines/project-and-chat-session-management.ts";
+  createProjectContextMachine,
+  type ProjectContextMachineDeps,
+} from "./machines/project-context.ts";
+import {
+  createSessionChatMachine,
+  type SessionChatMachineDeps,
+} from "./machines/session-chat.ts";
+import type { ResourceType } from "./active-scope.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
+
+/**
+ * Wire-protocol machine name preserved through MR-1.5 per the SRP amendment's
+ * "all MR-1 acceptance tests pass with zero modification" gate (DWD-13 + the
+ * MR-1.5 REC-2 decision). The source-tree splits to `project-context.ts` +
+ * `session-chat.ts` (DESIGN §2A/§2B), but the HTTP URL path and Redis
+ * event-log key prefix remain `project-and-chat-session-management` so the
+ * existing acceptance harness (`tests/acceptance/.../driver.py` +
+ * `J002Harness` at `tests/acceptance/user-flow-state-machines/harness/`)
+ * continues to drive the project-context half without modification. MR-2's
+ * crafter may opt to introduce the DESIGN-§1 `/ui-state/flow/project-context/*`
+ * URL family alongside this name once new acceptance scenarios require it.
+ */
+const PROJECT_CONTEXT_WIRE_NAME = "project-and-chat-session-management";
+const SESSION_CHAT_WIRE_NAME = "session-chat";
 
 export interface OrchestratorDeps {
   eventLog: FlowEventLog;
   loginMachineDeps: LoginMachineDeps;
   /**
-   * Deps for the J-002 (project-and-chat-session-management) machine — DWD-6
-   * + DWD-8. Optional so legacy J-001-only deployments can construct the
-   * orchestrator without wiring J-002 (the j001_ready hook becomes a no-op
+   * Deps for the J-002 project-context machine (DWD-13 §2A; previously named
+   * `projectFlowMachineDeps` against the unsplit `project-and-chat-session-management`
+   * machine). Optional so legacy J-001-only deployments can construct the
+   * orchestrator without wiring J-002 (the `j001_ready` hook becomes a no-op
    * when this is absent).
    */
-  projectFlowMachineDeps?: ProjectFlowMachineDeps;
+  projectContextMachineDeps?: ProjectContextMachineDeps;
+  /**
+   * Deps for the J-002 session-chat machine (DWD-13 §2B). Optional and
+   * EMPTY in MR-1.5 — the session-chat stub declares no invoke actors yet
+   * (MR-2 adds `loadSessionList`, `resumeSession`, …). When absent, the
+   * `project_ready` broadcast hook becomes a no-op so MR-1 deployments keep
+   * working untouched.
+   */
+  sessionChatMachineDeps?: SessionChatMachineDeps;
   /**
    * Async function form of the org-create step. Used by the harness-knob
    * wrapper to sequence create + reissue with forced failures injected at
@@ -74,14 +103,25 @@ type MachineFactory = (
 const MACHINE_REGISTRY: Record<string, MachineFactory> = {
   "login-and-org-setup": (deps, _input) =>
     createLoginAndOrgSetupMachine(deps.loginMachineDeps),
-  "project-and-chat-session-management": (deps, _input) => {
-    if (!deps.projectFlowMachineDeps) {
+  // The wire name is preserved (REC-2 / DWD-13 MR-1.5 — see PROJECT_CONTEXT_WIRE_NAME
+  // comment above). The internal factory is the new `createProjectContextMachine`
+  // from `./machines/project-context.ts`.
+  [PROJECT_CONTEXT_WIRE_NAME]: (deps, _input) => {
+    if (!deps.projectContextMachineDeps) {
       throw new Error(
-        "projectFlowMachineDeps required to construct the project-and-chat-session-management machine",
+        "projectContextMachineDeps required to construct the project-context machine",
       );
     }
-    return createProjectAndChatSessionMachine(deps.projectFlowMachineDeps);
+    return createProjectContextMachine(deps.projectContextMachineDeps);
   },
+  // Session-chat (DWD-13 §2B). MR-1.5 stub — `waiting_for_project` initial
+  // state only. Spawned exclusively via the orchestrator's `project_ready`
+  // broadcast hook (project-context → `project_selected` entry); direct
+  // `/begin` HTTP posts route here through `beginIfNotStarted` but the
+  // resulting actor remains in `waiting_for_project` until the orchestrator
+  // forwards a `project_ready` event with the resolved project_id.
+  [SESSION_CHAT_WIRE_NAME]: (deps, _input) =>
+    createSessionChatMachine(deps.sessionChatMachineDeps ?? {}),
 };
 
 export interface BeginFlowInput {
@@ -284,22 +324,38 @@ export class FlowOrchestrator {
   }
 
   /**
-   * Idempotently spawn a flow's actor if not already running. Used by the
-   * j001_ready broadcast hook to auto-spawn J-002 when J-001 reaches `ready`.
+   * Idempotently spawn a flow's actor if not already running.
    *
-   * Per DWD-6: the orchestrator owns cross-machine entry. Sibling machines
-   * never import each other — entry flows through this method called from
-   * the orchestrator's transition watcher.
+   * Per DWD-6 + DWD-13: the orchestrator owns cross-machine entry. Sibling
+   * machines never import each other — entry flows through this method
+   * called from the orchestrator's transition watcher. Two broadcast hooks
+   * call this:
+   *   - `j001_ready` (login → project-context) — passes `org_id` +
+   *     `user_first_name`; this method forwards a `j001_ready` event to the
+   *     spawned actor so the project-context machine's resolveInitialScope
+   *     invoke fires with a populated org_id.
+   *   - `project_ready` (project-context → session-chat) — passes `org_id`
+   *     + `project_id` + `project_name` + intent_* deep-link fields; this
+   *     method forwards a `project_ready` event to the spawned session-chat
+   *     actor so it can transition out of `waiting_for_project` (MR-2+) and
+   *     consume any forwarded deep-link intents per DESIGN §3.4.
    */
   async beginIfNotStarted(input: {
     machine: string;
     principal_id: string;
     correlation_id: string;
+    // `j001_ready` payload (project-context dispatch):
     org_id?: string;
     user_first_name?: string;
+    // `project_ready` payload (session-chat dispatch — DWD-13 §3.2.B):
+    project_id?: string;
+    project_name?: string;
+    intent_session_id?: string | null;
+    intent_resource_id?: string | null;
+    intent_resource_type?: ResourceType | null;
     /** When true, stop+respawn the actor and reset its event log. Used by
-     *  HTTP `/begin` direct posts (the production j001_ready hook leaves
-     *  this false so j001_ready→j002 entry is idempotent). */
+     *  HTTP `/begin` direct posts (broadcast-hook calls leave this false so
+     *  cross-machine entry is idempotent). */
     force_restart?: boolean;
   }): Promise<FlowProjection> {
     const factory = MACHINE_REGISTRY[input.machine];
@@ -307,6 +363,17 @@ export class FlowOrchestrator {
       throw new Error(`Unknown machine: ${input.machine}`);
     }
     const flow_id = `${input.machine}:${input.principal_id}`;
+
+    // Which broadcast hook is this — j001_ready (project-context) or
+    // project_ready (session-chat)? Inspect machine + payload to dispatch
+    // the right event shape on (re-)spawn.
+    const isProjectReadyDispatch =
+      input.machine === SESSION_CHAT_WIRE_NAME &&
+      typeof input.project_id === "string";
+    const isJ001ReadyDispatch =
+      !isProjectReadyDispatch &&
+      typeof input.org_id === "string" &&
+      input.user_first_name !== undefined;
 
     if (input.force_restart) {
       const existing = this.actors.get(flow_id);
@@ -318,21 +385,35 @@ export class FlowOrchestrator {
     }
 
     if (this.actors.has(flow_id)) {
-      // Already spawned. If we have a j001_ready payload AND the existing
-      // actor accepts it, forward (idempotent — the machine ignores the
-      // event when it has already settled past `resolving_initial_scope`).
-      if (input.org_id && input.user_first_name !== undefined) {
-        const actor = this.actors.get(flow_id);
-        try {
-          actor?.send({
-            type: "j001_ready",
-            org_id: input.org_id,
-            user_first_name: input.user_first_name,
+      // Already spawned. Idempotency: re-forward the appropriate event so
+      // the existing actor observes the latest payload (the machine ignores
+      // events it has already absorbed; session-chat re-applies its
+      // `project_ready` guard, project-context's `j001_ready` is a no-op
+      // after the resolveInitialScope invoke has fired).
+      const actor = this.actors.get(flow_id);
+      try {
+        if (isProjectReadyDispatch && actor) {
+          actor.send({
+            type: "project_ready",
+            org_id: input.org_id ?? "",
+            project_id: input.project_id!,
+            project_name: input.project_name ?? "",
+            correlation_id: input.correlation_id,
+            intent_session_id: input.intent_session_id ?? null,
+            intent_resource_id: input.intent_resource_id ?? null,
+            intent_resource_type: input.intent_resource_type ?? null,
           } as never);
-          await waitForSettledState(actor!);
-        } catch {
-          // Defensive — never blow up on a re-emission.
+          await waitForSettledState(actor);
+        } else if (isJ001ReadyDispatch && actor) {
+          actor.send({
+            type: "j001_ready",
+            org_id: input.org_id!,
+            user_first_name: input.user_first_name!,
+          } as never);
+          await waitForSettledState(actor);
         }
+      } catch {
+        // Defensive — never blow up on a re-emission.
       }
       return this.projectionFor(
         flow_id,
@@ -351,31 +432,65 @@ export class FlowOrchestrator {
         principal_id: input.principal_id,
         org_id: input.org_id,
         user_first_name: input.user_first_name,
+        project_id: input.project_id,
+        project_name: input.project_name,
+        intent_session_id: input.intent_session_id,
+        intent_resource_id: input.intent_resource_id,
+        intent_resource_type: input.intent_resource_type,
       } as never,
     });
     this.actors.set(flow_id, actor);
     actor.start();
 
-    // If we have the org_id at spawn time, forward j001_ready so the
-    // machine's resolveInitialScope invoke fires with a populated org_id.
-    if (input.org_id && input.user_first_name !== undefined) {
+    // Forward the appropriate spawn-time event to the machine.
+    if (isProjectReadyDispatch) {
+      try {
+        actor.send({
+          type: "project_ready",
+          org_id: input.org_id ?? "",
+          project_id: input.project_id!,
+          project_name: input.project_name ?? "",
+          correlation_id: input.correlation_id,
+          intent_session_id: input.intent_session_id ?? null,
+          intent_resource_id: input.intent_resource_id ?? null,
+          intent_resource_type: input.intent_resource_type ?? null,
+        } as never);
+      } catch {
+        // Defensive.
+      }
+    } else if (isJ001ReadyDispatch) {
       try {
         actor.send({
           type: "j001_ready",
-          org_id: input.org_id,
-          user_first_name: input.user_first_name,
+          org_id: input.org_id!,
+          user_first_name: input.user_first_name!,
         } as never);
       } catch {
         // Defensive.
       }
     }
 
-    // Wait for the resolveInitialScope invoke to settle.
+    // Wait for any invoke-driven transient state to settle (e.g.,
+    // resolveInitialScope on project-context). session-chat's MR-1.5 stub
+    // has no transient state, so this returns immediately.
     try {
       await waitForSettledState(actor);
     } catch {
       // Defensive — the projection-builder will reflect whatever state
       // the actor is in even if the wait timed out.
+    }
+
+    // The terminal-event-emission below shapes the project-context flow
+    // event log (the wire-protocol J-002 projection). session-chat's flow
+    // event log has no MR-1.5 terminal events (its `waiting_for_project`
+    // state is a low-importance observability marker per DESIGN §2.3.B); MR-2
+    // adds the session-list/resume events that populate this log.
+    if (input.machine !== PROJECT_CONTEXT_WIRE_NAME) {
+      return this.projectionFor(
+        flow_id,
+        input.principal_id,
+        input.correlation_id,
+      );
     }
 
     // Persist a j002_resolution_started + terminal-for-now event so the
@@ -445,6 +560,20 @@ export class FlowOrchestrator {
         },
         correlation_id: input.correlation_id,
       });
+
+      // ---- project_ready broadcast hook (DWD-13 §3.2.B; NEW per MR-1.5) ----
+      // When project-context settles in `project_selected` on initial spawn,
+      // broadcast `project_ready` to session-chat (idempotent spawn). The
+      // hook mirrors the existing j001_ready pattern below in `send()` —
+      // see also the `send()`-side branch for the project-switch re-entry
+      // path (MR-4 lifts `switching_project → project_selected`, which also
+      // needs to re-broadcast).
+      await this.maybeFireProjectReady(
+        flow_id,
+        input.principal_id,
+        input.correlation_id,
+        ctx,
+      );
     } else if (stateValue === "scope_mismatch_terminal") {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
@@ -462,6 +591,60 @@ export class FlowOrchestrator {
       input.principal_id,
       input.correlation_id,
     );
+  }
+
+  /**
+   * Broadcast `project_ready` to session-chat when project-context enters
+   * `project_selected` — DWD-13 §3.2.B. Idempotent on the SAME project_id
+   * (session-chat ignores re-emission); a DIFFERENT project_id triggers
+   * session-chat's invalidation handler (MR-4 lifts the re-broadcast on
+   * `switching_project → project_selected`).
+   *
+   * The hook is a no-op when:
+   *   - `sessionChatMachineDeps` is absent (legacy J-001-only deployment).
+   *   - project-context's resolved context lacks an `org_id` or a
+   *     `project.id` (defensive — should be impossible in `project_selected`,
+   *     but spawning session-chat with NULL project_id is wrong).
+   *
+   * Failures here NEVER propagate — project-context's `project_selected`
+   * transition succeeds regardless. Matches the j001_ready hook's resilience
+   * stance (orchestrator.ts:611-618 pre-split lineage).
+   */
+  private async maybeFireProjectReady(
+    originFlowId: string,
+    principal_id: string,
+    correlation_id: string,
+    ctx: {
+      org_id?: string;
+      project?: { id: string | null; name: string | null };
+      intent_session_id?: string | null;
+      intent_resource_id?: string | null;
+      intent_resource_type?: ResourceType | null;
+    },
+  ): Promise<void> {
+    if (!this.deps.sessionChatMachineDeps) return;
+    const orgId = ctx.org_id ?? "";
+    const projectId = ctx.project?.id ?? null;
+    if (!orgId || !projectId) return;
+    try {
+      await this.beginIfNotStarted({
+        machine: SESSION_CHAT_WIRE_NAME,
+        principal_id,
+        correlation_id,
+        org_id: orgId,
+        project_id: projectId,
+        project_name: ctx.project?.name ?? "",
+        intent_session_id: ctx.intent_session_id ?? null,
+        intent_resource_id: ctx.intent_resource_id ?? null,
+        intent_resource_type: ctx.intent_resource_type ?? null,
+      });
+    } catch (err) {
+      this.logTransition({
+        event_kind: "project_ready_hook.failed",
+        error: (err as Error).message,
+        origin_flow_id: originFlowId,
+      });
+    }
   }
 
   async send(input: SendEventInput): Promise<FlowProjection> {
@@ -590,26 +773,28 @@ export class FlowOrchestrator {
         correlation_id: input.correlation_id,
       });
 
-      // ---- j001_ready broadcast hook (DWD-6 + RD1) ----------------------
+      // ---- j001_ready broadcast hook (DWD-6 + DWD-13 RD1) ----------------
       // When J-001 transitions creating_org → ready (NOT the
-      // expired_token → ready recovery path), broadcast to J-002 so it
-      // spawns + receives the inherited org_id + user_first_name. This
+      // expired_token → ready recovery path), broadcast to project-context
+      // so it spawns + receives the inherited org_id + user_first_name. This
       // mechanically retires the "second source of truth" risk Praxis F-5
-      // named (the org_id flows J-001 → orchestrator → J-002 directly,
-      // never via a separate fetch).
+      // named (the org_id flows J-001 → orchestrator → project-context
+      // directly, never via a separate fetch). The project-context spawn's
+      // post-settle `project_selected` branch fires the NEW `project_ready`
+      // hook (DWD-13 §3.2.B) that spawns session-chat in turn.
       const isFirstReady = prior === "creating_org" || prior === "anonymous" || !prior;
-      if (isFirstReady && this.deps.projectFlowMachineDeps && orgCtx.id) {
+      if (isFirstReady && this.deps.projectContextMachineDeps && orgCtx.id) {
         const firstName = (userCtx.display_name ?? "").split(/\s+/)[0] || null;
         try {
           await this.beginIfNotStarted({
-            machine: "project-and-chat-session-management",
+            machine: PROJECT_CONTEXT_WIRE_NAME,
             principal_id: parsePrincipal(input.flow_id),
             correlation_id: input.correlation_id,
             org_id: orgCtx.id,
             user_first_name: firstName ?? "",
           });
         } catch (err) {
-          // Defensive — J-002 spawn failure must NOT break J-001's ready transition.
+          // Defensive — project-context spawn failure must NOT break J-001's ready transition.
           this.logTransition({
             event_kind: "j001_ready_hook.failed",
             error: (err as Error).message,
@@ -657,11 +842,13 @@ export class FlowOrchestrator {
       }
     }
 
-    // ---- J-002 terminal-for-now event appending --------------------------
-    // The J-002 machine's events do not share J-001's state names, so the
-    // existing branches above don't fire for it. Project a state-specific
+    // ---- project-context terminal-for-now event appending ----------------
+    // The project-context machine's events do not share J-001's state names, so
+    // the existing branches above don't fire for it. Project a state-specific
     // event into the log so subsequent projection reads can reconstruct.
-    if (input.machine === "project-and-chat-session-management") {
+    // Per DWD-13 the wire name is still `project-and-chat-session-management`;
+    // the source-tree splits but the wire-protocol log key + URL prefix stays.
+    if (input.machine === PROJECT_CONTEXT_WIRE_NAME) {
       const projectContext = snapshot.context as {
         org_id?: string;
         user_first_name?: string | null;
@@ -672,7 +859,7 @@ export class FlowOrchestrator {
         intent_project_id?: string | null;
         intent_session_id?: string | null;
         intent_resource_id?: string | null;
-        intent_resource_type?: "dataset" | "view" | "report" | null;
+        intent_resource_type?: ResourceType | null;
       };
 
       // When the incoming event is `open_deep_link`, also append a
@@ -744,6 +931,17 @@ export class FlowOrchestrator {
           },
           correlation_id: input.correlation_id,
         });
+        // ---- project_ready broadcast hook (DWD-13 §3.2.B; send-path) -----
+        // When project-context re-enters `project_selected` from create_project_submitted
+        // or from back_to_projects_clicked → resolveInitialScope → project_selected,
+        // broadcast `project_ready` so session-chat spawns (or, post-MR-4, re-invalidates
+        // on project switch). Idempotent on the same project_id.
+        await this.maybeFireProjectReady(
+          input.flow_id,
+          principal_id,
+          input.correlation_id,
+          projectContext,
+        );
       } else if (stateValue === "error_recoverable") {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
