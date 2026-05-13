@@ -1,4 +1,4 @@
-// Step definitions for `features/slice-1-scope-resolver.feature` (step 01-03).
+// Step definitions for `features/active-scope-reflects-real-tenant-project-resource.feature` (step 01-03).
 //
 // All step bodies drive through the harness (`open_deep_link`,
 // `assert_scope_reconciled`) — no test imports from ui-state/lib/**

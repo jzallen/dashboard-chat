@@ -34,7 +34,7 @@ Specifically:
    prescribes the absence-assertion test as the mitigation. ADR-022
    §Behaviour-preservation-guarantees + §Confirmation lists it as a
    required deliverable. DWD-2 in DESIGN's wave-decisions.md binds
-   it as a HARD GATE. THIS DISTILL's `milestone-2-asymmetry-preservation.feature`
+   it as a HARD GATE. THIS DISTILL's `outbox-payload-asymmetry-preserved-across-upload-shapes.feature`
    pins both halves at the acceptance level.
 
 3. **Existing characterization layer is enumerated.** The 15 tests

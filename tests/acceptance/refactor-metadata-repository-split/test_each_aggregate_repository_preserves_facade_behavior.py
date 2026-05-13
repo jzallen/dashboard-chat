@@ -1,5 +1,5 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-"""pytest-bdd runner for milestone-1-aggregate-split.feature.
+"""pytest-bdd runner for each-aggregate-repository-preserves-facade-behavior.feature.
 
 All scenarios in this milestone are tagged @pending and skipped by the
 default test filter (`-m "not pending"`). DELIVER unpends per phase per
@@ -9,4 +9,4 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-scenarios("milestone-1-aggregate-split.feature")
+scenarios("each-aggregate-repository-preserves-facade-behavior.feature")

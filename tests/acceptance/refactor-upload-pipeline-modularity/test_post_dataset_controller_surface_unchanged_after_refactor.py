@@ -1,5 +1,5 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-"""pytest-bdd runner for milestone-3-call-site-stability.feature.
+"""pytest-bdd runner for post-dataset-controller-surface-unchanged-after-refactor.feature.
 
 Scenarios are tagged @pending at the Feature level and therefore
 skipped by the default `-m "not pending"` filter. DELIVER unpends per
@@ -9,4 +9,4 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-scenarios("milestone-3-call-site-stability.feature")
+scenarios("post-dataset-controller-surface-unchanged-after-refactor.feature")

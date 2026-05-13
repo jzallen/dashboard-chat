@@ -42,7 +42,7 @@ This document records (a) any blocking upstream issues surfaced during DISTILL t
 
 ### §1.2 — DISTILL artefacts already use `_use_cases` exclusively in kwarg position
 
-**Verification.** A grep of the four `.feature` files plus `steps/controller_di_steps.py` plus `conftest.py` shows zero kwarg-position uses of `_uc=`. Every kwarg-position reference uses `_use_cases=` (e.g. `walking-skeleton.feature:49` `_use_cases=lambda: capture.fake_use_cases`; `milestone-1-kwarg-injection.feature:39` `the parameter "_use_cases" is keyword-only`; `milestone-2-test-migration.feature:53` `added _use_cases=lambda: mock_uc arguments on controller calls`).
+**Verification.** A grep of the four `.feature` files plus `steps/controller_di_steps.py` plus `conftest.py` shows zero kwarg-position uses of `_uc=`. Every kwarg-position reference uses `_use_cases=` (e.g. `controller-accepts-injected-use-case-factory.feature:49` `_use_cases=lambda: capture.fake_use_cases`; `controllers-expose-use-cases-injection-point.feature:39` `the parameter "_use_cases" is keyword-only`; `tests-use-kwarg-injection-without-patches.feature:53` `added _use_cases=lambda: mock_uc arguments on controller calls`).
 
 **Outcome.** DISTILL deliverables are internally consistent with DISTILL DWD-1 from the moment they were authored. No edits required.
 
@@ -63,15 +63,15 @@ These are not blockers but warrant attention during DELIVER kickoff:
 
 #### Note A — Pre-migration assertion capture mechanism
 
-`milestone-2-test-migration.feature`'s "byte-identical assertions" scenario depends on a captured snapshot of the pre-migration assertion lines. The step body's TODO suggests `git show origin/main:backend/tests/controllers/<file>` as the capture mechanism. DELIVER should confirm at kickoff time that origin/main still points at the pre-migration commit (i.e. no other PR has merged into main between this DISTILL handoff and the DELIVER PR's branch creation that touches `backend/tests/controllers/`). If a sibling PR mutates `backend/tests/controllers/` first, the snapshot must be taken from the merge-base of this DELIVER PR with origin/main, not from origin/main directly.
+`tests-use-kwarg-injection-without-patches.feature`'s "byte-identical assertions" scenario depends on a captured snapshot of the pre-migration assertion lines. The step body's TODO suggests `git show origin/main:backend/tests/controllers/<file>` as the capture mechanism. DELIVER should confirm at kickoff time that origin/main still points at the pre-migration commit (i.e. no other PR has merged into main between this DISTILL handoff and the DELIVER PR's branch creation that touches `backend/tests/controllers/`). If a sibling PR mutates `backend/tests/controllers/` first, the snapshot must be taken from the merge-base of this DELIVER PR with origin/main, not from origin/main directly.
 
 #### Note B — Synthetic-violator harness invocation surface
 
-`milestone-3-architectural-enforcement.feature`'s synthetic-violator scenarios construct candidate files in `tmp_path` and feed them through the same `pytest-archon` machinery the production rule uses. DELIVER should confirm that pytest-archon's API supports being invoked against a synthetic source-tree subset (some versions only support the entire installed package). If it doesn't, the scenarios degrade to a regex-based check on file contents, which is strictly weaker. Captured here so DELIVER doesn't discover this on the first DELIVER red-bar.
+`architectural-rule-prevents-kwarg-injection-regression.feature`'s synthetic-violator scenarios construct candidate files in `tmp_path` and feed them through the same `pytest-archon` machinery the production rule uses. DELIVER should confirm that pytest-archon's API supports being invoked against a synthetic source-tree subset (some versions only support the entire installed package). If it doesn't, the scenarios degrade to a regex-based check on file contents, which is strictly weaker. Captured here so DELIVER doesn't discover this on the first DELIVER red-bar.
 
 #### Note C — `_serialize` / `_error_response` re-exports stay (DESIGN DWD-5)
 
-The acceptance suite explicitly avoids touching these two re-exports. The `milestone-2-test-migration.feature` scenarios scope their grep to `*_use_cases` aliases and `_uc()` getters; they do NOT scan for `_serialize` / `_error_response` removal. This is correct: per DESIGN DWD-5, those re-exports are out-of-scope and must remain in `http_controller.py` after this refactor lands.
+The acceptance suite explicitly avoids touching these two re-exports. The `tests-use-kwarg-injection-without-patches.feature` scenarios scope their grep to `*_use_cases` aliases and `_uc()` getters; they do NOT scan for `_serialize` / `_error_response` removal. This is correct: per DESIGN DWD-5, those re-exports are out-of-scope and must remain in `http_controller.py` after this refactor lands.
 
 #### Note D — Fast-path applies (4 features × ~5 scenarios = 22 scenarios; not 3-or-fewer)
 

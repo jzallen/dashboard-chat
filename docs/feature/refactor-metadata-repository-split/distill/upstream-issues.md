@@ -48,7 +48,7 @@ Specifically:
      - "Concurrent `extract-dataset-query-port` design dispatch" →
        parallel feature; orthogonal layers per ADR-020 §Cross-decision
        composition; verified at this distill's authoring time by
-       grepping for `Dataset` in the parallel feature's `walking-skeleton.feature`
+       grepping for `Dataset` in the parallel feature's `project-repository-matches-legacy-facade-end-to-end.feature`
        (it lives in the model layer; this feature lives in the
        repository layer).
      - "Phase 2 dbt-test-validation in-flight code" → read-only fence

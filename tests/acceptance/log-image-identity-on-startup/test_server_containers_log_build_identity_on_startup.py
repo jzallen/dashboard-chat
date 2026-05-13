@@ -1,6 +1,6 @@
-"""pytest entry — registers milestone-1 scenarios with pytest-bdd.
+"""pytest entry — registers server-containers-log-build-identity-on-startup scenarios with pytest-bdd.
 
-Each scenario in milestone-1-server-identity.feature is enabled by removing
+Each scenario in server-containers-log-build-identity-on-startup.feature is enabled by removing
 its @pending tag during DELIVER. `scenarios(...)` discovers the file and
 registers every non-@pending scenario as a generated test item.
 
@@ -9,4 +9,4 @@ conftest.py's re-export.
 """
 from pytest_bdd import scenarios
 
-scenarios("milestone-1-server-identity.feature")
+scenarios("server-containers-log-build-identity-on-startup.feature")

@@ -110,13 +110,13 @@ checklist.
   20 because the refactor has only 8 aggregates and one mechanism
   applied uniformly — additional WS scenarios would be redundant).
   Per-file counts:
-    - `walking-skeleton.feature`: 1 scenario (Phase 00).
-    - `milestone-1-aggregate-split.feature`: 11 scenarios (Phase 01) —
+    - `project-repository-matches-legacy-facade-end-to-end.feature`: 1 scenario (Phase 00).
+    - `each-aggregate-repository-preserves-facade-behavior.feature`: 11 scenarios (Phase 01) —
       7-row Scenario Outline (one row per remaining aggregate) + 4
       standalone scenarios (deprecation warning emission, session
       cursor parity, exception translation, FK cascade across
       aggregates).
-    - `milestone-2-facade-removal.feature`: 5 scenarios (Phase 03) —
+    - `metadata-repository-facade-removed-without-breaking-callers.feature`: 5 scenarios (Phase 03) —
       grep audit (no legacy imports), AttributeError on `.metadata`,
       KeyError on `metadata_repository` key, archon-rule rejection of
       a synthetic violator, every per-aggregate property reachable.
@@ -304,13 +304,13 @@ assertions, zero `mock.called` assertions, zero file-existence checks
 
 ## Wave Outputs (file paths)
 
-* `tests/acceptance/refactor-metadata-repository-split/walking-skeleton.feature` (1 scenario; @walking_skeleton @real-io)
-* `tests/acceptance/refactor-metadata-repository-split/milestone-1-aggregate-split.feature` (11 scenarios; @aggregate_split @real-io @pending)
-* `tests/acceptance/refactor-metadata-repository-split/milestone-2-facade-removal.feature` (5 scenarios; @facade_removal @pending)
+* `tests/acceptance/refactor-metadata-repository-split/project-repository-matches-legacy-facade-end-to-end.feature` (1 scenario; @walking_skeleton @real-io)
+* `tests/acceptance/refactor-metadata-repository-split/each-aggregate-repository-preserves-facade-behavior.feature` (11 scenarios; @aggregate_split @real-io @pending)
+* `tests/acceptance/refactor-metadata-repository-split/metadata-repository-facade-removed-without-breaking-callers.feature` (5 scenarios; @facade_removal @pending)
 * `tests/acceptance/refactor-metadata-repository-split/conftest.py` (DISTILL scaffold; DELIVER's Phase 00 wires the real engine + container fixtures)
 * `tests/acceptance/refactor-metadata-repository-split/pyproject.toml`
 * `tests/acceptance/refactor-metadata-repository-split/steps/refactor_steps.py` (DISTILL scaffold; every step body raises `pytest.fail("DISTILL scaffold — DELIVER implements: ...")`)
-* `tests/acceptance/refactor-metadata-repository-split/test_walking_skeleton.py` + `test_milestone_1_aggregate_split.py` + `test_milestone_2_facade_removal.py` (pytest-bdd runners)
+* `tests/acceptance/refactor-metadata-repository-split/test_project_repository_matches_legacy_facade_end_to_end.py` + `test_each_aggregate_repository_preserves_facade_behavior.py` + `test_metadata_repository_facade_removed_without_breaking_callers.py` (pytest-bdd runners)
 * `docs/feature/refactor-metadata-repository-split/distill/wave-decisions.md` (this file)
 * `docs/feature/refactor-metadata-repository-split/distill/distill.md` (Quinn's authored notes on the chosen e2e path; companion to the WS feature file)
 * `docs/feature/refactor-metadata-repository-split/distill/upstream-issues.md`

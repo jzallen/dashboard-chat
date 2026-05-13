@@ -1,4 +1,4 @@
-// Step definitions for `features/slice-1-error-paths.feature` (step 01-02).
+// Step definitions for `features/sign-in-error-paths-are-honest-and-recoverable.feature` (step 01-02).
 //
 // All step bodies drive through the harness or the UiStateClient — both
 // hit `auth-proxy:1042` (CM-A driving port).  Tests never import from

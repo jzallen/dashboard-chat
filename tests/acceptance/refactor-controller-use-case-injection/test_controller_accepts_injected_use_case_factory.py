@@ -10,4 +10,4 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-scenarios("walking-skeleton.feature")
+scenarios("controller-accepts-injected-use-case-factory.feature")

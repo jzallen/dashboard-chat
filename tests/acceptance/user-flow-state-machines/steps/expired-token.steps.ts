@@ -1,4 +1,4 @@
-// Step definitions for `features/slice-3-expired-token-freeze.feature`
+// Step definitions for `features/chat-survives-mid-question-token-expiry.feature`
 // (US-005). Cross-machine FREEZE + bounded replay buffer.
 //
 // Per Step 03-01's Overseer directive (DI-1 extension):

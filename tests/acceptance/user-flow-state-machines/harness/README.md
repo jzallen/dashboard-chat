@@ -5,7 +5,7 @@ This harness is the **TS-side dual** of
 JOB-001 backend+agent contract). The TS harness owns **JOB-002 user-
 flow integration** (per DISCUSS `wave-decisions.md` D3) and is a
 first-class deliverable of US-004 — meaning its public surface is
-itself an acceptance-test target (`slice-2-harness-drives-transitions.feature`).
+itself an acceptance-test target (`harness-drives-every-sign-in-and-org-setup-transition.feature`).
 
 ## The four-piece contract
 

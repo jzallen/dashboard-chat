@@ -1,4 +1,4 @@
-"""pytest entry — registers milestone-3 cross-service scenarios.
+"""pytest entry — registers milestone-2 frontend-identity scenarios.
 
 `scenarios(...)` attaches generated test items to the module where it is
 called, so it must live in a `test_*.py` module that pytest discovers.
@@ -7,4 +7,4 @@ and are pulled in via conftest.py's re-export.
 """
 from pytest_bdd import scenarios
 
-scenarios("milestone-3-cross-service.feature")
+scenarios("frontend-container-exposes-build-identity.feature")

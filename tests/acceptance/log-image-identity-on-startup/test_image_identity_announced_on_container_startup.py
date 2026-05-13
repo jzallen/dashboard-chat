@@ -1,4 +1,4 @@
-"""pytest entry — registers walking-skeleton scenarios with pytest-bdd.
+"""pytest entry — registers image-identity-announced-on-container-startup scenarios with pytest-bdd.
 
 `scenarios(...)` attaches generated test items to the module where it is
 called, so it must live in a `test_*.py` module that pytest discovers.
@@ -7,4 +7,4 @@ and are pulled in via conftest.py's re-export.
 """
 from pytest_bdd import scenarios
 
-scenarios("walking-skeleton.feature")
+scenarios("image-identity-announced-on-container-startup.feature")

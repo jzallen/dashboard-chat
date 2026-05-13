@@ -1,7 +1,7 @@
 // UserFlowHarness — TS acceptance harness for J-001 (login-and-org-setup).
 //
 // First-class deliverable of US-004. The harness is itself a test target:
-// the @us-004 scenarios in `slice-2-harness-drives-transitions.feature`
+// the @us-004 scenarios in `harness-drives-every-sign-in-and-org-setup-transition.feature`
 // drive THROUGH this harness to verify its public surface matches the
 // contract Maya-shaped + Rajesh-shaped tests need.
 //

@@ -43,7 +43,7 @@ We do **not** rewrite the existing `backend/tests/repositories/test_*_repository
 - Used by the most representative use cases (`create_project`, `list_projects`, `delete_project` — see DESIGN §5 batch B6, "Project, 6 use-case files").
 - Has FK-cascade behavior already covered in `test_project_repository.py::test_cascades_to_datasets` — proves the per-aggregate repo participates in the same SQLAlchemy session correctly even when the operation crosses aggregate boundaries.
 
-**WS scenario** (`walking-skeleton.feature`, one scenario):
+**WS scenario** (`project-repository-matches-legacy-facade-end-to-end.feature`, one scenario):
 
 > *Customer creates, reads, updates, and deletes a project — the new repo and the legacy facade produce identical results*
 

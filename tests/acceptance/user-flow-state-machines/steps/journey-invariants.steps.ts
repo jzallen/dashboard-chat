@@ -1,4 +1,4 @@
-// Step definitions for `features/journey-invariants.feature` (US-006 IC-1..IC-6).
+// Step definitions for `features/sign-in-cross-state-invariants-hold.feature` (US-006 IC-1..IC-6).
 //
 // Per Step 03-01's Overseer directive (DI-1 extension):
 //   - The Cucumber acceptance suite is NOT executed headlessly in this

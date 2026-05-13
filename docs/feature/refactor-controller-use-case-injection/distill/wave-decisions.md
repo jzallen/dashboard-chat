@@ -83,7 +83,7 @@ grep -rn "def _default_.*_uc(" backend/app/controllers/*_controller.py | wc -l  
 
 ## DWD-4 — Iron Rule binding for the bundled test rewrite (inherited from DESIGN DWD-6)
 
-**Decision.** The acceptance suite's milestone-2 scenarios encode DESIGN DWD-6's Iron Rule contract. No assertion in `backend/tests/controllers/test_*_char.py` or `test_http_controller.py` is modified to make the refactor pass. The "byte-identical assertion lines" scenario in `milestone-2-test-migration.feature` is the executable test of that contract.
+**Decision.** The acceptance suite's milestone-2 scenarios encode DESIGN DWD-6's Iron Rule contract. No assertion in `backend/tests/controllers/test_*_char.py` or `test_http_controller.py` is modified to make the refactor pass. The "byte-identical assertion lines" scenario in `tests-use-kwarg-injection-without-patches.feature` is the executable test of that contract.
 
 **Authority.** Inherits from DESIGN DWD-6; this DISTILL DWD-4 records how the contract is encoded in the acceptance suite.
 
@@ -107,10 +107,10 @@ grep -rn "def _default_.*_uc(" backend/app/controllers/*_controller.py | wc -l  
 
 **Decision.** `roadmap.json` declares four phases (00, 01, 02, 03). Phase ordering mirrors DESIGN DWD-2's Mikado sequence:
 
-- **Phase 00 — Walking skeleton.** Migrate `OrganizationController` (the smallest controller) end-to-end: factory + kwarg + test rewrite for that one controller. Acceptance suite's `walking-skeleton.feature` unskips. Production tests for `test_organization_controller_char.py` rewrite to use `_use_cases=`.
-- **Phase 01 — Milestone 1.** Roll out kwarg injection to the remaining 5 simple controllers (report, project, query_engine, sql_access, view) AND the two multi-factory controllers (dataset's 3 factories, conversation's 5 submodule factories). Delete the 18-line alias block from `http_controller.py` and the 8 `_uc()` getters. Acceptance suite's `milestone-1-kwarg-injection.feature` unskips.
-- **Phase 02 — Milestone 2.** Bundled test rewrite: rewrite all 105 patches in `backend/tests/controllers/` to `_use_cases=lambda: mock_uc`. The byte-identical-assertions invariant must hold. Acceptance suite's `milestone-2-test-migration.feature` unskips.
-- **Phase 03 — Milestone 3.** Add `pytest-archon` rules A/B/C in `backend/tests/architecture/test_controller_imports.py`. Acceptance suite's `milestone-3-architectural-enforcement.feature` unskips.
+- **Phase 00 — Walking skeleton.** Migrate `OrganizationController` (the smallest controller) end-to-end: factory + kwarg + test rewrite for that one controller. Acceptance suite's `controller-accepts-injected-use-case-factory.feature` unskips. Production tests for `test_organization_controller_char.py` rewrite to use `_use_cases=`.
+- **Phase 01 — Milestone 1.** Roll out kwarg injection to the remaining 5 simple controllers (report, project, query_engine, sql_access, view) AND the two multi-factory controllers (dataset's 3 factories, conversation's 5 submodule factories). Delete the 18-line alias block from `http_controller.py` and the 8 `_uc()` getters. Acceptance suite's `controllers-expose-use-cases-injection-point.feature` unskips.
+- **Phase 02 — Milestone 2.** Bundled test rewrite: rewrite all 105 patches in `backend/tests/controllers/` to `_use_cases=lambda: mock_uc`. The byte-identical-assertions invariant must hold. Acceptance suite's `tests-use-kwarg-injection-without-patches.feature` unskips.
+- **Phase 03 — Milestone 3.** Add `pytest-archon` rules A/B/C in `backend/tests/architecture/test_controller_imports.py`. Acceptance suite's `architectural-rule-prevents-kwarg-injection-regression.feature` unskips.
 
 **Authority.** This DISTILL DWD-6; consistent with DESIGN DWD-2's step ordering. Note: Phase 01 absorbs DESIGN DWD-2 steps 1–3 (per-controller transformations) AND step 5 (alias-block deletion) because the alias block becomes deletable as soon as every controller has its kwarg + factory in place AND every test patches via `_use_cases=` (which Phase 02 enforces). The ordering 01 → 02 → 03 deliberately puts test rewrite AFTER controller rollout: production controllers stay green throughout because the alias block remains until Phase 02 finishes its rewrite.
 

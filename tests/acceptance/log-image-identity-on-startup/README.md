@@ -7,17 +7,17 @@ design, and DISTILL wave-decisions (consolidated post-finalize).
 
 ## What is in here
 
-- `walking-skeleton.feature` — single end-to-end scenario that builds
+- `image-identity-announced-on-container-startup.feature` — single end-to-end scenario that builds
   a real bazel image, starts a real container via docker compose, and
   asserts on real `docker compose logs` output. Runs by default.
-- `milestone-1-server-identity.feature` — AC1.1, AC1.2, AC1.3, AC1.4
+- `server-containers-log-build-identity-on-startup.feature` — AC1.1, AC1.2, AC1.3, AC1.4
   for the three server-process services (api, agent, auth-proxy). All
   scenarios tagged `@pending`.
-- `milestone-2-frontend-identity.feature` — AC2.1, AC2.2, AC2.3 for
+- `frontend-container-exposes-build-identity.feature` — AC2.1, AC2.2, AC2.3 for
   the nginx-served frontend (stdout + `/_meta.json`). `@pending`.
-- `milestone-3-cross-service.feature` — AC3.1, AC3.2 (identical sha
+- `bazel-built-services-share-one-identity-format.feature` — AC3.1, AC3.2 (identical sha
   and built across all four services from one `bazel run`). `@pending`.
-- `milestone-4-graceful-degradation.feature` — AC1.5 (missing or
+- `corrupt-version-json-degrades-gracefully.feature` — AC1.5 (missing or
   corrupt `version.json` → "unknown" tokens, no crash). `@pending`.
 - `steps/identity_steps.py` — pytest-bdd glue. Walking-skeleton
   bindings are wired; milestone bindings are added as DELIVER
@@ -51,7 +51,7 @@ real log polling. If your environment lacks bazel or docker on
 2. Add a `scenarios("../milestone-N-….feature")` call in
    `steps/identity_steps.py` (or a sibling step module) and write the
    missing bindings.
-3. Add a `test_milestone_N.py` module that imports the steps module so
+3. Add a `test_<behavior>.py` module that imports the steps module so
    pytest picks it up.
 4. Run the scenario green; commit it; move on to the next.
 

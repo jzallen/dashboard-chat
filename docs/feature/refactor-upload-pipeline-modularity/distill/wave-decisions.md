@@ -69,7 +69,7 @@ No back-propagation issues surfaced — see `upstream-issues.md`.
     `test_multi_dataset_persists_dataset_ids_and_first_id_in_outbox_payload`
     today; stays Iron-Rule-bound.
   - **Acceptance-level pin.** This wave's
-    `milestone-2-asymmetry-preservation.feature` restates BOTH halves
+    `outbox-payload-asymmetry-preserved-across-upload-shapes.feature` restates BOTH halves
     AND adds a "boundary scenario" that runs both paths in one
     scenario, asserting the explicit `if len(results) > 1` guard
     observably toggles. Three scenarios in milestone-2:
@@ -173,14 +173,14 @@ No back-propagation issues surfaced — see `upstream-issues.md`.
     asymmetry preserved, controller envelope unchanged).
 
   Per-file counts:
-  - `walking-skeleton.feature`: 1 scenario (Phase 00).
-  - `milestone-1-dispatcher-extraction.feature`: 4 scenarios (Phase
+  - `single-file-upload-flows-through-new-dispatcher.feature`: 1 scenario (Phase 00).
+  - `upload-pipeline-routes-through-plugin-dispatcher.feature`: 4 scenarios (Phase
     01) — single-plugin one-entry, multi-plugin N-entry, no-registry
     CSV fallback, plugin-name precedence.
-  - `milestone-2-asymmetry-preservation.feature`: 3 scenarios (Phase
+  - `outbox-payload-asymmetry-preserved-across-upload-shapes.feature`: 3 scenarios (Phase
     02) — single-path absence, multi-path presence, boundary
     (`len > 1`) toggle.
-  - `milestone-3-call-site-stability.feature`: 4 scenarios (Phase 03)
+  - `post-dataset-controller-surface-unchanged-after-refactor.feature`: 4 scenarios (Phase 03)
     — single-upload envelope, multi-upload preserved-verbatim,
     no-plugin-match error shape, partial-failure error shape.
 
@@ -450,14 +450,14 @@ assertions, zero `mock.called` assertions, zero file-existence checks
 
 ## Wave Outputs (file paths)
 
-* `tests/acceptance/refactor-upload-pipeline-modularity/walking-skeleton.feature` (1 scenario; `@walking_skeleton @real-io @driving_adapter`)
-* `tests/acceptance/refactor-upload-pipeline-modularity/milestone-1-dispatcher-extraction.feature` (4 scenarios; `@milestone_1 @real-io @driving_adapter @pending`)
-* `tests/acceptance/refactor-upload-pipeline-modularity/milestone-2-asymmetry-preservation.feature` (3 scenarios; `@milestone_2 @real-io @asymmetry_preservation @characterization @pending`)
-* `tests/acceptance/refactor-upload-pipeline-modularity/milestone-3-call-site-stability.feature` (4 scenarios; `@milestone_3 @real-io @driving_adapter @call_site_stability @pending`)
+* `tests/acceptance/refactor-upload-pipeline-modularity/single-file-upload-flows-through-new-dispatcher.feature` (1 scenario; `@walking_skeleton @real-io @driving_adapter`)
+* `tests/acceptance/refactor-upload-pipeline-modularity/upload-pipeline-routes-through-plugin-dispatcher.feature` (4 scenarios; `@milestone_1 @real-io @driving_adapter @pending`)
+* `tests/acceptance/refactor-upload-pipeline-modularity/outbox-payload-asymmetry-preserved-across-upload-shapes.feature` (3 scenarios; `@milestone_2 @real-io @asymmetry_preservation @characterization @pending`)
+* `tests/acceptance/refactor-upload-pipeline-modularity/post-dataset-controller-surface-unchanged-after-refactor.feature` (4 scenarios; `@milestone_3 @real-io @driving_adapter @call_site_stability @pending`)
 * `tests/acceptance/refactor-upload-pipeline-modularity/conftest.py` (DISTILL scaffold; DELIVER's Phase 00 wires the real engine + container fixtures)
 * `tests/acceptance/refactor-upload-pipeline-modularity/pyproject.toml`
 * `tests/acceptance/refactor-upload-pipeline-modularity/steps/upload_pipeline_steps.py` (DISTILL scaffold; every step body raises `pytest.fail("DISTILL scaffold — DELIVER implements: ...")`)
-* `tests/acceptance/refactor-upload-pipeline-modularity/test_walking_skeleton.py` + `test_milestone_1_dispatcher_extraction.py` + `test_milestone_2_asymmetry_preservation.py` + `test_milestone_3_call_site_stability.py` (pytest-bdd runners)
+* `tests/acceptance/refactor-upload-pipeline-modularity/test_single_file_upload_flows_through_new_dispatcher.py` + `test_upload_pipeline_routes_through_plugin_dispatcher.py` + `test_outbox_payload_asymmetry_preserved_across_upload_shapes.py` + `test_post_dataset_controller_surface_unchanged_after_refactor.py` (pytest-bdd runners)
 * `docs/feature/refactor-upload-pipeline-modularity/distill/wave-decisions.md` (this file)
 * `docs/feature/refactor-upload-pipeline-modularity/distill/upstream-issues.md`
 * `docs/feature/refactor-upload-pipeline-modularity/distill/roadmap.json`

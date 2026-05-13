@@ -1,5 +1,5 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-"""pytest-bdd runner for milestone-1-dispatcher-extraction.feature.
+"""pytest-bdd runner for upload-pipeline-routes-through-plugin-dispatcher.feature.
 
 Scenarios are tagged @pending at the Feature level and therefore
 skipped by the default `-m "not pending"` filter in pyproject.toml.
@@ -9,4 +9,4 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-scenarios("milestone-1-dispatcher-extraction.feature")
+scenarios("upload-pipeline-routes-through-plugin-dispatcher.feature")

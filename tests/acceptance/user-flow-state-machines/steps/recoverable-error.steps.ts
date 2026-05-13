@@ -1,11 +1,11 @@
-// Step definitions for `features/slice-2-recoverable-error.feature` (US-003).
+// Step definitions for `features/transient-sign-in-failure-is-honest-and-recoverable.feature` (US-003).
 //
 // Per Step 02-01's Overseer directive (DI-1):
 //   - The Cucumber acceptance suite is NOT executed headlessly in this
 //     environment. These bodies are authored against the UserFlowHarness
 //     and the projection contract so a future stabilized harness ticket
 //     can flip the @skip tags and run them without rewriting.
-//   - The five @us-003 scenarios in slice-2-recoverable-error.feature
+//   - The five @us-003 scenarios in transient-sign-in-failure-is-honest-and-recoverable.feature
 //     therefore remain @skip after this step.
 //
 // All step bodies drive through the harness (CM-A: tests use the driving

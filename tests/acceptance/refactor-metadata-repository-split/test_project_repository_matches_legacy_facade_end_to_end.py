@@ -10,4 +10,4 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-scenarios("walking-skeleton.feature")
+scenarios("project-repository-matches-legacy-facade-end-to-end.feature")

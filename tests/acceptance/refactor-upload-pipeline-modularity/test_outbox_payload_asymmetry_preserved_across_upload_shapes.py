@@ -1,5 +1,5 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-"""pytest-bdd runner for milestone-2-asymmetry-preservation.feature.
+"""pytest-bdd runner for outbox-payload-asymmetry-preserved-across-upload-shapes.feature.
 
 CRITICAL: this milestone is the asymmetry-preservation HARD GATE per
 DWD-2 in DESIGN's wave-decisions.md (also the binding decision in
@@ -15,4 +15,4 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-scenarios("milestone-2-asymmetry-preservation.feature")
+scenarios("outbox-payload-asymmetry-preserved-across-upload-shapes.feature")

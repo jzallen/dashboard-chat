@@ -9,4 +9,4 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-scenarios("walking-skeleton.feature")
+scenarios("single-file-upload-flows-through-new-dispatcher.feature")

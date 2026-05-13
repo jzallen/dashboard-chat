@@ -1,4 +1,4 @@
-// Step definitions for `features/slice-2-harness-drives-transitions.feature`
+// Step definitions for `features/harness-drives-every-sign-in-and-org-setup-transition.feature`
 // (US-004). The harness IS the test driver for every other scenario; this
 // file is the only place where it is both the driver AND the target.
 //
