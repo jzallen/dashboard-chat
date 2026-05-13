@@ -147,7 +147,8 @@ export type ResolveInitialScopeOutput =
       degraded_project_ids?: string[];
     }
   | { no_projects: true }
-  | { cross_tenant: true };
+  | { cross_tenant: true }
+  | { project_not_found: true };
 
 export interface ResolveInitialScopeInput {
   org_id: string;
@@ -236,6 +237,27 @@ export function createProjectAndChatSessionMachine(deps: J002MachineDeps) {
   }).createMachine({
     id: "project-and-chat-session-management",
     initial: "resolving_initial_scope",
+    // Root-level open_deep_link handler — available from ANY state. Per
+    // app-arch §2.3 / DWD-9: a cold deep-link can arrive while the machine
+    // is in no_projects_empty_state, project_selected, or any other live
+    // state. The handler captures intent_* and re-enters resolving_initial_scope
+    // so the resolver re-runs with the new intent.
+    on: {
+      open_deep_link: {
+        actions: assign({
+          intent_project_id: ({ event, context }) =>
+            event.intent_project_id ?? context.intent_project_id,
+          intent_session_id: ({ event, context }) =>
+            event.intent_session_id ?? context.intent_session_id,
+          intent_resource_id: ({ event, context }) =>
+            event.intent_resource_id ?? context.intent_resource_id,
+          intent_resource_type: ({ event, context }) =>
+            event.intent_resource_type ?? context.intent_resource_type,
+        }),
+        target: ".resolving_initial_scope",
+        reenter: true,
+      },
+    },
     context: ({ input }) => ({
       correlation_id: input.correlation_id,
       principal_id: input.principal_id,
@@ -277,6 +299,9 @@ export function createProjectAndChatSessionMachine(deps: J002MachineDeps) {
             target: "resolving_initial_scope",
             reenter: true,
           },
+          // Note: open_deep_link is handled at the machine root level so it
+          // can arrive from any live state (no_projects_empty_state,
+          // project_selected, etc).
         },
         invoke: {
           src: "resolveInitialScope",
@@ -292,6 +317,14 @@ export function createProjectAndChatSessionMachine(deps: J002MachineDeps) {
               target: "scope_mismatch_terminal",
               actions: assign({
                 underlying_cause_tag: () => "cross_tenant" as const,
+              }),
+            },
+            {
+              guard: ({ event }) =>
+                (event.output as { project_not_found?: true }).project_not_found === true,
+              target: "scope_mismatch_terminal",
+              actions: assign({
+                underlying_cause_tag: () => "project_not_found" as const,
               }),
             },
             {
@@ -427,6 +460,52 @@ export function resolveInitialScopeFn(
   shouldFailListSessions: (project_id: string) => boolean = () => false,
 ): (input: ResolveInitialScopeInput) => Promise<ResolveInitialScopeOutput> {
   return async (input) => {
+    // ─── Deep-link (intent_project_id) fast-path ──────────────────────────
+    // Per US-204 / app-arch §2.3: when an intent_project_id is supplied, the
+    // resolver consults the backend's `GET /api/projects/:id` directly so it
+    // can distinguish 403 (cross-tenant / access revoked) from 404
+    // (project_not_found). Listing all the user's projects can't make that
+    // distinction (the project is simply absent in both cases). The branch
+    // returns the project_not_found / cross_tenant variant accordingly; on
+    // 200 the project is settled.
+    if (input.intent_project_id) {
+      const detailResp = await fetch(
+        `${backendUrl}/api/projects/${encodeURIComponent(input.intent_project_id)}`,
+        {
+          method: "GET",
+          headers: {
+            "x-correlation-id": "j002-resolve-intent",
+            ...principalHeaders,
+          },
+        },
+      );
+      if (detailResp.status === 404) {
+        return { project_not_found: true };
+      }
+      if (detailResp.status === 403) {
+        return { cross_tenant: true };
+      }
+      if (!detailResp.ok) {
+        throw new Error(`get_project failed: ${detailResp.status}`);
+      }
+      const detailBody = (await detailResp.json()) as
+        | { id?: string; name?: string }
+        | { data?: { id?: string; name?: string; attributes?: { name?: string } } };
+      const projId =
+        (detailBody as { id?: string }).id ??
+        (detailBody as { data?: { id?: string } }).data?.id ??
+        input.intent_project_id;
+      const projName =
+        (detailBody as { name?: string }).name ??
+        (detailBody as { data?: { name?: string; attributes?: { name?: string } } }).data
+          ?.name ??
+        (detailBody as { data?: { attributes?: { name?: string } } }).data?.attributes
+          ?.name ??
+        "Untitled";
+      return { project: { id: projId, name: projName } };
+    }
+
+    // ─── No intent — list_projects fallback (last-used resolution) ────────
     const resp = await fetch(`${backendUrl}/api/projects`, {
       method: "GET",
       headers: {
@@ -459,16 +538,6 @@ export function resolveInitialScopeFn(
         (p as { attributes?: { name?: string } }).attributes?.name ??
         "Untitled",
     }));
-
-    // If intent_project_id is set (deep link), find that one. If not in
-    // the list, fall through to scope_mismatch_terminal via cross_tenant.
-    if (input.intent_project_id) {
-      const match = items.find((p) => p.id === input.intent_project_id);
-      if (!match) {
-        return { cross_tenant: true };
-      }
-      return { project: { id: match.id, name: match.name } };
-    }
 
     if (items.length === 0) {
       return { no_projects: true };

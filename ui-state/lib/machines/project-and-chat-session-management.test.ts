@@ -9,7 +9,17 @@
 //   B5 — empty project name (whitespace-only) keeps machine in
 //         no_projects_empty_state with inline validation error.
 //
-// Test count budget: 5 distinct behaviors × 2 = 10 unit tests max.
+// Sub-step 01-03 (US-204 cold deep-link + scope_mismatch_terminal):
+//   B6 — resolveInitialScope with intent_project_id + {cross_tenant: true}
+//         → scope_mismatch_terminal with cause "cross_tenant".
+//   B7 — resolveInitialScope with intent_project_id + {project_not_found: true}
+//         → scope_mismatch_terminal with cause "project_not_found".
+//   B8 — open_deep_link event re-enters resolving_initial_scope and assigns
+//         context.intent_* from the event payload.
+//   B9 — back_to_projects_clicked from scope_mismatch_terminal clears
+//         context.intent_* (all four) and transitions to resolving_initial_scope.
+//
+// Test count budget: 9 distinct behaviors × 2 = 18 unit tests max.
 // All tests are port-to-port at the machine's driving port (XState actor's
 // public `send` / snapshot surface). No internal-class assertions.
 
@@ -181,5 +191,138 @@ describe("ProjectAndChatSessionMachine (J-002) — substrate behaviors", () => {
     const snap = actor.getSnapshot();
     expect(snap.value).toBe("no_projects_empty_state");
     expect(snap.context.project_validation_error?.kind).toBe("empty");
+  });
+});
+
+// ─────────────────── Sub-step 01-03: US-204 deep-link behaviors ──────────────
+
+describe("ProjectAndChatSessionMachine (J-002) — US-204 deep-link behaviors", () => {
+  it("B6: cross-tenant resolveInitialScope output lands in scope_mismatch_terminal with cause cross_tenant", async () => {
+    const machine = createProjectAndChatSessionMachine({
+      resolveInitialScope: resolveTo({ cross_tenant: true }),
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+    });
+    const actor = createActor(machine, {
+      input: { ...MAYA_INPUT, intent_project_id: "foreign-project-id" },
+    });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.underlying_cause_tag).toBe("cross_tenant");
+  });
+
+  it("B7: project_not_found resolveInitialScope output lands in scope_mismatch_terminal with cause project_not_found", async () => {
+    const machine = createProjectAndChatSessionMachine({
+      resolveInitialScope: resolveTo({ project_not_found: true }),
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+    });
+    const actor = createActor(machine, {
+      input: { ...MAYA_INPUT, intent_project_id: "missing-project-id" },
+    });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.underlying_cause_tag).toBe("project_not_found");
+  });
+
+  it("B8: open_deep_link event populates context.intent_* from payload", async () => {
+    // Start with no_projects; arriving open_deep_link should set intent fields
+    // and re-resolve the initial scope.
+    //
+    // Implementation note: the resolveInitialScope invoke fires on initial
+    // spawn AND on every re-entry. With `j001_ready { target: self, reenter: true }`,
+    // this means the invoke fires twice during bootstrap (once on spawn, once
+    // on j001_ready re-entry). We return no_projects for both bootstrap calls;
+    // the THIRD call (triggered by open_deep_link) returns the project.
+    const project: ProjectSummary = { id: "deep-link-proj", name: "Q4 Analytics" };
+    let invokeCallCount = 0;
+    const resolveActor: ResolveInitialScopeActor = fromPromise(async () => {
+      invokeCallCount += 1;
+      if (invokeCallCount <= 2) {
+        return { no_projects: true };
+      }
+      return { project };
+    });
+    const machine = createProjectAndChatSessionMachine({
+      resolveInitialScope: resolveActor,
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+
+    // Fire open_deep_link with all four intent fields.
+    actor.send({
+      type: "open_deep_link",
+      intent_project_id: "deep-link-proj",
+      intent_session_id: "sess-1",
+      intent_resource_id: "ds-1",
+      intent_resource_type: "dataset",
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.intent_project_id).toBe("deep-link-proj");
+    expect(ctx.intent_session_id).toBe("sess-1");
+    expect(ctx.intent_resource_id).toBe("ds-1");
+    expect(ctx.intent_resource_type).toBe("dataset");
+  });
+
+  it("B9: back_to_projects_clicked clears all intent_* fields and exits scope_mismatch_terminal", async () => {
+    // Arrive in scope_mismatch_terminal via cross_tenant.
+    // The resolveInitialScope invoke fires twice during bootstrap (once on
+    // spawn with the input.intent_project_id present, once on j001_ready
+    // re-entry). Both bootstrap calls return cross_tenant; the third call
+    // (triggered by back_to_projects_clicked → resolving_initial_scope) sees
+    // intent cleared and returns no_projects.
+    let invokeCallCount = 0;
+    const resolveActor: ResolveInitialScopeActor = fromPromise(async () => {
+      invokeCallCount += 1;
+      if (invokeCallCount <= 2) {
+        return { cross_tenant: true };
+      }
+      return { no_projects: true };
+    });
+    const machine = createProjectAndChatSessionMachine({
+      resolveInitialScope: resolveActor,
+      createProject: createProjectOk({ id: "ignored", name: "ignored" }),
+    });
+    const actor = createActor(machine, {
+      input: { ...MAYA_INPUT, intent_project_id: "foreign-id" },
+    });
+    actor.start();
+    actor.send({
+      type: "j001_ready",
+      org_id: "dev-org-001",
+      user_first_name: "Maya",
+    });
+    await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
+
+    // Confirm intent_project_id was carried in.
+    expect(actor.getSnapshot().context.intent_project_id).toBe("foreign-id");
+
+    // Click back to projects.
+    actor.send({ type: "back_to_projects_clicked" });
+    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.intent_project_id).toBeNull();
+    expect(ctx.intent_session_id).toBeNull();
+    expect(ctx.intent_resource_id).toBeNull();
+    expect(ctx.intent_resource_type).toBeNull();
   });
 });

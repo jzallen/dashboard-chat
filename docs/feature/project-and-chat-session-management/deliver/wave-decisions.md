@@ -115,6 +115,84 @@ to `driver.post(...)`. The header is honored by `ui-state/index.ts`'s
 
 ---
 
+## DDD-3 (sub-step 01-03) — Per-project lookup for intent_project_id resolution
+
+**Decision**: When the J-002 `resolveInitialScope` invoke fires with a populated
+`input.intent_project_id`, the resolver consults the backend's
+`GET /api/projects/:id` endpoint directly instead of listing all the user's
+projects and filtering. This lets the resolver distinguish 403 (cross-tenant /
+access revoked → `{ cross_tenant: true }`) from 404 (deleted / never existed →
+`{ project_not_found: true }`).
+
+The no-intent fallback (last-used resolution) continues to use `list_projects`
+as before.
+
+### Why (per-project lookup over list-and-filter)
+
+| Pattern | Pros | Cons |
+|---|---|---|
+| **Per-project `GET /api/projects/:id` (CHOSEN)** | Distinguishes 403 from 404 → distinct `underlying_cause_tag` per US-204 AC. Single request, no list traversal. Uses existing `authorize_project_access` dependency for tenant enforcement. | One extra round-trip when the project is in the user's list. |
+| List-and-filter (`GET /api/projects`) | Single request shared with last-used resolution. | Both 403 and 404 manifest as "project absent in user's list"; cannot tag cause distinctly. Would require a second `GET /api/projects/:id` to disambiguate, which is the chosen pattern minus the listing overhead. |
+
+The US-204 AC requires distinct `underlying_cause_tag` values (`cross_tenant`
+vs `project_not_found`), and the backend already provides clean error-code
+disambiguation at the `:id` endpoint. The list approach can't deliver this
+property without a second request, making the per-project approach
+mechanically superior.
+
+### How to apply
+
+`resolveInitialScopeFn` has two branches:
+
+1. **`intent_project_id` set** — fetch `GET /api/projects/:id`:
+   - 200 → `{ project: { id, name } }` → `project_selected`
+   - 403 → `{ cross_tenant: true }` → `scope_mismatch_terminal` w/
+     `underlying_cause_tag = "cross_tenant"`
+   - 404 → `{ project_not_found: true }` → `scope_mismatch_terminal` w/
+     `underlying_cause_tag = "project_not_found"`
+   - 5xx → throw → `error_recoverable`
+2. **No intent** — fall through to last-used resolution (the existing
+   list-projects + per-project list-sessions pattern from 01-02 + OQ-J002-5).
+
+### Reversibility
+
+The two-branch shape is internal to `resolveInitialScopeFn`. A future MR can
+switch the intent branch to a different strategy (e.g. listing-then-filter
+with a fan-out probe to disambiguate) without disturbing callers; the
+`ResolveInitialScopeOutput` union is the stable contract.
+
+---
+
+## DDD-4 (sub-step 01-03) — Root-level open_deep_link handler
+
+**Decision**: The J-002 machine's `open_deep_link` event is handled at the
+machine-ROOT level (in the top-level `on: { open_deep_link: ... }` block) rather
+than per-state, with `target: ".resolving_initial_scope"` and `reenter: true`.
+
+### Why (root over per-state)
+
+A cold deep-link can arrive when the machine is in ANY live state
+(`no_projects_empty_state`, `project_selected`, or — in future MRs —
+`session_active`, `switching_project`, etc.). Per-state handlers would require
+adding the event entry in every state that wants to allow deep-link arrival.
+Root-level is one entry, total.
+
+The handler:
+1. Assigns intent_* fields from event payload onto context.
+2. Transitions to `resolving_initial_scope` with `reenter: true` so the
+   `resolveInitialScope` invoke re-fires against the new intent.
+
+`reenter: true` is critical — without it, an already-`resolving_initial_scope`
+state would NOT re-fire its invoke.
+
+### Reversibility
+
+If a future MR needs per-state interception of `open_deep_link` (e.g., to
+suppress it during `switching_project`), individual states can add their own
+`on.open_deep_link` handler that takes precedence over the root-level entry.
+
+---
+
 ## References
 
 - `distill/wave-decisions.md` DD-1..DD-7 (binding)

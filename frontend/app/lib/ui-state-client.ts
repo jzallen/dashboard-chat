@@ -128,6 +128,59 @@ export function uiStateClient(request: Request) {
         clearTimeout(timeoutId);
       }
     },
+
+    /**
+     * J-002 open-deep-link — DWD-4 + US-204. Posts to the intent-shaped
+     * deep-link endpoint with the supplied intent_* fields. The orchestrator
+     * spawns J-002 if not yet started and forwards an `open_deep_link` event
+     * to the actor, which re-resolves through resolving_initial_scope.
+     * Returns the settled projection.
+     */
+    async openJ002DeepLink(
+      principalId: string,
+      intent: {
+        intent_project_id?: string;
+        intent_session_id?: string;
+        intent_resource_id?: string;
+        intent_resource_type?: "dataset" | "view" | "report";
+      },
+    ): Promise<ProjectionShape> {
+      const url = new URL(
+        `/ui-state/flow/${J002_MACHINE}/open-deep-link`,
+        AUTH_PROXY_URL,
+      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), LOADER_TIMEOUT_MS);
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: authHeader,
+          },
+          body: JSON.stringify({
+            principal_id: principalId,
+            ...intent,
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Response(`ui-state ${res.status}`, { status: res.status });
+        }
+        return (await res.json()) as ProjectionShape;
+      } catch (err) {
+        if (err instanceof Response) throw err;
+        if (
+          err instanceof Error &&
+          (err.name === "AbortError" || controller.signal.aborted)
+        ) {
+          throw new Response("ui-state timeout", { status: 504 });
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
   };
 }
 

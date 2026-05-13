@@ -74,6 +74,13 @@ interface ReducedContext {
   /** Per OQ-J002-5 degraded path: ids of projects whose list_sessions
    *  call 5xx-failed during last-used resolution. */
   last_used_resolution_degraded: { failed_project_ids: string[]; partial_result: boolean } | null;
+  /** J-002 deep-link intent payload (US-204 / DWD-9). Carries the URL-level
+   *  intent so future MR (session resume, dataset switching) can consume
+   *  these fields. Cleared by back_to_projects_clicked. */
+  intent_project_id: string | null;
+  intent_session_id: string | null;
+  intent_resource_id: string | null;
+  intent_resource_type: ResourceType | null;
 }
 
 function initialContext(): ReducedContext {
@@ -93,6 +100,10 @@ function initialContext(): ReducedContext {
     project_validation_error: null,
     most_recent_session_per_project: {},
     last_used_resolution_degraded: null,
+    intent_project_id: null,
+    intent_session_id: null,
+    intent_resource_id: null,
+    intent_resource_type: null,
   };
 }
 
@@ -215,12 +226,22 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   },
 
   // Payload shape (mirrors `open_deep_link` handler in `index.ts`):
-  //   { scope: ActiveScope, project: { id, name } | null, reconciled: bool }
+  //   { scope: ActiveScope, project: { id, name } | null, reconciled: bool,
+  //     intent_project_id?, intent_session_id?, intent_resource_id?,
+  //     intent_resource_type? }
+  //
+  // Per DWD-9: the J-002 intent fields are carried in the same event payload
+  // so future MR consumers (session resume, dataset switching) read them
+  // from the projection's context.
   deep_link_opened: (state, context, event) => {
     const payload = event.payload as {
       scope?: ActiveScope;
       project?: { id: string | null; name: string | null } | null;
       reconciled?: boolean;
+      intent_project_id?: string | null;
+      intent_session_id?: string | null;
+      intent_resource_id?: string | null;
+      intent_resource_type?: ResourceType | null;
     };
     const newProject = payload.project ?? null;
     return {
@@ -233,6 +254,14 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           : context.project,
         scope_reconciled: Boolean(payload.reconciled),
         scope_resolution_error: null,
+        intent_project_id:
+          payload.intent_project_id ?? context.intent_project_id,
+        intent_session_id:
+          payload.intent_session_id ?? context.intent_session_id,
+        intent_resource_id:
+          payload.intent_resource_id ?? context.intent_resource_id,
+        intent_resource_type:
+          payload.intent_resource_type ?? context.intent_resource_type,
       },
     };
   },
@@ -390,6 +419,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     const payload = event.payload as {
       org_id?: string;
       underlying_cause_tag?: string;
+      intent_project_id?: string | null;
     };
     return {
       state: "scope_mismatch_terminal",
@@ -400,6 +430,8 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           name: context.org.name,
         },
         underlying_cause_tag: payload.underlying_cause_tag ?? "cross_tenant",
+        intent_project_id:
+          payload.intent_project_id ?? context.intent_project_id,
       },
     };
   },

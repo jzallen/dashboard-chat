@@ -669,13 +669,56 @@ export class FlowOrchestrator {
         underlying_cause_tag?: string | null;
         pending_project_name?: string;
         project_validation_error?: { kind: string; message: string } | null;
+        intent_project_id?: string | null;
+        intent_session_id?: string | null;
+        intent_resource_id?: string | null;
+        intent_resource_type?: "dataset" | "view" | "report" | null;
       };
+
+      // When the incoming event is `open_deep_link`, also append a
+      // `deep_link_opened` projection event so the projection's context
+      // carries the intent_* fields (per DWD-9). The projection reducer
+      // reads intent_* from this event.
+      if (input.type === "open_deep_link") {
+        const resolvedScope = {
+          org_id: j002Ctx.org_id ?? "",
+          project_id: j002Ctx.project?.id ?? null,
+          resource_type: j002Ctx.intent_resource_type ?? null,
+          resource_id: j002Ctx.intent_resource_id ?? null,
+        };
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "deep_link_opened",
+          payload: {
+            scope: resolvedScope,
+            project: j002Ctx.project ?? null,
+            reconciled: false,
+            intent_project_id: j002Ctx.intent_project_id ?? null,
+            intent_session_id: j002Ctx.intent_session_id ?? null,
+            intent_resource_id: j002Ctx.intent_resource_id ?? null,
+            intent_resource_type: j002Ctx.intent_resource_type ?? null,
+          },
+          correlation_id: input.correlation_id,
+        });
+      }
 
       if (stateValue === "no_projects_empty_state" && j002Ctx.project_validation_error) {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "project_validation_failed",
           payload: { error: j002Ctx.project_validation_error },
+          correlation_id: input.correlation_id,
+        });
+      } else if (stateValue === "no_projects_empty_state") {
+        // Re-resolved into no_projects (e.g., after back_to_projects_clicked).
+        // Emit no_projects_displayed so the projection settles correctly.
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "no_projects_displayed",
+          payload: {
+            org_id: j002Ctx.org_id ?? "",
+            user_first_name: j002Ctx.user_first_name ?? null,
+          },
           correlation_id: input.correlation_id,
         });
       } else if (stateValue === "creating_project") {
@@ -686,9 +729,15 @@ export class FlowOrchestrator {
           correlation_id: input.correlation_id,
         });
       } else if (stateValue === "project_selected") {
+        // Emit `project_selected` (not `project_created`) when this transition
+        // is the result of a re-resolve (open_deep_link or back_to_projects_clicked).
+        // The projection reducer handles both event types similarly; the
+        // distinction is semantic for downstream consumers (a deep-link
+        // resolution is not a creation).
+        const isFromCreate = input.type === "create_project_submitted";
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
-          type: "project_created",
+          type: isFromCreate ? "project_created" : "project_selected",
           payload: {
             org_id: j002Ctx.org_id ?? "",
             project: j002Ctx.project,
@@ -712,6 +761,7 @@ export class FlowOrchestrator {
           payload: {
             org_id: j002Ctx.org_id ?? "",
             underlying_cause_tag: j002Ctx.underlying_cause_tag ?? "cross_tenant",
+            intent_project_id: j002Ctx.intent_project_id ?? null,
           },
           correlation_id: input.correlation_id,
         });

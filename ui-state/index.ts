@@ -311,6 +311,7 @@ app.post("/flow/:machine/open-deep-link", async (c) => {
     c.req.header("X-Correlation-Id") ?? cryptoRandomId();
   let body: {
     flow_id?: string;
+    principal_id?: string;
     route?: {
       org?: string;
       project?: string;
@@ -319,12 +320,75 @@ app.post("/flow/:machine/open-deep-link", async (c) => {
     };
     project_name?: string;
     bookmarked_project_name?: string;
+    // J-002 intent-shaped payload (US-204 / DWD-9):
+    intent_project_id?: string;
+    intent_session_id?: string;
+    intent_resource_id?: string;
+    intent_resource_type?: ResourceType;
   };
   try {
     body = (await c.req.json()) as typeof body;
   } catch {
     return c.json({ error: "invalid_request" }, 400);
   }
+
+  // ─── J-002 intent-shaped deep link (US-204) ─────────────────────────────
+  // The J-002 surface takes a different deep-link shape: instead of route
+  // params + ScopeResolver, the caller supplies intent_* fields directly.
+  // The orchestrator forwards an `open_deep_link` event to the J-002 actor
+  // which re-enters resolving_initial_scope with the new intent. The flow
+  // is auto-spawned if not yet started.
+  const isJ002Intent =
+    machine === "project-and-chat-session-management" &&
+    (body.intent_project_id !== undefined ||
+      body.intent_session_id !== undefined ||
+      body.intent_resource_id !== undefined);
+  if (isJ002Intent) {
+    const principalId =
+      c.req.header("X-User-Id") ?? body.principal_id ?? "";
+    if (!principalId) {
+      return c.json({ error: "principal_id required" }, 400);
+    }
+    const orgId = c.req.header("X-Org-Id") ?? "";
+    const userEmail = c.req.header("X-User-Email") ?? "";
+    const firstName = (userEmail.split("@")[0] || "").trim() || null;
+    try {
+      // Ensure J-002 is spawned; idempotent.
+      await orchestrator.beginIfNotStarted({
+        machine,
+        principal_id: principalId,
+        correlation_id,
+        org_id: orgId,
+        user_first_name: firstName ?? "",
+      });
+      // Forward open_deep_link to the J-002 actor.
+      const flowId = body.flow_id ?? `${machine}:${principalId}`;
+      const payload: Record<string, unknown> = {};
+      if (body.intent_project_id !== undefined)
+        payload.intent_project_id = body.intent_project_id;
+      if (body.intent_session_id !== undefined)
+        payload.intent_session_id = body.intent_session_id;
+      if (body.intent_resource_id !== undefined)
+        payload.intent_resource_id = body.intent_resource_id;
+      if (body.intent_resource_type !== undefined)
+        payload.intent_resource_type = body.intent_resource_type;
+      const projection = await orchestrator.send({
+        machine,
+        flow_id: flowId,
+        type: "open_deep_link",
+        payload,
+        correlation_id,
+      });
+      return c.json(projection);
+    } catch (err) {
+      return c.json(
+        { error: "open_deep_link_failed", message: (err as Error).message },
+        500,
+      );
+    }
+  }
+
+  // ─── Legacy route-shaped deep link (J-001 / ScopeResolver path) ─────────
   if (!body.flow_id) {
     return c.json({ error: "flow_id required" }, 400);
   }
