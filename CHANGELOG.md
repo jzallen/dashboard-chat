@@ -1,3 +1,10 @@
+# [1.34.0](https://github.com/jzallen/dashboard-chat/compare/v1.33.0...v1.34.0) (2026-05-13)
+
+
+### Features
+
+* **backend:** add sessions.active_dataset_id + linearize alembic forks ([b496fe6](https://github.com/jzallen/dashboard-chat/commit/b496fe6aef27ee3a502c9d0f37d8613ca82ae303))
+
 # [1.33.0](https://github.com/jzallen/dashboard-chat/compare/v1.32.0...v1.33.0) (2026-05-13)
 
 
