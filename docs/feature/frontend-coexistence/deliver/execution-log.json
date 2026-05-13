@@ -204,6 +204,41 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-05-13T02:50:21Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T02:51:01Z"
+    },
+    {
+      "sid": "02-02",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T02:53:44Z"
+    },
+    {
+      "sid": "02-02",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "APPROVED_SKIP: Phase 02 acceptance scenarios un-skip in Step 02-03 (per DD-9 step decomposition). Step 02-02 lands only the /login loader migration; un-skip + DWD-7 cleanup follows in 02-03.",
+      "t": "2026-05-13T02:53:49Z"
+    },
+    {
+      "sid": "02-02",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "APPROVED_SKIP: framework-mode route module is exercised end-to-end by the Phase 02 acceptance suite (un-skipped in Step 02-03). Internal calls (new QueryClient, dehydrate, HydrationBoundary) are TanStack Query / RRv7 library boundaries; a unit test mocking them would test the library, not our code. Per CLAUDE.md 'Mocks only at port boundaries. No internal class mocks.' The existing vitest suite covers LoginPage (the wrapped component).",
+      "t": "2026-05-13T02:53:55Z"
+    },
+    {
+      "sid": "02-02",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T02:56:22Z"
     }
   ]
 }
