@@ -1,3 +1,10 @@
+## [1.35.1](https://github.com/jzallen/dashboard-chat/compare/v1.35.0...v1.35.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **frontend:** include app/ + ssr.ts as Bazel inputs to ssr_dist genrule ([8fc80e4](https://github.com/jzallen/dashboard-chat/commit/8fc80e4b702d70dbab55de1766a08d856abb127a))
+
 # [1.35.0](https://github.com/jzallen/dashboard-chat/compare/v1.34.0...v1.35.0) (2026-05-13)
 
 
