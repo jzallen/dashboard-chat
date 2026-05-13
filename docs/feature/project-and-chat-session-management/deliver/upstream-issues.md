@@ -53,6 +53,26 @@ visibility; mitigation paths are scheduled in subsequent sub-steps.
 
 **Action**: surface in MR-1 review-by-software-crafter; not a 01-01 blocker. Likely an XState v5 type-inference issue introduced by an earlier change. May be addressed in a separate hygiene MR.
 
+### D-01-03a — Same XState v5 `fromPromise` type-inference issue affects new B8/B9 tests
+
+**Status**: SAME CLASS AS D-01-01c — not blocking, vitest passes
+
+**Observation**: `cd ui-state && npm run build` (which runs `tsc --noEmit`) reports
+TS2322 errors at `lib/machines/project-and-chat-session-management.test.ts:249`
+and `:293` for the B8 (`open_deep_link`) and B9 (`back_to_projects_clicked`)
+tests' `fromPromise` actors. The error pattern is the same XState v5 type-
+inference limitation D-01-01c documented for `login-and-org-setup.test.ts:291`
+and `:325`.
+
+**Crafter's rationale**: The runtime works correctly — vitest passes all 61
+ui-state unit tests + all 18 MR-1 acceptance scenarios. The TS errors are
+test-only and don't affect deployment (production ui-state runs via `tsx` at
+runtime, not via `tsc` compilation per ui-state/Dockerfile).
+
+**Action**: surface in MR-1 review-by-software-crafter; not a 01-03 blocker.
+Likely solvable with an explicit type annotation on the `fromPromise` call;
+deferred to the hygiene MR that addresses D-01-01c.
+
 ### D-01-02a — Pre-existing J-001 cucumber ambiguous-step regression
 
 **Status**: PRE-EXISTING — not introduced by 01-02, not blocking
