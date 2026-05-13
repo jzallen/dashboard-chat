@@ -3,7 +3,7 @@
 #
 # This file is the DISTILL-wave SSOT of the milestone-1 scenarios. The
 # runnable copy lives at:
-#   tests/acceptance/extract-dataset-query-port/milestone-1-port-extraction.feature
+#   tests/acceptance/extract-dataset-query-port/query-engine-port-honors-boundary-contract.feature
 # and is byte-identical to this file. Updates to one MUST update the other
 # in the same commit (DWD-2 binding).
 #

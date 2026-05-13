@@ -3,7 +3,7 @@
 #
 # This file is the DISTILL-wave SSOT of the milestone-2 scenarios. The
 # runnable copy lives at:
-#   tests/acceptance/extract-dataset-query-port/milestone-2-caller-migration.feature
+#   tests/acceptance/extract-dataset-query-port/dataset-service-fetches-via-port-directly.feature
 # and is byte-identical to this file. Updates to one MUST update the other
 # in the same commit (DWD-2 binding).
 #

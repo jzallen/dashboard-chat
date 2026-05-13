@@ -254,24 +254,24 @@ Zero "NO — MISSING" rows.
 
 ## Wave Outputs (file paths)
 
-* `docs/feature/extract-dataset-query-port/distill/walking-skeleton.feature` (1 scenario; SSOT)
-* `docs/feature/extract-dataset-query-port/distill/milestone-1-port-extraction.feature` (7 scenarios, all @pending; SSOT)
-* `docs/feature/extract-dataset-query-port/distill/milestone-2-caller-migration.feature` (4 scenarios, all @pending; SSOT)
-* `docs/feature/extract-dataset-query-port/distill/milestone-3-domain-cleanup.feature` (5 scenarios, all @pending; SSOT)
+* `docs/feature/extract-dataset-query-port/distill/dataset-preview-flows-through-query-engine-port.feature` (1 scenario; SSOT)
+* `docs/feature/extract-dataset-query-port/distill/query-engine-port-honors-boundary-contract.feature` (7 scenarios, all @pending; SSOT)
+* `docs/feature/extract-dataset-query-port/distill/dataset-service-fetches-via-port-directly.feature` (4 scenarios, all @pending; SSOT)
+* `docs/feature/extract-dataset-query-port/distill/dataset-model-becomes-pure-after-port-cleanup.feature` (5 scenarios, all @pending; SSOT)
 * `docs/feature/extract-dataset-query-port/distill/wave-decisions.md` (this file)
 * `docs/feature/extract-dataset-query-port/distill/upstream-issues.md`
 * `docs/feature/extract-dataset-query-port/distill/roadmap.json`
-* `tests/acceptance/extract-dataset-query-port/walking-skeleton.feature` (runnable; byte-identical to SSOT modulo DES-ENFORCEMENT marker)
-* `tests/acceptance/extract-dataset-query-port/milestone-1-port-extraction.feature`
-* `tests/acceptance/extract-dataset-query-port/milestone-2-caller-migration.feature`
-* `tests/acceptance/extract-dataset-query-port/milestone-3-domain-cleanup.feature`
+* `tests/acceptance/extract-dataset-query-port/dataset-preview-flows-through-query-engine-port.feature` (runnable; byte-identical to SSOT modulo DES-ENFORCEMENT marker)
+* `tests/acceptance/extract-dataset-query-port/query-engine-port-honors-boundary-contract.feature`
+* `tests/acceptance/extract-dataset-query-port/dataset-service-fetches-via-port-directly.feature`
+* `tests/acceptance/extract-dataset-query-port/dataset-model-becomes-pure-after-port-cleanup.feature`
 * `tests/acceptance/extract-dataset-query-port/conftest.py`
 * `tests/acceptance/extract-dataset-query-port/pyproject.toml`
 * `tests/acceptance/extract-dataset-query-port/steps/dataset_query_port_steps.py` (RED scaffold, `__SCAFFOLD__ = True`)
-* `tests/acceptance/extract-dataset-query-port/test_walking_skeleton.py`
-* `tests/acceptance/extract-dataset-query-port/test_milestone_1_port_extraction.py`
-* `tests/acceptance/extract-dataset-query-port/test_milestone_2_caller_migration.py`
-* `tests/acceptance/extract-dataset-query-port/test_milestone_3_domain_cleanup.py`
+* `tests/acceptance/extract-dataset-query-port/test_dataset_preview_flows_through_query_engine_port.py`
+* `tests/acceptance/extract-dataset-query-port/test_query_engine_port_honors_boundary_contract.py`
+* `tests/acceptance/extract-dataset-query-port/test_dataset_service_fetches_via_port_directly.py`
+* `tests/acceptance/extract-dataset-query-port/test_dataset_model_becomes_pure_after_port_cleanup.py`
 
 ## Hand-off
 

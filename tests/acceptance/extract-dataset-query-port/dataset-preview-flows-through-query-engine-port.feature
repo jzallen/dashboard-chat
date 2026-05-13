@@ -1,6 +1,6 @@
 # Walking-skeleton acceptance for extract-dataset-query-port (ADR-021).
 #
-# Strategy C (real local I/O) — mirrors dbt-test-validation/walking-skeleton.feature
+# Strategy C (real local I/O) — mirrors dbt-test-validation/dataset-preview-flows-through-query-engine-port.feature
 # (DWD-1 there). The 5-service compose stack runs real auth-proxy + backend +
 # worker + query-engine (Postgres + pg_duckdb) + MinIO. The walking skeleton
 # threads a real `Dataset` whose preview is fetched through the new

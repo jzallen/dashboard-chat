@@ -3,7 +3,7 @@
 #
 # This file is the DISTILL-wave SSOT of the milestone-3 scenarios. The
 # runnable copy lives at:
-#   tests/acceptance/extract-dataset-query-port/milestone-3-domain-cleanup.feature
+#   tests/acceptance/extract-dataset-query-port/dataset-model-becomes-pure-after-port-cleanup.feature
 # and is byte-identical to this file. Updates to one MUST update the other
 # in the same commit (DWD-2 binding).
 #

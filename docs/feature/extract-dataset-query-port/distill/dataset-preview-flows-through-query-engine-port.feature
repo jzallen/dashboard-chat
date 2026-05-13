@@ -3,11 +3,11 @@
 #
 # This file is the DISTILL-wave SSOT of the walking-skeleton scenario.
 # The runnable copy lives at:
-#   tests/acceptance/extract-dataset-query-port/walking-skeleton.feature
+#   tests/acceptance/extract-dataset-query-port/dataset-preview-flows-through-query-engine-port.feature
 # and is byte-identical to this file. Updates to one MUST update the other
 # in the same commit (DWD-2 binding).
 #
-# Strategy C (real local I/O) — mirrors dbt-test-validation/walking-skeleton.feature
+# Strategy C (real local I/O) — mirrors dbt-test-validation/dataset-preview-flows-through-query-engine-port.feature
 # (DWD-1 there). The 5-service compose stack runs real auth-proxy + backend +
 # worker + query-engine (Postgres + pg_duckdb) + MinIO. The walking skeleton
 # threads a real `Dataset` whose preview is fetched through the new

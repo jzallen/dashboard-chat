@@ -7,4 +7,4 @@ pulled in via conftest.py's re-export.
 """
 from pytest_bdd import scenarios
 
-scenarios("walking-skeleton.feature")
+scenarios("dataset-preview-flows-through-query-engine-port.feature")
