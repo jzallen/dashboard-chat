@@ -124,6 +124,12 @@ js_library(
 
 # ─── Vite Build ──────────────────────────────────────────────────────────────
 
+# RRv7 framework mode (ADR-034) requires `react-router build` to trigger
+# the plugin's multi-environment build (client + ssr). Plain `vite build`
+# only emits the client environment and skips build/server/. Output goes to
+# frontend/build/{client,server} regardless of --outDir (the plugin
+# overrides it). Stage build/client into dist/ to preserve the
+# assets_layer contract (untars dist/ into /usr/share/nginx/html/).
 genrule(
     name = "dist",
     srcs = [
@@ -134,7 +140,9 @@ genrule(
     cmd = """
         set -a && . .env && set +a && \
         cd frontend && \
-        VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx vite build --outDir ../$$TMPDIR/dist --emptyOutDir && \
+        VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx react-router build && \
+        mkdir -p ../$$TMPDIR/dist && \
+        cp -r build/client/. ../$$TMPDIR/dist/ && \
         tar -cf - -C ../$$TMPDIR dist > ../$(OUTS)
     """,
     tags = ["no-sandbox", "manual"],
@@ -405,7 +413,7 @@ genrule(
     cmd = """
         set -a && . .env && set +a && \
         cd frontend && \
-        NODE_ENV=production npx vite build && \
+        NODE_ENV=production npx react-router build && \
         npx esbuild ssr.ts --bundle --platform=node --format=esm \
             --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" \
             --outfile=../$$TMPDIR/app/frontend/ssr.mjs && \
