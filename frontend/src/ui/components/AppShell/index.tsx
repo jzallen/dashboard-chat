@@ -10,6 +10,7 @@ import { QueryProvider } from "../../providers/QueryProvider";
 import { SideNav } from "../SideNav";
 import { UnifiedNav } from "../SideNav/UnifiedNav";
 import styles from "./AppShell.module.css";
+import { RequireAuth, RequireOrg } from "./guards";
 
 export interface AppShellContext {
   orgId: string | null;
@@ -53,8 +54,14 @@ function AppShellInner() {
 
 export function AppShell() {
   return (
-    <QueryProvider>
-      <AppShellInner />
-    </QueryProvider>
+    <RequireAuth>
+      <RequireOrg>
+        <QueryProvider>
+          <AppShellInner />
+        </QueryProvider>
+      </RequireOrg>
+    </RequireAuth>
   );
 }
+
+export default AppShell;

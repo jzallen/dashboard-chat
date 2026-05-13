@@ -5,6 +5,7 @@ import { createDataCatalog } from "@/dataCatalog";
 
 import { getErrorMessage } from "../../../lib/errors";
 import { useAuth } from "../../context/AuthContext";
+import { RequireAuth } from "../AppShell/guards";
 import styles from "./CreateOrg.module.css";
 
 const catalog = createDataCatalog(withAuth(fetch));
@@ -74,3 +75,13 @@ export function CreateOrg() {
     </div>
   );
 }
+
+// DWD-6: preserve App.tsx's `<RequireAuth><CreateOrg /></RequireAuth>` wrap when
+// the route resolves directly to this module via frontend/app/routes.ts.
+const CreateOrgGuarded = () => (
+  <RequireAuth>
+    <CreateOrg />
+  </RequireAuth>
+);
+
+export default CreateOrgGuarded;

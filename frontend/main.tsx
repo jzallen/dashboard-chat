@@ -1,15 +1,16 @@
-import './index.css'
+// RRv7 framework-mode client hydration entry (DWD-6).
+// <HydratedRouter /> from react-router/dom wires the route tree declared in
+// frontend/app/routes.ts and reconciles the SSR'd state from frontend/app/root.tsx.
+// hydrateRoot(document, ...) — the SSR'd HTML is the entire document.
+import "./index.css";
 
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { StrictMode } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { HydratedRouter } from "react-router/dom";
 
-import App from './App'
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </React.StrictMode>,
-)
+hydrateRoot(
+  document,
+  <StrictMode>
+    <HydratedRouter />
+  </StrictMode>,
+);
