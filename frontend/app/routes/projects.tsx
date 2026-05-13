@@ -14,11 +14,10 @@
 
 import type { LoaderFunctionArgs } from "react-router";
 
-import { uiStateClient } from "../lib/ui-state-client";
+import { PROJECT_FLOW_MACHINE, uiStateClient } from "../lib/ui-state-client";
 import { ProjectsPage } from "../../src/ui/components/OrgView";
 
 const DEFAULT_PRINCIPAL_ID = "dev-user-001";
-const J002_MACHINE = "project-and-chat-session-management";
 
 export interface ProjectsLoaderData {
   org_id: string;
@@ -35,12 +34,12 @@ export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<ProjectsLoaderData> {
   const principalId = DEFAULT_PRINCIPAL_ID;
-  const j002FlowId = `${J002_MACHINE}:${principalId}`;
+  const projectFlowId = `${PROJECT_FLOW_MACHINE}:${principalId}`;
   const client = uiStateClient(request);
 
   try {
-    const j002 = await client.getJ002Projection(j002FlowId);
-    const ctx = j002.context as {
+    const projection = await client.getProjection(PROJECT_FLOW_MACHINE, projectFlowId);
+    const ctx = projection.context as {
       project?: { id: string | null; name: string | null };
       most_recent_session_per_project?: Record<string, string>;
       last_used_resolution_degraded?: {
@@ -49,7 +48,7 @@ export async function loader({
       } | null;
     };
     return {
-      org_id: j002.active_scope.org_id,
+      org_id: projection.active_scope.org_id,
       selected_project_id: ctx.project?.id ?? null,
       selected_project_name: ctx.project?.name ?? null,
       most_recent_session_per_project: ctx.most_recent_session_per_project ?? {},

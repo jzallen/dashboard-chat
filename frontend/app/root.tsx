@@ -31,7 +31,11 @@ import {
 } from "react-router";
 
 import { AuthProvider } from "../src/ui/context/AuthContext";
-import { uiStateClient, type ProjectionShape } from "./lib/ui-state-client";
+import {
+  PROJECT_FLOW_MACHINE,
+  uiStateClient,
+  type ProjectionShape,
+} from "./lib/ui-state-client";
 
 // Dev-mode principal — auth-proxy hardcodes DEV_USER's identity headers,
 // so the per-flow id is deterministic at runtime. In production this is
@@ -41,8 +45,8 @@ const DEFAULT_PRINCIPAL_ID = "dev-user-001";
 interface RootLoaderData {
   org_id: string;
   user_first_name: string | null;
-  j002_state: string;
-  j002_active_scope: ProjectionShape["active_scope"];
+  project_flow_state: string;
+  active_scope: ProjectionShape["active_scope"];
   project: { id: string | null; name: string | null };
 }
 
@@ -68,21 +72,22 @@ export function Layout({ children }: { children: ReactNode }) {
 export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<RootLoaderData> {
-  // J-002 MR-1: read both J-001 projection (for org_id + user.first_name)
-  // and J-002 projection (for the no_projects_empty_state /
-  // project_selected dispatch). The walking-skeleton scenario relies on
-  // the SSR pass observing J-002.state === "no_projects_empty_state" so
-  // first paint carries the welcome panel — no client roundtrip needed.
+  // MR-1: read both the login-and-org-setup projection (for org_id +
+  // user.first_name) and the project-and-chat-session-management
+  // projection (for the no_projects_empty_state / project_selected
+  // dispatch). The walking-skeleton scenario relies on the SSR pass
+  // observing project_flow_state === "no_projects_empty_state" so first
+  // paint carries the welcome panel — no client roundtrip needed.
   const principalId = DEFAULT_PRINCIPAL_ID;
-  const j001FlowId = `login-and-org-setup:${principalId}`;
-  const j002FlowId = `project-and-chat-session-management:${principalId}`;
+  const loginFlowId = `login-and-org-setup:${principalId}`;
+  const projectFlowId = `${PROJECT_FLOW_MACHINE}:${principalId}`;
 
   const client = uiStateClient(request);
 
   let org_id = "";
   let user_first_name: string | null = null;
-  let j002_state = "anonymous";
-  let j002_active_scope: ProjectionShape["active_scope"] = {
+  let project_flow_state = "anonymous";
+  let active_scope: ProjectionShape["active_scope"] = {
     org_id: "",
     project_id: null,
     resource_type: null,
@@ -94,34 +99,37 @@ export async function loader({
   };
 
   try {
-    const j001 = await client.getProjection("login-and-org-setup", j001FlowId);
-    const j001Ctx = (j001 as ProjectionShape).context as {
+    const login = await client.getProjection("login-and-org-setup", loginFlowId);
+    const loginContext = (login as ProjectionShape).context as {
       org?: { id: string | null; name: string | null };
       user?: { display_name: string | null };
     };
-    org_id = j001Ctx?.org?.id ?? "";
-    const displayName = j001Ctx?.user?.display_name ?? "";
+    org_id = loginContext?.org?.id ?? "";
+    const displayName = loginContext?.user?.display_name ?? "";
     user_first_name = displayName ? displayName.split(/\s+/)[0] : null;
   } catch (err) {
-    // J-001 not yet started — leave defaults. The FE renders the login
-    // shell in that case (handled by the existing routes that this loader
-    // is composed under).
+    // login-and-org-setup not yet started — leave defaults. The FE
+    // renders the login shell in that case (handled by the existing
+    // routes that this loader is composed under).
     if (err instanceof Response && err.status === 504) throw err;
   }
 
   try {
-    const j002 = await client.getJ002Projection(j002FlowId);
-    j002_state = j002.state;
-    j002_active_scope = j002.active_scope;
-    const j002Ctx = j002.context as {
+    const projection = await client.getProjection(
+      PROJECT_FLOW_MACHINE,
+      projectFlowId,
+    );
+    project_flow_state = projection.state;
+    active_scope = projection.active_scope;
+    const projectContext = projection.context as {
       project?: { id: string | null; name: string | null };
       user_first_name?: string | null;
     };
-    if (j002Ctx?.project) {
-      project = j002Ctx.project;
+    if (projectContext?.project) {
+      project = projectContext.project;
     }
-    if (!user_first_name && j002Ctx?.user_first_name) {
-      user_first_name = j002Ctx.user_first_name;
+    if (!user_first_name && projectContext?.user_first_name) {
+      user_first_name = projectContext.user_first_name;
     }
   } catch (err) {
     if (err instanceof Response && err.status === 504) throw err;
@@ -130,8 +138,8 @@ export async function loader({
   return {
     org_id,
     user_first_name,
-    j002_state,
-    j002_active_scope,
+    project_flow_state,
+    active_scope,
     project,
   };
 }
@@ -153,17 +161,17 @@ export default function Root() {
       }),
   );
 
-  // The loader populates J-002's state for the SSR pass. When the user
-  // is in `no_projects_empty_state`, render the welcome panel inline so
-  // first-paint carries the no-projects shape (walking-skeleton AC).
-  // Otherwise, defer to the route-level <Outlet />.
+  // The loader populates the project flow's state for the SSR pass.
+  // When the user is in `no_projects_empty_state`, render the welcome
+  // panel inline so first-paint carries the no-projects shape
+  // (walking-skeleton AC). Otherwise, defer to the route-level <Outlet />.
   const data = useLoaderData<typeof loader>() as RootLoaderData | undefined;
 
   return (
     <QueryClientProvider client={queryClient}>
       <HydrationBoundary state={undefined}>
         <AuthProvider>
-          {data?.j002_state === "no_projects_empty_state" ? (
+          {data?.project_flow_state === "no_projects_empty_state" ? (
             <WelcomePanel
               orgName={null}
               userFirstName={data.user_first_name}

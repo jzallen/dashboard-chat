@@ -27,7 +27,7 @@ import {
 } from "./machines/login-and-org-setup.ts";
 import {
   createProjectAndChatSessionMachine,
-  type J002MachineDeps,
+  type ProjectFlowMachineDeps,
 } from "./machines/project-and-chat-session-management.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
@@ -42,7 +42,7 @@ export interface OrchestratorDeps {
    * orchestrator without wiring J-002 (the j001_ready hook becomes a no-op
    * when this is absent).
    */
-  j002MachineDeps?: J002MachineDeps;
+  projectFlowMachineDeps?: ProjectFlowMachineDeps;
   /**
    * Async function form of the org-create step. Used by the harness-knob
    * wrapper to sequence create + reissue with forced failures injected at
@@ -75,12 +75,12 @@ const MACHINE_REGISTRY: Record<string, MachineFactory> = {
   "login-and-org-setup": (deps, _input) =>
     createLoginAndOrgSetupMachine(deps.loginMachineDeps),
   "project-and-chat-session-management": (deps, _input) => {
-    if (!deps.j002MachineDeps) {
+    if (!deps.projectFlowMachineDeps) {
       throw new Error(
-        "j002MachineDeps required to construct the project-and-chat-session-management machine",
+        "projectFlowMachineDeps required to construct the project-and-chat-session-management machine",
       );
     }
-    return createProjectAndChatSessionMachine(deps.j002MachineDeps);
+    return createProjectAndChatSessionMachine(deps.projectFlowMachineDeps);
   },
 };
 
@@ -598,7 +598,7 @@ export class FlowOrchestrator {
       // named (the org_id flows J-001 → orchestrator → J-002 directly,
       // never via a separate fetch).
       const isFirstReady = prior === "creating_org" || prior === "anonymous" || !prior;
-      if (isFirstReady && this.deps.j002MachineDeps && orgCtx.id) {
+      if (isFirstReady && this.deps.projectFlowMachineDeps && orgCtx.id) {
         const firstName = (userCtx.display_name ?? "").split(/\s+/)[0] || null;
         try {
           await this.beginIfNotStarted({
@@ -662,7 +662,7 @@ export class FlowOrchestrator {
     // existing branches above don't fire for it. Project a state-specific
     // event into the log so subsequent projection reads can reconstruct.
     if (input.machine === "project-and-chat-session-management") {
-      const j002Ctx = snapshot.context as {
+      const projectContext = snapshot.context as {
         org_id?: string;
         user_first_name?: string | null;
         project?: { id: string | null; name: string | null };
@@ -681,32 +681,32 @@ export class FlowOrchestrator {
       // reads intent_* from this event.
       if (input.type === "open_deep_link") {
         const resolvedScope = {
-          org_id: j002Ctx.org_id ?? "",
-          project_id: j002Ctx.project?.id ?? null,
-          resource_type: j002Ctx.intent_resource_type ?? null,
-          resource_id: j002Ctx.intent_resource_id ?? null,
+          org_id: projectContext.org_id ?? "",
+          project_id: projectContext.project?.id ?? null,
+          resource_type: projectContext.intent_resource_type ?? null,
+          resource_id: projectContext.intent_resource_id ?? null,
         };
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "deep_link_opened",
           payload: {
             scope: resolvedScope,
-            project: j002Ctx.project ?? null,
+            project: projectContext.project ?? null,
             reconciled: false,
-            intent_project_id: j002Ctx.intent_project_id ?? null,
-            intent_session_id: j002Ctx.intent_session_id ?? null,
-            intent_resource_id: j002Ctx.intent_resource_id ?? null,
-            intent_resource_type: j002Ctx.intent_resource_type ?? null,
+            intent_project_id: projectContext.intent_project_id ?? null,
+            intent_session_id: projectContext.intent_session_id ?? null,
+            intent_resource_id: projectContext.intent_resource_id ?? null,
+            intent_resource_type: projectContext.intent_resource_type ?? null,
           },
           correlation_id: input.correlation_id,
         });
       }
 
-      if (stateValue === "no_projects_empty_state" && j002Ctx.project_validation_error) {
+      if (stateValue === "no_projects_empty_state" && projectContext.project_validation_error) {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "project_validation_failed",
-          payload: { error: j002Ctx.project_validation_error },
+          payload: { error: projectContext.project_validation_error },
           correlation_id: input.correlation_id,
         });
       } else if (stateValue === "no_projects_empty_state") {
@@ -716,8 +716,8 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "no_projects_displayed",
           payload: {
-            org_id: j002Ctx.org_id ?? "",
-            user_first_name: j002Ctx.user_first_name ?? null,
+            org_id: projectContext.org_id ?? "",
+            user_first_name: projectContext.user_first_name ?? null,
           },
           correlation_id: input.correlation_id,
         });
@@ -725,7 +725,7 @@ export class FlowOrchestrator {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "project_creation_started",
-          payload: { pending_project_name: j002Ctx.pending_project_name ?? "" },
+          payload: { pending_project_name: projectContext.pending_project_name ?? "" },
           correlation_id: input.correlation_id,
         });
       } else if (stateValue === "project_selected") {
@@ -739,8 +739,8 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: isFromCreate ? "project_created" : "project_selected",
           payload: {
-            org_id: j002Ctx.org_id ?? "",
-            project: j002Ctx.project,
+            org_id: projectContext.org_id ?? "",
+            project: projectContext.project,
           },
           correlation_id: input.correlation_id,
         });
@@ -749,8 +749,8 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "j002_recoverable_error",
           payload: {
-            underlying_cause_tag: j002Ctx.underlying_cause_tag ?? "transient",
-            pending_project_name: j002Ctx.pending_project_name ?? "",
+            underlying_cause_tag: projectContext.underlying_cause_tag ?? "transient",
+            pending_project_name: projectContext.pending_project_name ?? "",
           },
           correlation_id: input.correlation_id,
         });
@@ -759,9 +759,9 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "scope_mismatch_displayed",
           payload: {
-            org_id: j002Ctx.org_id ?? "",
-            underlying_cause_tag: j002Ctx.underlying_cause_tag ?? "cross_tenant",
-            intent_project_id: j002Ctx.intent_project_id ?? null,
+            org_id: projectContext.org_id ?? "",
+            underlying_cause_tag: projectContext.underlying_cause_tag ?? "cross_tenant",
+            intent_project_id: projectContext.intent_project_id ?? null,
           },
           correlation_id: input.correlation_id,
         });

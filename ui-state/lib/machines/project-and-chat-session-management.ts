@@ -28,7 +28,7 @@ import { assign, fromPromise, setup } from "xstate";
 
 import type { ActiveScope, ResourceType } from "../active-scope.ts";
 
-export type J002State =
+export type ProjectFlowState =
   | "resolving_initial_scope"
   | "no_projects_empty_state"
   | "creating_project"
@@ -48,7 +48,7 @@ export interface SessionSummary {
   active_dataset_id: string | null;
 }
 
-export type J002CauseTag =
+export type ProjectFlowCauseTag =
   | "no_projects"
   | "transient"
   | "project_not_found"
@@ -60,7 +60,7 @@ export type J002CauseTag =
   | "list_sessions_degraded"
   | "replay_abandoned";
 
-export interface J002ProjectValidationError {
+export interface ProjectValidationError {
   kind: "empty" | "too_short" | "too_long";
   message: string;
 }
@@ -72,7 +72,7 @@ export interface TranscriptMessage {
   ts: string;
 }
 
-export interface J002MachineContext {
+export interface ProjectFlowMachineContext {
   correlation_id: string;
   principal_id: string;
 
@@ -103,15 +103,15 @@ export interface J002MachineContext {
   intent_resource_type: ResourceType | null;
 
   // Cross-state plumbing:
-  underlying_cause_tag: J002CauseTag | null;
-  last_live_state: J002State | null;
+  underlying_cause_tag: ProjectFlowCauseTag | null;
+  last_live_state: ProjectFlowState | null;
   retries: number;
   /** Composer text preserved across creating_project ↔ error_recoverable. */
   pending_project_name: string;
 
   // Inline validation error attached when a submitted project name fails
   // local validation (parallels J-001's org_validation_error).
-  project_validation_error: J002ProjectValidationError | null;
+  project_validation_error: ProjectValidationError | null;
 
   // Observability counters:
   scope_reconciled_count: number;
@@ -124,7 +124,7 @@ export interface J002MachineContext {
   last_used_degraded_project_ids: string[];
 }
 
-export type J002Event =
+export type ProjectFlowEvent =
   | { type: "j001_ready"; org_id: string; user_first_name: string }
   | { type: "create_project_clicked" }
   | { type: "create_project_submitted"; org_name: string }
@@ -170,7 +170,7 @@ export type CreateProjectActor = ReturnType<
   typeof fromPromise<ProjectSummary, CreateProjectInput>
 >;
 
-export interface J002MachineDeps {
+export interface ProjectFlowMachineDeps {
   resolveInitialScope: ResolveInitialScopeActor;
   createProject: CreateProjectActor;
 }
@@ -178,7 +178,7 @@ export interface J002MachineDeps {
 /** Trim + length-check the project name; returns null if valid. */
 export function validateProjectName(
   raw: string,
-): J002ProjectValidationError | null {
+): ProjectValidationError | null {
   const trimmed = (raw ?? "").trim();
   if (trimmed.length === 0) {
     return { kind: "empty", message: "Please enter a project name" };
@@ -192,11 +192,11 @@ export function validateProjectName(
   return null;
 }
 
-export function createProjectAndChatSessionMachine(deps: J002MachineDeps) {
+export function createProjectAndChatSessionMachine(deps: ProjectFlowMachineDeps) {
   return setup({
     types: {
-      context: {} as J002MachineContext,
-      events: {} as J002Event,
+      context: {} as ProjectFlowMachineContext,
+      events: {} as ProjectFlowEvent,
       input: {} as {
         correlation_id: string;
         principal_id: string;

@@ -7,7 +7,12 @@
 
 const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL ?? "http://auth-proxy:3000";
 const LOADER_TIMEOUT_MS = 5000;
-const J002_MACHINE = "project-and-chat-session-management";
+
+/**
+ * Machine identifier for the project-and-chat-session-management flow.
+ * Exported so route loaders compose flowIds without re-declaring the literal.
+ */
+export const PROJECT_FLOW_MACHINE = "project-and-chat-session-management";
 
 export interface ActiveScopeShape {
   org_id: string;
@@ -58,6 +63,12 @@ async function fetchProjection(
 export function uiStateClient(request: Request) {
   const authHeader = request.headers.get("authorization") ?? "";
   return {
+    /**
+     * Read a flow's projection. Per DWD-4, flow_id is principal-scoped:
+     * `<machine>:<principal_id>`. When the caller passes no flowId, the
+     * server returns a fresh anonymous projection (matches buildProjection's
+     * default) — used for cold loader reads before a flow has been started.
+     */
     async getProjection(machine: string, flowId?: string) {
       const url = new URL(`/ui-state/flow/${machine}/projection`, AUTH_PROXY_URL);
       if (flowId) url.searchParams.set("flow_id", flowId);
@@ -65,36 +76,16 @@ export function uiStateClient(request: Request) {
     },
 
     /**
-     * J-002 projection read — DWD-4. The flow_id is principal-scoped:
-     * `project-and-chat-session-management:<principal_id>`. When the
-     * caller doesn't know the principal_id, derive it from J-001's
-     * projection's flow_id (same suffix). The flow may not exist yet
-     * (auto-spawn fires on J-001 → ready); a fresh `state: "anonymous"`
-     * projection is returned in that case (matches buildProjection's
-     * default).
+     * Post an event to a flow, returning the updated projection. Used by
+     * route loaders that need to drive a machine forward (e.g. submit a
+     * create-project intent). Body shape mirrors `/flow/:machine/event`.
      */
-    async getJ002Projection(flowId: string): Promise<ProjectionShape> {
-      const url = new URL(
-        `/ui-state/flow/${J002_MACHINE}/projection`,
-        AUTH_PROXY_URL,
-      );
-      url.searchParams.set("flow_id", flowId);
-      return fetchProjection(url, authHeader);
-    },
-
-    /**
-     * J-002 event POST — DWD-4. Returns the updated projection. Used by
-     * route loaders that need to drive the J-002 machine (e.g., open-deep-link,
-     * create_project_submitted). Body shape mirrors `/flow/:machine/event`.
-     */
-    async postJ002Event(
+    async postEvent(
+      machine: string,
       flowId: string,
       event: { type: string; payload?: Record<string, unknown> },
     ): Promise<ProjectionShape> {
-      const url = new URL(
-        `/ui-state/flow/${J002_MACHINE}/event`,
-        AUTH_PROXY_URL,
-      );
+      const url = new URL(`/ui-state/flow/${machine}/event`, AUTH_PROXY_URL);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), LOADER_TIMEOUT_MS);
       try {
@@ -130,13 +121,14 @@ export function uiStateClient(request: Request) {
     },
 
     /**
-     * J-002 open-deep-link — DWD-4 + US-204. Posts to the intent-shaped
-     * deep-link endpoint with the supplied intent_* fields. The orchestrator
-     * spawns J-002 if not yet started and forwards an `open_deep_link` event
-     * to the actor, which re-resolves through resolving_initial_scope.
-     * Returns the settled projection.
+     * Open a deep link into the project-and-chat-session-management flow
+     * (DWD-4 + US-204). Posts to the intent-shaped deep-link endpoint with
+     * the supplied intent_* fields. The orchestrator spawns the flow if
+     * not yet started and forwards an `open_deep_link` event to the actor,
+     * which re-resolves through resolving_initial_scope. Returns the
+     * settled projection.
      */
-    async openJ002DeepLink(
+    async openProjectDeepLink(
       principalId: string,
       intent: {
         intent_project_id?: string;
@@ -146,7 +138,7 @@ export function uiStateClient(request: Request) {
       },
     ): Promise<ProjectionShape> {
       const url = new URL(
-        `/ui-state/flow/${J002_MACHINE}/open-deep-link`,
+        `/ui-state/flow/${PROJECT_FLOW_MACHINE}/open-deep-link`,
         AUTH_PROXY_URL,
       );
       const controller = new AbortController();

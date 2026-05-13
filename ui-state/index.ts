@@ -83,7 +83,7 @@ const orchestrator = new FlowOrchestrator({
       DEFAULT_PRINCIPAL_HEADERS,
     ),
   },
-  j002MachineDeps: {
+  projectFlowMachineDeps: {
     resolveInitialScope: resolveInitialScopeActor(
       BACKEND_URL,
       DEFAULT_PRINCIPAL_HEADERS,
@@ -338,12 +338,12 @@ app.post("/flow/:machine/open-deep-link", async (c) => {
   // The orchestrator forwards an `open_deep_link` event to the J-002 actor
   // which re-enters resolving_initial_scope with the new intent. The flow
   // is auto-spawned if not yet started.
-  const isJ002Intent =
+  const isProjectFlowDeepLinkIntent =
     machine === "project-and-chat-session-management" &&
     (body.intent_project_id !== undefined ||
       body.intent_session_id !== undefined ||
       body.intent_resource_id !== undefined);
-  if (isJ002Intent) {
+  if (isProjectFlowDeepLinkIntent) {
     const principalId =
       c.req.header("X-User-Id") ?? body.principal_id ?? "";
     if (!principalId) {

@@ -1,12 +1,14 @@
 // Framework-mode route — `/projects/:projectId` AND
 // `/projects/:projectId/datasets/:datasetId`.
 //
-// MR-1 sub-step 01-03 (US-204): added a server-side `loader` that drives a
-// J-002 cold deep-link resolution before first paint. The loader:
+// MR-1 sub-step 01-03 (US-204): added a server-side `loader` that drives
+// a cold deep-link resolution through the project-and-chat-session-
+// management flow before first paint. The loader:
 //   1. Reads params.projectId (+ optional params.datasetId).
-//   2. Calls `uiStateClient.openJ002DeepLink({ intent_project_id, ... })`
-//      which POSTs to ui-state /open-deep-link. ui-state spawns J-002 if
-//      not yet started and forwards an `open_deep_link` event to the actor.
+//   2. Calls `uiStateClient.openProjectDeepLink({ intent_project_id, ... })`
+//      which POSTs to ui-state /open-deep-link. ui-state spawns the flow
+//      if not yet started and forwards an `open_deep_link` event to the
+//      actor.
 //   3. Returns the settled projection's snapshot so the SSR'd page body
 //      carries the resolved scope on first paint (no client roundtrip).
 //
@@ -58,7 +60,7 @@ export async function loader({
       intent.intent_resource_id = datasetId;
       intent.intent_resource_type = "dataset";
     }
-    const projection = await client.openJ002DeepLink(principalId, intent);
+    const projection = await client.openProjectDeepLink(principalId, intent);
     const ctx = projection.context as {
       project?: { id: string | null; name: string | null };
       underlying_cause_tag?: string | null;

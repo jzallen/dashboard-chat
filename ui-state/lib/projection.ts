@@ -62,9 +62,10 @@ interface ReducedContext {
    *  org_created_and_jwt_reissued boundary. The TS harness's
    *  assert_jwt_carries_org_claim reads this. */
   access_token: string | null;
-  /** J-002 context — populated by j002_* event handlers. The shape mirrors
-   *  the J-002 machine's J002MachineContext (subset relevant to projection
-   *  consumers — full per-flow context lives in the actor). */
+  /** project-and-chat-session-management context — populated by j002_*
+   *  event handlers. The shape mirrors the project flow machine's
+   *  ProjectFlowMachineContext (subset relevant to projection consumers —
+   *  full per-flow context lives in the actor). */
   user_first_name: string | null;
   pending_project_name: string;
   project_validation_error: { kind: string; message: string } | null;
