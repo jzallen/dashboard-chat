@@ -1,3 +1,11 @@
+# [1.30.0](https://github.com/jzallen/dashboard-chat/compare/v1.29.0...v1.30.0) (2026-05-13)
+
+
+### Features
+
+* **auth-proxy:** add test-mirror endpoint capturing forwarded Authorization ([19c3c99](https://github.com/jzallen/dashboard-chat/commit/19c3c99f16c106cb495765e3ada59b55be09297b))
+* **frontend:** migrate /login to RRv7 framework mode with server loader ([d052896](https://github.com/jzallen/dashboard-chat/commit/d052896c78e3ef8366d9b0b01b0d390af49d1b8a))
+
 # [1.29.0](https://github.com/jzallen/dashboard-chat/compare/v1.28.0...v1.29.0) (2026-05-13)
 
 
