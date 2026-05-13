@@ -33,5 +33,5 @@
       "@/stream/*": ["src/lib/stream/*"]
     }
   },
-  "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["*.ts", "*.tsx", "src/**/*.ts", "src/**/*.tsx", "app/**/*.ts", "app/**/*.tsx"]
 }
