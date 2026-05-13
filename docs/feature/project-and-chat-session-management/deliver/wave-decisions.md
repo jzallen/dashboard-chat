@@ -201,3 +201,138 @@ suppress it during `switching_project`), individual states can add their own
 - DESIGN handoff §"DEVOPS handoff" / §"Endpoints to assert against"
 - `tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts` (the harness file extended by 01-02)
 - `tests/acceptance/project-and-chat-session-management/driver.py` `run_ts_harness` (the invocation site)
+
+---
+
+## DDD-5 (MR-2) — session-chat is spawned and projected at flow_id `session-chat:<principal>` (per-machine projection URL family)
+
+**Decision**: MR-2 introduces the **session-chat** machine surface on the wire
+via `/ui-state/flow/session-chat/{begin, event, projection, projection/stream}`.
+This URL family was previously aspirational (DESIGN §1 + §3.1); MR-2 ships it
+because the new session-list / resume / session-active states need a flow log
+distinct from project-context's.
+
+The legacy `project-and-chat-session-management` URL family is **preserved
+unchanged** for project-context — MR-1 acceptance tests continue to pass
+verbatim per the MR-1.5 REC-2 decision.
+
+### Why two URL families, not one composed projection
+
+| Option | Pros | Cons |
+|---|---|---|
+| **TWO URL families (CHOSEN)** | Each machine has its own flow log (Redis stream key) — no coupling between project-context and session-chat event domains. Reflects DESIGN §3.1's MachineRegistry strategy. Each tab can subscribe to ONE machine's projection-stream if it only renders that surface (cheaper SSE). | Two `EventSource` instances per chat-shell page. |
+| Composed `getJ002Projection({project_context, session_chat})` over one URL | Single SSE for the union. | Couples the two flows' event logs; a session-chat-only update wakes consumers that only care about project-context. Adds a new wire envelope shape. |
+
+The composed-projection pattern is still available client-side: `sessions.tsx`
+loader reads BOTH projections via `Promise.all(...)`. The composition happens
+in the loader, not the wire envelope.
+
+### How to apply
+
+- `ui-state/index.ts` wires `sessionChatMachineDeps: { loadSessionList, resumeSession }`.
+- `ui-state/lib/orchestrator.ts`:
+  - `MACHINE_REGISTRY[SESSION_CHAT_WIRE_NAME] = (deps) => createSessionChatMachine(deps.sessionChatMachineDeps ?? {})`.
+  - `maybeFireProjectReady` calls `beginIfNotStarted({machine: SESSION_CHAT_WIRE_NAME, ...})` when project-context settles in `project_selected`.
+  - `emitSessionChatSpawnEvents` + `appendSessionChatTerminalEvents` write events to the session-chat flow log (per DESIGN §7.3 — disjoint event-type domain).
+- The idempotent re-spawn branch in `beginIfNotStarted` re-emits spawn events (substrate completion — without this, a re-issued project_ready when the actor already exists silently drops the events).
+
+### Reversibility
+
+If a future MR finds two URL families unwieldy, the composed projection can be
+added as a third URL family (`/ui-state/flow/j002-combined/projection`) without
+removing the per-machine ones. Adding it is one HTTP handler that calls
+`Promise.all([orchestrator.getProjection(pc_id), orchestrator.getProjection(sc_id)])`.
+
+---
+
+## DDD-6 (MR-2) — Redis `subscribe()` returns an AsyncIterable bounded by `blockMs`
+
+**Decision**: The new `FlowEventLog.subscribe(flow_id, sinceId, blockMs)`
+method returns an `AsyncIterable<FlowEvent>` that yields one event per new
+entry in the flow's Redis stream, terminating cleanly after `blockMs` of
+silence OR when the caller invokes `.return()` (e.g., the SSE consumer
+closes the connection).
+
+### Why AsyncIterable
+
+| Pattern | Pros | Cons |
+|---|---|---|
+| **AsyncIterable (CHOSEN)** | Native `for await` loops in the SSE handler; cancellation via `.return()` is standard; no callback-registration bookkeeping. | Iterator must `try/finally` close the underlying Redis subscriber connection. |
+| Callback subscription (`subscribe(flow_id, cb)`) | Familiar pub/sub shape. | Caller must wire a teardown path; race between unsubscribe and emit; no natural backpressure. |
+| EventEmitter / Observable | Powerful, but a new dependency type for the codebase. | Larger blast radius; the orchestrator only needs one consumer type (SSE). |
+
+AsyncIterable fits the SSE handler's `for await` loop directly. The Redis adapter
+uses a **dedicated subscriber connection** (`client.duplicate()`) because
+`XREAD BLOCK` holds the connection for the duration of the block — sharing with
+the orchestrator's append/read traffic would deadlock. The connection is
+`quit()`-ed in the iterator's `finally` block.
+
+The noop fallback implements the same shape with a per-flow Set of callbacks
+flushed on `append()`; this is what the unit tests + the local
+no-Redis fallback exercise.
+
+### Reversibility
+
+If a future MR needs millisecond-precision delivery latency or shared subscriber
+connections (e.g., 1000+ tabs per principal), the `Redis.subscribe` adapter can
+switch to a single multiplexed subscriber connection without changing the
+AsyncIterable contract. The two implementations are interchangeable from the
+SSE handler's perspective.
+
+---
+
+## DDD-7 (MR-2) — `refresh_session_list` is a session-chat public event (cross-tab refresh substrate)
+
+**Decision**: The `refresh_session_list` event is added to session-chat's
+public event vocabulary. From `session_list_visible` (and `session_active`,
+for symmetry) the machine transitions to `loading_session_list` with
+`reenter: true`, re-firing the `loadSessionList` invoke.
+
+### Why a public event, not a harness-only knob
+
+The cross-tab refresh contract (US-203 Example 4 + DWD-9 + RD2) requires that
+**any tab** can trigger a fresh session-list read. The mechanism is:
+1. Tab A subscribes to `/projection/stream` for session-chat.
+2. Tab B creates a session via the backend (independent path).
+3. Tab B dispatches `refresh_session_list` to session-chat. The machine
+   re-fires loadSessionList. The new event is appended to the session-chat
+   flow log. Tab A's SSE delivers the updated projection.
+
+The event is also useful for a user-driven "pull-to-refresh" gesture in the FE.
+Making it a harness-only knob would prevent that future use case.
+
+### How to apply
+
+- `session-chat.ts` adds the event to the `SessionChatEvent` union.
+- `session_list_visible.on.refresh_session_list = { target: "loading_session_list", reenter: true }`.
+- `session_active.on.refresh_session_list` mirrors the handler.
+- No new actor; just re-fires the existing loadSessionList invoke.
+
+---
+
+## DDD-8 (MR-2) — Backend substrate completion lands inside this MR
+
+**Decision**: Three backend substrate gaps left by MR-2a are completed inside
+MR-2 (see `deliver/upstream-issues.md` D-MR2-a for full context):
+
+1. `_mappers.session_to_dict` now includes `active_dataset_id` (column flowed through every read path).
+2. `SessionUpdate` Pydantic schema allowlists `active_dataset_id` (PATCH wire surface honors the column).
+3. NEW `GET /api/sessions/:session_id` endpoint + `get_session` use case + JSON:API response.
+
+These are the minimum read-side completions that make the MR-2a write-only
+column useful. They were missed in MR-2a's brief but are mechanical
+one-liners (≤ 15 lines total). The DESIGN §2.3.B `resumeSession` actor reads
+exactly these surfaces; without them the user story cannot pass.
+
+### Why include them in MR-2 (not MR-2b)
+
+| Pattern | Pros | Cons |
+|---|---|---|
+| **MR-2 includes substrate completion (CHOSEN)** | One PR captures the full read-path contract. Each diff is < 15 lines and entirely additive. | Slightly broader scope than the brief named. |
+| Separate MR-2b for substrate | Strict adherence to the named-scope contract. | Adds a sequencing step + cherry-pick risk for nothing — no design choice involved. |
+
+The brief says *"Do NOT extend scope beyond MR-2"* — these three diffs are
+substrate completion (read access to a column that was already added to the
+schema), not new feature scope. They are necessary preconditions for MR-2's
+acceptance tests, so they live in MR-2.
+

@@ -58,6 +58,10 @@ def session_to_dict(session: SessionRecord) -> dict[str, Any]:
         "org_id": session.org_id,
         "created_at": _iso(session.created_at),
         "last_active_at": _iso(session.last_active_at),
+        # J-002 MR-2: surface the column that MR-2a (b496fe6) added on the
+        # write side. The read side needs the value for `resumeSession` to
+        # populate `active_scope.resource_*` per US-205 / DWD-2.
+        "active_dataset_id": session.active_dataset_id,
     }
 
 

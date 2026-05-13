@@ -58,6 +58,12 @@ def _list_session_events_uc():
     return http_controller.list_session_events_uc
 
 
+def _get_session_uc():
+    from app.controllers import http_controller
+
+    return http_controller.get_session_uc
+
+
 class ConversationController:
     """Controller for Session (chat conversation) + ProjectMemory HTTP endpoints."""
 
@@ -134,5 +140,19 @@ class ConversationController:
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sessions", data, f"/api/projects/{project_id}/sessions/{session_id}"), 200
+            case Failure(error):
+                return error_response(error)
+
+    @staticmethod
+    async def get_session(session_id: str, user: "AuthUser") -> tuple[dict, int]:
+        """Get a single session by id (J-002 MR-2 / DWD-2).
+
+        Returns the session metadata in JSON:API shape. 404 (SessionNotFound)
+        for unknown sessions OR cross-org access — existence is not leaked.
+        """
+        result = await _get_session_uc().get_session(session_id, user=user)
+        match result:
+            case Success(data):
+                return wrap_jsonapi_single("sessions", data, f"/api/sessions/{session_id}"), 200
             case Failure(error):
                 return error_response(error)

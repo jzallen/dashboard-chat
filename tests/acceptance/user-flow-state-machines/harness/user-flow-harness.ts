@@ -476,6 +476,131 @@ export class J002Harness {
     }
   }
 
+  // ──────────────── MR-2 session-chat ops (DWD-13 §2B) ────────────────
+  //
+  // Per DWD-13 the J-002 session-chat machine has its own flow_id namespace
+  // (`session-chat:<principal>`) and its own projection URL family. The
+  // harness ops below read/drive that surface via the SAME auth-proxy →
+  // ui-state HTTP path (CM-A holds: no ui-state/lib imports).
+
+  /** Read the session-chat projection. The orchestrator's `project_ready`
+   *  broadcast hook auto-spawns the session-chat actor on project-context's
+   *  `project_selected` entry, so the projection is available once the
+   *  project-context machine has settled in `project_selected`. */
+  async get_session_chat_projection(): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/projection?flow_id=${encodeURIComponent("session-chat:" + this.config.principalId)}`,
+      { method: "GET" },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.get_session_chat_projection expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
+  /** Read the current session list (sorted DESC by last_active_at, capped
+   *  at 30 per page). Calls into the session-chat projection. */
+  async get_session_list(_project_id?: string): Promise<
+    Array<{
+      id: string;
+      title: string | null;
+      last_active_at: string;
+      active_dataset_id: string | null;
+    }>
+  > {
+    const projection = await this.get_session_chat_projection();
+    const ctx = projection.context as {
+      session_list?: Array<{
+        id: string;
+        title: string | null;
+        last_active_at: string;
+        active_dataset_id: string | null;
+      }>;
+    };
+    return ctx.session_list ?? [];
+  }
+
+  /** Resume the given session — drives `session_clicked` against the
+   *  session-chat flow. Returns the projection after settle. */
+  async resume_session(session_id: string): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: `session-chat:${this.config.principalId}`,
+          type: "session_clicked",
+          payload: { session_id },
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.resume_session expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
+  /** Read the current transcript from the session-chat projection. */
+  async get_transcript(): Promise<
+    Array<{ id: string; role: string; content: string; ts: string }>
+  > {
+    const projection = await this.get_session_chat_projection();
+    const ctx = projection.context as {
+      transcript?: Array<{
+        id: string;
+        role: string;
+        content: string;
+        ts: string;
+      }>;
+    };
+    return ctx.transcript ?? [];
+  }
+
+  /** Assert that the session-chat projection is in `session_active` with the
+   *  given session_id, and that BOTH transcript and resource_* are populated
+   *  atomically (no partial materialization). */
+  async assert_session_active(session_id: string): Promise<void> {
+    const projection = await this.get_session_chat_projection();
+    if (projection.state !== "session_active") {
+      throw new Error(
+        `j002.assert_session_active failed: state=${JSON.stringify(projection.state)}, expected session_active`,
+      );
+    }
+    const ctx = projection.context as {
+      session_id?: string | null;
+      transcript?: unknown[];
+      resource?: { type: unknown; id: unknown };
+    };
+    if (ctx.session_id !== session_id) {
+      throw new Error(
+        `j002.assert_session_active failed: session_id=${JSON.stringify(ctx.session_id)}, expected ${JSON.stringify(session_id)}`,
+      );
+    }
+  }
+
+  /** Assert that the session list contains a row whose title matches
+   *  `title` (substring match, case-insensitive). */
+  async assert_session_list_includes(title: string): Promise<void> {
+    const sessions = await this.get_session_list();
+    const needle = title.toLowerCase();
+    const found = sessions.some((s) =>
+      (s.title ?? "").toLowerCase().includes(needle),
+    );
+    if (!found) {
+      const titles = sessions.map((s) => s.title);
+      throw new Error(
+        `j002.assert_session_list_includes failed: no session title matching ${JSON.stringify(title)}; got ${JSON.stringify(titles)}`,
+      );
+    }
+  }
+
   /** Assert state === "scope_mismatch_terminal" AND
    *  context.underlying_cause_tag === expected_cause. */
   async assert_scope_mismatch(expected_cause: string): Promise<void> {

@@ -16,13 +16,13 @@
 //      any individual machine.
 //   4. Actor identity = (flow_id, principal_id).
 
-import { createActor, type AnyActorRef, type AnyStateMachine } from "xstate";
+import { type AnyActorRef, type AnyStateMachine,createActor } from "xstate";
 
+import type { ResourceType } from "./active-scope.ts";
 import {
   createForcedFailureOrgAndReissueActor,
   createLoginAndOrgSetupMachine,
   type CreateOrgAndReissueInput,
-  type CreateOrgAndReissueOutput,
   type LoginMachineDeps,
 } from "./machines/login-and-org-setup.ts";
 import {
@@ -33,10 +33,9 @@ import {
   createSessionChatMachine,
   type SessionChatMachineDeps,
 } from "./machines/session-chat.ts";
-import type { ResourceType } from "./active-scope.ts";
+import type { FlowEventLog } from "./persistence/redis.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
-import type { FlowEventLog } from "./persistence/redis.ts";
 
 /**
  * Wire-protocol machine name preserved through MR-1.5 per the SRP amendment's
@@ -161,6 +160,33 @@ interface FrozenFlowState {
   origin: string;
   /** Queued events waiting for thaw. Bounded to REPLAY_BUFFER_CAP. */
   queued: SendEventInput[];
+}
+
+/** Narrow snapshot context shape consumed by session-chat event emitters. */
+interface SessionChatSnapshotContext {
+  org_id?: string;
+  project_id?: string | null;
+  project_name?: string | null;
+  session_list?: Array<{
+    id: string;
+    title: string | null;
+    last_active_at: string;
+    active_dataset_id: string | null;
+  }>;
+  session_list_next_cursor?: string | null;
+  session_list_has_more?: boolean;
+  session_id?: string | null;
+  transcript?: Array<{
+    id: string;
+    role: "user" | "assistant" | "tool";
+    content: string;
+    ts: string;
+  }>;
+  resource?: { type: ResourceType | null; id: string | null };
+  intent_session_id?: string | null;
+  intent_resource_id?: string | null;
+  intent_resource_type?: ResourceType | null;
+  underlying_cause_tag?: string | null;
 }
 
 export class FlowOrchestrator {
@@ -404,6 +430,23 @@ export class FlowOrchestrator {
             intent_resource_type: input.intent_resource_type ?? null,
           } as never);
           await waitForSettledState(actor);
+          // Emit the spawn-style events to the session-chat flow log so the
+          // projection reflects the re-broadcast. Required when the actor
+          // already existed in memory but its Redis log was wiped (e.g.,
+          // /begin with force_restart) — without this the projection would
+          // appear stuck in `anonymous`.
+          if (input.machine === SESSION_CHAT_WIRE_NAME) {
+            await this.emitSessionChatSpawnEvents(
+              flow_id,
+              actor,
+              input.correlation_id,
+              {
+                org_id: input.org_id,
+                project_id: input.project_id,
+                project_name: input.project_name,
+              },
+            );
+          }
         } else if (isJ001ReadyDispatch && actor) {
           actor.send({
             type: "j001_ready",
@@ -480,11 +523,23 @@ export class FlowOrchestrator {
       // the actor is in even if the wait timed out.
     }
 
-    // The terminal-event-emission below shapes the project-context flow
-    // event log (the wire-protocol J-002 projection). session-chat's flow
-    // event log has no MR-1.5 terminal events (its `waiting_for_project`
-    // state is a low-importance observability marker per DESIGN §2.3.B); MR-2
-    // adds the session-list/resume events that populate this log.
+    // The terminal-event-emission below shapes each machine's flow event log.
+    // project-context's events drive the wire-protocol J-002 projection.
+    // session-chat's events drive its own per-machine projection (separate
+    // Redis stream key `ui-state:session-chat:<principal>:events`).
+    if (input.machine === SESSION_CHAT_WIRE_NAME) {
+      await this.emitSessionChatSpawnEvents(
+        flow_id,
+        actor,
+        input.correlation_id,
+        input,
+      );
+      return this.projectionFor(
+        flow_id,
+        input.principal_id,
+        input.correlation_id,
+      );
+    }
     if (input.machine !== PROJECT_CONTEXT_WIRE_NAME) {
       return this.projectionFor(
         flow_id,
@@ -643,6 +698,153 @@ export class FlowOrchestrator {
         event_kind: "project_ready_hook.failed",
         error: (err as Error).message,
         origin_flow_id: originFlowId,
+      });
+    }
+  }
+
+  /**
+   * After a session-chat actor settles from spawn (or from project_ready
+   * re-broadcast), examine its state and emit the projection-shaping events
+   * to the session-chat flow log. Matches the project-context emission
+   * pattern in `beginIfNotStarted` — events are the SSOT for projection
+   * reconstruction.
+   */
+  private async emitSessionChatSpawnEvents(
+    flow_id: string,
+    actor: AnyActorRef,
+    correlation_id: string,
+    spawn: {
+      org_id?: string;
+      project_id?: string;
+      project_name?: string;
+    },
+  ): Promise<void> {
+    const snapshot = actor.getSnapshot();
+    const stateValue = snapshot.value as string;
+    const ctx = snapshot.context as SessionChatSnapshotContext;
+    const orgId = ctx.org_id || spawn.org_id || "";
+    const projectId = ctx.project_id || spawn.project_id || null;
+    if (!orgId || !projectId) return;
+
+    // Per DWD-13 §2B the session-chat flow's log carries the
+    // `session_chat_project_ready` event as its first marker so the projection
+    // reducer knows session-chat has been spawned for this principal.
+    await this.deps.eventLog.append(flow_id, {
+      ts: new Date().toISOString(),
+      type: "session_chat_project_ready",
+      payload: {
+        org_id: orgId,
+        project_id: projectId,
+        project_name: ctx.project_name ?? spawn.project_name ?? "",
+      },
+      correlation_id,
+    });
+
+    await this.appendSessionChatTerminalEvents(flow_id, stateValue, ctx, correlation_id);
+  }
+
+  /**
+   * Emit the terminal-for-now events that match a session-chat actor's
+   * current state. Idempotent and side-effect-only — the actor's state is
+   * the source of truth; the events are the projection-builder substrate.
+   *
+   * Called from BOTH `emitSessionChatSpawnEvents` (after spawn / project_ready
+   * re-broadcast) AND the post-`send()` branch for SESSION_CHAT_WIRE_NAME so
+   * session_clicked → resuming_session → session_active emits the right
+   * sequence regardless of which surface drove the transition.
+   */
+  private async appendSessionChatTerminalEvents(
+    flow_id: string,
+    stateValue: string,
+    ctx: SessionChatSnapshotContext,
+    correlation_id: string,
+  ): Promise<void> {
+    if (stateValue === "loading_session_list") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_list_load_started",
+        payload: { project_id: ctx.project_id ?? null },
+        correlation_id,
+      });
+      return;
+    }
+    if (stateValue === "session_list_visible") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_list_load_started",
+        payload: { project_id: ctx.project_id ?? null },
+        correlation_id,
+      });
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_list_loaded",
+        payload: {
+          items: ctx.session_list ?? [],
+          next_cursor: ctx.session_list_next_cursor ?? null,
+          has_more: ctx.session_list_has_more ?? false,
+        },
+        correlation_id,
+      });
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_list_displayed",
+        payload: {
+          project_id: ctx.project_id ?? null,
+          session_count: (ctx.session_list ?? []).length,
+        },
+        correlation_id,
+      });
+      return;
+    }
+    if (stateValue === "resuming_session") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_resume_started",
+        payload: {
+          session_id: ctx.intent_session_id ?? ctx.session_id ?? null,
+        },
+        correlation_id,
+      });
+      return;
+    }
+    if (stateValue === "session_active") {
+      // `dataset_unavailable` is TRUE only when the resume actor detected a
+      // stored active_dataset_id that 404'd (graceful degradation per US-205
+      // Example 3). A null active_dataset_id is the conversational-mode
+      // default — NOT a degraded state. The machine signals the degraded
+      // case by setting underlying_cause_tag = "dataset_not_found".
+      const datasetUnavailable =
+        ctx.underlying_cause_tag === "dataset_not_found";
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_resumed",
+        payload: {
+          session_id: ctx.session_id,
+          transcript: ctx.transcript ?? [],
+          resource_type: ctx.resource?.type ?? null,
+          resource_id: ctx.resource?.id ?? null,
+          dataset_unavailable: datasetUnavailable,
+        },
+        correlation_id,
+      });
+      if (datasetUnavailable) {
+        await this.deps.eventLog.append(flow_id, {
+          ts: new Date().toISOString(),
+          type: "session_dataset_unavailable",
+          payload: {},
+          correlation_id,
+        });
+      }
+      return;
+    }
+    if (stateValue === "error_recoverable") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_chat_recoverable_error",
+        payload: {
+          underlying_cause_tag: ctx.underlying_cause_tag ?? "transient",
+        },
+        correlation_id,
       });
     }
   }
@@ -966,6 +1168,38 @@ export class FlowOrchestrator {
       }
     }
 
+    // ---- session-chat terminal-for-now event appending (J-002 MR-2) -------
+    // After session_clicked / refresh_session_list / project_ready re-broadcast
+    // dispatched via this `send()`, emit the projection-shaping events to the
+    // session-chat flow log.
+    if (input.machine === SESSION_CHAT_WIRE_NAME) {
+      const sessionChatCtx = snapshot.context as SessionChatSnapshotContext;
+      // Special-case: if the resumeSession resolved with session_not_found
+      // (silent return), the machine has settled in session_list_visible.
+      // The default state-emission path covers that; no special event needed.
+      // For session_not_found the test expects underlying_cause_tag to NOT
+      // surface — we emit `session_resume_not_found` so the projection
+      // reducer can blank out intent_session_id atomically.
+      if (
+        input.type === "session_clicked" &&
+        stateValue === "session_list_visible"
+      ) {
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "session_resume_not_found",
+          payload: {},
+          correlation_id: input.correlation_id,
+        });
+      } else {
+        await this.appendSessionChatTerminalEvents(
+          input.flow_id,
+          stateValue,
+          sessionChatCtx,
+          input.correlation_id,
+        );
+      }
+    }
+
     return this.projectionFor(
       input.flow_id,
       principal_id,
@@ -976,6 +1210,24 @@ export class FlowOrchestrator {
   async getProjection(flow_id: string): Promise<FlowProjection> {
     const principal_id = parsePrincipal(flow_id);
     return this.projectionFor(flow_id, principal_id, "");
+  }
+
+  /**
+   * Subscribe to a flow's event stream — substrate for the SSE
+   * `/projection/stream` route (DWD-9 + RD2). Delegates to the FlowEventLog
+   * adapter; the noop in-memory log emits to subscribers synchronously after
+   * `append()`, the Redis log uses `XREAD BLOCK` on a dedicated subscriber
+   * connection.
+   *
+   * `blockMs` bounds the iterator — when the server closes the SSE response,
+   * the iterator is exhausted (or the consumer calls `.return()`).
+   */
+  subscribeToFlow(
+    flow_id: string,
+    sinceId: string,
+    blockMs?: number,
+  ): AsyncIterable<FlowEvent> {
+    return this.deps.eventLog.subscribe(flow_id, sinceId, blockMs);
   }
 
   // ------------------------------------------------------------------------
@@ -1054,7 +1306,7 @@ export class FlowOrchestrator {
       // through `send()` — since `frozen` no longer carries this flow_id,
       // the events are dispatched to the underlying actor normally.
       for (const queued of drained) {
-        // eslint-disable-next-line no-await-in-loop
+         
         await this.send(queued);
       }
     }
@@ -1205,14 +1457,17 @@ function waitForSettledState(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     // States that contain `invoke` blocks — caller waits for them to leave.
-    // J-001: authenticating, creating_org. J-002: resolving_initial_scope,
-    // creating_project. Future MRs add loading_session_list,
-    // resuming_session, switching_project, switching_dataset_context.
+    // J-001: authenticating, creating_org. J-002 project-context:
+    // resolving_initial_scope, creating_project. J-002 session-chat:
+    // loading_session_list, resuming_session. Future MRs add
+    // switching_project, switching_dataset_context.
     const TRANSIENT_STATES = new Set([
       "authenticating",
       "creating_org",
       "resolving_initial_scope",
       "creating_project",
+      "loading_session_list",
+      "resuming_session",
     ]);
     const snapshot = actor.getSnapshot();
     if (!TRANSIENT_STATES.has(snapshot.value as string)) {

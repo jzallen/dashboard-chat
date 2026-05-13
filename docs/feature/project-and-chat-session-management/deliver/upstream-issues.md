@@ -177,3 +177,125 @@ DESIGN §7.3 calls for namespacing the projection `EVENT_HANDLERS` dispatch tabl
 The underlying semantic property ("J-002 machine source does not fetch /api/orgs/me") IS preserved: the new `ui-state/lib/machines/project-context.ts` does not fetch that endpoint (lifted verbatim from the pre-split file which also didn't). MR-2's DISTILL revisit (per DWD-13 RD13-4 "DISTILL revisit MR may follow") should update the path to `["ui-state/lib/machines/project-context.ts", "ui-state/lib/machines/session-chat.ts"]` so the test fails LOUDLY if a future regression introduces a /api/orgs/me fetch.
 
 Per the IRON RULE this MR-1.5 refactor leaves the test untouched. Documenting the degenerate pass so MR-2 closes the gap.
+
+---
+
+## MR-2 (Slice 2 — session list + resume) — 2026-05-13
+
+### D-MR2-a — MR-2a substrate gap closed inside this MR
+
+**Status**: ACCEPTED — the MR-2a brief omitted serialization + the read endpoint
+
+**Spec deviation**: The MR-2a (`b496fe6`) brief says *"the schema is ready — you
+read/write the column via the existing repository surface."* The schema column
+DID land but the SQLAlchemy → JSON-API mapper omitted `active_dataset_id`, the
+PATCH schema (`SessionUpdate`) didn't allowlist it, and **no GET endpoint** exposed
+a single session's metadata (only `GET /api/projects/:id/sessions` list +
+`GET /api/sessions/:id/events` event-replay existed). Without these three
+pieces the read path needed by US-205 / IC-J002-3 cannot exist.
+
+**Crafter's call**: MR-2 lands these three substrate completions because they
+are mechanical (no design choice; all three are one-liners that finish what
+MR-2a started) and gating the merge on a MR-2b would just sequence a trivial
+diff. They are explicit MR-2 deliverables in this crafter run:
+
+1. `backend/app/repositories/metadata/_mappers.py` — `session_to_dict` now
+   includes `active_dataset_id` so the column flows through every read.
+2. `backend/app/routers/schemas/session.py` — `SessionUpdate.active_dataset_id`
+   is on the wire so PATCH /api/projects/:p/sessions/:s honors it.
+3. `backend/app/routers/sessions.py` + `controllers/conversation_controller.py`
+   + `controllers/http_controller.py` + **NEW** `use_cases/session/get_session.py`
+   — adds `GET /api/sessions/:session_id` returning JSON:API session metadata.
+   Auth is org-scoped (404 for cross-org). The use case shape mirrors
+   `list_session_events`'s existing pattern.
+
+**Why MR-2 not MR-2b**: each diff is < 15 lines, none touches business logic,
+and they jointly complete the MR-2a schema's read surface. Sequencing them as
+a separate MR would add ceremony without value. The DESIGN §2.3.B
+`resumeSession` actor reads `session.active_dataset_id` from `get_session`
+— that's the contract DESIGN names; these changes deliver it.
+
+**Litmus impact**: with these three changes, US-205 #1 (happy path resume
+restores dataset chip), US-205 #2 (null dataset → conversational mode), and
+IC-J002-3 (atomic materialization) all GREEN. Without them, only US-205 #4
+(silent-not-found) + #5 (harness) would pass; the rest would fail on missing
+read-side surface.
+
+**Action for reviewer**: verify the three changes are tightly scoped to
+substrate completion (no new business logic), and confirm the 1425 backend
+pytest target still holds (it does — pre-existing FHIR test failure is
+verified to reproduce on `main` HEAD without my changes).
+
+### D-MR2-b — MR-2-a column wire name is `migration 012`, not `migration 009`
+
+**Status**: NON-ISSUE — naming drift in the DISTILL handoff, no code action
+
+**Observation**: `distill/handoff-distill-to-deliver.md` §"MR-2" calls the schema
+delta "Migration 009". The actual landed migration in MR-2a (`b496fe6`) is
+`012_add_session_active_dataset_id.py`. The numbering is determined by the
+linearized alembic head at the time of landing. The DESIGN amendments
+mention "Migration 009"; the user prompt for MR-2 correctly says "Migration
+012 already landed in MR-2a".
+
+The dataset-shape is unchanged; the migration sequence number is a routing
+detail not a behavioral contract. The DISTILL handoff's "Migration 009"
+references should be updated by a future DISTILL revisit MR (the DWD-13
+follow-up); MR-2 leaves them in place per the Iron Rule (don't touch
+upstream artifacts).
+
+### D-MR2-c — Pre-existing US-204 SSR failures still reproduce
+
+**Status**: PRE-EXISTING — not a MR-2 regression; same root cause as MR-1.5
+
+**Observation**: The two US-204 scenarios that fail on MR-1.5 (per the
+"Pre-existing US-204 SSR failures" entry above) continue to fail on MR-2:
+
+- `test_us204_cold_deep_link_resolves_active_scope_before_paint.py::test_cold_deep_link_to_project_resolves_active_scope_before_paint`
+- `test_us204_cold_deep_link_resolves_active_scope_before_paint.py::test_deep_link_with_intent_resource_carries_through_to_session_active`
+
+Verified MR-2 is behavior-neutral for these tests: `git stash` (drops all MR-2
+changes) + re-run reproduces verbatim. The root cause is the web-ssr SSR
+pipeline rendering the welcome panel instead of the project chip, unchanged
+from MR-1.5.
+
+**Action**: surface to platform team — same as in the MR-1.5 entry above.
+MR-2 ships unblocked.
+
+### D-MR2-d — Cross-tab SSE test relies on `refresh_session_list` harness event
+
+**Status**: ACCEPTED — the test mechanism is a session-chat event
+
+**Decision**: US-203 Example 4 ("session created in other tab refreshes list
+within 1 second") is implemented by:
+1. Tab A subscribes to `GET /ui-state/flow/session-chat/projection/stream?...`
+2. Tab B creates a session via the backend AND dispatches a
+   `refresh_session_list` event to session-chat.
+3. The session-chat's `session_list_visible` state transitions to
+   `loading_session_list` on `refresh_session_list`; the loadSessionList
+   invoke fires; the new list is appended to the session-chat flow log.
+4. Tab A's SSE subscription sees the new projection.
+
+The `refresh_session_list` event is a one-line addition to session-chat's
+public event surface. It is also useful for future scenarios where a user
+explicitly refreshes (e.g., a "pull-to-refresh" gesture). It is NOT a
+harness-only knob — its acceptance into the public event vocabulary is the
+discharge of US-203 Example 4 + the DWD-9 cross-tab refresh contract.
+
+### D-MR2-e — No web-ssr rebuild in this MR (loader changes deployed at next image cut)
+
+**Status**: ACCEPTED — frontend loader changes are source-only; SSR image rebuilds in a separate boundary
+
+**Observation**: The MR-2 frontend route changes (`frontend/app/routes/sessions.tsx`,
+`frontend/app/routes/chat.tsx`) live in source but the web-ssr container
+image (built via Bazel at `frontend/BUILD.bazel`) is not rebuilt in this MR
+run. The acceptance tests verify behavior through projection reads, NOT through
+SSR'd HTML, so they pass against the current web-ssr image.
+
+When the next Bazel image cut lands (typically via the gastown merge-queue's
+build pipeline), the new loaders take effect. The MR-1.5 review noted the
+same posture for project-detail.tsx; this MR follows that pattern.
+
+**Action for reviewer**: confirm the loader sources are correct (they will be
+exercised when the SSR image refreshes) and that the projection-based
+acceptance suite is the SSOT for MR-2 behavior verification.
+

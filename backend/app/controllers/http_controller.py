@@ -36,6 +36,7 @@ from app.use_cases.dataset import search_datasets as search_datasets_uc  # noqa:
 from app.use_cases.exceptions import DomainException  # noqa: F401
 from app.use_cases.memory import get_project_memory as get_project_memory_uc  # noqa: F401
 from app.use_cases.session import create_session as create_session_uc  # noqa: F401
+from app.use_cases.session import get_session as get_session_uc  # noqa: F401
 from app.use_cases.session import list_session_events as list_session_events_uc  # noqa: F401
 from app.use_cases.session import list_sessions as list_sessions_uc  # noqa: F401
 from app.use_cases.session import update_session as update_session_uc  # noqa: F401
@@ -87,6 +88,7 @@ class HTTPController:
     post_session = staticmethod(ConversationController.post_session)
     list_sessions = staticmethod(ConversationController.list_sessions)
     list_session_events = staticmethod(ConversationController.list_session_events)
+    get_session = staticmethod(ConversationController.get_session)
     patch_session = staticmethod(ConversationController.patch_session)
 
     # Identity / Organization (Seam 4)

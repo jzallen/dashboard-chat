@@ -196,6 +196,70 @@ describe("__harness_expire_token__ event handler", () => {
   });
 });
 
+describe("SSE /flow/:machine/projection/stream (MR-2 DWD-9)", () => {
+  it("emits the current projection as the first event, then a fresh projection on append", async () => {
+    scenario = buildScenario({ harnessKnobsEnabled: true });
+    const { flow_id } = await beginMaya(scenario.app);
+
+    // Open the SSE stream with a short budget so the test doesn't block.
+    const sseRes = await scenario.app.fetch(
+      new Request(
+        `http://t/flow/login-and-org-setup/projection/stream?flow_id=${encodeURIComponent(flow_id)}&budget_ms=1500`,
+        { method: "GET" },
+      ),
+    );
+    expect(sseRes.status).toBe(200);
+    expect(sseRes.headers.get("content-type")).toMatch(/event-stream/);
+
+    const reader = (sseRes.body as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    // Read until we have the initial projection event AND a second event.
+    const events: string[] = [];
+
+    const collect = async (timeoutMs: number): Promise<void> => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline && events.length < 2) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE frames are separated by blank lines.
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          if (frame.includes("event: projection")) events.push(frame);
+        }
+      }
+    };
+
+    // Drive an event into the flow while the stream is open — the
+    // subscriber should observe a second projection frame.
+    setTimeout(() => {
+      void scenario!.app.fetch(
+        new Request("http://t/flow/login-and-org-setup/event", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            flow_id,
+            type: "org_form_submitted",
+            payload: { org_name: "Acme Data" },
+          }),
+        }),
+      );
+    }, 50);
+
+    await collect(1500);
+    await reader.cancel();
+
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    // First frame should carry authenticated_no_org (Maya just signed in).
+    expect(events[0]).toMatch(/authenticated_no_org/);
+    // Second frame should reflect the ready state from org_form_submitted.
+    expect(events.slice(-1)[0]).toMatch(/"state":"ready"/);
+  });
+});
+
 describe("projection emits access_token after ready", () => {
   it("once Maya reaches ready, projection.context.access_token decodes to a payload with her org_id claim", async () => {
     scenario = buildScenario({ harnessKnobsEnabled: true });

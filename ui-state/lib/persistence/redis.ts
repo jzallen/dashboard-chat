@@ -16,6 +16,19 @@ export interface FlowEventLog {
   /** Drop the entire event stream for this flow. Used when `begin` resets a
    *  prior auth attempt — a fresh sign-in is a fresh flow. */
   reset(flow_id: string): Promise<void>;
+  /** Long-poll subscribe to a flow's event stream starting at `sinceId`
+   *  (Redis stream id, or "$" for events arriving AFTER subscription).
+   *
+   *  Per DWD-9: SSE projection-stream substrate. Yields one FlowEvent per
+   *  new entry. Bounded by `blockMs` (default 25_000 — see SSE handler in
+   *  ui-state/index.ts which closes the response when the iterator returns).
+   *
+   *  The iterator is exhausted when:
+   *    - `blockMs` elapses without a new event (yields nothing, completes),
+   *    - The caller invokes `.return()` (AbortController on the HTTP side),
+   *    - The Redis connection drops.
+   */
+  subscribe(flow_id: string, sinceId: string, blockMs?: number): AsyncIterable<FlowEvent>;
   probe(): Promise<void>;
   close(): Promise<void>;
 }
@@ -70,6 +83,40 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
       await client.del(streamKey(flow_id));
     },
 
+    async *subscribe(
+      flow_id: string,
+      sinceId: string,
+      blockMs = 25_000,
+    ): AsyncIterable<FlowEvent> {
+      // Use a dedicated subscriber connection — `xread BLOCK` holds the
+      // connection for the duration of the block, so we can't share with
+      // the append/read traffic that the rest of the orchestrator uses.
+      const sub = client.duplicate();
+      try {
+        let cursor = sinceId;
+        const deadline = Date.now() + blockMs;
+        while (Date.now() < deadline) {
+          const remainingMs = Math.max(50, deadline - Date.now());
+          const res = (await sub.xread(
+            "BLOCK",
+            Math.min(remainingMs, blockMs),
+            "STREAMS",
+            streamKey(flow_id),
+            cursor,
+          )) as Array<[string, Array<[string, string[]]>]> | null;
+          if (!res) break; // BLOCK timed out — exit cleanly
+          for (const [, entries] of res) {
+            for (const [entryId, fields] of entries) {
+              cursor = entryId;
+              yield deserialize(fields);
+            }
+          }
+        }
+      } finally {
+        await sub.quit().catch(() => undefined);
+      }
+    },
+
     async probe(): Promise<void> {
       const probeKey = `ui-state:__probe__:${Date.now()}`;
       const probeEvent: FlowEvent = {
@@ -97,12 +144,24 @@ export function createNoopFlowEventLog(): FlowEventLog {
   // Per ADR-018, this is the noop fallback — NOT a Redis substitute for
   // multi-replica scenarios.
   const store = new Map<string, FlowEvent[]>();
+  // Per-flow subscribers — invoked synchronously after append() lands.
+  const subscribers = new Map<string, Set<(event: FlowEvent) => void>>();
 
   return {
     async append(flow_id: string, event: FlowEvent): Promise<void> {
       const list = store.get(flow_id) ?? [];
       list.push(event);
       store.set(flow_id, list);
+      const subs = subscribers.get(flow_id);
+      if (subs) {
+        for (const cb of subs) {
+          try {
+            cb(event);
+          } catch {
+            // Defensive — subscriber callbacks must not break append.
+          }
+        }
+      }
     },
 
     async read(flow_id: string): Promise<FlowEvent[]> {
@@ -113,12 +172,58 @@ export function createNoopFlowEventLog(): FlowEventLog {
       store.delete(flow_id);
     },
 
+    async *subscribe(
+      flow_id: string,
+      _sinceId: string,
+      blockMs = 25_000,
+    ): AsyncIterable<FlowEvent> {
+      // Capture events arriving AFTER subscription. The noop adapter is
+      // single-process; subscribers register a callback and resolve a
+      // promise on each event. Bounded by `blockMs` like the Redis path.
+      let resolveNext: ((value: FlowEvent | null) => void) | null = null;
+      const queue: FlowEvent[] = [];
+      const cb = (event: FlowEvent) => {
+        if (resolveNext) {
+          const r = resolveNext;
+          resolveNext = null;
+          r(event);
+        } else {
+          queue.push(event);
+        }
+      };
+      const subs = subscribers.get(flow_id) ?? new Set();
+      subs.add(cb);
+      subscribers.set(flow_id, subs);
+      try {
+        const deadline = Date.now() + blockMs;
+        while (Date.now() < deadline) {
+          if (queue.length > 0) {
+            yield queue.shift() as FlowEvent;
+            continue;
+          }
+          const remainingMs = Math.max(0, deadline - Date.now());
+          const event = await Promise.race([
+            new Promise<FlowEvent | null>((resolve) => {
+              resolveNext = resolve;
+            }),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), remainingMs)),
+          ]);
+          if (event === null) break;
+          yield event;
+        }
+      } finally {
+        subs.delete(cb);
+        if (subs.size === 0) subscribers.delete(flow_id);
+      }
+    },
+
     async probe(): Promise<void> {
       // Noop has no external dependency to probe.
     },
 
     async close(): Promise<void> {
       store.clear();
+      subscribers.clear();
     },
   };
 }

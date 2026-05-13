@@ -17,10 +17,8 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
-import { resolveActiveScope } from "./lib/active-scope.ts";
 import type { ResourceType } from "./lib/active-scope.ts";
-import { FlowOrchestrator } from "./lib/orchestrator.ts";
-import { selectFlowEventLog } from "./lib/persistence/redis.ts";
+import { resolveActiveScope } from "./lib/active-scope.ts";
 import {
   createOrgAndReissueActor,
   createOrgFn,
@@ -31,6 +29,12 @@ import {
   createProjectActor,
   resolveInitialScopeActor,
 } from "./lib/machines/project-context.ts";
+import {
+  loadSessionListActor,
+  resumeSessionActor,
+} from "./lib/machines/session-chat.ts";
+import { FlowOrchestrator } from "./lib/orchestrator.ts";
+import { selectFlowEventLog } from "./lib/persistence/redis.ts";
 
 const PORT = parseInt(process.env.PORT ?? "8788", 10);
 const REDIS_URL = process.env.REDIS_URL;
@@ -95,12 +99,15 @@ const orchestrator = new FlowOrchestrator({
       forceCreateProjectFailureFlag,
     ),
   },
-  // Session-chat (DWD-13 §2B) — MR-1.5 stub has no live invokes; the deps
-  // interface is intentionally empty until MR-2 adds loadSessionList /
-  // resumeSession / createSessionEagerly / switchDatasetContext. Presence
-  // of this object (vs `undefined`) is the orchestrator's signal to fire
-  // the `project_ready` broadcast hook on project-context `project_selected`.
-  sessionChatMachineDeps: {},
+  // Session-chat (DWD-13 §2B) — MR-2 wires loadSessionList + resumeSession.
+  // Presence of this object (vs `undefined`) is the orchestrator's signal
+  // to fire the `project_ready` broadcast hook on project-context
+  // `project_selected`. MR-3 adds createSessionEagerly; MR-5 adds
+  // switchDatasetContext.
+  sessionChatMachineDeps: {
+    loadSessionList: loadSessionListActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+    resumeSession: resumeSessionActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+  },
   createOrgFn: createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
   reissueOrgJwtFn: reissueOrgJwtFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
 });
@@ -479,6 +486,69 @@ app.get("/flow/:machine/projection", async (c) => {
   }
 });
 
+// SSE projection-stream per DWD-9 + RD2 (cross-tab refresh substrate for
+// US-203 Example 4). Long-polls the flow's Redis event-log via XREAD BLOCK
+// and pushes a freshly-computed projection on each new event. Bounded by a
+// server-side budget (default 25s) so intermediaries don't trip; clients
+// reconnect on close. The reverse-proxy must NOT buffer this response (the
+// `X-Accel-Buffering: no` header is the canonical nginx hint).
+app.get("/flow/:machine/projection/stream", async (c) => {
+  const flow_id = c.req.query("flow_id");
+  if (!flow_id) {
+    return c.json({ error: "flow_id required" }, 400);
+  }
+  const sinceParam = c.req.query("since") ?? "$";
+  const budgetMsParam = c.req.query("budget_ms");
+  const budgetMs = Math.min(
+    Math.max(parseInt(budgetMsParam ?? "25000", 10) || 25_000, 1_000),
+    60_000,
+  );
+
+  const headers: Record<string, string> = {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    "x-accel-buffering": "no",
+    connection: "keep-alive",
+  };
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const writeEvent = (event: string, data: unknown): void => {
+        controller.enqueue(
+          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+        );
+      };
+      try {
+        // First frame: the current projection (so callers don't need to
+        // race a separate GET /projection request).
+        const initial = await orchestrator.getProjection(flow_id);
+        writeEvent("projection", initial);
+        // Then subscribe to subsequent events. Each new event triggers a
+        // fresh projection read so consumers see the up-to-date envelope.
+        for await (const _event of orchestrator.subscribeToFlow(
+          flow_id,
+          sinceParam,
+          budgetMs,
+        )) {
+          const projection = await orchestrator.getProjection(flow_id);
+          writeEvent("projection", projection);
+        }
+      } catch (err) {
+        writeEvent("error", { message: (err as Error).message });
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          // Defensive — the client may have closed the connection already.
+        }
+      }
+    },
+  });
+
+  return new Response(stream, { headers, status: 200 });
+});
+
 } // end wireRoutes
 
 // Production composition: wire routes onto the module-level app + orchestrator.
@@ -515,7 +585,7 @@ if (process.env.UI_STATE_AUTOSTART !== "false") {
       );
     })
     .catch((err) => {
-      // eslint-disable-next-line no-console
+       
       console.error(
         JSON.stringify({
           event: "flow.startup.fatal",

@@ -83,6 +83,24 @@ async def search_datasets(
     return JSONResponse(content=body, status_code=status_code)
 
 
+@session_replay_router.get("/{session_id}")
+async def get_session(
+    session_id: str,
+    user: AuthUser = Depends(get_current_user),
+    _db=Depends(use_db_context),
+):
+    """Get a single session by id — J-002 MR-2 resume path (DWD-2).
+
+    Returns the session metadata including `active_dataset_id` so the
+    ui-state tier's `resumeSession` actor can populate `active_scope.resource_*`
+    atomically with the transcript per US-205 / IC-J002-3.
+
+    Auth: org-scoped — 404 for unknown session OR cross-org access.
+    """
+    body, status_code = await HTTPController.get_session(session_id, user=user)
+    return JSONResponse(content=body, status_code=status_code)
+
+
 @session_replay_router.get("/{session_id}/events")
 async def list_session_events(
     session_id: str,

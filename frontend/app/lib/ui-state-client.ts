@@ -9,10 +9,13 @@ const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL ?? "http://auth-proxy:3000";
 const LOADER_TIMEOUT_MS = 5000;
 
 /**
- * Machine identifier for the project-and-chat-session-management flow.
+ * Machine identifier for the project-and-chat-session-management flow
+ * (project-context source-tree per DWD-13; wire-protocol name unchanged).
  * Exported so route loaders compose flowIds without re-declaring the literal.
  */
 export const PROJECT_FLOW_MACHINE = "project-and-chat-session-management";
+/** Sibling machine for session lifecycle per DWD-13 §2B. */
+export const SESSION_CHAT_MACHINE = "session-chat";
 
 export interface ActiveScopeShape {
   org_id: string;

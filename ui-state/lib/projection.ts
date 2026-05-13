@@ -82,6 +82,34 @@ interface ReducedContext {
   intent_session_id: string | null;
   intent_resource_id: string | null;
   intent_resource_type: ResourceType | null;
+  // ── session-chat context (J-002 MR-2 + DWD-13 §2B) ─────────────────────
+  /** session-chat's authoritative project (set by project_ready broadcast). */
+  session_chat_project_id: string | null;
+  session_chat_project_name: string | null;
+  /** Sessions visible in the current project; populated on
+   *  session_list_loaded. Sorted DESC by last_active_at. */
+  session_list: Array<{
+    id: string;
+    title: string | null;
+    last_active_at: string;
+    active_dataset_id: string | null;
+  }>;
+  session_list_next_cursor: string | null;
+  session_list_has_more: boolean;
+  /** Active session: populated on session_resumed. */
+  session_id: string | null;
+  transcript: Array<{
+    id: string;
+    role: "user" | "assistant" | "tool";
+    content: string;
+    ts: string;
+  }>;
+  /** Active resource (dataset). Populated on session_resumed when
+   *  active_dataset_id resolved successfully. */
+  resource: { type: ResourceType | null; id: string | null };
+  /** Surfaced when a resumed session's active_dataset_id 404s. Per US-205
+   *  Example 3 the FE renders the conversational-mode chip. */
+  session_dataset_unavailable: boolean;
 }
 
 function initialContext(): ReducedContext {
@@ -105,6 +133,15 @@ function initialContext(): ReducedContext {
     intent_session_id: null,
     intent_resource_id: null,
     intent_resource_type: null,
+    session_chat_project_id: null,
+    session_chat_project_name: null,
+    session_list: [],
+    session_list_next_cursor: null,
+    session_list_has_more: false,
+    session_id: null,
+    transcript: [],
+    resource: { type: null, id: null },
+    session_dataset_unavailable: false,
   };
 }
 
@@ -452,6 +489,157 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       },
     };
   },
+
+  // ───────────── session-chat handlers (J-002 MR-2, DWD-13 §2B) ──────────
+  // Each handler keeps the FlowProjection envelope unchanged (DWD-9) and
+  // writes session-chat fields under context.*. The session-chat flow's
+  // event log carries these events on the `session-chat:<principal>` Redis
+  // stream key — separate from the project-context flow's log.
+
+  session_chat_project_ready: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      project_id?: string;
+      project_name?: string;
+    };
+    return {
+      state: "waiting_for_project",
+      context: {
+        ...context,
+        org: { id: payload.org_id ?? context.org.id, name: context.org.name },
+        session_chat_project_id:
+          payload.project_id ?? context.session_chat_project_id,
+        session_chat_project_name:
+          payload.project_name ?? context.session_chat_project_name,
+      },
+    };
+  },
+
+  session_list_load_started: (_state, context, _event) => ({
+    state: "loading_session_list",
+    context: { ...context },
+  }),
+
+  session_list_loaded: (_state, context, event) => {
+    const payload = event.payload as {
+      items?: Array<{
+        id: string;
+        title: string | null;
+        last_active_at: string;
+        active_dataset_id: string | null;
+      }>;
+      next_cursor?: string | null;
+      has_more?: boolean;
+    };
+    return {
+      state: "session_list_visible",
+      context: {
+        ...context,
+        session_list: payload.items ?? [],
+        session_list_next_cursor: payload.next_cursor ?? null,
+        session_list_has_more: payload.has_more ?? false,
+        // Loading session list invalidates the prior resumed session.
+        session_id: null,
+        transcript: [],
+        resource: { type: null, id: null },
+        session_dataset_unavailable: false,
+      },
+    };
+  },
+
+  // Emitted on session_list_visible entry (separate from session_list_loaded
+  // so consumers can distinguish "list refreshed" from "first paint").
+  session_list_displayed: (_state, context, _event) => ({
+    state: "session_list_visible",
+    context: { ...context },
+  }),
+
+  session_resume_started: (_state, context, event) => {
+    const payload = event.payload as { session_id?: string };
+    return {
+      state: "resuming_session",
+      context: {
+        ...context,
+        // Capture the intent so the FE can render the "resuming…" hint.
+        intent_session_id: payload.session_id ?? context.intent_session_id,
+      },
+    };
+  },
+
+  session_resumed: (_state, context, event) => {
+    const payload = event.payload as {
+      session_id?: string;
+      transcript?: Array<{ id: string; role: string; content: string; ts: string }>;
+      resource_type?: ResourceType | null;
+      resource_id?: string | null;
+      dataset_unavailable?: boolean;
+    };
+    const transcript = (payload.transcript ?? []).map((m) => ({
+      id: m.id,
+      role: (m.role === "assistant" || m.role === "tool" ? m.role : "user") as
+        | "user"
+        | "assistant"
+        | "tool",
+      content: m.content,
+      ts: m.ts,
+    }));
+    return {
+      state: "session_active",
+      context: {
+        ...context,
+        session_id: payload.session_id ?? null,
+        transcript,
+        resource: {
+          type: payload.resource_type ?? null,
+          id: payload.resource_id ?? null,
+        },
+        session_dataset_unavailable: Boolean(payload.dataset_unavailable),
+        intent_session_id: null,
+        underlying_cause_tag: payload.dataset_unavailable
+          ? "dataset_not_found"
+          : null,
+      },
+    };
+  },
+
+  session_dataset_unavailable: (state, context, _event) => ({
+    state,
+    context: {
+      ...context,
+      session_dataset_unavailable: true,
+      resource: { type: null, id: null },
+      underlying_cause_tag: "dataset_not_found",
+    },
+  }),
+
+  // Silent return per US-205 Example 4 — used by the resumeSession actor
+  // when the session row 404s.
+  session_resume_not_found: (_state, context, _event) => ({
+    state: "session_list_visible",
+    context: {
+      ...context,
+      session_id: null,
+      transcript: [],
+      resource: { type: null, id: null },
+      intent_session_id: null,
+      // Silent — no underlying_cause_tag.
+      underlying_cause_tag: null,
+    },
+  }),
+
+  session_chat_recoverable_error: (_state, context, event) => {
+    const payload = event.payload as {
+      underlying_cause_tag?: string;
+    };
+    return {
+      state: "error_recoverable",
+      context: {
+        ...context,
+        underlying_cause_tag:
+          payload.underlying_cause_tag ?? "transient",
+      },
+    };
+  },
 };
 
 /**
@@ -489,11 +677,25 @@ export function buildProjection(
   }
 
   // Build the projection-level active_scope from the running context.
-  // Precedence: resolved_scope (from deep_link_opened) > J-002 project
-  // (derived from context.org.id + context.project) > org-only > empty.
+  // Precedence:
+  //   1. resolved_scope (from deep_link_opened)
+  //   2. session-chat projection (when session-chat owns the project_id —
+  //      includes resource_* from the active session per DWD-13 §2B)
+  //   3. project-context projection (derived from context.org.id + context.project)
+  //   4. org-only
+  //   5. empty
   let scope: ActiveScope = EMPTY_SCOPE;
   if (context.resolved_scope) {
     scope = context.resolved_scope;
+  } else if (context.session_chat_project_id && context.org.id) {
+    // session-chat flow's active_scope — combines project_id (from
+    // project_ready broadcast) with resource_* (from session_resumed).
+    scope = {
+      org_id: context.org.id,
+      project_id: context.session_chat_project_id,
+      resource_type: context.resource.type,
+      resource_id: context.resource.id,
+    };
   } else if (context.org.id) {
     // J-002 project-selected derivation: when the projection's context
     // carries a project from a J-002 project_created/project_selected

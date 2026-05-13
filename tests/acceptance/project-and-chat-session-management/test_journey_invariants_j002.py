@@ -247,18 +247,177 @@ def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
     )
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-2; atomic materialization through resuming_session")
 @pytest.mark.mr_2
+@pytest.mark.property
 def test_ic_j002_3_resuming_session_to_session_active_materializes_atomically(
     requires_compose_stack: None,
+    clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
     """IC-J002-3: transcript AND active_scope.resource_* both visible on session_active entry.
 
     NO observation of session_active with mixed/partial state (transcript
     present but resource still resolving, or vice versa).
+
+    The atomicity guarantee is delivered at the XState assign boundary in
+    session-chat's `resuming_session.onDone` handler — transcript and
+    resource are populated in a SINGLE assign before the transition to
+    `session_active` per DESIGN §2.3.B.
     """
-    pytest.fail("not yet implemented")
+    import json
+    import subprocess
+    import time
+    import uuid
+
+    SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
+
+    def _create_project(name: str) -> str:
+        proc = subprocess.run(
+            [
+                "docker", "exec", "dashboard-api", "curl", "-sS",
+                "-X", "POST",
+                "http://localhost:8000/api/projects",
+                "-H", "x-user-id: dev-user-001",
+                "-H", "x-org-id: dev-org-001",
+                "-H", "x-user-email: dev@localhost",
+                "-H", "content-type: application/json",
+                "-d", json.dumps({"name": name}),
+            ],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        return json.loads(proc.stdout)["data"]["id"]
+
+    def _create_session(project_id: str) -> str:
+        proc = subprocess.run(
+            [
+                "docker", "exec", "dashboard-api", "curl", "-sS",
+                "-X", "POST",
+                f"http://localhost:8000/api/projects/{project_id}/sessions",
+                "-H", "x-user-id: dev-user-001",
+                "-H", "x-org-id: dev-org-001",
+                "-H", "x-user-email: dev@localhost",
+            ],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        body = json.loads(proc.stdout)
+        return body["data"]["id"]
+
+    def _create_dataset(project_id: str) -> str:
+        ds_id = str(uuid.uuid4())
+        sql = (
+            f"import sqlite3; conn=sqlite3.connect('/data/app.db'); "
+            f"conn.execute(\"INSERT INTO datasets (id, project_id, name, schema_config, "
+            f"partition_fields, created_at, updated_at) VALUES "
+            f"('{ds_id}', '{project_id}', 'Sales', '{{}}', '[]', "
+            f"'2026-05-13', '2026-05-13')\"); conn.commit()"
+        )
+        subprocess.run(
+            ["docker", "exec", "dashboard-api", "python", "-c", sql],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        return ds_id
+
+    project_id = _create_project("Q4 Analytics")
+    dataset_id = _create_dataset(project_id)
+    session_id = _create_session(project_id)
+    # Set active_dataset_id via PATCH
+    subprocess.run(
+        [
+            "docker", "exec", "dashboard-api", "curl", "-sS",
+            "-X", "PATCH",
+            f"http://localhost:8000/api/projects/{project_id}/sessions/{session_id}",
+            "-H", "x-user-id: dev-user-001",
+            "-H", "x-org-id: dev-org-001",
+            "-H", "x-user-email: dev@localhost",
+            "-H", "content-type: application/json",
+            "-d", json.dumps({"active_dataset_id": dataset_id}),
+        ],
+        capture_output=True, text=True, timeout=10, check=True,
+    )
+
+    # Spawn J-002 + wait for session-chat to reach session_list_visible.
+    begin = driver.post(
+        "/ui-state/flow/project-and-chat-session-management/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen"},
+    )
+    assert begin.status == 200
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        probe = driver.get(
+            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
+            base=driver.auth_proxy_url,
+        )
+        data = json.loads(probe.body) if probe.status == 200 else {}
+        if data.get("state") == "session_list_visible":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("session-chat never reached session_list_visible")
+
+    # Drive resume.
+    driver.post(
+        "/ui-state/flow/session-chat/event",
+        base=driver.auth_proxy_url,
+        json_body={
+            "flow_id": SESSION_CHAT_FLOW_ID,
+            "type": "session_clicked",
+            "payload": {"session_id": session_id},
+        },
+    )
+
+    # IC-J002-3 atomicity probe: poll the projection AS FAST AS POSSIBLE
+    # until session_active. Track every observation. The invariant says:
+    # whenever state == session_active, BOTH transcript AND resource fields
+    # are populated according to the resumeSession output (here: transcript=[]
+    # since the session has no events, AND resource={type:dataset,id:DS}).
+    violations: list[str] = []
+    saw_session_active = False
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        probe = driver.get(
+            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
+            base=driver.auth_proxy_url,
+        )
+        if probe.status != 200:
+            continue
+        data = json.loads(probe.body)
+        if data.get("state") == "session_active":
+            saw_session_active = True
+            ctx = data["context"]
+            sid = ctx.get("session_id")
+            resource = ctx.get("resource") or {}
+            transcript_present = isinstance(ctx.get("transcript"), list)
+            resource_populated = resource.get("id") == dataset_id
+            # The invariant: in session_active, BOTH transcript-field-exists
+            # AND resource-set are observable. session_id must match the
+            # resumed id (not the prior session_id from a different resume).
+            if sid != session_id:
+                violations.append(
+                    f"session_id mismatch in session_active: expected {session_id!r}, got {sid!r}"
+                )
+            if not transcript_present:
+                violations.append("transcript field missing in session_active")
+            if not resource_populated:
+                violations.append(
+                    f"resource not atomically populated: got {resource!r}, expected id={dataset_id!r}"
+                )
+            # Read the active_scope envelope too — IC-J002-3 says the
+            # *scope* must carry the resource on session_active entry.
+            scope = data.get("active_scope") or {}
+            if scope.get("resource_id") != dataset_id:
+                violations.append(
+                    f"active_scope.resource_id mismatch: got {scope.get('resource_id')!r}"
+                )
+            break
+        time.sleep(0.02)
+    assert saw_session_active, "session-chat never reached session_active"
+    assert violations == [], (
+        f"IC-J002-3 atomic-materialization violated: {violations!r}"
+    )
+
+
+DEV_PRINCIPAL_ID = "dev-user-001"
 
 
 @pytest.mark.skip(reason="DELIVER-deferred to MR-4; switching_project invalidation contract — load-bearing for K-J002-4")
