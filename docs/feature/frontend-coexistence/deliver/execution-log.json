@@ -281,6 +281,34 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-05-13T03:03:08Z"
+    },
+    {
+      "sid": "03-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T04:06:43Z"
+    },
+    {
+      "sid": "03-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "APPROVED_SKIP: reversibility acceptance scenarios un-skip in step 03-03; this step lands the file-level revert that satisfies the byte-equivalence precondition.",
+      "t": "2026-05-13T04:06:47Z"
+    },
+    {
+      "sid": "03-01",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "APPROVED_SKIP: pure mechanical revert; no new unit-testable behavior. Byte-equivalence (git diff cc7e517 empty) is the structural integrity check, verified at GREEN. Vitest is the regression boundary.",
+      "t": "2026-05-13T04:06:51Z"
+    },
+    {
+      "sid": "03-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-13T04:07:59Z"
     }
   ]
 }
