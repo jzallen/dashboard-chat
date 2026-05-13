@@ -1,0 +1,111 @@
+{
+  "roadmap": {
+    "project_id": "project-and-chat-session-management",
+    "created_at": "2026-05-13T07:13:00Z",
+    "total_steps": 3,
+    "phases": 1
+  },
+  "binding_source": "docs/feature/project-and-chat-session-management/distill/roadmap.json step 1",
+  "branch": "deliver/project-and-chat-session-management-mr1",
+  "mr": 1,
+  "user_stories": ["US-201", "US-202", "US-204"],
+  "integration_checkpoints": ["IC-J002-1", "IC-J002-2"],
+  "kpi_targets": ["K-J002-4"],
+  "phases": [
+    {
+      "id": "01",
+      "name": "MR-1 walking skeleton substrate plus initial scope plus deep links",
+      "description": "J-002 substrate plus US-201 plus US-202 plus US-204 plus IC-J002-1 plus IC-J002-2",
+      "default_agent": "nw-software-crafter",
+      "default_deps_strategy": "sequential",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Substrate plus walking skeleton GREEN",
+          "criteria": [
+            "Walking skeleton test_first_sign_in_foregrounds_the_no_projects_welcome_panel passes against local compose",
+            "test_creating_first_project_lands_in_project_selected passes",
+            "test_empty_project_name_keeps_machine_in_no_projects_empty_state passes",
+            "test_transient_create_project_failure_lands_in_error_recoverable_with_composer_preserved passes",
+            "IC-J002-2 project_selected entry has non-null authorized project_id property passes"
+          ],
+          "agent": "nw-software-crafter",
+          "deps": [],
+          "test_file": "tests/acceptance/project-and-chat-session-management/test_us201_first_time_lands_in_no_projects_empty_state.py",
+          "scenario_name": "test_first_sign_in_foregrounds_the_no_projects_welcome_panel",
+          "files_to_modify": [
+            "ui-state/lib/machines/project-and-chat-session-management.ts",
+            "ui-state/lib/orchestrator.ts",
+            "ui-state/lib/projection.ts",
+            "ui-state/index.ts",
+            "frontend/app/root.tsx",
+            "frontend/app/lib/ui-state-client.ts",
+            "tests/acceptance/project-and-chat-session-management/test_us201_first_time_lands_in_no_projects_empty_state.py",
+            "tests/acceptance/project-and-chat-session-management/test_journey_invariants_j002.py"
+          ],
+          "implementation_notes": "Create J-002 machine with 5 states. Extend orchestrator with MachineRegistry plus j001_ready broadcast hook per DWD-6 and DWD-8. Extend projection EVENT_HANDLERS with five J-002 event types. Add four HTTP route handlers under /ui-state/flow/project-and-chat-session-management/. Skip /projection/stream (lands MR-2)."
+        },
+        {
+          "id": "01-02",
+          "name": "TS harness plus US-202 last-used plus IC-J002-1",
+          "criteria": [
+            "harness.j002 namespace with six ops callable from node subprocess",
+            "All five US-202 last-used resolution scenarios pass",
+            "test_ts_harness_drives_no_projects_path_end_to_end passes",
+            "IC-J002-1 Praxis F-5 org_id consistency property passes within 100ms tolerance",
+            "Last-used resolution emits last_used_resolution_degraded on transient failure"
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-01"],
+          "test_file": "tests/acceptance/project-and-chat-session-management/test_us202_returning_user_lands_in_last_used_project.py",
+          "scenario_name": "test_resolution_picks_project_carrying_most_recent_session",
+          "files_to_modify": [
+            "tests/acceptance/user-flow-state-machines/harness/user-flow-harness.ts",
+            "ui-state/lib/machines/project-and-chat-session-management.ts",
+            "frontend/app/routes/projects.tsx",
+            "frontend/app/routes.ts",
+            "tests/acceptance/project-and-chat-session-management/test_us201_first_time_lands_in_no_projects_empty_state.py",
+            "tests/acceptance/project-and-chat-session-management/test_us202_returning_user_lands_in_last_used_project.py",
+            "tests/acceptance/project-and-chat-session-management/test_journey_invariants_j002.py",
+            "docs/feature/project-and-chat-session-management/deliver/wave-decisions.md"
+          ],
+          "implementation_notes": "Extend J-001 TS harness with j002 namespace exporting six ops. Choose REC-2 invocation pattern. Justify choice in deliver/wave-decisions.md. Extend resolveInitialScope with last-used resolution per OQ-J002-5 lazy reads. Add projects.tsx framework-mode loader."
+        },
+        {
+          "id": "01-03",
+          "name": "US-204 cold deep link plus scope_mismatch_terminal",
+          "criteria": [
+            "test_cold_deep_link_to_project_resolves_active_scope_before_paint passes",
+            "test_cross_tenant_deep_link_lands_in_scope_mismatch_terminal passes",
+            "test_deep_link_to_deleted_project_surfaces_same_panel_with_project_not_found_cause passes",
+            "test_back_to_projects_cta_re_enters_resolving_initial_scope_with_intent_cleared passes",
+            "All 18 MR-1 scenarios are GREEN end-to-end"
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-01", "01-02"],
+          "test_file": "tests/acceptance/project-and-chat-session-management/test_us204_cold_deep_link_resolves_active_scope_before_paint.py",
+          "scenario_name": "test_cold_deep_link_to_project_resolves_active_scope_before_paint",
+          "files_to_modify": [
+            "ui-state/lib/machines/project-and-chat-session-management.ts",
+            "ui-state/lib/projection.ts",
+            "frontend/app/routes/project-detail.tsx",
+            "frontend/app/routes.ts",
+            "tests/acceptance/project-and-chat-session-management/test_us204_cold_deep_link_resolves_active_scope_before_paint.py"
+          ],
+          "implementation_notes": "Extend J-002 machine open_deep_link handling. Add scope_mismatch_terminal cross-tenant plus project_not_found cause tagging. Add back_to_projects_clicked clearing intent fields. Extend deep_link_opened payload reducer. Add project-detail.tsx loader covering both routes."
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": ["ui-state/", "frontend/app/", "tests/acceptance/"],
+    "test_directories": ["tests/acceptance/project-and-chat-session-management/"],
+    "excluded_patterns": ["node_modules/**", "dist/**", "build/**", "__pycache__/**"]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "main-orchestrator",
+    "approved_at": "2026-05-13T07:13:00Z",
+    "rationale": "DISTILL roadmap step 1 decomposed into three sub-steps preserving scenarios_to_unskip[] gate verbatim"
+  }
+}

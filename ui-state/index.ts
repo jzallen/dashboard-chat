@@ -27,6 +27,10 @@ import {
   createWorkOSUserInfoActor,
   reissueOrgJwtFn,
 } from "./lib/machines/login-and-org-setup.ts";
+import {
+  createProjectActor,
+  resolveInitialScopeActor,
+} from "./lib/machines/project-and-chat-session-management.ts";
 
 const PORT = parseInt(process.env.PORT ?? "8788", 10);
 const REDIS_URL = process.env.REDIS_URL;
@@ -46,6 +50,21 @@ const DEFAULT_PRINCIPAL_HEADERS = {
 };
 
 const eventLog = selectFlowEventLog(REDIS_URL);
+
+// J-002 harness knob: per-process counter; the next `create_project_submitted`
+// event whose request bears `X-Force-Create-Project-Failure: transient`
+// makes the actor throw a transient error before any backend call. Used by
+// the US-201 transient-failure acceptance scenario (mirrors J-001's
+// `__harness_force_failure__` pattern but at the actor level).
+let forceCreateProjectFailureNext = false;
+function forceCreateProjectFailureFlag(): boolean {
+  if (forceCreateProjectFailureNext) {
+    forceCreateProjectFailureNext = false;
+    return true;
+  }
+  return false;
+}
+
 const orchestrator = new FlowOrchestrator({
   eventLog,
   loginMachineDeps: {
@@ -53,6 +72,17 @@ const orchestrator = new FlowOrchestrator({
     createOrgAndReissue: createOrgAndReissueActor(
       BACKEND_URL,
       DEFAULT_PRINCIPAL_HEADERS,
+    ),
+  },
+  j002MachineDeps: {
+    resolveInitialScope: resolveInitialScopeActor(
+      BACKEND_URL,
+      DEFAULT_PRINCIPAL_HEADERS,
+    ),
+    createProject: createProjectActor(
+      BACKEND_URL,
+      DEFAULT_PRINCIPAL_HEADERS,
+      forceCreateProjectFailureFlag,
     ),
   },
   createOrgFn: createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
@@ -92,26 +122,67 @@ app.post("/flow/:machine/begin", async (c) => {
     persona_display_name?: string;
     existing_org_names?: string[];
     harness_force_reissue_failures?: number;
+    principal_id?: string;
   };
   try {
     body = (await c.req.json()) as typeof body;
   } catch {
     return c.json({ error: "invalid_request" }, 400);
   }
-  if (!body.persona_email) {
-    return c.json({ error: "persona_email required" }, 400);
+
+  // J-001 requires the persona_email to drive the WorkOS exchange. J-002
+  // (and other non-J-001 machines) spawn via the orchestrator's j001_ready
+  // broadcast hook, so a direct `/begin` POST for them is idempotent —
+  // returns the existing projection or spawns a fresh actor.
+  if (machine === "login-and-org-setup") {
+    if (!body.persona_email) {
+      return c.json({ error: "persona_email required" }, 400);
+    }
   }
 
   // Principal: in dev mode auth-proxy injects X-User-Id. Otherwise derive
   // from the persona email (deterministic, multi-tenant-safe per ADR-030).
   const principal_id =
-    c.req.header("X-User-Id") || derivePrincipalId(body.persona_email);
+    c.req.header("X-User-Id") ||
+    body.principal_id ||
+    (body.persona_email ? derivePrincipalId(body.persona_email) : "anon");
+
+  // For non-J-001 machines (J-002+), prefer the explicit beginIfNotStarted
+  // path that takes auth-proxy-injected identity headers. This bypasses
+  // the J-001 persona/WorkOS preconditions and lets the dev compose stack
+  // exercise J-002 without dragging a fake WorkOS server into scope.
+  // Direct HTTP `/begin` always resets the actor + event log so the call
+  // is idempotent for re-runs (matches J-001's begin semantics).
+  if (machine !== "login-and-org-setup") {
+    const orgId = c.req.header("X-Org-Id") ?? "";
+    const userEmail = c.req.header("X-User-Email") ?? "";
+    const firstName =
+      (body.persona_display_name ?? "").split(/\s+/)[0] ||
+      (userEmail ? userEmail.split("@")[0] : "") ||
+      "";
+    try {
+      const projection = await orchestrator.beginIfNotStarted({
+        machine,
+        principal_id,
+        correlation_id,
+        org_id: orgId,
+        user_first_name: firstName,
+        force_restart: true,
+      });
+      return c.json(projection);
+    } catch (err) {
+      return c.json(
+        { error: "begin_failed", message: (err as Error).message },
+        500,
+      );
+    }
+  }
 
   try {
     const projection = await orchestrator.begin({
       machine,
       principal_id,
-      persona_email: body.persona_email,
+      persona_email: body.persona_email ?? "",
       persona_display_name: body.persona_display_name ?? "",
       correlation_id,
       existing_org_names: body.existing_org_names,
@@ -158,6 +229,19 @@ app.post("/flow/:machine/event", async (c) => {
         403,
       );
     }
+  }
+
+  // J-002 harness knob — header-gated: the next createProject invoke throws
+  // a transient error. Used by the US-201 transient-failure scenario. Gated
+  // by the same NWAVE_HARNESS_KNOBS env-flag policy as the J-001 knobs in
+  // production; in dev mode (default for the local stack) the flag is
+  // accepted unconditionally to match the local-stack harness shape.
+  if (
+    machine === "project-and-chat-session-management" &&
+    body.type === "create_project_submitted" &&
+    c.req.header("X-Force-Create-Project-Failure")
+  ) {
+    forceCreateProjectFailureNext = true;
   }
 
   try {

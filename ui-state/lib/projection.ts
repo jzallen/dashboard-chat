@@ -42,7 +42,8 @@ interface ReducedContext {
   /**
    * Per ADR-029, the projection's `context.project` carries the
    * authoritative (current) project name as known to the user's machine.
-   * Populated by deep_link_opened / scope_reconciled events.
+   * Populated by deep_link_opened / scope_reconciled / project_selected
+   * / project_created events.
    */
   project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
@@ -61,6 +62,12 @@ interface ReducedContext {
    *  org_created_and_jwt_reissued boundary. The TS harness's
    *  assert_jwt_carries_org_claim reads this. */
   access_token: string | null;
+  /** J-002 context — populated by j002_* event handlers. The shape mirrors
+   *  the J-002 machine's J002MachineContext (subset relevant to projection
+   *  consumers — full per-flow context lives in the actor). */
+  user_first_name: string | null;
+  pending_project_name: string;
+  project_validation_error: { kind: string; message: string } | null;
 }
 
 function initialContext(): ReducedContext {
@@ -75,6 +82,9 @@ function initialContext(): ReducedContext {
     scope_resolution_error: null,
     resolved_scope: null,
     access_token: null,
+    user_first_name: null,
+    pending_project_name: "",
+    project_validation_error: null,
   };
 }
 
@@ -239,6 +249,147 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       },
     };
   },
+
+  // ─────────────────── J-002 event handlers (MR-1 substrate) ──────────────
+  // Per DWD-9 the FlowProjection envelope is UNCHANGED; J-002 fields live
+  // inside `context.*`. The active_scope field is derived from context.org.id
+  // and context.project below in buildProjection.
+
+  j002_resolution_started: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      user_first_name?: string | null;
+    };
+    return {
+      state: "resolving_initial_scope",
+      context: {
+        ...context,
+        org: {
+          id: payload.org_id ?? context.org.id,
+          name: context.org.name,
+        },
+        user_first_name: payload.user_first_name ?? context.user_first_name,
+      },
+    };
+  },
+
+  no_projects_displayed: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      user_first_name?: string | null;
+    };
+    return {
+      state: "no_projects_empty_state",
+      context: {
+        ...context,
+        org: {
+          id: payload.org_id ?? context.org.id,
+          name: context.org.name,
+        },
+        user_first_name: payload.user_first_name ?? context.user_first_name,
+        underlying_cause_tag: "no_projects",
+        project_validation_error: null,
+      },
+    };
+  },
+
+  project_validation_failed: (state, context, event) => {
+    const payload = event.payload as {
+      error?: { kind: string; message: string };
+    };
+    return {
+      state,
+      context: {
+        ...context,
+        project_validation_error: payload.error ?? null,
+      },
+    };
+  },
+
+  project_creation_started: (_state, context, event) => {
+    const payload = event.payload as { pending_project_name?: string };
+    return {
+      state: "creating_project",
+      context: {
+        ...context,
+        pending_project_name:
+          payload.pending_project_name ?? context.pending_project_name,
+        project_validation_error: null,
+      },
+    };
+  },
+
+  project_created: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      project?: { id: string | null; name: string | null };
+    };
+    return {
+      state: "project_selected",
+      context: {
+        ...context,
+        org: {
+          id: payload.org_id ?? context.org.id,
+          name: context.org.name,
+        },
+        project: payload.project ?? context.project,
+        underlying_cause_tag: null,
+        project_validation_error: null,
+      },
+    };
+  },
+
+  project_selected: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      project?: { id: string | null; name: string | null };
+    };
+    return {
+      state: "project_selected",
+      context: {
+        ...context,
+        org: {
+          id: payload.org_id ?? context.org.id,
+          name: context.org.name,
+        },
+        project: payload.project ?? context.project,
+      },
+    };
+  },
+
+  scope_mismatch_displayed: (_state, context, event) => {
+    const payload = event.payload as {
+      org_id?: string;
+      underlying_cause_tag?: string;
+    };
+    return {
+      state: "scope_mismatch_terminal",
+      context: {
+        ...context,
+        org: {
+          id: payload.org_id ?? context.org.id,
+          name: context.org.name,
+        },
+        underlying_cause_tag: payload.underlying_cause_tag ?? "cross_tenant",
+      },
+    };
+  },
+
+  j002_recoverable_error: (_state, context, event) => {
+    const payload = event.payload as {
+      underlying_cause_tag?: string;
+      pending_project_name?: string;
+    };
+    return {
+      state: "error_recoverable",
+      context: {
+        ...context,
+        underlying_cause_tag: payload.underlying_cause_tag ?? "transient",
+        pending_project_name:
+          payload.pending_project_name ?? context.pending_project_name,
+      },
+    };
+  },
 };
 
 /**
@@ -276,16 +427,20 @@ export function buildProjection(
   }
 
   // Build the projection-level active_scope from the running context.
-  // Precedence: resolved_scope (from deep_link_opened) > derived from org.
+  // Precedence: resolved_scope (from deep_link_opened) > J-002 project
+  // (derived from context.org.id + context.project) > org-only > empty.
   let scope: ActiveScope = EMPTY_SCOPE;
   if (context.resolved_scope) {
     scope = context.resolved_scope;
   } else if (context.org.id) {
-    // Once Maya has an org but hasn't opened a deep link, the scope is
-    // org-only — project_id stays null per I2 (no project context yet).
+    // J-002 project-selected derivation: when the projection's context
+    // carries a project from a J-002 project_created/project_selected
+    // event, surface it on active_scope so consumers (chat-view, agent's
+    // X-Active-Scope header writer) read the project_id from the
+    // projection envelope directly (DWD-4 + ADR-029 §1 I2 contract).
     scope = {
       org_id: context.org.id,
-      project_id: null,
+      project_id: context.project.id ?? null,
       resource_type: null,
       resource_id: null,
     };

@@ -146,3 +146,50 @@ def driver(
         agent_url=agent_url,
         repo_root=repo_root,
     )
+
+
+@pytest.fixture
+def clean_projects_for_dev_user(driver: J002Driver) -> None:
+    """Delete all dev-user-001 projects via direct backend HTTP.
+
+    The walking-skeleton + US-201 scenarios assume Maya starts with zero
+    projects. Auth-proxy gates `/api/*` behind real JWT verification, so
+    tests can't delete via the production ingress — they reach the backend
+    directly through docker exec. (Out of band by design — production
+    deletes happen via authenticated DELETE; this fixture is a test-only
+    janitor.)
+    """
+    import subprocess
+
+    # List projects.
+    list_proc = subprocess.run(
+        [
+            "docker", "exec", "dashboard-api", "curl", "-s",
+            "http://localhost:8000/api/projects",
+            "-H", "x-user-id: dev-user-001",
+            "-H", "x-org-id: dev-org-001",
+            "-H", "x-user-email: dev@localhost",
+        ],
+        capture_output=True, text=True, timeout=10,
+    )
+    import json as _json
+    try:
+        body = _json.loads(list_proc.stdout or "{}")
+    except _json.JSONDecodeError:
+        return
+    items = body.get("data", []) if isinstance(body, dict) else []
+    for item in items:
+        pid = item.get("id")
+        if not pid:
+            continue
+        subprocess.run(
+            [
+                "docker", "exec", "dashboard-api", "curl", "-s",
+                "-X", "DELETE",
+                f"http://localhost:8000/api/projects/{pid}",
+                "-H", "x-user-id: dev-user-001",
+                "-H", "x-org-id: dev-org-001",
+                "-H", "x-user-email: dev@localhost",
+            ],
+            capture_output=True, text=True, timeout=10, check=False,
+        )

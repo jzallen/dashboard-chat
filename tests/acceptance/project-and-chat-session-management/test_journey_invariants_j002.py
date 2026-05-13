@@ -63,10 +63,10 @@ def test_ic_j002_1_entry_from_j001_ready_reads_org_id_from_j001_projection(
     pytest.fail("not yet implemented — IC-J002-1 + Praxis F-5 property")
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-1; project_selected entry contract")
 @pytest.mark.mr_1
 def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
     requires_compose_stack: None,
+    clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
     """IC-J002-2: on project_selected entry, active_scope.project_id non-null AND user-authorized.
@@ -75,7 +75,89 @@ def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
     NOT after — no observation of project_selected with a project the user
     cannot access.
     """
-    pytest.fail("not yet implemented")
+    import json
+    import subprocess
+    import time
+    import uuid
+
+    DEV_PRINCIPAL_ID = "dev-user-001"
+    J002_FLOW_ID = f"project-and-chat-session-management:{DEV_PRINCIPAL_ID}"
+
+    # Spawn J-002 directly — same orchestrator method the j001_ready
+    # broadcast hook calls in production (see DWD-6 + the orchestrator's
+    # `j001_ready_hook` block).
+    begin = driver.post(
+        "/ui-state/flow/project-and-chat-session-management/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen"},
+    )
+    assert begin.status == 200, (
+        f"J-002 begin expected 200; got {begin.status} body={begin.body[:200]!r}"
+    )
+
+    # Poll J-002 → no_projects_empty_state.
+    def wait_for_state(target: str, timeout_s: float = 5.0) -> dict:
+        deadline = time.monotonic() + timeout_s
+        last = None
+        while time.monotonic() < deadline:
+            probe = driver.get_j002_projection(
+                flow_id=J002_FLOW_ID,
+                base=driver.auth_proxy_url,
+            )
+            last = probe
+            if driver.projection_state(probe) == target:
+                return json.loads(probe.body)
+            time.sleep(0.05)
+        assert last is not None
+        pytest.fail(
+            f"J-002 never reached {target!r}; final={driver.projection_state(last)!r}"
+        )
+
+    wait_for_state("no_projects_empty_state")
+
+    # Create a project — this drives the machine through `creating_project`
+    # to `project_selected`.
+    project_name = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
+    create = driver.post(
+        "/ui-state/flow/project-and-chat-session-management/event",
+        base=driver.auth_proxy_url,
+        json_body={
+            "flow_id": J002_FLOW_ID,
+            "type": "create_project_submitted",
+            "payload": {"org_name": project_name},
+        },
+    )
+    assert create.status == 200
+
+    body = wait_for_state("project_selected")
+
+    # IC-J002-2 invariant 1: active_scope.project_id is non-null on entry.
+    project_id = body["active_scope"]["project_id"]
+    assert project_id is not None and project_id != "", (
+        f"IC-J002-2: project_selected entry MUST have non-null "
+        f"active_scope.project_id; got {project_id!r}"
+    )
+
+    # IC-J002-2 invariant 2: the project_id belongs to the user's org.
+    # Assert by direct backend call (auth-proxy gates /api behind real JWT;
+    # the J-002 actor's createProject succeeded with the user's identity
+    # headers, so we round-trip via the same identity to verify the row).
+    auth_check = subprocess.run(
+        [
+            "docker", "exec", "dashboard-api", "curl", "-s", "-o", "/dev/null",
+            "-w", "%{http_code}",
+            f"http://localhost:8000/api/projects/{project_id}",
+            "-H", "x-user-id: dev-user-001",
+            "-H", "x-org-id: dev-org-001",
+            "-H", "x-user-email: dev@localhost",
+        ],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert auth_check.stdout.strip() == "200", (
+        f"IC-J002-2: project_selected entry has project_id={project_id!r} "
+        f"that the user is NOT authorized for — got HTTP {auth_check.stdout.strip()!r} "
+        f"from /api/projects/{project_id}"
+    )
 
 
 @pytest.mark.skip(reason="DELIVER-deferred to MR-2; atomic materialization through resuming_session")

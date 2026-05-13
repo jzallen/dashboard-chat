@@ -16,7 +16,7 @@
 //      any individual machine.
 //   4. Actor identity = (flow_id, principal_id).
 
-import { createActor, type AnyActorRef } from "xstate";
+import { createActor, type AnyActorRef, type AnyStateMachine } from "xstate";
 
 import {
   createForcedFailureOrgAndReissueActor,
@@ -25,6 +25,10 @@ import {
   type CreateOrgAndReissueOutput,
   type LoginMachineDeps,
 } from "./machines/login-and-org-setup.ts";
+import {
+  createProjectAndChatSessionMachine,
+  type J002MachineDeps,
+} from "./machines/project-and-chat-session-management.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
@@ -32,6 +36,13 @@ import type { FlowEventLog } from "./persistence/redis.ts";
 export interface OrchestratorDeps {
   eventLog: FlowEventLog;
   loginMachineDeps: LoginMachineDeps;
+  /**
+   * Deps for the J-002 (project-and-chat-session-management) machine — DWD-6
+   * + DWD-8. Optional so legacy J-001-only deployments can construct the
+   * orchestrator without wiring J-002 (the j001_ready hook becomes a no-op
+   * when this is absent).
+   */
+  j002MachineDeps?: J002MachineDeps;
   /**
    * Async function form of the org-create step. Used by the harness-knob
    * wrapper to sequence create + reissue with forced failures injected at
@@ -47,6 +58,31 @@ export interface OrchestratorDeps {
   ) => Promise<void>;
   log?: (record: Record<string, unknown>) => void;
 }
+
+/**
+ * Strategy table replacing today's hardcoded `if (input.machine !== ...)`
+ * conditional per DWD-8. Each entry is a factory that, given the
+ * orchestrator's deps + a begin-flow input, returns a constructed machine.
+ *
+ * Adding a future flow is one new factory + one new entry — no `if/else`.
+ */
+type MachineFactory = (
+  deps: OrchestratorDeps,
+  input: { correlation_id: string; principal_id: string; existing_org_names?: string[] },
+) => AnyStateMachine;
+
+const MACHINE_REGISTRY: Record<string, MachineFactory> = {
+  "login-and-org-setup": (deps, _input) =>
+    createLoginAndOrgSetupMachine(deps.loginMachineDeps),
+  "project-and-chat-session-management": (deps, _input) => {
+    if (!deps.j002MachineDeps) {
+      throw new Error(
+        "j002MachineDeps required to construct the project-and-chat-session-management machine",
+      );
+    }
+    return createProjectAndChatSessionMachine(deps.j002MachineDeps);
+  },
+};
 
 export interface BeginFlowInput {
   machine: string;
@@ -104,10 +140,27 @@ export class FlowOrchestrator {
    * Begin a flow. Creates the actor, persists the sign_in_clicked event,
    * waits for the authenticating actor's onDone (workos userinfo), and
    * returns the projection.
+   *
+   * Machine selection is via the MachineRegistry strategy table (DWD-8)
+   * — `login-and-org-setup` follows the legacy WorkOS+org-create path
+   * below; other machines (J-002+) plug in via the registry and are
+   * begun via `beginIfNotStarted` from the j001_ready broadcast hook.
    */
   async begin(input: BeginFlowInput): Promise<FlowProjection> {
-    if (input.machine !== "login-and-org-setup") {
+    if (!MACHINE_REGISTRY[input.machine]) {
       throw new Error(`Unknown machine: ${input.machine}`);
+    }
+
+    // J-002 and other machines are spawned via beginIfNotStarted (called by
+    // the j001_ready broadcast hook) — direct `begin` posts for those would
+    // bypass the cross-machine entry contract. Allow them only when the
+    // existing flow is already started (idempotent no-op).
+    if (input.machine !== "login-and-org-setup") {
+      return this.beginIfNotStarted({
+        machine: input.machine,
+        principal_id: input.principal_id,
+        correlation_id: input.correlation_id,
+      });
     }
 
     const flow_id = `${input.machine}:${input.principal_id}`;
@@ -230,6 +283,166 @@ export class FlowOrchestrator {
     return this.projectionFor(flow_id, input.principal_id, input.correlation_id);
   }
 
+  /**
+   * Idempotently spawn a flow's actor if not already running. Used by the
+   * j001_ready broadcast hook to auto-spawn J-002 when J-001 reaches `ready`.
+   *
+   * Per DWD-6: the orchestrator owns cross-machine entry. Sibling machines
+   * never import each other — entry flows through this method called from
+   * the orchestrator's transition watcher.
+   */
+  async beginIfNotStarted(input: {
+    machine: string;
+    principal_id: string;
+    correlation_id: string;
+    org_id?: string;
+    user_first_name?: string;
+    /** When true, stop+respawn the actor and reset its event log. Used by
+     *  HTTP `/begin` direct posts (the production j001_ready hook leaves
+     *  this false so j001_ready→j002 entry is idempotent). */
+    force_restart?: boolean;
+  }): Promise<FlowProjection> {
+    const factory = MACHINE_REGISTRY[input.machine];
+    if (!factory) {
+      throw new Error(`Unknown machine: ${input.machine}`);
+    }
+    const flow_id = `${input.machine}:${input.principal_id}`;
+
+    if (input.force_restart) {
+      const existing = this.actors.get(flow_id);
+      if (existing) {
+        existing.stop();
+        this.actors.delete(flow_id);
+      }
+      await this.deps.eventLog.reset(flow_id);
+    }
+
+    if (this.actors.has(flow_id)) {
+      // Already spawned. If we have a j001_ready payload AND the existing
+      // actor accepts it, forward (idempotent — the machine ignores the
+      // event when it has already settled past `resolving_initial_scope`).
+      if (input.org_id && input.user_first_name !== undefined) {
+        const actor = this.actors.get(flow_id);
+        try {
+          actor?.send({
+            type: "j001_ready",
+            org_id: input.org_id,
+            user_first_name: input.user_first_name,
+          } as never);
+          await waitForSettledState(actor!);
+        } catch {
+          // Defensive — never blow up on a re-emission.
+        }
+      }
+      return this.projectionFor(
+        flow_id,
+        input.principal_id,
+        input.correlation_id,
+      );
+    }
+
+    const machine = factory(this.deps, {
+      correlation_id: input.correlation_id,
+      principal_id: input.principal_id,
+    });
+    const actor = createActor(machine, {
+      input: {
+        correlation_id: input.correlation_id,
+        principal_id: input.principal_id,
+        org_id: input.org_id,
+        user_first_name: input.user_first_name,
+      } as never,
+    });
+    this.actors.set(flow_id, actor);
+    actor.start();
+
+    // If we have the org_id at spawn time, forward j001_ready so the
+    // machine's resolveInitialScope invoke fires with a populated org_id.
+    if (input.org_id && input.user_first_name !== undefined) {
+      try {
+        actor.send({
+          type: "j001_ready",
+          org_id: input.org_id,
+          user_first_name: input.user_first_name,
+        } as never);
+      } catch {
+        // Defensive.
+      }
+    }
+
+    // Wait for the resolveInitialScope invoke to settle.
+    try {
+      await waitForSettledState(actor);
+    } catch {
+      // Defensive — the projection-builder will reflect whatever state
+      // the actor is in even if the wait timed out.
+    }
+
+    // Persist a j002_resolution_started + terminal-for-now event so the
+    // projection-builder can reconstruct state from the event log alone.
+    const snapshot = actor.getSnapshot();
+    const stateValue = snapshot.value as string;
+    const ctx = snapshot.context as {
+      org_id?: string;
+      user_first_name?: string | null;
+      project?: { id: string | null; name: string | null };
+      underlying_cause_tag?: string | null;
+      pending_project_name?: string;
+      project_validation_error?: { kind: string; message: string } | null;
+    };
+
+    // Initial event — marks the J-002 actor as started for projection consumers.
+    await this.deps.eventLog.append(flow_id, {
+      ts: new Date().toISOString(),
+      type: "j002_resolution_started",
+      payload: {
+        org_id: ctx.org_id ?? input.org_id ?? "",
+        user_first_name: ctx.user_first_name ?? input.user_first_name ?? null,
+        correlation_id: input.correlation_id,
+      },
+      correlation_id: input.correlation_id,
+    });
+
+    // Terminal-for-now event reflecting settle.
+    if (stateValue === "no_projects_empty_state") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "no_projects_displayed",
+        payload: {
+          org_id: ctx.org_id ?? input.org_id ?? "",
+          user_first_name: ctx.user_first_name ?? input.user_first_name ?? null,
+        },
+        correlation_id: input.correlation_id,
+      });
+    } else if (stateValue === "project_selected") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "project_selected",
+        payload: {
+          org_id: ctx.org_id ?? input.org_id ?? "",
+          project: ctx.project,
+        },
+        correlation_id: input.correlation_id,
+      });
+    } else if (stateValue === "scope_mismatch_terminal") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "scope_mismatch_displayed",
+        payload: {
+          org_id: ctx.org_id ?? input.org_id ?? "",
+          underlying_cause_tag: ctx.underlying_cause_tag ?? "cross_tenant",
+        },
+        correlation_id: input.correlation_id,
+      });
+    }
+
+    return this.projectionFor(
+      flow_id,
+      input.principal_id,
+      input.correlation_id,
+    );
+  }
+
   async send(input: SendEventInput): Promise<FlowProjection> {
     const actor = this.actors.get(input.flow_id);
     if (!actor) {
@@ -330,8 +543,9 @@ export class FlowOrchestrator {
     this.priorState.set(input.flow_id, stateValue);
     // ---- End freeze/thaw signaling --------------------------------------
 
-    if (stateValue === "ready") {
+    if (stateValue === "ready" && input.machine === "login-and-org-setup") {
       const orgCtx = (snapshot.context as { org: { id: string | null; name: string | null } }).org;
+      const userCtx = (snapshot.context as { user: { email: string | null; display_name: string | null } }).user;
       // Mint a synthetic JWT carrying the org_id claim. Per ADR-029
       // invariant 4 the projection MUST expose the access_token so the FE
       // (and the TS harness via assert_jwt_carries_org_claim) can verify
@@ -354,6 +568,34 @@ export class FlowOrchestrator {
         },
         correlation_id: input.correlation_id,
       });
+
+      // ---- j001_ready broadcast hook (DWD-6 + RD1) ----------------------
+      // When J-001 transitions creating_org → ready (NOT the
+      // expired_token → ready recovery path), broadcast to J-002 so it
+      // spawns + receives the inherited org_id + user_first_name. This
+      // mechanically retires the "second source of truth" risk Praxis F-5
+      // named (the org_id flows J-001 → orchestrator → J-002 directly,
+      // never via a separate fetch).
+      const isFirstReady = prior === "creating_org" || prior === "anonymous" || !prior;
+      if (isFirstReady && this.deps.j002MachineDeps && orgCtx.id) {
+        const firstName = (userCtx.display_name ?? "").split(/\s+/)[0] || null;
+        try {
+          await this.beginIfNotStarted({
+            machine: "project-and-chat-session-management",
+            principal_id: parsePrincipal(input.flow_id),
+            correlation_id: input.correlation_id,
+            org_id: orgCtx.id,
+            user_first_name: firstName ?? "",
+          });
+        } catch (err) {
+          // Defensive — J-002 spawn failure must NOT break J-001's ready transition.
+          this.logTransition({
+            event_kind: "j001_ready_hook.failed",
+            error: (err as Error).message,
+            origin_flow_id: input.flow_id,
+          });
+        }
+      }
     } else if (stateValue === "expired_token") {
       // Harness-driven (or future production-driven) transition into the
       // expired_token state. The projection reducer derives state from this
@@ -389,6 +631,67 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "validation_failed",
           payload: { error: ctx.org_validation_error },
+          correlation_id: input.correlation_id,
+        });
+      }
+    }
+
+    // ---- J-002 terminal-for-now event appending --------------------------
+    // The J-002 machine's events do not share J-001's state names, so the
+    // existing branches above don't fire for it. Project a state-specific
+    // event into the log so subsequent projection reads can reconstruct.
+    if (input.machine === "project-and-chat-session-management") {
+      const j002Ctx = snapshot.context as {
+        org_id?: string;
+        user_first_name?: string | null;
+        project?: { id: string | null; name: string | null };
+        underlying_cause_tag?: string | null;
+        pending_project_name?: string;
+        project_validation_error?: { kind: string; message: string } | null;
+      };
+
+      if (stateValue === "no_projects_empty_state" && j002Ctx.project_validation_error) {
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "project_validation_failed",
+          payload: { error: j002Ctx.project_validation_error },
+          correlation_id: input.correlation_id,
+        });
+      } else if (stateValue === "creating_project") {
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "project_creation_started",
+          payload: { pending_project_name: j002Ctx.pending_project_name ?? "" },
+          correlation_id: input.correlation_id,
+        });
+      } else if (stateValue === "project_selected") {
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "project_created",
+          payload: {
+            org_id: j002Ctx.org_id ?? "",
+            project: j002Ctx.project,
+          },
+          correlation_id: input.correlation_id,
+        });
+      } else if (stateValue === "error_recoverable") {
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "j002_recoverable_error",
+          payload: {
+            underlying_cause_tag: j002Ctx.underlying_cause_tag ?? "transient",
+            pending_project_name: j002Ctx.pending_project_name ?? "",
+          },
+          correlation_id: input.correlation_id,
+        });
+      } else if (stateValue === "scope_mismatch_terminal") {
+        await this.deps.eventLog.append(input.flow_id, {
+          ts: new Date().toISOString(),
+          type: "scope_mismatch_displayed",
+          payload: {
+            org_id: j002Ctx.org_id ?? "",
+            underlying_cause_tag: j002Ctx.underlying_cause_tag ?? "cross_tenant",
+          },
           correlation_id: input.correlation_id,
         });
       }
@@ -536,7 +839,7 @@ export class FlowOrchestrator {
     correlation_id: string;
     events: Array<{ type: string; payload: Record<string, unknown> }>;
   }): Promise<FlowProjection> {
-    if (input.machine !== "login-and-org-setup") {
+    if (!MACHINE_REGISTRY[input.machine]) {
       throw new Error(`Unknown machine: ${input.machine}`);
     }
     for (const ev of input.events) {
@@ -633,9 +936,15 @@ function waitForSettledState(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     // States that contain `invoke` blocks — caller waits for them to leave.
-    // `creating_org` retries internally up to REISSUE_BUDGET; we wait for
-    // it to settle into `ready` or `error_recoverable`.
-    const TRANSIENT_STATES = new Set(["authenticating", "creating_org"]);
+    // J-001: authenticating, creating_org. J-002: resolving_initial_scope,
+    // creating_project. Future MRs add loading_session_list,
+    // resuming_session, switching_project, switching_dataset_context.
+    const TRANSIENT_STATES = new Set([
+      "authenticating",
+      "creating_org",
+      "resolving_initial_scope",
+      "creating_project",
+    ]);
     const snapshot = actor.getSnapshot();
     if (!TRANSIENT_STATES.has(snapshot.value as string)) {
       resolve();
