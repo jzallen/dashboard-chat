@@ -387,6 +387,28 @@ The fallback path emits a `scope_header_fallback_used { calling_client }` log ev
 
 **Compile-time sunset** (per US-208 AC + R8): `agent/lib/chat/handleChat.ts` includes a `const SCOPE_HEADER_FALLBACK_SUNSET: Date = new Date("YYYY-MM-DD")` (the date set at MR-time to ~6 weeks post-J-002-DELIVER). A `static_assert`-style check at module load asserts `Date.now() < SCOPE_HEADER_FALLBACK_SUNSET.getTime()` — if violated, the agent **fails to start** with a structured `agent.startup.refused: scope_header_fallback_sunset_passed` log. This forces the flag-removal change to land on time. ([DWD-3 ratifies the date-string mechanism; the literal sunset date is set by the engineer landing US-208 in DELIVER.](./wave-decisions.md))
 
+#### 4.1.1 Deprecation window mechanics (per Praxis review F-2)
+
+The flag + sunset combination needs explicit operational mechanics so the MR-4 DELIVER engineer can execute the cutover safely:
+
+1. **Flag lifecycle.** `SCOPE_HEADER_FALLBACK_ENABLED` persists in the codebase **until an MR explicitly removes the flag and its body-fallback branch**. There is no auto-disable. The forcing function is the compile-time sunset check — once `Date.now() >= SCOPE_HEADER_FALLBACK_SUNSET.getTime()`, the agent refuses to start (per above) UNLESS `SCOPE_HEADER_FALLBACK_ENABLED` has been removed from the codebase entirely. The engineer landing MR-4 sets a calendar reminder for ~6 weeks post-merge to land the removal MR.
+
+2. **Revert behavior.** The check condition is `if (Date.now() >= SCOPE_HEADER_FALLBACK_SUNSET.getTime() && process.env.SCOPE_HEADER_FALLBACK_ENABLED === "true") throw new Error(...)`. Once the removal MR lands and reverts ever happen post-sunset, the build fails at startup (the check still exists; the flag env-var resolves to undefined ≠ "true"; the check passes). If a panic-revert restores the flag after sunset, the agent again refuses to start — preventing accidental regression of the cross-tenant surface.
+
+3. **Post-sunset 400 error body.** Once the flag is removed, clients that still send `project_id` in the body without the header receive:
+   ```json
+   {
+     "error": "missing X-Active-Scope header",
+     "hint": "Clients older than version X.Y.Z are not supported after 2026-MM-DD; please upgrade.",
+     "docs": "https://docs.dashboard-chat.example/migrate/x-active-scope"
+   }
+   ```
+   The agent emits a `scope_header_post_sunset_rejected { user_agent, ip }` log event for any such request (allows ops to identify and contact remaining legacy clients).
+
+4. **Observability — when to remove the flag.** The `scope_header_fallback_used { calling_client }` event emitted by the fallback path is the signal: once that event rate trends to < 0.1% of chat turns for two consecutive release windows, the flag-removal MR is safe to land before sunset (early removal is acceptable; late removal is not).
+
+The MR-4 engineer SHOULD: (a) set the literal sunset date in the constant, (b) add a calendar reminder for ~6 weeks post-merge, (c) draft the removal MR's body text in advance with the post-sunset 400 body shape above. The MR-removing-the-flag is one-file (just `agent/lib/chat/handleChat.ts`) and ~30 lines of net deletion.
+
 ### 4.3 The FE side: `uiStateClient` extension
 
 `frontend/app/lib/ui-state-client.ts` today exposes one method (`getProjection`). J-002 extends it:

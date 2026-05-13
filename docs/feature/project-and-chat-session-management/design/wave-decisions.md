@@ -127,6 +127,8 @@ Option A makes the whole scope a single contract — one header, one validation 
 
 The `j001_ready` entry mechanism (orchestrator-broadcast on J-001 settling in `ready`) lands at the same time the orchestrator's `priorState` watcher is taught to spawn J-002 — a single hook on the same lifecycle pattern that drives FREEZE/THAW.
 
+**Hook lineage (per Praxis review F-1 clarification):** The `j001_ready` broadcast hook **does not exist in live code today** — the orchestrator (`ui-state/lib/orchestrator.ts`) carries only a `priorState` watcher. MR-1 DELIVER lands this hook alongside the MachineRegistry refactor at the same lifecycle point the watcher observes J-001's `ready` entry. Until MR-1 ships, J-002 does not auto-spawn on J-001 ready; DISTILL's spawning-assertion test should assert the post-MR-1 behavior (auto-spawn) explicitly, and the test must remain `@skip` until MR-1 lands (mirroring the un-skip-on-target-step pattern from `frontend-coexistence` DISTILL).
+
 **Why:** Three implementation patterns were considered:
 
 | Pattern | Mechanism | Verdict |
