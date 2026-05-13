@@ -1,3 +1,10 @@
+# [1.36.0](https://github.com/jzallen/dashboard-chat/compare/v1.35.1...v1.36.0) (2026-05-13)
+
+
+### Features
+
+* **ui-state:** land J-002 MR-3 lazy new-session lifecycle with eager-create on first message ([b284907](https://github.com/jzallen/dashboard-chat/commit/b284907e9a266f1edf3f24a8601bde96c1bc868b))
+
 ## [1.35.1](https://github.com/jzallen/dashboard-chat/compare/v1.35.0...v1.35.1) (2026-05-13)
 
 
