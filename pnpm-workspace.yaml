@@ -1,5 +1,5 @@
 packages:
-  - reverse-proxy
+  - frontend
   - agent
   - auth-proxy
   - shared/chat
