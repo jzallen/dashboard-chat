@@ -105,12 +105,37 @@ js_library(
     deps = [":node_modules"],
 )
 
+# RRv7 framework-mode tree (ADR-034). Includes root.tsx, routes.ts, and the
+# per-route modules under app/routes/. Without this target, the vite/Bazel
+# build runs against an incomplete sandbox view and silently strips loader
+# exports from the SSR bundle (`hasLoader: false` in the route manifest),
+# breaking every cold deep-link acceptance scenario that depends on
+# server-side scope resolution. The runtime SSR entry point `ssr.ts` AND
+# the framework-mode build config are also declared here so esbuild + the
+# RRv7 plugin see them as hermetic inputs.
+js_library(
+    name = "app_framework",
+    srcs = glob(
+        [
+            "app/**/*.ts",
+            "app/**/*.tsx",
+            "ssr.ts",
+        ],
+        exclude = [
+            "app/**/*.test.ts",
+            "app/**/*.test.tsx",
+        ],
+    ),
+    deps = [":node_modules"],
+)
+
 # Aggregate target for Vite production build
 js_library(
     name = "sources",
     srcs = [],
     visibility = ["//visibility:public"],
     deps = [
+        ":app_framework",
         ":app_shell",
         ":config",
         ":core_auth",
@@ -134,6 +159,7 @@ genrule(
     name = "dist",
     srcs = [
         ":sources",
+        ":app_framework",
         "//:.env",
     ],
     outs = ["dist.tar"],
@@ -403,6 +429,7 @@ genrule(
     name = "ssr_dist",
     srcs = [
         ":sources",
+        ":app_framework",
         "ssr.ts",
         "//:.env",
     ],
