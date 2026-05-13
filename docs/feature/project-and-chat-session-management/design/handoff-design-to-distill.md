@@ -1,10 +1,110 @@
 # DESIGN → DISTILL Handoff — `project-and-chat-session-management` (J-002)
 
-> **Wave**: DESIGN → DISTILL
-> **Date**: 2026-05-13
-> **From**: nw-solution-architect (J-002 DESIGN wave)
+> **Wave**: DESIGN → DISTILL (with SRP amendment 2026-05-13)
+> **Date (original)**: 2026-05-13
+> **Date (SRP amendment)**: 2026-05-13
+> **From**: nw-solution-architect (J-002 DESIGN wave + amendment)
 > **To**: nw-acceptance-designer (J-002 DISTILL wave)
-> **Status**: All four DESIGN artifacts shipped. Both blocking OQs resolved (OQ-J002-1 in DWD-2; OQ-J002-6 in DWD-7). No new ADR proposed. **Awaiting nw-solution-architect-reviewer pass** before this handoff is binding.
+> **Status**: All four DESIGN artifacts shipped + SRP amendment applied. All blocking OQs resolved (OQ-J002-1 in DWD-2; OQ-J002-6 in DWD-7; machine split in DWD-13). No new ADR proposed. **Awaiting nw-solution-architect-reviewer pass on the amendment** before this handoff is binding.
+
+## SRP amendment addendum (DWD-13) — what changed for DISTILL
+
+Per the SRP review (`./review-by-software-crafter-srp.md`) the original single-machine J-002 is split into **two sibling machines** under the ADR-028 actor model:
+
+- **`project-context`** — 8 states; owns project-resolution / project-creation / project-switching / scope-mismatch + freeze + error_recoverable.
+- **`session-chat`** — 9 states (including a new `waiting_for_project` initial state); owns session-list / resume / new-session / active / dataset-switch + freeze + error_recoverable.
+
+**The journey YAML's 14 narrative states are partitioned across the two machines** (per `application-architecture.md` §2 + `c4-diagrams.md` §3 post-amendment). No journey state is added or removed (the new `waiting_for_project` is an XState-implementation-level state with no user-visible surface). **No user story acceptance criterion is amended.** The DISTILL scenarios in `roadmap.json` remain valid; their projection-level assertions continue to work against per-machine projections via the harness composer.
+
+### What DISTILL needs to know about the split
+
+1. **The scenario→file mapping below identifies which machine owns each scenario's load-bearing assertion** so the harness call routes correctly.
+2. **No scenario is invalidated.** The legacy `harness.j002.assert_state(name)` continues to work (it inspects BOTH projections and asserts the state appears in EITHER). Tests authored before the split need no body changes.
+3. **A few harness extensions are needed** for per-machine assertions (see "Harness extensions" below). The existing 12 harness operations remain.
+4. **The MR-1.5 refactor MR (NEW per DWD-13)** lands BETWEEN MR-1 (shipped) and MR-2. The MR-1.5 worker is responsible for the split; DISTILL does NOT modify acceptance tests for MR-1.5 — they pass verbatim against the post-split code.
+
+### Scenario-to-machine mapping addendum
+
+Annotating each MR's scenarios with the load-bearing machine assertion:
+
+| MR | Scenario file | Scenario | Load-bearing machine | Harness call (suggested) |
+|---|---|---|---|---|
+| MR-1 | test_us201 (all) | All 5 scenarios | project-context | `harness.j002.assert_project_context_state(name)` |
+| MR-1 | test_us202 (all) | All 5 scenarios | project-context | `harness.j002.assert_project_context_state(name)` |
+| MR-1 | test_us204 (all) | All 6 scenarios | project-context (resolves scope, surfaces scope_mismatch_terminal) | `harness.j002.assert_project_context_state(name)` |
+| MR-1 | test_journey_invariants | IC-J002-1 (J-001 → project-context org_id parity) | project-context (consumer of j001_ready) | `harness.j002.assert_scope({org_id})` via composer |
+| MR-1 | test_journey_invariants | IC-J002-2 (project_selected has non-null project_id) | project-context | `harness.j002.assert_project_context_state("project_selected")` + `harness.j002.assert_scope({project_id})` |
+| MR-2 | test_us203 (all) | All 6 scenarios | session-chat (session list) | `harness.j002.assert_session_chat_state(name)` |
+| MR-2 | test_us205 (all) | All 5 scenarios | session-chat (resume + dataset restore) | `harness.j002.assert_session_chat_state(name)` |
+| MR-2 | test_journey_invariants | IC-J002-3 (resume materializes atomically) | session-chat (`resuming_session → session_active`) | `harness.j002.assert_session_chat_state("session_active")` + `harness.j002.assert_scope({resource_*})` |
+| MR-3 | test_us206 (all) | All 6 scenarios | session-chat (new-session lifecycle) | `harness.j002.assert_session_chat_state(name)` |
+| MR-4 | test_us207 (all) | All 5 scenarios | project-context for the SWITCH transition; session-chat for the INVALIDATION assertion | Composed: `harness.j002.assert_project_context_state("switching_project")` then `harness.j002.assert_session_chat_state("loading_session_list")` then `assert_scope({project_id: new})` |
+| MR-4 | test_us208 (all) | All 6 scenarios | (agent boundary — neither J-002 machine; agent receives composed scope) | Existing `assert_agent_received_scope(turn_index)` |
+| MR-4 | test_journey_invariants | IC-J002-4 (switching_project invalidates session_id + resource_*) | Both — atomicity is a cross-machine property | Composed scope read pre/post switch: `assert_scope({project_id: old, session_id: null AFTER}, {project_id: new, session_id: null AFTER})` |
+| MR-4 | test_journey_invariants | IC-J002-7 (every chat turn carries X-Active-Scope) | session-chat (chat-emitting states live here) | `harness.j002.assert_agent_received_scope_for_chat_turns_from(session-chat states)` |
+| MR-5 | test_us209 (all) | All 6 scenarios | session-chat | `harness.j002.assert_session_chat_state(name)` |
+| MR-5 | test_journey_invariants | IC-J002-5 (dataset_resolved_by_agent → exactly one scope update) | session-chat | `harness.j002.assert_session_chat_state("session_active")` + scope assertion |
+| MR-6 | test_us210 (all) | All 6 scenarios | both (FREEZE broadcasts to both; each restores independently) | `harness.j002.assert_project_context_state("freeze")` AND `harness.j002.assert_session_chat_state("freeze")`; THAW asserts both restore |
+| MR-6 | test_journey_invariants | IC-J002-6 (FREEZE → mutations paused → THAW replays) | both | Same — broadcast invariant; each machine's replay buffer drained independently |
+
+**Rule of thumb**: if the scenario asserts something happening "in" project resolution, project creation, project switching, or scope-mismatch terminal → it's project-context's assertion. If it asserts anything about session lists, transcripts, dataset attach, or chat-emitting states → it's session-chat's assertion. FREEZE/THAW is cross-cutting. The agent boundary (US-208) is neither machine — the agent reads from a composed header.
+
+### Harness extensions (DWD-13 §RD13-3 mitigation)
+
+Add to `harness.j002.*`:
+
+```ts
+// Per-machine state assertions
+await harness.j002.assert_project_context_state(expectedState: ProjectContextState);
+await harness.j002.assert_session_chat_state(expectedState: SessionChatState);
+await harness.j002.assert_state_in(machine: "project-context" | "session-chat", expectedState: string);
+
+// Legacy compatibility (continues to work; reads both projections)
+await harness.j002.assert_state(expectedState: string);  // Returns true if state matches EITHER projection.
+
+// Composed-scope read (already in the original 12-operation list)
+await harness.j002.assert_scope({ org_id?, project_id?, resource_type?, resource_id? });
+//   Reads project-context's projection for org_id + project_id; session-chat's for resource_*.
+```
+
+**Per-machine event-stream assertions**: emit assertions remain by event name (e.g., `assert_event_emitted("project_selected")` still works — the event lives in project-context's event log; the harness looks it up via the per-machine flow_id automatically).
+
+### Roadmap.json update guidance
+
+`docs/feature/project-and-chat-session-management/distill/roadmap.json` (already shipped at MR-time per the binding inputs) need not be rewritten. The `files_changed_estimate` list for each step is now slightly inaccurate — `ui-state/lib/machines/project-and-chat-session-management.ts` is replaced by `project-context.ts` + `session-chat.ts`; the orchestrator gains a second broadcast hook. DISTILL may either:
+
+- (a) Update `roadmap.json` in a follow-up DISTILL revisit MR with the post-DWD-13 file paths and per-machine routing notes, OR
+- (b) Leave `roadmap.json` as-is; the DELIVER agents (per `nw-deliver` and `nw-execute`) read both the roadmap AND this handoff addendum AND the post-amendment `application-architecture.md` §9 (which IS updated to show MR-1.5 + per-machine touch).
+
+The author recommends (b): the roadmap is mostly stable; the handoff addendum + app-arch §9 are the authoritative routing source for the DELIVER worker. A DISTILL revisit is out of scope for this DESIGN amendment.
+
+### What is NOT changed by the SRP amendment for DISTILL
+
+- The 65-scenario scope (per `roadmap.json` `totals.scenarios_pytest`).
+- The 6-MR DELIVER plan (MR-1.5 is INSERTED as a refactor — it lands BETWEEN MR-1 and MR-2 and ships no new behavior, so DISTILL has nothing to write for it).
+- The Iron Rule (NEVER modify a failing test to make it pass).
+- The mandate compliance evidence (CM-A driving port; CM-B business language; CM-C walking skeletons; CM-D pure function extraction).
+- The adapter coverage table.
+- All BDD scenario step glue.
+
+### Migration concerns for MR-1.5 (per reviewer R1)
+
+MR-1's event log lives at `ui-state:project-and-chat-session-management:<principal_id>:events`. Post-split the events fan out across `ui-state:project-context:<principal_id>:events` AND `ui-state:session-chat:<principal_id>:events`. The MR-1.5 implementer chooses one of:
+
+1. **One-time double-write migration** (recommended for production-like environments): for each principal in the old prefix, run `XRANGE` on the old key → classify each event by its target machine via the per-machine event taxonomy in `application-architecture.md` §7.3 → `XADD` to the appropriate new key. Idempotent on re-runs (the `event_id` discriminates duplicates). Drop the old key when both new keys have caught up.
+2. **Lazy-migration on first read** (recommended for dev / compose environments): on the first projection read after MR-1.5 ships, if both new keys are empty AND the old key exists, run the classification + double-write inline. Subsequent reads see the migrated state.
+
+Either approach is consistent with the projection-builder's pure-fold semantics — the events themselves don't change shape; only their key location does. MR-1.5's MR description must surface which path was taken so DEVOPS knows whether to expect a one-time migration job or lazy-on-read latency on the first post-deploy projection fetch.
+
+**This is operational hygiene, not architectural** — the amendment's logic is unaffected. The DISTILL acceptance tests are unaffected either way (they read projections, not Redis keys directly).
+
+### `waiting_for_project` observability note (per reviewer R2)
+
+During the brief `waiting_for_project` dwell (typically <10 ms between orchestrator broadcast and machine transition), the FE renders from project-context's projection only — no session-list UI appears until session-chat enters `loading_session_list`. The projection-compose layer in `uiStateClient` naturally handles this: if session-chat's projection doesn't exist yet (actor not yet spawned, or 404 from the projection-fetch HTTP), the composer defaults session-chat context fields to null. **The harness needs NO special `waiting_for_project` assertion path** — acceptance tests targeting downstream session-chat states naturally wait for the transition before reading session-chat's projection.
+
+**The FE composer's null-handling is itself a DELIVER detail** — the composer should treat "session-chat projection 404 / actor-not-yet-spawned" identically to "session-chat in `waiting_for_project`" — both produce a `view` shape where `view.sessionChat` is null. The MR-1.5 implementer should write a unit test asserting this equivalence so the FE's render logic remains unambiguous.
+
+---
 
 ---
 
@@ -471,10 +571,11 @@ The compose acceptance test stack (per ADR-016 + ADR-030 + ADR-034) is **unchang
 
 ### Pending (DISTILL or user):
 
-- [ ] **nw-solution-architect-reviewer pass** on this DESIGN bundle (HARD GATE per command-args).
+- [ ] **nw-solution-architect-reviewer pass** on this DESIGN bundle (HARD GATE per command-args). **Re-run required after SRP amendment** (2026-05-13 — DWD-13 + companion edits).
 - [ ] DISTILL writes the per-feature `pyproject.toml` + scaffolds the 10 test files.
 - [ ] DISTILL formalizes all 62 scenarios.
 - [ ] DISTILL produces its own `wave-decisions.md` capturing any test-framework-level decisions.
+- [ ] **MR-1.5 (DELIVER refactor — NEW per DWD-13)**: split `project-and-chat-session-management.ts` into `project-context.ts` + `session-chat.ts`. Pure refactor; no behavior change; all MR-1 acceptance tests continue to pass. Adds the orchestrator's `project_ready` broadcast hook + `session-chat` MachineRegistry entry.
 
 ### Pending (DELIVER, not gating DISTILL):
 
@@ -495,6 +596,8 @@ The compose acceptance test stack (per ADR-016 + ADR-030 + ADR-034) is **unchang
 - Journey YAML embedded Gherkin: `docs/feature/project-and-chat-session-management/discuss/journey-project-and-chat-session-management.feature`
 - Outcome KPIs (for DEVOPS): `docs/feature/project-and-chat-session-management/discuss/outcome-kpis.md`
 - Per-slice briefs: `docs/feature/project-and-chat-session-management/discuss/slices/slice-{01..06}-*.md`
-- DESIGN companion artifacts (this wave): `application-architecture.md`, `wave-decisions.md`, `c4-diagrams.md`
+- DESIGN companion artifacts (this wave + SRP amendment): `application-architecture.md` (post-DWD-13), `wave-decisions.md` (DWD-1..DWD-13), `c4-diagrams.md` (post-DWD-13)
+- **SRP review (binding input for the amendment)**: `./review-by-software-crafter-srp.md`
+- **DESIGN amendment review**: `./review-by-solution-architect-srp-amendment.md`
 - J-001 DESIGN → DISTILL handoff (template): `docs/evolution/2026-05-12-user-flow-state-machines/design/handoff-design-to-distill.md`
 - Inherited ADRs: ADR-014, ADR-015, ADR-016, ADR-018, ADR-027, ADR-028, ADR-029, ADR-030, ADR-031 §7, ADR-034

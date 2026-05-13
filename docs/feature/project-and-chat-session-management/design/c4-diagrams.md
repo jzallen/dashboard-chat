@@ -1,17 +1,20 @@
 # C4 Diagrams — `project-and-chat-session-management` (J-002)
 
-> **Wave**: DESIGN
-> **Date**: 2026-05-13
-> **Architect**: nw-solution-architect (J-002 DESIGN wave)
-> **Companion**: `application-architecture.md` (binding architecture); `wave-decisions.md` (DWD-1..DWD-12).
+> **Wave**: DESIGN (with SRP amendment 2026-05-13)
+> **Date (original)**: 2026-05-13
+> **Date (SRP amendment)**: 2026-05-13
+> **Architect**: nw-solution-architect (J-002 DESIGN wave; SRP amendment)
+> **Companion**: `application-architecture.md` (binding architecture); `wave-decisions.md` (DWD-1..DWD-13).
 
 This document provides the C4 model artifacts for J-002:
 - **§1 Container Diagram (L2)** — J-002 deltas vs the live topology.
-- **§2 Component Diagram (L3)** — inside `ui-state/` for J-002 + cross-machine orchestration with J-001.
-- **§3 State Chart** — the 14-state J-002 machine with all transitions.
-- **§4 Sequence Diagrams** — one per carpaccio slice (canonical happy path each).
+- **§2 Component Diagram (L3)** — inside `ui-state/` for J-002 (TWO machines per DWD-13) + cross-machine orchestration with J-001.
+- **§3 State Charts** — the TWO J-002 machine charts (post-DWD-13) with all transitions.
+- **§4 Sequence Diagrams** — one per carpaccio slice (canonical happy path each). Slice 1 is unchanged in shape (single machine path); Slices 2-6 show the two-actor coordination.
 
 Existing system-context (L1) is byte-unchanged from J-001 (see `docs/evolution/2026-05-12-user-flow-state-machines/design/c4-diagrams.md` §1); J-002 introduces no new external systems.
+
+**Amendment scope**: §2 (Component) is updated to show TWO J-002 actors (project-context + session-chat). §3 (State Chart) is split into two charts. §1 (Container) is unchanged — both machines live in the same ui-state container. §4 (Sequence) carries an addendum note in §4.7 explaining how the existing single-actor sequence diagrams are read against the two-actor decomposition (they remain accurate at the projection-consumer / agent level; the orchestrator-mediated two-actor inner mechanics are summarized in §4.7).
 
 ---
 
@@ -75,41 +78,49 @@ C4Container
 
 ---
 
-## 2. Component Diagram (L3) — ui-state internals + cross-machine orchestration
+## 2. Component Diagram (L3) — ui-state internals + cross-machine orchestration (post-DWD-13)
 
 ```mermaid
 C4Component
-  title Component Diagram — ui-state tier (J-002 + cross-machine composition with J-001)
+  title Component Diagram — ui-state tier (J-002 split into project-context + session-chat per DWD-13)
 
   Container_Boundary(uistate, "ui-state tier (Hono on Node)") {
-    Component(routes, "Flow Routes", "Hono handlers — index.ts", "<<J-002 EXTENSION>>: handles /ui-state/flow/project-and-chat-session-management/{begin,event,projection,open-deep-link} via the same wireRoutes pattern. NEW: /projection/stream SSE handler (DWD-9; Slice 2)")
-    Component(orchestrator, "Flow Orchestrator", "orchestrator.ts — supervisor actor", "<<J-002 EXTENSION>>: NEW MachineRegistry strategy table replaces hardcoded conditional (DWD-8). Existing FREEZE/THAW broadcast logic is byte-unchanged — enumerates all spawned actors. Watches J-001 priorState→ready transition to spawn J-002 actor and emit j001_ready event")
-    Component(loginmachine, "LoginAndOrgSetupMachine", "machines/login-and-org-setup.ts — XState v5 statechart (J-001)", "8 states; UNCHANGED by J-002. Provides org_id + user.display_name to J-002 via orchestrator broadcast on ready entry")
-    Component(j002machine, "<<NEW>> ProjectAndChatSessionMachine", "machines/project-and-chat-session-management.ts — XState v5 statechart (J-002)", "14 states (12 narrative + error_recoverable + freeze); top-level on.FREEZE handler reachable from every non-terminal state (DWD-6); guards on intent replay implement stale-intent filter (DWD-7)")
-    Component(scoperesolver, "ScopeResolver", "active-scope.ts — pure fn (route, jwt, machineContext) → ActiveScope", "BYTE-UNCHANGED by J-002. J-002 adds 3 new call sites (resolveInitialScope, switchProject, switchDatasetContext actors)")
-    Component(projectionbuilder, "ProjectionBuilder", "projection.ts — pure fold (FlowEvent[], snapshot?) → FlowProjection", "<<J-002 EXTENSION>>: EVENT_HANDLERS dispatch table extended with ~16 new entries (one per J-002 event type per the journey YAML emits blocks). Envelope shape unchanged (DWD-9)")
-    Component(eventlog, "FlowEventLog port", "persistence/redis.ts — append-only XADD/XRANGE", "<<J-002 EXTENSION>>: NEW subscribe(key, since: sequenceId): AsyncIterable&lt;FlowEvent&gt; method using Redis Streams XREAD BLOCK — backs the SSE stream endpoint (Slice 2)")
-    Component(replaybuffer, "ReplayBuffer", "orchestrator.ts:54-56,161-192 — bounded queue", "5s timeout, 16 max queued per flow. BYTE-UNCHANGED by J-002. J-002 is the first CONSUMER (per ADR-028 §94)")
-    Component(probe, "probe()", "Earned-Trust startup checks", "BYTE-UNCHANGED by J-002. Adapter probes (Redis, auth-proxy, backend, WorkOS) cover both flows uniformly")
-    Component(j002factory, "<<NEW>> createProjectAndChatSessionMachine", "machines/project-and-chat-session-management.ts factory", "Sibling of createLoginAndOrgSetupMachine; injected with deps for resolveInitialScope, createProject, loadSessionList, resumeSession, createSessionEagerly, switchDatasetContext, switchProject actors. Per ADR-028 v5 actor model setup({actors: {...}}).createMachine pattern")
+    Component(routes, "Flow Routes", "Hono handlers — index.ts", "<<J-002 EXTENSION>>: handles /ui-state/flow/project-context/{begin,event,projection,open-deep-link,projection/stream} AND /ui-state/flow/session-chat/{begin,event,projection,projection/stream} via the same wireRoutes pattern. TWO SSE handlers (one per machine) per DWD-9 + DWD-13.")
+    Component(orchestrator, "Flow Orchestrator", "orchestrator.ts — supervisor actor", "<<J-002 EXTENSION>>: MachineRegistry strategy table now has 3 entries (login-and-org-setup, project-context, session-chat) per DWD-8 + DWD-13. Existing FREEZE/THAW broadcast logic is byte-unchanged — enumerates all spawned actors. TWO priorState-watcher hooks: existing j001_ready (login → project-context) + NEW project_ready (project-context → session-chat) per DWD-13 §3.2.")
+    Component(loginmachine, "LoginAndOrgSetupMachine", "machines/login-and-org-setup.ts — XState v5 statechart (J-001)", "8 states; UNCHANGED by J-002. SRP review (2026-05-13) explicitly approved — kept as-is per DWD-13. Provides org_id + user.display_name to project-context via orchestrator broadcast on ready entry.")
+    Component(projctxmachine, "<<NEW per DWD-13>> ProjectContextMachine", "machines/project-context.ts — XState v5 statechart", "8 states (resolving_initial_scope, no_projects_empty_state, creating_project, project_selected, switching_project, scope_mismatch_terminal, error_recoverable, freeze). Top-level on.FREEZE handler (DWD-6 per-machine). Owns org_id + project_id halves of active_scope. Per ADR-028:46-48: does NOT import from sibling machines.")
+    Component(sessionchatmachine, "<<NEW per DWD-13>> SessionChatMachine", "machines/session-chat.ts — XState v5 statechart", "9 states (waiting_for_project [initial], loading_session_list, session_list_visible, resuming_session, session_active_no_messages, session_active, switching_dataset_context, error_recoverable, freeze). Top-level on.FREEZE handler (per-machine). Owns resource_* half of active_scope and the chat-emitting states. Per ADR-028:46-48: does NOT import from sibling machines.")
+    Component(scoperesolver, "ScopeResolver", "active-scope.ts — pure fn (route, jwt, machineContext) → ActiveScope", "BYTE-UNCHANGED by J-002. project-context calls in 2 actors (resolveInitialScope, switchProject); session-chat calls in 1 actor (switchDatasetContext).")
+    Component(projectionbuilder, "ProjectionBuilder", "projection.ts — pure fold (FlowEvent[], snapshot?) → FlowProjection", "<<J-002 EXTENSION>>: EVENT_HANDLERS dispatch table is now namespaced per-machine (PROJECT_CONTEXT_EVENT_HANDLERS + SESSION_CHAT_EVENT_HANDLERS) per DWD-13 §7.3. Routed by flow_id prefix. Envelope shape unchanged per DWD-9.")
+    Component(eventlog, "FlowEventLog port", "persistence/redis.ts — append-only XADD/XRANGE", "<<J-002 EXTENSION>>: TWO new key prefixes (ui-state:project-context:&lt;principal_id&gt;:events AND ui-state:session-chat:&lt;principal_id&gt;:events). NEW subscribe(key, since: sequenceId): AsyncIterable&lt;FlowEvent&gt; method using Redis Streams XREAD BLOCK — backs both SSE stream endpoints (MR-2).")
+    Component(replaybuffer, "ReplayBuffer", "orchestrator.ts:54-56,161-192 — bounded queue", "5s timeout, 16 max queued PER FLOW. BYTE-UNCHANGED by J-002. Each J-002 machine gets its own per-flow buffer; FREEZE/THAW broadcast reaches both naturally.")
+    Component(probe, "probe()", "Earned-Trust startup checks", "BYTE-UNCHANGED by J-002. Adapter probes (Redis, auth-proxy, backend, WorkOS) cover both flows uniformly.")
+    Component(pcfactory, "<<NEW per DWD-13>> createProjectContextMachine", "machines/project-context.ts factory", "Sibling of createLoginAndOrgSetupMachine; injected with deps for resolveInitialScope, createProject, switchProject actors. Per ADR-028 v5 actor model setup({actors: {...}}).createMachine pattern.")
+    Component(scfactory, "<<NEW per DWD-13>> createSessionChatMachine", "machines/session-chat.ts factory", "Sibling of createProjectContextMachine; injected with deps for loadSessionList, resumeSession, createSessionEagerly, switchDatasetContext actors.")
   }
 
   ContainerDb_Ext(redis, "Redis")
   Container_Ext(authproxy, "Auth-Proxy")
   Container_Ext(backend, "Backend")
 
-  Rel(routes, orchestrator, "Dispatches flow events to (begin / send / open-deep-link / projection-read / SSE-subscribe)")
+  Rel(routes, orchestrator, "Dispatches flow events to (begin / send / open-deep-link / projection-read / SSE-subscribe) — per-machine endpoints route to per-machine spawned actor")
   Rel(orchestrator, loginmachine, "Spawns + sends events to (existing)")
-  Rel(orchestrator, j002factory, "<<NEW>> Calls factory on principal's first J-002 event OR on J-001 ready broadcast")
-  Rel(j002factory, j002machine, "<<NEW>> Creates machine instance per (flow_id, principal_id) — setup({actors}).createMachine pattern per ADR-028")
-  Rel(orchestrator, j002machine, "Broadcasts FREEZE on J-001 expired_token; broadcasts THAW on J-001 silent_reauth_ok; replays queued intents from ReplayBuffer")
-  Rel(j002machine, eventlog, "Appends DomainEvents per transition (ui-state:project-and-chat-session-management:&lt;principal_id&gt;:events)")
-  Rel(j002machine, scoperesolver, "Calls in 3 actors (resolveInitialScope, switchProject, switchDatasetContext)")
-  Rel(j002machine, backend, "Invokes list_projects, list_sessions, get_session, get_project, create_project, create_session, update_session, list_session_events via HTTPS", "HTTPS via authproxy")
+  Rel(orchestrator, pcfactory, "<<DWD-13>> Calls factory on j001_ready broadcast (project-context's beginIfNotStarted)")
+  Rel(orchestrator, scfactory, "<<NEW per DWD-13>> Calls factory on project_ready broadcast (session-chat's beginIfNotStarted; idempotent against same project_id)")
+  Rel(pcfactory, projctxmachine, "Creates machine instance per (project-context:&lt;principal_id&gt;) flow_id")
+  Rel(scfactory, sessionchatmachine, "Creates machine instance per (session-chat:&lt;principal_id&gt;) flow_id")
+  Rel(orchestrator, projctxmachine, "Broadcasts FREEZE on J-001 expired_token; broadcasts THAW on J-001 silent_reauth_ok; sends project_ready on project_selected entry as a callback hook")
+  Rel(orchestrator, sessionchatmachine, "Broadcasts FREEZE on J-001 expired_token; broadcasts THAW on J-001 silent_reauth_ok; sends project_ready (received from project-context's project_selected entry) — invalidates session_id+resource on different project_id")
+  Rel(projctxmachine, eventlog, "Appends DomainEvents per transition (ui-state:project-context:&lt;principal_id&gt;:events)")
+  Rel(sessionchatmachine, eventlog, "Appends DomainEvents per transition (ui-state:session-chat:&lt;principal_id&gt;:events)")
+  Rel(projctxmachine, scoperesolver, "Calls in 2 actors (resolveInitialScope, switchProject) — invariants I1, I4")
+  Rel(sessionchatmachine, scoperesolver, "Calls in 1 actor (switchDatasetContext) — invariants I1, I3, I4")
+  Rel(projctxmachine, backend, "Invokes list_projects, get_project, create_project via HTTPS via authproxy")
+  Rel(sessionchatmachine, backend, "Invokes list_sessions, get_session, create_session, update_session, list_session_events via HTTPS via authproxy")
   Rel(loginmachine, scoperesolver, "Calls (existing)")
   Rel(loginmachine, eventlog, "Appends DomainEvents (existing key prefix)")
-  Rel(orchestrator, replaybuffer, "Owns; queues intents during FREEZE window per flow")
-  Rel(routes, projectionbuilder, "Folds events for GET /projection (HTTP) and for each SSE push (Slice 2)")
+  Rel(orchestrator, replaybuffer, "Owns; queues intents during FREEZE window per flow (one buffer per J-002 actor)")
+  Rel(routes, projectionbuilder, "Folds events for GET /projection (HTTP) and for each SSE push — per-machine dispatch via flow_id prefix")
   Rel(projectionbuilder, eventlog, "Reads via XRANGE (HTTP projection); via subscribe (SSE)")
   Rel(eventlog, redis, "Persists to / reads from")
   Rel(probe, redis, "Pings on startup")
@@ -117,84 +128,55 @@ C4Component
   Rel(probe, backend, "Verifies /api/health + openapi.json shape on startup")
 ```
 
-### 2.1 What this diagram shows
+### 2.1 What this diagram shows (post-DWD-13)
 
-- **`j002machine` is a NEW sibling of `loginmachine`** — same XState v5 actor-model pattern; per ADR-028:46-48 the two machines never import each other; communication is one-way via orchestrator broadcast.
-- **The orchestrator's `MachineRegistry`** (DWD-8) replaces the hardcoded conditional; the registry is constructed at the composition root with both J-001 and J-002 factories.
-- **The replay buffer and FREEZE/THAW broadcast logic are byte-unchanged** — the broadcast enumerates spawned actors (machine-agnostic); J-002 is just a new spawned actor.
-- **`ProjectionBuilder` extends `EVENT_HANDLERS`** — strategy pattern, no fold logic change.
-- **`FlowEventLog` adapter gains a `subscribe()` method** for the SSE endpoint; the existing XADD/XRANGE methods are unchanged.
+- **Two NEW sibling machines** (`ProjectContextMachine` + `SessionChatMachine`) — each is a peer of `LoginAndOrgSetupMachine` under the same XState v5 actor-model pattern; per ADR-028:46-48 + DWD-13 NONE of the three machines import each other; all communication is one-way via orchestrator broadcast.
+- **The orchestrator's `MachineRegistry`** (DWD-8) now has **three entries**; the registry is constructed at the composition root with three factories.
+- **The orchestrator's `priorState` watcher** now drives **two broadcast hooks**: the existing `j001_ready` (login → project-context) plus the NEW `project_ready` (project-context → session-chat) per DWD-13 §3.2. Both follow the same pattern.
+- **The replay buffer and FREEZE/THAW broadcast logic are byte-unchanged** — the broadcast enumerates spawned actors (machine-agnostic); both J-002 actors are just new spawned actors.
+- **`ProjectionBuilder` namespaces `EVENT_HANDLERS`** per-machine; flow_id prefix routes the dispatch.
+- **`FlowEventLog` adapter** gains a `subscribe()` method for the SSE endpoint (shared by both machines' SSE handlers); existing XADD/XRANGE methods are unchanged.
+- **Per-principal cardinality**: bounded by 3 flows (login + project-context + session-chat); session-chat may be absent for users still in `no_projects_empty_state` / `scope_mismatch_terminal`.
 
 ### 2.2 What this diagram does NOT change
 
-- The `routes/` → `orchestrator/` → `machines/` import-graph topology (`dependency-cruiser` rule per ADR-027 §7).
+- The `routes/` → `orchestrator/` → `machines/` import-graph topology (`dependency-cruiser` rule per ADR-027 §7) — the rule covers the new file pair automatically.
 - The Earned-Trust `probe()` pattern (ADR-027 §6).
 - The composition root's adapter-injection shape.
-- The Redis key prefix tenancy (J-001 and J-002 use distinct prefixes; no key collision).
+- The Redis key prefix tenancy invariant (each `(machine, principal_id)` pair has its own key; no collision possible).
+- The orchestrator broadcast loop and replay buffer mechanics.
 
 ---
 
-## 3. State Chart — J-002 machine (14 states + transitions)
+## 3. State Charts — TWO J-002 machines (post-DWD-13)
 
-The chart below is the IMMUTABLE journey-YAML contract expressed as XState v5 state names. Each transition's `event → target` mapping comes directly from the YAML; this view collapses the YAML's text descriptions into a graph for visual review.
+Per DWD-13 the single 14-state machine is split into two cohesive sibling machines. Each chart below is the IMMUTABLE journey-YAML contract expressed as XState v5 state names for its owning machine. Each transition's `event → target` mapping comes directly from the YAML (with per-machine assignments per `application-architecture.md` §2 post-amendment).
+
+### 3.A `project-context` state chart — 8 states
 
 ```mermaid
 stateDiagram-v2
     direction LR
     [*] --> resolving_initial_scope: spawned on j001_ready
 
-    resolving_initial_scope --> project_selected: resolved_with_project
-    resolving_initial_scope --> no_projects_empty_state: resolved_no_projects
-    resolving_initial_scope --> scope_mismatch_terminal: scope_mismatch
+    resolving_initial_scope --> project_selected: resolved_with_project (invoke onDone)
+    resolving_initial_scope --> no_projects_empty_state: resolved_no_projects (invoke onDone)
+    resolving_initial_scope --> scope_mismatch_terminal: cross_tenant / project_not_found (invoke onDone)
+    resolving_initial_scope --> error_recoverable: transient_failure (invoke onError)
     resolving_initial_scope --> freeze: FREEZE (top-level)
 
-    no_projects_empty_state --> creating_project: create_project_clicked / create_project_submitted
+    no_projects_empty_state --> creating_project: create_project_clicked / create_project_submitted (valid name)
+    no_projects_empty_state --> no_projects_empty_state: create_project_submitted (invalid name; inline error)
     no_projects_empty_state --> freeze: FREEZE
 
     creating_project --> project_selected: project_created (invoke onDone)
-    creating_project --> no_projects_empty_state: validation_failed (invoke onError)
     creating_project --> error_recoverable: transient_failure (invoke onError)
     creating_project --> freeze: FREEZE
 
-    project_selected --> loading_session_list: session_list_load_started (raised on entry)
     project_selected --> switching_project: switching_project_intent
     project_selected --> freeze: FREEZE
 
-    loading_session_list --> session_list_visible: session_list_loaded (invoke onDone)
-    loading_session_list --> error_recoverable: transient_failure
-    loading_session_list --> freeze: FREEZE
-
-    session_list_visible --> resuming_session: session_clicked
-    session_list_visible --> session_active_no_messages: new_session_clicked
-    session_list_visible --> switching_project: switching_project_intent
-    session_list_visible --> [*]: suggestion_chip_clicked_upload (exit_to_J003 — navigation side-effect)
-    session_list_visible --> [*]: suggestion_chip_clicked_browse_projects (exit_to_projects_page — navigation side-effect)
-    session_list_visible --> freeze: FREEZE
-
-    resuming_session --> session_active: session_resumed (invoke onDone)
-    resuming_session --> session_list_visible: session_not_found (invoke onDone, graceful)
-    resuming_session --> error_recoverable: transient_failure
-    resuming_session --> freeze: FREEZE
-
-    session_active_no_messages --> session_active: first_message_sent (via createSessionEagerly invoke onDone)
-    session_active_no_messages --> resuming_session: session_clicked
-    session_active_no_messages --> switching_project: switching_project_intent
-    session_active_no_messages --> error_recoverable: transient_failure (createSessionEagerly onError)
-    session_active_no_messages --> freeze: FREEZE
-
-    session_active --> resuming_session: session_clicked
-    session_active --> session_active_no_messages: new_session_clicked
-    session_active --> switching_project: switching_project_intent
-    session_active --> switching_dataset_context: dataset_resolved_by_agent
-    session_active --> switching_dataset_context: dataset_picked_directly
-    session_active --> freeze: FREEZE
-
-    switching_dataset_context --> session_active: dataset_attached (invoke onDone)
-    switching_dataset_context --> session_active: dataset_access_denied (invoke onDone, graceful)
-    switching_dataset_context --> error_recoverable: transient_failure
-    switching_dataset_context --> freeze: FREEZE
-
-    switching_project --> project_selected: project_switched (invoke onDone)
+    switching_project --> project_selected: project_switched (invoke onDone) [triggers project_ready re-broadcast]
     switching_project --> scope_mismatch_terminal: cross_tenant / access_revoked (invoke onDone)
     switching_project --> error_recoverable: transient_failure
     switching_project --> freeze: FREEZE
@@ -207,41 +189,101 @@ stateDiagram-v2
     freeze --> error_recoverable: replay_abandoned (5s timeout, cause replay_abandoned)
 ```
 
+**Cross-machine effect**: On entry to `project_selected` (from `resolving_initial_scope`, `creating_project`, or `switching_project`), the orchestrator observes the state transition and broadcasts `project_ready` to session-chat with `{org_id, project_id, project_name, intent_session_id?, intent_resource_id?, intent_resource_type?}`. project-context itself does NOT emit anything to session-chat — the orchestrator carries the signal.
+
+### 3.B `session-chat` state chart — 9 states
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> waiting_for_project: spawned on first project_ready broadcast
+
+    waiting_for_project --> loading_session_list: project_ready (no intent_session_id)
+    waiting_for_project --> resuming_session: project_ready (with intent_session_id — deep-link continuation)
+    waiting_for_project --> freeze: FREEZE
+
+    loading_session_list --> session_list_visible: session_list_loaded (invoke onDone)
+    loading_session_list --> resuming_session: session_list_loaded AND context.intent_session_id != null (deep-link)
+    loading_session_list --> error_recoverable: transient_failure (cause list_sessions_degraded)
+    loading_session_list --> loading_session_list: project_ready (different project_id — re-invoke after invalidate)
+    loading_session_list --> freeze: FREEZE
+
+    session_list_visible --> resuming_session: session_clicked
+    session_list_visible --> session_active_no_messages: new_session_clicked
+    session_list_visible --> loading_session_list: project_ready (different project_id — invalidate + reload)
+    session_list_visible --> [*]: suggestion_chip_clicked_upload (exit_to_J003 — navigation side-effect)
+    session_list_visible --> [*]: suggestion_chip_clicked_browse_projects (exit_to_projects_page — navigation side-effect)
+    session_list_visible --> freeze: FREEZE
+
+    resuming_session --> session_active: session_resumed (invoke onDone)
+    resuming_session --> session_list_visible: session_not_found (invoke onDone, graceful)
+    resuming_session --> error_recoverable: transient_failure
+    resuming_session --> freeze: FREEZE
+
+    session_active_no_messages --> session_active: first_message_sent (via createSessionEagerly invoke onDone)
+    session_active_no_messages --> resuming_session: session_clicked
+    session_active_no_messages --> loading_session_list: project_ready (different project_id)
+    session_active_no_messages --> error_recoverable: transient_failure (createSessionEagerly onError)
+    session_active_no_messages --> freeze: FREEZE
+
+    session_active --> resuming_session: session_clicked
+    session_active --> session_active_no_messages: new_session_clicked
+    session_active --> loading_session_list: project_ready (different project_id)
+    session_active --> switching_dataset_context: dataset_resolved_by_agent
+    session_active --> switching_dataset_context: dataset_picked_directly
+    session_active --> freeze: FREEZE
+
+    switching_dataset_context --> session_active: dataset_attached (invoke onDone)
+    switching_dataset_context --> session_active: dataset_access_denied (invoke onDone, graceful)
+    switching_dataset_context --> error_recoverable: transient_failure
+    switching_dataset_context --> freeze: FREEZE
+
+    error_recoverable --> [*]: retry_clicked (transitions to last_live_state via history target)
+
+    freeze --> [*]: THAW (transitions to last_live_state via history target)
+    freeze --> error_recoverable: replay_abandoned (5s timeout, cause replay_abandoned)
+```
+
 > **Note on collapsed state**: The journey YAML lists `no_sessions_empty_state` as one of the 12 narrative states (kind `interactive`) for emotional-arc clarity. The XState machine **does NOT create a separate state for it** — it is a derived UI predicate within `session_list_visible` when `context.session_list.length === 0`. See `application-architecture.md` §2.3 for the rationale (DWD-1).
+
+> **Note on `waiting_for_project`**: This state is new per DWD-13 (does not appear in the journey YAML's 12-state enumeration). It is the internal pre-spawn state for session-chat. No FE component, no acceptance test, no projection consumer reads `state === "waiting_for_project"` as a UX trigger.
 
 ### 3.1 Chart legend / reading guide
 
-- `[*]` exits in `session_list_visible` are the **navigation side-effects** `exit_to_J003` and `exit_to_projects_page` from the journey YAML — they are NOT internal XState states; they fire route navigations.
-- `[*]` re-entries from `error_recoverable` and `freeze` represent **history-target transitions** to `context.last_live_state` (per DWD-6, the field assigned on FREEZE entry; per the `error_recoverable` action symmetric pattern from J-001).
-- The top-level `FREEZE` handler (per DWD-6 + §2.2 of application-architecture.md) is shown as a transition from every non-terminal state — visually this is redundant but it matches XState v5's `on:` top-level inheritance semantics.
-- **`scope_mismatch_terminal` is terminal-recoverable** — it has an exit (`back_to_projects_clicked`) but no auto-resolution. The user must click.
+- `[*]` exits in `session-chat`'s `session_list_visible` are the **navigation side-effects** `exit_to_J003` and `exit_to_projects_page` from the journey YAML — they are NOT internal XState states; they fire route navigations.
+- `[*]` re-entries from `error_recoverable` and `freeze` (in BOTH charts) represent **history-target transitions** to the OWNING machine's `context.last_live_state` (per DWD-6 + DWD-13 — each machine carries its own `last_live_state`).
+- The top-level `FREEZE` handler (per DWD-6 + DWD-13 + §2.2 of application-architecture.md) is shown as a transition from every non-terminal state IN BOTH CHARTS — visually this is redundant but it matches XState v5's `on:` top-level inheritance semantics in each machine.
+- **`scope_mismatch_terminal` is terminal-recoverable** — it has an exit (`back_to_projects_clicked`) but no auto-resolution. The user must click. It lives in project-context.
 
-### 3.2 Cross-machine signals (shown but originating outside J-002)
+### 3.2 Cross-machine signals (shown but originating outside the receiving machine)
 
-- `FREEZE` is emitted by the **orchestrator** when J-001 transitions to `expired_token` (per ADR-028 §"Decision outcome"). J-002 never emits FREEZE.
-- `THAW` is emitted by the **orchestrator** when J-001 silent re-auth completes (J-001 transitions `expired_token → ready`). J-002 never emits THAW.
-- `replay_abandoned` is emitted by the **orchestrator's replay buffer** on 5s timeout without THAW (per ADR-027 §5).
+- **`j001_ready`** is emitted by the **orchestrator** when J-001 transitions to `ready`. project-context receives it. (Not shown explicitly in 3.A; the initial transition `[*] --> resolving_initial_scope: spawned on j001_ready` summarizes the entry.)
+- **`project_ready`** is emitted by the **orchestrator** when project-context transitions INTO `project_selected` (from any source state). session-chat receives it. (Shown explicitly in 3.B as the entry transition `waiting_for_project → loading_session_list / resuming_session` and as the re-broadcast invalidation transitions in `session_list_visible / session_active_no_messages / session_active / loading_session_list`.)
+- **`FREEZE`** is emitted by the **orchestrator** when J-001 transitions to `expired_token` (per ADR-028 §"Decision outcome"). BOTH J-002 machines receive it. Neither J-002 machine ever emits FREEZE.
+- **`THAW`** is emitted by the **orchestrator** when J-001 silent re-auth completes (J-001 transitions `expired_token → ready`). BOTH J-002 machines receive it. Neither emits THAW.
+- **`replay_abandoned`** is emitted by the **orchestrator's replay buffer** on 5s timeout without THAW (per ADR-027 §5). Each per-flow buffer drives its own machine's transition.
 
 ### 3.3 Match against the journey YAML
 
-| Journey YAML state | XState state | Notes |
-|---|---|---|
-| `resolving_initial_scope` | ✓ same | Initial state |
-| `no_projects_empty_state` | ✓ same | Sibling — not a sub-shape per DWD-1 |
-| `creating_project` | ✓ same | |
-| `project_selected` | ✓ same | |
-| `loading_session_list` | ✓ same | |
-| `session_list_visible` | ✓ same | **`no_sessions_empty_state` collapses into this** per DWD-1 |
-| `no_sessions_empty_state` | (UI sub-shape; not an XState state per DWD-1) | Derived from `context.session_list.length === 0` |
-| `resuming_session` | ✓ same | |
-| `session_active_no_messages` | ✓ same | |
-| `session_active` | ✓ same | |
-| `switching_dataset_context` | ✓ same | |
-| `switching_project` | ✓ same | |
-| `scope_mismatch_terminal` | ✓ same | |
-| `error_recoverable` | ✓ same | Same shape as J-001's |
-| `freeze` | ✓ same | Side-state reachable via top-level `on.FREEZE` |
-| `exit_to_J003`, `exit_to_projects_page` | (navigation events, not XState states) | Emit + side-effect |
+| Journey YAML state | Owning machine | XState state | Notes |
+|---|---|---|---|
+| `resolving_initial_scope` | project-context | ✓ same | Initial state of project-context |
+| `no_projects_empty_state` | project-context | ✓ same | Sibling — not a sub-shape per DWD-1 |
+| `creating_project` | project-context | ✓ same | |
+| `project_selected` | project-context | ✓ same | Triggers `project_ready` orchestrator broadcast on entry |
+| `loading_session_list` | session-chat | ✓ same | |
+| `session_list_visible` | session-chat | ✓ same | **`no_sessions_empty_state` collapses into this** per DWD-1 |
+| `no_sessions_empty_state` | session-chat (UI sub-shape) | (not an XState state per DWD-1) | Derived from `context.session_list.length === 0` |
+| `resuming_session` | session-chat | ✓ same | |
+| `session_active_no_messages` | session-chat | ✓ same | |
+| `session_active` | session-chat | ✓ same | |
+| `switching_dataset_context` | session-chat | ✓ same | |
+| `switching_project` | project-context | ✓ same | |
+| `scope_mismatch_terminal` | project-context | ✓ same | |
+| `error_recoverable` | **both (one per machine)** | ✓ same | Per-machine retry contract per DWD-13 |
+| `freeze` | **both (one per machine)** | ✓ same | Per-machine side-state per DWD-13 |
+| `waiting_for_project` (NEW) | session-chat | ✓ new initial state | Pre-`project_ready` state per DWD-13; no user-visible surface |
+| `exit_to_J003`, `exit_to_projects_page` | session-chat (navigation events) | (not XState states) | Emit + side-effect |
 
 ---
 
@@ -486,20 +528,41 @@ sequenceDiagram
     Note over FE: "Refreshing your session..." banner fades; chat-9b2a session active. Maya never re-clicked.
 ```
 
-### 4.7 Slice notes
+### 4.7 Slice notes (post-DWD-13 — two-actor model)
 
 All six sequence diagrams share these properties (per ADR-029 §4 + ADR-031 §7 inheritance):
 
 - **Auth-proxy is on every outbound path.** No FE → ui-state or FE → agent direct.
-- **`X-Active-Scope` header is set by `uiStateClient.activeScopeHeader(projection)` on every FE outbound fetch** post-Slice-4.
+- **`X-Active-Scope` header is set by `uiStateClient.activeScopeHeader(view)` on every FE outbound fetch** post-Slice-4. The composer takes BOTH J-002 projections per DWD-13 §4.3.
 - **Correlation_id threads through every emit.** The original user-action's correlation_id survives FREEZE/THAW (Slice 6) and reentry from `error_recoverable`.
-- **The agent is byte-unchanged in flow logic.** Slice 4 is the only slice touching `agent/lib/chat/handleChat.ts`, and only the scope-extraction prefix.
+- **The agent is byte-unchanged in flow logic.** Slice 4 is the only slice touching `agent/lib/chat/handleChat.ts`, and only the scope-extraction prefix. The agent is NOT aware of the J-002 split — it consumes ONE composed `X-Active-Scope` header.
+
+#### How to read the existing sequence diagrams against the two-actor decomposition (DWD-13)
+
+The diagrams in §§4.1–4.6 above represent the pre-amendment single-`US` (ui-state) actor. Per DWD-13, that `US` actor is now TWO actors (`PC` = project-context, `SC` = session-chat). At the projection-consumer / agent level the externally observable behavior is identical, so the diagrams remain accurate for the FE/agent-facing flows. The inner mechanics differ as follows:
+
+| Slice / diagram | What the single-actor view shows | What actually happens post-DWD-13 |
+|---|---|---|
+| **§4.1 Slice 1 — Cold deep-link** | `US` resolves scope, transitions through `resolving_initial_scope → project_selected → loading_session_list → session_list_visible`. | `PC` resolves and transitions `resolving_initial_scope → project_selected`. Orchestrator's `priorState` watcher fires `project_ready` broadcast → `SC` spawns in `waiting_for_project` → receives `project_ready` → transitions `waiting_for_project → loading_session_list → session_list_visible`. Two projection envelopes; same end-to-end timeline. |
+| **§4.2 Slice 2 — Resume** | `US`: `session_list_visible → resuming_session → session_active`. | `SC`: `session_list_visible → resuming_session → session_active`. `PC` is byte-unchanged during the resume. (FE's loader fetches both projections; only `SC` transitions are observed.) |
+| **§4.3 Slice 3 — New session** | `US`: `session_list_visible → session_active_no_messages → session_active` (eager-create on first_message_sent). | `SC`: same transitions. `PC` byte-unchanged. |
+| **§4.4 Slice 4 — Project switching** | `US`: `session_active → switching_project → project_selected → loading_session_list → session_list_visible` for the new project. | `PC` transitions `project_selected → switching_project → project_selected` (with new project_id). The FE's chat-view watches `PC`'s projection state and closes SSE on `switching_project`. Then orchestrator broadcasts `project_ready` with new `project_id` → `SC` (which was in `session_active`) sees the project_id mismatch in its `project_ready` handler → invalidates `session_id`+`resource_*` → transitions to `loading_session_list → session_list_visible`. The atomicity guarantee (US-207 AC) is satisfied because `SC` never holds the old `session_id` against the new `project_id`. |
+| **§4.5 Slice 5 — Dataset attach** | `US`: `session_active → switching_dataset_context → session_active`. | `SC`: same transitions. `PC` byte-unchanged. |
+| **§4.6 Slice 6 — FREEZE/THAW during resume** | `US`: enters `freeze`, last_live_state = `resuming_session`. THAW → restore. | BOTH `PC` and `SC` enter their own `freeze` states with their own `last_live_state`. Per the diagram's scenario (token expiry during resume), `PC`'s last_live_state is probably `project_selected` (no in-flight invoke); `SC`'s last_live_state is `resuming_session` (the in-flight transcript fetch). THAW broadcasts to BOTH; each restores via its own `last_live_state`. The replay buffer is per-flow — `SC`'s buffer drains the original `session_clicked` intent. |
+
+These mechanics are explicit in the post-DWD-13 sequence-diagram template that DELIVER MR-1.5 will produce. The existing diagrams here are kept as authoritative for the externally-observable contracts; the two-actor inner workings are summarized above.
+
+#### When to update the sequence diagrams to show TWO actors explicitly
+
+A future DESIGN revisit may rewrite §§4.1–4.6 with explicit `PC` + `SC` swimlanes if reviewer feedback indicates the single-actor view causes confusion. For this amendment, the brief tabular addendum above is sufficient — it cites the binding inner mechanics without churning the pre-existing diagrams.
 
 ---
 
 ## References
 
-- Companion DESIGN docs: `application-architecture.md`, `wave-decisions.md`, `handoff-design-to-distill.md`
+- Companion DESIGN docs: `application-architecture.md` (post-DWD-13), `wave-decisions.md` (DWD-1..DWD-13), `handoff-design-to-distill.md`
+- SRP review (binding input for the amendment): `./review-by-software-crafter-srp.md`
+- DESIGN amendment review: `./review-by-solution-architect-srp-amendment.md`
 - Journey YAML (state contract): `docs/feature/project-and-chat-session-management/discuss/journey-project-and-chat-session-management.yaml`
 - ADR-027 (ui-state tier + Remix→RRv7 framework), ADR-028 (XState v5 actor model), ADR-029 (active_scope contract), ADR-030 (topology + scaling), ADR-031 §7 (auth path), ADR-034 (frontend coexistence)
 - J-001 C4 diagrams: `docs/evolution/2026-05-12-user-flow-state-machines/design/c4-diagrams.md`

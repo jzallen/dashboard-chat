@@ -261,6 +261,151 @@ The DWD-* decisions above resolve J-002-internal questions (state shape, schema 
 
 **Why:** Per the nw-design skill's "Don't introduce abstractions beyond what the task requires" guidance. ADRs ratify architectural decisions; J-002's decisions are application-level refinements of an architecture already ratified at the system level by J-001's DESIGN wave. Inventing ADR-035 for "J-002 chose Option A for the dataset column" would clutter the decision record without proportional epistemic value.
 
+**See also DWD-13** (SRP amendment, 2026-05-13): reaffirms "no new ADR" while ratifying a project-wide convention ("One bounded responsibility per state machine") via a wave-decision rather than an ADR. The convention is now the cite path future DESIGN waves use when deciding whether to split a flow machine.
+
+---
+
+## DWD-13 — Split the J-002 machine into `project-context` + `session-chat` BEFORE MR-2 (SRP amendment)
+
+**Status**: AMENDMENT (2026-05-13) — supersedes the single-machine assumption baked into DWD-1, DWD-6, DWD-7, DWD-8, DWD-9, DWD-11, DWD-12 to the extent indicated below. Other DWD-* entries remain valid as written.
+
+**Triggered by**: `docs/feature/project-and-chat-session-management/design/review-by-software-crafter-srp.md` (overseer-dispatched nw-software-crafter-reviewer pass, 2026-05-13). MR-1 has shipped at `cd4103e`; MR-2..MR-6 have NOT shipped. This DWD lands BEFORE MR-2 begins so subsequent DELIVER work proceeds against the new shape.
+
+### Decision
+
+The single machine `project-and-chat-session-management` (planned for 14 states across 5 behavioral domains by MR-6) is split into **two cohesive sibling machines** under the ADR-028 actor model:
+
+| New machine | Source-tree file (post-refactor) | States | Single load-bearing responsibility |
+|---|---|---|---|
+| `project-context` | `ui-state/lib/machines/project-context.ts` | 8 — `resolving_initial_scope`, `no_projects_empty_state`, `creating_project`, `project_selected`, `switching_project`, `scope_mismatch_terminal`, `error_recoverable`, `freeze` | **"Which project am I in?"** — initial scope resolution, project creation, mid-flow project switching, cross-tenant terminal failure, and the deep-link entry path. Owns the `org_id` + `project_id` halves of `active_scope`. |
+| `session-chat` | `ui-state/lib/machines/session-chat.ts` | 9 — `waiting_for_project` (initial), `loading_session_list`, `session_list_visible`, `resuming_session`, `session_active_no_messages`, `session_active`, `switching_dataset_context`, `error_recoverable`, `freeze` | **"What's happening in my current session?"** — session list visibility, resume, new-session lifecycle, dataset attachment within the session, and the chat-turn-emitting states. Owns the `resource_*` half of `active_scope`. |
+
+Both machines are spawned by the orchestrator (ADR-028 mediation); neither imports the other (ADR-028:46–48). Coordination is via a new orchestrator broadcast hook (see §Coordination contract below).
+
+### What was rejected, and why
+
+**Rejected: keep the single 14-state machine.** The SRP review made the case definitively. Counter-summary:
+
+1. By MR-6, **4–5 distinct behavioral domains** would coexist in one machine: scope-resolution, session-lifecycle, transcript, resource-context, project-switching, freeze. Context fields balloon from 1 cohesive group to 4+ logical groups.
+2. **Divergent change** becomes the dominant smell: a bug in session-resume forces understanding of project-resolution states; a bug in resource-context switching forces understanding of session-state to know if the switch is allowed.
+3. **Pattern teaching is the most important downstream concern** — if J-002 ships as a composite machine, J-003+ workers will adopt that as the team's convention. ADR-028 §"Cross-machine signaling" exists precisely to enable decoupling at the orchestrator layer, not to avoid it.
+
+**Rejected: split into THREE machines (`project-context` + `session-chat` + `resource-context`).** A `resource-context` machine would own `switching_dataset_context` alone. Counter-arguments:
+
+1. In J-002 scope, the dataset attachment is **per-session** (DWD-2: `session.active_dataset_id` is a column on the `sessions` row). The dataset has no lifecycle without a session.
+2. `switching_dataset_context` always runs from `session_active` and returns to `session_active`. The state's natural home is the lifecycle it loops inside.
+3. A standalone 1-state `resource-context` would need to coordinate with session-chat on every transition (it must wait for `session_active`; it must invalidate when session ends). The coordination overhead exceeds the cohesion benefit.
+4. If a future feature decouples the dataset's lifecycle from a session (e.g., per-project sticky datasets), `resource-context` becomes a legitimate carve-out at that time. Today it is premature.
+
+**Rejected: split `error_recoverable` into a third orchestrator-level concern.** The two machines' transient-error contracts are NOT the same:
+- project-context's transient errors retry into `creating_project`, `resolving_initial_scope`, or `switching_project` invokes with their respective state's user-action payload preserved (`pending_project_name`, `intent_project_id`).
+- session-chat's transient errors retry into `loading_session_list`, `resuming_session`, `session_active_no_messages` (eager-create), or `switching_dataset_context` invokes with their respective payloads (`pending_first_message`, `intent_session_id`, `intent_resource_id`).
+- The originating state and the retry payload differ per machine. Conflating them into one orchestrator-level `error_recoverable` would require the orchestrator to know each machine's transition map — a violation of ADR-028's "no machine introspection from the orchestrator" stance.
+
+**Each machine therefore declares its own `error_recoverable`**, both modeled identically (XState v5 idiom; `last_live_state` history-target on `retry_clicked`). They never share state.
+
+### Why `login-and-org-setup` (J-001) is NOT amended
+
+The SRP review explicitly approves `login-and-org-setup`. The "and" denotes a strict sequence dependency: JWT reissue MUST complete before `ready` because downstream machines read `org_id` from the JWT claim (ADR-029 invariant I1). Splitting J-001 reintroduces a race condition the orchestrator broadcast contract is designed to avoid. **J-001 stays as-is. No production code change to `login-and-org-setup.ts` or its DESIGN.**
+
+The contrast — J-001 "and" denotes sequence; J-002 "and" denoted collocation — is the precedent for the convention statement below.
+
+### Coordination contract (orchestrator broadcast hooks)
+
+The orchestrator's `priorState` watcher (today: 1 hook for `j001_ready`) gains a **second** hook for `project_ready`. Both follow the same pattern: observe a target state transition; broadcast a typed event to the consumer machine(s).
+
+| Event | Origin (watched transition) | Receivers | Payload | Idempotency |
+|---|---|---|---|---|
+| `j001_ready` | login-and-org-setup → `ready` | project-context only | `{ org_id, user_first_name }` | Idempotent — re-emissions are ignored by a project-context actor already past `resolving_initial_scope`. (Existing behavior per `orchestrator.ts:320-336`.) |
+| **`project_ready`** *(NEW per this DWD)* | project-context → `project_selected` | session-chat only | `{ org_id, project_id, project_name, correlation_id }` | Idempotent on the SAME `project_id` (session-chat ignores the event when its `context.project_id` already matches). Re-emission with a DIFFERENT `project_id` triggers session-chat's `project_switched` event handler — invalidates `session_id` + `resource_*` and re-enters `loading_session_list`. |
+| `FREEZE` | login-and-org-setup → `expired_token` | ALL spawned actors except origin | `{}` | Existing ADR-028 broadcast (`orchestrator.ts:550-563`, `:796-820`). Both project-context AND session-chat receive it; each declares its own top-level `on.FREEZE` handler. |
+| `THAW` | login-and-org-setup → `ready` (after `expired_token`) | All previously-frozen actors | `{}` | Existing broadcast. Each machine's `freeze` state's `on.THAW` returns via its own `last_live_state`. |
+| `replay_abandoned` | orchestrator (5 s timeout, no THAW) | All previously-frozen actors | `{}` | Existing. Each machine's `freeze` → `error_recoverable` with cause `replay_abandoned`. |
+
+**No machine-to-machine imports.** project-context never imports session-chat; session-chat never imports project-context. The `dependency-cruiser` rule from ADR-027 §7 already covers this; the rule does not need to change.
+
+**`project-context` is spawned on `j001_ready` (as today).** `session-chat` is spawned by the orchestrator on the FIRST `project_ready` event it observes for a given principal. Spawning is idempotent (`orchestrator.ts:beginIfNotStarted`). Subsequent `project_ready` events (on project switch) are forwarded to the existing session-chat actor.
+
+### What changes vs DWD-1..DWD-12 (delta list)
+
+| Prior DWD | Original assumption | Amendment | Why |
+|---|---|---|---|
+| **DWD-1** (flat-compound 14-state) | One machine, 14 sibling states. | **Amended**: TWO machines, each flat-compound. project-context has 8 sibling states; session-chat has 9. The flat-compound rationale (TypeScript inference, orchestrator-readable state values, mirror of J-001's shape) carries through machine-by-machine. | The single 14-state shape was load-bearing for the old assumption. With the split, each smaller chart is closer to J-001's 8-state precedent and is the cohesion sweet spot per the reviewer. |
+| **DWD-6** (FREEZE/THAW: top-level `on.FREEZE` + `last_live_state`) | One handler at one root. | **Amended**: BOTH machines declare top-level `on.FREEZE` and a `freeze` side-state. Each carries its own `last_live_state` field. The orchestrator broadcast loop (`orchestrator.ts:796-820`) is byte-unchanged — it enumerates spawned actors, so adding a second actor per principal "just works." | ADR-028's broadcast model is machine-agnostic. The amendment is editorial — duplicate the pattern, don't change it. |
+| **DWD-7** (stale-intent filter at J-002 guard side) | Guards on one machine. | **Amended**: Guards on the relevant machine. Project-switch intent (`switching_project_intent`) guards live on project-context; session/dataset intents (`session_clicked`, `dataset_resolved_by_agent`, `dataset_picked_directly`, `first_message_sent`) live on session-chat. The per-intent rules in DWD-7 are unchanged in semantics, just routed to their owning machine. | The reviewer's "stale-intent at the J-002 side, not the orchestrator side" principle is preserved; J-002 now means "the machine that owns the intent." |
+| **DWD-8** (MachineRegistry strategy table) | Two entries: `login-and-org-setup` + `project-and-chat-session-management`. | **Amended**: Three entries — `login-and-org-setup`, **`project-context`**, **`session-chat`**. The registry itself is unchanged in shape — adding entries is mechanical, which was the point of the registry. The hardcoded conditional at `orchestrator.ts:158-164` that gates direct `/begin` posts to login-only continues to apply; both J-002 machines are spawned exclusively via `beginIfNotStarted` from broadcast hooks. | The registry pays off here exactly as DWD-8 promised. The amendment touches one factory wiring per new machine; no orchestrator-supervision change. |
+| **DWD-9** (FlowProjection envelope + SSE) | One projection at `/ui-state/flow/project-and-chat-session-management/projection`. | **Amended**: TWO projection endpoints — `/ui-state/flow/project-context/projection` and `/ui-state/flow/session-chat/projection`. Each is a standalone `FlowProjection` envelope (shape unchanged per DWD-9's "envelope unchanged" guarantee). The SSE projection-stream gets TWO endpoints too. The FE loaders read both; `uiStateClient.activeScopeHeader` (the single header writer) composes the union. The Redis key prefix doubles per principal (`ui-state:project-context:<principal>:events` + `ui-state:session-chat:<principal>:events`). | Per ADR-030, `flow_id = {machine-name}:{principal_id}`. Two machines → two flows → two log keys → two projections. The flow-event log discipline is preserved. The cost is one extra HTTP call per loader and roughly 2× the Redis key cardinality per principal — both negligible at the planning horizon (ADR-030 §3 ceiling triggers do NOT fire under this fan-out). |
+| **DWD-11** (cross-tab cache invalidation) | RRv7 loader re-run on framework-mode routes; explicit `invalidateQueries` for legacy routes. | **Reinforced, not amended**: the loader fetches BOTH projections on every navigation. A project-switch updates `project-context` first (orchestrator hook re-emits `project_ready`); session-chat receives the new `project_ready`, invalidates `session_id`/`resource_*`, transitions through `waiting_for_project` (briefly — see §coordination semantics below) → `loading_session_list`. The FE's loader awaits both projections to settle. | The split makes the contract MORE legible: project-context is the authoritative project source; session-chat is the authoritative session-and-resource source. The FE has two sources of truth that compose deterministically. |
+| **DWD-12** (no new ADR) | One machine; no new ADR. | **Reaffirmed; this amendment introduces no new ADR**, but ratifies a project-wide convention (next paragraph). The convention is recorded here in DWD-13 and surfaced in `application-architecture.md`'s preamble. If a future feature challenges the convention, the next DESIGN wave can propose ADR-035 ("Bounded responsibility per state machine") at that point with concrete evidence. Today, DWD-13 plus the application-architecture preamble carries sufficient force. | Per nw-design "Don't introduce abstractions beyond what the task requires." A DWD with strong language + a preamble note + a cross-reference from this DESIGN amendment is enough; ADRs ratify project-wide stances when feature-level DWDs accumulate. We have one accumulation event so far (this one). |
+
+**Stories US-201..US-210 are NOT amended.** Acceptance criteria, KPIs, JTBD, journey YAML — all unchanged. The split is **implementation-layer only**; the user-facing surface is byte-identical.
+
+**The journey YAML's IMMUTABLE 14-state contract is NOT broken.** The same 14 states exist; they are partitioned across two machines instead of one. The FE / TS harness / acceptance tests read the union via the projection composition (the FE loader composes both projections; the harness exposes `harness.j002.assert_state(machine, name)` per-machine and `harness.j002.assert_unified_state(name)` for the legacy single-state-string callers). See `handoff-design-to-distill.md` §Scenario-to-machine mapping addendum for the per-scenario routing.
+
+### Coordination semantics — three key moments
+
+1. **Cold sign-in (US-201, US-202, US-204).** Orchestrator observes J-001 → `ready` → emits `j001_ready` → spawns project-context. Project-context resolves → enters `project_selected` (or `no_projects_empty_state` / `scope_mismatch_terminal`). Orchestrator observes the `project_selected` transition → emits `project_ready` → spawns session-chat (which immediately receives `project_ready` and transitions `waiting_for_project → loading_session_list`).
+   - For the `no_projects_empty_state` path (no project to coordinate around): session-chat is NEVER spawned. The user sees the welcome panel from project-context's projection alone; session-chat does not exist in the actor tree.
+   - For the `scope_mismatch_terminal` path: session-chat is NEVER spawned. The user sees the named-diagnostic panel; pressing "Back to projects" re-enters project-context's `resolving_initial_scope`.
+
+2. **Mid-flow project switch (US-207).** User clicks a different project in nav rail → FE posts `switching_project_intent` to project-context's `/event`. project-context: `session_active (no, wait — project-context doesn't have session_active; the user is in session-chat's session_active. Let me clarify the FE-to-machine routing.)`.
+   
+   **Correction**: the FE's `switching_project_intent` event goes to **project-context**, not session-chat. project-context handles project-switching as a first-class concern (it owns the `project_id` half of `active_scope`). The chat-view component (which is rendered when session-chat is in `session_active`) observes the project-context projection — when project-context's state becomes `switching_project`, the chat-view's `useEffect` cleanup closes the SSE stream (per `application-architecture.md` §6.3 — unchanged in spirit, just routed to the right projection). Project-context settles → `project_ready` re-broadcast → session-chat receives it → invalidates `session_id` + `resource_*` → re-enters `loading_session_list`. The atomicity guarantee (US-207 AC: "no Q4 session ever appears in Q3's projection after the switch") is satisfied because session-chat's `loading_session_list` invoke begins WITH the new `project_id` — the old list is gone from session-chat's context the moment `project_ready` is processed.
+
+3. **Token expiry mid-mutation (US-210).** J-001 → `expired_token` → orchestrator broadcasts FREEZE to project-context AND session-chat (and any other spawned actors). Each transitions into its OWN `freeze` side-state, captures its OWN `last_live_state`, and pauses its OWN outgoing mutations. J-001's silent re-auth completes → orchestrator broadcasts THAW. Each machine's `freeze` → `last_live_state` history-target. The replay buffer (per-flow, in the orchestrator at `orchestrator.ts:54-56,161-192`) drains intents for the right flow (the buffer is already keyed by `flow_id`; no orchestrator change). Per-machine stale-intent guards (DWD-7) drop muscle-memory-stale intents silently.
+
+### Naming convention — pattern statement (RATIFIED HERE; cited from future DESIGNs)
+
+> **One bounded responsibility per state machine. Coordinate via orchestrator broadcast hooks.**
+>
+> Composite names (`X-and-Y-machine`) are a smell unless the conjunction denotes a strict sequence dependency that cannot be expressed via orchestrator broadcast (e.g., `login-and-org-setup`: JWT reissue MUST complete before downstream machines can read `org_id` from the claim).
+>
+> When in doubt, prefer two machines + a broadcast event over one machine with a composite name. The actor model (ADR-028) exists to make decoupling at the orchestrator layer free.
+>
+> **Test**: if naming the machine requires more than ONE noun phrase, or if its context groups would split cleanly along the conjunction, split it.
+
+This convention applies to all future flow machines. The cite path is: this DWD-13 + ADR-028 §"Cross-machine signaling" + `application-architecture.md` §"Pattern statement for future flow machines" (preamble). Future DESIGN waves should read this DWD before designing composite machines.
+
+### MR-to-machine implementation guidance
+
+The split lands as a **DELIVER MR-1.5 (recommended) or as part of MR-2 (alternative)**. This DESIGN amendment is agnostic about WHICH; both shapes are compatible with the post-amendment design. The overseer/team chooses based on rollout risk. The author of this amendment **recommends MR-1.5** for the following reasons:
+
+1. **MR-1.5 is a pure refactor**: same behavior, two source files instead of one. All MR-1 acceptance tests pass without modification (the projection-composition layer makes the unified state surface byte-identical). Lower regression risk.
+2. **MR-2 starts clean**: implements the four new session-chat states (`loading_session_list`, `session_list_visible`, `resuming_session`, `session_active`) in a file that already exists with its substrate (`session-chat.ts`'s `waiting_for_project` initial state). No cross-cutting refactor pressure during a feature MR.
+3. **The Mikado roadmap is shorter**: split first, then build, vs. split-while-building.
+
+Per-MR scope under the new shape:
+
+| MR | Machine(s) touched | What lands |
+|---|---|---|
+| MR-1 *(SHIPPED at `cd4103e` 2026-05-13)* | (pre-split single machine — to be refactored) | The 5 substrate states already live: `resolving_initial_scope`, `no_projects_empty_state`, `creating_project`, `project_selected`, `scope_mismatch_terminal`, plus `error_recoverable`. **Behavior is preserved verbatim after the MR-1.5 split.** |
+| **MR-1.5 (NEW — refactor)** | Both | Split the current file into `ui-state/lib/machines/project-context.ts` (5 states + error_recoverable) and `ui-state/lib/machines/session-chat.ts` (only `waiting_for_project` initial state — a stub that awaits MR-2's content). Orchestrator gains the `project_ready` broadcast hook (analogous to today's `j001_ready` hook at `orchestrator.ts:550-563`). MachineRegistry gains the `session-chat` entry. The `frontend/app/lib/ui-state-client.ts` gets `getProjectContextProjection` + `getSessionChatProjection` methods (the existing `getJ002Projection` becomes a thin composer). All existing acceptance tests pass with minor harness extension (the harness gains a `harness.j002.assert_state_in(machine, state)` API; the legacy `harness.j002.assert_state(state)` continues to work by inspecting both projections). |
+| MR-2 | session-chat only | Adds `loading_session_list`, `session_list_visible`, `resuming_session`, `session_active`. Migration 009 (DWD-2) lands at this MR exactly as before. The session-chat machine's `waiting_for_project` initial state already exists from MR-1.5; MR-2 extends it. project-context is byte-unchanged by MR-2. |
+| MR-3 | session-chat only | Adds `session_active_no_messages`. project-context byte-unchanged. |
+| MR-4 | project-context (machine), agent, FE (loader fan-out + ESLint rule) | Adds `switching_project` to project-context. The agent's `extractActiveScope` middleware (DWD-3) and the compile-time sunset check are byte-identical to the pre-split design. The FE's `activeScopeHeader` composer now reads both projections (project-context for `org_id`+`project_id`; session-chat for `resource_*`). session-chat byte-unchanged in code (its existing `project_ready` handler from MR-1.5 already does the invalidate-on-new-project_id work). |
+| MR-5 | session-chat only | Adds `switching_dataset_context`. project-context byte-unchanged. |
+| MR-6 | Both | Each machine declares top-level `on.FREEZE` + `freeze` side-state + per-intent stale-guards (DWD-7). The orchestrator's broadcast logic remains byte-unchanged. |
+
+### Risks introduced by the amendment
+
+| # | Risk | Mitigation |
+|---|---|---|
+| RD13-1 | The `project_ready` orchestrator hook is novel (a second cross-machine broadcast hook). It must fire exactly when project-context enters `project_selected` and re-fire on EVERY entry (i.e., on `switching_project → project_selected` too). | MR-1.5 lands a unit test that asserts: (a) project_ready fires on initial `project_selected` entry; (b) project_ready re-fires with new `project_id` on the second entry (after switching_project); (c) the broadcast is idempotent against an already-spawned session-chat actor (same project_id → no transition); (d) the broadcast invalidates session-chat's `session_id`+`resource_*` on a different project_id. The hook is a pure additive copy of the J-001 → `j001_ready` pattern (`orchestrator.ts:550-563` — `priorState`-watcher + `beginIfNotStarted`). |
+| RD13-2 | The FE loader now fetches TWO projections per route — modest fan-out increase. | Per ADR-030's back-of-envelope (system-architecture.md §0): the ui-state tier has 2-3 orders-of-magnitude headroom on every dimension. Doubling per-principal projection fetches is negligible. Praxis F-3's loader fan-out concern (handoff-design-to-distill.md O7) gains one extra hop — recommend the slate crew confirms the cumulative loader budget before MR-1.5 lands (carrying forward the same coordination already noted for MR-1). |
+| RD13-3 | The TS harness must distinguish "which machine is in state X" — `assert_state("session_active")` is ambiguous if the unified state list grew. | The harness's `harness.j002.*` namespace adds `assert_state_in(machine, state)` (per-machine). The legacy `harness.j002.assert_state(state)` continues to work by inspecting both projections and asserting the state appears in EITHER (the 14-state unified set is partitioned with no overlap, so the per-machine projection unambiguously tells which side the assertion lands on). The DISTILL handoff addendum lists the per-machine routing per scenario. |
+| RD13-4 | DISTILL's existing acceptance tests (drafted against the unified machine assumption in `roadmap.json`) need a routing update for some scenarios — but **no acceptance scenario is invalidated**. The behavior under test is unchanged. | The DISTILL handoff addendum (`handoff-design-to-distill.md` §Scenario-to-machine mapping addendum) enumerates which scenarios target which machine. Most scenarios already assert on the projection envelope (state + context), which works identically against per-machine projections via the harness composer. A DISTILL revisit MR may follow to refine per-scenario harness calls, but the test bodies are stable; the IRON RULE holds (no failing test is modified to make it pass). |
+| RD13-5 | The MR-1.5 refactor itself is a load-bearing change immediately after MR-1 shipped (`cd4103e`). | MR-1.5 lands as a pure refactor: zero behavior change, all existing tests pass, no schema change. The refactor scope is bounded (one source file → two; one orchestrator hook addition; one ui-state-client method extension). If the refactor surfaces unforeseen complexity, the alternative (split-during-MR-2) remains available. The pattern matches J-001's MR-by-MR cadence. |
+
+### How to apply
+
+1. **This DESIGN amendment ships first** (as the current branch/MR `design/j002-machine-split`).
+2. After merge, the overseer schedules **MR-1.5** as a pure-refactor DELIVER MR. Estimated size: M (~1-2 days). Recommended scope: split file + orchestrator hook + ui-state-client method extension + harness extension + unit test for `project_ready` hook. **No DISTILL revisit required at MR-1.5** — all existing MR-1 acceptance tests pass without modification.
+3. **MR-2** then DELIVERs against `session-chat.ts` per the per-MR table above.
+
+### Why no new ADR (final summary)
+
+Per nw-design "Don't introduce abstractions beyond what the task requires": DWD-13 carries the architectural commitment (machine-per-bounded-responsibility) within the J-002 design record. The convention statement at §Naming convention above is the cite path for future DESIGNs. Adding ADR-035 today would document one accumulation event (this one) — the bar for ADRs is project-wide commitment surfaced by multiple feature surfaces. If J-003+ DESIGN waves cite DWD-13 as binding and the citation graph grows, **then** the convention earns ADR-035; not before.
+
 ---
 
 ## Reuse Analysis (HARD GATE — repeated from application-architecture.md §13)
@@ -329,6 +474,9 @@ The following constraints carry into DISTILL and DELIVER:
 | C8 | The `FlowProjection` envelope shape is unchanged (DWD-9) | J-002 fields are inside `context.*` |
 | C9 | The orchestrator's broadcast logic is byte-unchanged (DWD-6 + DWD-7) | J-002's FREEZE handling is at the machine side; the stale-intent filter is at the J-002 guard side |
 | C10 | Migration 009 is forward-only in production (DWD-2 corollary) | The `downgrade()` is a dev-only escape hatch |
+| **C11** | **Two machines per J-002 flow** (`project-context` + `session-chat`) — neither imports the other (DWD-13) | Coordination via orchestrator `project_ready` broadcast hook; project-context owns `org_id`+`project_id`; session-chat owns `resource_*` and the chat-emitting states |
+| **C12** | **One bounded responsibility per state machine** (DWD-13 convention) | Future J-NNN flow designs cite DWD-13; composite names are a smell unless the "and" denotes strict sequence (per `login-and-org-setup` precedent) |
+| **C13** | **The MR-1.5 refactor MR is a pure rename + split** with no behavior change (DWD-13) | All MR-1 acceptance tests pass against the post-split shape; if behavior diverges, the refactor is reverted before MR-2 begins |
 
 ---
 
@@ -344,10 +492,11 @@ The following constraints carry into DISTILL and DELIVER:
 | OQ-J002-2 multi-tab safety (`flow_id` tab_id extension) | **Deferred** (per DISCUSS posture) | Today's product has no multi-tab affordance; flagged for future without ADR change | DWD-12 carries the deferral; not implemented |
 | US-208 backward-compat fallback (Luna's R8) | **Refined** | Compile-time sunset check added; date set at MR-time | DWD-3 |
 | R9 (TanStack Query cache invalidation on project-switch) | **Resolved** | RRv7 loader re-run handles framework-mode routes; explicit `invalidateQueries` for legacy routes at the state-transition boundary | DWD-11 + application-architecture.md §6.5 |
+| **SRP review (2026-05-13, `review-by-software-crafter-srp.md`)** | **Amended** | J-002's single machine is split into `project-context` + `session-chat` BEFORE MR-2 begins. The split lands as MR-1.5 (pure refactor) or as part of MR-2. Stories US-201..US-210 are NOT amended. Journey YAML is NOT amended. | DWD-13 + `application-architecture.md` Preamble + `application-architecture.md` §2 + `application-architecture.md` §3 + `c4-diagrams.md` §2 + `handoff-design-to-distill.md` scenario-to-machine addendum |
 
-**No DISCUSS user story is invalidated.** US-201..US-210 land exactly as written.
+**No DISCUSS user story is invalidated.** US-201..US-210 land exactly as written. **The journey YAML's IMMUTABLE 14-state contract is preserved** — the same 14 states exist, partitioned across two machines instead of one.
 
-**No DISCUSS wave-decision D1-D12 is overridden.** All 12 are inherited verbatim.
+**No DISCUSS wave-decision D1-D12 is overridden.** All 12 are inherited verbatim. **DWD-13 amends DWD-1, DWD-6, DWD-7, DWD-8, DWD-9, DWD-11 to the extent noted in DWD-13's "What changes vs DWD-1..DWD-12" table.** DWD-12 is reaffirmed (no new ADR).
 
 ---
 
@@ -359,3 +508,5 @@ The following constraints carry into DISTILL and DELIVER:
 - Companion DESIGN artifacts: `application-architecture.md`, `c4-diagrams.md`, `handoff-design-to-distill.md`
 - ADRs (binding): ADR-014, ADR-015, ADR-016, ADR-018, ADR-027, ADR-028, ADR-029, ADR-030, ADR-031 §7, ADR-034
 - J-001 design template: `docs/evolution/2026-05-12-user-flow-state-machines/design/`
+- **SRP review (binding input for DWD-13)**: `./review-by-software-crafter-srp.md` (overseer-dispatched nw-software-crafter-reviewer, 2026-05-13)
+- **DESIGN amendment review (this branch)**: `./review-by-solution-architect-srp-amendment.md` (nw-solution-architect-reviewer pass on DWD-13 + companions)
