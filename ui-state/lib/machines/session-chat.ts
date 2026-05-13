@@ -38,6 +38,7 @@ export type SessionChatState =
   | "session_list_visible"
   | "resuming_session"
   | "session_active_no_messages"
+  | "creating_session_eagerly"
   | "session_active"
   | "switching_dataset_context"
   | "error_recoverable"
@@ -170,6 +171,24 @@ export type ResumeSessionActor = ReturnType<
   typeof fromPromise<ResumeSessionOutput, ResumeSessionInput>
 >;
 
+/** US-206 / DWD-10 lazy-creation: invoked on `first_message_sent` from the
+ *  welcome state. POSTs to `/api/projects/:id/sessions` and PATCHes the
+ *  title in one fire-and-await sequence so the test can observe the title
+ *  by the time `session_active` settles. */
+export interface CreateSessionEagerlyInput {
+  project_id: string;
+  principal_id: string;
+  first_message: string;
+}
+
+export interface CreateSessionEagerlyOutput {
+  session_id: string;
+}
+
+export type CreateSessionEagerlyActor = ReturnType<
+  typeof fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>
+>;
+
 export interface SessionChatMachineDeps {
   /** Optional in MR-1.5; MR-2+ provides the real actor implementation. When
    *  absent, the machine still spawns into `waiting_for_project` cleanly —
@@ -177,6 +196,10 @@ export interface SessionChatMachineDeps {
    *  invoked, surfacing as error_recoverable. */
   loadSessionList?: LoadSessionListActor;
   resumeSession?: ResumeSessionActor;
+  /** MR-3 (US-206): invoked on `first_message_sent` from the welcome state.
+   *  Absent → first_message_sent surfaces error_recoverable (consistent with
+   *  the noop-actor pattern used for loadSessionList / resumeSession). */
+  createSessionEagerly?: CreateSessionEagerlyActor;
 }
 
 // ──────────────────────────── Factory ────────────────────────────
@@ -196,6 +219,13 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
     fromPromise<ResumeSessionOutput, ResumeSessionInput>(async () => {
       throw new Error("resumeSession actor not wired");
     });
+  const noopCreateSessionEagerly: CreateSessionEagerlyActor =
+    deps.createSessionEagerly ??
+    fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>(
+      async () => {
+        throw new Error("createSessionEagerly actor not wired");
+      },
+    );
 
   return setup({
     types: {
@@ -215,6 +245,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
     actors: {
       loadSessionList: noopLoadSessionList,
       resumeSession: noopResumeSession,
+      createSessionEagerly: noopCreateSessionEagerly,
     },
     actions: {
       capturePendingResumeIntent: assign({
@@ -222,6 +253,12 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           event.type === "session_clicked"
             ? event.session_id
             : context.intent_session_id,
+      }),
+      capturePendingFirstMessage: assign({
+        pending_first_message: ({ event, context }) =>
+          event.type === "first_message_sent"
+            ? event.content
+            : context.pending_first_message,
       }),
     },
   }).createMachine({
@@ -340,6 +377,17 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           session_clicked: {
             target: "resuming_session",
             actions: "capturePendingResumeIntent",
+          },
+          new_session_clicked: {
+            // US-206 / DWD-10: lazy-creation. Enter the welcome state with
+            // session_id null; no backend write fires until `first_message_sent`.
+            target: "session_active_no_messages",
+            actions: assign({
+              session_id: () => null,
+              transcript: () => [],
+              resource: () => ({ type: null, id: null }),
+              pending_first_message: () => "",
+            }),
           },
           refresh_session_list: {
             target: "loading_session_list",
@@ -473,6 +521,82 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           ],
         },
       },
+      session_active_no_messages: {
+        // US-206: the welcome state. Composer text lives in component-local
+        // state on the FE per app-arch §6.4 AND in `pending_first_message`
+        // on the machine for the error_recoverable → retry boundary.
+        on: {
+          // Idempotent — clicking "+ New Session" again from the welcome
+          // state is a no-op (the FE button is the same; the machine
+          // already has session_id=null).
+          new_session_clicked: {
+            target: "session_active_no_messages",
+            reenter: false,
+          },
+          // Clicking an existing session from the welcome state cancels
+          // the new-session intent and resumes the clicked session.
+          session_clicked: {
+            target: "resuming_session",
+            actions: "capturePendingResumeIntent",
+          },
+          // Eager create on first message. The actor POSTs the session
+          // row + PATCHes the title; on settle we transition to session_active.
+          first_message_sent: {
+            target: "creating_session_eagerly",
+            actions: "capturePendingFirstMessage",
+          },
+          // Switching project from the welcome state navigates away —
+          // re-enters loading_session_list for the new project. NO
+          // session row was ever created (the no-ghost-row invariant).
+          project_ready: [
+            {
+              guard: ({ context, event }) =>
+                context.project_id !== event.project_id,
+              target: "loading_session_list",
+              actions: assign({
+                org_id: ({ event }) => event.org_id,
+                project_id: ({ event }) => event.project_id,
+                project_name: ({ event }) => event.project_name,
+                correlation_id: ({ event, context }) =>
+                  event.correlation_id ?? context.correlation_id,
+                session_id: () => null,
+                transcript: () => [],
+                resource: () => ({ type: null, id: null }),
+                session_list: () => [],
+                pending_first_message: () => "",
+              }),
+            },
+            // Same project_id — idempotent no-op (project_ready re-emission).
+          ],
+        },
+      },
+      creating_session_eagerly: {
+        invoke: {
+          src: "createSessionEagerly",
+          input: ({ context }) => ({
+            project_id: context.project_id ?? "",
+            principal_id: context.principal_id,
+            first_message: context.pending_first_message,
+          }),
+          onDone: {
+            target: "session_active",
+            actions: assign({
+              session_id: ({ event }) => event.output.session_id,
+              transcript: () => [],
+              resource: () => ({ type: null, id: null }),
+              pending_first_message: () => "",
+              underlying_cause_tag: () => null,
+            }),
+          },
+          onError: {
+            target: "error_recoverable",
+            actions: assign({
+              underlying_cause_tag: () => "transient" as const,
+              last_live_state: () => "session_active_no_messages" as const,
+            }),
+          },
+        },
+      },
       error_recoverable: {
         on: {
           retry_clicked: [
@@ -489,6 +613,18 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               guard: ({ context }) => context.last_live_state === "resuming_session",
               target: "resuming_session",
               reenter: true,
+              actions: assign({
+                underlying_cause_tag: () => null,
+                retries: ({ context }) => context.retries + 1,
+              }),
+            },
+            {
+              // US-206: retry from a failed eager-create returns to the
+              // welcome state with `pending_first_message` intact (app-arch
+              // §6.4 composer-state preservation contract).
+              guard: ({ context }) =>
+                context.last_live_state === "session_active_no_messages",
+              target: "session_active_no_messages",
               actions: assign({
                 underlying_cause_tag: () => null,
                 retries: ({ context }) => context.retries + 1,
@@ -766,6 +902,91 @@ export function resumeSessionActor(
   const fn = resumeSessionFn(backendUrl, principalHeaders);
   return fromPromise<ResumeSessionOutput, ResumeSessionInput>(({ input }) =>
     fn(input),
+  );
+}
+
+/**
+ * Build the real `createSessionEagerly` actor — wraps the two-call sequence
+ *   1. POST /api/projects/:id/sessions     → creates the session row (title null)
+ *   2. PATCH /api/projects/:id/sessions/:sid {title: first_message[:80]}
+ *
+ * Per app-arch §2.3 + US-206 Scenario 2: the title is materialized before
+ * the machine settles in session_active so the test can observe the row
+ * with title === first_message[:80] without races.
+ *
+ * `shouldFailNext` is the harness knob (consumed once per call) that lets
+ * the US-206 transient-failure scenario simulate a 503 without coupling
+ * the test to actual backend chaos.
+ */
+export function createSessionEagerlyFn(
+  backendUrl: string,
+  principalHeaders: Record<string, string>,
+  shouldFailNext: () => boolean = () => false,
+): (input: CreateSessionEagerlyInput) => Promise<CreateSessionEagerlyOutput> {
+  return async (input) => {
+    if (shouldFailNext()) {
+      throw new Error("transient: forced by X-Force-Create-Session-Failure");
+    }
+    const createResp = await fetch(
+      `${backendUrl}/api/projects/${encodeURIComponent(input.project_id)}/sessions`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": "session-chat-create",
+          ...principalHeaders,
+        },
+        // The backend's create_session route does NOT accept a body today —
+        // the title is set via PATCH below. Sending an empty body keeps the
+        // wire payload deterministic.
+        body: "{}",
+      },
+    );
+    if (!createResp.ok) {
+      throw new Error(`create_session failed: ${createResp.status}`);
+    }
+    const createBody = (await createResp.json()) as
+      | { id?: string }
+      | { data?: { id?: string } };
+    const sessionId =
+      (createBody as { id?: string }).id ??
+      (createBody as { data?: { id?: string } }).data?.id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) {
+      throw new Error("create_session: missing session id in response");
+    }
+    // Title = first_message truncated to 80 chars (US-206 Scenario 2 contract).
+    const title = input.first_message.slice(0, 80);
+    const patchResp = await fetch(
+      `${backendUrl}/api/projects/${encodeURIComponent(input.project_id)}/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": "session-chat-create-title",
+          ...principalHeaders,
+        },
+        body: JSON.stringify({ title }),
+      },
+    );
+    if (!patchResp.ok) {
+      // The session row exists but title-set failed. We surface this as a
+      // create-session failure because the contract (row with title) is
+      // not met — the welcome-state composer text stays in pending_first_message
+      // so the retry path re-attempts atomically.
+      throw new Error(`set_session_title failed: ${patchResp.status}`);
+    }
+    return { session_id: sessionId };
+  };
+}
+
+export function createSessionEagerlyActor(
+  backendUrl: string,
+  principalHeaders: Record<string, string>,
+  shouldFailNext: () => boolean = () => false,
+): CreateSessionEagerlyActor {
+  const fn = createSessionEagerlyFn(backendUrl, principalHeaders, shouldFailNext);
+  return fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>(
+    ({ input }) => fn(input),
   );
 }
 

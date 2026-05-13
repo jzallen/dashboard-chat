@@ -601,6 +601,79 @@ export class J002Harness {
     }
   }
 
+  /** US-206 — drive the session-chat machine into `session_active_no_messages`.
+   *  Pure machine event; no backend write fires (DWD-10 lazy-create). */
+  async start_new_session(): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: `session-chat:${this.config.principalId}`,
+          type: "new_session_clicked",
+          payload: {},
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.start_new_session expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
+  /** US-206 — send the first message; eagerly creates the session row and
+   *  PATCHes title = `content[:80]`. Returns the projection after settle. */
+  async send_first_message(content: string): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: `session-chat:${this.config.principalId}`,
+          type: "first_message_sent",
+          payload: { content },
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.send_first_message expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
+  /** Drive `refresh_session_list` against session-chat — re-reads the
+   *  backend list and re-emits the session_list_loaded event. Used by the
+   *  US-206 harness scenario to surface the newly created row in the list. */
+  async refresh_session_list(): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: `session-chat:${this.config.principalId}`,
+          type: "refresh_session_list",
+          payload: {},
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.refresh_session_list expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    return body;
+  }
+
   /** Assert state === "scope_mismatch_terminal" AND
    *  context.underlying_cause_tag === expected_cause. */
   async assert_scope_mismatch(expected_cause: string): Promise<void> {

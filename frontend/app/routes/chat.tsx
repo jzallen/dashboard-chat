@@ -13,6 +13,17 @@
 // For `/` (index) the loader returns the current session-chat projection so
 // the FE renders whatever state Maya was last in (session_list_visible /
 // session_active / etc).
+//
+// MR-3 (US-206 / DWD-10): the loader surfaces the new `session_active_no_messages`
+// state and the `pending_first_message` context field via the projection
+// envelope (consumed below by ChatLoaderData). Composer-state preservation
+// across `error_recoverable → retry_clicked` is anchored on React's
+// component-local `useState` per app-arch §6.4 — no new abstraction is
+// required at the route level. A future MR rewires ChatView's submit
+// handler to dispatch `first_message_sent` against the session-chat machine
+// and to await `projection.session_id` (set by the machine's
+// createSessionEagerly invoke) before POSTing the chat turn to the agent;
+// MR-3 lands only the machine + projection substrate that wiring depends on.
 
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -41,6 +52,11 @@ export interface ChatLoaderData {
   /** When the URL carried /chat/:channelId, the loader forwards the deep
    *  link to ui-state so the orchestrator drives resume before paint. */
   intent_session_id: string | null;
+  /** MR-3 (US-206 / app-arch §6.4) — preserved across the
+   *  `error_recoverable → retry_clicked` boundary by the session-chat
+   *  machine. Surfaced here so the future first-message-handler rewire can
+   *  hydrate the composer with its prior value on retry. */
+  pending_first_message: string;
 }
 
 export async function loader({
@@ -87,6 +103,7 @@ export async function loader({
       };
       session_dataset_unavailable?: boolean;
       intent_session_id?: string | null;
+      pending_first_message?: string;
     };
     return {
       org_id: sessionChat.active_scope.org_id,
@@ -98,6 +115,7 @@ export async function loader({
       resource: ctx.resource ?? { type: null, id: null },
       session_dataset_unavailable: Boolean(ctx.session_dataset_unavailable),
       intent_session_id: channelId ?? ctx.intent_session_id ?? null,
+      pending_first_message: ctx.pending_first_message ?? "",
     };
   } catch (err) {
     if (err instanceof Response && err.status === 504) throw err;
@@ -111,6 +129,7 @@ export async function loader({
       resource: { type: null, id: null },
       session_dataset_unavailable: false,
       intent_session_id: channelId,
+      pending_first_message: "",
     };
   }
 }

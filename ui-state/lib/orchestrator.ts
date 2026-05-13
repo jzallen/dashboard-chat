@@ -187,6 +187,10 @@ interface SessionChatSnapshotContext {
   intent_resource_id?: string | null;
   intent_resource_type?: ResourceType | null;
   underlying_cause_tag?: string | null;
+  /** US-206 composer-state preservation context field; read by the
+   *  error_recoverable emission so the FlowEvent log carries the
+   *  retained composer text. */
+  pending_first_message?: string;
 }
 
 export class FlowOrchestrator {
@@ -758,6 +762,11 @@ export class FlowOrchestrator {
     stateValue: string,
     ctx: SessionChatSnapshotContext,
     correlation_id: string,
+    /** Optional: the machine's state value immediately before this settle.
+     *  Used to distinguish eager-create from resume on `session_active`
+     *  arrival (US-206 vs US-205) so the projection log records the right
+     *  event-type. */
+    priorState?: string,
   ): Promise<void> {
     if (stateValue === "loading_session_list") {
       await this.deps.eventLog.append(flow_id, {
@@ -808,6 +817,24 @@ export class FlowOrchestrator {
       return;
     }
     if (stateValue === "session_active") {
+      // US-206 vs US-205 path distinction: an eager-create landing in
+      // session_active came from session_active_no_messages (via the
+      // creating_session_eagerly invoke). Use the prior-state hint to emit
+      // `session_active_reached` instead of `session_resumed`. Functionally
+      // both events project to state=session_active; the distinct names
+      // keep the event log auditable for "did this row come from a
+      // resume or an eager-create?" queries.
+      if (priorState === "session_active_no_messages") {
+        await this.deps.eventLog.append(flow_id, {
+          ts: new Date().toISOString(),
+          type: "session_active_reached",
+          payload: {
+            session_id: ctx.session_id,
+          },
+          correlation_id,
+        });
+        return;
+      }
       // `dataset_unavailable` is TRUE only when the resume actor detected a
       // stored active_dataset_id that 404'd (graceful degradation per US-205
       // Example 3). A null active_dataset_id is the conversational-mode
@@ -837,12 +864,33 @@ export class FlowOrchestrator {
       }
       return;
     }
+    if (stateValue === "session_active_no_messages") {
+      // US-206: emit `session_welcome_displayed` so the projection reducer
+      // surfaces the welcome state to consumers. session_id stays null.
+      // Carry pending_first_message so the projection reducer preserves the
+      // composer text when re-entering from `retry_clicked` — the machine
+      // already holds it in context across that transition (app-arch §6.4).
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "session_welcome_displayed",
+        payload: {
+          project_id: ctx.project_id ?? null,
+          pending_first_message: ctx.pending_first_message ?? "",
+        },
+        correlation_id,
+      });
+      return;
+    }
     if (stateValue === "error_recoverable") {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_chat_recoverable_error",
         payload: {
           underlying_cause_tag: ctx.underlying_cause_tag ?? "transient",
+          // US-206 composer-preservation: carry the welcome-state composer
+          // text on the FlowEvent so the projection reducer preserves it
+          // across reload (DWD-9 SSOT — projection is rebuilt from log).
+          pending_first_message: ctx.pending_first_message ?? "",
         },
         correlation_id,
       });
@@ -1196,6 +1244,10 @@ export class FlowOrchestrator {
           stateValue,
           sessionChatCtx,
           input.correlation_id,
+          // `prior` captured at the top of send() — the state BEFORE the
+          // current event was dispatched. Used to distinguish eager-create
+          // from resume on `session_active` arrival.
+          prior,
         );
       }
     }
@@ -1468,6 +1520,7 @@ function waitForSettledState(
       "creating_project",
       "loading_session_list",
       "resuming_session",
+      "creating_session_eagerly",
     ]);
     const snapshot = actor.getSnapshot();
     if (!TRANSIENT_STATES.has(snapshot.value as string)) {

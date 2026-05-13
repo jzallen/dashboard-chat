@@ -460,3 +460,213 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     expect(actor.getSnapshot().context.underlying_cause_tag).toBeNull();
   });
 });
+
+describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
+  const SEED_SESSIONS: SessionSummary[] = [
+    {
+      id: "sess-prior",
+      title: "Prior",
+      last_active_at: "2026-05-12T15:00:00Z",
+      active_dataset_id: null,
+    },
+  ];
+
+  function machineWith(
+    overrides: Parameters<typeof createSessionChatMachine>[0],
+  ) {
+    return createSessionChatMachine({
+      loadSessionList: stubLoadSessionList({
+        items: SEED_SESSIONS,
+        next_cursor: null,
+        has_more: false,
+      }),
+      resumeSession: stubResumeSession({
+        session_id: "sess-prior",
+        transcript: [],
+        active_dataset_id: null,
+      }),
+      ...overrides,
+    });
+  }
+
+  async function settleIntoSessionListVisible() {
+    const machine = machineWith({});
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+      correlation_id: "R-1",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    return actor;
+  }
+
+  it("S14: new_session_clicked from session_list_visible → session_active_no_messages with session_id=null", async () => {
+    const actor = await settleIntoSessionListVisible();
+    actor.send({ type: "new_session_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.session_id).toBeNull();
+    expect(ctx.transcript).toEqual([]);
+    expect(ctx.resource).toEqual({ type: null, id: null });
+    expect(ctx.pending_first_message).toBe("");
+  });
+
+  it("S15: new_session_clicked while already in session_active_no_messages is a self-no-op", async () => {
+    const actor = await settleIntoSessionListVisible();
+    actor.send({ type: "new_session_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    actor.send({ type: "new_session_clicked" });
+    expect(actor.getSnapshot().value).toBe("session_active_no_messages");
+  });
+
+  it("S16: session_clicked from session_active_no_messages → resuming_session (cancels new-session intent)", async () => {
+    const actor = await settleIntoSessionListVisible();
+    actor.send({ type: "new_session_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    actor.send({ type: "session_clicked", session_id: "sess-prior" });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.session_id).toBe("sess-prior");
+  });
+
+  it("S17: first_message_sent → session_active via createSessionEagerly", async () => {
+    let createCalled = false;
+    let receivedContent = "";
+    const createActor = fromPromise<
+      { session_id: string },
+      { project_id: string; principal_id: string; first_message: string }
+    >(async ({ input }) => {
+      createCalled = true;
+      receivedContent = input.first_message;
+      return { session_id: "sess-new-001" };
+    });
+    const machine = machineWith({ createSessionEagerly: createActor });
+    const actor = createActor_(machine);
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+      correlation_id: "R-1",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    actor.send({ type: "new_session_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    actor.send({ type: "first_message_sent", content: "Show me top customers" });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+    expect(createCalled).toBe(true);
+    expect(receivedContent).toBe("Show me top customers");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.session_id).toBe("sess-new-001");
+    expect(ctx.pending_first_message).toBe("");
+  });
+
+  it("S18: createSessionEagerly onError → error_recoverable with pending_first_message preserved", async () => {
+    const failingCreate = fromPromise<
+      { session_id: string },
+      { project_id: string; principal_id: string; first_message: string }
+    >(async () => {
+      throw new Error("transient");
+    });
+    const machine = machineWith({ createSessionEagerly: failingCreate });
+    const actor = createActor_(machine);
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+      correlation_id: "R-1",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    actor.send({ type: "new_session_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    actor.send({ type: "first_message_sent", content: "Show me top customers" });
+    await waitFor(() => actor.getSnapshot().value === "error_recoverable");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.pending_first_message).toBe("Show me top customers");
+    expect(ctx.underlying_cause_tag).toBe("transient");
+    expect(ctx.last_live_state).toBe("session_active_no_messages");
+  });
+
+  it("S19: retry_clicked from error_recoverable with last_live_state=session_active_no_messages preserves composer", async () => {
+    let calls = 0;
+    const createActor = fromPromise<
+      { session_id: string },
+      { project_id: string; principal_id: string; first_message: string }
+    >(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("transient");
+      return { session_id: "sess-new-002" };
+    });
+    const machine = machineWith({ createSessionEagerly: createActor });
+    const actor = createActor_(machine);
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+      correlation_id: "R-1",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    actor.send({ type: "new_session_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    actor.send({ type: "first_message_sent", content: "Show me top customers" });
+    await waitFor(() => actor.getSnapshot().value === "error_recoverable");
+    expect(actor.getSnapshot().context.pending_first_message).toBe(
+      "Show me top customers",
+    );
+    actor.send({ type: "retry_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    expect(actor.getSnapshot().context.pending_first_message).toBe(
+      "Show me top customers",
+    );
+    // Re-fire the first_message — succeeds.
+    actor.send({ type: "first_message_sent", content: "Show me top customers" });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+    expect(actor.getSnapshot().context.session_id).toBe("sess-new-002");
+  });
+
+  it("S20: project_ready (different project_id) from session_active_no_messages → loading_session_list", async () => {
+    const actor = await settleIntoSessionListVisible();
+    actor.send({ type: "new_session_clicked" });
+    await waitFor(
+      () => actor.getSnapshot().value === "session_active_no_messages",
+    );
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q3",
+      project_name: "Q3 Sales",
+      correlation_id: "R-2",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.project_id).toBe("proj-q3");
+    expect(ctx.session_id).toBeNull();
+  });
+});
+
+// Wraps createActor + start so the per-test boilerplate stays terse.
+function createActor_(machine: ReturnType<typeof createSessionChatMachine>) {
+  const actor = createActor(machine, { input: MAYA_INPUT });
+  actor.start();
+  return actor;
+}

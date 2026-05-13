@@ -110,6 +110,11 @@ interface ReducedContext {
   /** Surfaced when a resumed session's active_dataset_id 404s. Per US-205
    *  Example 3 the FE renders the conversational-mode chip. */
   session_dataset_unavailable: boolean;
+  /** US-206 composer-state preservation: the welcome-state's pending first
+   *  message, populated by `first_message_sent` and preserved across the
+   *  `error_recoverable → retry_clicked → session_active_no_messages` boundary
+   *  per app-arch §6.4. */
+  pending_first_message: string;
 }
 
 function initialContext(): ReducedContext {
@@ -142,6 +147,7 @@ function initialContext(): ReducedContext {
     transcript: [],
     resource: { type: null, id: null },
     session_dataset_unavailable: false,
+    pending_first_message: "",
   };
 }
 
@@ -630,6 +636,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   session_chat_recoverable_error: (_state, context, event) => {
     const payload = event.payload as {
       underlying_cause_tag?: string;
+      pending_first_message?: string;
     };
     return {
       state: "error_recoverable",
@@ -637,6 +644,50 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
         ...context,
         underlying_cause_tag:
           payload.underlying_cause_tag ?? "transient",
+        pending_first_message:
+          payload.pending_first_message ?? context.pending_first_message,
+      },
+    };
+  },
+
+  // ────────────── session-chat MR-3 (US-206) new-session lifecycle ──────────
+  // session_welcome_displayed: the machine entered `session_active_no_messages`.
+  // session_id is null; no backend session row exists yet (DWD-10 lazy-create).
+  // pending_first_message in the payload preserves composer text when the
+  // welcome state is re-entered via `retry_clicked` (app-arch §6.4 — machine
+  // retains the composer across error_recoverable → retry).
+  session_welcome_displayed: (_state, context, event) => {
+    const payload = event.payload as { pending_first_message?: string };
+    return {
+      state: "session_active_no_messages",
+      context: {
+        ...context,
+        session_id: null,
+        transcript: [],
+        resource: { type: null, id: null },
+        session_dataset_unavailable: false,
+        pending_first_message: payload.pending_first_message ?? "",
+        underlying_cause_tag: null,
+      },
+    };
+  },
+
+  // session_active_reached: terminal-for-now event emitted after the
+  // `createSessionEagerly` invoke settles. Distinct from `session_resumed`
+  // because the eager-create path has no transcript fetch and no
+  // active_dataset_id probe — it's a brand new row.
+  session_active_reached: (_state, context, event) => {
+    const payload = event.payload as { session_id?: string };
+    return {
+      state: "session_active",
+      context: {
+        ...context,
+        session_id: payload.session_id ?? null,
+        transcript: [],
+        resource: { type: null, id: null },
+        session_dataset_unavailable: false,
+        pending_first_message: "",
+        underlying_cause_tag: null,
       },
     };
   },

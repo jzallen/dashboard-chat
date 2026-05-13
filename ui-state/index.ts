@@ -30,6 +30,7 @@ import {
   resolveInitialScopeActor,
 } from "./lib/machines/project-context.ts";
 import {
+  createSessionEagerlyActor,
   loadSessionListActor,
   resumeSessionActor,
 } from "./lib/machines/session-chat.ts";
@@ -78,6 +79,20 @@ function shouldFailListSessions(project_id: string): boolean {
   return forceListSessionsFailures.has(project_id);
 }
 
+// J-002 MR-3 harness knob: the next `first_message_sent` event whose
+// request bears `X-Force-Create-Session-Failure: transient` makes the
+// `createSessionEagerly` actor throw a transient error before any backend
+// call. Used by the US-206 transient-failure acceptance scenario (mirrors
+// the `forceCreateProjectFailureNext` flag at the create-project boundary).
+let forceCreateSessionFailureNext = false;
+function forceCreateSessionFailureFlag(): boolean {
+  if (forceCreateSessionFailureNext) {
+    forceCreateSessionFailureNext = false;
+    return true;
+  }
+  return false;
+}
+
 const orchestrator = new FlowOrchestrator({
   eventLog,
   loginMachineDeps: {
@@ -107,6 +122,11 @@ const orchestrator = new FlowOrchestrator({
   sessionChatMachineDeps: {
     loadSessionList: loadSessionListActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
     resumeSession: resumeSessionActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+    createSessionEagerly: createSessionEagerlyActor(
+      BACKEND_URL,
+      DEFAULT_PRINCIPAL_HEADERS,
+      forceCreateSessionFailureFlag,
+    ),
   },
   createOrgFn: createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
   reissueOrgJwtFn: reissueOrgJwtFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
@@ -276,6 +296,17 @@ app.post("/flow/:machine/event", async (c) => {
     c.req.header("X-Force-Create-Project-Failure")
   ) {
     forceCreateProjectFailureNext = true;
+  }
+
+  // J-002 MR-3 harness knob: the next first_message_sent invoke throws a
+  // transient error. Used by the US-206 composer-preservation scenario.
+  // Matches the create-project pattern above — header-gated, consumed once.
+  if (
+    machine === "session-chat" &&
+    body.type === "first_message_sent" &&
+    c.req.header("X-Force-Create-Session-Failure")
+  ) {
+    forceCreateSessionFailureNext = true;
   }
 
   try {
