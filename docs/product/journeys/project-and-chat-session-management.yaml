@@ -1,0 +1,578 @@
+schema_version: 1
+# Journey contract for J-002 — Project + Chat Session Management.
+#
+# This file is the canonical reference. Feature-level perspectives
+# (emotional analysis, TUI mockups, additional Gherkin) live in the
+# feature's discuss/ directory:
+#
+#   docs/feature/project-and-chat-session-management/discuss/
+#     ├── journey-project-and-chat-session-management-visual.md
+#     ├── journey-project-and-chat-session-management.yaml
+#     └── journey-project-and-chat-session-management.feature
+#
+# This file holds only what other features need to **rely on** when
+# composing with this journey: the named states, the transitions, the
+# shared artifacts, and the integration checkpoints.
+
+journey:
+  id: J-002
+  name: "Project + Chat Session Management"
+  goal: >
+    Materialize `active_scope.project_id` and `state.session_id` so
+    that every downstream user action (chat turn, dataset upload,
+    transform, view/report compose, dbt export) operates inside a
+    coherent project+session context — with that context reflected
+    identically in the FE shell, the agent's per-turn invocation, and
+    any headless harness watching the flow.
+
+  job_references:
+    - id: JOB-002
+      relationship: "primary — J-002 is the second journey to instantiate JOB-002's server-owned-state-machine pattern (after J-001), and the first one to validate that pattern scales to a non-auth flow"
+    - id: JOB-001
+      relationship: "compositional — JOB-001's O3, O4, O5 benefit because J-002 is the first flow to *consume* `active_scope.{org_id}` from J-001 and *produce* `active_scope.{project_id}` for downstream flows; the chain works or doesn't"
+
+  primary_personas:
+    - id: PERSONA-RETURNING-USER
+      name: "Maya Chen (post-J-001 / returning)"
+      role: "returning analyst with one or more projects in her Acme Data org"
+      context: "Completed J-001 yesterday; opens Dashboard Chat the next morning expecting to resume work on her Q4 Analytics project"
+    - id: PERSONA-NEW-IN-ORG
+      name: "Maya Chen (just after J-001 / first-time)"
+      role: "user who just completed org setup; has no projects yet"
+      context: "J-001 reached `ready` with `session.current` pre-created but pointing at an org-level placeholder; J-002 must guide her into project creation OR a no-projects empty state"
+    - id: PERSONA-DEEP-LINK-VISITOR
+      name: "Maya Chen (clicking a bookmark)"
+      role: "any persona arriving via a cold deep link to a project URL"
+      context: "URL `/projects/{projectId}/datasets/{datasetId}` opened in a fresh tab; expects active_scope to resolve before the page paints"
+
+state_machine:
+  initial: "resolving_initial_scope"
+  states:
+    - id: "resolving_initial_scope"
+      kind: "in-flight"
+      description: >
+        Entry from J-001 `ready` OR from a route navigation. Reads
+        the URL (intent_project_id), J-001's `state.session.current`,
+        the project list, and the user's last-used project metadata.
+        Emits exactly one `DomainEvent` resolving the initial state.
+      emits:
+        - event: "j002_resolution_started"
+          payload_includes: ["correlation_id", "intent_project_id", "intent_session_id", "intent_resource_id"]
+      transitions:
+        - on: "resolved_with_project"
+          to: "project_selected"
+        - on: "resolved_no_projects"
+          to: "no_projects_empty_state"
+        - on: "scope_mismatch"
+          to: "scope_mismatch_terminal"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "no_projects_empty_state"
+      kind: "interactive"
+      description: >
+        User has no projects in their org. Visible: a "Create your
+        first project" CTA + the empty-state nav. The CTA triggers
+        the single-step `POST /api/projects` use case
+        (`backend/app/use_cases/project/create_project.py`); on
+        success J-002 transitions to `project_selected` with the new
+        project_id.
+      emits:
+        - event: "no_projects_displayed"
+      transitions:
+        - on: "create_project_clicked"
+          to: "creating_project"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "creating_project"
+      kind: "in-flight"
+      description: >
+        In-flight: backend `create_project` call is pending. UI shows
+        "Creating project...". On success, the new project_id flows
+        through the projection and J-002 transitions to
+        `project_selected`. On validation failure, J-002 returns to
+        `no_projects_empty_state` with an inline error.
+      emits:
+        - event: "project_creation_started"
+      transitions:
+        - on: "project_created"
+          to: "project_selected"
+        - on: "validation_failed"
+          to: "no_projects_empty_state"
+        - on: "transient_failure"
+          to: "error_recoverable"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "project_selected"
+      kind: "interactive-with-side-loads"
+      description: >
+        Project context is established. `active_scope.project_id` is
+        populated. The app shell paints the project chip. J-002 fires
+        a side-effect to load the session list, transitioning to
+        `loading_session_list` for the visible loading state.
+      emits:
+        - event: "project_selected"
+          payload_includes: ["project_id", "project_name", "correlation_id"]
+      transitions:
+        - on: "session_list_load_started"
+          to: "loading_session_list"
+        - on: "switching_project_intent"
+          to: "switching_project"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "loading_session_list"
+      kind: "in-flight"
+      description: >
+        Backend `list_sessions(project_id, user)` call is pending.
+        UI shows a placeholder for the session list (skeleton). On
+        success the list materializes; on transient failure J-002
+        transitions to `error_recoverable` with the partial-load
+        copy variant.
+      transitions:
+        - on: "session_list_loaded"
+          to: "session_list_visible"
+        - on: "transient_failure"
+          to: "error_recoverable"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "session_list_visible"
+      kind: "interactive"
+      description: >
+        Session list rendered (sorted most-recent-first per
+        `features/chat-first-ui.feature:60`). No session is yet
+        active. If the project has zero sessions, the empty-state
+        sub-shape is `no_sessions_empty_state` (welcome chips
+        visible). If the project has sessions, the user can resume
+        one or click "New Session".
+      emits:
+        - event: "session_list_displayed"
+          payload_includes: ["project_id", "session_count"]
+      transitions:
+        - on: "session_clicked"
+          to: "resuming_session"
+        - on: "new_session_clicked"
+          to: "session_active_no_messages"
+        - on: "switching_project_intent"
+          to: "switching_project"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "no_sessions_empty_state"
+      kind: "interactive"
+      description: >
+        A sub-shape of `session_list_visible` for the
+        zero-sessions-in-project case. Welcome chips visible
+        (`features/chat-first-ui.feature:71-76`). Functionally
+        equivalent to `session_list_visible` with session_count=0;
+        kept as a separate state for emotional-arc clarity.
+      transitions:
+        - on: "new_session_clicked"
+          to: "session_active_no_messages"
+        - on: "suggestion_chip_clicked_upload"
+          to: "exit_to_J003"
+        - on: "suggestion_chip_clicked_browse_projects"
+          to: "exit_to_projects_page"
+        - on: "switching_project_intent"
+          to: "switching_project"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "resuming_session"
+      kind: "in-flight"
+      description: >
+        User clicked a session in the list. J-002 loads the session
+        transcript via `list_session_events(session_id)` AND reads
+        `session.active_dataset_id` from session metadata (D11).
+        Both writes are materialized before transitioning to
+        `session_active`.
+      emits:
+        - event: "session_resume_started"
+          payload_includes: ["session_id", "correlation_id"]
+      transitions:
+        - on: "session_resumed"
+          to: "session_active"
+        - on: "session_not_found"
+          to: "session_list_visible"
+        - on: "transient_failure"
+          to: "error_recoverable"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "session_active_no_messages"
+      kind: "interactive"
+      description: >
+        Welcome state for a new session — session row NOT yet created
+        (lazy creation per D11). Suggestion chips visible. Chat input
+        ready. Project chip visible. The first chat message triggers
+        eager creation via `create_session(project_id, user)` and
+        transitions to `session_active` with the new session_id.
+      emits:
+        - event: "session_welcome_displayed"
+      transitions:
+        - on: "first_message_sent"
+          to: "session_active"
+        - on: "session_clicked"
+          to: "resuming_session"
+        - on: "switching_project_intent"
+          to: "switching_project"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "session_active"
+      kind: "interactive-with-side-loads"
+      description: >
+        The user is inside a chat session with a session_id, a
+        transcript visible, and `active_scope` fully populated
+        (project_id + optional resource_*). This is J-002's
+        "ready" — the analog of J-001's `ready` state but for the
+        chat-session context.
+      emits:
+        - event: "session_active_reached"
+          payload_includes: ["project_id", "session_id", "resource_type", "resource_id", "correlation_id"]
+      transitions:
+        - on: "session_clicked"
+          to: "resuming_session"
+        - on: "new_session_clicked"
+          to: "session_active_no_messages"
+        - on: "switching_project_intent"
+          to: "switching_project"
+        - on: "dataset_resolved_by_agent"
+          to: "switching_dataset_context"
+        - on: "dataset_picked_directly"
+          to: "switching_dataset_context"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "switching_dataset_context"
+      kind: "in-flight"
+      description: >
+        The user picked a dataset (either via the agent's
+        `resolve_dataset` tool return path consuming a
+        `data-agent-request` typed part, or via direct selection in
+        a dataset list). J-002 validates the dataset's accessibility
+        (cross-tenant 403 rejection per ADR-029 §1 invariant 4),
+        updates `active_scope.resource_*`, and writes
+        `session.active_dataset_id` to session metadata. On success
+        transitions back to `session_active` with the new scope;
+        on rejection transitions back to `session_active` with the
+        prior scope and a `scope_reconciled` event for observability.
+      emits:
+        - event: "switching_dataset_context_started"
+          payload_includes: ["session_id", "intended_resource_type", "intended_resource_id", "correlation_id"]
+      transitions:
+        - on: "dataset_attached"
+          to: "session_active"
+        - on: "dataset_access_denied"
+          to: "session_active"
+        - on: "transient_failure"
+          to: "error_recoverable"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "switching_project"
+      kind: "in-flight"
+      description: >
+        The user clicked a different project (in the nav, the
+        Projects grid, or via a deep-link mid-session). J-002
+        invalidates the current session_id, retargets
+        `active_scope.project_id`, and re-enters at
+        `loading_session_list` for the new project. Any in-flight
+        chat-turn dispatch in the old project is cancelled at the
+        FE boundary (the agent receives no further turns from that
+        ChatView instance until the new project's session is
+        active).
+      emits:
+        - event: "switching_project_started"
+          payload_includes: ["old_project_id", "new_project_id", "correlation_id"]
+      transitions:
+        - on: "project_switched"
+          to: "project_selected"
+        - on: "scope_mismatch"
+          to: "scope_mismatch_terminal"
+        - on: "FREEZE"
+          to: "freeze"
+
+    - id: "scope_mismatch_terminal"
+      kind: "recoverable-error"
+      description: >
+        A user opened a deep link to a project they no longer have
+        access to (cross-tenant moved, project deleted, or
+        permission revoked). The ScopeResolver returns 403 per
+        ADR-029 §1 invariant 4. UI shows a named-diagnostic panel:
+        "This project is no longer accessible" + a "Back to projects"
+        CTA. The "Back to projects" CTA re-enters
+        `resolving_initial_scope` with the URL cleared.
+      emits:
+        - event: "scope_mismatch_displayed"
+          payload_includes: ["intent_project_id", "underlying_cause_tag", "correlation_id"]
+      transitions:
+        - on: "back_to_projects_clicked"
+          to: "resolving_initial_scope"
+
+    - id: "error_recoverable"
+      kind: "recoverable-error"
+      description: >
+        Mirrors J-001's `error_recoverable` for transient failures
+        during a J-002 in-flight state (`creating_project`,
+        `loading_session_list`, `resuming_session`,
+        `switching_dataset_context`). Shows a "Try again" CTA and
+        a correlation id; the retry re-enters the originating
+        state with the same correlation_id.
+      emits:
+        - event: "j002_recoverable_error"
+          payload_includes: ["underlying_cause_tag", "correlation_id", "originating_state"]
+      transitions:
+        - on: "retry_clicked"
+          to: "originating_state_via_correlation_id_lookup"  # XState implementation: history target
+
+    - id: "freeze"
+      kind: "cross-machine-suspension"
+      description: >
+        Side-state reachable from any active J-002 state via the
+        orchestrator's `FREEZE` broadcast (triggered by J-001's
+        `expired_token`). All outgoing mutations from J-002 are
+        paused; intents (`session_clicked`, `switching_project_intent`,
+        etc.) are queued in the orchestrator's replay buffer (per
+        ADR-027 §5; 5s timeout, 16 max per flow). On `THAW`,
+        queued intents replay with their original `correlation_id`.
+      emits:
+        - event: "j002_frozen"
+          payload_includes: ["last_live_state", "correlation_id"]
+      transitions:
+        - on: "THAW"
+          to: "last_live_state"  # XState implementation: history target
+
+    - id: "exit_to_J003"
+      kind: "exit-to-sibling-machine"
+      description: >
+        Reserved exit transition: the user clicked the "Upload CSV"
+        suggestion chip. Out-of-scope for this DISCUSS pass — the
+        target is J-003 (dataset upload), a future DISCUSS pass.
+        Implementation: emit `exit_to_j003` event; route navigation
+        is the side-effect. NOT a J-002 internal state.
+
+    - id: "exit_to_projects_page"
+      kind: "exit-to-route"
+      description: >
+        Reserved exit transition: the user clicked the "Browse
+        Projects" suggestion chip OR clicked "Projects" in the nav.
+        Side-effect: route navigation to `/projects`. NOT a J-002
+        internal state.
+
+shared_artifacts:
+  active_scope.project_id:
+    source_of_truth: "J-002 machine state state.project_id (populated at project_selected entry)"
+    consumers:
+      - "FE app shell project chip"
+      - "FE every page in the app-shell layout"
+      - "Chat agent (worker) — every turn via X-Active-Scope header"
+      - "Every backend write — multi-tenant scoping"
+      - "TS harness — assert_scope({project_id: ...})"
+    owner: "J-002 (this journey)"
+    integration_risk: "HIGH — retires the canonical ChatView project-context race (adr-027:14)"
+
+  active_scope.resource_type:
+    source_of_truth: "J-002 machine state state.resource_type (populated at session_active entry from session metadata, OR at switching_dataset_context exit)"
+    consumers:
+      - "FE chat-view dataset chip in input gutter (features/chat-first-ui.feature:84-87)"
+      - "Chat agent — receives dataset_id in X-Active-Scope when present"
+      - "Per-resource pages (table view, view detail, report detail) for body-content scoping"
+    owner: "J-002"
+    integration_risk: "MEDIUM — survives session resume per D11; storage shape DESIGN-deferred (OQ-J002-1)"
+
+  active_scope.resource_id:
+    source_of_truth: "J-002 machine state state.resource_id; atomic with resource_type per ADR-029 §1 invariant 3"
+    consumers:
+      - "FE chat-view dataset chip + downstream pages"
+      - "Chat agent X-Active-Scope payload"
+    owner: "J-002"
+    integration_risk: "MEDIUM — same as resource_type"
+
+  session.id:
+    source_of_truth: "J-002 machine state state.session_id (populated at session_active entry — from resuming_session OR session_active_no_messages → first_message_sent)"
+    consumers:
+      - "FE chat-view transcript binding"
+      - "FE recent-sessions nav active-row highlight"
+      - "Chat agent thread_id parameter (agent/lib/chat/handleChat.ts:111)"
+      - "TS harness — assert_session_active(session_id)"
+    owner: "J-002"
+    integration_risk: "MEDIUM — invalidated to null on switching_project to prevent cross-project session bleed"
+
+  session.list:
+    source_of_truth: "Backend list_sessions(project_id, user) at backend/app/use_cases/session/list_sessions.py:18-58"
+    consumers:
+      - "FE recent-sessions nav (first page, up to 5)"
+      - "FE Chats page at /sessions"
+      - "TS harness — assert_session_list_includes(session_id)"
+    owner: "Backend metadata_repository; J-002 reads-and-projects"
+    integration_risk: "MEDIUM — pagination must not leak project A's sessions into project B's cache"
+
+  session.title:
+    source_of_truth: "Backend session.title field; populated from first message; editable via update_session"
+    consumers:
+      - "FE recent-sessions nav label"
+      - "FE Chats page list row"
+      - "FE chat-view header"
+    owner: "Backend; J-002 reads-and-projects"
+    integration_risk: "LOW"
+
+  session.active_dataset_id:
+    source_of_truth: "Session metadata (storage shape DESIGN-deferred — D11 / OQ-J002-1)"
+    consumers:
+      - "J-002 machine on session resume (materializes active_scope.resource_*)"
+      - "FE chat-view gutter (dataset chip restoration)"
+    owner: "J-002 (writes during switching_dataset_context; reads during resuming_session)"
+    integration_risk: "MEDIUM — new schema delta; required by features/chat-first-ui.feature:109-113"
+
+  project.name:
+    source_of_truth: "Backend project.name field; J-002 reads via get_project(project_id) on project_selected entry"
+    consumers:
+      - "FE app-shell project chip label"
+      - "FE project-detail page header"
+    owner: "Backend; J-002 reads-and-projects"
+    integration_risk: "LOW"
+
+  correlation_id:
+    source_of_truth: "Inherited from J-001 (docs/product/journeys/login-and-org-setup.yaml:160-167); minted fresh per J-002 user-action transition"
+    consumers:
+      - "J-002 emitted events (every emit carries it)"
+      - "X-Correlation-Id outbound header (to agent, backend)"
+      - "Log threading across ui-state, agent, backend, FE"
+    owner: "J-001 (pattern); J-002 mints fresh values for J-002-originating transitions"
+    integration_risk: "MEDIUM"
+
+integration_checkpoints:
+  - id: IC-J002-1
+    between: ["J-001 ready", "resolving_initial_scope"]
+    must_hold: >
+      Entry into J-002 reads active_scope.org_id from J-001's
+      projection, NOT from a separate JWT decode or /api/orgs/me
+      fetch. The orchestrator validates the read against the JWT
+      claim per ADR-029 §1 invariant 1.
+
+  - id: IC-J002-2
+    between: ["resolving_initial_scope", "project_selected"]
+    must_hold: >
+      On entry to project_selected, active_scope.project_id is
+      non-null AND equal to state.project_id AND the JWT held by
+      the FE/harness authorizes access to that project (cross-tenant
+      access is rejected per ADR-029 §1 invariant 4 BEFORE entering
+      project_selected).
+
+  - id: IC-J002-3
+    between: ["session_list_visible", "session_active"]
+    must_hold: >
+      On transition through `resuming_session`, both writes are
+      visible: the session transcript is loaded AND
+      active_scope.resource_* reflects session.active_dataset_id
+      (or is null if no dataset was attached). The transition does
+      NOT enter session_active with mixed or partially-loaded state.
+
+  - id: IC-J002-4
+    between: ["session_active", "switching_project"]
+    must_hold: >
+      On switching_project entry, state.session_id is invalidated
+      to null AND active_scope.resource_* is invalidated to null.
+      No chat-turn dispatch carries the OLD project's session_id
+      or dataset_id during the switch window. The agent receives
+      no further turns from the old ChatView instance.
+
+  - id: IC-J002-5
+    between: ["session_active", "switching_dataset_context"]
+    must_hold: >
+      Every dataset_resolved_by_agent event (from the FE intercepting
+      a data-agent-request typed part) is followed by exactly one
+      active_scope.resource_* update via the projection. The agent's
+      next turn sees the new resource_id in its X-Active-Scope
+      header. The session metadata is updated to reflect the new
+      active_dataset_id BEFORE the next turn is dispatched.
+
+  - id: IC-J002-6
+    between: ["any J-002 state", "freeze"]
+    must_hold: >
+      On FREEZE broadcast from the orchestrator (triggered by J-001
+      `expired_token`), J-002's machine pauses all outgoing mutations
+      (no backend POSTs, no projection writes, no agent turns).
+      Queued intents arrive at the orchestrator's replay buffer with
+      their original correlation_id. On THAW, queued intents replay
+      against the live state machine.
+
+  - id: IC-J002-7
+    between: ["any chat-agent invocation", "agent middleware"]
+    must_hold: >
+      Every chat-agent POST /chat invocation that originates inside
+      a J-002 state carries the X-Active-Scope header with org_id
+      AND project_id populated from active_scope (the SAME projection
+      the FE shell reads). The agent's middleware (per ADR-029 §4)
+      rejects invocations missing either with 400 + named
+      diagnostic.
+
+failure_modes:
+  - tag: "j002_no_projects_in_org"
+    description: "User has zero projects (first-time-in-org after J-001 ready). Not an error — it is a state."
+    transition: "resolving_initial_scope → no_projects_empty_state"
+
+  - tag: "j002_stale_deep_link_cross_tenant"
+    description: "URL says /projects/{projectId} but that project belongs to a different org OR the user lost access. ScopeResolver returns 403 per ADR-029 §1 invariant 4."
+    transition: "resolving_initial_scope → scope_mismatch_terminal"
+
+  - tag: "j002_session_not_found"
+    description: "Session id from URL or stored last-used is invalid (deleted session, or session belongs to a project the user lost access to)."
+    transition: "resuming_session → session_list_visible (graceful recovery — no panel; the session list itself is the recovery surface)"
+
+  - tag: "j002_dataset_access_denied"
+    description: "User picked a dataset (direct or via resolve_dataset) but does not have access. ScopeResolver returns 403."
+    transition: "switching_dataset_context → session_active (graceful recovery — active_scope.resource_* stays at prior value; the chat input shows 'you don't have access to that dataset' inline)"
+
+  - tag: "j002_list_sessions_transient_failure"
+    description: "Backend list_sessions returns 5xx or times out."
+    transition: "loading_session_list → error_recoverable (with retry CTA)"
+
+  - tag: "j002_create_project_validation_failed"
+    description: "User submitted a project name that fails server-side validation."
+    transition: "creating_project → no_projects_empty_state (inline form error)"
+
+  - tag: "j002_token_expired_during_mutation"
+    description: "J-001 transitions to expired_token while J-002 is mid-mutation; orchestrator broadcasts FREEZE."
+    transition: "any J-002 in-flight state → freeze (replay buffer queues the intent)"
+
+testing_surface:
+  ts_harness:
+    description: >
+      The TS UserFlowHarness (already extended for J-001) gains
+      J-002-specific operations. Every operation reads/writes the
+      same projection the FE consumes.
+    operations:
+      - "open_project(project_id) → drives switching_project or initial selection; assertion target is state.project_id == project_id and active_scope.project_id == project_id"
+      - "open_deep_link(project_id, session_id?, dataset_id?) → drives resolving_initial_scope with intent params; assertion target is project_selected (or scope_mismatch_terminal in the cross-tenant case)"
+      - "resume_session(session_id) → drives resuming_session → session_active; asserts transcript and active_scope.resource_* are both populated"
+      - "start_new_session() → drives session_active_no_messages; asserts session_id is null and suggestion chips are renderable"
+      - "send_first_message(content) → drives session_active_no_messages → session_active; asserts session.id is now non-null"
+      - "switch_project(new_project_id) → drives switching_project → project_selected; asserts old session_id is invalidated and new project is loaded"
+      - "attach_dataset_via_agent(dataset_name) → simulates the resolve_dataset tool-return path; asserts active_scope.resource_id is set"
+      - "attach_dataset_directly(dataset_id) → drives switching_dataset_context directly; same assertions"
+      - "assert_scope({project_id?, resource_type?, resource_id?}) → cross-cuts with J-001's harness; uses the same named-column diff format"
+      - "assert_agent_received_scope(turn_index) → asserts the chat-agent invocation at turn_index carried org_id AND project_id in X-Active-Scope"
+      - "freeze() → simulates J-001 expired_token; asserts J-002 mutations are paused"
+      - "thaw() → simulates silent_reauth_ok; asserts queued intents replay"
+
+  python_harness:
+    description: >
+      The existing DatasetLayerHarness retains its current surface.
+      A new method `chat_turn_with_scope_header(scope, message)` is
+      added to validate the agent's X-Active-Scope reading path
+      (this is a JOB-001 acceptance, not a JOB-002 one — covers the
+      backend contract that JOB-002 wires up).
+    note: >
+      The TS harness owns J-002's user-flow surface end-to-end. The
+      Python harness's contract grows only by the scope-header
+      enforcement check, which is JOB-001's domain.
+
+changelog:
+  - date: "2026-05-13"
+    feature: "project-and-chat-session-management"
+    change: "Initial DISCUSS-wave journey artifact for J-002. 12 named states; 7 integration checkpoints; 7 failure modes; TS harness surface drafted."

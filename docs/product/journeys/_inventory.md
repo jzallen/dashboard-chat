@@ -16,6 +16,7 @@ Bootstrapped 2026-05-11 by feature `user-flow-state-machines`.
 | id | name | yaml | feature origin | status |
 |----|------|------|----------------|--------|
 | J-001 | Login + Org Setup | [login-and-org-setup.yaml](./login-and-org-setup.yaml) | `user-flow-state-machines` (DISCUSS 2026-05-11) | active |
+| J-002 | Project + Chat Session Management | [project-and-chat-session-management.yaml](./project-and-chat-session-management.yaml) | `project-and-chat-session-management` (DISCUSS 2026-05-13) | active |
 
 ## Catalog (not yet promoted to SSOT)
 
@@ -26,8 +27,7 @@ its own DISCUSS pass and lands here as a separate row.
 
 | id (provisional) | name | feature origin | next step |
 |---|---|---|---|
-| J-002 | Project + chat session management | future DISCUSS pass | dive after `user-flow-state-machines` DESIGN settles the machine framework |
-| J-003 | Dataset upload (chat-driven + direct) | future DISCUSS pass | dive after J-002 |
+| J-003 | Dataset upload (chat-driven + direct) | future DISCUSS pass | dive after J-002 (per research §5 prioritization) |
 | J-004 | Table / dataset preview | future DISCUSS pass | this one is closest to ADR-015 today; dive can probably re-use machinery |
 | J-005 | Transform toggles (preview / apply / undo) | future DISCUSS pass | strongest existing server-side state (transforms API + replay); dive will mostly formalize the *preview* sub-state |
 | J-006 | View + report creation | future DISCUSS pass | weakest harness coverage; dive will add headless contracts |
@@ -52,3 +52,7 @@ its own DISCUSS pass and lands here as a separate row.
 
 - 2026-05-11 — Bootstrapped by `user-flow-state-machines` DISCUSS;
   J-001 added.
+- 2026-05-13 — J-002 promoted from catalog to active by the
+  `project-and-chat-session-management` DISCUSS wave. J-002's
+  journey contract lands at
+  `docs/product/journeys/project-and-chat-session-management.yaml`.
