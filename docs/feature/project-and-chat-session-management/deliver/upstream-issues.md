@@ -78,6 +78,58 @@ introduced. The unit-test surface (Vitest tests for `scope.ts` +
 parsing logic, but does NOT cover the orchestrator's projection-event
 emission OR the SSE-stream cancellation contract.
 
+### D-MR4-02 — Acceptance tests re-skipped pending JWT-mint helper in driver
+
+**Status**: DEFERRED to a follow-up MR — substrate landed; live
+verification path discovered during MR-4-verify and blocked on
+test-infra gap.
+
+**What**: After MR-4 committed, an attempt to run the 14 MR-4 scenarios
+end-to-end (with a fresh agent build via `bazel run //agent:image_tar`)
+surfaced a second blocker beyond D-MR4-01:
+
+- The test driver's `post_agent_chat` was originally posting `/chat` to
+  the reverse-proxy. Nginx has no `/chat` route — falls through to
+  web-ssr's RRv7 404 page.
+- Updating the driver to target `agent_url` directly (port 1041) gets
+  the request to the agent, but the agent's `authMiddleware`
+  (`agent/lib/auth.ts`) verifies the bearer as a JWT signed by JWKS.
+  The `DEV_BEARER = "dev-token-static"` the tests use is auth-proxy's
+  dev token — it isn't a JWT and the agent rejects it with 401.
+- In production the FE chat flow goes `FE → vite proxy → /worker/chat
+  → agent` and the FE includes a real JWT (obtained from auth-proxy's
+  mint endpoint). Tests need an analogous JWT-mint step before posting
+  to the agent.
+
+**Decision (per overseer)**: re-skip the 14 MR-4 scenarios with this
+issue ID. MR-4 substrate ships (1+13+17 unit tests pass — agent scope
+helpers, project-context machine, eslint rule); live acceptance
+verification deferred to a follow-up MR that:
+
+1. Adds a `mint_dev_jwt()` helper to `driver.py` that POSTs
+   `dev-token-static` to `http://auth-proxy:3000/api/auth/token` and
+   returns the JWT.
+2. Replaces `bearer=DEV_BEARER` in `test_us207_*.py` + `test_us208_*.py`
+   + the IC-J002-4/7 invariants with `bearer=driver.mint_dev_jwt()`.
+3. Adds `NWAVE_HARNESS_KNOBS=true` to the agent service in
+   `docker-compose.override.yml` so the harness `/debug/*` endpoints
+   come up.
+4. Un-skips by removing the module-level `pytest.mark.skip(...)` on
+   `test_us207_*.py`, `test_us208_*.py`, and the per-test markers on
+   `test_ic_j002_4_*` + `test_ic_j002_7_*`.
+
+The follow-up MR is tracked as **MR-4-verify** and SHOULD land before
+MR-5 begins so we don't accumulate verification debt across slices.
+
+**Risk acknowledged**: re-skipping forfeits coverage of the K-J002-4
+North-Star until MR-4-verify lands. Substrate IS exercised by unit
+tests + the existing 36 J-002 passing acceptance scenarios that test
+the upstream of the chat-turn boundary (no agent traffic). The
+specific behaviors that lack coverage post-re-skip: atomic project
+switch retargeting <300ms p95, in-flight chat cancellation on switch,
+agent rejection-on-missing-scope (400/403), body-fallback observability
+event during migration window.
+
 ### D-MR4-02 — Agent debug endpoints provisional shape
 
 **What**: `agent/index.ts` exposes `/debug/last-request-scope`,
