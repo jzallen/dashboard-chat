@@ -33,6 +33,8 @@ os.environ.setdefault("PRE_SLICE_2_REF", "cc7e517")
 os.environ.setdefault("POST_SLICE_2_REF", "d052896")
 # POST_MR_2_REF intentionally stays unset; the test default is "HEAD" which is
 # the correct value for any local run after MR-2 lands.
+# Phase 04 probe-route path (DD-16): `_test-loader-probe.tsx` is mounted here.
+os.environ.setdefault("LOADER_PROBE_PATH", "/_test/loader-probe")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -80,6 +82,54 @@ def requires_compose_stack(reverse_proxy_url: str) -> None:
             f"compose stack not reachable at {reverse_proxy_url} — "
             f"this scenario needs the post-MR-0 local stack to be up "
             f"(`docker compose up -d` from repo root)",
+            allow_module_level=False,
+        )
+
+
+@pytest.fixture(scope="session")
+def requires_slow_mode_capable(reverse_proxy_url: str, auth_proxy_url: str) -> None:
+    """Skip cleanly when the local stack lacks SLOW_MODE_DELAY_MS support or isn't running.
+
+    Phase 04 induces the slow-upstream condition via the auth-proxy
+    SLOW_MODE_DELAY_MS env var (DD-18). The test caller is expected to have
+    brought up the stack with the env var set externally (e.g.,
+    `SLOW_MODE_DELAY_MS=10000 docker compose up -d auth-proxy`). This fixture
+    skips the scenario when:
+      (a) the reverse-proxy isn't reachable at all (Strategy C), OR
+      (b) auth-proxy is reachable but a probe to `/_test/loader-probe` returns
+          quickly enough to suggest SLOW_MODE isn't set.
+
+    The probe doesn't try to inspect the auth-proxy env directly — it just
+    observes the timing behavior. Operator runs the live verification by
+    restarting auth-proxy with SLOW_MODE_DELAY_MS set and re-running.
+    """
+    if not _service_reachable(reverse_proxy_url):
+        pytest.skip(
+            f"compose stack not reachable at {reverse_proxy_url} — "
+            f"this scenario needs the post-MR-3 local stack to be up "
+            f"with auth-proxy started under SLOW_MODE_DELAY_MS=10000.",
+            allow_module_level=False,
+        )
+    # Best-effort timing probe: hit the loader probe path; if it responds
+    # under 1.0s, SLOW_MODE clearly isn't engaged (the loader's 5s
+    # AbortController would only fire if upstream lagged > 5s).
+    import time
+
+    import httpx
+
+    try:
+        start = time.monotonic()
+        with httpx.Client(timeout=8.0, follow_redirects=False) as client:
+            r = client.get(f"{reverse_proxy_url}/_test/loader-probe")
+        elapsed = time.monotonic() - start
+    except OSError as e:
+        pytest.skip(f"loader-probe path not reachable: {e}", allow_module_level=False)
+    if r.status_code == 200 and elapsed < 1.0:
+        pytest.skip(
+            "auth-proxy does not appear to be running with SLOW_MODE_DELAY_MS set "
+            f"(/_test/loader-probe returned {r.status_code} in {elapsed:.2f}s — "
+            "expected hang past 5s with slow mode). Restart the stack with "
+            "`SLOW_MODE_DELAY_MS=10000 docker compose up -d auth-proxy` to engage.",
             allow_module_level=False,
         )
 
