@@ -251,7 +251,7 @@
       "sid": "02-03",
       "p": "PREPARE",
       "s": "EXECUTED",
-      "d": "PASS: Read AppShell/index.tsx, providers/QueryProvider.tsx, 2 test files, conftest.py, distill feature file (inner-provider-removed scenario), wave-decisions.md DD-12 verbatim reason confirmed. Pre-flight greps confirm: QueryProvider component imported only by AppShell; queryClient named export from providers/QueryProvider.tsx has zero consumers; all other queryClient references are local test variables, useQueryClient hooks, or local QueryClient instances. Safe to delete providers/QueryProvider.tsx outright. Note: frontend/app/routes/app-shell.tsx contains a comment referencing the inner <QueryProvider /> which becomes stale after this step.",
+      "d": "PASS",
       "t": "2026-05-13T02:59:49Z"
     },
     {
@@ -265,21 +265,21 @@
       "sid": "02-03",
       "p": "RED_ACCEPTANCE",
       "s": "EXECUTED",
-      "d": "PASS: 9 Phase 02 scenarios un-skipped at module level; 3 placeholders re-marked at function level with DD-12 verbatim reason. Acceptance suite run (compose stack down \u2014 Strategy C): slice_2 marker = 3 PASSED (file-system: test_no_loader_imports_auth_provider_as_value, test_no_loader_calls_use_auth, test_appshell_inner_query_provider_is_removed) + 9 SKIPPED (6 stack-down via requires_compose_stack fixture, 3 DD-12-deferred with named reason) + 0 FAILED. Full suite = 13 PASSED / 31 SKIPPED / 0 FAILED (+3 vs Phase 01 baseline of 10P/34S/0F). Iron Rule honored: pytest.fail bodies of the 3 deferred placeholders preserved verbatim, only @skip decorators added.",
+      "d": "PASS",
       "t": "2026-05-13T03:02:09Z"
     },
     {
       "sid": "02-03",
       "p": "GREEN",
       "s": "EXECUTED",
-      "d": "PASS: DWD-7 cleanup landed \u2014 AppShell drops inner <QueryProvider> wrap (and its import); frontend/src/ui/providers/QueryProvider.tsx deleted; empty providers/ directory removed. Stale comments in frontend/app/root.tsx and frontend/app/routes/app-shell.tsx updated to reflect post-Phase-02 reality. Quality gates: vitest 595 passed (matches baseline); vite build OK; acceptance suite slice_2 3 passed/9 skipped/0 failed; full acceptance 13 passed/31 skipped/0 failed.",
+      "d": "PASS",
       "t": "2026-05-13T03:02:12Z"
     },
     {
       "sid": "02-03",
       "p": "COMMIT",
       "s": "EXECUTED",
-      "d": "PASS: commit d73acd5 \u2014 refactor(frontend): drop AppShell inner QueryProvider; un-skip Phase 02 scenarios. Step-ID: 02-03. 7 files changed, 51 insertions(+), 37 deletions(-); frontend/src/ui/providers/QueryProvider.tsx deleted. Pre-commit (ruff + eslint auto-fix) passed (8 pre-existing warnings, 0 errors). All 11 quality gates pass: acceptance test passes (3 file-system PASS); vitest 595 passed; vite build OK; no test skips outside Strategy-C + DD-12 deferral; test budget N/A (structural refactor); no mocks inside hexagon.",
+      "d": "PASS",
       "t": "2026-05-13T03:03:08Z"
     }
   ]
