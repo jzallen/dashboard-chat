@@ -23,13 +23,13 @@ async def update_session(
     *,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
-    """Update a session's metadata (title, last_active_at).
+    """Update a session's metadata (title, last_active_at, active_dataset_id).
 
     Only the session owner can update.
 
     Args:
         session_id: The session to update.
-        update_data: Fields to update (title, last_active_at).
+        update_data: Fields to update (title, last_active_at, active_dataset_id).
         user: The authenticated user.
 
     Returns:
@@ -47,8 +47,8 @@ async def update_session(
     if session["owner_id"] != user.id:
         raise SessionAccessDenied(session_id)
 
-    # Only allow updating title and last_active_at
-    allowed_fields = {"title", "last_active_at"}
+    # Only allow updating title, last_active_at, and active_dataset_id (DWD-2)
+    allowed_fields = {"title", "last_active_at", "active_dataset_id"}
     filtered = {k: v for k, v in update_data.items() if k in allowed_fields}
 
     if not filtered:

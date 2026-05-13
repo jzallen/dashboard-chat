@@ -1,9 +1,19 @@
 """add query_engine_nodes table and update external_access
 
-Revision ID: a8b9c0d1e2f3
-Revises: f7a8b9c0d1e2
+Revision ID: a8b9c0d1e2f4
+Revises: a8b9c0d1e2f3
 Create Date: 2026-03-31 12:00:00.000000
 
+Linearization fix (2026-05-13): this revision and
+``008_add_project_memories_and_sessions`` were originally both authored
+with ``revision = "a8b9c0d1e2f3"`` from concurrent feature branches, which
+left the alembic chain with two heads and triggered "Revision is present
+more than once" warnings. Renumbering this migration to a fresh ID
+(``a8b9c0d1e2f4``) and chaining it after the sessions migration
+linearizes the fork. Prod ``alembic_version`` stores only the latest
+applied revision (currently ``d1e2f3a4b5c6`` for migration 011, which is
+downstream of both 008s), so this rename has no production migration-
+table impact.
 """
 
 from typing import Sequence, Union
@@ -13,8 +23,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "a8b9c0d1e2f3"
-down_revision: Union[str, None] = "f7a8b9c0d1e2"
+revision: str = "a8b9c0d1e2f4"  # pragma: allowlist secret
+down_revision: Union[str, None] = "a8b9c0d1e2f3"  # pragma: allowlist secret
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

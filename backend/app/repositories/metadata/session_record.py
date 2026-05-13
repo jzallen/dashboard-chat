@@ -32,6 +32,7 @@ class SessionRecord(Base):
     owner_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    active_dataset_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     last_active_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 

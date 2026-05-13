@@ -1,7 +1,7 @@
 """add views table
 
 Revision ID: d5e6f7a8b9c0
-Revises: c4d5e6f7a8b9
+Revises: c4d5e6f7a8c0
 Create Date: 2026-03-06 12:00:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "d5e6f7a8b9c0"  # pragma: allowlist secret
-down_revision: Union[str, None] = "c4d5e6f7a8b9"
+down_revision: Union[str, None] = "c4d5e6f7a8c0"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

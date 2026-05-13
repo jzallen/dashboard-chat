@@ -1,7 +1,7 @@
 """add idempotency_keys table for endpoint retry deduplication
 
 Revision ID: b9c0d1e2f3a4
-Revises: a8b9c0d1e2f3
+Revises: a8b9c0d1e2f4
 Create Date: 2026-04-29 05:00:00.000000
 
 Backs Epic C.3: idempotency-key support on mutation endpoints. The table
@@ -19,7 +19,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b9c0d1e2f3a4"  # pragma: allowlist secret
-down_revision: Union[str, None] = "a8b9c0d1e2f3"  # pragma: allowlist secret
+down_revision: Union[str, None] = "a8b9c0d1e2f4"  # pragma: allowlist secret
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
