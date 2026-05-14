@@ -139,18 +139,6 @@ const orchestrator = new FlowOrchestrator({
 const app = new Hono();
 
 /**
- * Closed list of legacy-named XState events the failure-simulation registry
- * has NOT yet routed through shouldInject. Per ADR-038 phase-1, event names
- * stay byte-identical on the wire (legacyAlias bridge); the per-knob gate
- * migration moves each entry out of this set into a registry-mediated check
- * one MR-4 commit at a time. The set is dead once empty (MR-5 vocabulary
- * cleanup also drops the legacyAlias).
- */
-const HARNESS_EVENT_TYPES: ReadonlySet<string> = new Set([
-  "__harness_expire_token__",
-]);
-
-/**
  * Wire the ui-state routes onto the supplied Hono app, using the supplied
  * orchestrator as the state owner. Extracted so tests can build a scenario-
  * scoped app + orchestrator pair without invoking the production composition
@@ -331,15 +319,25 @@ app.post("/flow/:machine/event", async (c) => {
     }
   }
 
-  // Residual harness-event gating: any __harness_* event NOT yet migrated to
-  // the registry above falls through to the legacy NWAVE_HARNESS_KNOBS gate.
-  // Each MR-4 commit shrinks HARNESS_EVENT_TYPES until the set is empty.
-  if (HARNESS_EVENT_TYPES.has(body.type)) {
-    if (process.env.NWAVE_HARNESS_KNOBS !== "true") {
+  // expire-token knob — event transport. The __harness_expire_token__ wire
+  // event drives the login-and-org-setup machine from `ready` into
+  // `expired_token` to exercise silent re-auth (DWD-1). The gate decision
+  // routes through shouldInject(KNOB.expireToken, { event, ... }); the wire
+  // event type stays byte-identical (legacyAlias bridge per ADR-038;
+  // vocabulary cleanup is MR-5). With this commit the legacy
+  // NWAVE_HARNESS_KNOBS event-side gate is fully retired in favor of the
+  // registry's verdict — both __harness_* events now go through shouldInject.
+  if (body.type === "__harness_expire_token__") {
+    const allowed = shouldInject(KNOB.expireToken, {
+      event: { type: body.type },
+      correlationId: correlation_id,
+      serviceName: "ui-state",
+    });
+    if (!allowed) {
       return c.json(
         {
           error:
-            "harness knob disabled: __harness_* events require NWAVE_HARNESS_KNOBS=true (dev-mode only)",
+            "harness knob disabled: __harness_expire_token__ requires the failure-simulation gate enabled (ENVIRONMENT=dev|ci + flag set)",
         },
         403,
       );
