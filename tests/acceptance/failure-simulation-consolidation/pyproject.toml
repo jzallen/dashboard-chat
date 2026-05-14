@@ -1,0 +1,52 @@
+[project]
+name = "dashboard-chat-acceptance-failure-simulation-consolidation"
+version = "0.0.1"
+description = "Acceptance tests for the failure-simulation-consolidation feature (DISTILL)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    "pyyaml>=6.0",
+    # Tests drive the new TS registry under `shared/failure-simulation/` via
+    # subprocess (`node --input-type=module ...`) for the API-level scenarios,
+    # and via the running dev compose stack for the gate / inspection-probe /
+    # audit-sink scenarios.
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "real_io: scenario drives a real adapter (real node subprocess, real compose stack, real stdout capture)",
+    "walking_skeleton: end-to-end scenario validating registry + gate + audit emission together",
+    "mr_1: MR-1 — Slice 1 (registry + manifest + KNOB accessor; US-CONSOL-1, US-CONSOL-5)",
+    "mr_2: MR-2 — Slice 2 (gate composition + probe + inspection-probe conditional registration; US-CONSOL-2)",
+    "mr_3: MR-3 — Slice 3 (audit emitter + correlation-id propagation; US-CONSOL-3)",
+    "mr_4: MR-4 — Slice 4 (migration phase 1: adapter + legacyAlias bridge; US-CONSOL-4 phase 1)",
+    "mr_5: MR-5 — Slice 5 (migration phase 2: vocabulary cleanup; US-CONSOL-4 phase 2)",
+    "happy_path: nominal flow — knob fires or gate is honored",
+    "error_path: explicit rejection / unknown-knob / mis-config scenario",
+    "boundary: edge case / parameterized boundary scenario",
+    "contract_assertion: CA-1..CA-9 invariant from the DESIGN handoff",
+    "group_a: directly exercises the new registry's public API",
+    "group_b: validates migration preserved pre-existing behavior",
+    "group_c: deprecation-specific (NWAVE_HARNESS_KNOBS)",
+    "us_consol_1: US-CONSOL-1 — Unified failure-simulation registry",
+    "us_consol_2: US-CONSOL-2 — Environment-tiered gate",
+    "us_consol_3: US-CONSOL-3 — Structured audit log",
+    "us_consol_4: US-CONSOL-4 — Migration of the 6 existing knobs",
+    "us_consol_5: US-CONSOL-5 — Knob-sprawl friction",
+    "needs_node: scenario requires `node` on PATH to drive the TS registry via subprocess",
+    "needs_compose_stack: scenario requires the local compose topology to be reachable on host ports",
+    "needs_shared_failure_simulation: scenario requires `shared/failure-simulation/` to exist on disk (DELIVER MR-1)",
+    "slow: scenario expected to take >10s wall-clock",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]

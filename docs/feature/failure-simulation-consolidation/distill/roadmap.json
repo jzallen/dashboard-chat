@@ -1,0 +1,175 @@
+{
+  "feature_id": "failure-simulation-consolidation",
+  "wave": "distill",
+  "produced_at": "2026-05-14",
+  "test_suite": "tests/acceptance/failure-simulation-consolidation/",
+  "test_runner": "cd tests/acceptance/failure-simulation-consolidation && uv run --no-project pytest",
+  "total_scenarios": 29,
+  "total_contract_assertions": 9,
+  "total_collected_tests": 55,
+  "scenario_distribution": {
+    "group_a_direct_api_tests": 22,
+    "group_b_migration_safety_net": 6,
+    "group_c_deprecation": 1
+  },
+  "ssot_references": {
+    "stories": "docs/feature/failure-simulation-consolidation/discuss/stories.md",
+    "acceptance_criteria": "docs/feature/failure-simulation-consolidation/discuss/acceptance-criteria.md",
+    "design_handoff": "docs/feature/failure-simulation-consolidation/design/handoff-design-to-distill.md",
+    "component_design": "docs/feature/failure-simulation-consolidation/design/component-design.md",
+    "adrs": [
+      "docs/feature/failure-simulation-consolidation/design/adr-035-failure-simulation-gate-composition.md",
+      "docs/feature/failure-simulation-consolidation/design/adr-036-failure-simulation-module-location.md",
+      "docs/feature/failure-simulation-consolidation/design/adr-037-failure-simulation-audit-sink.md",
+      "docs/feature/failure-simulation-consolidation/design/adr-038-failure-simulation-naming-phase-plan.md"
+    ]
+  },
+  "merge_requests": [
+    {
+      "id": "MR-1",
+      "title": "Land shared/failure-simulation/ package — manifest + KNOB accessor + assertKnown + schema",
+      "story_ids": ["US-CONSOL-1", "US-CONSOL-5"],
+      "scenarios_unskipped": [
+        "test_us_consol_1_unified_registry.py::test_developer_discovers_every_knob_in_one_manifest_file",
+        "test_us_consol_1_unified_registry.py::test_a_knob_outside_the_manifest_is_rejected_with_unknown_audit_event",
+        "test_us_consol_1_unified_registry.py::test_a_typo_knob_name_surfaces_a_hint_pointing_at_the_manifest",
+        "test_us_consol_1_unified_registry.py::test_all_six_existing_knobs_are_listed_with_canonical_names_after_consolidation",
+        "test_us_consol_1_unified_registry.py::test_manifest_is_single_source_of_truth_across_ui_state_and_agent",
+        "test_us_consol_5_sprawl_friction.py::test_assert_known_rejects_a_knob_not_listed_in_the_manifest",
+        "test_us_consol_5_sprawl_friction.py::test_manifest_entry_with_empty_rationale_fails_schema_validation",
+        "test_us_consol_5_sprawl_friction.py::test_manifest_entry_without_contract_test_consideration_fails_validation",
+        "test_us_consol_5_sprawl_friction.py::test_a_seventh_knob_lands_as_a_normal_mr_with_manifest_wiring_and_scenario",
+        "test_contract_assertions.py::test_ca_1_manifest_vs_source_drift_check_catches_unregistered_knob",
+        "test_contract_assertions.py::test_ca_2_schema_validation_rejects_a_known_bad_entry"
+      ],
+      "deliverable_summary": "Stand up the shared/failure-simulation/ workspace package per ADR-036. Land package.json, manifest.ts (6 entries with legacyAlias bridge per ADR-038), manifest.schema.ts (Zod + branded KnobCanonicalName), registry.ts (shouldInject + detectUnknownSignals stubs, throwing for unknown names), the KNOB const accessor, and assertKnown helper. The registry package compiles and the manifest schema rejects malformed entries. No production callsites are migrated yet — phase-1 migration is MR-4. The CI lint drift-check script lands here too so MR-1 itself is enforceable.",
+      "size": "S",
+      "dependencies": [],
+      "exit_criteria": [
+        "shared/failure-simulation/ exists and is built by Bazel",
+        "MR-1 unskipped scenarios + CA-1 + CA-2 turn GREEN",
+        "All other scenarios remain RED (registry has no gate / audit / migration yet)"
+      ]
+    },
+    {
+      "id": "MR-2",
+      "title": "Land gate composition + probe + composition-root wiring + inspection-probe conditional registration",
+      "story_ids": ["US-CONSOL-2"],
+      "scenarios_unskipped": [
+        "test_us_consol_2_environment_gate.py::test_production_rejects_every_knob_invocation_even_with_legacy_flag_set",
+        "test_us_consol_2_environment_gate.py::test_staging_rejects_every_knob_invocation_by_default",
+        "test_us_consol_2_environment_gate.py::test_dev_and_ci_environments_permit_knob_invocation[dev]",
+        "test_us_consol_2_environment_gate.py::test_dev_and_ci_environments_permit_knob_invocation[ci]",
+        "test_us_consol_2_environment_gate.py::test_unset_environment_defaults_to_production_restrictive_gate",
+        "test_us_consol_2_environment_gate.py::test_inspection_probe_endpoints_are_absent_outside_dev_or_ci[/debug/last-request-scope]",
+        "test_us_consol_2_environment_gate.py::test_inspection_probe_endpoints_are_absent_outside_dev_or_ci[/debug/request-log]",
+        "test_us_consol_2_environment_gate.py::test_gate_verdict_is_logged_exactly_once_at_startup",
+        "test_us_consol_2_environment_gate.py::test_production_behavior_is_independent_of_legacy_flag_value (12 parametrizations)",
+        "test_journey_invariants_fsc.py::test_hostile_environment_integration_asserts_production_safety",
+        "test_contract_assertions.py::test_ca_3_first_failure_simulation_event_is_a_gate_event",
+        "test_contract_assertions.py::test_ca_4_verdict_cache_is_stable_within_one_process_lifetime",
+        "test_contract_assertions.py::test_ca_7_inspection_probe_returns_404_not_403_when_gate_is_disabled (3 parametrizations)",
+        "test_contract_assertions.py::test_ca_9_production_verdict_is_disabled_regardless_of_flag_values (9 parametrizations)"
+      ],
+      "deliverable_summary": "Land gate.ts (evalGate + probe + parseBool + readTier) per ADR-035 and component-design.md. Wire probe() into ui-state/index.ts and agent/index.ts composition roots; both call probe() exactly once at startup before any route or actor is bound. Land agent/lib/inspection/ with registerInspectionRoutes(app, verdict) per ADR-036; conditional registration based on gate verdict (404 when disabled, route absent). Update shouldInject to consult the cached verdict. Audit emitter for gate events + rejected/fired stub (full audit lands in MR-3).",
+      "size": "S",
+      "dependencies": ["MR-1"],
+      "exit_criteria": [
+        "MR-2 unskipped scenarios + CA-3 + CA-4 + CA-7 + CA-9 turn GREEN",
+        "Production-safety matrix (CA-9, 9 cases) is fully GREEN",
+        "Inspection probes 404 in staging/production (CA-7, 3 routes)"
+      ]
+    },
+    {
+      "id": "MR-3",
+      "title": "Land structured audit emitter + correlation-id propagation across actor boundary",
+      "story_ids": ["US-CONSOL-3"],
+      "scenarios_unskipped": [
+        "test_us_consol_3_audit_log.py::test_a_fired_knob_emits_exactly_one_structured_audit_entry",
+        "test_us_consol_3_audit_log.py::test_a_rejected_knob_emits_a_distinct_audit_entry",
+        "test_us_consol_3_audit_log.py::test_an_unknown_knob_emits_a_warning_audit_entry_with_manifest_pointer",
+        "test_us_consol_3_audit_log.py::test_audit_entries_are_absent_for_normal_requests",
+        "test_us_consol_3_audit_log.py::test_audit_entries_carry_correlation_id_across_actor_boundary",
+        "test_contract_assertions.py::test_ca_5_every_audit_event_is_a_single_line_of_valid_json",
+        "test_contract_assertions.py::test_ca_6_correlation_id_propagates_across_the_actor_boundary"
+      ],
+      "deliverable_summary": "Land audit.ts per ADR-037: discriminated-union AuditEvent types (fired/rejected/unknown/gate.enabled/gate.disabled/config.deprecated), one-line JSON-on-stdout emission, OTel-aligned envelope (event.name, service.name, timestamp, environment.tier, correlation_id). Wire emission into shouldInject (fired + rejected) and detectUnknownSignals (unknown). Thread correlationId through actor input per ADR-028 — add the field to actor input schemas where missing.",
+      "size": "S",
+      "dependencies": ["MR-1", "MR-2"],
+      "exit_criteria": [
+        "All 5 US-CONSOL-3 scenarios + CA-5 + CA-6 turn GREEN",
+        "Every audit event is one line of valid JSON conforming to ADR-037 schema",
+        "Correlation id propagates from HTTP request through XState actor to audit envelope"
+      ]
+    },
+    {
+      "id": "MR-4",
+      "title": "Migrate the 6 existing knob callsites to the registry — phase 1 (adapter, wire-identical)",
+      "story_ids": ["US-CONSOL-4"],
+      "scenarios_unskipped": [
+        "test_us_consol_4_migration.py::test_acceptance_suite_passes_after_adapter_phase_migration",
+        "test_us_consol_4_migration.py::test_adapter_phase_commits_contain_zero_test_changes",
+        "test_us_consol_4_migration.py::test_each_knob_migration_is_one_atomic_commit",
+        "test_us_consol_4_migration.py::test_a_regression_is_caught_by_the_acceptance_suite_via_audit_log",
+        "test_journey_invariants_fsc.py::test_all_six_knobs_remain_functional_after_every_story_lands (partial — header + body knobs only, event knobs await MR-5)"
+      ],
+      "deliverable_summary": "Phase-1 of US-CONSOL-4 migration. Rewrite each of the 6 knob callsites in ui-state/index.ts, project-context.ts, session-chat.ts, login-and-org-setup.ts, agent/index.ts, agent/lib/chat/requestLog.ts to call shouldInject(KNOB.xxx, ctx) per component-design.md. Firing-path wire contract is byte-identical pre-vs-post — the legacyAlias entries in the manifest bridge the event/body-field names until MR-5. No test changes in this MR (Scenario 2 invariant). Per-knob atomic commits; each commit's existing acceptance suite (project-and-chat-session-management/) runs GREEN at HEAD.",
+      "size": "S",
+      "dependencies": ["MR-1", "MR-2", "MR-3"],
+      "exit_criteria": [
+        "Existing acceptance suite (project-and-chat-session-management/) passes at every commit of MR-4",
+        "Zero modifications under tests/acceptance/project-and-chat-session-management/ in MR-4",
+        "Each migration commit modifies <=8 files (atomic-commit invariant)",
+        "MR-4 unskipped scenarios turn GREEN"
+      ]
+    },
+    {
+      "id": "MR-5",
+      "title": "Phase-2 vocabulary cleanup — drop harness_ prefix from events + body field, deprecate NWAVE_HARNESS_KNOBS",
+      "story_ids": ["US-CONSOL-4"],
+      "scenarios_unskipped": [
+        "test_us_consol_4_migration.py::test_vocabulary_cleanup_commits_rename_production_and_tests_atomically",
+        "test_journey_invariants_fsc.py::test_nwave_harness_knobs_is_deprecated_with_loud_startup_warning",
+        "test_journey_invariants_fsc.py::test_all_six_knobs_remain_functional_after_every_story_lands (fully — event knobs now use canonical names)",
+        "test_contract_assertions.py::test_ca_8_legacy_variable_honored_with_deprecation_event"
+      ],
+      "deliverable_summary": "Phase-2 of US-CONSOL-4 — vocabulary cleanup. Atomic rename commits, each touching production source AND affected acceptance fixtures: __harness_force_failure__ -> __force_failure__; __harness_expire_token__ -> __expire_token__; harness_force_reissue_failures body field -> force_reissue_failures. Drop the legacyAlias entries from manifest.ts. Land the failure-simulation.config.deprecated event when NWAVE_HARNESS_KNOBS is read (legacy path), with the DELIVER-decided removal.target_release semver string. HTTP X-Force-* headers are NOT renamed (ADR-038).",
+      "size": "S",
+      "dependencies": ["MR-4"],
+      "exit_criteria": [
+        "No __harness_*, harness_force_reissue_failures in tree (verified by git grep)",
+        "NWAVE_HARNESS_KNOBS still readable, emits config.deprecated event with semver-shaped removal.target_release",
+        "All 29 scenarios + 9 contract assertions GREEN",
+        "Existing project-and-chat-session-management/ suite still GREEN at HEAD of every rename commit"
+      ]
+    }
+  ],
+  "known_unknowns_handed_off_to_deliver": [
+    {
+      "id": "KU-1",
+      "topic": "removal.target_release semver string for failure-simulation.config.deprecated",
+      "resolution_in_distill": "Tests assert SEMVER_REGEX shape only; exact string is DELIVER's call",
+      "tests_affected": [
+        "test_journey_invariants_fsc.py::test_nwave_harness_knobs_is_deprecated_with_loud_startup_warning",
+        "test_contract_assertions.py::test_ca_8_legacy_variable_honored_with_deprecation_event"
+      ]
+    },
+    {
+      "id": "KU-2",
+      "topic": "stdout-capture helper choice (capsys vs dedicated fixture vs monkeypatch sys.stdout)",
+      "resolution_in_distill": "Driven by subprocess.run() with text=True; parse stdout line-by-line via _parse_jsonl_events. No pytest capture mechanism needed because the registry runs in a child node process.",
+      "tests_affected": "all real_io scenarios"
+    },
+    {
+      "id": "KU-3",
+      "topic": "detectUnknownSignals middleware placement order in ui-state and agent",
+      "resolution_in_distill": "Tests call detectUnknownSignals directly from a node subprocess; do not depend on middleware position. DELIVER picks the Hono middleware insertion point.",
+      "tests_affected": [
+        "test_us_consol_1_unified_registry.py::test_a_knob_outside_the_manifest_is_rejected_with_unknown_audit_event",
+        "test_us_consol_1_unified_registry.py::test_a_typo_knob_name_surfaces_a_hint_pointing_at_the_manifest",
+        "test_us_consol_3_audit_log.py::test_an_unknown_knob_emits_a_warning_audit_entry_with_manifest_pointer"
+      ]
+    }
+  ],
+  "iron_rule_reminder": "Tests in this suite are RED at handoff. DELIVER's job is to land production code that turns them GREEN. NEVER modify a failing test to make it pass. If a test is wrong, revert and escalate."
+}
