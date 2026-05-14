@@ -107,6 +107,16 @@ fi
 rc=0
 
 if [ $backend -eq 1 ]; then
+  # Workspace consistency — fail-fast before any test. Catches the regression
+  # pattern where a new pnpm workspace lands without pnpm-workspace.yaml,
+  # .bazelignore, and pnpm-lock.yaml all being updated together (post-merge
+  # Bazel CI failure discovered during failure-simulation-consolidation MR-1).
+  echo "▶ workspace consistency"
+  python3 "$ROOT/tools/check_workspace_consistency.py" || rc=$?
+  if [ $rc -ne 0 ]; then
+    echo "✗ aborting: fix workspace consistency before running tests" >&2
+    exit $rc
+  fi
   # Lint first — fail-fast. CI runs `bazel test //... --test_tag_filters=lint`
   # which invokes ruff against the whole backend; gating on the same checks
   # here keeps the merge-queue and CI in lock-step (otherwise lint failures

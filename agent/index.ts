@@ -1,11 +1,10 @@
 // Chat Agent — Hono server for chat streaming via Groq (Vercel AI SDK)
 // Session management is handled by Stream.io (frontend-side)
 
+import { probe } from "@dashboard-chat/shared-failure-simulation";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-
-import { probe } from "@dashboard-chat/shared-failure-simulation";
 
 import { authMiddleware } from "./lib/auth";
 import { createChatHandler } from "./lib/chat";

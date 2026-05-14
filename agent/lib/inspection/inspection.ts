@@ -13,8 +13,8 @@
 // because it removes the read-side surface from staging/production entirely
 // rather than relying on a runtime denial.
 
-import type { Hono } from "hono";
 import type { GateVerdict } from "@dashboard-chat/shared-failure-simulation";
+import type { Hono } from "hono";
 
 import { requestLog } from "../chat/requestLog";
 

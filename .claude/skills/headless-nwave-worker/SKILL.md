@@ -470,6 +470,34 @@ For pure-docs waves (research, design, review) that typically finish in 30–90 
 
 Every wave — code or docs — submits to the merge queue. The refinery's gate (`./tools/test/test.sh --auto`) is content-aware and skips tests when the diff is docs-only (see Choosing the Wave §"Single funnel through MQ"). This is the project's trunk-based workflow: there is no PR step; the MR (`gt mq submit` output) is the merge unit.
 
+### Pre-submit checklist (production-code MRs)
+
+If the diff touches anything outside the docs-only allowlist (`docs/**`, `.claude/skills/**`, `*.md`, etc.), run these locally before `gt mq submit` — the refinery's `--auto` gate falls through to `--backend` which runs ruff + pytest, but Bazel CI (lint, test-frontend, test-agent, test-auth-proxy, test-backend) runs post-merge and discovers structural issues only after the merge has landed:
+
+1. **Workspace consistency** (sub-second; catches the topaz/coral regression pattern):
+   ```bash
+   python3 tools/check_workspace_consistency.py
+   ```
+   Verifies `pnpm-workspace.yaml`, `.bazelignore`, and `pnpm-lock.yaml` agree on every workspace package. If you added a new `package.json`, all three files must be updated together. The script's error messages include the exact remediation command.
+
+2. **The full gate the refinery will run**:
+   ```bash
+   ./tools/test/test.sh --auto
+   ```
+   This runs the workspace consistency check (step 1 is now folded in) + backend lint + backend tests when code is touched. Docs-only diffs short-circuit.
+
+3. **Service-specific tests if you touched those services** (the refinery's `--auto` gate runs ONLY the backend pytest; frontend/agent/auth-proxy/Bazel-lint tests fire post-merge in CI):
+   ```bash
+   cd agent && npx vitest run               # if you touched agent/
+   cd frontend && npx vitest run            # if you touched frontend/
+   cd ui-state && npx vitest run            # if you touched ui-state/
+   bazel test //... --test_tag_filters=lint # if you touched any workspace structure
+   ```
+
+The first failure-simulation-consolidation DELIVER worker (topaz, MR-1) hit two structural regressions that required three follow-up MRs: pnpm-lock.yaml missing a workspace, .bazelignore missing a node_modules entry, and agent unit tests broken by a prior wave's substrate. The workspace consistency check catches the first two; running the service vitest suites catches the third. ~30s of pre-submit verification saves ~30 minutes of follow-up MQ-and-CI-noise.
+
+### Submit
+
 ```bash
 cd ~/gt/<rig>/crew/<worker-name>
 git status                           # confirm clean
