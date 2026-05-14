@@ -1,6 +1,17 @@
-import type { GateFlag, GateReason, GateState, GateTier, GateVerdict } from "./gate";
-import type { KnobManifestEntry, OwningService } from "./manifest.schema";
+import type {
+  GateFlag,
+  GateReason,
+  GateState,
+  GateTier,
+  GateVerdict,
+} from "./gate";
+import type { KnobManifestEntry, KnobTransport, OwningService } from "./manifest.schema";
 
+/**
+ * Shared envelope fields per ADR-037 §"Envelope (every event)". `event.name`
+ * is the discriminator across the AuditEvent union; per-event variants narrow
+ * it to a literal string.
+ */
 interface AuditEnvelope {
   readonly "event.name": string;
   readonly "service.name": string;
@@ -9,6 +20,11 @@ interface AuditEnvelope {
   readonly correlation_id?: string;
 }
 
+/**
+ * Composition-root probe event — exactly one per process per ADR-035.
+ * Mutually-exclusive `event.name` discriminators (`enabled` vs `disabled`)
+ * keep the typescript narrowing honest at call sites.
+ */
 export interface FailureSimulationGateEvent extends AuditEnvelope {
   readonly "event.name":
     | "failure-simulation.gate.enabled"
@@ -20,23 +36,69 @@ export interface FailureSimulationGateEvent extends AuditEnvelope {
   readonly "manifest.knob_count": number;
 }
 
+/**
+ * Per-request fired event — verdict permits AND a manifest-registered knob
+ * was carried in the request context.
+ */
 export interface FailureSimulationFiredEvent extends AuditEnvelope {
   readonly "event.name": "failure-simulation.fired";
   readonly "knob.name": string;
-  readonly "knob.transport": "header" | "event" | "body-field";
+  readonly "knob.transport": KnobTransport;
   readonly "knob.value"?: string;
   readonly "target.port": string;
   readonly "owning.service": OwningService;
 }
 
+/**
+ * Per-request rejected event — verdict denies AND a manifest-registered knob
+ * was carried in the request context. The `reason` field surfaces which gate
+ * condition denied (`environment_tier_denies` vs `flag_denies`).
+ */
 export interface FailureSimulationRejectedEvent extends AuditEnvelope {
   readonly "event.name": "failure-simulation.rejected";
   readonly "knob.name": string;
-  readonly "knob.transport": "header" | "event" | "body-field";
+  readonly "knob.transport": KnobTransport;
   readonly reason: GateReason;
   readonly "gate.tier": GateTier;
   readonly "gate.flag": GateFlag;
 }
+
+/**
+ * Per-request unknown-signal event — the request carried a header/event/body
+ * field matching the failure-simulation wire pattern but the name is not in
+ * the manifest. Surfaces typos and drift to Devon via `manifest.path`.
+ */
+export interface FailureSimulationUnknownEvent extends AuditEnvelope {
+  readonly "event.name": "failure-simulation.unknown";
+  readonly "knob.name.raw": string;
+  readonly "knob.transport": KnobTransport;
+  readonly "manifest.path": string;
+}
+
+/**
+ * Companion deprecation event — emitted at startup when a legacy env var
+ * (e.g. `NWAVE_HARNESS_KNOBS`) is honored. Documented here for completeness;
+ * the emitter lands in MR-5 alongside the vocabulary cleanup. The type union
+ * is exported now so downstream `switch (event["event.name"]) { ... }`
+ * call sites compile against the final shape ahead of the emitter landing.
+ */
+export interface FailureSimulationConfigDeprecatedEvent extends AuditEnvelope {
+  readonly "event.name": "failure-simulation.config.deprecated";
+  readonly "env.legacy": string;
+  readonly "env.replacement": string;
+  readonly "removal.target_release": string;
+}
+
+/**
+ * Discriminated union of every audit-event variant per ADR-037. Use a
+ * `switch (event["event.name"]) { ... }` to narrow.
+ */
+export type AuditEvent =
+  | FailureSimulationGateEvent
+  | FailureSimulationFiredEvent
+  | FailureSimulationRejectedEvent
+  | FailureSimulationUnknownEvent
+  | FailureSimulationConfigDeprecatedEvent;
 
 export function emitGateEvent(args: {
   readonly verdict: GateVerdict;
@@ -57,3 +119,13 @@ export function emitRejectedEvent(args: {
   readonly correlationId: string | undefined;
   readonly verdict: GateVerdict;
 }): void;
+
+export function emitUnknownEvent(args: {
+  readonly rawName: string;
+  readonly transport: KnobTransport;
+  readonly serviceName: OwningService | undefined;
+  readonly correlationId: string | undefined;
+}): void;
+
+// emitConfigDeprecatedEvent will land in MR-5 with the legacy NWAVE_HARNESS_KNOBS
+// migration. Type already exported above so future callers compile cleanly.

@@ -1,6 +1,6 @@
 import { manifest, MANIFEST_PATH } from "./manifest.js";
 import { getCachedVerdict } from "./gate.js";
-import { emitFiredEvent, emitRejectedEvent } from "./audit.js";
+import { emitFiredEvent, emitRejectedEvent, emitUnknownEvent } from "./audit.js";
 
 // Internal index for fast canonical-name lookup. Built once at module load.
 const KNOB_BY_NAME = new Map(manifest.map((entry) => [entry.name, entry]));
@@ -195,7 +195,7 @@ function headersGet(headers, headerName) {
   return undefined;
 }
 
-// ─────────────────────────── detectUnknownSignals (MR-1) ───────────────────────────
+// ─────────────────────────── detectUnknownSignals ───────────────────────────
 
 const HEADER_PATTERN = /^x-force-[a-z0-9-]+$/;
 const EVENT_PATTERN = /^__(?:force|expire)_[a-z0-9_]+__$/;
@@ -203,12 +203,9 @@ const BODY_FIELD_PATTERNS = [/^harness_force_[a-z0-9_]+$/, /^force_[a-z0-9_]+$/]
 
 /**
  * Scan the request context for failure-simulation-shaped wire signals that
- * do not correspond to any manifest entry. Emit one
- * `failure-simulation.unknown` line on stdout per unrecognized signal.
- *
- * The full audit envelope (timestamp, service.name, etc.) lands in MR-3; MR-1
- * ships the manifest-pointer fields the unknown-detection scenarios assert
- * on (event.name, knob.name.raw, manifest.path).
+ * do not correspond to any manifest entry. Delegates emission to
+ * `audit.emitUnknownEvent` so the audit envelope is consistent across all
+ * `failure-simulation.*` event types (ADR-037 §"Audit emission point").
  */
 export function detectUnknownSignals(ctx) {
   const serviceName = ctx?.serviceName;
@@ -294,30 +291,4 @@ function isKnownWireSignal(rawName, transport) {
     return KNOB_BY_NAME.has(canonical);
   }
   return false;
-}
-
-function emitUnknownEvent({ rawName, transport, serviceName, correlationId }) {
-  const event = {
-    "event.name": "failure-simulation.unknown",
-    "service.name": serviceName ?? "unknown",
-    timestamp: new Date().toISOString(),
-    "environment.tier": readEnvTier(),
-    "knob.name.raw": rawName,
-    "knob.transport": transport,
-    "manifest.path": MANIFEST_PATH,
-  };
-  if (correlationId != null) {
-    event.correlation_id = correlationId;
-  }
-  process.stdout.write(JSON.stringify(event) + "\n");
-}
-
-function readEnvTier() {
-  const raw = process.env.ENVIRONMENT;
-  if (raw == null || raw.trim() === "") return "unset";
-  const normalized = raw.trim().toLowerCase();
-  if (["dev", "ci", "staging", "production"].includes(normalized)) {
-    return normalized;
-  }
-  return "unknown";
 }

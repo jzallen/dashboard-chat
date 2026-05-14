@@ -1,17 +1,25 @@
 // Structured audit emitter for the failure-simulation surface per ADR-037.
 //
-// MR-2 ships gate.enabled / gate.disabled (probe) + fired / rejected (registry
-// shouldInject). MR-3 expands the `unknown` event to the full envelope (today
-// emitted in MR-1's registry stub with the same field shape) and lands the
-// `config.deprecated` event when legacy NWAVE_HARNESS_KNOBS is read.
+// One JSON line per event on stdout. The ADR-037 envelope (event.name,
+// service.name, timestamp, environment.tier, optional correlation_id) is
+// dot-namespaced to align with OpenTelemetry semantic conventions; downstream
+// log aggregators filter on the `failure-simulation.*` prefix.
 //
-// Every event is one JSON line on stdout — no logger framework, no prefix.
-// The ADR-037 envelope (event.name, service.name, timestamp,
-// environment.tier, optional correlation_id) is dot-namespaced to align with
-// OpenTelemetry semantic conventions; downstream aggregators filter on the
-// `failure-simulation.*` prefix.
+// The full discriminated AuditEvent union covers six event names:
+//   - failure-simulation.gate.enabled       (probe at composition root)
+//   - failure-simulation.gate.disabled      (probe at composition root)
+//   - failure-simulation.fired              (shouldInject — verdict permits)
+//   - failure-simulation.rejected           (shouldInject — verdict denies)
+//   - failure-simulation.unknown            (detectUnknownSignals — typo/drift)
+//   - failure-simulation.config.deprecated  (MR-5 — emitter not landed yet;
+//                                            type defined for future-compat)
+//
+// MR-5 will add emitConfigDeprecatedEvent when the legacy NWAVE_HARNESS_KNOBS
+// read is finalised; the type union is already exported so callers can switch
+// on it ahead of the emitter landing.
 
-import { manifest } from "./manifest.js";
+import { getCachedVerdict } from "./gate.js";
+import { manifest, MANIFEST_PATH } from "./manifest.js";
 
 const MANIFEST_KNOB_COUNT = manifest.length;
 
@@ -92,6 +100,34 @@ export function emitRejectedEvent({ entry, serviceName, correlationId, verdict }
     reason: verdict.reason,
     "gate.tier": verdict.tier,
     "gate.flag": verdict.flag,
+  };
+  if (correlationId != null) {
+    event.correlation_id = correlationId;
+  }
+  write(event);
+}
+
+/**
+ * Emit one failure-simulation.unknown event per request-carried signal whose
+ * wire name matches the failure-simulation pattern but does not correspond to
+ * any manifest entry (typo, removed knob, or drift). Called by
+ * `detectUnknownSignals` once per detected signal.
+ *
+ * Tier is read from the cached gate verdict (per ADR-037 envelope consistency
+ * with fired/rejected). Callers SHOULD invoke `probe()` before
+ * `detectUnknownSignals` — the verdict cache's fail-closed default surfaces
+ * misordered initialization as `environment.tier: "unset"`.
+ */
+export function emitUnknownEvent({ rawName, transport, serviceName, correlationId }) {
+  const verdict = getCachedVerdict();
+  const event = {
+    "event.name": "failure-simulation.unknown",
+    "service.name": serviceName ?? "unknown",
+    timestamp: nowIsoTimestamp(),
+    "environment.tier": verdict.tier,
+    "knob.name.raw": rawName,
+    "knob.transport": transport,
+    "manifest.path": MANIFEST_PATH,
   };
   if (correlationId != null) {
     event.correlation_id = correlationId;

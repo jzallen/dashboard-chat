@@ -43,9 +43,17 @@ export type {
   GateTier,
   GateVerdict,
 } from "./gate";
-export { emitFiredEvent, emitGateEvent, emitRejectedEvent } from "./audit";
+export {
+  emitFiredEvent,
+  emitGateEvent,
+  emitRejectedEvent,
+  emitUnknownEvent,
+} from "./audit";
 export type {
+  AuditEvent,
+  FailureSimulationConfigDeprecatedEvent,
   FailureSimulationFiredEvent,
   FailureSimulationGateEvent,
   FailureSimulationRejectedEvent,
+  FailureSimulationUnknownEvent,
 } from "./audit";
