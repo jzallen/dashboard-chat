@@ -8,7 +8,8 @@
     "frontend",
     "agent",
     "auth-proxy",
-    "shared/chat"
+    "shared/chat",
+    "shared/failure-simulation"
   ],
   "scripts": {
     "dev:agent": "npm run dev -w agent",

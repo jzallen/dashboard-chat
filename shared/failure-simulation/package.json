@@ -1,0 +1,32 @@
+{
+  "name": "@dashboard-chat/shared-failure-simulation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./manifest": {
+      "types": "./manifest.d.ts",
+      "default": "./manifest.js"
+    },
+    "./manifest.schema": {
+      "types": "./manifest.schema.d.ts",
+      "default": "./manifest.schema.js"
+    },
+    "./registry": {
+      "types": "./registry.d.ts",
+      "default": "./registry.js"
+    }
+  },
+  "scripts": {
+    "drift-check": "node scripts/drift-check.mjs"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  }
+}

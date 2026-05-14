@@ -3,5 +3,6 @@ packages:
   - agent
   - auth-proxy
   - shared/chat
+  - shared/failure-simulation
 
 onlyBuiltDependencies: []
