@@ -14,6 +14,7 @@
 // injected by auth-proxy upstream (ADR-016). It does NOT re-verify JWTs.
 // In AUTH_MODE=dev the headers identify the dev user.
 
+import { probe } from "@dashboard-chat/shared-failure-simulation";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
@@ -156,6 +157,15 @@ const HARNESS_EVENT_TYPES: ReadonlySet<string> = new Set([
  * adapters).
  */
 export function wireRoutes(app: Hono, orchestrator: FlowOrchestrator): void {
+
+// Composition-root failure-simulation probe per ADR-035 + ADR-036. Runs once
+// per wireRoutes invocation: production binds routes once at module load
+// (`wireRoutes(app, orchestrator)` below); per-scenario test harnesses build
+// a fresh app + orchestrator pair and call `wireRoutes` themselves, so the
+// gate verdict is refreshed against the scenario's process.env at that
+// point. The verdict is cached inside the shared package and consumed by
+// `shouldInject()` callsites elsewhere in this module + the machine layer.
+probe(process.env, "ui-state");
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 

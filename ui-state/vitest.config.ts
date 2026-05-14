@@ -10,6 +10,12 @@ export default defineConfig({
     // index.ts respects this env var.
     env: {
       UI_STATE_AUTOSTART: "false",
+      // Pin the failure-simulation gate to dev tier so the registry's
+      // shouldInject callsites resolve like the local compose stack does
+      // (ADR-035). Per-scenario tests toggle NWAVE_HARNESS_KNOBS to flip
+      // the flag; the registry honors that legacy var via readFlag's
+      // legacyAlias fallback. ENVIRONMENT is constant for the vitest run.
+      ENVIRONMENT: "dev",
     },
   },
 });
