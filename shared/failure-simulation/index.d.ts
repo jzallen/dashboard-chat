@@ -27,5 +27,25 @@ export {
   UnknownKnobError,
 } from "./registry";
 export type { InjectionContext } from "./registry";
-export { evalGate, parseBool, probe, readFlag, readTier } from "./gate";
-export type { EnvSource, GateFlag, GateReason, GateState, GateVerdict } from "./gate";
+export {
+  evalGate,
+  getCachedVerdict,
+  parseBool,
+  probe,
+  readFlag,
+  readTier,
+} from "./gate";
+export type {
+  EnvSource,
+  GateFlag,
+  GateReason,
+  GateState,
+  GateTier,
+  GateVerdict,
+} from "./gate";
+export { emitFiredEvent, emitGateEvent, emitRejectedEvent } from "./audit";
+export type {
+  FailureSimulationFiredEvent,
+  FailureSimulationGateEvent,
+  FailureSimulationRejectedEvent,
+} from "./audit";

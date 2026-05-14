@@ -1,4 +1,6 @@
 import { manifest, MANIFEST_PATH } from "./manifest.js";
+import { getCachedVerdict } from "./gate.js";
+import { emitFiredEvent, emitRejectedEvent } from "./audit.js";
 
 // Internal index for fast canonical-name lookup. Built once at module load.
 const KNOB_BY_NAME = new Map(manifest.map((entry) => [entry.name, entry]));
@@ -42,35 +44,158 @@ export function findManifestEntry(name) {
   return KNOB_BY_NAME.get(name);
 }
 
-// ─────────────────────────── shouldInject (MR-1 stub) ───────────────────────────
+// ─────────────────────────── shouldInject (MR-2) ───────────────────────────
 //
-// The MR-1 stub enforces the manifest contract — an unknown `KnobCanonicalName`
-// throws `UnknownKnobError` per the MR-1 deliverable. Gate consultation and
-// audit emission (`failure-simulation.fired` / `failure-simulation.rejected`)
-// are deferred — the gate composition lands in MR-2 and the audit envelope
-// lands in MR-3. Until those MRs land the stub returns `false` for every known
-// knob so the firing path stays inert and downstream contract tests (CA-3..6,
-// CA-9, US-CONSOL-2, US-CONSOL-3 #1/#2/#5) stay RED as DISTILL handed off.
+// Per-request decision point. Lookup + transport-match + gate-consult +
+// audit-emit. The verdict is the one cached by probe() at composition root —
+// per-request env-var parsing is forbidden by CA-4 (cache stability).
+//
+// Ordering rules (ADR-037 §"Audit emission point and ordering"):
+//   1. Unknown `knobName` (not in manifest)         → throw UnknownKnobError
+//   2. No signal carried for this knob's transport → return false, emit nothing
+//   3. Signal present + verdict disabled            → emit rejected, return false
+//   4. Signal present + verdict enabled             → emit fired, return true
 
-/**
- * Per-request decision point. Returns true iff the knob should fire its
- * registered effect.
- *
- * MR-1 semantics:
- *   - Unknown `knobName` (not in the manifest) → throws `UnknownKnobError`.
- *   - Known `knobName` → returns `false` (the inert MR-1 stub; MR-2 wires
- *     gate consultation + cached verdict; MR-3 wires audit emission).
- */
 export function shouldInject(knobName, ctx) {
-  void ctx;
   const entry = KNOB_BY_NAME.get(knobName);
   if (entry == null) {
     throw new UnknownKnobError(knobName);
   }
+
+  if (!matchTransport(entry, ctx)) {
+    return false;
+  }
+
+  const verdict = getCachedVerdict();
+  const serviceName = ctx?.serviceName;
+  const correlationId = ctx?.correlationId;
+
+  if (verdict.state !== "enabled") {
+    emitRejectedEvent({ entry, serviceName, correlationId, verdict });
+    return false;
+  }
+
+  const value = extractTransportValue(entry, ctx);
+  emitFiredEvent({ entry, value, serviceName, correlationId, verdict });
+  return true;
+}
+
+// ─────────────────────────── transport matching ───────────────────────────
+
+function matchTransport(entry, ctx) {
+  if (ctx == null) return false;
+  if (entry.transport === "header") {
+    const headerName = renderHeaderName(entry.name);
+    return headersHas(ctx.headers, headerName);
+  }
+  if (entry.transport === "event") {
+    if (ctx.event == null || typeof ctx.event.type !== "string") return false;
+    return renderEventTypes(entry).includes(ctx.event.type);
+  }
+  if (entry.transport === "body-field") {
+    if (ctx.body == null || typeof ctx.body !== "object") return false;
+    return renderFieldNames(entry).some((name) => ctx.body[name] != null);
+  }
   return false;
 }
 
-// ─────────────────────────── detectUnknownSignals (MR-1 stub) ───────────────────────────
+function extractTransportValue(entry, ctx) {
+  if (entry.transport === "header") {
+    return headersGet(ctx?.headers, renderHeaderName(entry.name));
+  }
+  if (entry.transport === "body-field") {
+    for (const name of renderFieldNames(entry)) {
+      const raw = ctx?.body?.[name];
+      if (raw == null) continue;
+      return typeof raw === "string" ? raw : JSON.stringify(raw);
+    }
+    return undefined;
+  }
+  // Event transport has no semantic value beyond the type itself.
+  return undefined;
+}
+
+function renderHeaderName(canonical) {
+  // force-create-session-failure → X-Force-Create-Session-Failure
+  return (
+    "X-" +
+    canonical
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join("-")
+  );
+}
+
+function renderEventTypes(entry) {
+  // Phase-1 bridge: accept both the legacyAlias value and the canonical
+  // post-rename event name. MR-5 drops the legacyAlias half. Knobs without a
+  // legacyAlias use canonical-derived `__<name_with_underscores>__`.
+  const types = [];
+  if (entry.legacyAlias != null) {
+    const legacy = entry.legacyAlias.transportValue;
+    types.push(legacy);
+    types.push(legacy.replace(/^__harness_/, "__"));
+  } else {
+    types.push("__" + entry.name.replace(/-/g, "_") + "__");
+  }
+  return types;
+}
+
+function renderFieldNames(entry) {
+  const names = [];
+  if (entry.legacyAlias != null) {
+    const legacy = entry.legacyAlias.transportValue;
+    names.push(legacy);
+    names.push(legacy.replace(/^harness_/, ""));
+  } else {
+    names.push(entry.name.replace(/-/g, "_"));
+  }
+  return names;
+}
+
+function headersHas(headers, headerName) {
+  if (headers == null) return false;
+  const target = headerName.toLowerCase();
+  if (typeof headers.has === "function") {
+    return headers.has(headerName) || headers.has(target);
+  }
+  if (Array.isArray(headers)) {
+    return headers.some(
+      (pair) =>
+        Array.isArray(pair) &&
+        typeof pair[0] === "string" &&
+        pair[0].toLowerCase() === target,
+    );
+  }
+  if (typeof headers === "object") {
+    return Object.keys(headers).some((k) => k.toLowerCase() === target);
+  }
+  return false;
+}
+
+function headersGet(headers, headerName) {
+  if (headers == null) return undefined;
+  const target = headerName.toLowerCase();
+  if (typeof headers.get === "function") {
+    return headers.get(headerName) ?? headers.get(target) ?? undefined;
+  }
+  if (Array.isArray(headers)) {
+    const match = headers.find(
+      (pair) =>
+        Array.isArray(pair) &&
+        typeof pair[0] === "string" &&
+        pair[0].toLowerCase() === target,
+    );
+    return match ? match[1] : undefined;
+  }
+  if (typeof headers === "object") {
+    const key = Object.keys(headers).find((k) => k.toLowerCase() === target);
+    return key ? headers[key] : undefined;
+  }
+  return undefined;
+}
+
+// ─────────────────────────── detectUnknownSignals (MR-1) ───────────────────────────
 
 const HEADER_PATTERN = /^x-force-[a-z0-9-]+$/;
 const EVENT_PATTERN = /^__(?:force|expire)_[a-z0-9_]+__$/;
@@ -101,8 +226,6 @@ export function detectUnknownSignals(ctx) {
     });
   }
 }
-
-// ─────────────────────────── internals ───────────────────────────
 
 function* iterateWireSignals(ctx) {
   if (ctx == null) return;

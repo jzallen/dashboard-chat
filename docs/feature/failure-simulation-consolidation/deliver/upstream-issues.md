@@ -42,3 +42,76 @@ Per `roadmap.json::known_unknowns_handed_off_to_deliver`:
   roots are wired. No DISTILL test depends on a middleware order at MR-1.
 
 KU-2 (stdout-capture helper choice) was resolved in DISTILL.
+
+## MR-2 — ui-state composition-root `probe()` deferred to MR-4
+
+The MR-2 dispatch task description names ui-state's composition root as a
+second site for `probe(process.env, "ui-state")` (alongside agent's). MR-2
+lands the agent-side wiring + `registerInspectionRoutes` per ADR-036 and the
+roadmap exit criteria, but **defers** the ui-state-side `probe()` call to
+MR-4 (the phase-1 migration MR) for these reasons:
+
+1. **No MR-2 test depends on ui-state's startup emission.** Every gate-event
+   scenario in `test_us_consol_2_environment_gate.py` and
+   `test_contract_assertions.py::test_ca_3/4/9` calls `probe()` directly
+   from a node subprocess via the driver. None of them spawn ui-state.
+2. **ui-state is not a `package.json` workspace in npm root config**
+   (root `package.json` lists `frontend`, `agent`, `auth-proxy`,
+   `shared/chat`, `shared/failure-simulation`). Adding the workspace dep
+   `@dashboard-chat/shared-failure-simulation: "*"` to `ui-state/package.json`
+   would either require:
+   - Promoting ui-state to a workspace (changes 3 files but breaks
+     `ui-state/Dockerfile`, which does a standalone `npm install --no-package-lock`
+     and would fail to resolve the workspace package), OR
+   - A `file:../shared/failure-simulation` protocol path AND extending the
+     ui-state docker build context to include `../shared/failure-simulation`.
+
+   Both touch the production image build path. MR-4 already plans to migrate
+   ui-state's six knob callsites to `shouldInject(KNOB.x, ctx)`, at which
+   point the workspace promotion is justified by the actual import need.
+   Bundling the build-system change into the migration MR keeps MR-2's
+   exit criteria honest.
+3. **CA-7 still passes** because the inspection probes live in `agent/`
+   (ADR-036), not in ui-state. The agent's `probe()` + `registerInspectionRoutes`
+   are what gate `/debug/*` 404 vs 200.
+
+**Disposition:** ui-state's `probe()` is wired in MR-4 alongside the
+callsite migration. The ADR-036 invariant "every service that imports
+the registry calls `probe()` at startup" is satisfied at the time
+ui-state actually imports the registry — i.e., when its knob callsites
+move to `shouldInject(...)`.
+
+## MR-2 — header transport rendering uses canonical-name title-case prefix
+
+The DESIGN component-design.md spec (`matchTransport()` pseudocode) names
+a helper `renderHeader(entry)` without fixing the rendering algorithm. MR-2
+implements it as kebab-case → Title-Case-Kebab with `X-` prefix:
+
+```
+force-create-session-failure  ⇒  X-Force-Create-Session-Failure
+```
+
+The DISTILL tests assert on the exact header string `X-Force-Create-Session-Failure`
+etc., so the algorithm is implicit in the test contract. Documented here so
+US-CONSOL-5 (new-knob walkthrough) doesn't have to re-derive it: a knob
+named `force-list-projects-failure` renders as `X-Force-List-Projects-Failure`.
+
+## MR-2 — event + body-field rendering bridges phase-1 legacyAlias
+
+For event and body-field transports, MR-2 accepts BOTH the legacyAlias
+value AND the canonical post-rename value during the phase-1 overlap window
+(ADR-038):
+
+| Knob | Canonical (post-MR-5) | Phase-1 legacy (today) |
+|---|---|---|
+| `force-failure-tag` | `__force_failure__` | `__harness_force_failure__` |
+| `expire-token` | `__expire_token__` | `__harness_expire_token__` |
+| `force-reissue-failures` (body) | `force_reissue_failures` | `harness_force_reissue_failures` |
+
+The MR-2 transport-match implementation derives the canonical event/field
+name from `legacyAlias.transportValue` by stripping the `__harness_` /
+`harness_` prefix (NOT from `entry.name` — the `force-failure-tag` canonical
+name does not render to `__force_failure_tag__`; the test contract calls for
+`__force_failure__`). MR-5 drops the `legacyAlias` field and the canonical
+rendering becomes the single source.
+

@@ -1,7 +1,16 @@
-// Gate evaluation per ADR-035. MR-1 ships the minimum surface the
-// MR-1 scenarios import (`probe`) plus pure-function helpers. The full
-// composition-root wiring and verdict-cache + startup-emission semantics land
-// in MR-2; the audit envelope lands in MR-3.
+// Gate evaluation + composition-root probe per ADR-035.
+//
+// Surface stratification:
+//   MR-1 — pure-function helpers (readTier, parseBool, readFlag, evalGate) +
+//          probe() returning the verdict. Inert: no caching, no emission.
+//   MR-2 — verdict cache + startup gate event emission. shouldInject reads
+//          the cached verdict (registry.js handles fired/rejected emission).
+//   MR-3 — full audit envelope on fired/rejected/unknown + correlation-id
+//          propagation through the actor input boundary (ADR-028 + ADR-037).
+//   MR-5 — `failure-simulation.config.deprecated` event emission when legacy
+//          NWAVE_HARNESS_KNOBS is present (KU-1 chooses the semver target).
+
+import { emitGateEvent } from "./audit.js";
 
 const VALID_TIERS = ["dev", "ci", "staging", "production"];
 
@@ -44,15 +53,52 @@ export function evalGate(env) {
   return { state: "enabled", reason: "both_permit", tier, flag };
 }
 
+// ─────────────────────────── Verdict cache (MR-2) ───────────────────────────
+//
+// Module-scoped cache populated by probe(). shouldInject (in registry.js)
+// reads the cache rather than re-parsing process.env per request. CA-4
+// asserts the cache is stable across env mutations within one process —
+// the `firstResult === secondResult` invariant after probe() runs.
+//
+// Default verdict for the not-yet-probed state is fail-closed: production-
+// restrictive. Production code calls probe() at the composition root before
+// any route is bound, so the default is never observed in normal flow; it
+// exists so a misordered import in a test harness fails closed rather than
+// open.
+
+const FAIL_CLOSED_VERDICT = Object.freeze({
+  state: "disabled",
+  reason: "environment_tier_denies",
+  tier: "unset",
+  flag: "unset",
+});
+
+let _cachedVerdict = null;
+
+export function getCachedVerdict() {
+  return _cachedVerdict ?? FAIL_CLOSED_VERDICT;
+}
+
 /**
- * Composition-root probe. MR-1 stub: evaluates the gate and returns the
- * verdict. Startup-event emission and verdict caching land in MR-2 per the
- * roadmap. The function exists at MR-1 so consumers that wire `probe(env, 'svc')`
- * at startup are stable across the migration.
+ * Composition-root probe per ADR-035 + ADR-036.
+ *
+ * - Evaluates the gate against `env` (defaults to `{}` for safety).
+ * - Caches the verdict for `shouldInject` (and any other per-request reader).
+ * - Emits one `failure-simulation.gate.enabled` / `.gate.disabled` event with
+ *   the ADR-037 envelope (service.name, timestamp, environment.tier, gate.*,
+ *   inspection_probes_registered, manifest.knob_count).
+ *
+ * Component-design.md documents that production code calls `probe()` exactly
+ * once at startup; a second call from a test scenario re-evaluates the gate,
+ * re-caches, and emits a fresh event. That deliberate choice keeps `probe()`
+ * test-driveable without a private reset helper.
  */
 export function probe(env, serviceName) {
   if (typeof serviceName !== "string" || serviceName === "") {
     throw new TypeError("probe(env, serviceName): serviceName is required");
   }
-  return evalGate(env ?? {});
+  const verdict = evalGate(env ?? {});
+  _cachedVerdict = verdict;
+  emitGateEvent({ verdict, serviceName });
+  return verdict;
 }

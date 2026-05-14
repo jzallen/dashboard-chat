@@ -21,6 +21,14 @@
     "./registry": {
       "types": "./registry.d.ts",
       "default": "./registry.js"
+    },
+    "./gate": {
+      "types": "./gate.d.ts",
+      "default": "./gate.js"
+    },
+    "./audit": {
+      "types": "./audit.d.ts",
+      "default": "./audit.js"
     }
   },
   "scripts": {

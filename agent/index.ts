@@ -5,13 +5,15 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
+import { probe } from "@dashboard-chat/shared-failure-simulation";
+
 import { authMiddleware } from "./lib/auth";
 import { createChatHandler } from "./lib/chat";
 import { selectPresentationStateLog } from "./lib/chat/presentationStateDispatch";
 import { createPresentationStateRoutes } from "./lib/chat/presentationStateRoutes";
-import { requestLog } from "./lib/chat/requestLog";
 import { assertScopeHeaderFallbackSunset } from "./lib/chat/scope";
 import { selectThreadPersister } from "./lib/chat/threadPersisterDispatch";
+import { registerInspectionRoutes } from "./lib/inspection/inspection";
 import { createOpenApiRoutes } from "./lib/openapi";
 import { logImageIdentity } from "./version";
 
@@ -24,6 +26,14 @@ import { logImageIdentity } from "./version";
 assertScopeHeaderFallbackSunset();
 
 logImageIdentity("dashboard-agent");
+
+// Composition-root failure-simulation gate per ADR-035 + ADR-036. Called
+// exactly once before any route is bound or any actor is constructed; the
+// verdict is cached by the shared package and consumed by shouldInject()
+// callsites. The verdict also gates the /debug/* inspection probes —
+// registerInspectionRoutes returns without binding routes when the verdict
+// is disabled, producing 404 (route absent), not 403 (route present + denied).
+const failureSimulationVerdict = probe(process.env, "agent");
 
 const app = new Hono();
 
@@ -124,31 +134,18 @@ app.post("/chat", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Harness debug endpoints (NWAVE_HARNESS_KNOBS=true ONLY)
+// Inspection-probe endpoints (failure-simulation gate)
 // ---------------------------------------------------------------------------
 // US-207 + US-208 acceptance scenarios drive the TS harness's
 // `assert_agent_received_scope` and `assert_agent_request_log_no_mismatched`
-// methods, which read from these endpoints. The capture is a no-op when
-// the flag is off; the endpoints 404 in production.
+// methods, which read from these endpoints. Registration is gated by the
+// ENVIRONMENT × FAILURE_SIMULATION_ENABLED verdict from probe() above —
+// CA-7 in the DISTILL contract requires 404 (route absent), not 403, when
+// the gate is disabled. The legacy NWAVE_HARNESS_KNOBS=true gate is honored
+// via the readFlag legacy alias inside the shared package; deprecation event
+// emission lands in MR-5.
 
-if (requestLog.enabled()) {
-  app.get("/debug/last-request-scope", (c) => {
-    const last = requestLog.last();
-    if (!last) {
-      return c.json({ scope: null, reason: "no requests recorded" });
-    }
-    return c.json({ scope: last.scope, status: last.status });
-  });
-
-  app.get("/debug/request-log", (c) => {
-    return c.json({ entries: requestLog.all() });
-  });
-
-  app.post("/debug/request-log/clear", (c) => {
-    requestLog.clear();
-    return c.json({ cleared: true });
-  });
-}
+registerInspectionRoutes(app, failureSimulationVerdict);
 
 // ---------------------------------------------------------------------------
 // Reflect-only directive log (ADR-015 / dc-x3y.2.2 / F.3)

@@ -5,12 +5,18 @@
 //   - ManifestEntrySchema, ManifestSchema (Zod)
 //   - KNOB (typed const accessor)
 //   - assertKnown (CI-lint helper for the drift check)
-//   - shouldInject, detectUnknownSignals (MR-1 stubs)
-//   - probe, evalGate (MR-1 surface; full composition-root semantics in MR-2)
+//   - shouldInject (MR-1 inert stub → MR-2 wires the gate + audit)
+//   - detectUnknownSignals (MR-1)
+//   - probe, evalGate, parseBool, readTier, readFlag (MR-1)
 //   - UnknownKnobError
 //
-// Audit emission expands in MR-3; gate caching + composition-root startup
-// event lands in MR-2.
+// MR-2 surface additions per
+// docs/feature/failure-simulation-consolidation/distill/roadmap.json::MR-2:
+//   - getCachedVerdict — composition-root probe's cache reader
+//   - emitGateEvent, emitFiredEvent, emitRejectedEvent — ADR-037 emitters
+//
+// MR-3 ships the full audit envelope on `unknown` + the
+// `failure-simulation.config.deprecated` event (KU-1 chooses the semver target).
 
 export { manifest, MANIFEST_PATH } from "./manifest.js";
 export {
@@ -32,4 +38,16 @@ export {
   shouldInject,
   UnknownKnobError,
 } from "./registry.js";
-export { evalGate, parseBool, probe, readFlag, readTier } from "./gate.js";
+export {
+  evalGate,
+  getCachedVerdict,
+  parseBool,
+  probe,
+  readFlag,
+  readTier,
+} from "./gate.js";
+export {
+  emitFiredEvent,
+  emitGateEvent,
+  emitRejectedEvent,
+} from "./audit.js";
