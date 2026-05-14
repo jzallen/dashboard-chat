@@ -1,15 +1,15 @@
-# ADR-035: Fault-Injection Gate Composition — `ENVIRONMENT` × `FAULT_INJECTION_ENABLED`
+# ADR-035: Failure-Simulation Gate Composition — `ENVIRONMENT` × `FAILURE_SIMULATION_ENABLED`
 
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
-**Originating wave:** DESIGN — `fault-injection-consolidation`
-**Resolves:** `docs/feature/fault-injection-consolidation/discuss/open-questions.md` Q1
+**Originating wave:** DESIGN — `failure-simulation-consolidation`
+**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q1
 **Companion ADRs:** ADR-036 (module location), ADR-037 (audit sink), ADR-038 (naming + phase plan)
 
 ## Context
 
 The DISCUSS wave (`stories.md` US-CONSOL-2; `open-questions.md` Q1) identified that
-today's fault-injection surface is gated by a single boolean env var,
+today's failure-simulation surface is gated by a single boolean env var,
 `NWAVE_HARNESS_KNOBS=true`. The user's revision prompt explicitly framed the
 problem as "defense-in-depth is missing: the only gate is a single env var" and
 asked for a higher-order `ENVIRONMENT` tier discriminator. Two clean designs
@@ -18,7 +18,7 @@ exist:
 - **Q1.a — single-source-of-truth:** `ENVIRONMENT` alone gates the surface;
   no companion flag survives.
 - **Q1.b — defense-in-depth, AND-composition:** both `ENVIRONMENT in {dev, ci}`
-  AND `FAULT_INJECTION_ENABLED=true` must hold for any knob to fire.
+  AND `FAILURE_SIMULATION_ENABLED=true` must hold for any knob to fire.
 
 Separately, the legacy env var name `NWAVE_HARNESS_KNOBS` is structurally
 incorrect — the `NWAVE_` prefix suggests the flag belongs to the nwave-ai
@@ -35,14 +35,14 @@ revision prompt; memory `feedback_no_harness_no_nwave_in_product_names.md`).
   of failure from `NWAVE_HARNESS_KNOBS` to `ENVIRONMENT`.
 - **Conway's-Law fit.** Olivia (operator) owns `ENVIRONMENT` — it is a
   tier-discriminator she manages across many concerns. Devon (engineer) owns
-  `FAULT_INJECTION_ENABLED` — it is a feature-specific dev-loop toggle. Two
+  `FAILURE_SIMULATION_ENABLED` — it is a feature-specific dev-loop toggle. Two
   separate roles, two separate flags, AND-composed at the registry.
 - **Fail-closed semantics.** Both variables individually fail closed when
   unset. The composition is monotone — adding any second gate cannot
   open the surface that the first gate already closed.
-- **Naming hygiene.** Every replacement candidate carries the `fault-injection`
-  category name so that audit log events (`fault-injection.fired`), the module
-  (`shared/fault-injection/`), and the gate flag (`FAULT_INJECTION_ENABLED`)
+- **Naming hygiene.** Every replacement candidate carries the `failure-simulation`
+  category name so that audit log events (`failure-simulation.fired`), the module
+  (`shared/failure-simulation/`), and the gate flag (`FAILURE_SIMULATION_ENABLED`)
   all line up under one vocabulary.
 - **Earned Trust (principle 12).** The gate is a dependency every machine
   trusts blindly today. The composition design includes a startup probe that
@@ -55,7 +55,7 @@ revision prompt; memory `feedback_no_harness_no_nwave_in_product_names.md`).
 
 ### Option A — `ENVIRONMENT`-only (Q1.a)
 
-`FAULT_INJECTION_ENABLED` does not exist. `ENVIRONMENT in {dev, ci}` is the
+`FAILURE_SIMULATION_ENABLED` does not exist. `ENVIRONMENT in {dev, ci}` is the
 sole permit; staging and production deny. `NWAVE_HARNESS_KNOBS` is deprecated
 and removed without replacement.
 
@@ -69,9 +69,9 @@ and removed without replacement.
   session, copy-paste from local override) re-opens the entire surface. No
   second line of defense.
 
-### Option B — AND-composition, `ENVIRONMENT` × `FAULT_INJECTION_ENABLED` (Q1.b) — SELECTED
+### Option B — AND-composition, `ENVIRONMENT` × `FAILURE_SIMULATION_ENABLED` (Q1.b) — SELECTED
 
-`ENVIRONMENT in {dev, ci}` **AND** `FAULT_INJECTION_ENABLED=true` must both
+`ENVIRONMENT in {dev, ci}` **AND** `FAILURE_SIMULATION_ENABLED=true` must both
 hold. Either variable alone blocks the surface. `NWAVE_HARNESS_KNOBS` is
 deprecated (one-release overlap; read with warning; behavior preserved) and
 removed at the end of the overlap window.
@@ -80,9 +80,9 @@ removed at the end of the overlap window.
 
 - (+) True defense-in-depth: two simultaneous misconfigurations required.
 - (+) Conway-Law fit: Olivia owns `ENVIRONMENT`; Devon owns
-  `FAULT_INJECTION_ENABLED`.
+  `FAILURE_SIMULATION_ENABLED`.
 - (+) Migration path is additive: legacy `NWAVE_HARNESS_KNOBS=true` is
-  honored as a synonym for `FAULT_INJECTION_ENABLED=true` during the overlap
+  honored as a synonym for `FAILURE_SIMULATION_ENABLED=true` during the overlap
   window with a deprecation warning, so existing dev environments do not
   break on day one.
 - (−) Interaction matrix grows to 4×2 = 8 cases (documented below).
@@ -103,7 +103,7 @@ a per-knob env var.
 
 ## Decision outcome
 
-**Option B (Q1.b) — AND-composition with `FAULT_INJECTION_ENABLED` as the
+**Option B (Q1.b) — AND-composition with `FAILURE_SIMULATION_ENABLED` as the
 defense-in-depth flag.**
 
 ### Composition algorithm (specification — not implementation)
@@ -138,7 +138,7 @@ READ_TIER(env):
 
 
 READ_FLAG(env):
-  primary := env.FAULT_INJECTION_ENABLED
+  primary := env.FAILURE_SIMULATION_ENABLED
   legacy  := env.NWAVE_HARNESS_KNOBS
 
   if primary is set:
@@ -151,7 +151,7 @@ READ_FLAG(env):
 
 ### Interaction matrix (8 cases)
 
-| `ENVIRONMENT` | `FAULT_INJECTION_ENABLED` | Verdict | Reason |
+| `ENVIRONMENT` | `FAILURE_SIMULATION_ENABLED` | Verdict | Reason |
 |---|---|---|---|
 | `dev` | `true` | enabled | `both_permit` |
 | `dev` | `false` or unset | disabled | `flag_denies` |
@@ -171,18 +171,18 @@ is enabled that does not require `tier in {dev, ci}` AND `flag = true`.
 One-release overlap, then removal. Specifically:
 
 1. **On migration MR (US-CONSOL-4 phase 2) landing:** the registry reads both
-   `FAULT_INJECTION_ENABLED` (preferred) and `NWAVE_HARNESS_KNOBS` (legacy).
+   `FAILURE_SIMULATION_ENABLED` (preferred) and `NWAVE_HARNESS_KNOBS` (legacy).
    When the legacy variable is present:
-   - If `FAULT_INJECTION_ENABLED` is also set, the primary wins; legacy
-     is ignored with a `fault-injection.config.deprecated` warning naming the
+   - If `FAILURE_SIMULATION_ENABLED` is also set, the primary wins; legacy
+     is ignored with a `failure-simulation.config.deprecated` warning naming the
      replacement.
    - If only the legacy is set, it is parsed as the flag value with a
-     `fault-injection.config.deprecated` warning naming the replacement and
+     `failure-simulation.config.deprecated` warning naming the replacement and
      stating "behavior preserved for one release."
 2. **One release after the migration lands** (tracked as a follow-up MR
    referencing this ADR): the registry stops reading `NWAVE_HARNESS_KNOBS`.
    If still present in env, the registry logs
-   `fault-injection.config.removed env=NWAVE_HARNESS_KNOBS` at startup but
+   `failure-simulation.config.removed env=NWAVE_HARNESS_KNOBS` at startup but
    does not honor it. Local `.env` files and docker-compose overlays that
    still set the legacy variable must be updated.
 3. **Two releases after migration:** no log emitted; the variable is fully
@@ -200,33 +200,33 @@ every middleware in `agent/` trusts. Per principle 12, the gate exposes a
 before any route is registered or any actor is spawned. The probe:
 
 1. Evaluates `EVAL_GATE` against the live process env.
-2. Emits a single structured log entry (`fault-injection.gate.enabled` or
-   `fault-injection.gate.disabled`) with the verdict (see ADR-037 schema).
-3. Emits a `fault-injection.config.deprecated` entry if legacy variables are
+2. Emits a single structured log entry (`failure-simulation.gate.enabled` or
+   `failure-simulation.gate.disabled`) with the verdict (see ADR-037 schema).
+3. Emits a `failure-simulation.config.deprecated` entry if legacy variables are
    present (independent of verdict).
 4. Returns the cached verdict to the composition root, which then decides
    whether to register the `/debug/*` inspection-probe routes (only if
    verdict is enabled).
 
-Fault-injection scenarios the probe must survive (catalogued for the
+Failure-simulation scenarios the probe must survive (catalogued for the
 CI gold-test runner per principle 12):
 
 | Substrate lie / misconfiguration | Probe's required behavior |
 |---|---|
 | `ENVIRONMENT` unset | Verdict: disabled, reason: `environment_tier_denies`, tier: `unset` |
-| `ENVIRONMENT=DEV` (uppercase) | Normalized to `dev`; verdict honors `FAULT_INJECTION_ENABLED` |
-| `ENVIRONMENT=dev` with whitespace | Trimmed; verdict honors `FAULT_INJECTION_ENABLED` |
+| `ENVIRONMENT=DEV` (uppercase) | Normalized to `dev`; verdict honors `FAILURE_SIMULATION_ENABLED` |
+| `ENVIRONMENT=dev` with whitespace | Trimmed; verdict honors `FAILURE_SIMULATION_ENABLED` |
 | `ENVIRONMENT=marketing` (typo) | Verdict: disabled, reason: `environment_tier_denies`, tier: `unknown` |
-| Both `FAULT_INJECTION_ENABLED=true` and `NWAVE_HARNESS_KNOBS=false` | Primary wins; legacy ignored; deprecation warning emitted |
+| Both `FAILURE_SIMULATION_ENABLED=true` and `NWAVE_HARNESS_KNOBS=false` | Primary wins; legacy ignored; deprecation warning emitted |
 | Only `NWAVE_HARNESS_KNOBS=true` set | Legacy honored; deprecation warning emitted; verdict honors `ENVIRONMENT` |
-| `FAULT_INJECTION_ENABLED=yes` (non-boolean) | Parsed as false (strict parse); verdict: disabled, reason: `flag_denies` |
+| `FAILURE_SIMULATION_ENABLED=yes` (non-boolean) | Parsed as false (strict parse); verdict: disabled, reason: `flag_denies` |
 | Service restarted between request 1 and request 2 with different env | Verdict re-evaluated; cached for new process lifetime |
 
 The composition root invariant is **wire then probe then use**: the gate's
 probe MUST run before any route registration or actor spawning. If the
 probe emits a `disabled` verdict in an environment a developer expected to
 be `enabled` (e.g. `ENVIRONMENT=dev` set in a worker container that forgot
-to inherit `FAULT_INJECTION_ENABLED`), the startup log makes the discrepancy
+to inherit `FAILURE_SIMULATION_ENABLED`), the startup log makes the discrepancy
 visible at boot time, not at first-failing acceptance scenario.
 
 ## Consequences
@@ -249,13 +249,13 @@ visible at boot time, not at first-failing acceptance scenario.
 
 - 8-case interaction matrix instead of a 4-case matrix. Documented above
   and in the gate's startup log. Mitigated by Devon writing
-  `FAULT_INJECTION_ENABLED=true` only twice (once in his local `.env`,
+  `FAILURE_SIMULATION_ENABLED=true` only twice (once in his local `.env`,
   once in `docker-compose.yml`).
 - Dual variable maintenance during the overlap window: legacy
-  `NWAVE_HARNESS_KNOBS` and primary `FAULT_INJECTION_ENABLED` both
+  `NWAVE_HARNESS_KNOBS` and primary `FAILURE_SIMULATION_ENABLED` both
   honored. Mitigated by deprecation log; bounded to one release.
 - Devon's mental model now distinguishes `ENVIRONMENT` from
-  `FAULT_INJECTION_ENABLED`. He cannot enable knobs by flipping one
+  `FAILURE_SIMULATION_ENABLED`. He cannot enable knobs by flipping one
   variable; he must understand both. This is the cost of defense-in-depth
   and is the explicit user-asked-for outcome.
 
@@ -274,10 +274,10 @@ None. Q1 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/fault-injection-consolidation/discuss/stories.md` — US-CONSOL-2
-- `docs/feature/fault-injection-consolidation/discuss/open-questions.md` — Q1
+- `docs/feature/failure-simulation-consolidation/discuss/stories.md` — US-CONSOL-2
+- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q1
 - ADR-029 (`X-Active-Scope` propagation contract) — confirms test-only knob
   surface must remain visually distinct from production headers; the gate
   decision here is independent of that contract.
 - Memory `feedback_no_harness_no_nwave_in_product_names.md` — naming hygiene
-  constraint on `FAULT_INJECTION_ENABLED`.
+  constraint on `FAILURE_SIMULATION_ENABLED`.

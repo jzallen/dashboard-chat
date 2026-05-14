@@ -1,6 +1,6 @@
-# Component Design — Fault-Injection Registry
+# Component Design — Failure-Simulation Registry
 
-DESIGN-wave deliverable for `fault-injection-consolidation`. This document
+DESIGN-wave deliverable for `failure-simulation-consolidation`. This document
 specifies the registry's internal shape — type signatures, gate
 evaluation algorithm, machine/middleware-facing API, audit-emitter
 interface, declaration site for new knobs, and the step-by-step "add a
@@ -13,8 +13,8 @@ files; this document is the binding contract those source files satisfy.
 ## Module layout (reprise from ADR-036)
 
 ```
-shared/fault-injection/
-  package.json              # @dashboard-chat/shared-fault-injection
+shared/failure-simulation/
+  package.json              # @dashboard-chat/shared-failure-simulation
   tsconfig.json
   BUILD.bazel
   index.ts                  # public API re-exports
@@ -31,7 +31,7 @@ shared/fault-injection/
 ## Manifest entry type signature
 
 ```ts
-// shared/fault-injection/manifest.schema.ts
+// shared/failure-simulation/manifest.schema.ts
 
 export type KnobTransport = 'header' | 'event' | 'body-field';
 export type OwningService = 'ui-state' | 'agent';
@@ -102,7 +102,7 @@ export interface GateVerdict {
 
 export interface EnvSource {
   readonly ENVIRONMENT?: string;
-  readonly FAULT_INJECTION_ENABLED?: string;
+  readonly FAILURE_SIMULATION_ENABLED?: string;
   readonly NWAVE_HARNESS_KNOBS?: string;     // legacy, deprecated
 }
 
@@ -136,13 +136,13 @@ readTier(raw: string | undefined) -> EnvironmentTier | 'unset' | 'unknown':
 
 
 readFlag(env: EnvSource) -> 'true' | 'false' | 'unset':
-  if env.FAULT_INJECTION_ENABLED is set:
-    return parseBool(env.FAULT_INJECTION_ENABLED)
+  if env.FAILURE_SIMULATION_ENABLED is set:
+    return parseBool(env.FAILURE_SIMULATION_ENABLED)
 
   if env.NWAVE_HARNESS_KNOBS is set:
     emitDeprecationEvent({
       env_legacy: 'NWAVE_HARNESS_KNOBS',
-      env_replacement: 'FAULT_INJECTION_ENABLED',
+      env_replacement: 'FAILURE_SIMULATION_ENABLED',
       removal_target_release: <DELIVER decides>
     })
     return parseBool(env.NWAVE_HARNESS_KNOBS)
@@ -164,8 +164,8 @@ probe(env, serviceName) -> GateVerdict:
 
   emitStartupEvent({
     event_name: verdict.state == 'enabled'
-      ? 'fault-injection.gate.enabled'
-      : 'fault-injection.gate.disabled',
+      ? 'failure-simulation.gate.enabled'
+      : 'failure-simulation.gate.disabled',
     service_name: serviceName,
     gate_tier: verdict.tier,
     gate_flag: verdict.flag,
@@ -186,7 +186,7 @@ production code calls it once.
 ## Machine/middleware-facing API (`registry.ts`)
 
 The single API every callsite consumes. This is the dependency the
-fault-injection registry exposes to the rest of the codebase.
+failure-simulation registry exposes to the rest of the codebase.
 
 ### Type signatures
 
@@ -215,12 +215,12 @@ export interface InjectionContext {
  * Semantics:
  *   - If the gate verdict is disabled AND the context carries a knob
  *     name matching this knob's transport-rendering: emit
- *     fault-injection.rejected; return false.
+ *     failure-simulation.rejected; return false.
  *   - If the gate verdict is enabled AND the context carries this
- *     specific knob: emit fault-injection.fired; return true.
+ *     specific knob: emit failure-simulation.fired; return true.
  *   - If the gate verdict is enabled AND the context carries a knob
  *     name NOT in the manifest (typo, removed knob): emit
- *     fault-injection.unknown; return false.
+ *     failure-simulation.unknown; return false.
  *   - If the context carries no knob: emit nothing; return false.
  *
  * Throws iff `knobName` is not a known KnobCanonicalName at compile
@@ -262,7 +262,7 @@ if (shouldInject(KNOB.forceCreateSessionFailure, {
 }
 ```
 
-`KNOB` is a typed accessor exported from `shared/fault-injection/`:
+`KNOB` is a typed accessor exported from `shared/failure-simulation/`:
 
 ```ts
 export const KNOB = {
@@ -299,7 +299,7 @@ shouldInject(knobName, ctx) -> boolean:
 
   if verdict.state == 'disabled':
     audit.emit({
-      event_name: 'fault-injection.rejected',
+      event_name: 'failure-simulation.rejected',
       service_name: ctx.serviceName,
       knob_name: entry.name,
       knob_transport: entry.transport,
@@ -311,7 +311,7 @@ shouldInject(knobName, ctx) -> boolean:
     return false
 
   audit.emit({
-    event_name: 'fault-injection.fired',
+    event_name: 'failure-simulation.fired',
     service_name: ctx.serviceName,
     knob_name: entry.name,
     knob_transport: entry.transport,
@@ -339,7 +339,7 @@ matchTransport(entry, ctx) -> boolean:
   return false
 ```
 
-### How unknown knob names produce `fault-injection.unknown`
+### How unknown knob names produce `failure-simulation.unknown`
 
 The `shouldInject()` API receives a `KnobCanonicalName` — by definition
 a manifest entry exists. Unknown names arrive when:
@@ -355,8 +355,8 @@ The registry exposes a separate dispatch entrypoint for this case:
 ```ts
 /**
  * Called by middleware at the request boundary to detect unknown
- * fault-injection signals that don't correspond to any manifest entry.
- * Emits fault-injection.unknown for each unknown signal found.
+ * failure-simulation signals that don't correspond to any manifest entry.
+ * Emits failure-simulation.unknown for each unknown signal found.
  */
 export function detectUnknownSignals(ctx: InjectionContext): void;
 ```
@@ -364,19 +364,19 @@ export function detectUnknownSignals(ctx: InjectionContext): void;
 The middleware in `ui-state/index.ts` and `agent/index.ts` calls
 `detectUnknownSignals()` after request parsing, before the route
 handlers run. The function is a no-op when no knob-pattern signals are
-present and emits `fault-injection.unknown` for each unrecognized
+present and emits `failure-simulation.unknown` for each unrecognized
 signal otherwise.
 
 ## Audit-log emitter interface (`audit.ts`)
 
 ```ts
 export type AuditEvent =
-  | FaultInjectionFiredEvent
-  | FaultInjectionRejectedEvent
-  | FaultInjectionUnknownEvent
-  | FaultInjectionGateEnabledEvent
-  | FaultInjectionGateDisabledEvent
-  | FaultInjectionConfigDeprecatedEvent;
+  | FailureSimulationFiredEvent
+  | FailureSimulationRejectedEvent
+  | FailureSimulationUnknownEvent
+  | FailureSimulationGateEnabledEvent
+  | FailureSimulationGateDisabledEvent
+  | FailureSimulationConfigDeprecatedEvent;
 
 export function emit(event: AuditEvent): void;
 ```
@@ -438,7 +438,7 @@ ensures the registration is deliberate.
 
 ### Step 1 — Devon adds the manifest entry
 
-Edit `shared/fault-injection/manifest.ts`. Append:
+Edit `shared/failure-simulation/manifest.ts`. Append:
 
 ```ts
 {
@@ -452,11 +452,11 @@ Edit `shared/fault-injection/manifest.ts`. Append:
 }
 ```
 
-**File touched:** `shared/fault-injection/manifest.ts` (single addition).
+**File touched:** `shared/failure-simulation/manifest.ts` (single addition).
 
 ### Step 2 — Devon adds the typed accessor
 
-Edit the `KNOB` const object in `shared/fault-injection/index.ts` (or
+Edit the `KNOB` const object in `shared/failure-simulation/index.ts` (or
 wherever the const lives):
 
 ```ts
@@ -466,7 +466,7 @@ export const KNOB = {
 } as const;
 ```
 
-**File touched:** `shared/fault-injection/index.ts`.
+**File touched:** `shared/failure-simulation/index.ts`.
 
 ### Step 3 — Devon wires the production-side callsite
 
@@ -506,7 +506,7 @@ uv run --no-project pytest tests/test_us209_*.py
 
 Scenario goes RED (no production code change yet), then GREEN once
 step 3's wiring is in place. The audit log shows
-`fault-injection.fired name=force-list-projects-failure` in the test
+`failure-simulation.fired name=force-list-projects-failure` in the test
 output.
 
 ### Step 6 — Devon submits the MR via `gt mq submit`
@@ -541,7 +541,7 @@ trio from principle 12):
 3. **Runtime probe (test-time):** the CI gold test loads each service's
    composition root and asserts `probe()` emits the expected manifest
    count. A new knob without manifest registration would not appear in
-   the count and would either not fire (with `fault-injection.unknown`
+   the count and would either not fire (with `failure-simulation.unknown`
    in the audit log) or fail the count assertion.
 
 Three orthogonal layers. Bypassing one is caught by the other two.
@@ -551,12 +551,12 @@ Three orthogonal layers. Bypassing one is caught by the other two.
 | Failure mode | Defense |
 |---|---|
 | Devon adds a header check without a manifest entry | TS branded type rejects untyped string; CI drift check rejects unregistered name |
-| Devon types `force-crete-session-failure` (typo) in a fixture | `detectUnknownSignals` emits `fault-injection.unknown` with manifest-path pointer; assertion fails on missing `fault-injection.fired` |
-| Olivia sets `ENVIRONMENT=DEV` (uppercase) in staging by mistake | Normalized to `dev`; flag still required; `FAULT_INJECTION_ENABLED` is unset in staging → verdict disabled |
+| Devon types `force-crete-session-failure` (typo) in a fixture | `detectUnknownSignals` emits `failure-simulation.unknown` with manifest-path pointer; assertion fails on missing `failure-simulation.fired` |
+| Olivia sets `ENVIRONMENT=DEV` (uppercase) in staging by mistake | Normalized to `dev`; flag still required; `FAILURE_SIMULATION_ENABLED` is unset in staging → verdict disabled |
 | Olivia sets `ENVIRONMENT=marketing` (unknown tier) | `readTier` returns `'unknown'`; verdict disabled with `environment_tier_denies` |
-| Devon forgets to call `probe()` in a service's composition root | CI gold test fails because no `fault-injection.gate.*` event is emitted at startup |
+| Devon forgets to call `probe()` in a service's composition root | CI gold test fails because no `failure-simulation.gate.*` event is emitted at startup |
 | A knob fires in an actor with no correlation-id input | Audit entry emits without `correlation_id` field (optional); test fixture failure surfaces the missing thread |
-| A knob fires twice for one request | Two `fault-injection.fired` audit entries — the count is itself the diagnostic signal; no silent dedup |
+| A knob fires twice for one request | Two `failure-simulation.fired` audit entries — the count is itself the diagnostic signal; no silent dedup |
 | `console.log` is monkey-patched in a test and swallows the audit event | CI gold test captures stdout via process-level pipe, not via mocked `console.log` |
 
 ## Performance characteristics
@@ -571,7 +571,7 @@ The registry is on the request hot path. Required characteristics:
   ceiling). Header / body / event match is one read.
 - **`audit.emit`**: called per knob-bearing request (0 for normal
   requests per ADR-037 ordering rules). Synchronous `console.log`. Cost
-  acceptable given the rate (fault injection is acceptance-test-driven,
+  acceptable given the rate (failure simulation is acceptance-test-driven,
   not production-traffic-driven).
 - **`detectUnknownSignals`**: called per request at middleware boundary.
   Must short-circuit cheaply on the dominant case (no knob signals
@@ -585,7 +585,7 @@ test/dev-environment requests.
 
 ## Versioning posture
 
-The `@dashboard-chat/shared-fault-injection` package is internal-only.
+The `@dashboard-chat/shared-failure-simulation` package is internal-only.
 No external consumers. Semver discipline within the monorepo: a
 breaking change to the manifest schema or the `shouldInject()` signature
 is a follow-up ADR. The `legacyAlias` field is the only transitional

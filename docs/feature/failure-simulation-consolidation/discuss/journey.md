@@ -4,12 +4,12 @@ DISCUSS-wave deliverable. The user of this journey is **Devon**, a backend/full-
 
 ## Vocabulary note
 
-The category term for the mechanism this journey describes is **fault injection** — industry-standard terminology (Istio, AWS FIS, chaos engineering). The previously-used word "harness" was overloaded across at least six distinct concepts in the codebase and is retired from the category vocabulary. Specifically:
+The category term for the mechanism this journey describes is **failure simulation** — industry-standard terminology (Istio, AWS FIS, chaos engineering). The previously-used word "harness" was overloaded across at least six distinct concepts in the codebase and is retired from the category vocabulary. Specifically:
 
-- **fault-injection registry** — the consolidated module
-- **fault-injection knob** — one specific lever
-- **fault-injection manifest** — the canonical list (file: `fault-injection.manifest.ts`)
-- **inspection probes** — the read-only `/debug/*` observability endpoints (a *different* category from fault injection; same ENVIRONMENT gate)
+- **failure-simulation registry** — the consolidated module
+- **failure-simulation knob** — one specific lever
+- **failure-simulation manifest** — the canonical list (file: `failure-simulation.manifest.ts`)
+- **inspection probes** — the read-only `/debug/*` observability endpoints (a *different* category from failure simulation; same ENVIRONMENT gate)
 
 The TS test-runner directory `tests/acceptance/user-flow-state-machines/harness/` ("UserFlowHarness") is unchanged — it's a proper noun, not a generic descriptor.
 
@@ -17,7 +17,7 @@ The `NWAVE_` prefix on env vars is being retired in US-CONSOL-4. nwave-ai is the
 
 ## Persona
 
-**Devon Park** — Backend engineer, 18 months on dashboard-chat. Comfortable in TypeScript and Python. Has written ~6 acceptance scenarios in this codebase but has never needed to add a brand-new fault-injection knob. Today's task: scenario for US-209 (hypothetical), which needs `POST /api/projects/{id}/sessions` to return 5xx exactly once mid-flow.
+**Devon Park** — Backend engineer, 18 months on dashboard-chat. Comfortable in TypeScript and Python. Has written ~6 acceptance scenarios in this codebase but has never needed to add a brand-new failure-simulation knob. Today's task: scenario for US-209 (hypothetical), which needs `POST /api/projects/{id}/sessions` to return 5xx exactly once mid-flow.
 
 ## Journey Goal
 
@@ -61,7 +61,7 @@ The arc: **frustration → relief → confidence**. Each phase has a concrete de
 |       (TS UserFlowHarness, debug endpoints, env-var gate, ...).  |
 |                                                                    |
 | After consolidation:                                               |
-|   $ cat shared/fault-injection/manifest.ts   # one file            |
+|   $ cat shared/failure-simulation/manifest.ts   # one file            |
 |   force-create-session-failure  | header  | createSession          |
 |   force-list-sessions-failure   | header  | listSessions           |
 |   force-create-project-failure  | header  | createProject          |
@@ -131,7 +131,7 @@ The arc: **frustration → relief → confidence**. Each phase has a concrete de
 |   contract test?"                                                  |
 |                                                                    |
 | After consolidation:                                               |
-|   1. Edit shared/fault-injection/manifest.ts                       |
+|   1. Edit shared/failure-simulation/manifest.ts                       |
 |   2. Schema validation requires:                                  |
 |        - rationale: non-empty                                     |
 |        - contract_test_alternative_considered: explicit bool      |
@@ -194,20 +194,20 @@ The arc: **frustration → relief → confidence**. Each phase has a concrete de
 |                                                                    |
 | After consolidation:                                               |
 |   Pytest output shows the relevant audit log lines:               |
-|     fault-injection.fired                                         |
+|     failure-simulation.fired                                         |
 |       name=force-create-session-failure                           |
 |       transport=header env=dev cid=abc-123 ts=2026-05-14T10:42:00Z |
 |                                                                    |
 |   If scenario fails, Devon greps the log for                      |
-|   `fault-injection.fired` and immediately sees which knobs        |
+|   `failure-simulation.fired` and immediately sees which knobs        |
 |   fired or didn't.                                                 |
 +-------------------------------------------------------------------+
 ```
 
-**Feels**: Today, hopeful but blind. After, calm — the audit log makes fault-injection firings first-class observable events.
+**Feels**: Today, hopeful but blind. After, calm — the audit log makes failure-simulation firings first-class observable events.
 
 **Friction (today)**: debugging a flaky scenario is a 30-minute archaeology session.
-**Friction (after)**: one grep on `fault-injection.fired` answers "did the knob fire?".
+**Friction (after)**: one grep on `failure-simulation.fired` answers "did the knob fire?".
 
 **Design lever**: US-CONSOL-3 (audit log).
 
@@ -236,7 +236,7 @@ The arc: **frustration → relief → confidence**. Each phase has a concrete de
 |   knob. The safety is structural — Devon's vigilance is not the   |
 |   only line of defense. The env var name itself is being phased   |
 |   out (US-CONSOL-4) in favor of a name that describes the         |
-|   mechanism (fault injection), not a developer tool (nwave-ai).   |
+|   mechanism (failure simulation), not a developer tool (nwave-ai).   |
 +-------------------------------------------------------------------+
 ```
 
@@ -336,7 +336,7 @@ Olivia is a secondary persona on this journey. Her journey is much shorter:
 |      (and the env var is on its way out — see US-CONSOL-4).       |
 |                                                                    |
 |   On container start, Olivia sees:                                |
-|     fault-injection.gate.disabled environment=staging             |
+|     failure-simulation.gate.disabled environment=staging             |
 |     reason=environment_tier_denies                                |
 |     inspection_probes_registered=false                            |
 |                                                                    |
@@ -376,25 +376,25 @@ Nine distinct frictions. Five stories. Each story resolves 1-2 frictions; no fri
 Variables that appear in the journey but should have a single source of truth in DESIGN-wave outputs:
 
 - **Knob canonical name** — source: manifest entry. Consumers: production-side gate, audit log entries, manifest, reviewer-visible diff, pytest fixture string.
-- **ENVIRONMENT tier value** — source: compose overlay env var (Olivia's domain). Consumers: fault-injection registry gate, startup log, inspection-probe registration condition.
-- **Defense-in-depth flag name** (if DESIGN picks Q1.b) — recommended `FAULT_INJECTION_ENABLED`; DESIGN decides. Consumers: registry gate, startup log, deprecation message for `NWAVE_HARNESS_KNOBS`.
+- **ENVIRONMENT tier value** — source: compose overlay env var (Olivia's domain). Consumers: failure-simulation registry gate, startup log, inspection-probe registration condition.
+- **Defense-in-depth flag name** (if DESIGN picks Q1.b) — recommended `FAILURE_SIMULATION_ENABLED`; DESIGN decides. Consumers: registry gate, startup log, deprecation message for `NWAVE_HARNESS_KNOBS`.
 - **Manifest file path** — source: DESIGN ADR. Consumers: production code import, CI lint check, this journey doc.
-- **Audit log event names** (`fault-injection.fired` / `.rejected` / `.unknown`) — source: registry module constant. Consumers: production-side emit calls, log-query examples in this journey doc, future operator dashboards.
-- **Gate startup log event** (`fault-injection.gate.enabled` / `.disabled`) — source: registry module constant. Consumers: Olivia's container logs; production-mode startup verification.
+- **Audit log event names** (`failure-simulation.fired` / `.rejected` / `.unknown`) — source: registry module constant. Consumers: production-side emit calls, log-query examples in this journey doc, future operator dashboards.
+- **Gate startup log event** (`failure-simulation.gate.enabled` / `.disabled`) — source: registry module constant. Consumers: Olivia's container logs; production-mode startup verification.
 
 Registry generation is deferred until DESIGN — at this stage the names exist as variables in `${italics}` placeholders, but the canonical home for each is undecided.
 
 ---
 
-## Category boundary: fault injection vs inspection probes
+## Category boundary: failure simulation vs inspection probes
 
 This DISCUSS retires "harness" as a generic descriptor. Two categories of test-mode behavior remain, and the consolidation gates both via the same ENVIRONMENT mechanism — but the categories themselves are distinct.
 
 | Category | Purpose | Members |
 |---|---|---|
-| **Fault injection** | Force deterministic failures at port boundaries (write-side / state-changing) | The 6 knobs: headers, events, body field |
+| **Failure simulation** | Force deterministic failures at port boundaries (write-side / state-changing) | The 6 knobs: headers, events, body field |
 | **Inspection probes** | Observe internal state for test assertions (read-only) | The 3 `/debug/*` endpoints on the agent service |
 
-The fault-injection registry owns the gate, the manifest, the audit log. The inspection probes share the same ENVIRONMENT gate but are otherwise a separate concern — they don't appear in the manifest, they don't emit `fault-injection.*` audit entries. DESIGN may choose to co-locate them in `shared/fault-injection/` for gate-sharing reasons or to keep them in `agent/lib/inspection/` for category-clarity reasons; the open question is in `open-questions.md` Q2.
+The failure-simulation registry owns the gate, the manifest, the audit log. The inspection probes share the same ENVIRONMENT gate but are otherwise a separate concern — they don't appear in the manifest, they don't emit `failure-simulation.*` audit entries. DESIGN may choose to co-locate them in `shared/failure-simulation/` for gate-sharing reasons or to keep them in `agent/lib/inspection/` for category-clarity reasons; the open question is in `open-questions.md` Q2.
 
 This matters for Devon: when he asks "is there a knob for X?", the answer might be "no, but there's an inspection probe for X" — and those are different shapes of solution. The vocabulary makes that distinction explicit.

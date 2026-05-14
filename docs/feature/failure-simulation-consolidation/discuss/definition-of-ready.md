@@ -1,4 +1,4 @@
-# Definition of Ready — Fault-Injection Consolidation
+# Definition of Ready — Failure-Simulation Consolidation
 
 DISCUSS-wave gate. Each of US-CONSOL-1..5 must pass all 9 standard DoR items plus 4 consolidation-specific items before handoff to DESIGN. This document records the current status as of the DISCUSS revision pass that produced these artifacts.
 
@@ -45,7 +45,7 @@ These four items are specific to this feature's nature as cross-cutting infrastr
 | Addendum | Status | Owner | Resolution path |
 |---|---|---|---|
 | A1. ADR drafted for `ENVIRONMENT` vs defense-in-depth flag interaction | NOT YET | solution-architect (DESIGN) | DESIGN-wave deliverable; see `open-questions.md` Q1 |
-| A2. Module location decided (`shared/fault-injection/` vs `ui-state/lib/fault-injection/` vs per-service) | NOT YET | solution-architect (DESIGN) | DESIGN-wave deliverable; see `open-questions.md` Q2 |
+| A2. Module location decided (`shared/failure-simulation/` vs `ui-state/lib/failure-simulation/` vs per-service) | NOT YET | solution-architect (DESIGN) | DESIGN-wave deliverable; see `open-questions.md` Q2 |
 | A3. Audit log sink decided (stdout / Redis stream / OTel span) | NOT YET | solution-architect (DESIGN) | DESIGN-wave deliverable; see `open-questions.md` Q3 |
 | A4. Naming scheme decided (DISCUSS recommends `X-Force-*` retained for headers, verb-only for events/body fields) | NOT YET | solution-architect (DESIGN) | DESIGN-wave deliverable; see `open-questions.md` Q4 |
 
@@ -63,8 +63,8 @@ All 5 stories pass standard DoR (with conditional flags on CONSOL-2 and CONSOL-4
 
 A1-A4 must be resolved as ADRs before DISTILL. Specifically:
 
-- **A1 ADR** must specify whether a defense-in-depth flag survives alongside `ENVIRONMENT` (DISCUSS recommends Q1.b — AND composition) and, if so, what it is named (DISCUSS recommends `FAULT_INJECTION_ENABLED`; explicitly NOT `NWAVE_*`). Whichever flag DESIGN picks, the existing `NWAVE_HARNESS_KNOBS` env var must be deprecated in US-CONSOL-4 migration scope.
-- **A2 ADR** must specify the module's source-tree home, honoring ADR-033/034 (directory named for body of source). DISCUSS recommends `shared/fault-injection/` (precedent: `shared/chat/`). ADR must also document the category boundary between the fault-injection registry and the inspection probes (whether they share a module or live separately).
+- **A1 ADR** must specify whether a defense-in-depth flag survives alongside `ENVIRONMENT` (DISCUSS recommends Q1.b — AND composition) and, if so, what it is named (DISCUSS recommends `FAILURE_SIMULATION_ENABLED`; explicitly NOT `NWAVE_*`). Whichever flag DESIGN picks, the existing `NWAVE_HARNESS_KNOBS` env var must be deprecated in US-CONSOL-4 migration scope.
+- **A2 ADR** must specify the module's source-tree home, honoring ADR-033/034 (directory named for body of source). DISCUSS recommends `shared/failure-simulation/` (precedent: `shared/chat/`). ADR must also document the category boundary between the failure-simulation registry and the inspection probes (whether they share a module or live separately).
 - **A3 ADR** must specify the audit log sink and the structured-data format.
 - **A4 ADR** must specify the naming scheme. DISCUSS recommends: keep `X-Force-*` headers; rename `__harness_*` events to verb-only (`__force_failure__`, `__expire_token__`); rename `harness_force_reissue_failures` to `force_reissue_failures`. If DESIGN diverges, US-CONSOL-4 phase 2 must be re-scoped.
 
@@ -111,10 +111,10 @@ DESIGN inputs from elsewhere:
 DESIGN deliverables (expected):
 
 - ADR for ENVIRONMENT vs defense-in-depth flag (resolves Q1)
-- ADR for module location and category boundary between fault-injection registry and inspection probes (resolves Q2)
+- ADR for module location and category boundary between failure-simulation registry and inspection probes (resolves Q2)
 - ADR for audit log sink (resolves Q3)
 - ADR for naming scheme (resolves Q4)
-- C4 update showing the fault-injection registry's relationship to ui-state and agent services
+- C4 update showing the failure-simulation registry's relationship to ui-state and agent services
 - Domain-model update if the manifest is modeled as a first-class domain artifact
 
 ---
@@ -125,7 +125,7 @@ DESIGN deliverables (expected):
 **Original date**: 2026-05-13
 **Revision date**: 2026-05-14
 **Status**: DISCUSS deliverables complete; DoR PASSED for handoff to DESIGN
-**Next wave**: `/nw-design` with `docs/feature/fault-injection-consolidation/discuss/` as input
+**Next wave**: `/nw-design` with `docs/feature/failure-simulation-consolidation/discuss/` as input
 
 ### Revision summary
 
@@ -133,6 +133,6 @@ This pass revised the original 5 artifacts to:
 
 1. Retire "harness" as a category descriptor (the TS `tests/.../user-flow-state-machines/harness/` directory is unchanged — it's a proper noun).
 2. Remove "nwave" from product-name positions (env vars, audit log fields, module names). The nwave-ai SDLC tooling is unaffected.
-3. Rename the feature directory: `docs/feature/harness-knob-consolidation/` → `docs/feature/fault-injection-consolidation/`.
+3. Rename the feature directory: `docs/feature/harness-knob-consolidation/` → `docs/feature/failure-simulation-consolidation/`.
 4. Scope vocabulary-cleanup (event renames, body-field rename, env-var deprecation) into US-CONSOL-4 phase 2.
-5. Document the category boundary between fault injection (write-side state forcing) and inspection probes (read-side observation).
+5. Document the category boundary between failure simulation (write-side state forcing) and inspection probes (read-side observation).

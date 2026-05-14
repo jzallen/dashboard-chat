@@ -1,16 +1,16 @@
-# ADR-038: Fault-Injection Naming Scheme and Migration Phase Plan
+# ADR-038: Failure-Simulation Naming Scheme and Migration Phase Plan
 
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
-**Originating wave:** DESIGN — `fault-injection-consolidation`
-**Resolves:** `docs/feature/fault-injection-consolidation/discuss/open-questions.md` Q4
+**Originating wave:** DESIGN — `failure-simulation-consolidation`
+**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q4
 **Companion ADRs:** ADR-035 (gate composition), ADR-036 (module location), ADR-037 (audit sink)
 
 ## Context
 
-US-CONSOL-4 is the migration that bridges the scattered fault-injection
+US-CONSOL-4 is the migration that bridges the scattered failure-simulation
 surface (6 knobs across 6 files in `ui-state/` and `agent/`) to the
-consolidated registry (`shared/fault-injection/`, ADR-036). The
+consolidated registry (`shared/failure-simulation/`, ADR-036). The
 migration has two intertwined concerns:
 
 1. **Naming.** Today's surface uses three transport-specific conventions
@@ -48,7 +48,7 @@ must not appear in any product-code name.
 - **Earned Trust (principle 12).** The manifest is a typed contract; the
   schema is enforced by Zod (or equivalent) at module load. The
   manifest-vs-source drift check is the empirical demonstration that
-  every fault-injection knob name referenced in production code has a
+  every failure-simulation knob name referenced in production code has a
   corresponding manifest entry.
 
 ## Considered options on naming
@@ -75,9 +75,9 @@ Manifest canonical name is kebab-case verb-noun, transport-agnostic.
 - (+) Manifest canonical name is the single source of truth; transports
   render from it.
 
-### Option N3 — Rename headers to `X-Fault-Injection-*` (full category prefix)
+### Option N3 — Rename headers to `X-Failure-Simulation-*` (full category prefix)
 
-Headers become `X-Fault-Injection-Create-Session-Failure` etc.
+Headers become `X-Failure-Simulation-Create-Session-Failure` etc.
 
 - (+) Maximum category-vocabulary consistency.
 - (−) Every acceptance fixture changes for zero clarity gain.
@@ -112,7 +112,7 @@ rendering is derived from it by the registry.
 | `force-failure-tag` | n/a | `__force_failure__` | n/a |
 | `expire-token` | n/a | `__expire_token__` | n/a |
 
-**Rendering rules** (encoded in `shared/fault-injection/transports.ts`):
+**Rendering rules** (encoded in `shared/failure-simulation/transports.ts`):
 
 - Header rendering: `X-` + Title-Case-Hyphenated form of the canonical
   name (kebab-case → Title-Hyphenated by capitalizing each segment).
@@ -135,7 +135,7 @@ This is the typed shape every manifest entry conforms to. The DELIVER
 wave implements the file; this ADR fixes the shape.
 
 ```ts
-// shared/fault-injection/manifest.schema.ts
+// shared/failure-simulation/manifest.schema.ts
 
 export type KnobTransport = 'header' | 'event' | 'body-field';
 export type OwningService = 'ui-state' | 'agent';
@@ -223,13 +223,13 @@ green at HEAD of every commit, not only at the final commit.
 #### Phase 1 — Adapter (wire-identical; production-only edits)
 
 **Goal:** rewrite the 6 callsites to call `shouldInject()` from
-`shared/fault-injection/`. Wire contract (header names, event names,
+`shared/failure-simulation/`. Wire contract (header names, event names,
 body field name) remains byte-identical to pre-migration so the existing
 acceptance suite passes unchanged.
 
 **Commits (one per logical callsite):**
 
-1. `feat(shared): introduce fault-injection registry skeleton + manifest with all 6 knobs (legacy wire names)`
+1. `feat(shared): introduce failure-simulation registry skeleton + manifest with all 6 knobs (legacy wire names)`
    — adds the new package; manifest entries carry the canonical names
    AND a transitional `legacyAlias` field for the two transports that
    will rename in phase 2. The transport renderer reads the alias during
@@ -268,10 +268,10 @@ source and the affected acceptance fixtures.
 11. `refactor(agent,acceptance): rename harness_force_reissue_failures body field → force_reissue_failures`
    — production: `agent/index.ts`, manifest `legacyAlias` removed for
    `force-reissue-failures`. Tests: any fixture sending the body field.
-12. `refactor(config): deprecate NWAVE_HARNESS_KNOBS; introduce FAULT_INJECTION_ENABLED`
-   — production: `shared/fault-injection/gate.ts` reads both with
+12. `refactor(config): deprecate NWAVE_HARNESS_KNOBS; introduce FAILURE_SIMULATION_ENABLED`
+   — production: `shared/failure-simulation/gate.ts` reads both with
    deprecation warning per ADR-035. `docker-compose.yml` and the dev
-   overlay set `FAULT_INJECTION_ENABLED=true` alongside the legacy var.
+   overlay set `FAILURE_SIMULATION_ENABLED=true` alongside the legacy var.
    Tests: any fixture or compose overlay that mentions the legacy var.
 
 After phase 2, the wire contract reflects the new naming; the legacy
@@ -279,7 +279,7 @@ event/body names are gone; `NWAVE_HARNESS_KNOBS` is honored for one
 release with a deprecation warning.
 
 **Phase 2 acceptance check:** every commit's `git diff` modifies both
-`production source` (or `shared/fault-injection/`) AND
+`production source` (or `shared/failure-simulation/`) AND
 `tests/acceptance/`. No commit modifies only one side.
 
 #### Phase 3 — Legacy variable removal (post-overlap window)
@@ -289,8 +289,8 @@ phase 2.
 
 **Commits:**
 
-13. `refactor(shared): remove NWAVE_HARNESS_KNOBS legacy honor; emit fault-injection.config.removed at startup if present`
-   — production: `shared/fault-injection/gate.ts`. Tests: any compose
+13. `refactor(shared): remove NWAVE_HARNESS_KNOBS legacy honor; emit failure-simulation.config.removed at startup if present`
+   — production: `shared/failure-simulation/gate.ts`. Tests: any compose
    overlay still using the legacy var; any acceptance scenario that
    asserted the deprecation warning (replaced with assertion on the
    `removed` log event).
@@ -336,7 +336,7 @@ them:
 1. **Manifest-vs-source drift check:** a node script grep-matches every
    knob naming pattern (`X-Force-*` header, `__force_*__` /
    `__expire_*__` event, `force_*` body field) in `ui-state/`, `agent/`,
-   and `shared/fault-injection/`. Every match must correspond to a
+   and `shared/failure-simulation/`. Every match must correspond to a
    manifest entry. Failures block the merge queue.
 2. **Schema validation:** the Zod schema rejects empty `rationale`,
    missing `contractTestAlternativeConsidered`, malformed `name`.
@@ -406,10 +406,10 @@ None. Q4 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/fault-injection-consolidation/discuss/open-questions.md` — Q4
-- `docs/feature/fault-injection-consolidation/discuss/stories.md` —
+- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q4
+- `docs/feature/failure-simulation-consolidation/discuss/stories.md` —
   US-CONSOL-4, US-CONSOL-5
-- `docs/feature/fault-injection-consolidation/discuss/acceptance-criteria.md` —
+- `docs/feature/failure-simulation-consolidation/discuss/acceptance-criteria.md` —
   the 27 BDD scenarios (including the 6 US-CONSOL-4 scenarios) that the
   phase plan must keep green
 - Memory `feedback_no_harness_no_nwave_in_product_names.md` — naming

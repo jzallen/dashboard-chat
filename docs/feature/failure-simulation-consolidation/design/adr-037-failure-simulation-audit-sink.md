@@ -1,15 +1,15 @@
-# ADR-037: Fault-Injection Audit Sink — Structured stdout (JSON lines)
+# ADR-037: Failure-Simulation Audit Sink — Structured stdout (JSON lines)
 
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
-**Originating wave:** DESIGN — `fault-injection-consolidation`
-**Resolves:** `docs/feature/fault-injection-consolidation/discuss/open-questions.md` Q3
+**Originating wave:** DESIGN — `failure-simulation-consolidation`
+**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q3
 **Companion ADRs:** ADR-035 (gate composition), ADR-036 (module location), ADR-038 (naming + phase plan)
 
 ## Context
 
 US-CONSOL-3 (`stories.md`) commits to a structured audit trail of every
-fault-injection invocation. The DISCUSS recommendation in
+failure-simulation invocation. The DISCUSS recommendation in
 `open-questions.md` Q3 is structured stdout (JSON lines, OTel-compatible
 field shape, no new infrastructure dependency). Two alternatives were
 considered: a dedicated Redis stream and OpenTelemetry spans.
@@ -17,12 +17,12 @@ considered: a dedicated Redis stream and OpenTelemetry spans.
 The use case has two consumers:
 
 1. **Devon, debugging a flaky scenario.** "Did this knob fire in this run?"
-   — answered by grepping container logs for `fault-injection.fired
+   — answered by grepping container logs for `failure-simulation.fired
    correlation_id=<id>`.
 2. **On-call, investigating a suspected misfire in staging or production.**
    "Did any knob fire here over the incident window?" — answered by
    querying the platform's log-aggregation tooling with the
-   `fault-injection.*` event-name filter.
+   `failure-simulation.*` event-name filter.
 
 Both use cases are well-served by structured stdout. The two alternatives
 add infrastructure dependencies that the current operational maturity
@@ -72,7 +72,7 @@ through the standard logging pipeline.
 ### Option B — Dedicated Redis stream
 
 The registry pushes entries into a Redis stream
-(`ui-state:fault-injection:audit`).
+(`ui-state:failure-simulation:audit`).
 
 **Trade-offs:**
 
@@ -123,7 +123,7 @@ stdout. No trailing log-format prefixes (timestamps from a logger
 framework are out of scope — services log directly via
 `console.log(JSON.stringify(...))`).
 
-#### Event 1: `fault-injection.fired`
+#### Event 1: `failure-simulation.fired`
 
 Emitted when the gate is enabled AND the knob is in the manifest AND the
 request carries the knob.
@@ -140,7 +140,7 @@ Example:
 
 ```json
 {
-  "event.name": "fault-injection.fired",
+  "event.name": "failure-simulation.fired",
   "service.name": "ui-state",
   "timestamp": "2026-05-14T10:42:00.123Z",
   "environment.tier": "dev",
@@ -153,7 +153,7 @@ Example:
 }
 ```
 
-#### Event 2: `fault-injection.rejected`
+#### Event 2: `failure-simulation.rejected`
 
 Emitted when the gate is disabled AND the request carries a knob name.
 Single event per request — the registry does not double-emit `rejected`
@@ -171,7 +171,7 @@ Example:
 
 ```json
 {
-  "event.name": "fault-injection.rejected",
+  "event.name": "failure-simulation.rejected",
   "service.name": "ui-state",
   "timestamp": "2026-05-14T10:42:01.456Z",
   "environment.tier": "staging",
@@ -184,7 +184,7 @@ Example:
 }
 ```
 
-#### Event 3: `fault-injection.unknown`
+#### Event 3: `failure-simulation.unknown`
 
 Emitted when the gate is enabled AND the request carries a knob name that
 is not in the manifest. The gate verdict is enabled in this case
@@ -200,18 +200,18 @@ Example:
 
 ```json
 {
-  "event.name": "fault-injection.unknown",
+  "event.name": "failure-simulation.unknown",
   "service.name": "ui-state",
   "timestamp": "2026-05-14T10:42:02.789Z",
   "environment.tier": "dev",
   "correlation_id": "req-typo-007",
   "knob.name.raw": "force-crete-session-failure",
   "knob.transport": "header",
-  "manifest.path": "shared/fault-injection/manifest.ts"
+  "manifest.path": "shared/failure-simulation/manifest.ts"
 }
 ```
 
-#### Event 4: `fault-injection.gate.enabled` / `fault-injection.gate.disabled`
+#### Event 4: `failure-simulation.gate.enabled` / `failure-simulation.gate.disabled`
 
 Emitted exactly once per process, at the composition root, from `probe()`
 (see ADR-035). The two event names are mutually exclusive per process
@@ -220,7 +220,7 @@ lifetime.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `gate.tier` | string | yes | The resolved `ENVIRONMENT` tier |
-| `gate.flag` | string | yes | One of `true` / `false` / `unset` (from `FAULT_INJECTION_ENABLED` / legacy) |
+| `gate.flag` | string | yes | One of `true` / `false` / `unset` (from `FAILURE_SIMULATION_ENABLED` / legacy) |
 | `gate.reason` | string | yes | `both_permit` / `environment_tier_denies` / `flag_denies` |
 | `inspection_probes_registered` | boolean | yes | Whether the agent's `/debug/*` routes were registered |
 | `manifest.knob_count` | number | yes | Number of entries in the manifest at boot |
@@ -229,7 +229,7 @@ Example (enabled):
 
 ```json
 {
-  "event.name": "fault-injection.gate.enabled",
+  "event.name": "failure-simulation.gate.enabled",
   "service.name": "ui-state",
   "timestamp": "2026-05-14T10:00:00.000Z",
   "environment.tier": "dev",
@@ -245,7 +245,7 @@ Example (disabled):
 
 ```json
 {
-  "event.name": "fault-injection.gate.disabled",
+  "event.name": "failure-simulation.gate.disabled",
   "service.name": "agent",
   "timestamp": "2026-05-14T10:00:00.001Z",
   "environment.tier": "staging",
@@ -262,7 +262,7 @@ the `agent` service when the gate verdict is enabled. The `ui-state`
 service does not register inspection probes — the field is always
 `false` for ui-state's startup event.
 
-#### Event 5: `fault-injection.config.deprecated` (companion event)
+#### Event 5: `failure-simulation.config.deprecated` (companion event)
 
 Emitted at startup, alongside the gate event, when legacy env vars are
 present. Not strictly an audit event, but documented here for
@@ -271,19 +271,19 @@ completeness because the migration deprecates `NWAVE_HARNESS_KNOBS`.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `env.legacy` | string | yes | The deprecated variable name (e.g. `NWAVE_HARNESS_KNOBS`) |
-| `env.replacement` | string | yes | The replacement variable name (e.g. `FAULT_INJECTION_ENABLED`) |
+| `env.replacement` | string | yes | The replacement variable name (e.g. `FAILURE_SIMULATION_ENABLED`) |
 | `removal.target_release` | string | yes | Semver-shaped target removal version |
 
 Example:
 
 ```json
 {
-  "event.name": "fault-injection.config.deprecated",
+  "event.name": "failure-simulation.config.deprecated",
   "service.name": "ui-state",
   "timestamp": "2026-05-14T10:00:00.002Z",
   "environment.tier": "dev",
   "env.legacy": "NWAVE_HARNESS_KNOBS",
-  "env.replacement": "FAULT_INJECTION_ENABLED",
+  "env.replacement": "FAILURE_SIMULATION_ENABLED",
   "removal.target_release": "v2.0.0"
 }
 ```
@@ -306,7 +306,7 @@ platform-architect):
   is local docker-compose `logs` in dev/ci; the platform team will
   configure aggregated retention in staging/production when the time
   comes).
-- The `event.name` prefix `fault-injection.*` is the filter contract.
+- The `event.name` prefix `failure-simulation.*` is the filter contract.
   Any aggregation tool that supports JSON-field filtering can query the
   audit trail without bespoke parsing.
 - No deduplication, no rate-limiting at the audit layer. If a high
@@ -315,16 +315,16 @@ platform-architect):
 
 ### Audit emission point and ordering
 
-The audit emitter is a function inside `shared/fault-injection/audit.ts`
+The audit emitter is a function inside `shared/failure-simulation/audit.ts`
 called from `shouldInject()` (see `component-design.md`). Ordering rules:
 
 1. `shouldInject()` evaluates the gate verdict.
 2. If verdict is disabled AND a knob name was carried in the request:
-   emit `fault-injection.rejected`. Return false.
+   emit `failure-simulation.rejected`. Return false.
 3. If verdict is enabled AND knob name is unknown: emit
-   `fault-injection.unknown`. Return false.
+   `failure-simulation.unknown`. Return false.
 4. If verdict is enabled AND knob name is known: emit
-   `fault-injection.fired`. Return true.
+   `failure-simulation.fired`. Return true.
 5. If no knob name was carried: emit nothing. Return false.
 
 Exactly one audit event per `shouldInject()` invocation that carries a
@@ -359,14 +359,14 @@ This is the Earned-Trust contract on the audit emitter.
 ### Positive
 
 - Zero new infrastructure dependencies.
-- One file (`shared/fault-injection/audit.ts`) owns the schema; every
+- One file (`shared/failure-simulation/audit.ts`) owns the schema; every
   callsite is uniform.
 - Schema is portable across log-aggregation tools (Loki / CloudWatch /
   Datadog / Elastic / etc.) by virtue of being plain JSON lines with
   OTel-aligned field names.
-- The `event.name` prefix `fault-injection.*` makes filter queries
+- The `event.name` prefix `failure-simulation.*` makes filter queries
   trivial.
-- On-call has a definitive query: "any `fault-injection.fired` over the
+- On-call has a definitive query: "any `failure-simulation.fired` over the
   incident window where `environment.tier in {staging, production}`?"
   is a one-line filter.
 - Correlation id is carried through the actor/worker boundary by
@@ -397,8 +397,8 @@ None. Q3 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/fault-injection-consolidation/discuss/open-questions.md` — Q3
-- `docs/feature/fault-injection-consolidation/discuss/stories.md` —
+- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q3
+- `docs/feature/failure-simulation-consolidation/discuss/stories.md` —
   US-CONSOL-3
 - OpenTelemetry semantic conventions for events:
   <https://opentelemetry.io/docs/specs/semconv/general/events/>

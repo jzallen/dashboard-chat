@@ -1,6 +1,6 @@
 # Handoff — DESIGN to DISTILL
 
-`fault-injection-consolidation` — DESIGN-wave handoff package. The
+`failure-simulation-consolidation` — DESIGN-wave handoff package. The
 DISTILL wave consumes this document plus the four ADRs
 (`adr-035..038-*.md`), the C4 (`c4-context.md`), and the component
 design (`component-design.md`) to author the BDD acceptance tests and
@@ -10,8 +10,8 @@ the `roadmap.json` for delivery.
 
 | Question | Decision | Artifact |
 |---|---|---|
-| Q1 — gate composition | AND-compose `ENVIRONMENT in {dev,ci}` with `FAULT_INJECTION_ENABLED=true`; deprecate `NWAVE_HARNESS_KNOBS` over one release | ADR-035 |
-| Q2 — module location | Registry: `shared/fault-injection/` (workspace package). Inspection probes: `agent/lib/inspection/` (categorically separate; share the gate). | ADR-036 |
+| Q1 — gate composition | AND-compose `ENVIRONMENT in {dev,ci}` with `FAILURE_SIMULATION_ENABLED=true`; deprecate `NWAVE_HARNESS_KNOBS` over one release | ADR-035 |
+| Q2 — module location | Registry: `shared/failure-simulation/` (workspace package). Inspection probes: `agent/lib/inspection/` (categorically separate; share the gate). | ADR-036 |
 | Q3 — audit sink | Structured stdout (JSON lines), OTel-compatible field shape, no new infrastructure | ADR-037 |
 | Q4 — naming + phase plan | Headers unchanged (`X-Force-*`); events/body field drop `harness_` prefix; three-phase migration with `legacyAlias` as the phase-1→2 bridge | ADR-038 |
 
@@ -22,13 +22,13 @@ The 27 BDD scenarios from `discuss/acceptance-criteria.md` are still
 authoritative; this section enumerates the API surface so DISTILL knows
 which assertions to write against which entry point.
 
-### Entry points exposed by `shared/fault-injection/`
+### Entry points exposed by `shared/failure-simulation/`
 
 | Entry point | Signature (informal) | Tested by scenarios |
 |---|---|---|
-| `probe(env, serviceName)` | startup gate evaluation; emits `fault-injection.gate.{enabled,disabled}` | US-CONSOL-2: scenarios 1, 2, 3, 4, 5, 6, 7 |
-| `shouldInject(name, ctx)` | per-request decision; emits `fault-injection.{fired,rejected}` | US-CONSOL-1: scenarios 1, 2, 4, 5; US-CONSOL-2: 3; US-CONSOL-3: 1, 2, 5 |
-| `detectUnknownSignals(ctx)` | middleware-side typo / drift detection; emits `fault-injection.unknown` | US-CONSOL-1: scenario 3; US-CONSOL-3: 3 |
+| `probe(env, serviceName)` | startup gate evaluation; emits `failure-simulation.gate.{enabled,disabled}` | US-CONSOL-2: scenarios 1, 2, 3, 4, 5, 6, 7 |
+| `shouldInject(name, ctx)` | per-request decision; emits `failure-simulation.{fired,rejected}` | US-CONSOL-1: scenarios 1, 2, 4, 5; US-CONSOL-2: 3; US-CONSOL-3: 1, 2, 5 |
+| `detectUnknownSignals(ctx)` | middleware-side typo / drift detection; emits `failure-simulation.unknown` | US-CONSOL-1: scenario 3; US-CONSOL-3: 3 |
 | `assertKnown(name)` | CI lint helper for the drift check | US-CONSOL-5: scenarios 1, 2, 3 |
 | `manifest` (typed array) | the SSOT data structure | US-CONSOL-1: scenarios 4, 5; US-CONSOL-5: 4 |
 | `KNOB` (typed const accessor) | autocomplete + typo-prevention for callsites | implicit; covered by TS compile checks rather than runtime scenarios |
@@ -43,12 +43,12 @@ which assertions to write against which entry point.
 
 | Event name | Emitted by | Schema reference | Tested by scenarios |
 |---|---|---|---|
-| `fault-injection.fired` | `shouldInject` | ADR-037 event 1 | US-CONSOL-3: 1, 4, 5; cross-story integration: 1 |
-| `fault-injection.rejected` | `shouldInject` | ADR-037 event 2 | US-CONSOL-2: 1, 7; US-CONSOL-3: 2; cross-story: 2 |
-| `fault-injection.unknown` | `detectUnknownSignals` | ADR-037 event 3 | US-CONSOL-1: 2, 3; US-CONSOL-3: 3 |
-| `fault-injection.gate.enabled` | `probe` | ADR-037 event 4 | US-CONSOL-2: 3, 6 |
-| `fault-injection.gate.disabled` | `probe` | ADR-037 event 4 | US-CONSOL-2: 1, 2, 4, 6 |
-| `fault-injection.config.deprecated` | `probe` (when legacy var present) | ADR-037 event 5 | US-CONSOL-4: 6 |
+| `failure-simulation.fired` | `shouldInject` | ADR-037 event 1 | US-CONSOL-3: 1, 4, 5; cross-story integration: 1 |
+| `failure-simulation.rejected` | `shouldInject` | ADR-037 event 2 | US-CONSOL-2: 1, 7; US-CONSOL-3: 2; cross-story: 2 |
+| `failure-simulation.unknown` | `detectUnknownSignals` | ADR-037 event 3 | US-CONSOL-1: 2, 3; US-CONSOL-3: 3 |
+| `failure-simulation.gate.enabled` | `probe` | ADR-037 event 4 | US-CONSOL-2: 3, 6 |
+| `failure-simulation.gate.disabled` | `probe` | ADR-037 event 4 | US-CONSOL-2: 1, 2, 4, 6 |
+| `failure-simulation.config.deprecated` | `probe` (when legacy var present) | ADR-037 event 5 | US-CONSOL-4: 6 |
 
 ## Contract assertions (CI-enforceable rules)
 
@@ -57,7 +57,7 @@ executable tests; DELIVER wires them into CI.
 
 ### CA-1 — Manifest-vs-source drift
 
-> Every fault-injection knob-name pattern appearing in production
+> Every failure-simulation knob-name pattern appearing in production
 > source under `ui-state/` and `agent/` must correspond to a manifest
 > entry (matched by canonical name or `legacyAlias`).
 
@@ -73,7 +73,7 @@ diffs the matches against the manifest. Non-zero diff → CI failure.
 > `ManifestEntrySchema` (Zod). An entry with empty `rationale` or
 > missing `contractTestAlternativeConsidered` crashes the import.
 
-**Test shape:** unit test in `shared/fault-injection/` that asserts a
+**Test shape:** unit test in `shared/failure-simulation/` that asserts a
 known-bad entry (built in the test) is rejected; a known-good entry is
 accepted.
 
@@ -81,15 +81,15 @@ accepted.
 
 ### CA-3 — Composition-root probe invariant
 
-> Every service that imports `shared/fault-injection/` calls `probe()`
+> Every service that imports `shared/failure-simulation/` calls `probe()`
 > exactly once at startup, before any route or actor is bound. The
 > service's stdout for a fresh process contains exactly one
-> `fault-injection.gate.enabled` OR `fault-injection.gate.disabled`
-> event before any other `fault-injection.*` event.
+> `failure-simulation.gate.enabled` OR `failure-simulation.gate.disabled`
+> event before any other `failure-simulation.*` event.
 
 **Test shape:** behavioral test that launches the service in dev mode
 with a captured stdout, asserts the first
-`fault-injection.*` event by timestamp is a gate event, and asserts
+`failure-simulation.*` event by timestamp is a gate event, and asserts
 no gate event appears more than once per process lifetime.
 
 **Maps to:** US-CONSOL-2 scenarios 6, 7.
@@ -146,8 +146,8 @@ hit each `/debug/*` path; assert 404 for each.
 ### CA-8 — Legacy variable honors via deprecation warning
 
 > When only `NWAVE_HARNESS_KNOBS=true` is present (legacy) and
-> `FAULT_INJECTION_ENABLED` is unset, `probe()` honors the legacy
-> value AND emits `fault-injection.config.deprecated` once at
+> `FAILURE_SIMULATION_ENABLED` is unset, `probe()` honors the legacy
+> value AND emits `failure-simulation.config.deprecated` once at
 > startup.
 
 **Test shape:** start a service with the legacy var only; capture
@@ -160,7 +160,7 @@ deprecation event are present.
 
 > With `ENVIRONMENT=production`, the verdict is `disabled` regardless
 > of whether `NWAVE_HARNESS_KNOBS` is `true`, `false`, or unset; and
-> regardless of `FAULT_INJECTION_ENABLED`.
+> regardless of `FAILURE_SIMULATION_ENABLED`.
 
 **Test shape:** matrix test over the three legacy values × two primary
 values, all under `ENVIRONMENT=production`; assert verdict is
@@ -177,7 +177,7 @@ code through pre-existing user-facing behavior**.
 
 ### Group A — Directly exercise the registry's API (new tests, DISTILL writes from scratch)
 
-These scenarios test the `shared/fault-injection/` package, the
+These scenarios test the `shared/failure-simulation/` package, the
 audit emitter, the gate's `probe()`, or the inspection-probe
 conditional-registration logic. They are net-new tests; nothing in
 the existing acceptance suite covers them today.
@@ -224,13 +224,13 @@ For each story, where the tests live:
 
 | Story | Suite location | Test runner |
 |---|---|---|
-| US-CONSOL-1 (registry + manifest) | `tests/acceptance/fault-injection-consolidation/` (new suite per CLAUDE.md per-feature pattern) | `cd tests/acceptance/fault-injection-consolidation && uv run --no-project pytest` |
-| US-CONSOL-2 (gate) | same suite + `tests/acceptance/fault-injection-consolidation/test_gate_*.py` | same |
-| US-CONSOL-3 (audit) | same suite + `tests/acceptance/fault-injection-consolidation/test_audit_*.py` | same |
+| US-CONSOL-1 (registry + manifest) | `tests/acceptance/failure-simulation-consolidation/` (new suite per CLAUDE.md per-feature pattern) | `cd tests/acceptance/failure-simulation-consolidation && uv run --no-project pytest` |
+| US-CONSOL-2 (gate) | same suite + `tests/acceptance/failure-simulation-consolidation/test_gate_*.py` | same |
+| US-CONSOL-3 (audit) | same suite + `tests/acceptance/failure-simulation-consolidation/test_audit_*.py` | same |
 | US-CONSOL-4 (migration) | existing `tests/acceptance/project-and-chat-session-management/` (the safety net) — no new tests, only assertions that pre-existing tests still pass through the migration | `cd tests/acceptance/project-and-chat-session-management && uv run --no-project pytest` |
 | US-CONSOL-5 (sprawl) | same as US-CONSOL-1 suite | same |
 | Cross-story 1 (all knobs functional) | existing `project-and-chat-session-management` suite | same |
-| Cross-story 2 (hostile-env) | new `tests/acceptance/fault-injection-consolidation/test_hostile_environment.py` | same |
+| Cross-story 2 (hostile-env) | new `tests/acceptance/failure-simulation-consolidation/test_hostile_environment.py` | same |
 
 The new suite directory follows the existing per-feature pattern (each
 has its own `pyproject.toml` + venv). DISTILL bootstraps the suite.
@@ -259,7 +259,7 @@ has its own `pyproject.toml` + venv). DISTILL bootstraps the suite.
    correlation id explicitly via the actor's `input` parameter.
 
 5. **Deprecation event is observable.** CA-8 says the
-   `fault-injection.config.deprecated` event is emitted on the same
+   `failure-simulation.config.deprecated` event is emitted on the same
    startup as the gate event. DISTILL writes a test that captures
    startup stdout and asserts both events appear (order: gate event
    first, then deprecation, or vice versa — the design does not
@@ -299,7 +299,7 @@ Per the wave map in CLAUDE.md, DISTILL writes:
 
 1. **BDD acceptance tests** for the 27 (or 29, see classification
    above) scenarios. Group A scenarios go in the new
-   `tests/acceptance/fault-injection-consolidation/` suite. Group B
+   `tests/acceptance/failure-simulation-consolidation/` suite. Group B
    scenarios add assertions to existing suite scenarios.
 2. **A `roadmap.json`** at the feature directory describing the
    delivery sequence and mapping each story to its commits.
@@ -309,7 +309,7 @@ Per the wave map in CLAUDE.md, DISTILL writes:
 ## Open issues / known unknowns
 
 1. **`removal.target_release` semver value in
-   `fault-injection.config.deprecated`.** The DESIGN ADRs (037, 038)
+   `failure-simulation.config.deprecated`.** The DESIGN ADRs (037, 038)
    commit to the field's presence and intent but not to a specific
    semver string. DISTILL's test should match a semver-shape regex,
    not an exact value, until DELIVER picks the string.
@@ -335,7 +335,7 @@ DISTILL declares ready to begin when:
 - [ ] Has read `c4-context.md` and `component-design.md`.
 - [ ] Has classified the 27 (or 29) scenarios into Group A / B / C per
   the section above.
-- [ ] Has scaffolded `tests/acceptance/fault-injection-consolidation/`
+- [ ] Has scaffolded `tests/acceptance/failure-simulation-consolidation/`
   with its `pyproject.toml` per the CLAUDE.md pattern.
 - [ ] Has confirmed the existing `project-and-chat-session-management/`
   suite is green at HEAD before adding any new assertions.
@@ -344,10 +344,10 @@ If any of the above fails, DISTILL returns to DESIGN for clarification.
 
 ## References
 
-- ADR-035: gate composition (`adr-035-fault-injection-gate-composition.md`)
-- ADR-036: module location (`adr-036-fault-injection-module-location.md`)
-- ADR-037: audit sink (`adr-037-fault-injection-audit-sink.md`)
-- ADR-038: naming + phase plan (`adr-038-fault-injection-naming-phase-plan.md`)
+- ADR-035: gate composition (`adr-035-failure-simulation-gate-composition.md`)
+- ADR-036: module location (`adr-036-failure-simulation-module-location.md`)
+- ADR-037: audit sink (`adr-037-failure-simulation-audit-sink.md`)
+- ADR-038: naming + phase plan (`adr-038-failure-simulation-naming-phase-plan.md`)
 - C4 view: `c4-context.md`
 - Component design: `component-design.md`
 - DISCUSS handoff: `../discuss/definition-of-ready.md`

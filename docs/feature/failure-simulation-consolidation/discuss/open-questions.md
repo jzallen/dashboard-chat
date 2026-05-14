@@ -8,10 +8,10 @@ These questions correspond to addenda A1-A4 in `definition-of-ready.md`.
 
 This revision pass retired "harness" as a category descriptor and removed "nwave" from product-name positions. Throughout this document:
 
-- The category is **fault injection**.
-- The module is the **fault-injection registry**.
+- The category is **failure simulation**.
+- The module is the **failure-simulation registry**.
 - The legacy env var `NWAVE_HARNESS_KNOBS` is being deprecated in US-CONSOL-4 (read with warning, behavior preserved for one release).
-- The `/debug/*` endpoints are **inspection probes**, not fault injection — same gate, different category.
+- The `/debug/*` endpoints are **inspection probes**, not failure simulation — same gate, different category.
 
 ---
 
@@ -27,7 +27,7 @@ Today, `NWAVE_HARNESS_KNOBS=true` is the single boolean gate. US-CONSOL-2 introd
 
 #### Q1.a — `ENVIRONMENT` subsumes the flag (single-source)
 
-Behavior: no companion flag survives. The fault-injection registry reads only `ENVIRONMENT` and honors knobs when value is `dev` or `ci`. The compose dev overlay sets `ENVIRONMENT=dev`. `NWAVE_HARNESS_KNOBS` is read for one release with deprecation warning, then removed.
+Behavior: no companion flag survives. The failure-simulation registry reads only `ENVIRONMENT` and honors knobs when value is `dev` or `ci`. The compose dev overlay sets `ENVIRONMENT=dev`. `NWAVE_HARNESS_KNOBS` is read for one release with deprecation warning, then removed.
 
 **Tradeoffs**:
 
@@ -44,18 +44,18 @@ Behavior: knobs fire only when `ENVIRONMENT in {dev, ci}` **AND** the defense-in
 
 | Candidate | Pros | Cons | DISCUSS verdict |
 |---|---|---|---|
-| `FAULT_INJECTION_ENABLED` | Self-documenting; aligns with module/registry naming; industry-standard term; long-but-clear | Verbose (24 chars) | **RECOMMENDED** |
-| `INJECT_FAULTS` | Short, imperative, aligns with chaos-eng convention | "inject" alone is less clear than "fault injection"; could be confused with dependency injection in a TS codebase | runner-up |
-| `FAULT_INJECTION` | Even shorter, same vocabulary | Lacks the `_ENABLED` boolean semantic | runner-up |
+| `FAILURE_SIMULATION_ENABLED` | Self-documenting; aligns with module/registry naming; industry-standard term; long-but-clear | Verbose (24 chars) | **RECOMMENDED** |
+| `INJECT_FAULTS` | Short, imperative, aligns with chaos-eng convention | "inject" alone is less clear than "failure simulation"; could be confused with dependency injection in a TS codebase | runner-up |
+| `FAILURE_SIMULATION` | Even shorter, same vocabulary | Lacks the `_ENABLED` boolean semantic | runner-up |
 | `TEST_KNOBS_ENABLED` | Matches existing "knob" colloquialism | "test" is overloaded; the knobs are not the tests themselves | rejected — collides with general test infrastructure |
 | `DEV_KNOBS_ENABLED` | "dev" hints at the right environment | Redundant with `ENVIRONMENT=dev`; might mislead operators into setting it in non-dev tiers | rejected |
 
-DISCUSS recommends `FAULT_INJECTION_ENABLED` — it pairs with the module naming (`shared/fault-injection/`), the audit log namespace (`fault-injection.fired`), and the manifest filename (`fault-injection.manifest.ts`). Consistency across all surfaces.
+DISCUSS recommends `FAILURE_SIMULATION_ENABLED` — it pairs with the module naming (`shared/failure-simulation/`), the audit log namespace (`failure-simulation.fired`), and the manifest filename (`failure-simulation.manifest.ts`). Consistency across all surfaces.
 
 **Tradeoffs of Q1.b**:
 
 - True defense-in-depth: an attacker (or accidental config) needs two simultaneous misconfigurations.
-- Migration is additive — existing `NWAVE_HARNESS_KNOBS=true` is read for one release with deprecation warning, then replaced by `FAULT_INJECTION_ENABLED=true`.
+- Migration is additive — existing `NWAVE_HARNESS_KNOBS=true` is read for one release with deprecation warning, then replaced by `FAILURE_SIMULATION_ENABLED=true`.
 - Interaction matrix is 4x2 = 8 cases to reason about (and document).
 - Devon must set two env vars locally; one is more error-prone. (Mitigation: the dev compose overlay sets both by default.)
 
@@ -69,7 +69,7 @@ Behavior: `ENVIRONMENT` is the master gate. In `dev` and `ci`, knobs are *availa
 - Adds complexity for marginal benefit; nobody asked for this.
 - Multiplies the configuration surface that operators must understand.
 
-### DISCUSS recommendation: Q1.b with `FAULT_INJECTION_ENABLED` as the defense-in-depth flag
+### DISCUSS recommendation: Q1.b with `FAILURE_SIMULATION_ENABLED` as the defense-in-depth flag
 
 Rationale: the user's original prompt explicitly framed concern #2 as "Defense-in-depth is missing: the only gate is a single env var." Q1.b adds the second gate as the prompt requests. The 4x2 interaction matrix is documentable in the ADR; the safety gain is worth the documentation cost. Q1.a is cleaner but doesn't address the explicit concern.
 
@@ -81,17 +81,17 @@ Rationale: the user's original prompt explicitly framed concern #2 as "Defense-i
 
 ### Context
 
-The fault-injection registry is the central abstraction owning the manifest, the gate, and the audit emission. The 6 knobs live in two services today (`ui-state/` for 5 of them, `agent/` for the debug/inspection endpoints). The registry's home determines whether the two services share code, share a schema, or duplicate logic.
+The failure-simulation registry is the central abstraction owning the manifest, the gate, and the audit emission. The 6 knobs live in two services today (`ui-state/` for 5 of them, `agent/` for the debug/inspection endpoints). The registry's home determines whether the two services share code, share a schema, or duplicate logic.
 
 ADR-033 says source-tree directories are named for the body of source they contain. The registry is *not* "tests" — it ships in production builds and is gated off there. Test directories are explicitly the wrong home.
 
-**Additional question (new in this revision)**: the `/debug/*` endpoints are *inspection probes*, not fault injection. They share the ENVIRONMENT gate but are a different category. Where do they live?
+**Additional question (new in this revision)**: the `/debug/*` endpoints are *inspection probes*, not failure simulation. They share the ENVIRONMENT gate but are a different category. Where do they live?
 
 ### Candidates
 
-#### Q2.a — `ui-state/lib/fault-injection/` (single home, ui-state owns it)
+#### Q2.a — `ui-state/lib/failure-simulation/` (single home, ui-state owns it)
 
-Behavior: the registry lives in `ui-state/lib/fault-injection/`. The agent service imports it via a shared package or relative path. The audit emission for agent-side knobs travels through ui-state. Inspection probes stay in `agent/lib/inspection/` (separate category, separate location, shared gate.)
+Behavior: the registry lives in `ui-state/lib/failure-simulation/`. The agent service imports it via a shared package or relative path. The audit emission for agent-side knobs travels through ui-state. Inspection probes stay in `agent/lib/inspection/` (separate category, separate location, shared gate.)
 
 **Tradeoffs**:
 
@@ -99,9 +99,9 @@ Behavior: the registry lives in `ui-state/lib/fault-injection/`. The agent servi
 - Cross-service import is awkward — agent doesn't otherwise depend on ui-state.
 - Violates "source tree named for body of source it contains" if it's logically shared between services.
 
-#### Q2.b — `shared/fault-injection/` (cross-cutting shared package) — DISCUSS RECOMMENDED
+#### Q2.b — `shared/failure-simulation/` (cross-cutting shared package) — DISCUSS RECOMMENDED
 
-Behavior: the registry lives in `shared/fault-injection/` alongside the existing `shared/chat/` package. Both `ui-state/` and `agent/` import from it as a workspace dependency. Inspection probes live in `agent/lib/inspection/` and import the gate logic from `shared/fault-injection/gate.ts` (gate-sharing, no category-mixing).
+Behavior: the registry lives in `shared/failure-simulation/` alongside the existing `shared/chat/` package. Both `ui-state/` and `agent/` import from it as a workspace dependency. Inspection probes live in `agent/lib/inspection/` and import the gate logic from `shared/failure-simulation/gate.ts` (gate-sharing, no category-mixing).
 
 **Tradeoffs**:
 
@@ -113,7 +113,7 @@ Behavior: the registry lives in `shared/fault-injection/` alongside the existing
 
 #### Q2.c — Per-service modules with shared schema only
 
-Behavior: each service has its own `lib/fault-injection/` implementing the gate locally; only the manifest schema (a TypeScript type, JSON schema, or YAML) lives in `shared/`.
+Behavior: each service has its own `lib/failure-simulation/` implementing the gate locally; only the manifest schema (a TypeScript type, JSON schema, or YAML) lives in `shared/`.
 
 **Tradeoffs**:
 
@@ -121,22 +121,22 @@ Behavior: each service has its own `lib/fault-injection/` implementing the gate 
 - Duplicates the gate logic and the audit emission.
 - Drift risk: ui-state and agent could implement the gate inconsistently.
 
-### DISCUSS recommendation: Q2.b (`shared/fault-injection/`)
+### DISCUSS recommendation: Q2.b (`shared/failure-simulation/`)
 
-Rationale: a precedent already exists (`shared/chat/` per CLAUDE.md, "Single source of truth for the chat event schema"). The fault-injection registry is exactly that pattern — single source of truth for cross-service test-mode behavior. Q2.a violates ADR-033's spirit (the registry is not logically owned by ui-state, just historically located there). Q2.c invites the drift problem the consolidation is meant to solve.
+Rationale: a precedent already exists (`shared/chat/` per CLAUDE.md, "Single source of truth for the chat event schema"). The failure-simulation registry is exactly that pattern — single source of truth for cross-service test-mode behavior. Q2.a violates ADR-033's spirit (the registry is not logically owned by ui-state, just historically located there). Q2.c invites the drift problem the consolidation is meant to solve.
 
 ### Category boundary recommendation
 
-The fault-injection registry and the inspection probes share the ENVIRONMENT gate, but they are categorically distinct:
+The failure-simulation registry and the inspection probes share the ENVIRONMENT gate, but they are categorically distinct:
 
 | Category | Purpose | Module home | What's in the manifest? | Audit log? |
 |---|---|---|---|---|
-| Fault injection (write-side) | Force deterministic failures | `shared/fault-injection/` | Yes — 6 knobs | Yes — `fault-injection.*` |
+| Failure simulation (write-side) | Force deterministic failures | `shared/failure-simulation/` | Yes — 6 knobs | Yes — `failure-simulation.*` |
 | Inspection probes (read-side) | Observe internal state | `agent/lib/inspection/` | No — not knobs | No — request log already covers it |
 
-Both consume the gate from `shared/fault-injection/gate.ts`. Inspection probes register their Hono routes conditionally based on the same `ENVIRONMENT` check. The boundary is: anything that *forces* behavior is fault injection (manifest-registered); anything that only *reads* state is an inspection probe (not manifest-registered).
+Both consume the gate from `shared/failure-simulation/gate.ts`. Inspection probes register their Hono routes conditionally based on the same `ENVIRONMENT` check. The boundary is: anything that *forces* behavior is failure simulation (manifest-registered); anything that only *reads* state is an inspection probe (not manifest-registered).
 
-DESIGN may choose to override this boundary — for example, co-locating inspection probes inside `shared/fault-injection/` for simplicity. The cost is muddier category vocabulary; the gain is one fewer module. DISCUSS leans toward keeping them separate for vocabulary clarity, but flags it as a DESIGN call.
+DESIGN may choose to override this boundary — for example, co-locating inspection probes inside `shared/failure-simulation/` for simplicity. The cost is muddier category vocabulary; the gain is one fewer module. DISCUSS leans toward keeping them separate for vocabulary clarity, but flags it as a DESIGN call.
 
 ---
 
@@ -146,7 +146,7 @@ DESIGN may choose to override this boundary — for example, co-locating inspect
 
 US-CONSOL-3 specifies that every knob invocation emits a structured audit entry. The sink — where those entries are written — is a separate concern. Three candidates with different tradeoffs.
 
-**Naming update (new in this revision)**: audit log event names are `fault-injection.fired`, `fault-injection.rejected`, `fault-injection.unknown` (formerly `harness.knob.*`). The startup gate-verdict log is `fault-injection.gate.enabled` / `.disabled` (formerly `harness.gate.*`).
+**Naming update (new in this revision)**: audit log event names are `failure-simulation.fired`, `failure-simulation.rejected`, `failure-simulation.unknown` (formerly `harness.knob.*`). The startup gate-verdict log is `failure-simulation.gate.enabled` / `.disabled` (formerly `harness.gate.*`).
 
 ### Candidates
 
@@ -160,11 +160,11 @@ Behavior: the registry calls `console.log(JSON.stringify({...}))` on each invoca
 - Works in every environment (dev, ci, staging, production — though staging/prod only emit `rejected` entries).
 - Already the dominant logging pattern in the codebase.
 - Querying requires log-aggregation tooling that may not exist for local dev.
-- Mixed with general request logs — needs structured fields (event name prefix `fault-injection.`) to filter.
+- Mixed with general request logs — needs structured fields (event name prefix `failure-simulation.`) to filter.
 
 #### Q3.b — Dedicated Redis stream
 
-Behavior: the registry pushes entries into a Redis stream (e.g. `ui-state:fault-injection:audit`). The stream is read-only for operators; it has a TTL.
+Behavior: the registry pushes entries into a Redis stream (e.g. `ui-state:failure-simulation:audit`). The stream is read-only for operators; it has a TTL.
 
 **Tradeoffs**:
 
@@ -186,7 +186,7 @@ Behavior: each knob invocation is emitted as an OTel span event (or a child span
 
 ### DISCUSS recommendation: Q3.a (structured stdout)
 
-Rationale: zero new infrastructure, works everywhere, matches existing patterns. The use case is debugging acceptance scenarios and answering "did this knob fire in staging?" — both questions are well-served by structured JSON in container logs. The `fault-injection.*` event-name prefix makes filtering trivial. Q3.b and Q3.c are over-engineered for the present need; either could be a future evolution if the team adopts a richer observability story.
+Rationale: zero new infrastructure, works everywhere, matches existing patterns. The use case is debugging acceptance scenarios and answering "did this knob fire in staging?" — both questions are well-served by structured JSON in container logs. The `failure-simulation.*` event-name prefix makes filtering trivial. Q3.b and Q3.c are over-engineered for the present need; either could be a future evolution if the team adopts a richer observability story.
 
 ---
 
@@ -268,9 +268,9 @@ Devon writes the canonical name in the manifest; the registry knows how to rende
 
 Rejected: verbose-redundant. "Force" already implies a deliberate test-only override; "inject" adds a syllable without adding clarity.
 
-#### Q4.alt-2 — Rename headers to `X-Fault-Injection-*`
+#### Q4.alt-2 — Rename headers to `X-Failure-Simulation-*`
 
-Rejected: the category prefix matches the registry name (`shared/fault-injection/`), which is internally consistent, but the wire-cost is high (every acceptance fixture changes) and the gain is small. If DESIGN concludes the category-prefix consistency is worth the wire-cost, this is a viable alternative — but DISCUSS leans toward keeping `X-Force-*` because the cost/benefit favors stability.
+Rejected: the category prefix matches the registry name (`shared/failure-simulation/`), which is internally consistent, but the wire-cost is high (every acceptance fixture changes) and the gain is small. If DESIGN concludes the category-prefix consistency is worth the wire-cost, this is a viable alternative — but DISCUSS leans toward keeping `X-Force-*` because the cost/benefit favors stability.
 
 #### Q4.alt-3 — Keep events/body fields prefixed (`__harness_*`, `harness_*`)
 
@@ -291,9 +291,9 @@ Migration: US-CONSOL-4 phase 2 lands the event and body-field renames atomically
 
 | # | Question | DISCUSS recommendation | DESIGN owns final decision |
 |---|---|---|---|
-| Q1 | Defense-in-depth flag + name | Q1.b with `FAULT_INJECTION_ENABLED` | yes |
-| Q2 | Module location + category boundary | Q2.b (`shared/fault-injection/`); inspection probes stay in `agent/lib/inspection/` | yes |
-| Q3 | Audit log sink | Q3.a (structured stdout) with `fault-injection.*` event-name prefix | yes |
+| Q1 | Defense-in-depth flag + name | Q1.b with `FAILURE_SIMULATION_ENABLED` | yes |
+| Q2 | Module location + category boundary | Q2.b (`shared/failure-simulation/`); inspection probes stay in `agent/lib/inspection/` | yes |
+| Q3 | Audit log sink | Q3.a (structured stdout) with `failure-simulation.*` event-name prefix | yes |
 | Q4 | Naming scheme | Headers unchanged (`X-Force-*`); events/body fields drop `harness_` prefix | yes |
 
 All four recommendations compose: Q1.b + Q2.b + Q3.a + Q4 (as recommended) is a coherent design. DESIGN may adopt all four, override any, or propose alternatives. The DISCUSS-wave deliverable does not block on these decisions — it surfaces them.
@@ -302,14 +302,14 @@ All four recommendations compose: Q1.b + Q2.b + Q3.a + Q4 (as recommended) is a 
 
 These are decisions DISCUSS made under the user's instruction "make the reasonable call and continue" — they should be reviewed by DESIGN and either ratified into ADRs or overridden:
 
-1. **Module category**: "fault injection" (not "harness", not "test infrastructure", not "knobs subsystem")
-2. **Module home (recommended)**: `shared/fault-injection/`
-3. **Manifest filename**: `fault-injection.manifest.ts`
-4. **Audit log event-name prefix**: `fault-injection.*` (e.g. `fault-injection.fired`)
-5. **Gate startup log event names**: `fault-injection.gate.enabled` / `fault-injection.gate.disabled`
-6. **Defense-in-depth flag name (if DESIGN picks Q1.b)**: `FAULT_INJECTION_ENABLED`
+1. **Module category**: "failure simulation" (not "harness", not "test infrastructure", not "knobs subsystem")
+2. **Module home (recommended)**: `shared/failure-simulation/`
+3. **Manifest filename**: `failure-simulation.manifest.ts`
+4. **Audit log event-name prefix**: `failure-simulation.*` (e.g. `failure-simulation.fired`)
+5. **Gate startup log event names**: `failure-simulation.gate.enabled` / `failure-simulation.gate.disabled`
+6. **Defense-in-depth flag name (if DESIGN picks Q1.b)**: `FAILURE_SIMULATION_ENABLED`
 7. **HTTP header convention**: unchanged from today — keep `X-Force-*`
 8. **XState event renames**: drop `__harness_` prefix → verb-only (`__force_failure__`, `__expire_token__`)
 9. **Body field rename**: drop `harness_` prefix → `force_reissue_failures`
-10. **`/debug/*` endpoint category**: "inspection probes" — distinct from fault injection, shared ENVIRONMENT gate
+10. **`/debug/*` endpoint category**: "inspection probes" — distinct from failure simulation, shared ENVIRONMENT gate
 11. **`NWAVE_HARNESS_KNOBS`**: deprecated in US-CONSOL-4 phase 2 (read with warning; behavior preserved one release; then removed)

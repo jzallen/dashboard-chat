@@ -1,14 +1,14 @@
-# ADR-036: Fault-Injection Module Location and Category Boundary
+# ADR-036: Failure-Simulation Module Location and Category Boundary
 
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
-**Originating wave:** DESIGN — `fault-injection-consolidation`
-**Resolves:** `docs/feature/fault-injection-consolidation/discuss/open-questions.md` Q2
+**Originating wave:** DESIGN — `failure-simulation-consolidation`
+**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q2
 **Companion ADRs:** ADR-035 (gate composition), ADR-037 (audit sink), ADR-038 (naming + phase plan)
 
 ## Context
 
-The fault-injection registry owns the manifest, the gate, and the audit
+The failure-simulation registry owns the manifest, the gate, and the audit
 emission. Today's 6 knobs and 3 inspection probes live in two services:
 
 | Surface | Location today |
@@ -27,11 +27,11 @@ ADR-033 commits the project to source-tree directory names that describe
 **the body of source they contain**. ADR-028 commits to the constraint
 that no machine imports another machine — anything cross-machine is a
 service that machines depend on. The DISCUSS recommendation in
-`open-questions.md` Q2 is `shared/fault-injection/` (precedent:
+`open-questions.md` Q2 is `shared/failure-simulation/` (precedent:
 `shared/chat/` per CLAUDE.md, already a workspace package).
 
 The category-boundary question is separate: the `/debug/*` endpoints are
-**inspection probes** (read-only observation), not fault injection
+**inspection probes** (read-only observation), not failure simulation
 (write-side state forcing). They share the ENVIRONMENT gate but they are
 different shapes of solution. The choice is whether to co-locate them or
 keep them separate.
@@ -39,7 +39,7 @@ keep them separate.
 ## Decision drivers
 
 - **ADR-033 source-tree honesty.** A directory's name describes its
-  content. `shared/fault-injection/` contains the fault-injection registry
+  content. `shared/failure-simulation/` contains the failure-simulation registry
   source. `agent/lib/inspection/` contains the inspection probe source.
   Each name is accurate for the body of code it holds.
 - **ADR-028 machine isolation.** Machines call into a service; they do not
@@ -48,10 +48,10 @@ keep them separate.
   on the other.
 - **Existing precedent: `shared/chat/`.** CLAUDE.md establishes
   `shared/chat/` as "single source of truth for the chat event schema;
-  imported by both `agent/` and `frontend/`." The fault-injection registry
+  imported by both `agent/` and `frontend/`." The failure-simulation registry
   is the same pattern: single source of truth for cross-service test-mode
   behavior, imported by both `ui-state/` and `agent/`.
-- **Category vocabulary clarity.** "Fault injection" and "inspection probe"
+- **Category vocabulary clarity.** "Failure simulation" and "inspection probe"
   are different categories with different semantics. Co-locating them in
   one module muddies the vocabulary the DISCUSS pass worked to clarify.
   Separate modules with a shared gate dependency keeps the vocabulary
@@ -62,7 +62,7 @@ keep them separate.
 
 ## Considered options
 
-### Option A — `ui-state/lib/fault-injection/` (ui-state owns it)
+### Option A — `ui-state/lib/failure-simulation/` (ui-state owns it)
 
 The registry lives inside ui-state. Agent imports it via relative path or
 a workspace dependency. Inspection probes stay in `agent/lib/inspection/`.
@@ -77,12 +77,12 @@ a workspace dependency. Inspection probes stay in `agent/lib/inspection/`.
   callsites' contracts to verify them.
 - Rejected.
 
-### Option B — `shared/fault-injection/` (shared workspace package), `agent/lib/inspection/` (inspection probes separate) — SELECTED
+### Option B — `shared/failure-simulation/` (shared workspace package), `agent/lib/inspection/` (inspection probes separate) — SELECTED
 
-The registry lives in `shared/fault-injection/` as a workspace package
+The registry lives in `shared/failure-simulation/` as a workspace package
 alongside `shared/chat/`. Both `ui-state/` and `agent/` depend on it.
 Inspection probes live in `agent/lib/inspection/` and import only the
-gate decision from `shared/fault-injection/`.
+gate decision from `shared/failure-simulation/`.
 
 **Trade-offs:**
 
@@ -90,9 +90,9 @@ gate decision from `shared/fault-injection/`.
 - (+) Single source of truth: one manifest, one gate, one audit emitter,
   shared by all consumers.
 - (+) ADR-033 source-tree honesty: each directory's name describes its
-  content — the registry is `shared/fault-injection/`; the probes are
+  content — the registry is `shared/failure-simulation/`; the probes are
   `agent/lib/inspection/`.
-- (+) Category vocabulary preserved: "fault-injection registry" and
+- (+) Category vocabulary preserved: "failure-simulation registry" and
   "inspection probes" stay nameable and findable.
 - (+) Workspace dependency wiring is trivial — the npm workspace already
   consumes `@dashboard-chat/shared-chat`.
@@ -101,9 +101,9 @@ gate decision from `shared/fault-injection/`.
 - (−) Inspection probes share the gate dependency but not the module home.
   Devon must understand the boundary; documented in this ADR.
 
-### Option C — per-service `lib/fault-injection/` modules with only the manifest schema shared
+### Option C — per-service `lib/failure-simulation/` modules with only the manifest schema shared
 
-Each service has its own `lib/fault-injection/`. Only the manifest schema
+Each service has its own `lib/failure-simulation/`. Only the manifest schema
 (TypeScript type or JSON schema) is shared.
 
 **Trade-offs:**
@@ -117,15 +117,15 @@ Each service has its own `lib/fault-injection/`. Only the manifest schema
 - Rejected: drift risk is exactly the problem the consolidation exists to
   solve.
 
-### Option D — co-locate inspection probes inside `shared/fault-injection/`
+### Option D — co-locate inspection probes inside `shared/failure-simulation/`
 
-The registry plus the probes both live in `shared/fault-injection/`.
+The registry plus the probes both live in `shared/failure-simulation/`.
 
 **Trade-offs:**
 
 - (+) One module home for all gated test-mode behavior.
 - (−) Conflates two categories the DISCUSS vocabulary deliberately
-  separates: fault injection (write-side, manifest-registered, audit-logged)
+  separates: failure simulation (write-side, manifest-registered, audit-logged)
   vs inspection probes (read-side, route-registered, no manifest entry).
 - (−) The probes need access to agent-internal state (`requestLog`,
   `last-request-scope`). Moving the probes to `shared/` means moving the
@@ -135,15 +135,15 @@ The registry plus the probes both live in `shared/fault-injection/`.
 
 ## Decision outcome
 
-**Option B — `shared/fault-injection/` for the registry; `agent/lib/inspection/`
+**Option B — `shared/failure-simulation/` for the registry; `agent/lib/inspection/`
 for the inspection probes; both depend on the gate from
-`shared/fault-injection/gate`.**
+`shared/failure-simulation/gate`.**
 
 ### Module layout (specification — files listed, contents are DELIVER's job)
 
 ```
-shared/fault-injection/
-  package.json              # @dashboard-chat/shared-fault-injection
+shared/failure-simulation/
+  package.json              # @dashboard-chat/shared-failure-simulation
   tsconfig.json
   BUILD.bazel               # mirrors shared/chat/BUILD.bazel
   index.ts                  # public API surface (re-exports)
@@ -161,7 +161,7 @@ agent/lib/inspection/
   routes.ts                 # GET /debug/last-request-scope etc.
   README.md                 # explains the category boundary
 
-ui-state/lib/                # no new directory — machines import shared/fault-injection
+ui-state/lib/                # no new directory — machines import shared/failure-simulation
   machines/login-and-org-setup.ts   # imports shouldInject from shared package
   machines/project-context.ts       # imports shouldInject from shared package
   machines/session-chat.ts          # imports shouldInject from shared package
@@ -171,7 +171,7 @@ agent/
   index.ts                  # composition root: gate.probe() at startup; conditional inspection-routes
 ```
 
-### Public API of `shared/fault-injection/` (surface only — signatures, not bodies)
+### Public API of `shared/failure-simulation/` (surface only — signatures, not bodies)
 
 The DELIVER wave implements these signatures; this ADR fixes the surface:
 
@@ -182,7 +182,7 @@ The DELIVER wave implements these signatures; this ADR fixes the surface:
   the single decision point every callsite calls. Implements
   manifest-lookup + gate-check + audit-emit + verdict.
 - `manifest: ReadonlyArray<KnobManifestEntry>` — typed, frozen at module
-  load time. The `fault-injection.manifest.ts` filename in the DISCUSS
+  load time. The `failure-simulation.manifest.ts` filename in the DISCUSS
   artifacts is the user-facing alias; the actual export is `manifest`.
 - `assertKnown(knobName): void` — used by CI lint to validate that a name
   referenced in source has a manifest entry (US-CONSOL-5).
@@ -194,24 +194,24 @@ specified in `component-design.md`.
 
 | Category | Module | Manifest entry? | Audit log? | What it does |
 |---|---|---|---|---|
-| **Fault injection** (write-side) | `shared/fault-injection/` | Yes — 6 knobs | Yes — `fault-injection.*` | Forces a deterministic failure at a port boundary in response to a header/event/body-field |
+| **Failure simulation** (write-side) | `shared/failure-simulation/` | Yes — 6 knobs | Yes — `failure-simulation.*` | Forces a deterministic failure at a port boundary in response to a header/event/body-field |
 | **Inspection probes** (read-side) | `agent/lib/inspection/` | No | No (covered by the existing request log) | Exposes read-only observability endpoints under `/debug/*` |
 
-Both consume `probe()` and `gate.verdict` from `shared/fault-injection/`.
+Both consume `probe()` and `gate.verdict` from `shared/failure-simulation/`.
 Inspection probes register their Hono routes conditionally based on the
 verdict — when `disabled`, no `/debug/*` route is registered (returns 404,
 not 403, per US-CONSOL-2 AC).
 
 The boundary rule:
 
-> Anything that *forces* a port-boundary failure is fault injection
+> Anything that *forces* a port-boundary failure is failure simulation
 > (manifest-registered, audit-logged). Anything that only *reads* state
 > is an inspection probe (route-registered, gate-shared, no manifest).
 
 ### Cross-service import topology (after the migration)
 
 ```
-shared/fault-injection/  ◄──── ui-state/ (all machines + orchestrator + index.ts)
+shared/failure-simulation/  ◄──── ui-state/ (all machines + orchestrator + index.ts)
         ▲
         │
         └──── agent/index.ts (registry calls)
@@ -221,7 +221,7 @@ shared/fault-injection/  ◄──── ui-state/ (all machines + orchestrator 
 
 No source-tree directory depends on another peer source-tree directory
 (`agent` does not import from `ui-state`; `ui-state` does not import from
-`agent`). Both depend on `shared/fault-injection/`. This is exactly the
+`agent`). Both depend on `shared/failure-simulation/`. This is exactly the
 shape of the existing `shared/chat/` dependency in CLAUDE.md.
 
 ### ADR-028 compliance check
@@ -246,7 +246,7 @@ Per principle 12, the module-location decision itself has an empirical
 verification:
 
 1. **Composition-root invariant (`wire then probe then use`):** every
-   service whose source imports `shared/fault-injection/` must call
+   service whose source imports `shared/failure-simulation/` must call
    `probe()` exactly once at startup, before any route is registered or
    any actor is spawned. The audit log entry from `probe()` is the
    "I am wired" announcement.
@@ -274,9 +274,9 @@ fixture.
 
 - Source-tree honesty (ADR-033): each directory's name describes its
   content.
-- Single source of truth for the fault-injection surface across services
+- Single source of truth for the failure-simulation surface across services
   — exactly the consolidation goal.
-- Category vocabulary preserved: "fault injection" and "inspection
+- Category vocabulary preserved: "failure simulation" and "inspection
   probes" stay nameable and findable.
 - Conway-Law fit: no phantom ownership; the agent service keeps its
   read-only probes; the shared package owns the gate.
@@ -286,10 +286,10 @@ fixture.
 
 ### Negative / accepted trade-offs
 
-- One additional workspace package (`@dashboard-chat/shared-fault-injection`)
+- One additional workspace package (`@dashboard-chat/shared-failure-simulation`)
   to maintain. Wiring overhead is bounded — `shared/chat/` is the existing
   template.
-- Two module homes (`shared/fault-injection/` and `agent/lib/inspection/`)
+- Two module homes (`shared/failure-simulation/` and `agent/lib/inspection/`)
   for what an outsider might initially read as one feature. Documented
   in this ADR's category-boundary section and in
   `agent/lib/inspection/README.md` (DELIVER wave).
@@ -313,11 +313,11 @@ None. Q2 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/fault-injection-consolidation/discuss/open-questions.md` — Q2
+- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q2
 - ADR-033 (source-tree topology separation) — primary constraint on
   directory naming
 - ADR-028 (XState v5 actor model) — machine isolation constraint preserved
 - CLAUDE.md "Shared" section — `shared/chat/` precedent for cross-service
   workspace packages
 - `shared/chat/package.json`, `shared/chat/BUILD.bazel` — template for
-  `shared/fault-injection/` setup
+  `shared/failure-simulation/` setup

@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD024 -->
 
-# Fault-Injection Consolidation — Acceptance Criteria
+# Failure-Simulation Consolidation — Acceptance Criteria
 
 Given-When-Then scenarios for each of US-CONSOL-1..5. Scenario titles describe *business outcomes for Devon/Olivia*, not implementation details (no "Registry sets a flag" or "Manifest object has a key"). The acceptance suite expansion implied by these scenarios is itself a DISTILL-wave deliverable — this document defines the contract, not the test code.
 
@@ -9,10 +9,10 @@ Given-When-Then scenarios for each of US-CONSOL-1..5. Scenario titles describe *
 - **Headers**: HTTP headers retain the `X-Force-*` convention (e.g. `X-Force-Create-Session-Failure`). Justification: `X-Force-*` is already precise and self-documenting; `X-Inject-Force-*` is verbose-redundant; `X-Fault-Inject-*` adds a category prefix without adding clarity. The user's revision prompt explicitly noted "force is precise" — this document honors that. See `open-questions.md` Q4 for the full naming-scheme decision matrix.
 - **Events**: XState event names drop the `__harness_` prefix to verb-only: `__force_failure__`, `__expire_token__`. Rename lands in US-CONSOL-4 phase 2.
 - **Body fields**: `harness_force_reissue_failures` → `force_reissue_failures`. Rename lands in US-CONSOL-4 phase 2.
-- **Audit-log event names**: `fault-injection.fired` / `fault-injection.rejected` / `fault-injection.unknown` (was `harness.knob.*`).
-- **Gate startup log event**: `fault-injection.gate.enabled` / `fault-injection.gate.disabled` (was `harness.gate.*`).
-- **Module/registry**: "fault-injection registry" (was "harness module").
-- **Inspection probes**: the `/debug/*` endpoints are called *inspection probes* throughout (not "harness debug endpoints" — they aren't fault injection, they're observation).
+- **Audit-log event names**: `failure-simulation.fired` / `failure-simulation.rejected` / `failure-simulation.unknown` (was `harness.knob.*`).
+- **Gate startup log event**: `failure-simulation.gate.enabled` / `failure-simulation.gate.disabled` (was `harness.gate.*`).
+- **Module/registry**: "failure-simulation registry" (was "harness module").
+- **Inspection probes**: the `/debug/*` endpoints are called *inspection probes* throughout (not "harness debug endpoints" — they aren't failure simulation, they're observation).
 
 Story-to-scenario index:
 
@@ -29,31 +29,31 @@ Story-to-scenario index:
 
 ---
 
-## US-CONSOL-1: Unified fault-injection registry with consistent naming
+## US-CONSOL-1: Unified failure-simulation registry with consistent naming
 
 ### Scenario: A developer discovers every available knob in one file
 
 Given Devon is writing a new acceptance scenario in `tests/acceptance/project-and-chat-session-management/`
-When he opens the fault-injection manifest file
+When he opens the failure-simulation manifest file
 Then he sees a list of every existing knob with its canonical name, transport, target port boundary, and owning service
 And the manifest is the single document referenced by both production-side gates and test-side fixtures
 And he does not need to grep `ui-state/lib/machines/` or `agent/` to discover any knob
 
 ### Scenario: A knob outside the manifest is rejected at runtime
 
-Given a request arrives carrying a header, event, or body field matching the fault-injection knob naming scheme
+Given a request arrives carrying a header, event, or body field matching the failure-simulation knob naming scheme
 And no manifest entry exists for that name
-When the fault-injection registry evaluates the request
+When the failure-simulation registry evaluates the request
 Then the knob is treated as no-op
-And a `fault-injection.unknown` log entry is emitted naming the offending knob
+And a `failure-simulation.unknown` log entry is emitted naming the offending knob
 And the underlying request proceeds with normal (un-forced) behavior
 
 ### Scenario: A typo'd knob name surfaces a discoverable error
 
 Given Devon sends a request with header `X-Force-Crete-Session-Failure: transient` (typo of `Create`)
-When the fault-injection registry processes the request
+When the failure-simulation registry processes the request
 Then the response logs a hint listing valid knob names or pointing to the manifest file
-And Devon's failing scenario message references "see fault-injection manifest"
+And Devon's failing scenario message references "see failure-simulation manifest"
 
 ### Scenario: All 6 existing knobs are listed in the manifest after consolidation
 
@@ -70,7 +70,7 @@ And each entry includes canonical name, transport, target port boundary, owning 
 
 ### Scenario: The manifest is the single source of truth across services
 
-Given the `ui-state` service and the `agent` service both ship fault-injection knobs
+Given the `ui-state` service and the `agent` service both ship failure-simulation knobs
 When each service starts
 Then both services read the same canonical manifest (whether by shared package import or shared schema file)
 And neither service hardcodes a knob name that is absent from the manifest
@@ -83,18 +83,18 @@ And neither service hardcodes a knob name that is absent from the manifest
 
 Given a service is running with `ENVIRONMENT=production`
 And the deprecated `NWAVE_HARNESS_KNOBS=true` is also set (worst-case misconfiguration)
-When a request arrives carrying any fault-injection header, event, or body field
+When a request arrives carrying any failure-simulation header, event, or body field
 Then the knob is treated as no-op for that request
-And a `fault-injection.rejected` log entry is emitted with reason `environment_tier_denies`
+And a `failure-simulation.rejected` log entry is emitted with reason `environment_tier_denies`
 And the underlying request proceeds with its normal behavior
 And no `/debug/*` inspection-probe route is registered on any service
 
 ### Scenario: Staging deployments reject every knob invocation by default
 
 Given a service is running with `ENVIRONMENT=staging`
-When a request arrives carrying a fault-injection header
+When a request arrives carrying a failure-simulation header
 Then the knob is treated as no-op
-And the gate decision is logged at startup as `fault-injection.gate.disabled environment=staging`
+And the gate decision is logged at startup as `failure-simulation.gate.disabled environment=staging`
 And no `/debug/*` inspection-probe route is registered
 
 ### Scenario: Dev and CI environments permit knob invocation
@@ -103,12 +103,12 @@ Given a service is running with `ENVIRONMENT=dev` (or `ENVIRONMENT=ci`)
 And the knob is registered in the manifest
 When a request arrives carrying that knob
 Then the knob fires its registered effect
-And a `fault-injection.fired` audit entry is emitted
+And a `failure-simulation.fired` audit entry is emitted
 
 ### Scenario: Unset ENVIRONMENT defaults to production-restrictive
 
 Given a service starts with no `ENVIRONMENT` value
-When the fault-injection registry initializes
+When the failure-simulation registry initializes
 Then the gate defaults to the most restrictive tier
 And every subsequent knob invocation is rejected
 And a startup log entry warns `ENVIRONMENT unset — defaulting to production-restrictive gate`
@@ -125,7 +125,7 @@ And a request to any of those paths returns HTTP 404
 ### Scenario: Gate verdict is logged exactly once at startup
 
 Given a service starts in any environment tier
-When the fault-injection registry initializes
+When the failure-simulation registry initializes
 Then exactly one structured log entry is emitted at startup
 And the entry names the environment tier, the verdict (`enabled` or `disabled`), and the reason
 And no per-request gate-status log is emitted (only per-invocation audit — see US-CONSOL-3)
@@ -136,7 +136,7 @@ Given a service is running with `ENVIRONMENT=production`
 When the same hostile request is replayed against `NWAVE_HARNESS_KNOBS=true`, `NWAVE_HARNESS_KNOBS=false`, and `NWAVE_HARNESS_KNOBS=unset`
 Then the response is identical in all three cases (no knob fires, no inspection-probe route registered)
 And the legacy flag has no observable effect outside `ENVIRONMENT in {dev, ci}`
-And if DESIGN selects a defense-in-depth companion flag (`FAULT_INJECTION_ENABLED` or similar), it likewise has no observable effect in production
+And if DESIGN selects a defense-in-depth companion flag (`FAILURE_SIMULATION_ENABLED` or similar), it likewise has no observable effect in production
 
 ---
 
@@ -144,33 +144,33 @@ And if DESIGN selects a defense-in-depth companion flag (`FAULT_INJECTION_ENABLE
 
 ### Scenario: A fired knob emits exactly one structured audit entry
 
-Given the fault-injection registry is enabled (`ENVIRONMENT=dev`)
+Given the failure-simulation registry is enabled (`ENVIRONMENT=dev`)
 And a knob is registered in the manifest
 When a request fires the knob
-Then exactly one log entry is emitted with event name `fault-injection.fired`
+Then exactly one log entry is emitted with event name `failure-simulation.fired`
 And the entry contains: canonical knob name, transport, ENVIRONMENT tier, correlation id (when available), timestamp
 And the entry is parseable as structured data (JSON or whichever serialization DESIGN selects)
 
 ### Scenario: A rejected knob emits a distinct audit entry
 
-Given the fault-injection registry is gated off (`ENVIRONMENT=staging`)
-When a request carries a fault-injection knob header
-Then exactly one log entry is emitted with event name `fault-injection.rejected`
+Given the failure-simulation registry is gated off (`ENVIRONMENT=staging`)
+When a request carries a failure-simulation knob header
+Then exactly one log entry is emitted with event name `failure-simulation.rejected`
 And the entry contains the requested knob name, the ENVIRONMENT tier, and the rejection reason
 
 ### Scenario: An unknown knob emits a warning audit entry
 
 Given a request carries a knob name not present in the manifest
-And the fault-injection registry is enabled
-When the fault-injection registry processes the request
-Then exactly one log entry is emitted with event name `fault-injection.unknown`
+And the failure-simulation registry is enabled
+When the failure-simulation registry processes the request
+Then exactly one log entry is emitted with event name `failure-simulation.unknown`
 And the entry contains the offending name and a pointer to the manifest file
 
 ### Scenario: Audit entries are absent for normal requests
 
-Given a request carries no fault-injection header, event, or body field
-When the fault-injection registry processes the request
-Then no `fault-injection.*` log entries are emitted
+Given a request carries no failure-simulation header, event, or body field
+When the failure-simulation registry processes the request
+Then no `failure-simulation.*` log entries are emitted
 And no per-request overhead is added to non-test traffic
 
 ### Scenario: Audit entries cross the actor / worker boundary
@@ -186,7 +186,7 @@ And Devon can join the actor-side audit row to the test-side HTTP assertion
 
 ### Scenario: Acceptance suite passes against the adapter phase
 
-Given the migration MR has rewritten all 6 knob callsites to route through the fault-injection registry (phase 1 only)
+Given the migration MR has rewritten all 6 knob callsites to route through the failure-simulation registry (phase 1 only)
 And the firing-path wire contract (header names, event names, body field name) is byte-identical to pre-migration
 When the full acceptance suite runs at the migration HEAD via `cd tests/acceptance/project-and-chat-session-management && uv run --no-project pytest`
 Then every scenario that passed pre-migration still passes
@@ -197,7 +197,7 @@ And the suite reports zero new failures and zero new skips
 Given the migration MR's phase-1 (adapter) commits are reviewed
 When the reviewer lists files modified under `tests/acceptance/` for those commits
 Then the count is zero
-And the only changed files in phase 1 are production sources, the new fault-injection registry, and the manifest
+And the only changed files in phase 1 are production sources, the new failure-simulation registry, and the manifest
 
 ### Scenario: Vocabulary-cleanup commits rename production and tests atomically
 
@@ -225,15 +225,15 @@ Given a regression is introduced mid-migration (e.g. a callsite is no longer wir
 When the acceptance suite runs
 Then at least one scenario fails
 And the failure message references the specific knob that no longer fires
-And the audit log (US-CONSOL-3) shows either the absent `fault-injection.fired` entry or a `fault-injection.unknown` entry
+And the audit log (US-CONSOL-3) shows either the absent `failure-simulation.fired` entry or a `failure-simulation.unknown` entry
 
 ### Scenario: `NWAVE_HARNESS_KNOBS` is deprecated, not deleted, on migration completion
 
 Given US-CONSOL-4 has landed
 And a developer's local environment still sets `NWAVE_HARNESS_KNOBS=true`
 When the dev compose service starts with `ENVIRONMENT=dev`
-Then the fault-injection registry honors the legacy flag (knobs still fire)
-And a startup log entry warns `fault-injection.config.deprecated env=NWAVE_HARNESS_KNOBS replacement=<DESIGN-selected name>`
+Then the failure-simulation registry honors the legacy flag (knobs still fire)
+And a startup log entry warns `failure-simulation.config.deprecated env=NWAVE_HARNESS_KNOBS replacement=<DESIGN-selected name>`
 And migration is independent of the ENVIRONMENT gate landing (US-CONSOL-2 lands separately)
 
 ---
@@ -242,7 +242,7 @@ And migration is independent of the ENVIRONMENT gate landing (US-CONSOL-2 lands 
 
 ### Scenario: A knob without a manifest entry fails CI
 
-Given a developer adds a string match for a fault-injection knob name in production code
+Given a developer adds a string match for a failure-simulation knob name in production code
 And no corresponding manifest entry exists
 When the CI lint check (or build gate) runs
 Then the check fails with a message naming the offending file, line number, and missing manifest entry
@@ -282,13 +282,13 @@ Given US-CONSOL-1, 2, 3, 4, 5 have all landed
 And the dev compose service runs with `ENVIRONMENT=dev` (and either the deprecated `NWAVE_HARNESS_KNOBS=true` or the DESIGN-selected replacement flag)
 When the full acceptance suite runs
 Then every scenario in `tests/acceptance/project-and-chat-session-management/` passes
-And the audit log shows `fault-injection.fired` entries for each knob invocation
+And the audit log shows `failure-simulation.fired` entries for each knob invocation
 And the manifest lists all 6 knobs
 
 ### Scenario: A hostile-environment integration test asserts production safety
 
 Given a one-off integration test (added in DISTILL) launches services with `ENVIRONMENT=production`
-When the test replays every fault-injection header, event, and body field from the acceptance suite against the production-mode services
+When the test replays every failure-simulation header, event, and body field from the acceptance suite against the production-mode services
 Then every replayed knob is no-op (request proceeds normally)
 And every replayed `/debug/*` request returns 404
-And the audit log shows `fault-injection.rejected` for every replayed knob
+And the audit log shows `failure-simulation.rejected` for every replayed knob
