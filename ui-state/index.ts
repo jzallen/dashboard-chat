@@ -326,13 +326,19 @@ app.post("/flow/:machine/event", async (c) => {
     forceCreateProjectFailureNext = true;
   }
 
-  // J-002 MR-3 harness knob: the next first_message_sent invoke throws a
-  // transient error. Used by the US-206 composer-preservation scenario.
-  // Matches the create-project pattern above — header-gated, consumed once.
+  // J-002 force-create-session-failure knob — header transport. The
+  // X-Force-Create-Session-Failure wire header is unchanged; the gate
+  // consultation routes through the shared failure-simulation registry per
+  // ADR-035 / ADR-038. Matches the create-project pattern above — gated,
+  // consumed once by the actor's per-invoke check.
   if (
     machine === "session-chat" &&
     body.type === "first_message_sent" &&
-    c.req.header("X-Force-Create-Session-Failure")
+    shouldInject(KNOB.forceCreateSessionFailure, {
+      headers: c.req.raw.headers,
+      correlationId: correlation_id,
+      serviceName: "ui-state",
+    })
   ) {
     forceCreateSessionFailureNext = true;
   }
