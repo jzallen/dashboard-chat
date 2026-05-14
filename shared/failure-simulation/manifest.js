@@ -52,10 +52,6 @@ const RAW_ENTRIES = [
       "US-204 agent reissue-on-failure path — body field drives a count of " +
       "synthetic upstream failures the agent must recover from",
     contractTestAlternativeConsidered: false,
-    legacyAlias: {
-      transportValue: "harness_force_reissue_failures",
-      removalCommit: "phase-2",
-    },
   },
   {
     name: "force-failure-tag",

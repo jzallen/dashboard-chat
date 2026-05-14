@@ -166,7 +166,7 @@ app.post("/flow/:machine/begin", async (c) => {
     persona_email?: string;
     persona_display_name?: string;
     existing_org_names?: string[];
-    harness_force_reissue_failures?: number;
+    force_reissue_failures?: number;
     principal_id?: string;
   };
   try {
@@ -244,12 +244,12 @@ app.post("/flow/:machine/begin", async (c) => {
     }
   }
 
-  // force-reissue-failures knob — body-field transport. The wire field name
-  // remains `harness_force_reissue_failures` (legacyAlias bridge per
-  // ADR-038; MR-5 renames). The gate routes through the shared registry so
-  // the verdict + audit envelope are uniform across all six knobs. The
-  // orchestrator retains its own NWAVE_HARNESS_KNOBS check as defense in
-  // depth until MR-5 vocabulary cleanup.
+  // force-reissue-failures knob — body-field transport. Phase-2 vocabulary
+  // cleanup per ADR-038: the wire body field is `force_reissue_failures`,
+  // the legacyAlias bridge is dropped. The gate routes through the shared
+  // registry so the verdict + audit envelope are uniform across all six
+  // knobs. The orchestrator retains its own NWAVE_HARNESS_KNOBS check as
+  // defense in depth during the one-release env-var overlap window.
   const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
     body: body as Record<string, unknown>,
     correlationId: correlation_id,
@@ -263,8 +263,8 @@ app.post("/flow/:machine/begin", async (c) => {
       persona_display_name: body.persona_display_name ?? "",
       correlation_id,
       existing_org_names: body.existing_org_names,
-      harness_force_reissue_failures: reissueFailuresAllowed
-        ? body.harness_force_reissue_failures
+      force_reissue_failures: reissueFailuresAllowed
+        ? body.force_reissue_failures
         : undefined,
     });
     return c.json(projection);

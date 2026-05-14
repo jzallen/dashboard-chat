@@ -132,13 +132,14 @@ export interface BeginFlowInput {
   /** Optional seed for the duplicate-org-name fixture path (slice-1). */
   existing_org_names?: string[];
   /**
-   * Test-only harness knob: pre-load the machine with N forced failures of
+   * Failure-simulation knob: pre-load the machine with N forced failures of
    * the createOrgAndReissue actor (the (N+1)-th call succeeds). Implements
    * the `@jwt_reissue_failed_after_org_create` slice-1 scenarios. Has no
    * effect in production builds — the orchestrator only reads it when
-   * NWAVE_HARNESS_KNOBS=true is set in the environment.
+   * NWAVE_HARNESS_KNOBS=true is set in the environment (legacy flag, honored
+   * during the one-release overlap per ADR-035).
    */
-  harness_force_reissue_failures?: number;
+  force_reissue_failures?: number;
 }
 
 export interface SendEventInput {
@@ -249,13 +250,14 @@ export class FlowOrchestrator {
     }
     await this.deps.eventLog.reset(flow_id);
 
-    // Harness knob: wrap createOrgAndReissue with a failure-injecting
-    // counter for slice-1 scenarios that exercise the retry budget. The
-    // knob is gated by NWAVE_HARNESS_KNOBS so production builds ignore
-    // the field even if a caller tries to set it.
-    const harnessKnobsEnabled = process.env.NWAVE_HARNESS_KNOBS === "true";
-    const forceFailures = harnessKnobsEnabled
-      ? input.harness_force_reissue_failures ?? 0
+    // Failure-simulation knob: wrap createOrgAndReissue with a failure-
+    // injecting counter for slice-1 scenarios that exercise the retry
+    // budget. The knob is gated by NWAVE_HARNESS_KNOBS (legacy env-var,
+    // honored during the one-release overlap per ADR-035) so production
+    // builds ignore the field even if a caller tries to set it.
+    const failureSimulationEnabled = process.env.NWAVE_HARNESS_KNOBS === "true";
+    const forceFailures = failureSimulationEnabled
+      ? input.force_reissue_failures ?? 0
       : 0;
     const machineDeps: LoginMachineDeps =
       forceFailures > 0
