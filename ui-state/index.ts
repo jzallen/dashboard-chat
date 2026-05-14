@@ -139,13 +139,14 @@ const orchestrator = new FlowOrchestrator({
 const app = new Hono();
 
 /**
- * Closed list of event types the harness uses to drive the machine into
- * recoverable-error and expired-token states. Per DWD-1, these are gated by
- * NWAVE_HARNESS_KNOBS=true: production deployments leave the env var unset,
- * so the route refuses to dispatch the event with a clear error.
+ * Closed list of legacy-named XState events the failure-simulation registry
+ * has NOT yet routed through shouldInject. Per ADR-038 phase-1, event names
+ * stay byte-identical on the wire (legacyAlias bridge); the per-knob gate
+ * migration moves each entry out of this set into a registry-mediated check
+ * one MR-4 commit at a time. The set is dead once empty (MR-5 vocabulary
+ * cleanup also drops the legacyAlias).
  */
 const HARNESS_EVENT_TYPES: ReadonlySet<string> = new Set([
-  "__harness_force_failure__",
   "__harness_expire_token__",
 ]);
 
@@ -305,10 +306,34 @@ app.post("/flow/:machine/event", async (c) => {
     return c.json({ error: "flow_id and type required" }, 400);
   }
 
-  // Harness-event gating (DWD-1): the `__harness_*` events drive the machine
-  // into states that have no production-callable entry. Production deployments
-  // leave NWAVE_HARNESS_KNOBS unset → the route refuses the event with a
-  // clear error so a malicious caller can't bypass real flow logic.
+  // force-failure-tag knob — event transport. The __harness_force_failure__
+  // wire event drives the login-and-org-setup machine into error_recoverable
+  // with the supplied cause tag (DWD-1). Production deployments must refuse
+  // this event so a malicious caller can't bypass real auth flow logic; the
+  // ADR-035 gate (ENVIRONMENT × flag) is the closed-by-default decision and
+  // the registry surfaces a failure-simulation.rejected audit entry when the
+  // event arrives in a denying tier. The wire event type stays byte-identical
+  // (legacyAlias bridge per ADR-038; vocabulary cleanup is MR-5).
+  if (body.type === "__harness_force_failure__") {
+    const allowed = shouldInject(KNOB.forceFailureTag, {
+      event: { type: body.type },
+      correlationId: correlation_id,
+      serviceName: "ui-state",
+    });
+    if (!allowed) {
+      return c.json(
+        {
+          error:
+            "harness knob disabled: __harness_force_failure__ requires the failure-simulation gate enabled (ENVIRONMENT=dev|ci + flag set)",
+        },
+        403,
+      );
+    }
+  }
+
+  // Residual harness-event gating: any __harness_* event NOT yet migrated to
+  // the registry above falls through to the legacy NWAVE_HARNESS_KNOBS gate.
+  // Each MR-4 commit shrinks HARNESS_EVENT_TYPES until the set is empty.
   if (HARNESS_EVENT_TYPES.has(body.type)) {
     if (process.env.NWAVE_HARNESS_KNOBS !== "true") {
       return c.json(
