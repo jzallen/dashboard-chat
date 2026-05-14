@@ -216,12 +216,22 @@ app.post("/flow/:machine/begin", async (c) => {
       (body.persona_display_name ?? "").split(/\s+/)[0] ||
       (userEmail ? userEmail.split("@")[0] : "") ||
       "";
-    // J-002 harness knob — header-gated: the resolver treats listed project
-    // ids' list_sessions calls as 5xx-failed. Comma-separated ids. Cleared
-    // each /begin so test scenarios don't leak state.
+    // J-002 force-list-sessions-failure knob — header transport. The
+    // X-Force-List-Sessions-Failure wire value (comma-separated project ids)
+    // is unchanged; the gate consultation routes through the shared
+    // failure-simulation registry so the verdict honors the ADR-035 gate and
+    // the audit envelope captures the header value. Cleared each /begin so
+    // test scenarios don't leak state.
     forceListSessionsFailures.clear();
-    const forceFailHeader = c.req.header("X-Force-List-Sessions-Failure");
-    if (forceFailHeader && machine === "project-and-chat-session-management") {
+    if (
+      machine === "project-and-chat-session-management" &&
+      shouldInject(KNOB.forceListSessionsFailure, {
+        headers: c.req.raw.headers,
+        correlationId: correlation_id,
+        serviceName: "ui-state",
+      })
+    ) {
+      const forceFailHeader = c.req.header("X-Force-List-Sessions-Failure") ?? "";
       for (const raw of forceFailHeader.split(",")) {
         const id = raw.trim();
         if (id) forceListSessionsFailures.add(id);
