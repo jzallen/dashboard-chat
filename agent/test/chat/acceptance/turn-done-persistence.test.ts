@@ -55,7 +55,16 @@ vi.mock("@ai-sdk/groq", () => ({
 function createRequest(body: Record<string, unknown>): Request {
   return new Request("http://localhost/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Active-Scope": JSON.stringify({
+        org_id: "test-org",
+        project_id: "test-project",
+        resource_type: null,
+        resource_id: null,
+      }),
+      "X-Org-Id": "test-org",
+    },
     body: JSON.stringify(body),
   });
 }
