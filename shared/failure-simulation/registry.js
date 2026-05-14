@@ -14,6 +14,19 @@ const KNOB_BY_LEGACY_ALIAS = new Map(
     .map((entry) => [entry.legacyAlias.transportValue, entry]),
 );
 
+// Wire-event-name index for `event`-transport entries — covers both the
+// canonical-derived rendering and any phase-1 legacyAlias renderings produced
+// by `renderEventTypes`. Lets `detectUnknownSignals` recognize wire names
+// whose mapping back to a canonical name is non-trivial (e.g. an entry with
+// `eventDistinguisher` whose canonical name carries a disambiguator suffix).
+const KNOB_BY_WIRE_EVENT = new Map();
+for (const entry of manifest) {
+  if (entry.transport !== "event") continue;
+  for (const wire of renderEventTypes(entry)) {
+    KNOB_BY_WIRE_EVENT.set(wire, entry);
+  }
+}
+
 export class UnknownKnobError extends Error {
   constructor(name) {
     super(
@@ -127,18 +140,20 @@ function renderHeaderName(canonical) {
 }
 
 function renderEventTypes(entry) {
-  // Phase-1 bridge: accept both the legacyAlias value and the canonical
-  // post-rename event name. MR-5 drops the legacyAlias half. Knobs without a
-  // legacyAlias use canonical-derived `__<name_with_underscores>__`.
-  const types = [];
+  // Phase-2 (MR-5) post-rename: canonical-derived `__<name_with_underscores>__`.
+  // Entries with `eventDistinguisher` drop the canonical name's last kebab
+  // segment per ADR-038 §"Naming scheme" (e.g. `force-failure-tag` →
+  // `__force_failure__`). The remaining `legacyAlias` branch is the phase-1
+  // bridge for knobs whose vocabulary cleanup has not landed yet.
   if (entry.legacyAlias != null) {
     const legacy = entry.legacyAlias.transportValue;
-    types.push(legacy);
-    types.push(legacy.replace(/^__harness_/, "__"));
-  } else {
-    types.push("__" + entry.name.replace(/-/g, "_") + "__");
+    return [legacy, legacy.replace(/^__harness_/, "__")];
   }
-  return types;
+  const baseName =
+    entry.eventDistinguisher != null
+      ? entry.name.replace(/-[^-]+$/, "")
+      : entry.name;
+  return ["__" + baseName.replace(/-/g, "_") + "__"];
 }
 
 function renderFieldNames(entry) {
@@ -282,8 +297,7 @@ function isKnownWireSignal(rawName, transport) {
   }
   if (transport === "event") {
     if (KNOB_BY_LEGACY_ALIAS.has(rawName)) return true;
-    const canonical = rawName.replace(/^__|__$/g, "").replace(/_/g, "-");
-    return KNOB_BY_NAME.has(canonical);
+    return KNOB_BY_WIRE_EVENT.has(rawName);
   }
   if (transport === "body-field") {
     if (KNOB_BY_LEGACY_ALIAS.has(rawName)) return true;

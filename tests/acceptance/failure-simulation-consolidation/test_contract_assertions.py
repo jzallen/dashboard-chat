@@ -51,19 +51,37 @@ def test_ca_1_manifest_vs_source_drift_check_catches_unregistered_knob(
     driver: FailureSimulationDriver,
 ) -> None:
     """Every knob-name pattern in production source under ``ui-state/`` and
-    ``agent/`` corresponds to a manifest entry (matched by canonical name or
-    documented ``legacyAlias``). The drift check would catch a knob added
-    to source without manifest registration.
+    ``agent/`` corresponds to a manifest entry. The drift check would catch a
+    knob added to source without manifest registration.
+
+    A match is established via any of: (a) the canonical name kebab→snake'd
+    form, (b) a documented ``legacyAlias.transportValue`` (phase-1 bridge per
+    ADR-038), or (c) for entries carrying ``eventDistinguisher``, the
+    canonical name minus its disambiguator suffix kebab→snake'd
+    (post-MR-5 rendering rule per ADR-038 §"Naming scheme").
     """
     canonical = set(driver.manifest_canonical_names())
-    # Phase-1 carries `legacyAlias` for the two events and one body-field
-    # rename. Compute legacy values from the manifest source where present.
+    # Phase-1 carries `legacyAlias` for any unrenamed knobs. Compute legacy
+    # values from the manifest source where present; the regex tolerates the
+    # eventual empty set once every legacyAlias is dropped.
     src = driver.read_manifest_source() if (
         driver.registry_dir / "manifest.ts"
     ).is_file() else ""
     legacy_alias_values = set(
         re.findall(r"transportValue:\s*['\"]([^'\"]+)['\"]", src)
     )
+    # Canonical names whose entry carries `eventDistinguisher` render to
+    # `__<canonical-without-last-segment>__` per ADR-038 §"Naming scheme".
+    # Extract those stripped forms so they participate in the canonical match.
+    distinguisher_stripped_canonicals = {
+        name.rsplit("-", 1)[0]
+        for name in re.findall(
+            r"name:\s*['\"]([a-z][a-z0-9-]*[a-z0-9])['\"][^}]*?eventDistinguisher:",
+            src,
+            re.DOTALL,
+        )
+        if "-" in name
+    }
 
     grep_hits = driver.grep_production_source_for_knob_patterns()
     # Tail-of-line identifier extraction per transport kind.
@@ -95,13 +113,17 @@ def test_ca_1_manifest_vs_source_drift_check_catches_unregistered_knob(
             elif kind == "event":
                 tokens = re.findall(r"__(?:force|expire)_[a-z][a-z0-9_]*__", line_text)
                 for t in tokens:
+                    stripped_kebab = t.strip("_").replace("_", "-")
                     assert (
                         t in legacy_alias_values
-                        # Strip __ wrapping and underscores for canonical match.
-                        or t.strip("_").replace("_", "-") in canonical
+                        # Canonical name kebab→snake-derived match.
+                        or stripped_kebab in canonical
+                        # eventDistinguisher case (ADR-038 §"Naming scheme").
+                        or stripped_kebab in distinguisher_stripped_canonicals
                     ), (
                         f"event {t} at {hit} not in manifest or legacy aliases. "
-                        f"canonical={canonical}, legacy={legacy_alias_values}"
+                        f"canonical={canonical}, legacy={legacy_alias_values}, "
+                        f"distinguisher_stripped={distinguisher_stripped_canonicals}"
                     )
 
 

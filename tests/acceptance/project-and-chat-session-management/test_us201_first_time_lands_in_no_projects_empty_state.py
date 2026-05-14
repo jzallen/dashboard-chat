@@ -315,7 +315,7 @@ def test_transient_create_project_failure_lands_in_error_recoverable_with_compos
     _wait_for_j002_state(driver, target_state="no_projects_empty_state")
 
     # Act — force a transient failure via the header-gated knob.
-    # The machine carries a __harness_force_failure__ event that lands
+    # The machine carries a __force_failure__ event that lands
     # error_recoverable with the supplied cause tag; this lets us assert
     # the recoverable-error behaviour without injecting a real backend 5xx.
     project_name = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
