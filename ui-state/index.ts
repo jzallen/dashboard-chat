@@ -255,6 +255,17 @@ app.post("/flow/:machine/begin", async (c) => {
     }
   }
 
+  // force-reissue-failures knob — body-field transport. The wire field name
+  // remains `harness_force_reissue_failures` (legacyAlias bridge per
+  // ADR-038; MR-5 renames). The gate routes through the shared registry so
+  // the verdict + audit envelope are uniform across all six knobs. The
+  // orchestrator retains its own NWAVE_HARNESS_KNOBS check as defense in
+  // depth until MR-5 vocabulary cleanup.
+  const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
+    body: body as Record<string, unknown>,
+    correlationId: correlation_id,
+    serviceName: "ui-state",
+  });
   try {
     const projection = await orchestrator.begin({
       machine,
@@ -263,7 +274,9 @@ app.post("/flow/:machine/begin", async (c) => {
       persona_display_name: body.persona_display_name ?? "",
       correlation_id,
       existing_org_names: body.existing_org_names,
-      harness_force_reissue_failures: body.harness_force_reissue_failures,
+      harness_force_reissue_failures: reissueFailuresAllowed
+        ? body.harness_force_reissue_failures
+        : undefined,
     });
     return c.json(projection);
   } catch (err) {
