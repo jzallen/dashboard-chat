@@ -1,6 +1,6 @@
 // Vitest tests for the ui-state HTTP tier (Step 02-02 / US-004).
 //
-// Exercises the `__force_failure__` and `__harness_expire_token__`
+// Exercises the `__force_failure__` and `__expire_token__`
 // event handler branches end-to-end against the in-process Hono app via
 // `app.fetch` — no live socket, no compose stack. The tests build a fresh
 // Hono app per scenario using the production `wireRoutes` helper exported
@@ -141,7 +141,7 @@ describe("__force_failure__ event handler", () => {
   });
 });
 
-describe("__harness_expire_token__ event handler", () => {
+describe("__expire_token__ event handler", () => {
   it("when NWAVE_HARNESS_KNOBS=true, routes Maya from ready into expired_token", async () => {
     scenario = buildScenario({ harnessKnobsEnabled: true });
     const { flow_id } = await beginMaya(scenario.app);
@@ -166,7 +166,7 @@ describe("__harness_expire_token__ event handler", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           flow_id,
-          type: "__harness_expire_token__",
+          type: "__expire_token__",
           payload: {},
         }),
       }),
@@ -185,14 +185,14 @@ describe("__harness_expire_token__ event handler", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           flow_id,
-          type: "__harness_expire_token__",
+          type: "__expire_token__",
           payload: {},
         }),
       }),
     );
     expect(expireRes.status).toBeGreaterThanOrEqual(400);
     const body = (await expireRes.json()) as { error?: string };
-    expect(body.error).toMatch(/harness knob/i);
+    expect(body.error).toMatch(/failure-simulation knob/i);
   });
 });
 

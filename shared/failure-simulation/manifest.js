@@ -79,10 +79,6 @@ const RAW_ENTRIES = [
       "US-205 token-expiry re-auth flow — synthetic expiry event the " +
       "authenticated state consumes to drive the re-auth transition",
     contractTestAlternativeConsidered: false,
-    legacyAlias: {
-      transportValue: "__harness_expire_token__",
-      removalCommit: "phase-2",
-    },
   },
 ];
 

@@ -305,7 +305,7 @@ describe("Login machine reaching expired_token triggers broadcastFreeze (B6)", (
       await orch.send({
         machine: "login-and-org-setup",
         flow_id: mayaFlow,
-        type: "__harness_expire_token__",
+        type: "__expire_token__",
         payload: {},
         correlation_id: "R-1",
       });
@@ -357,7 +357,7 @@ describe("Login machine returning to ready after silent reauth triggers broadcas
       await orch.send({
         machine: "login-and-org-setup",
         flow_id: mayaFlow,
-        type: "__harness_expire_token__",
+        type: "__expire_token__",
         payload: {},
         correlation_id: "R-1",
       });

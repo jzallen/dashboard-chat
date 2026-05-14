@@ -234,7 +234,7 @@ describe("harness expire_token event drives into expired_token (B4)", () => {
     await waitFor(actor, (s) => s.value === "authenticated_no_org");
     actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
     await waitFor(actor, (s) => s.value === "ready");
-    actor.send({ type: "__harness_expire_token__" });
+    actor.send({ type: "__expire_token__" });
     await waitFor(actor, (s) => s.value === "expired_token");
     expect(actor.getSnapshot().value).toBe("expired_token");
   });
@@ -300,7 +300,7 @@ describe("expired_token invokes silent reauth (B5)", () => {
     await waitFor(actor, (s) => s.value === "authenticated_no_org");
     actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
     await waitFor(actor, (s) => s.value === "ready");
-    actor.send({ type: "__harness_expire_token__" });
+    actor.send({ type: "__expire_token__" });
     await waitFor(actor, (s) => s.value === "expired_token");
     // Silent reauth invoke kicks off automatically on entry; success → ready.
     await waitFor(actor, (s) => s.value === "ready");
@@ -334,7 +334,7 @@ describe("expired_token routes failed silent reauth to error_recoverable (B6)", 
     await waitFor(actor, (s) => s.value === "authenticated_no_org");
     actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
     await waitFor(actor, (s) => s.value === "ready");
-    actor.send({ type: "__harness_expire_token__" });
+    actor.send({ type: "__expire_token__" });
     await waitFor(actor, (s) => s.value === "expired_token");
     await waitFor(actor, (s) => s.value === "error_recoverable");
     expect(actor.getSnapshot().value).toBe("error_recoverable");

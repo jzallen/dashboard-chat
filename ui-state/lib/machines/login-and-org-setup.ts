@@ -64,7 +64,7 @@ export type LoginEvent =
   | { type: "org_form_submitted"; org_name: string }
   | { type: "retry_clicked" }
   | { type: "__force_failure__"; tag: UnderlyingCauseTag }
-  | { type: "__harness_expire_token__" }
+  | { type: "__expire_token__" }
   | { type: "FREEZE" }
   | { type: "THAW" };
 
@@ -340,7 +340,7 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
         on: {
           // Harness-only side-channel: force the machine from ready to
           // expired_token. Gated at the HTTP layer by NWAVE_HARNESS_KNOBS.
-          __harness_expire_token__: {
+          __expire_token__: {
             target: "expired_token",
           },
         },

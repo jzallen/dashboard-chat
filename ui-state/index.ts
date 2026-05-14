@@ -320,15 +320,14 @@ app.post("/flow/:machine/event", async (c) => {
     }
   }
 
-  // expire-token knob — event transport. The __harness_expire_token__ wire
-  // event drives the login-and-org-setup machine from `ready` into
-  // `expired_token` to exercise silent re-auth (DWD-1). The gate decision
-  // routes through shouldInject(KNOB.expireToken, { event, ... }); the wire
-  // event type stays byte-identical (legacyAlias bridge per ADR-038;
-  // vocabulary cleanup is MR-5). With this commit the legacy
-  // NWAVE_HARNESS_KNOBS event-side gate is fully retired in favor of the
-  // registry's verdict — both __harness_* events now go through shouldInject.
-  if (body.type === "__harness_expire_token__") {
+  // expire-token knob — event transport. The __expire_token__ wire event
+  // drives the login-and-org-setup machine from `ready` into `expired_token`
+  // to exercise silent re-auth (DWD-1). The gate decision routes through
+  // shouldInject(KNOB.expireToken, { event, ... }) and emits the ADR-037
+  // audit envelope. Phase-2 vocabulary cleanup per ADR-038 — the legacyAlias
+  // bridge is dropped and the wire event type now matches the registry's
+  // canonical-derived rendering.
+  if (body.type === "__expire_token__") {
     const allowed = shouldInject(KNOB.expireToken, {
       event: { type: body.type },
       correlationId: correlation_id,
@@ -338,7 +337,7 @@ app.post("/flow/:machine/event", async (c) => {
       return c.json(
         {
           error:
-            "harness knob disabled: __harness_expire_token__ requires the failure-simulation gate enabled (ENVIRONMENT=dev|ci + flag set)",
+            "failure-simulation knob disabled: __expire_token__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
         },
         403,
       );
