@@ -203,7 +203,7 @@ describe("harness force_failure event drives into error_recoverable (B3)", () =>
     await waitFor(actor, (s) => s.value === "authenticated_no_org");
     // Send the harness event. The machine MUST route the harness event into
     // error_recoverable with the supplied tag stored as underlying_cause_tag.
-    actor.send({ type: "__harness_force_failure__", tag: "transient" });
+    actor.send({ type: "__force_failure__", tag: "transient" });
     await waitFor(actor, (s) => s.value === "error_recoverable");
     expect(actor.getSnapshot().value).toBe("error_recoverable");
     expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");

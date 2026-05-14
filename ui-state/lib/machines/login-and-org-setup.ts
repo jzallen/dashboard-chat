@@ -63,7 +63,7 @@ export type LoginEvent =
   | { type: "auth_failed"; underlying_cause_tag: UnderlyingCauseTag }
   | { type: "org_form_submitted"; org_name: string }
   | { type: "retry_clicked" }
-  | { type: "__harness_force_failure__"; tag: UnderlyingCauseTag }
+  | { type: "__force_failure__"; tag: UnderlyingCauseTag }
   | { type: "__harness_expire_token__" }
   | { type: "FREEZE" }
   | { type: "THAW" };
@@ -286,11 +286,11 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
           // error_recoverable carrying the supplied cause tag. Gated at the
           // HTTP layer (index.ts) by NWAVE_HARNESS_KNOBS=true so production
           // builds never see this event.
-          __harness_force_failure__: {
+          __force_failure__: {
             target: "error_recoverable",
             actions: assign({
               underlying_cause_tag: ({ event }) =>
-                event.type === "__harness_force_failure__" ? event.tag : "transient",
+                event.type === "__force_failure__" ? event.tag : "transient",
             }),
           },
         },

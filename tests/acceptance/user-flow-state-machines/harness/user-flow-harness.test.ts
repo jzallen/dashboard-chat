@@ -222,7 +222,7 @@ describe("B2 — submit_org captures jwt on transition to ready", () => {
 });
 
 describe("B3 — force_transient_failure drives into error_recoverable", () => {
-  it("POSTs the __harness_force_failure__ event and reports the recoverable-error state", async () => {
+  it("POSTs the __force_failure__ event and reports the recoverable-error state", async () => {
     const flow_id = "login-and-org-setup:user_maya";
     installStub([
       {
@@ -261,7 +261,7 @@ describe("B3 — force_transient_failure drives into error_recoverable", () => {
     const body = JSON.parse(
       String((eventCalls[0][1] as { body: string }).body),
     ) as { type: string; payload: { tag: string } };
-    expect(body.type).toBe("__harness_force_failure__");
+    expect(body.type).toBe("__force_failure__");
     expect(body.payload.tag).toBe("transient");
   });
 });

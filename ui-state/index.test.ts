@@ -1,6 +1,6 @@
 // Vitest tests for the ui-state HTTP tier (Step 02-02 / US-004).
 //
-// Exercises the `__harness_force_failure__` and `__harness_expire_token__`
+// Exercises the `__force_failure__` and `__harness_expire_token__`
 // event handler branches end-to-end against the in-process Hono app via
 // `app.fetch` — no live socket, no compose stack. The tests build a fresh
 // Hono app per scenario using the production `wireRoutes` helper exported
@@ -97,7 +97,7 @@ async function beginMaya(app: Hono): Promise<{
   return { flow_id: proj.flow_id, correlation_id: proj.correlation_id };
 }
 
-describe("__harness_force_failure__ event handler", () => {
+describe("__force_failure__ event handler", () => {
   it("when NWAVE_HARNESS_KNOBS=true, routes Maya into error_recoverable", async () => {
     scenario = buildScenario({ harnessKnobsEnabled: true });
     const { flow_id } = await beginMaya(scenario.app);
@@ -107,7 +107,7 @@ describe("__harness_force_failure__ event handler", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           flow_id,
-          type: "__harness_force_failure__",
+          type: "__force_failure__",
           payload: { tag: "transient" },
         }),
       }),
@@ -130,14 +130,14 @@ describe("__harness_force_failure__ event handler", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           flow_id,
-          type: "__harness_force_failure__",
+          type: "__force_failure__",
           payload: { tag: "transient" },
         }),
       }),
     );
     expect(eventRes.status).toBeGreaterThanOrEqual(400);
     const body = (await eventRes.json()) as { error?: string };
-    expect(body.error).toMatch(/harness knob/i);
+    expect(body.error).toMatch(/failure-simulation knob/i);
   });
 });
 

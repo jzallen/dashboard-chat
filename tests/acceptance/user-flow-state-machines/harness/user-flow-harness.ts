@@ -112,7 +112,7 @@ export class UserFlowHarness {
   }
 
   async force_transient_failure(tag: UnderlyingCauseTag): Promise<FlowProjection> {
-    return this.send_event("__harness_force_failure__", { tag });
+    return this.send_event("__force_failure__", { tag });
   }
 
   async expire_token(): Promise<FlowProjection> {

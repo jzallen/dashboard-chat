@@ -62,7 +62,7 @@ const eventLog = selectFlowEventLog(REDIS_URL);
 // event whose request bears `X-Force-Create-Project-Failure: transient`
 // makes the actor throw a transient error before any backend call. Used by
 // the US-201 transient-failure acceptance scenario (mirrors J-001's
-// `__harness_force_failure__` pattern but at the actor level).
+// `__force_failure__` pattern but at the actor level).
 let forceCreateProjectFailureNext = false;
 function forceCreateProjectFailureFlag(): boolean {
   if (forceCreateProjectFailureNext) {
@@ -294,15 +294,16 @@ app.post("/flow/:machine/event", async (c) => {
     return c.json({ error: "flow_id and type required" }, 400);
   }
 
-  // force-failure-tag knob — event transport. The __harness_force_failure__
-  // wire event drives the login-and-org-setup machine into error_recoverable
-  // with the supplied cause tag (DWD-1). Production deployments must refuse
-  // this event so a malicious caller can't bypass real auth flow logic; the
-  // ADR-035 gate (ENVIRONMENT × flag) is the closed-by-default decision and
-  // the registry surfaces a failure-simulation.rejected audit entry when the
-  // event arrives in a denying tier. The wire event type stays byte-identical
-  // (legacyAlias bridge per ADR-038; vocabulary cleanup is MR-5).
-  if (body.type === "__harness_force_failure__") {
+  // force-failure-tag knob — event transport. The __force_failure__ wire event
+  // drives the login-and-org-setup machine into error_recoverable with the
+  // supplied cause tag (DWD-1). Production deployments must refuse this event
+  // so a malicious caller can't bypass real auth flow logic; the ADR-035 gate
+  // (ENVIRONMENT × flag) is the closed-by-default decision and the registry
+  // surfaces a failure-simulation.rejected audit entry when the event arrives
+  // in a denying tier. Phase-2 vocabulary cleanup per ADR-038 — the
+  // legacyAlias bridge is dropped and the wire event type matches the
+  // registry's canonical-derived rendering.
+  if (body.type === "__force_failure__") {
     const allowed = shouldInject(KNOB.forceFailureTag, {
       event: { type: body.type },
       correlationId: correlation_id,
@@ -312,7 +313,7 @@ app.post("/flow/:machine/event", async (c) => {
       return c.json(
         {
           error:
-            "harness knob disabled: __harness_force_failure__ requires the failure-simulation gate enabled (ENVIRONMENT=dev|ci + flag set)",
+            "failure-simulation knob disabled: __force_failure__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
         },
         403,
       );

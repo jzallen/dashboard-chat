@@ -68,10 +68,6 @@ const RAW_ENTRIES = [
       "US-202 login/org-setup machine — synthetic auth failure event used by " +
       "the authenticating state to exercise retry/back-off transitions",
     contractTestAlternativeConsidered: false,
-    legacyAlias: {
-      transportValue: "__harness_force_failure__",
-      removalCommit: "phase-2",
-    },
   },
   {
     name: "expire-token",
