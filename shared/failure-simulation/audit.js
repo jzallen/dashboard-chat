@@ -14,9 +14,11 @@
 //   - failure-simulation.config.deprecated  (MR-5 — emitter not landed yet;
 //                                            type defined for future-compat)
 //
-// MR-5 will add emitConfigDeprecatedEvent when the legacy NWAVE_HARNESS_KNOBS
-// read is finalised; the type union is already exported so callers can switch
-// on it ahead of the emitter landing.
+// Composition-root `probe()` calls emitConfigDeprecatedEvent at startup when
+// the legacy NWAVE_HARNESS_KNOBS env var is read (any non-empty value). The
+// event fires alongside the gate verdict event and is "loud" — it repeats at
+// every startup until the env var is fully removed (a future cleanup MR per
+// ADR-038's phase 3).
 
 import { getCachedVerdict } from "./gate.js";
 import { manifest, MANIFEST_PATH } from "./manifest.js";
@@ -105,6 +107,34 @@ export function emitRejectedEvent({ entry, serviceName, correlationId, verdict }
     event.correlation_id = correlationId;
   }
   write(event);
+}
+
+/**
+ * Emit one failure-simulation.config.deprecated event per probe() invocation
+ * when NWAVE_HARNESS_KNOBS is set. The event names the replacement env var
+ * (FAILURE_SIMULATION_ENABLED) and carries a semver-shaped
+ * removal.target_release the operator can plan against. The `detected_value`
+ * field surfaces the actual env-var content so a misconfigured `=false`
+ * value is visible without re-shelling. Tier comes from the cached gate
+ * verdict so the envelope is consistent with the gate / fired / rejected
+ * events emitted in the same process.
+ */
+export function emitConfigDeprecatedEvent({
+  serviceName,
+  verdict,
+  detectedValue,
+  targetRelease,
+}) {
+  write({
+    "event.name": "failure-simulation.config.deprecated",
+    "service.name": serviceName,
+    timestamp: nowIsoTimestamp(),
+    "environment.tier": verdict.tier,
+    "env.legacy": "NWAVE_HARNESS_KNOBS",
+    "env.replacement": "FAILURE_SIMULATION_ENABLED",
+    "env.detected_value": detectedValue,
+    "removal.target_release": targetRelease,
+  });
 }
 
 /**

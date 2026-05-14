@@ -77,15 +77,17 @@ export interface FailureSimulationUnknownEvent extends AuditEnvelope {
 
 /**
  * Companion deprecation event — emitted at startup when a legacy env var
- * (e.g. `NWAVE_HARNESS_KNOBS`) is honored. Documented here for completeness;
- * the emitter lands in MR-5 alongside the vocabulary cleanup. The type union
- * is exported now so downstream `switch (event["event.name"]) { ... }`
- * call sites compile against the final shape ahead of the emitter landing.
+ * (e.g. `NWAVE_HARNESS_KNOBS`) is honored. Fires alongside the gate verdict
+ * event and is "loud": repeats at every startup until the env var is fully
+ * removed (a future cleanup MR per ADR-038 phase 3). The `env.detected_value`
+ * field surfaces the actual env-var content so a misconfigured `=false`
+ * value is visible without re-shelling.
  */
 export interface FailureSimulationConfigDeprecatedEvent extends AuditEnvelope {
   readonly "event.name": "failure-simulation.config.deprecated";
   readonly "env.legacy": string;
   readonly "env.replacement": string;
+  readonly "env.detected_value": string;
   readonly "removal.target_release": string;
 }
 
@@ -127,5 +129,9 @@ export function emitUnknownEvent(args: {
   readonly correlationId: string | undefined;
 }): void;
 
-// emitConfigDeprecatedEvent will land in MR-5 with the legacy NWAVE_HARNESS_KNOBS
-// migration. Type already exported above so future callers compile cleanly.
+export function emitConfigDeprecatedEvent(args: {
+  readonly serviceName: OwningService;
+  readonly verdict: GateVerdict;
+  readonly detectedValue: string;
+  readonly targetRelease: string;
+}): void;
