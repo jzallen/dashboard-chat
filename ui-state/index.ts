@@ -14,7 +14,7 @@
 // injected by auth-proxy upstream (ADR-016). It does NOT re-verify JWTs.
 // In AUTH_MODE=dev the headers identify the dev user.
 
-import { probe } from "@dashboard-chat/shared-failure-simulation";
+import { KNOB, probe, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
@@ -298,15 +298,20 @@ app.post("/flow/:machine/event", async (c) => {
     }
   }
 
-  // J-002 harness knob — header-gated: the next createProject invoke throws
-  // a transient error. Used by the US-201 transient-failure scenario. Gated
-  // by the same NWAVE_HARNESS_KNOBS env-flag policy as the J-001 knobs in
-  // production; in dev mode (default for the local stack) the flag is
-  // accepted unconditionally to match the local-stack harness shape.
+  // J-002 force-create-project-failure knob — header transport. The wire
+  // signal (X-Force-Create-Project-Failure) is unchanged; the gate
+  // consultation routes through the shared failure-simulation registry
+  // (ADR-035 + ADR-038) so the verdict honors ENVIRONMENT × flag composition
+  // and emits the audit envelope. The post-knob effect (consume-once flag)
+  // is preserved end-to-end so the actor's per-invoke check is unchanged.
   if (
     machine === "project-and-chat-session-management" &&
     body.type === "create_project_submitted" &&
-    c.req.header("X-Force-Create-Project-Failure")
+    shouldInject(KNOB.forceCreateProjectFailure, {
+      headers: c.req.raw.headers,
+      correlationId: correlation_id,
+      serviceName: "ui-state",
+    })
   ) {
     forceCreateProjectFailureNext = true;
   }
