@@ -66,7 +66,7 @@ Given("Maya's access will expire before the answer can stream", function (
   this: UserFlowWorld,
 ) {
   // No-op preparation: the When step drives the actual expiry via the
-  // __harness_expire_token__ event. This Given just records intent so the
+  // __expire_token__ event. This Given just records intent so the
   // narrative reads cleanly in the .feature.
   this.bag.expiry_planned = true;
 });

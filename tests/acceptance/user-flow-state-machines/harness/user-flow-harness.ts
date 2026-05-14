@@ -43,7 +43,7 @@ export class UserFlowHarness {
     _personaName: string,
     options: {
       existing_org_names?: string[];
-      harness_force_reissue_failures?: number;
+      force_reissue_failures?: number;
     } = {},
   ): Promise<FlowProjection> {
     const machine = this.config.defaultMachine ?? "login-and-org-setup";
@@ -56,7 +56,7 @@ export class UserFlowHarness {
           persona_email: this.persona.email,
           persona_display_name: this.persona.display_name,
           existing_org_names: options.existing_org_names,
-          harness_force_reissue_failures: options.harness_force_reissue_failures,
+          force_reissue_failures: options.force_reissue_failures,
         }),
       },
     );
@@ -116,7 +116,7 @@ export class UserFlowHarness {
   }
 
   async expire_token(): Promise<FlowProjection> {
-    return this.send_event("__harness_expire_token__", {});
+    return this.send_event("__expire_token__", {});
   }
 
   /**

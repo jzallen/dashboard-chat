@@ -267,7 +267,7 @@ describe("B3 — force_transient_failure drives into error_recoverable", () => {
 });
 
 describe("B4 — expire_token drives into expired_token", () => {
-  it("POSTs the __harness_expire_token__ event and reports the expired_token state", async () => {
+  it("POSTs the __expire_token__ event and reports the expired_token state", async () => {
     const flow_id = "login-and-org-setup:user_maya";
     installStub([
       {
@@ -304,7 +304,7 @@ describe("B4 — expire_token drives into expired_token", () => {
     const body = JSON.parse(
       String((eventCalls[0][1] as { body: string }).body),
     ) as { type: string };
-    expect(body.type).toBe("__harness_expire_token__");
+    expect(body.type).toBe("__expire_token__");
   });
 });
 

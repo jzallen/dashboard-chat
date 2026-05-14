@@ -266,12 +266,12 @@ When(
     if (!harness) {
       harness = this.use_harness_for("maya");
       const existing = (this.bag.existing_org_names as string[] | undefined) ?? [];
-      const forcedFailures = this.bag.harness_force_reissue_failures as
+      const forcedFailures = this.bag.force_reissue_failures as
         | number
         | undefined;
       const beginProjection = await harness.begin_auth("maya", {
         existing_org_names: existing,
-        harness_force_reissue_failures: forcedFailures,
+        force_reissue_failures: forcedFailures,
       });
       const expectedEmail = this.bag.welcome_expected_email as string | undefined;
       if (expectedEmail) {
@@ -330,7 +330,7 @@ Then("Maya's access token has not been reissued", function (
 Given(
   "the access reissue service will fail twice and succeed on the third attempt",
   function (this: UserFlowWorld) {
-    this.bag.harness_force_reissue_failures = 2;
+    this.bag.force_reissue_failures = 2;
   },
 );
 
@@ -340,7 +340,7 @@ Given(
     // The machine retries up to REISSUE_BUDGET=3, so 3 forced failures
     // exhausts the budget and lands in error_recoverable with the
     // partial-setup tag.
-    this.bag.harness_force_reissue_failures = 3;
+    this.bag.force_reissue_failures = 3;
   },
 );
 
