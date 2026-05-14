@@ -1,3 +1,17 @@
+# [1.37.0](https://github.com/jzallen/dashboard-chat/compare/v1.36.0...v1.37.0) (2026-05-14)
+
+
+### Bug Fixes
+
+* **bazel:** add shared/failure-simulation/node_modules to .bazelignore ([2be4353](https://github.com/jzallen/dashboard-chat/commit/2be43536a94047e7872875def07e80da7ec1bfd8))
+* **bazel:** register shared/failure-simulation in pnpm-lock.yaml ([f7e9d86](https://github.com/jzallen/dashboard-chat/commit/f7e9d8634ad649e5f51ae91a2c2e23c3976bbfa0))
+
+
+### Features
+
+* **agent,ui-state:** land J-002 MR-4 atomic project switching + X-Active-Scope contract ([735596b](https://github.com/jzallen/dashboard-chat/commit/735596bb5d640cf2e6c980f159ccead1df323b4c))
+* **shared/failure-simulation:** land registry workspace package (MR-1) ([73ec197](https://github.com/jzallen/dashboard-chat/commit/73ec197e2a3529a28cc4ff0ff4f3b0a14327f267))
+
 # [1.36.0](https://github.com/jzallen/dashboard-chat/compare/v1.35.1...v1.36.0) (2026-05-13)
 
 
