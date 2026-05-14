@@ -1,3 +1,10 @@
+# [1.38.0](https://github.com/jzallen/dashboard-chat/compare/v1.37.0...v1.38.0) (2026-05-14)
+
+
+### Features
+
+* **shared/failure-simulation:** land gate composition + probe + agent inspection wiring (MR-2) ([657daa9](https://github.com/jzallen/dashboard-chat/commit/657daa97acbbf2bde4af5d2b716c55c19c658392))
+
 # [1.37.0](https://github.com/jzallen/dashboard-chat/compare/v1.36.0...v1.37.0) (2026-05-14)
 
 
