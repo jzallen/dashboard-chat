@@ -146,12 +146,25 @@ export interface LoadSessionListInput {
   project_id: string;
   principal_id: string;
   page_size?: number;
+  /** Deep-link session intent forwarded from the orchestrator via the
+   *  `project_ready` event. The actor echoes this through `resume_target`
+   *  on its output so the `loading_session_list → resuming_session`
+   *  branch can guard on `event.output.resume_target` instead of reading
+   *  `ctx.intent_session_id` (ADR-030 §"Migration sequencing" LEAF-C;
+   *  ADR-028 Direction F — branch-relevant data MUST flow through
+   *  `event.output`, never through context set before the invoke). */
+  intent_session_id?: string | null;
 }
 
 export interface LoadSessionListOutput {
   items: SessionSummary[];
   next_cursor: string | null;
   has_more: boolean;
+  /** Echoes `input.intent_session_id` so the `onDone` branch can pick
+   *  between `session_list_loaded` and `resuming_session` without
+   *  reading `ctx.intent_session_id` (ADR-030 §254 / ADR-028 Amendment
+   *  2026-05-15 Direction F). Null when no resume intent was carried in. */
+  resume_target: string | null;
 }
 
 export type LoadSessionListActor = ReturnType<
@@ -340,18 +353,29 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         },
         invoke: {
           src: "loadSessionList",
+          // ADR-030 LEAF-C: `intent_session_id` rides INTO the actor's input
+          // so the actor can echo it OUT as `resume_target`. The onDone
+          // branch then reads from `event.output.resume_target` — branch
+          // data flows through the actor's output channel, not via a
+          // context field set before the invoke (ADR-028 Amendment
+          // 2026-05-15 Direction F, ADR-030 §254).
           input: ({ context }) => ({
             project_id: context.project?.id ?? "",
             principal_id: context.principal_id,
             page_size: 30,
+            intent_session_id: context.intent_session_id,
           }),
           onDone: [
             {
-              // Deep-link continuation: intent_session_id forwarded by
-              // project-context → orchestrator → session-chat. The list still
-              // loads (so the FE renders the sidebar) but the machine settles
-              // in resuming_session.
-              guard: ({ context }) => context.intent_session_id !== null,
+              // Deep-link continuation: the actor surfaces the forwarded
+              // intent via `event.output.resume_target`. The list still
+              // loads (so the FE renders the sidebar) but the machine
+              // settles in resuming_session. `resuming_session.invoke.input`
+              // reads `context.intent_session_id` (still populated by the
+              // `project_ready` handler) — that context field stays for
+              // now and is removed in a follow-up MR after the remaining
+              // readers migrate.
+              guard: ({ event }) => event.output.resume_target !== null,
               target: "resuming_session",
               actions: assign({
                 session_list: ({ event }) => event.output.items,
@@ -670,7 +694,12 @@ export function loadSessionListFn(
     // session_list_loaded (US-203 Example 3 no_sessions_empty_state sub-shape
     // per DWD-1). The 404 is NOT a transient failure.
     if (resp.status === 404) {
-      return { items: [], next_cursor: null, has_more: false };
+      return {
+        items: [],
+        next_cursor: null,
+        has_more: false,
+        resume_target: input.intent_session_id ?? null,
+      };
     }
     if (!resp.ok) {
       throw new Error(`list_sessions failed: ${resp.status}`);
@@ -745,6 +774,7 @@ export function loadSessionListFn(
       items,
       next_cursor: nextCursor,
       has_more: items.length >= pageSize,
+      resume_target: input.intent_session_id ?? null,
     };
   };
 }

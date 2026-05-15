@@ -37,8 +37,20 @@ const MAYA_INPUT = {
   principal_id: "dev-user-001",
 };
 
-function stubLoadSessionList(output: LoadSessionListOutput): LoadSessionListActor {
-  return fromPromise<LoadSessionListOutput, LoadSessionListInput>(async () => output);
+function stubLoadSessionList(
+  output: Omit<LoadSessionListOutput, "resume_target">,
+): LoadSessionListActor {
+  // ADR-030 LEAF-C: the production actor echoes `input.intent_session_id`
+  // through `output.resume_target` so the onDone guard can branch on
+  // event.output rather than ctx. The stub mirrors that contract — tests
+  // that supply an intent via project_ready exercise the resume path
+  // through this channel, just like production.
+  return fromPromise<LoadSessionListOutput, LoadSessionListInput>(
+    async ({ input }) => ({
+      ...output,
+      resume_target: input.intent_session_id ?? null,
+    }),
+  );
 }
 
 function stubLoadSessionListFailing(error: string): LoadSessionListActor {
@@ -248,6 +260,94 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     expect(ctx.transcript).toHaveLength(1);
   });
 
+  it("S6b (ADR-030 LEAF-C): loadSessionList input echoes intent_session_id through output.resume_target", async () => {
+    // Direct actor-level assertion: per ADR-028 Direction F / ADR-030 §254,
+    // branch-relevant data flows out via event.output, not via a context
+    // field set before the invoke. The actor receives intent_session_id
+    // on its input and echoes it as output.resume_target.
+    // Closure-captured probes (array-wrapped to sidestep TS narrowing
+    // of `let foo: T | null = null` through async closures).
+    const observedInputs: LoadSessionListInput[] = [];
+    const observedOutputs: LoadSessionListOutput[] = [];
+    const recordingActor = fromPromise<LoadSessionListOutput, LoadSessionListInput>(
+      async ({ input }) => {
+        observedInputs.push(input);
+        const output: LoadSessionListOutput = {
+          items: SESSIONS_DESC,
+          next_cursor: null,
+          has_more: false,
+          resume_target: input.intent_session_id ?? null,
+        };
+        observedOutputs.push(output);
+        return output;
+      },
+    );
+    const machine = createSessionChatMachine({
+      loadSessionList: recordingActor,
+      resumeSession: stubResumeSession({
+        session_id: "sess-t4",
+        transcript: [],
+        active_dataset_id: null,
+      }),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+      correlation_id: "R-deeplink",
+      intent_session_id: "sess-t4",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+    expect(observedInputs).toHaveLength(1);
+    expect(observedInputs[0].intent_session_id).toBe("sess-t4");
+    expect(observedOutputs).toHaveLength(1);
+    expect(observedOutputs[0].resume_target).toBe("sess-t4");
+  });
+
+  it("S6c (ADR-030 LEAF-C): null resume_target lands in session_list_loaded even if ctx.intent_session_id is non-null", async () => {
+    // Negative-channel test: prove the guard reads event.output, NOT ctx.
+    // The stub returns resume_target: null regardless of input. The send
+    // populates ctx.intent_session_id via project_ready, but because the
+    // actor's OUTPUT says no resume, the machine must settle in
+    // session_list_loaded. If the guard were still reading ctx, this
+    // test would settle in session_active instead.
+    const truncatingActor = fromPromise<LoadSessionListOutput, LoadSessionListInput>(
+      async () => ({
+        items: SESSIONS_DESC,
+        next_cursor: null,
+        has_more: false,
+        resume_target: null,
+      }),
+    );
+    const machine = createSessionChatMachine({
+      loadSessionList: truncatingActor,
+      resumeSession: stubResumeSession({
+        session_id: "sess-t4",
+        transcript: [],
+        active_dataset_id: null,
+      }),
+    });
+    const actor = createActor(machine, { input: MAYA_INPUT });
+    actor.start();
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+      correlation_id: "R-deeplink",
+      intent_session_id: "sess-t4",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+    expect(actor.getSnapshot().value).toBe("session_list_loaded");
+    // ctx.intent_session_id WAS captured by project_ready (LEAF-C does not
+    // remove that path — its removal is a follow-up MR). The point of this
+    // test is that the OUTPUT channel's null overrides what's in ctx.
+    expect(actor.getSnapshot().context.intent_session_id).toBe("sess-t4");
+  });
+
   it("S7: loadSessionList onError → error_recoverable with cause list_sessions_degraded", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionListFailing("boom"),
@@ -408,12 +508,13 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
   it("S12: refresh_session_list from session_list_loaded → loading_session_list", async () => {
     let callCount = 0;
     const loadActor = fromPromise<LoadSessionListOutput, LoadSessionListInput>(
-      async () => {
+      async ({ input }) => {
         callCount += 1;
         return {
           items: callCount === 1 ? [SESSIONS_DESC[0]] : SESSIONS_DESC,
           next_cursor: null,
           has_more: false,
+          resume_target: input.intent_session_id ?? null,
         };
       },
     );
@@ -441,10 +542,15 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
   it("S13: retry_clicked returns to last_live_state from error_recoverable", async () => {
     let callCount = 0;
     const loadActor = fromPromise<LoadSessionListOutput, LoadSessionListInput>(
-      async () => {
+      async ({ input }) => {
         callCount += 1;
         if (callCount === 1) throw new Error("transient");
-        return { items: SESSIONS_DESC, next_cursor: null, has_more: false };
+        return {
+          items: SESSIONS_DESC,
+          next_cursor: null,
+          has_more: false,
+          resume_target: input.intent_session_id ?? null,
+        };
       },
     );
     const machine = createSessionChatMachine({ loadSessionList: loadActor });
