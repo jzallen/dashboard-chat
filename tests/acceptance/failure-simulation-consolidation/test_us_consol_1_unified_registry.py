@@ -42,7 +42,7 @@ EXPECTED_CANONICAL_KNOBS = {
     "force-list-sessions-failure": {"transport": "header", "owning": "ui-state"},
     "force-create-session-failure": {"transport": "header", "owning": "ui-state"},
     "force-reissue-failures": {"transport": "body-field", "owning": "agent"},
-    "force-failure-tag": {"transport": "event", "owning": "ui-state"},
+    "force-failure-on-auth-retry": {"transport": "event", "owning": "ui-state"},
     "expire-token": {"transport": "event", "owning": "ui-state"},
 }
 
@@ -211,7 +211,7 @@ def test_manifest_is_single_source_of_truth_across_ui_state_and_agent(
       1. Listing manifest entries from a node subprocess (the SSOT).
       2. Grepping production source for any knob-name pattern.
       3. Asserting every grep hit corresponds to a manifest entry (matched by
-         canonical name OR documented legacyAlias during phase-1).
+         canonical name or by the eventDistinguisher-stripped form).
 
     Per US-CONSOL-1 Scenario 5.
     """
@@ -221,7 +221,6 @@ def test_manifest_is_single_source_of_truth_across_ui_state_and_agent(
         "  name: e.name,\n"
         "  transport: e.transport,\n"
         "  owningService: e.owningService,\n"
-        "  legacyAlias: e.legacyAlias?.transportValue ?? null,\n"
         "}));\n"
         "process.stdout.write(JSON.stringify({__verdict: view}) + '\\n');\n"
     )
@@ -231,19 +230,16 @@ def test_manifest_is_single_source_of_truth_across_ui_state_and_agent(
     entries = payload["__verdict"]
 
     canonical_names = {e["name"] for e in entries}
-    legacy_aliases = {e["legacyAlias"] for e in entries if e["legacyAlias"]}
 
-    # Every header/event/body-field pattern in production source must be a
-    # canonical name (or a documented legacyAlias for the duration of phase 1).
+    # Every header/event/body-field pattern in production source must
+    # correspond to a manifest entry. CA-1 owns the strict full-match; here we
+    # assert presence-in-manifest as a less strict but service-spanning
+    # invariant.
     hits = driver.grep_production_source_for_knob_patterns()
     for kind, matches in hits.items():
         if not matches:
             continue
-        # Each matched line gets distilled to its identifier-shaped tail.
-        # The drift check (CA-1) owns the strict full-match; here we assert
-        # presence-in-manifest-or-alias as a less strict but service-spanning
-        # invariant.
-        assert canonical_names or legacy_aliases, (
+        assert canonical_names, (
             f"production source contains knob-pattern hits {kind!r} "
             f"({matches[:3]}) but the manifest is empty"
         )

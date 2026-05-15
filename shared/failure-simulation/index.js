@@ -33,7 +33,6 @@ export {
   GateMatrixSchema,
   GatePolicySchema,
   KnobTransportSchema,
-  LegacyAliasSchema,
   OwningServiceSchema,
 } from "./manifest.schema.js";
 export { KNOB } from "./knob.js";

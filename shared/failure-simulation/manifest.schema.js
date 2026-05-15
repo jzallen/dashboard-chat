@@ -16,16 +16,13 @@ const GateMatrixSchema = z.object({
   production: GatePolicySchema,
 });
 
-const LegacyAliasSchema = z.object({
-  transportValue: z.string().min(1),
-  removalCommit: z.literal("phase-2"),
-});
-
 // Zod schema for KnobManifestEntry per ADR-038. Required-field discipline:
 //   - `rationale` non-empty (US-CONSOL-5 Scenario 2 / CA-2)
 //   - `contractTestAlternativeConsidered` present, boolean (US-CONSOL-5 Scenario 3 / CA-2)
 //   - `name` matches kebab-case regex
 //   - `gate` carries all four tier keys
+//   - `eventDistinguisher` (optional, event-transport only): kebab suffix
+//     stripped from the canonical at wire-render time per ADR-038.
 export const ManifestEntrySchema = z
   .object({
     name: z.string().regex(CANONICAL_NAME_REGEX),
@@ -36,7 +33,6 @@ export const ManifestEntrySchema = z
     gate: GateMatrixSchema,
     rationale: z.string().min(1),
     contractTestAlternativeConsidered: z.boolean(),
-    legacyAlias: LegacyAliasSchema.optional(),
   })
   .strict();
 
@@ -48,6 +44,5 @@ export {
   GateMatrixSchema,
   GatePolicySchema,
   KnobTransportSchema,
-  LegacyAliasSchema,
   OwningServiceSchema,
 };

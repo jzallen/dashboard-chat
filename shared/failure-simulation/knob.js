@@ -9,6 +9,6 @@ export const KNOB = Object.freeze({
   forceListSessionsFailure: "force-list-sessions-failure",
   forceCreateSessionFailure: "force-create-session-failure",
   forceReissueFailures: "force-reissue-failures",
-  forceFailureTag: "force-failure-tag",
+  forceFailureOnAuthRetry: "force-failure-on-auth-retry",
   expireToken: "expire-token",
 });

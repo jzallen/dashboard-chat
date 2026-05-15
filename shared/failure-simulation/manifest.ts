@@ -56,11 +56,11 @@ export const manifest: ReadonlyArray<KnobManifestEntry> = [
     contractTestAlternativeConsidered: false,
   },
   {
-    name: "force-failure-tag" as KnobCanonicalName,
+    name: "force-failure-on-auth-retry" as KnobCanonicalName,
     transport: "event",
     target: "loginAndOrgSetup.authenticating",
     owningService: "ui-state",
-    eventDistinguisher: "authenticating",
+    eventDistinguisher: "on-auth-retry",
     gate: { dev: "permit", ci: "permit", staging: "deny", production: "deny" },
     rationale:
       "US-202 login/org-setup machine — synthetic auth failure event used by " +

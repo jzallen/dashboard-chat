@@ -294,17 +294,16 @@ app.post("/flow/:machine/event", async (c) => {
     return c.json({ error: "flow_id and type required" }, 400);
   }
 
-  // force-failure-tag knob — event transport. The __force_failure__ wire event
-  // drives the login-and-org-setup machine into error_recoverable with the
-  // supplied cause tag (DWD-1). Production deployments must refuse this event
-  // so a malicious caller can't bypass real auth flow logic; the ADR-035 gate
-  // (ENVIRONMENT × flag) is the closed-by-default decision and the registry
-  // surfaces a failure-simulation.rejected audit entry when the event arrives
-  // in a denying tier. Phase-2 vocabulary cleanup per ADR-038 — the
-  // legacyAlias bridge is dropped and the wire event type matches the
-  // registry's canonical-derived rendering.
+  // force-failure-on-auth-retry knob — event transport. The __force_failure__
+  // wire event drives the login-and-org-setup machine into error_recoverable
+  // with the supplied cause tag (DWD-1). Production deployments must refuse
+  // this event so a malicious caller can't bypass real auth flow logic; the
+  // ADR-035 gate (ENVIRONMENT × flag) is the closed-by-default decision and
+  // the registry surfaces a failure-simulation.rejected audit entry when the
+  // event arrives in a denying tier. Wire form `__force_failure__` derives
+  // from canonical via the eventDistinguisher rendering rule (ADR-038).
   if (body.type === "__force_failure__") {
-    const allowed = shouldInject(KNOB.forceFailureTag, {
+    const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
       event: { type: body.type },
       correlationId: correlation_id,
       serviceName: "ui-state",

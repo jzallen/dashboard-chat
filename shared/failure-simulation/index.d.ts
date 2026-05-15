@@ -12,7 +12,6 @@ export {
   GateMatrixSchema,
   GatePolicySchema,
   KnobTransportSchema,
-  LegacyAliasSchema,
   ManifestEntrySchema,
   ManifestSchema,
   OwningServiceSchema,

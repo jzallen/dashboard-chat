@@ -17,15 +17,17 @@ export interface KnobManifestEntry {
   readonly transport: KnobTransport;
   readonly target: string;
   readonly owningService: OwningService;
+  /**
+   * Optional, event-transport only. The kebab-case suffix that
+   * `renderEventTypes` strips from the canonical name to produce the wire
+   * event type — lets a self-documenting canonical (e.g.
+   * `force-failure-on-auth-retry`) render to an idiomatic XState wire form
+   * (e.g. `__force_failure__`). See ADR-038.
+   */
   readonly eventDistinguisher?: string;
   readonly gate: Readonly<Record<EnvironmentTier, GatePolicy>>;
   readonly rationale: string;
   readonly contractTestAlternativeConsidered: boolean;
-  /** Transitional. Present during phase 1 of US-CONSOL-4 only — see ADR-038. */
-  readonly legacyAlias?: {
-    readonly transportValue: string;
-    readonly removalCommit: "phase-2";
-  };
 }
 
 export const CANONICAL_NAME_REGEX: RegExp;
@@ -34,9 +36,5 @@ export const OwningServiceSchema: z.ZodEnum<["ui-state", "agent"]>;
 export const EnvironmentTierSchema: z.ZodEnum<["dev", "ci", "staging", "production"]>;
 export const GatePolicySchema: z.ZodEnum<["permit", "deny"]>;
 export const GateMatrixSchema: ZodType<Readonly<Record<EnvironmentTier, GatePolicy>>>;
-export const LegacyAliasSchema: ZodType<{
-  transportValue: string;
-  removalCommit: "phase-2";
-}>;
 export const ManifestEntrySchema: ZodType<KnobManifestEntry>;
 export const ManifestSchema: ZodType<ReadonlyArray<KnobManifestEntry>>;

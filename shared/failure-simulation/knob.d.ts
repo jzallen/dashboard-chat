@@ -11,6 +11,6 @@ export const KNOB: {
   readonly forceListSessionsFailure: KnobCanonicalName;
   readonly forceCreateSessionFailure: KnobCanonicalName;
   readonly forceReissueFailures: KnobCanonicalName;
-  readonly forceFailureTag: KnobCanonicalName;
+  readonly forceFailureOnAuthRetry: KnobCanonicalName;
   readonly expireToken: KnobCanonicalName;
 };

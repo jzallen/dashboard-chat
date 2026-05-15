@@ -1,13 +1,18 @@
 import { ManifestSchema } from "./manifest.schema.js";
 
-// Canonical knob list per ADR-038. The `legacyAlias` entries bridge phase 1
-// (wire-identical adapter migration) to phase 2 (vocabulary cleanup) and are
-// removed atomically by MR-5. See:
-//   docs/feature/failure-simulation-consolidation/design/adr-038-failure-simulation-naming-phase-plan.md
+// Canonical knob list per ADR-038. The phase-1 `legacyAlias` bridge was
+// removed after MR-5 — manifest entries now carry only their canonical
+// (post-rename) names.
 //
 // SSOT pair: this file is the runtime data; `manifest.ts` is the TypeScript
 // source-of-truth parsed by the acceptance driver's regex. The drift-check
 // script in `scripts/drift-check.mjs` verifies the two stay in sync.
+//
+// `eventDistinguisher` (optional, event-transport only): the kebab-case
+// suffix that `renderEventTypes` strips from the canonical name to produce
+// the wire event type. Lets the manifest carry a fully self-documenting
+// canonical (e.g. `force-failure-on-auth-retry`) while keeping the wire
+// event idiomatic for XState consumers (e.g. `__force_failure__`).
 const RAW_ENTRIES = [
   {
     name: "force-create-project-failure",
@@ -54,11 +59,11 @@ const RAW_ENTRIES = [
     contractTestAlternativeConsidered: false,
   },
   {
-    name: "force-failure-tag",
+    name: "force-failure-on-auth-retry",
     transport: "event",
     target: "loginAndOrgSetup.authenticating",
     owningService: "ui-state",
-    eventDistinguisher: "authenticating",
+    eventDistinguisher: "on-auth-retry",
     gate: { dev: "permit", ci: "permit", staging: "deny", production: "deny" },
     rationale:
       "US-202 login/org-setup machine — synthetic auth failure event used by " +

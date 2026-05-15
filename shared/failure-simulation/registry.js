@@ -5,20 +5,11 @@ import { emitFiredEvent, emitRejectedEvent, emitUnknownEvent } from "./audit.js"
 // Internal index for fast canonical-name lookup. Built once at module load.
 const KNOB_BY_NAME = new Map(manifest.map((entry) => [entry.name, entry]));
 
-// Legacy transport-value index for the phase-1 wire bridge per ADR-038. Used
-// by `detectUnknownSignals` to recognize the transitional event/body-field
-// names without flagging them as unknown. MR-5 drops the entries.
-const KNOB_BY_LEGACY_ALIAS = new Map(
-  manifest
-    .filter((entry) => entry.legacyAlias != null)
-    .map((entry) => [entry.legacyAlias.transportValue, entry]),
-);
-
-// Wire-event-name index for `event`-transport entries — covers both the
-// canonical-derived rendering and any phase-1 legacyAlias renderings produced
-// by `renderEventTypes`. Lets `detectUnknownSignals` recognize wire names
-// whose mapping back to a canonical name is non-trivial (e.g. an entry with
-// `eventDistinguisher` whose canonical name carries a disambiguator suffix).
+// Wire-event-name index for `event`-transport entries. Lets
+// `detectUnknownSignals` recognize wire names whose mapping back to a
+// canonical name is non-trivial — entries that carry `eventDistinguisher`
+// strip a kebab suffix from the canonical at render time, so the wire form
+// is not bijective with the canonical via simple snake↔kebab conversion.
 const KNOB_BY_WIRE_EVENT = new Map();
 for (const entry of manifest) {
   if (entry.transport !== "event") continue;
@@ -140,32 +131,27 @@ function renderHeaderName(canonical) {
 }
 
 function renderEventTypes(entry) {
-  // Phase-2 (MR-5) post-rename: canonical-derived `__<name_with_underscores>__`.
-  // Entries with `eventDistinguisher` drop the canonical name's last kebab
-  // segment per ADR-038 §"Naming scheme" (e.g. `force-failure-tag` →
-  // `__force_failure__`). The remaining `legacyAlias` branch is the phase-1
-  // bridge for knobs whose vocabulary cleanup has not landed yet.
-  if (entry.legacyAlias != null) {
-    const legacy = entry.legacyAlias.transportValue;
-    return [legacy, legacy.replace(/^__harness_/, "__")];
-  }
+  // Canonical-derived wire event: snake-case the canonical then wrap in `__`.
+  // Entries with `eventDistinguisher` strip that exact kebab suffix from the
+  // canonical before rendering — letting the manifest carry a self-documenting
+  // canonical (e.g. `force-failure-on-auth-retry`) while the wire stays
+  // idiomatic for XState consumers (e.g. `__force_failure__`).
   const baseName =
     entry.eventDistinguisher != null
-      ? entry.name.replace(/-[^-]+$/, "")
+      ? entry.name.replace(
+          new RegExp(`-${escapeRegex(entry.eventDistinguisher)}$`),
+          "",
+        )
       : entry.name;
   return ["__" + baseName.replace(/-/g, "_") + "__"];
 }
 
 function renderFieldNames(entry) {
-  const names = [];
-  if (entry.legacyAlias != null) {
-    const legacy = entry.legacyAlias.transportValue;
-    names.push(legacy);
-    names.push(legacy.replace(/^harness_/, ""));
-  } else {
-    names.push(entry.name.replace(/-/g, "_"));
-  }
-  return names;
+  return [entry.name.replace(/-/g, "_")];
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function headersHas(headers, headerName) {
@@ -296,13 +282,10 @@ function isKnownWireSignal(rawName, transport) {
     return KNOB_BY_NAME.has(rawName);
   }
   if (transport === "event") {
-    if (KNOB_BY_LEGACY_ALIAS.has(rawName)) return true;
     return KNOB_BY_WIRE_EVENT.has(rawName);
   }
   if (transport === "body-field") {
-    if (KNOB_BY_LEGACY_ALIAS.has(rawName)) return true;
-    const canonical = rawName.replace(/_/g, "-");
-    return KNOB_BY_NAME.has(canonical);
+    return KNOB_BY_NAME.has(rawName.replace(/_/g, "-"));
   }
   return false;
 }

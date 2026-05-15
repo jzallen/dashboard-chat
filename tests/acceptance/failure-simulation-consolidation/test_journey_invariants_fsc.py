@@ -64,7 +64,7 @@ def test_all_six_knobs_remain_functional_after_every_story_lands(
         "});\n"
         "// Event knobs (ui-state).\n"
         "for (const [knob, evt] of [\n"
-        "  [KNOB.forceFailureTag, '__force_failure__'],\n"
+        "  [KNOB.forceFailureOnAuthRetry, '__force_failure__'],\n"
         "  [KNOB.expireToken, '__expire_token__'],\n"
         "]) {\n"
         "  shouldInject(knob, {\n"
@@ -87,7 +87,7 @@ def test_all_six_knobs_remain_functional_after_every_story_lands(
         "force-list-sessions-failure",
         "force-create-session-failure",
         "force-reissue-failures",
-        "force-failure-tag",
+        "force-failure-on-auth-retry",
         "expire-token",
     }
 
