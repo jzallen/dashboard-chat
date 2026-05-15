@@ -766,11 +766,11 @@ export class FlowOrchestrator {
     if (!orgId || !projectId) return;
 
     // Per DWD-13 §2B the session-chat flow's log carries the
-    // `session_chat_project_ready` event as its first marker so the projection
+    // `project_context_inherited` event as its first marker so the projection
     // reducer knows session-chat has been spawned for this principal.
     await this.deps.eventLog.append(flow_id, {
       ts: new Date().toISOString(),
-      type: "session_chat_project_ready",
+      type: "project_context_inherited",
       payload: {
         org_id: orgId,
         project_id: projectId,

@@ -139,7 +139,7 @@ These events are never FE-emitted — they arrive from the orchestrator.
 
 **Outgoing.** This machine has no downstream cross-machine broadcasts — it's the end of the chain.
 
-It emits projection events to the FlowEvent log for FE consumption: `session_chat_project_ready`, `session_list_load_started`, `session_list_loaded`, `session_list_displayed`, `session_resume_started`, `session_resumed`, `session_active_reached`, `session_resume_not_found`.
+It emits projection events to the FlowEvent log for FE consumption: `project_context_inherited`, `session_list_load_started`, `session_list_loaded`, `session_list_displayed`, `session_resume_started`, `session_resumed`, `session_active_reached`, `session_resume_not_found`.
 
 ## Files
 

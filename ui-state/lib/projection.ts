@@ -594,7 +594,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   // event log carries these events on the `session-chat:<principal>` Redis
   // stream key — separate from the project-context flow's log.
 
-  session_chat_project_ready: (_state, context, event) => {
+  project_context_inherited: (_state, context, event) => {
     const payload = event.payload as {
       org_id?: string;
       project_id?: string;
