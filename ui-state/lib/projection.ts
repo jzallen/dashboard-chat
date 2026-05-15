@@ -357,7 +357,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   // inside `context.*`. The active_scope field is derived from context.org.id
   // and context.project below in buildProjection.
 
-  j002_resolution_started: (_state, context, event) => {
+  project_context_resolution_started: (_state, context, event) => {
     const payload = event.payload as {
       org_id?: string;
       user?: { first_name?: string | null };
@@ -572,7 +572,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  j002_recoverable_error: (_state, context, event) => {
+  project_context_recoverable_error: (_state, context, event) => {
     const payload = event.payload as {
       underlying_cause_tag?: string;
       pending_project_name?: string;

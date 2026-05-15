@@ -549,7 +549,7 @@ export class FlowOrchestrator {
       );
     }
 
-    // Persist a j002_resolution_started + terminal-for-now event so the
+    // Persist a project_context_resolution_started + terminal-for-now event so the
     // projection-builder can reconstruct state from the event log alone.
     //
     // ADR-030 LEAF-B: ctx is rebound to the live projection's context (built
@@ -593,7 +593,7 @@ export class FlowOrchestrator {
     // Initial event — marks the J-002 actor as started for projection consumers.
     await this.deps.eventLog.append(flow_id, {
       ts: new Date().toISOString(),
-      type: "j002_resolution_started",
+      type: "project_context_resolution_started",
       payload: {
         org_id: ctx.org.id ?? input.org_id ?? "",
         user: {
@@ -1335,7 +1335,7 @@ export class FlowOrchestrator {
       } else if (stateValue === "error_recoverable") {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
-          type: "j002_recoverable_error",
+          type: "project_context_recoverable_error",
           payload: {
             underlying_cause_tag:
               projectionCtx.underlying_cause_tag ?? "transient",

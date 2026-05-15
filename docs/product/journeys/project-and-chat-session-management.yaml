@@ -56,7 +56,7 @@ state_machine:
         the project list, and the user's last-used project metadata.
         Emits exactly one `DomainEvent` resolving the initial state.
       emits:
-        - event: "j002_resolution_started"
+        - event: "project_context_resolution_started"
           payload_includes: ["correlation_id", "intent_project_id", "intent_session_id", "intent_resource_id"]
       transitions:
         - on: "resolved_with_project"
@@ -323,7 +323,7 @@ state_machine:
         a correlation id; the retry re-enters the originating
         state with the same correlation_id.
       emits:
-        - event: "j002_recoverable_error"
+        - event: "project_context_recoverable_error"
           payload_includes: ["underlying_cause_tag", "correlation_id", "originating_state"]
       transitions:
         - on: "retry_clicked"
