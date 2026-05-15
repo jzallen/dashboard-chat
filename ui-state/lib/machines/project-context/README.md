@@ -1,137 +1,152 @@
 # project-context machine
 
-> **Owner:** ui-state (Hono BFF actor system)
-> **Source-of-truth:** `machine.ts` in this directory.
-> **Related ADRs:** ADR-027 (flow-state tier + framework — XState v5 adoption), ADR-028 (XState v5 actor model — machines own transitions, the log owns state), ADR-030 (flow-state topology + scaling — orchestrator pattern + projection as primary read model).
+Owns "which project am I in?" — the project-selection half of the post-signin experience. Sibling of [`login-and-org-setup`](../login-and-org-setup/) (which feeds it `auth_ready`) and [`session-chat`](../session-chat/) (which it wakes via `project_ready`).
 
-## Purpose
+## What this machine does
 
-Owns the "which project am I in?" half of journey J-002: initial-scope resolution, project creation, the deep-link entry path (US-204), mid-flow project switching (MR-4 / US-207), and the cross-tenant terminal failure surface. Maintains the `org_id` + `project_id` halves of `active_scope`; the `resource_*` half is owned by the sibling `session-chat` machine.
+Once login is done, the user lands in this machine. Three responsibilities:
+
+1. **Initial scope resolution.** Look up the user's projects. If they have one, pre-select it. If they have a deep-link intent on the URL, validate it. If the project belongs to a different tenant, route to a terminal mismatch surface.
+2. **Project creation.** First-time users with no projects type a name; the machine creates the row and pre-selects the new project.
+3. **Mid-session project switching.** When the user clicks a different project in the picker, the machine atomically clears the previous selection's session state (via the orchestrator broadcasting a fresh `project_ready`) and verifies they still have access.
+
+The settled state is `project_selected`. When the machine enters that state, the orchestrator broadcasts `project_ready` to `session-chat`, carrying `{ org_id, project_id, project_name }` plus any deep-link intents that came in via the URL.
 
 ## State diagram
 
 ```mermaid
 stateDiagram-v2
+  %% Two ways the user gets "stuck":
+  %%   scope_mismatch_terminal = cross-tenant, project not found,
+  %%                             access revoked. Recoverable via
+  %%                             back_to_projects_clicked.
+  %%   error_recoverable       = transient (network etc.).
+  %%                             Recoverable via retry_clicked.
+  %%
+  %% `open_deep_link` is registered at the machine root, not as
+  %% a from-some-state transition, so it can arrive from any
+  %% live state. Drawn separately below the diagram to keep
+  %% the chart readable.
+
   [*] --> resolving_initial_scope
 
-  resolving_initial_scope --> resolving_initial_scope: auth_ready (re-enter; absorbs org_id + user.first_name from J-001)
-  resolving_initial_scope --> scope_mismatch_terminal: resolveInitialScope onDone {cross_tenant: true}
-  resolving_initial_scope --> scope_mismatch_terminal: resolveInitialScope onDone {project_not_found: true}
-  resolving_initial_scope --> no_projects: resolveInitialScope onDone {no_projects: true}
-  resolving_initial_scope --> project_selected: resolveInitialScope onDone {project}
-  resolving_initial_scope --> error_recoverable: resolveInitialScope onError (transient)
+  resolving_initial_scope --> resolving_initial_scope: auth_ready
+  resolving_initial_scope --> no_projects: resolveInitialScope onDone [no projects]
+  resolving_initial_scope --> project_selected: resolveInitialScope onDone [project]
+  resolving_initial_scope --> scope_mismatch_terminal: resolveInitialScope onDone [cross-tenant or not found]
+  resolving_initial_scope --> error_recoverable: resolveInitialScope onError
 
   no_projects --> creating_project: create_project_clicked
-  no_projects --> creating_project: create_project_submitted [projectNameValid]
-  no_projects --> no_projects: create_project_submitted [invalid] (inline error, no transition)
+  no_projects --> creating_project: create_project_submitted [valid]
+  no_projects --> no_projects: create_project_submitted [invalid]
 
   creating_project --> project_selected: createProject onDone
-  creating_project --> error_recoverable: createProject onError (transient)
+  creating_project --> error_recoverable: createProject onError
 
-  project_selected --> switching_project: switching_project_intent (captures new_project_id)
+  project_selected --> switching_project: switching_project_intent
 
-  switching_project --> scope_mismatch_terminal: switchProject onDone {access_revoked: true}
-  switching_project --> scope_mismatch_terminal: switchProject onDone {project_not_found: true}
-  switching_project --> project_selected: switchProject onDone {project} (clears intent_*; bumps scope_reconciled_count)
-  switching_project --> error_recoverable: switchProject onError (transient)
+  switching_project --> project_selected: switchProject onDone [project]
+  switching_project --> scope_mismatch_terminal: switchProject onDone [access revoked or not found]
+  switching_project --> error_recoverable: switchProject onError
 
-  scope_mismatch_terminal --> resolving_initial_scope: back_to_projects_clicked (clears all intent_*)
+  scope_mismatch_terminal --> resolving_initial_scope: back_to_projects_clicked
 
-  error_recoverable --> creating_project: retry_clicked (preserves pending_project_name; bumps retries_count)
-
-  state any_state {
-    [*] --> any_state
-  }
-  any_state --> resolving_initial_scope: open_deep_link (root-level handler; assigns intent_* from payload)
+  error_recoverable --> creating_project: retry_clicked
 ```
 
-*Note: `open_deep_link` is registered at the machine root level (the `on:` block outside `states`) so it can arrive from any live state — `no_projects`, `project_selected`, `error_recoverable`, etc. The handler captures the four `intent_*` fields from the event payload and re-enters `resolving_initial_scope` so the resolver re-runs with the new intent.*
+**Root-level event — `open_deep_link`.** This transition is registered on the machine's root `on:` block (outside the `states:` block), which means it can fire from any state. When it fires, the handler captures the four `intent_*` fields from the event payload and re-enters `resolving_initial_scope` so the resolver runs again with the new intent. It's not drawn as a wildcard arrow above to keep the chart readable — when you see deep-link behaviour in production, this is what dispatched it.
 
 ## States
 
-| State | Purpose | Entered on | Exits on |
+| State | What's happening | Entered on | Exits on |
 |---|---|---|---|
-| `resolving_initial_scope` | Invokes `resolveInitialScope` to learn whether the user has any projects, owns one matching `intent_project_id`, or has cross-tenant intent | initial spawn; `auth_ready`; `open_deep_link`; `back_to_projects_clicked` | resolver `onDone` (4 branches) / `onError` (transient) |
-| `no_projects` | Welcome-empty surface; user must create the first project | resolver `onDone {no_projects: true}` | `create_project_clicked` / valid `create_project_submitted` |
-| `creating_project` | Invokes `createProject` against `POST /api/projects` with `pending_project_name` | `create_project_submitted` (valid) or `retry_clicked` | `createProject` `onDone` (settled) / `onError` (transient) |
-| `project_selected` | Project chosen + materialized in `context.project`; the orchestrator's broadcast hook fires `project_ready` to session-chat on entry | `resolveInitialScope` `onDone {project}`; `createProject` `onDone`; `switchProject` `onDone {project}` | `switching_project_intent` (or root-level `open_deep_link`) |
-| `switching_project` | Invokes `switchProject` to validate the user's access to a new `intent_project_id` (MR-4 / US-207) | `switching_project_intent` | `switchProject` `onDone` (4 branches) / `onError` (transient) |
-| `scope_mismatch_terminal` | Terminal-style surface for `cross_tenant`, `project_not_found`, or `access_revoked` causes; not a sink — user can recover via `back_to_projects_clicked` | resolver / switcher `onDone` with mismatch verdict | `back_to_projects_clicked` |
-| `error_recoverable` | Generic transient-failure landing zone; preserves `pending_project_name` for retry | any actor `onError` | `retry_clicked` (routes back to `creating_project`) |
+| `resolving_initial_scope` | Invokes `resolveInitialScope` to find out: does the user have any projects? Does an `intent_project_id` from the URL match one they own? Are they cross-tenant? | spawn, `auth_ready`, `open_deep_link`, `back_to_projects_clicked` | resolver settles |
+| `no_projects` | Welcome-empty surface. The user must type a name to create their first project | resolver returns `{ no_projects: true }` | `create_project_clicked` or valid submit |
+| `creating_project` | POST `/api/projects` with `pending_project_name` | valid `create_project_submitted` or `retry_clicked` | `createProject` settles |
+| `project_selected` | A project is materialized in `context.project`. The orchestrator broadcasts `project_ready` to session-chat on entry | resolver `onDone {project}`, `createProject onDone`, `switchProject onDone {project}` | `switching_project_intent` (or root-level `open_deep_link`) |
+| `switching_project` | Validates the user's access to a new project id via `switchProject` | `switching_project_intent` | `switchProject` settles |
+| `scope_mismatch_terminal` | Terminal-style mismatch surface (cross-tenant, project not found, access revoked). Not a sink — the user can recover via `back_to_projects_clicked` | resolver or switcher returns a mismatch verdict | `back_to_projects_clicked` |
+| `error_recoverable` | Transient-failure landing zone. Preserves `pending_project_name` so the retry doesn't lose composer text | any actor error | `retry_clicked` |
 
 ## Events
 
-### External (FE / orchestrator → machine)
+### From the FE
 
-| Event | Source | Payload | Purpose |
-|---|---|---|---|
-| `auth_ready` | Orchestrator broadcast hook (login → project-context) | `{ org_id, user: { first_name } }` | Inherit identity from the login machine's projection; triggers initial scope resolution. Payload-centric event name per [ADR-039](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) §C3 (cross-machine broadcasts name what they carry, not the sender) |
-| `create_project_clicked` | FE composer | (none) | Move from welcome to the in-progress creation invoke (variant of explicit submit path) |
-| `create_project_submitted` | FE composer | `{ org_name }` | Submit a project-name string; guard `projectNameValid` decides between transition and inline-error stay |
-| `back_to_projects_clicked` | FE terminal-state escape hatch | (none) | Recover from `scope_mismatch_terminal`; clears all four `intent_*` |
-| `retry_clicked` | FE error UI | (none) | Re-invoke `createProject` from `error_recoverable`, preserving `pending_project_name` |
-| `switching_project_intent` | FE project picker / mid-session deep link (MR-4) | `{ new_project_id }` | Atomic project switch; the orchestrator emits `switching_project_started` so the projection invalidates `session_id` + `resource_*` BEFORE the new project's `loading_session_list` |
+| Event | Payload | What it does |
+|---|---|---|
+| `create_project_clicked` | (none) | Move from `no_projects` welcome surface into `creating_project` directly (variant of explicit submit) |
+| `create_project_submitted` | `{ project_name }` | Submit a project-name string. Guarded — invalid input self-loops with an inline `project_validation_error` |
+| `back_to_projects_clicked` | (none) | Recover from `scope_mismatch_terminal`. Clears all four `intent_*` fields |
+| `retry_clicked` | (none) | Re-invoke `createProject` from `error_recoverable`, preserving `pending_project_name` |
+| `switching_project_intent` | `{ new_project_id }` | Atomic project switch. The orchestrator emits `switching_project_started` so the projection invalidates `session_id` + `resource_*` *before* `session-chat`'s `loading_session_list` re-runs |
 
-### Internal (machine-emitted; root-level)
+### Cross-machine (from orchestrator)
 
-| Event | Source | Payload | Purpose |
-|---|---|---|---|
-| `open_deep_link` | HTTP `/flow/:machine/open-deep-link` route → orchestrator → machine | `{ intent_project_id?, intent_session_id?, intent_resource_id?, intent_resource_type? }` | Root-level handler; captures the four intents and re-enters `resolving_initial_scope` |
+| Event | Payload | What it does |
+|---|---|---|
+| `auth_ready` | `{ org_id, user: { first_name } }` | Inherit identity from the login machine. Re-entering `resolving_initial_scope` kicks off scope resolution |
 
-### Cross-machine (orchestrator broadcasts FROM this machine)
+### Root-level (cross-state)
 
-This machine does not directly send events to siblings; the orchestrator's state-watcher branch observes `project_selected` entry and broadcasts a `project_ready` event to the session-chat machine (idempotent on same `project_id`; invalidates `session_id` + `resource_*` on different `project_id`). See `orchestrator.ts` `emitProjectContextSpawnEvents` and the `project_ready` broadcast hook.
+| Event | Payload | What it does |
+|---|---|---|
+| `open_deep_link` | `{ intent_project_id?, intent_session_id?, intent_resource_id?, intent_resource_type? }` | Captures the four intents into context and re-enters `resolving_initial_scope`. Fires from any state |
+
+The HTTP entry point is `POST /flow/:machine/open-deep-link`, which arrives via the orchestrator.
 
 ## Actors invoked
 
-| Actor | `input` shape | `output` shape | When invoked |
+| Actor | Input | Output | Invoked in |
 |---|---|---|---|
-| `resolveInitialScope` | `{ org_id, intent_project_id, principal_id }` | `{ project } \| { no_projects: true } \| { cross_tenant: true } \| { project_not_found: true }` (optionally `most_recent_session_per_project`, `degraded_project_ids`) | On entry into `resolving_initial_scope` |
-| `createProject` | `{ org_name, correlation_id, principal_id }` | `ProjectSummary` (id + name) | On entry into `creating_project` |
-| `switchProject` | `{ new_project_id, correlation_id, principal_id }` | `{ project } \| { access_revoked: true } \| { project_not_found: true }` | On entry into `switching_project` (MR-4) |
+| `resolveInitialScope` | `{ org_id, intent_project_id, principal_id }` | One of: `{ project }`, `{ no_projects: true }`, `{ cross_tenant: true }`, `{ project_not_found: true }`. May also include `most_recent_session_per_project` and `degraded_project_ids` | `resolving_initial_scope` |
+| `createProject` | `{ org_name, correlation_id, principal_id }` | `ProjectSummary` = `{ id, name }` | `creating_project` |
+| `switchProject` | `{ new_project_id, correlation_id, principal_id }` | One of: `{ project }`, `{ access_revoked: true }`, `{ project_not_found: true }` | `switching_project` |
 
-## Context fields (current)
+## Context
 
-| Field | Type | When populated | Read by | Notes |
-|---|---|---|---|---|
-| `correlation_id` | `string` | construction | every emission | always |
-| `principal_id` | `string` | construction | actor inputs | from auth-proxy `X-User-Id` |
-| `org_id` | `string` | `auth_ready` | actor inputs; projection | `""` until J-001 settles |
-| `user` | `{ first_name: string \| null }` | `auth_ready` | projection / FE | for greeting copy |
-| `project` | `{ id: string \| null; name: string \| null }` | `project_selected` entry | projection; `project_ready` broadcast | both null until settled |
-| `intent_project_id` | `string \| null` | `open_deep_link` / `switching_project_intent` | `resolveInitialScope`, `switchProject` inputs | cleared on `switchProject` `onDone` and on `back_to_projects_clicked` |
-| `intent_session_id` | `string \| null` | `open_deep_link` | forwarded via `project_ready` payload to session-chat | cleared on `back_to_projects_clicked` |
-| `intent_resource_id` | `string \| null` | `open_deep_link` | forwarded via `project_ready` payload | cleared on `back_to_projects_clicked` |
-| `intent_resource_type` | `ResourceType \| null` | `open_deep_link` | forwarded via `project_ready` payload | cleared on `back_to_projects_clicked`; `ResourceType` is YAGNI-collapsed to `"dataset"` per ADR-039 §Q1 |
-| `underlying_cause_tag` | `ProjectContextCauseTag \| null` | mismatch / error transitions | projection; FE diagnostic copy | union of 6 cause kinds |
-| `last_live_state` | `ProjectContextState \| null` | error transitions | retry routing (parallels session-chat) | unused in project-context's retry table (the retry path always returns to `creating_project`) — kept for shape parity |
-| `retries_count` | `number` | `retry_clicked` | observability | bumps each retry |
-| `pending_project_name` | `string` | `create_project_submitted` (valid) | `createProject` input on retry | preserved across `creating_project` ↔ `error_recoverable` |
-| `project_validation_error` | `ProjectValidationError \| null` | `create_project_submitted` (invalid) | projection / inline error UI | `null` after a successful submit |
-| `scope_reconciled_count` | `number` | `switchProject` `onDone {project}` | observability | OQ-J002-5 |
-| `stale_intents_dropped_count` | `number` | (reserved) | observability | OQ-J002-5 |
-| `most_recent_session_per_project` | `Record<string, string>` | `resolveInitialScope` `onDone` | orchestrator emits `last_used_resolution_degraded` from this | OQ-J002-5 |
-| `last_used_degraded_project_ids` | `string[]` | `resolveInitialScope` `onDone` | orchestrator emits `last_used_resolution_degraded` | OQ-J002-5 |
+| Field | Type | When populated |
+|---|---|---|
+| `correlation_id` | `string` | spawn |
+| `principal_id` | `string` | spawn (from auth-proxy's `X-User-Id` header) |
+| `org_id` | `string` | `auth_ready` (empty string until login settles) |
+| `user` | `{ first_name }` (`string \| null`) | `auth_ready` |
+| `project` | `{ id, name }` (both `string \| null`) | `project_selected` entry |
+| `intent_project_id` | `string \| null` | `open_deep_link` or `switching_project_intent` — cleared on `switchProject onDone` and on `back_to_projects_clicked` |
+| `intent_session_id` | `string \| null` | `open_deep_link` — forwarded via `project_ready` payload to session-chat |
+| `intent_resource_id` | `string \| null` | `open_deep_link` — forwarded via `project_ready` payload |
+| `intent_resource_type` | `ResourceType \| null` | `open_deep_link` — forwarded via `project_ready` payload |
+| `pending_project_name` | `string` | valid `create_project_submitted`; preserved across `creating_project` ↔ `error_recoverable` |
+| `project_validation_error` | `ProjectValidationError \| null` | invalid `create_project_submitted` |
+| `underlying_cause_tag` | `ProjectContextCauseTag \| null` | mismatch or transient-error transitions. 6-cause union |
+| `last_live_state` | `ProjectContextState \| null` | error transitions. Currently retry routing always goes back to `creating_project`; kept for shape parity with sibling machines |
+| `retries_count` | `number` | each `retry_clicked` |
+| `scope_reconciled_count` | `number` | each `switchProject onDone {project}` (observability) |
+| `stale_intents_dropped_count` | `number` | reserved (observability) |
+| `most_recent_session_per_project` | `Record<string, string>` | `resolveInitialScope onDone`. Orchestrator emits `last_used_resolution_degraded` from this |
+| `last_used_degraded_project_ids` | `string[]` | `resolveInitialScope onDone`. Orchestrator emits `last_used_resolution_degraded` from this |
 
-NOTE: Per ADR-028 §"Amendment 2026-05-15", context should carry internal handler state only; cross-state communication rides on `event.output`. The current field set may include legacy "lying-about-nullability" fields targeted for LEAF-A through LEAF-D migration per ADR-030. In particular, `intent_session_id` / `intent_resource_id` / `intent_resource_type` are CARRIED transiently on this machine's context between `open_deep_link` and `project_selected`, where the orchestrator forwards them to session-chat via the `project_ready` payload — but per the amendment they should ride on the event surface, not context.
+**A note on the `intent_*` fields.** This machine carries them transiently between `open_deep_link` and the next `project_ready` broadcast, where the orchestrator forwards them to session-chat. They are pass-through scope leak — this machine doesn't read them, only stores and forwards. There's an open migration to ride them on the event surface (see ADR-030); for now they live in context.
 
-## Cross-machine wiring
+## How it connects to siblings
 
-- **Receives from orchestrator:** `auth_ready` (from login-and-org-setup `ready` entry — carries `org_id` + `user: { first_name }`).
-- **Emits projection events** (via `orchestrator.appendProjectContextTerminalEvents` and adjacent emitters): `no_projects_displayed`, `project_creation_started`, `project_validation_failed`, `project_selected`, `project_switched`, `switching_project_started`, `scope_mismatch_displayed`, `deep_link_opened`, `last_used_resolution_degraded`.
-- **Triggers downstream broadcast:** the orchestrator's state-watcher branch observes `project_selected` entry and broadcasts a `project_ready` event to the session-chat machine (idempotent on same `project_id`; invalidates `session_id` + `resource_*` on different `project_id` per IC-J002-4).
+**Incoming.** The orchestrator forwards `auth_ready` from `login-and-org-setup`'s `ready` entry — that's how this machine learns its `org_id` and `user.first_name`.
 
-## Files in this directory
+**Outgoing.** This machine doesn't send events directly. The orchestrator watches `project_selected` entry and broadcasts `project_ready` to `session-chat`. The broadcast is idempotent on the same `project_id` (no-op) and invalidates session/transcript/resource state when the `project_id` changes (cross-project switch).
 
-- `machine.ts` — the XState v5 machine factory + types + production actor factories (`resolveInitialScopeActor`, `createProjectActor`, `switchProjectActor`)
+The machine also emits projection events to the FlowEvent log: `no_projects_displayed`, `project_creation_started`, `project_validation_failed`, `project_selected`, `project_switched`, `switching_project_started`, `scope_mismatch_displayed`, `deep_link_opened`, `last_used_resolution_degraded`.
+
+## Files
+
+- `machine.ts` — the XState v5 machine + types + actor factories (`resolveInitialScopeActor`, `createProjectActor`, `switchProjectActor`)
 - `validation.ts` — `validateProjectName`, `ProjectValidationError`
-- `index.ts` — barrel; re-exports the public surface (machine + actors + types + validation)
-- `machine.test.ts` — vitest unit tests (port-to-port at the XState actor's `send` / snapshot surface)
-- `README.md` — this file
+- `index.ts` — barrel; re-exports the public surface
+- `machine.test.ts` — vitest unit tests at the actor's `send` / snapshot boundary
 
-## Related design docs
+## See also
 
-- `docs/evolution/2026-05-15-failure-simulation-consolidation/` — failure-simulation knobs this machine respects (`X-Force-Create-Project-Failure`, `X-Force-List-Sessions-Failure`)
-- `docs/feature/project-and-chat-session-management/design/` — J-002 design wave (will migrate to docs/evolution/ on FINALIZE)
-- `docs/decisions/adr-027-flow-state-tier-and-framework.md`, `adr-028-xstate-v5-actor-model.md`, `adr-030-flow-state-topology-and-scaling.md`
-- `docs/discussion/session-chat-context-architecture/directions.md` — the JTBD analysis that motivated the A+F convergence
+- [`../login-and-org-setup/`](../login-and-org-setup/) — feeds this machine `auth_ready`
+- [`../session-chat/`](../session-chat/) — receives `project_ready` from this machine
+- [ADR-027](../../../../docs/decisions/adr-027-flow-state-tier-and-framework.md) — why ui-state runs XState v5 in a Hono BFF
+- [ADR-028](../../../../docs/decisions/adr-028-xstate-v5-actor-model.md) — the actor model and the rule "machines own transitions, the log owns state"
+- [ADR-030](../../../../docs/decisions/adr-030-flow-state-topology-and-scaling.md) — orchestrator pattern, projection-as-read-model, and the `event.output` direction for cross-state hand-off
+- [ADR-039](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) — naming conventions for states, events, fields, counters

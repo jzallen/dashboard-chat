@@ -1,138 +1,157 @@
 # session-chat machine
 
-> **Owner:** ui-state (Hono BFF actor system)
-> **Source-of-truth:** `machine.ts` in this directory.
-> **Related ADRs:** ADR-027 (flow-state tier + framework — XState v5 adoption), ADR-028 (XState v5 actor model — machines own transitions, the log owns state), ADR-030 (flow-state topology + scaling — orchestrator pattern + projection as primary read model).
+Owns "what's happening in my current chat session?" — session list, session resume, the welcome state for fresh sessions, and the chat-turn surface. Sibling of [`project-context`](../project-context/) (which feeds it `project_ready`) and [`login-and-org-setup`](../login-and-org-setup/) (which it doesn't talk to directly).
 
-## Purpose
+## What this machine does
 
-Owns the "what's happening in my current session?" half of journey J-002: session-list visibility (US-203), session resume + transcript materialization (US-205), the lazy-create welcome state (US-206), and the chat-turn-emitting states. Maintains the `resource_*` half of `active_scope`; the `org_id` + `project_id` halves are owned by the sibling `project-context` machine and arrive here via the orchestrator's `project_ready` broadcast.
+After `project-context` has settled on a project, this machine wakes up via the orchestrator's `project_ready` broadcast and takes over the right side of the UI. Three responsibilities:
+
+1. **Show the sidebar.** Fetch the session list for the current project. If the URL carried an `intent_session_id` (deep link or click-from-elsewhere), resume that session directly.
+2. **Resume sessions.** Pull transcript + resource together in one atomic operation so the UI never paints a half-loaded session.
+3. **Lazy-create new sessions.** When the user clicks "+ New Session" we don't write to the backend yet — we sit in a welcome state. The session row is only created when they send the first message. The title is derived from that first message.
+
+The machine has a "waiting" stub state (`waiting_for_project`) where it idles before `project_ready` arrives. Once it does, the machine cycles between `loading_session_list`, `session_list_loaded`, `resuming_session`, and `session_active` as the user picks/creates/switches sessions.
 
 ## State diagram
 
 ```mermaid
 stateDiagram-v2
+  %% The retry table in error_recoverable consults `last_live_state`
+  %% to know which actor to re-invoke. Three branches: list, resume,
+  %% welcome. Each branch preserves the relevant pending-input context.
+  %%
+  %% project_ready can re-fire when the user switches projects.
+  %% The cross-project guard clears session/transcript/resource
+  %% before re-entering loading_session_list.
+
   [*] --> waiting_for_project
 
-  waiting_for_project --> loading_session_list: project_ready (captures org_id + project_id + project_name + intent_session_id)
+  waiting_for_project --> loading_session_list: project_ready
 
-  loading_session_list --> loading_session_list: project_ready (reenter; clears session_id + transcript + resource + session_list)
-  loading_session_list --> resuming_session: loadSessionList onDone [intent_session_id !== null]
+  loading_session_list --> loading_session_list: project_ready
+  loading_session_list --> resuming_session: loadSessionList onDone [intent present]
   loading_session_list --> session_list_loaded: loadSessionList onDone [no intent]
-  loading_session_list --> error_recoverable: loadSessionList onError (list_sessions_degraded; last_live_state = loading_session_list)
+  loading_session_list --> error_recoverable: loadSessionList onError
 
-  session_list_loaded --> resuming_session: session_clicked (captures session_id into intent_session_id)
-  session_list_loaded --> session_welcome: new_session_clicked (zeros session_id + transcript + resource + pending_first_message)
+  session_list_loaded --> resuming_session: session_clicked
+  session_list_loaded --> session_welcome: new_session_clicked
   session_list_loaded --> loading_session_list: refresh_session_list
-  session_list_loaded --> loading_session_list: project_ready [project_id changed] (clears all session state)
+  session_list_loaded --> loading_session_list: project_ready [project changed]
 
-  resuming_session --> session_list_loaded: resumeSession onDone {session_not_found: true} (silent; clears intent_session_id)
-  resuming_session --> session_active: resumeSession onDone (atomic: transcript + resource assigned together)
-  resuming_session --> error_recoverable: resumeSession onError (transient; last_live_state = resuming_session)
+  resuming_session --> session_active: resumeSession onDone [found]
+  resuming_session --> session_list_loaded: resumeSession onDone [not found]
+  resuming_session --> error_recoverable: resumeSession onError
 
   session_active --> resuming_session: session_clicked
   session_active --> loading_session_list: refresh_session_list
-  session_active --> loading_session_list: project_ready [project_id changed]
+  session_active --> loading_session_list: project_ready [project changed]
 
-  session_welcome --> session_welcome: new_session_clicked (idempotent no-op)
+  session_welcome --> session_welcome: new_session_clicked
   session_welcome --> resuming_session: session_clicked
-  session_welcome --> creating_session: first_message_sent (captures pending_first_message)
-  session_welcome --> loading_session_list: project_ready [project_id changed] (clears pending_first_message)
+  session_welcome --> creating_session: first_message_sent
+  session_welcome --> loading_session_list: project_ready [project changed]
 
-  creating_session --> session_active: createSessionEagerly onDone (session_id assigned; transcript + resource zeroed)
-  creating_session --> error_recoverable: createSessionEagerly onError (transient; last_live_state = session_welcome)
+  creating_session --> session_active: createSessionEagerly onDone
+  creating_session --> error_recoverable: createSessionEagerly onError
 
-  error_recoverable --> loading_session_list: retry_clicked [last_live_state = loading_session_list]
-  error_recoverable --> resuming_session: retry_clicked [last_live_state = resuming_session]
-  error_recoverable --> session_welcome: retry_clicked [last_live_state = session_welcome] (preserves pending_first_message)
+  error_recoverable --> loading_session_list: retry_clicked [list]
+  error_recoverable --> resuming_session: retry_clicked [resume]
+  error_recoverable --> session_welcome: retry_clicked [welcome]
 ```
-
-*MR-3 added the `session_welcome` + `creating_session` pair for the US-206 lazy-create contract. The eager-create actor POSTs `/api/projects/:id/sessions` and PATCHes the title in one fire-and-await sequence so the test can observe the row with `title === first_message[:80]` by the time `session_active` settles. MR-5 will add `switching_dataset_context`; MR-6 will add a top-level `on.FREEZE` handler + `freeze` state.*
 
 ## States
 
-| State | Purpose | Entered on | Exits on |
+| State | What's happening | Entered on | Exits on |
 |---|---|---|---|
-| `waiting_for_project` | Stub state; the actor spawns here and idles until the orchestrator's `project_ready` broadcast arrives | initial spawn | `project_ready` |
-| `loading_session_list` | Invokes `loadSessionList` against `GET /api/projects/:id/sessions` | `project_ready` (initial or re-broadcast on project switch); `refresh_session_list`; `retry_clicked` (when `last_live_state = loading_session_list`) | `loadSessionList` `onDone` (2 branches: intent / no-intent) / `onError` |
-| `session_list_loaded` | Sidebar populated; no session opened | `loadSessionList` `onDone` (no intent); `resumeSession` `onDone {session_not_found: true}` | `session_clicked`, `new_session_clicked`, `refresh_session_list`, or cross-project `project_ready` |
-| `resuming_session` | Invokes `resumeSession` against `GET /api/sessions/:id` + transcript events + dataset probe (US-205) | `loadSessionList` `onDone` (with intent); `session_clicked`; `retry_clicked` (when `last_live_state = resuming_session`) | `resumeSession` `onDone` (3 branches: found / not_found / dataset_unavailable) / `onError` |
-| `session_active` | Atomic post-resume state with transcript + resource materialized together (per IC-J002-3) | `resumeSession` `onDone {found}`; `createSessionEagerly` `onDone` | `session_clicked`, `refresh_session_list`, or cross-project `project_ready` |
-| `session_welcome` | US-206 welcome state; lazily-created session — no backend write fires until first message | `new_session_clicked`; `retry_clicked` (when `last_live_state = session_welcome`) | `first_message_sent`, `session_clicked`, idempotent `new_session_clicked`, or cross-project `project_ready` |
-| `creating_session` | Invokes `createSessionEagerly` (POST + PATCH title) on the welcome state's first message | `first_message_sent` | `createSessionEagerly` `onDone` / `onError` |
-| `error_recoverable` | Transient-failure landing zone; the retry table consults `last_live_state` to route back | any actor `onError` | `retry_clicked` (3 guarded branches) |
+| `waiting_for_project` | Stub state. The actor spawns here and idles until the orchestrator's `project_ready` broadcast arrives | spawn | `project_ready` |
+| `loading_session_list` | Invokes `loadSessionList` against `GET /api/projects/:id/sessions` | `project_ready` (initial or cross-project re-broadcast), `refresh_session_list`, `retry_clicked` for list | `loadSessionList` settles |
+| `session_list_loaded` | Sidebar populated; no session opened. Awaiting user action | `loadSessionList onDone` (no intent); `resumeSession onDone {session_not_found: true}` (silent fall-through) | `session_clicked`, `new_session_clicked`, `refresh_session_list`, or cross-project `project_ready` |
+| `resuming_session` | Invokes `resumeSession` against `GET /api/sessions/:id` to fetch transcript + dataset probe | `loadSessionList onDone` (with intent), `session_clicked`, `retry_clicked` for resume | `resumeSession` settles |
+| `session_active` | A session is loaded. `transcript` + `resource` were assigned together in one transition (no half-loaded UI) | `resumeSession onDone {found}`, `createSessionEagerly onDone` | `session_clicked`, `refresh_session_list`, or cross-project `project_ready` |
+| `session_welcome` | A new session has been started but not yet persisted. The composer is empty; no backend write fires until the first message arrives | `new_session_clicked`, `retry_clicked` for welcome | `first_message_sent`, `session_clicked`, idempotent `new_session_clicked`, or cross-project `project_ready` |
+| `creating_session` | Invokes `createSessionEagerly` (POST a new session row + PATCH its title from `first_message[:80]`) | `first_message_sent` | `createSessionEagerly` settles |
+| `error_recoverable` | Transient-failure landing zone. The retry table consults `last_live_state` to route back to the right actor | any actor error | `retry_clicked` (three guarded branches) |
 
 ## Events
 
-### External (FE → machine)
+### From the FE
 
-| Event | Source | Payload | Purpose |
-|---|---|---|---|
-| `session_clicked` | FE sidebar row click | `{ session_id }` | Captures `session_id` into `intent_session_id`; transitions to `resuming_session` |
-| `new_session_clicked` | FE "+ New Session" button | (none) | Enter the welcome state; idempotent from `session_welcome` |
-| `first_message_sent` | FE composer submit (from welcome state) | `{ content }` | US-206 lazy-create trigger; captures `pending_first_message` |
-| `refresh_session_list` | FE sidebar refresh | (none) | Re-enter `loading_session_list` |
-| `dataset_resolved_by_agent` | FE agent message handler (MR-5+) | `{ resource_id, resource_type }` | Reserved for MR-5 dataset attachment |
-| `dataset_picked_directly` | FE dataset picker (MR-5+) | `{ resource_id, resource_type }` | Reserved for MR-5 dataset attachment |
-| `retry_clicked` | FE error UI | (none) | Re-invoke the actor for `last_live_state` |
-| `suggestion_chip_clicked_upload` | FE welcome-state suggestion chip | (none) | Reserved for future UX surfacing |
-| `suggestion_chip_clicked_browse_projects` | FE welcome-state suggestion chip | (none) | Reserved for future UX surfacing |
+| Event | Payload | What it does |
+|---|---|---|
+| `session_clicked` | `{ session_id }` | Captures `session_id` into `intent_session_id`; transitions to `resuming_session` |
+| `new_session_clicked` | (none) | Enter the welcome state. Idempotent from `session_welcome` |
+| `first_message_sent` | `{ content }` | Captures `pending_first_message`. Triggers the lazy-create POST/PATCH |
+| `refresh_session_list` | (none) | Re-enter `loading_session_list` |
+| `retry_clicked` | (none) | Re-invoke the actor for whichever live state failed |
+| `dataset_resolved_by_agent` | `{ resource_id, resource_type }` | Reserved — wired in a future dataset-attachment feature |
+| `dataset_picked_directly` | `{ resource_id, resource_type }` | Reserved — wired in a future dataset-attachment feature |
+| `suggestion_chip_clicked_upload` | (none) | Reserved — wired when the welcome-state suggestion chips ship |
+| `suggestion_chip_clicked_browse_projects` | (none) | Reserved — wired when the welcome-state suggestion chips ship |
 
-### Cross-machine (orchestrator-emitted; never FE-emitted)
+### Cross-machine (from orchestrator)
 
-| Event | Source | Payload | Purpose |
-|---|---|---|---|
-| `project_ready` | Orchestrator broadcast hook (project-context → session-chat, on `project_selected` entry) | `{ org_id, project_id, project_name, correlation_id, intent_session_id?, intent_resource_id?, intent_resource_type? }` | Initial wake-up from `waiting_for_project`; on subsequent broadcasts (e.g. MR-4 project switch) clears session/transcript/resource state when `project_id` changes; idempotent no-op when `project_id` matches |
-| `FREEZE` | Orchestrator FREEZE/THAW broadcast (cross-flow replay barrier, ADR-028) | `{ origin_correlation_id? }` | Reserved for MR-6 (top-level handler + `freeze` state not yet declared in MR-3) |
-| `THAW` | Orchestrator FREEZE/THAW broadcast | (none) | Reserved for MR-6 |
+These events are never FE-emitted — they arrive from the orchestrator.
+
+| Event | Payload | What it does |
+|---|---|---|
+| `project_ready` | `{ org_id, project_id, project_name, correlation_id, intent_session_id?, intent_resource_id?, intent_resource_type? }` | Initial wake-up from `waiting_for_project`. On subsequent broadcasts (the user switched projects), the cross-project guard clears session/transcript/resource state before re-entering `loading_session_list`. Idempotent on the same `project_id` |
+| `FREEZE` | `{ origin_correlation_id? }` | Reserved — the freeze/replay handler isn't yet declared in this machine |
+| `THAW` | (none) | Reserved companion to `FREEZE` |
 
 ## Actors invoked
 
-| Actor | `input` shape | `output` shape | When invoked |
+| Actor | Input | Output | Invoked in |
 |---|---|---|---|
-| `loadSessionList` | `{ project_id, principal_id, page_size? }` | `{ items: SessionSummary[], next_cursor: string \| null, has_more: boolean }` | On entry into `loading_session_list` |
-| `resumeSession` | `{ session_id, project_id, principal_id }` | `{ session_id, transcript: TranscriptMessage[], active_dataset_id: string \| null, dataset_unavailable?: boolean }` \| `{ session_not_found: true }` | On entry into `resuming_session` |
-| `createSessionEagerly` | `{ project_id, principal_id, first_message }` | `{ session_id }` | On entry into `creating_session` |
+| `loadSessionList` | `{ project_id, principal_id, page_size? }` | `{ items: SessionSummary[], next_cursor: string \| null, has_more: boolean }` | `loading_session_list` |
+| `resumeSession` | `{ session_id, project_id, principal_id }` | Either `{ session_id, transcript, active_dataset_id, dataset_unavailable? }` or `{ session_not_found: true }` | `resuming_session` |
+| `createSessionEagerly` | `{ project_id, principal_id, first_message }` | `{ session_id }` | `creating_session` |
 
-## Context fields (current)
+`createSessionEagerly` does a POST + PATCH in one fire-and-await sequence so the test/UI can observe the session row with the correct title (derived from `first_message[:80]`) by the time `session_active` settles.
 
-| Field | Type | When populated | Read by | Notes |
-|---|---|---|---|---|
-| `correlation_id` | `string` | construction; refreshed on `project_ready` if payload supplies one | every emission | always |
-| `principal_id` | `string` | construction | actor inputs | from auth-proxy `X-User-Id` |
-| `org_id` | `string` | `project_ready` | projection / FE | `""` until project-context settles |
-| `project` | `{ id: string \| null; name: string \| null }` | `project_ready` | actor inputs; projection / FE | cleared on cross-project `project_ready`; nested per ADR-039 §C8 (aggregate-owned id nested inside its object) |
-| `session_list` | `SessionSummary[]` | `loadSessionList` `onDone` | projection / FE sidebar | cleared on cross-project `project_ready` |
-| `session_list_next_cursor` | `string \| null` | `loadSessionList` `onDone` | (reserved for pagination) | |
-| `session_list_has_more` | `boolean` | `loadSessionList` `onDone` | (reserved for pagination) | |
-| `session_id` | `string \| null` | `resumeSession` / `createSessionEagerly` `onDone` | projection / FE | zeroed by `new_session_clicked` and by cross-project `project_ready` |
-| `transcript` | `TranscriptMessage[]` | `resumeSession` `onDone` (atomic with `resource`) | projection / FE | zeroed by `new_session_clicked` and by cross-project `project_ready` |
-| `resource` | `{ type: ResourceType \| null; id: string \| null }` | `resumeSession` `onDone` (atomic with `transcript`) | projection / FE | per IC-J002-3 the assignment is single-transaction with transcript; `ResourceType` is YAGNI-collapsed to `"dataset"` per ADR-039 §Q1 |
-| `intent_session_id` | `string \| null` | `project_ready` payload; `session_clicked` | `resumeSession` input | cleared on `resumeSession` `onDone` (settled or not_found) |
-| `underlying_cause_tag` | `SessionChatCauseTag \| null` | error transitions; `resumeSession` `onDone` (dataset_unavailable case) | projection; FE diagnostic copy | 6-cause union |
-| `last_live_state` | `SessionChatState \| null` | error transitions | retry routing | drives the 3-branch retry table in `error_recoverable` |
-| `retries_count` | `number` | `retry_clicked` | observability | bumps each retry |
-| `pending_first_message` | `string` | `first_message_sent` | `createSessionEagerly` input on retry | preserved across `session_welcome` ↔ `error_recoverable` (app-arch §6.4 composer-state contract) |
-| `stale_intents_dropped_count` | `number` | (reserved) | observability | OQ-J002-5 |
+## Context
 
-NOTE: Per ADR-028 §"Amendment 2026-05-15", context should carry internal handler state only; cross-state communication rides on `event.output`. The current field set may include legacy "lying-about-nullability" fields targeted for LEAF-A through LEAF-D migration per ADR-030. In particular, `intent_session_id` is carried transiently here between the `project_ready` payload (or `session_clicked`) and `resuming_session` `onDone` — per the amendment it should ride on the event surface, not context.
+| Field | Type | When populated |
+|---|---|---|
+| `correlation_id` | `string` | spawn; refreshed on `project_ready` if the payload supplies one |
+| `principal_id` | `string` | spawn (from auth-proxy's `X-User-Id` header) |
+| `org_id` | `string` | `project_ready` (empty string until project-context settles) |
+| `project` | `{ id, name }` (both `string \| null`) | `project_ready`. Cleared on cross-project `project_ready` |
+| `session_list` | `SessionSummary[]` | `loadSessionList onDone`. Cleared on cross-project `project_ready` |
+| `session_list_next_cursor` | `string \| null` | `loadSessionList onDone` (reserved for pagination) |
+| `session_list_has_more` | `boolean` | `loadSessionList onDone` (reserved for pagination) |
+| `session_id` | `string \| null` | `resumeSession onDone` or `createSessionEagerly onDone`. Zeroed by `new_session_clicked` and cross-project `project_ready` |
+| `transcript` | `TranscriptMessage[]` | `resumeSession onDone`, assigned in the same transition as `resource` |
+| `resource` | `{ type: ResourceType \| null; id: string \| null }` | `resumeSession onDone`, assigned in the same transition as `transcript` |
+| `intent_session_id` | `string \| null` | `project_ready` payload, or `session_clicked`. Cleared on `resumeSession onDone` (any branch) |
+| `pending_first_message` | `string` | `first_message_sent`. Preserved across `session_welcome` ↔ `error_recoverable` so the retry sees the same message |
+| `underlying_cause_tag` | `SessionChatCauseTag \| null` | error transitions, plus `resumeSession onDone` in the `dataset_unavailable` branch |
+| `last_live_state` | `SessionChatState \| null` | error transitions. Drives the three-branch retry table |
+| `retries_count` | `number` | each `retry_clicked` |
+| `stale_intents_dropped_count` | `number` | reserved (observability) |
 
-## Cross-machine wiring
+**Atomicity rule.** `transcript` and `resource` are assigned in a single transition (when `resumeSession` settles successfully). The orchestrator's projection never sees a session where transcript is filled but resource is null, or vice versa. This is the invariant the FE relies on to avoid rendering a session with the chat panel populated but the dataset chip blank.
 
-- **Receives from orchestrator:** `project_ready` (from project-context's `project_selected` entry — carries `org_id` + `project_id` + `project_name` + forwarded `intent_*`). MR-4's `project_ready` re-broadcast on project switch arrives here too; the cross-project guard (`context.project?.id !== event.project_id`) routes it back into `loading_session_list` with all session state cleared per IC-J002-4.
-- **Emits projection events** (via `orchestrator.appendSessionChatTerminalEvents` and adjacent emitters): `session_chat_project_ready`, `session_list_load_started`, `session_list_loaded`, `session_list_displayed`, `session_resume_started`, `session_resumed`, `session_active_reached`, `session_resume_not_found`. (Dataset-related events arrive with MR-5; FREEZE/THAW arrive with MR-6.)
-- **No downstream broadcasts:** session-chat is a leaf in the J-002 broadcast tree.
+**Internal vs. cross-state hand-off.** Fields like `intent_session_id` are transient hand-off — captured from one event, read by the next actor, cleared on settle. There's an open migration to ride them on the event surface rather than carrying them in context (see ADR-030); for now they live here.
 
-## Files in this directory
+## How it connects to siblings
 
-- `machine.ts` — the XState v5 machine factory + types + production actor factories (`loadSessionListActor`, `resumeSessionActor`, `createSessionEagerlyActor`)
-- `index.ts` — barrel; re-exports the public surface (machine + actors + types)
-- `machine.test.ts` — vitest unit tests (port-to-port at the XState actor's `send` / snapshot surface)
-- `README.md` — this file
+**Incoming.** `project_ready` from the orchestrator (originally sourced from `project-context`'s `project_selected` entry). That broadcast is the only way this machine learns about its project; before it arrives, the machine sits in `waiting_for_project`.
 
-## Related design docs
+**Outgoing.** This machine has no downstream cross-machine broadcasts — it's the end of the chain.
 
-- `docs/evolution/2026-05-15-failure-simulation-consolidation/` — failure-simulation knobs this machine respects (`X-Force-Create-Session-Failure`)
-- `docs/feature/project-and-chat-session-management/design/` — J-002 design wave (will migrate to docs/evolution/ on FINALIZE)
-- `docs/decisions/adr-027-flow-state-tier-and-framework.md`, `adr-028-xstate-v5-actor-model.md`, `adr-030-flow-state-topology-and-scaling.md`
-- `docs/discussion/session-chat-context-architecture/directions.md` — the JTBD analysis that motivated the A+F convergence
+It emits projection events to the FlowEvent log for FE consumption: `session_chat_project_ready`, `session_list_load_started`, `session_list_loaded`, `session_list_displayed`, `session_resume_started`, `session_resumed`, `session_active_reached`, `session_resume_not_found`.
+
+## Files
+
+- `machine.ts` — the XState v5 machine + types + actor factories (`loadSessionListActor`, `resumeSessionActor`, `createSessionEagerlyActor`)
+- `index.ts` — barrel; re-exports the public surface
+- `machine.test.ts` — vitest unit tests at the actor's `send` / snapshot boundary
+
+## See also
+
+- [`../project-context/`](../project-context/) — feeds this machine `project_ready`
+- [`../login-and-org-setup/`](../login-and-org-setup/) — the first machine in the chain; doesn't talk to this one directly
+- [ADR-027](../../../../docs/decisions/adr-027-flow-state-tier-and-framework.md) — why ui-state runs XState v5 in a Hono BFF
+- [ADR-028](../../../../docs/decisions/adr-028-xstate-v5-actor-model.md) — the actor model and the rule "machines own transitions, the log owns state"
+- [ADR-030](../../../../docs/decisions/adr-030-flow-state-topology-and-scaling.md) — orchestrator pattern, projection-as-read-model, and the `event.output` direction for cross-state hand-off
+- [ADR-039](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) — naming conventions for states, events, fields, counters

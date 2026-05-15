@@ -1,140 +1,153 @@
 # login-and-org-setup machine
 
-> **Owner:** ui-state (Hono BFF actor system)
-> **Source-of-truth:** `machine.ts` in this directory.
-> **Related ADRs:** ADR-027 (flow-state tier + framework — XState v5 adoption), ADR-028 (XState v5 actor model — machines own transitions, the log owns state; amended 2026-05-15 to canonicalize "context for handler-internal state, `event.output` for cross-state hand-off"), ADR-030 (flow-state topology + scaling — orchestrator pattern + projection as primary read model).
+The flow that takes a brand-new user from "I clicked sign in" to "I'm signed in with an org and a working JWT." Owned by `ui-state` (the Hono backend-for-frontend actor system).
 
-## Purpose
+## What this machine does
 
-Owns the J-001 sign-in + org-bootstrap journey: anonymous → WorkOS userinfo exchange → org-name submission with inline validation → atomic create-org + JWT reissue with a bounded internal retry budget → `ready`. From `ready` the machine also handles the silent-reauth-on-expired-token path (ADR-028 §"Decision outcome"). Maintains the `user.{email, display_name}` + `org.{id, name}` halves of the J-001 projection; emits `auth_ready` post-`ready` so the orchestrator can wake `project-context.resolving_initial_scope` with `org_id` + `user.first_name`.
+This is the first machine a user touches. It has three jobs:
+
+1. **Authenticate.** Trade an OAuth code with WorkOS for a user profile (`email`, `display_name`).
+2. **Bootstrap an org.** A fresh user has no org, so we collect a name, then atomically create the org row and reissue the JWT so the token's `org_id` claim matches the new org.
+3. **Keep the token alive.** When the access token expires later, attempt a silent reauth without bouncing the user back to `/login`.
+
+When everything settles, the machine sits in `ready`. The orchestrator watches for that and broadcasts `auth_ready` to the sibling [`project-context`](../project-context/) machine, which then loads the project list.
 
 ## State diagram
 
 ```mermaid
 stateDiagram-v2
+  %% Two error landing zones:
+  %%   error_recoverable  = user can click "Try again"; bounded retry budget
+  %%   error_terminal     = contact-support page; budget exhausted
+  %%
+  %% Transition labels are kept short here; side-effects
+  %% (context assignments, counter bumps) live in the States table.
+
   [*] --> anonymous
 
   anonymous --> authenticating: sign_in_clicked
 
-  authenticating --> authenticated_no_org: workosUserInfo onDone (assigns user.email + user.display_name)
-  authenticating --> error_recoverable: workosUserInfo onError (classifyFailure → underlying_cause_tag)
+  authenticating --> authenticated_no_org: workosUserInfo onDone
+  authenticating --> error_recoverable: workosUserInfo onError
 
-  authenticated_no_org --> creating_org: org_form_submitted [orgNameValid] (captures pending_org_name; clears org_validation_error)
-  authenticated_no_org --> authenticated_no_org: org_form_submitted [invalid] (inline error in context; no transition)
-  authenticated_no_org --> error_recoverable: __force_failure__ (harness side-channel; assigns underlying_cause_tag)
+  authenticated_no_org --> creating_org: org_form_submitted [valid]
+  authenticated_no_org --> authenticated_no_org: org_form_submitted [invalid]
+  authenticated_no_org --> error_recoverable: __force_failure__
 
-  creating_org --> ready: createOrgAndReissue onDone (assigns org.id + org.name)
-  creating_org --> creating_org: createOrgAndReissue onError [retry budget remaining] (increments reissue_attempts_count; capturePartialOrgFromError; reenter)
-  creating_org --> error_recoverable: createOrgAndReissue onError [reissueBudgetExhausted] (tag partial-setup; capturePartialOrgFromError)
+  creating_org --> ready: createOrgAndReissue onDone
+  creating_org --> creating_org: createOrgAndReissue onError [budget remaining]
+  creating_org --> error_recoverable: createOrgAndReissue onError [budget exhausted]
 
-  ready --> expired_token: __expire_token__ (harness side-channel)
+  ready --> expired_token: __expire_token__
 
   expired_token --> ready: silentReauth onDone
-  expired_token --> error_recoverable: silentReauth onError (assigns underlying_cause_tag = silent-reauth-failed)
+  expired_token --> error_recoverable: silentReauth onError
 
-  error_recoverable --> creating_org: retry_clicked [user retry budget remaining] (increments retry_budget_used_count; resets reissue_attempts_count)
-  error_recoverable --> error_terminal: retry_clicked [userRetryBudgetExhausted] (increments retry_budget_used_count)
+  error_recoverable --> creating_org: retry_clicked [budget remaining]
+  error_recoverable --> error_terminal: retry_clicked [budget exhausted]
 
   error_terminal --> [*]
 ```
 
-*Note: the two `__double_underscore__` events (`__force_failure__`, `__expire_token__`) are failure-simulation side channels — gated at the HTTP layer (`ui-state/index.ts`) by `NWAVE_HARNESS_KNOBS=true` (the deprecated alias) / `FAILURE_SIMULATION_ENABLED=true` so production builds never observe them. Per the vocabulary audit's canonical convention C4, production events MUST NOT use the `__double_underscore__` prefix.*
+`__force_failure__` and `__expire_token__` are failure-simulation entry points — see [Failure simulation](#failure-simulation) below.
 
 ## States
 
-| State | Purpose | Entered on | Exits on |
+| State | What's happening | Entered on | Exits on |
 |---|---|---|---|
-| `anonymous` | Initial state; pre-sign-in surface | initial spawn | `sign_in_clicked` |
-| `authenticating` | Invokes `workosUserInfo` against the WorkOS-compatible `/oauth/token` + `/oauth/userinfo` exchange | `sign_in_clicked` | `workosUserInfo` `onDone` (settled) / `onError` (transient or workos-profile-corrupt) |
-| `authenticated_no_org` | Org-name composer surface; Maya enters her org name. `org_form_submitted` branches via the `orgNameValid` guard | `workosUserInfo` `onDone` | valid `org_form_submitted`; invalid `org_form_submitted` (self-loop with inline error); `__force_failure__` (harness) |
-| `creating_org` | Invokes `createOrgAndReissue` (POST `/api/orgs` + POST `/api/auth/reissue`, idempotent per ADR-029 invariant 4). Internal retry budget = 3 reissue attempts | valid `org_form_submitted`; `retry_clicked` from `error_recoverable` (with `reissue_attempts_count` reset to 0); internal retry self-loop on transient `onError` | `createOrgAndReissue` `onDone` (settled) / `onError` (transient self-loop or budget-exhausted to `error_recoverable`) |
-| `ready` | Settled state — `org.id` populated, JWT reissued. Orchestrator's broadcast hook fires `auth_ready` to project-context on entry | `createOrgAndReissue` `onDone`; `silentReauth` `onDone` | `__expire_token__` (harness side-channel) |
-| `error_recoverable` | Recoverable-error landing zone; FE shows a "Try again" CTA. The user-retry budget = 3 (the 4th total attempt at the same `underlying_cause_tag` escalates to `error_terminal`) | `workosUserInfo` `onError`; `createOrgAndReissue` `onError` (budget exhausted); `silentReauth` `onError`; `__force_failure__` | `retry_clicked` (2 guarded branches) |
-| `expired_token` | Invokes `silentReauth` to attempt a transparent re-issue without forcing Maya through `/login` again | `__expire_token__` from `ready` | `silentReauth` `onDone` (→ `ready`) / `onError` (→ `error_recoverable` tagged `silent-reauth-failed`) |
-| `error_terminal` | Terminal-style surface (contact-support page); no further retry CTA. Not a sink in the XState sense — the FE simply does not surface an exit | `retry_clicked` with `userRetryBudgetExhausted` | (none — terminal from the FE's perspective) |
+| `anonymous` | Pre-sign-in landing surface | spawn | `sign_in_clicked` |
+| `authenticating` | Invokes the WorkOS userinfo exchange. On success, `user.{email, display_name, first_name}` populate | `sign_in_clicked` | `workosUserInfo` settles |
+| `authenticated_no_org` | Waiting for the user to type an org name. Invalid submissions self-loop with `org_validation_error` set in context | `workosUserInfo` `onDone` | valid submit / invalid submit / failure-sim side channel |
+| `creating_org` | POST `/api/orgs` + POST `/api/auth/reissue` (one idempotent invoke). On transient errors, retries up to **3 attempts** before falling through to `error_recoverable`. On success, `org.{id, name}` populate | valid `org_form_submitted`, `retry_clicked` from recoverable, or self-loop on transient error | actor settles or budget exhausts |
+| `ready` | Signed in with org. The orchestrator broadcasts `auth_ready` on entry | `createOrgAndReissue` settles, `silentReauth` settles | token-expiry side channel |
+| `expired_token` | Attempts a silent JWT refresh without forcing the user back to `/login` | `__expire_token__` | `silentReauth` settles |
+| `error_recoverable` | Shows a "Try again" CTA. User has **3 retries** at the same `underlying_cause_tag` before escalating | any actor error, or `__force_failure__` | `retry_clicked` |
+| `error_terminal` | Contact-support surface. The FE doesn't render an exit; the user must reload | `retry_clicked` with budget exhausted | none |
 
 ## Events
 
-### External (FE / orchestrator → machine)
+### From the FE
 
-| Event | Source | Payload | Purpose |
-|---|---|---|---|
-| `sign_in_clicked` | FE sign-in button | `{ persona_email, persona_display_name }` | Move from `anonymous` to `authenticating`; persona fields supply the fake-workos lookup code in dev |
-| `auth_callback_resolved` | (reserved) | (none) | Reserved for the real WorkOS redirect callback path; not yet wired |
-| `auth_failed` | (reserved) | `{ underlying_cause_tag }` | Reserved for an explicit FE-emitted auth-failure signal; not yet wired |
-| `org_form_submitted` | FE org-name composer | `{ org_name }` | Submit the org name; guard `orgNameValid` decides between transition and inline-error self-loop |
-| `retry_clicked` | FE recoverable-error CTA | (none) | Re-enter `creating_org` (clearing `reissue_attempts_count`) OR escalate to `error_terminal` when the user-retry budget is exhausted |
+| Event | Payload | What it does |
+|---|---|---|
+| `sign_in_clicked` | `{ persona_email, persona_display_name }` | Kick off the WorkOS exchange. Persona fields drive the fake-WorkOS lookup in dev mode |
+| `org_form_submitted` | `{ org_name }` | Submit the org name. Guarded — invalid input self-loops with an inline `org_validation_error` |
+| `retry_clicked` | (none) | Resume from `error_recoverable`. Either re-enters `creating_org` or escalates to `error_terminal` based on the retry budget |
+| `auth_callback_resolved` | (none) | Reserved — not yet wired. Intended for the production WorkOS redirect callback |
+| `auth_failed` | `{ underlying_cause_tag }` | Reserved — not yet wired |
 
-### Internal / failure-simulation side channels
+### Cross-machine (from orchestrator)
 
-| Event | Source | Payload | Purpose |
-|---|---|---|---|
-| `__force_failure__` | Failure-simulation harness (gated by `FAILURE_SIMULATION_ENABLED` / legacy `NWAVE_HARNESS_KNOBS`) | `{ tag: UnderlyingCauseTag }` | From `authenticated_no_org`, jump straight into `error_recoverable` carrying the supplied cause tag |
-| `__expire_token__` | Failure-simulation harness | (none) | From `ready`, jump to `expired_token` to rehearse the silent-reauth path |
+| Event | Payload | What it does |
+|---|---|---|
+| `FREEZE` | (none) | Cross-flow replay barrier. The orchestrator owns the semantics; this machine only declares the type |
+| `THAW` | (none) | Replay-buffer release |
 
-### Cross-machine (orchestrator-emitted; FREEZE/THAW)
+### Failure simulation
 
-| Event | Source | Payload | Purpose |
-|---|---|---|---|
-| `FREEZE` | Orchestrator FREEZE/THAW broadcast (cross-flow replay barrier, ADR-028) | (none) | Currently declared in the event union; the orchestrator's freeze logic owns the cross-machine semantics (see `orchestrator.ts`) |
-| `THAW` | Orchestrator FREEZE/THAW broadcast | (none) | Companion to `FREEZE`; replay-buffer release |
+`__force_failure__` and `__expire_token__` are dev-only side channels gated at the HTTP boundary (`ui-state/index.ts`) by `FAILURE_SIMULATION_ENABLED` (legacy alias: `NWAVE_HARNESS_KNOBS`). Production builds don't observe them — they exist so acceptance tests can rehearse failure modes without breaking real upstreams.
 
-### Cross-machine broadcasts (orchestrator broadcasts FROM this machine)
+| Event | Payload | What it does |
+|---|---|---|
+| `__force_failure__` | `{ tag: UnderlyingCauseTag }` | From `authenticated_no_org`, jump to `error_recoverable` with the supplied cause tag |
+| `__expire_token__` | (none) | From `ready`, jump to `expired_token` to rehearse the silent-reauth path |
 
-This machine does not directly send events to siblings; the orchestrator's state-watcher branch observes `ready` entry and broadcasts `auth_ready` to the project-context machine (carries `{ org_id, user: { first_name } }`).
-
-> **Naming convention:** the broadcast event is `auth_ready` — payload-centric per [ADR-039](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) §C3 (cross-machine broadcasts name what they carry — auth completion — not the sender). Renamed from the legacy journey-numbered `auth_ready` per the vocabulary audit at `docs/discussion/ui-state-vocabulary-audit/findings.md` §7 Tier-1 #1.
+The double-underscore prefix is the project-wide convention for "this event must not exist in production." See [ADR-039 §C4](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md).
 
 ## Actors invoked
 
-| Actor | `input` shape | `output` shape | When invoked |
+| Actor | Input | Output | Invoked in |
 |---|---|---|---|
-| `workosUserInfo` | `{ persona_email, persona_display_name }` | `{ email, display_name }` (`WorkOSProfile`) | On entry into `authenticating` |
-| `createOrgAndReissue` | `{ org_name, principal_id, correlation_id, attempt }` | `{ org_id, org_name }` (`CreateOrgAndReissueOutput`) | On entry into `creating_org` (including reentry on transient `onError` within the internal 3-attempt budget) |
-| `silentReauth` | `{ correlation_id }` | `{ ok: true }` | On entry into `expired_token` (no-op fallback when `deps.silentReauth` is absent — the actor sits pending rather than blowing up the chart) |
+| `workosUserInfo` | `{ persona_email, persona_display_name }` | `WorkOSProfile` = `{ email, display_name }` | `authenticating` |
+| `createOrgAndReissue` | `{ org_name, principal_id, correlation_id, attempt }` | `{ org_id, org_name }` | `creating_org` (each attempt within the 3-retry budget) |
+| `silentReauth` | `{ correlation_id }` | `{ ok: true }` | `expired_token` |
 
-## Context fields (current)
+`createOrgAndReissue` is idempotent on `(org_name, principal_id)`. On partial failure (org created but reissue failed), the machine captures the partial org id so the retry doesn't double-create. See [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md) for why this is one invoke rather than two.
 
-| Field | Type | When populated | Read by | Notes |
-|---|---|---|---|---|
-| `correlation_id` | `string` | construction | every emission; actor inputs | NEVER overwritten across retries (B2 invariant in `machine.test.ts`) |
-| `principal_id` | `string` | construction | actor inputs | from auth-proxy `X-User-Id` |
-| `user` | `{ email: string \| null; display_name: string \| null }` | `workosUserInfo` `onDone` | projection / FE | both null until WorkOS settles |
-| `org` | `{ id: string \| null; name: string \| null }` | `createOrgAndReissue` `onDone`; also populated from the `partial_org` marker on `onError` via `capturePartialOrgFromError` so the "Try again" CTA can retry reissue without re-creating the org row | projection; orchestrator `auth_ready` broadcast | both null until provisioning settles |
-| `pending_org_name` | `string` | `org_form_submitted` (valid) | `createOrgAndReissue` input on retry | preserved across `creating_org` ↔ `error_recoverable` so each retry sees the same name |
-| `underlying_cause_tag` | `UnderlyingCauseTag \| null` | error transitions; `__force_failure__`; `silentReauth` `onError` | projection / FE diagnostic copy | union: `transient \| cookie-blocked \| partial-setup \| workos-profile-corrupt \| silent-reauth-failed` |
-| `retries_count` | `number` | (reserved) | observability | declared but currently unused by transition logic — the two real counters are `reissue_attempts_count` and `retry_budget_used_count` |
-| `reissue_attempts_count` | `number` | each `creating_org` reentry on transient `onError` | guard `reissueBudgetExhausted` | bounded by `REISSUE_BUDGET = 3`; reset on `retry_clicked` |
-| `retry_budget_used_count` | `number` | every `retry_clicked` | guard `userRetryBudgetExhausted` | bounded by `USER_RETRY_BUDGET = 3` — the 4th total attempt at the same `underlying_cause_tag` escalates to `error_terminal` (3 user-visible retries including the original failure) |
-| `org_validation_error` | `OrgValidationInlineError \| null` | invalid `org_form_submitted` | projection / inline error UI | cleared on the valid-submit branch (`clearOrgValidationError`); 4-kind discriminated union (`empty \| too_short \| too_long \| duplicate`) |
-| `existing_org_names` | `string[]` | construction (from `input.existing_org_names`) | `orgNameValid` guard + `recordOrgValidationError` | duplicate-name detection set; case-insensitive compare |
+## Context
 
-NOTE: Per ADR-028 §"Amendment 2026-05-15", context should carry handler-internal state only; cross-state hand-off should ride on `event.output`. Several legacy shapes in this machine are noted as targets for the later LEAF-A through LEAF-D migration (ADR-030 §"Migration sequencing") — captured here as descriptive context (no fix in this MR):
+| Field | Type | When populated |
+|---|---|---|
+| `correlation_id` | `string` | spawn |
+| `principal_id` | `string` | spawn (from auth-proxy's `X-User-Id` header) |
+| `user` | `{ email, display_name, first_name }` (all `string \| null`) | `workosUserInfo onDone`; `first_name` derived from `display_name` |
+| `org` | `{ id, name }` (both `string \| null`) | `createOrgAndReissue onDone`, or partial-org capture on retry |
+| `pending_org_name` | `string` | valid `org_form_submitted`; preserved across `creating_org` ↔ `error_recoverable` so retries see the same name |
+| `existing_org_names` | `string[]` | spawn input; powers duplicate-name validation |
+| `org_validation_error` | `OrgValidationInlineError \| null` | invalid `org_form_submitted`. 4-kind union: `empty`, `too_short`, `too_long`, `duplicate` |
+| `underlying_cause_tag` | `UnderlyingCauseTag \| null` | error transitions and silent-reauth failure |
+| `reissue_attempts_count` | `number` | each transient retry in `creating_org`. Bounded by `REISSUE_BUDGET = 3` |
+| `retry_budget_used_count` | `number` | each `retry_clicked`. Bounded by `USER_RETRY_BUDGET = 3` |
+| `retries_count` | `number` | reserved field; not currently driven by any transition |
 
-- **`pending_org_name` prefix** — Tier-2 audit row "`pending_` prefix" confirms this is the de facto canonical prefix for composer-text preservation (paired with `pending_project_name`, `pending_first_message`). Not a defect; recorded as the established convention.
+Counter fields end in `_count` per [ADR-039 §C5](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md).
 
-The vocabulary audit at `docs/discussion/ui-state-vocabulary-audit/findings.md` is the SSOT for the convention catalog; ADR-039 ratifies C1–C12. Counter-suffix canonicalization (C5) and `user.{first_name, …}` nesting (Tier-2 #11) landed under MR-C.
+Most fields here are **internal handler state** — they live for the duration of a `creating_org` retry loop or a composer-validation cycle, not as a contract between states. The exceptions are the fields the orchestrator reads off the snapshot (`user.first_name`, `org.id`) when it builds the cross-machine `auth_ready` payload; those are the cross-machine projection contract. ADR-028 has the broader rule.
 
-## Cross-machine wiring
+## How it connects to siblings
 
-- **Receives from orchestrator:** `FREEZE` / `THAW` (cross-flow replay barrier; the orchestrator owns the semantics).
-- **Emits projection events** (inline in `orchestrator.begin()` and the J-001 broadcast hook): `sign_in_clicked`, `org_created_and_jwt_reissued`, `reissue_failed_partial`, plus the `auth_ready` cross-machine event recorded as a side-effect of the broadcast hook (see `orchestrator.ts` §"auth_ready broadcast hook").
-- **Triggers downstream broadcast:** the orchestrator's state-watcher branch observes `ready` entry and broadcasts an `auth_ready` event to the project-context machine, carrying `{ org_id, user: { first_name } }` (payload-centric event naming per ADR-039 §C3).
+This machine never sends events to other machines directly. The orchestrator watches for `ready` entry and broadcasts `auth_ready` with `{ org_id, user: { first_name } }` to the `project-context` machine, which uses it to start scope resolution.
 
-## Files in this directory
+The event is named after **what it carries** ("auth completion data") rather than the sender. See [ADR-039 §C3](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) for the broadcast-naming rule.
 
-- `machine.ts` — the XState v5 machine factory + types + production actor factories (`createWorkOSUserInfoActor`, `createOrgAndReissueActor`) + the harness-knob construction site (`createForcedFailureOrgAndReissueActor`) + the split pure-function halves (`createOrgFn`, `reissueOrgJwtFn`)
-- `index.ts` — barrel; re-exports the public surface (machine + actors + types + the re-exported `UnderlyingCauseTag` from `../validation.ts`)
-- `machine.test.ts` — vitest unit tests (port-to-port at the XState actor's `send` / snapshot surface); the B1 + B2 behavior budget (4-test cap)
-- `README.md` — this file
+The machine also emits projection events for the FlowEvent log: `sign_in_clicked`, `org_created_and_jwt_reissued`, `reissue_failed_partial`. Those are FE-consumable; `auth_ready` is internal to ui-state.
 
-Shared with sibling machines (intentionally NOT moved into this directory; see the vocabulary audit for the relocation discussion):
+## Files
 
-- `../validation.ts` — `validateOrgName`, `classifyFailure`, `UnderlyingCauseTag` — currently consumed only by this machine but kept at the `machines/` root pending a separate decision on whether to relocate. Sibling `project-context/validation.ts` holds the `validateProjectName` analog.
+- `machine.ts` — the XState v5 machine + types + actor factories (`createWorkOSUserInfoActor`, `createOrgAndReissueActor`, plus the split pure helpers `createOrgFn` / `reissueOrgJwtFn`)
+- `index.ts` — barrel; re-exports the public surface
+- `machine.test.ts` — vitest unit tests at the actor's `send` / snapshot boundary
 
-## Related design docs
+Shared with siblings (kept at `machines/` root rather than in this directory):
 
-- `docs/decisions/adr-027-flow-state-tier-and-framework.md`, `adr-028-xstate-v5-actor-model.md` (with 2026-05-15 amendment), `adr-029-jwt-reissue-on-org-create.md`, `adr-030-flow-state-topology-and-scaling.md`
-- `docs/product/journeys/login-and-org-setup.yaml` — the J-001 journey (8-state contract this machine implements)
-- `docs/discussion/ui-state-vocabulary-audit/findings.md` — Tier-1 / Tier-2 vocabulary findings; the deferred-rename SSOT
-- `docs/evolution/2026-05-15-failure-simulation-consolidation/` — failure-simulation knobs this machine respects (`force-failure-on-auth-retry`, `expire-token`)
+- `../validation.ts` — `validateOrgName`, `classifyFailure`, and the `UnderlyingCauseTag` union
+
+## See also
+
+- [`../project-context/`](../project-context/) — receives `auth_ready` from this machine and owns the project-selection half of the post-signin flow
+- [`../session-chat/`](../session-chat/) — the third machine in the chain; doesn't talk to this one directly
+- [ADR-027](../../../../docs/decisions/adr-027-flow-state-tier-and-framework.md) — why ui-state runs XState v5 in a Hono BFF
+- [ADR-028](../../../../docs/decisions/adr-028-xstate-v5-actor-model.md) — the actor model and the rule "machines own transitions, the log owns state"
+- [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md) — why `createOrgAndReissue` is one atomic invoke
+- [ADR-030](../../../../docs/decisions/adr-030-flow-state-topology-and-scaling.md) — orchestrator pattern and projection-as-read-model
+- [ADR-039](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) — naming conventions for states, events, fields, counters
