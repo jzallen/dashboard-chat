@@ -80,9 +80,19 @@ emission OR the SSE-stream cancellation contract.
 
 ### D-MR4-02 — Acceptance tests re-skipped pending JWT-mint helper in driver
 
-**Status**: DEFERRED to a follow-up MR — substrate landed; live
-verification path discovered during MR-4-verify and blocked on
-test-infra gap.
+**Status**: PARTIALLY RESOLVED in `feature/j002-mr4-verify`. The
+JWT-mint helper + un-skips + override flags landed; 8 of 14 mr_4
+scenarios now run green against the local compose stack (1
+legitimately skipped — see D-MR4-05 below). The remaining 5 failing
+scenarios revealed additional MR-4 substrate gaps that are tracked
+separately as **D-MR4-05** (X-Org-Id injection in agent
+authMiddleware) and **D-MR4-06** (project-context `switching_project`
+state never settles end-to-end). These are real MR-4 substrate bugs;
+per the Iron Rule MR-4-verify does NOT modify the tests to make them
+pass — the failing tests stay un-skipped so they continue to surface
+the gaps. The verification debt for K-J002-4 is partially cleared
+(scope-contract assertions + IC-J002-4 invalidation under non-error
+paths) and partially carried into D-MR4-05/06.
 
 **What**: After MR-4 committed, an attempt to run the 14 MR-4 scenarios
 end-to-end (with a fresh agent build via `bazel run //agent:image_tar`)
@@ -164,6 +174,84 @@ is belt-and-braces.
 component that subscribes to the J-002 projection stream and calls
 `eventSource.close()` + `queryClient.invalidateQueries` on
 `switching_project` entry. Contract is documented in DWD-11.
+
+### D-MR4-05 — Agent's authMiddleware does not inject X-Org-Id from JWT
+
+**Status**: DEFERRED — pre-existing substrate gap surfaced by MR-4-verify.
+
+**What**: `agent/lib/auth.ts` verifies the bearer as an RS256 JWT but
+discards the verified payload — it calls `next()` without setting any
+request-context fields. Downstream code (`agent/lib/chat/scope.ts`
+line 128–129) reads `X-Org-Id` from the inbound request headers to
+enforce the documented cross-tenant defense-in-depth:
+
+```ts
+// scope.ts:156-158
+// Defense in depth: when both X-Active-Scope and X-Org-Id are present,
+// they MUST agree. auth-proxy injects X-Org-Id from the verified JWT;
+// a header-forging client cannot escape its own tenant via X-Active-Scope.
+```
+
+In production the chat path is `FE → reverse-proxy → /worker/chat →
+agent` — `/worker/*` strips the prefix and forwards DIRECTLY to the
+agent without auth-proxy in the chain (`frontend/nginx.conf` line 42–
+54). The agent thus never receives an `X-Org-Id` header in normal
+operation, and the cross-tenant guard at scope.ts:159 is dead code.
+
+**Tests blocked**:
+- `test_agent_rejects_chat_turn_with_org_id_mismatch_to_jwt_with_403`
+  expects 403 when X-Active-Scope.org_id != JWT.org_id. Currently
+  returns 200 (with an LLM-side "Invalid API Key" SSE error because
+  GROQ_API_KEY is dummy, but the scope check did not fire).
+- `test_during_migration_window_agent_falls_back_to_body_project_id_with_observability_event`
+  is the @degraded body-fallback path; scope.ts line 184 requires
+  X-Org-Id before honoring `body.project_id`, so the path 400s and
+  the test pytest.skip()s.
+
+**Resolution path**: Either (a) agent's `authMiddleware` sets
+`X-Org-Id` / `X-User-Id` on `c.req.raw.headers` from the verified
+JWT's claims after `jwtVerify` succeeds, or (b) the nginx `/worker/*`
+rule is routed through auth-proxy so identity headers are injected
+upstream. Option (a) is the smaller diff and aligns with the
+defense-in-depth comment (the agent should not trust that auth-proxy
+is in front of it for /chat).
+
+### D-MR4-06 — `switching_project` state never settles end-to-end
+
+**Status**: DEFERRED — surfaced by MR-4-verify.
+
+**What**: When a `switching_project_intent` event is posted to a flow
+in `project_selected`, the machine transitions to `switching_project`
+and invokes the `switchProject` actor. The actor's HTTP call to
+`GET /api/projects/:id` succeeds (verified by hitting the same URL
+from the ui-state container with `node -e fetch(...)`). But the
+projection's `state` field stays at `switching_project` indefinitely
+(observed: still `switching_project` 12 seconds after the event).
+The `project.id`, `scope_resolution_error`, and
+`underlying_cause_tag` fields remain null.
+
+`ui-state` emits no logs in the switching window — the orchestrator's
+state-watcher branch that should emit `switching_project_started` /
+`project_switched` events does not appear to fire.
+
+**Tests blocked**:
+- `test_switching_projects_atomically_retargets_active_scope_within_300ms_p95`
+- `test_deep_link_mid_session_switches_projects_via_loader`
+- `test_switching_to_access_revoked_project_surfaces_named_diagnostic`
+- `test_ts_harness_asserts_atomic_switching_and_sse_cancellation`
+
+**Investigation pointers for the follow-up MR**:
+- `ui-state/lib/machines/project-context/machine.ts` lines 445–496 —
+  the `switching_project` state's `invoke.onDone` branches look
+  correct. Verify the actor is actually invoked (add an entry-action
+  console.log to confirm).
+- `ui-state/index.ts` line 119 — `switchProject` is wired only when
+  the override branch is hit; confirm the deps wiring matches the
+  `ProjectContextMachineDeps.switchProject?: SwitchProjectActor` shape.
+- `ui-state/lib/orchestrator.ts` — the projection-event emission for
+  `switching_project_started` may not be wired to the J-002 flow yet
+  (unit-test surface covers the machine in isolation; the wiring
+  layer is the gap).
 
 ### D-MR4-04 — `project_switched` coexists with `project_selected`
 
