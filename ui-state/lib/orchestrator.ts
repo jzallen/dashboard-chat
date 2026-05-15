@@ -1104,8 +1104,27 @@ export class FlowOrchestrator {
     // ---- End freeze/thaw signaling --------------------------------------
 
     if (stateValue === "ready" && input.machine === "login-and-org-setup") {
-      const orgCtx = projectionCtx.org;
-      const userCtx = projectionCtx.user;
+      // LEAF-B carve-out: org.id / user are only set on the machine
+      // snapshot at this point — the projection has not yet observed the
+      // `org_created_and_jwt_reissued` event we are about to emit, so a
+      // projection read returns null and the minted access_token would
+      // be signature-only ("") instead of carrying the org_id claim.
+      // Until an upstream bridge event (LEAF-C+ for the login flow)
+      // populates the projection earlier, the snapshot is the source of
+      // truth for these two values. ADR-030 §"Migration sequencing"
+      // tracks the bridge-event work; this carve-out is the analogue of
+      // the LEAF-A risk note in `appendSessionChatTerminalEvents`.
+      // eslint-disable-next-line ui-state-conventions/no-orchestrator-snapshot-reads
+      const snapshotCtx = actor.getSnapshot().context as {
+        org: { id: string | null; name: string | null };
+        user: {
+          email: string | null;
+          display_name: string | null;
+          first_name: string | null;
+        };
+      };
+      const orgCtx = snapshotCtx.org;
+      const userCtx = snapshotCtx.user;
       // Mint a synthetic JWT carrying the org_id claim. Per ADR-029
       // invariant 4 the projection MUST expose the access_token so the FE
       // (and the TS harness via assert_jwt_carries_org_claim) can verify
@@ -1171,13 +1190,28 @@ export class FlowOrchestrator {
         correlation_id: input.correlation_id,
       });
     } else if (stateValue === "error_recoverable") {
+      // LEAF-B carve-out: underlying_cause_tag is set by the machine
+      // (e.g. from a `__force_failure__` event's payload, or from
+      // classifyFailure on a transient actor onError) and only lives on
+      // the snapshot at this emission point. The projection has not yet
+      // observed the `reissue_failed_partial` event we are about to
+      // emit, so a projection read returns null and the fallback
+      // "partial-setup" would mask the real cause (e.g. the test's
+      // `transient` tag). Until an upstream cause-classification event
+      // is added (LEAF-C+ for the login flow per ADR-030 §"Migration
+      // sequencing"), the snapshot is the source of truth here.
+      // eslint-disable-next-line ui-state-conventions/no-orchestrator-snapshot-reads
+      const snapshotCtx = actor.getSnapshot().context as {
+        underlying_cause_tag: string | null;
+        org: { id: string | null; name: string | null };
+      };
       await this.deps.eventLog.append(input.flow_id, {
         ts: new Date().toISOString(),
         type: "reissue_failed_partial",
         payload: {
           underlying_cause_tag:
-            projectionCtx.underlying_cause_tag ?? "partial-setup",
-          org: projectionCtx.org,
+            snapshotCtx.underlying_cause_tag ?? "partial-setup",
+          org: snapshotCtx.org,
         },
         correlation_id: input.correlation_id,
       });
