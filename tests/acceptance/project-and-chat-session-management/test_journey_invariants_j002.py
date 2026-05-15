@@ -181,7 +181,7 @@ def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
         f"J-002 begin expected 200; got {begin.status} body={begin.body[:200]!r}"
     )
 
-    # Poll J-002 → no_projects_empty_state.
+    # Poll J-002 → no_projects.
     def wait_for_state(target: str, timeout_s: float = 5.0) -> dict:
         deadline = time.monotonic() + timeout_s
         last = None
@@ -199,7 +199,7 @@ def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
             f"J-002 never reached {target!r}; final={driver.projection_state(last)!r}"
         )
 
-    wait_for_state("no_projects_empty_state")
+    wait_for_state("no_projects")
 
     # Create a project — this drives the machine through `creating_project`
     # to `project_selected`.
@@ -334,7 +334,7 @@ def test_ic_j002_3_resuming_session_to_session_active_materializes_atomically(
         capture_output=True, text=True, timeout=10, check=True,
     )
 
-    # Spawn J-002 + wait for session-chat to reach session_list_visible.
+    # Spawn J-002 + wait for session-chat to reach session_list_loaded.
     begin = driver.post(
         "/ui-state/flow/project-and-chat-session-management/begin",
         base=driver.auth_proxy_url,
@@ -348,11 +348,11 @@ def test_ic_j002_3_resuming_session_to_session_active_materializes_atomically(
             base=driver.auth_proxy_url,
         )
         data = json.loads(probe.body) if probe.status == 200 else {}
-        if data.get("state") == "session_list_visible":
+        if data.get("state") == "session_list_loaded":
             break
         time.sleep(0.05)
     else:
-        pytest.fail("session-chat never reached session_list_visible")
+        pytest.fail("session-chat never reached session_list_loaded")
 
     # Drive resume.
     driver.post(
@@ -545,7 +545,7 @@ def test_ic_j002_7_every_chat_turn_from_j002_state_carries_x_active_scope_header
     driver: J002Driver,
 ) -> None:
     """IC-J002-7: every chat turn originating in session_active or
-    session_active_no_messages (post-first_message_sent) carries X-Active-Scope
+    session_welcome (post-first_message_sent) carries X-Active-Scope
     with org_id AND project_id; agent rejects missing fields with 400 + named
     diagnostic. Parameterized over both chat-turn-emitting J-002 states."""
     import os as _os

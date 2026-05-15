@@ -129,7 +129,7 @@ describe("retry budget on error_recoverable (B1)", () => {
     // After 3 user retries (= 4 total attempts including the original
     // failure), the machine MUST be in error_terminal.
     expect(actor.getSnapshot().value).toBe("error_terminal");
-    expect(actor.getSnapshot().context.retry_budget_used).toBe(3);
+    expect(actor.getSnapshot().context.retry_budget_used_count).toBe(3);
   });
 });
 

@@ -419,7 +419,7 @@ export class J002Harness {
   }
 
   /** Submit `create_project_submitted` with the given name. Assumes the
-   *  machine is currently in `no_projects_empty_state`. */
+   *  machine is currently in `no_projects`. */
   async create_first_project(name: string): Promise<FlowProjection> {
     return this.sendEvent("create_project_submitted", { org_name: name });
   }
@@ -601,7 +601,7 @@ export class J002Harness {
     }
   }
 
-  /** US-206 — drive the session-chat machine into `session_active_no_messages`.
+  /** US-206 — drive the session-chat machine into `session_welcome`.
    *  Pure machine event; no backend write fires (DWD-10 lazy-create). */
   async start_new_session(): Promise<FlowProjection> {
     const res = await request(

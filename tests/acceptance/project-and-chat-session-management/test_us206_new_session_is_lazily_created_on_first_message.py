@@ -92,7 +92,7 @@ def _list_sessions(project_id: str) -> list[dict]:
 
 
 def _spawn_j002_and_wait_session_list(driver: J002Driver) -> None:
-    """Spawn J-002 + wait for session-chat to reach session_list_visible."""
+    """Spawn J-002 + wait for session-chat to reach session_list_loaded."""
     begin = driver.post(
         "/ui-state/flow/project-and-chat-session-management/begin",
         base=driver.auth_proxy_url,
@@ -106,10 +106,10 @@ def _spawn_j002_and_wait_session_list(driver: J002Driver) -> None:
             base=driver.auth_proxy_url,
         )
         data = json.loads(probe.body) if probe.status == 200 else {}
-        if data.get("state") == "session_list_visible":
+        if data.get("state") == "session_list_loaded":
             return
         time.sleep(0.05)
-    pytest.fail("session-chat never reached session_list_visible")
+    pytest.fail("session-chat never reached session_list_loaded")
 
 
 def _send_session_chat_event(
@@ -162,7 +162,7 @@ def test_clicking_new_session_lands_in_welcome_state_with_no_backend_write(
     clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
-    """+ New Session → session_active_no_messages; session_id null; NO session row created.
+    """+ New Session → session_welcome; session_id null; NO session row created.
 
     The backend's session count for the project is unchanged after the click.
     """
@@ -176,8 +176,8 @@ def test_clicking_new_session_lands_in_welcome_state_with_no_backend_write(
     _spawn_j002_and_wait_session_list(driver)
     final = _send_session_chat_event(driver, "new_session_clicked")
 
-    assert final["state"] == "session_active_no_messages", (
-        f"US-206 #1: expected session_active_no_messages; got {final['state']!r}"
+    assert final["state"] == "session_welcome", (
+        f"US-206 #1: expected session_welcome; got {final['state']!r}"
     )
     ctx = final["context"]
     assert ctx.get("session_id") is None, (
@@ -202,7 +202,7 @@ def test_sending_first_message_eagerly_creates_session_with_title_from_message(
 
     _spawn_j002_and_wait_session_list(driver)
     _send_session_chat_event(driver, "new_session_clicked")
-    _wait_for_state(driver, "session_active_no_messages")
+    _wait_for_state(driver, "session_welcome")
 
     first_message = "Show me top customers by revenue"
     _send_session_chat_event(
@@ -252,11 +252,11 @@ def test_navigating_away_from_welcome_state_leaves_no_ghost_session_row(
 
     _spawn_j002_and_wait_session_list(driver)
     _send_session_chat_event(driver, "new_session_clicked")
-    _wait_for_state(driver, "session_active_no_messages")
+    _wait_for_state(driver, "session_welcome")
 
     # Navigate away (project switch) — drive project-context to a different project.
     # Switching project re-broadcasts project_ready to session-chat which
-    # re-enters loading_session_list (per machine §session_active_no_messages
+    # re-enters loading_session_list (per machine §session_welcome
     # different-project_id guard).
     driver.post(
         "/ui-state/flow/project-and-chat-session-management/event",
@@ -267,7 +267,7 @@ def test_navigating_away_from_welcome_state_leaves_no_ghost_session_row(
             "payload": {"project_id": proj_q3, "project_name": "Q3 Sales"},
         },
     )
-    # Wait for session-chat to re-enter session_list_visible for Q3.
+    # Wait for session-chat to re-enter session_list_loaded for Q3.
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
         probe = driver.get(
@@ -275,7 +275,7 @@ def test_navigating_away_from_welcome_state_leaves_no_ghost_session_row(
             base=driver.auth_proxy_url,
         )
         data = json.loads(probe.body) if probe.status == 200 else {}
-        if data.get("state") in ("session_list_visible", "loading_session_list"):
+        if data.get("state") in ("session_list_loaded", "loading_session_list"):
             ctx = data.get("context") or {}
             if ctx.get("session_chat_project_id") == proj_q3:
                 break
@@ -295,7 +295,7 @@ def test_clicking_existing_session_from_welcome_state_cancels_new_session_intent
     clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
-    """session_active_no_messages → resuming_session via session_clicked; no row created."""
+    """session_welcome → resuming_session via session_clicked; no row created."""
     proj_id = _create_project("Q4 Analytics")
     existing_id = _create_session(proj_id, "chat-9b2a")
     before = _list_sessions(proj_id)
@@ -303,7 +303,7 @@ def test_clicking_existing_session_from_welcome_state_cancels_new_session_intent
 
     _spawn_j002_and_wait_session_list(driver)
     _send_session_chat_event(driver, "new_session_clicked")
-    _wait_for_state(driver, "session_active_no_messages")
+    _wait_for_state(driver, "session_welcome")
 
     _send_session_chat_event(
         driver,
@@ -334,7 +334,7 @@ def test_transient_create_session_failure_preserves_composer_text_across_retry(
     proj_id = _create_project("Q4 Analytics")
     _spawn_j002_and_wait_session_list(driver)
     _send_session_chat_event(driver, "new_session_clicked")
-    _wait_for_state(driver, "session_active_no_messages")
+    _wait_for_state(driver, "session_welcome")
 
     composer = "Show me top customers"
     # First attempt: forced transient failure (harness knob).
@@ -356,10 +356,10 @@ def test_transient_create_session_failure_preserves_composer_text_across_retry(
 
     # Retry — flag is NOT set this time.
     _send_session_chat_event(driver, "retry_clicked")
-    retry_state = _wait_for_state(driver, "session_active_no_messages")
+    retry_state = _wait_for_state(driver, "session_welcome")
     rctx = retry_state["context"]
     assert rctx.get("pending_first_message") == composer, (
-        f"US-206 #5: composer text must survive retry_clicked into session_active_no_messages; "
+        f"US-206 #5: composer text must survive retry_clicked into session_welcome; "
         f"got {rctx.get('pending_first_message')!r}"
     )
 
@@ -399,17 +399,17 @@ def test_ts_harness_drives_new_session_lifecycle_end_to_end(
         f"  principalId: '{DEV_PRINCIPAL_ID}',\n"
         "});\n"
         "await h.j002.begin('Maya Chen');\n"
-        "// Wait for session-chat to settle in session_list_visible.\n"
+        "// Wait for session-chat to settle in session_list_loaded.\n"
         "for (let i = 0; i < 50; i++) {\n"
         "  const p = await h.j002.get_session_chat_projection();\n"
-        "  if (p.state === 'session_list_visible') break;\n"
+        "  if (p.state === 'session_list_loaded') break;\n"
         "  await new Promise(r => setTimeout(r, 100));\n"
         "}\n"
         "await h.j002.start_new_session();\n"
-        "// session_active_no_messages — session_id must be null.\n"
+        "// session_welcome — session_id must be null.\n"
         "{\n"
         "  const p = await h.j002.get_session_chat_projection();\n"
-        "  if (p.state !== 'session_active_no_messages') throw new Error(`expected session_active_no_messages, got ${p.state}`);\n"
+        "  if (p.state !== 'session_welcome') throw new Error(`expected session_welcome, got ${p.state}`);\n"
         "  const ctx = p.context;\n"
         "  if (ctx.session_id != null) throw new Error(`session_id should be null pre-first-message; got ${ctx.session_id}`);\n"
         "}\n"

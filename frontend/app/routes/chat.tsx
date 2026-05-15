@@ -11,10 +11,10 @@
 // transcript + dataset chip are visible on the SAME first paint.
 //
 // For `/` (index) the loader returns the current session-chat projection so
-// the FE renders whatever state Maya was last in (session_list_visible /
+// the FE renders whatever state Maya was last in (session_list_loaded /
 // session_active / etc).
 //
-// MR-3 (US-206 / DWD-10): the loader surfaces the new `session_active_no_messages`
+// MR-3 (US-206 / DWD-10): the loader surfaces the new `session_welcome`
 // state and the `pending_first_message` context field via the projection
 // envelope (consumed below by ChatLoaderData). Composer-state preservation
 // across `error_recoverable → retry_clicked` is anchored on React's
@@ -79,7 +79,7 @@ export async function loader({
         });
       } catch {
         // Defensive — projection read below still surfaces whatever state
-        // is currently visible (e.g. session_list_visible if the deep link
+        // is currently visible (e.g. session_list_loaded if the deep link
         // resolved to a deleted session).
       }
     }

@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Owns the J-001 sign-in + org-bootstrap journey: anonymous → WorkOS userinfo exchange → org-name submission with inline validation → atomic create-org + JWT reissue with a bounded internal retry budget → `ready`. From `ready` the machine also handles the silent-reauth-on-expired-token path (ADR-028 §"Decision outcome"). Maintains the `user.{email, display_name}` + `org.{id, name}` halves of the J-001 projection; emits `auth_ready` post-`ready` so the orchestrator can wake `project-context.resolving_initial_scope` with `org_id` + `user_first_name`.
+Owns the J-001 sign-in + org-bootstrap journey: anonymous → WorkOS userinfo exchange → org-name submission with inline validation → atomic create-org + JWT reissue with a bounded internal retry budget → `ready`. From `ready` the machine also handles the silent-reauth-on-expired-token path (ADR-028 §"Decision outcome"). Maintains the `user.{email, display_name}` + `org.{id, name}` halves of the J-001 projection; emits `auth_ready` post-`ready` so the orchestrator can wake `project-context.resolving_initial_scope` with `org_id` + `user.first_name`.
 
 ## State diagram
 
@@ -24,7 +24,7 @@ stateDiagram-v2
   authenticated_no_org --> error_recoverable: __force_failure__ (harness side-channel; assigns underlying_cause_tag)
 
   creating_org --> ready: createOrgAndReissue onDone (assigns org.id + org.name)
-  creating_org --> creating_org: createOrgAndReissue onError [retry budget remaining] (increments reissue_attempts; capturePartialOrgFromError; reenter)
+  creating_org --> creating_org: createOrgAndReissue onError [retry budget remaining] (increments reissue_attempts_count; capturePartialOrgFromError; reenter)
   creating_org --> error_recoverable: createOrgAndReissue onError [reissueBudgetExhausted] (tag partial-setup; capturePartialOrgFromError)
 
   ready --> expired_token: __expire_token__ (harness side-channel)
@@ -32,8 +32,8 @@ stateDiagram-v2
   expired_token --> ready: silentReauth onDone
   expired_token --> error_recoverable: silentReauth onError (assigns underlying_cause_tag = silent-reauth-failed)
 
-  error_recoverable --> creating_org: retry_clicked [user retry budget remaining] (increments retry_budget_used; resets reissue_attempts)
-  error_recoverable --> error_terminal: retry_clicked [userRetryBudgetExhausted] (increments retry_budget_used)
+  error_recoverable --> creating_org: retry_clicked [user retry budget remaining] (increments retry_budget_used_count; resets reissue_attempts_count)
+  error_recoverable --> error_terminal: retry_clicked [userRetryBudgetExhausted] (increments retry_budget_used_count)
 
   error_terminal --> [*]
 ```
@@ -47,7 +47,7 @@ stateDiagram-v2
 | `anonymous` | Initial state; pre-sign-in surface | initial spawn | `sign_in_clicked` |
 | `authenticating` | Invokes `workosUserInfo` against the WorkOS-compatible `/oauth/token` + `/oauth/userinfo` exchange | `sign_in_clicked` | `workosUserInfo` `onDone` (settled) / `onError` (transient or workos-profile-corrupt) |
 | `authenticated_no_org` | Org-name composer surface; Maya enters her org name. `org_form_submitted` branches via the `orgNameValid` guard | `workosUserInfo` `onDone` | valid `org_form_submitted`; invalid `org_form_submitted` (self-loop with inline error); `__force_failure__` (harness) |
-| `creating_org` | Invokes `createOrgAndReissue` (POST `/api/orgs` + POST `/api/auth/reissue`, idempotent per ADR-029 invariant 4). Internal retry budget = 3 reissue attempts | valid `org_form_submitted`; `retry_clicked` from `error_recoverable` (with `reissue_attempts` reset to 0); internal retry self-loop on transient `onError` | `createOrgAndReissue` `onDone` (settled) / `onError` (transient self-loop or budget-exhausted to `error_recoverable`) |
+| `creating_org` | Invokes `createOrgAndReissue` (POST `/api/orgs` + POST `/api/auth/reissue`, idempotent per ADR-029 invariant 4). Internal retry budget = 3 reissue attempts | valid `org_form_submitted`; `retry_clicked` from `error_recoverable` (with `reissue_attempts_count` reset to 0); internal retry self-loop on transient `onError` | `createOrgAndReissue` `onDone` (settled) / `onError` (transient self-loop or budget-exhausted to `error_recoverable`) |
 | `ready` | Settled state — `org.id` populated, JWT reissued. Orchestrator's broadcast hook fires `auth_ready` to project-context on entry | `createOrgAndReissue` `onDone`; `silentReauth` `onDone` | `__expire_token__` (harness side-channel) |
 | `error_recoverable` | Recoverable-error landing zone; FE shows a "Try again" CTA. The user-retry budget = 3 (the 4th total attempt at the same `underlying_cause_tag` escalates to `error_terminal`) | `workosUserInfo` `onError`; `createOrgAndReissue` `onError` (budget exhausted); `silentReauth` `onError`; `__force_failure__` | `retry_clicked` (2 guarded branches) |
 | `expired_token` | Invokes `silentReauth` to attempt a transparent re-issue without forcing Maya through `/login` again | `__expire_token__` from `ready` | `silentReauth` `onDone` (→ `ready`) / `onError` (→ `error_recoverable` tagged `silent-reauth-failed`) |
@@ -63,7 +63,7 @@ stateDiagram-v2
 | `auth_callback_resolved` | (reserved) | (none) | Reserved for the real WorkOS redirect callback path; not yet wired |
 | `auth_failed` | (reserved) | `{ underlying_cause_tag }` | Reserved for an explicit FE-emitted auth-failure signal; not yet wired |
 | `org_form_submitted` | FE org-name composer | `{ org_name }` | Submit the org name; guard `orgNameValid` decides between transition and inline-error self-loop |
-| `retry_clicked` | FE recoverable-error CTA | (none) | Re-enter `creating_org` (clearing `reissue_attempts`) OR escalate to `error_terminal` when the user-retry budget is exhausted |
+| `retry_clicked` | FE recoverable-error CTA | (none) | Re-enter `creating_org` (clearing `reissue_attempts_count`) OR escalate to `error_terminal` when the user-retry budget is exhausted |
 
 ### Internal / failure-simulation side channels
 
@@ -81,7 +81,7 @@ stateDiagram-v2
 
 ### Cross-machine broadcasts (orchestrator broadcasts FROM this machine)
 
-This machine does not directly send events to siblings; the orchestrator's state-watcher branch observes `ready` entry and broadcasts `auth_ready` to the project-context machine (carries `{ org_id, user_first_name }`).
+This machine does not directly send events to siblings; the orchestrator's state-watcher branch observes `ready` entry and broadcasts `auth_ready` to the project-context machine (carries `{ org_id, user: { first_name } }`).
 
 > **Naming convention:** the broadcast event is `auth_ready` — payload-centric per [ADR-039](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) §C3 (cross-machine broadcasts name what they carry — auth completion — not the sender). Renamed from the legacy journey-numbered `auth_ready` per the vocabulary audit at `docs/discussion/ui-state-vocabulary-audit/findings.md` §7 Tier-1 #1.
 
@@ -103,25 +103,23 @@ This machine does not directly send events to siblings; the orchestrator's state
 | `org` | `{ id: string \| null; name: string \| null }` | `createOrgAndReissue` `onDone`; also populated from the `partial_org` marker on `onError` via `capturePartialOrgFromError` so the "Try again" CTA can retry reissue without re-creating the org row | projection; orchestrator `auth_ready` broadcast | both null until provisioning settles |
 | `pending_org_name` | `string` | `org_form_submitted` (valid) | `createOrgAndReissue` input on retry | preserved across `creating_org` ↔ `error_recoverable` so each retry sees the same name |
 | `underlying_cause_tag` | `UnderlyingCauseTag \| null` | error transitions; `__force_failure__`; `silentReauth` `onError` | projection / FE diagnostic copy | union: `transient \| cookie-blocked \| partial-setup \| workos-profile-corrupt \| silent-reauth-failed` |
-| `retries` | `number` | (reserved) | observability | declared but currently unused by transition logic — the two real counters are `reissue_attempts` and `retry_budget_used` |
-| `reissue_attempts` | `number` | each `creating_org` reentry on transient `onError` | guard `reissueBudgetExhausted` | bounded by `REISSUE_BUDGET = 3`; reset on `retry_clicked` |
-| `retry_budget_used` | `number` | every `retry_clicked` | guard `userRetryBudgetExhausted` | bounded by `USER_RETRY_BUDGET = 3` — the 4th total attempt at the same `underlying_cause_tag` escalates to `error_terminal` (3 user-visible retries including the original failure) |
+| `retries_count` | `number` | (reserved) | observability | declared but currently unused by transition logic — the two real counters are `reissue_attempts_count` and `retry_budget_used_count` |
+| `reissue_attempts_count` | `number` | each `creating_org` reentry on transient `onError` | guard `reissueBudgetExhausted` | bounded by `REISSUE_BUDGET = 3`; reset on `retry_clicked` |
+| `retry_budget_used_count` | `number` | every `retry_clicked` | guard `userRetryBudgetExhausted` | bounded by `USER_RETRY_BUDGET = 3` — the 4th total attempt at the same `underlying_cause_tag` escalates to `error_terminal` (3 user-visible retries including the original failure) |
 | `org_validation_error` | `OrgValidationInlineError \| null` | invalid `org_form_submitted` | projection / inline error UI | cleared on the valid-submit branch (`clearOrgValidationError`); 4-kind discriminated union (`empty \| too_short \| too_long \| duplicate`) |
 | `existing_org_names` | `string[]` | construction (from `input.existing_org_names`) | `orgNameValid` guard + `recordOrgValidationError` | duplicate-name detection set; case-insensitive compare |
 
 NOTE: Per ADR-028 §"Amendment 2026-05-15", context should carry handler-internal state only; cross-state hand-off should ride on `event.output`. Several legacy shapes in this machine are noted as targets for the later LEAF-A through LEAF-D migration (ADR-030 §"Migration sequencing") — captured here as descriptive context (no fix in this MR):
 
-- **`user.{email, display_name}` nesting** — login uses nested `user: { email, display_name }`, project-context uses flat `user_first_name`. Tier-2 audit finding #11 recommends canonicalizing on `user: { first_name, display_name, email }`.
 - **`pending_org_name` prefix** — Tier-2 audit row "`pending_` prefix" confirms this is the de facto canonical prefix for composer-text preservation (paired with `pending_project_name`, `pending_first_message`). Not a defect; recorded as the established convention.
-- **Counter-suffix inconsistency** — `reissue_attempts` (no suffix) and `retry_budget_used` (`_used` suffix) sit alongside `retries` (plural-no-suffix). Tier-2 audit finding #6 recommends canonicalizing on `_count` (matches `scope_reconciled_count` / `stale_intents_dropped_count` in the sibling machines).
 
-The vocabulary audit at `docs/discussion/ui-state-vocabulary-audit/findings.md` is the SSOT for these deferred renames. This MR is mechanical structure only.
+The vocabulary audit at `docs/discussion/ui-state-vocabulary-audit/findings.md` is the SSOT for the convention catalog; ADR-039 ratifies C1–C12. Counter-suffix canonicalization (C5) and `user.{first_name, …}` nesting (Tier-2 #11) landed under MR-C.
 
 ## Cross-machine wiring
 
 - **Receives from orchestrator:** `FREEZE` / `THAW` (cross-flow replay barrier; the orchestrator owns the semantics).
 - **Emits projection events** (inline in `orchestrator.begin()` and the J-001 broadcast hook): `sign_in_clicked`, `org_created_and_jwt_reissued`, `reissue_failed_partial`, plus the `auth_ready` cross-machine event recorded as a side-effect of the broadcast hook (see `orchestrator.ts` §"auth_ready broadcast hook").
-- **Triggers downstream broadcast:** the orchestrator's state-watcher branch observes `ready` entry and broadcasts an `auth_ready` event to the project-context machine, carrying `{ org_id, user_first_name }` (payload-centric event naming per ADR-039 §C3).
+- **Triggers downstream broadcast:** the orchestrator's state-watcher branch observes `ready` entry and broadcasts an `auth_ready` event to the project-context machine, carrying `{ org_id, user: { first_name } }` (payload-centric event naming per ADR-039 §C3).
 
 ## Files in this directory
 

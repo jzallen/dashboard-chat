@@ -41,18 +41,18 @@ export interface OrgValidationInlineError {
 export interface LoginMachineContext {
   correlation_id: string;
   principal_id: string;
-  user: { email: string | null; display_name: string | null };
+  user: { email: string | null; display_name: string | null; first_name: string | null };
   org: { id: string | null; name: string | null };
   /** The org name Maya last submitted -- preserved across `creating_org`
    *  re-entries so each retry sees the same name as the first attempt. */
   pending_org_name: string;
   underlying_cause_tag: UnderlyingCauseTag | null;
-  retries: number;
-  reissue_attempts: number;
+  retries_count: number;
+  reissue_attempts_count: number;
   /** Counts USER-initiated retries from error_recoverable. The 4th total
    *  attempt at the same underlying_cause_tag escalates to error_terminal
    *  (3 user retries from the user's POV including the original failure). */
-  retry_budget_used: number;
+  retry_budget_used_count: number;
   org_validation_error: OrgValidationInlineError | null;
   existing_org_names: string[];
 }
@@ -156,9 +156,9 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
         return result.ok;
       },
       reissueBudgetExhausted: ({ context }) =>
-        context.reissue_attempts + 1 >= REISSUE_BUDGET,
+        context.reissue_attempts_count + 1 >= REISSUE_BUDGET,
       userRetryBudgetExhausted: ({ context }) =>
-        context.retry_budget_used + 1 >= USER_RETRY_BUDGET,
+        context.retry_budget_used_count + 1 >= USER_RETRY_BUDGET,
     },
     actions: {
       recordOrgValidationError: assign({
@@ -185,13 +185,13 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
         org_validation_error: () => null,
       }),
       incrementReissueAttempts: assign({
-        reissue_attempts: ({ context }) => context.reissue_attempts + 1,
+        reissue_attempts_count: ({ context }) => context.reissue_attempts_count + 1,
       }),
       incrementUserRetryBudget: assign({
-        retry_budget_used: ({ context }) => context.retry_budget_used + 1,
+        retry_budget_used_count: ({ context }) => context.retry_budget_used_count + 1,
       }),
       resetReissueAttempts: assign({
-        reissue_attempts: () => 0,
+        reissue_attempts_count: () => 0,
       }),
       tagPartialSetup: assign({
         underlying_cause_tag: () => "partial-setup" as const,
@@ -212,13 +212,13 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
     context: ({ input }) => ({
       correlation_id: input.correlation_id,
       principal_id: input.principal_id,
-      user: { email: null, display_name: null },
+      user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
       pending_org_name: "",
       underlying_cause_tag: null,
-      retries: 0,
-      reissue_attempts: 0,
-      retry_budget_used: 0,
+      retries_count: 0,
+      reissue_attempts_count: 0,
+      retry_budget_used_count: 0,
       org_validation_error: null,
       existing_org_names: input.existing_org_names ?? [],
     }),
@@ -248,6 +248,8 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
               user: ({ event }) => ({
                 email: event.output.email,
                 display_name: event.output.display_name,
+                first_name:
+                  (event.output.display_name ?? "").split(/\s+/)[0] || null,
               }),
             }),
           },
@@ -303,7 +305,7 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
               org_name: context.pending_org_name,
               principal_id: context.principal_id,
               correlation_id: context.correlation_id,
-              attempt: context.reissue_attempts + 1,
+              attempt: context.reissue_attempts_count + 1,
             };
           },
           onDone: {

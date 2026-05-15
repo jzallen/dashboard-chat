@@ -8,18 +8,18 @@
 //
 // MR-2 surface (THIS MR — DWD-13 §"MR-to-machine implementation guidance"):
 //   waiting_for_project (initial) ─→ loading_session_list           (project_ready)
-//   loading_session_list (invoke)  ─┬─→ session_list_visible        (onDone, no intent_session_id)
+//   loading_session_list (invoke)  ─┬─→ session_list_loaded        (onDone, no intent_session_id)
 //                                    ├─→ resuming_session            (onDone, intent_session_id present)
 //                                    └─→ error_recoverable           (onError, transient)
-//   session_list_visible          ─┬─→ resuming_session              (session_clicked)
+//   session_list_loaded          ─┬─→ resuming_session              (session_clicked)
 //                                    └─→ loading_session_list         (refresh_session_list)
 //   resuming_session (invoke)     ─┬─→ session_active                (onDone, found)
-//                                    ├─→ session_list_visible         (onDone, session_not_found — silent)
+//                                    ├─→ session_list_loaded         (onDone, session_not_found — silent)
 //                                    └─→ error_recoverable            (onError, transient)
 //   session_active                (read-only path for MR-2; write path lands MR-3+)
 //   error_recoverable             ─→ last_live_state                  (retry_clicked)
 //
-// MR-3 will add `session_active_no_messages` + `createSessionEagerly`; MR-5
+// MR-3 will add `session_welcome` + `createSessionEagerly`; MR-5
 // adds `switching_dataset_context`; MR-6 adds top-level `on.FREEZE` + `freeze`.
 //
 // ADR-028:46-48 invariant: this file does NOT import from `project-context.ts`
@@ -35,10 +35,10 @@ import type { ActiveScope, ResourceType } from "../../active-scope.ts";
 export type SessionChatState =
   | "waiting_for_project"
   | "loading_session_list"
-  | "session_list_visible"
+  | "session_list_loaded"
   | "resuming_session"
-  | "session_active_no_messages"
-  | "creating_session_eagerly"
+  | "session_welcome"
+  | "creating_session"
   | "session_active"
   | "switching_dataset_context"
   | "error_recoverable"
@@ -73,10 +73,9 @@ export interface SessionChatMachineContext {
   // Received via `project_ready` orchestrator broadcast — populated on entry
   // out of `waiting_for_project`:
   org_id: string;
-  project_id: string | null;
-  project_name: string | null;
+  project: { id: string | null; name: string | null };
 
-  // Session list state — populated on session_list_visible entry:
+  // Session list state — populated on session_list_loaded entry:
   session_list: SessionSummary[];
   session_list_next_cursor: string | null;
   session_list_has_more: boolean;
@@ -92,7 +91,7 @@ export interface SessionChatMachineContext {
   // Deep-link session intent forwarded by project-context via the
   // `project_ready` event payload (per DESIGN §3.4). Survives the
   // `loadSessionList` async-invoke boundary so the `loading_session_list`
-  // onDone branch can choose between `session_list_visible` and
+  // onDone branch can choose between `session_list_loaded` and
   // `resuming_session`; cleared by the resume actor's onDone.
   //
   // intent_resource_id / intent_resource_type were previously captured here
@@ -108,8 +107,8 @@ export interface SessionChatMachineContext {
   // Cross-state plumbing:
   underlying_cause_tag: SessionChatCauseTag | null;
   last_live_state: SessionChatState | null;
-  retries: number;
-  /** Composer text preserved across session_active_no_messages ↔ error_recoverable (MR-3). */
+  retries_count: number;
+  /** Composer text preserved across session_welcome ↔ error_recoverable (MR-3). */
   pending_first_message: string;
 
   // Observability counters:
@@ -278,8 +277,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       correlation_id: input.correlation_id,
       principal_id: input.principal_id,
       org_id: input.org_id ?? "",
-      project_id: input.project_id ?? null,
-      project_name: input.project_name ?? null,
+      project: {
+        id: input.project_id ?? null,
+        name: input.project_name ?? null,
+      },
       session_list: [],
       session_list_next_cursor: null,
       session_list_has_more: false,
@@ -289,7 +290,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       intent_session_id: input.intent_session_id ?? null,
       underlying_cause_tag: null,
       last_live_state: null,
-      retries: 0,
+      retries_count: 0,
       pending_first_message: "",
       stale_intents_dropped_count: 0,
     }),
@@ -300,8 +301,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             target: "loading_session_list",
             actions: assign({
               org_id: ({ event }) => event.org_id,
-              project_id: ({ event }) => event.project_id,
-              project_name: ({ event }) => event.project_name,
+              project: ({ event }) => ({
+                id: event.project_id,
+                name: event.project_name,
+              }),
               correlation_id: ({ event, context }) =>
                 event.correlation_id ?? context.correlation_id,
               intent_session_id: ({ event, context }) =>
@@ -320,8 +323,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             reenter: true,
             actions: assign({
               org_id: ({ event }) => event.org_id,
-              project_id: ({ event }) => event.project_id,
-              project_name: ({ event }) => event.project_name,
+              project: ({ event }) => ({
+                id: event.project_id,
+                name: event.project_name,
+              }),
               correlation_id: ({ event, context }) =>
                 event.correlation_id ?? context.correlation_id,
               session_id: () => null,
@@ -336,7 +341,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         invoke: {
           src: "loadSessionList",
           input: ({ context }) => ({
-            project_id: context.project_id ?? "",
+            project_id: context.project?.id ?? "",
             principal_id: context.principal_id,
             page_size: 30,
           }),
@@ -355,7 +360,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               }),
             },
             {
-              target: "session_list_visible",
+              target: "session_list_loaded",
               actions: assign({
                 session_list: ({ event }) => event.output.items,
                 session_list_next_cursor: ({ event }) => event.output.next_cursor,
@@ -372,7 +377,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           },
         },
       },
-      session_list_visible: {
+      session_list_loaded: {
         on: {
           session_clicked: {
             target: "resuming_session",
@@ -381,7 +386,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           new_session_clicked: {
             // US-206 / DWD-10: lazy-creation. Enter the welcome state with
             // session_id null; no backend write fires until `first_message_sent`.
-            target: "session_active_no_messages",
+            target: "session_welcome",
             actions: assign({
               session_id: () => null,
               transcript: () => [],
@@ -395,12 +400,14 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           },
           project_ready: [
             {
-              guard: ({ context, event }) => context.project_id !== event.project_id,
+              guard: ({ context, event }) => context.project?.id !== event.project_id,
               target: "loading_session_list",
               actions: assign({
                 org_id: ({ event }) => event.org_id,
-                project_id: ({ event }) => event.project_id,
-                project_name: ({ event }) => event.project_name,
+                project: ({ event }) => ({
+                  id: event.project_id,
+                  name: event.project_name,
+                }),
                 correlation_id: ({ event, context }) =>
                   event.correlation_id ?? context.correlation_id,
                 session_id: () => null,
@@ -422,14 +429,14 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           input: ({ context }) => ({
             session_id:
               context.intent_session_id ?? context.session_id ?? "",
-            project_id: context.project_id ?? "",
+            project_id: context.project?.id ?? "",
             principal_id: context.principal_id,
           }),
           onDone: [
             {
               guard: ({ event }) =>
                 (event.output as { session_not_found?: true }).session_not_found === true,
-              target: "session_list_visible",
+              target: "session_list_loaded",
               actions: assign({
                 // Silent return per US-205 Example 4 — clear the intent so we
                 // don't loop on re-emission.
@@ -500,12 +507,14 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           },
           project_ready: [
             {
-              guard: ({ context, event }) => context.project_id !== event.project_id,
+              guard: ({ context, event }) => context.project?.id !== event.project_id,
               target: "loading_session_list",
               actions: assign({
                 org_id: ({ event }) => event.org_id,
-                project_id: ({ event }) => event.project_id,
-                project_name: ({ event }) => event.project_name,
+                project: ({ event }) => ({
+                  id: event.project_id,
+                  name: event.project_name,
+                }),
                 correlation_id: ({ event, context }) =>
                   event.correlation_id ?? context.correlation_id,
                 session_id: () => null,
@@ -517,7 +526,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           ],
         },
       },
-      session_active_no_messages: {
+      session_welcome: {
         // US-206: the welcome state. Composer text lives in component-local
         // state on the FE per app-arch §6.4 AND in `pending_first_message`
         // on the machine for the error_recoverable → retry boundary.
@@ -526,7 +535,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           // state is a no-op (the FE button is the same; the machine
           // already has session_id=null).
           new_session_clicked: {
-            target: "session_active_no_messages",
+            target: "session_welcome",
             reenter: false,
           },
           // Clicking an existing session from the welcome state cancels
@@ -538,7 +547,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           // Eager create on first message. The actor POSTs the session
           // row + PATCHes the title; on settle we transition to session_active.
           first_message_sent: {
-            target: "creating_session_eagerly",
+            target: "creating_session",
             actions: "capturePendingFirstMessage",
           },
           // Switching project from the welcome state navigates away —
@@ -547,12 +556,14 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           project_ready: [
             {
               guard: ({ context, event }) =>
-                context.project_id !== event.project_id,
+                context.project?.id !== event.project_id,
               target: "loading_session_list",
               actions: assign({
                 org_id: ({ event }) => event.org_id,
-                project_id: ({ event }) => event.project_id,
-                project_name: ({ event }) => event.project_name,
+                project: ({ event }) => ({
+                  id: event.project_id,
+                  name: event.project_name,
+                }),
                 correlation_id: ({ event, context }) =>
                   event.correlation_id ?? context.correlation_id,
                 session_id: () => null,
@@ -566,11 +577,11 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           ],
         },
       },
-      creating_session_eagerly: {
+      creating_session: {
         invoke: {
           src: "createSessionEagerly",
           input: ({ context }) => ({
-            project_id: context.project_id ?? "",
+            project_id: context.project?.id ?? "",
             principal_id: context.principal_id,
             first_message: context.pending_first_message,
           }),
@@ -588,7 +599,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             target: "error_recoverable",
             actions: assign({
               underlying_cause_tag: () => "transient" as const,
-              last_live_state: () => "session_active_no_messages" as const,
+              last_live_state: () => "session_welcome" as const,
             }),
           },
         },
@@ -602,7 +613,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               reenter: true,
               actions: assign({
                 underlying_cause_tag: () => null,
-                retries: ({ context }) => context.retries + 1,
+                retries_count: ({ context }) => context.retries_count + 1,
               }),
             },
             {
@@ -611,7 +622,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               reenter: true,
               actions: assign({
                 underlying_cause_tag: () => null,
-                retries: ({ context }) => context.retries + 1,
+                retries_count: ({ context }) => context.retries_count + 1,
               }),
             },
             {
@@ -619,11 +630,11 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               // welcome state with `pending_first_message` intact (app-arch
               // §6.4 composer-state preservation contract).
               guard: ({ context }) =>
-                context.last_live_state === "session_active_no_messages",
-              target: "session_active_no_messages",
+                context.last_live_state === "session_welcome",
+              target: "session_welcome",
               actions: assign({
                 underlying_cause_tag: () => null,
-                retries: ({ context }) => context.retries + 1,
+                retries_count: ({ context }) => context.retries_count + 1,
               }),
             },
           ],
@@ -656,7 +667,7 @@ export function loadSessionListFn(
     // Treat 404 as "no sessions yet" — the backend wraps the session list in a
     // ProjectMemory row that is lazily created at first-session. A project
     // without a memory means zero sessions, which lands cleanly in
-    // session_list_visible (US-203 Example 3 no_sessions_empty_state sub-shape
+    // session_list_loaded (US-203 Example 3 no_sessions_empty_state sub-shape
     // per DWD-1). The 404 is NOT a transient failure.
     if (resp.status === 404) {
       return { items: [], next_cursor: null, has_more: false };

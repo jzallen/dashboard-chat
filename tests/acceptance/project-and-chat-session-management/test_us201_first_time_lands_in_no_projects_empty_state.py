@@ -6,7 +6,7 @@ DISTILL produces these tests RED — every test is `pytest.mark.skip`-marked
 with a per-MR reason. DELIVER's MR-1 removes the skips as the substrate
 lands. The scenarios cover:
 
-  - @walking_skeleton happy path: J-001 ready → J-002 no_projects_empty_state
+  - @walking_skeleton happy path: J-001 ready → J-002 no_projects
   - @happy_path: create_project_submitted → project_selected for new project
   - @error_path @boundary: empty project name → inline error
   - @error_path: transient failure → error_recoverable → retry path
@@ -60,8 +60,8 @@ WELCOME_FIRST_PROJECT_HINT = "creating your first project"
 # The loader data lives in the SSR'd HTML's streamController script payload
 # AND is JSON-escaped (quotes are backslash-escaped). We assert on the
 # substring without the surrounding quotes since the literal value appears
-# unambiguously: "j002_state","no_projects_empty_state".
-WELCOME_LOADER_STATE_TOKEN = "no_projects_empty_state"
+# unambiguously: "j002_state","no_projects".
+WELCOME_LOADER_STATE_TOKEN = "no_projects"
 WELCOME_LOADER_FIRST_NAME_TOKEN = "Maya"
 
 # Maya's fake-WorkOS persona — set up by the J-001 fixture/fake-WorkOS during
@@ -144,24 +144,24 @@ def test_first_sign_in_foregrounds_the_no_projects_welcome_panel(
     # auth_ready broadcast hook calls in production. The dev compose stack's
     # auth-proxy injects `X-Org-Id: dev-org-001`, so J-002's
     # resolveInitialScope invoke fires against the real backend and settles
-    # in `no_projects_empty_state` (the dev user has no projects).
+    # in `no_projects` (the dev user has no projects).
     begin_probe = _spawn_j002(driver)
     assert begin_probe.status == 200, (
         f"J-002 begin expected 200; got {begin_probe.status} "
         f"body={begin_probe.body[:300]!r}"
     )
 
-    # Wait for J-002 to materialize and settle in no_projects_empty_state.
+    # Wait for J-002 to materialize and settle in no_projects.
     j002_probe = _wait_for_j002_state(
-        driver, target_state="no_projects_empty_state"
+        driver, target_state="no_projects"
     )
     j002 = json.loads(j002_probe.body)
-    assert j002["state"] == "no_projects_empty_state"
+    assert j002["state"] == "no_projects"
     assert j002["active_scope"]["org_id"], (
         "J-002 active_scope.org_id must be populated from J-001 projection"
     )
     assert j002["active_scope"]["project_id"] is None, (
-        "no_projects_empty_state has no selected project"
+        "no_projects has no selected project"
     )
 
     # Act — GET `/` through reverse-proxy (the production ingress).
@@ -217,9 +217,9 @@ def test_creating_first_project_lands_in_project_selected(
     `active_scope.project_id` = the new project's id; FE paints the
     project chip on first paint.
     """
-    # Arrange — spawn J-002 → resolves to no_projects_empty_state.
+    # Arrange — spawn J-002 → resolves to no_projects.
     _spawn_j002(driver)
-    _wait_for_j002_state(driver, target_state="no_projects_empty_state")
+    _wait_for_j002_state(driver, target_state="no_projects")
 
     # Use a unique project name so we don't collide with prior test runs.
     project_name = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
@@ -254,20 +254,20 @@ def test_creating_first_project_lands_in_project_selected(
 
 @pytest.mark.error_path
 @pytest.mark.boundary
-def test_empty_project_name_keeps_machine_in_no_projects_empty_state(
+def test_empty_project_name_keeps_machine_in_no_projects(
     requires_compose_stack: None,
     clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
     """Submitting an empty project name surfaces an inline error without a backend call.
 
-    Asserts the projection stays in `no_projects_empty_state`; the
+    Asserts the projection stays in `no_projects`; the
     validation error is recorded in the projection's context; no
     `POST /api/projects` fires.
     """
-    # Arrange — spawn J-002 → no_projects_empty_state.
+    # Arrange — spawn J-002 → no_projects.
     _spawn_j002(driver)
-    _wait_for_j002_state(driver, target_state="no_projects_empty_state")
+    _wait_for_j002_state(driver, target_state="no_projects")
 
     # Act — submit an empty/whitespace-only project name.
     submit = driver.post(
@@ -283,12 +283,12 @@ def test_empty_project_name_keeps_machine_in_no_projects_empty_state(
         f"event expected 200; got {submit.status} body={submit.body[:300]!r}"
     )
 
-    # Assert — projection stays in no_projects_empty_state with a validation
+    # Assert — projection stays in no_projects with a validation
     # error recorded in context. The empty name is rejected client-side
     # (machine guard); no backend POST fires.
     body = json.loads(submit.body)
-    assert body["state"] == "no_projects_empty_state", (
-        f"empty name must keep state in no_projects_empty_state; "
+    assert body["state"] == "no_projects", (
+        f"empty name must keep state in no_projects; "
         f"got {body['state']!r}"
     )
     validation_err = body["context"].get("project_validation_error")
@@ -310,9 +310,9 @@ def test_transient_create_project_failure_lands_in_error_recoverable_with_compos
     reference; the composer text is preserved across the retry boundary
     (context.pending_project_name).
     """
-    # Arrange — spawn J-002 → resolves to no_projects_empty_state.
+    # Arrange — spawn J-002 → resolves to no_projects.
     _spawn_j002(driver)
-    _wait_for_j002_state(driver, target_state="no_projects_empty_state")
+    _wait_for_j002_state(driver, target_state="no_projects")
 
     # Act — force a transient failure via the header-gated knob.
     # The machine carries a __force_failure__ event that lands
@@ -356,7 +356,7 @@ def test_ts_harness_drives_no_projects_path_end_to_end(
 ) -> None:
     """The TS `UserFlowHarness` drives the no-projects path end-to-end.
 
-    Spawns J-002 → no_projects_empty_state, then calls
+    Spawns J-002 → no_projects, then calls
     `harness.j002.create_first_project("Q4 Analytics")` → project_selected,
     then asserts `harness.j002.assert_scope({project_id: <new-id>})`. Routed
     through auth-proxy per DD-3 / DWD-3 — never imports ui-state internals.
@@ -376,8 +376,8 @@ def test_ts_harness_drives_no_projects_path_end_to_end(
         f"  principalId: '{DEV_PRINCIPAL_ID}',\n"
         "});\n"
         "const initial = await h.j002.begin('Maya Chen');\n"
-        "if (initial.state !== 'no_projects_empty_state') {\n"
-        "  throw new Error('expected no_projects_empty_state on begin; got ' + initial.state);\n"
+        "if (initial.state !== 'no_projects') {\n"
+        "  throw new Error('expected no_projects on begin; got ' + initial.state);\n"
         "}\n"
         f"const after = await h.j002.create_first_project('{PROJECT_NAME}');\n"
         "if (after.state !== 'project_selected') {\n"

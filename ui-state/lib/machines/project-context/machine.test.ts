@@ -2,13 +2,13 @@
 //
 // Behaviors covered (post-DWD-13 SRP split — lifted from
 // `project-and-chat-session-management.test.ts` MR-1 budget):
-//   B1 — resolveInitialScope → no_projects_empty_state when backend returns empty.
+//   B1 — resolveInitialScope → no_projects when backend returns empty.
 //   B2 — resolveInitialScope → project_selected when backend returns ≥1 project.
 //   B3 — creating_project → project_selected on success.
 //   B4 — creating_project → error_recoverable on transient failure;
 //         pending_project_name preserved for composer state.
 //   B5 — empty project name (whitespace-only) keeps machine in
-//         no_projects_empty_state with inline validation error.
+//         no_projects with inline validation error.
 //
 // US-204 deep-link behaviors (sub-step 01-03):
 //   B6 — resolveInitialScope with intent_project_id + {cross_tenant: true}
@@ -52,7 +52,7 @@ const MAYA_INPUT = {
   correlation_id: "R-7a4f-901c",
   principal_id: "dev-user-001",
   org_id: "dev-org-001",
-  user_first_name: "Maya",
+  user: { first_name: "Maya" },
 };
 
 function resolveTo(output: ResolveInitialScopeOutput): ResolveInitialScopeActor {
@@ -97,7 +97,7 @@ async function waitFor(
 }
 
 describe("ProjectContextMachine — substrate behaviors", () => {
-  it("settles in no_projects_empty_state when resolveInitialScope returns empty", async () => {
+  it("settles in no_projects when resolveInitialScope returns empty", async () => {
     const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ no_projects: true }),
       createProject: createProjectOk({ id: "p-1", name: "ignored" }),
@@ -107,12 +107,12 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
-    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+    await waitFor(actor, (s) => s.value === "no_projects");
     const ctx = actor.getSnapshot().context;
     expect(ctx.org_id).toBe("dev-org-001");
-    expect(ctx.user_first_name).toBe("Maya");
+    expect(ctx.user.first_name).toBe("Maya");
     expect(ctx.underlying_cause_tag).toBe("no_projects");
   });
 
@@ -127,7 +127,7 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "project_selected");
     const ctx = actor.getSnapshot().context;
@@ -146,9 +146,9 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
-    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+    await waitFor(actor, (s) => s.value === "no_projects");
     actor.send({
       type: "create_project_submitted",
       org_name: "Q4 Analytics",
@@ -169,9 +169,9 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
-    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+    await waitFor(actor, (s) => s.value === "no_projects");
     actor.send({
       type: "create_project_submitted",
       org_name: "Q4 Analytics",
@@ -183,7 +183,7 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     expect(ctx.pending_project_name).toBe("Q4 Analytics");
   });
 
-  it("empty project name keeps machine in no_projects_empty_state with validation error", async () => {
+  it("empty project name keeps machine in no_projects with validation error", async () => {
     const machine = createProjectContextMachine({
       resolveInitialScope: resolveTo({ no_projects: true }),
       createProject: createProjectOk({ id: "ignored", name: "ignored" }),
@@ -193,17 +193,17 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
-    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+    await waitFor(actor, (s) => s.value === "no_projects");
     actor.send({
       type: "create_project_submitted",
       org_name: "   ",
     });
     // After processing the event, the machine stays in
-    // no_projects_empty_state — no transition to creating_project.
+    // no_projects — no transition to creating_project.
     const snap = actor.getSnapshot();
-    expect(snap.value).toBe("no_projects_empty_state");
+    expect(snap.value).toBe("no_projects");
     expect(snap.context.project_validation_error?.kind).toBe("empty");
   });
 });
@@ -223,7 +223,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
     const ctx = actor.getSnapshot().context;
@@ -242,7 +242,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
     const ctx = actor.getSnapshot().context;
@@ -276,9 +276,9 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
-    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+    await waitFor(actor, (s) => s.value === "no_projects");
 
     // Fire open_deep_link with all four intent fields.
     actor.send({
@@ -322,7 +322,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "scope_mismatch_terminal");
 
@@ -331,7 +331,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
 
     // Click back to projects.
     actor.send({ type: "back_to_projects_clicked" });
-    await waitFor(actor, (s) => s.value === "no_projects_empty_state");
+    await waitFor(actor, (s) => s.value === "no_projects");
 
     const ctx = actor.getSnapshot().context;
     expect(ctx.intent_project_id).toBeNull();
@@ -355,7 +355,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "project_selected");
     expect(actor.getSnapshot().context.project.id).toBe("proj-A");
@@ -383,7 +383,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "project_selected");
     actor.send({
@@ -406,7 +406,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "project_selected");
     actor.send({
@@ -429,7 +429,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     actor.send({
       type: "auth_ready",
       org_id: "dev-org-001",
-      user_first_name: "Maya",
+      user: { first_name: "Maya" },
     });
     await waitFor(actor, (s) => s.value === "project_selected");
     actor.send({

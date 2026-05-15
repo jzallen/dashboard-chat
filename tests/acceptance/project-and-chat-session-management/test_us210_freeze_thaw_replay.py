@@ -52,7 +52,7 @@ def test_multiple_intents_queued_during_freeze_replay_serially_in_fifo_with_stal
 ) -> None:
     """switching_project + session_clicked queued during FREEZE; THAW replays in FIFO;
     Q3 switch settles; Q4 session_clicked is stale-dropped with observability event;
-    final state = session_list_visible for Q3."""
+    final state = session_list_loaded for Q3."""
     pytest.fail("not yet implemented")
 
 
@@ -70,11 +70,11 @@ def test_replay_buffer_timeout_transitions_to_error_recoverable(
 
 @pytest.mark.skip(reason="DELIVER-deferred to MR-6; no-flicker invariant for non-mutating states")
 @pytest.mark.happy_path
-def test_freeze_during_session_active_no_messages_preserves_welcome_view_no_flicker(
+def test_freeze_during_session_welcome_preserves_welcome_view_no_flicker(
     requires_compose_stack: None,
     driver: J002Driver,
 ) -> None:
-    """session_active_no_messages → freeze → THAW → session_active_no_messages; no flicker."""
+    """session_welcome → freeze → THAW → session_welcome; no flicker."""
     pytest.fail("not yet implemented")
 
 

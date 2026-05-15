@@ -37,7 +37,11 @@ const EMPTY_SCOPE: ActiveScope = {
 };
 
 interface ReducedContext {
-  user: { email: string | null; display_name: string | null };
+  user: {
+    email: string | null;
+    display_name: string | null;
+    first_name: string | null;
+  };
   org: { id: string | null; name: string | null };
   /**
    * Per ADR-029, the projection's `context.project` carries the
@@ -47,7 +51,7 @@ interface ReducedContext {
    */
   project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
-  retries: number;
+  retries_count: number;
   org_validation_error: { kind: string; message: string } | null;
   /** Per ADR-029 I5: true when last deep-link reconciliation rewrote the
    *  bookmarked project name. The acceptance test agent inspects this. */
@@ -66,7 +70,6 @@ interface ReducedContext {
    *  event handlers. The shape mirrors the project flow machine's
    *  ProjectFlowMachineContext (subset relevant to projection consumers —
    *  full per-flow context lives in the actor). */
-  user_first_name: string | null;
   pending_project_name: string;
   project_validation_error: { kind: string; message: string } | null;
   /** Per OQ-J002-5: per-project last_active_at map captured by
@@ -112,24 +115,23 @@ interface ReducedContext {
   session_dataset_unavailable: boolean;
   /** US-206 composer-state preservation: the welcome-state's pending first
    *  message, populated by `first_message_sent` and preserved across the
-   *  `error_recoverable → retry_clicked → session_active_no_messages` boundary
+   *  `error_recoverable → retry_clicked → session_welcome` boundary
    *  per app-arch §6.4. */
   pending_first_message: string;
 }
 
 function initialContext(): ReducedContext {
   return {
-    user: { email: null, display_name: null },
+    user: { email: null, display_name: null, first_name: null },
     org: { id: null, name: null },
     project: { id: null, name: null },
     underlying_cause_tag: null,
-    retries: 0,
+    retries_count: 0,
     org_validation_error: null,
     scope_reconciled: false,
     scope_resolution_error: null,
     resolved_scope: null,
     access_token: null,
-    user_first_name: null,
     pending_project_name: "",
     project_validation_error: null,
     most_recent_session_per_project: {},
@@ -186,13 +188,18 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   auth_callback_resolved: (_state, context, event) => {
     const userPayload =
       (event.payload.user as Partial<ReducedContext["user"]>) ?? {};
+    const displayName = userPayload.display_name ?? null;
+    const firstName =
+      userPayload.first_name ??
+      (displayName ? displayName.split(/\s+/)[0] || null : null);
     return {
       state: "authenticated_no_org",
       context: {
         ...context,
         user: {
           email: userPayload.email ?? null,
-          display_name: userPayload.display_name ?? null,
+          display_name: displayName,
+          first_name: firstName,
         },
       },
     };
@@ -339,7 +346,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   j002_resolution_started: (_state, context, event) => {
     const payload = event.payload as {
       org_id?: string;
-      user_first_name?: string | null;
+      user?: { first_name?: string | null };
     };
     return {
       state: "resolving_initial_scope",
@@ -349,7 +356,11 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           id: payload.org_id ?? context.org.id,
           name: context.org.name,
         },
-        user_first_name: payload.user_first_name ?? context.user_first_name,
+        user: {
+          ...context.user,
+          first_name:
+            payload.user?.first_name ?? context.user.first_name,
+        },
       },
     };
   },
@@ -357,17 +368,21 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   no_projects_displayed: (_state, context, event) => {
     const payload = event.payload as {
       org_id?: string;
-      user_first_name?: string | null;
+      user?: { first_name?: string | null };
     };
     return {
-      state: "no_projects_empty_state",
+      state: "no_projects",
       context: {
         ...context,
         org: {
           id: payload.org_id ?? context.org.id,
           name: context.org.name,
         },
-        user_first_name: payload.user_first_name ?? context.user_first_name,
+        user: {
+          ...context.user,
+          first_name:
+            payload.user?.first_name ?? context.user.first_name,
+        },
         underlying_cause_tag: "no_projects",
         project_validation_error: null,
       },
@@ -600,7 +615,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       has_more?: boolean;
     };
     return {
-      state: "session_list_visible",
+      state: "session_list_loaded",
       context: {
         ...context,
         session_list: payload.items ?? [],
@@ -615,10 +630,10 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // Emitted on session_list_visible entry (separate from session_list_loaded
+  // Emitted on session_list_loaded entry (separate from session_list_loaded
   // so consumers can distinguish "list refreshed" from "first paint").
   session_list_displayed: (_state, context, _event) => ({
-    state: "session_list_visible",
+    state: "session_list_loaded",
     context: { ...context },
   }),
 
@@ -683,7 +698,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   // Silent return per US-205 Example 4 — used by the resumeSession actor
   // when the session row 404s.
   session_resume_not_found: (_state, context, _event) => ({
-    state: "session_list_visible",
+    state: "session_list_loaded",
     context: {
       ...context,
       session_id: null,
@@ -713,7 +728,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   },
 
   // ────────────── session-chat MR-3 (US-206) new-session lifecycle ──────────
-  // session_welcome_displayed: the machine entered `session_active_no_messages`.
+  // session_welcome_displayed: the machine entered `session_welcome`.
   // session_id is null; no backend session row exists yet (DWD-10 lazy-create).
   // pending_first_message in the payload preserves composer text when the
   // welcome state is re-entered via `retry_clicked` (app-arch §6.4 — machine
@@ -721,7 +736,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   session_welcome_displayed: (_state, context, event) => {
     const payload = event.payload as { pending_first_message?: string };
     return {
-      state: "session_active_no_messages",
+      state: "session_welcome",
       context: {
         ...context,
         session_id: null,

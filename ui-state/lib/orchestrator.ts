@@ -166,8 +166,7 @@ interface FrozenFlowState {
 /** Narrow snapshot context shape consumed by session-chat event emitters. */
 interface SessionChatSnapshotContext {
   org_id?: string;
-  project_id?: string | null;
-  project_name?: string | null;
+  project?: { id: string | null; name: string | null };
   session_list?: Array<{
     id: string;
     title: string | null;
@@ -361,7 +360,7 @@ export class FlowOrchestrator {
    * called from the orchestrator's transition watcher. Two broadcast hooks
    * call this:
    *   - `auth_ready` (login → project-context) — passes `org_id` +
-   *     `user_first_name`; this method forwards a `auth_ready` event to the
+   *     `user.first_name`; this method forwards a `auth_ready` event to the
    *     spawned actor so the project-context machine's resolveInitialScope
    *     invoke fires with a populated org_id.
    *   - `project_ready` (project-context → session-chat) — passes `org_id`
@@ -455,7 +454,7 @@ export class FlowOrchestrator {
           actor.send({
             type: "auth_ready",
             org_id: input.org_id!,
-            user_first_name: input.user_first_name!,
+            user: { first_name: input.user_first_name! },
           } as never);
           await waitForSettledState(actor);
         }
@@ -478,7 +477,10 @@ export class FlowOrchestrator {
         correlation_id: input.correlation_id,
         principal_id: input.principal_id,
         org_id: input.org_id,
-        user_first_name: input.user_first_name,
+        user:
+          input.user_first_name !== undefined
+            ? { first_name: input.user_first_name }
+            : undefined,
         project_id: input.project_id,
         project_name: input.project_name,
         intent_session_id: input.intent_session_id,
@@ -510,7 +512,7 @@ export class FlowOrchestrator {
         actor.send({
           type: "auth_ready",
           org_id: input.org_id!,
-          user_first_name: input.user_first_name!,
+          user: { first_name: input.user_first_name! },
         } as never);
       } catch {
         // Defensive.
@@ -558,7 +560,7 @@ export class FlowOrchestrator {
     const stateValue = snapshot.value as string;
     const ctx = snapshot.context as {
       org_id?: string;
-      user_first_name?: string | null;
+      user?: { first_name?: string | null };
       project?: { id: string | null; name: string | null };
       underlying_cause_tag?: string | null;
       pending_project_name?: string;
@@ -573,7 +575,10 @@ export class FlowOrchestrator {
       type: "j002_resolution_started",
       payload: {
         org_id: ctx.org_id ?? input.org_id ?? "",
-        user_first_name: ctx.user_first_name ?? input.user_first_name ?? null,
+        user: {
+          first_name:
+            ctx.user?.first_name ?? input.user_first_name ?? null,
+        },
         correlation_id: input.correlation_id,
       },
       correlation_id: input.correlation_id,
@@ -597,13 +602,16 @@ export class FlowOrchestrator {
     }
 
     // Terminal-for-now event reflecting settle.
-    if (stateValue === "no_projects_empty_state") {
+    if (stateValue === "no_projects") {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "no_projects_displayed",
         payload: {
           org_id: ctx.org_id ?? input.org_id ?? "",
-          user_first_name: ctx.user_first_name ?? input.user_first_name ?? null,
+          user: {
+            first_name:
+              ctx.user?.first_name ?? input.user_first_name ?? null,
+          },
         },
         correlation_id: input.correlation_id,
       });
@@ -727,7 +735,7 @@ export class FlowOrchestrator {
     const stateValue = snapshot.value as string;
     const ctx = snapshot.context as SessionChatSnapshotContext;
     const orgId = ctx.org_id || spawn.org_id || "";
-    const projectId = ctx.project_id || spawn.project_id || null;
+    const projectId = ctx.project?.id || spawn.project_id || null;
     if (!orgId || !projectId) return;
 
     // Per DWD-13 §2B the session-chat flow's log carries the
@@ -739,7 +747,7 @@ export class FlowOrchestrator {
       payload: {
         org_id: orgId,
         project_id: projectId,
-        project_name: ctx.project_name ?? spawn.project_name ?? "",
+        project_name: ctx.project?.name ?? spawn.project_name ?? "",
       },
       correlation_id,
     });
@@ -772,16 +780,16 @@ export class FlowOrchestrator {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_list_load_started",
-        payload: { project_id: ctx.project_id ?? null },
+        payload: { project_id: ctx.project?.id ?? null },
         correlation_id,
       });
       return;
     }
-    if (stateValue === "session_list_visible") {
+    if (stateValue === "session_list_loaded") {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_list_load_started",
-        payload: { project_id: ctx.project_id ?? null },
+        payload: { project_id: ctx.project?.id ?? null },
         correlation_id,
       });
       await this.deps.eventLog.append(flow_id, {
@@ -798,7 +806,7 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_list_displayed",
         payload: {
-          project_id: ctx.project_id ?? null,
+          project_id: ctx.project?.id ?? null,
           session_count: (ctx.session_list ?? []).length,
         },
         correlation_id,
@@ -818,13 +826,13 @@ export class FlowOrchestrator {
     }
     if (stateValue === "session_active") {
       // US-206 vs US-205 path distinction: an eager-create landing in
-      // session_active came from session_active_no_messages (via the
-      // creating_session_eagerly invoke). Use the prior-state hint to emit
+      // session_active came from session_welcome (via the
+      // creating_session invoke). Use the prior-state hint to emit
       // `session_active_reached` instead of `session_resumed`. Functionally
       // both events project to state=session_active; the distinct names
       // keep the event log auditable for "did this row come from a
       // resume or an eager-create?" queries.
-      if (priorState === "session_active_no_messages") {
+      if (priorState === "session_welcome") {
         await this.deps.eventLog.append(flow_id, {
           ts: new Date().toISOString(),
           type: "session_active_reached",
@@ -864,7 +872,7 @@ export class FlowOrchestrator {
       }
       return;
     }
-    if (stateValue === "session_active_no_messages") {
+    if (stateValue === "session_welcome") {
       // US-206: emit `session_welcome_displayed` so the projection reducer
       // surfaces the welcome state to consumers. session_id stays null.
       // Carry pending_first_message so the projection reducer preserves the
@@ -874,7 +882,7 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_welcome_displayed",
         payload: {
-          project_id: ctx.project_id ?? null,
+          project_id: ctx.project?.id ?? null,
           pending_first_message: ctx.pending_first_message ?? "",
         },
         correlation_id,
@@ -999,7 +1007,13 @@ export class FlowOrchestrator {
 
     if (stateValue === "ready" && input.machine === "login-and-org-setup") {
       const orgCtx = (snapshot.context as { org: { id: string | null; name: string | null } }).org;
-      const userCtx = (snapshot.context as { user: { email: string | null; display_name: string | null } }).user;
+      const userCtx = (snapshot.context as {
+        user: {
+          email: string | null;
+          display_name: string | null;
+          first_name: string | null;
+        };
+      }).user;
       // Mint a synthetic JWT carrying the org_id claim. Per ADR-029
       // invariant 4 the projection MUST expose the access_token so the FE
       // (and the TS harness via assert_jwt_carries_org_claim) can verify
@@ -1026,7 +1040,7 @@ export class FlowOrchestrator {
       // ---- auth_ready broadcast hook (DWD-6 + DWD-13 RD1) ----------------
       // When J-001 transitions creating_org → ready (NOT the
       // expired_token → ready recovery path), broadcast to project-context
-      // so it spawns + receives the inherited org_id + user_first_name. This
+      // so it spawns + receives the inherited org_id + user.first_name. This
       // mechanically retires the "second source of truth" risk Praxis F-5
       // named (the org_id flows J-001 → orchestrator → project-context
       // directly, never via a separate fetch). The project-context spawn's
@@ -1034,7 +1048,9 @@ export class FlowOrchestrator {
       // hook (DWD-13 §3.2.B) that spawns session-chat in turn.
       const isFirstReady = prior === "creating_org" || prior === "anonymous" || !prior;
       if (isFirstReady && this.deps.projectContextMachineDeps && orgCtx.id) {
-        const firstName = (userCtx.display_name ?? "").split(/\s+/)[0] || null;
+        const firstName =
+          userCtx.first_name ??
+          ((userCtx.display_name ?? "").split(/\s+/)[0] || null);
         try {
           await this.beginIfNotStarted({
             machine: PROJECT_CONTEXT_WIRE_NAME,
@@ -1101,7 +1117,7 @@ export class FlowOrchestrator {
     if (input.machine === PROJECT_CONTEXT_WIRE_NAME) {
       const projectContext = snapshot.context as {
         org_id?: string;
-        user_first_name?: string | null;
+        user?: { first_name?: string | null };
         project?: { id: string | null; name: string | null };
         underlying_cause_tag?: string | null;
         pending_project_name?: string;
@@ -1139,14 +1155,14 @@ export class FlowOrchestrator {
         });
       }
 
-      if (stateValue === "no_projects_empty_state" && projectContext.project_validation_error) {
+      if (stateValue === "no_projects" && projectContext.project_validation_error) {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "project_validation_failed",
           payload: { error: projectContext.project_validation_error },
           correlation_id: input.correlation_id,
         });
-      } else if (stateValue === "no_projects_empty_state") {
+      } else if (stateValue === "no_projects") {
         // Re-resolved into no_projects (e.g., after back_to_projects_clicked).
         // Emit no_projects_displayed so the projection settles correctly.
         await this.deps.eventLog.append(input.flow_id, {
@@ -1154,7 +1170,7 @@ export class FlowOrchestrator {
           type: "no_projects_displayed",
           payload: {
             org_id: projectContext.org_id ?? "",
-            user_first_name: projectContext.user_first_name ?? null,
+            user: { first_name: projectContext.user?.first_name ?? null },
           },
           correlation_id: input.correlation_id,
         });
@@ -1253,14 +1269,14 @@ export class FlowOrchestrator {
     if (input.machine === SESSION_CHAT_WIRE_NAME) {
       const sessionChatCtx = snapshot.context as SessionChatSnapshotContext;
       // Special-case: if the resumeSession resolved with session_not_found
-      // (silent return), the machine has settled in session_list_visible.
+      // (silent return), the machine has settled in session_list_loaded.
       // The default state-emission path covers that; no special event needed.
       // For session_not_found the test expects underlying_cause_tag to NOT
       // surface — we emit `session_resume_not_found` so the projection
       // reducer can blank out intent_session_id atomically.
       if (
         input.type === "session_clicked" &&
-        stateValue === "session_list_visible"
+        stateValue === "session_list_loaded"
       ) {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
@@ -1550,7 +1566,7 @@ function waitForSettledState(
       "creating_project",
       "loading_session_list",
       "resuming_session",
-      "creating_session_eagerly",
+      "creating_session",
     ]);
     const snapshot = actor.getSnapshot();
     if (!TRANSIENT_STATES.has(snapshot.value as string)) {

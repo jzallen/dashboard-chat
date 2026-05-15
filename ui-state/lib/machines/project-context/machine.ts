@@ -10,9 +10,9 @@
 // renamed to drop the J002/ProjectFlow prefixes per DWD-13):
 //
 //   resolving_initial_scope (initial) ─┬─→ project_selected
-//                                       ├─→ no_projects_empty_state
+//                                       ├─→ no_projects
 //                                       └─→ scope_mismatch_terminal
-//   no_projects_empty_state            ─→ creating_project (valid name)
+//   no_projects                        ─→ creating_project (valid name)
 //                                      ─→ self                (empty name; inline error)
 //   creating_project (invoke)          ─┬─→ project_selected   (onDone)
 //                                       └─→ error_recoverable  (onError; transient)
@@ -37,7 +37,7 @@ import {
 
 export type ProjectContextState =
   | "resolving_initial_scope"
-  | "no_projects_empty_state"
+  | "no_projects"
   | "creating_project"
   | "project_selected"
   | "switching_project"
@@ -63,7 +63,7 @@ export interface ProjectContextMachineContext {
 
   // From J-001 projection — set on auth_ready event entry:
   org_id: string;
-  user_first_name: string | null;
+  user: { first_name: string | null };
 
   // Authoritative project context — populated on project_selected entry:
   project: { id: string | null; name: string | null };
@@ -81,7 +81,7 @@ export interface ProjectContextMachineContext {
   // Cross-state plumbing:
   underlying_cause_tag: ProjectContextCauseTag | null;
   last_live_state: ProjectContextState | null;
-  retries: number;
+  retries_count: number;
   /** Composer text preserved across creating_project ↔ error_recoverable. */
   pending_project_name: string;
 
@@ -104,7 +104,7 @@ export interface ProjectContextMachineContext {
 }
 
 export type ProjectContextEvent =
-  | { type: "auth_ready"; org_id: string; user_first_name: string }
+  | { type: "auth_ready"; org_id: string; user: { first_name: string } }
   | { type: "create_project_clicked" }
   | { type: "create_project_submitted"; org_name: string }
   | { type: "back_to_projects_clicked" }
@@ -198,7 +198,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         correlation_id: string;
         principal_id: string;
         org_id?: string;
-        user_first_name?: string;
+        user?: { first_name?: string };
         intent_project_id?: string;
       },
     },
@@ -247,7 +247,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
     initial: "resolving_initial_scope",
     // Root-level open_deep_link handler — available from ANY state. Per
     // app-arch §2.3 / DWD-9: a cold deep-link can arrive while the machine
-    // is in no_projects_empty_state, project_selected, or any other live
+    // is in no_projects, project_selected, or any other live
     // state. The handler captures intent_* and re-enters resolving_initial_scope
     // so the resolver re-runs with the new intent.
     on: {
@@ -270,7 +270,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       correlation_id: input.correlation_id,
       principal_id: input.principal_id,
       org_id: input.org_id ?? "",
-      user_first_name: input.user_first_name ?? null,
+      user: { first_name: input.user?.first_name ?? null },
       project: { id: null, name: null },
       intent_project_id: input.intent_project_id ?? null,
       intent_session_id: null,
@@ -278,7 +278,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       intent_resource_type: null,
       underlying_cause_tag: null,
       last_live_state: null,
-      retries: 0,
+      retries_count: 0,
       pending_project_name: "",
       project_validation_error: null,
       scope_reconciled_count: 0,
@@ -291,19 +291,19 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         on: {
           // Entry from J-001 — orchestrator broadcasts this when J-001
           // transitions into `ready`. The payload carries the inherited
-          // org_id + user_first_name from J-001's projection so J-002
+          // org_id + user.first_name from J-001's projection so J-002
           // never re-fetches them from JWT / /api/orgs/me (DWD-6, F-5).
           auth_ready: {
             actions: assign({
               org_id: ({ event }) => event.org_id,
-              user_first_name: ({ event }) => event.user_first_name,
+              user: ({ event }) => ({ first_name: event.user.first_name }),
             }),
             // Stay in resolving_initial_scope — the invoke below fires.
             target: "resolving_initial_scope",
             reenter: true,
           },
           // Note: open_deep_link is handled at the machine root level so it
-          // can arrive from any live state (no_projects_empty_state,
+          // can arrive from any live state (no_projects,
           // project_selected, etc).
         },
         invoke: {
@@ -333,7 +333,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
             {
               guard: ({ event }) =>
                 (event.output as { no_projects?: true }).no_projects === true,
-              target: "no_projects_empty_state",
+              target: "no_projects",
             },
             {
               target: "project_selected",
@@ -363,7 +363,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           },
         },
       },
-      no_projects_empty_state: {
+      no_projects: {
         entry: assign({
           underlying_cause_tag: () => "no_projects" as const,
         }),
@@ -509,7 +509,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
             target: "creating_project",
             actions: assign({
               underlying_cause_tag: () => null,
-              retries: ({ context }) => context.retries + 1,
+              retries_count: ({ context }) => context.retries_count + 1,
             }),
           },
         },

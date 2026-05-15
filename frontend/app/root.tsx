@@ -12,7 +12,7 @@
 // `loader` (J-002 MR-1 sub-step 01-01) reads J-001's projection for
 // `active_scope.org_id` + `user.first_name` AND J-002's projection for
 // the current `state` per DWD-4 §6.1. When J-002's state is
-// `no_projects_empty_state`, the SSR pass renders the welcome panel inline
+// `no_projects`, the SSR pass renders the welcome panel inline
 // so first-paint carries the no-projects shape without a client roundtrip.
 //
 // `ErrorBoundary` surfaces RRv7 route errors with a minimal accessible fallback.
@@ -74,9 +74,9 @@ export async function loader({
 }: LoaderFunctionArgs): Promise<RootLoaderData> {
   // MR-1: read both the login-and-org-setup projection (for org_id +
   // user.first_name) and the project-and-chat-session-management
-  // projection (for the no_projects_empty_state / project_selected
+  // projection (for the no_projects / project_selected
   // dispatch). The walking-skeleton scenario relies on the SSR pass
-  // observing project_flow_state === "no_projects_empty_state" so first
+  // observing project_flow_state === "no_projects" so first
   // paint carries the welcome panel — no client roundtrip needed.
   const principalId = DEFAULT_PRINCIPAL_ID;
   const loginFlowId = `login-and-org-setup:${principalId}`;
@@ -102,11 +102,12 @@ export async function loader({
     const login = await client.getProjection("login-and-org-setup", loginFlowId);
     const loginContext = (login as ProjectionShape).context as {
       org?: { id: string | null; name: string | null };
-      user?: { display_name: string | null };
+      user?: { display_name: string | null; first_name?: string | null };
     };
     org_id = loginContext?.org?.id ?? "";
-    const displayName = loginContext?.user?.display_name ?? "";
-    user_first_name = displayName ? displayName.split(/\s+/)[0] : null;
+    user_first_name =
+      loginContext?.user?.first_name ??
+      ((loginContext?.user?.display_name ?? "").split(/\s+/)[0] || null);
   } catch (err) {
     // login-and-org-setup not yet started — leave defaults. The FE
     // renders the login shell in that case (handled by the existing
@@ -123,13 +124,13 @@ export async function loader({
     active_scope = projection.active_scope;
     const projectContext = projection.context as {
       project?: { id: string | null; name: string | null };
-      user_first_name?: string | null;
+      user?: { first_name?: string | null };
     };
     if (projectContext?.project) {
       project = projectContext.project;
     }
-    if (!user_first_name && projectContext?.user_first_name) {
-      user_first_name = projectContext.user_first_name;
+    if (!user_first_name && projectContext?.user?.first_name) {
+      user_first_name = projectContext.user.first_name;
     }
   } catch (err) {
     if (err instanceof Response && err.status === 504) throw err;
@@ -162,7 +163,7 @@ export default function Root() {
   );
 
   // The loader populates the project flow's state for the SSR pass.
-  // When the user is in `no_projects_empty_state`, render the welcome
+  // When the user is in `no_projects`, render the welcome
   // panel inline so first-paint carries the no-projects shape
   // (walking-skeleton AC). Otherwise, defer to the route-level <Outlet />.
   const data = useLoaderData<typeof loader>() as RootLoaderData | undefined;
@@ -171,7 +172,7 @@ export default function Root() {
     <QueryClientProvider client={queryClient}>
       <HydrationBoundary state={undefined}>
         <AuthProvider>
-          {data?.project_flow_state === "no_projects_empty_state" ? (
+          {data?.project_flow_state === "no_projects" ? (
             <WelcomePanel
               orgName={null}
               userFirstName={data.user_first_name}
@@ -187,7 +188,7 @@ export default function Root() {
 
 /**
  * No-projects welcome panel — rendered server-side when J-002 settles
- * in `no_projects_empty_state` per US-201. The exact copy is asserted
+ * in `no_projects` per US-201. The exact copy is asserted
  * by the walking-skeleton acceptance test on FIRST paint.
  */
 function WelcomePanel({

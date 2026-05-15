@@ -176,10 +176,10 @@ def test_cross_tenant_deep_link_lands_in_scope_mismatch_terminal(
         foreign_project_name, org_id=foreign_org_id, user_id=foreign_user_id
     )
 
-    # Spawn J-002 first (no intent — resolves to no_projects_empty_state since
+    # Spawn J-002 first (no intent — resolves to no_projects since
     # Maya has no projects of her own).
     _spawn_j002(driver)
-    _wait_for_j002_state(driver, target_state="no_projects_empty_state")
+    _wait_for_j002_state(driver, target_state="no_projects")
 
     # Act — post open-deep-link with intent_project_id pointing at the foreign
     # project. The machine re-resolves with intent, the backend's GET
@@ -220,9 +220,9 @@ def test_deep_link_to_deleted_project_surfaces_same_panel_with_project_not_found
     # Arrange — invent a UUID that doesn't exist in the backend.
     missing_project_id = f"deleted-{uuid.uuid4().hex}"
 
-    # Spawn J-002 → no_projects_empty_state.
+    # Spawn J-002 → no_projects.
     _spawn_j002(driver)
-    _wait_for_j002_state(driver, target_state="no_projects_empty_state")
+    _wait_for_j002_state(driver, target_state="no_projects")
 
     # Act — post open-deep-link with intent pointing at the missing project.
     deep_link = driver.open_j002_deep_link(
@@ -255,12 +255,12 @@ def test_back_to_projects_cta_re_enters_resolving_initial_scope_with_intent_clea
       2. Send back_to_projects_clicked.
       3. Assert intent_* fields in context.* (snapshot via projection) are null AND
          the machine re-resolves (lands in project_selected since we now have a
-         real project, OR no_projects_empty_state).
+         real project, OR no_projects).
     """
     # Arrange — land in scope_mismatch_terminal via missing project deep link.
     missing_project_id = f"missing-{uuid.uuid4().hex}"
     _spawn_j002(driver)
-    _wait_for_j002_state(driver, target_state="no_projects_empty_state")
+    _wait_for_j002_state(driver, target_state="no_projects")
     driver.open_j002_deep_link(
         principal_id=DEV_PRINCIPAL_ID,
         intent_project_id=missing_project_id,
@@ -293,17 +293,17 @@ def test_back_to_projects_cta_re_enters_resolving_initial_scope_with_intent_clea
     )
 
     # Assert — machine left scope_mismatch_terminal; intent is cleared in context.
-    # We expect to settle at no_projects_empty_state (Maya has no real projects).
+    # We expect to settle at no_projects (Maya has no real projects).
     settled = _wait_for_j002_state(
-        driver, target_state="no_projects_empty_state"
+        driver, target_state="no_projects"
     )
     body = json.loads(settled.body)
-    assert body["state"] == "no_projects_empty_state", (
+    assert body["state"] == "no_projects", (
         f"expected to re-resolve from scope_mismatch_terminal; "
         f"got state={body['state']!r}"
     )
     # Underlying cause tag should be reset for the resolving_initial_scope re-entry.
-    # (After settling at no_projects_empty_state it'll be 'no_projects' again.)
+    # (After settling at no_projects it'll be 'no_projects' again.)
     assert body["context"].get("underlying_cause_tag") == "no_projects"
 
 

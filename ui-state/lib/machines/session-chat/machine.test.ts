@@ -5,14 +5,14 @@
 //
 // MR-2 contract:
 //   S4 — project_ready transitions to `loading_session_list`.
-//   S5 — loadSessionList onDone (no intent) → session_list_visible.
+//   S5 — loadSessionList onDone (no intent) → session_list_loaded.
 //   S6 — loadSessionList onDone (with intent_session_id) → resuming_session.
 //   S7 — loadSessionList onError → error_recoverable with cause list_sessions_degraded.
-//   S8 — session_clicked from session_list_visible → resuming_session.
+//   S8 — session_clicked from session_list_loaded → resuming_session.
 //   S9 — resumeSession onDone (atomic) → session_active with transcript + resource together.
-//   S10 — resumeSession onDone (session_not_found) → silent return to session_list_visible.
+//   S10 — resumeSession onDone (session_not_found) → silent return to session_list_loaded.
 //   S11 — resumeSession onDone (dataset_unavailable) → session_active with resource null + cause tag.
-//   S12 — refresh_session_list from session_list_visible → loading_session_list.
+//   S12 — refresh_session_list from session_list_loaded → loading_session_list.
 //   S13 — retry_clicked from error_recoverable returns to last_live_state.
 //
 // All tests are port-to-port at the XState actor's `send` / snapshot surface.
@@ -80,8 +80,8 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
     expect(snap.value).toBe("waiting_for_project");
     const ctx = snap.context;
     expect(ctx.org_id).toBe("");
-    expect(ctx.project_id).toBeNull();
-    expect(ctx.project_name).toBeNull();
+    expect(ctx.project.id).toBeNull();
+    expect(ctx.project.name).toBeNull();
     expect(ctx.session_list).toEqual([]);
     expect(ctx.session_id).toBeNull();
     expect(ctx.intent_session_id).toBeNull();
@@ -110,11 +110,11 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-broadcast-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
     expect(ctx.org_id).toBe("dev-org-001");
-    expect(ctx.project_id).toBe("proj-q4");
-    expect(ctx.project_name).toBe("Q4 Analytics");
+    expect(ctx.project.id).toBe("proj-q4");
+    expect(ctx.project.name).toBe("Q4 Analytics");
     expect(ctx.correlation_id).toBe("R-broadcast-1");
   });
 
@@ -172,7 +172,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     },
   ];
 
-  it("S4: project_ready → loading_session_list → session_list_visible (no intent)", async () => {
+  it("S4: project_ready → loading_session_list → session_list_loaded (no intent)", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionList({
         items: SESSIONS_DESC,
@@ -189,14 +189,14 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
     expect(ctx.session_list).toEqual(SESSIONS_DESC);
     expect(ctx.session_list_next_cursor).toBeNull();
     expect(ctx.session_list_has_more).toBe(false);
   });
 
-  it("S5: empty session list lands in session_list_visible with no_sessions sub-shape", async () => {
+  it("S5: empty session list lands in session_list_loaded with no_sessions sub-shape", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionList({
         items: [],
@@ -213,7 +213,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     expect(actor.getSnapshot().context.session_list).toEqual([]);
   });
 
@@ -267,7 +267,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     expect(ctx.last_live_state).toBe("loading_session_list");
   });
 
-  it("S8: session_clicked from session_list_visible → resuming_session", async () => {
+  it("S8: session_clicked from session_list_loaded → resuming_session", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionList({
         items: SESSIONS_DESC,
@@ -289,7 +289,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "session_clicked", session_id: "sess-t3" });
     await waitFor(() => actor.getSnapshot().value === "session_active");
     expect(actor.getSnapshot().context.session_id).toBe("sess-t3");
@@ -347,7 +347,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     });
   });
 
-  it("S10: resumeSession session_not_found → silent return to session_list_visible", async () => {
+  it("S10: resumeSession session_not_found → silent return to session_list_loaded", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionList({
         items: SESSIONS_DESC,
@@ -366,7 +366,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       correlation_id: "R-1",
       intent_session_id: "sess-deleted",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
     expect(ctx.session_id).toBeNull();
     expect(ctx.transcript).toEqual([]);
@@ -405,7 +405,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     expect(ctx.underlying_cause_tag).toBe("dataset_not_found");
   });
 
-  it("S12: refresh_session_list from session_list_visible → loading_session_list", async () => {
+  it("S12: refresh_session_list from session_list_loaded → loading_session_list", async () => {
     let callCount = 0;
     const loadActor = fromPromise<LoadSessionListOutput, LoadSessionListInput>(
       async () => {
@@ -427,12 +427,12 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     expect(actor.getSnapshot().context.session_list).toHaveLength(1);
     actor.send({ type: "refresh_session_list" });
     await waitFor(
       () =>
-        actor.getSnapshot().value === "session_list_visible" &&
+        actor.getSnapshot().value === "session_list_loaded" &&
         actor.getSnapshot().context.session_list.length === 3,
     );
     expect(callCount).toBe(2);
@@ -459,8 +459,8 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     });
     await waitFor(() => actor.getSnapshot().value === "error_recoverable");
     actor.send({ type: "retry_clicked" });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
-    expect(actor.getSnapshot().context.retries).toBe(1);
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+    expect(actor.getSnapshot().context.retries_count).toBe(1);
     expect(actor.getSnapshot().context.underlying_cause_tag).toBeNull();
   });
 });
@@ -504,15 +504,15 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     return actor;
   }
 
-  it("S14: new_session_clicked from session_list_visible → session_active_no_messages with session_id=null", async () => {
+  it("S14: new_session_clicked from session_list_loaded → session_welcome with session_id=null", async () => {
     const actor = await settleIntoSessionListVisible();
     actor.send({ type: "new_session_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     const ctx = actor.getSnapshot().context;
     expect(ctx.session_id).toBeNull();
@@ -521,21 +521,21 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
     expect(ctx.pending_first_message).toBe("");
   });
 
-  it("S15: new_session_clicked while already in session_active_no_messages is a self-no-op", async () => {
+  it("S15: new_session_clicked while already in session_welcome is a self-no-op", async () => {
     const actor = await settleIntoSessionListVisible();
     actor.send({ type: "new_session_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     actor.send({ type: "new_session_clicked" });
-    expect(actor.getSnapshot().value).toBe("session_active_no_messages");
+    expect(actor.getSnapshot().value).toBe("session_welcome");
   });
 
-  it("S16: session_clicked from session_active_no_messages → resuming_session (cancels new-session intent)", async () => {
+  it("S16: session_clicked from session_welcome → resuming_session (cancels new-session intent)", async () => {
     const actor = await settleIntoSessionListVisible();
     actor.send({ type: "new_session_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     actor.send({ type: "session_clicked", session_id: "sess-prior" });
     await waitFor(() => actor.getSnapshot().value === "session_active");
@@ -563,10 +563,10 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "new_session_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     actor.send({ type: "first_message_sent", content: "Show me top customers" });
     await waitFor(() => actor.getSnapshot().value === "session_active");
@@ -593,20 +593,20 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "new_session_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     actor.send({ type: "first_message_sent", content: "Show me top customers" });
     await waitFor(() => actor.getSnapshot().value === "error_recoverable");
     const ctx = actor.getSnapshot().context;
     expect(ctx.pending_first_message).toBe("Show me top customers");
     expect(ctx.underlying_cause_tag).toBe("transient");
-    expect(ctx.last_live_state).toBe("session_active_no_messages");
+    expect(ctx.last_live_state).toBe("session_welcome");
   });
 
-  it("S19: retry_clicked from error_recoverable with last_live_state=session_active_no_messages preserves composer", async () => {
+  it("S19: retry_clicked from error_recoverable with last_live_state=session_welcome preserves composer", async () => {
     let calls = 0;
     const createActor = fromPromise<
       { session_id: string },
@@ -625,10 +625,10 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "new_session_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     actor.send({ type: "first_message_sent", content: "Show me top customers" });
     await waitFor(() => actor.getSnapshot().value === "error_recoverable");
@@ -637,7 +637,7 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
     );
     actor.send({ type: "retry_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     expect(actor.getSnapshot().context.pending_first_message).toBe(
       "Show me top customers",
@@ -648,11 +648,11 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
     expect(actor.getSnapshot().context.session_id).toBe("sess-new-002");
   });
 
-  it("S20: project_ready (different project_id) from session_active_no_messages → loading_session_list", async () => {
+  it("S20: project_ready (different project_id) from session_welcome → loading_session_list", async () => {
     const actor = await settleIntoSessionListVisible();
     actor.send({ type: "new_session_clicked" });
     await waitFor(
-      () => actor.getSnapshot().value === "session_active_no_messages",
+      () => actor.getSnapshot().value === "session_welcome",
     );
     actor.send({
       type: "project_ready",
@@ -661,9 +661,9 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       project_name: "Q3 Sales",
       correlation_id: "R-2",
     });
-    await waitFor(() => actor.getSnapshot().value === "session_list_visible");
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
-    expect(ctx.project_id).toBe("proj-q3");
+    expect(ctx.project.id).toBe("proj-q3");
     expect(ctx.session_id).toBeNull();
   });
 });

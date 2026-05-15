@@ -156,7 +156,7 @@ def test_session_list_renders_sorted_most_recent_first(
     _update_session_last_active(s4, "2026-05-12T13:00:00")
 
     _spawn_j002(driver)
-    session_chat = _wait_for_session_chat_state(driver, "session_list_visible")
+    session_chat = _wait_for_session_chat_state(driver, "session_list_loaded")
     items = session_chat["context"].get("session_list") or []
     ids = [s["id"] for s in items]
     assert ids == [s4, s3, s2, s1], (
@@ -187,7 +187,7 @@ def test_recent_sessions_nav_caps_at_five_rows(
         _update_session_last_active(sid, f"2026-05-12T{i:02d}:00:00")
 
     _spawn_j002(driver)
-    session_chat = _wait_for_session_chat_state(driver, "session_list_visible")
+    session_chat = _wait_for_session_chat_state(driver, "session_list_loaded")
     items = session_chat["context"].get("session_list") or []
     # Most recent first → reverse of insertion order.
     assert len(items) >= 5, f"expected >=5 sessions, got {len(items)}"
@@ -204,15 +204,15 @@ def test_zero_sessions_project_enters_no_sessions_empty_state_sub_shape(
     clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
-    """0 sessions → session_list_visible with empty list (no_sessions sub-shape per DWD-1)."""
+    """0 sessions → session_list_loaded with empty list (no_sessions sub-shape per DWD-1)."""
     _create_project("Q4 Analytics")  # project exists but no sessions
     _spawn_j002(driver)
-    session_chat = _wait_for_session_chat_state(driver, "session_list_visible")
+    session_chat = _wait_for_session_chat_state(driver, "session_list_loaded")
     items = session_chat["context"].get("session_list") or []
     assert items == [], (
         f"US-203 zero-sessions: expected empty session_list; got {items!r}"
     )
-    assert session_chat["state"] == "session_list_visible"
+    assert session_chat["state"] == "session_list_loaded"
 
 
 @pytest.mark.happy_path
@@ -231,7 +231,7 @@ def test_session_list_is_paginated_for_projects_with_more_than_thirty_sessions(
         _update_session_last_active(sid, f"2026-05-12T{(i // 60):02d}:{(i % 60):02d}:00")
 
     _spawn_j002(driver)
-    session_chat = _wait_for_session_chat_state(driver, "session_list_visible")
+    session_chat = _wait_for_session_chat_state(driver, "session_list_loaded")
     items = session_chat["context"].get("session_list") or []
     has_more = session_chat["context"].get("session_list_has_more")
     # The backend's list_sessions endpoint paginates at 30 per request.
@@ -263,7 +263,7 @@ def test_session_created_in_other_tab_refreshes_list_within_one_second(
     s1 = _create_session(proj_id, "First chat")
     _update_session_last_active(s1, "2026-05-12T10:00:00")
     _spawn_j002(driver)
-    _wait_for_session_chat_state(driver, "session_list_visible")
+    _wait_for_session_chat_state(driver, "session_list_loaded")
 
     # Tab A opens the SSE stream with a 3s budget.
     sse_url = (
@@ -363,10 +363,10 @@ def test_ts_harness_asserts_session_list_ordering(
         f"  principalId: '{DEV_PRINCIPAL_ID}',\n"
         "});\n"
         "await h.j002.begin('Maya Chen');\n"
-        "// Wait for session-chat to settle in session_list_visible.\n"
+        "// Wait for session-chat to settle in session_list_loaded.\n"
         "for (let i = 0; i < 50; i++) {\n"
         "  const p = await h.j002.get_session_chat_projection();\n"
-        "  if (p.state === 'session_list_visible') break;\n"
+        "  if (p.state === 'session_list_loaded') break;\n"
         "  await new Promise(r => setTimeout(r, 100));\n"
         "}\n"
         "const sessions = await h.j002.get_session_list();\n"

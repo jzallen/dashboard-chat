@@ -108,7 +108,7 @@ def _set_session_dataset(project_id: str, session_id: str, dataset_id: str | Non
 
 
 def _spawn_j002_and_wait_session_list(driver: J002Driver) -> None:
-    """Spawn J-002 + wait for session-chat to reach session_list_visible."""
+    """Spawn J-002 + wait for session-chat to reach session_list_loaded."""
     begin = driver.post(
         "/ui-state/flow/project-and-chat-session-management/begin",
         base=driver.auth_proxy_url,
@@ -122,10 +122,10 @@ def _spawn_j002_and_wait_session_list(driver: J002Driver) -> None:
             base=driver.auth_proxy_url,
         )
         data = json.loads(probe.body) if probe.status == 200 else {}
-        if data.get("state") == "session_list_visible":
+        if data.get("state") == "session_list_loaded":
             return
         time.sleep(0.05)
-    pytest.fail("session-chat never reached session_list_visible")
+    pytest.fail("session-chat never reached session_list_loaded")
 
 
 def _resume_session(driver: J002Driver, session_id: str) -> dict:
@@ -147,8 +147,8 @@ def _resume_session(driver: J002Driver, session_id: str) -> dict:
         )
         data = json.loads(probe.body) if probe.status == 200 else {}
         state = data.get("state")
-        # Settle in session_active OR back to session_list_visible (silent-not-found).
-        if state in ("session_active", "session_list_visible"):
+        # Settle in session_active OR back to session_list_loaded (silent-not-found).
+        if state in ("session_active", "session_list_loaded"):
             return data
         if state == "error_recoverable":
             return data
@@ -265,12 +265,12 @@ def test_resuming_session_with_deleted_dataset_degrades_gracefully_to_conversati
 
 
 @pytest.mark.error_path
-def test_resuming_nonexistent_session_returns_silently_to_session_list_visible(
+def test_resuming_nonexistent_session_returns_silently_to_session_list_loaded(
     requires_compose_stack: None,
     clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
-    """Click a deleted session → silent return to session_list_visible (no panel)."""
+    """Click a deleted session → silent return to session_list_loaded (no panel)."""
     proj_id = _create_project("Q4 Analytics")
     # Create a session so the project has memory; then we'll try to resume
     # a DIFFERENT (nonexistent) id.
@@ -280,8 +280,8 @@ def test_resuming_nonexistent_session_returns_silently_to_session_list_visible(
     _spawn_j002_and_wait_session_list(driver)
     final = _resume_session(driver, ghost_id)
 
-    assert final["state"] == "session_list_visible", (
-        f"US-205 #4: nonexistent session → silent return to session_list_visible; "
+    assert final["state"] == "session_list_loaded", (
+        f"US-205 #4: nonexistent session → silent return to session_list_loaded; "
         f"got {final['state']!r}"
     )
     ctx = final["context"]
@@ -317,10 +317,10 @@ def test_ts_harness_asserts_resume_contract(
         f"  principalId: '{DEV_PRINCIPAL_ID}',\n"
         "});\n"
         "await h.j002.begin('Maya Chen');\n"
-        "// Wait for session-chat to settle in session_list_visible.\n"
+        "// Wait for session-chat to settle in session_list_loaded.\n"
         "for (let i = 0; i < 50; i++) {\n"
         "  const p = await h.j002.get_session_chat_projection();\n"
-        "  if (p.state === 'session_list_visible') break;\n"
+        "  if (p.state === 'session_list_loaded') break;\n"
         "  await new Promise(r => setTimeout(r, 100));\n"
         "}\n"
         f"await h.j002.resume_session('{session_id}');\n"
