@@ -78,13 +78,25 @@ interface ReducedContext {
   /** Per OQ-J002-5 degraded path: ids of projects whose list_sessions
    *  call 5xx-failed during last-used resolution. */
   last_used_resolution_degraded: { failed_project_ids: string[]; partial_result: boolean } | null;
-  /** J-002 deep-link intent payload (US-204 / DWD-9). Carries the URL-level
-   *  intent so future MR (session resume, dataset switching) can consume
-   *  these fields. Cleared by back_to_projects_clicked. */
-  intent_project_id: string | null;
-  intent_session_id: string | null;
+  /** J-002 deep-link WISH payload (US-204 / DWD-9, post-MR-D split per
+   *  audit §5 / §7 Tier-1 #2). Carries the URL-level user wish — what
+   *  the user typed/landed on, not yet confirmed or denied. Cleared by
+   *  back_to_projects_clicked. */
+  deeplink_project_id: string | null;
+  deeplink_session_id: string | null;
+  /** Resource fields are still URL-fed but kept on the polymorphic
+   *  prefix `intent_resource_*` for forward-compat with the
+   *  `open_deep_link` event payload (whose key names rename in a
+   *  follow-up MR). They no longer touch project-context's ctx — the
+   *  projection is their only stable home. */
   intent_resource_id: string | null;
   intent_resource_type: ResourceType | null;
+  /** Click-captured resume target (session-chat half — MR-D split).
+   *  Populated by session_clicked + carried into resuming_session;
+   *  cleared by session_resumed / session_resume_not_found /
+   *  switching_project_started. Pairs with the existing pending_*
+   *  family (pending_project_name, pending_first_message). */
+  pending_resume_session_id: string | null;
   // ── session-chat context (J-002 MR-2 + DWD-13 §2B) ─────────────────────
   /** session-chat's authoritative project (set by project_ready broadcast). */
   session_chat_project_id: string | null;
@@ -136,10 +148,11 @@ function initialContext(): ReducedContext {
     project_validation_error: null,
     most_recent_session_per_project: {},
     last_used_resolution_degraded: null,
-    intent_project_id: null,
-    intent_session_id: null,
+    deeplink_project_id: null,
+    deeplink_session_id: null,
     intent_resource_id: null,
     intent_resource_type: null,
+    pending_resume_session_id: null,
     session_chat_project_id: null,
     session_chat_project_name: null,
     session_list: [],
@@ -276,21 +289,22 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // Payload shape (mirrors `open_deep_link` handler in `index.ts`):
+  // Payload shape (mirrors `open_deep_link` handler in `index.ts`,
+  // post-MR-D rename per audit §5 / §7 Tier-1 #2):
   //   { scope: ActiveScope, project: { id, name } | null, reconciled: bool,
-  //     intent_project_id?, intent_session_id?, intent_resource_id?,
-  //     intent_resource_type? }
+  //     deeplink_project_id?, deeplink_session_id?,
+  //     intent_resource_id?, intent_resource_type? }
   //
-  // Per DWD-9: the J-002 intent fields are carried in the same event payload
-  // so future MR consumers (session resume, dataset switching) read them
-  // from the projection's context.
+  // Per DWD-9: the J-002 deep-link wish fields are carried in the same
+  // event payload so future MR consumers (session resume, dataset
+  // switching) read them from the projection's context.
   deep_link_opened: (state, context, event) => {
     const payload = event.payload as {
       scope?: ActiveScope;
       project?: { id: string | null; name: string | null } | null;
       reconciled?: boolean;
-      intent_project_id?: string | null;
-      intent_session_id?: string | null;
+      deeplink_project_id?: string | null;
+      deeplink_session_id?: string | null;
       intent_resource_id?: string | null;
       intent_resource_type?: ResourceType | null;
     };
@@ -305,10 +319,10 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           : context.project,
         scope_reconciled: Boolean(payload.reconciled),
         scope_resolution_error: null,
-        intent_project_id:
-          payload.intent_project_id ?? context.intent_project_id,
-        intent_session_id:
-          payload.intent_session_id ?? context.intent_session_id,
+        deeplink_project_id:
+          payload.deeplink_project_id ?? context.deeplink_project_id,
+        deeplink_session_id:
+          payload.deeplink_session_id ?? context.deeplink_session_id,
         intent_resource_id:
           payload.intent_resource_id ?? context.intent_resource_id,
         intent_resource_type:
@@ -486,7 +500,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
   switching_project_started: (_state, context, event) => {
     const payload = event.payload as {
       org_id?: string;
-      intent_project_id?: string | null;
+      deeplink_project_id?: string | null;
     };
     return {
       state: "switching_project",
@@ -496,8 +510,8 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           id: payload.org_id ?? context.org.id,
           name: context.org.name,
         },
-        intent_project_id:
-          payload.intent_project_id ?? context.intent_project_id,
+        deeplink_project_id:
+          payload.deeplink_project_id ?? context.deeplink_project_id,
         // IC-J002-4 atomic invalidation — write nulls in the SAME projection
         // tick the `switching_project` state surfaces. SSE consumers see the
         // (state, session_id=null, resource=null) tuple together.
@@ -505,7 +519,8 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
         transcript: [],
         resource: { type: null, id: null },
         session_dataset_unavailable: false,
-        intent_session_id: null,
+        deeplink_session_id: null,
+        pending_resume_session_id: null,
         intent_resource_id: null,
         intent_resource_type: null,
       },
@@ -540,7 +555,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     const payload = event.payload as {
       org_id?: string;
       underlying_cause_tag?: string;
-      intent_project_id?: string | null;
+      deeplink_project_id?: string | null;
     };
     return {
       state: "scope_mismatch_terminal",
@@ -551,8 +566,8 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           name: context.org.name,
         },
         underlying_cause_tag: payload.underlying_cause_tag ?? "cross_tenant",
-        intent_project_id:
-          payload.intent_project_id ?? context.intent_project_id,
+        deeplink_project_id:
+          payload.deeplink_project_id ?? context.deeplink_project_id,
       },
     };
   },
@@ -643,8 +658,10 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       state: "resuming_session",
       context: {
         ...context,
-        // Capture the intent so the FE can render the "resuming…" hint.
-        intent_session_id: payload.session_id ?? context.intent_session_id,
+        // Capture the click-pending resume target so the FE can render
+        // the "resuming…" hint (MR-D split — was intent_session_id).
+        pending_resume_session_id:
+          payload.session_id ?? context.pending_resume_session_id,
       },
     };
   },
@@ -677,7 +694,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           id: payload.resource_id ?? null,
         },
         session_dataset_unavailable: Boolean(payload.dataset_unavailable),
-        intent_session_id: null,
+        pending_resume_session_id: null,
         underlying_cause_tag: payload.dataset_unavailable
           ? "dataset_not_found"
           : null,
@@ -704,7 +721,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       session_id: null,
       transcript: [],
       resource: { type: null, id: null },
-      intent_session_id: null,
+      pending_resume_session_id: null,
       // Silent — no underlying_cause_tag.
       underlying_cause_tag: null,
     },

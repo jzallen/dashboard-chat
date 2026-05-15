@@ -355,10 +355,14 @@ export class FlowOrchestrator {
    *     spawned actor so the project-context machine's resolveInitialScope
    *     invoke fires with a populated org_id.
    *   - `project_ready` (project-context → session-chat) — passes `org_id`
-   *     + `project_id` + `project_name` + intent_* deep-link fields; this
-   *     method forwards a `project_ready` event to the spawned session-chat
-   *     actor so it can transition out of `waiting_for_project` (MR-2+) and
-   *     consume any forwarded deep-link intents per DESIGN §3.4.
+   *     + `project_id` + `project_name` + `deeplink_session_id` (the
+   *     URL-level wish forwarded by project-context post audit §5 / MR-D)
+   *     and the `intent_resource_*` slots (forward-compat — no longer
+   *     stored on either machine's ctx; routed through the projection by
+   *     the deep_link_opened reducer); this method forwards a
+   *     `project_ready` event to the spawned session-chat actor so it can
+   *     transition out of `waiting_for_project` (MR-2+) and consume any
+   *     forwarded deep-link target per DESIGN §3.4.
    */
   async beginIfNotStarted(input: {
     machine: string;
@@ -370,7 +374,7 @@ export class FlowOrchestrator {
     // `project_ready` payload (session-chat dispatch — DWD-13 §3.2.B):
     project_id?: string;
     project_name?: string;
-    intent_session_id?: string | null;
+    deeplink_session_id?: string | null;
     intent_resource_id?: string | null;
     intent_resource_type?: ResourceType | null;
     /** When true, stop+respawn the actor and reset its event log. Used by
@@ -419,7 +423,7 @@ export class FlowOrchestrator {
             project_id: input.project_id!,
             project_name: input.project_name ?? "",
             correlation_id: input.correlation_id,
-            intent_session_id: input.intent_session_id ?? null,
+            deeplink_session_id: input.deeplink_session_id ?? null,
             intent_resource_id: input.intent_resource_id ?? null,
             intent_resource_type: input.intent_resource_type ?? null,
           } as never);
@@ -474,7 +478,7 @@ export class FlowOrchestrator {
             : undefined,
         project_id: input.project_id,
         project_name: input.project_name,
-        intent_session_id: input.intent_session_id,
+        deeplink_session_id: input.deeplink_session_id,
         intent_resource_id: input.intent_resource_id,
         intent_resource_type: input.intent_resource_type,
       } as never,
@@ -491,7 +495,7 @@ export class FlowOrchestrator {
           project_id: input.project_id!,
           project_name: input.project_name ?? "",
           correlation_id: input.correlation_id,
-          intent_session_id: input.intent_session_id ?? null,
+          deeplink_session_id: input.deeplink_session_id ?? null,
           intent_resource_id: input.intent_resource_id ?? null,
           intent_resource_type: input.intent_resource_type ?? null,
         } as never);
@@ -576,7 +580,12 @@ export class FlowOrchestrator {
       last_used_resolution_degraded:
         | { failed_project_ids: string[]; partial_result: boolean }
         | null;
-      intent_session_id: string | null;
+      // URL-level deep-link wish — projection field renamed in MR-D
+      // (audit §5 / §7 Tier-1 #2).
+      deeplink_session_id: string | null;
+      // resource_* still live on the projection (fed by deep_link_opened
+      // event payload). Per MR-D they no longer touch project-context's
+      // ctx; the projection is the only place they live.
       intent_resource_id: string | null;
       intent_resource_type: ResourceType | null;
     };
@@ -652,7 +661,7 @@ export class FlowOrchestrator {
         {
           org_id: ctx.org.id ?? undefined,
           project: ctx.project,
-          intent_session_id: ctx.intent_session_id,
+          deeplink_session_id: ctx.deeplink_session_id,
           intent_resource_id: ctx.intent_resource_id,
           intent_resource_type: ctx.intent_resource_type,
         },
@@ -700,7 +709,7 @@ export class FlowOrchestrator {
     ctx: {
       org_id?: string;
       project?: { id: string | null; name: string | null };
-      intent_session_id?: string | null;
+      deeplink_session_id?: string | null;
       intent_resource_id?: string | null;
       intent_resource_type?: ResourceType | null;
     },
@@ -717,7 +726,7 @@ export class FlowOrchestrator {
         org_id: orgId,
         project_id: projectId,
         project_name: ctx.project?.name ?? "",
-        intent_session_id: ctx.intent_session_id ?? null,
+        deeplink_session_id: ctx.deeplink_session_id ?? null,
         intent_resource_id: ctx.intent_resource_id ?? null,
         intent_resource_type: ctx.intent_resource_type ?? null,
       });
@@ -830,7 +839,9 @@ export class FlowOrchestrator {
         ts: string;
       }>;
       resource: { type: ResourceType | null; id: string | null };
-      intent_session_id: string | null;
+      // Click-captured resume target (session-chat half — projection
+      // field renamed in MR-D).
+      pending_resume_session_id: string | null;
       underlying_cause_tag: string | null;
       pending_first_message: string;
     };
@@ -876,7 +887,8 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_resume_started",
         payload: {
-          session_id: ctx.intent_session_id ?? ctx.session_id ?? null,
+          session_id:
+            ctx.pending_resume_session_id ?? ctx.session_id ?? null,
         },
         correlation_id,
       });
@@ -1063,8 +1075,13 @@ export class FlowOrchestrator {
       org_validation_error: { kind: string; message: string } | null;
       pending_project_name: string;
       project_validation_error: { kind: string; message: string } | null;
-      intent_project_id: string | null;
-      intent_session_id: string | null;
+      // URL-level deep-link wishes (projection field names renamed in
+      // MR-D per audit §5 / §7 Tier-1 #2).
+      deeplink_project_id: string | null;
+      deeplink_session_id: string | null;
+      // resource_* still live on the projection (fed by deep_link_opened
+      // event payload). Per MR-D they no longer touch project-context's
+      // ctx; the projection is the only place they live.
       intent_resource_id: string | null;
       intent_resource_type: ResourceType | null;
     };
@@ -1192,8 +1209,12 @@ export class FlowOrchestrator {
 
       // When the incoming event is `open_deep_link`, also append a
       // `deep_link_opened` projection event so the projection's context
-      // carries the intent_* fields (per DWD-9). The projection reducer
-      // reads intent_* from this event.
+      // carries the URL-level wish + resource_* fields (per DWD-9).
+      // Post-MR-D the projection field names are `deeplink_*` (URL half)
+      // + `intent_resource_*` (forward-compat slots still routed through
+      // the projection — see audit §5 / §7 Tier-1 #2). The values come
+      // from the projection (the open_deep_link event's payload has
+      // already been folded in by buildProjection above).
       if (input.type === "open_deep_link") {
         const resolvedScope = {
           org_id: orgId,
@@ -1208,8 +1229,8 @@ export class FlowOrchestrator {
             scope: resolvedScope,
             project: projectionCtx.project,
             reconciled: false,
-            intent_project_id: projectionCtx.intent_project_id,
-            intent_session_id: projectionCtx.intent_session_id,
+            deeplink_project_id: projectionCtx.deeplink_project_id,
+            deeplink_session_id: projectionCtx.deeplink_session_id,
             intent_resource_id: projectionCtx.intent_resource_id,
             intent_resource_type: projectionCtx.intent_resource_type,
           },
@@ -1276,7 +1297,7 @@ export class FlowOrchestrator {
           {
             org_id: orgId,
             project: projectionCtx.project,
-            intent_session_id: projectionCtx.intent_session_id,
+            deeplink_session_id: projectionCtx.deeplink_session_id,
             intent_resource_id: projectionCtx.intent_resource_id,
             intent_resource_type: projectionCtx.intent_resource_type,
           },
@@ -1307,7 +1328,7 @@ export class FlowOrchestrator {
           type: "switching_project_started",
           payload: {
             org_id: orgId,
-            intent_project_id: projectionCtx.intent_project_id,
+            deeplink_project_id: projectionCtx.deeplink_project_id,
           },
           correlation_id: input.correlation_id,
         });
@@ -1330,7 +1351,7 @@ export class FlowOrchestrator {
             org_id: orgId,
             underlying_cause_tag:
               projectionCtx.underlying_cause_tag ?? "cross_tenant",
-            intent_project_id: projectionCtx.intent_project_id,
+            deeplink_project_id: projectionCtx.deeplink_project_id,
           },
           correlation_id: input.correlation_id,
         });
@@ -1347,7 +1368,7 @@ export class FlowOrchestrator {
       // The default state-emission path covers that; no special event needed.
       // For session_not_found the test expects underlying_cause_tag to NOT
       // surface — we emit `session_resume_not_found` so the projection
-      // reducer can blank out intent_session_id atomically.
+      // reducer can blank out pending_resume_session_id atomically.
       if (
         input.type === "session_clicked" &&
         stateValue === "session_list_loaded"

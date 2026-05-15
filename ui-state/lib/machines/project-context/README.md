@@ -54,13 +54,13 @@ stateDiagram-v2
   error_recoverable --> creating_project: retry_clicked
 ```
 
-**Root-level event — `open_deep_link`.** This transition is registered on the machine's root `on:` block (outside the `states:` block), which means it can fire from any state. When it fires, the handler captures the four `intent_*` fields from the event payload and re-enters `resolving_initial_scope` so the resolver runs again with the new intent. It's not drawn as a wildcard arrow above to keep the chart readable — when you see deep-link behaviour in production, this is what dispatched it.
+**Root-level event — `open_deep_link`.** This transition is registered on the machine's root `on:` block (outside the `states:` block), which means it can fire from any state. When it fires, the handler captures the URL wish into the `deeplink_project_id` + `deeplink_session_id` context fields and re-enters `resolving_initial_scope` so the resolver runs again with the new wish. (The event payload also carries `intent_resource_id` + `intent_resource_type`; those ride along to session-chat through the `project_ready` broadcast directly, without ever touching this machine's context.) It's not drawn as a wildcard arrow above to keep the chart readable — when you see deep-link behaviour in production, this is what dispatched it.
 
 ## States
 
 | State | What's happening | Entered on | Exits on |
 |---|---|---|---|
-| `resolving_initial_scope` | Invokes `resolveInitialScope` to find out: does the user have any projects? Does an `intent_project_id` from the URL match one they own? Are they cross-tenant? | spawn, `auth_ready`, `open_deep_link`, `back_to_projects_clicked` | resolver settles |
+| `resolving_initial_scope` | Invokes `resolveInitialScope` to find out: does the user have any projects? Does a `deeplink_project_id` from the URL match one they own? Are they cross-tenant? | spawn, `auth_ready`, `open_deep_link`, `back_to_projects_clicked` | resolver settles |
 | `no_projects` | Welcome-empty surface. The user must type a name to create their first project | resolver returns `{ no_projects: true }` | `create_project_clicked` or valid submit |
 | `creating_project` | POST `/api/projects` with `pending_project_name` | valid `create_project_submitted` or `retry_clicked` | `createProject` settles |
 | `project_selected` | A project is materialized in `context.project`. The orchestrator broadcasts `project_ready` to session-chat on entry | resolver `onDone {project}`, `createProject onDone`, `switchProject onDone {project}` | `switching_project_intent` (or root-level `open_deep_link`) |
@@ -76,7 +76,7 @@ stateDiagram-v2
 |---|---|---|
 | `create_project_clicked` | (none) | Move from `no_projects` welcome surface into `creating_project` directly (variant of explicit submit) |
 | `create_project_submitted` | `{ project_name }` | Submit a project-name string. Guarded — invalid input self-loops with an inline `project_validation_error` |
-| `back_to_projects_clicked` | (none) | Recover from `scope_mismatch_terminal`. Clears all four `intent_*` fields |
+| `back_to_projects_clicked` | (none) | Recover from `scope_mismatch_terminal`. Clears the `deeplink_*` context fields |
 | `retry_clicked` | (none) | Re-invoke `createProject` from `error_recoverable`, preserving `pending_project_name` |
 | `switching_project_intent` | `{ new_project_id }` | Atomic project switch. The orchestrator emits `switching_project_started` so the projection invalidates `session_id` + `resource_*` *before* `session-chat`'s `loading_session_list` re-runs |
 
@@ -90,7 +90,7 @@ stateDiagram-v2
 
 | Event | Payload | What it does |
 |---|---|---|
-| `open_deep_link` | `{ intent_project_id?, intent_session_id?, intent_resource_id?, intent_resource_type? }` | Captures the four intents into context and re-enters `resolving_initial_scope`. Fires from any state |
+| `open_deep_link` | `{ intent_project_id?, intent_session_id?, intent_resource_id?, intent_resource_type? }` | Captures the URL wish into `deeplink_project_id` + `deeplink_session_id` and re-enters `resolving_initial_scope`. The `intent_resource_*` keys ride straight through to the `project_ready` broadcast without touching this machine's context. Fires from any state |
 
 The HTTP entry point is `POST /flow/:machine/open-deep-link`, which arrives via the orchestrator.
 
@@ -98,7 +98,7 @@ The HTTP entry point is `POST /flow/:machine/open-deep-link`, which arrives via 
 
 | Actor | Input | Output | Invoked in |
 |---|---|---|---|
-| `resolveInitialScope` | `{ org_id, intent_project_id, principal_id }` | One of: `{ project }`, `{ no_projects: true }`, `{ cross_tenant: true }`, `{ project_not_found: true }`. May also include `most_recent_session_per_project` and `degraded_project_ids` | `resolving_initial_scope` |
+| `resolveInitialScope` | `{ org_id, deeplink_project_id, principal_id }` | One of: `{ project }`, `{ no_projects: true }`, `{ cross_tenant: true }`, `{ project_not_found: true }`. May also include `most_recent_session_per_project` and `degraded_project_ids` | `resolving_initial_scope` |
 | `createProject` | `{ org_name, correlation_id, principal_id }` | `ProjectSummary` = `{ id, name }` | `creating_project` |
 | `switchProject` | `{ new_project_id, correlation_id, principal_id }` | One of: `{ project }`, `{ access_revoked: true }`, `{ project_not_found: true }` | `switching_project` |
 
@@ -111,10 +111,8 @@ The HTTP entry point is `POST /flow/:machine/open-deep-link`, which arrives via 
 | `org_id` | `string` | `auth_ready` (empty string until login settles) |
 | `user` | `{ first_name }` (`string \| null`) | `auth_ready` |
 | `project` | `{ id, name }` (both `string \| null`) | `project_selected` entry |
-| `intent_project_id` | `string \| null` | `open_deep_link` or `switching_project_intent` — cleared on `switchProject onDone` and on `back_to_projects_clicked` |
-| `intent_session_id` | `string \| null` | `open_deep_link` — forwarded via `project_ready` payload to session-chat |
-| `intent_resource_id` | `string \| null` | `open_deep_link` — forwarded via `project_ready` payload |
-| `intent_resource_type` | `ResourceType \| null` | `open_deep_link` — forwarded via `project_ready` payload |
+| `deeplink_project_id` | `string \| null` | `open_deep_link` or `switching_project_intent` — the URL-level project wish, cleared on `switchProject onDone` and on `back_to_projects_clicked` |
+| `deeplink_session_id` | `string \| null` | `open_deep_link` — the URL-level session wish, forwarded via the `project_ready` payload to session-chat (where it lands as `pending_resume_session_id`) |
 | `pending_project_name` | `string` | valid `create_project_submitted`; preserved across `creating_project` ↔ `error_recoverable` |
 | `project_validation_error` | `ProjectValidationError \| null` | invalid `create_project_submitted` |
 | `underlying_cause_tag` | `ProjectContextCauseTag \| null` | mismatch or transient-error transitions. 6-cause union |
@@ -125,7 +123,7 @@ The HTTP entry point is `POST /flow/:machine/open-deep-link`, which arrives via 
 | `most_recent_session_per_project` | `Record<string, string>` | `resolveInitialScope onDone`. Orchestrator emits `last_used_resolution_degraded` from this |
 | `last_used_degraded_project_ids` | `string[]` | `resolveInitialScope onDone`. Orchestrator emits `last_used_resolution_degraded` from this |
 
-**A note on the `intent_*` fields.** This machine carries them transiently between `open_deep_link` and the next `project_ready` broadcast, where the orchestrator forwards them to session-chat. They are pass-through scope leak — this machine doesn't read them, only stores and forwards. There's an open migration to ride them on the event surface (see ADR-030); for now they live in context.
+**A note on the `deeplink_*` fields.** This machine carries the URL-level wish transiently between `open_deep_link` and the next `project_ready` broadcast, where the orchestrator forwards `deeplink_session_id` to session-chat (it lands there as `pending_resume_session_id` — the click-or-deeplink-captured resume target). The resource half of the wish (`intent_resource_id` / `intent_resource_type`) rides the orchestrator's `project_ready` payload directly from the `open_deep_link` event payload, without ever touching this machine's context.
 
 ## How it connects to siblings
 

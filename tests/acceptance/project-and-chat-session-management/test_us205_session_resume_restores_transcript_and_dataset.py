@@ -290,8 +290,12 @@ def test_resuming_nonexistent_session_returns_silently_to_session_list_loaded(
         f"US-205 #4: silent return must NOT surface a cause tag; "
         f"got {ctx.get('underlying_cause_tag')!r}"
     )
-    assert ctx.get("intent_session_id") is None, (
-        f"US-205 #4: intent_session_id must be cleared; got {ctx.get('intent_session_id')!r}"
+    # MR-D split: the pending resume target lives under
+    # `pending_resume_session_id` (the post-split projection field) — was
+    # `intent_session_id` pre-MR-D.
+    assert ctx.get("pending_resume_session_id") is None, (
+        f"US-205 #4: pending_resume_session_id must be cleared; "
+        f"got {ctx.get('pending_resume_session_id')!r}"
     )
 
 

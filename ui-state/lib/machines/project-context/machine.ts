@@ -68,15 +68,20 @@ export interface ProjectContextMachineContext {
   // Authoritative project context — populated on project_selected entry:
   project: { id: string | null; name: string | null };
 
-  // Deep-link intent payloads — populated on open_deep_link; cleared on settle.
-  // Per DESIGN §3.4: project-context CARRIES intent_session_id /
-  // intent_resource_id / intent_resource_type TRANSIENTLY between open_deep_link
-  // and project_selected, where the orchestrator forwards them to session-chat
-  // via the `project_ready` payload.
-  intent_project_id: string | null;
-  intent_session_id: string | null;
-  intent_resource_id: string | null;
-  intent_resource_type: ResourceType | null;
+  // Deep-link wish payloads — populated on open_deep_link; cleared on settle.
+  // Per audit §5 "intent" + §7 Tier-1 #2 (MR-D): these fields are URL-level
+  // user wishes that have not yet been confirmed or denied. They carry the
+  // shape the user requested from the URL through resolution; on settle
+  // (project_selected) the orchestrator forwards `deeplink_session_id` to
+  // session-chat via the `project_ready` payload.
+  //
+  // The pre-MR-D pair `intent_resource_id` + `intent_resource_type` was
+  // removed from this context: project-context never read them — they were
+  // pure pass-through (Direction F / ADR-030 §"Migration sequencing"). The
+  // orchestrator now forwards them from the `open_deep_link` event payload
+  // directly into `project_ready`, never touching this machine's ctx.
+  deeplink_project_id: string | null;
+  deeplink_session_id: string | null;
 
   // Cross-state plumbing:
   underlying_cause_tag: ProjectContextCauseTag | null;
@@ -109,6 +114,10 @@ export type ProjectContextEvent =
   | { type: "create_project_submitted"; org_name: string }
   | { type: "back_to_projects_clicked" }
   | { type: "retry_clicked" }
+  // The `open_deep_link` event payload keys retain the legacy `intent_*`
+  // prefix — that's a wire surface (FE + orchestrator) renamed in a
+  // separate follow-up MR. Post-MR-D the values land in `deeplink_*`
+  // context fields here.
   | {
       type: "open_deep_link";
       intent_project_id?: string;
@@ -139,7 +148,7 @@ export type ResolveInitialScopeOutput =
 
 export interface ResolveInitialScopeInput {
   org_id: string;
-  intent_project_id: string | null;
+  deeplink_project_id: string | null;
   principal_id: string;
 }
 
@@ -199,7 +208,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         principal_id: string;
         org_id?: string;
         user?: { first_name?: string };
-        intent_project_id?: string;
+        deeplink_project_id?: string;
       },
     },
     actors: {
@@ -247,20 +256,21 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
     initial: "resolving_initial_scope",
     // Root-level open_deep_link handler — available from ANY state. Per
     // app-arch §2.3 / DWD-9: a cold deep-link can arrive while the machine
-    // is in no_projects, project_selected, or any other live
-    // state. The handler captures intent_* and re-enters resolving_initial_scope
-    // so the resolver re-runs with the new intent.
+    // is in no_projects, project_selected, or any other live state. The
+    // handler captures the URL wish into `deeplink_*` ctx and re-enters
+    // resolving_initial_scope so the resolver re-runs with the new wish.
     on: {
       open_deep_link: {
         actions: assign({
-          intent_project_id: ({ event, context }) =>
-            event.intent_project_id ?? context.intent_project_id,
-          intent_session_id: ({ event, context }) =>
-            event.intent_session_id ?? context.intent_session_id,
-          intent_resource_id: ({ event, context }) =>
-            event.intent_resource_id ?? context.intent_resource_id,
-          intent_resource_type: ({ event, context }) =>
-            event.intent_resource_type ?? context.intent_resource_type,
+          deeplink_project_id: ({ event, context }) =>
+            event.intent_project_id ?? context.deeplink_project_id,
+          deeplink_session_id: ({ event, context }) =>
+            event.intent_session_id ?? context.deeplink_session_id,
+          // `intent_resource_id` / `intent_resource_type` are carried in
+          // the event payload but no longer materialized here — the
+          // orchestrator forwards them directly from the event payload
+          // into the `project_ready` broadcast (audit §7 Tier-1 #2;
+          // Direction F / ADR-030 §"Migration sequencing").
         }),
         target: ".resolving_initial_scope",
         reenter: true,
@@ -272,10 +282,8 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       org_id: input.org_id ?? "",
       user: { first_name: input.user?.first_name ?? null },
       project: { id: null, name: null },
-      intent_project_id: input.intent_project_id ?? null,
-      intent_session_id: null,
-      intent_resource_id: null,
-      intent_resource_type: null,
+      deeplink_project_id: input.deeplink_project_id ?? null,
+      deeplink_session_id: null,
       underlying_cause_tag: null,
       last_live_state: null,
       retries_count: 0,
@@ -310,7 +318,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           src: "resolveInitialScope",
           input: ({ context }) => ({
             org_id: context.org_id,
-            intent_project_id: context.intent_project_id,
+            deeplink_project_id: context.deeplink_project_id,
             principal_id: context.principal_id,
           }),
           onDone: [
@@ -426,7 +434,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           switching_project_intent: {
             target: "switching_project",
             actions: assign({
-              intent_project_id: ({ event }) =>
+              deeplink_project_id: ({ event }) =>
                 event.type === "switching_project_intent"
                   ? event.new_project_id
                   : null,
@@ -442,7 +450,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         invoke: {
           src: "switchProject",
           input: ({ context }) => ({
-            new_project_id: context.intent_project_id ?? "",
+            new_project_id: context.deeplink_project_id ?? "",
             correlation_id: context.correlation_id,
             principal_id: context.principal_id,
           }),
@@ -470,11 +478,9 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
                   const out = event.output as { project: ProjectSummary };
                   return { id: out.project.id, name: out.project.name };
                 },
-                // Clear the intent — settled.
-                intent_project_id: () => null,
-                intent_session_id: () => null,
-                intent_resource_id: () => null,
-                intent_resource_type: () => null,
+                // Clear the deeplink wish — settled.
+                deeplink_project_id: () => null,
+                deeplink_session_id: () => null,
                 underlying_cause_tag: () => null,
                 scope_reconciled_count: ({ context }) =>
                   context.scope_reconciled_count + 1,
@@ -494,10 +500,8 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           back_to_projects_clicked: {
             target: "resolving_initial_scope",
             actions: assign({
-              intent_project_id: () => null,
-              intent_session_id: () => null,
-              intent_resource_id: () => null,
-              intent_resource_type: () => null,
+              deeplink_project_id: () => null,
+              deeplink_session_id: () => null,
               underlying_cause_tag: () => null,
             }),
           },
@@ -525,8 +529,8 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
 /**
  * Build the real `resolveInitialScope` actor that calls the backend's
  * `GET /api/projects` (page 1; we only need to learn whether any project
- * exists for MR-1). The `intent_project_id` branch is wired in 01-03; in
- * 01-01 we just check the project list and pick the first project (or
+ * exists for MR-1). The `deeplink_project_id` branch is wired in 01-03;
+ * in 01-01 we just check the project list and pick the first project (or
  * report no_projects).
  *
  * NOTE: the backend's authorize_org middleware checks `X-Org-Id` against
@@ -538,17 +542,17 @@ export function resolveInitialScopeFn(
   shouldFailListSessions: (project_id: string) => boolean = () => false,
 ): (input: ResolveInitialScopeInput) => Promise<ResolveInitialScopeOutput> {
   return async (input) => {
-    // ─── Deep-link (intent_project_id) fast-path ──────────────────────────
-    // Per US-204 / app-arch §2.3: when an intent_project_id is supplied, the
+    // ─── Deep-link (deeplink_project_id) fast-path ────────────────────────
+    // Per US-204 / app-arch §2.3: when a deeplink_project_id is supplied, the
     // resolver consults the backend's `GET /api/projects/:id` directly so it
     // can distinguish 403 (cross-tenant / access revoked) from 404
     // (project_not_found). Listing all the user's projects can't make that
     // distinction (the project is simply absent in both cases). The branch
     // returns the project_not_found / cross_tenant variant accordingly; on
     // 200 the project is settled.
-    if (input.intent_project_id) {
+    if (input.deeplink_project_id) {
       const detailResp = await fetch(
-        `${backendUrl}/api/projects/${encodeURIComponent(input.intent_project_id)}`,
+        `${backendUrl}/api/projects/${encodeURIComponent(input.deeplink_project_id)}`,
         {
           method: "GET",
           headers: {
@@ -572,7 +576,7 @@ export function resolveInitialScopeFn(
       const projId =
         (detailBody as { id?: string }).id ??
         (detailBody as { data?: { id?: string } }).data?.id ??
-        input.intent_project_id;
+        input.deeplink_project_id;
       const projName =
         (detailBody as { name?: string }).name ??
         (detailBody as { data?: { name?: string; attributes?: { name?: string } } }).data

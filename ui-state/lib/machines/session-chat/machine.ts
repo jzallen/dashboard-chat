@@ -8,8 +8,8 @@
 //
 // MR-2 surface (THIS MR — DWD-13 §"MR-to-machine implementation guidance"):
 //   waiting_for_project (initial) ─→ loading_session_list           (project_ready)
-//   loading_session_list (invoke)  ─┬─→ session_list_loaded        (onDone, no intent_session_id)
-//                                    ├─→ resuming_session            (onDone, intent_session_id present)
+//   loading_session_list (invoke)  ─┬─→ session_list_loaded        (onDone, no pending_resume_session_id)
+//                                    ├─→ resuming_session            (onDone, pending_resume_session_id present)
 //                                    └─→ error_recoverable           (onError, transient)
 //   session_list_loaded          ─┬─→ resuming_session              (session_clicked)
 //                                    └─→ loading_session_list         (refresh_session_list)
@@ -88,21 +88,26 @@ export interface SessionChatMachineContext {
   // `session.active_dataset_id` (MR-2 read path); switching_dataset_context exit (MR-5):
   resource: { type: ResourceType | null; id: string | null };
 
-  // Deep-link session intent forwarded by project-context via the
-  // `project_ready` event payload (per DESIGN §3.4). Survives the
-  // `loadSessionList` async-invoke boundary so the `loading_session_list`
-  // onDone branch can choose between `session_list_loaded` and
-  // `resuming_session`; cleared by the resume actor's onDone.
+  // Pending session-resume target — populated EITHER by the inbound
+  // `project_ready` payload's `deeplink_session_id` key (URL-level wish
+  // forwarded by project-context per audit §5 / MR-D) OR by a
+  // `session_clicked` event (capturePendingResumeIntent action). Both
+  // paths feed the same downstream consumer: the `loading_session_list →
+  // resuming_session` branch reads the actor output's `resume_target`
+  // (which echoes `input.pending_resume_session_id`) and the
+  // `resuming_session.invoke.input` reads ctx directly for the session
+  // id to resume. Cleared by the resume actor's onDone.
   //
-  // intent_resource_id / intent_resource_type were previously captured here
-  // but the session-chat machine never read them after capture (the MR-5+
-  // dataset-switching events carry the resource id/type directly in their
-  // payload — see SessionChatEvent's `dataset_resolved_by_agent` and
-  // `dataset_picked_directly` variants). Per app-arch §3.4 they remain on
-  // project-context's context where they originate. The session-chat input/
-  // event surface still accepts them (forward-compat) but they are no
-  // longer materialized into context.
-  intent_session_id: string | null;
+  // `intent_resource_id` / `intent_resource_type` were previously
+  // captured here but the session-chat machine never read them after
+  // capture (the MR-5+ dataset-switching events carry the resource id/
+  // type directly in their payload — see SessionChatEvent's
+  // `dataset_resolved_by_agent` and `dataset_picked_directly` variants).
+  // Per app-arch §3.4 they no longer touch this ctx — the orchestrator
+  // forwards them directly from the `open_deep_link` event payload into
+  // the `project_ready` broadcast, and the session-chat input/event
+  // surface still accepts them as no-op forward-compat slots.
+  pending_resume_session_id: string | null;
 
   // Cross-state plumbing:
   underlying_cause_tag: SessionChatCauseTag | null;
@@ -133,7 +138,14 @@ export type SessionChatEvent =
       project_id: string;
       project_name: string;
       correlation_id: string;
-      intent_session_id?: string | null;
+      // The URL-level deep-link session wish (renamed from
+      // intent_session_id in MR-D). Captured into
+      // pending_resume_session_id on entry.
+      deeplink_session_id?: string | null;
+      // Forward-compat slots — accepted but no longer stored on ctx
+      // (the orchestrator routes them through the wire/projection
+      // directly per MR-D). Kept on the event surface for the
+      // open_deep_link follow-up MR that will rename them.
       intent_resource_id?: string | null;
       intent_resource_type?: ResourceType | null;
     }
@@ -146,24 +158,26 @@ export interface LoadSessionListInput {
   project_id: string;
   principal_id: string;
   page_size?: number;
-  /** Deep-link session intent forwarded from the orchestrator via the
-   *  `project_ready` event. The actor echoes this through `resume_target`
-   *  on its output so the `loading_session_list → resuming_session`
-   *  branch can guard on `event.output.resume_target` instead of reading
-   *  `ctx.intent_session_id` (ADR-030 §"Migration sequencing" LEAF-C;
-   *  ADR-028 Direction F — branch-relevant data MUST flow through
-   *  `event.output`, never through context set before the invoke). */
-  intent_session_id?: string | null;
+  /** Pending session-resume target forwarded from ctx. The actor echoes
+   *  this through `resume_target` on its output so the
+   *  `loading_session_list → resuming_session` branch can guard on
+   *  `event.output.resume_target` instead of reading
+   *  `ctx.pending_resume_session_id` (ADR-030 §"Migration sequencing"
+   *  LEAF-C; ADR-028 Direction F — branch-relevant data MUST flow
+   *  through `event.output`, never through context set before the
+   *  invoke). */
+  pending_resume_session_id?: string | null;
 }
 
 export interface LoadSessionListOutput {
   items: SessionSummary[];
   next_cursor: string | null;
   has_more: boolean;
-  /** Echoes `input.intent_session_id` so the `onDone` branch can pick
-   *  between `session_list_loaded` and `resuming_session` without
-   *  reading `ctx.intent_session_id` (ADR-030 §254 / ADR-028 Amendment
-   *  2026-05-15 Direction F). Null when no resume intent was carried in. */
+  /** Echoes `input.pending_resume_session_id` so the `onDone` branch can
+   *  pick between `session_list_loaded` and `resuming_session` without
+   *  reading `ctx.pending_resume_session_id` (ADR-030 §254 / ADR-028
+   *  Amendment 2026-05-15 Direction F). Null when no resume target was
+   *  carried in. */
   resume_target: string | null;
 }
 
@@ -259,7 +273,12 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         org_id?: string;
         project_id?: string;
         project_name?: string;
-        intent_session_id?: string | null;
+        // URL-level wish at spawn time — captured into
+        // pending_resume_session_id. Renamed from intent_session_id in
+        // MR-D to disambiguate it from the click-captured resume target
+        // (audit §5 / §7 Tier-1 #2).
+        deeplink_session_id?: string | null;
+        // Forward-compat — no longer stored on ctx (audit §7 Tier-1 #2).
         intent_resource_id?: string | null;
         intent_resource_type?: ResourceType | null;
       },
@@ -271,10 +290,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
     },
     actions: {
       capturePendingResumeIntent: assign({
-        intent_session_id: ({ event, context }) =>
+        pending_resume_session_id: ({ event, context }) =>
           event.type === "session_clicked"
             ? event.session_id
-            : context.intent_session_id,
+            : context.pending_resume_session_id,
       }),
       capturePendingFirstMessage: assign({
         pending_first_message: ({ event, context }) =>
@@ -300,7 +319,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       session_id: null,
       transcript: [],
       resource: { type: null, id: null },
-      intent_session_id: input.intent_session_id ?? null,
+      pending_resume_session_id: input.deeplink_session_id ?? null,
       underlying_cause_tag: null,
       last_live_state: null,
       retries_count: 0,
@@ -320,8 +339,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               }),
               correlation_id: ({ event, context }) =>
                 event.correlation_id ?? context.correlation_id,
-              intent_session_id: ({ event, context }) =>
-                event.intent_session_id ?? context.intent_session_id,
+              pending_resume_session_id: ({ event, context }) =>
+                event.deeplink_session_id ?? context.pending_resume_session_id,
             }),
           },
         },
@@ -346,35 +365,35 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               transcript: () => [],
               resource: () => ({ type: null, id: null }),
               session_list: () => [],
-              intent_session_id: ({ event, context }) =>
-                event.intent_session_id ?? context.intent_session_id,
+              pending_resume_session_id: ({ event, context }) =>
+                event.deeplink_session_id ?? context.pending_resume_session_id,
             }),
           },
         },
         invoke: {
           src: "loadSessionList",
-          // ADR-030 LEAF-C: `intent_session_id` rides INTO the actor's input
-          // so the actor can echo it OUT as `resume_target`. The onDone
-          // branch then reads from `event.output.resume_target` — branch
-          // data flows through the actor's output channel, not via a
-          // context field set before the invoke (ADR-028 Amendment
+          // ADR-030 LEAF-C: `pending_resume_session_id` rides INTO the
+          // actor's input so the actor can echo it OUT as `resume_target`.
+          // The onDone branch then reads from `event.output.resume_target`
+          // — branch data flows through the actor's output channel, not
+          // via a context field set before the invoke (ADR-028 Amendment
           // 2026-05-15 Direction F, ADR-030 §254).
           input: ({ context }) => ({
             project_id: context.project?.id ?? "",
             principal_id: context.principal_id,
             page_size: 30,
-            intent_session_id: context.intent_session_id,
+            pending_resume_session_id: context.pending_resume_session_id,
           }),
           onDone: [
             {
               // Deep-link continuation: the actor surfaces the forwarded
-              // intent via `event.output.resume_target`. The list still
+              // target via `event.output.resume_target`. The list still
               // loads (so the FE renders the sidebar) but the machine
               // settles in resuming_session. `resuming_session.invoke.input`
-              // reads `context.intent_session_id` (still populated by the
-              // `project_ready` handler) — that context field stays for
-              // now and is removed in a follow-up MR after the remaining
-              // readers migrate.
+              // reads `context.pending_resume_session_id` (still populated
+              // by the `project_ready` handler) — that context field is
+              // the per-MR-D split for the resume half (audit §7 Tier-1
+              // #2).
               guard: ({ event }) => event.output.resume_target !== null,
               target: "resuming_session",
               actions: assign({
@@ -438,8 +457,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                 transcript: () => [],
                 resource: () => ({ type: null, id: null }),
                 session_list: () => [],
-                intent_session_id: ({ event, context }) =>
-                  event.intent_session_id ?? context.intent_session_id,
+                pending_resume_session_id: ({ event, context }) =>
+                  event.deeplink_session_id ?? context.pending_resume_session_id,
               }),
             },
             // Same project_id — idempotent no-op (the existing actor ignores
@@ -452,7 +471,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           src: "resumeSession",
           input: ({ context }) => ({
             session_id:
-              context.intent_session_id ?? context.session_id ?? "",
+              context.pending_resume_session_id ?? context.session_id ?? "",
             project_id: context.project?.id ?? "",
             principal_id: context.principal_id,
           }),
@@ -462,9 +481,9 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                 (event.output as { session_not_found?: true }).session_not_found === true,
               target: "session_list_loaded",
               actions: assign({
-                // Silent return per US-205 Example 4 — clear the intent so we
-                // don't loop on re-emission.
-                intent_session_id: () => null,
+                // Silent return per US-205 Example 4 — clear the pending
+                // resume target so we don't loop on re-emission.
+                pending_resume_session_id: () => null,
                 session_id: () => null,
                 transcript: () => [],
                 resource: () => ({ type: null, id: null }),
@@ -506,7 +525,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                   const out = event.output as { dataset_unavailable?: boolean };
                   return out.dataset_unavailable === true ? "dataset_not_found" : null;
                 },
-                intent_session_id: () => null,
+                pending_resume_session_id: () => null,
               }),
             },
           ],
@@ -698,7 +717,7 @@ export function loadSessionListFn(
         items: [],
         next_cursor: null,
         has_more: false,
-        resume_target: input.intent_session_id ?? null,
+        resume_target: input.pending_resume_session_id ?? null,
       };
     }
     if (!resp.ok) {
@@ -774,7 +793,7 @@ export function loadSessionListFn(
       items,
       next_cursor: nextCursor,
       has_more: items.length >= pageSize,
-      resume_target: input.intent_session_id ?? null,
+      resume_target: input.pending_resume_session_id ?? null,
     };
   };
 }

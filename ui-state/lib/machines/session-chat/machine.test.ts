@@ -5,8 +5,8 @@
 //
 // MR-2 contract:
 //   S4 — project_ready transitions to `loading_session_list`.
-//   S5 — loadSessionList onDone (no intent) → session_list_loaded.
-//   S6 — loadSessionList onDone (with intent_session_id) → resuming_session.
+//   S5 — loadSessionList onDone (no pending resume) → session_list_loaded.
+//   S6 — loadSessionList onDone (with pending_resume_session_id) → resuming_session.
 //   S7 — loadSessionList onError → error_recoverable with cause list_sessions_degraded.
 //   S8 — session_clicked from session_list_loaded → resuming_session.
 //   S9 — resumeSession onDone (atomic) → session_active with transcript + resource together.
@@ -40,15 +40,16 @@ const MAYA_INPUT = {
 function stubLoadSessionList(
   output: Omit<LoadSessionListOutput, "resume_target">,
 ): LoadSessionListActor {
-  // ADR-030 LEAF-C: the production actor echoes `input.intent_session_id`
-  // through `output.resume_target` so the onDone guard can branch on
-  // event.output rather than ctx. The stub mirrors that contract — tests
-  // that supply an intent via project_ready exercise the resume path
-  // through this channel, just like production.
+  // ADR-030 LEAF-C: the production actor echoes
+  // `input.pending_resume_session_id` through `output.resume_target` so
+  // the onDone guard can branch on event.output rather than ctx. The
+  // stub mirrors that contract — tests that supply a resume target via
+  // project_ready exercise the resume path through this channel, just
+  // like production.
   return fromPromise<LoadSessionListOutput, LoadSessionListInput>(
     async ({ input }) => ({
       ...output,
-      resume_target: input.intent_session_id ?? null,
+      resume_target: input.pending_resume_session_id ?? null,
     }),
   );
 }
@@ -96,13 +97,16 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
     expect(ctx.project.name).toBeNull();
     expect(ctx.session_list).toEqual([]);
     expect(ctx.session_id).toBeNull();
-    expect(ctx.intent_session_id).toBeNull();
+    expect(ctx.pending_resume_session_id).toBeNull();
     // intent_resource_id / intent_resource_type previously asserted here.
     // Removed in the L3 SRP refactor — see
     // docs/refactoring/session-chat-context-srp/refactoring-log.md.
     // Those fields were captured in context but never read by the machine;
     // the dataset-switching events (MR-5) carry resource id/type directly
     // in their event payload, so context capture was pure scope leak.
+    // MR-D split the prior `intent_session_id` into
+    // `pending_resume_session_id` (this ctx, click- or deeplink-captured)
+    // and the URL-level `deeplink_session_id` on project-context.
   });
 
   it("S2: project_ready event populates org_id, project_id, project_name", async () => {
@@ -130,7 +134,7 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
     expect(ctx.correlation_id).toBe("R-broadcast-1");
   });
 
-  it("S3: project_ready forwards intent_* deep-link fields per DESIGN §3.4", async () => {
+  it("S3: project_ready forwards deeplink_session_id per DESIGN §3.4", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionList({
         items: [],
@@ -151,7 +155,12 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       correlation_id: "R-broadcast-1",
-      intent_session_id: "sess-1",
+      // The URL-level deep-link wish flows in via the renamed key
+      // (audit §5 / MR-D). intent_resource_id / intent_resource_type
+      // remain on the event surface (forward-compat) but are no
+      // longer materialized into ctx — the orchestrator routes them
+      // through the projection directly.
+      deeplink_session_id: "sess-1",
       intent_resource_id: "ds-1",
       intent_resource_type: "dataset",
     });
@@ -184,7 +193,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     },
   ];
 
-  it("S4: project_ready → loading_session_list → session_list_loaded (no intent)", async () => {
+  it("S4: project_ready → loading_session_list → session_list_loaded (no resume target)", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionList({
         items: SESSIONS_DESC,
@@ -229,7 +238,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     expect(actor.getSnapshot().context.session_list).toEqual([]);
   });
 
-  it("S6: loadSessionList onDone with intent_session_id → resuming_session", async () => {
+  it("S6: loadSessionList onDone with pending_resume_session_id → resuming_session", async () => {
     const machine = createSessionChatMachine({
       loadSessionList: stubLoadSessionList({
         items: SESSIONS_DESC,
@@ -252,7 +261,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
-      intent_session_id: "sess-t4",
+      deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
     const ctx = actor.getSnapshot().context;
@@ -260,11 +269,12 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
     expect(ctx.transcript).toHaveLength(1);
   });
 
-  it("S6b (ADR-030 LEAF-C): loadSessionList input echoes intent_session_id through output.resume_target", async () => {
+  it("S6b (ADR-030 LEAF-C): loadSessionList input echoes pending_resume_session_id through output.resume_target", async () => {
     // Direct actor-level assertion: per ADR-028 Direction F / ADR-030 §254,
     // branch-relevant data flows out via event.output, not via a context
-    // field set before the invoke. The actor receives intent_session_id
-    // on its input and echoes it as output.resume_target.
+    // field set before the invoke. The actor receives
+    // pending_resume_session_id on its input and echoes it as
+    // output.resume_target.
     // Closure-captured probes (array-wrapped to sidestep TS narrowing
     // of `let foo: T | null = null` through async closures).
     const observedInputs: LoadSessionListInput[] = [];
@@ -276,7 +286,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
           items: SESSIONS_DESC,
           next_cursor: null,
           has_more: false,
-          resume_target: input.intent_session_id ?? null,
+          resume_target: input.pending_resume_session_id ?? null,
         };
         observedOutputs.push(output);
         return output;
@@ -298,21 +308,21 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       correlation_id: "R-deeplink",
-      intent_session_id: "sess-t4",
+      deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
     expect(observedInputs).toHaveLength(1);
-    expect(observedInputs[0].intent_session_id).toBe("sess-t4");
+    expect(observedInputs[0].pending_resume_session_id).toBe("sess-t4");
     expect(observedOutputs).toHaveLength(1);
     expect(observedOutputs[0].resume_target).toBe("sess-t4");
   });
 
-  it("S6c (ADR-030 LEAF-C): null resume_target lands in session_list_loaded even if ctx.intent_session_id is non-null", async () => {
+  it("S6c (ADR-030 LEAF-C): null resume_target lands in session_list_loaded even if ctx.pending_resume_session_id is non-null", async () => {
     // Negative-channel test: prove the guard reads event.output, NOT ctx.
     // The stub returns resume_target: null regardless of input. The send
-    // populates ctx.intent_session_id via project_ready, but because the
-    // actor's OUTPUT says no resume, the machine must settle in
-    // session_list_loaded. If the guard were still reading ctx, this
+    // populates ctx.pending_resume_session_id via project_ready, but
+    // because the actor's OUTPUT says no resume, the machine must settle
+    // in session_list_loaded. If the guard were still reading ctx, this
     // test would settle in session_active instead.
     const truncatingActor = fromPromise<LoadSessionListOutput, LoadSessionListInput>(
       async () => ({
@@ -338,14 +348,15 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       correlation_id: "R-deeplink",
-      intent_session_id: "sess-t4",
+      deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     expect(actor.getSnapshot().value).toBe("session_list_loaded");
-    // ctx.intent_session_id WAS captured by project_ready (LEAF-C does not
-    // remove that path — its removal is a follow-up MR). The point of this
-    // test is that the OUTPUT channel's null overrides what's in ctx.
-    expect(actor.getSnapshot().context.intent_session_id).toBe("sess-t4");
+    // ctx.pending_resume_session_id WAS captured by project_ready (LEAF-C
+    // does not remove that path — its removal is a follow-up MR). The
+    // point of this test is that the OUTPUT channel's null overrides what's
+    // in ctx.
+    expect(actor.getSnapshot().context.pending_resume_session_id).toBe("sess-t4");
   });
 
   it("S7: loadSessionList onError → error_recoverable with cause list_sessions_degraded", async () => {
@@ -437,7 +448,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
-      intent_session_id: "sess-t4",
+      deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
     expect(violations).toEqual([]);
@@ -464,13 +475,13 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
-      intent_session_id: "sess-deleted",
+      deeplink_session_id: "sess-deleted",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
     expect(ctx.session_id).toBeNull();
     expect(ctx.transcript).toEqual([]);
-    expect(ctx.intent_session_id).toBeNull();
+    expect(ctx.pending_resume_session_id).toBeNull();
     // Silent → no underlying_cause_tag surfaced.
     expect(ctx.underlying_cause_tag).toBeNull();
   });
@@ -497,7 +508,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       correlation_id: "R-1",
-      intent_session_id: "sess-t4",
+      deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
     const ctx = actor.getSnapshot().context;
@@ -514,7 +525,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
           items: callCount === 1 ? [SESSIONS_DESC[0]] : SESSIONS_DESC,
           next_cursor: null,
           has_more: false,
-          resume_target: input.intent_session_id ?? null,
+          resume_target: input.pending_resume_session_id ?? null,
         };
       },
     );
@@ -549,7 +560,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
           items: SESSIONS_DESC,
           next_cursor: null,
           has_more: false,
-          resume_target: input.intent_session_id ?? null,
+          resume_target: input.pending_resume_session_id ?? null,
         };
       },
     );

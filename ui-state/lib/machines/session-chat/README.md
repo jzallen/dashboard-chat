@@ -6,7 +6,7 @@ Owns "what's happening in my current chat session?" — session list, session re
 
 After `project-context` has settled on a project, this machine wakes up via the orchestrator's `project_ready` broadcast and takes over the right side of the UI. Three responsibilities:
 
-1. **Show the sidebar.** Fetch the session list for the current project. If the URL carried an `intent_session_id` (deep link or click-from-elsewhere), resume that session directly.
+1. **Show the sidebar.** Fetch the session list for the current project. If the URL carried a `deeplink_session_id` (forwarded from `project-context` via the `project_ready` broadcast) — or a `session_clicked` arrived from the sidebar — resume that target directly. Both paths feed the same `pending_resume_session_id` context field.
 2. **Resume sessions.** Pull transcript + resource together in one atomic operation so the UI never paints a half-loaded session.
 3. **Lazy-create new sessions.** When the user clicks "+ New Session" we don't write to the backend yet — we sit in a welcome state. The session row is only created when they send the first message. The title is derived from that first message.
 
@@ -29,8 +29,8 @@ stateDiagram-v2
   waiting_for_project --> loading_session_list: project_ready
 
   loading_session_list --> loading_session_list: project_ready
-  loading_session_list --> resuming_session: loadSessionList onDone [intent present]
-  loading_session_list --> session_list_loaded: loadSessionList onDone [no intent]
+  loading_session_list --> resuming_session: loadSessionList onDone [resume target present]
+  loading_session_list --> session_list_loaded: loadSessionList onDone [no resume target]
   loading_session_list --> error_recoverable: loadSessionList onError
 
   session_list_loaded --> resuming_session: session_clicked
@@ -65,8 +65,8 @@ stateDiagram-v2
 |---|---|---|---|
 | `waiting_for_project` | Stub state. The actor spawns here and idles until the orchestrator's `project_ready` broadcast arrives | spawn | `project_ready` |
 | `loading_session_list` | Invokes `loadSessionList` against `GET /api/projects/:id/sessions` | `project_ready` (initial or cross-project re-broadcast), `refresh_session_list`, `retry_clicked` for list | `loadSessionList` settles |
-| `session_list_loaded` | Sidebar populated; no session opened. Awaiting user action | `loadSessionList onDone` (no intent); `resumeSession onDone {session_not_found: true}` (silent fall-through) | `session_clicked`, `new_session_clicked`, `refresh_session_list`, or cross-project `project_ready` |
-| `resuming_session` | Invokes `resumeSession` against `GET /api/sessions/:id` to fetch transcript + dataset probe | `loadSessionList onDone` (with intent), `session_clicked`, `retry_clicked` for resume | `resumeSession` settles |
+| `session_list_loaded` | Sidebar populated; no session opened. Awaiting user action | `loadSessionList onDone` (no resume target); `resumeSession onDone {session_not_found: true}` (silent fall-through) | `session_clicked`, `new_session_clicked`, `refresh_session_list`, or cross-project `project_ready` |
+| `resuming_session` | Invokes `resumeSession` against `GET /api/sessions/:id` to fetch transcript + dataset probe | `loadSessionList onDone` (with resume target), `session_clicked`, `retry_clicked` for resume | `resumeSession` settles |
 | `session_active` | A session is loaded. `transcript` + `resource` were assigned together in one transition (no half-loaded UI) | `resumeSession onDone {found}`, `createSessionEagerly onDone` | `session_clicked`, `refresh_session_list`, or cross-project `project_ready` |
 | `session_welcome` | A new session has been started but not yet persisted. The composer is empty; no backend write fires until the first message arrives | `new_session_clicked`, `retry_clicked` for welcome | `first_message_sent`, `session_clicked`, idempotent `new_session_clicked`, or cross-project `project_ready` |
 | `creating_session` | Invokes `createSessionEagerly` (POST a new session row + PATCH its title from `first_message[:80]`) | `first_message_sent` | `createSessionEagerly` settles |
@@ -78,7 +78,7 @@ stateDiagram-v2
 
 | Event | Payload | What it does |
 |---|---|---|
-| `session_clicked` | `{ session_id }` | Captures `session_id` into `intent_session_id`; transitions to `resuming_session` |
+| `session_clicked` | `{ session_id }` | Captures `session_id` into `pending_resume_session_id` (via `capturePendingResumeIntent`); transitions to `resuming_session` |
 | `new_session_clicked` | (none) | Enter the welcome state. Idempotent from `session_welcome` |
 | `first_message_sent` | `{ content }` | Captures `pending_first_message`. Triggers the lazy-create POST/PATCH |
 | `refresh_session_list` | (none) | Re-enter `loading_session_list` |
@@ -94,7 +94,7 @@ These events are never FE-emitted — they arrive from the orchestrator.
 
 | Event | Payload | What it does |
 |---|---|---|
-| `project_ready` | `{ org_id, project_id, project_name, correlation_id, intent_session_id?, intent_resource_id?, intent_resource_type? }` | Initial wake-up from `waiting_for_project`. On subsequent broadcasts (the user switched projects), the cross-project guard clears session/transcript/resource state before re-entering `loading_session_list`. Idempotent on the same `project_id` |
+| `project_ready` | `{ org_id, project_id, project_name, correlation_id, deeplink_session_id?, intent_resource_id?, intent_resource_type? }` | Initial wake-up from `waiting_for_project`. The `deeplink_session_id` value (when present) lands in `pending_resume_session_id` so the upcoming `loadSessionList` can echo it through `event.output.resume_target`. `intent_resource_*` are forward-compat slots — accepted but not stored on this machine's context (the orchestrator routes them through the projection directly). On subsequent broadcasts (the user switched projects), the cross-project guard clears session/transcript/resource state before re-entering `loading_session_list`. Idempotent on the same `project_id` |
 | `FREEZE` | `{ origin_correlation_id? }` | Reserved — the freeze/replay handler isn't yet declared in this machine |
 | `THAW` | (none) | Reserved companion to `FREEZE` |
 
@@ -102,7 +102,7 @@ These events are never FE-emitted — they arrive from the orchestrator.
 
 | Actor | Input | Output | Invoked in |
 |---|---|---|---|
-| `loadSessionList` | `{ project_id, principal_id, page_size? }` | `{ items: SessionSummary[], next_cursor: string \| null, has_more: boolean }` | `loading_session_list` |
+| `loadSessionList` | `{ project_id, principal_id, page_size?, pending_resume_session_id? }` | `{ items: SessionSummary[], next_cursor: string \| null, has_more: boolean, resume_target: string \| null }` | `loading_session_list` |
 | `resumeSession` | `{ session_id, project_id, principal_id }` | Either `{ session_id, transcript, active_dataset_id, dataset_unavailable? }` or `{ session_not_found: true }` | `resuming_session` |
 | `createSessionEagerly` | `{ project_id, principal_id, first_message }` | `{ session_id }` | `creating_session` |
 
@@ -122,7 +122,7 @@ These events are never FE-emitted — they arrive from the orchestrator.
 | `session_id` | `string \| null` | `resumeSession onDone` or `createSessionEagerly onDone`. Zeroed by `new_session_clicked` and cross-project `project_ready` |
 | `transcript` | `TranscriptMessage[]` | `resumeSession onDone`, assigned in the same transition as `resource` |
 | `resource` | `{ type: ResourceType \| null; id: string \| null }` | `resumeSession onDone`, assigned in the same transition as `transcript` |
-| `intent_session_id` | `string \| null` | `project_ready` payload, or `session_clicked`. Cleared on `resumeSession onDone` (any branch) |
+| `pending_resume_session_id` | `string \| null` | `project_ready` payload (the `deeplink_session_id` URL wish forwarded from project-context), or `session_clicked` (click-captured target). Cleared on `resumeSession onDone` (any branch) |
 | `pending_first_message` | `string` | `first_message_sent`. Preserved across `session_welcome` ↔ `error_recoverable` so the retry sees the same message |
 | `underlying_cause_tag` | `SessionChatCauseTag \| null` | error transitions, plus `resumeSession onDone` in the `dataset_unavailable` branch |
 | `last_live_state` | `SessionChatState \| null` | error transitions. Drives the three-branch retry table |
@@ -131,7 +131,7 @@ These events are never FE-emitted — they arrive from the orchestrator.
 
 **Atomicity rule.** `transcript` and `resource` are assigned in a single transition (when `resumeSession` settles successfully). The orchestrator's projection never sees a session where transcript is filled but resource is null, or vice versa. This is the invariant the FE relies on to avoid rendering a session with the chat panel populated but the dataset chip blank.
 
-**Internal vs. cross-state hand-off.** Fields like `intent_session_id` are transient hand-off — captured from one event, read by the next actor, cleared on settle. There's an open migration to ride them on the event surface rather than carrying them in context (see ADR-030); for now they live here.
+**Internal vs. cross-state hand-off.** `pending_resume_session_id` is transient hand-off — captured from `project_ready` (URL wish) or `session_clicked` (click), read by the `resumeSession` actor invoke, cleared on settle. The actor input/output channel echoes it as `resume_target` so the `loading_session_list → resuming_session` branch reads from `event.output` rather than ctx (per ADR-030 §"Migration sequencing" LEAF-C / ADR-028 Direction F).
 
 ## How it connects to siblings
 

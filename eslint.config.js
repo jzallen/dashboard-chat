@@ -116,10 +116,15 @@ export default [
   // fires on its probe (Earned Trust principle 12).
   //
   // Initial severity is `warn` for all three because pre-existing
-  // violations are present in projection.ts and will be cleaned up by
-  // follow-up MRs:
-  //   - C7 violations (intent_session_id, intent_resource_*) clean up in
-  //     MR-D (audit §8); the rule flips to `error` after MR-D lands.
+  // violations are present and clean up across follow-up MRs:
+  //   - C7: MR-D removed `intent_session_id` and `intent_project_id` from
+  //     context (renamed to `pending_resume_session_id` /
+  //     `deeplink_session_id` / `deeplink_project_id`). The remaining
+  //     warnings are confined to the `open_deep_link` HTTP/event-payload
+  //     keys (`intent_project_id`, `intent_session_id`, `intent_resource_id`,
+  //     `intent_resource_type`) — those rename in the open_deep_link
+  //     event-payload follow-up. Severity flips to `error` once that
+  //     follow-up lands.
   //   - C12 violations (session_chat_project_id, session_chat_project_name)
   //     clean up in MR-H (audit §8); the rule flips to `error` after MR-H
   //     lands.

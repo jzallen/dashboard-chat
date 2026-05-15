@@ -130,6 +130,12 @@ export function uiStateClient(request: Request) {
      * not yet started and forwards an `open_deep_link` event to the actor,
      * which re-resolves through resolving_initial_scope. Returns the
      * settled projection.
+     *
+     * NOTE — the body keys retain the `intent_*` prefix: they're the
+     * `open_deep_link` event payload keys, which are deferred to a
+     * follow-up to MR-D. Inside ui-state the values land in
+     * `deeplink_*` (URL half) and `pending_resume_session_id` (resume
+     * half) per the audit §5 / §7 Tier-1 #2 split.
      */
     async openProjectDeepLink(
       principalId: string,

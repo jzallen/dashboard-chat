@@ -4,11 +4,15 @@
 // session-chat projection so the chat surface renders the welcome / session
 // list / resumed transcript on first paint (no client-side roundtrip).
 //
-// For `/chat/:channelId` the loader posts an `open_deep_link` with
-// `intent_session_id = params.channelId` so the orchestrator drives
-// project-context → project_ready → session-chat → loading_session_list →
-// resuming_session before the loader returns. Per US-205 Example 1 the
-// transcript + dataset chip are visible on the SAME first paint.
+// For `/chat/:channelId` the loader posts an `open_deep_link` with the
+// session id as `intent_session_id` (the HTTP/event-payload key still
+// uses the legacy prefix — its rename is a deferred follow-up to MR-D)
+// so the orchestrator drives project-context → project_ready →
+// session-chat → loading_session_list → resuming_session before the
+// loader returns. Inside ui-state the wish lands in
+// pending_resume_session_id (the renamed session-chat ctx field /
+// projection field post-MR-D). Per US-205 Example 1 the transcript +
+// dataset chip are visible on the SAME first paint.
 //
 // For `/` (index) the loader returns the current session-chat projection so
 // the FE renders whatever state Maya was last in (session_list_loaded /
@@ -50,8 +54,12 @@ export interface ChatLoaderData {
   resource: { type: "dataset" | "view" | "report" | null; id: string | null };
   session_dataset_unavailable: boolean;
   /** When the URL carried /chat/:channelId, the loader forwards the deep
-   *  link to ui-state so the orchestrator drives resume before paint. */
-  intent_session_id: string | null;
+   *  link to ui-state so the orchestrator drives resume before paint.
+   *  Read from the projection's `pending_resume_session_id` (post-MR-D
+   *  the projection holds the click-or-deeplink-captured target in this
+   *  unified field). Falls back to the URL channelId when the projection
+   *  read raced or failed. */
+  pending_resume_session_id: string | null;
   /** MR-3 (US-206 / app-arch §6.4) — preserved across the
    *  `error_recoverable → retry_clicked` boundary by the session-chat
    *  machine. Surfaced here so the future first-message-handler rewire can
@@ -69,9 +77,11 @@ export async function loader({
   const channelId = (params.channelId as string | undefined) ?? null;
 
   try {
-    // Deep-link path: /chat/:channelId — push the intent_session_id through
-    // the orchestrator's project-context machine, which forwards it to
+    // Deep-link path: /chat/:channelId — push the channel id through the
+    // orchestrator's project-context machine, which forwards it to
     // session-chat via the `project_ready` broadcast hook (DESIGN §3.4).
+    // The HTTP body key `intent_session_id` is the wire surface — its
+    // rename to `deeplink_session_id` is a deferred follow-up to MR-D.
     if (channelId) {
       try {
         await client.openProjectDeepLink(principalId, {
@@ -102,7 +112,7 @@ export async function loader({
         id: string | null;
       };
       session_dataset_unavailable?: boolean;
-      intent_session_id?: string | null;
+      pending_resume_session_id?: string | null;
       pending_first_message?: string;
     };
     return {
@@ -114,7 +124,8 @@ export async function loader({
       transcript: ctx.transcript ?? [],
       resource: ctx.resource ?? { type: null, id: null },
       session_dataset_unavailable: Boolean(ctx.session_dataset_unavailable),
-      intent_session_id: channelId ?? ctx.intent_session_id ?? null,
+      pending_resume_session_id:
+        channelId ?? ctx.pending_resume_session_id ?? null,
       pending_first_message: ctx.pending_first_message ?? "",
     };
   } catch (err) {
@@ -128,7 +139,7 @@ export async function loader({
       transcript: [],
       resource: { type: null, id: null },
       session_dataset_unavailable: false,
-      intent_session_id: channelId,
+      pending_resume_session_id: channelId,
       pending_first_message: "",
     };
   }

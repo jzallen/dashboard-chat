@@ -8,7 +8,10 @@
 //   2. Calls `uiStateClient.openProjectDeepLink({ intent_project_id, ... })`
 //      which POSTs to ui-state /open-deep-link. ui-state spawns the flow
 //      if not yet started and forwards an `open_deep_link` event to the
-//      actor.
+//      actor. (The HTTP body uses the legacy `intent_*` keys — their
+//      rename to `deeplink_*` is a deferred follow-up to MR-D; the
+//      projection-side reads below use the renamed `deeplink_project_id`
+//      field per the MR-D split.)
 //   3. Returns the settled projection's snapshot so the SSR'd page body
 //      carries the resolved scope on first paint (no client roundtrip).
 //
@@ -30,7 +33,12 @@ export interface ProjectDetailLoaderData {
   project_name: string | null;
   state: string;
   underlying_cause_tag: string | null;
-  intent_project_id: string | null;
+  /** URL-level project wish (deep-link half of audit §5 / MR-D). */
+  deeplink_project_id: string | null;
+  /** Resource fields stay on the `intent_resource_*` prefix — they're
+   *  routed straight through the projection from the URL, never via a
+   *  context field on either machine. Rename to `deeplink_resource_*`
+   *  rides with the `open_deep_link` event-payload rename. */
   intent_resource_id: string | null;
   intent_resource_type: "dataset" | "view" | "report" | null;
 }
@@ -64,7 +72,7 @@ export async function loader({
     const ctx = projection.context as {
       project?: { id: string | null; name: string | null };
       underlying_cause_tag?: string | null;
-      intent_project_id?: string | null;
+      deeplink_project_id?: string | null;
       intent_resource_id?: string | null;
       intent_resource_type?: "dataset" | "view" | "report" | null;
     };
@@ -74,7 +82,7 @@ export async function loader({
       project_name: ctx.project?.name ?? null,
       state: projection.state,
       underlying_cause_tag: ctx.underlying_cause_tag ?? null,
-      intent_project_id: ctx.intent_project_id ?? projectId,
+      deeplink_project_id: ctx.deeplink_project_id ?? projectId,
       intent_resource_id: ctx.intent_resource_id ?? datasetId ?? null,
       intent_resource_type: ctx.intent_resource_type ?? (datasetId ? "dataset" : null),
     };
@@ -86,7 +94,7 @@ export async function loader({
       project_name: null,
       state: "anonymous",
       underlying_cause_tag: null,
-      intent_project_id: projectId,
+      deeplink_project_id: projectId,
       intent_resource_id: datasetId ?? null,
       intent_resource_type: datasetId ? "dataset" : null,
     };
