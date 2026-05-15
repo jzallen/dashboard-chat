@@ -163,34 +163,6 @@ interface FrozenFlowState {
   queued: SendEventInput[];
 }
 
-/** Narrow snapshot context shape consumed by session-chat event emitters. */
-interface SessionChatSnapshotContext {
-  org_id?: string;
-  project?: { id: string | null; name: string | null };
-  session_list?: Array<{
-    id: string;
-    title: string | null;
-    last_active_at: string;
-    active_dataset_id: string | null;
-  }>;
-  session_list_next_cursor?: string | null;
-  session_list_has_more?: boolean;
-  session_id?: string | null;
-  transcript?: Array<{
-    id: string;
-    role: "user" | "assistant" | "tool";
-    content: string;
-    ts: string;
-  }>;
-  resource?: { type: ResourceType | null; id: string | null };
-  intent_session_id?: string | null;
-  underlying_cause_tag?: string | null;
-  /** US-206 composer-state preservation context field; read by the
-   *  error_recoverable emission so the FlowEvent log carries the
-   *  retained composer text. */
-  pending_first_message?: string;
-}
-
 export class FlowOrchestrator {
   private readonly actors = new Map<string, AnyActorRef>();
   /** Per-flow freeze state. Absent key = flow is not frozen. */
@@ -314,13 +286,34 @@ export class FlowOrchestrator {
     // Wait for the authenticating invoke to resolve.
     await waitForSettledState(actor);
 
-    const snapshot = actor.getSnapshot();
-    const stateValue = snapshot.value as string;
+    const stateValue = actor.getSnapshot().value as string;
+
+    // ADR-030 LEAF-B: read user / underlying_cause_tag from the live
+    // projection (built from the FlowEvent log) rather than from the
+    // machine snapshot context, per ADR-030 §"Decision outcome" — the
+    // projection is the only legal read source for the emission path.
+    //
+    // Risk noted for reviewer: at this code point the projection has only
+    // observed `sign_in_clicked`, so `context.user` is still the empty
+    // initial shape and `context.underlying_cause_tag` is null. The
+    // workos-profile / cause-classification harvest currently lives in
+    // the actor's settled context and is not yet a FlowEvent-derivable
+    // value. LEAF-C+ work (see ADR-030 §"Migration sequencing") will land
+    // an upstream event that captures the workos invoke output so this
+    // read site sees the resolved profile; until then `auth_callback_resolved`
+    // / `auth_failed` may carry placeholder values. Mirrors the LEAF-A
+    // session-list trade-off (`appendSessionChatTerminalEvents`).
+    const preEmitEvents = await this.deps.eventLog.read(flow_id);
+    const preEmitProjection = buildProjection(flow_id, preEmitEvents);
+    const preEmitCtx = preEmitProjection.context as {
+      user: { email: string | null; display_name: string | null };
+      underlying_cause_tag: string | null;
+    };
 
     // On successful auth, append auth_callback_resolved so the projection
     // matches the wire contract from the event log even without a snapshot.
     if (stateValue === "authenticated_no_org") {
-      const user = (snapshot.context as { user: { email: string | null; display_name: string | null } }).user;
+      const user = preEmitCtx.user;
       const resolvedEvent: FlowEvent = {
         ts: new Date().toISOString(),
         type: "auth_callback_resolved",
@@ -337,9 +330,7 @@ export class FlowOrchestrator {
         duration_ms: Date.now() - start,
       });
     } else if (stateValue === "error_recoverable") {
-      const cause =
-        (snapshot.context as { underlying_cause_tag: string | null })
-          .underlying_cause_tag ?? "transient";
+      const cause = preEmitCtx.underlying_cause_tag ?? "transient";
       const failedEvent: FlowEvent = {
         ts: new Date().toISOString(),
         type: "auth_failed",
@@ -556,17 +547,38 @@ export class FlowOrchestrator {
 
     // Persist a j002_resolution_started + terminal-for-now event so the
     // projection-builder can reconstruct state from the event log alone.
-    const snapshot = actor.getSnapshot();
-    const stateValue = snapshot.value as string;
-    const ctx = snapshot.context as {
-      org_id?: string;
-      user?: { first_name?: string | null };
-      project?: { id: string | null; name: string | null };
-      underlying_cause_tag?: string | null;
-      pending_project_name?: string;
-      project_validation_error?: { kind: string; message: string } | null;
-      most_recent_session_per_project?: Record<string, string>;
-      last_used_degraded_project_ids?: string[];
+    //
+    // ADR-030 LEAF-B: ctx is rebound to the live projection's context (built
+    // from the flow event log) per ADR-030 §"Decision outcome" — the
+    // projection is the only legal read source for the emission path.
+    //
+    // Risk noted for reviewer: this is the FIRST write to the
+    // project-context flow's log, so the projection has not yet observed
+    // any events and ctx fields that the orchestrator wrote into the
+    // log via spawn-input (org_id, user.first_name) read empty here.
+    // The existing `?? input.*` fallbacks cover those.  Fields that
+    // come from `resolveInitialScope`'s actor output (project,
+    // most_recent_session_per_project, last_used_degraded_project_ids,
+    // underlying_cause_tag) currently live only in the machine's
+    // settled context — they will read null/empty via the projection
+    // until LEAF-C+ work lands an upstream event that captures
+    // `resolveInitialScope`'s `event.output`.  Mirrors the LEAF-A
+    // session-list trade-off.
+    const stateValue = actor.getSnapshot().value as string;
+    const projectionEvents = await this.deps.eventLog.read(flow_id);
+    const projection = buildProjection(flow_id, projectionEvents);
+    const ctx = projection.context as {
+      org: { id: string | null; name: string | null };
+      user: { first_name: string | null };
+      project: { id: string | null; name: string | null };
+      underlying_cause_tag: string | null;
+      most_recent_session_per_project: Record<string, string>;
+      last_used_resolution_degraded:
+        | { failed_project_ids: string[]; partial_result: boolean }
+        | null;
+      intent_session_id: string | null;
+      intent_resource_id: string | null;
+      intent_resource_type: ResourceType | null;
     };
 
     // Initial event — marks the J-002 actor as started for projection consumers.
@@ -574,10 +586,9 @@ export class FlowOrchestrator {
       ts: new Date().toISOString(),
       type: "j002_resolution_started",
       payload: {
-        org_id: ctx.org_id ?? input.org_id ?? "",
+        org_id: ctx.org.id ?? input.org_id ?? "",
         user: {
-          first_name:
-            ctx.user?.first_name ?? input.user_first_name ?? null,
+          first_name: ctx.user.first_name ?? input.user_first_name ?? null,
         },
         correlation_id: input.correlation_id,
       },
@@ -588,7 +599,8 @@ export class FlowOrchestrator {
     // failures on list_sessions, emit the degraded event so projection
     // consumers can surface a banner / metric. Emitted BEFORE the terminal
     // event so the projection reducer sees them in causal order.
-    const degradedIds = ctx.last_used_degraded_project_ids ?? [];
+    const degradedIds =
+      ctx.last_used_resolution_degraded?.failed_project_ids ?? [];
     if (degradedIds.length > 0) {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
@@ -607,10 +619,9 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "no_projects_displayed",
         payload: {
-          org_id: ctx.org_id ?? input.org_id ?? "",
+          org_id: ctx.org.id ?? input.org_id ?? "",
           user: {
-            first_name:
-              ctx.user?.first_name ?? input.user_first_name ?? null,
+            first_name: ctx.user.first_name ?? input.user_first_name ?? null,
           },
         },
         correlation_id: input.correlation_id,
@@ -620,10 +631,9 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "project_selected",
         payload: {
-          org_id: ctx.org_id ?? input.org_id ?? "",
+          org_id: ctx.org.id ?? input.org_id ?? "",
           project: ctx.project,
-          most_recent_session_per_project:
-            ctx.most_recent_session_per_project ?? {},
+          most_recent_session_per_project: ctx.most_recent_session_per_project,
         },
         correlation_id: input.correlation_id,
       });
@@ -639,14 +649,20 @@ export class FlowOrchestrator {
         flow_id,
         input.principal_id,
         input.correlation_id,
-        ctx,
+        {
+          org_id: ctx.org.id ?? undefined,
+          project: ctx.project,
+          intent_session_id: ctx.intent_session_id,
+          intent_resource_id: ctx.intent_resource_id,
+          intent_resource_type: ctx.intent_resource_type,
+        },
       );
     } else if (stateValue === "scope_mismatch_terminal") {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "scope_mismatch_displayed",
         payload: {
-          org_id: ctx.org_id ?? input.org_id ?? "",
+          org_id: ctx.org.id ?? input.org_id ?? "",
           underlying_cause_tag: ctx.underlying_cause_tag ?? "cross_tenant",
         },
         correlation_id: input.correlation_id,
@@ -731,11 +747,13 @@ export class FlowOrchestrator {
       project_name?: string;
     },
   ): Promise<void> {
-    const snapshot = actor.getSnapshot();
-    const stateValue = snapshot.value as string;
-    const ctx = snapshot.context as SessionChatSnapshotContext;
-    const orgId = ctx.org_id || spawn.org_id || "";
-    const projectId = ctx.project?.id || spawn.project_id || null;
+    // ADR-030 LEAF-B: state-value is the only legal read off the actor
+    // snapshot at the emission boundary; identity fields come from the
+    // spawn input (the orchestrator's own contract) rather than from
+    // snapshot.context, per ADR-030 §"Decision outcome".
+    const stateValue = actor.getSnapshot().value as string;
+    const orgId = spawn.org_id || "";
+    const projectId = spawn.project_id || null;
     if (!orgId || !projectId) return;
 
     // Per DWD-13 §2B the session-chat flow's log carries the
@@ -747,12 +765,12 @@ export class FlowOrchestrator {
       payload: {
         org_id: orgId,
         project_id: projectId,
-        project_name: ctx.project?.name ?? spawn.project_name ?? "",
+        project_name: spawn.project_name ?? "",
       },
       correlation_id,
     });
 
-    await this.appendSessionChatTerminalEvents(flow_id, stateValue, ctx, correlation_id);
+    await this.appendSessionChatTerminalEvents(flow_id, stateValue, correlation_id);
   }
 
   /**
@@ -768,7 +786,6 @@ export class FlowOrchestrator {
   private async appendSessionChatTerminalEvents(
     flow_id: string,
     stateValue: string,
-    ctx: SessionChatSnapshotContext,
     correlation_id: string,
     /** Optional: the machine's state value immediately before this settle.
      *  Used to distinguish eager-create from resume on `session_active`
@@ -776,36 +793,70 @@ export class FlowOrchestrator {
      *  event-type. */
     priorState?: string,
   ): Promise<void> {
+    // ADR-030 LEAF-B: rebind ctx to the live projection's context built
+    // from the flow event log. The projection is the only legal read
+    // source for the emission path per ADR-030 §"Decision outcome".
+    //
+    // Risk noted for reviewer: fields populated by session-chat's invoke
+    // outputs (session_list, session_id, transcript, resource,
+    // pending_first_message, underlying_cause_tag) are projected only by
+    // their corresponding emit events — at the moment of THIS read, the
+    // about-to-be-written event has not yet landed in the log, so the
+    // payload will surface the projection's prior-tick values (commonly
+    // null/empty for the fresh-spawn path).  LEAF-C+ will restructure
+    // `loadSessionList`, `resumeSession`, and peers to land an upstream
+    // `event.output` carrier event so this read sees the resolved data.
+    // Mirrors the LEAF-A session-list trade-off; tracked under
+    // ADR-030 §"Migration sequencing".
+    const projection = buildProjection(
+      flow_id,
+      await this.deps.eventLog.read(flow_id),
+    );
+    const ctx = projection.context as {
+      project: { id: string | null; name: string | null };
+      session_list: Array<{
+        id: string;
+        title: string | null;
+        last_active_at: string;
+        active_dataset_id: string | null;
+      }>;
+      session_list_next_cursor: string | null;
+      session_list_has_more: boolean;
+      session_id: string | null;
+      transcript: Array<{
+        id: string;
+        role: "user" | "assistant" | "tool";
+        content: string;
+        ts: string;
+      }>;
+      resource: { type: ResourceType | null; id: string | null };
+      intent_session_id: string | null;
+      underlying_cause_tag: string | null;
+      pending_first_message: string;
+    };
     if (stateValue === "loading_session_list") {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_list_load_started",
-        payload: { project_id: ctx.project?.id ?? null },
+        payload: { project_id: ctx.project.id },
         correlation_id,
       });
       return;
     }
     if (stateValue === "session_list_loaded") {
-      // ADR-030 LEAF-A: projection is the SSOT for read state. The
-      // session-list fields come from the live projection (built from the
-      // event log) rather than from machine snapshot context.
-      const projection = buildProjection(
-        flow_id,
-        await this.deps.eventLog.read(flow_id),
-      );
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_list_load_started",
-        payload: { project_id: ctx.project?.id ?? null },
+        payload: { project_id: ctx.project.id },
         correlation_id,
       });
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_list_loaded",
         payload: {
-          items: projection.context.session_list ?? [],
-          next_cursor: projection.context.session_list_next_cursor ?? null,
-          has_more: projection.context.session_list_has_more ?? false,
+          items: ctx.session_list,
+          next_cursor: ctx.session_list_next_cursor,
+          has_more: ctx.session_list_has_more,
         },
         correlation_id,
       });
@@ -813,8 +864,8 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_list_displayed",
         payload: {
-          project_id: ctx.project?.id ?? null,
-          session_count: (projection.context.session_list ?? []).length,
+          project_id: ctx.project.id,
+          session_count: ctx.session_list.length,
         },
         correlation_id,
       });
@@ -862,9 +913,9 @@ export class FlowOrchestrator {
         type: "session_resumed",
         payload: {
           session_id: ctx.session_id,
-          transcript: ctx.transcript ?? [],
-          resource_type: ctx.resource?.type ?? null,
-          resource_id: ctx.resource?.id ?? null,
+          transcript: ctx.transcript,
+          resource_type: ctx.resource.type,
+          resource_id: ctx.resource.id,
           dataset_unavailable: datasetUnavailable,
         },
         correlation_id,
@@ -889,8 +940,8 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_welcome_displayed",
         payload: {
-          project_id: ctx.project?.id ?? null,
-          pending_first_message: ctx.pending_first_message ?? "",
+          project_id: ctx.project.id,
+          pending_first_message: ctx.pending_first_message,
         },
         correlation_id,
       });
@@ -905,7 +956,7 @@ export class FlowOrchestrator {
           // US-206 composer-preservation: carry the welcome-state composer
           // text on the FlowEvent so the projection reducer preserves it
           // across reload (DWD-9 SSOT — projection is rebuilt from log).
-          pending_first_message: ctx.pending_first_message ?? "",
+          pending_first_message: ctx.pending_first_message,
         },
         correlation_id,
       });
@@ -991,9 +1042,32 @@ export class FlowOrchestrator {
     // After settle, observe terminal-for-now state and append projection-
     // shaping events for the event-sourced read model. The reducer in
     // `projection.ts` is the SSOT for state-derivation from events.
-    const snapshot = actor.getSnapshot();
-    const stateValue = snapshot.value as string;
+    //
+    // ADR-030 LEAF-B: only the snapshot's state-value is read here; all
+    // context reads in the emission paths below route through the live
+    // projection (built from the FlowEvent log) per ADR-030 §"Decision
+    // outcome".
+    const stateValue = actor.getSnapshot().value as string;
     const principal_id = parsePrincipal(input.flow_id);
+    const projectionEvents = await this.deps.eventLog.read(input.flow_id);
+    const projectionCtx = buildProjection(input.flow_id, projectionEvents)
+      .context as {
+      user: {
+        email: string | null;
+        display_name: string | null;
+        first_name: string | null;
+      };
+      org: { id: string | null; name: string | null };
+      project: { id: string | null; name: string | null };
+      underlying_cause_tag: string | null;
+      org_validation_error: { kind: string; message: string } | null;
+      pending_project_name: string;
+      project_validation_error: { kind: string; message: string } | null;
+      intent_project_id: string | null;
+      intent_session_id: string | null;
+      intent_resource_id: string | null;
+      intent_resource_type: ResourceType | null;
+    };
 
     // ---- Cross-machine FREEZE/THAW signaling (Step 03-01, ADR-028) -------
     // When the origin flow transitions INTO expired_token, broadcast FREEZE
@@ -1013,14 +1087,8 @@ export class FlowOrchestrator {
     // ---- End freeze/thaw signaling --------------------------------------
 
     if (stateValue === "ready" && input.machine === "login-and-org-setup") {
-      const orgCtx = (snapshot.context as { org: { id: string | null; name: string | null } }).org;
-      const userCtx = (snapshot.context as {
-        user: {
-          email: string | null;
-          display_name: string | null;
-          first_name: string | null;
-        };
-      }).user;
+      const orgCtx = projectionCtx.org;
+      const userCtx = projectionCtx.user;
       // Mint a synthetic JWT carrying the org_id claim. Per ADR-029
       // invariant 4 the projection MUST expose the access_token so the FE
       // (and the TS harness via assert_jwt_carries_org_claim) can verify
@@ -1086,30 +1154,24 @@ export class FlowOrchestrator {
         correlation_id: input.correlation_id,
       });
     } else if (stateValue === "error_recoverable") {
-      const ctx = snapshot.context as {
-        underlying_cause_tag: string | null;
-        org: { id: string | null; name: string | null };
-      };
       await this.deps.eventLog.append(input.flow_id, {
         ts: new Date().toISOString(),
         type: "reissue_failed_partial",
         payload: {
-          underlying_cause_tag: ctx.underlying_cause_tag ?? "partial-setup",
-          org: ctx.org,
+          underlying_cause_tag:
+            projectionCtx.underlying_cause_tag ?? "partial-setup",
+          org: projectionCtx.org,
         },
         correlation_id: input.correlation_id,
       });
     } else if (stateValue === "authenticated_no_org") {
       // org_form_submitted with an invalid name → stay in
       // authenticated_no_org but attach the validation error to context.
-      const ctx = snapshot.context as {
-        org_validation_error: { kind: string; message: string } | null;
-      };
-      if (ctx.org_validation_error) {
+      if (projectionCtx.org_validation_error) {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "validation_failed",
-          payload: { error: ctx.org_validation_error },
+          payload: { error: projectionCtx.org_validation_error },
           correlation_id: input.correlation_id,
         });
       }
@@ -1122,18 +1184,11 @@ export class FlowOrchestrator {
     // Per DWD-13 the wire name is still `project-and-chat-session-management`;
     // the source-tree splits but the wire-protocol log key + URL prefix stays.
     if (input.machine === PROJECT_CONTEXT_WIRE_NAME) {
-      const projectContext = snapshot.context as {
-        org_id?: string;
-        user?: { first_name?: string | null };
-        project?: { id: string | null; name: string | null };
-        underlying_cause_tag?: string | null;
-        pending_project_name?: string;
-        project_validation_error?: { kind: string; message: string } | null;
-        intent_project_id?: string | null;
-        intent_session_id?: string | null;
-        intent_resource_id?: string | null;
-        intent_resource_type?: ResourceType | null;
-      };
+      // ADR-030 LEAF-B: project-context emission reads now flow through
+      // the projection.  `projectionCtx.org.id` mirrors the actor's
+      // single-field `org_id`; the rest of the shape matches the
+      // projection's reducer-populated context.
+      const orgId = projectionCtx.org.id ?? "";
 
       // When the incoming event is `open_deep_link`, also append a
       // `deep_link_opened` projection event so the projection's context
@@ -1141,32 +1196,35 @@ export class FlowOrchestrator {
       // reads intent_* from this event.
       if (input.type === "open_deep_link") {
         const resolvedScope = {
-          org_id: projectContext.org_id ?? "",
-          project_id: projectContext.project?.id ?? null,
-          resource_type: projectContext.intent_resource_type ?? null,
-          resource_id: projectContext.intent_resource_id ?? null,
+          org_id: orgId,
+          project_id: projectionCtx.project.id,
+          resource_type: projectionCtx.intent_resource_type,
+          resource_id: projectionCtx.intent_resource_id,
         };
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "deep_link_opened",
           payload: {
             scope: resolvedScope,
-            project: projectContext.project ?? null,
+            project: projectionCtx.project,
             reconciled: false,
-            intent_project_id: projectContext.intent_project_id ?? null,
-            intent_session_id: projectContext.intent_session_id ?? null,
-            intent_resource_id: projectContext.intent_resource_id ?? null,
-            intent_resource_type: projectContext.intent_resource_type ?? null,
+            intent_project_id: projectionCtx.intent_project_id,
+            intent_session_id: projectionCtx.intent_session_id,
+            intent_resource_id: projectionCtx.intent_resource_id,
+            intent_resource_type: projectionCtx.intent_resource_type,
           },
           correlation_id: input.correlation_id,
         });
       }
 
-      if (stateValue === "no_projects" && projectContext.project_validation_error) {
+      if (
+        stateValue === "no_projects" &&
+        projectionCtx.project_validation_error
+      ) {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "project_validation_failed",
-          payload: { error: projectContext.project_validation_error },
+          payload: { error: projectionCtx.project_validation_error },
           correlation_id: input.correlation_id,
         });
       } else if (stateValue === "no_projects") {
@@ -1176,8 +1234,8 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "no_projects_displayed",
           payload: {
-            org_id: projectContext.org_id ?? "",
-            user: { first_name: projectContext.user?.first_name ?? null },
+            org_id: orgId,
+            user: { first_name: projectionCtx.user.first_name },
           },
           correlation_id: input.correlation_id,
         });
@@ -1185,7 +1243,9 @@ export class FlowOrchestrator {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "project_creation_started",
-          payload: { pending_project_name: projectContext.pending_project_name ?? "" },
+          payload: {
+            pending_project_name: projectionCtx.pending_project_name,
+          },
           correlation_id: input.correlation_id,
         });
       } else if (stateValue === "project_selected") {
@@ -1199,8 +1259,8 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: isFromCreate ? "project_created" : "project_selected",
           payload: {
-            org_id: projectContext.org_id ?? "",
-            project: projectContext.project,
+            org_id: orgId,
+            project: projectionCtx.project,
           },
           correlation_id: input.correlation_id,
         });
@@ -1213,7 +1273,13 @@ export class FlowOrchestrator {
           input.flow_id,
           principal_id,
           input.correlation_id,
-          projectContext,
+          {
+            org_id: orgId,
+            project: projectionCtx.project,
+            intent_session_id: projectionCtx.intent_session_id,
+            intent_resource_id: projectionCtx.intent_resource_id,
+            intent_resource_type: projectionCtx.intent_resource_type,
+          },
         );
         // MR-4 — when the entry was a switch settle (the prior state was
         // `switching_project`), also emit a `project_switched` projection
@@ -1226,8 +1292,8 @@ export class FlowOrchestrator {
             ts: new Date().toISOString(),
             type: "project_switched",
             payload: {
-              org_id: projectContext.org_id ?? "",
-              project: projectContext.project,
+              org_id: orgId,
+              project: projectionCtx.project,
             },
             correlation_id: input.correlation_id,
           });
@@ -1240,8 +1306,8 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "switching_project_started",
           payload: {
-            org_id: projectContext.org_id ?? "",
-            intent_project_id: projectContext.intent_project_id ?? null,
+            org_id: orgId,
+            intent_project_id: projectionCtx.intent_project_id,
           },
           correlation_id: input.correlation_id,
         });
@@ -1250,8 +1316,9 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "j002_recoverable_error",
           payload: {
-            underlying_cause_tag: projectContext.underlying_cause_tag ?? "transient",
-            pending_project_name: projectContext.pending_project_name ?? "",
+            underlying_cause_tag:
+              projectionCtx.underlying_cause_tag ?? "transient",
+            pending_project_name: projectionCtx.pending_project_name,
           },
           correlation_id: input.correlation_id,
         });
@@ -1260,9 +1327,10 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "scope_mismatch_displayed",
           payload: {
-            org_id: projectContext.org_id ?? "",
-            underlying_cause_tag: projectContext.underlying_cause_tag ?? "cross_tenant",
-            intent_project_id: projectContext.intent_project_id ?? null,
+            org_id: orgId,
+            underlying_cause_tag:
+              projectionCtx.underlying_cause_tag ?? "cross_tenant",
+            intent_project_id: projectionCtx.intent_project_id,
           },
           correlation_id: input.correlation_id,
         });
@@ -1274,7 +1342,6 @@ export class FlowOrchestrator {
     // dispatched via this `send()`, emit the projection-shaping events to the
     // session-chat flow log.
     if (input.machine === SESSION_CHAT_WIRE_NAME) {
-      const sessionChatCtx = snapshot.context as SessionChatSnapshotContext;
       // Special-case: if the resumeSession resolved with session_not_found
       // (silent return), the machine has settled in session_list_loaded.
       // The default state-emission path covers that; no special event needed.
@@ -1295,7 +1362,6 @@ export class FlowOrchestrator {
         await this.appendSessionChatTerminalEvents(
           input.flow_id,
           stateValue,
-          sessionChatCtx,
           input.correlation_id,
           // `prior` captured at the top of send() — the state BEFORE the
           // current event was dispatched. Used to distinguish eager-create
