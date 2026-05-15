@@ -33,6 +33,7 @@ import {
   createSessionChatMachine,
   type SessionChatMachineDeps,
 } from "./machines/session-chat/index.ts";
+import { harvestSettledLoginState } from "./orchestrator-harvester.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
@@ -1104,27 +1105,15 @@ export class FlowOrchestrator {
     // ---- End freeze/thaw signaling --------------------------------------
 
     if (stateValue === "ready" && input.machine === "login-and-org-setup") {
-      // LEAF-B carve-out: org.id / user are only set on the machine
-      // snapshot at this point — the projection has not yet observed the
-      // `org_created_and_jwt_reissued` event we are about to emit, so a
-      // projection read returns null and the minted access_token would
-      // be signature-only ("") instead of carrying the org_id claim.
-      // Until an upstream bridge event (LEAF-C+ for the login flow)
-      // populates the projection earlier, the snapshot is the source of
-      // truth for these two values. ADR-030 §"Migration sequencing"
-      // tracks the bridge-event work; this carve-out is the analogue of
-      // the LEAF-A risk note in `appendSessionChatTerminalEvents`.
-      // eslint-disable-next-line ui-state-conventions/no-orchestrator-snapshot-reads
-      const snapshotCtx = actor.getSnapshot().context as {
-        org: { id: string | null; name: string | null };
-        user: {
-          email: string | null;
-          display_name: string | null;
-          first_name: string | null;
-        };
-      };
-      const orgCtx = snapshotCtx.org;
-      const userCtx = snapshotCtx.user;
+      // The projection does not yet have org/user — they are set on the
+      // machine snapshot by the createOrgAndReissue actor's onDone, and
+      // the `org_created_and_jwt_reissued` event we are about to emit is
+      // what populates them in the projection. Source the values from
+      // the dedicated harvester (`orchestrator-harvester.ts`), which is
+      // the LEAF-D rule's designated snapshot-read boundary.
+      const harvested = harvestSettledLoginState(actor);
+      const orgCtx = harvested.org;
+      const userCtx = harvested.user;
       // Mint a synthetic JWT carrying the org_id claim. Per ADR-029
       // invariant 4 the projection MUST expose the access_token so the FE
       // (and the TS harness via assert_jwt_carries_org_claim) can verify
@@ -1190,28 +1179,21 @@ export class FlowOrchestrator {
         correlation_id: input.correlation_id,
       });
     } else if (stateValue === "error_recoverable") {
-      // LEAF-B carve-out: underlying_cause_tag is set by the machine
-      // (e.g. from a `__force_failure__` event's payload, or from
-      // classifyFailure on a transient actor onError) and only lives on
-      // the snapshot at this emission point. The projection has not yet
-      // observed the `reissue_failed_partial` event we are about to
-      // emit, so a projection read returns null and the fallback
-      // "partial-setup" would mask the real cause (e.g. the test's
-      // `transient` tag). Until an upstream cause-classification event
-      // is added (LEAF-C+ for the login flow per ADR-030 §"Migration
-      // sequencing"), the snapshot is the source of truth here.
-      // eslint-disable-next-line ui-state-conventions/no-orchestrator-snapshot-reads
-      const snapshotCtx = actor.getSnapshot().context as {
-        underlying_cause_tag: string | null;
-        org: { id: string | null; name: string | null };
-      };
+      // The projection does not yet have underlying_cause_tag — it is
+      // set on the machine by the __force_failure__ handler or by
+      // classifyFailure on a transient onError, and the
+      // `reissue_failed_partial` event we are about to emit is what
+      // populates it in the projection. Source the values from the
+      // dedicated harvester (`orchestrator-harvester.ts`), which is the
+      // LEAF-D rule's designated snapshot-read boundary.
+      const harvested = harvestSettledLoginState(actor);
       await this.deps.eventLog.append(input.flow_id, {
         ts: new Date().toISOString(),
         type: "reissue_failed_partial",
         payload: {
           underlying_cause_tag:
-            snapshotCtx.underlying_cause_tag ?? "partial-setup",
-          org: snapshotCtx.org,
+            harvested.underlying_cause_tag ?? "partial-setup",
+          org: harvested.org,
         },
         correlation_id: input.correlation_id,
       });
