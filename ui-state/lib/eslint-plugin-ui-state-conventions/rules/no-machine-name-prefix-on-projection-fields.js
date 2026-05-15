@@ -9,12 +9,15 @@
 // The audit identified two current violations:
 //   - session_chat_project_id
 //   - session_chat_project_name
-// Both rename in MR-H, gated on the field-collapse property test from
-// audit §9 Q3 (the test asserts agreement between project-context and
-// session-chat on project state).
+// Both collapsed in MR-H into the shared `project: { id, name }` field,
+// gated on the field-collapse property test from audit §9 Q3 (the test
+// asserts agreement between project-context and session-chat on project
+// state — `projection-property.test.ts`).
 //
-// Initial severity is `warn` because the pre-MR-H violations exist. MR-H
-// upgrades to `error` once the collapse lands.
+// Severity remains `warn` post-collapse because the rule still has a
+// pending false-positive issue (TaskList #76 — event-handler keys in
+// the projection dispatch table are flagged when they should not be).
+// The severity upgrade to `error` is gated on that fix.
 
 const DEFAULT_BANNED_PREFIXES = ["session_chat", "project_context", "login"];
 

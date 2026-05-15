@@ -57,20 +57,21 @@ export async function loader({
       project?: { id: string | null; name: string | null };
     };
     const sessionCtx = sessionChat.context as {
-      session_chat_project_id?: string | null;
-      session_chat_project_name?: string | null;
+      project?: { id: string | null; name: string | null };
       session_list?: SessionListItem[];
       session_list_next_cursor?: string | null;
       session_list_has_more?: boolean;
     };
+    // Project state on both projections converges on `project: { id, name }`
+    // (audit §9 Q3 / MR-H field collapse). The session-chat fallback to
+    // project-context covers the bootstrap race where project-context has
+    // settled but session-chat has not yet received `project_context_inherited`.
     return {
       org_id: projectContext.active_scope.org_id,
       project_id:
-        sessionCtx.session_chat_project_id ?? projectCtx.project?.id ?? null,
+        sessionCtx.project?.id ?? projectCtx.project?.id ?? null,
       project_name:
-        sessionCtx.session_chat_project_name ??
-        projectCtx.project?.name ??
-        null,
+        sessionCtx.project?.name ?? projectCtx.project?.name ?? null,
       sessions: sessionCtx.session_list ?? [],
       next_cursor: sessionCtx.session_list_next_cursor ?? null,
       has_more: sessionCtx.session_list_has_more ?? false,

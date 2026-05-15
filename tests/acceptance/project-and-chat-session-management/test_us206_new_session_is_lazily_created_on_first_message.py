@@ -277,7 +277,9 @@ def test_navigating_away_from_welcome_state_leaves_no_ghost_session_row(
         data = json.loads(probe.body) if probe.status == 200 else {}
         if data.get("state") in ("session_list_loaded", "loading_session_list"):
             ctx = data.get("context") or {}
-            if ctx.get("session_chat_project_id") == proj_q3:
+            # Post audit §9 Q3 / MR-H: project identity on the session-chat
+            # projection lives on the shared `project: { id, name }` field.
+            if (ctx.get("project") or {}).get("id") == proj_q3:
                 break
         time.sleep(0.05)
 

@@ -16,7 +16,7 @@ Reserves the `intent_` prefix on context-field declarations for URL-level user w
 
 ### `no-machine-name-prefix-on-projection-fields` (ADR-039 C12)
 
-Forbids machine-name prefixes (`session_chat_`, `project_context_`, `login_`) on projection field names. Field names describe the data, not the producer; the prefix encodes the producer machine's identity into the read shape that downstream consumers must depend on ([audit Tier-1 #5](../../../docs/discussion/ui-state-vocabulary-audit/findings.md)). MR-H collapses the existing violations (`session_chat_project_id`, `session_chat_project_name`) gated on the field-collapse property test from audit §9 Q3. Probe: [`c12-machine-name-prefix.probe.ts`](../lint-probes/c12-machine-name-prefix.probe.ts).
+Forbids machine-name prefixes (`session_chat_`, `project_context_`, `login_`) on projection field names. Field names describe the data, not the producer; the prefix encodes the producer machine's identity into the read shape that downstream consumers must depend on ([audit Tier-1 #5](../../../docs/discussion/ui-state-vocabulary-audit/findings.md)). MR-H collapsed the existing violations (`session_chat_project_id`, `session_chat_project_name`) into the shared `project: { id, name }` field, gated on the field-collapse property test from audit §9 Q3 ([`projection-property.test.ts`](../projection-property.test.ts)). Probe: [`c12-machine-name-prefix.probe.ts`](../lint-probes/c12-machine-name-prefix.probe.ts).
 
 ## Severity migration
 

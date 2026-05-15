@@ -98,9 +98,13 @@ interface ReducedContext {
    *  family (pending_project_name, pending_first_message). */
   pending_resume_session_id: string | null;
   // ── session-chat context (J-002 MR-2 + DWD-13 §2B) ─────────────────────
-  /** session-chat's authoritative project (set by project_ready broadcast). */
-  session_chat_project_id: string | null;
-  session_chat_project_name: string | null;
+  // Project identity on the session-chat projection lives on the shared
+  // `project: { id, name }` field above. Written here by
+  // `project_context_inherited` (the orchestrator's `project_ready`
+  // re-broadcast), the same shape project-context writes via
+  // `project_selected`. Audit §7 #5 + §9 Q3: the `session_chat_project_*`
+  // duplicate was collapsed — see the property test in
+  // projection-property.test.ts for the agreement invariant.
   /** Sessions visible in the current project; populated on
    *  session_list_loaded. Sorted DESC by last_active_at. */
   session_list: Array<{
@@ -153,8 +157,6 @@ function initialContext(): ReducedContext {
     intent_resource_id: null,
     intent_resource_type: null,
     pending_resume_session_id: null,
-    session_chat_project_id: null,
-    session_chat_project_name: null,
     session_list: [],
     session_list_next_cursor: null,
     session_list_has_more: false,
@@ -605,10 +607,10 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       context: {
         ...context,
         org: { id: payload.org_id ?? context.org.id, name: context.org.name },
-        session_chat_project_id:
-          payload.project_id ?? context.session_chat_project_id,
-        session_chat_project_name:
-          payload.project_name ?? context.session_chat_project_name,
+        project: {
+          id: payload.project_id ?? context.project.id,
+          name: payload.project_name ?? context.project.name,
+        },
       },
     };
   },
@@ -824,32 +826,27 @@ export function buildProjection(
   // Build the projection-level active_scope from the running context.
   // Precedence:
   //   1. resolved_scope (from deep_link_opened)
-  //   2. session-chat projection (when session-chat owns the project_id —
-  //      includes resource_* from the active session per DWD-13 §2B)
-  //   3. project-context projection (derived from context.org.id + context.project)
-  //   4. org-only
-  //   5. empty
+  //   2. context.project (set by project_selected on project-context flows
+  //      or project_context_inherited on session-chat flows — same shape per
+  //      audit §9 Q3 collapse, see projection-property.test.ts). Carries
+  //      `resource_*` from session_resumed when session-chat has settled;
+  //      `resource` stays { type: null, id: null } on project-context flows.
+  //   3. org-only
+  //   4. empty
   let scope: ActiveScope = EMPTY_SCOPE;
   if (context.resolved_scope) {
     scope = context.resolved_scope;
-  } else if (context.session_chat_project_id && context.org.id) {
-    // session-chat flow's active_scope — combines project_id (from
-    // project_ready broadcast) with resource_* (from session_resumed).
+  } else if (context.project.id && context.org.id) {
     scope = {
       org_id: context.org.id,
-      project_id: context.session_chat_project_id,
+      project_id: context.project.id,
       resource_type: context.resource.type,
       resource_id: context.resource.id,
     };
   } else if (context.org.id) {
-    // J-002 project-selected derivation: when the projection's context
-    // carries a project from a J-002 project_created/project_selected
-    // event, surface it on active_scope so consumers (chat-view, agent's
-    // X-Active-Scope header writer) read the project_id from the
-    // projection envelope directly (DWD-4 + ADR-029 §1 I2 contract).
     scope = {
       org_id: context.org.id,
-      project_id: context.project.id ?? null,
+      project_id: null,
       resource_type: null,
       resource_id: null,
     };

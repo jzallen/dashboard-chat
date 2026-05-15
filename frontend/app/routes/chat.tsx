@@ -98,8 +98,7 @@ export async function loader({
       sessionChatFlowId,
     );
     const ctx = sessionChat.context as {
-      session_chat_project_id?: string | null;
-      session_chat_project_name?: string | null;
+      project?: { id: string | null; name: string | null };
       session_id?: string | null;
       transcript?: Array<{
         id: string;
@@ -115,10 +114,15 @@ export async function loader({
       pending_resume_session_id?: string | null;
       pending_first_message?: string;
     };
+    // Project state on the session-chat projection lives on the shared
+    // `project: { id, name }` field after the audit §9 Q3 collapse — it is
+    // populated by `project_context_inherited` (the orchestrator's
+    // `project_ready` re-broadcast) with the same id/name that
+    // project-context settled on.
     return {
       org_id: sessionChat.active_scope.org_id,
-      project_id: ctx.session_chat_project_id ?? null,
-      project_name: ctx.session_chat_project_name ?? null,
+      project_id: ctx.project?.id ?? null,
+      project_name: ctx.project?.name ?? null,
       session_id: ctx.session_id ?? null,
       state: sessionChat.state,
       transcript: ctx.transcript ?? [],

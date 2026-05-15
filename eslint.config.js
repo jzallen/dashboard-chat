@@ -126,8 +126,9 @@ export default [
   //     event-payload follow-up. Severity flips to `error` once that
   //     follow-up lands.
   //   - C12 violations (session_chat_project_id, session_chat_project_name)
-  //     clean up in MR-H (audit §8); the rule flips to `error` after MR-H
-  //     lands.
+  //     were collapsed in MR-H into the shared `project: { id, name }`
+  //     field (audit §8 + §9 Q3). Severity stays at `warn` until the
+  //     rule's event-handler-key false-positive is fixed (TaskList #76).
   // C4 has no current violations in production code; it remains `warn`
   // here for consistency with the other two and is safe to upgrade to
   // `error` independently in a follow-up.
