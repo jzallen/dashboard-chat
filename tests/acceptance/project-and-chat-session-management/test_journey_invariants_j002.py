@@ -420,7 +420,6 @@ DEV_PRINCIPAL_ID = "dev-user-001"
 
 
 @pytest.mark.mr_4
-@pytest.mark.skip(reason="D-MR4-02: test driver needs JWT-mint helper to authenticate against agent's authMiddleware; tracked in deliver/upstream-issues.md")
 def test_ic_j002_4_switching_project_invalidates_session_and_resource_before_new_load(
     requires_compose_stack: None,
     driver: J002Driver,
@@ -539,7 +538,6 @@ def test_ic_j002_6_freeze_pauses_outgoing_mutations_intents_queue_replay_on_thaw
 
 
 @pytest.mark.mr_4
-@pytest.mark.skip(reason="D-MR4-02: test driver needs JWT-mint helper to authenticate against agent's authMiddleware; tracked in deliver/upstream-issues.md")
 def test_ic_j002_7_every_chat_turn_from_j002_state_carries_x_active_scope_header(
     requires_compose_stack: None,
     driver: J002Driver,
@@ -551,7 +549,7 @@ def test_ic_j002_7_every_chat_turn_from_j002_state_carries_x_active_scope_header
     import os as _os
 
     dev_org = _os.environ.get("DEV_ORG_ID", "dev-org-001")
-    bearer = _os.environ.get("DEV_BEARER", "dev-token-static")
+    bearer = driver.mint_dev_jwt()
 
     # The IC-J002-7 invariant has two halves:
     #   (a) A turn carrying a well-formed scope succeeds (200).

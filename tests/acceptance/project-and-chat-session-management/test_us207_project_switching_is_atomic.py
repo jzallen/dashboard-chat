@@ -22,14 +22,6 @@ pytestmark = [
     pytest.mark.real_io,
     pytest.mark.mr_4,
     pytest.mark.needs_compose_stack,
-    pytest.mark.skip(
-        reason=(
-            "D-MR4-02: test driver needs JWT-mint helper to authenticate "
-            "against agent's authMiddleware (tracked in deliver/upstream-"
-            "issues.md). MR-4 substrate landed; live verification deferred "
-            "to a follow-up MR that adds the JWT-mint helper + un-skips."
-        )
-    ),
 ]
 
 
@@ -153,7 +145,14 @@ def test_chat_turn_in_flight_during_project_switch_is_cancelled_before_new_loade
     _begin_j002_flow(driver)
 
     # Clear the agent's request log to scope our observation to this window.
-    driver.post("/debug/request-log/clear", base=driver.agent_url, json_body={})
+    # `/debug/*` lives behind the agent's authMiddleware → real JWT required.
+    agent_jwt = driver.mint_dev_jwt()
+    driver.post(
+        "/debug/request-log/clear",
+        base=driver.agent_url,
+        bearer=agent_jwt,
+        json_body={},
+    )
 
     # Fire turns against both projects with distinct session ids.
     for project, session_id in [
@@ -161,7 +160,7 @@ def test_chat_turn_in_flight_during_project_switch_is_cancelled_before_new_loade
         (project_b, "us207-sess-B"),
     ]:
         driver.post_agent_chat(
-            bearer=DEV_BEARER,
+            bearer=agent_jwt,
             active_scope={
                 "org_id": DEV_ORG_ID,
                 "project_id": project["id"],
@@ -174,7 +173,7 @@ def test_chat_turn_in_flight_during_project_switch_is_cancelled_before_new_loade
             },
         )
 
-    log_probe = driver.get("/debug/request-log", base=driver.agent_url)
+    log_probe = driver.get("/debug/request-log", base=driver.agent_url, bearer=agent_jwt)
     if log_probe.status != 200:
         pytest.skip(
             f"agent debug request-log not available ({log_probe.status}); "

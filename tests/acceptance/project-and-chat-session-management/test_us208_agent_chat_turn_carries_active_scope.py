@@ -24,14 +24,6 @@ pytestmark = [
     pytest.mark.real_io,
     pytest.mark.mr_4,
     pytest.mark.needs_compose_stack,
-    pytest.mark.skip(
-        reason=(
-            "D-MR4-02: test driver needs JWT-mint helper to authenticate "
-            "against agent's authMiddleware (tracked in deliver/upstream-"
-            "issues.md). MR-4 substrate landed; live verification deferred "
-            "to a follow-up MR that adds the JWT-mint helper + un-skips."
-        )
-    ),
 ]
 
 
@@ -96,7 +88,7 @@ def test_chat_turn_from_session_active_carries_x_active_scope_with_org_and_proje
     post-migration body does NOT carry project_id."""
     project_id, _ = _bootstrap_project(driver)
     probe = driver.post_agent_chat(
-        bearer=DEV_BEARER,
+        bearer=driver.mint_dev_jwt(),
         active_scope={
             "org_id": DEV_ORG_ID,
             "project_id": project_id,
@@ -120,7 +112,7 @@ def test_agent_rejects_chat_turn_missing_org_id_with_400(
 ) -> None:
     """X-Active-Scope w/o org_id → 400; response body identifies "org_id" as missing; no LLM call."""
     probe = driver.post_agent_chat(
-        bearer=DEV_BEARER,
+        bearer=driver.mint_dev_jwt(),
         active_scope={"project_id": "p-missing-org"},  # no org_id
         body={"messages": [{"role": "user", "content": "ping"}]},
     )
@@ -137,7 +129,7 @@ def test_agent_rejects_chat_turn_missing_project_id_with_400(
 ) -> None:
     """X-Active-Scope w/o project_id → 400; response identifies "project_id" as missing."""
     probe = driver.post_agent_chat(
-        bearer=DEV_BEARER,
+        bearer=driver.mint_dev_jwt(),
         active_scope={"org_id": DEV_ORG_ID},  # no project_id
         body={"messages": [{"role": "user", "content": "ping"}]},
     )
@@ -155,7 +147,7 @@ def test_agent_rejects_chat_turn_with_org_id_mismatch_to_jwt_with_403(
     """JWT org_id != X-Active-Scope.org_id → 403; body names the mismatch."""
     project_id, _ = _bootstrap_project(driver)
     probe = driver.post_agent_chat(
-        bearer=DEV_BEARER,
+        bearer=driver.mint_dev_jwt(),
         active_scope={
             "org_id": "other-tenant-001",  # mismatch
             "project_id": project_id,
@@ -182,14 +174,17 @@ def test_ts_harness_asserts_agent_received_scope_on_every_turn(
     """Send 5 turns; harness.j002.assert_agent_received_scope(i) for i in [0..5)."""
     project_id, _ = _bootstrap_project(driver)
     # Clear the agent's request log so we're observing only this scenario's turns.
+    # `/debug/*` is behind the agent's authMiddleware → real JWT required.
+    agent_jwt = driver.mint_dev_jwt()
     driver.post(
         "/debug/request-log/clear",
         base=driver.agent_url,
+        bearer=agent_jwt,
         json_body={},
     )
     for i in range(5):
         probe = driver.post_agent_chat(
-            bearer=DEV_BEARER,
+            bearer=agent_jwt,
             active_scope={
                 "org_id": DEV_ORG_ID,
                 "project_id": project_id,
@@ -204,7 +199,7 @@ def test_ts_harness_asserts_agent_received_scope_on_every_turn(
         assert probe.status == 200, (
             f"turn {i} expected 200, got {probe.status}: {probe.body[:200]}"
         )
-    log = driver.get("/debug/request-log", base=driver.agent_url)
+    log = driver.get("/debug/request-log", base=driver.agent_url, bearer=agent_jwt)
     assert log.status == 200, f"agent /debug/request-log returned {log.status}"
     entries = json.loads(log.body).get("entries", [])
     assert len(entries) >= 5, f"expected >=5 entries, got {len(entries)}"
@@ -225,7 +220,7 @@ def test_during_migration_window_agent_falls_back_to_body_project_id_with_observ
     project_id, _ = _bootstrap_project(driver)
     # NO X-Active-Scope header — relies on the body fallback path.
     probe = driver.post_agent_chat(
-        bearer=DEV_BEARER,
+        bearer=driver.mint_dev_jwt(),
         active_scope=None,
         body={
             "messages": [{"role": "user", "content": "ping"}],
