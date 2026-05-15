@@ -28,11 +28,11 @@ import {
 import {
   createProjectContextMachine,
   type ProjectContextMachineDeps,
-} from "./machines/project-context.ts";
+} from "./machines/project-context/index.ts";
 import {
   createSessionChatMachine,
   type SessionChatMachineDeps,
-} from "./machines/session-chat.ts";
+} from "./machines/session-chat/index.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";

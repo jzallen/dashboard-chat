@@ -29,8 +29,8 @@ import type {
   ResumeSessionOutput,
   SessionSummary,
   TranscriptMessage,
-} from "./session-chat.ts";
-import { createSessionChatMachine } from "./session-chat.ts";
+} from "./machine.ts";
+import { createSessionChatMachine } from "./machine.ts";
 
 const MAYA_INPUT = {
   correlation_id: "R-7a4f-901c",

@@ -29,7 +29,11 @@
 
 import { assign, fromPromise, setup } from "xstate";
 
-import type { ActiveScope, ResourceType } from "../active-scope.ts";
+import type { ActiveScope, ResourceType } from "../../active-scope.ts";
+import {
+  type ProjectValidationError,
+  validateProjectName,
+} from "./validation.ts";
 
 export type ProjectContextState =
   | "resolving_initial_scope"
@@ -52,11 +56,6 @@ export type ProjectContextCauseTag =
   | "cross_tenant"
   | "access_revoked"
   | "replay_abandoned";
-
-export interface ProjectValidationError {
-  kind: "empty" | "too_short" | "too_long";
-  message: string;
-}
 
 export interface ProjectContextMachineContext {
   correlation_id: string;
@@ -188,23 +187,6 @@ export interface ProjectContextMachineDeps {
    *  `switching_project_intent` event is dropped (no-op) — keeps the
    *  machine backward-compatible with MR-1..MR-3 deployments. */
   switchProject?: SwitchProjectActor;
-}
-
-/** Trim + length-check the project name; returns null if valid. */
-export function validateProjectName(
-  raw: string,
-): ProjectValidationError | null {
-  const trimmed = (raw ?? "").trim();
-  if (trimmed.length === 0) {
-    return { kind: "empty", message: "Please enter a project name" };
-  }
-  if (trimmed.length < 2) {
-    return { kind: "too_short", message: "Project name is too short" };
-  }
-  if (trimmed.length > 80) {
-    return { kind: "too_long", message: "Project name is too long" };
-  }
-  return null;
 }
 
 export function createProjectContextMachine(deps: ProjectContextMachineDeps) {

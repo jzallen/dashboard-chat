@@ -30,12 +30,12 @@ import {
   createProjectActor,
   resolveInitialScopeActor,
   switchProjectActor,
-} from "./lib/machines/project-context.ts";
+} from "./lib/machines/project-context/index.ts";
 import {
   createSessionEagerlyActor,
   loadSessionListActor,
   resumeSessionActor,
-} from "./lib/machines/session-chat.ts";
+} from "./lib/machines/session-chat/index.ts";
 import { FlowOrchestrator } from "./lib/orchestrator.ts";
 import { selectFlowEventLog } from "./lib/persistence/redis.ts";
 
