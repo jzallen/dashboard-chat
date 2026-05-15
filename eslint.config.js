@@ -6,6 +6,7 @@ import tanstackQuery from "@tanstack/eslint-plugin-query";
 import testingLibrary from "eslint-plugin-testing-library";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import globals from "globals";
+import uiStateConventions from "./ui-state/lib/eslint-plugin-ui-state-conventions/index.js";
 
 export default [
   // ── Global ignores ──────────────────────────────────────────────────
@@ -105,6 +106,37 @@ export default [
   // Shared chat handler used by both frontend and worker — no special config
   {
     files: ["shared/**/*.ts"],
+  },
+
+  // ── ADR-039 ui-state vocabulary conventions (C4, C7, C12) ───────────
+  // Custom rules under `ui-state/lib/eslint-plugin-ui-state-conventions/`
+  // mechanically enforce the lint-tier (E1) conventions from ADR-039.
+  // Each rule has a probe under `ui-state/lib/lint-probes/` that contains
+  // a deliberate violation; the plugin's test suite asserts the rule
+  // fires on its probe (Earned Trust principle 12).
+  //
+  // Initial severity is `warn` for all three because pre-existing
+  // violations are present in projection.ts and will be cleaned up by
+  // follow-up MRs:
+  //   - C7 violations (intent_session_id, intent_resource_*) clean up in
+  //     MR-D (audit §8); the rule flips to `error` after MR-D lands.
+  //   - C12 violations (session_chat_project_id, session_chat_project_name)
+  //     clean up in MR-H (audit §8); the rule flips to `error` after MR-H
+  //     lands.
+  // C4 has no current violations in production code; it remains `warn`
+  // here for consistency with the other two and is safe to upgrade to
+  // `error` independently in a follow-up.
+  {
+    files: ["ui-state/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    plugins: { "ui-state-conventions": uiStateConventions },
+    rules: {
+      "ui-state-conventions/no-failure-sim-event-prefix-outside-allowlist":
+        "warn",
+      "ui-state-conventions/intent-prefix-deeplink-only": "warn",
+      "ui-state-conventions/no-machine-name-prefix-on-projection-fields":
+        "warn",
+    },
   },
 
   // ── DWD-3 single-writer guard for X-Active-Scope ────────────────────
