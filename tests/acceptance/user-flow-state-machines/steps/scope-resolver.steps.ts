@@ -204,7 +204,7 @@ When(
       route: {
         org: DEV_ORG_ID,
         project: this.bag.maya_project_id as string,
-        resource_type: resourceType as "dataset" | "view" | "report",
+        resource_type: resourceType as "dataset",
         // resource_id intentionally omitted — boundary case.
       },
       project_name: this.bag.maya_project_name as string,

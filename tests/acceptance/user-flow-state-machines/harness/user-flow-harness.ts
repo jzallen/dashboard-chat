@@ -130,7 +130,7 @@ export class UserFlowHarness {
     route: {
       org?: string;
       project?: string;
-      resource_type?: "dataset" | "view" | "report";
+      resource_type?: "dataset";
       resource_id?: string;
     };
     project_name?: string;
@@ -354,7 +354,7 @@ export interface J002OpenDeepLinkIntent {
   project_id?: string;
   session_id?: string;
   resource_id?: string;
-  resource_type?: "dataset" | "view" | "report";
+  resource_type?: "dataset";
 }
 
 export class J002Harness {

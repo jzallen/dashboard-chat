@@ -102,7 +102,7 @@ This machine does not directly send events to siblings; the orchestrator's state
 | `intent_project_id` | `string \| null` | `open_deep_link` / `switching_project_intent` | `resolveInitialScope`, `switchProject` inputs | cleared on `switchProject` `onDone` and on `back_to_projects_clicked` |
 | `intent_session_id` | `string \| null` | `open_deep_link` | forwarded via `project_ready` payload to session-chat | cleared on `back_to_projects_clicked` |
 | `intent_resource_id` | `string \| null` | `open_deep_link` | forwarded via `project_ready` payload | cleared on `back_to_projects_clicked` |
-| `intent_resource_type` | `ResourceType \| null` | `open_deep_link` | forwarded via `project_ready` payload | cleared on `back_to_projects_clicked` |
+| `intent_resource_type` | `ResourceType \| null` | `open_deep_link` | forwarded via `project_ready` payload | cleared on `back_to_projects_clicked`; `ResourceType` is YAGNI-collapsed to `"dataset"` per ADR-039 §Q1 |
 | `underlying_cause_tag` | `ProjectContextCauseTag \| null` | mismatch / error transitions | projection; FE diagnostic copy | union of 6 cause kinds |
 | `last_live_state` | `ProjectContextState \| null` | error transitions | retry routing (parallels session-chat) | unused in project-context's retry table (the retry path always returns to `creating_project`) — kept for shape parity |
 | `retries_count` | `number` | `retry_clicked` | observability | bumps each retry |

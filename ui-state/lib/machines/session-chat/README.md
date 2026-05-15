@@ -107,7 +107,7 @@ stateDiagram-v2
 | `session_list_has_more` | `boolean` | `loadSessionList` `onDone` | (reserved for pagination) | |
 | `session_id` | `string \| null` | `resumeSession` / `createSessionEagerly` `onDone` | projection / FE | zeroed by `new_session_clicked` and by cross-project `project_ready` |
 | `transcript` | `TranscriptMessage[]` | `resumeSession` `onDone` (atomic with `resource`) | projection / FE | zeroed by `new_session_clicked` and by cross-project `project_ready` |
-| `resource` | `{ type: ResourceType \| null; id: string \| null }` | `resumeSession` `onDone` (atomic with `transcript`) | projection / FE | per IC-J002-3 the assignment is single-transaction with transcript |
+| `resource` | `{ type: ResourceType \| null; id: string \| null }` | `resumeSession` `onDone` (atomic with `transcript`) | projection / FE | per IC-J002-3 the assignment is single-transaction with transcript; `ResourceType` is YAGNI-collapsed to `"dataset"` per ADR-039 §Q1 |
 | `intent_session_id` | `string \| null` | `project_ready` payload; `session_clicked` | `resumeSession` input | cleared on `resumeSession` `onDone` (settled or not_found) |
 | `underlying_cause_tag` | `SessionChatCauseTag \| null` | error transitions; `resumeSession` `onDone` (dataset_unavailable case) | projection; FE diagnostic copy | 6-cause union |
 | `last_live_state` | `SessionChatState \| null` | error transitions | retry routing | drives the 3-branch retry table in `error_recoverable` |

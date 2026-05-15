@@ -407,7 +407,7 @@ app.post("/flow/:machine/event", async (c) => {
 //     flow_id: string,                                  // existing flow
 //     route: {
 //       org?: string, project?: string,
-//       resource_type?: "dataset"|"view"|"report",
+//       resource_type?: "dataset",       // see ADR-039 §Q1
 //       resource_id?: string,
 //     },
 //     project_name?: string,                            // server-known name (current)

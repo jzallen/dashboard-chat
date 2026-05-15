@@ -5,7 +5,9 @@
 // so the acceptance suite cannot accidentally couple to production internals.
 // CM-A: tests never `from "ui-state/lib/..."` import.
 
-export type ResourceType = "dataset" | "view" | "report";
+// Mirrors ui-state's `ResourceType` per CM-A (no production imports from
+// tests). YAGNI-collapsed to `"dataset"` alongside ui-state per ADR-039 §Q1.
+export type ResourceType = "dataset";
 
 export interface ActiveScope {
   org_id: string;

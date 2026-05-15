@@ -17,7 +17,11 @@
 // CM-D contract: this function has ZERO fixture/IO dependency. Its unit
 // tests run with no Redis, no backend, no network.
 
-export type ResourceType = "dataset" | "view" | "report";
+// `ResourceType` is YAGNI-collapsed to the single literal `"dataset"` per
+// ADR-039 §Q1. The alias name is retained so call sites read structurally;
+// the shape `resource: { type: ResourceType | null; id: string | null }` stays
+// polymorphism-ready for the day a second resource type actually ships.
+export type ResourceType = "dataset";
 
 export interface ActiveScope {
   org_id: string;
