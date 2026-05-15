@@ -1,13 +1,14 @@
 # ADR-030: UI-State Tier Topology and Scaling Stance
 
-**Status:** Accepted (ratified 2026-05-11)
+**Status:** Accepted (ratified 2026-05-11; amended 2026-05-15 — see "Amendment 2026-05-15" sections at the end)
 **Date:** 2026-05-11
 **Originating wave:** DESIGN — `user-flow-state-machines` (system-scope pass)
 **Author:** Titan (nw-system-designer)
 **Companion artifacts:**
 - System-scope deliverable: `docs/feature/user-flow-state-machines/design/system-architecture.md`
-- Sibling ADRs (same wave): ADR-027 (host tier + framework), ADR-028 (XState v5 actor model), ADR-029 (`active_scope` propagation), ADR-031 (frontend tier transition)
+- Sibling ADRs (same wave): ADR-027 (host tier + framework), ADR-028 (XState v5 actor model — amended in lockstep 2026-05-15), ADR-029 (`active_scope` propagation), ADR-031 (frontend tier transition)
 - Inherited: ADR-016 (auth-proxy as sole production ingress), ADR-018 (capability-presence dispatch)
+- Divergence artifact that motivated the 2026-05-15 amendment: `docs/discussion/session-chat-context-architecture/directions.md` (Direction A + Direction F + Direction G convergence)
 
 ## Context
 
@@ -189,3 +190,100 @@ So a `freeze` event on `loginAndOrgSetup:user-001` MUST NOT affect `loginAndOrgS
 - `docker-compose.yml` (agent fixed-port pattern at line 48)
 - `reverse-proxy/nginx.conf` (current de-facto multi-upstream router)
 - ADR-016 (auth-proxy ingress claim), ADR-018 (Redis dispatch), ADR-027 (tier + framework), ADR-028 (XState v5 actor model)
+
+---
+
+## Amendment 2026-05-15 — Projection as primary read model (Direction A + Direction G)
+
+**Status:** Accepted (2026-05-15)
+**Wave:** DESIGN — ratification of `docs/discussion/session-chat-context-architecture/directions.md` Direction A (event-sourced; projection IS the state) + Direction G (forbid orchestrator from reading `snapshot.context.*`, folded in here as a sub-policy of A).
+**Companion:** ADR-028 §"Amendment 2026-05-15 — Machines own transitions; the log owns state" (the symmetric letter on the machine-shape side).
+
+### What changed
+
+The original §1 ("Topology") and §4 ("Failover behavior") treated the **projection** as the FE-facing read shape derived from the log on demand — a downstream consumer. This amendment **promotes the projection from downstream side effect to primary read model** for orchestrator FlowEvent emission.
+
+Concretely:
+
+- Before: the orchestrator's `appendSessionChatTerminalEvents` (and peers) read from `snapshot.getContext()` / `snapshot.context.*` at the moment a machine settles, and emitted FlowEvents using those values directly.
+- After: the orchestrator emits FlowEvents using values read from `projection.context.*` (the projection is rebuilt from the log via `buildProjection`; DWD-9 SSOT invariant). The machine snapshot is no longer a read target for the orchestrator's emission path.
+
+This makes DWD-9 ("the log is SSOT; the snapshot is a cache") **load-bearing rather than nice-to-have**. The snapshot stops being a place data lives.
+
+### The snapshot-read prohibition (Direction G policy, folded in)
+
+**The orchestrator MUST NOT read from `snapshot.getContext()` or `snapshot.context.*` outside test fixtures.**
+
+This is the lint-enforceable boundary. Specifically:
+
+- **Production code in `ui-state/lib/orchestrator.ts`** (and any file it imports for FlowEvent emission) MUST NOT contain `snapshot.getContext()` or `snapshot.context.<field>` reads. The single legal read source is the projection (`buildProjection(flowId)` or the equivalent live-projection accessor for the emission path).
+- **Test fixtures** in `ui-state/lib/**/*.test.ts` MAY read `snapshot.context.*` to assert that internal handler state (per ADR-028 amendment's discriminating test) settled as expected — that is the appropriate read site for machine-internal state.
+- **`event.output` payloads inside guard predicates** are NOT a snapshot read and are permitted (see "Direction F" amendment below). The output channel is the contract surface between states.
+
+The existing snapshot-read sites in `appendSessionChatTerminalEvents` (approximately `ui-state/lib/orchestrator.ts:780-897` — 7 read sites per the divergence artifact's audit; line numbers and exact count will drift post-LEAF-1 of `refactor/session-chat-context-srp` and as subsequent LEAFs land) are **migration targets, NOT new precedent**. New PRs MUST NOT add to the count. The orchestrator file also contains several `snapshot.context.*` reads in non-terminal-event paths (e.g., projection-update handlers around lines 324, 342, 1001, 1002, 1066, 1082, 1102, 1254 at the time of writing); those are in scope for the same prohibition once the terminal-event migration is complete (LEAF-A and LEAF-B in "Migration sequencing" below).
+
+### Enforcement (Earned Trust)
+
+Per principle 12, the prohibition is enforced empirically, not by convention:
+
+- **Recommended tooling:** an ESLint custom rule (e.g., `no-restricted-syntax` over `MemberExpression[object.property.name="context"][object.object.name="snapshot"]` with a path-scoped allow-list for `ui-state/lib/**/*.test.ts`) is the lowest-ceremony fit for the TS source tree. Alternative: `eslint-plugin-boundaries` element-type tagging of orchestrator vs test source.
+- **Probe contract:** the lint rule's own coverage is itself a probe — a synthetic test under `ui-state/lib/lint-probes/` that introduces a deliberate `snapshot.context.x` read in a non-test file and asserts the rule flags it. Without the probe the rule is faith, not evidence; per principle 12 every enforcement layer needs a probe that proves it can catch the violation it claims to catch.
+- **CI gate:** the lint rule runs in the standard pre-commit eslint pass (existing infrastructure; no new gate needed). The probe runs in the standard ui-state vitest suite.
+
+### What this amendment does NOT change
+
+- **Topology** (§1) — unchanged. ui-state stays single-replica behind auth-proxy.
+- **Scaling shape** (§2) — unchanged. Single replica, with documented ceiling.
+- **`flow_id` schema** (§6) — unchanged. Per-user flows still use `<machine-name>:<principal_id>`.
+- **The FlowEvent log as Redis Streams** — unchanged. The amendment narrows what *reads* from the projection, not how the log is stored.
+- **The projection's existing FE-facing role** — unchanged. The FE continues to read `GET /api/flows/{flow_id}/projection` (ADR-027 §1); the projection's role just widens to also serve orchestrator emission.
+
+---
+
+## Amendment 2026-05-15 — Async-invoke continuations via `event.output` (Direction F)
+
+**Status:** Accepted (2026-05-15) — folded into this ADR rather than a standalone ADR-039. Rationale: Direction F is a narrow tactical policy (one paragraph of normative content) that is the symmetric input-side rule to the projection-read amendment above. Co-locating them keeps the discriminating test in one ADR. The 039 slot remains available for the next genuinely independent decision.
+
+### The rule
+
+**Async-invoke continuations are carried by `event.output`. Context fields MUST NOT survive an async-invoke boundary except where the field encodes pre-invoke caller identity (`correlation_id`) or pre-invoke configuration that the invoke needs as `input`.**
+
+Concretely:
+
+- A machine's invoked actor (`fromPromise`, `fromCallback`, or a spawned child) receives its data via `input` and returns its branch-relevant data via `output`. The `onDone` transition's `guard` and `actions` read from `event.output.*`.
+- A context field set before the invoke and read by `onDone` after the invoke (e.g., the pre-LEAF-1 `intent_session_id` in `SessionChatMachineContext` read by `loadSessionList`'s `onDone` guard at the historical `session-chat.ts:349`) is the failure mode this rule prohibits. The branch-relevant data MUST be returned by the invoked actor as part of its output payload.
+- The narrow exception: a field that names *the caller of the invoke* (e.g., `correlation_id` for log threading; `principal_id` for ScopeResolver enforcement per ADR-029) may live in context across the invoke boundary because it is *internal handler state* (per ADR-028 amendment's discriminating test) — the machine itself needs it for its own logging/auth concerns, not as a contract between states.
+
+### Why this is "just XState v5 hygiene"
+
+XState v5's `fromPromise` actor returns its resolved value as `event.output` on `onDone`. Storing the same value in context before the invoke and re-reading it after the invoke is **dual storage of one truth** — and the failure mode the divergence artifact's J2 job (async-invoke continuation carrier) named explicitly. The rule above eliminates J2 as a justification for context fields.
+
+### Relationship to LEAF-1 of `refactor/session-chat-context-srp`
+
+LEAF-1 (intent_resource_id + intent_resource_type dropped from `SessionChatMachineContext`) is consistent with this rule and is **defensible regardless of which directions are ultimately ratified**. It lands independently and does not require this ADR amendment as a prerequisite. Subsequent LEAFs that restructure `loadSessionList` (and peers) to carry continuation via `event.output` ARE post-ratification work (see "Migration sequencing" below).
+
+---
+
+## Amendment 2026-05-15 — Migration sequencing (deferred journey)
+
+**Status:** Sketched (2026-05-15). This is NOT a DISTILL or DELIVER plan; the actual stories/tests live in a future wave. The sequence below is the **shape** of the migration so future contributors know what landed when.
+
+### Already in flight (no ADR ratification required)
+
+- **LEAF-1** of `refactor/session-chat-context-srp`: drops `intent_resource_id` + `intent_resource_type` from `SessionChatMachineContext`. Consistent with Direction F. Lands independently; not blocked by this ADR amendment.
+
+### Post-ratification roadmap
+
+A 3-4 step migration journey, to be sequenced by a future DISTILL pass when the team is ready to commit delivery capacity:
+
+1. **LEAF-A — Redirect orchestrator's session-list reads to projection.** Replace `snapshot.context.session_list` / `session_list_next_cursor` / `has_more` reads in `appendSessionChatTerminalEvents` with reads against the live projection accessor. Acceptance: existing `tests/acceptance/project-and-chat-session-management/` scenarios pass unchanged; orchestrator unit tests assert no `snapshot.context.session_*` reads remain. *Size estimate: small (~1 day; the projection already mirrors these fields 1:1).*
+
+2. **LEAF-B — Redirect orchestrator's active-session reads to projection.** Same shape for `session_id`, `transcript`, `resource`, `pending_first_message`, `underlying_cause_tag`. Acceptance: same. *Size estimate: small-to-medium (~2-3 days; some fields require projection-reducer adjustments).*
+
+3. **LEAF-C — Restructure `loadSessionList` invoke to carry continuation via `event.output`.** The actor returns `{ items, next_cursor, has_more, resume_target: string | null }`; the `onDone` guard reads from `event.output.resume_target` rather than `ctx.intent_session_id`. The `intent_session_id` field is then removable from `SessionChatMachineContext`. Acceptance: existing scenarios pass; new unit tests assert the invoke's output shape. *Size estimate: small (~1-2 days; the actor is one file).*
+
+4. **LEAF-D — Install the lint rule + probe.** Add the `no-restricted-syntax` rule (or equivalent), add the lint-probe synthetic test, document the override path for test fixtures. Acceptance: probe passes; introducing a deliberate violation in a non-test file fails the lint gate. *Size estimate: small (~0.5-1 day).*
+
+The sequence is intentionally LEAF-A → LEAF-B → LEAF-C → LEAF-D: orchestrator-read migrations land before the lint rule, so the rule can be turned on at a point where the codebase already passes it. Each LEAF is independently shippable; the team may interleave with feature work.
+
+This roadmap does NOT need DISTILL or DELIVER planning at the time of this ADR amendment. It is a deferred journey, recorded here so future contributors can pick it up without re-deriving the sequence.

@@ -104,6 +104,57 @@ Tests inject mock actors via `.provide({ actors: { verifyJwt: fromPromise(/* moc
 - **`v5` maturity vs ecosystem inertia**: most XState examples online are v4. Mitigation: maintain a `ui-state/docs/xstate-v5-cookbook.md` with our chosen idioms; v5 docs are official and complete.
 - **Lock-in to v5 actor-model API surface**: if v5's actor API changes between minor versions, our orchestrator may need to adjust. Mitigation: pin major version; review the changelog at each minor bump; the actor-model API is the most-used surface of v5 and stable in practice.
 
+## Amendment 2026-05-15 — Machines own transitions; the log owns state
+
+**Status:** Accepted (2026-05-15)
+**Wave:** DESIGN — ratification of `docs/discussion/session-chat-context-architecture/directions.md` Direction A + Direction F convergence.
+**Resolves:** the "god context" pressure on `SessionChatMachineContext` and `ProjectContextMachineContext` (16 fields apiece, inline comments documenting which states populate which — comments substituting for type safety).
+
+### What changed
+
+The original §"Decision outcome" said *"machines own state"* (implicit in the bullet on persistence: "machine context is rebuilt from the Redis flow-event log on cold restart"). The wave-decisions amendment (DWD-9, J-002 design) elevated the log to **SSOT**: "the projection is rebuilt from the log; the snapshot is a cache." This amendment makes that elevation load-bearing for the **machine context shape**, not just for cold-restart rehydration.
+
+The revised letter is:
+
+> **Machines own transitions; the log owns state.**
+
+Concretely:
+
+- A machine's `context` carries **internal handler state only** — values that the machine needs to make its own transition decisions in the immediate next step. The canonical members are `correlation_id`, `principal_id`, and any literal continuation pointers needed mid-invoke that cannot be carried via `event.output` (see ADR-030 §"Amendment 2026-05-15 — Async-invoke continuations via `event.output` (Direction F)").
+- A machine's `context` does **NOT** carry data destined for downstream consumers (the orchestrator's FlowEvent emission, the projection reducer, the FE). Those consumers read from the **projection** (ADR-030 §"Amendment 2026-05-15 — Projection as primary read model"), which is built from the log.
+- The "no machine imports another machine" invariant (original §"Decision outcome") is **unchanged**. This amendment does not introduce machine-to-machine coupling. The orchestrator remains the only cross-machine mediator, and the log/projection remain the only cross-machine read surface.
+
+### Ubiquitous-language anchor — the discriminating test
+
+The vocabulary the team will use to reason about every new context field, verbatim from the convergence discussion:
+
+> "The context seems like internal state for an event handler whereas `event.output` communicates: these are the variables I want other states to have if they occur after me."
+
+This sentence is the **discriminating test** every new `context` field PR must pass before review:
+
+> *Is this internal handler state, or is it a contract between states?*
+
+- **Internal handler state** → may live in `context`. Examples: a retry counter the machine itself reads inside an `error_recoverable` guard; a pre-invoke configuration value the invoke needs as `input`; the machine's own `correlation_id` for log threading.
+- **Contract between states** → MUST NOT live in `context`. It belongs in a `DomainEvent` written to the log (read back by the next state via the projection) or in `event.output` (handed off across an async-invoke boundary per ADR-030 amendment).
+
+PR reviewers (human and agent) MUST apply this test explicitly. A new `context` field whose only readers are *other states* of the same machine, *the orchestrator*, *the projection reducer*, or *downstream FlowEvent emission* fails the test and is refused review.
+
+### What this amendment does NOT change
+
+- **The "no machine imports another machine" invariant** (original §"Decision outcome", bullet 7) — unchanged. Direction B in the divergence artifact (aggregate-per-cluster) would have amended this; A+F do not.
+- **The actor-model commitment** (§"Decision outcome" bullets 1-4) — unchanged. Orchestrator, per-flow actors, cross-machine signaling via `system.get(...)` all remain.
+- **The replay buffer's location** (orchestrator-owned) — unchanged.
+- **The `setup` API + typed events + `assign` + `provide` idiom** (§"TypeScript integration") — unchanged. What's narrowed is the *shape* of context, not the API for managing it.
+- **Cold-restart rehydration via Redis flow-event log** (§"Decision outcome", bullet 6) — unchanged. If anything, this amendment reinforces it: shrinking the context to internal-handler-state means rehydration has less to reconstruct and the projection's role as authoritative read model is more visible.
+
+### Migration
+
+The mechanical migration (drop fields from machine contexts; redirect their readers to the projection) is sequenced in ADR-030's amendment §"Migration sequencing". This amendment does not commit to a delivery date; the LEAF-1 branch `refactor/session-chat-context-srp` (which drops `intent_resource_id` + `intent_resource_type` from `SessionChatMachineContext`) is consistent with Direction F and lands independently of this ratification.
+
+### Enforcement (Earned Trust)
+
+Per principle 12 ("every architectural style choice includes a recommendation for language-appropriate automated enforcement tooling"), the discriminating test is reinforced by the snapshot-read prohibition in ADR-030 §"Amendment 2026-05-15 — Projection as primary read model". An ESLint custom rule (or `eslint-plugin-boundaries`-style import-graph constraint) is the recommended enforcement vehicle; specifics live in that amendment because the rule's *subject* is the orchestrator's read sites, not the machine definitions themselves.
+
 ## Open questions
 
 1. **`createActor` vs `interpret` (v4 name)**: v5 renamed `interpret` to `createActor`. Confirmed; no decision needed.
