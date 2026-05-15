@@ -21,8 +21,8 @@ import {
   type CreateOrgAndReissueInput,
   type CreateOrgAndReissueOutput,
   type WorkOSUserInfoActor,
-} from "./login-and-org-setup.ts";
-import type { UnderlyingCauseTag } from "./validation.ts";
+} from "./machine.ts";
+import type { UnderlyingCauseTag } from "../validation.ts";
 
 const MAYA_INPUT = {
   correlation_id: "R-7a4f-901c",

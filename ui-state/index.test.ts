@@ -21,7 +21,7 @@ import type {
   CreateOrgAndReissueInput,
   CreateOrgAndReissueOutput,
   WorkOSUserInfoActor,
-} from "./lib/machines/login-and-org-setup.ts";
+} from "./lib/machines/login-and-org-setup/index.ts";
 
 function buildScenario(opts: { harnessKnobsEnabled: boolean }) {
   const prev = process.env.NWAVE_HARNESS_KNOBS;

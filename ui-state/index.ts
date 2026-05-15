@@ -25,7 +25,7 @@ import {
   createOrgFn,
   createWorkOSUserInfoActor,
   reissueOrgJwtFn,
-} from "./lib/machines/login-and-org-setup.ts";
+} from "./lib/machines/login-and-org-setup/index.ts";
 import {
   createProjectActor,
   resolveInitialScopeActor,

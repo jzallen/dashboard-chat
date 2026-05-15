@@ -24,7 +24,7 @@ import {
   createLoginAndOrgSetupMachine,
   type CreateOrgAndReissueInput,
   type LoginMachineDeps,
-} from "./machines/login-and-org-setup.ts";
+} from "./machines/login-and-org-setup/index.ts";
 import {
   createProjectContextMachine,
   type ProjectContextMachineDeps,

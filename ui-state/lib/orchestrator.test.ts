@@ -32,7 +32,7 @@ import type {
   CreateOrgAndReissueOutput,
   LoginMachineDeps,
   WorkOSUserInfoActor,
-} from "./machines/login-and-org-setup.ts";
+} from "./machines/login-and-org-setup/index.ts";
 
 const PROFILE_MAYA = {
   email: "maya.chen@acme-data.example",

@@ -19,7 +19,7 @@ import {
   classifyFailure,
   validateOrgName,
   type UnderlyingCauseTag,
-} from "./validation.ts";
+} from "../validation.ts";
 
 export type LoginState =
   | "anonymous"
@@ -31,7 +31,7 @@ export type LoginState =
   | "expired_token"
   | "error_terminal";
 
-export type { UnderlyingCauseTag } from "./validation.ts";
+export type { UnderlyingCauseTag } from "../validation.ts";
 
 export interface OrgValidationInlineError {
   kind: "empty" | "too_short" | "too_long" | "duplicate";
