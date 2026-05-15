@@ -176,7 +176,7 @@ app.post("/flow/:machine/begin", async (c) => {
   }
 
   // J-001 requires the persona_email to drive the WorkOS exchange. J-002
-  // (and other non-J-001 machines) spawn via the orchestrator's j001_ready
+  // (and other non-J-001 machines) spawn via the orchestrator's auth_ready
   // broadcast hook, so a direct `/begin` POST for them is idempotent —
   // returns the existing projection or spawns a fresh actor.
   if (machine === "login-and-org-setup") {

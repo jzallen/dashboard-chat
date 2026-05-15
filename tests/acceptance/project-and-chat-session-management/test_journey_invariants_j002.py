@@ -38,7 +38,7 @@ pytestmark = [
 
 @pytest.mark.mr_1
 @pytest.mark.praxis_f5
-def test_ic_j002_1_entry_from_j001_ready_reads_org_id_from_j001_projection(
+def test_ic_j002_1_entry_from_auth_ready_reads_org_id_from_j001_projection(
     requires_compose_stack: None,
     clean_projects_for_dev_user: None,
     driver: J002Driver,
@@ -50,7 +50,7 @@ def test_ic_j002_1_entry_from_j001_ready_reads_org_id_from_j001_projection(
          sequence_id (±100ms clock-skew)
       2. J-002.context.org_id == JWT.decoded.org_id (from access_token claim
          injected by auth-proxy via X-Org-Id in AUTH_MODE=dev)
-      3. The j001_ready broadcast hook IS what drove the value into J-002
+      3. The auth_ready broadcast hook IS what drove the value into J-002
          (no separate /api/orgs/me fetch — the value flows orchestrator →
          J-002 directly per DWD-6)
 
@@ -58,7 +58,7 @@ def test_ic_j002_1_entry_from_j001_ready_reads_org_id_from_j001_projection(
     wired (see deliver/upstream-issues.md D-01-01a), we cannot drive J-001
     through to `ready` end-to-end via the production WorkOS path. Instead
     we exercise the SAME orchestrator surface (`beginIfNotStarted`) the
-    `j001_ready` hook calls in production. The key assertion: when J-002
+    `auth_ready` hook calls in production. The key assertion: when J-002
     is spawned via the hook's entry contract (with `org_id` + first name
     in the payload), J-002.context.org_id ECHOES the broadcast value AND
     that value equals the auth-proxy-injected X-Org-Id (the JWT claim
@@ -74,7 +74,7 @@ def test_ic_j002_1_entry_from_j001_ready_reads_org_id_from_j001_projection(
     # Spawn J-002 via auth-proxy. Auth-proxy injects X-Org-Id=dev-org-001 +
     # X-User-Id=dev-user-001 (its dev-mode hardcoded JWT claims). The
     # ui-state `/begin` route reads those headers and forwards to
-    # orchestrator.beginIfNotStarted — the SAME method the j001_ready
+    # orchestrator.beginIfNotStarted — the SAME method the auth_ready
     # broadcast hook calls. Assertion #3 (no separate /api/orgs/me fetch)
     # is structurally true because ui-state never calls /api/orgs/me — the
     # org_id flows from headers → orchestrator → J-002 context directly.
@@ -135,7 +135,7 @@ def test_ic_j002_1_entry_from_j001_ready_reads_org_id_from_j001_projection(
 
     # Invariant #3 (no second-source): the J-002 machine itself must NOT
     # fetch /api/orgs/me — the value flows orchestrator → J-002 via the
-    # j001_ready hook only, per DWD-6. J-001's machine source may legitimately
+    # auth_ready hook only, per DWD-6. J-001's machine source may legitimately
     # reference /api/orgs/me as part of its org-create fallback; that path is
     # OUT OF SCOPE here. Scope the grep to J-002's machine source AND the
     # orchestrator's beginIfNotStarted block.
@@ -169,9 +169,9 @@ def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
     DEV_PRINCIPAL_ID = "dev-user-001"
     J002_FLOW_ID = f"project-and-chat-session-management:{DEV_PRINCIPAL_ID}"
 
-    # Spawn J-002 directly — same orchestrator method the j001_ready
+    # Spawn J-002 directly — same orchestrator method the auth_ready
     # broadcast hook calls in production (see DWD-6 + the orchestrator's
-    # `j001_ready_hook` block).
+    # `auth_ready_hook` block).
     begin = driver.post(
         "/ui-state/flow/project-and-chat-session-management/begin",
         base=driver.auth_proxy_url,

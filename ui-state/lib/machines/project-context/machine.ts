@@ -24,7 +24,7 @@
 //
 // ADR-028:46-48 invariant: this file does NOT import from `session-chat.ts` or
 // `login-and-org-setup.ts`. The orchestrator mediates all cross-machine entry
-// (`j001_ready` from login → project-context; `project_ready` from project-context
+// (`auth_ready` from login → project-context; `project_ready` from project-context
 // → session-chat).
 
 import { assign, fromPromise, setup } from "xstate";
@@ -61,7 +61,7 @@ export interface ProjectContextMachineContext {
   correlation_id: string;
   principal_id: string;
 
-  // From J-001 projection — set on j001_ready event entry:
+  // From J-001 projection — set on auth_ready event entry:
   org_id: string;
   user_first_name: string | null;
 
@@ -104,7 +104,7 @@ export interface ProjectContextMachineContext {
 }
 
 export type ProjectContextEvent =
-  | { type: "j001_ready"; org_id: string; user_first_name: string }
+  | { type: "auth_ready"; org_id: string; user_first_name: string }
   | { type: "create_project_clicked" }
   | { type: "create_project_submitted"; org_name: string }
   | { type: "back_to_projects_clicked" }
@@ -293,7 +293,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           // transitions into `ready`. The payload carries the inherited
           // org_id + user_first_name from J-001's projection so J-002
           // never re-fetches them from JWT / /api/orgs/me (DWD-6, F-5).
-          j001_ready: {
+          auth_ready: {
             actions: assign({
               org_id: ({ event }) => event.org_id,
               user_first_name: ({ event }) => event.user_first_name,

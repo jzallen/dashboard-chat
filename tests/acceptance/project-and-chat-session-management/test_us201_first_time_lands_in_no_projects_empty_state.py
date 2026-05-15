@@ -81,15 +81,15 @@ J002_FLOW_ID = f"project-and-chat-session-management:{DEV_PRINCIPAL_ID}"
 def _spawn_j002(driver: J002Driver) -> HTTPProbe:
     """Spawn J-002 via its direct `/begin` route.
 
-    The production entry into J-002 is the orchestrator's `j001_ready`
+    The production entry into J-002 is the orchestrator's `auth_ready`
     broadcast hook fired when J-001 reaches `ready` (DWD-6); this is
     landed in the orchestrator at this MR (verifiable by inspecting
-    `ui-state/lib/orchestrator.ts` for `j001_ready_hook`).
+    `ui-state/lib/orchestrator.ts` for `auth_ready_hook`).
 
     In dev mode auth-proxy injects DEV_USER's identity headers
     (`X-User-Id`, `X-Org-Id`, `X-User-Email`); the ui-state tier's
     `beginIfNotStarted` reads them. This direct path exercises the SAME
-    orchestrator method (`beginIfNotStarted`) the j001_ready hook calls,
+    orchestrator method (`beginIfNotStarted`) the auth_ready hook calls,
     without requiring the J-001 WorkOS fixture to be running locally.
     """
     return driver.post(
@@ -141,7 +141,7 @@ def test_first_sign_in_foregrounds_the_no_projects_welcome_panel(
     """
     # Arrange — spawn J-002 directly via its `/begin` route. This exercises
     # the orchestrator's `beginIfNotStarted` — the same method the
-    # j001_ready broadcast hook calls in production. The dev compose stack's
+    # auth_ready broadcast hook calls in production. The dev compose stack's
     # auth-proxy injects `X-Org-Id: dev-org-001`, so J-002's
     # resolveInitialScope invoke fires against the real backend and settles
     # in `no_projects_empty_state` (the dev user has no projects).

@@ -59,7 +59,7 @@ export interface OrchestratorDeps {
    * Deps for the J-002 project-context machine (DWD-13 §2A; previously named
    * `projectFlowMachineDeps` against the unsplit `project-and-chat-session-management`
    * machine). Optional so legacy J-001-only deployments can construct the
-   * orchestrator without wiring J-002 (the `j001_ready` hook becomes a no-op
+   * orchestrator without wiring J-002 (the `auth_ready` hook becomes a no-op
    * when this is absent).
    */
   projectContextMachineDeps?: ProjectContextMachineDeps;
@@ -213,7 +213,7 @@ export class FlowOrchestrator {
    * Machine selection is via the MachineRegistry strategy table (DWD-8)
    * — `login-and-org-setup` follows the legacy WorkOS+org-create path
    * below; other machines (J-002+) plug in via the registry and are
-   * begun via `beginIfNotStarted` from the j001_ready broadcast hook.
+   * begun via `beginIfNotStarted` from the auth_ready broadcast hook.
    */
   async begin(input: BeginFlowInput): Promise<FlowProjection> {
     if (!MACHINE_REGISTRY[input.machine]) {
@@ -221,7 +221,7 @@ export class FlowOrchestrator {
     }
 
     // J-002 and other machines are spawned via beginIfNotStarted (called by
-    // the j001_ready broadcast hook) — direct `begin` posts for those would
+    // the auth_ready broadcast hook) — direct `begin` posts for those would
     // bypass the cross-machine entry contract. Allow them only when the
     // existing flow is already started (idempotent no-op).
     if (input.machine !== "login-and-org-setup") {
@@ -360,8 +360,8 @@ export class FlowOrchestrator {
    * machines never import each other — entry flows through this method
    * called from the orchestrator's transition watcher. Two broadcast hooks
    * call this:
-   *   - `j001_ready` (login → project-context) — passes `org_id` +
-   *     `user_first_name`; this method forwards a `j001_ready` event to the
+   *   - `auth_ready` (login → project-context) — passes `org_id` +
+   *     `user_first_name`; this method forwards a `auth_ready` event to the
    *     spawned actor so the project-context machine's resolveInitialScope
    *     invoke fires with a populated org_id.
    *   - `project_ready` (project-context → session-chat) — passes `org_id`
@@ -374,7 +374,7 @@ export class FlowOrchestrator {
     machine: string;
     principal_id: string;
     correlation_id: string;
-    // `j001_ready` payload (project-context dispatch):
+    // `auth_ready` payload (project-context dispatch):
     org_id?: string;
     user_first_name?: string;
     // `project_ready` payload (session-chat dispatch — DWD-13 §3.2.B):
@@ -394,13 +394,13 @@ export class FlowOrchestrator {
     }
     const flow_id = `${input.machine}:${input.principal_id}`;
 
-    // Which broadcast hook is this — j001_ready (project-context) or
+    // Which broadcast hook is this — auth_ready (project-context) or
     // project_ready (session-chat)? Inspect machine + payload to dispatch
     // the right event shape on (re-)spawn.
     const isProjectReadyDispatch =
       input.machine === SESSION_CHAT_WIRE_NAME &&
       typeof input.project_id === "string";
-    const isJ001ReadyDispatch =
+    const isAuthReadyDispatch =
       !isProjectReadyDispatch &&
       typeof input.org_id === "string" &&
       input.user_first_name !== undefined;
@@ -418,7 +418,7 @@ export class FlowOrchestrator {
       // Already spawned. Idempotency: re-forward the appropriate event so
       // the existing actor observes the latest payload (the machine ignores
       // events it has already absorbed; session-chat re-applies its
-      // `project_ready` guard, project-context's `j001_ready` is a no-op
+      // `project_ready` guard, project-context's `auth_ready` is a no-op
       // after the resolveInitialScope invoke has fired).
       const actor = this.actors.get(flow_id);
       try {
@@ -451,9 +451,9 @@ export class FlowOrchestrator {
               },
             );
           }
-        } else if (isJ001ReadyDispatch && actor) {
+        } else if (isAuthReadyDispatch && actor) {
           actor.send({
-            type: "j001_ready",
+            type: "auth_ready",
             org_id: input.org_id!,
             user_first_name: input.user_first_name!,
           } as never);
@@ -505,10 +505,10 @@ export class FlowOrchestrator {
       } catch {
         // Defensive.
       }
-    } else if (isJ001ReadyDispatch) {
+    } else if (isAuthReadyDispatch) {
       try {
         actor.send({
-          type: "j001_ready",
+          type: "auth_ready",
           org_id: input.org_id!,
           user_first_name: input.user_first_name!,
         } as never);
@@ -623,7 +623,7 @@ export class FlowOrchestrator {
       // ---- project_ready broadcast hook (DWD-13 §3.2.B; NEW per MR-1.5) ----
       // When project-context settles in `project_selected` on initial spawn,
       // broadcast `project_ready` to session-chat (idempotent spawn). The
-      // hook mirrors the existing j001_ready pattern below in `send()` —
+      // hook mirrors the existing auth_ready pattern below in `send()` —
       // see also the `send()`-side branch for the project-switch re-entry
       // path (MR-4 lifts `switching_project → project_selected`, which also
       // needs to re-broadcast).
@@ -666,7 +666,7 @@ export class FlowOrchestrator {
    *     but spawning session-chat with NULL project_id is wrong).
    *
    * Failures here NEVER propagate — project-context's `project_selected`
-   * transition succeeds regardless. Matches the j001_ready hook's resilience
+   * transition succeeds regardless. Matches the auth_ready hook's resilience
    * stance (orchestrator.ts:611-618 pre-split lineage).
    */
   private async maybeFireProjectReady(
@@ -1023,7 +1023,7 @@ export class FlowOrchestrator {
         correlation_id: input.correlation_id,
       });
 
-      // ---- j001_ready broadcast hook (DWD-6 + DWD-13 RD1) ----------------
+      // ---- auth_ready broadcast hook (DWD-6 + DWD-13 RD1) ----------------
       // When J-001 transitions creating_org → ready (NOT the
       // expired_token → ready recovery path), broadcast to project-context
       // so it spawns + receives the inherited org_id + user_first_name. This
@@ -1046,7 +1046,7 @@ export class FlowOrchestrator {
         } catch (err) {
           // Defensive — project-context spawn failure must NOT break J-001's ready transition.
           this.logTransition({
-            event_kind: "j001_ready_hook.failed",
+            event_kind: "auth_ready_hook.failed",
             error: (err as Error).message,
             origin_flow_id: input.flow_id,
           });

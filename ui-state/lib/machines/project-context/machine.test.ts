@@ -105,7 +105,7 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -125,7 +125,7 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -144,7 +144,7 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -167,7 +167,7 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -191,7 +191,7 @@ describe("ProjectContextMachine — substrate behaviors", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -221,7 +221,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -240,7 +240,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -254,9 +254,9 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     // and re-resolve the initial scope.
     //
     // Implementation note: the resolveInitialScope invoke fires on initial
-    // spawn AND on every re-entry. With `j001_ready { target: self, reenter: true }`,
+    // spawn AND on every re-entry. With `auth_ready { target: self, reenter: true }`,
     // this means the invoke fires twice during bootstrap (once on spawn, once
-    // on j001_ready re-entry). We return no_projects for both bootstrap calls;
+    // on auth_ready re-entry). We return no_projects for both bootstrap calls;
     // the THIRD call (triggered by open_deep_link) returns the project.
     const project: ProjectSummary = { id: "deep-link-proj", name: "Q4 Analytics" };
     let invokeCallCount = 0;
@@ -274,7 +274,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -299,7 +299,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
   it("B9: back_to_projects_clicked clears all intent_* fields and exits scope_mismatch_terminal", async () => {
     // Arrive in scope_mismatch_terminal via cross_tenant.
     // The resolveInitialScope invoke fires twice during bootstrap (once on
-    // spawn with the input.intent_project_id present, once on j001_ready
+    // spawn with the input.intent_project_id present, once on auth_ready
     // re-entry). Both bootstrap calls return cross_tenant; the third call
     // (triggered by back_to_projects_clicked → resolving_initial_scope) sees
     // intent cleared and returns no_projects.
@@ -320,7 +320,7 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -353,7 +353,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -381,7 +381,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -404,7 +404,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
@@ -427,7 +427,7 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     const actor = createActor(machine, { input: MAYA_INPUT });
     actor.start();
     actor.send({
-      type: "j001_ready",
+      type: "auth_ready",
       org_id: "dev-org-001",
       user_first_name: "Maya",
     });
