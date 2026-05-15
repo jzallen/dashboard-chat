@@ -6,18 +6,31 @@
 // must depend on. Per ADR-039 §C12 those consumers care what the field
 // represents, not which machine wrote it.
 //
-// The audit identified two current violations:
-//   - session_chat_project_id
-//   - session_chat_project_name
-// Both collapsed in MR-H into the shared `project: { id, name }` field,
-// gated on the field-collapse property test from audit §9 Q3 (the test
-// asserts agreement between project-context and session-chat on project
-// state — `projection-property.test.ts`).
+// The audit identified two original violations (session_chat_project_id /
+// session_chat_project_name); both were collapsed in MR-H + the §9 Q3
+// follow-up (commit 00c5891) into the shared `project: { id, name }`
+// field. The collapse-gating property test lives at
+// `projection-property.test.ts`.
 //
-// Severity remains `warn` post-collapse because the rule still has a
-// pending false-positive issue (TaskList #76 — event-handler keys in
-// the projection dispatch table are flagged when they should not be).
-// The severity upgrade to `error` is gated on that fix.
+// SCOPE EXCLUSION — reducer dispatch entries. In the projection reducer
+// (`projection.ts`), event-name → handler-function mappings are encoded
+// as object-literal properties:
+//
+//   const REDUCERS = {
+//     project_context_resolution_started: (state, ctx, event) => { ... },
+//     project_context_recoverable_error:  (state, ctx, event) => { ... },
+//   };
+//
+// These property KEYS carry the wire-event name — the audit's recommended
+// canonical vocabulary per MR-F / MR-H, where `project_context_*` is the
+// source-tree-aligned event-name convention. The key here is a DISPATCH
+// TAG, not a data-field declaration; renaming it would break the
+// dispatcher. The rule detects these by skipping `Property` nodes whose
+// value is a function expression.
+//
+// Type-level `TSPropertySignature` nodes (interface members declaring the
+// projection's read shape, e.g. `ReducedContext`) are still checked —
+// those are the rule's original target.
 
 const DEFAULT_BANNED_PREFIXES = ["session_chat", "project_context", "login"];
 
@@ -93,11 +106,26 @@ const rule = {
       });
     }
 
+    function isFunctionValue(node) {
+      if (!node || !node.value) return false;
+      const valueType = node.value.type;
+      return (
+        valueType === "ArrowFunctionExpression" ||
+        valueType === "FunctionExpression"
+      );
+    }
+
     return {
       TSPropertySignature(node) {
+        // Type-level field declarations — always check. Interface members
+        // are how projection read-shapes (e.g. ReducedContext) are declared.
         check(node.key, node);
       },
       Property(node) {
+        // Reducer dispatch-table entries (event-name → handler-function)
+        // are intentionally named after the wire event. Skip them so the
+        // rule fires only on data-field declarations.
+        if (isFunctionValue(node)) return;
         check(node.key, node);
       },
     };

@@ -162,6 +162,25 @@ describe("eslint-plugin-ui-state-conventions (ADR-039)", () => {
       );
       expect(falsePositives).toEqual([]);
     });
+
+    it("does NOT flag reducer dispatch-table entries (function values)", () => {
+      // The probe declares `fakeProjectionReducerTable` with two
+      // function-valued properties whose keys would otherwise match
+      // banned prefixes (`project_context_resolution_started`,
+      // `session_chat_recoverable_error`). The rule should skip them
+      // because the value is a function — these are dispatch tags, not
+      // data fields. See rule source for the scope-exclusion rationale.
+      const messages = lintProbe("c12-machine-name-prefix.probe.ts", {
+        ruleId: RULE,
+      });
+      const falsePositives = messages.filter(
+        (m) =>
+          m.ruleId === `ui-state-conventions/${RULE}` &&
+          (m.message.includes("'project_context_resolution_started'") ||
+            m.message.includes("'session_chat_recoverable_error'")),
+      );
+      expect(falsePositives).toEqual([]);
+    });
   });
 
   describe("LEAF-D — no-orchestrator-snapshot-reads", () => {

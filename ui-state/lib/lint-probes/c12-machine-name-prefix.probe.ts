@@ -42,7 +42,21 @@ interface FakeProjectionProbeUnrelated {
   chat_session_id: string | null;
 }
 
-export { fakeProjectionValueProbe };
+// PASSING — reducer dispatch-table entries. The key is a wire-event name
+// (the audit's recommended `project_context_*` / `session_chat_*` event
+// vocabulary per MR-F / MR-H); the value is the handler function. These
+// are dispatch tags, not data fields. The rule MUST NOT fire on either
+// of the two arrow-function entries below.
+const fakeProjectionReducerTable = {
+  project_context_resolution_started: (_state: unknown, _event: unknown) => ({
+    state: "resolving_initial_scope",
+  }),
+  session_chat_recoverable_error: function (_state: unknown, _event: unknown) {
+    return { state: "error_recoverable" };
+  },
+};
+
+export { fakeProjectionReducerTable, fakeProjectionValueProbe };
 export type {
   FakeProjectionProbePassing,
   FakeProjectionProbeUnrelated,

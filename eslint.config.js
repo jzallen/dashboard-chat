@@ -115,33 +115,42 @@ export default [
   // a deliberate violation; the plugin's test suite asserts the rule
   // fires on its probe (Earned Trust principle 12).
   //
-  // Initial severity is `warn` for all three because pre-existing
-  // violations are present and clean up across follow-up MRs:
-  //   - C7: MR-D removed `intent_session_id` and `intent_project_id` from
-  //     context (renamed to `pending_resume_session_id` /
-  //     `deeplink_session_id` / `deeplink_project_id`). The remaining
-  //     warnings are confined to the `open_deep_link` HTTP/event-payload
-  //     keys (`intent_project_id`, `intent_session_id`, `intent_resource_id`,
-  //     `intent_resource_type`) — those rename in the open_deep_link
+  // Severity rationale per rule:
+  //   - C4 (no-failure-sim-event-prefix-outside-allowlist): no current
+  //     violations in production code; kept at `warn` for consistency.
+  //     Safe to upgrade to `error` independently in a future follow-up.
+  //   - C7 (intent-prefix-deeplink-only): MR-D removed intent_session_id
+  //     and intent_project_id from machine context (renamed to
+  //     pending_resume_session_id / deeplink_session_id / deeplink_project_id).
+  //     Remaining warnings are on the `open_deep_link` HTTP / event-payload
+  //     keys (intent_project_id, intent_session_id, intent_resource_id,
+  //     intent_resource_type) — those rename in the open_deep_link
   //     event-payload follow-up. Severity flips to `error` once that
   //     follow-up lands.
-  //   - C12 violations (session_chat_project_id, session_chat_project_name)
-  //     were collapsed in MR-H into the shared `project: { id, name }`
-  //     field (audit §8 + §9 Q3). Severity stays at `warn` until the
-  //     rule's event-handler-key false-positive is fixed (TaskList #76).
-  // C4 has no current violations in production code; it remains `warn`
-  // here for consistency with the other two and is safe to upgrade to
-  // `error` independently in a follow-up.
+  //   - C12 (no-machine-name-prefix-on-projection-fields): the original
+  //     audit violations were collapsed in MR-H + the §9 Q3 follow-up.
+  //     The rule's reducer-dispatch-key false-positive was fixed (skip
+  //     `Property` nodes with function values — see rule source). With
+  //     zero remaining violations in production code, severity is now
+  //     `error` — regressions are caught at lint time.
   {
     files: ["ui-state/**/*.ts"],
-    ignores: ["**/*.test.ts"],
+    ignores: [
+      "**/*.test.ts",
+      // Lint-probe files contain deliberate violations the rules MUST flag —
+      // they're fixtures for the plugin's own test suite (which lints them
+      // in isolation via __tests__/rules.test.ts to assert coverage). The
+      // production lint pass skips them so the intentional violations
+      // don't surface as errors.
+      "ui-state/lib/lint-probes/**",
+    ],
     plugins: { "ui-state-conventions": uiStateConventions },
     rules: {
       "ui-state-conventions/no-failure-sim-event-prefix-outside-allowlist":
         "warn",
       "ui-state-conventions/intent-prefix-deeplink-only": "warn",
       "ui-state-conventions/no-machine-name-prefix-on-projection-fields":
-        "warn",
+        "error",
     },
   },
 
