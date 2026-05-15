@@ -89,11 +89,21 @@ export interface SessionChatMachineContext {
   // `session.active_dataset_id` (MR-2 read path); switching_dataset_context exit (MR-5):
   resource: { type: ResourceType | null; id: string | null };
 
-  // Deep-link intent payloads forwarded by project-context via the
-  // `project_ready` event payload (per DESIGN §3.4):
+  // Deep-link session intent forwarded by project-context via the
+  // `project_ready` event payload (per DESIGN §3.4). Survives the
+  // `loadSessionList` async-invoke boundary so the `loading_session_list`
+  // onDone branch can choose between `session_list_visible` and
+  // `resuming_session`; cleared by the resume actor's onDone.
+  //
+  // intent_resource_id / intent_resource_type were previously captured here
+  // but the session-chat machine never read them after capture (the MR-5+
+  // dataset-switching events carry the resource id/type directly in their
+  // payload — see SessionChatEvent's `dataset_resolved_by_agent` and
+  // `dataset_picked_directly` variants). Per app-arch §3.4 they remain on
+  // project-context's context where they originate. The session-chat input/
+  // event surface still accepts them (forward-compat) but they are no
+  // longer materialized into context.
   intent_session_id: string | null;
-  intent_resource_id: string | null;
-  intent_resource_type: ResourceType | null;
 
   // Cross-state plumbing:
   underlying_cause_tag: SessionChatCauseTag | null;
@@ -277,8 +287,6 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       transcript: [],
       resource: { type: null, id: null },
       intent_session_id: input.intent_session_id ?? null,
-      intent_resource_id: input.intent_resource_id ?? null,
-      intent_resource_type: input.intent_resource_type ?? null,
       underlying_cause_tag: null,
       last_live_state: null,
       retries: 0,
@@ -298,10 +306,6 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                 event.correlation_id ?? context.correlation_id,
               intent_session_id: ({ event, context }) =>
                 event.intent_session_id ?? context.intent_session_id,
-              intent_resource_id: ({ event, context }) =>
-                event.intent_resource_id ?? context.intent_resource_id,
-              intent_resource_type: ({ event, context }) =>
-                event.intent_resource_type ?? context.intent_resource_type,
             }),
           },
         },
@@ -326,10 +330,6 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               session_list: () => [],
               intent_session_id: ({ event, context }) =>
                 event.intent_session_id ?? context.intent_session_id,
-              intent_resource_id: ({ event, context }) =>
-                event.intent_resource_id ?? context.intent_resource_id,
-              intent_resource_type: ({ event, context }) =>
-                event.intent_resource_type ?? context.intent_resource_type,
             }),
           },
         },
@@ -409,10 +409,6 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                 session_list: () => [],
                 intent_session_id: ({ event, context }) =>
                   event.intent_session_id ?? context.intent_session_id,
-                intent_resource_id: ({ event, context }) =>
-                  event.intent_resource_id ?? context.intent_resource_id,
-                intent_resource_type: ({ event, context }) =>
-                  event.intent_resource_type ?? context.intent_resource_type,
               }),
             },
             // Same project_id — idempotent no-op (the existing actor ignores

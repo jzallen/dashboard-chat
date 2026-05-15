@@ -185,8 +185,6 @@ interface SessionChatSnapshotContext {
   }>;
   resource?: { type: ResourceType | null; id: string | null };
   intent_session_id?: string | null;
-  intent_resource_id?: string | null;
-  intent_resource_type?: ResourceType | null;
   underlying_cause_tag?: string | null;
   /** US-206 composer-state preservation context field; read by the
    *  error_recoverable emission so the FlowEvent log carries the

@@ -1,12 +1,13 @@
 # ADR-028: XState v5 with the Actor Model as the UI-State Engine
 
-**Status:** Accepted (ratified 2026-05-11)
+**Status:** Accepted (ratified 2026-05-11; amended 2026-05-15 — see "Amendment 2026-05-15" below)
 **Date:** 2026-05-11
 **Originating wave:** DESIGN — `user-flow-state-machines`
 **Companion artifacts:**
 - DISCUSS handoff: `docs/feature/user-flow-state-machines/discuss/handoff-design.md` (OQ-2 deferred)
 - DESIGN application-architecture: `docs/feature/user-flow-state-machines/design/application-architecture.md`
-- Sibling ADRs: ADR-027 (ui-state tier + framework), ADR-029 (`active_scope` propagation contract)
+- Sibling ADRs: ADR-027 (ui-state tier + framework), ADR-029 (`active_scope` propagation contract), ADR-030 (orchestrator topology — amended in lockstep 2026-05-15)
+- Divergence artifact that motivated this amendment: `docs/discussion/session-chat-context-architecture/directions.md` (Direction A + Direction F convergence)
 
 ## Context
 

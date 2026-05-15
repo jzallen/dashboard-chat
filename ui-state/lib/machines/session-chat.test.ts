@@ -85,8 +85,12 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
     expect(ctx.session_list).toEqual([]);
     expect(ctx.session_id).toBeNull();
     expect(ctx.intent_session_id).toBeNull();
-    expect(ctx.intent_resource_id).toBeNull();
-    expect(ctx.intent_resource_type).toBeNull();
+    // intent_resource_id / intent_resource_type previously asserted here.
+    // Removed in the L3 SRP refactor — see
+    // docs/refactoring/session-chat-context-srp/refactoring-log.md.
+    // Those fields were captured in context but never read by the machine;
+    // the dataset-switching events (MR-5) carry resource id/type directly
+    // in their event payload, so context capture was pure scope leak.
   });
 
   it("S2: project_ready event populates org_id, project_id, project_name", async () => {
