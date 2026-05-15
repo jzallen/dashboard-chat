@@ -47,6 +47,7 @@ class J002Driver:
     ui_state_url: str
     agent_url: str
     repo_root: Path
+    _cached_dev_jwt: str | None = field(default=None, repr=False)
 
     # ───────────────────────────── HTTP probes ─────────────────────────────
 
@@ -177,7 +178,13 @@ class J002Driver:
         body: dict[str, Any],
         base: str | None = None,
     ) -> HTTPProbe:
-        """POST /chat to the agent — via reverse-proxy by default per DWD-3 / IC-J002-7.
+        """POST /chat to the agent. Defaults to `agent_url` because the
+        reverse-proxy's nginx config does not currently route `/chat` to
+        the agent — `/api/*` goes to auth-proxy, `/worker/*` is stripped
+        and forwarded to agent, but `/chat` falls through to web-ssr's
+        RRv7 404 page (upstream-issues.md O-MR4-06). Callers can override
+        with `base=` to drive via the reverse-proxy once the nginx rule
+        lands.
 
         The agent's middleware reads `X-Active-Scope` exclusively (post-sunset);
         during the migration window, body's `project_id` is the fallback per DWD-3.
@@ -187,7 +194,7 @@ class J002Driver:
             headers["X-Active-Scope"] = json.dumps(active_scope)
         return self.post(
             "/chat",
-            base=base,
+            base=base or self.agent_url,
             bearer=bearer,
             extra_headers=headers,
             json_body=body,
@@ -275,6 +282,71 @@ class J002Driver:
         loader → auth-proxy → agent pipeline.
         """
         return f"{prefix}-probe-{secrets.token_hex(8)}"
+
+    # ───────────────────────────── Dev JWT mint ─────────────────────────────
+
+    def mint_dev_jwt(self) -> str:
+        """Return a JWT the agent's `authMiddleware` accepts.
+
+        The agent's middleware verifies bearer tokens as RS256 JWTs against
+        backend's JWKS — kid `dev-key-1`, audience `dev-client`, issuer
+        `http://localhost:8000`. The static `dev-token-static` is not a JWT
+        and the agent rejects it with 401. Tests posting to `/chat` (or the
+        agent's `/debug/*` probes) need a real backend-signed JWT — this
+        helper mints one.
+
+        Flow: POST `/api/auth/callback` to auth-proxy. The path is in
+        auth-proxy's PUBLIC_PATHS so no bearer is required; auth-proxy
+        proxies to backend's `/api/auth/callback`, which in `AUTH_MODE=dev`
+        invokes `DevAuthProvider.handle_callback` to mint a JWT for
+        `DEV_USER` (`dev-user-001` / `dev-org-001`) regardless of the auth
+        code value. The returned JWT is signed by backend's `dev-key-1` and
+        matches the agent's JWKS lookup byte-for-byte.
+
+        Note on the M2M alternative: auth-proxy's `/api/auth/token`
+        (OAuth2 client_credentials) mints JWTs signed by auth-proxy's own
+        keypair (kid `auth-proxy:m2m:1`). Those tokens authenticate calls
+        through the auth-proxy ingress (where auth-proxy's verifyToken
+        dispatcher recognises the M2M kid) but the agent never sees the
+        auth-proxy keypair — the M2M path is the right shape for partners
+        calling `/api/*` routes, not direct `/chat` calls. The
+        `/api/auth/callback` path matches the FE chat flow's actual
+        end-to-end shape: backend mints, agent verifies.
+
+        Cached per driver-instance — the JWT TTL is 300s in dev and
+        re-minting on every assertion is wasteful. Tests that need a fresh
+        JWT can reset `self._cached_dev_jwt = None` and call again; nothing
+        in MR-4-verify scope needs that.
+
+        Raises `RuntimeError` with a hint when the auth-proxy is unreachable
+        (the most common operational failure).
+        """
+        if self._cached_dev_jwt is not None:
+            return self._cached_dev_jwt
+        url = f"{self.auth_proxy_url.rstrip('/')}/api/auth/callback"
+        try:
+            with httpx.Client(timeout=10.0, follow_redirects=False) as client:
+                response = client.post(url, json={"code": "dev-auth-code"})
+        except httpx.RequestError as e:
+            raise RuntimeError(
+                f"mint_dev_jwt: cannot reach auth-proxy at {url} "
+                f"({type(e).__name__}: {e}). Bring the compose stack up "
+                f"with `docker compose up -d` from the repo root."
+            ) from e
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"mint_dev_jwt: auth-proxy returned {response.status_code} "
+                f"from POST {url}: {response.text[:300]}. Verify AUTH_MODE=dev "
+                f"on the backend and that the auth-proxy is proxying /api/*."
+            )
+        token = response.json().get("token")
+        if not isinstance(token, str) or not token:
+            raise RuntimeError(
+                f"mint_dev_jwt: auth-proxy returned 200 but no token field: "
+                f"{response.text[:300]}"
+            )
+        self._cached_dev_jwt = token
+        return token
 
     # ───────────────────────────── Convenience predicates ─────────────────────────────
 
