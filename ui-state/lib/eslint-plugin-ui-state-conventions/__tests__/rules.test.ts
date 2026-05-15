@@ -163,4 +163,45 @@ describe("eslint-plugin-ui-state-conventions (ADR-039)", () => {
       expect(falsePositives).toEqual([]);
     });
   });
+
+  describe("LEAF-D — no-orchestrator-snapshot-reads", () => {
+    const RULE = "no-orchestrator-snapshot-reads";
+    const PROBE = "leaf-d-no-orchestrator-snapshot-reads.probe.ts";
+
+    it("flags snapshot.context member reads", () => {
+      const messages = lintProbe(PROBE, { ruleId: RULE });
+      const violations = messages.filter(
+        (m) =>
+          m.ruleId === `ui-state-conventions/${RULE}` &&
+          m.messageId === "snapshotMemberRead",
+      );
+      // Three expected member-access violations:
+      //   readSnapshotMember         (snapshot.context.project_id)
+      //   readSnapshotBracket        (snapshot["context"].project_id)
+      //   readSnapshotDestructure    (const { project_id } = snapshot.context)
+      expect(violations.length).toBe(3);
+    });
+
+    it("flags snapshot.getContext() method calls", () => {
+      const messages = lintProbe(PROBE, { ruleId: RULE });
+      const violations = messages.filter(
+        (m) =>
+          m.ruleId === `ui-state-conventions/${RULE}` &&
+          m.messageId === "snapshotMethodRead",
+      );
+      // One method-call violation: readSnapshotMethod.
+      expect(violations.length).toBe(1);
+    });
+
+    it("does NOT flag projection.context, ctx alias, or event.output", () => {
+      const messages = lintProbe(PROBE, { ruleId: RULE });
+      const ruleHits = messages.filter(
+        (m) => m.ruleId === `ui-state-conventions/${RULE}`,
+      );
+      // 3 member + 1 method = 4 total. Anything beyond that is a false
+      // positive on the passing fixtures (projection.context, ctx alias,
+      // event.output).
+      expect(ruleHits.length).toBe(4);
+    });
+  });
 });

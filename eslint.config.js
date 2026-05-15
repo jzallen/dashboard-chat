@@ -144,6 +144,29 @@ export default [
     },
   },
 
+  // ── ADR-030 LEAF-D — orchestrator MUST read state from the projection ─
+  // FlowEvent-emission paths in `ui-state/lib/orchestrator.ts` MUST NOT
+  // read from `snapshot.context.*` or `snapshot.getContext()`. The
+  // projection (rebuilt from the FlowEvent log) is the single source of
+  // truth for read state per ADR-030 §"Decision outcome"; the machine
+  // snapshot is internal handler state per ADR-028 §"Amendment 2026-05-15".
+  //
+  // LEAF-A (5826660) and LEAF-B (5f4e635) cleared every pre-existing
+  // snapshot read from orchestrator.ts. This rule activates on a clean
+  // tree at severity `error` to prevent regression.
+  //
+  // The rule is scoped to orchestrator.ts (the FlowEvent emitter) — other
+  // files in ui-state legitimately read from snapshots (machine action
+  // handlers, etc.). If we ever extend the prohibition to additional
+  // emission paths, widen this `files:` glob.
+  {
+    files: ["ui-state/lib/orchestrator.ts"],
+    plugins: { "ui-state-conventions": uiStateConventions },
+    rules: {
+      "ui-state-conventions/no-orchestrator-snapshot-reads": "error",
+    },
+  },
+
   // ── DWD-3 single-writer guard for X-Active-Scope ────────────────────
   // The X-Active-Scope header is the agent's authoritative scope contract
   // (ADR-029 §4 + DWD-3). It MUST be set exclusively by

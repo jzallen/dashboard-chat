@@ -19,6 +19,7 @@
 import noFailureSimEventPrefixOutsideAllowlist from "./rules/no-failure-sim-event-prefix-outside-allowlist.js";
 import intentPrefixDeeplinkOnly from "./rules/intent-prefix-deeplink-only.js";
 import noMachineNamePrefixOnProjectionFields from "./rules/no-machine-name-prefix-on-projection-fields.js";
+import noOrchestratorSnapshotReads from "./rules/no-orchestrator-snapshot-reads.js";
 
 const plugin = {
   meta: {
@@ -31,6 +32,7 @@ const plugin = {
     "intent-prefix-deeplink-only": intentPrefixDeeplinkOnly,
     "no-machine-name-prefix-on-projection-fields":
       noMachineNamePrefixOnProjectionFields,
+    "no-orchestrator-snapshot-reads": noOrchestratorSnapshotReads,
   },
 };
 
