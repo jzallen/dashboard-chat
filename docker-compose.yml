@@ -142,7 +142,13 @@ services:
   # Built locally from ./ui-state/Dockerfile — no Bazel image yet for this
   # new tier; the Bazel-built `:bazel` tag pattern will land in a follow-up.
   ui-state:
-    build: ./ui-state
+    # Build context is the repo root so the Dockerfile can COPY the
+    # `@dashboard-chat/shared-failure-simulation` workspace package — it is
+    # imported by ui-state/index.ts but not listed in ui-state/package.json
+    # (workspace symlink in local dev; explicit copy in isolated builds).
+    build:
+      context: .
+      dockerfile: ui-state/Dockerfile
     container_name: dashboard-ui-state
     # Default-profile service post-MR-0 — `ui-state` is part of the application's
     # baseline runtime topology (reachable via auth-proxy at /ui-state/* per

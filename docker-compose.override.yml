@@ -14,7 +14,50 @@ services:
 
   # Rebuild backend from source so DELIVER step 01-02 ships
   # POST /api/auth/reissue without waiting for the Bazel image refresh.
+  # Host-side bind mount for /data so the appuser inside the rebuilt image
+  # can create the SQLite file — the named-volume default initialises as
+  # root-owned and the Dockerfile's user-switch loses write access.
   api:
     build: ./backend
     image: dashboard-chat/api:ui-state-dev
     pull_policy: build
+    volumes:
+      - ./backend/data:/data
+
+  # Enable the failure-simulation gate on the agent so the
+  # `/debug/request-log` + `/debug/last-request-scope` routes register at
+  # startup. Per ADR-035 the gate fires only when `ENVIRONMENT ∈ {dev, ci}`
+  # AND `FAILURE_SIMULATION_ENABLED=true`; the dev compose stack hosts the
+  # MR-4 acceptance suite (US-207/US-208 + IC-J002-4/7) which reads from
+  # these endpoints. Production deployments omit this override so the
+  # routes 404 by absence (CA-7 in the DISTILL contract). The legacy
+  # `NWAVE_HARNESS_KNOBS` alias is still honored by readFlag for backwards
+  # compatibility but `FAILURE_SIMULATION_ENABLED` is the canonical name.
+  # No image rebuild here — the agent ships from `dashboard-chat/agent:bazel`
+  # and these env vars are evaluated at container start.
+  agent:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-dev}
+      FAILURE_SIMULATION_ENABLED: "true"
+      # Legacy alias still consumed by `agent/lib/chat/requestLog.ts`'s
+      # `InProcessRequestLog.enabled()` directly (it has not migrated to the
+      # canonical `FAILURE_SIMULATION_ENABLED` name yet — that is queued for
+      # an MR-5 follow-up per shared/failure-simulation MR-2 bridge plan).
+      # Without this the agent's `requestLog.append()` is a no-op and the
+      # US-207/US-208 harness scenarios that read from `/debug/request-log`
+      # see zero entries even though chat turns succeeded.
+      NWAVE_HARNESS_KNOBS: "true"
+      # Migration-window flag per DWD-3: enable the body.project_id fallback
+      # path so US-208's @degraded scenario exercises the legacy-client
+      # surface. The compile-time sunset (SCOPE_HEADER_FALLBACK_SUNSET
+      # 2026-06-25) forces removal of the flag before the window closes.
+      SCOPE_HEADER_FALLBACK_ENABLED: "true"
+      # The agent's authMiddleware verifies bearer tokens against backend's
+      # dev JWKS. Without this override the lazy JWKS resolver targets
+      # `http://localhost:8000/.well-known/jwks.json` (the agent/lib/auth.ts
+      # default for `BACKEND_URL`), which is unreachable from inside the
+      # container — every JWT verification then 401s. Pointing at the
+      # compose-internal `api:8000` is the same wiring the auth-proxy
+      # service uses (compare `auth-proxy.environment.BACKEND_URL` in the
+      # base file).
+      JWKS_URL: http://api:8000/.well-known/jwks.json
