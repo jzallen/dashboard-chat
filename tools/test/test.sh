@@ -15,19 +15,30 @@
 #                   pytest -x --tb=short [--ignore=tests/integration]
 #                   (lint runs first; tests skip if lint fails)
 #   --ui            cd frontend && npx vitest run
+#   --ui-state      cd ui-state && npx vitest run
 #   --agent         npm run test:agent
-#   --all           shorthand for --backend --ui --agent
+#   --all           shorthand for --backend --ui --ui-state --agent
 #   --integration   include backend tests/integration/ (default: excluded)
 #   --acceptance=X  cd tests/acceptance/X && uv run --no-project pytest
-#   --auto          inspect the diff against origin/main; if every changed
-#                   file matches the docs-only allowlist, exit 0 without
-#                   running tests; otherwise fall through to --backend.
-#                   Used by the merge queue as its test_command so that
+#   --auto          inspect the diff against origin/main and dispatch the
+#                   relevant test suites by changed-file subtree:
+#                     docs-only diff             → skip (exit 0)
+#                     touches backend/           → --backend
+#                     touches ui-state/          → --ui-state
+#                     touches frontend/          → --ui
+#                     touches agent/             → --agent
+#                     touches shared/ or other   → --backend (safe default)
+#                   Multiple subtrees compose: a diff touching both
+#                   `backend/` and `ui-state/` runs both suites. Used by
+#                   the merge queue as its test_command so that
 #                   docs-only MRs (finalize, research, ADRs, README, skills)
-#                   land in seconds while code changes still gate on backend.
-#                   Allowlist: docs/**, .claude/skills/**, .claude/settings.json,
-#                   *.md (any path), README*, CHANGELOG*. Any file outside the
-#                   allowlist triggers full backend gate.
+#                   land in seconds while code changes gate on the
+#                   relevant test suite. Pre-2026-05-15 only ran --backend
+#                   on any non-docs diff; this left ui-state JS regressions
+#                   (LEAF-B 5f4e635) and analogous gaps in other JS trees
+#                   uncaught. Docs allowlist: docs/**, .claude/skills/**,
+#                   .claude/settings.json, *.md (any path), README*,
+#                   CHANGELOG*.
 #
 # Notes:
 #   • When invoked via `bazel run`, BUILD_WORKSPACE_DIRECTORY is set; we cd
@@ -49,6 +60,7 @@ cd "$ROOT"
 
 backend=0
 ui=0
+ui_state=0
 agent=0
 integration=0
 acceptance=""
@@ -56,51 +68,93 @@ auto=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --all)            backend=1; ui=1; agent=1 ;;
+    --all)            backend=1; ui=1; ui_state=1; agent=1 ;;
     --backend)        backend=1 ;;
     --ui)             ui=1 ;;
+    --ui-state)       ui_state=1 ;;
     --agent)          agent=1 ;;
     --auto)           auto=1 ;;
     --integration)    integration=1 ;;
     --acceptance=*)   acceptance="${1#*=}" ;;
-    -h|--help)        sed -n '1,45p' "$0"; exit 0 ;;
+    -h|--help)        sed -n '1,55p' "$0"; exit 0 ;;
     *) echo "tools/test: unknown flag: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
 if [ $auto -eq 1 ]; then
-  # Content-aware refinery gate. Inspect the diff against origin/main; if
-  # every changed file matches the docs-only allowlist, exit 0 without
-  # running tests. Otherwise fall through to --backend as the safe default.
+  # Content-aware refinery gate. Inspect the diff against origin/main and
+  # dispatch the relevant test suites by changed-file subtree. Docs-only
+  # diffs exit 0 immediately. Any subtree match adds its selector; multiple
+  # subtrees compose. A diff outside every recognized subtree falls
+  # through to --backend as the safe default.
   changed=$(git diff --name-only origin/main...HEAD 2>/dev/null || true)
   if [ -z "$changed" ]; then
     echo "tools/test --auto: no diff against origin/main detected — running --backend as safe default"
     backend=1
   else
-    docs_only=1
+    auto_docs_only=1
+    auto_unmatched=0
     while IFS= read -r f; do
       [ -z "$f" ] && continue
       case "$f" in
-        docs/*|.claude/skills/*|.claude/settings.json|README*|CHANGELOG*|*.md) ;;
-        *) docs_only=0; break ;;
+        docs/*|.claude/skills/*|.claude/settings.json|README*|CHANGELOG*|*.md)
+          # docs allowlist — does not count as non-docs
+          ;;
+        backend/*)
+          auto_docs_only=0
+          backend=1
+          ;;
+        ui-state/*)
+          auto_docs_only=0
+          ui_state=1
+          ;;
+        frontend/*)
+          auto_docs_only=0
+          ui=1
+          ;;
+        agent/*)
+          auto_docs_only=0
+          agent=1
+          ;;
+        *)
+          # File outside docs allowlist AND outside the four recognized
+          # subtrees (e.g. shared/, worker/, root config files, top-level
+          # build files). Default to backend as the safe choice.
+          auto_docs_only=0
+          auto_unmatched=1
+          ;;
       esac
     done <<EOF
 $changed
 EOF
-    if [ $docs_only -eq 1 ]; then
+    if [ $auto_docs_only -eq 1 ]; then
       echo "tools/test --auto: docs-only diff — skipping test gate"
       echo "  changed files:"
       echo "$changed" | sed 's/^/    /'
       exit 0
     fi
-    echo "tools/test --auto: code changes detected — running --backend"
-    backend=1
+    # If no recognized subtree was matched but there are non-docs changes
+    # (e.g. shared/, root config files), run backend as the safe default.
+    if [ $backend -eq 0 ] && [ $ui_state -eq 0 ] && [ $ui -eq 0 ] && [ $agent -eq 0 ]; then
+      backend=1
+    fi
+    # If an unmatched-subtree file appeared alongside subtree-matched
+    # files, also pull in backend as a belt-and-braces default for the
+    # unmatched paths.
+    if [ $auto_unmatched -eq 1 ] && [ $backend -eq 0 ]; then
+      backend=1
+    fi
+    echo "tools/test --auto: code changes detected — dispatching:"
+    [ $backend -eq 1 ]  && echo "  + --backend"
+    [ $ui_state -eq 1 ] && echo "  + --ui-state"
+    [ $ui -eq 1 ]       && echo "  + --ui"
+    [ $agent -eq 1 ]    && echo "  + --agent"
   fi
 fi
 
-if [ $backend -eq 0 ] && [ $ui -eq 0 ] && [ $agent -eq 0 ] && [ -z "$acceptance" ]; then
-  echo "tools/test: specify at least one selector (--backend|--ui|--agent|--all|--auto|--acceptance=<feature>)" >&2
+if [ $backend -eq 0 ] && [ $ui -eq 0 ] && [ $ui_state -eq 0 ] && [ $agent -eq 0 ] && [ -z "$acceptance" ]; then
+  echo "tools/test: specify at least one selector (--backend|--ui|--ui-state|--agent|--all|--auto|--acceptance=<feature>)" >&2
   exit 2
 fi
 
@@ -131,6 +185,11 @@ if [ $backend -eq 1 ]; then
     fi
     ( cd backend && uv run pytest -x --tb=short $ignore ) || rc=$?
   fi
+fi
+
+if [ $ui_state -eq 1 ] && [ $rc -eq 0 ]; then
+  echo "▶ ui-state"
+  ( cd ui-state && npx vitest run ) || rc=$?
 fi
 
 if [ $ui -eq 1 ] && [ $rc -eq 0 ]; then
