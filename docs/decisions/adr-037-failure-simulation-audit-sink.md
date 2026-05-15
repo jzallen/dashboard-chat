@@ -3,7 +3,7 @@
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
 **Originating wave:** DESIGN — `failure-simulation-consolidation`
-**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q3
+**Resolves:** `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` Q3
 **Companion ADRs:** ADR-035 (gate composition), ADR-036 (module location), ADR-038 (naming + phase plan)
 
 ## Context
@@ -397,8 +397,8 @@ None. Q3 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q3
-- `docs/feature/failure-simulation-consolidation/discuss/stories.md` —
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` — Q3
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/stories.md` —
   US-CONSOL-3
 - OpenTelemetry semantic conventions for events:
   <https://opentelemetry.io/docs/specs/semconv/general/events/>

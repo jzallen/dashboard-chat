@@ -3,7 +3,7 @@
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
 **Originating wave:** DESIGN — `failure-simulation-consolidation`
-**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q1
+**Resolves:** `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` Q1
 **Companion ADRs:** ADR-036 (module location), ADR-037 (audit sink), ADR-038 (naming + phase plan)
 
 ## Context
@@ -274,8 +274,8 @@ None. Q1 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/failure-simulation-consolidation/discuss/stories.md` — US-CONSOL-2
-- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q1
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/stories.md` — US-CONSOL-2
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` — Q1
 - ADR-029 (`X-Active-Scope` propagation contract) — confirms test-only knob
   surface must remain visually distinct from production headers; the gate
   decision here is independent of that contract.

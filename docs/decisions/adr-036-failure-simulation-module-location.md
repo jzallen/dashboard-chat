@@ -3,7 +3,7 @@
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
 **Originating wave:** DESIGN — `failure-simulation-consolidation`
-**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q2
+**Resolves:** `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` Q2
 **Companion ADRs:** ADR-035 (gate composition), ADR-037 (audit sink), ADR-038 (naming + phase plan)
 
 ## Context
@@ -313,7 +313,7 @@ None. Q2 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q2
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` — Q2
 - ADR-033 (source-tree topology separation) — primary constraint on
   directory naming
 - ADR-028 (XState v5 actor model) — machine isolation constraint preserved

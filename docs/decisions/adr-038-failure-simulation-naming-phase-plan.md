@@ -3,7 +3,7 @@
 **Status:** Accepted (2026-05-14)
 **Date:** 2026-05-14
 **Originating wave:** DESIGN — `failure-simulation-consolidation`
-**Resolves:** `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` Q4
+**Resolves:** `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` Q4
 **Companion ADRs:** ADR-035 (gate composition), ADR-036 (module location), ADR-037 (audit sink)
 
 ## Context
@@ -406,10 +406,10 @@ None. Q4 from `open-questions.md` is resolved by this ADR.
 
 ## References
 
-- `docs/feature/failure-simulation-consolidation/discuss/open-questions.md` — Q4
-- `docs/feature/failure-simulation-consolidation/discuss/stories.md` —
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/open-questions.md` — Q4
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/stories.md` —
   US-CONSOL-4, US-CONSOL-5
-- `docs/feature/failure-simulation-consolidation/discuss/acceptance-criteria.md` —
+- `docs/evolution/2026-05-15-failure-simulation-consolidation/discuss/acceptance-criteria.md` —
   the 27 BDD scenarios (including the 6 US-CONSOL-4 scenarios) that the
   phase plan must keep green
 - Memory `feedback_no_harness_no_nwave_in_product_names.md` — naming
