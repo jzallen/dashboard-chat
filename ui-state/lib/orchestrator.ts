@@ -786,6 +786,13 @@ export class FlowOrchestrator {
       return;
     }
     if (stateValue === "session_list_loaded") {
+      // ADR-030 LEAF-A: projection is the SSOT for read state. The
+      // session-list fields come from the live projection (built from the
+      // event log) rather than from machine snapshot context.
+      const projection = buildProjection(
+        flow_id,
+        await this.deps.eventLog.read(flow_id),
+      );
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_list_load_started",
@@ -796,9 +803,9 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_list_loaded",
         payload: {
-          items: ctx.session_list ?? [],
-          next_cursor: ctx.session_list_next_cursor ?? null,
-          has_more: ctx.session_list_has_more ?? false,
+          items: projection.context.session_list ?? [],
+          next_cursor: projection.context.session_list_next_cursor ?? null,
+          has_more: projection.context.session_list_has_more ?? false,
         },
         correlation_id,
       });
@@ -807,7 +814,7 @@ export class FlowOrchestrator {
         type: "session_list_displayed",
         payload: {
           project_id: ctx.project?.id ?? null,
-          session_count: (ctx.session_list ?? []).length,
+          session_count: (projection.context.session_list ?? []).length,
         },
         correlation_id,
       });
