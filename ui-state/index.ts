@@ -35,6 +35,7 @@ import {
   createSessionEagerlyActor,
   loadSessionListActor,
   resumeSessionActor,
+  switchDatasetContextActor,
 } from "./lib/machines/session-chat/index.ts";
 import { FlowOrchestrator } from "./lib/orchestrator.ts";
 import { selectFlowEventLog } from "./lib/persistence/redis.ts";
@@ -122,7 +123,7 @@ const orchestrator = new FlowOrchestrator({
   // Presence of this object (vs `undefined`) is the orchestrator's signal
   // to fire the `project_ready` broadcast hook on project-context
   // `project_selected`. MR-3 adds createSessionEagerly; MR-5 adds
-  // switchDatasetContext.
+  // switchDatasetContext (US-209 — dataset context switching).
   sessionChatMachineDeps: {
     loadSessionList: loadSessionListActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
     resumeSession: resumeSessionActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
@@ -130,6 +131,11 @@ const orchestrator = new FlowOrchestrator({
       BACKEND_URL,
       DEFAULT_PRINCIPAL_HEADERS,
       forceCreateSessionFailureFlag,
+    ),
+    // MR-5 — US-209 dataset context switching.
+    switchDatasetContext: switchDatasetContextActor(
+      BACKEND_URL,
+      DEFAULT_PRINCIPAL_HEADERS,
     ),
   },
   createOrgFn: createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),

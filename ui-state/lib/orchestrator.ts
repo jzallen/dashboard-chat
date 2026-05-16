@@ -36,6 +36,7 @@ import {
 import {
   harvestSettledLoginState,
   harvestSettledProjectContextState,
+  harvestSettledSessionChatState,
 } from "./orchestrator-harvester.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
@@ -594,12 +595,40 @@ export class FlowOrchestrator {
       intent_resource_type: ResourceType | null;
     };
 
+    // D-MR5-01 — the begin/`resolveInitialScope` settle has the SAME
+    // D-MR4-06 problem #2 as the switch path: the resolved `project` (and
+    // the cross_tenant / project_not_found / no_projects cause) lands on
+    // the machine context AFTER the snapshot flips and BEFORE the first
+    // FlowEvent captures it, so the projection read above sees
+    // `project: { id: null }`. D-MR4-06 fixed this for
+    // `switching_project_intent` only and explicitly deferred the begin
+    // counterpart to "LEAF-C+". Without it here `project_selected` is
+    // emitted with a null project, `active_scope.project_id` stays null,
+    // and `maybeFireProjectReady` short-circuits (`!projectId`) so
+    // session-chat NEVER spawns — which blocks the entire US-205 resume /
+    // US-209 dataset-switch chain (session-chat can't reach
+    // session_active). Harvest from the designated snapshot-read boundary
+    // (the project-context counterpart already added by D-MR4-06), exactly
+    // as the switch-settle path does, so the begin emission carries the
+    // real resolved project.
+    const beginHarvest = harvestSettledProjectContextState(actor);
+    const settledProject = beginHarvest.project.id
+      ? beginHarvest.project
+      : ctx.project;
+    const settledCause =
+      beginHarvest.underlying_cause_tag ?? ctx.underlying_cause_tag;
+    // D-MR5-01: org_id has the same first-write-null problem as project.
+    // Without harvesting it, `maybeFireProjectReady` short-circuits on
+    // `!orgId` and session-chat never spawns.
+    const settledOrgId =
+      beginHarvest.org_id ?? ctx.org.id ?? input.org_id ?? "";
+
     // Initial event — marks the J-002 actor as started for projection consumers.
     await this.deps.eventLog.append(flow_id, {
       ts: new Date().toISOString(),
       type: "project_context_resolution_started",
       payload: {
-        org_id: ctx.org.id ?? input.org_id ?? "",
+        org_id: settledOrgId,
         user: {
           first_name: ctx.user.first_name ?? input.user_first_name ?? null,
         },
@@ -632,7 +661,7 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "no_projects_displayed",
         payload: {
-          org_id: ctx.org.id ?? input.org_id ?? "",
+          org_id: settledOrgId,
           user: {
             first_name: ctx.user.first_name ?? input.user_first_name ?? null,
           },
@@ -644,8 +673,8 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "project_selected",
         payload: {
-          org_id: ctx.org.id ?? input.org_id ?? "",
-          project: ctx.project,
+          org_id: settledOrgId,
+          project: settledProject,
           most_recent_session_per_project: ctx.most_recent_session_per_project,
         },
         correlation_id: input.correlation_id,
@@ -663,8 +692,8 @@ export class FlowOrchestrator {
         input.principal_id,
         input.correlation_id,
         {
-          org_id: ctx.org.id ?? undefined,
-          project: ctx.project,
+          org_id: settledOrgId || undefined,
+          project: settledProject,
           deeplink_session_id: ctx.deeplink_session_id,
           intent_resource_id: ctx.intent_resource_id,
           intent_resource_type: ctx.intent_resource_type,
@@ -675,8 +704,8 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "scope_mismatch_displayed",
         payload: {
-          org_id: ctx.org.id ?? input.org_id ?? "",
-          underlying_cause_tag: ctx.underlying_cause_tag ?? "cross_tenant",
+          org_id: settledOrgId,
+          underlying_cause_tag: settledCause ?? "cross_tenant",
         },
         correlation_id: input.correlation_id,
       });
@@ -805,6 +834,27 @@ export class FlowOrchestrator {
      *  arrival (US-206 vs US-205) so the projection log records the right
      *  event-type. */
     priorState?: string,
+    /** D-MR5-01: the `resumeSession` actor's resolved `resource` (and the
+     *  `dataset_not_found` cause) lands on the machine context AFTER the
+     *  snapshot flips to `session_active` and BEFORE any FlowEvent
+     *  captures it — the SAME D-MR4-06 problem #2 LEAF-B introduced and
+     *  D-MR4-06 fixed only for the switch path. So `session_resumed`
+     *  emitted from the projection-of-log read below carries
+     *  resource=null / dataset_unavailable=false and US-205's resume
+     *  contract (and US-209's resume precondition) fails. Callers harvest
+     *  from the designated snapshot-read boundary and pass it here so the
+     *  `session_resumed` payload reflects the real resumed dataset. */
+    harvestedResume?: {
+      session_id: string | null;
+      transcript: Array<{
+        id: string;
+        role: string;
+        content: string;
+        ts: string;
+      }>;
+      resource: { type: string | null; id: string | null };
+      underlying_cause_tag: string | null;
+    } | null,
   ): Promise<void> {
     // ADR-030 LEAF-B: rebind ctx to the live projection's context built
     // from the flow event log. The projection is the only legal read
@@ -917,21 +967,31 @@ export class FlowOrchestrator {
         });
         return;
       }
+      // D-MR5-01: prefer the harvested settled context (the resume
+      // actor's resolved resource lands on ctx after the snapshot flips —
+      // the projection-of-log read here would see null). Falls back to
+      // the projection read when no harvest was supplied (spawn-path call
+      // sites that never resumed).
+      const resumedResource = harvestedResume?.resource ?? ctx.resource;
+      const resumedCause =
+        harvestedResume?.underlying_cause_tag ?? ctx.underlying_cause_tag;
+      const resumedSessionId = harvestedResume?.session_id ?? ctx.session_id;
+      const resumedTranscript =
+        harvestedResume?.transcript ?? ctx.transcript;
       // `dataset_unavailable` is TRUE only when the resume actor detected a
       // stored active_dataset_id that 404'd (graceful degradation per US-205
       // Example 3). A null active_dataset_id is the conversational-mode
       // default — NOT a degraded state. The machine signals the degraded
       // case by setting underlying_cause_tag = "dataset_not_found".
-      const datasetUnavailable =
-        ctx.underlying_cause_tag === "dataset_not_found";
+      const datasetUnavailable = resumedCause === "dataset_not_found";
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_resumed",
         payload: {
-          session_id: ctx.session_id,
-          transcript: ctx.transcript,
-          resource_type: ctx.resource.type,
-          resource_id: ctx.resource.id,
+          session_id: resumedSessionId,
+          transcript: resumedTranscript,
+          resource_type: resumedResource.type,
+          resource_id: resumedResource.id,
           dataset_unavailable: datasetUnavailable,
         },
         correlation_id,
@@ -1069,6 +1129,35 @@ export class FlowOrchestrator {
           org_id: preSettleCtx.org.id ?? "",
           deeplink_project_id:
             (input.payload.new_project_id as string | undefined) ?? null,
+        },
+        correlation_id: input.correlation_id,
+      });
+    }
+
+    // US-209 / MR-5 — `switching_dataset_context` is an invoke-driven
+    // transient state (the `switchDatasetContext` actor performs
+    // GET /api/datasets/:id + PATCH session.active_dataset_id). Mirrors the
+    // D-MR4-06 `switching_project_started` pre-settle emission: emit
+    // `switching_dataset_context_started` BEFORE awaiting the settle so an
+    // SSE consumer observes the (state=switching_dataset_context) tick.
+    // The post-settle block below then emits the terminal `dataset_attached`
+    // / `dataset_access_denied` once `switchDatasetContext` resolves —
+    // sourced from the harvested machine context (the resolved resource
+    // lands on ctx after the snapshot flips, the D-MR4-06 problem #2).
+    if (
+      input.machine === SESSION_CHAT_WIRE_NAME &&
+      (input.type === "dataset_resolved_by_agent" ||
+        input.type === "dataset_picked_directly") &&
+      (actor.getSnapshot().value as string) === "switching_dataset_context"
+    ) {
+      await this.deps.eventLog.append(input.flow_id, {
+        ts: new Date().toISOString(),
+        type: "switching_dataset_context_started",
+        payload: {
+          intended_resource_id:
+            (input.payload.resource_id as string | undefined) ?? null,
+          intended_resource_type:
+            (input.payload.resource_type as string | undefined) ?? "dataset",
         },
         correlation_id: input.correlation_id,
       });
@@ -1448,16 +1537,53 @@ export class FlowOrchestrator {
     // dispatched via this `send()`, emit the projection-shaping events to the
     // session-chat flow log.
     if (input.machine === SESSION_CHAT_WIRE_NAME) {
-      // Special-case: if the resumeSession resolved with session_not_found
-      // (silent return), the machine has settled in session_list_loaded.
-      // The default state-emission path covers that; no special event needed.
-      // For session_not_found the test expects underlying_cause_tag to NOT
-      // surface — we emit `session_resume_not_found` so the projection
-      // reducer can blank out pending_resume_session_id atomically.
-      if (
+      const isDatasetSwitch =
+        input.type === "dataset_resolved_by_agent" ||
+        input.type === "dataset_picked_directly";
+      // US-209 / MR-5 — the `switchDatasetContext` settle path. Mirrors the
+      // D-MR4-06 project-switch settle discipline: the resolved `resource`
+      // (or the `dataset_access_denied` cause) lands on the machine context
+      // AFTER the snapshot flips back to `session_active`, so a projection
+      // read here would see the prior-tick resource. Harvest from the
+      // designated snapshot-read boundary and emit the terminal
+      // `dataset_attached` / `dataset_access_denied` so the projection — the
+      // SSOT the acceptance probes read — reflects the new (or preserved)
+      // dataset. Keyed off `input.type` (the switch discriminator), exactly
+      // as the project-context block keys off `switching_project_intent`.
+      // A transient invoke failure settles in `error_recoverable`; that
+      // falls through to the generic emission path
+      // (`session_chat_recoverable_error`) below.
+      if (isDatasetSwitch && stateValue === "session_active") {
+        const harvest = harvestSettledSessionChatState(actor);
+        if (harvest.underlying_cause_tag === "dataset_access_denied") {
+          await this.deps.eventLog.append(input.flow_id, {
+            ts: new Date().toISOString(),
+            type: "dataset_access_denied",
+            payload: { underlying_cause_tag: "dataset_access_denied" },
+            correlation_id: input.correlation_id,
+          });
+        } else {
+          await this.deps.eventLog.append(input.flow_id, {
+            ts: new Date().toISOString(),
+            type: "dataset_attached",
+            payload: {
+              resource_type: harvest.resource.type,
+              resource_id: harvest.resource.id,
+            },
+            correlation_id: input.correlation_id,
+          });
+        }
+      } else if (
         input.type === "session_clicked" &&
         stateValue === "session_list_loaded"
       ) {
+        // Special-case: if the resumeSession resolved with
+        // session_not_found (silent return), the machine has settled in
+        // session_list_loaded. The default state-emission path covers
+        // that; for session_not_found the test expects
+        // underlying_cause_tag to NOT surface — we emit
+        // `session_resume_not_found` so the projection reducer can blank
+        // out pending_resume_session_id atomically.
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "session_resume_not_found",
@@ -1473,6 +1599,12 @@ export class FlowOrchestrator {
           // current event was dispatched. Used to distinguish eager-create
           // from resume on `session_active` arrival.
           prior,
+          // D-MR5-01: harvest the resumed resource / cause so
+          // `session_resumed` reflects the actor's settled context
+          // (resolved AFTER the snapshot flipped — the projection-of-log
+          // read would see null). Same boundary-discipline as the
+          // dataset-switch harvest above.
+          harvestSettledSessionChatState(actor),
         );
       }
     }
@@ -1738,8 +1870,12 @@ function waitForSettledState(
     // resolving_initial_scope, creating_project, switching_project (MR-4 —
     // the `switchProject` invoke; D-MR4-06: this was previously missing, so
     // `send()` did not await the switch and the projection never settled).
-    // J-002 session-chat: loading_session_list, resuming_session. A future
-    // MR adds switching_dataset_context.
+    // J-002 session-chat: loading_session_list, resuming_session,
+    // switching_dataset_context (MR-5 — the `switchDatasetContext` invoke;
+    // GET /api/datasets/:id + PATCH session.active_dataset_id. Mirrors the
+    // D-MR4-06 fix for switching_project: omitting it here would make
+    // `send()` NOT await the invoke, so the projection would stay stuck at
+    // switching_dataset_context and the resource_* update never settle).
     const TRANSIENT_STATES = new Set([
       "authenticating",
       "creating_org",
@@ -1749,6 +1885,7 @@ function waitForSettledState(
       "loading_session_list",
       "resuming_session",
       "creating_session",
+      "switching_dataset_context",
     ]);
     const snapshot = actor.getSnapshot();
     if (!TRANSIENT_STATES.has(snapshot.value as string)) {

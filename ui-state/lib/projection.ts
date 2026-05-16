@@ -795,6 +795,58 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       },
     };
   },
+
+  // ────────────── session-chat MR-5 (US-209) dataset switching ──────────
+  // Per app-arch §466 + DESIGN §2B the session-chat machine owns the
+  // `switching_dataset_context` state. The orchestrator emits these three
+  // events from the `switchDatasetContext` settle path (mirroring the
+  // D-MR4-06 switching_project emission discipline).
+
+  // The machine entered `switching_dataset_context` (the
+  // `switchDatasetContext` invoke is in flight). Unlike
+  // `switching_project_started`, this does NOT invalidate `resource` —
+  // IC-J002-5 requires EXACTLY ONE resource_* update, applied atomically
+  // on settle (`dataset_attached`). The prior dataset stays visible while
+  // the new pick is validated.
+  switching_dataset_context_started: (_state, context, _event) => ({
+    state: "switching_dataset_context",
+    context: { ...context },
+  }),
+
+  // Validated + persisted: retarget `context.resource` to the picked
+  // dataset (the single resource_* update — IC-J002-5). Clears any prior
+  // dataset_not_found / dataset_access_denied banner.
+  dataset_attached: (_state, context, event) => {
+    const payload = event.payload as {
+      resource_type?: ResourceType | null;
+      resource_id?: string | null;
+    };
+    return {
+      state: "session_active",
+      context: {
+        ...context,
+        resource: {
+          type: payload.resource_type ?? null,
+          id: payload.resource_id ?? null,
+        },
+        session_dataset_unavailable: false,
+        underlying_cause_tag: null,
+      },
+    };
+  },
+
+  // ScopeResolver invariant 4 rejection (US-209 Example 3/4): the prior
+  // `context.resource` is left UNCHANGED — the previously-attached dataset
+  // stays in scope; only the named cause surfaces for the FE gutter copy
+  // ("you don't have access to that dataset"). session.active_dataset_id
+  // was NOT written.
+  dataset_access_denied: (_state, context, _event) => ({
+    state: "session_active",
+    context: {
+      ...context,
+      underlying_cause_tag: "dataset_access_denied",
+    },
+  }),
 };
 
 /**

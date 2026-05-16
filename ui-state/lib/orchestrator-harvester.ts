@@ -84,15 +84,68 @@ export function harvestSettledLoginState(actor: AnyActorRef): {
  * the acceptance probes read — reflects the switched project.
  */
 export function harvestSettledProjectContextState(actor: AnyActorRef): {
+  org_id: string | null;
   project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
 } {
   const ctx = actor.getSnapshot().context as {
+    org_id: string | null;
     project: { id: string | null; name: string | null };
     underlying_cause_tag: string | null;
   };
   return {
+    // D-MR5-01: the begin path needs `org_id` too — it lands on the
+    // project-context machine context (from the `auth_ready` event /
+    // spawn input) and, like `project`, is absent from the
+    // projection-of-log at first-write emission time. The switch-settle
+    // callers (D-MR4-06) ignore this extra field (same-org switch).
+    org_id: ctx.org_id ?? null,
     project: ctx.project,
+    underlying_cause_tag: ctx.underlying_cause_tag,
+  };
+}
+
+/**
+ * Session-chat machine's settled-state harvest (US-209 / MR-5).
+ *
+ * The exact analog of `harvestSettledProjectContextState` for the
+ * `switching_dataset_context` settle path: the `switchDatasetContext`
+ * actor's resolved `resource` (and the `dataset_access_denied` /
+ * `transient` cause on its branches) lands on the machine context AFTER
+ * the snapshot value flips back to `session_active` and BEFORE any
+ * FlowEvent has captured it — so a projection read at emission time would
+ * see the PRIOR-tick `resource` (the D-MR4-06 failure class). Used by
+ * `orchestrator.ts` `send()` to source the `dataset_attached` /
+ * `dataset_access_denied` terminal-event payloads so the projection — the
+ * SSOT the US-209 acceptance probes read — reflects the switched dataset.
+ */
+export function harvestSettledSessionChatState(actor: AnyActorRef): {
+  session_id: string | null;
+  transcript: Array<{ id: string; role: string; content: string; ts: string }>;
+  resource: { type: string | null; id: string | null };
+  underlying_cause_tag: string | null;
+} {
+  const ctx = actor.getSnapshot().context as {
+    session_id: string | null;
+    transcript: Array<{
+      id: string;
+      role: string;
+      content: string;
+      ts: string;
+    }>;
+    resource: { type: string | null; id: string | null };
+    underlying_cause_tag: string | null;
+  };
+  return {
+    // D-MR5-01: session_id + transcript are materialized atomically with
+    // `resource` by the `resumeSession` onDone assign — all land on the
+    // machine context after the snapshot flips, so the projection-of-log
+    // read at emission time sees them null/empty (the IC-J002-3 atomic
+    // materialization is correct in the machine; the regression was that
+    // the emission never observed it).
+    session_id: ctx.session_id,
+    transcript: ctx.transcript,
+    resource: ctx.resource,
     underlying_cause_tag: ctx.underlying_cause_tag,
   };
 }
