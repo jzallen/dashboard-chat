@@ -510,3 +510,37 @@ The following constraints carry into DISTILL and DELIVER:
 - J-001 design template: `docs/evolution/2026-05-12-user-flow-state-machines/design/`
 - **SRP review (binding input for DWD-13)**: `./review-by-software-crafter-srp.md` (overseer-dispatched nw-software-crafter-reviewer, 2026-05-13)
 - **DESIGN amendment review (this branch)**: `./review-by-solution-architect-srp-amendment.md` (nw-solution-architect-reviewer pass on DWD-13 + companions)
+
+## DESIGN Decisions — post-delivery (ui-state hexagonal transport, 2026-05-16)
+
+A guide-mode DESIGN session, run *after* J-002 delivery completed (MR-1..MR-6
++ MR-4-verify + D-MR4-05/06 + D-MR5-01), converted the J-002 substrate
+experience into a forward architecture decision. The five in-pattern
+emission-completeness recurrences observed during J-002 delivery
+(D-MR4-06, D-MR5-01 ×2, MR-6 `harvestSettledFreezeState`) were the
+empirical trigger.
+
+- [D-A40-1] **Deep hexagonal re-core of ui-state**: `FlowStrategy` port owns
+  per-machine orchestration; orchestrator → thin generic pump. See
+  `docs/decisions/adr-040-ui-state-hexagonal-transport.md`.
+- [D-A40-2] **Port boundary**: FREEZE/THAW broadcast + intent-replay buffer +
+  actor system stay central (cross-machine, ADR-028 §94); machine def /
+  begin / event→transition / settle move to the per-machine strategy.
+- [D-A40-3] **Driven read-port = hybrid store model**: per-flow settled-state
+  record is SSOT; event-sourced projection rebuild removed; bounded
+  US-210 intent buffer retained. Resolves the ADR-030 2026-05-16
+  emission-completeness tripwire **by exit** (supersedes ADR-030 §2
+  "Projection as primary read model" amendment, read-path only; ADR-030
+  §1–§4 topology/scaling intact).
+- [D-A40-4] **Transport**: per-machine sub-routers via `makeFlowRouter`
+  factory + Hono `app.route` mounts; registry keyed by canonical
+  machine-name (ADR-039) with a migration-safe alias map for legacy
+  feature-slug / flow-name path segments.
+- [D-A40-5] **LEAF-5 cutover = hard swap** (overseer chose speed over the
+  dual-read parity window); accepted no-parity-net risk recorded in
+  ADR-040 Consequences with the LEAF-5 regression-gate mitigation.
+
+Migration is a deferred LEAF journey (LEAF-1..6), recorded in ADR-040,
+**not scheduled** until delivery capacity is committed (same posture as
+ADR-030's deferred journey). Not feature-blocking for J-002, which is
+complete and landed.
