@@ -1,0 +1,213 @@
+{
+  "roadmap": {
+    "feature_id": "ui-state-hexagonal-transport",
+    "wave": "DISTILL",
+    "produced_at": "2026-05-16",
+    "acceptance_designer": "nw-acceptance-designer (ADR-040 LEAF-series DISTILL pass)",
+    "kind": "brownfield-refactor",
+    "binding_source": "docs/decisions/adr-040-ui-state-hexagonal-transport.md",
+    "total_steps": 6,
+    "phases": 1
+  },
+  "test_strategy": {
+    "outer_behavioral_pin": "tests/acceptance/project-and-chat-session-management/ (J-002 suite — inherited SSOT; mr_1..mr_6). REFERENCED, not duplicated. Every LEAF gate runs it per-marker and it MUST stay green: baseline mr_4 14/0/0 · mr_5 7/0 · mr_6 8/0.",
+    "characterization_first": "Per Feathers + nwave brownfield discipline, behavior-neutral LEAFs (1,2,3,4,6) are pinned by characterization assertions BEFORE the refactor — the brownfield analog of the walking skeleton. The outer pin (acceptance suite) is the characterization for end-to-end behavior; the new ui-state vitest specs pin the structural/contract deltas the suite does not cover.",
+    "new_contract_split": {
+      "characterization_reuse": ["LEAF-1", "LEAF-3", "LEAF-4"],
+      "new_contract": ["LEAF-2 path-surface alias contract", "LEAF-5 SettledStateStore byte-equivalence gate", "LEAF-6 alias-removal precondition + 404 contract"]
+    },
+    "behavior_changing_leafs": ["LEAF-5"],
+    "behavior_neutral_leafs": ["LEAF-1", "LEAF-2", "LEAF-3", "LEAF-4", "LEAF-6"],
+    "port_to_port_boundaries": {
+      "driving_port": "ui-state HTTP edge — POST /flow/<machine>/begin|event|open-deep-link, GET /flow/<machine>/projection[/stream] (exercised in-process via wireRoutes(app, orchestrator) + app.fetch, the index.test.ts pattern; and end-to-end via the acceptance suite through auth-proxy /ui-state/*).",
+      "driven_port": "SettledStateStore.get/set vs legacy FlowEventLog.read()+buildProjection — the LEAF-5 equivalence boundary. Mocks only at port boundaries; no internal-class mocks.",
+      "spec_location": "ui-state/lib/hexagonal-transport/*.test.ts (vitest; lib/**/*.test.ts include glob). DISTILL writes skip-marked binding contracts; DELIVER un-skips one LEAF at a time."
+    },
+    "skip_discipline": "All DISTILL specs are describe.skip / it.skip-marked with a DELIVER-deferred reason. The --auto subtree gate (ruff+pytest on code touch) is unaffected by TS specs; ui-state vitest reports them skipped (green). DELIVER removes the skip per LEAF as it implements (mirrors the J-002 acceptance-suite skip-at-DISTILL / un-skip-per-MR contract). Iron Rule: a skipped spec is never weakened to pass — it is implemented to green or the LEAF does not land."
+  },
+  "regression_gate_definition": {
+    "id": "RG-LEAF",
+    "applies_to": "every LEAF (1..6), as the merge prerequisite",
+    "steps": [
+      "cd ui-state && npx vitest run    # ui-state unit/integration GREEN (incl. the LEAF's own un-skipped spec)",
+      "cd ui-state && npx eslint .      # 0 errors",
+      "cd tests/acceptance/project-and-chat-session-management && FAILURE_SIMULATION_ENABLED=true uv run --no-project pytest -q -m mr_1   # per-marker, run separately",
+      "  ... repeat -m mr_2 ... mr_3 ... mr_4 ... mr_5 ... mr_6   (per-marker, NEVER the whole file at once)",
+      "./tools/test/test.sh --auto      # merge-queue gate (ruff+pytest on code touch)"
+    ],
+    "invariants": [
+      "Full mr_1..mr_6 per-marker green with ZERO regression vs the J-002 FINALIZE baseline (mr_4 14/0/0 · mr_5 7/0 · mr_6 8/0). The acceptance suite is NEVER weakened, re-skipped, or marker-edited to make a LEAF pass.",
+      "ui-state vitest stays green; eslint 0 errors.",
+      "For LEAF-1..4 + LEAF-6 (behavior-neutral): the GET /projection payload is byte-identical before/after for every J-002 state-history. For LEAF-5 (behavior-changing read-port swap): byte-identity of the GET /projection payload is the explicit equivalence-gate assertion (RED prerequisite)."
+    ],
+    "known_hazard": {
+      "id": "D-MR5-02",
+      "description": "Pre-existing full-suite shared-dev-user-001 ordering fragility (J-002 FINALIZE 'Deferred / still-open'). OUT OF SCOPE for this refactor — do NOT fix it. The RG-LEAF gate MUST run the acceptance suite PER-MARKER (-m mr_N separately), never the whole directory in one pytest invocation, so this fragility cannot mask or manufacture a regression signal."
+    }
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "ui-state hexagonal-transport LEAF migration (ADR-040 D1-D5)",
+      "description": "Decompose the parameterized-route + 1939-L orchestrator transport into a FlowStrategy port + generic pump (D1/D2), per-machine sub-routers + alias map (D4/D5), named driven adapters (D2), and swap the driven read-port event-log -> SettledStateStore (D3) behind a byte-equivalence gate. Each LEAF independently mergeable; strict order LEAF-1 -> 2 -> 3 -> 4 -> 5 -> 6.",
+      "default_agent": "nw-software-crafter",
+      "default_deps_strategy": "sequential",
+      "steps": [
+        {
+          "id": "LEAF-1",
+          "name": "FlowStrategy interface + registry keyed by canonical machine-name",
+          "behavior_neutrality": "behavior-neutral",
+          "binding_source": "adr-040 §D1, §D5, Reuse-Analysis row 'orchestrator.ts (EXTEND carve)'; ADR-039 (canonical machine-name as registry key); ADR-028 §'no machine imports another machine'",
+          "size_estimate": "S-M (~1-2 days; interface + registry table + delegating shims; no transition logic moves yet)",
+          "deps": [],
+          "spec_file": "ui-state/lib/hexagonal-transport/leaf-1-strategy-registry.test.ts",
+          "test_type": "characterization (acceptance-suite reuse) + new structural contract",
+          "criteria": [
+            "A FlowStrategy port (interface) exists and a registry maps canonical machine-name -> strategy (login-and-org-setup, project-context, session-chat). flow-id is NOT the key (ADR-040 D5: flow-id = <machine-name>:<principal_id> is an instance id).",
+            "The existing machine === \"...\" string conditionals in the carved dispatch path delegate to the registry; no per-machine machine === \"<name>\" branch remains in the carved path (structural assertion).",
+            "Unknown machine resolves to a clean 404 via the registry (no conditional fall-through).",
+            "Characterization: full mr_1..mr_6 per-marker acceptance suite byte-behavior-identical to the FINALIZE baseline; ui-state vitest green. GET /projection payload byte-identical before/after for every J-002 state-history.",
+            "RG-LEAF passes."
+          ],
+          "files_to_modify_estimate": [
+            "ui-state/lib/orchestrator.ts (EXTEND — introduce FlowStrategy port + registry; conditionals delegate)",
+            "ui-state/lib/hexagonal-transport/leaf-1-strategy-registry.test.ts (un-skip)"
+          ]
+        },
+        {
+          "id": "LEAF-2",
+          "name": "makeFlowRouter(strategy) factory + per-machine app.route mounts + alias map",
+          "behavior_neutrality": "behavior-neutral",
+          "binding_source": "adr-040 §D4, §D5, LEAF-2 (HTTP-routing-level alias, not registry-level); ADR-027 §1 (FE projection read contract); ADR-030 §'auth-proxy /ui-state/* routing table' (unchanged through migration)",
+          "size_estimate": "M (~2 days; factory + mounts + alias mounts + retire :machine param)",
+          "deps": ["LEAF-1"],
+          "spec_file": "ui-state/lib/hexagonal-transport/leaf-2-router-factory-alias-surface.test.ts",
+          "test_type": "new contract (path-surface alias contract)",
+          "criteria": [
+            "Each strategy is mounted at its canonical path AND its legacy alias path against the SAME router instance (ADR-040 LEAF-2 example: app.route('/flow/project-context', r); app.route('/flow/project-and-chat-session-management', r)). The :machine parameter is retired.",
+            "Path-surface contract: for begin, event, open-deep-link and projection, canonical /flow/project-context/* and legacy /flow/project-and-chat-session-management/* resolve to byte-identical responses for the same flow_id. /flow/session-chat/* and /flow/login-and-org-setup/* (canonical == legacy segment) remain stable. NO 404 window on any of the three legacy vocabularies at any point in the migration.",
+            "ADR-027 §1 FE projection read contract and the nginx/auth-proxy /ui-state/ proxy resolve identically through the migration (assertion at the HTTP edge).",
+            "Characterization: full mr_1..mr_6 per-marker green (the acceptance suite drives /ui-state/flow/project-and-chat-session-management/* and /ui-state/flow/session-chat/* — proves the alias path stays live); ui-state vitest green.",
+            "RG-LEAF passes."
+          ],
+          "files_to_modify_estimate": [
+            "ui-state/index.ts (EXTEND — makeFlowRouter factory; app.route canonical + alias mounts; remove :machine param)",
+            "ui-state/lib/hexagonal-transport/leaf-2-router-factory-alias-surface.test.ts (un-skip)"
+          ]
+        },
+        {
+          "id": "LEAF-3",
+          "name": "Carve orchestrator per-machine branches into the three strategies; orchestrator -> generic pump",
+          "behavior_neutrality": "behavior-neutral",
+          "binding_source": "adr-040 §D1, §D2, LEAF-3 ('settle->emit still writes the event-log — behavior-neutral'); ADR-030 §'Projection as primary read model' (read-path contract preserved)",
+          "size_estimate": "L (~3 days; the bulk carve of the 1939-L orchestrator's per-machine fan-out)",
+          "deps": ["LEAF-2"],
+          "spec_file": "ui-state/lib/hexagonal-transport/leaf-3-orchestrator-pump-carve.test.ts",
+          "test_type": "characterization (acceptance-suite reuse) + new structural contract",
+          "criteria": [
+            "Per-machine begin/event->transition/settle branches are moved into LoginOrgSetupStrategy / ProjectContextStrategy / SessionChatStrategy. The residual orchestrator is a generic pump (actor-system ownership + spawn lifecycle) with NO per-machine machine === \"...\" fan-out remaining (structural assertion over the carved path).",
+            "settle->emit STILL writes the Redis-Streams event-log this LEAF (read-port swap is LEAF-5). Behavior-neutral: GET /projection payload byte-identical before/after for every J-002 state-history.",
+            "Characterization: full mr_1..mr_6 per-marker green; ui-state vitest green; the no-orchestrator-snapshot-reads ESLint rule (ADR-030 LEAF-D) still passes on the carved orchestrator.",
+            "RG-LEAF passes."
+          ],
+          "files_to_modify_estimate": [
+            "ui-state/lib/orchestrator.ts (EXTEND — carve per-machine arms out; shrink to pump)",
+            "ui-state/lib/machines/{login-and-org-setup,project-context,session-chat}/ (EXTEND — strategy bodies)",
+            "ui-state/lib/hexagonal-transport/leaf-3-orchestrator-pump-carve.test.ts (un-skip)"
+          ]
+        },
+        {
+          "id": "LEAF-4",
+          "name": "Extract bounded intent buffer + FREEZE/THAW broadcaster as explicit named driven adapters",
+          "behavior_neutrality": "behavior-neutral",
+          "binding_source": "adr-040 §D2, §D3 (intent buffer survives as a distinct append-only driven adapter scoped to US-210), LEAF-4; ADR-027 §5 (replay buffer: 5s timeout, 16 max, FIFO, replay_abandoned); ADR-028 §'replay buffer is a property of the orchestrator', §'cross-machine signaling'",
+          "size_estimate": "M (~2 days; promote in-orchestrator buffer + broadcast to named adapters; behavior unchanged)",
+          "deps": ["LEAF-3"],
+          "spec_file": "ui-state/lib/hexagonal-transport/leaf-4-intent-buffer-freeze-thaw-adapters.test.ts",
+          "test_type": "characterization (US-210 behavior pin)",
+          "criteria": [
+            "The bounded intent buffer is a standalone named driven adapter (IntentBuffer): bound 16-max, 5s wall-clock window from FREEZE, FIFO replay on THAW with original correlation_id, stale-drop guard, replay_abandoned on overflow/timeout — behavior IDENTICAL to the pre-extraction in-orchestrator buffer (ADR-027 §5).",
+            "The FREEZE/THAW broadcaster is a standalone named driven adapter; cross-machine broadcast semantics (orchestrator-mediated, no machine imports another machine) unchanged (ADR-028).",
+            "Characterization: US-210 mr_6 (8/0 baseline) FREEZE/THAW replay scenarios byte-behavior-identical post-extraction — incl. test_multiple_intents_queued_during_freeze_replay_serially_in_fifo_with_stale_drop, test_replay_buffer_timeout_transitions_to_error_recoverable, test_praxis_f4_*. ui-state vitest green.",
+            "RG-LEAF passes."
+          ],
+          "files_to_modify_estimate": [
+            "ui-state/lib/orchestrator.ts (EXTEND — extract buffer + broadcaster)",
+            "ui-state/lib/hexagonal-transport/ (NEW — IntentBuffer + FreezeThawBroadcaster driven adapters)",
+            "ui-state/lib/hexagonal-transport/leaf-4-intent-buffer-freeze-thaw-adapters.test.ts (un-skip)"
+          ]
+        },
+        {
+          "id": "LEAF-5",
+          "name": "Hard swap: driven read-port event-log -> SettledStateStore (single MR, behind the byte-equivalence gate)",
+          "behavior_neutrality": "behavior-changing (driven read-port source swap; observable GET /projection payload MUST remain byte-identical — that is exactly what the equivalence gate proves)",
+          "binding_source": "adr-040 §D3, LEAF-5, Consequences 'LEAF-5 equivalence gate (binding)' block; ADR-030 §'Amendment 2026-05-16 — Emission-completeness tripwire' (pre-costed store model = the tripwire exit); supersedes ADR-030 2026-05-15 amendment for the backing-store mechanism only (read-path contract preserved)",
+          "size_estimate": "L (~3 days; comparable-to-one-LEAF effort per ADR-030 pre-costed alternative; machines + FREEZE/THAW untouched)",
+          "deps": ["LEAF-4"],
+          "decomposition_directive": "SINGLE HARD SWAP — exactly ONE step. Do NOT decompose into 5a/5b/5c. The overseer (re-confirmed 2026-05-16) explicitly chose the single hard swap over the safer dual-write -> read-swap -> drop-writes 3-step sequence (speed over safety net; risk owned). See handoff-distill-to-deliver.md for the verbatim binding decision. The equivalence gate is the safety net that replaced the dual-read parity window.",
+          "red_prerequisite": {
+            "id": "LEAF-5-EQUIVALENCE-GATE",
+            "spec_file": "ui-state/lib/hexagonal-transport/leaf-5-settled-state-store-equivalence.test.ts",
+            "binding": "ADR-040 Consequences mandates this test is authored FIRST, in its OWN commit, BEFORE the read-port swap; it runs against the LEGACY buildProjection path first to establish the baseline; it then becomes the regression gate the LEAF-5 swap MR MUST pass. LEAF-5 cannot submit until it is green. This converted aspirational prose into a falsifiable artifact and is the highest-value artifact of this DISTILL pass.",
+            "commit_sequence": [
+              "Commit A (gate, first): un-skip leaf-5-settled-state-store-equivalence.test.ts; implement it against the EXISTING legacy buildProjection(eventLog.read() ++ [terminalEvent]) path for EVERY J-002 state-history fixture; it goes GREEN against legacy = baseline established. No production read-port change in this commit.",
+              "Commit B (swap): introduce SettledStateStore; settle->store.set; GET /projection -> store.get; delete buildProjection's event-log path AND the entire harvestSettled* family (orchestrator-harvester.ts) in this same MR. The gate from Commit A now runs store.set/get and MUST stay byte-equivalent to the legacy projection captured in the fixtures."
+            ]
+          },
+          "spec_file": "ui-state/lib/hexagonal-transport/leaf-5-settled-state-store-equivalence.test.ts",
+          "test_type": "new binding contract (byte-equivalence gate — the centerpiece)",
+          "criteria": [
+            "For EVERY J-002 state-history (begin; project_select incl. create/deep-link/atomic-switch; session_resume incl. transcript+dataset/degraded; session_list; dataset_switch US-209 agent-resolve+direct+cross-tenant; freeze/thaw US-210 incl. FIFO replay/stale-drop/replay_abandoned; the cross-machine settle race; and the error arms: scope_mismatch_terminal, project_not_found, access_revoked, dataset_access_denied, transient error_recoverable): store.set(flow_id, settledState) followed by store.get(flow_id) yields a projection BYTE-EQUIVALENT to legacy buildProjection(eventLog.read() ++ [terminalEvent]) for the same history.",
+            "Byte-equivalence is exact: JSON.stringify(store.get(flow_id)) === JSON.stringify(buildProjection(flow_id, log.concat([terminalEvent]))) including state, context (all harvestSettled*-sourced fields), active_scope, sequence_id, last_event_at, correlation_id. Fixtures pin ts + correlation_id deterministically so the comparison is byte-stable.",
+            "set idempotence: store.set(flow_id, s) applied twice (and N times) -> store.get(flow_id) byte-identical to a single set.",
+            "The harvestSettled* family (orchestrator-harvester.ts) and buildProjection's event-log read path are DELETED in the swap MR (dead by construction per ADR-040 D3).",
+            "Observable surface unchanged: full mr_1..mr_6 per-marker acceptance suite green (GET /projection payload byte-identical end-to-end through auth-proxy); ui-state vitest green.",
+            "RG-LEAF passes WITH the equivalence gate as the RED prerequisite (gate authored + green-against-legacy BEFORE the swap commit)."
+          ],
+          "files_to_modify_estimate": [
+            "ui-state/lib/hexagonal-transport/leaf-5-settled-state-store-equivalence.test.ts (un-skip — Commit A, FIRST)",
+            "ui-state/lib/hexagonal-transport/ (NEW — SettledStateStore driven adapter; Redis hash per flow_id per ADR-040 Open-Q2)",
+            "ui-state/index.ts (EXTEND — GET /projection -> store.get)",
+            "ui-state/lib/orchestrator.ts (EXTEND — settle -> store.set)",
+            "ui-state/lib/projection.ts (REPLACE — remove event-log read path; buildProjection becomes store-fed or retired per ADR-040 Reuse-Analysis)",
+            "ui-state/lib/orchestrator-harvester.ts (DELETE — harvestSettled* dead by construction)",
+            "ui-state/lib/persistence/redis.ts (EXTEND/REPLACE — settled-state hash adapter; event-log read path removed)"
+          ]
+        },
+        {
+          "id": "LEAF-6",
+          "name": "Remove the alias map once the FE consumes canonical machine-name paths",
+          "behavior_neutrality": "behavior-neutral (once FE migrated — the precondition test gates this)",
+          "binding_source": "adr-040 §D5, LEAF-6; ADR-027 §1 (FE projection read contract — only safe to break the legacy segment once FE no longer requests it)",
+          "size_estimate": "S (~0.5-1 day; delete the alias mounts + the precondition assertion)",
+          "deps": ["LEAF-5"],
+          "spec_file": "ui-state/lib/hexagonal-transport/leaf-6-alias-removal.test.ts",
+          "test_type": "new contract (precondition gate + post-removal 404 contract)",
+          "criteria": [
+            "Precondition (gates the deletion): the FE and the acceptance suite no longer request the legacy feature-slug path /flow/project-and-chat-session-management/* — assertion that zero non-test references to the legacy segment remain in frontend/ (and the acceptance suite has migrated to canonical /flow/project-context/*). The alias is NOT deleted until this precondition test is green.",
+            "Post-removal: legacy /flow/project-and-chat-session-management/* returns 404; canonical /flow/project-context/* returns 200 (byte-identical to pre-removal canonical behavior). /flow/session-chat/* and /flow/login-and-org-setup/* unaffected.",
+            "Characterization: full mr_1..mr_6 per-marker green (the acceptance suite must have been migrated to canonical paths as part of satisfying the precondition); ui-state vitest green.",
+            "RG-LEAF passes."
+          ],
+          "files_to_modify_estimate": [
+            "ui-state/index.ts (EXTEND — delete the legacy alias app.route mount)",
+            "frontend/app/lib/ui-state-client.ts + frontend/app/routes/* (EXTEND — migrate to canonical /flow/project-context/* paths, precondition for deletion)",
+            "tests/acceptance/project-and-chat-session-management/ (EXTEND — migrate driver paths to canonical; suite stays green per-marker)",
+            "ui-state/lib/hexagonal-transport/leaf-6-alias-removal.test.ts (un-skip)"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": ["ui-state/", "frontend/app/ (LEAF-6 only)", "tests/acceptance/project-and-chat-session-management/ (LEAF-6 path migration only)"],
+    "test_directories": ["ui-state/lib/hexagonal-transport/", "tests/acceptance/project-and-chat-session-management/ (outer pin — REFERENCED, not modified by DISTILL)"],
+    "excluded_patterns": ["node_modules/**", "dist/**", "docs/evolution/** (J-002 archive — read-only)"]
+  },
+  "dependency_order": "LEAF-1 -> LEAF-2 -> LEAF-3 -> LEAF-4 -> LEAF-5 -> LEAF-6. Strict sequential; each LEAF independently mergeable through the refinery queue (gt mq submit) but MUST land in order (later LEAFs assume earlier structure). LEAF-5's equivalence gate (Commit A) is authored + green-against-legacy before LEAF-5's swap (Commit B) within the single LEAF-5 MR.",
+  "validation": {
+    "status": "distill-complete",
+    "produced_by": "nw-acceptance-designer (ADR-040 LEAF-series DISTILL pass, 2026-05-16)",
+    "rationale": "LEAF-1..6 sequenced from ADR-040 D1-D5 + the deferred migration journey + the Consequences LEAF-5 equivalence-gate block. Behavior-neutrality classified per ADR-040 (LEAF-1..4 + LEAF-6 neutral; LEAF-5 the read-port swap). Every step carries RG-LEAF (full mr_1..mr_6 per-marker + ui-state vitest + eslint) as the binding regression gate. LEAF-5 is ONE step (binding hard-swap decision, NOT decomposed) with the byte-equivalence gate as its RED prerequisite. DELIVER executes one LEAF per /nw-deliver pass."
+  }
+}
