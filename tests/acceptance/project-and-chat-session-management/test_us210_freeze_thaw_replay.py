@@ -279,7 +279,6 @@ def test_multiple_intents_queued_during_freeze_replay_serially_in_fifo_with_stal
     pytest.fail("not yet implemented")
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-6; 5s replay-buffer timeout (ADR-027 §5)")
 @pytest.mark.error_path
 @pytest.mark.boundary
 def test_replay_buffer_timeout_transitions_to_error_recoverable(
@@ -288,7 +287,44 @@ def test_replay_buffer_timeout_transitions_to_error_recoverable(
 ) -> None:
     """silent_reauth_failed; 5s timeout; orchestrator emits replay_abandoned;
     J-002 → error_recoverable carrying originating user-action for re-issue."""
-    pytest.fail("not yet implemented")
+    proj_id = _create_project("Q4 Analytics")
+    session_id = _create_session(proj_id, "chat-9b2a")
+    sc = _spawn_to_session_list(driver)
+    original_correlation = sc.get("correlation_id")
+
+    # Click → resume held → FREEZE catches resuming_session in flight.
+    def _click() -> None:
+        _post_event(
+            driver, "session-chat", SC_FLOW_ID, "session_clicked",
+            {"session_id": session_id},
+            extra_headers={"X-Force-Slow-Resume": "3000"},
+        )
+
+    t = threading.Thread(target=_click, daemon=True)
+    t.start()
+    time.sleep(1.0)
+    _freeze(driver)
+    frozen = _wait_state(driver, _sc, "freeze")
+    assert frozen["context"].get("last_live_state") == "resuming_session"
+    t.join(timeout=6.0)
+
+    # Silent re-auth FAILS → the 5s replay window lapses with no THAW →
+    # the orchestrator emits replay_abandoned; J-002 freeze →
+    # error_recoverable, originating user-action preserved for re-issue.
+    _thaw(driver, reason="abandoned")
+    err = _wait_state(driver, _sc, "error_recoverable")
+    assert err["context"].get("underlying_cause_tag") == "replay_abandoned", (
+        f"US-210 #4: cause must be replay_abandoned; "
+        f"got {err['context'].get('underlying_cause_tag')!r}"
+    )
+    # The originating user-action (the session_clicked target) is preserved
+    # on the machine context for re-issue (retry history target).
+    assert err["context"].get("pending_resume_session_id") == session_id, (
+        "US-210 #4: originating session_clicked must be preserved for re-issue"
+    )
+    assert err.get("correlation_id") == original_correlation, (
+        "US-210 #4: original correlation reference preserved"
+    )
 
 
 @pytest.mark.happy_path

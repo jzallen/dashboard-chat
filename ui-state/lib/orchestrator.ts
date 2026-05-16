@@ -1777,7 +1777,17 @@ export class FlowOrchestrator {
             machine === SESSION_CHAT_WIRE_NAME
               ? "session_chat_frozen"
               : "project_context_frozen",
-          payload: { last_live_state: h.last_live_state },
+          payload: {
+            last_live_state: h.last_live_state,
+            // Originating user-action preserved from the freeze moment so
+            // it survives into error_recoverable on the abandoned path
+            // (US-210 AC — "preserved in the failure event payload for
+            // re-issue"). The *_started events that normally write these
+            // never fired when FREEZE pre-empted the in-flight invoke.
+            pending_resume_session_id: h.pending_resume_session_id,
+            pending_first_message: h.pending_first_message,
+            pending_project_name: h.pending_project_name,
+          },
           correlation_id: h.correlation_id,
         });
       }

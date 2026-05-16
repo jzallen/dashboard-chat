@@ -174,6 +174,17 @@ export function harvestSettledFreezeState(actor: AnyActorRef): {
   stale_intents_dropped_count: number;
   last_stale_intent: { intent_type: string; target_id: string } | null;
   underlying_cause_tag: string | null;
+  /** US-210 AC — the originating user-action, preserved in the freeze /
+   *  replay_abandoned FlowEvent payload "for re-issue". These live on the
+   *  machine context (set by capturePendingResumeIntent /
+   *  capturePendingFirstMessage / capturePendingProjectName) and are
+   *  absent from the projection-of-log at freeze time (only their
+   *  *_started events would have written them, which never fired when
+   *  FREEZE pre-empted the in-flight invoke). Per-machine fields —
+   *  undefined for the machine that doesn't have them. */
+  pending_resume_session_id: string | null;
+  pending_first_message: string | null;
+  pending_project_name: string | null;
 } {
   const ctx = actor.getSnapshot().context as {
     correlation_id: string;
@@ -181,8 +192,14 @@ export function harvestSettledFreezeState(actor: AnyActorRef): {
     stale_intents_dropped_count: number;
     last_stale_intent: { intent_type: string; target_id: string } | null;
     underlying_cause_tag: string | null;
+    pending_resume_session_id?: string | null;
+    pending_first_message?: string | null;
+    pending_project_name?: string | null;
   };
   return {
+    pending_resume_session_id: ctx.pending_resume_session_id ?? null,
+    pending_first_message: ctx.pending_first_message ?? null,
+    pending_project_name: ctx.pending_project_name ?? null,
     // US-210: the original correlation reference is preserved across the
     // whole freeze→thaw lifecycle (it lives on the machine context, set
     // at spawn / project_ready and never rewritten by FREEZE/THAW).

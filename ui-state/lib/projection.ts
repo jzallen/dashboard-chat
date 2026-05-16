@@ -878,6 +878,11 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       ...context,
       last_live_state:
         (event.payload.last_live_state as string | undefined) ?? null,
+      // US-210 AC — preserve the originating user-action from the freeze
+      // moment so it survives freeze → error_recoverable for re-issue.
+      pending_project_name:
+        (event.payload.pending_project_name as string | undefined) ??
+        context.pending_project_name,
     },
   }),
 
@@ -887,6 +892,12 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
       ...context,
       last_live_state:
         (event.payload.last_live_state as string | undefined) ?? null,
+      pending_resume_session_id:
+        (event.payload.pending_resume_session_id as string | undefined) ??
+        context.pending_resume_session_id,
+      pending_first_message:
+        (event.payload.pending_first_message as string | undefined) ??
+        context.pending_first_message,
     },
   }),
 
