@@ -1,6 +1,6 @@
 # ADR-040: ui-state Hexagonal Transport + Emission-Completeness Resolution
 
-**Status:** Accepted (2026-05-16)
+**Status:** Accepted (2026-05-16) — passed the nw-design DESIGN-gate review (nw-solution-architect-reviewer, 2026-05-16: PASS-WITH-FIXES; all five fixes applied incl. the criterion-5 LEAF-5 equivalence-gate block)
 **Deciders:** project overseer (architect) + Morgan (nw-solution-architect), guide-mode DESIGN session
 **Wave:** DESIGN — emerged from the J-002 (`project-and-chat-session-management`) substrate experience, finalized after MR-6 (`43c7c04`) landed
 **Companion artifacts:**
@@ -8,7 +8,7 @@
 - Empirical basis: `docs/feature/project-and-chat-session-management/deliver/upstream-issues.md` (D-MR4-06, D-MR5-01 ×2, MR-6 freeze harvest — five in-pattern emission-completeness instances)
 
 **Relationship to prior ADRs:**
-- **Supersedes** ADR-030's *"Amendment 2026-05-15 — Projection as primary read model"* for the **read path only**. ADR-030 §1–§4 (topology behind auth-proxy, single-replica, scaling ceiling, failover) remain fully in force and are cross-referenced, not changed.
+- **Supersedes** ADR-030's *"Amendment 2026-05-15 — Projection as primary read model"* for the **backing-store mechanism only**: the read-path *contract* (the orchestrator reads from the projection, never from `snapshot.context`) is preserved unchanged; what is replaced is the projection's *source of truth* — the Redis-Streams event-log gives way to a server-authoritative settled-state store. ADR-030 §1–§4 (topology behind auth-proxy, single-replica, scaling ceiling, failover) remain fully in force and are cross-referenced, not changed.
 - **Resolves** ADR-030's *"Amendment 2026-05-16 — Emission-completeness tripwire"* — **by exit**, not by adding the compile-time emit-guard. The tripwire's pre-costed store-model alternative is hereby adopted.
 - Honors ADR-027 §1 (FE projection read contract), ADR-028 (XState v5 actor model + cross-machine FREEZE/THAW), ADR-039 (ui-state vocabulary conventions).
 
@@ -28,7 +28,7 @@ A `FlowStrategy` port owns per-machine orchestration. The orchestrator is decomp
 - **`FlowStrategy` (per machine):** machine definition, `begin` semantics, event→transition mapping, and `settle` (the typed member that subsumes the emit obligation).
 
 ### D3 — Driven read-port = hybrid store model (the tripwire exit)
-The per-flow **settled-state record** becomes the SSOT; `GET …/projection` resolves to `store.get(flow_id)`. The Redis-Streams `FlowEventLog` + `buildProjection` rebuild path is **removed**. The bounded intent buffer (16-max / 5 s, ADR-027 §5) **survives** as a distinct append-only driven adapter, scoped solely to US-210 FREEZE/THAW replay — the one temporal requirement an actual written story justifies. The emission-completeness invariant is **eliminated by construction**: with no rebuilt projection, there is nothing to go stale, and the `harvestSettled*` family becomes dead code (deleted in LEAF-5).
+The per-flow **settled-state record** becomes the SSOT; `GET …/projection` resolves to `store.get(flow_id)`. The Redis-Streams `FlowEventLog` + `buildProjection` rebuild path is **removed**. The bounded intent buffer (16-max / 5 s, ADR-027 §5) **survives** as a distinct append-only driven adapter, scoped solely to US-210 FREEZE/THAW replay. This retention is **not speculative**: US-210 (FREEZE/THAW replay across machines on token expiry) is a written, *landed* requirement — it shipped as J-002 MR-6 (`43c7c04`), its replay contract is ratified in ADR-027 §5 + ADR-028's cross-machine freeze contract, and its scenarios (`test_us210_*`, IC-J002-6) are green in the suite. It is the *one* temporal requirement an actual story justifies; full event-log temporal replay (audit trail, point-in-time) has no written requirement and is therefore dropped. The emission-completeness invariant is **eliminated by construction**: with no rebuilt projection, there is nothing to go stale, and the `harvestSettled*` family becomes dead code (deleted in LEAF-5).
 
 ### D4 — Transport exposure
 Per-machine sub-routers via a shared `makeFlowRouter(strategy)` factory, mounted with Hono `app.route('/flow/<canonical-machine-name>', …)` (the Flask-blueprint analog). No `:machine` parameter.
@@ -69,6 +69,8 @@ flowchart LR
   STORE -. "GET /projection (ADR-027 §1, unchanged)" .-> R2
 ```
 
+**Container topology is unchanged** — this is a component-internal refactor of the `ui-state` container only, which is why no C4 System-Context or Container diagram delta is produced (those remain ADR-030 §1 + ADR-033/034). Specifically: the auth-proxy upstream routing table's `/ui-state/*` rule is unchanged; the nginx `/ui-state/` proxy and the FE-facing `/ui-state/*` path surface are unchanged (preserved through the migration by the LEAF-2 alias mounts); the Redis dependency, key-prefix tenure (`ui-state:`), and storage scale are unchanged — only the *key shape* changes (XADD event-log stream → settled-state hash), a driven-adapter-internal concern, so ADR-030's Redis-blast-radius "Negative" and the Redis-HA mitigation apply unchanged.
+
 ## Reuse Analysis
 
 | Existing component | File | Overlap | Decision | Justification |
@@ -84,7 +86,7 @@ flowchart LR
 Behavior-neutral steps; each LEAF independently mergeable through the refinery queue. Recorded here so future contributors can pick it up without re-deriving the sequence; **NOT scheduled** until delivery capacity is committed (same posture as ADR-030's deferred journey).
 
 - **LEAF-1** — `FlowStrategy` interface + registry keyed by canonical machine-name; existing conditionals delegate to the registry. No behavior change.
-- **LEAF-2** — `makeFlowRouter` factory + per-machine `app.route` mounts + alias map for legacy path segments; retire the `:machine` parameter. FE / nginx unaffected (legacy paths still resolve via aliases).
+- **LEAF-2** — `makeFlowRouter(strategy)` factory + per-machine `app.route` mounts; retire the `:machine` parameter. The alias map is **HTTP-routing-level, not registry-level**: each strategy is mounted at its canonical path *and* at its legacy path segments against the *same* router instance — e.g. `const r = makeFlowRouter(projectContextStrategy); app.route('/flow/project-context', r); app.route('/flow/project-and-chat-session-management', r);` (legacy feature-slug) so the ADR-027 §1 FE projection contract and the nginx `/ui-state/` proxy resolve identically through the migration with no 404 window. The canonical-name registry key (D5) is unaffected by the alias — aliasing is purely an extra mount point, not a second key.
 - **LEAF-3** — carve orchestrator per-machine branches into the three strategies; orchestrator shrinks to the generic pump. `settle→emit` still writes the event-log (behavior-neutral).
 - **LEAF-4** — extract the bounded intent buffer + FREEZE/THAW broadcaster as explicit named driven adapters.
 - **LEAF-5 (the tripwire exit, hard swap)** — replace the driven read-port event-log→`SettledStateStore` in one move; delete `buildProjection`'s event-log path and the entire `harvestSettled*` family same MR; `GET /projection` reads the store. **No dual-read parity window** (see accepted risk below).
@@ -96,11 +98,15 @@ Behavior-neutral steps; each LEAF independently mergeable through the refinery q
 - Emission-completeness bug class (D-MR4-06 / D-MR5-01 / MR-6 freeze) **eliminated by construction** — five recurrences become structurally impossible.
 - Orchestrator 1939 L → small generic pump; per-machine logic unit-testable in isolation behind the strategy port.
 - Explicit static machine registry; unknown-machine becomes a clean 404, no conditional fall-through.
-- Only the temporal machinery a written requirement (US-210) justifies is retained; speculative event-sourcing removed (resolves the ADR-030 tripwile permanently rather than perpetually policing it).
+- Only the temporal machinery a written requirement (US-210) justifies is retained; speculative event-sourcing removed (resolves the ADR-030 tripwire permanently rather than perpetually policing it).
 - ADR-027 §1 FE contract and nginx `/ui-state/` proxy untouched throughout (alias map + adapter-edge contract test).
 
 **Negative / accepted trade-offs**
-- **LEAF-5 hard swap carries no parity safety net (accepted by the overseer over the dual-read alternative).** A `SettledStateStore` write defect would surface as wrong projection data with no event-log comparison signal. Mitigation required at LEAF-5: exhaustive store-write unit + the ADR-027 §1 adapter contract test + the full per-marker acceptance suite (mr_1..mr_6) as the regression gate before the swap MR submits. This is a deliberate speed-over-safety-net choice; recorded so the risk is owned, not discovered.
+- **LEAF-5 hard swap carries no parity safety net — explicitly accepted by the overseer over the dual-read alternative (speed over safety net).** A `SettledStateStore` write defect would surface as wrong projection data with no event-log comparison signal. The acceptance-suite-only mitigation in the prior draft was insufficient (end-to-end happy-path scenarios + a "returns JSON" contract test would not catch a silently dropped field under a specific state-history). The mitigation is therefore a **mechanically verifiable equivalence gate, written before LEAF-5 ships**:
+
+  > **LEAF-5 equivalence gate (binding):** A stand-alone `SettledStateStore` unit test MUST be authored *first* (its own commit, before the read-port swap) that asserts, for every J-002 state-history — `begin`, `project_select`, `session_resume`, `dataset_switch` (US-209), `freeze`/`thaw` (US-210), and the cross-machine settle race — that `store.set(flow_id, settledState)` followed by `store.get(flow_id)` yields a projection **byte-equivalent** to the legacy `buildProjection(eventLog.read() ++ [terminalEvent])` for the same history. The test runs against the *legacy* `buildProjection` path first to establish the baseline, then becomes the regression gate the LEAF-5 MR must pass. Idempotence of `set` is asserted in the same test. This converts the gate from good-faith prose to a falsifiable artifact; LEAF-5 cannot submit until it is green.
+
+  This is a deliberate speed-over-safety choice; recorded so the risk is owned, not discovered. **DISTILL handoff prerequisite:** when a DISTILL pass picks up LEAF-5, the overseer's acceptance of the hard-swap posture (vs. the deferred dual-write → read-swap → drop-writes sequence) MUST be re-confirmed in writing in the DISTILL handoff, so the crafter knows to implement the single hard swap behind the equivalence gate and not silently substitute the safer multi-step sequence.
 - Audit-trail / point-in-time replay over the *full* flow history is lost (only the bounded US-210 intent window remains). Re-introduced as a **separate** append-only audit adapter only if and when a temporal-query requirement is actually written (none exists at the planning horizon).
 - ADR-030 §2 amendment is partially superseded — readers must follow the cross-reference; ADR-030 §1–§4 remain authoritative for topology/scaling/failover.
 
