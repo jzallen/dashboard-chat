@@ -33,7 +33,10 @@ import {
   createSessionChatMachine,
   type SessionChatMachineDeps,
 } from "./machines/session-chat/index.ts";
-import { harvestSettledLoginState } from "./orchestrator-harvester.ts";
+import {
+  harvestSettledLoginState,
+  harvestSettledProjectContextState,
+} from "./orchestrator-harvester.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
@@ -1033,6 +1036,44 @@ export class FlowOrchestrator {
     // Forward the event type to the XState actor. Unknown event types are
     // ignored by the machine (XState v5 default).
     actor.send({ type: input.type, ...input.payload } as never);
+
+    // D-MR4-06 / IC-J002-4 — `switching_project` is an invoke-driven
+    // transient state (the `switchProject` actor performs
+    // GET /api/projects/:id). Emit `switching_project_started` BEFORE
+    // awaiting the settle so the projection writes the atomic invalidation
+    // (session_id + resource_* nulled) in the SAME tick the
+    // `switching_project` state surfaces — SSE consumers see the
+    // (state=switching_project, session_id=null, resource=null) tuple
+    // together. The post-settle block below then emits the terminal
+    // `project_switched` / `project_selected` (or `scope_mismatch_displayed`
+    // / `project_context_recoverable_error`) once `switchProject` resolves;
+    // because `waitForSettledState` now treats `switching_project` as
+    // transient the snapshot read there observes the SETTLED state, so the
+    // post-settle `switching_project` arm no longer fires for this path.
+    // Without this pre-settle emission `project_switched`'s reducer (which
+    // relies on `switching_project_started` having cleared session_id)
+    // would leak the old session_id under the new project.
+    if (
+      input.machine === PROJECT_CONTEXT_WIRE_NAME &&
+      input.type === "switching_project_intent" &&
+      (actor.getSnapshot().value as string) === "switching_project"
+    ) {
+      const preSettleCtx = buildProjection(
+        input.flow_id,
+        await this.deps.eventLog.read(input.flow_id),
+      ).context as { org: { id: string | null } };
+      await this.deps.eventLog.append(input.flow_id, {
+        ts: new Date().toISOString(),
+        type: "switching_project_started",
+        payload: {
+          org_id: preSettleCtx.org.id ?? "",
+          deeplink_project_id:
+            (input.payload.new_project_id as string | undefined) ?? null,
+        },
+        correlation_id: input.correlation_id,
+      });
+    }
+
     await waitForSettledState(actor);
     // If this transition lands the machine in expired_token AND silentReauth
     // is wired, wait one more cycle for it to leave again (success → ready,
@@ -1223,6 +1264,26 @@ export class FlowOrchestrator {
       // projection's reducer-populated context.
       const orgId = projectionCtx.org.id ?? "";
 
+      // D-MR4-06 — the `switchProject` actor's resolved project (and the
+      // access_revoked / project_not_found / transient cause it sets on
+      // its error branches) settles on the machine context AFTER the
+      // snapshot value flips and BEFORE any FlowEvent has captured it, so
+      // `projectionCtx.project` / `projectionCtx.underlying_cause_tag`
+      // read null/empty here (the LEAF-B trade-off documented in
+      // `beginIfNotStarted`). Harvest from the designated snapshot-read
+      // boundary (`orchestrator-harvester.ts`, exempt from the LEAF-D
+      // rule) so the switch-settle terminal events carry the real
+      // resolved values — mirrors the login `harvestSettledLoginState`
+      // pre-emit pattern. Scoped to the switch path (input.type ===
+      // `switching_project_intent`) so create / deep-link / re-resolve
+      // emission is unchanged.
+      const isSwitchSettle = input.type === "switching_project_intent";
+      const switchHarvest = isSwitchSettle
+        ? harvestSettledProjectContextState(actor)
+        : null;
+      const switchSettledProject = switchHarvest?.project ?? null;
+      const switchSettledCause = switchHarvest?.underlying_cause_tag ?? null;
+
       // When the incoming event is `open_deep_link`, also append a
       // `deep_link_opened` projection event so the projection's context
       // carries the URL-level wish + resource_* fields (per DWD-9).
@@ -1292,12 +1353,16 @@ export class FlowOrchestrator {
         // distinction is semantic for downstream consumers (a deep-link
         // resolution is not a creation).
         const isFromCreate = input.type === "create_project_submitted";
+        // D-MR4-06: on the switch-settle path the resolved project lives
+        // only on the harvested machine context (see switchHarvest above).
+        const settledProject =
+          switchSettledProject ?? projectionCtx.project;
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: isFromCreate ? "project_created" : "project_selected",
           payload: {
             org_id: orgId,
-            project: projectionCtx.project,
+            project: settledProject,
           },
           correlation_id: input.correlation_id,
         });
@@ -1312,7 +1377,7 @@ export class FlowOrchestrator {
           input.correlation_id,
           {
             org_id: orgId,
-            project: projectionCtx.project,
+            project: settledProject,
             deeplink_session_id: projectionCtx.deeplink_session_id,
             intent_resource_id: projectionCtx.intent_resource_id,
             intent_resource_type: projectionCtx.intent_resource_type,
@@ -1330,7 +1395,7 @@ export class FlowOrchestrator {
             type: "project_switched",
             payload: {
               org_id: orgId,
-              project: projectionCtx.project,
+              project: settledProject,
             },
             correlation_id: input.correlation_id,
           });
@@ -1354,7 +1419,9 @@ export class FlowOrchestrator {
           type: "project_context_recoverable_error",
           payload: {
             underlying_cause_tag:
-              projectionCtx.underlying_cause_tag ?? "transient",
+              switchSettledCause ??
+              projectionCtx.underlying_cause_tag ??
+              "transient",
             pending_project_name: projectionCtx.pending_project_name,
           },
           correlation_id: input.correlation_id,
@@ -1366,7 +1433,9 @@ export class FlowOrchestrator {
           payload: {
             org_id: orgId,
             underlying_cause_tag:
-              projectionCtx.underlying_cause_tag ?? "cross_tenant",
+              switchSettledCause ??
+              projectionCtx.underlying_cause_tag ??
+              "cross_tenant",
             deeplink_project_id: projectionCtx.deeplink_project_id,
           },
           correlation_id: input.correlation_id,
@@ -1666,14 +1735,17 @@ function waitForSettledState(
   return new Promise((resolve, reject) => {
     // States that contain `invoke` blocks — caller waits for them to leave.
     // J-001: authenticating, creating_org. J-002 project-context:
-    // resolving_initial_scope, creating_project. J-002 session-chat:
-    // loading_session_list, resuming_session. Future MRs add
-    // switching_project, switching_dataset_context.
+    // resolving_initial_scope, creating_project, switching_project (MR-4 —
+    // the `switchProject` invoke; D-MR4-06: this was previously missing, so
+    // `send()` did not await the switch and the projection never settled).
+    // J-002 session-chat: loading_session_list, resuming_session. A future
+    // MR adds switching_dataset_context.
     const TRANSIENT_STATES = new Set([
       "authenticating",
       "creating_org",
       "resolving_initial_scope",
       "creating_project",
+      "switching_project",
       "loading_session_list",
       "resuming_session",
       "creating_session",

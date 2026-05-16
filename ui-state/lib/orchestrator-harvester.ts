@@ -64,3 +64,35 @@ export function harvestSettledLoginState(actor: AnyActorRef): {
     underlying_cause_tag: ctx.underlying_cause_tag,
   };
 }
+
+/**
+ * Project-context machine's settled-state harvest (D-MR4-06).
+ *
+ * The `switchProject` actor's resolved `project` (and the
+ * `access_revoked` / `project_not_found` / `transient` cause it sets on
+ * the error branches) lands on the machine's context AFTER the snapshot
+ * value flips to its settled state and BEFORE any FlowEvent has captured
+ * it. The projection therefore reads `project: { id: null, name: null }`
+ * / `underlying_cause_tag: null` at the moment of emission — exactly the
+ * LEAF-B trade-off the `beginIfNotStarted` comment block flagged as
+ * "currently live only in the machine's settled context ... until
+ * LEAF-C+ work". This is that harvest: it is the project-context
+ * counterpart of `harvestSettledLoginState`, used by `orchestrator.ts`
+ * `send()` to source the `project_selected` / `project_switched` /
+ * `scope_mismatch_displayed` terminal-event payloads on the
+ * `switching_project_intent` settle path so the projection — the SSOT
+ * the acceptance probes read — reflects the switched project.
+ */
+export function harvestSettledProjectContextState(actor: AnyActorRef): {
+  project: { id: string | null; name: string | null };
+  underlying_cause_tag: string | null;
+} {
+  const ctx = actor.getSnapshot().context as {
+    project: { id: string | null; name: string | null };
+    underlying_cause_tag: string | null;
+  };
+  return {
+    project: ctx.project,
+    underlying_cause_tag: ctx.underlying_cause_tag,
+  };
+}

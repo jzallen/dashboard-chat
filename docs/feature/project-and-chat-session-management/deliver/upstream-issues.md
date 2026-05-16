@@ -218,7 +218,70 @@ is in front of it for /chat).
 
 ### D-MR4-06 — `switching_project` state never settles end-to-end
 
-**Status**: DEFERRED — surfaced by MR-4-verify.
+**Status**: RESOLVED on branch `fix/d-mr4-06-switching-project-settle`
+(landed via the dashboard_chat merge queue). All 4 blocked US-207
+scenarios + IC-J002-4 now
+run green against the local compose stack; the other 8 mr_4 scenarios
+stay green and D-MR4-05's 1 skip is unchanged. The 1 remaining mr_4
+failure (`test_agent_rejects_chat_turn_with_org_id_mismatch_to_jwt_with_403`)
+is the separate D-MR4-05 agent X-Org-Id gap (below), out of this MR's
+scope.
+
+**Root cause (two layers)**:
+
+1. **Settle never observed.** `waitForSettledState()` in
+   `ui-state/lib/orchestrator.ts` omitted `switching_project` from its
+   `TRANSIENT_STATES` set (the code comment literally read "Future MRs
+   add switching_project"). MR-4 landed the state, the `switchProject`
+   actor, and the emission arms but never updated this gate. So when
+   `send()` processed `switching_project_intent` it did NOT await the
+   `switchProject` invoke — it read the snapshot while still in
+   `switching_project`, emitted only `switching_project_started`, and
+   returned. The later settle to `project_selected` was never observed,
+   so no terminal projection event (`project_switched` /
+   `project_selected`) was appended and the projection — the SSOT the
+   acceptance probes read — was stuck at `switching_project` forever.
+
+2. **Resolved project never propagated.** Even once the settle is
+   awaited, the `switchProject` actor's resolved `project` (and the
+   `access_revoked` / `project_not_found` / `transient` cause on its
+   error branches) lands on the machine context AFTER the snapshot
+   value flips and BEFORE any FlowEvent captures it. The LEAF-B refactor
+   (`5f4e635`) redirected the orchestrator's project-context emission
+   reads to the projection and added a login-only pre-emit harvest
+   (`harvestSettledLoginState`) but never added the project-context
+   counterpart — it explicitly deferred this to "LEAF-C+ work". The
+   projection therefore read `project: { id: null }` at emission time,
+   so `active_scope.project_id` stayed null and the US-207 assertions
+   (`scope.project_id == target`) failed. A stale `deep_link_opened`
+   `resolved_scope` could also mask the switched project because
+   `resolved_scope` takes precedence in the active_scope derivation.
+
+**Fix (in-pattern, ui-state-only)**:
+
+- Add `switching_project` to `waitForSettledState`'s `TRANSIENT_STATES`
+  so `send()` awaits the `switchProject` invoke.
+- Emit `switching_project_started` BEFORE awaiting the settle so the
+  IC-J002-4 atomic invalidation (session_id + resource_* nulled) still
+  surfaces in the same tick the `switching_project` state does.
+- Add `harvestSettledProjectContextState` to `orchestrator-harvester.ts`
+  (the designated snapshot-read boundary, exempt from the LEAF-D rule)
+  — the project-context counterpart of `harvestSettledLoginState`. The
+  switch-settle path sources the real resolved `project` / cause from it
+  for the `project_selected` / `project_switched` /
+  `scope_mismatch_displayed` / `project_context_recoverable_error`
+  payloads. This is the deferred "LEAF-C+" work, scoped minimally to the
+  switch path so create / deep-link / re-resolve emission is unchanged.
+- Clear `resolved_scope` in the `switching_project_started` projection
+  reducer so a stale deep-link scope cannot mask the switched project.
+
+Regression coverage: `ui-state/lib/orchestrator-switching-project.test.ts`
+(unit; RED with the bug, GREEN with the fix) is the inner contract; the
+4 US-207 acceptance scenarios are the outer contract.
+
+---
+
+**Original report (DEFERRED — surfaced by MR-4-verify)**:
 
 **What**: When a `switching_project_intent` event is posted to a flow
 in `project_selected`, the machine transitions to `switching_project`

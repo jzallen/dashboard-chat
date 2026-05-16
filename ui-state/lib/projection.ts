@@ -525,6 +525,14 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
         pending_resume_session_id: null,
         intent_resource_id: null,
         intent_resource_type: null,
+        // D-MR4-06: a switch supersedes any prior deep-link-resolved scope.
+        // `resolved_scope` takes precedence in the projection's
+        // active_scope derivation (see buildProjection); if a stale
+        // deep_link_opened scope survived the switch it would mask the
+        // switched project's id. Clear it atomically with the rest of the
+        // old-project invalidation so active_scope falls through to the
+        // freshly-switched `context.project`.
+        resolved_scope: null,
       },
     };
   },
