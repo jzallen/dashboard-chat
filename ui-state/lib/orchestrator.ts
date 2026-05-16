@@ -110,24 +110,112 @@ export interface OrchestratorDeps {
 }
 
 /**
- * Strategy table replacing today's hardcoded `if (input.machine !== ...)`
- * conditional per DWD-8. Each entry is a factory that, given the
- * orchestrator's deps + a begin-flow input, returns a constructed machine.
- *
- * Adding a future flow is one new factory + one new entry — no `if/else`.
+ * Canonical machine-names (ADR-039) — the FlowStrategy registry keys.
+ * The three strategies in the ADR-040 C4 target-state diagram.
  */
-type MachineFactory = (
-  deps: OrchestratorDeps,
-  input: { correlation_id: string; principal_id: string; existing_org_names?: string[] },
-) => AnyStateMachine;
+const LOGIN_AND_ORG_SETUP_MACHINE = "login-and-org-setup";
+const PROJECT_CONTEXT_MACHINE = "project-context";
+const SESSION_CHAT_MACHINE = "session-chat";
 
-const MACHINE_REGISTRY: Record<string, MachineFactory> = {
-  "login-and-org-setup": (deps, _input) =>
-    createLoginAndOrgSetupMachine(deps.loginMachineDeps),
-  // The wire name is preserved (REC-2 / DWD-13 MR-1.5 — see PROJECT_CONTEXT_WIRE_NAME
-  // comment above). The internal factory is the new `createProjectContextMachine`
-  // from `./machines/project-context.ts`.
-  [PROJECT_CONTEXT_WIRE_NAME]: (deps, _input) => {
+/**
+ * ADR-040 §D1/§D5 — the `FlowStrategy` port. The orchestrator dispatch fork
+ * resolves a machine to its strategy through the registry instead of a
+ * hardcoded `if (input.machine === "…")` conditional table (the legacy
+ * machine-factory record per DWD-8, now retired). LEAF-1 carves the
+ * machine-RESOLUTION fork onto these typed members; the per-machine
+ * begin/event/settle bodies stay in the orchestrator (transition-logic
+ * relocation is LEAF-3 — delegation, not relocation).
+ */
+export interface FlowStrategy {
+  /** Canonical machine-name (ADR-039) — the registry key. Never a flow-id
+   *  (`<machine-name>:<principal_id>` per ADR-030 §6 is an instance id,
+   *  explicitly rejected as the dispatch key — ADR-040 D5). */
+  readonly machineName: string;
+  /** Begin-semantics discriminator (ADR-040 D2). `login-and-org-setup` runs
+   *  the orchestrator's direct WorkOS begin body; the J-002 machines are
+   *  spawned via the cross-machine broadcast hook (`beginIfNotStarted`).
+   *  The begin body itself is carved onto the strategy in LEAF-3. */
+  readonly beginsDirectly: boolean;
+  /** Machine definition (ADR-040 D2): construct the XState machine for this
+   *  flow from the orchestrator deps. */
+  buildMachine(
+    deps: OrchestratorDeps,
+    input: { correlation_id: string; principal_id: string; existing_org_names?: string[] },
+  ): AnyStateMachine;
+}
+
+/** Thrown on a registry miss. The HTTP edge maps this to a clean 404
+ *  (ADR-040 Consequences: "unknown-machine becomes a clean 404, no
+ *  conditional fall-through"). The message is preserved verbatim from the
+ *  legacy `throw new Error("Unknown machine: …")` so non-HTTP callers see
+ *  no behavior delta. */
+export class UnknownMachineError extends Error {
+  constructor(public readonly machine: string) {
+    super(`Unknown machine: ${machine}`);
+    this.name = "UnknownMachineError";
+  }
+}
+
+/**
+ * Registry-level migration-safe alias map (ADR-040 §D5): a legacy wire
+ * segment is canonicalized to its machine-name before lookup so the J-002
+ * acceptance suite (which drives the legacy feature-slug) stays
+ * byte-behavior-identical through the migration. The registry KEY stays
+ * canonical (D5); this is purely name canonicalization. The HTTP-routing
+ * `app.route` alias mounts are a separate, later concern (LEAF-2).
+ */
+const MACHINE_NAME_ALIASES: Readonly<Record<string, string>> = {
+  [PROJECT_CONTEXT_WIRE_NAME]: PROJECT_CONTEXT_MACHINE,
+};
+
+/**
+ * ADR-040 §D1/§D5 — the explicit static `FlowStrategy` registry, keyed by
+ * canonical machine-name. Adding a future flow is one new strategy
+ * registration — no `if/else`. `get` is the strict canonical-key lookup
+ * (flow-id / unknown / legacy-slug all miss); `resolve` is the dispatch
+ * entry that additionally applies the D5 migration alias and throws
+ * `UnknownMachineError` on a miss.
+ */
+class FlowStrategyRegistry {
+  private readonly strategies = new Map<string, FlowStrategy>();
+
+  register(strategy: FlowStrategy): void {
+    this.strategies.set(strategy.machineName, strategy);
+  }
+
+  /** Strict canonical-key lookup. flow-id / unknown / legacy-slug -> undefined. */
+  get(machineName: string): FlowStrategy | undefined {
+    return this.strategies.get(machineName);
+  }
+
+  canonicalNames(): string[] {
+    return [...this.strategies.keys()];
+  }
+
+  /** Dispatch entry: canonicalize via the D5 alias map, then look up.
+   *  Throws `UnknownMachineError` on a miss (no conditional fall-through). */
+  resolve(wireName: string): FlowStrategy {
+    const canonical = MACHINE_NAME_ALIASES[wireName] ?? wireName;
+    const strategy = this.strategies.get(canonical);
+    if (!strategy) {
+      throw new UnknownMachineError(wireName);
+    }
+    return strategy;
+  }
+}
+
+export const FLOW_STRATEGY_REGISTRY = new FlowStrategyRegistry();
+
+FLOW_STRATEGY_REGISTRY.register({
+  machineName: LOGIN_AND_ORG_SETUP_MACHINE,
+  beginsDirectly: true,
+  buildMachine: (deps) => createLoginAndOrgSetupMachine(deps.loginMachineDeps),
+});
+
+FLOW_STRATEGY_REGISTRY.register({
+  machineName: PROJECT_CONTEXT_MACHINE,
+  beginsDirectly: false,
+  buildMachine: (deps) => {
     if (!deps.projectContextMachineDeps) {
       throw new Error(
         "projectContextMachineDeps required to construct the project-context machine",
@@ -135,15 +223,19 @@ const MACHINE_REGISTRY: Record<string, MachineFactory> = {
     }
     return createProjectContextMachine(deps.projectContextMachineDeps);
   },
-  // Session-chat (DWD-13 §2B). MR-1.5 stub — `waiting_for_project` initial
-  // state only. Spawned exclusively via the orchestrator's `project_ready`
-  // broadcast hook (project-context → `project_selected` entry); direct
-  // `/begin` HTTP posts route here through `beginIfNotStarted` but the
-  // resulting actor remains in `waiting_for_project` until the orchestrator
-  // forwards a `project_ready` event with the resolved project_id.
-  [SESSION_CHAT_WIRE_NAME]: (deps, _input) =>
-    createSessionChatMachine(deps.sessionChatMachineDeps ?? {}),
-};
+});
+
+// Session-chat (DWD-13 §2B). MR-1.5 stub — `waiting_for_project` initial
+// state only. Spawned exclusively via the orchestrator's `project_ready`
+// broadcast hook (project-context → `project_selected` entry); direct
+// `/begin` HTTP posts route here through `beginIfNotStarted` but the
+// resulting actor remains in `waiting_for_project` until the orchestrator
+// forwards a `project_ready` event with the resolved project_id.
+FLOW_STRATEGY_REGISTRY.register({
+  machineName: SESSION_CHAT_MACHINE,
+  beginsDirectly: false,
+  buildMachine: (deps) => createSessionChatMachine(deps.sessionChatMachineDeps ?? {}),
+});
 
 export interface BeginFlowInput {
   machine: string;
@@ -217,15 +309,13 @@ export class FlowOrchestrator {
    * begun via `beginIfNotStarted` from the auth_ready broadcast hook.
    */
   async begin(input: BeginFlowInput): Promise<FlowProjection> {
-    if (!MACHINE_REGISTRY[input.machine]) {
-      throw new Error(`Unknown machine: ${input.machine}`);
-    }
+    const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
 
     // J-002 and other machines are spawned via beginIfNotStarted (called by
     // the auth_ready broadcast hook) — direct `begin` posts for those would
     // bypass the cross-machine entry contract. Allow them only when the
     // existing flow is already started (idempotent no-op).
-    if (input.machine !== "login-and-org-setup") {
+    if (!strategy.beginsDirectly) {
       return this.beginIfNotStarted({
         machine: input.machine,
         principal_id: input.principal_id,
@@ -413,10 +503,7 @@ export class FlowOrchestrator {
      *  cross-machine entry is idempotent). */
     force_restart?: boolean;
   }): Promise<FlowProjection> {
-    const factory = MACHINE_REGISTRY[input.machine];
-    if (!factory) {
-      throw new Error(`Unknown machine: ${input.machine}`);
-    }
+    const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
     const flow_id = `${input.machine}:${input.principal_id}`;
 
     // Which broadcast hook is this — auth_ready (project-context) or
@@ -495,7 +582,7 @@ export class FlowOrchestrator {
       );
     }
 
-    const machine = factory(this.deps, {
+    const machine = strategy.buildMachine(this.deps, {
       correlation_id: input.correlation_id,
       principal_id: input.principal_id,
     });
@@ -2073,9 +2160,7 @@ export class FlowOrchestrator {
     correlation_id: string;
     events: Array<{ type: string; payload: Record<string, unknown> }>;
   }): Promise<FlowProjection> {
-    if (!MACHINE_REGISTRY[input.machine]) {
-      throw new Error(`Unknown machine: ${input.machine}`);
-    }
+    FLOW_STRATEGY_REGISTRY.resolve(input.machine);
     for (const ev of input.events) {
       const flowEvent: FlowEvent = {
         ts: new Date().toISOString(),
