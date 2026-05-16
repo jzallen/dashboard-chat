@@ -664,3 +664,102 @@ same posture for project-detail.tsx; this MR follows that pattern.
 exercised when the SSR image refreshes) and that the projection-based
 acceptance suite is the SSOT for MR-2 behavior verification.
 
+
+---
+
+## MR-5 (Slice 5 — dataset context switching, US-209) — 2026-05-16
+
+**Status**: DELIVERED on branch `feat/j002-mr5-switching-dataset-context`
+(landed via the dashboard_chat merge queue). The 5 US-209 acceptance
+scenarios + the `@harness` scenario + IC-J002-5 all run green against the
+local compose stack; the full **mr_4 set stays 14/0/0** (zero regression,
+no D-MR4-06-class projection-settle regression) and **mr_6 stays
+8-skipped** (US-210 untouched).
+
+**What shipped** (ui-state-only product code + FE emit seam):
+
+- session-chat machine (`ui-state/lib/machines/session-chat/machine.ts`):
+  new `switching_dataset_context` state + `dataset_resolved_by_agent` /
+  `dataset_picked_directly` transitions in `session_active`; the
+  `switchDatasetContext` actor (GET `/api/datasets/:id` → ScopeResolver
+  invariant 4 cross-tenant/cross-project rejection → PATCH
+  `/api/projects/:pid/sessions/:sid {active_dataset_id}` via the existing
+  `update_session` allowlist — no new backend route, no new migration; the
+  column is MR-2a's migration 012, the write path already existed).
+  `error_recoverable` retry targets `switching_dataset_context`.
+- projection (`projection.ts`): `switching_dataset_context_started`,
+  `dataset_attached`, `dataset_access_denied` handlers. `dataset_attached`
+  is the single atomic `resource_*` update (IC-J002-5); `dataset_access_
+  denied` leaves `context.resource` UNCHANGED (US-209 Example 3/4).
+- orchestrator emission mirrors the D-MR4-06 discipline exactly:
+  `switching_dataset_context` added to `waitForSettledState`'s
+  `TRANSIENT_STATES`; pre-settle `switching_dataset_context_started`
+  emission; post-settle `dataset_attached` / `dataset_access_denied`
+  sourced from `harvestSettledSessionChatState` (new, the session-chat
+  counterpart of `harvestSettledProjectContextState`).
+- FE emit seam: `useChatEngine.handleDatasetSelected` emits
+  `dataset_resolved_by_agent` (agent resolve_dataset path — pending
+  command set) / `dataset_picked_directly` (direct pick) to J-002,
+  best-effort and non-blocking. Per DWD-13 J-002 RETIRES the FE's
+  parallel dataset state; the FE delta is the emit seam only.
+- TS harness: `harness.j002.attach_dataset_via_agent(name)` /
+  `attach_dataset_directly(id)`; `assert_scope` now overlays the
+  session-chat projection's `resource_*` half (DWD-13: session-chat owns
+  `resource_*`, project-context owns `org_id`/`project_id`).
+
+### D-MR5-01 — D-MR4-06-class settle regression on the BEGIN + RESUME paths
+
+**Status**: RESOLVED within MR-5 (required to unblock US-209; also
+restores US-205's resume contract).
+
+**What**: D-MR4-06 fixed the LEAF-B "resolved value lands on machine
+context AFTER the snapshot flips, projection-of-log read at emission time
+sees null" problem (problem #2) for `switching_project_intent` ONLY, and
+explicitly deferred the begin / resume counterparts to "LEAF-C+". On the
+substrate as of `a63aa28` this left two compounding regressions:
+
+1. **Begin path**: `beginIfNotStarted`'s `project_selected` emission read
+   `project` (and `org_id`) from the projection-of-log at first write →
+   both null → `project_selected` emitted with `project:null`,
+   `active_scope.project_id` null, and `maybeFireProjectReady`
+   short-circuited on `!orgId/!projectId` so **session-chat never
+   spawned**. Every begin-dependent flow (US-205 resume, and therefore the
+   entire US-209 chain) was blocked. mr_4 masked it because US-207/US-208
+   drive the D-MR4-06-fixed *switch* path.
+2. **Resume path**: `appendSessionChatTerminalEvents`' `session_resumed`
+   emission read `session_id` / `transcript` / `resource` /
+   `underlying_cause_tag` from the projection-of-log → null/empty → the
+   resumed dataset chip + transcript never reached the projection (US-205
+   #1/#3 red).
+
+**Fix** (in-pattern, ui-state-only — the same harvest discipline
+D-MR4-06 established): `harvestSettledProjectContextState` extended to
+also return `org_id`; the begin emission + `maybeFireProjectReady` source
+`project`/`org_id`/cause from it. `harvestSettledSessionChatState`
+(new) harvests `session_id`/`transcript`/`resource`/cause for the
+`session_resumed` emission. No machine-logic change — the machines'
+materialization was already correct (IC-J002-3 atomic assign); the
+regression was purely that the emission never *observed* it.
+
+Regression coverage: `ui-state/lib/orchestrator-switching-dataset-context.test.ts`
+(new inner port-to-port contract — RED without the harvest, GREEN with);
+US-205 HTTP scenarios (outer) back green; the 28 session-chat machine
+unit tests pin the state/transition contract.
+
+### D-MR5-02 — Full-suite acceptance ordering fragility (pre-existing, NOT MR-5)
+
+**Status**: DOCUMENTED — pre-existing shared-principal hazard, out of MR-5
+scope, Iron-Rule-untouched.
+
+The J-002 acceptance flows are all keyed by the single `dev-user-001`
+principal. Running the *entire* suite in one process pollutes shared
+Redis flow logs / backend rows across MRs, so mr_1/mr_2/mr_3 scenarios
+(US-201..206) intermittently fail when run after later MRs — independent
+of MR-5 (e.g. US-201's failure is a `web-ssr` SSR-HTML assertion, the
+exact posture D-MR2-e documents; the project-context `/begin`
+force_restart resets only ITS flow log, not session-chat's). MR-5's own
+scenarios are made **hermetic** (each resets the session-chat flow via
+`/ui-state/flow/session-chat/begin` before spawning) so mr_5 is green
+both isolated and within its marker set. Recommendation for a future
+cleanup MR: a per-test principal or a session-chat-flow-reset conftest
+fixture so the full suite is order-independent.
