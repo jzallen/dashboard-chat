@@ -59,10 +59,30 @@ export async function authMiddleware(c: Context, next: Next) {
       return c.json({ error: "WORKOS_CLIENT_ID not configured" }, 401);
     }
     const options = getVerifyOptions();
-    await jwtVerify(token, keySet, {
+    const { payload } = await jwtVerify(token, keySet, {
       ...options,
       algorithms: ["RS256"],
     });
+
+    // D-MR4-05: derive the tenant identity from the cryptographically
+    // verified JWT and propagate it downstream as X-Org-Id / X-User-Id —
+    // the same headers auth-proxy injects (org_id → X-Org-Id, sub →
+    // X-User-Id; see auth-proxy/lib/auth.ts). The production chat path
+    // (FE → reverse-proxy → /worker/chat → agent) has NO auth-proxy in
+    // the chain, so the agent must not trust that these headers were set
+    // upstream. We OVERWRITE any inbound X-Org-Id / X-User-Id: a
+    // header-forging client must not be able to escape its own tenant
+    // (this is what makes the scope.ts cross-tenant guard live). Request
+    // headers are immutable, so we replace c.req.raw with a clone that
+    // carries the verified identity — the channel scope.ts reads via
+    // index.ts `handleChat(c.req.raw)`.
+    const orgId = typeof payload.org_id === "string" ? payload.org_id : "";
+    const userId = typeof payload.sub === "string" ? payload.sub : "";
+    const headers = new Headers(c.req.raw.headers);
+    headers.set("X-Org-Id", orgId);
+    headers.set("X-User-Id", userId);
+    c.req.raw = new Request(c.req.raw, { headers });
+
     return next();
   } catch (err) {
     console.error("JWT verification failed:", err);

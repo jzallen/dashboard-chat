@@ -177,13 +177,39 @@ component that subscribes to the J-002 projection stream and calls
 
 ### D-MR4-05 — Agent's authMiddleware does not inject X-Org-Id from JWT
 
-**Status**: DEFERRED — pre-existing substrate gap surfaced by MR-4-verify.
+**Status**: RESOLVED on branch `fix/d-mr4-05-agent-xorgid` (landed via
+the dashboard_chat merge queue). Option (a) applied: the agent's
+`authMiddleware` now derives the tenant identity from the
+cryptographically verified JWT and propagates it downstream as
+`X-Org-Id` (← `org_id` claim) / `X-User-Id` (← `sub` claim) — the same
+header convention auth-proxy uses (`auth-proxy/lib/auth.ts`). Both
+previously-blocked US-208 scenarios now run green against the local
+compose stack: the cross-tenant 403 guard is live, and the @degraded
+body-fallback scenario no longer skips (its X-Org-Id precondition is
+now real). Full `-m mr_4` set: 14 passed / 0 failed / 0 skipped — the
+12 post-D-MR4-06 scenarios stay green, zero regressions. Agent vitest
+suite green (157 passed; a 2-line regression test was added to
+`agent/lib/auth.test.ts` asserting injection + forged-header overwrite).
 
-**What**: `agent/lib/auth.ts` verifies the bearer as an RS256 JWT but
-discards the verified payload — it calls `next()` without setting any
-request-context fields. Downstream code (`agent/lib/chat/scope.ts`
-line 128–129) reads `X-Org-Id` from the inbound request headers to
-enforce the documented cross-tenant defense-in-depth:
+**Root cause**: `agent/lib/auth.ts` verified the bearer as an RS256 JWT
+but discarded the verified payload — it called `next()` without
+propagating any identity. Because the production chat path
+(FE → reverse-proxy → /worker/chat → agent) has no auth-proxy in the
+chain, the agent never received an `X-Org-Id` header, so the
+cross-tenant guard at `scope.ts:159` was dead code (it is skipped when
+`orgIdHeader` is null). The fix overwrites any inbound
+`X-Org-Id`/`X-User-Id` with the verified-JWT values — a header-forging
+client cannot escape its own tenant. Request headers are immutable, so
+`authMiddleware` replaces `c.req.raw` with a clone carrying the
+verified identity (the channel `scope.ts` reads via
+`index.ts` `handleChat(c.req.raw)`).
+
+**What (original symptom)**: `agent/lib/auth.ts` verifies the bearer as
+an RS256 JWT but discards the verified payload — it calls `next()`
+without setting any request-context fields. Downstream code
+(`agent/lib/chat/scope.ts` line 128–129) reads `X-Org-Id` from the
+inbound request headers to enforce the documented cross-tenant
+defense-in-depth:
 
 ```ts
 // scope.ts:156-158

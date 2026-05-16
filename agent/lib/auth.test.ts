@@ -85,6 +85,69 @@ describe("authMiddleware (dev mode)", () => {
   });
 });
 
+describe("authMiddleware identity injection (D-MR4-05)", () => {
+  // The agent must not trust that auth-proxy is in front of it for /chat
+  // (the production path FE → reverse-proxy → /worker/chat → agent has no
+  // auth-proxy in the chain). Identity MUST be derived from the
+  // cryptographically verified JWT and reach downstream readers through
+  // c.req.raw.headers — the exact channel agent/lib/chat/scope.ts uses via
+  // index.ts `handleChat(c.req.raw)`.
+  beforeEach(() => {
+    mockJwtVerifyImpl = vi.fn().mockResolvedValue({
+      payload: {
+        sub: "dev-user-001",
+        org_id: "dev-org-001",
+        email: "dev@localhost",
+      },
+      protectedHeader: { alg: "RS256" },
+      key: {},
+    });
+  });
+
+  function appReadingRawHeaders() {
+    const app = new Hono();
+    app.use("*", authMiddleware);
+    app.post("/echo", (c) =>
+      c.json({
+        orgId: c.req.raw.headers.get("x-org-id"),
+        userId: c.req.raw.headers.get("x-user-id"),
+      })
+    );
+    return app;
+  }
+
+  it("injects X-Org-Id / X-User-Id from the verified JWT onto c.req.raw", async () => {
+    const app = appReadingRawHeaders();
+    const res = await app.request("/echo", {
+      method: "POST",
+      headers: { Authorization: "Bearer valid.jwt.token" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      orgId: "dev-org-001",
+      userId: "dev-user-001",
+    });
+  });
+
+  it("overwrites a forged inbound X-Org-Id / X-User-Id with the verified-JWT identity", async () => {
+    const app = appReadingRawHeaders();
+    const res = await app.request("/echo", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer valid.jwt.token",
+        "X-Org-Id": "attacker-org",
+        "X-User-Id": "attacker-user",
+      },
+    });
+    expect(res.status).toBe(200);
+    // The forging client cannot escape its own tenant: JWT claims win.
+    expect(await res.json()).toEqual({
+      orgId: "dev-org-001",
+      userId: "dev-user-001",
+    });
+  });
+});
+
 describe("authMiddleware (production mode)", () => {
   beforeEach(() => {
     vi.resetModules();
