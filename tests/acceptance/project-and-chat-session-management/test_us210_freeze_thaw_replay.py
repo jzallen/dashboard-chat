@@ -12,6 +12,11 @@ semantics) per the review §5 recommendation.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import threading
+import time
+
 import pytest
 
 from driver import J002Driver
@@ -22,8 +27,146 @@ pytestmark = [
     pytest.mark.needs_compose_stack,
 ]
 
+DEV_PRINCIPAL_ID = "dev-user-001"
+DEV_ORG_ID = "dev-org-001"
+SC_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
+PC_FLOW_ID = f"project-and-chat-session-management:{DEV_PRINCIPAL_ID}"
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-6; un-skip when top-level on.FREEZE + freeze side-state land")
+
+# ───────────────────────────── dev backend seeding ─────────────────────────────
+
+
+def _api_curl(method: str, path: str, body: dict | None = None,
+               org_id: str = DEV_ORG_ID) -> str:
+    args = [
+        "docker", "exec", "dashboard-api", "curl", "-sS",
+        "-X", method, f"http://localhost:8000{path}",
+        "-H", f"x-user-id: {DEV_PRINCIPAL_ID}",
+        "-H", f"x-org-id: {org_id}",
+        "-H", "x-user-email: dev@localhost",
+    ]
+    if body is not None:
+        args += ["-H", "content-type: application/json", "-d", json.dumps(body)]
+    return subprocess.run(
+        args, capture_output=True, text=True, timeout=10, check=True
+    ).stdout
+
+
+def _create_project(name: str) -> str:
+    return json.loads(_api_curl("POST", "/api/projects", {"name": name}))["data"]["id"]
+
+
+def _create_session(project_id: str, title: str) -> str:
+    body = json.loads(
+        _api_curl("POST", f"/api/projects/{project_id}/sessions", {"title": title})
+    )
+    return body["data"]["id"] if "data" in body else body["id"]
+
+
+def _create_dataset(project_id: str, name: str) -> str:
+    import uuid
+    dataset_id = str(uuid.uuid4())
+    sql = (
+        f"import sqlite3; conn=sqlite3.connect('/data/app.db'); "
+        f"conn.execute(\"INSERT INTO datasets (id, project_id, name, schema_config, "
+        f"partition_fields, created_at, updated_at) VALUES "
+        f"('{dataset_id}', '{project_id}', '{name}', '{{}}', '[]', "
+        f"'2026-05-15', '2026-05-15')\"); conn.commit(); print('inserted')"
+    )
+    proc = subprocess.run(
+        ["docker", "exec", "dashboard-api", "python", "-c", sql],
+        capture_output=True, text=True, timeout=10, check=True,
+    )
+    assert "inserted" in proc.stdout, proc.stderr
+    return dataset_id
+
+
+# ───────────────────────────── flow helpers ─────────────────────────────
+
+
+def _sc(driver: J002Driver) -> dict:
+    probe = driver.get(
+        f"/ui-state/flow/session-chat/projection?flow_id={SC_FLOW_ID}",
+        base=driver.auth_proxy_url,
+    )
+    return json.loads(probe.body) if probe.status == 200 else {}
+
+
+def _pc(driver: J002Driver) -> dict:
+    probe = driver.get(
+        f"/ui-state/flow/project-and-chat-session-management/projection?flow_id={PC_FLOW_ID}",
+        base=driver.auth_proxy_url,
+    )
+    return json.loads(probe.body) if probe.status == 200 else {}
+
+
+def _spawn_to_session_list(driver: J002Driver) -> dict:
+    """Reset both J-002 flows then spawn project-context → session-chat;
+    settle session-chat in session_list_loaded. Hermetic per scenario
+    (the shared dev-user-001 principal would otherwise bleed state)."""
+    driver.post(
+        "/ui-state/flow/session-chat/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
+    )
+    begin = driver.post(
+        "/ui-state/flow/project-and-chat-session-management/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
+    )
+    assert begin.status == 200, f"begin {begin.status}: {begin.body[:300]}"
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        if _sc(driver).get("state") == "session_list_loaded":
+            return _sc(driver)
+        time.sleep(0.05)
+    pytest.fail(f"session-chat never reached session_list_loaded; last={_sc(driver)!r}")
+
+
+def _post_event(driver: J002Driver, machine: str, flow_id: str, type_: str,
+                 payload: dict, extra_headers: dict | None = None) -> None:
+    driver.post(
+        f"/ui-state/flow/{machine}/event",
+        base=driver.auth_proxy_url,
+        json_body={"flow_id": flow_id, "type": type_, "payload": payload},
+        extra_headers=extra_headers,
+    )
+
+
+def _freeze(driver: J002Driver, reason: str | None = None) -> None:
+    body: dict = {"principal_id": DEV_PRINCIPAL_ID}
+    kind = "thaw" if reason else "freeze"
+    if reason:
+        body["reason"] = reason
+    r = driver.post(
+        f"/ui-state/flow/session-chat/{kind}",
+        base=driver.auth_proxy_url,
+        json_body=body,
+    )
+    assert r.status == 200, f"/{kind} {r.status}: {r.body[:300]}"
+
+
+def _thaw(driver: J002Driver, reason: str = "thaw") -> None:
+    body: dict = {"principal_id": DEV_PRINCIPAL_ID, "reason": reason}
+    r = driver.post(
+        "/ui-state/flow/session-chat/thaw",
+        base=driver.auth_proxy_url,
+        json_body=body,
+    )
+    assert r.status == 200, f"/thaw {r.status}: {r.body[:300]}"
+
+
+def _wait_state(driver: J002Driver, getter, want: str, timeout: float = 8.0) -> dict:
+    deadline = time.monotonic() + timeout
+    last: dict = {}
+    while time.monotonic() < deadline:
+        last = getter(driver)
+        if last.get("state") == want:
+            return last
+        time.sleep(0.05)
+    pytest.fail(f"state never reached {want}; last={last!r}")
+
+
 @pytest.mark.happy_path
 def test_token_expiry_during_session_resume_pauses_and_replays_with_original_correlation(
     requires_compose_stack: None,
@@ -31,7 +174,54 @@ def test_token_expiry_during_session_resume_pauses_and_replays_with_original_cor
 ) -> None:
     """resuming_session → freeze → THAW → resuming_session with same correlation reference;
     the 401 in-flight response is discarded by J-002 with no transition."""
-    pytest.fail("not yet implemented")
+    proj_id = _create_project("Q4 Analytics")
+    session_id = _create_session(proj_id, "chat-9b2a")
+    sc = _spawn_to_session_list(driver)
+    original_correlation = sc.get("correlation_id")
+    assert original_correlation, f"no correlation on session_list_loaded: {sc!r}"
+
+    # Maya clicks the session; the resume is held (gated test knob) so the
+    # orchestrator FREEZE broadcast lands while J-002 is still in
+    # resuming_session — the in-flight transcript-load 401-discard contract.
+    def _click() -> None:
+        _post_event(
+            driver, "session-chat", SC_FLOW_ID, "session_clicked",
+            {"session_id": session_id},
+            extra_headers={"X-Force-Slow-Resume": "3000"},
+        )
+
+    t = threading.Thread(target=_click, daemon=True)
+    t.start()
+    # Give the click time to be dispatched and the actor to enter
+    # resuming_session (now holding in the gated slow-resume window).
+    time.sleep(1.0)
+
+    # J-001 expires → orchestrator broadcasts FREEZE.
+    _freeze(driver)
+
+    frozen = _wait_state(driver, _sc, "freeze")
+    assert frozen["context"].get("last_live_state") == "resuming_session", (
+        f"US-210 #1: froze from resuming_session; got "
+        f"{frozen['context'].get('last_live_state')!r}"
+    )
+    t.join(timeout=6.0)
+    # The slow resume's 401-equivalent response is discarded — no
+    # transition out of freeze from the stopped in-flight invoke.
+    time.sleep(0.3)
+    assert _sc(driver)["state"] == "freeze", "in-flight resume must be discarded"
+
+    # Silent re-auth succeeds → THAW. freeze → resuming_session (re-invoke
+    # with fresh JWT) → session_active.
+    _thaw(driver)
+    active = _wait_state(driver, _sc, "session_active")
+    assert active["context"].get("session_id") == session_id, (
+        f"US-210 #1: resumed session id; got {active['context'].get('session_id')!r}"
+    )
+    # The original correlation reference is preserved across freeze/thaw.
+    assert active.get("correlation_id") == original_correlation, (
+        f"US-210 #1: correlation must be preserved; "
+        f"{active.get('correlation_id')!r} != {original_correlation!r}"
+    )
 
 
 @pytest.mark.skip(reason="DELIVER-deferred to MR-6")

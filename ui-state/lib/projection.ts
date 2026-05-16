@@ -134,6 +134,18 @@ interface ReducedContext {
    *  `error_recoverable → retry_clicked → session_welcome` boundary
    *  per app-arch §6.4. */
   pending_first_message: string;
+  // ── MR-6 / US-210 cross-machine FREEZE/THAW ──────────────────────────
+  /** The live state the machine froze from; written by the per-machine
+   *  `*_frozen` event, read by `*_thawed` to restore (DWD-2/DWD-6 — the
+   *  history target is a queryable context field, not an XState history
+   *  node, so the TS harness can assert on it). */
+  last_live_state: string | null;
+  /** Cumulative DWD-7 stale-intent drop counter (observability only —
+   *  the muscle-memory click that no longer resolves post-THAW). */
+  stale_intents_dropped_count: number;
+  /** The most recent stale-dropped intent, for
+   *  `harness.j002.assert_stale_intent_dropped(intent_type, target_id)`. */
+  last_stale_intent: { intent_type: string; target_id: string } | null;
 }
 
 function initialContext(): ReducedContext {
@@ -165,6 +177,9 @@ function initialContext(): ReducedContext {
     resource: { type: null, id: null },
     session_dataset_unavailable: false,
     pending_first_message: "",
+    last_live_state: null,
+    stale_intents_dropped_count: 0,
+    last_stale_intent: null,
   };
 }
 
@@ -845,6 +860,79 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     context: {
       ...context,
       underlying_cause_tag: "dataset_access_denied",
+    },
+  }),
+
+  // ──────────── MR-6 / US-210 cross-machine FREEZE/THAW ────────────
+  // Per app-arch §2.3 the freeze lifecycle is per-machine; the
+  // orchestrator's broadcastFreeze/broadcastThaw emission arms append
+  // these (machines never write FlowEvents — ADR-028/ADR-030). `*_frozen`
+  // records `last_live_state` so `*_thawed` can restore it. All other
+  // context is preserved untouched — the FE renders the "Refreshing your
+  // session..." banner OVER the prior paint, so the welcome chips / scope
+  // / transcript stay visible with no flicker (US-210 Example 5).
+
+  project_context_frozen: (_state, context, event) => ({
+    state: "freeze",
+    context: {
+      ...context,
+      last_live_state:
+        (event.payload.last_live_state as string | undefined) ?? null,
+    },
+  }),
+
+  session_chat_frozen: (_state, context, event) => ({
+    state: "freeze",
+    context: {
+      ...context,
+      last_live_state:
+        (event.payload.last_live_state as string | undefined) ?? null,
+    },
+  }),
+
+  // THAW restores the state the machine froze from. When that state was
+  // an invoke-driven transient, a terminal event (session_resumed /
+  // project_switched / …) emitted immediately after by the same
+  // broadcastThaw arm advances it further; this handler is the baseline
+  // restore so a non-transient freeze (e.g. session_welcome — US-210
+  // Example 5) returns with no flicker and no extra event.
+  project_context_thawed: (_state, context, _event) => ({
+    state: context.last_live_state ?? "resolving_initial_scope",
+    context: { ...context },
+  }),
+
+  session_chat_thawed: (_state, context, _event) => ({
+    state: context.last_live_state ?? "loading_session_list",
+    context: { ...context },
+  }),
+
+  // DWD-7 — observability only, no state change, no UX surface. The
+  // cumulative counter + last_stale_intent feed
+  // `harness.j002.assert_stale_intent_dropped` / the
+  // `assert_no_stale_intents_dropped` happy-path assertion.
+  stale_intent_dropped_after_thaw: (state, context, event) => ({
+    state,
+    context: {
+      ...context,
+      stale_intents_dropped_count: context.stale_intents_dropped_count + 1,
+      last_stale_intent: {
+        intent_type: (event.payload.intent_type as string | undefined) ?? "",
+        target_id: (event.payload.target_id as string | undefined) ?? "",
+      },
+    },
+  }),
+
+  // The 5s replay-buffer timeout / silent-reauth-failure path (US-210
+  // Example 3 / scenario 4). The subsequent `*_recoverable_error` event
+  // (emitted right after by the same broadcastThaw arm) sets the
+  // user-facing error_recoverable; this handler moves state out of
+  // `freeze` and tags the cause so a lone `replay_abandoned` is still
+  // coherent. `last_live_state` is preserved for the retry history target.
+  replay_abandoned: (_state, context, _event) => ({
+    state: "error_recoverable",
+    context: {
+      ...context,
+      underlying_cause_tag: "replay_abandoned",
     },
   }),
 };

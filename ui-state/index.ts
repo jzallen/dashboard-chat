@@ -17,6 +17,7 @@
 import { KNOB, probe, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import type { Context } from "hono";
 
 import type { ResourceType } from "./lib/active-scope.ts";
 import { resolveActiveScope } from "./lib/active-scope.ts";
@@ -96,6 +97,19 @@ function forceCreateSessionFailureFlag(): boolean {
   return false;
 }
 
+// US-210 test-infra knob (consume-once, gated). The next session-chat
+// `session_clicked` whose request bears `X-Force-Slow-Resume: <ms>` holds
+// the `resumeSession` invoke for <ms> before the backend round-trip, so
+// the acceptance scenario can broadcast FREEZE deterministically while the
+// machine is still in `resuming_session` (US-210 scenario 1). Not a
+// product behavior — gated by the failure-simulation registry.
+let forceSlowResumeMsNext = 0;
+function slowResumeMsFlag(): number {
+  const v = forceSlowResumeMsNext;
+  forceSlowResumeMsNext = 0;
+  return v;
+}
+
 const orchestrator = new FlowOrchestrator({
   eventLog,
   loginMachineDeps: {
@@ -126,7 +140,11 @@ const orchestrator = new FlowOrchestrator({
   // switchDatasetContext (US-209 — dataset context switching).
   sessionChatMachineDeps: {
     loadSessionList: loadSessionListActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
-    resumeSession: resumeSessionActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+    resumeSession: resumeSessionActor(
+      BACKEND_URL,
+      DEFAULT_PRINCIPAL_HEADERS,
+      slowResumeMsFlag,
+    ),
     createSessionEagerly: createSessionEagerlyActor(
       BACKEND_URL,
       DEFAULT_PRINCIPAL_HEADERS,
@@ -384,6 +402,27 @@ app.post("/flow/:machine/event", async (c) => {
     forceCreateSessionFailureNext = true;
   }
 
+  // US-210 slow-resume knob — header transport (X-Force-Slow-Resume: <ms>).
+  // Gated via the same KNOB.expireToken freeze/expiry test family. Lets the
+  // scenario-1 acceptance test broadcast FREEZE while resuming_session is
+  // still in flight (the in-flight 401-discard contract). Consumed once.
+  if (
+    machine === "session-chat" &&
+    body.type === "session_clicked" &&
+    c.req.header("X-Force-Slow-Resume") &&
+    shouldInject(KNOB.expireToken, {
+      event: { type: "__expire_token__" },
+      correlationId: correlation_id,
+      serviceName: "ui-state",
+    })
+  ) {
+    const ms = Number.parseInt(
+      c.req.header("X-Force-Slow-Resume") ?? "0",
+      10,
+    );
+    forceSlowResumeMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
+  }
+
   try {
     const projection = await orchestrator.send({
       machine,
@@ -400,6 +439,78 @@ app.post("/flow/:machine/event", async (c) => {
     );
   }
 });
+
+// Cross-machine FREEZE / THAW test-driving endpoints (US-005 / US-210).
+//
+// Per the harness four-piece contract
+// (`tests/acceptance/user-flow-state-machines/harness/README.md` §1):
+// `POST /flow/<machine>/freeze` and `/thaw` represent the orchestrator
+// broadcast J-001's `expired_token` → silent-reauth lifecycle drives.
+// The live compose stack does NOT wire a `silentReauth` actor (recovery
+// is deferred-to-UI2 in J-001's own suite), so these endpoints expose the
+// EXISTING `orchestrator.broadcastFreeze` / `broadcastThaw` substrate
+// methods (byte-unchanged — ADR-028 / DWD-6 / C9) to the test wire,
+// exactly as `__expire_token__` exposes token expiry. They are test-only:
+// gated by the same `KNOB.expireToken` failure-simulation gate (ADR-035 ×
+// flag, closed by default in production). J-002 emits NOTHING here — it is
+// a pure downstream consumer (ADR-028:46-48).
+//
+// `originFlowId` is the J-001 login flow id for the principal. The
+// broadcast loop skips the origin and reaches every other spawned actor
+// (both J-002 flows for the principal) — so the J-001 actor need not even
+// exist; the id is only the skip key.
+function freezeThawHandler(kind: "freeze" | "thaw") {
+  return async (c: Context) => {
+    const correlation_id =
+      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    let body: { principal_id?: string; reason?: "thaw" | "abandoned" };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      body = {};
+    }
+    const principal_id =
+      c.req.header("X-User-Id") || body.principal_id || "anon";
+    // Gate under the expire-token knob: /freeze + /thaw ARE the
+    // orchestrator broadcast lifecycle that J-001's `__expire_token__` →
+    // silent-reauth drives. The manifest gates `KNOB.expireToken` to the
+    // `__expire_token__` wire event (transport-match), so consult it with
+    // that canonical type — these endpoints belong to the same
+    // token-expiry test family (ADR-035 closed-by-default in production).
+    const allowed = shouldInject(KNOB.expireToken, {
+      event: { type: "__expire_token__" },
+      correlationId: correlation_id,
+      serviceName: "ui-state",
+    });
+    if (!allowed) {
+      return c.json(
+        {
+          error:
+            `failure-simulation knob disabled: /${kind} requires the gate ` +
+            `enabled (ENVIRONMENT=dev|ci + flag set)`,
+        },
+        403,
+      );
+    }
+    const originFlowId = `login-and-org-setup:${principal_id}`;
+    try {
+      if (kind === "freeze") {
+        await orchestrator.broadcastFreeze(originFlowId);
+      } else {
+        const reason = body.reason === "abandoned" ? "abandoned" : "thaw";
+        await orchestrator.broadcastThaw(originFlowId, reason);
+      }
+      return c.json({ status: "ok", kind, principal_id });
+    } catch (err) {
+      return c.json(
+        { error: `${kind}_failed`, message: (err as Error).message },
+        500,
+      );
+    }
+  };
+}
+app.post("/flow/:machine/freeze", freezeThawHandler("freeze"));
+app.post("/flow/:machine/thaw", freezeThawHandler("thaw"));
 
 // Deep-link / scope-resolution endpoint per ADR-029 (Step 01-03).
 //

@@ -34,6 +34,7 @@ import {
   type SessionChatMachineDeps,
 } from "./machines/session-chat/index.ts";
 import {
+  harvestSettledFreezeState,
   harvestSettledLoginState,
   harvestSettledProjectContextState,
   harvestSettledSessionChatState,
@@ -56,6 +57,22 @@ import { buildProjection } from "./projection.ts";
  */
 const PROJECT_CONTEXT_WIRE_NAME = "project-and-chat-session-management";
 const SESSION_CHAT_WIRE_NAME = "session-chat";
+
+/** The two J-002 machine wire names. US-210 / MR-6: only these flows get
+ *  the freeze-lifecycle emission arms (`*_frozen` / `*_thawed` /
+ *  `replay_abandoned` / `stale_intent_dropped_after_thaw`). The login
+ *  origin flow and any non-J-002 flow are skipped — they have no `freeze`
+ *  side-state and no projection consumer for these events. */
+const J002_MACHINES = new Set([
+  PROJECT_CONTEXT_WIRE_NAME,
+  SESSION_CHAT_WIRE_NAME,
+]);
+
+/** Derive the machine wire name from a `<machine>:<principal>` flow_id.
+ *  Principal ids never contain `:`, so the head segment is the machine. */
+function machineOfFlow(flow_id: string): string {
+  return flow_id.split(":")[0] ?? "";
+}
 
 export interface OrchestratorDeps {
   eventLog: FlowEventLog;
@@ -1039,6 +1056,65 @@ export class FlowOrchestrator {
     }
   }
 
+  /**
+   * MR-6 / US-210 — emission-completeness for the project-context THAW
+   * history-target re-entry. When `last_live_state` was the invoke-driven
+   * `switching_project` (US-210 scenario 2), `freeze → switching_project`
+   * re-runs `switchProject` with the fresh post-re-auth JWT and settles
+   * into `project_selected` / `scope_mismatch_terminal` /
+   * `error_recoverable`. That settle lands on the machine context AFTER
+   * the snapshot flips and BEFORE any FlowEvent captures it — the
+   * D-MR4-06 class. Source the terminal payload from the designated
+   * harvest boundary (mirrors the `switching_project_intent` settle path
+   * in `send()`), so the projection advances to the switched project
+   * instead of staying at `project_context_thawed`. Non-transient
+   * `last_live_state` values restore via the `project_context_thawed`
+   * reducer alone — no terminal emission needed.
+   */
+  private async appendProjectContextThawTerminal(
+    flow_id: string,
+    actor: AnyActorRef,
+    settledState: string,
+    correlation_id: string,
+  ): Promise<void> {
+    const h = harvestSettledProjectContextState(actor);
+    if (settledState === "project_selected") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "project_switched",
+        payload: { org_id: h.org_id ?? "", project: h.project },
+        correlation_id,
+      });
+      // Re-broadcast project_ready so a frozen-then-thawed session-chat
+      // re-binds to the switched project (idempotent on same id).
+      await this.maybeFireProjectReady(
+        flow_id,
+        parsePrincipal(flow_id),
+        correlation_id,
+        { org_id: h.org_id ?? "", project: h.project },
+      );
+    } else if (settledState === "scope_mismatch_terminal") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "scope_mismatch_displayed",
+        payload: {
+          org_id: h.org_id ?? "",
+          underlying_cause_tag: h.underlying_cause_tag ?? "access_revoked",
+        },
+        correlation_id,
+      });
+    } else if (settledState === "error_recoverable") {
+      await this.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "project_context_recoverable_error",
+        payload: {
+          underlying_cause_tag: h.underlying_cause_tag ?? "transient",
+        },
+        correlation_id,
+      });
+    }
+  }
+
   async send(input: SendEventInput): Promise<FlowProjection> {
     const actor = this.actors.get(input.flow_id);
     if (!actor) {
@@ -1224,12 +1300,16 @@ export class FlowOrchestrator {
     // failure), broadcast THAW.
     const prior = this.priorState.get(input.flow_id);
     if (stateValue === "expired_token" && prior !== "expired_token") {
-      this.broadcastFreeze(input.flow_id);
-    } else if (
-      prior === "expired_token" &&
-      (stateValue === "ready" || stateValue === "error_recoverable")
-    ) {
-      await this.broadcastThaw(input.flow_id);
+      await this.broadcastFreeze(input.flow_id);
+    } else if (prior === "expired_token" && stateValue === "ready") {
+      // Silent re-auth succeeded → THAW: each frozen J-002 machine
+      // returns to its `last_live_state` and queued intents replay FIFO.
+      await this.broadcastThaw(input.flow_id, "thaw");
+    } else if (prior === "expired_token" && stateValue === "error_recoverable") {
+      // Silent re-auth FAILED (US-210 Example 3): the buffered intents are
+      // abandoned and each frozen J-002 machine falls through
+      // `freeze → error_recoverable` (cause `replay_abandoned`).
+      await this.broadcastThaw(input.flow_id, "abandoned");
     }
     this.priorState.set(input.flow_id, stateValue);
     // ---- End freeze/thaw signaling --------------------------------------
@@ -1652,12 +1732,13 @@ export class FlowOrchestrator {
    * tracks the freeze state at this level so `send()` can queue intent
    * events arriving at frozen actors into the bounded replay buffer.
    */
-  broadcastFreeze(originFlowId: string): void {
+  async broadcastFreeze(originFlowId: string): Promise<void> {
     const now = Date.now();
     for (const [flow_id, actor] of this.actors.entries()) {
       if (flow_id === originFlowId) continue;
       // Mark frozen at the orchestrator level — `send()` consults this to
-      // decide whether to forward or queue.
+      // decide whether to forward or queue. Synchronous so a caller that
+      // does not await still observes `isFrozen` immediately (B1/B6/B7).
       if (!this.frozen.has(flow_id)) {
         this.frozen.set(flow_id, {
           frozenAt: now,
@@ -1665,14 +1746,38 @@ export class FlowOrchestrator {
           queued: [],
         });
       }
-      // Also notify the actor — machines may extend behavior on FREEZE in
-      // a later step (e.g. pause polling). Today this is a no-op for the
-      // login machine, which is intentional — ADR-028 §"No machine imports
-      // another machine" keeps the signal flowing via the orchestrator.
+      // Notify the actor. J-002's machines declare a top-level on.FREEZE
+      // (US-210 §2.2) that transitions into their `freeze` side-state and
+      // assigns `last_live_state`. The login machine has no handler — a
+      // harmless no-op (ADR-028 §"No machine imports another machine").
       try {
         actor.send({ type: "FREEZE" } as never);
       } catch {
         // Defensive: a stopped actor would reject the send; ignore.
+      }
+      // Emission arm (ADR-030 2026-05-16 tripwire). The machine just
+      // settled into `freeze` and assigned `last_live_state` on its
+      // snapshot context. Without an emission here the projection — the
+      // SSOT every downstream reader (FE, TS harness, acceptance probes)
+      // observes — stays at the pre-freeze state forever: the exact
+      // D-MR4-06 / D-MR5-01 emission-completeness failure class. Harvest
+      // the settled freeze state and append the per-machine `*_frozen`
+      // FlowEvent so the projection reflects `freeze`.
+      const machine = machineOfFlow(flow_id);
+      if (
+        J002_MACHINES.has(machine) &&
+        (actor.getSnapshot().value as string) === "freeze"
+      ) {
+        const h = harvestSettledFreezeState(actor);
+        await this.deps.eventLog.append(flow_id, {
+          ts: new Date().toISOString(),
+          type:
+            machine === SESSION_CHAT_WIRE_NAME
+              ? "session_chat_frozen"
+              : "project_context_frozen",
+          payload: { last_live_state: h.last_live_state },
+          correlation_id: h.correlation_id,
+        });
       }
     }
   }
@@ -1682,7 +1787,10 @@ export class FlowOrchestrator {
    * events are replayed in arrival order, unless the flow was abandoned
    * (overflow or 5s timeout) in which case the queue is dropped.
    */
-  async broadcastThaw(originFlowId: string): Promise<void> {
+  async broadcastThaw(
+    originFlowId: string,
+    reason: "thaw" | "abandoned" = "thaw",
+  ): Promise<void> {
     // Snapshot the keys first because draining mutates the map.
     const flowIds = Array.from(this.frozen.keys());
     for (const flow_id of flowIds) {
@@ -1692,31 +1800,139 @@ export class FlowOrchestrator {
       // skipped them), but defend against future callers.
       if (flow_id === originFlowId) continue;
       // Take the queue off before signalling, so re-entrant sends during
-      // replay don't double-up. If abandoned, drop the queue silently.
+      // replay don't double-up.
       const drained = state.queued;
       this.frozen.delete(flow_id);
-      const abandoned = this.abandoned.has(flow_id);
-      try {
-        const actor = this.actors.get(flow_id);
-        if (actor) {
-          actor.send({ type: "THAW" } as never);
+      // A flow is abandoned when the replay buffer overflowed / the 5s
+      // window elapsed (lazy `send()` check) OR silent re-auth failed
+      // (reason === "abandoned", US-210 Example 3 / scenario 4).
+      const abandoned = this.abandoned.has(flow_id) || reason === "abandoned";
+      const actor = this.actors.get(flow_id);
+      const machine = machineOfFlow(flow_id);
+      const isJ002 = J002_MACHINES.has(machine);
+
+      if (abandoned) {
+        // Drive the J-002 machine `freeze → error_recoverable` (cause
+        // `replay_abandoned`) and drop the queue. The originating
+        // user-action is preserved on the machine context
+        // (pending_resume_session_id / pending_first_message /
+        // pending_project_name) AND echoed in the FlowEvent payload for
+        // re-issue (US-210 AC). Emission arm (ADR-030 tripwire): without
+        // the two appends below the projection would never leave `freeze`.
+        try {
+          actor?.send({ type: "replay_abandoned" } as never);
+        } catch {
+          // Defensive — see broadcastFreeze.
         }
+        this.abandoned.delete(flow_id);
+        if (isJ002 && actor) {
+          const h = harvestSettledFreezeState(actor);
+          await this.deps.eventLog.append(flow_id, {
+            ts: new Date().toISOString(),
+            type: "replay_abandoned",
+            payload: {
+              last_live_state: h.last_live_state,
+              // The originating user-action(s) preserved for re-issue.
+              abandoned_intents: drained.map((d) => ({
+                type: d.type,
+                payload: d.payload,
+                correlation_id: d.correlation_id,
+              })),
+            },
+            correlation_id: h.correlation_id,
+          });
+          await this.deps.eventLog.append(flow_id, {
+            ts: new Date().toISOString(),
+            type:
+              machine === SESSION_CHAT_WIRE_NAME
+                ? "session_chat_recoverable_error"
+                : "project_context_recoverable_error",
+            payload: {
+              underlying_cause_tag: "replay_abandoned",
+              originating_state: h.last_live_state,
+            },
+            correlation_id: h.correlation_id,
+          });
+        }
+        continue;
+      }
+
+      // ---- Successful THAW ------------------------------------------------
+      try {
+        actor?.send({ type: "THAW" } as never);
       } catch {
         // Defensive — see broadcastFreeze.
       }
-      if (abandoned) {
-        // Drop the queue and clear the abandonment flag — the flow is now
-        // thawed but no replay happens. The persisted event log carries
-        // the original attempts so the projection still tells the story.
-        this.abandoned.delete(flow_id);
-        continue;
+      // THAW returns the machine to `last_live_state`. When that state is
+      // an invoke-driven transient (resuming_session / switching_project /
+      // switching_dataset_context / creating_session / loading_session_list
+      // — all `reenter:true`) the invoke re-runs with the fresh post-
+      // re-auth credential (US-210 Example 1 "the transcript-load fires
+      // again"). Wait for it to settle so the emission below observes the
+      // final state, not the transient.
+      if (actor) {
+        await waitForSettledState(actor);
       }
-      // Replay queued intents in arrival order. Each call passes BACK
-      // through `send()` — since `frozen` no longer carries this flow_id,
-      // the events are dispatched to the underlying actor normally.
+      if (isJ002 && actor) {
+        const h = harvestSettledFreezeState(actor);
+        const settledState = actor.getSnapshot().value as string;
+        await this.deps.eventLog.append(flow_id, {
+          ts: new Date().toISOString(),
+          type:
+            machine === SESSION_CHAT_WIRE_NAME
+              ? "session_chat_thawed"
+              : "project_context_thawed",
+          payload: { last_live_state: h.last_live_state },
+          correlation_id: h.correlation_id,
+        });
+        // Emission-completeness for the history-target re-entry: the
+        // re-run invoke settled the machine into a NEW terminal state
+        // (e.g. resuming_session → session_active) but no FlowEvent has
+        // captured it — the D-MR4-06 / D-MR5-01 class. Re-use the same
+        // terminal emitter `send()` uses so the projection advances.
+        if (machine === SESSION_CHAT_WIRE_NAME) {
+          await this.appendSessionChatTerminalEvents(
+            flow_id,
+            settledState,
+            h.correlation_id,
+            h.last_live_state ?? undefined,
+            harvestSettledSessionChatState(actor),
+          );
+        } else {
+          await this.appendProjectContextThawTerminal(
+            flow_id,
+            actor,
+            settledState,
+            h.correlation_id,
+          );
+        }
+      }
+
+      // Replay queued intents in arrival order (FIFO). Each call passes
+      // BACK through `send()` — `frozen` no longer carries this flow_id so
+      // they dispatch normally with full emission. After each, harvest the
+      // DWD-7 stale-intent counter: if the machine silent-dropped the
+      // replayed intent (target no longer resolves post-THAW) emit the
+      // observability-only `stale_intent_dropped_after_thaw` (no UX).
       for (const queued of drained) {
-         
+        const before = actor
+          ? harvestSettledFreezeState(actor).stale_intents_dropped_count
+          : 0;
         await this.send(queued);
+        if (isJ002 && actor) {
+          const after = harvestSettledFreezeState(actor);
+          if (after.stale_intents_dropped_count > before) {
+            await this.deps.eventLog.append(flow_id, {
+              ts: new Date().toISOString(),
+              type: "stale_intent_dropped_after_thaw",
+              payload: {
+                intent_type: after.last_stale_intent?.intent_type ?? queued.type,
+                target_id: after.last_stale_intent?.target_id ?? "",
+              },
+              correlation_id: queued.correlation_id,
+            });
+          }
+        }
       }
     }
   }
