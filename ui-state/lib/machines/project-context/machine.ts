@@ -42,7 +42,8 @@ export type ProjectContextState =
   | "project_selected"
   | "switching_project"
   | "scope_mismatch_terminal"
-  | "error_recoverable";
+  | "error_recoverable"
+  | "freeze";
 
 export interface ProjectSummary {
   id: string;
@@ -97,6 +98,10 @@ export interface ProjectContextMachineContext {
   // Observability counters:
   scope_reconciled_count: number;
   stale_intents_dropped_count: number;
+  // MR-6 / US-210 — the most recent DWD-7 stale-dropped intent; harvested
+  // by the orchestrator to emit stale_intent_dropped_after_thaw (machines
+  // never write FlowEvents — ADR-028/ADR-030).
+  last_stale_intent: { intent_type: string; target_id: string } | null;
 
   // Per OQ-J002-5: per-project last_active_at map captured by resolveInitialScope.
   most_recent_session_per_project: Record<string, string>;
@@ -134,7 +139,10 @@ export type ProjectContextEvent =
   // projection layer via the `switching_project_started` event handler.
   | { type: "switching_project_intent"; new_project_id: string }
   | { type: "FREEZE"; origin_correlation_id?: string }
-  | { type: "THAW" };
+  | { type: "THAW" }
+  // Orchestrator-emitted on the 5s replay-buffer timeout (ADR-027 §5):
+  // silent re-auth never succeeded; freeze → error_recoverable.
+  | { type: "replay_abandoned" };
 
 export type ResolveInitialScopeOutput =
   | {
@@ -250,6 +258,14 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           return event.org_name.trim();
         },
       }),
+      // MR-6 / US-210 — record the live state we froze from so on.THAW
+      // returns there (DWD-2/DWD-6: queryable context field, not an
+      // XState history node). FREEZE is top-level so the snapshot value
+      // is still the source state when this assigner runs.
+      captureFreezeOrigin: assign({
+        last_live_state: ({ self }) =>
+          self.getSnapshot().value as ProjectContextState,
+      }),
     },
   }).createMachine({
     id: "project-context",
@@ -260,6 +276,16 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
     // handler captures the URL wish into `deeplink_*` ctx and re-enters
     // resolving_initial_scope so the resolver re-runs with the new wish.
     on: {
+      // MR-6 / US-210 §2.2 — top-level FREEZE handler, inherited by every
+      // non-terminal state. project-context is a pure downstream consumer
+      // (ADR-028:46-48): it never emits FREEZE/THAW, only reacts to the
+      // orchestrator broadcast. `freeze` is a side-state with NO invoke;
+      // the in-flight switchProject of the state we left is stopped by
+      // XState so a mid-flight 401 is discarded with no transition.
+      FREEZE: {
+        target: ".freeze",
+        actions: "captureFreezeOrigin",
+      },
       open_deep_link: {
         actions: assign({
           deeplink_project_id: ({ event, context }) =>
@@ -291,6 +317,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       project_validation_error: null,
       scope_reconciled_count: 0,
       stale_intents_dropped_count: 0,
+      last_stale_intent: null,
       most_recent_session_per_project: {},
       last_used_degraded_project_ids: [],
     }),
@@ -514,6 +541,36 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
             actions: assign({
               underlying_cause_tag: () => null,
               retries_count: ({ context }) => context.retries_count + 1,
+            }),
+          },
+        },
+      },
+      // MR-6 / US-210 §2.3.A — the `freeze` side-state. Reached only via
+      // the top-level on.FREEZE. NO invoke (no outgoing mutations while
+      // frozen). on.THAW returns to `last_live_state` (one guarded arm per
+      // freezable state — DWD-2/DWD-6: context-driven history target, not
+      // an XState history node). The invoke-driven transients
+      // (resolving_initial_scope, creating_project, switching_project)
+      // re-enter so the invoke re-runs with the fresh post-re-auth JWT
+      // (US-210 scenario 2: "the project-load fires with the fresh JWT").
+      // on.replay_abandoned → error_recoverable (the 5s timeout).
+      freeze: {
+        on: {
+          THAW: [
+            { guard: ({ context }) => context.last_live_state === "resolving_initial_scope", target: "resolving_initial_scope", reenter: true },
+            { guard: ({ context }) => context.last_live_state === "no_projects", target: "no_projects" },
+            { guard: ({ context }) => context.last_live_state === "creating_project", target: "creating_project", reenter: true },
+            { guard: ({ context }) => context.last_live_state === "project_selected", target: "project_selected" },
+            { guard: ({ context }) => context.last_live_state === "switching_project", target: "switching_project", reenter: true },
+            { guard: ({ context }) => context.last_live_state === "scope_mismatch_terminal", target: "scope_mismatch_terminal" },
+            { guard: ({ context }) => context.last_live_state === "error_recoverable", target: "error_recoverable" },
+            // Defensive fallback — no recorded origin: re-resolve scope.
+            { target: "resolving_initial_scope", reenter: true },
+          ],
+          replay_abandoned: {
+            target: "error_recoverable",
+            actions: assign({
+              underlying_cause_tag: () => "replay_abandoned" as const,
             }),
           },
         },
@@ -859,10 +916,22 @@ export function switchProjectFn(
 export function switchProjectActor(
   backendUrl: string,
   principalHeaders: Record<string, string>,
+  /** US-210 test-infra knob (gated, consume-once) — mirrors
+   *  resumeSession's slow knob. Holds the switch BEFORE the backend
+   *  round-trip so an acceptance scenario can broadcast FREEZE while the
+   *  machine is still in `switching_project` (US-210 scenario 2). Not a
+   *  product behavior. */
+  slowSwitchMsFn?: () => number,
 ): SwitchProjectActor {
   const fn = switchProjectFn(backendUrl, principalHeaders);
-  return fromPromise<SwitchProjectOutput, SwitchProjectInput>(({ input }) =>
-    fn(input),
+  return fromPromise<SwitchProjectOutput, SwitchProjectInput>(
+    async ({ input }) => {
+      const slowMs = slowSwitchMsFn?.() ?? 0;
+      if (slowMs > 0) {
+        await new Promise((r) => setTimeout(r, slowMs));
+      }
+      return fn(input);
+    },
   );
 }
 

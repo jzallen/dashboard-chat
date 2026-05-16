@@ -149,3 +149,64 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
     underlying_cause_tag: ctx.underlying_cause_tag,
   };
 }
+
+/**
+ * Cross-machine FREEZE/THAW settled-state harvest (US-210 / MR-6).
+ *
+ * Both J-002 machines (project-context + session-chat) declare a
+ * top-level `on.FREEZE` whose action assigns `last_live_state` from the
+ * snapshot, a `recordStale*` action that bumps
+ * `stale_intents_dropped_count` + `last_stale_intent`, and a
+ * `replay_abandoned` arm that sets `underlying_cause_tag`. All four land
+ * on the machine context AFTER the snapshot value flips (to `freeze`, or
+ * back to `last_live_state`, or to `error_recoverable`) and BEFORE any
+ * FlowEvent has captured them — the exact D-MR4-06 / D-MR5-01 emission-
+ * completeness failure class the ADR-030 2026-05-16 tripwire amendment
+ * names. The orchestrator's broadcastFreeze / broadcastThaw emission arms
+ * source the `*_frozen` / `*_thawed` / `stale_intent_dropped_after_thaw`
+ * / `replay_abandoned` FlowEvent payloads from here so the projection —
+ * the SSOT the US-210 acceptance probes + TS harness read — reflects the
+ * freeze lifecycle instead of going stale at the pre-freeze state.
+ */
+export function harvestSettledFreezeState(actor: AnyActorRef): {
+  correlation_id: string;
+  last_live_state: string | null;
+  stale_intents_dropped_count: number;
+  last_stale_intent: { intent_type: string; target_id: string } | null;
+  underlying_cause_tag: string | null;
+  /** US-210 AC — the originating user-action, preserved in the freeze /
+   *  replay_abandoned FlowEvent payload "for re-issue". These live on the
+   *  machine context (set by capturePendingResumeIntent /
+   *  capturePendingFirstMessage / capturePendingProjectName) and are
+   *  absent from the projection-of-log at freeze time (only their
+   *  *_started events would have written them, which never fired when
+   *  FREEZE pre-empted the in-flight invoke). Per-machine fields —
+   *  undefined for the machine that doesn't have them. */
+  pending_resume_session_id: string | null;
+  pending_first_message: string | null;
+  pending_project_name: string | null;
+} {
+  const ctx = actor.getSnapshot().context as {
+    correlation_id: string;
+    last_live_state: string | null;
+    stale_intents_dropped_count: number;
+    last_stale_intent: { intent_type: string; target_id: string } | null;
+    underlying_cause_tag: string | null;
+    pending_resume_session_id?: string | null;
+    pending_first_message?: string | null;
+    pending_project_name?: string | null;
+  };
+  return {
+    pending_resume_session_id: ctx.pending_resume_session_id ?? null,
+    pending_first_message: ctx.pending_first_message ?? null,
+    pending_project_name: ctx.pending_project_name ?? null,
+    // US-210: the original correlation reference is preserved across the
+    // whole freeze→thaw lifecycle (it lives on the machine context, set
+    // at spawn / project_ready and never rewritten by FREEZE/THAW).
+    correlation_id: ctx.correlation_id ?? "",
+    last_live_state: ctx.last_live_state ?? null,
+    stale_intents_dropped_count: ctx.stale_intents_dropped_count ?? 0,
+    last_stale_intent: ctx.last_stale_intent ?? null,
+    underlying_cause_tag: ctx.underlying_cause_tag ?? null,
+  };
+}

@@ -1059,6 +1059,154 @@ describe("SessionChatMachine — MR-5 dataset context switching (US-209)", () =>
   });
 });
 
+// ───────────────────────── MR-6 — US-210 cross-machine FREEZE/THAW ──────────
+//
+// The orchestrator broadcasts FREEZE/THAW; the machine declares a top-level
+// on.FREEZE reachable from every non-terminal state, a `freeze` side-state
+// that records `last_live_state`, an on.THAW that returns there (guarded on
+// context.last_live_state — DWD-2 rejected XState history nodes because the
+// prior-state value must stay queryable for the harness), and an
+// on.replay_abandoned → error_recoverable arm (cause `replay_abandoned`)
+// for the 5s replay-buffer timeout. Plus the DWD-7 session_clicked
+// stale-intent guard (drop + count when the target is not in the post-THAW
+// session_list).
+
+describe("SessionChatMachine — MR-6 FREEZE/THAW (US-210)", () => {
+  it("FREEZE from session_list_loaded → freeze, last_live_state captured", async () => {
+    const machine = createSessionChatMachine({
+      loadSessionList: stubLoadSessionList({
+        items: [{ id: "chat-9b2a", title: "Q4", last_active_at: "t", active_dataset_id: null }],
+        next_cursor: null,
+        has_more: false,
+      }),
+    });
+    const actor = createActor_(machine);
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+
+    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "freeze");
+    expect(actor.getSnapshot().context.last_live_state).toBe("session_list_loaded");
+  });
+
+  it("FREEZE while resuming_session → freeze; the in-flight resume result is discarded (no transition)", async () => {
+    const machine = createSessionChatMachine({
+      loadSessionList: stubLoadSessionList({
+        items: [{ id: "chat-9b2a", title: "Q4", last_active_at: "t", active_dataset_id: null }],
+        next_cursor: null,
+        has_more: false,
+      }),
+      // Resume resolves only after a delay — long enough that FREEZE
+      // pre-empts it (mirrors a backend round-trip 401'ing mid-flight).
+      resumeSession: fromPromise<ResumeSessionOutput, ResumeSessionInput>(
+        async () => {
+          await new Promise((r) => setTimeout(r, 80));
+          return {
+            session_id: "chat-9b2a",
+            transcript: [],
+            resource: { type: null, id: null },
+          } as ResumeSessionOutput;
+        },
+      ),
+    });
+    const actor = createActor_(machine);
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+    actor.send({ type: "session_clicked", session_id: "chat-9b2a" });
+    await waitFor(() => actor.getSnapshot().value === "resuming_session");
+
+    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "freeze");
+    expect(actor.getSnapshot().context.last_live_state).toBe("resuming_session");
+
+    // The slow resume now resolves — its onDone MUST be discarded because
+    // the actor left resuming_session (XState stops the child invoke).
+    await new Promise((r) => setTimeout(r, 140));
+    expect(actor.getSnapshot().value).toBe("freeze");
+  });
+
+  it("THAW from freeze returns to last_live_state (resuming_session re-invokes resume → session_active)", async () => {
+    const machine = createSessionChatMachine({
+      loadSessionList: stubLoadSessionList({
+        items: [{ id: "chat-9b2a", title: "Q4", last_active_at: "t", active_dataset_id: null }],
+        next_cursor: null,
+        has_more: false,
+      }),
+      resumeSession: stubResumeSession({
+        session_id: "chat-9b2a",
+        transcript: [],
+        resource: { type: null, id: null },
+      } as ResumeSessionOutput),
+    });
+    const actor = createActor_(machine);
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+    actor.send({ type: "session_clicked", session_id: "chat-9b2a" });
+    await waitFor(() =>
+      ["resuming_session", "session_active"].includes(
+        actor.getSnapshot().value as string,
+      ),
+    );
+    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "freeze");
+
+    actor.send({ type: "THAW" });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+    expect(actor.getSnapshot().context.session_id).toBe("chat-9b2a");
+  });
+
+  it("replay_abandoned from freeze → error_recoverable with cause replay_abandoned", async () => {
+    const machine = createSessionChatMachine({
+      loadSessionList: stubLoadSessionList({
+        items: [{ id: "s1", title: "Q4", last_active_at: "t", active_dataset_id: null }],
+        next_cursor: null,
+        has_more: false,
+      }),
+    });
+    const actor = createActor_(machine);
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "freeze");
+
+    actor.send({ type: "replay_abandoned" });
+    await waitFor(() => actor.getSnapshot().value === "error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe("replay_abandoned");
+    // The originating live state is preserved for re-issue.
+    expect(actor.getSnapshot().context.last_live_state).toBe("session_list_loaded");
+  });
+
+  it("DWD-7: session_clicked for a session absent from session_list is stale-dropped (count++, no resuming_session)", async () => {
+    const machine = createSessionChatMachine({
+      loadSessionList: stubLoadSessionList({
+        items: [{ id: "in-list", title: "Q3", last_active_at: "t", active_dataset_id: null }],
+        next_cursor: null,
+        has_more: false,
+      }),
+      resumeSession: stubResumeSession({
+        session_id: "in-list",
+        transcript: [],
+        resource: { type: null, id: null },
+      } as ResumeSessionOutput),
+    });
+    const actor = createActor_(machine);
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q3", correlation_id: "R-1" });
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+
+    // chat-xyz is NOT in the post-THAW list — stale (the user switched
+    // projects during freeze; this is a replayed muscle-memory click).
+    actor.send({ type: "session_clicked", session_id: "chat-xyz" });
+    // No transition to resuming_session; the drop is silent + counted.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(actor.getSnapshot().value).toBe("session_list_loaded");
+    expect(actor.getSnapshot().context.stale_intents_dropped_count).toBe(1);
+    expect(actor.getSnapshot().context.last_stale_intent).toEqual({
+      intent_type: "session_clicked",
+      target_id: "chat-xyz",
+    });
+  });
+});
+
 // Wraps createActor + start so the per-test boilerplate stays terse.
 function createActor_(machine: ReturnType<typeof createSessionChatMachine>) {
   const actor = createActor(machine, { input: MAYA_INPUT });

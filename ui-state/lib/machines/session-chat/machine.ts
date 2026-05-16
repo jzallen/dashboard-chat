@@ -128,6 +128,11 @@ export interface SessionChatMachineContext {
 
   // Observability counters:
   stale_intents_dropped_count: number;
+  // The most recent stale intent the DWD-7 guard dropped after THAW.
+  // The orchestrator harvests this on the replay-settle path to emit the
+  // `stale_intent_dropped_after_thaw` FlowEvent (the projection/harness
+  // SSOT — machines never write FlowEvents per ADR-028/ADR-030).
+  last_stale_intent: { intent_type: string; target_id: string } | null;
 }
 
 export type SessionChatEvent =
@@ -160,7 +165,11 @@ export type SessionChatEvent =
       intent_resource_type?: ResourceType | null;
     }
   | { type: "FREEZE"; origin_correlation_id?: string }
-  | { type: "THAW" };
+  | { type: "THAW" }
+  // Orchestrator-emitted on the 5s replay-buffer timeout (ADR-027 §5):
+  // silent re-auth never succeeded, the buffered intents are abandoned,
+  // and `freeze` falls through to `error_recoverable` (US-210 Example 3).
+  | { type: "replay_abandoned" };
 
 // ─────────────────────────── Actor input / output ───────────────────────────
 
@@ -362,6 +371,29 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       // `dataset_resolved_by_agent` / `dataset_picked_directly` so the
       // `switching_dataset_context` invoke can read it from ctx (XState
       // invoke input reads context, not the triggering event).
+      // MR-6 / US-210 — record the live state we froze from so on.THAW
+      // can return there (DWD-2 rejected XState history nodes precisely
+      // because the prior-state value must remain a queryable context
+      // field for `harness.j002.assert_no_stale_intents_dropped`). The
+      // FREEZE transition is top-level (inherited by every state) so the
+      // snapshot value is still the source state when this action runs.
+      captureFreezeOrigin: assign({
+        last_live_state: ({ self }) =>
+          self.getSnapshot().value as SessionChatState,
+      }),
+      // DWD-7 — a replayed-after-THAW intent whose target no longer
+      // resolves in the post-THAW state is silent-dropped (observability
+      // only, no UX surface). The count + last_stale_intent are harvested
+      // by the orchestrator to emit `stale_intent_dropped_after_thaw`.
+      recordStaleSessionClicked: assign({
+        stale_intents_dropped_count: ({ context }) =>
+          context.stale_intents_dropped_count + 1,
+        last_stale_intent: ({ event }) => ({
+          intent_type: "session_clicked",
+          target_id:
+            event.type === "session_clicked" ? event.session_id : "",
+        }),
+      }),
       captureIntendedResource: assign({
         intended_resource_id: ({ event, context }) =>
           event.type === "dataset_resolved_by_agent" ||
@@ -400,7 +432,21 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       retries_count: 0,
       pending_first_message: "",
       stale_intents_dropped_count: 0,
+      last_stale_intent: null,
     }),
+    // MR-6 / US-210 §2.2 — top-level FREEZE handler, inherited by every
+    // non-terminal state (XState v5 `on:` top-level semantics). J-002 is a
+    // pure downstream consumer: it never emits FREEZE/THAW (ADR-028:46-48),
+    // it only reacts to the orchestrator broadcast. `freeze` is a side-state
+    // with NO outgoing mutations (no invoke); the in-flight invoke of the
+    // state we left is stopped by XState, so a mid-flight 401 is discarded
+    // with no transition (US-210 Example 1).
+    on: {
+      FREEZE: {
+        target: ".freeze",
+        actions: "captureFreezeOrigin",
+      },
+    },
     states: {
       waiting_for_project: {
         on: {
@@ -497,10 +543,25 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       },
       session_list_loaded: {
         on: {
-          session_clicked: {
-            target: "resuming_session",
-            actions: "capturePendingResumeIntent",
-          },
+          session_clicked: [
+            {
+              // DWD-7 stale-intent guard (US-210 / OQ-J002-6): a
+              // session_clicked whose target is absent from the current
+              // session_list — typically a replayed post-THAW muscle-
+              // memory click after the user switched projects during
+              // freeze — is silent-dropped. Observability only (count +
+              // last_stale_intent harvested by the orchestrator); no UX
+              // surface, no error, no transition.
+              guard: ({ context, event }) =>
+                event.type === "session_clicked" &&
+                !context.session_list.some((s) => s.id === event.session_id),
+              actions: "recordStaleSessionClicked",
+            },
+            {
+              target: "resuming_session",
+              actions: "capturePendingResumeIntent",
+            },
+          ],
           new_session_clicked: {
             // US-206 / DWD-10: lazy-creation. Enter the welcome state with
             // session_id null; no backend write fires until `first_message_sent`.
@@ -615,10 +676,25 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       },
       session_active: {
         on: {
-          session_clicked: {
-            target: "resuming_session",
-            actions: "capturePendingResumeIntent",
-          },
+          session_clicked: [
+            {
+              // DWD-7 stale-intent guard (US-210 / OQ-J002-6): a
+              // session_clicked whose target is absent from the current
+              // session_list — typically a replayed post-THAW muscle-
+              // memory click after the user switched projects during
+              // freeze — is silent-dropped. Observability only (count +
+              // last_stale_intent harvested by the orchestrator); no UX
+              // surface, no error, no transition.
+              guard: ({ context, event }) =>
+                event.type === "session_clicked" &&
+                !context.session_list.some((s) => s.id === event.session_id),
+              actions: "recordStaleSessionClicked",
+            },
+            {
+              target: "resuming_session",
+              actions: "capturePendingResumeIntent",
+            },
+          ],
           refresh_session_list: {
             target: "loading_session_list",
             reenter: true,
@@ -738,10 +814,25 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           },
           // Clicking an existing session from the welcome state cancels
           // the new-session intent and resumes the clicked session.
-          session_clicked: {
-            target: "resuming_session",
-            actions: "capturePendingResumeIntent",
-          },
+          session_clicked: [
+            {
+              // DWD-7 stale-intent guard (US-210 / OQ-J002-6): a
+              // session_clicked whose target is absent from the current
+              // session_list — typically a replayed post-THAW muscle-
+              // memory click after the user switched projects during
+              // freeze — is silent-dropped. Observability only (count +
+              // last_stale_intent harvested by the orchestrator); no UX
+              // surface, no error, no transition.
+              guard: ({ context, event }) =>
+                event.type === "session_clicked" &&
+                !context.session_list.some((s) => s.id === event.session_id),
+              actions: "recordStaleSessionClicked",
+            },
+            {
+              target: "resuming_session",
+              actions: "capturePendingResumeIntent",
+            },
+          ],
           // Eager create on first message. The actor POSTs the session
           // row + PATCHes the title; on settle we transition to session_active.
           first_message_sent: {
@@ -849,6 +940,39 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               }),
             },
           ],
+        },
+      },
+      // MR-6 / US-210 §2.3.B — the `freeze` side-state. Reached only via
+      // the top-level on.FREEZE. NO invoke (no outgoing mutations while
+      // frozen). on.THAW returns to `last_live_state` (one guarded arm per
+      // freezable state — DWD-2 / DWD-6: history target realised via a
+      // context-driven conditional, not an XState history node, so the
+      // prior state stays a queryable field). Transient invoke states
+      // (loading_session_list, resuming_session, switching_dataset_context,
+      // creating_session) re-enter so their invoke re-runs with the fresh
+      // post-re-auth JWT (US-210 Example 1: "the transcript-load fires
+      // again"). on.replay_abandoned → error_recoverable (the 5s timeout).
+      freeze: {
+        on: {
+          THAW: [
+            { guard: ({ context }) => context.last_live_state === "waiting_for_project", target: "waiting_for_project" },
+            { guard: ({ context }) => context.last_live_state === "loading_session_list", target: "loading_session_list", reenter: true },
+            { guard: ({ context }) => context.last_live_state === "session_list_loaded", target: "session_list_loaded" },
+            { guard: ({ context }) => context.last_live_state === "resuming_session", target: "resuming_session", reenter: true },
+            { guard: ({ context }) => context.last_live_state === "session_active", target: "session_active" },
+            { guard: ({ context }) => context.last_live_state === "switching_dataset_context", target: "switching_dataset_context", reenter: true },
+            { guard: ({ context }) => context.last_live_state === "session_welcome", target: "session_welcome" },
+            { guard: ({ context }) => context.last_live_state === "creating_session", target: "creating_session", reenter: true },
+            { guard: ({ context }) => context.last_live_state === "error_recoverable", target: "error_recoverable" },
+            // Defensive fallback — no recorded origin: re-resolve the list.
+            { target: "loading_session_list", reenter: true },
+          ],
+          replay_abandoned: {
+            target: "error_recoverable",
+            actions: assign({
+              underlying_cause_tag: () => "replay_abandoned" as const,
+            }),
+          },
         },
       },
     },
@@ -1122,10 +1246,24 @@ export function resumeSessionFn(
 export function resumeSessionActor(
   backendUrl: string,
   principalHeaders: Record<string, string>,
+  /** US-210 test-infra knob (gated, consume-once). When it returns >0 the
+   *  resume holds for that many ms BEFORE the backend round-trip, so an
+   *  acceptance scenario can deterministically broadcast FREEZE while the
+   *  machine is still in `resuming_session` (US-210 scenario 1 — "while
+   *  J-002 is in resuming_session, J-001 transitions to expired_token").
+   *  Not a product behavior: gated by the failure-simulation registry
+   *  exactly like the X-Force-* family; ignored in production. */
+  slowResumeMsFn?: () => number,
 ): ResumeSessionActor {
   const fn = resumeSessionFn(backendUrl, principalHeaders);
-  return fromPromise<ResumeSessionOutput, ResumeSessionInput>(({ input }) =>
-    fn(input),
+  return fromPromise<ResumeSessionOutput, ResumeSessionInput>(
+    async ({ input }) => {
+      const slowMs = slowResumeMsFn?.() ?? 0;
+      if (slowMs > 0) {
+        await new Promise((r) => setTimeout(r, slowMs));
+      }
+      return fn(input);
+    },
   );
 }
 

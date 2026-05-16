@@ -763,3 +763,61 @@ scenarios are made **hermetic** (each resets the session-chat flow via
 both isolated and within its marker set. Recommendation for a future
 cleanup MR: a per-test principal or a session-chat-flow-reset conftest
 fixture so the full suite is order-independent.
+
+---
+
+## MR-6 — FREEZE/THAW cross-machine participation (US-210) — DELIVERED
+
+**Status**: DELIVERED. Final J-002 milestone. J-002 is now complete
+end-to-end (MR-1..MR-6 + MR-4-verify + the D-MR4-05/06 substrate fixes
++ D-MR5-01).
+
+**Scope landed**: J-002's `session-chat` and `project-context` machines
+each declare a top-level FREEZE handler reachable from every
+non-terminal state → `freeze` side-state (recording `last_live_state`);
+THAW returns to `last_live_state` via XState history target with the
+original `correlation_id` preserved. In `freeze`: no outgoing mutations;
+mid-flight backend responses are discarded. The orchestrator's existing
+J-001 replay buffer captures J-002 intents as
+`(intent_event, original_correlation_id, queued_at)` triples; FIFO
+replay on THAW with the DWD-7 stale-intent filter emitting
+`stale_intent_dropped_after_thaw`. Replay-buffer timeout (5s, ADR-027
+§5) without THAW transitions `freeze → error_recoverable` with the
+originating user-action preserved. TS harness gains
+`harness.j002.freeze()` / `harness.j002.thaw()`. This is the
+cross-machine substrate payoff named in ADR-028 §94 — J-002 adds
+handlers; it does not rebuild the orchestrator broadcast or replay
+buffer.
+
+**Emission-completeness (ADR-030 2026-05-16 tripwire zone)**: the
+`freeze → last_live_state` and `freeze → error_recoverable` settles are
+sourced via a new `harvestSettledFreezeState` in
+`ui-state/lib/orchestrator-harvester.ts` — the same harvest discipline
+D-MR4-06 / D-MR5-01 established. FREEZE is reachable from every
+non-terminal state, making this the highest-surface-area application of
+the manufactured emission-completeness invariant to date. This is the
+**fifth** in-pattern harvest (D-MR4-06; D-MR5-01 project-context +
+session-chat; now freeze) — corroborating empirical evidence for the
+ADR-030 "Amendment 2026-05-16 — Emission-completeness tripwire": the
+forgot-to-emit failure class scales with each new machine/state, as
+predicted.
+
+**Verification (per-marker, against the live compose stack)**:
+
+| Marker set | Result |
+|---|---|
+| `mr_6` | **8 passed** (7 `test_us210_*` + `test_ic_j002_6`), 57 deselected |
+| `mr_5` | **7 passed** — zero regression |
+| `mr_4` | **14 passed** — zero regression, no emission-completeness regression |
+| ui-state vitest | **149 passed** (12 files, incl. new session-chat FREEZE/THAW unit tests + LEAF-D/C12 rule tests) |
+| ui-state eslint | **0 errors** (65 pre-existing `intent_`-prefix C7 warnings, unchanged) |
+
+**No new D-MR6-NN issues.** The delivering worker process hard-died
+(host OOM/timeout — no result event emitted) during the final
+*redundant* per-marker regression re-run, after all six atomic commits
+were in place; the hand-off (per-marker gate confirmation, this docs
+record, push, MQ submit) was completed by the orchestrator on the
+already-committed, already-green work. No code was re-implemented;
+Iron Rule untouched. D-MR5-02 (full-suite shared-principal ordering
+fragility) remains pre-existing and out of scope — MR-6 scenarios are
+hermetic and green isolated and within their marker set.
