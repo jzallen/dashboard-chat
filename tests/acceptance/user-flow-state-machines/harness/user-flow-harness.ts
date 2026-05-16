@@ -459,10 +459,28 @@ export class J002Harness {
     }
   }
 
-  /** Assert that the active_scope matches the expected (partial) shape. */
+  /** Assert that the active_scope matches the expected (partial) shape.
+   *
+   *  Per DWD-13 `active_scope` is split across the two J-002 machines:
+   *  project-context owns `org_id` + `project_id`; session-chat owns the
+   *  `resource_*` half (set by `session_resumed` / `dataset_attached`).
+   *  So when the caller asserts `resource_type` / `resource_id` (US-209)
+   *  the authoritative value is on the session-chat projection — read it
+   *  and overlay it onto the project-context scope before comparing. The
+   *  project/org-only callers (US-207 / US-208) are unaffected. */
   async assert_scope(expected: Partial<ActiveScope>): Promise<void> {
     const projection = await this.get_projection();
-    const actual = projection.active_scope;
+    const actual: ActiveScope = { ...projection.active_scope };
+    if ("resource_type" in expected || "resource_id" in expected) {
+      try {
+        const sc = await this.get_session_chat_projection();
+        actual.resource_type = sc.active_scope.resource_type;
+        actual.resource_id = sc.active_scope.resource_id;
+      } catch {
+        // session-chat projection unavailable — fall back to the
+        // project-context scope (resource_* will be null there).
+      }
+    }
     const diffs: string[] = [];
     for (const key of Object.keys(expected) as (keyof ActiveScope)[]) {
       if (actual[key] !== expected[key]) {
@@ -816,6 +834,124 @@ export class J002Harness {
         `j002.assert_scope_mismatch failed: underlying_cause_tag=${JSON.stringify(cause)}, expected ${JSON.stringify(expected_cause)}`,
       );
     }
+  }
+
+  // ──────────────── MR-5 dataset context switching (US-209) ────────────────
+
+  /** Simulate the agent's `resolve_dataset` tool-return path end to end:
+   *  resolve `dataset_name` → id within the active project, then emit
+   *  `dataset_resolved_by_agent` to session-chat and wait for the
+   *  `switching_dataset_context → session_active` settle. Returns the
+   *  settled session-chat projection. */
+  async attach_dataset_via_agent(
+    dataset_name: string,
+  ): Promise<FlowProjection> {
+    const datasetId = await this.resolveDatasetIdByName(dataset_name);
+    return this.sendSessionChatDatasetEvent(
+      "dataset_resolved_by_agent",
+      datasetId,
+    );
+  }
+
+  /** Direct UI selection path: emit `dataset_picked_directly` for the
+   *  given dataset id and wait for the settle. */
+  async attach_dataset_directly(
+    dataset_id: string,
+  ): Promise<FlowProjection> {
+    return this.sendSessionChatDatasetEvent(
+      "dataset_picked_directly",
+      dataset_id,
+    );
+  }
+
+  /** POST a dataset pick event to the session-chat flow and poll the
+   *  projection until it re-settles in `session_active` (the
+   *  switchDatasetContext invoke is awaited by the orchestrator, but the
+   *  HTTP response races the projection write under the in-memory log —
+   *  poll to be deterministic across log tiers). */
+  private async sendSessionChatDatasetEvent(
+    type: "dataset_resolved_by_agent" | "dataset_picked_directly",
+    dataset_id: string,
+  ): Promise<FlowProjection> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flow_id: `session-chat:${this.config.principalId}`,
+          type,
+          payload: { resource_id: dataset_id, resource_type: "dataset" },
+        }),
+      },
+    );
+    const body = (await res.body.json()) as FlowProjection;
+    if (res.statusCode !== 200) {
+      throw new Error(
+        `j002.${type} expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+      );
+    }
+    for (let i = 0; i < 80; i++) {
+      const sc = await this.get_session_chat_projection();
+      if (sc.state === "session_active") return sc;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(
+      `j002.${type}: session-chat never re-settled in session_active`,
+    );
+  }
+
+  /** Mint a dev JWT via auth-proxy's public `/api/auth/callback` (the
+   *  same flow `driver.mint_dev_jwt` uses) and list the active project's
+   *  datasets to map a dataset NAME → id. The agent's resolve_dataset
+   *  tool returns a name; the FE renders the inline list; the user's pick
+   *  is an id — this resolver stands in for that name→id lookup. */
+  private async resolveDatasetIdByName(name: string): Promise<string> {
+    const sc = await this.get_session_chat_projection();
+    const projectId = (sc.context as { project?: { id?: string | null } })
+      .project?.id;
+    if (!projectId) {
+      throw new Error(
+        "j002.attach_dataset_via_agent: session-chat has no project context yet",
+      );
+    }
+    const tokenRes = await request(
+      `${this.config.authProxyUrl}/api/auth/callback`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      },
+    );
+    const tokenBody = (await tokenRes.body.json()) as { token?: string };
+    if (tokenRes.statusCode !== 200 || !tokenBody.token) {
+      throw new Error(
+        `j002.attach_dataset_via_agent: dev JWT mint failed (${tokenRes.statusCode})`,
+      );
+    }
+    const dsRes = await request(
+      `${this.config.authProxyUrl}/api/projects/${encodeURIComponent(projectId)}/datasets`,
+      {
+        method: "GET",
+        headers: { authorization: `Bearer ${tokenBody.token}` },
+      },
+    );
+    const dsBody = (await dsRes.body.json()) as {
+      data?: Array<{
+        id?: string;
+        name?: string;
+        attributes?: { name?: string };
+      }>;
+      items?: Array<{ id?: string; name?: string }>;
+    };
+    const rows = dsBody.data ?? dsBody.items ?? [];
+    for (const row of rows) {
+      const rowName = row.name ?? row.attributes?.name;
+      if (rowName === name && row.id) return row.id;
+    }
+    throw new Error(
+      `j002.attach_dataset_via_agent: dataset "${name}" not found in project ${projectId}`,
+    );
   }
 
   private async sendEvent(
