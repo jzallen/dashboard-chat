@@ -1,10 +1,18 @@
 // UI-State Tier — Hono server entry point.
 //
-// Routes (per `design/handoff-design-to-distill.md` §"Endpoints"):
-//   GET  /health                              — liveness check
-//   POST /flow/:machine/begin                 — begin a flow, returns projection
-//   POST /flow/:machine/event                 — send event to existing flow
-//   GET  /flow/:machine/projection?flow_id=…  — read current projection
+// Routes (ADR-040 §D4/§D5 — per-machine sub-routers, no :machine param):
+//   GET  /health                                    — liveness check
+//   {/flow/login-and-org-setup, /flow/project-context (+ legacy alias
+//    /flow/project-and-chat-session-management), /flow/session-chat} each
+//    mount a makeFlowRouter() instance carrying:
+//      POST .../begin            — begin a flow, returns projection
+//      POST .../event            — send event to existing flow
+//      POST .../freeze|/thaw     — cross-machine FREEZE/THAW (US-210)
+//      POST .../open-deep-link   — deep-link / scope resolution
+//      GET  .../projection?flow_id=…        — read current projection
+//      GET  .../projection/stream?flow_id=… — SSE projection stream
+//   A terminal /flow/:machine/* guard maps an unknown machine to the
+//   LEAF-1 clean 404 (registry miss); it is a boundary, not dispatch.
 //
 // Wiring: composition root creates the FlowEventLog adapter via
 // capability-presence dispatch (REDIS_URL set → Redis tier; unset → noop),
@@ -38,7 +46,12 @@ import {
   resumeSessionActor,
   switchDatasetContextActor,
 } from "./lib/machines/session-chat/index.ts";
-import { FlowOrchestrator, UnknownMachineError } from "./lib/orchestrator.ts";
+import {
+  FLOW_STRATEGY_REGISTRY,
+  type FlowStrategy,
+  FlowOrchestrator,
+  UnknownMachineError,
+} from "./lib/orchestrator.ts";
 import { selectFlowEventLog } from "./lib/persistence/redis.ts";
 
 const PORT = parseInt(process.env.PORT ?? "8788", 10);
@@ -198,8 +211,43 @@ probe(process.env, "ui-state");
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-app.post("/flow/:machine/begin", async (c) => {
-  const machine = c.req.param("machine");
+  /**
+   * ADR-040 §D4/§D5 (LEAF-2) — per-machine sub-router factory. Produces a
+   * Hono instance carrying the full flow transport surface (begin / event /
+   * freeze / thaw / open-deep-link / projection / projection-stream). One
+   * instance is mounted per canonical machine-name AND, for the project
+   * machine, additionally at its legacy feature-slug path against the SAME
+   * instance — so the ADR-027 §1 FE projection contract and the nginx /
+   * auth-proxy `/ui-state/` proxy resolve identically through the migration
+   * with NO 404 window. The `:machine` dispatch parameter is retired.
+   *
+   * `wireName` is the wire-protocol machine name forwarded to the
+   * orchestrator. It is intentionally the established (legacy-stable)
+   * segment — `project-and-chat-session-management` for the project
+   * machine — because `flow_id = "<wireName>:<principal_id>"` (orchestrator
+   * §8) is the Redis event-log key, the `J002_MACHINES` membership key, and
+   * the `FlowProjection.flow_id` wire field. Forwarding the established
+   * name keeps every byte identical to the pre-LEAF-2 baseline through
+   * BOTH mounts; the LEAF-1 registry still canonicalizes it via the D5
+   * alias (`resolve()`), so no alias logic is reimplemented here. LEAF-6
+   * flips this to the canonical name once the FE/suite migrate.
+   */
+  function makeFlowRouter(strategy: FlowStrategy, wireName: string): Hono {
+    // Composition-time guard: the wire name MUST resolve, via the LEAF-1
+    // registry's D5 alias, to exactly this strategy. Keeps the HTTP mount
+    // and registry dispatch in lockstep (ADR-040 C4: router -> registry ->
+    // strategy) — a mis-wired mount fails loudly at startup, never at
+    // request time (so it cannot introduce a runtime behavior delta).
+    if (FLOW_STRATEGY_REGISTRY.resolve(wireName) !== strategy) {
+      throw new Error(
+        `makeFlowRouter: wire name "${wireName}" does not resolve to ` +
+          `strategy "${strategy.machineName}"`,
+      );
+    }
+    const router = new Hono();
+
+    router.post("/begin", async (c) => {
+  const machine = wireName;
   const correlation_id =
     c.req.header("X-Correlation-Id") ?? cryptoRandomId();
   let body: {
@@ -310,8 +358,8 @@ app.post("/flow/:machine/begin", async (c) => {
   }
 });
 
-app.post("/flow/:machine/event", async (c) => {
-  const machine = c.req.param("machine");
+    router.post("/event", async (c) => {
+  const machine = wireName;
   const correlation_id =
     c.req.header("X-Correlation-Id") ?? cryptoRandomId();
   let body: {
@@ -533,8 +581,8 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
     }
   };
 }
-app.post("/flow/:machine/freeze", freezeThawHandler("freeze"));
-app.post("/flow/:machine/thaw", freezeThawHandler("thaw"));
+    router.post("/freeze", freezeThawHandler("freeze"));
+    router.post("/thaw", freezeThawHandler("thaw"));
 
 // Deep-link / scope-resolution endpoint per ADR-029 (Step 01-03).
 //
@@ -559,8 +607,8 @@ app.post("/flow/:machine/thaw", freezeThawHandler("thaw"));
 //   X-User-Id, X-Org-Id, X-User-Email
 //
 // Returns: the updated FlowProjection envelope.
-app.post("/flow/:machine/open-deep-link", async (c) => {
-  const machine = c.req.param("machine");
+    router.post("/open-deep-link", async (c) => {
+  const machine = wireName;
   const correlation_id =
     c.req.header("X-Correlation-Id") ?? cryptoRandomId();
   let body: {
@@ -705,7 +753,7 @@ app.post("/flow/:machine/open-deep-link", async (c) => {
   }
 });
 
-app.get("/flow/:machine/projection", async (c) => {
+    router.get("/projection", async (c) => {
   const flow_id = c.req.query("flow_id");
   if (!flow_id) {
     return c.json({ error: "flow_id required" }, 400);
@@ -727,7 +775,7 @@ app.get("/flow/:machine/projection", async (c) => {
 // server-side budget (default 25s) so intermediaries don't trip; clients
 // reconnect on close. The reverse-proxy must NOT buffer this response (the
 // `X-Accel-Buffering: no` header is the canonical nginx hint).
-app.get("/flow/:machine/projection/stream", async (c) => {
+    router.get("/projection/stream", async (c) => {
   const flow_id = c.req.query("flow_id");
   if (!flow_id) {
     return c.json({ error: "flow_id required" }, 400);
@@ -783,6 +831,59 @@ app.get("/flow/:machine/projection/stream", async (c) => {
 
   return new Response(stream, { headers, status: 200 });
 });
+
+    return router;
+  } // end makeFlowRouter
+
+  // ── Per-machine mounts (ADR-040 §D4/§D5, LEAF-2) ──────────────────────
+  // Each strategy is resolved from the LEAF-1 registry by its canonical
+  // machine-name and mounted at /flow/<canonical>. The project machine is
+  // ALSO mounted at its legacy feature-slug path against the SAME router
+  // instance (ADR-040 D5 example) so the ADR-027 §1 FE projection contract
+  // and the nginx / auth-proxy `/ui-state/` proxy resolve identically
+  // through the migration with no 404 window. session-chat /
+  // login-and-org-setup have canonical == legacy segment (no true alias
+  // pair) and mount once.
+  const loginRouter = makeFlowRouter(
+    FLOW_STRATEGY_REGISTRY.resolve("login-and-org-setup"),
+    "login-and-org-setup",
+  );
+  app.route("/flow/login-and-org-setup", loginRouter);
+
+  const projectRouter = makeFlowRouter(
+    FLOW_STRATEGY_REGISTRY.resolve("project-context"),
+    // Established wire name — keeps flow_id / Redis key / projection bytes
+    // identical to the pre-LEAF-2 baseline through BOTH mounts. LEAF-6
+    // flips this to the canonical name once the FE/suite migrate.
+    "project-and-chat-session-management",
+  );
+  app.route("/flow/project-context", projectRouter);
+  app.route("/flow/project-and-chat-session-management", projectRouter);
+
+  const sessionChatRouter = makeFlowRouter(
+    FLOW_STRATEGY_REGISTRY.resolve("session-chat"),
+    "session-chat",
+  );
+  app.route("/flow/session-chat", sessionChatRouter);
+
+  // Terminal registry-miss boundary (LEAF-1 contract; ADR-040
+  // Consequences "unknown-machine becomes a clean 404, no conditional
+  // fall-through"). The per-machine mounts above own all flow DISPATCH;
+  // this is the ONLY surviving `:machine` reference and is NOT a dispatch
+  // route — it reproduces the LEAF-1 unknown-machine clean 404 (registry
+  // miss) byte-for-byte for any /flow/<unknown>/* path, and defers to
+  // Hono's default not-found for an unknown sub-path of a known machine
+  // (the pre-LEAF-2 behavior for those paths). Registered AFTER the mounts
+  // so a matched sub-router always responds first.
+  app.all("/flow/:machine/*", (c) => {
+    const machine = c.req.param("machine");
+    try {
+      FLOW_STRATEGY_REGISTRY.resolve(machine);
+    } catch (err) {
+      return flowDispatchError(c, err, "begin_failed");
+    }
+    return c.notFound();
+  });
 
 } // end wireRoutes
 
