@@ -597,6 +597,20 @@ function useChatEngine(): ChatContextValue {
 
       // Re-submit the pending command if one was stored
       const pendingCommand = pendingCommandRef.current;
+      // US-209 / MR-5: hand the dataset pick to J-002 so the session-chat
+      // machine owns the resolution (it runs ScopeResolver invariant 4,
+      // retargets active_scope.resource_*, and persists
+      // session.active_dataset_id). A stored pending command means this
+      // pick came from the agent's resolve_dataset tool-return path
+      // (`data-agent-request`) → `dataset_resolved_by_agent`; otherwise it
+      // is a direct UI selection → `dataset_picked_directly`. Best-effort
+      // and non-blocking — the full ownership contract is validated at the
+      // ui-state acceptance layer (US-209). Per DWD-13 J-002 RETIRES the
+      // FE's parallel dataset state; this is only the emit seam.
+      emitDatasetPickToJ002(
+        datasetId,
+        pendingCommand ? "dataset_resolved_by_agent" : "dataset_picked_directly",
+      );
       if (pendingCommand) {
         pendingCommandRef.current = null;
         submitText(pendingCommand);
@@ -635,6 +649,49 @@ function useChatEngine(): ChatContextValue {
     isStreaming: sseOverlay.isStreaming,
     streamingContent: sseOverlay.streamingContent,
   };
+}
+
+/**
+ * US-209 / MR-5 — emit a dataset pick to the J-002 session-chat machine.
+ *
+ * Best-effort, fire-and-forget, browser-only. J-002 owns the dataset
+ * resolution end-to-end (ScopeResolver invariant 4 → active_scope.resource_*
+ * → session.active_dataset_id); this is purely the FE emit seam. The flow
+ * principal is read from the app-exposed global (set by the SSR shell from
+ * the verified identity); when it is absent — e.g. unit tests, or a build
+ * that has not wired it — this is a silent no-op so the existing chat
+ * re-submit flow is never blocked or made to throw (DWD-13: J-002 retires
+ * the FE's parallel dataset state, the FE does not re-own it here).
+ */
+function emitDatasetPickToJ002(
+  datasetId: string,
+  type: "dataset_resolved_by_agent" | "dataset_picked_directly",
+): void {
+  try {
+    const principal = (
+      globalThis as { __J002_PRINCIPAL_ID__?: unknown }
+    ).__J002_PRINCIPAL_ID__;
+    if (
+      typeof principal !== "string" ||
+      principal.length === 0 ||
+      typeof fetch !== "function"
+    ) {
+      return;
+    }
+    void fetch("/ui-state/flow/session-chat/event", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        flow_id: `session-chat:${principal}`,
+        type,
+        payload: { resource_id: datasetId, resource_type: "dataset" },
+      }),
+    }).catch(() => {
+      /* J-002 emit is best-effort; never surfaces to the user */
+    });
+  } catch {
+    /* never let the emit seam break dataset selection */
+  }
 }
 
 // ---------------------------------------------------------------------------
