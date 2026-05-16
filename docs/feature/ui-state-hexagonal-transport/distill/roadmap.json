@@ -72,7 +72,27 @@
           "files_to_modify_estimate": [
             "ui-state/lib/orchestrator.ts (EXTEND — introduce FlowStrategy port + registry; conditionals delegate)",
             "ui-state/lib/hexagonal-transport/leaf-1-strategy-registry.test.ts (un-skip)"
-          ]
+          ],
+          "deliver_status": {
+            "status": "delivered",
+            "delivered_at": "2026-05-16",
+            "wave": "DELIVER",
+            "source_commit": "4c33709",
+            "merge_sha": "pending — lands via refinery gt mq submit (rig: dashboard_chat); final main SHA recorded by the queue on green",
+            "files_modified": [
+              "ui-state/lib/orchestrator.ts (FlowStrategy port + UnknownMachineError + registry-level D5 alias + FLOW_STRATEGY_REGISTRY; begin/beginIfNotStarted/appendDeepLinkEvents resolve through the registry)",
+              "ui-state/index.ts (UnknownMachineError -> clean 404 at the HTTP edge; non-unknown errors keep their prior {error,message} 500 shape byte-identical)",
+              "ui-state/lib/hexagonal-transport/leaf-1-strategy-registry.test.ts (un-skipped + implemented to GREEN, unweakened)"
+            ],
+            "scope_note": "index.ts touched ONLY for the criterion-3 / ADR-040-Consequences mandated unknown-machine 404 status mapping (no :machine param / route-factory / alias-mount change — those remain LEAF-2). Delegation, not relocation: per-machine begin/event/settle bodies untouched (LEAF-3).",
+            "rg_leaf": {
+              "ui_state_vitest": "153 passed | 42 skipped (baseline 149 passed; +4 leaf-1 un-skipped; leaf-{2..6} stay skipped) — zero regression",
+              "eslint": "0 errors (npx eslint . exit 0; only pre-existing repo-wide warnings)",
+              "workspace_consistency": "tools/check_workspace_consistency.py ✓",
+              "auto_gate": "./tools/test/test.sh --auto -> ui-state subtree -> npx vitest run (green)",
+              "behavior_neutrality_proof": "Controlled A/B on the SAME crew Docker stack: unmodified origin/main (990c812) vs LEAF-1 branch, per-marker. IDENTICAL pass/fail set every marker -> code introduces ZERO behavioral delta. baseline==leaf1: mr_1 14F/4P, mr_2 5F/7P, mr_3 4F/2P, mr_4 14P/0F, mr_5 1F/6P, mr_6 1F/7P. mr_4 == J-002 FINALIZE baseline (14/0/0) exactly. The mr_1/2/3/5/6 failures are a PRE-EXISTING environmental degradation of this shared crew host (predominantly us204 cold-deep-link / us202 degraded-path timing scenarios) present IDENTICALLY with and without the change — NOT a LEAF-1 regression. RG-LEAF's binding invariant (zero regression vs baseline; GET /projection byte-identical before/after) is satisfied by the controlled A/B equality."
+            }
+          }
         },
         {
           "id": "LEAF-2",

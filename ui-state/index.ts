@@ -38,7 +38,7 @@ import {
   resumeSessionActor,
   switchDatasetContextActor,
 } from "./lib/machines/session-chat/index.ts";
-import { FlowOrchestrator } from "./lib/orchestrator.ts";
+import { FlowOrchestrator, UnknownMachineError } from "./lib/orchestrator.ts";
 import { selectFlowEventLog } from "./lib/persistence/redis.ts";
 
 const PORT = parseInt(process.env.PORT ?? "8788", 10);
@@ -277,10 +277,7 @@ app.post("/flow/:machine/begin", async (c) => {
       });
       return c.json(projection);
     } catch (err) {
-      return c.json(
-        { error: "begin_failed", message: (err as Error).message },
-        500,
-      );
+      return flowDispatchError(c, err, "begin_failed");
     }
   }
 
@@ -309,10 +306,7 @@ app.post("/flow/:machine/begin", async (c) => {
     });
     return c.json(projection);
   } catch (err) {
-    return c.json(
-      { error: "begin_failed", message: (err as Error).message },
-      500,
-    );
+    return flowDispatchError(c, err, "begin_failed");
   }
 });
 
@@ -466,10 +460,7 @@ app.post("/flow/:machine/event", async (c) => {
     });
     return c.json(projection);
   } catch (err) {
-    return c.json(
-      { error: "event_failed", message: (err as Error).message },
-      500,
-    );
+    return flowDispatchError(c, err, "event_failed");
   }
 });
 
@@ -644,10 +635,7 @@ app.post("/flow/:machine/open-deep-link", async (c) => {
       });
       return c.json(projection);
     } catch (err) {
-      return c.json(
-        { error: "open_deep_link_failed", message: (err as Error).message },
-        500,
-      );
+      return flowDispatchError(c, err, "open_deep_link_failed");
     }
   }
 
@@ -713,10 +701,7 @@ app.post("/flow/:machine/open-deep-link", async (c) => {
     });
     return c.json(projection);
   } catch (err) {
-    return c.json(
-      { error: "open_deep_link_failed", message: (err as Error).message },
-      500,
-    );
+    return flowDispatchError(c, err, "open_deep_link_failed");
   }
 });
 
@@ -815,6 +800,24 @@ function derivePrincipalId(email: string): string {
 function cryptoRandomId(): string {
   // Hono's runtime exposes globalThis.crypto; randomUUID is in Node 19+.
   return globalThis.crypto?.randomUUID?.() ?? `corr-${Date.now()}`;
+}
+
+// ADR-040 §D5 / Consequences: an unknown machine is a clean 404 registry
+// miss, never a 500 conditional fall-through. Every other dispatch failure
+// keeps its prior `{ error, message }` 500 shape byte-identical so the
+// J-002 acceptance suite stays behavior-neutral.
+function flowDispatchError(
+  c: Context,
+  err: unknown,
+  fallbackError: string,
+): Response {
+  if (err instanceof UnknownMachineError) {
+    return c.json({ error: "unknown_machine", machine: err.machine }, 404);
+  }
+  return c.json(
+    { error: fallbackError, message: (err as Error).message },
+    500,
+  );
 }
 
 if (process.env.UI_STATE_AUTOSTART !== "false") {
