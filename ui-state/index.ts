@@ -110,6 +110,18 @@ function slowResumeMsFlag(): number {
   return v;
 }
 
+// US-210 test-infra knob (consume-once, gated) — project-context analog
+// of slowResumeMsFlag. The next switching_project_intent bearing
+// X-Force-Slow-Switch-Project: <ms> holds the switchProject invoke so
+// the scenario-2 acceptance test can broadcast FREEZE while the machine
+// is still in `switching_project`. Not a product behavior.
+let forceSlowSwitchMsNext = 0;
+function slowSwitchMsFlag(): number {
+  const v = forceSlowSwitchMsNext;
+  forceSlowSwitchMsNext = 0;
+  return v;
+}
+
 const orchestrator = new FlowOrchestrator({
   eventLog,
   loginMachineDeps: {
@@ -131,7 +143,11 @@ const orchestrator = new FlowOrchestrator({
       forceCreateProjectFailureFlag,
     ),
     // MR-4 — atomic project switching (US-207 + IC-J002-4).
-    switchProject: switchProjectActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+    switchProject: switchProjectActor(
+      BACKEND_URL,
+      DEFAULT_PRINCIPAL_HEADERS,
+      slowSwitchMsFlag,
+    ),
   },
   // Session-chat (DWD-13 §2B) — MR-2 wires loadSessionList + resumeSession.
   // Presence of this object (vs `undefined`) is the orchestrator's signal
@@ -421,6 +437,23 @@ app.post("/flow/:machine/event", async (c) => {
       10,
     );
     forceSlowResumeMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
+  }
+
+  if (
+    machine === "project-and-chat-session-management" &&
+    body.type === "switching_project_intent" &&
+    c.req.header("X-Force-Slow-Switch-Project") &&
+    shouldInject(KNOB.expireToken, {
+      event: { type: "__expire_token__" },
+      correlationId: correlation_id,
+      serviceName: "ui-state",
+    })
+  ) {
+    const ms = Number.parseInt(
+      c.req.header("X-Force-Slow-Switch-Project") ?? "0",
+      10,
+    );
+    forceSlowSwitchMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
   }
 
   try {

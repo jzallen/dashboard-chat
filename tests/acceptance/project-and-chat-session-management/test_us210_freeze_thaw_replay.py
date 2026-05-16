@@ -224,14 +224,47 @@ def test_token_expiry_during_session_resume_pauses_and_replays_with_original_cor
     )
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-6")
 @pytest.mark.happy_path
 def test_token_expiry_during_project_switch_replays_after_thaw(
     requires_compose_stack: None,
     driver: J002Driver,
 ) -> None:
     """switching_project → freeze → THAW → switching_project → project_selected for Q3."""
-    pytest.fail("not yet implemented")
+    _create_project("Q4 Analytics")
+    q3_id = _create_project("Q3 Sales")
+    _spawn_to_session_list(driver)
+    pc = _wait_state(driver, _pc, "project_selected")
+    original_correlation = pc.get("correlation_id")
+
+    def _switch() -> None:
+        _post_event(
+            driver, "project-and-chat-session-management", PC_FLOW_ID,
+            "switching_project_intent", {"new_project_id": q3_id},
+            extra_headers={"X-Force-Slow-Switch-Project": "3000"},
+        )
+
+    t = threading.Thread(target=_switch, daemon=True)
+    t.start()
+    time.sleep(1.0)
+    _freeze(driver)
+
+    frozen = _wait_state(driver, _pc, "freeze")
+    assert frozen["context"].get("last_live_state") == "switching_project", (
+        f"US-210 #2: froze from switching_project; got "
+        f"{frozen['context'].get('last_live_state')!r}"
+    )
+    t.join(timeout=6.0)
+
+    _thaw(driver)
+    settled = _wait_state(driver, _pc, "project_selected")
+    proj = settled["context"].get("project") or {}
+    assert proj.get("id") == q3_id, (
+        f"US-210 #2: must land in Q3 after thaw; got {proj!r}"
+    )
+    assert settled.get("correlation_id") == original_correlation, (
+        f"US-210 #2: correlation preserved; "
+        f"{settled.get('correlation_id')!r} != {original_correlation!r}"
+    )
 
 
 @pytest.mark.skip(reason="DELIVER-deferred to MR-6; FIFO replay + per-intent stale filter (DWD-7)")
