@@ -291,14 +291,32 @@ def test_replay_buffer_timeout_transitions_to_error_recoverable(
     pytest.fail("not yet implemented")
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-6; no-flicker invariant for non-mutating states")
 @pytest.mark.happy_path
 def test_freeze_during_session_welcome_preserves_welcome_view_no_flicker(
     requires_compose_stack: None,
     driver: J002Driver,
 ) -> None:
     """session_welcome → freeze → THAW → session_welcome; no flicker."""
-    pytest.fail("not yet implemented")
+    _create_project("Q4 Analytics")
+    _spawn_to_session_list(driver)
+    _post_event(driver, "session-chat", SC_FLOW_ID, "new_session_clicked", {})
+    welcome = _wait_state(driver, _sc, "session_welcome")
+    # Welcome view shape: no session row, composer empty (chips visible).
+    assert welcome["context"].get("session_id") is None
+
+    # Token expires with NO J-002 mutation in flight.
+    _freeze(driver)
+    frozen = _wait_state(driver, _sc, "freeze")
+    assert frozen["context"].get("last_live_state") == "session_welcome"
+    # The welcome context is preserved underneath the banner (no flicker —
+    # session_id stays null, nothing was created).
+    assert frozen["context"].get("session_id") is None
+
+    _thaw(driver)
+    back = _wait_state(driver, _sc, "session_welcome")
+    assert back["context"].get("session_id") is None, (
+        "US-210 #5: welcome state must be intact after thaw (no ghost row)"
+    )
 
 
 @pytest.mark.skip(

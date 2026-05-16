@@ -671,7 +671,6 @@ def test_ic_j002_5_dataset_resolved_by_agent_produces_exactly_one_scope_update(
     )
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-6; FREEZE pause contract")
 @pytest.mark.mr_6
 def test_ic_j002_6_freeze_pauses_outgoing_mutations_intents_queue_replay_on_thaw(
     requires_compose_stack: None,
@@ -680,7 +679,108 @@ def test_ic_j002_6_freeze_pauses_outgoing_mutations_intents_queue_replay_on_thaw
     """IC-J002-6: on FREEZE, J-002 emits no backend POSTs / projection writes /
     agent turns; intents queue at orchestrator with original correlation refs;
     on THAW, intents replay against live state."""
-    pytest.fail("not yet implemented")
+    import json
+    import subprocess
+    import time
+
+    DEV_PRINCIPAL_ID = "dev-user-001"
+    SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
+
+    def _api(method: str, path: str, body: dict | None = None) -> str:
+        args = [
+            "docker", "exec", "dashboard-api", "curl", "-sS", "-X", method,
+            f"http://localhost:8000{path}",
+            "-H", "x-user-id: dev-user-001",
+            "-H", "x-org-id: dev-org-001",
+            "-H", "x-user-email: dev@localhost",
+        ]
+        if body is not None:
+            args += ["-H", "content-type: application/json", "-d", json.dumps(body)]
+        return subprocess.run(
+            args, capture_output=True, text=True, timeout=10, check=True
+        ).stdout
+
+    project_id = json.loads(_api("POST", "/api/projects", {"name": "IC6 Proj"}))["data"]["id"]
+    session_id = json.loads(
+        _api("POST", f"/api/projects/{project_id}/sessions", {"title": "IC6"})
+    )["data"]["id"]
+
+    driver.post(
+        "/ui-state/flow/session-chat/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
+    )
+    begin = driver.post(
+        "/ui-state/flow/project-and-chat-session-management/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
+    )
+    assert begin.status == 200
+
+    def _sc() -> dict:
+        p = driver.get(
+            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
+            base=driver.auth_proxy_url,
+        )
+        return json.loads(p.body) if p.status == 200 else {}
+
+    def _wait(want: str, timeout: float = 8.0) -> dict:
+        deadline = time.monotonic() + timeout
+        last: dict = {}
+        while time.monotonic() < deadline:
+            last = _sc()
+            if last.get("state") == want:
+                return last
+            time.sleep(0.05)
+        pytest.fail(f"state never reached {want}; last={last!r}")
+
+    _wait("session_list_loaded")
+
+    # J-001 expires → orchestrator broadcasts FREEZE (the machine is idle
+    # in session_list_loaded — no in-flight mutation).
+    fr = driver.post(
+        "/ui-state/flow/session-chat/freeze",
+        base=driver.auth_proxy_url,
+        json_body={"principal_id": DEV_PRINCIPAL_ID},
+    )
+    assert fr.status == 200, f"/freeze {fr.status}: {fr.body[:200]}"
+    frozen = _wait("freeze")
+    seq_at_freeze = frozen.get("sequence_id", 0)
+
+    # An intent arriving DURING freeze is queued at the orchestrator's
+    # replay buffer with its original correlation ref — it does NOT drive
+    # the machine: no resuming_session, no backend resume POST, no
+    # projection state change away from freeze (the pause contract).
+    driver.post(
+        "/ui-state/flow/session-chat/event",
+        base=driver.auth_proxy_url,
+        json_body={"flow_id": SESSION_CHAT_FLOW_ID, "type": "session_clicked",
+                   "payload": {"session_id": session_id}},
+    )
+    time.sleep(0.6)
+    paused = _sc()
+    assert paused.get("state") == "freeze", (
+        f"IC-J002-6: FREEZE must pause outgoing mutations; "
+        f"state={paused.get('state')!r} (intent should be queued, not run)"
+    )
+    # The backend session row was NOT touched (no resume POST fired).
+    sess = json.loads(_api("GET", f"/api/sessions/{session_id}"))
+    sess_attrs = sess.get("data", sess).get("attributes", sess.get("data", sess))
+    assert sess_attrs.get("active_dataset_id") is None
+
+    # THAW → the queued intent replays against the live post-THAW state and
+    # settles in session_active.
+    th = driver.post(
+        "/ui-state/flow/session-chat/thaw",
+        base=driver.auth_proxy_url,
+        json_body={"principal_id": DEV_PRINCIPAL_ID, "reason": "thaw"},
+    )
+    assert th.status == 200, f"/thaw {th.status}: {th.body[:200]}"
+    active = _wait("session_active")
+    assert active["context"].get("session_id") == session_id, (
+        "IC-J002-6: the queued intent must replay against live state on THAW"
+    )
+    assert active.get("sequence_id", 0) > seq_at_freeze
 
 
 @pytest.mark.mr_4

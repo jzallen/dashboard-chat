@@ -240,6 +240,7 @@ export class FlowOrchestrator {
       this.actors.delete(flow_id);
     }
     await this.deps.eventLog.reset(flow_id);
+    this.resetFlowTracking(flow_id);
 
     // Failure-simulation knob: wrap createOrgAndReissue with a failure-
     // injecting counter for slice-1 scenarios that exercise the retry
@@ -428,6 +429,7 @@ export class FlowOrchestrator {
         this.actors.delete(flow_id);
       }
       await this.deps.eventLog.reset(flow_id);
+      this.resetFlowTracking(flow_id);
     }
 
     if (this.actors.has(flow_id)) {
@@ -1885,12 +1887,31 @@ export class FlowOrchestrator {
           payload: { last_live_state: h.last_live_state },
           correlation_id: h.correlation_id,
         });
-        // Emission-completeness for the history-target re-entry: the
-        // re-run invoke settled the machine into a NEW terminal state
-        // (e.g. resuming_session → session_active) but no FlowEvent has
-        // captured it — the D-MR4-06 / D-MR5-01 class. Re-use the same
-        // terminal emitter `send()` uses so the projection advances.
-        if (machine === SESSION_CHAT_WIRE_NAME) {
+        // Emission-completeness for the history-target re-entry — ONLY
+        // when `last_live_state` was an invoke-driven transient that
+        // actually re-ran on THAW (reenter:true). For a non-transient
+        // freeze (e.g. session_list_loaded / project_selected — US-210
+        // Example 5, IC-J002-6) the `*_thawed` reducer alone restores the
+        // state; emitting a terminal here would be wrong AND, for
+        // project-context, would re-broadcast project_ready and clobber a
+        // freshly-thawed session-chat (no switch occurred — nothing to
+        // re-announce). The replayed queued intents below carry their own
+        // full emission via send().
+        const SC_TRANSIENTS = new Set([
+          "loading_session_list",
+          "resuming_session",
+          "switching_dataset_context",
+          "creating_session",
+        ]);
+        const PC_TRANSIENTS = new Set([
+          "resolving_initial_scope",
+          "creating_project",
+          "switching_project",
+        ]);
+        if (
+          machine === SESSION_CHAT_WIRE_NAME &&
+          SC_TRANSIENTS.has(h.last_live_state ?? "")
+        ) {
           await this.appendSessionChatTerminalEvents(
             flow_id,
             settledState,
@@ -1898,7 +1919,10 @@ export class FlowOrchestrator {
             h.last_live_state ?? undefined,
             harvestSettledSessionChatState(actor),
           );
-        } else {
+        } else if (
+          machine === PROJECT_CONTEXT_WIRE_NAME &&
+          PC_TRANSIENTS.has(h.last_live_state ?? "")
+        ) {
           await this.appendProjectContextThawTerminal(
             flow_id,
             actor,
@@ -2003,6 +2027,24 @@ export class FlowOrchestrator {
       principal_id,
       input.correlation_id,
     );
+  }
+
+  /**
+   * Reset ALL per-flow orchestrator tracking for a flow whose actor +
+   * event log were just reset (begin / force_restart). The actor, log,
+   * AND the in-memory trackers are one unit: a fresh flow must not inherit
+   * the prior flow's `priorState` (used to distinguish eager-create from
+   * resume on `session_active` — a stale `session_welcome` here makes a
+   * replayed THAW resume emit `session_active_reached` with a null
+   * session_id), nor a stale `frozen` / `abandoned` entry. This closes a
+   * cross-flow contamination latent before MR-6 and surfaced by the
+   * freeze/thaw replay path (the shared dev-user-001 principal reuses
+   * flow_ids across scenarios).
+   */
+  private resetFlowTracking(flow_id: string): void {
+    this.priorState.delete(flow_id);
+    this.frozen.delete(flow_id);
+    this.abandoned.delete(flow_id);
   }
 
   private async projectionFor(
