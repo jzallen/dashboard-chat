@@ -287,3 +287,43 @@ A 3-4 step migration journey, to be sequenced by a future DISTILL pass when the 
 The sequence is intentionally LEAF-A → LEAF-B → LEAF-C → LEAF-D: orchestrator-read migrations land before the lint rule, so the rule can be turned on at a point where the codebase already passes it. Each LEAF is independently shippable; the team may interleave with feature work.
 
 This roadmap does NOT need DISTILL or DELIVER planning at the time of this ADR amendment. It is a deferred journey, recorded here so future contributors can pick it up without re-deriving the sequence.
+
+---
+
+## Amendment 2026-05-16 — Emission-completeness tripwire (deferred-decision marker)
+
+**Status:** Recorded (2026-05-16). This is NOT a decision to change the architecture. It is a **pre-committed trigger** — analogous in form to the §3 "scaling ceiling triggers" — that converts an open-ended "revisit later" into a concrete, observable signal, so the decision is acted on rather than silently defaulting to "never."
+
+### What this records
+
+The decision outcome (§2) and the 2026-05-15 "Projection as primary read model" amendment commit the tier to an **event-sourced projection** as the read model. This is sound for the stated drivers (restart recovery, FE-readable server-authoritative state, the documented Option γ migration path). It also **manufactures an invariant**: the orchestrator MUST emit a FlowEvent for every machine settle, or the projection silently goes stale and every downstream reader (FE, TS harness, acceptance probes) observes a state that never advances.
+
+This invariant is currently policed by **discipline + review**, not by construction. The 2026-05-15 snapshot-read prohibition + LEAF-D lint rule catch the *stale-read* anti-pattern (reading `snapshot.context.*`); they do **not** catch the *forgot-to-emit* failure — a settle path with no corresponding emission arm. The two are different failure modes; only the first is mechanically enforced.
+
+Empirical recurrence of the un-enforced second mode, at time of writing:
+
+| Instance | Failure | Resolution |
+|---|---|---|
+| `switching_project` (original) | settle reached, no emission → projection stuck | D-MR4-06 fix (`08258cd`) |
+| `switching_project` access-revoked / not-found arms | same class, adjacent arms | folded into D-MR4-06 |
+| `session_resumed` (resume path) | settle reads `resource` / `underlying_cause_tag` from projection-of-log = null | fixed in-pattern during J-002 MR-5 (harvest the settled context) |
+
+Three instances of one failure class surfaced inside ~one feature's worth of work. Two independent architecture reviews (2026-05-16) named this the single largest accidental-complexity surplus in the system: an essential *need* (server-authoritative state, because the agent co-authors it) met with a *mechanism* (event-sourcing + projection rebuild) heavier than the current product stage requires, whose distinguishing cost is exactly this manufactured, hand-policed invariant.
+
+### The tripwire
+
+> **When a proposal is made to enforce emission-completeness *by construction* — a type-level / compile-time guard that makes "settle a machine without emitting its FlowEvent" unrepresentable (as opposed to lint-caught or review-caught) — that proposal is itself the signal to instead evaluate replacing the event-sourced projection with a simpler server-authoritative store** (one settled-state record per `flow_id`; projection reads become a store read; orchestrator writes become a store write; the emission contract — and this entire failure class — ceases to exist by construction).
+
+Rationale: the compile-time-guard proposal only gets made once hand-policing the invariant has hurt enough times that mechanical enforcement is judged worth building. At that moment the cost calculus inverts — building and maintaining enforcement of a manufactured invariant becomes more expensive than deleting the invariant. The proposal to add the guard *is* the evidence that the simpler model is now the cheaper path. The trigger is the proposal, not a date or a metric — you do not have to predict when; you watch for that specific proposal.
+
+### Pre-costed alternative (the thing to evaluate when the tripwire fires)
+
+Server-authoritative **store model**: keep the machines, keep FREEZE/THAW, keep restart-recovery and server authority; replace the Redis-Streams FlowEventLog + `buildProjection` rebuild with one settled-state record per `flow_id` (`{project_id, session_id, dataset_id, error_state, last_settled_state_per_machine}`). Projection reads → `store.get(flow_id)`. Orchestrator settle → `store.set(flow_id, …)`. Lost: built-in audit trail and point-in-time replay — re-introduced as a *separate* audit log if and when a temporal-query requirement is actually written down (none exists at the planning horizon). Order-of-magnitude effort: comparable to one LEAF; the machines and FREEZE/THAW are untouched.
+
+### What this amendment does NOT do
+
+- It does **not** ratify the store model or schedule a migration. J-002 is built on the current substrate; refactoring now costs more than the carry cost through J-003. Default action today remains: **accept the complexity, keep policing by review.**
+- It does **not** change topology (§1), scaling shape (§2), the FlowEvent log storage, or the snapshot-read prohibition / LEAF-A–D journey. Those stand.
+- It does **not** add a gate or block any wave. It is a marker, deliberately placed where the event-sourcing rationale lives, so the deferred decision has an owner-less but explicit trigger instead of evaporating.
+
+Cross-reference: this composes with "Open questions" above as a fourth deferred item, and with the 2026-05-15 "Enforcement (Earned Trust)" subsection — the tripwire is precisely the boundary at which "earn more enforcement" should instead become "remove the thing that needs enforcing."
