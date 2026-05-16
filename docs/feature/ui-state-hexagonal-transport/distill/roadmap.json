@@ -113,7 +113,26 @@
           "files_to_modify_estimate": [
             "ui-state/index.ts (EXTEND — makeFlowRouter factory; app.route canonical + alias mounts; remove :machine param)",
             "ui-state/lib/hexagonal-transport/leaf-2-router-factory-alias-surface.test.ts (un-skip)"
-          ]
+          ],
+          "deliver_status": {
+            "status": "delivered",
+            "delivered_at": "2026-05-16",
+            "wave": "DELIVER",
+            "source_commit": "7a73cf4",
+            "merge_sha": "pending — lands via refinery gt mq submit (rig: dashboard_chat); final main SHA recorded by the queue on green",
+            "files_modified": [
+              "ui-state/index.ts (makeFlowRouter(strategy, wireName) factory + per-machine app.route mounts: login-and-org-setup, project-context (+ legacy alias project-and-chat-session-management against the SAME instance, ADR-040 D5), session-chat; :machine dispatch retired; terminal app.all('/flow/:machine/*') guard reproduces the LEAF-1 unknown-machine 404 byte-for-byte; handler bodies byte-unchanged)",
+              "ui-state/lib/hexagonal-transport/leaf-2-router-factory-alias-surface.test.ts (un-skipped + implemented to GREEN, unweakened)"
+            ],
+            "scope_note": "Routing-only. wireName forwards the established legacy-stable wire segment to the orchestrator so flow_id / Redis event-log key / J002_MACHINES key / FlowProjection.flow_id stay byte-identical to the pre-LEAF-2 baseline through BOTH mounts; the LEAF-1 registry still canonicalizes via the D5 resolve() alias — no alias logic reimplemented in routes. No orchestrator transition logic carved (LEAF-3); no intent buffer / FREEZE-THAW extraction (LEAF-4); read-port untouched (LEAF-5); no alias removed (LEAF-6).",
+            "rg_leaf": {
+              "ui_state_vitest": "159 passed | 36 skipped (baseline 153 passed after LEAF-1; +6 leaf-2 un-skipped; leaf-1 still passing; leaf-{3..6} stay skipped) — zero regression",
+              "eslint": "0 errors (npx eslint . exit 0; only pre-existing repo-wide intent-prefix warnings)",
+              "workspace_consistency": "tools/check_workspace_consistency.py ✓",
+              "auto_gate": "./tools/test/test.sh --auto (post-commit) -> + --ui-state -> npx vitest run green (exit 0)",
+              "behavior_neutrality_proof": "Controlled A/B on the SAME crew Docker stack: only the ui-state container differs between A and B (pristine origin/main e9d3cce with ui-state/index.ts reverted, vs LEAF-2 branch restored; all other containers unchanged). Per-marker, IDENTICAL pass/fail set every marker — verified at FAILED node-id granularity (25 failing node-ids; set diff empty A vs B) -> ZERO behavioral delta. baseline==leaf2: mr_1 14F/4P, mr_2 5F/7P, mr_3 4F/2P, mr_4 14P/0F, mr_5 1F/6P, mr_6 1F/7P. mr_4 == J-002 FINALIZE baseline (14/0/0) exactly. The mr_1/2/3/5/6 failures are a PRE-EXISTING environmental degradation of this shared crew host (root cause: 24x ERR_MODULE_NOT_FOUND — userFlowHarness TS module unresolvable on the degraded host — plus timeouts) present IDENTICALLY with and without the change, reproducing LEAF-1's documented baseline exactly — NOT a LEAF-2 regression. The acceptance suite driving the LEGACY /ui-state/flow/project-and-chat-session-management/* AND /ui-state/flow/session-chat/* segments and staying byte-behavior-identical (mr_4 14/0/0, mr_6 unchanged) through the per-machine mounts + alias is the live proof of NO 404 window on any legacy vocabulary."
+            }
+          }
         },
         {
           "id": "LEAF-3",

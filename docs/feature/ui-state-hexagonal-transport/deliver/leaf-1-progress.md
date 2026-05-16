@@ -6,7 +6,7 @@ LEAF-2..6 remain DISTILL-deferred (skip-marked specs); do not alter them.
 | LEAF | Status | Wave | Source commit | Merge SHA | Behavior |
 |---|---|---|---|---|---|
 | LEAF-1 | ✅ delivered | DELIVER (2026-05-16) | `4c33709` | pending (refinery `gt mq submit`) | behavior-neutral (A/B proven) |
-| LEAF-2 | ⏳ deferred | — | — | — | behavior-neutral |
+| LEAF-2 | ✅ delivered | DELIVER (2026-05-16) | `7a73cf4` | pending (refinery `gt mq submit`) | behavior-neutral (A/B proven, Δ=0) |
 | LEAF-3 | ⏳ deferred | — | — | — | behavior-neutral |
 | LEAF-4 | ⏳ deferred | — | — | — | behavior-neutral |
 | LEAF-5 | ⏳ deferred | — | — | — | behavior-changing (equivalence gate) |
