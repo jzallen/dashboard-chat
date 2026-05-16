@@ -181,8 +181,13 @@ interface FrozenFlowState {
   frozenAt: number;
   /** Origin flow that triggered the freeze — the broadcaster. */
   origin: string;
-  /** Queued events waiting for thaw. Bounded to REPLAY_BUFFER_CAP. */
-  queued: SendEventInput[];
+  /** Queued events waiting for thaw. Bounded to REPLAY_BUFFER_CAP. Each
+   *  carries a process-global monotonic `seq` so THAW can replay across
+   *  ALL frozen flows in true arrival order (DD-4 / scenario 3+6: the
+   *  switching_project intent on project-context and the session_clicked
+   *  on session-chat are queued on SEPARATE per-flow buffers but must
+   *  replay in the order Maya actually clicked). */
+  queued: Array<{ input: SendEventInput; seq: number }>;
 }
 
 export class FlowOrchestrator {
@@ -195,6 +200,9 @@ export class FlowOrchestrator {
   /** Per-flow prior state, used to detect transitions out of expired_token
    *  so the orchestrator can broadcast THAW once silent reauth settles. */
   private readonly priorState = new Map<string, string>();
+  /** Process-global monotonic counter stamped on every intent queued
+   *  during a freeze window — the cross-flow FIFO key for THAW replay. */
+  private replaySeq = 0;
 
   constructor(private readonly deps: OrchestratorDeps) {}
 
@@ -1141,7 +1149,7 @@ export class FlowOrchestrator {
         if (frozenState.queued.length >= REPLAY_BUFFER_CAP) {
           this.abandoned.add(input.flow_id);
         } else {
-          frozenState.queued.push(input);
+          frozenState.queued.push({ input, seq: this.replaySeq++ });
         }
       }
       // Append the event to the persisted log so projection consumers see
@@ -1803,6 +1811,19 @@ export class FlowOrchestrator {
     originFlowId: string,
     reason: "thaw" | "abandoned" = "thaw",
   ): Promise<void> {
+    // ── Pass 1: unfreeze + THAW every flow (or abandon it), collecting
+    // each flow's drained queue. Replay is deferred to pass 2 so it runs
+    // GLOBALLY in true arrival order across flows — DD-4: the
+    // switching_project intent (project-context) must replay before the
+    // session_clicked (session-chat) even though they sit on separate
+    // per-flow buffers, AND every flow must be UNFROZEN first so the
+    // project_ready the switch re-broadcasts reaches a live (not frozen,
+    // event-dropping) session-chat actor.
+    const allDrained: Array<{
+      input: SendEventInput;
+      seq: number;
+      flow_id: string;
+    }> = [];
     // Snapshot the keys first because draining mutates the map.
     const flowIds = Array.from(this.frozen.keys());
     for (const flow_id of flowIds) {
@@ -1846,9 +1867,9 @@ export class FlowOrchestrator {
               last_live_state: h.last_live_state,
               // The originating user-action(s) preserved for re-issue.
               abandoned_intents: drained.map((d) => ({
-                type: d.type,
-                payload: d.payload,
-                correlation_id: d.correlation_id,
+                type: d.input.type,
+                payload: d.input.payload,
+                correlation_id: d.input.correlation_id,
               })),
             },
             correlation_id: h.correlation_id,
@@ -1942,30 +1963,63 @@ export class FlowOrchestrator {
         }
       }
 
-      // Replay queued intents in arrival order (FIFO). Each call passes
-      // BACK through `send()` — `frozen` no longer carries this flow_id so
-      // they dispatch normally with full emission. After each, harvest the
-      // DWD-7 stale-intent counter: if the machine silent-dropped the
-      // replayed intent (target no longer resolves post-THAW) emit the
-      // observability-only `stale_intent_dropped_after_thaw` (no UX).
-      for (const queued of drained) {
-        const before = actor
+      // Defer this flow's queue to the global pass-2 replay.
+      for (const q of drained) {
+        allDrained.push({ input: q.input, seq: q.seq, flow_id });
+      }
+    }
+
+    // ── Pass 2: replay ALL drained intents in true cross-flow arrival
+    // order (the `seq` stamped at queue time). Each goes BACK through
+    // `send()` — `frozen` no longer carries any of these flow_ids so they
+    // dispatch normally with full emission, and a switching_project
+    // replay's project_ready re-broadcast now reaches an unfrozen
+    // session-chat (DD-4). After each, harvest the DWD-7 stale-intent
+    // counter on the intent's OWN flow actor: if the machine silent-
+    // dropped it (target no longer resolves post-THAW) emit the
+    // observability-only `stale_intent_dropped_after_thaw` (no UX).
+    allDrained.sort((a, b) => a.seq - b.seq);
+    for (const { input, flow_id } of allDrained) {
+      const actor = this.actors.get(flow_id);
+      const isJ002 = J002_MACHINES.has(machineOfFlow(flow_id));
+      const before =
+        isJ002 && actor
           ? harvestSettledFreezeState(actor).stale_intents_dropped_count
           : 0;
-        await this.send(queued);
-        if (isJ002 && actor) {
-          const after = harvestSettledFreezeState(actor);
-          if (after.stale_intents_dropped_count > before) {
-            await this.deps.eventLog.append(flow_id, {
-              ts: new Date().toISOString(),
-              type: "stale_intent_dropped_after_thaw",
-              payload: {
-                intent_type: after.last_stale_intent?.intent_type ?? queued.type,
-                target_id: after.last_stale_intent?.target_id ?? "",
-              },
-              correlation_id: queued.correlation_id,
-            });
-          }
+      await this.send(input);
+      if (isJ002 && actor) {
+        const after = harvestSettledFreezeState(actor);
+        const isDatasetPick =
+          input.type === "dataset_resolved_by_agent" ||
+          input.type === "dataset_picked_directly";
+        // DWD-7 / DD-4 (Praxis F-4): a REPLAYED dataset pick that fails
+        // ScopeResolver invariant 4 (deleted / cross-tenant) is
+        // silent-dropped with stale_intent_dropped_after_thaw — distinct
+        // from the interactive US-209 dataset_access_denied gutter hint
+        // (that path is NOT a THAW replay so never reaches here). The
+        // machine's onDone arm already preserved the prior resource
+        // (intent N) and stayed in session_active (no
+        // scope_mismatch_terminal); the replay-staleness is recognised
+        // HERE at replay time per DWD-7's "filter applied at replay".
+        const datasetStale =
+          isDatasetPick &&
+          harvestSettledSessionChatState(actor).underlying_cause_tag ===
+            "dataset_access_denied";
+        if (after.stale_intents_dropped_count > before || datasetStale) {
+          await this.deps.eventLog.append(flow_id, {
+            ts: new Date().toISOString(),
+            type: "stale_intent_dropped_after_thaw",
+            payload: {
+              intent_type:
+                after.last_stale_intent?.intent_type ?? input.type,
+              target_id:
+                after.last_stale_intent?.target_id ??
+                (datasetStale
+                  ? (input.payload.resource_id as string | undefined) ?? ""
+                  : ""),
+            },
+            correlation_id: input.correlation_id,
+          });
         }
       }
     }

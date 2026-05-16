@@ -267,7 +267,6 @@ def test_token_expiry_during_project_switch_replays_after_thaw(
     )
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-6; FIFO replay + per-intent stale filter (DWD-7)")
 @pytest.mark.boundary
 def test_multiple_intents_queued_during_freeze_replay_serially_in_fifo_with_stale_drop(
     requires_compose_stack: None,
@@ -276,7 +275,58 @@ def test_multiple_intents_queued_during_freeze_replay_serially_in_fifo_with_stal
     """switching_project + session_clicked queued during FREEZE; THAW replays in FIFO;
     Q3 switch settles; Q4 session_clicked is stale-dropped with observability event;
     final state = session_list_loaded for Q3."""
-    pytest.fail("not yet implemented")
+    # Q3 first so Q4 is the most-recent project resolveInitialScope picks
+    # (J-002 must START in Q4 per the gherkin Given).
+    q3_id = _create_project("Q3 Sales")
+    _create_session(q3_id, "q3-only-session")  # Q3's list differs from Q4's
+    q4_id = _create_project("Q4 Analytics")
+    chat_9b2a = _create_session(q4_id, "chat-9b2a")
+    chat_xyz = _create_session(q4_id, "chat-xyz")
+
+    _spawn_to_session_list(driver)
+    # Resume a Q4 session so J-002 is in session_active for Q4.
+    _post_event(driver, "session-chat", SC_FLOW_ID, "session_clicked",
+                {"session_id": chat_9b2a})
+    _wait_state(driver, _sc, "session_active")
+
+    # FREEZE while idle in session_active (no in-flight mutation).
+    _freeze(driver)
+    _wait_state(driver, _sc, "freeze")
+
+    # Maya clicks "Q3 Sales" AND clicks session "chat-xyz" in rapid
+    # succession — both queued in the orchestrator replay buffer with
+    # their original arrival order (switch first).
+    _post_event(driver, "project-and-chat-session-management", PC_FLOW_ID,
+                "switching_project_intent", {"new_project_id": q3_id})
+    _post_event(driver, "session-chat", SC_FLOW_ID, "session_clicked",
+                {"session_id": chat_xyz})
+    time.sleep(0.3)
+    assert _sc(driver)["state"] == "freeze", "intents must queue, not run"
+
+    # Silent re-auth succeeds → THAW. Global-FIFO replay: switching_project
+    # first → project_selected Q3 → session-chat reloads Q3's list; then
+    # session_clicked(chat-xyz) — chat-xyz is a Q4 session, NOT in Q3's
+    # list → DWD-7 silent-drop with stale_intent_dropped_after_thaw.
+    _thaw(driver)
+    pc = _wait_state(driver, _pc, "project_selected")
+    assert (pc["context"].get("project") or {}).get("id") == q3_id, (
+        f"US-210 #3: project must switch to Q3; got {pc['context'].get('project')!r}"
+    )
+    sc = _wait_state(driver, _sc, "session_list_loaded")
+    assert sc["context"].get("stale_intents_dropped_count", 0) >= 1, (
+        "US-210 #3: the Q4 session_clicked must be stale-dropped against Q3's list"
+    )
+    last_stale = sc["context"].get("last_stale_intent") or {}
+    assert last_stale.get("intent_type") == "session_clicked", last_stale
+    assert last_stale.get("target_id") == chat_xyz, (
+        f"US-210 #3: stale drop must name chat-xyz; got {last_stale!r}"
+    )
+    # No user-facing error — the stale drop is observability only (DWD-7);
+    # J-002 settles cleanly in Q3's session list.
+    assert sc["context"].get("underlying_cause_tag") is None, (
+        f"US-210 #3: stale drop must NOT raise a user error; "
+        f"cause={sc['context'].get('underlying_cause_tag')!r}"
+    )
 
 
 @pytest.mark.error_path
@@ -355,16 +405,6 @@ def test_freeze_during_session_welcome_preserves_welcome_view_no_flicker(
     )
 
 
-@pytest.mark.skip(
-    reason=(
-        "DELIVER-deferred to MR-6 — PRAXIS F-4 deferred scenario. Per the system-"
-        "designer review §3 F-4 and DD-4 in distill/wave-decisions.md: on THAW, "
-        "dataset intents replay in FIFO order. If intent N passes the ScopeResolver "
-        "I4 guard and intent N+1 fails (dataset deleted / cross-tenant), the project "
-        "+ resource context for intent N persists — intent N+1 is silent-dropped "
-        "with stale_intent_dropped_after_thaw."
-    )
-)
 @pytest.mark.praxis_f4
 @pytest.mark.boundary
 @pytest.mark.property
@@ -382,7 +422,61 @@ def test_praxis_f4_concurrent_dataset_picks_during_freeze_fifo_replay_with_stale
       - intent N+1 emits the observability event (NOT scope_mismatch_terminal)
       - `harness.j002.assert_stale_intent_dropped("dataset_resolved_by_agent", <bad-id>)` succeeds
     """
-    pytest.fail("not yet implemented — Praxis F-4 deferred scenario")
+    import uuid as _uuid
+
+    q4_id = _create_project("Q4 Analytics")
+    session_id = _create_session(q4_id, "chat-9b2a")
+    patients_2025 = _create_dataset(q4_id, "patients_2025")
+    deleted_dataset = str(_uuid.uuid4())  # never inserted → ScopeResolver I4 fails
+
+    _spawn_to_session_list(driver)
+    _post_event(driver, "session-chat", SC_FLOW_ID, "session_clicked",
+                {"session_id": session_id})
+    active = _wait_state(driver, _sc, "session_active")
+    assert (active["context"].get("resource") or {}).get("id") is None
+
+    _freeze(driver)
+    _wait_state(driver, _sc, "freeze")
+
+    # Maya picks "patients_2025" AND then "deleted_dataset" in rapid
+    # succession — both queued in FIFO order in the replay buffer.
+    _post_event(driver, "session-chat", SC_FLOW_ID, "dataset_resolved_by_agent",
+                {"resource_id": patients_2025, "resource_type": "dataset"})
+    _post_event(driver, "session-chat", SC_FLOW_ID, "dataset_resolved_by_agent",
+                {"resource_id": deleted_dataset, "resource_type": "dataset"})
+    time.sleep(0.3)
+    assert _sc(driver)["state"] == "freeze"
+
+    # THAW → FIFO replay: intent N (patients_2025) settles; intent N+1
+    # (deleted_dataset, I4 fails) is silent-dropped — prior resource (N)
+    # persists, NO scope_mismatch_terminal.
+    _thaw(driver)
+    sc = _wait_state(driver, _sc, "session_active")
+    resource = sc["context"].get("resource") or {}
+    assert resource.get("id") == patients_2025, (
+        f"Praxis F-4: intent N must persist; got resource={resource!r}"
+    )
+    scope = sc.get("active_scope") or {}
+    assert scope.get("resource_id") == patients_2025, (
+        f"Praxis F-4: active_scope must reflect intent N; got {scope!r}"
+    )
+    assert (sc["context"].get("project") or {}).get("id") == q4_id, (
+        "Praxis F-4: project context remains Q4"
+    )
+    assert sc["state"] != "scope_mismatch_terminal", (
+        "Praxis F-4: a stale dataset replay must NOT reach scope_mismatch_terminal"
+    )
+    last_stale = sc["context"].get("last_stale_intent") or {}
+    assert last_stale.get("intent_type") == "dataset_resolved_by_agent", last_stale
+    assert last_stale.get("target_id") == deleted_dataset, (
+        f"Praxis F-4: stale drop must name the deleted dataset; got {last_stale!r}"
+    )
+    # session.active_dataset_id persisted as intent N (DWD-2 storage SSOT).
+    sess = json.loads(_api_curl("GET", f"/api/sessions/{session_id}"))
+    sess_attrs = sess.get("data", sess).get("attributes", sess.get("data", sess))
+    assert sess_attrs.get("active_dataset_id") == patients_2025, (
+        "Praxis F-4: intent N's dataset must be the persisted active_dataset_id"
+    )
 
 
 @pytest.mark.skip(reason="DELIVER-deferred to MR-6; un-skip when harness.j002.freeze + thaw ship")
