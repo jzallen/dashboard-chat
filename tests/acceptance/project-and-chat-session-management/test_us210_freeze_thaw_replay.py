@@ -479,7 +479,6 @@ def test_praxis_f4_concurrent_dataset_picks_during_freeze_fifo_replay_with_stale
     )
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-6; un-skip when harness.j002.freeze + thaw ship")
 @pytest.mark.harness
 @pytest.mark.needs_ts_harness
 def test_ts_harness_drives_freeze_thaw_end_to_end(
@@ -488,4 +487,46 @@ def test_ts_harness_drives_freeze_thaw_end_to_end(
     driver: J002Driver,
 ) -> None:
     """harness.j002.freeze() + thaw(); subsequent mutations queue; assert_no_stale_intents_dropped()."""
-    pytest.fail("not yet implemented")
+    import os as _os
+
+    q4_id = _create_project("Q4 Analytics")
+    chat_9b2a = _create_session(q4_id, "chat-9b2a")
+    _spawn_to_session_list(driver)
+    _post_event(driver, "session-chat", SC_FLOW_ID, "session_clicked",
+                {"session_id": chat_9b2a})
+    _wait_state(driver, _sc, "session_active")
+
+    script = (
+        "import { userFlowHarness } from './harness/user-flow-harness.ts';\n"
+        "const h = userFlowHarness({\n"
+        f"  authProxyUrl: '{driver.auth_proxy_url}',\n"
+        "  fakeWorkOSUrl: 'http://localhost:14299',\n"
+        f"  principalId: '{DEV_PRINCIPAL_ID}',\n"
+        "});\n"
+        "await h.j002.freeze();\n"
+        "const frozen = await h.j002.get_session_chat_projection();\n"
+        "if (frozen.state !== 'freeze') throw new Error('expected freeze, got ' + frozen.state);\n"
+        "if (frozen.context.last_live_state !== 'session_active') "
+        "throw new Error('expected last_live_state=session_active, got ' + "
+        "frozen.context.last_live_state);\n"
+        # A mutation issued while frozen is queued by the orchestrator.
+        f"await h.j002.resume_session('{chat_9b2a}');\n"
+        "const paused = await h.j002.get_session_chat_projection();\n"
+        "if (paused.state !== 'freeze') throw new Error('mutation not queued: ' + paused.state);\n"
+        "await h.j002.thaw();\n"
+        f"await h.j002.assert_session_active('{chat_9b2a}');\n"
+        "await h.j002.assert_no_stale_intents_dropped();\n"
+        "console.log(JSON.stringify({ ok: true }));\n"
+    )
+    result = subprocess.run(
+        ["node", "--import", "tsx", "--input-type=module", "-e", script],
+        cwd=str(driver.repo_root / "tests" / "acceptance" / "user-flow-state-machines"),
+        capture_output=True, text=True, timeout=45, check=False,
+        env={"PATH": _os.environ.get("PATH", "")},
+    )
+    assert result.returncode == 0, (
+        f"harness.j002 freeze/thaw contract failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    out = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "{}"
+    assert json.loads(out).get("ok") is True

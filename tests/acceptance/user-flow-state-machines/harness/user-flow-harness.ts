@@ -519,6 +519,95 @@ export class J002Harness {
     return body;
   }
 
+  // ───────────────── MR-6 / US-210 cross-machine FREEZE/THAW ──────────────
+  // The harness simulates the orchestrator broadcast J-001's expired_token
+  // → silent-reauth lifecycle drives (the test wire of the existing
+  // broadcastFreeze/broadcastThaw substrate — index.ts §/freeze + /thaw,
+  // gated). J-002 is a pure downstream consumer (ADR-028:46-48).
+
+  /** Broadcast FREEZE to this principal's J-002 flows. */
+  async freeze(): Promise<void> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/freeze`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ principal_id: this.config.principalId }),
+      },
+    );
+    if (res.statusCode !== 200) {
+      const body = await res.body.text();
+      throw new Error(
+        `j002.freeze expected 200, got ${res.statusCode}: ${body}`,
+      );
+    }
+  }
+
+  /** Broadcast THAW (silent-reauth success). `reason: "abandoned"`
+   *  simulates the 5s replay-buffer timeout / reauth failure. */
+  async thaw(reason: "thaw" | "abandoned" = "thaw"): Promise<void> {
+    const res = await request(
+      `${this.config.authProxyUrl}/ui-state/flow/session-chat/thaw`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          principal_id: this.config.principalId,
+          reason,
+        }),
+      },
+    );
+    if (res.statusCode !== 200) {
+      const body = await res.body.text();
+      throw new Error(
+        `j002.thaw expected 200, got ${res.statusCode}: ${body}`,
+      );
+    }
+  }
+
+  /** Assert the DWD-7 stale-intent filter dropped the named intent
+   *  (observability-only — reads the session-chat projection's
+   *  last_stale_intent, the SSOT the orchestrator wrote at replay). */
+  async assert_stale_intent_dropped(
+    intent_type: string,
+    target_id: string,
+  ): Promise<void> {
+    const projection = await this.get_session_chat_projection();
+    const ctx = projection.context as {
+      last_stale_intent?: { intent_type?: string; target_id?: string } | null;
+      stale_intents_dropped_count?: number;
+    };
+    const ls = ctx.last_stale_intent ?? null;
+    if (
+      !ls ||
+      ls.intent_type !== intent_type ||
+      ls.target_id !== target_id
+    ) {
+      throw new Error(
+        `j002.assert_stale_intent_dropped failed: expected ` +
+          `{intent_type:${intent_type}, target_id:${target_id}}; got ` +
+          `${JSON.stringify(ls)} (count=${ctx.stale_intents_dropped_count ?? 0})`,
+      );
+    }
+  }
+
+  /** Happy-path assertion: NO intent was stale-dropped after THAW. */
+  async assert_no_stale_intents_dropped(): Promise<void> {
+    const projection = await this.get_session_chat_projection();
+    const ctx = projection.context as {
+      stale_intents_dropped_count?: number;
+      last_stale_intent?: unknown;
+    };
+    const count = ctx.stale_intents_dropped_count ?? 0;
+    if (count !== 0) {
+      throw new Error(
+        `j002.assert_no_stale_intents_dropped failed: ` +
+          `stale_intents_dropped_count=${count}, ` +
+          `last_stale_intent=${JSON.stringify(ctx.last_stale_intent)}`,
+      );
+    }
+  }
+
   /** Read the current session list (sorted DESC by last_active_at, capped
    *  at 30 per page). Calls into the session-chat projection. */
   async get_session_list(_project_id?: string): Promise<
