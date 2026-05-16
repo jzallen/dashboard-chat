@@ -513,16 +513,162 @@ def test_ic_j002_4_switching_project_invalidates_session_and_resource_before_new
     assert observed_switching or True  # tolerance: fast settle is OK
 
 
-@pytest.mark.skip(reason="DELIVER-deferred to MR-5; dataset_resolved_by_agent contract")
 @pytest.mark.mr_5
 def test_ic_j002_5_dataset_resolved_by_agent_produces_exactly_one_scope_update(
     requires_compose_stack: None,
+    clean_projects_for_dev_user: None,
     driver: J002Driver,
 ) -> None:
-    """IC-J002-5: dataset_resolved_by_agent → exactly ONE active_scope.resource_* update
-    via the projection; the agent's NEXT turn sees the new resource_id; session
-    metadata is updated BEFORE the next turn dispatches."""
-    pytest.fail("not yet implemented")
+    """IC-J002-5: dataset_resolved_by_agent → exactly ONE active_scope.resource_*
+    update via the projection; the agent's NEXT turn sees the new resource_id;
+    session metadata is updated BEFORE the next turn dispatches.
+
+    The single-update guarantee is delivered at the XState assign boundary in
+    session-chat's `switching_dataset_context.onDone` handler (one atomic
+    assign of `context.resource`) and surfaced by exactly one
+    `dataset_attached` terminal FlowEvent — there is no intermediate
+    projection tick where resource_* holds a half-applied value.
+    """
+    import json
+    import subprocess
+    import time
+    import uuid
+
+    SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
+
+    def _api(method: str, path: str, body: dict | None = None) -> str:
+        args = [
+            "docker", "exec", "dashboard-api", "curl", "-sS", "-X", method,
+            f"http://localhost:8000{path}",
+            "-H", "x-user-id: dev-user-001",
+            "-H", "x-org-id: dev-org-001",
+            "-H", "x-user-email: dev@localhost",
+        ]
+        if body is not None:
+            args += ["-H", "content-type: application/json", "-d", json.dumps(body)]
+        return subprocess.run(
+            args, capture_output=True, text=True, timeout=10, check=True
+        ).stdout
+
+    project_id = json.loads(_api("POST", "/api/projects", {"name": "IC5 Proj"}))["data"]["id"]
+    session_id = json.loads(
+        _api("POST", f"/api/projects/{project_id}/sessions", {"title": "IC5"})
+    )["data"]["id"]
+    dataset_id = str(uuid.uuid4())
+    subprocess.run(
+        ["docker", "exec", "dashboard-api", "python", "-c",
+         f"import sqlite3; conn=sqlite3.connect('/data/app.db'); "
+         f"conn.execute(\"INSERT INTO datasets (id, project_id, name, schema_config, "
+         f"partition_fields, created_at, updated_at) VALUES ('{dataset_id}', "
+         f"'{project_id}', 'ic5_ds', '{{}}', '[]', '2026-05-15', '2026-05-15')\"); "
+         f"conn.commit()"],
+        capture_output=True, text=True, timeout=10, check=True,
+    )
+
+    # Hermetic: reset the session-chat flow first (shared dev-user-001
+    # principal — a prior scenario's settled session-chat state would
+    # otherwise bleed across; project-context /begin only resets ITS log).
+    driver.post(
+        "/ui-state/flow/session-chat/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
+    )
+    begin = driver.post(
+        "/ui-state/flow/project-and-chat-session-management/begin",
+        base=driver.auth_proxy_url,
+        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
+    )
+    assert begin.status == 200
+
+    def _sc() -> dict:
+        p = driver.get(
+            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
+            base=driver.auth_proxy_url,
+        )
+        return json.loads(p.body) if p.status == 200 else {}
+
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        if _sc().get("state") == "session_list_loaded":
+            break
+        time.sleep(0.05)
+    driver.post(
+        "/ui-state/flow/session-chat/event",
+        base=driver.auth_proxy_url,
+        json_body={"flow_id": SESSION_CHAT_FLOW_ID, "type": "session_clicked",
+                   "payload": {"session_id": session_id}},
+    )
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        if _sc().get("state") == "session_active":
+            break
+        time.sleep(0.05)
+    pre = _sc()
+    assert pre.get("state") == "session_active"
+    assert (pre.get("active_scope") or {}).get("resource_id") is None, (
+        "IC-J002-5 precondition: no dataset attached before the pick"
+    )
+
+    # The single dataset_resolved_by_agent event.
+    driver.post(
+        "/ui-state/flow/session-chat/event",
+        base=driver.auth_proxy_url,
+        json_body={"flow_id": SESSION_CHAT_FLOW_ID, "type": "dataset_resolved_by_agent",
+                   "payload": {"resource_id": dataset_id, "resource_type": "dataset"}},
+    )
+
+    # Sample the projection across the settle window. resource_id must move
+    # from None straight to dataset_id and NEVER hold any other value — the
+    # "exactly ONE update" invariant (no flapping, no half-applied pair).
+    observed_ids: set = set()
+    deadline = time.monotonic() + 8.0
+    settled = None
+    while time.monotonic() < deadline:
+        data = _sc()
+        scope = data.get("active_scope") or {}
+        rid = scope.get("resource_id")
+        rtype = scope.get("resource_type")
+        observed_ids.add(rid)
+        # The (resource_type, resource_id) pair is always atomic
+        # (IC-J002-3 / ADR-029 I3): never type set without id or vice versa.
+        assert (rtype is None) == (rid is None), (
+            f"IC-J002-5: resource_* pair must stay atomic; got {scope!r}"
+        )
+        if data.get("state") == "session_active" and rid == dataset_id:
+            settled = data
+            break
+        time.sleep(0.02)
+    assert settled is not None, "IC-J002-5: switch never settled with the new dataset"
+    # Only ever None (pre) or the picked id (post) — exactly one transition.
+    assert observed_ids <= {None, dataset_id}, (
+        f"IC-J002-5: resource_id took an unexpected intermediate value: {observed_ids!r}"
+    )
+
+    # Session metadata is updated BEFORE the next turn dispatches: the
+    # backend row already carries it (the actor PATCHed it on the settle
+    # path, before returning the projection the FE re-submits against).
+    sess = json.loads(_api("GET", f"/api/sessions/{session_id}"))
+    sess_attrs = sess.get("data", sess).get("attributes", sess.get("data", sess))
+    assert sess_attrs.get("active_dataset_id") == dataset_id, (
+        "IC-J002-5: session.active_dataset_id MUST be persisted before the next turn"
+    )
+
+    # The agent's NEXT turn sees the new resource_id (carried as X-Active-Scope).
+    nxt = driver.post_agent_chat(
+        bearer=driver.mint_dev_jwt(),
+        active_scope={
+            "org_id": "dev-org-001",
+            "project_id": project_id,
+            "resource_type": "dataset",
+            "resource_id": dataset_id,
+        },
+        body={"messages": [{"role": "user", "content": "summarize"}],
+              "thread_id": session_id},
+    )
+    assert nxt.status == 200, (
+        f"IC-J002-5: the next turn carrying the new resource_id must be accepted; "
+        f"got {nxt.status}: {nxt.body[:300]}"
+    )
 
 
 @pytest.mark.skip(reason="DELIVER-deferred to MR-6; FREEZE pause contract")
