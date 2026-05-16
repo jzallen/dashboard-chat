@@ -24,6 +24,8 @@ export {
   loadSessionListFn,
   resumeSessionActor,
   resumeSessionFn,
+  switchDatasetContextActor,
+  switchDatasetContextFn,
   type ActiveScope,
   type CreateSessionEagerlyActor,
   type CreateSessionEagerlyInput,
@@ -40,5 +42,8 @@ export {
   type SessionChatMachineDeps,
   type SessionChatState,
   type SessionSummary,
+  type SwitchDatasetContextActor,
+  type SwitchDatasetContextInput,
+  type SwitchDatasetContextOutput,
   type TranscriptMessage,
 } from "./machine.ts";

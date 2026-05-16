@@ -88,6 +88,16 @@ export interface SessionChatMachineContext {
   // `session.active_dataset_id` (MR-2 read path); switching_dataset_context exit (MR-5):
   resource: { type: ResourceType | null; id: string | null };
 
+  // The dataset pick captured from a `dataset_resolved_by_agent` /
+  // `dataset_picked_directly` event in `session_active`, carried into the
+  // `switching_dataset_context` invoke's input (US-209 / MR-5). XState
+  // invoke `input` reads ctx, not the triggering event, so the pick MUST
+  // be captured here on the transition. Cleared on settle (success OR
+  // dataset_access_denied) so a stale pick can't bleed into a later
+  // switch.
+  intended_resource_id: string | null;
+  intended_resource_type: ResourceType | null;
+
   // Pending session-resume target — populated EITHER by the inbound
   // `project_ready` payload's `deeplink_session_id` key (URL-level wish
   // forwarded by project-context per audit §5 / MR-D) OR by a
@@ -225,6 +235,41 @@ export type CreateSessionEagerlyActor = ReturnType<
   typeof fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>
 >;
 
+/**
+ * MR-5 (US-209) — switchDatasetContext actor. Given the intended dataset
+ * pick (from `dataset_resolved_by_agent` / `dataset_picked_directly`),
+ * validates access via ScopeResolver invariant 4 (cross-tenant AND
+ * cross-project rejection per ADR-029 §1) by calling `GET /api/datasets/:id`
+ * and comparing the dataset's `project_id` against the active project; on
+ * pass it persists `session.active_dataset_id` via `update_session`
+ * (`PATCH /api/projects/:pid/sessions/:sid`). On 403/404/cross-project the
+ * pick is rejected with `{ dataset_access_denied: true }` and the prior
+ * resource is preserved (US-209 Example 3/4). Mirrors the `switchProject`
+ * actor's error-variant discipline (project-context MR-4).
+ */
+export type SwitchDatasetContextOutput =
+  | { resource_type: ResourceType; resource_id: string; persisted: true }
+  | {
+      dataset_access_denied: true;
+      prior_resource: { type: ResourceType | null; id: string | null };
+    };
+
+export interface SwitchDatasetContextInput {
+  session_id: string;
+  project_id: string;
+  principal_id: string;
+  intended_resource_id: string;
+  intended_resource_type: ResourceType;
+  /** The resource attached BEFORE this pick. Echoed back on the
+   *  dataset_access_denied branch so the machine can leave
+   *  `context.resource` provably unchanged (US-209 Example 3). */
+  prior_resource: { type: ResourceType | null; id: string | null };
+}
+
+export type SwitchDatasetContextActor = ReturnType<
+  typeof fromPromise<SwitchDatasetContextOutput, SwitchDatasetContextInput>
+>;
+
 export interface SessionChatMachineDeps {
   /** Optional in MR-1.5; MR-2+ provides the real actor implementation. When
    *  absent, the machine still spawns into `waiting_for_project` cleanly —
@@ -236,6 +281,10 @@ export interface SessionChatMachineDeps {
    *  Absent → first_message_sent surfaces error_recoverable (consistent with
    *  the noop-actor pattern used for loadSessionList / resumeSession). */
   createSessionEagerly?: CreateSessionEagerlyActor;
+  /** MR-5 (US-209): invoked on `dataset_resolved_by_agent` /
+   *  `dataset_picked_directly` from `session_active`. Absent → the pick
+   *  surfaces error_recoverable (same noop-actor pattern). */
+  switchDatasetContext?: SwitchDatasetContextActor;
 }
 
 // ──────────────────────────── Factory ────────────────────────────
@@ -260,6 +309,13 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
     fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>(
       async () => {
         throw new Error("createSessionEagerly actor not wired");
+      },
+    );
+  const noopSwitchDatasetContext: SwitchDatasetContextActor =
+    deps.switchDatasetContext ??
+    fromPromise<SwitchDatasetContextOutput, SwitchDatasetContextInput>(
+      async () => {
+        throw new Error("switchDatasetContext actor not wired");
       },
     );
 
@@ -287,6 +343,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       loadSessionList: noopLoadSessionList,
       resumeSession: noopResumeSession,
       createSessionEagerly: noopCreateSessionEagerly,
+      switchDatasetContext: noopSwitchDatasetContext,
     },
     actions: {
       capturePendingResumeIntent: assign({
@@ -300,6 +357,22 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           event.type === "first_message_sent"
             ? event.content
             : context.pending_first_message,
+      }),
+      // US-209 / MR-5 — capture the dataset pick from
+      // `dataset_resolved_by_agent` / `dataset_picked_directly` so the
+      // `switching_dataset_context` invoke can read it from ctx (XState
+      // invoke input reads context, not the triggering event).
+      captureIntendedResource: assign({
+        intended_resource_id: ({ event, context }) =>
+          event.type === "dataset_resolved_by_agent" ||
+          event.type === "dataset_picked_directly"
+            ? event.resource_id
+            : context.intended_resource_id,
+        intended_resource_type: ({ event, context }) =>
+          event.type === "dataset_resolved_by_agent" ||
+          event.type === "dataset_picked_directly"
+            ? event.resource_type
+            : context.intended_resource_type,
       }),
     },
   }).createMachine({
@@ -319,6 +392,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       session_id: null,
       transcript: [],
       resource: { type: null, id: null },
+      intended_resource_id: null,
+      intended_resource_type: null,
       pending_resume_session_id: input.deeplink_session_id ?? null,
       underlying_cause_tag: null,
       last_live_state: null,
@@ -548,6 +623,18 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             target: "loading_session_list",
             reenter: true,
           },
+          // US-209 / MR-5 — a dataset pick (via the agent's resolve_dataset
+          // tool-return path OR direct UI selection) moves the machine into
+          // `switching_dataset_context`. Same payload shape for both; the
+          // capture action records the pick for the invoke input.
+          dataset_resolved_by_agent: {
+            target: "switching_dataset_context",
+            actions: "captureIntendedResource",
+          },
+          dataset_picked_directly: {
+            target: "switching_dataset_context",
+            actions: "captureIntendedResource",
+          },
           project_ready: [
             {
               guard: ({ context, event }) => context.project?.id !== event.project_id,
@@ -567,6 +654,74 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               }),
             },
           ],
+        },
+      },
+      switching_dataset_context: {
+        // Entry — orchestrator-side emission of
+        // `switching_dataset_context_started` happens in orchestrator.ts
+        // (the pre-settle branch, mirroring D-MR4-06's
+        // `switching_project_started`). The `switchDatasetContext` invoke
+        // performs GET /api/datasets/:id (ScopeResolver invariant 4 —
+        // cross-tenant + cross-project) then, on pass,
+        // PATCH /api/projects/:pid/sessions/:sid { active_dataset_id }
+        // (DWD-2 persist via the existing update_session allowlist).
+        invoke: {
+          src: "switchDatasetContext",
+          input: ({ context }) => ({
+            session_id: context.session_id ?? "",
+            project_id: context.project?.id ?? "",
+            principal_id: context.principal_id,
+            intended_resource_id: context.intended_resource_id ?? "",
+            intended_resource_type:
+              context.intended_resource_type ?? ("dataset" as ResourceType),
+            prior_resource: {
+              type: context.resource.type,
+              id: context.resource.id,
+            },
+          }),
+          onDone: [
+            {
+              // ScopeResolver invariant 4 rejection (403 / 404 /
+              // cross-project): leave `context.resource` UNCHANGED, surface
+              // the named cause for the FE gutter copy, and clear the pick
+              // (US-209 Example 3/4 — prior scope preserved).
+              guard: ({ event }) =>
+                (event.output as { dataset_access_denied?: true })
+                  .dataset_access_denied === true,
+              target: "session_active",
+              actions: assign({
+                underlying_cause_tag: () => "dataset_access_denied" as const,
+                intended_resource_id: () => null,
+                intended_resource_type: () => null,
+              }),
+            },
+            {
+              // Validated + persisted: retarget `context.resource` to the
+              // picked dataset. Single atomic assign — there is no
+              // intermediate snapshot where resource is half-updated
+              // (IC-J002-5: exactly ONE resource_* update).
+              target: "session_active",
+              actions: assign({
+                resource: ({ event }) => {
+                  const out = event.output as {
+                    resource_type: ResourceType;
+                    resource_id: string;
+                  };
+                  return { type: out.resource_type, id: out.resource_id };
+                },
+                underlying_cause_tag: () => null,
+                intended_resource_id: () => null,
+                intended_resource_type: () => null,
+              }),
+            },
+          ],
+          onError: {
+            target: "error_recoverable",
+            actions: assign({
+              underlying_cause_tag: () => "transient" as const,
+              last_live_state: () => "switching_dataset_context" as const,
+            }),
+          },
         },
       },
       session_welcome: {
@@ -675,6 +830,19 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               guard: ({ context }) =>
                 context.last_live_state === "session_welcome",
               target: "session_welcome",
+              actions: assign({
+                underlying_cause_tag: () => null,
+                retries_count: ({ context }) => context.retries_count + 1,
+              }),
+            },
+            {
+              // US-209: retry from a transient switchDatasetContext failure
+              // re-enters the switch with the captured pick still in ctx
+              // (app-arch §"error_recoverable retry targets").
+              guard: ({ context }) =>
+                context.last_live_state === "switching_dataset_context",
+              target: "switching_dataset_context",
+              reenter: true,
               actions: assign({
                 underlying_cause_tag: () => null,
                 retries_count: ({ context }) => context.retries_count + 1,
@@ -958,6 +1126,123 @@ export function resumeSessionActor(
   const fn = resumeSessionFn(backendUrl, principalHeaders);
   return fromPromise<ResumeSessionOutput, ResumeSessionInput>(({ input }) =>
     fn(input),
+  );
+}
+
+/**
+ * MR-5 (US-209) — switchDatasetContextFn implementation. The session-chat
+ * `switchDatasetContext` actor. Enforces ScopeResolver invariant 4
+ * (cross-tenant AND cross-project rejection per ADR-029 §1) as defense in
+ * depth at the ui-state tier (app-arch §"defense in depth"):
+ *
+ *   1. `GET /api/datasets/:id` — the backend's `authorize_dataset_access`
+ *      dep returns 403 for cross-tenant (dataset's project belongs to a
+ *      different org) and 404 for a non-existent dataset. Either → the
+ *      pick is rejected.
+ *   2. Cross-project: a 200 dataset whose `project_id` differs from the
+ *      active project (`input.project_id`) is the US-209 Example 4 anomaly
+ *      — also rejected (the inline list SHOULD be project-filtered; this
+ *      is the belt-and-braces check).
+ *   3. On pass: `PATCH /api/projects/:pid/sessions/:sid { active_dataset_id }`
+ *      persists the pick via the existing `update_session` allowlist
+ *      (DWD-2). A non-2xx persist throws → transient → error_recoverable.
+ *
+ * Mirrors `switchProjectFn`'s status-discrimination discipline (MR-4).
+ */
+export function switchDatasetContextFn(
+  backendUrl: string,
+  principalHeaders: Record<string, string>,
+): (input: SwitchDatasetContextInput) => Promise<SwitchDatasetContextOutput> {
+  return async (input) => {
+    if (!input.intended_resource_id) {
+      throw new Error("switchDatasetContext: intended_resource_id is required");
+    }
+    // ─── ScopeResolver invariant 4: cross-tenant (403) / not-found (404) ──
+    const dsResp = await fetch(
+      `${backendUrl}/api/datasets/${encodeURIComponent(input.intended_resource_id)}?include_transforms=false`,
+      {
+        method: "GET",
+        headers: {
+          "x-correlation-id": "switch-dataset-context",
+          ...principalHeaders,
+        },
+      },
+    );
+    if (
+      dsResp.status === 403 ||
+      dsResp.status === 404 ||
+      dsResp.status === 410
+    ) {
+      return {
+        dataset_access_denied: true,
+        prior_resource: input.prior_resource,
+      };
+    }
+    if (!dsResp.ok) {
+      throw new Error(`get_dataset failed: ${dsResp.status}`);
+    }
+    // get_dataset is wrapped JSON:API: { data: { id, attributes: {
+    // project_id, name, ... } } }. Tolerate a flat { id, project_id }
+    // shape for forward-compat.
+    const dsBody = (await dsResp.json()) as
+      | { id?: string; project_id?: string | null }
+      | {
+          data?: {
+            id?: string;
+            attributes?: { project_id?: string | null };
+            project_id?: string | null;
+          };
+        };
+    const datasetProjectId =
+      (dsBody as { project_id?: string | null }).project_id ??
+      (dsBody as { data?: { attributes?: { project_id?: string | null } } })
+        .data?.attributes?.project_id ??
+      (dsBody as { data?: { project_id?: string | null } }).data?.project_id ??
+      null;
+    // ─── ScopeResolver invariant 4: cross-project rejection ───────────────
+    if (
+      datasetProjectId !== null &&
+      input.project_id !== "" &&
+      datasetProjectId !== input.project_id
+    ) {
+      return {
+        dataset_access_denied: true,
+        prior_resource: input.prior_resource,
+      };
+    }
+    // ─── Persist `session.active_dataset_id` (DWD-2) ──────────────────────
+    const patchResp = await fetch(
+      `${backendUrl}/api/projects/${encodeURIComponent(input.project_id)}/sessions/${encodeURIComponent(input.session_id)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": "switch-dataset-context-persist",
+          ...principalHeaders,
+        },
+        body: JSON.stringify({ active_dataset_id: input.intended_resource_id }),
+      },
+    );
+    if (!patchResp.ok) {
+      throw new Error(
+        `persist active_dataset_id failed: ${patchResp.status}`,
+      );
+    }
+    return {
+      resource_type: input.intended_resource_type,
+      resource_id: input.intended_resource_id,
+      persisted: true,
+    };
+  };
+}
+
+export function switchDatasetContextActor(
+  backendUrl: string,
+  principalHeaders: Record<string, string>,
+): SwitchDatasetContextActor {
+  const fn = switchDatasetContextFn(backendUrl, principalHeaders);
+  return fromPromise<SwitchDatasetContextOutput, SwitchDatasetContextInput>(
+    ({ input }) => fn(input),
   );
 }
 

@@ -28,6 +28,9 @@ import type {
   ResumeSessionInput,
   ResumeSessionOutput,
   SessionSummary,
+  SwitchDatasetContextActor,
+  SwitchDatasetContextInput,
+  SwitchDatasetContextOutput,
   TranscriptMessage,
 } from "./machine.ts";
 import { createSessionChatMachine } from "./machine.ts";
@@ -782,6 +785,277 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
     const ctx = actor.getSnapshot().context;
     expect(ctx.project.id).toBe("proj-q3");
     expect(ctx.session_id).toBeNull();
+  });
+});
+
+describe("SessionChatMachine — MR-5 dataset context switching (US-209)", () => {
+  const SEED_SESSIONS: SessionSummary[] = [
+    {
+      id: "sess-q4",
+      title: "Q4 chat",
+      last_active_at: "2026-05-15T10:00:00Z",
+      active_dataset_id: null,
+    },
+  ];
+
+  /** Build a session-chat machine settled into `session_active` for
+   *  session `sess-q4`, with `priorDatasetId` already attached, and a
+   *  configurable `switchDatasetContext` actor. `captured` records the
+   *  invoke input for the assertions. */
+  function buildSessionActive(
+    switchOutput:
+      | ((input: SwitchDatasetContextInput) => Promise<unknown> | unknown)
+      | unknown,
+    priorDatasetId: string | null = null,
+  ): {
+    actor: ReturnType<typeof createActor_>;
+    captured: { input: SwitchDatasetContextInput | null };
+  } {
+    const captured: { input: SwitchDatasetContextInput | null } = {
+      input: null,
+    };
+    const switchActor: SwitchDatasetContextActor = fromPromise<
+      SwitchDatasetContextOutput,
+      SwitchDatasetContextInput
+    >(async ({ input }) => {
+      captured.input = input;
+      const out =
+        typeof switchOutput === "function"
+          ? await (
+              switchOutput as (
+                i: SwitchDatasetContextInput,
+              ) => Promise<unknown> | unknown
+            )(input)
+          : switchOutput;
+      return out as SwitchDatasetContextOutput;
+    });
+    const machine = createSessionChatMachine({
+      loadSessionList: stubLoadSessionList({
+        items: SEED_SESSIONS,
+        next_cursor: null,
+        has_more: false,
+      }),
+      resumeSession: stubResumeSession({
+        session_id: "sess-q4",
+        transcript: [],
+        active_dataset_id: priorDatasetId,
+      }),
+      switchDatasetContext: switchActor,
+    });
+    const actor = createActor_(machine);
+    actor.send({
+      type: "project_ready",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+      correlation_id: "R-ds",
+    });
+    return { actor, captured };
+  }
+
+  async function reachSessionActive(
+    actor: ReturnType<typeof createActor_>,
+  ): Promise<void> {
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+    actor.send({ type: "session_clicked", session_id: "sess-q4" });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+  }
+
+  it("M-DS1: dataset_resolved_by_agent → switching_dataset_context → session_active with resource retargeted + persisted", async () => {
+    const { actor, captured } = buildSessionActive({
+      resource_type: "dataset",
+      resource_id: "ds-patients-2025",
+      persisted: true,
+    });
+    await reachSessionActive(actor);
+
+    actor.send({
+      type: "dataset_resolved_by_agent",
+      resource_id: "ds-patients-2025",
+      resource_type: "dataset",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.resource).toEqual({ type: "dataset", id: "ds-patients-2025" });
+    expect(ctx.underlying_cause_tag).toBeNull();
+    // Pick is cleared after settle so a stale pick can't bleed forward.
+    expect(ctx.intended_resource_id).toBeNull();
+    // The invoke input carried the captured pick + session/project context.
+    expect(captured.input?.session_id).toBe("sess-q4");
+    expect(captured.input?.project_id).toBe("proj-q4");
+    expect(captured.input?.intended_resource_id).toBe("ds-patients-2025");
+    expect(captured.input?.prior_resource).toEqual({ type: null, id: null });
+  });
+
+  it("M-DS2: dataset_picked_directly → switching_dataset_context → session_active retargets resource", async () => {
+    const { actor } = buildSessionActive(
+      { resource_type: "dataset", resource_id: "ds-customers-2025", persisted: true },
+      "ds-sales-2026",
+    );
+    await reachSessionActive(actor);
+    expect(actor.getSnapshot().context.resource).toEqual({
+      type: "dataset",
+      id: "ds-sales-2026",
+    });
+
+    actor.send({
+      type: "dataset_picked_directly",
+      resource_id: "ds-customers-2025",
+      resource_type: "dataset",
+    });
+    await waitFor(
+      () =>
+        actor.getSnapshot().value === "session_active" &&
+        actor.getSnapshot().context.resource.id === "ds-customers-2025",
+    );
+    expect(actor.getSnapshot().context.resource).toEqual({
+      type: "dataset",
+      id: "ds-customers-2025",
+    });
+  });
+
+  it("M-DS3: dataset_access_denied output → session_active, prior resource UNCHANGED, cause surfaced", async () => {
+    const { actor, captured } = buildSessionActive(
+      (input) => ({
+        dataset_access_denied: true as const,
+        prior_resource: input.prior_resource,
+      }),
+      "ds-sales-2026",
+    );
+    await reachSessionActive(actor);
+
+    actor.send({
+      type: "dataset_picked_directly",
+      resource_id: "ds-restricted",
+      resource_type: "dataset",
+    });
+    await waitFor(
+      () =>
+        actor.getSnapshot().value === "session_active" &&
+        actor.getSnapshot().context.underlying_cause_tag ===
+          "dataset_access_denied",
+    );
+    const ctx = actor.getSnapshot().context;
+    // Prior dataset stays attached (US-209 Example 3 — scope preserved).
+    expect(ctx.resource).toEqual({ type: "dataset", id: "ds-sales-2026" });
+    expect(ctx.underlying_cause_tag).toBe("dataset_access_denied");
+    expect(captured.input?.prior_resource).toEqual({
+      type: "dataset",
+      id: "ds-sales-2026",
+    });
+  });
+
+  it("M-DS4: switchDatasetContext onError → error_recoverable; retry_clicked re-enters switching_dataset_context", async () => {
+    let calls = 0;
+    const { actor } = buildSessionActive(() => {
+      calls += 1;
+      if (calls === 1) throw new Error("transient: dataset probe 503");
+      return {
+        resource_type: "dataset",
+        resource_id: "ds-after-retry",
+        persisted: true,
+      };
+    });
+    await reachSessionActive(actor);
+
+    actor.send({
+      type: "dataset_resolved_by_agent",
+      resource_id: "ds-after-retry",
+      resource_type: "dataset",
+    });
+    await waitFor(() => actor.getSnapshot().value === "error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");
+    expect(actor.getSnapshot().context.last_live_state).toBe(
+      "switching_dataset_context",
+    );
+
+    actor.send({ type: "retry_clicked" });
+    await waitFor(
+      () =>
+        actor.getSnapshot().value === "session_active" &&
+        actor.getSnapshot().context.resource.id === "ds-after-retry",
+    );
+    expect(actor.getSnapshot().context.resource).toEqual({
+      type: "dataset",
+      id: "ds-after-retry",
+    });
+  });
+
+  it("M-DS5a: XState single-event-at-a-time — a pick arriving during an in-flight switch is dropped (only one switching_dataset_context runs)", async () => {
+    // The safety half of US-209 Example 5: "XState's state-machine
+    // semantics ensure only one switching_dataset_context transition can
+    // run at a time". With both picks delivered to the raw actor before
+    // the first switch settles, the SECOND is dropped — `session_active`
+    // is the only state with the dataset-pick handlers; once the machine
+    // is in `switching_dataset_context` the second event has no handler.
+    let invocations = 0;
+    const { actor } = buildSessionActive(async (input) => {
+      invocations += 1;
+      await new Promise((r) => setTimeout(r, 10));
+      return {
+        resource_type: "dataset" as const,
+        resource_id: input.intended_resource_id,
+        persisted: true as const,
+      };
+    });
+    await reachSessionActive(actor);
+
+    actor.send({
+      type: "dataset_resolved_by_agent",
+      resource_id: "ds-first",
+      resource_type: "dataset",
+    });
+    actor.send({
+      type: "dataset_resolved_by_agent",
+      resource_id: "ds-second",
+      resource_type: "dataset",
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_active");
+    // Exactly one switch ran; the in-flight-collision pick was dropped.
+    expect(invocations).toBe(1);
+    expect(actor.getSnapshot().context.resource).toEqual({
+      type: "dataset",
+      id: "ds-first",
+    });
+  });
+
+  it("M-DS5b: serialized picks (each settling before the next) — most-recent wins", async () => {
+    // The other half of US-209 Example 5 / the boundary scenario: when
+    // picks are applied serially (the discipline the orchestrator
+    // enforces by awaiting `waitForSettledState` per send — D-MR4-06),
+    // the most-recent pick's resource_id is the final resource. This is
+    // the property the HTTP acceptance scenario observes.
+    const { actor } = buildSessionActive((input) => ({
+      resource_type: "dataset" as const,
+      resource_id: input.intended_resource_id,
+      persisted: true as const,
+    }));
+    await reachSessionActive(actor);
+
+    actor.send({
+      type: "dataset_resolved_by_agent",
+      resource_id: "ds-first",
+      resource_type: "dataset",
+    });
+    await waitFor(
+      () =>
+        actor.getSnapshot().value === "session_active" &&
+        actor.getSnapshot().context.resource.id === "ds-first",
+    );
+    actor.send({
+      type: "dataset_resolved_by_agent",
+      resource_id: "ds-second",
+      resource_type: "dataset",
+    });
+    await waitFor(
+      () =>
+        actor.getSnapshot().value === "session_active" &&
+        actor.getSnapshot().context.resource.id === "ds-second",
+    );
+    expect(actor.getSnapshot().context.resource).toEqual({
+      type: "dataset",
+      id: "ds-second",
+    });
   });
 });
 
