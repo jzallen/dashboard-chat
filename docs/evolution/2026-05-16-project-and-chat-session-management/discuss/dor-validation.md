@@ -269,6 +269,37 @@ projection for /sessions, J002-4 last-used partial-result, J002-5
 projection read shape for most-recent-session-per-project) are
 non-blocking — DESIGN owns them but they don't gate any slice.
 
+### OQ-J002-5 — CLOSURE (2026-05-17, reconciliation pass; ratified)
+
+OQ-J002-5 ("projection read shape for most-recent-session-per-project",
+flagged non-blocking above) is **RESOLVED**.
+
+RESOLUTION: DESIGN chose **projection-carries** (not
+orchestrator-queries). `context.most_recent_session_per_project` is an
+IN-CONTRACT field of the `project-context` projection, "Populated when
+`resolving_initial_scope` exit", functional consumer US-202 last-used
+resolution (`design/application-architecture.md:1078`). Per
+ADR-027 §"TS harness symmetry" and ADR-029 §"TS harness assertion
+surface", a field in the projection context table is read by the
+harness and the FE identically — it is in-contract, not
+instrumentation-only.
+
+PINNED SHAPE (residual sub-shape, pinned here so the contract is
+unambiguous for TDD): a map **keyed by `project_id`** (ids are stable
+per `US-202.md` Technical notes; names are not), value =
+`{ session_id: string, last_active_at: string }` — the descriptor the
+US-202 last-used resolution and the FE Projects grid sort hint consume.
+US-202's narrative example is name-keyed for readability only and is
+NOT the wire shape.
+
+EFFECT: the
+`test_us202…test_resolution_picks_project_carrying_most_recent_session`
+read-shape assertion (`q4_id in
+context.most_recent_session_per_project`) is IN-CONTRACT →
+GENUINE-UNIMPLEMENTED, not DEFERRED. Ratified by the overseer
+2026-05-17 (proposal:
+`docs/feature/j002-d6-oq5-reconciliation/discuss/reconciliation-proposal.md`).
+
 ### Ready for peer review and DESIGN handoff
 
 This document closes out the DoR gate. The next step is

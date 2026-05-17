@@ -188,6 +188,44 @@ discriminator** from research §6 Anti-Pattern 1 — if a behavior has
 no in-flight state worth preserving across `FREEZE`, it does not need
 to be in J-002's machine.
 
+### D6 — AMENDMENT (2026-05-17, J-002 D6/OQ reconciliation)
+
+D6's OUT-of-scope clause "project create/delete/rename are single-step
+CRUD … J-002 does NOT carry validation, naming, or
+deletion-confirmation state internally" (the OUT-of-scope list above)
+is hereby **NARROWED**.
+
+WHAT D6 STILL ASSERTS (unchanged):
+
+* J-002 does NOT re-implement the backend create/delete/rename use
+  cases (`backend/app/use_cases/project/{create,delete,update}_project.py`).
+* J-002 does NOT own project DELETE or RENAME as multi-step flows, and
+  carries no deletion-confirmation or rename-edit state internally.
+
+WHAT D6 NO LONGER ASSERTS (the over-generalization, corrected):
+
+* The create-project sub-flow IS owned by J-002. The journey SSOT
+  (`discuss/journey-project-and-chat-session-management.yaml:88-106,
+  316-324, 535-537`) models `creating_project` as an in-flight state
+  with `validation_failed → no_projects_empty_state` and
+  `transient_failure → error_recoverable`; DESIGN provisioned
+  `context.pending_project_name` / `context.project_validation_error`
+  for it (`design/application-architecture.md:1081`).
+  `creating_project` is the ONLY exit from `no_projects_empty_state`;
+  its empty-name validation state and transient-failure recoverable
+  state are J-002-internal and in-contract, exactly as US-201 AC
+  requires (`discuss/stories/US-201.md` Acceptance Criteria) and
+  IC-J002-2 asserts
+  (`tests/acceptance/project-and-chat-session-management/test_journey_invariants_j002.py:204-225`).
+
+RATIONALE: D6 is the only artifact in the DISCUSS set that excluded
+create-project internal state; the journey SSOT, US-201 AC, IC-J002-2,
+and the ratified DESIGN application-architecture all model J-002 as the
+owner and were never reconciled to D6. This amendment removes the lone
+contradiction with minimum blast radius and no SSOT/DESIGN churn.
+Ratified by the overseer 2026-05-17 (proposal:
+`docs/feature/j002-d6-oq5-reconciliation/discuss/reconciliation-proposal.md`).
+
 ## D7 — Phase 2.5 carpaccio scope
 
 J-002 ships in **6 carpaccio slices, 9 stories total** (see
@@ -464,7 +502,7 @@ slug-of-journey-name; lower-kebab-case).
 
 ## DISCUSS-wave decisions that bind subsequent waves
 
-1. **D6**: Project create/delete/rename are NOT flows; J-002 observes their completion but does not encode their state.
+1. **D6**: Project create/delete/rename are NOT flows; J-002 observes their completion but does not encode their state. — **AMENDED 2026-05-17**: the carve-out covers delete/rename only; the create-project in-flight/validation/recoverable sub-flow IS J-002-owned (see "D6 — AMENDMENT" above).
 2. **D8 (carried)**: Agent stays the chat brain; chat-turn streaming is untouched by J-002.
 3. **D9**: J-002 owns chat-session multi-turn state (including the `resolve_dataset` re-submission loop's state). The agent stays stateless.
 4. **D10**: Org-switching is deferred to a future J-NNN flow; J-002 does NOT include it.
