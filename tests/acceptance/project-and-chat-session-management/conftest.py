@@ -121,6 +121,29 @@ def requires_ts_harness() -> None:
             "namespace — MR-1 DELIVER lands it.",
             allow_module_level=False,
         )
+    # The harness is run via `node --import tsx`; tsx resolves from the
+    # user-flow-state-machines package's node_modules. A fresh clone / CI
+    # job that has not run `npm ci` there will otherwise emit a misleading
+    # `ERR_MODULE_NOT_FOUND: tsx` that masks real product signal (it looks
+    # like a behavioural failure but is pure provisioning). Probe the tsx
+    # runtime and skip — do NOT false-RED — when it is absent.
+    tsx_bin = (
+        REPO_ROOT
+        / "tests"
+        / "acceptance"
+        / "user-flow-state-machines"
+        / "node_modules"
+        / ".bin"
+        / "tsx"
+    )
+    if not tsx_bin.exists():
+        pytest.skip(
+            f"TS harness runtime `tsx` not installed at {tsx_bin} — run "
+            f"`npm ci` in tests/acceptance/user-flow-state-machines/ to "
+            f"enable harness-driven scenarios. Skipping (not failing) so "
+            f"the unprovisioned environment does not mask RC-1/RC-2 signal.",
+            allow_module_level=False,
+        )
 
 
 @pytest.fixture(scope="session")
