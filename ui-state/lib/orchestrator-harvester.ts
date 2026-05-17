@@ -124,6 +124,15 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
   transcript: Array<{ id: string; role: string; content: string; ts: string }>;
   resource: { type: string | null; id: string | null };
   underlying_cause_tag: string | null;
+  session_list: Array<{
+    id: string;
+    title: string | null;
+    last_active_at: string;
+    active_dataset_id: string | null;
+  }>;
+  session_list_next_cursor: string | null;
+  session_list_has_more: boolean;
+  pending_first_message: string;
 } {
   const ctx = actor.getSnapshot().context as {
     session_id: string | null;
@@ -135,6 +144,15 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
     }>;
     resource: { type: string | null; id: string | null };
     underlying_cause_tag: string | null;
+    session_list: Array<{
+      id: string;
+      title: string | null;
+      last_active_at: string;
+      active_dataset_id: string | null;
+    }>;
+    session_list_next_cursor: string | null;
+    session_list_has_more: boolean;
+    pending_first_message: string;
   };
   return {
     // D-MR5-01: session_id + transcript are materialized atomically with
@@ -147,6 +165,31 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
     transcript: ctx.transcript,
     resource: ctx.resource,
     underlying_cause_tag: ctx.underlying_cause_tag,
+    // RC-2 (J-002 mr_2/mr_3): the `loadSessionList` onDone assign
+    // materializes session_list / next_cursor / has_more onto the machine
+    // context AFTER the snapshot flips to `session_list_loaded` and BEFORE
+    // any FlowEvent captures it — the SAME D-MR4-06 / D-MR5-01 emission-
+    // completeness failure class. On the spawn path
+    // (project_ready → loading_session_list → session_list_loaded) the
+    // orchestrator emitted `session_list_loaded` from a projection-of-log
+    // read that still saw the empty prior-tick list, so every mr_2/mr_3
+    // precondition (`_wait_for_session_chat_state(session_list_loaded)`
+    // then asserting list contents) observed an empty list. Harvest the
+    // settled list here so the emission reflects the loaded sessions.
+    session_list: ctx.session_list,
+    session_list_next_cursor: ctx.session_list_next_cursor,
+    session_list_has_more: ctx.session_list_has_more,
+    // RC-2 (US-206): the eager-create `session_id` (createSessionEagerly
+    // onDone) and the composer text `pending_first_message`
+    // (capturePendingFirstMessage, preserved across the transient-failure
+    // retry) both land on the machine context AFTER the snapshot flips
+    // (to `session_active` / `error_recoverable`) and BEFORE any FlowEvent
+    // captures them. The `session_active_reached`, `session_welcome`, and
+    // `error_recoverable` emission branches read the projection-of-log,
+    // which still shows the empty prior-tick values — so US-206's
+    // eager-create id and composer-preservation assertions fail. Harvest
+    // them here so the emission reflects the settled context.
+    pending_first_message: ctx.pending_first_message,
   };
 }
 

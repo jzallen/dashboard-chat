@@ -926,7 +926,20 @@ export class FlowOrchestrator {
       correlation_id,
     });
 
-    await this.appendSessionChatTerminalEvents(flow_id, stateValue, correlation_id);
+    // RC-2: the spawn path (project_ready → loading_session_list →
+    // session_list_loaded) is where every mr_2/mr_3 precondition funnels.
+    // Without harvesting the settled actor state here, the
+    // `session_list_loaded` emission reads the empty prior-tick list off
+    // the projection-of-log and the entire cluster fails its
+    // `_wait_for_session_chat_state(session_list_loaded)` + list assertion.
+    // Same boundary discipline the send-path callers already apply.
+    await this.appendSessionChatTerminalEvents(
+      flow_id,
+      stateValue,
+      correlation_id,
+      undefined,
+      harvestSettledSessionChatState(actor),
+    );
   }
 
   /**
@@ -968,6 +981,22 @@ export class FlowOrchestrator {
       }>;
       resource: { type: string | null; id: string | null };
       underlying_cause_tag: string | null;
+      // RC-2: the settled session_list (loadSessionList onDone) — read off
+      // the actor snapshot at the designated boundary, NOT the stale
+      // projection-of-log (which has not yet observed the loaded list at
+      // emission time).
+      session_list?: Array<{
+        id: string;
+        title: string | null;
+        last_active_at: string;
+        active_dataset_id: string | null;
+      }>;
+      session_list_next_cursor?: string | null;
+      session_list_has_more?: boolean;
+      // RC-2 (US-206): the settled composer text — preserved on the
+      // machine context across the transient-create-session retry, read
+      // off the actor snapshot rather than the stale projection-of-log.
+      pending_first_message?: string;
     } | null,
   ): Promise<void> {
     // ADR-030 LEAF-B: rebind ctx to the live projection's context built
@@ -1023,6 +1052,23 @@ export class FlowOrchestrator {
       return;
     }
     if (stateValue === "session_list_loaded") {
+      // RC-2: prefer the harvested settled list (read off the actor
+      // snapshot at the designated boundary) over the projection-of-log
+      // `ctx` — the loadSessionList onDone assign lands AFTER the snapshot
+      // flips to `session_list_loaded`, so `ctx.session_list` still holds
+      // the empty prior-tick value at this emission point. Without this the
+      // spawn-path `session_list_loaded` event carries `items: []` and every
+      // mr_2/mr_3 precondition sees an empty list (same D-MR5-01 class as
+      // the `session_resumed` harvest below).
+      const settledList = harvestedResume?.session_list ?? ctx.session_list;
+      const settledNextCursor =
+        harvestedResume?.session_list_next_cursor !== undefined
+          ? harvestedResume.session_list_next_cursor
+          : ctx.session_list_next_cursor;
+      const settledHasMore =
+        harvestedResume?.session_list_has_more !== undefined
+          ? harvestedResume.session_list_has_more
+          : ctx.session_list_has_more;
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_list_load_started",
@@ -1033,9 +1079,9 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_list_loaded",
         payload: {
-          items: ctx.session_list,
-          next_cursor: ctx.session_list_next_cursor,
-          has_more: ctx.session_list_has_more,
+          items: settledList,
+          next_cursor: settledNextCursor,
+          has_more: settledHasMore,
         },
         correlation_id,
       });
@@ -1044,7 +1090,7 @@ export class FlowOrchestrator {
         type: "session_list_displayed",
         payload: {
           project_id: ctx.project.id,
-          session_count: ctx.session_list.length,
+          session_count: settledList.length,
         },
         correlation_id,
       });
@@ -1071,11 +1117,18 @@ export class FlowOrchestrator {
       // keep the event log auditable for "did this row come from a
       // resume or an eager-create?" queries.
       if (priorState === "session_welcome") {
+        // RC-2 (US-206): the session_id is materialized AFTER the snapshot
+        // flips to `session_active` — by the createSessionEagerly onDone
+        // (eager-create) or the resumeSession onDone (existing-session
+        // click that cancels the new-session intent). The projection-of-log
+        // read still holds null at this emission point, so prefer the
+        // harvested settled value (same boundary discipline as the
+        // `session_resumed` branch below).
         await this.deps.eventLog.append(flow_id, {
           ts: new Date().toISOString(),
           type: "session_active_reached",
           payload: {
-            session_id: ctx.session_id,
+            session_id: harvestedResume?.session_id ?? ctx.session_id,
           },
           correlation_id,
         });
@@ -1131,7 +1184,11 @@ export class FlowOrchestrator {
         type: "session_welcome_displayed",
         payload: {
           project_id: ctx.project.id,
-          pending_first_message: ctx.pending_first_message,
+          // RC-2 (US-206): capturePendingFirstMessage assigns the composer
+          // text AFTER the snapshot flips, so the projection-of-log read is
+          // empty at this emission point — prefer the harvested value.
+          pending_first_message:
+            harvestedResume?.pending_first_message ?? ctx.pending_first_message,
         },
         correlation_id,
       });
@@ -1142,11 +1199,19 @@ export class FlowOrchestrator {
         ts: new Date().toISOString(),
         type: "session_chat_recoverable_error",
         payload: {
-          underlying_cause_tag: ctx.underlying_cause_tag ?? "transient",
+          underlying_cause_tag:
+            harvestedResume?.underlying_cause_tag ??
+            ctx.underlying_cause_tag ??
+            "transient",
           // US-206 composer-preservation: carry the welcome-state composer
           // text on the FlowEvent so the projection reducer preserves it
           // across reload (DWD-9 SSOT — projection is rebuilt from log).
-          pending_first_message: ctx.pending_first_message,
+          // RC-2: the transient-create-session failure sets the cause +
+          // preserves pending_first_message AFTER the snapshot flips to
+          // `error_recoverable`; the projection-of-log read is stale here,
+          // so prefer the harvested settled values.
+          pending_first_message:
+            harvestedResume?.pending_first_message ?? ctx.pending_first_message,
         },
         correlation_id,
       });
