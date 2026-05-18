@@ -34,7 +34,6 @@ import {
 } from "./machines/session-chat/index.ts";
 import {
   harvestSettledFreezeState,
-  harvestSettledLoginState,
   harvestSettledProjectContextState,
   harvestSettledSessionChatState,
 } from "./orchestrator-harvester.ts";
@@ -1508,108 +1507,46 @@ export class FlowOrchestrator implements PumpContext {
     this.priorState.set(input.flow_id, stateValue);
     // ---- End freeze/thaw signaling --------------------------------------
 
-    if (stateValue === "ready" && input.machine === "login-and-org-setup") {
-      // The projection does not yet have org/user — they are set on the
-      // machine snapshot by the createOrgAndReissue actor's onDone, and
-      // the `org_created_and_jwt_reissued` event we are about to emit is
-      // what populates them in the projection. Source the values from
-      // the dedicated harvester (`orchestrator-harvester.ts`), which is
-      // the LEAF-D rule's designated snapshot-read boundary.
-      const harvested = harvestSettledLoginState(actor);
-      const orgCtx = harvested.org;
-      const userCtx = harvested.user;
-      // Mint a synthetic JWT carrying the org_id claim. Per ADR-029
-      // invariant 4 the projection MUST expose the access_token so the FE
-      // (and the TS harness via assert_jwt_carries_org_claim) can verify
-      // the claim matches the projection's org. The signature is
-      // intentionally a fixed placeholder — auth-proxy is the SSOT for
-      // real signature verification; the ui-state tier exposes the
-      // composed token shape for projection consumers.
-      const access_token = mintAccessTokenForReady(orgCtx.id ?? "");
-      // If this ready transition came FROM expired_token, mark the event
-      // payload so auth-proxy can emit silent_reauth_ok. The projection
-      // reducer surfaces the flag in context for the FE banner to read.
-      const silentReauthRecovery = prior === "expired_token";
-      await this.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "org_created_and_jwt_reissued",
-        payload: {
-          org: orgCtx,
-          access_token,
-          ...(silentReauthRecovery ? { silent_reauth_ok: true } : {}),
-        },
-        correlation_id: input.correlation_id,
-      });
-
-      // ---- auth_ready broadcast hook (DWD-6 + DWD-13 RD1) ----------------
-      // When J-001 transitions creating_org → ready (NOT the
-      // expired_token → ready recovery path), broadcast to project-context
-      // so it spawns + receives the inherited org_id + user.first_name. This
-      // mechanically retires the "second source of truth" risk Praxis F-5
-      // named (the org_id flows J-001 → orchestrator → project-context
-      // directly, never via a separate fetch). The project-context spawn's
-      // post-settle `project_selected` branch fires the NEW `project_ready`
-      // hook (DWD-13 §3.2.B) that spawns session-chat in turn.
-      const isFirstReady = prior === "creating_org" || prior === "anonymous" || !prior;
-      if (isFirstReady && this.deps.projectContextMachineDeps && orgCtx.id) {
-        const firstName =
-          userCtx.first_name ??
-          ((userCtx.display_name ?? "").split(/\s+/)[0] || null);
-        try {
-          await this.beginIfNotStarted({
-            machine: PROJECT_CONTEXT_WIRE_NAME,
-            principal_id: parsePrincipal(input.flow_id),
-            correlation_id: input.correlation_id,
-            org_id: orgCtx.id,
-            user_first_name: firstName ?? "",
-          });
-        } catch (err) {
-          // Defensive — project-context spawn failure must NOT break J-001's ready transition.
-          this.logTransition({
-            event_kind: "auth_ready_hook.failed",
-            error: (err as Error).message,
-            origin_flow_id: input.flow_id,
-          });
-        }
-      }
-    } else if (stateValue === "expired_token") {
-      // Harness-driven (or future production-driven) transition into the
-      // expired_token state. The projection reducer derives state from this
-      // event so subsequent reads see expired_token without the actor.
-      await this.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "token_expired",
-        payload: {},
-        correlation_id: input.correlation_id,
-      });
-    } else if (stateValue === "error_recoverable") {
-      // The projection does not yet have underlying_cause_tag — it is
-      // set on the machine by the __force_failure__ handler or by
-      // classifyFailure on a transient onError, and the
-      // `reissue_failed_partial` event we are about to emit is what
-      // populates it in the projection. Source the values from the
-      // dedicated harvester (`orchestrator-harvester.ts`), which is the
-      // LEAF-D rule's designated snapshot-read boundary.
-      const harvested = harvestSettledLoginState(actor);
-      await this.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "reissue_failed_partial",
-        payload: {
-          underlying_cause_tag:
-            harvested.underlying_cause_tag ?? "partial-setup",
-          org: harvested.org,
-        },
-        correlation_id: input.correlation_id,
-      });
-    } else if (stateValue === "authenticated_no_org") {
-      // org_form_submitted with an invalid name → stay in
-      // authenticated_no_org but attach the validation error to context.
-      if (projectionCtx.org_validation_error) {
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "validation_failed",
-          payload: { error: projectionCtx.org_validation_error },
+    // ADR-040 LEAF-3 MR-L3a/N3: the per-machine login terminal-emission
+    // chain (ready / expired_token / error_recoverable /
+    // authenticated_no_org) is CARVED into loginOrgSetupStrategy.settle.
+    // Called UNCONDITIONALLY here (the imported strategy ref, NOT
+    // resolve(input.machine)) so the pre-carve chained-if semantics are
+    // byte-preserved: the chain was not fully machine-gated — a non-login
+    // flow that settles `error_recoverable` still falls through the shared
+    // arm exactly as before (project/session carve = MR-L3b/c, §7
+    // scope-fence). The pump retains the cross-machine `auth_ready` spawn
+    // hook FIRING (leaf-3-plan §3): settle returns the signal; the pump
+    // fires beginIfNotStarted(PROJECT_CONTEXT…) AFTER settle returns. The
+    // `&& projectContextMachineDeps` half of the original guard is the
+    // pump's; `&&` is order-independent so the combined guard is identical.
+    if (!loginOrgSetupStrategy.settle) {
+      throw new Error("loginOrgSetupStrategy.settle missing (LEAF-3 N3)");
+    }
+    const loginSettleOutcome = await loginOrgSetupStrategy.settle(
+      this,
+      actor,
+      input,
+      { stateValue, prior, projectionCtx },
+    );
+    if (
+      loginSettleOutcome.authReady &&
+      this.deps.projectContextMachineDeps
+    ) {
+      try {
+        await this.beginIfNotStarted({
+          machine: PROJECT_CONTEXT_WIRE_NAME,
+          principal_id: parsePrincipal(input.flow_id),
           correlation_id: input.correlation_id,
+          org_id: loginSettleOutcome.authReady.org_id,
+          user_first_name: loginSettleOutcome.authReady.user_first_name,
+        });
+      } catch (err) {
+        // Defensive — project-context spawn failure must NOT break J-001's ready transition.
+        this.logTransition({
+          event_kind: "auth_ready_hook.failed",
+          error: (err as Error).message,
+          origin_flow_id: input.flow_id,
         });
       }
     }
@@ -2395,27 +2332,6 @@ function parsePrincipal(flow_id: string): string {
   const parts = flow_id.split(":");
   return parts[1] ?? "";
 }
-
-/**
- * Mint a synthetic JWT carrying the org_id claim. The ui-state tier does
- * NOT sign tokens cryptographically — that is auth-proxy's job per ADR-016.
- * This routine composes a JWT-shaped string whose payload encodes the
- * org_id so projection consumers (FE + TS harness) can read the claim
- * without an additional API call. The "sig" segment is a stable placeholder.
- *
- * Per ADR-029 invariant 4: the projection's access_token MUST carry the
- * same org_id as the projection's org.id.
- */
-function mintAccessTokenForReady(org_id: string): string {
-  const header = Buffer.from(
-    JSON.stringify({ alg: "none", typ: "JWT" }),
-  ).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({ org_id })).toString(
-    "base64url",
-  );
-  return `${header}.${payload}.ui-state-mint`;
-}
-
 
 /**
  * Wait until the actor leaves the named state. Used by the freeze/thaw
