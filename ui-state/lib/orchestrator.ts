@@ -20,11 +20,10 @@ import { type AnyActorRef, type AnyStateMachine,createActor } from "xstate";
 
 import type { ResourceType } from "./active-scope.ts";
 import {
-  createForcedFailureOrgAndReissueActor,
-  createLoginAndOrgSetupMachine,
   type CreateOrgAndReissueInput,
   type LoginMachineDeps,
 } from "./machines/login-and-org-setup/index.ts";
+import { loginOrgSetupStrategy } from "./machines/login-and-org-setup/strategy.ts";
 import {
   createProjectContextMachine,
   type ProjectContextMachineDeps,
@@ -42,6 +41,7 @@ import {
 import type { FlowEventLog } from "./persistence/redis.ts";
 import type { FlowEvent, FlowProjection } from "./projection.ts";
 import { buildProjection } from "./projection.ts";
+import { waitForSettledState } from "./wait-for-settled-state.ts";
 
 /**
  * Wire-protocol machine name preserved through MR-1.5 per the SRP amendment's
@@ -112,8 +112,9 @@ export interface OrchestratorDeps {
 /**
  * Canonical machine-names (ADR-039) — the FlowStrategy registry keys.
  * The three strategies in the ADR-040 C4 target-state diagram.
+ * (`login-and-org-setup`'s canonical-name const now lives with its carved
+ * strategy at machines/login-and-org-setup/strategy.ts — LEAF-3 N2.)
  */
-const LOGIN_AND_ORG_SETUP_MACHINE = "login-and-org-setup";
 const PROJECT_CONTEXT_MACHINE = "project-context";
 const SESSION_CHAT_MACHINE = "session-chat";
 
@@ -329,11 +330,12 @@ class FlowStrategyRegistry {
 
 export const FLOW_STRATEGY_REGISTRY = new FlowStrategyRegistry();
 
-FLOW_STRATEGY_REGISTRY.register({
-  machineName: LOGIN_AND_ORG_SETUP_MACHINE,
-  beginsDirectly: true,
-  buildMachine: (deps) => createLoginAndOrgSetupMachine(deps.loginMachineDeps),
-});
+// ADR-040 LEAF-3 MR-L3a/N2: the login strategy is now the carved
+// `loginOrgSetupStrategy` impl (co-located at machines/login-and-org-setup/
+// strategy.ts per AMB-2). It owns `machineName`/`beginsDirectly`/
+// `buildMachine` AND the carved `beginDirect` body. Registration is
+// unchanged in semantics — same canonical key, same beginsDirectly.
+FLOW_STRATEGY_REGISTRY.register(loginOrgSetupStrategy);
 
 FLOW_STRATEGY_REGISTRY.register({
   machineName: PROJECT_CONTEXT_MACHINE,
@@ -405,7 +407,7 @@ interface FrozenFlowState {
   queued: Array<{ input: SendEventInput; seq: number }>;
 }
 
-export class FlowOrchestrator {
+export class FlowOrchestrator implements PumpContext {
   private readonly actors = new Map<string, AnyActorRef>();
   /** Per-flow freeze state. Absent key = flow is not frozen. */
   private readonly frozen = new Map<string, FrozenFlowState>();
@@ -419,7 +421,27 @@ export class FlowOrchestrator {
    *  during a freeze window — the cross-flow FIFO key for THAW replay. */
   private replaySeq = 0;
 
-  constructor(private readonly deps: OrchestratorDeps) {}
+  constructor(readonly deps: OrchestratorDeps) {}
+
+  // ── PumpContext seam (ADR-040 §D2 / leaf-3-plan §3) ──────────────────
+  // The pump RETAINS actor-system ownership & spawn lifecycle: carved
+  // strategies never touch the actor map directly — they ask the pump to
+  // recycle/track actors. These are the exact lifecycle ops the inlined
+  // `begin` body performed, behavior-identical.
+
+  /** Stop+forget any existing actor for this flow (begin re-click reset). */
+  recycleActor(flow_id: string): void {
+    const existing = this.actors.get(flow_id);
+    if (existing) {
+      existing.stop();
+      this.actors.delete(flow_id);
+    }
+  }
+
+  /** Register a freshly created+started actor under its flow_id. */
+  trackActor(flow_id: string, actor: AnyActorRef): void {
+    this.actors.set(flow_id, actor);
+  }
 
   /**
    * Begin a flow. Creates the actor, persists the sign_in_clicked event,
@@ -446,145 +468,20 @@ export class FlowOrchestrator {
       });
     }
 
-    const flow_id = `${input.machine}:${input.principal_id}`;
-    const start = Date.now();
-
-    // Re-clicking sign-in is the entry to a NEW auth attempt — reset the
-    // prior actor (if any) and event log so we don't replay a stale flow.
-    // The persisted event log is the source of truth; the actor is a
-    // process-local cache. Without this reset, a second sign-in inherits
-    // the previous attempt's terminal state and never re-enters
-    // `authenticating`.
-    const existing = this.actors.get(flow_id);
-    if (existing) {
-      existing.stop();
-      this.actors.delete(flow_id);
+    // ADR-040 LEAF-3 MR-L3a/N2: the direct WorkOS+org-create begin body is
+    // CARVED into LoginOrgSetupStrategy.beginDirect (machines/login-and-org-
+    // setup/strategy.ts). The pump retains actor-system ownership & spawn
+    // lifecycle (§3 stays-central) and is reached by the strategy through
+    // the PumpContext seam (`this`). Behavior-neutral: same FlowEvents,
+    // same order. `beginDirect` is present whenever `beginsDirectly` (login
+    // is the only direct machine); the guard is defensive — unreachable for
+    // the registered login strategy.
+    if (!strategy.beginDirect) {
+      throw new Error(
+        `strategy '${strategy.machineName}' is beginsDirectly but has no beginDirect impl`,
+      );
     }
-    await this.deps.eventLog.reset(flow_id);
-    this.resetFlowTracking(flow_id);
-
-    // Failure-simulation knob: wrap createOrgAndReissue with a failure-
-    // injecting counter for slice-1 scenarios that exercise the retry
-    // budget. The knob is gated by NWAVE_HARNESS_KNOBS (legacy env-var,
-    // honored during the one-release overlap per ADR-035) so production
-    // builds ignore the field even if a caller tries to set it.
-    const failureSimulationEnabled = process.env.NWAVE_HARNESS_KNOBS === "true";
-    const forceFailures = failureSimulationEnabled
-      ? input.force_reissue_failures ?? 0
-      : 0;
-    const machineDeps: LoginMachineDeps =
-      forceFailures > 0
-        ? {
-            ...this.deps.loginMachineDeps,
-            createOrgAndReissue: createForcedFailureOrgAndReissueActor(
-              this.deps.createOrgFn ??
-                (async () => {
-                  throw new Error("no real createOrgFn wired");
-                }),
-              this.deps.reissueOrgJwtFn ??
-                (async () => {
-                  throw new Error("no real reissueOrgJwtFn wired");
-                }),
-              forceFailures,
-            ),
-          }
-        : this.deps.loginMachineDeps;
-
-    const machine = createLoginAndOrgSetupMachine(machineDeps);
-    const actor = createActor(machine, {
-      input: {
-        correlation_id: input.correlation_id,
-        principal_id: input.principal_id,
-        existing_org_names: input.existing_org_names,
-      },
-    });
-    this.actors.set(flow_id, actor);
-    actor.start();
-    this.logTransition({
-      flow_id,
-      from_state: null,
-      to_state: "anonymous",
-      correlation_id: input.correlation_id,
-      principal_id: input.principal_id,
-      duration_ms: 0,
-    });
-
-    // Append sign_in_clicked event to the log and dispatch it.
-    const signInEvent: FlowEvent = {
-      ts: new Date().toISOString(),
-      type: "sign_in_clicked",
-      payload: {
-        persona_email: input.persona_email,
-        persona_display_name: input.persona_display_name,
-      },
-      correlation_id: input.correlation_id,
-    };
-    await this.deps.eventLog.append(flow_id, signInEvent);
-
-    actor.send({
-      type: "sign_in_clicked",
-      persona_email: input.persona_email,
-      persona_display_name: input.persona_display_name,
-    });
-
-    // Wait for the authenticating invoke to resolve.
-    await waitForSettledState(actor);
-
-    const stateValue = actor.getSnapshot().value as string;
-
-    // ADR-030 LEAF-B: read user / underlying_cause_tag from the live
-    // projection (built from the FlowEvent log) rather than from the
-    // machine snapshot context, per ADR-030 §"Decision outcome" — the
-    // projection is the only legal read source for the emission path.
-    //
-    // Risk noted for reviewer: at this code point the projection has only
-    // observed `sign_in_clicked`, so `context.user` is still the empty
-    // initial shape and `context.underlying_cause_tag` is null. The
-    // workos-profile / cause-classification harvest currently lives in
-    // the actor's settled context and is not yet a FlowEvent-derivable
-    // value. LEAF-C+ work (see ADR-030 §"Migration sequencing") will land
-    // an upstream event that captures the workos invoke output so this
-    // read site sees the resolved profile; until then `auth_callback_resolved`
-    // / `auth_failed` may carry placeholder values. Mirrors the LEAF-A
-    // session-list trade-off (`appendSessionChatTerminalEvents`).
-    const preEmitEvents = await this.deps.eventLog.read(flow_id);
-    const preEmitProjection = buildProjection(flow_id, preEmitEvents);
-    const preEmitCtx = preEmitProjection.context as {
-      user: { email: string | null; display_name: string | null };
-      underlying_cause_tag: string | null;
-    };
-
-    // On successful auth, append auth_callback_resolved so the projection
-    // matches the wire contract from the event log even without a snapshot.
-    if (stateValue === "authenticated_no_org") {
-      const user = preEmitCtx.user;
-      const resolvedEvent: FlowEvent = {
-        ts: new Date().toISOString(),
-        type: "auth_callback_resolved",
-        payload: { user },
-        correlation_id: input.correlation_id,
-      };
-      await this.deps.eventLog.append(flow_id, resolvedEvent);
-      this.logTransition({
-        flow_id,
-        from_state: "authenticating",
-        to_state: "authenticated_no_org",
-        correlation_id: input.correlation_id,
-        principal_id: input.principal_id,
-        duration_ms: Date.now() - start,
-      });
-    } else if (stateValue === "error_recoverable") {
-      const cause = preEmitCtx.underlying_cause_tag ?? "transient";
-      const failedEvent: FlowEvent = {
-        ts: new Date().toISOString(),
-        type: "auth_failed",
-        payload: { underlying_cause_tag: cause },
-        correlation_id: input.correlation_id,
-      };
-      await this.deps.eventLog.append(flow_id, failedEvent);
-    }
-
-    return this.projectionFor(flow_id, input.principal_id, input.correlation_id);
+    return strategy.beginDirect(this, input);
   }
 
   /**
@@ -2452,13 +2349,13 @@ export class FlowOrchestrator {
    * freeze/thaw replay path (the shared dev-user-001 principal reuses
    * flow_ids across scenarios).
    */
-  private resetFlowTracking(flow_id: string): void {
+  resetFlowTracking(flow_id: string): void {
     this.priorState.delete(flow_id);
     this.frozen.delete(flow_id);
     this.abandoned.delete(flow_id);
   }
 
-  private async projectionFor(
+  async projectionFor(
     flow_id: string,
     _principal_id: string,
     correlation_id: string,
@@ -2477,7 +2374,7 @@ export class FlowOrchestrator {
     };
   }
 
-  private logTransition(record: Record<string, unknown>): void {
+  logTransition(record: Record<string, unknown>): void {
     const out = { event: "flow.transition", ...record };
     if (this.deps.log) {
       this.deps.log(out);
@@ -2519,63 +2416,6 @@ function mintAccessTokenForReady(org_id: string): string {
   return `${header}.${payload}.ui-state-mint`;
 }
 
-
-/**
- * Wait for the XState actor to leave any transient state (i.e., to settle
- * out of an `invoke`'d promise). Subscribes once, resolves on the first
- * snapshot whose value is one of the terminal-for-now states.
- *
- * For the walking skeleton: authenticating is transient; everything else is
- * settled. Later steps that introduce more invoke-driven states extend this
- * to a state-machine-aware predicate.
- */
-function waitForSettledState(
-  actor: AnyActorRef,
-  timeoutMs = 10000,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // States that contain `invoke` blocks — caller waits for them to leave.
-    // J-001: authenticating, creating_org. J-002 project-context:
-    // resolving_initial_scope, creating_project, switching_project (MR-4 —
-    // the `switchProject` invoke; D-MR4-06: this was previously missing, so
-    // `send()` did not await the switch and the projection never settled).
-    // J-002 session-chat: loading_session_list, resuming_session,
-    // switching_dataset_context (MR-5 — the `switchDatasetContext` invoke;
-    // GET /api/datasets/:id + PATCH session.active_dataset_id. Mirrors the
-    // D-MR4-06 fix for switching_project: omitting it here would make
-    // `send()` NOT await the invoke, so the projection would stay stuck at
-    // switching_dataset_context and the resource_* update never settle).
-    const TRANSIENT_STATES = new Set([
-      "authenticating",
-      "creating_org",
-      "resolving_initial_scope",
-      "creating_project",
-      "switching_project",
-      "loading_session_list",
-      "resuming_session",
-      "creating_session",
-      "switching_dataset_context",
-    ]);
-    const snapshot = actor.getSnapshot();
-    if (!TRANSIENT_STATES.has(snapshot.value as string)) {
-      resolve();
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      sub.unsubscribe();
-      reject(new Error("waitForSettledState: timeout"));
-    }, timeoutMs);
-
-    const sub = actor.subscribe((snap) => {
-      if (!TRANSIENT_STATES.has(snap.value as string)) {
-        clearTimeout(timer);
-        sub.unsubscribe();
-        resolve();
-      }
-    });
-  });
-}
 
 /**
  * Wait until the actor leaves the named state. Used by the freeze/thaw
