@@ -866,281 +866,15 @@ export class FlowOrchestrator implements PumpContext {
   // with the node that killed its callers (mirrors MR-L3b retiring the
   // carved project-context privates). Behavior-neutral.
 
-  /**
-   * Emit the terminal-for-now events that match a session-chat actor's
-   * current state. Idempotent and side-effect-only — the actor's state is
-   * the source of truth; the events are the projection-builder substrate.
-   *
-   * Called from BOTH `emitSessionChatSpawnEvents` (after spawn / project_ready
-   * re-broadcast) AND the post-`send()` branch for SESSION_CHAT_WIRE_NAME so
-   * session_clicked → resuming_session → session_active emits the right
-   * sequence regardless of which surface drove the transition.
-   */
-  private async appendSessionChatTerminalEvents(
-    flow_id: string,
-    stateValue: string,
-    correlation_id: string,
-    /** Optional: the machine's state value immediately before this settle.
-     *  Used to distinguish eager-create from resume on `session_active`
-     *  arrival (US-206 vs US-205) so the projection log records the right
-     *  event-type. */
-    priorState?: string,
-    /** D-MR5-01: the `resumeSession` actor's resolved `resource` (and the
-     *  `dataset_not_found` cause) lands on the machine context AFTER the
-     *  snapshot flips to `session_active` and BEFORE any FlowEvent
-     *  captures it — the SAME D-MR4-06 problem #2 LEAF-B introduced and
-     *  D-MR4-06 fixed only for the switch path. So `session_resumed`
-     *  emitted from the projection-of-log read below carries
-     *  resource=null / dataset_unavailable=false and US-205's resume
-     *  contract (and US-209's resume precondition) fails. Callers harvest
-     *  from the designated snapshot-read boundary and pass it here so the
-     *  `session_resumed` payload reflects the real resumed dataset. */
-    harvestedResume?: {
-      session_id: string | null;
-      transcript: Array<{
-        id: string;
-        role: string;
-        content: string;
-        ts: string;
-      }>;
-      resource: { type: string | null; id: string | null };
-      underlying_cause_tag: string | null;
-      // RC-2: the settled session_list (loadSessionList onDone) — read off
-      // the actor snapshot at the designated boundary, NOT the stale
-      // projection-of-log (which has not yet observed the loaded list at
-      // emission time).
-      session_list?: Array<{
-        id: string;
-        title: string | null;
-        last_active_at: string;
-        active_dataset_id: string | null;
-      }>;
-      session_list_next_cursor?: string | null;
-      session_list_has_more?: boolean;
-      // RC-2 (US-206): the settled composer text — preserved on the
-      // machine context across the transient-create-session retry, read
-      // off the actor snapshot rather than the stale projection-of-log.
-      pending_first_message?: string;
-    } | null,
-  ): Promise<void> {
-    // ADR-030 LEAF-B: rebind ctx to the live projection's context built
-    // from the flow event log. The projection is the only legal read
-    // source for the emission path per ADR-030 §"Decision outcome".
-    //
-    // Risk noted for reviewer: fields populated by session-chat's invoke
-    // outputs (session_list, session_id, transcript, resource,
-    // pending_first_message, underlying_cause_tag) are projected only by
-    // their corresponding emit events — at the moment of THIS read, the
-    // about-to-be-written event has not yet landed in the log, so the
-    // payload will surface the projection's prior-tick values (commonly
-    // null/empty for the fresh-spawn path).  LEAF-C+ will restructure
-    // `loadSessionList`, `resumeSession`, and peers to land an upstream
-    // `event.output` carrier event so this read sees the resolved data.
-    // Mirrors the LEAF-A session-list trade-off; tracked under
-    // ADR-030 §"Migration sequencing".
-    const projection = buildProjection(
-      flow_id,
-      await this.deps.eventLog.read(flow_id),
-    );
-    const ctx = projection.context as {
-      project: { id: string | null; name: string | null };
-      session_list: Array<{
-        id: string;
-        title: string | null;
-        last_active_at: string;
-        active_dataset_id: string | null;
-      }>;
-      session_list_next_cursor: string | null;
-      session_list_has_more: boolean;
-      session_id: string | null;
-      transcript: Array<{
-        id: string;
-        role: "user" | "assistant" | "tool";
-        content: string;
-        ts: string;
-      }>;
-      resource: { type: ResourceType | null; id: string | null };
-      // Click-captured resume target (session-chat half — projection
-      // field renamed in MR-D).
-      pending_resume_session_id: string | null;
-      underlying_cause_tag: string | null;
-      pending_first_message: string;
-    };
-    if (stateValue === "loading_session_list") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_list_load_started",
-        payload: { project_id: ctx.project.id },
-        correlation_id,
-      });
-      return;
-    }
-    if (stateValue === "session_list_loaded") {
-      // RC-2: prefer the harvested settled list (read off the actor
-      // snapshot at the designated boundary) over the projection-of-log
-      // `ctx` — the loadSessionList onDone assign lands AFTER the snapshot
-      // flips to `session_list_loaded`, so `ctx.session_list` still holds
-      // the empty prior-tick value at this emission point. Without this the
-      // spawn-path `session_list_loaded` event carries `items: []` and every
-      // mr_2/mr_3 precondition sees an empty list (same D-MR5-01 class as
-      // the `session_resumed` harvest below).
-      const settledList = harvestedResume?.session_list ?? ctx.session_list;
-      const settledNextCursor =
-        harvestedResume?.session_list_next_cursor !== undefined
-          ? harvestedResume.session_list_next_cursor
-          : ctx.session_list_next_cursor;
-      const settledHasMore =
-        harvestedResume?.session_list_has_more !== undefined
-          ? harvestedResume.session_list_has_more
-          : ctx.session_list_has_more;
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_list_load_started",
-        payload: { project_id: ctx.project.id },
-        correlation_id,
-      });
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_list_loaded",
-        payload: {
-          items: settledList,
-          next_cursor: settledNextCursor,
-          has_more: settledHasMore,
-        },
-        correlation_id,
-      });
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_list_displayed",
-        payload: {
-          project_id: ctx.project.id,
-          session_count: settledList.length,
-        },
-        correlation_id,
-      });
-      return;
-    }
-    if (stateValue === "resuming_session") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_resume_started",
-        payload: {
-          session_id:
-            ctx.pending_resume_session_id ?? ctx.session_id ?? null,
-        },
-        correlation_id,
-      });
-      return;
-    }
-    if (stateValue === "session_active") {
-      // US-206 vs US-205 path distinction: an eager-create landing in
-      // session_active came from session_welcome (via the
-      // creating_session invoke). Use the prior-state hint to emit
-      // `session_active_reached` instead of `session_resumed`. Functionally
-      // both events project to state=session_active; the distinct names
-      // keep the event log auditable for "did this row come from a
-      // resume or an eager-create?" queries.
-      if (priorState === "session_welcome") {
-        // RC-2 (US-206): the session_id is materialized AFTER the snapshot
-        // flips to `session_active` — by the createSessionEagerly onDone
-        // (eager-create) or the resumeSession onDone (existing-session
-        // click that cancels the new-session intent). The projection-of-log
-        // read still holds null at this emission point, so prefer the
-        // harvested settled value (same boundary discipline as the
-        // `session_resumed` branch below).
-        await this.deps.eventLog.append(flow_id, {
-          ts: new Date().toISOString(),
-          type: "session_active_reached",
-          payload: {
-            session_id: harvestedResume?.session_id ?? ctx.session_id,
-          },
-          correlation_id,
-        });
-        return;
-      }
-      // D-MR5-01: prefer the harvested settled context (the resume
-      // actor's resolved resource lands on ctx after the snapshot flips —
-      // the projection-of-log read here would see null). Falls back to
-      // the projection read when no harvest was supplied (spawn-path call
-      // sites that never resumed).
-      const resumedResource = harvestedResume?.resource ?? ctx.resource;
-      const resumedCause =
-        harvestedResume?.underlying_cause_tag ?? ctx.underlying_cause_tag;
-      const resumedSessionId = harvestedResume?.session_id ?? ctx.session_id;
-      const resumedTranscript =
-        harvestedResume?.transcript ?? ctx.transcript;
-      // `dataset_unavailable` is TRUE only when the resume actor detected a
-      // stored active_dataset_id that 404'd (graceful degradation per US-205
-      // Example 3). A null active_dataset_id is the conversational-mode
-      // default — NOT a degraded state. The machine signals the degraded
-      // case by setting underlying_cause_tag = "dataset_not_found".
-      const datasetUnavailable = resumedCause === "dataset_not_found";
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_resumed",
-        payload: {
-          session_id: resumedSessionId,
-          transcript: resumedTranscript,
-          resource_type: resumedResource.type,
-          resource_id: resumedResource.id,
-          dataset_unavailable: datasetUnavailable,
-        },
-        correlation_id,
-      });
-      if (datasetUnavailable) {
-        await this.deps.eventLog.append(flow_id, {
-          ts: new Date().toISOString(),
-          type: "session_dataset_unavailable",
-          payload: {},
-          correlation_id,
-        });
-      }
-      return;
-    }
-    if (stateValue === "session_welcome") {
-      // US-206: emit `session_welcome_displayed` so the projection reducer
-      // surfaces the welcome state to consumers. session_id stays null.
-      // Carry pending_first_message so the projection reducer preserves the
-      // composer text when re-entering from `retry_clicked` — the machine
-      // already holds it in context across that transition (app-arch §6.4).
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_welcome_displayed",
-        payload: {
-          project_id: ctx.project.id,
-          // RC-2 (US-206): capturePendingFirstMessage assigns the composer
-          // text AFTER the snapshot flips, so the projection-of-log read is
-          // empty at this emission point — prefer the harvested value.
-          pending_first_message:
-            harvestedResume?.pending_first_message ?? ctx.pending_first_message,
-        },
-        correlation_id,
-      });
-      return;
-    }
-    if (stateValue === "error_recoverable") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_chat_recoverable_error",
-        payload: {
-          underlying_cause_tag:
-            harvestedResume?.underlying_cause_tag ??
-            ctx.underlying_cause_tag ??
-            "transient",
-          // US-206 composer-preservation: carry the welcome-state composer
-          // text on the FlowEvent so the projection reducer preserves it
-          // across reload (DWD-9 SSOT — projection is rebuilt from log).
-          // RC-2: the transient-create-session failure sets the cause +
-          // preserves pending_first_message AFTER the snapshot flips to
-          // `error_recoverable`; the projection-of-log read is stale here,
-          // so prefer the harvested settled values.
-          pending_first_message:
-            harvestedResume?.pending_first_message ?? ctx.pending_first_message,
-        },
-        correlation_id,
-      });
-    }
-  }
+  // ADR-040 LEAF-3 MR-L3c/N15: the private `appendSessionChatTerminalEvents`
+  // (session-chat terminal-for-now emission) is CARVED into
+  // sessionChatStrategy (a module-private helper of
+  // machines/session-chat/strategy.ts, called by settleSpawn / settle /
+  // settleThaw). Its last orchestrator call site (the broadcastThaw
+  // history-target re-entry tail) now dispatches
+  // sessionChatStrategy.settleThaw; this private is dead and retired
+  // with the node that killed its last caller (mirrors MR-L3b retiring
+  // the carved project-context privates). Behavior-neutral.
 
   // ADR-040 LEAF-3 MR-L3b/N10: the project-context THAW history-target
   // re-entry terminal (formerly the private `appendProjectContextThawTerminal`
@@ -1536,37 +1270,26 @@ export class FlowOrchestrator implements PumpContext {
       // D-MR4-06 / D-MR5-01 emission-completeness failure class. Harvest
       // the settled freeze state and append the per-machine `*_frozen`
       // FlowEvent so the projection reflects `freeze`.
-      // ADR-040 LEAF-3 MR-L3b/N10 + AMB-3: the FREEZE broadcast LOOP stays
-      // central (this method); the per-machine `*_frozen` emission tail
-      // moves to the strategy. The pump pre-gates `J002 && state==="freeze"`
-      // and dispatches per machine — project-context →
-      // projectContextStrategy.settleFreeze (carved); session-chat →
-      // `session_chat_frozen` stays inlined (N15 / MR-L3c, §7 scope-fence).
+      // ADR-040 LEAF-3 MR-L3b/N10 + MR-L3c/N15 + AMB-3: the FREEZE
+      // broadcast LOOP stays central (this method) per §3 / ADR-040 §D2
+      // (the cross-machine broadcaster is the pump's; it cannot belong to
+      // one strategy). The per-machine `*_frozen` emission tail is carved
+      // to each strategy's `settleFreeze`. The pump pre-gates
+      // `J002 && state==="freeze"` (loop bookkeeping — AMB-3) and now
+      // dispatches via the resolved strategy (project-context →
+      // projectContextStrategy.settleFreeze [MR-L3b/N10]; session-chat →
+      // sessionChatStrategy.settleFreeze [the carved `session_chat_frozen`
+      // tail, MR-L3c/N15]) — zero per-machine `machine === …` dispatch
+      // branch. `FLOW_STRATEGY_REGISTRY.resolve` applies the D5 alias so
+      // the project-context wire name resolves correctly.
       const machine = machineOfFlow(flow_id);
       if (
         J002_MACHINES.has(machine) &&
         (actor.getSnapshot().value as string) === "freeze"
       ) {
-        if (machine === SESSION_CHAT_WIRE_NAME) {
-          const h = harvestSettledFreezeState(actor);
-          await this.deps.eventLog.append(flow_id, {
-            ts: new Date().toISOString(),
-            type: "session_chat_frozen",
-            payload: {
-              last_live_state: h.last_live_state,
-              // Originating user-action preserved from the freeze moment
-              // so it survives into error_recoverable on the abandoned
-              // path (US-210 AC). The *_started events that normally write
-              // these never fired when FREEZE pre-empted the in-flight
-              // invoke.
-              pending_resume_session_id: h.pending_resume_session_id,
-              pending_first_message: h.pending_first_message,
-              pending_project_name: h.pending_project_name,
-            },
-            correlation_id: h.correlation_id,
-          });
-        } else if (projectContextStrategy.settleFreeze) {
-          await projectContextStrategy.settleFreeze(this, actor, flow_id);
+        const frozenStrategy = FLOW_STRATEGY_REGISTRY.resolve(machine);
+        if (frozenStrategy.settleFreeze) {
+          await frozenStrategy.settleFreeze(this, actor, flow_id);
         }
       }
     }
@@ -1713,13 +1436,28 @@ export class FlowOrchestrator implements PumpContext {
           machine === SESSION_CHAT_WIRE_NAME &&
           SC_TRANSIENTS.has(h.last_live_state ?? "")
         ) {
-          await this.appendSessionChatTerminalEvents(
-            flow_id,
-            settledState,
-            h.correlation_id,
-            h.last_live_state ?? undefined,
-            harvestSettledSessionChatState(actor),
-          );
+          // ADR-040 LEAF-3 MR-L3c/N15 + AMB-3: the THAW broadcast LOOP
+          // stays central (this method); the session-chat history-target
+          // re-entry terminal (formerly the inline
+          // `appendSessionChatTerminalEvents` thaw tail) is carved to
+          // sessionChatStrategy.settleThaw. The pump pre-gates
+          // `machine === SESSION_CHAT_WIRE_NAME && SC_TRANSIENTS.has` —
+          // machine-generic loop bookkeeping retained per §3 / AMB-3
+          // (the broadcastThaw loop's own per-flow transient-set gate;
+          // NOT a begin/event/settle dispatch branch — the exact
+          // project-context settleThaw precedent below). settleThaw
+          // re-derives `settledState` / `h` idempotently (byte-identical
+          // to the pump's). session-chat is the spawn-chain TERMINAL — it
+          // fires NO onward cross-machine re-broadcast (unlike
+          // project-context's `project_ready`).
+          if (sessionChatStrategy.settleThaw) {
+            await sessionChatStrategy.settleThaw(
+              this,
+              actor,
+              flow_id,
+              "thaw",
+            );
+          }
         } else if (
           machine === PROJECT_CONTEXT_WIRE_NAME &&
           PC_TRANSIENTS.has(h.last_live_state ?? "")
