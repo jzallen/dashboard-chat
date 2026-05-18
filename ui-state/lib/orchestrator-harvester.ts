@@ -85,6 +85,7 @@ export function harvestSettledLoginState(actor: AnyActorRef): {
  */
 export function harvestSettledProjectContextState(actor: AnyActorRef): {
   org_id: string | null;
+  user: { first_name: string | null };
   project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
   last_used_degraded_project_ids: string[];
@@ -94,6 +95,7 @@ export function harvestSettledProjectContextState(actor: AnyActorRef): {
 } {
   const ctx = actor.getSnapshot().context as {
     org_id: string | null;
+    user?: { first_name: string | null };
     project: { id: string | null; name: string | null };
     underlying_cause_tag: string | null;
     last_used_degraded_project_ids?: string[];
@@ -102,6 +104,17 @@ export function harvestSettledProjectContextState(actor: AnyActorRef): {
     project_validation_error?: { kind: string; message: string } | null;
   };
   return {
+    // LEAF-3 MR-L3b/N6: the project-context machine context carries
+    // `user.first_name` (seeded from the `auth_ready` spawn input / event —
+    // machine.ts initial-context + the `auth_ready` assign). The carved
+    // `ProjectContextStrategy.settleSpawn` sources the
+    // `project_context_resolution_started` / `no_projects_displayed`
+    // identity from HERE (the sanctioned snapshot boundary, AMB-1) instead
+    // of the pump's `input.user_first_name` — the port-locked `settleSpawn`
+    // signature does not carry it, and the machine-context value is
+    // byte-identical to it on every spawn path. Additive read; behavior-
+    // neutral (no harvester deleted — LEAF-5 scope-fence respected).
+    user: { first_name: ctx.user?.first_name ?? null },
     // MR-1 create-path + OQ-J002-5 (RC-1 / step-5): the create-project
     // sub-flow's terminal values land on the machine context AFTER the
     // snapshot flips and BEFORE the first FlowEvent captures them — the

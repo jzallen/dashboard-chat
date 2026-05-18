@@ -25,9 +25,9 @@ import {
 } from "./machines/login-and-org-setup/index.ts";
 import { loginOrgSetupStrategy } from "./machines/login-and-org-setup/strategy.ts";
 import {
-  createProjectContextMachine,
   type ProjectContextMachineDeps,
 } from "./machines/project-context/index.ts";
+import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import {
   createSessionChatMachine,
   type SessionChatMachineDeps,
@@ -336,18 +336,13 @@ export const FLOW_STRATEGY_REGISTRY = new FlowStrategyRegistry();
 // unchanged in semantics — same canonical key, same beginsDirectly.
 FLOW_STRATEGY_REGISTRY.register(loginOrgSetupStrategy);
 
-FLOW_STRATEGY_REGISTRY.register({
-  machineName: PROJECT_CONTEXT_MACHINE,
-  beginsDirectly: false,
-  buildMachine: (deps) => {
-    if (!deps.projectContextMachineDeps) {
-      throw new Error(
-        "projectContextMachineDeps required to construct the project-context machine",
-      );
-    }
-    return createProjectContextMachine(deps.projectContextMachineDeps);
-  },
-});
+// ADR-040 LEAF-3 MR-L3b/N6: the project-context strategy is now the carved
+// `projectContextStrategy` impl (co-located at machines/project-context/
+// strategy.ts per AMB-2). It owns `machineName`/`beginsDirectly`/
+// `buildMachine` AND the carved `settleSpawn` body (N6); N7–N10 carve the
+// remaining members. Registration is unchanged in semantics — same
+// canonical key, same beginsDirectly, same buildMachine guard.
+FLOW_STRATEGY_REGISTRY.register(projectContextStrategy);
 
 // Session-chat (DWD-13 §2B). MR-1.5 stub — `waiting_for_project` initial
 // state only. Spawned exclusively via the orchestrator's `project_ready`
@@ -687,173 +682,70 @@ export class FlowOrchestrator implements PumpContext {
       );
     }
 
-    // Persist a project_context_resolution_started + terminal-for-now event so the
-    // projection-builder can reconstruct state from the event log alone.
-    //
-    // ADR-030 LEAF-B: ctx is rebound to the live projection's context (built
-    // from the flow event log) per ADR-030 §"Decision outcome" — the
-    // projection is the only legal read source for the emission path.
-    //
-    // Risk noted for reviewer: this is the FIRST write to the
-    // project-context flow's log, so the projection has not yet observed
-    // any events and ctx fields that the orchestrator wrote into the
-    // log via spawn-input (org_id, user.first_name) read empty here.
-    // The existing `?? input.*` fallbacks cover those.  Fields that
-    // come from `resolveInitialScope`'s actor output (project,
-    // most_recent_session_per_project, last_used_degraded_project_ids,
-    // underlying_cause_tag) currently live only in the machine's
-    // settled context — they will read null/empty via the projection
-    // until LEAF-C+ work lands an upstream event that captures
-    // `resolveInitialScope`'s `event.output`.  Mirrors the LEAF-A
-    // session-list trade-off.
-    const stateValue = actor.getSnapshot().value as string;
-    const projectionEvents = await this.deps.eventLog.read(flow_id);
-    const projection = buildProjection(flow_id, projectionEvents);
-    const ctx = projection.context as {
+    // ADR-040 LEAF-3 MR-L3b/N6: the project-context spawn terminal-emission
+    // arm (`project_context_resolution_started` / `last_used_resolution_degraded`
+    // / `no_projects_displayed` / `project_selected` / `scope_mismatch_displayed`
+    // + `harvestSettledProjectContextState`) is CARVED into
+    // projectContextStrategy.settleSpawn (machines/project-context/strategy.ts).
+    // The pump RETAINS actor-system ownership/spawn lifecycle AND the
+    // cross-machine `project_ready` hook FIRING (leaf-3-plan §3 stays-central):
+    // `maybeFireProjectReady` is dispatched HERE (cross-machine, to
+    // session-chat), mirroring the `auth_ready` hook in `send()`. Because the
+    // port-locked `settleSpawn` signature is `Promise<void>`, the pump
+    // reproduces the pre-emission hook params byte-for-byte from the SAME
+    // settled actor + projection-of-log the carved emission reads (pure,
+    // idempotent reads — behavior-neutral). Behavior-neutral: same FlowEvents,
+    // same order; `settle→emit` STILL writes the Redis event-log.
+    if (!projectContextStrategy.settleSpawn) {
+      throw new Error("projectContextStrategy.settleSpawn missing (LEAF-3 N6)");
+    }
+
+    // Pre-emission projection-of-log + settled harvest — the cross-machine
+    // spawn HOOK plumbing (§3). Identical expressions to the carved emission
+    // so the fired `project_ready` payload is byte-for-byte the pre-carve
+    // value (the project_selected arm read these BEFORE appending).
+    const spawnStateValue = actor.getSnapshot().value as string;
+    const spawnProjCtx = buildProjection(
+      flow_id,
+      await this.deps.eventLog.read(flow_id),
+    ).context as {
       org: { id: string | null; name: string | null };
-      user: { first_name: string | null };
       project: { id: string | null; name: string | null };
-      underlying_cause_tag: string | null;
-      most_recent_session_per_project: Record<string, string>;
-      last_used_resolution_degraded:
-        | { failed_project_ids: string[]; partial_result: boolean }
-        | null;
-      // URL-level deep-link wish — projection field renamed in MR-D
-      // (audit §5 / §7 Tier-1 #2).
       deeplink_session_id: string | null;
-      // resource_* still live on the projection (fed by deep_link_opened
-      // event payload). Per MR-D they no longer touch project-context's
-      // ctx; the projection is the only place they live.
       intent_resource_id: string | null;
       intent_resource_type: ResourceType | null;
     };
+    const spawnHarvest = harvestSettledProjectContextState(actor);
+    const spawnSettledProject = spawnHarvest.project.id
+      ? spawnHarvest.project
+      : spawnProjCtx.project;
+    const spawnSettledOrgId =
+      spawnHarvest.org_id ?? spawnProjCtx.org.id ?? input.org_id ?? "";
 
-    // D-MR5-01 — the begin/`resolveInitialScope` settle has the SAME
-    // D-MR4-06 problem #2 as the switch path: the resolved `project` (and
-    // the cross_tenant / project_not_found / no_projects cause) lands on
-    // the machine context AFTER the snapshot flips and BEFORE the first
-    // FlowEvent captures it, so the projection read above sees
-    // `project: { id: null }`. D-MR4-06 fixed this for
-    // `switching_project_intent` only and explicitly deferred the begin
-    // counterpart to "LEAF-C+". Without it here `project_selected` is
-    // emitted with a null project, `active_scope.project_id` stays null,
-    // and `maybeFireProjectReady` short-circuits (`!projectId`) so
-    // session-chat NEVER spawns — which blocks the entire US-205 resume /
-    // US-209 dataset-switch chain (session-chat can't reach
-    // session_active). Harvest from the designated snapshot-read boundary
-    // (the project-context counterpart already added by D-MR4-06), exactly
-    // as the switch-settle path does, so the begin emission carries the
-    // real resolved project.
-    const beginHarvest = harvestSettledProjectContextState(actor);
-    const settledProject = beginHarvest.project.id
-      ? beginHarvest.project
-      : ctx.project;
-    const settledCause =
-      beginHarvest.underlying_cause_tag ?? ctx.underlying_cause_tag;
-    // D-MR5-01: org_id has the same first-write-null problem as project.
-    // Without harvesting it, `maybeFireProjectReady` short-circuits on
-    // `!orgId` and session-chat never spawns.
-    const settledOrgId =
-      beginHarvest.org_id ?? ctx.org.id ?? input.org_id ?? "";
-
-    // Initial event — marks the J-002 actor as started for projection consumers.
-    await this.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "project_context_resolution_started",
-      payload: {
-        org_id: settledOrgId,
-        user: {
-          first_name: ctx.user.first_name ?? input.user_first_name ?? null,
-        },
-        correlation_id: input.correlation_id,
-      },
+    await projectContextStrategy.settleSpawn(this, actor, {
+      machine: input.machine,
+      principal_id: input.principal_id,
       correlation_id: input.correlation_id,
     });
 
-    // OQ-J002-5: when resolveInitialScope's invoke captured one or more 5xx
-    // failures on list_sessions, emit the degraded event so projection
-    // consumers can surface a banner / metric. Emitted BEFORE the terminal
-    // event so the projection reducer sees them in causal order.
-    //
-    // RC-1: the degraded set lands on the machine context (resolveInitialScope
-    // onDone assign) AFTER the snapshot flips and BEFORE the first FlowEvent —
-    // exactly the D-MR4-06 / D-MR5-01 emission-completeness failure class. A
-    // projection-of-log read here is always empty on the first write
-    // (US-202 degraded scenario observed `last_used_resolution_degraded:
-    // null`). Source it from the designated harvest boundary instead.
-    const degradedIds = beginHarvest.last_used_degraded_project_ids ?? [];
-    if (degradedIds.length > 0) {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "last_used_resolution_degraded",
-        payload: {
-          failed_project_ids: degradedIds,
-          partial_result: true,
-        },
-        correlation_id: input.correlation_id,
-      });
-    }
-
-    // Terminal-for-now event reflecting settle.
-    if (stateValue === "no_projects") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "no_projects_displayed",
-        payload: {
-          org_id: settledOrgId,
-          user: {
-            first_name: ctx.user.first_name ?? input.user_first_name ?? null,
-          },
-        },
-        correlation_id: input.correlation_id,
-      });
-    } else if (stateValue === "project_selected") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_selected",
-        payload: {
-          org_id: settledOrgId,
-          project: settledProject,
-          // OQ-J002-5 (US-202 last-used resolution): `resolveInitialScope`
-          // onDone writes the per-project last_active_at map onto the
-          // machine context AFTER the snapshot flips — the projection-of-log
-          // read (`ctx`) is empty at first write (observed `keys=[]`).
-          // Harvest it from the same boundary as `settledProject`.
-          most_recent_session_per_project:
-            beginHarvest.most_recent_session_per_project,
-        },
-        correlation_id: input.correlation_id,
-      });
-
-      // ---- project_ready broadcast hook (DWD-13 §3.2.B; NEW per MR-1.5) ----
-      // When project-context settles in `project_selected` on initial spawn,
-      // broadcast `project_ready` to session-chat (idempotent spawn). The
-      // hook mirrors the existing auth_ready pattern below in `send()` —
-      // see also the `send()`-side branch for the project-switch re-entry
-      // path (MR-4 lifts `switching_project → project_selected`, which also
-      // needs to re-broadcast).
+    // ---- project_ready broadcast hook (DWD-13 §3.2.B; stays pump-central) --
+    // When project-context settled in `project_selected` on initial spawn,
+    // broadcast `project_ready` to session-chat (idempotent spawn). Fired
+    // AFTER the carved settleSpawn emission, exactly as the pre-carve
+    // project_selected arm did (emit project_selected, then fire the hook).
+    if (spawnStateValue === "project_selected") {
       await this.maybeFireProjectReady(
         flow_id,
         input.principal_id,
         input.correlation_id,
         {
-          org_id: settledOrgId || undefined,
-          project: settledProject,
-          deeplink_session_id: ctx.deeplink_session_id,
-          intent_resource_id: ctx.intent_resource_id,
-          intent_resource_type: ctx.intent_resource_type,
+          org_id: spawnSettledOrgId || undefined,
+          project: spawnSettledProject,
+          deeplink_session_id: spawnProjCtx.deeplink_session_id,
+          intent_resource_id: spawnProjCtx.intent_resource_id,
+          intent_resource_type: spawnProjCtx.intent_resource_type,
         },
       );
-    } else if (stateValue === "scope_mismatch_terminal") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "scope_mismatch_displayed",
-        payload: {
-          org_id: settledOrgId,
-          underlying_cause_tag: settledCause ?? "cross_tenant",
-        },
-        correlation_id: input.correlation_id,
-      });
     }
 
     return this.projectionFor(
