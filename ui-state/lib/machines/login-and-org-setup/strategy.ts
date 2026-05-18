@@ -354,4 +354,62 @@ export const loginOrgSetupStrategy: FlowStrategy = {
 
     return { authReady: null };
   },
+
+  // ── ADR-040 §D2 LEAF-3 MR-L3a/N4 — login non-participation members ───
+  // login-and-org-setup is the ONLY `beginsDirectly` machine: nothing
+  // spawns it (no inbound cross-machine entry), it has no FREEZE handler
+  // (ADR-028 — FREEZE/THAW is a J-002 project/session concern; the login
+  // origin flow only FIRES the expired_token broadcast, it is never
+  // itself frozen), no pre-settle event→transition emission, and no
+  // deep-link re-resolve. These members complete the design-locked port
+  // shape (N0) on the carved strategy and are intentional no-ops. The
+  // pump's FREEZE/THAW broadcast LOOP stays central (leaf-3-plan §3) and
+  // iterates only J-002 flows, so it never calls these for login; they
+  // exist for port-completeness + MR-L3b/c symmetry. Behavior-neutral.
+
+  async settleSpawn(
+    _pump: PumpContext,
+    _actor: AnyActorRef,
+    _input: { machine: string; principal_id: string; correlation_id: string },
+  ): Promise<void> {
+    // No-op: login is never spawned (it is the only beginsDirectly machine).
+  },
+
+  async settleFreeze(
+    _pump: PumpContext,
+    _actor: AnyActorRef,
+    _flow_id: string,
+  ): Promise<void> {
+    // No-op: login has no FREEZE handler (ADR-028) — it is never frozen.
+  },
+
+  async settleThaw(
+    _pump: PumpContext,
+    _actor: AnyActorRef,
+    _flow_id: string,
+    _kind: "thaw" | "abandoned",
+  ): Promise<void> {
+    // No-op: login has no FREEZE/THAW participation (ADR-028).
+  },
+
+  async applyEvent(
+    _pump: PumpContext,
+    _actor: AnyActorRef,
+    _input: SendEventInput,
+  ): Promise<void> {
+    // No-op: login has no pre-settle event→transition emission (the
+    // switching_* pre-settle arms are project/session only).
+  },
+
+  async applyDeepLink(
+    _pump: PumpContext,
+    _input: {
+      machine: string;
+      flow_id: string;
+      correlation_id: string;
+      events: Array<{ type: string; payload: Record<string, unknown> }>;
+    },
+  ): Promise<void> {
+    // No-op: login has no deep-link re-resolve (project-context only).
+  },
 };
