@@ -179,6 +179,22 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
   session_list_next_cursor: string | null;
   session_list_has_more: boolean;
   pending_first_message: string;
+  // ADR-040 LEAF-3 MR-L3c/N12: the spawn-input identity
+  // (org_id / project) the session-chat machine seeds onto its context
+  // from the spawn `input` + the `project_ready` event (machine.ts
+  // initial-context seed `org_id: input.org_id ?? ""` /
+  // `project: { id: input.project_id ?? null, … }` + the
+  // `waiting_for_project` → `project_ready` assign). Surfacing already-
+  // present context fields through the sanctioned snapshot-read boundary
+  // (AMB-1) so `SessionChatStrategy.settleSpawn` can source the
+  // `project_context_inherited` payload from the harvest rather than the
+  // port-locked `{ machine, principal_id, correlation_id }` input — the
+  // exact `harvestSettledProjectContextState` org_id precedent (D-MR5-01).
+  // Behavior-neutral: on the spawn path the machine context value is
+  // byte-identical to the pump's pre-carve `spawn.org_id` /
+  // `spawn.project_id` / `spawn.project_name`.
+  org_id: string | null;
+  project: { id: string | null; name: string | null };
 } {
   const ctx = actor.getSnapshot().context as {
     session_id: string | null;
@@ -199,6 +215,8 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
     session_list_next_cursor: string | null;
     session_list_has_more: boolean;
     pending_first_message: string;
+    org_id: string;
+    project: { id: string | null; name: string | null };
   };
   return {
     // D-MR5-01: session_id + transcript are materialized atomically with
@@ -236,6 +254,11 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
     // eager-create id and composer-preservation assertions fail. Harvest
     // them here so the emission reflects the settled context.
     pending_first_message: ctx.pending_first_message,
+    // ADR-040 LEAF-3 MR-L3c/N12: spawn-input identity surfaced for
+    // `SessionChatStrategy.settleSpawn` (byte-identical to the pre-carve
+    // pump `spawn.org_id` / `spawn.project_id` / `spawn.project_name`).
+    org_id: ctx.org_id ?? null,
+    project: ctx.project,
   };
 }
 

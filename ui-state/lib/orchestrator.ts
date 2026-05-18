@@ -29,9 +29,9 @@ import {
 } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import {
-  createSessionChatMachine,
   type SessionChatMachineDeps,
 } from "./machines/session-chat/index.ts";
+import { sessionChatStrategy } from "./machines/session-chat/strategy.ts";
 import {
   harvestSettledFreezeState,
   harvestSettledProjectContextState,
@@ -109,13 +109,13 @@ export interface OrchestratorDeps {
 }
 
 /**
- * Canonical machine-names (ADR-039) — the FlowStrategy registry keys.
- * The three strategies in the ADR-040 C4 target-state diagram.
- * (`login-and-org-setup`'s canonical-name const now lives with its carved
- * strategy at machines/login-and-org-setup/strategy.ts — LEAF-3 N2.)
+ * Canonical machine-name (ADR-039) — the FlowStrategy registry key used by
+ * the D5 migration alias map. (`login-and-org-setup`'s + `session-chat`'s
+ * canonical-name consts now live with their carved strategies at
+ * machines/<machine>/strategy.ts — LEAF-3 N2 / N12; the project-context
+ * alias still references this one.)
  */
 const PROJECT_CONTEXT_MACHINE = "project-context";
-const SESSION_CHAT_MACHINE = "session-chat";
 
 /**
  * ADR-040 §D2 / LEAF-3 — the capability surface the generic pump offers a
@@ -363,17 +363,21 @@ FLOW_STRATEGY_REGISTRY.register(loginOrgSetupStrategy);
 // canonical key, same beginsDirectly, same buildMachine guard.
 FLOW_STRATEGY_REGISTRY.register(projectContextStrategy);
 
-// Session-chat (DWD-13 §2B). MR-1.5 stub — `waiting_for_project` initial
-// state only. Spawned exclusively via the orchestrator's `project_ready`
-// broadcast hook (project-context → `project_selected` entry); direct
-// `/begin` HTTP posts route here through `beginIfNotStarted` but the
-// resulting actor remains in `waiting_for_project` until the orchestrator
-// forwards a `project_ready` event with the resolved project_id.
-FLOW_STRATEGY_REGISTRY.register({
-  machineName: SESSION_CHAT_MACHINE,
-  beginsDirectly: false,
-  buildMachine: (deps) => createSessionChatMachine(deps.sessionChatMachineDeps ?? {}),
-});
+// ADR-040 LEAF-3 MR-L3c/N12: the session-chat strategy is now the carved
+// `sessionChatStrategy` impl (co-located at machines/session-chat/
+// strategy.ts per AMB-2). It owns `machineName`/`beginsDirectly`/
+// `buildMachine` AND the carved `settleSpawn` body (N12); N13–N15 carve
+// the remaining members (`applyEvent`/`settle`/`settleFreeze`/
+// `settleThaw`). Registration is unchanged in semantics — same canonical
+// key (`session-chat`), same `beginsDirectly: false`, same buildMachine
+// (`createSessionChatMachine(deps.sessionChatMachineDeps ?? {})`).
+// Session-chat (DWD-13 §2B) is spawned exclusively via the orchestrator's
+// `project_ready` broadcast hook (project-context → `project_selected`
+// entry); direct `/begin` HTTP posts route here through
+// `beginIfNotStarted` but the resulting actor remains in
+// `waiting_for_project` until the orchestrator forwards a `project_ready`
+// event with the resolved project_id.
+FLOW_STRATEGY_REGISTRY.register(sessionChatStrategy);
 
 export interface BeginFlowInput {
   machine: string;
@@ -585,17 +589,24 @@ export class FlowOrchestrator implements PumpContext {
           // already existed in memory but its Redis log was wiped (e.g.,
           // /begin with force_restart) — without this the projection would
           // appear stuck in `anonymous`.
-          if (input.machine === SESSION_CHAT_WIRE_NAME) {
-            await this.emitSessionChatSpawnEvents(
-              flow_id,
-              actor,
-              input.correlation_id,
-              {
-                org_id: input.org_id,
-                project_id: input.project_id,
-                project_name: input.project_name,
-              },
-            );
+          //
+          // ADR-040 LEAF-3 MR-L3c/N12: the session-chat spawn emission
+          // (formerly the private `emitSessionChatSpawnEvents`) is CARVED
+          // into sessionChatStrategy.settleSpawn. `isProjectReadyDispatch`
+          // ⟹ `input.machine === SESSION_CHAT_WIRE_NAME` by its own
+          // definition (the cross-machine spawn ROUTING stays pump-central
+          // — leaf-3-plan §3 / §4C), so the imported strategy ref IS the
+          // resolved strategy here; called exactly where the pre-carve
+          // `emitSessionChatSpawnEvents` ran. settleSpawn sources the
+          // `project_context_inherited` org/project from the sanctioned
+          // harvester (byte-identical to the pre-carve `spawn.*` input on
+          // the spawn path — see strategy.ts). Behavior-neutral.
+          if (sessionChatStrategy.settleSpawn) {
+            await sessionChatStrategy.settleSpawn(this, actor, {
+              machine: input.machine,
+              principal_id: input.principal_id,
+              correlation_id: input.correlation_id,
+            });
           }
         } else if (isAuthReadyDispatch && actor) {
           actor.send({
@@ -680,13 +691,31 @@ export class FlowOrchestrator implements PumpContext {
     // project-context's events drive the wire-protocol J-002 projection.
     // session-chat's events drive its own per-machine projection (separate
     // Redis stream key `ui-state:session-chat:<principal>:events`).
+    // ADR-040 LEAF-3 MR-L3c/N12: the session-chat spawn terminal-emission
+    // arm (formerly the private `emitSessionChatSpawnEvents`:
+    // `project_context_inherited` + `appendSessionChatTerminalEvents` +
+    // `harvestSettledSessionChatState`) is CARVED into
+    // sessionChatStrategy.settleSpawn (machines/session-chat/strategy.ts).
+    // The pump RETAINS actor-system ownership/spawn lifecycle AND the
+    // cross-machine `project_ready` → session-chat spawn ROUTING
+    // (leaf-3-plan §3 / §4C stays-central): session-chat is the spawn-chain
+    // TERMINAL — it fires NO onward hook (unlike project-context's
+    // `project_ready`), so the pump only calls `settleSpawn` and returns.
+    // settleSpawn sources the org/project identity from the sanctioned
+    // harvester (byte-identical to the pre-carve `spawn.*` input on the
+    // spawn path — see strategy.ts). Behavior-neutral: same FlowEvents,
+    // same order; `settle→emit` STILL writes the Redis event-log. The
+    // residual `machine ===` dispatch wrapper here is retired in N17 (the
+    // residual-pump-cleanup node — mirrors MR-L3b/N6 leaving the pump
+    // structure for N17, §7 scope-fence).
     if (input.machine === SESSION_CHAT_WIRE_NAME) {
-      await this.emitSessionChatSpawnEvents(
-        flow_id,
-        actor,
-        input.correlation_id,
-        input,
-      );
+      if (sessionChatStrategy.settleSpawn) {
+        await sessionChatStrategy.settleSpawn(this, actor, {
+          machine: input.machine,
+          principal_id: input.principal_id,
+          correlation_id: input.correlation_id,
+        });
+      }
       return this.projectionFor(
         flow_id,
         input.principal_id,
@@ -828,61 +857,14 @@ export class FlowOrchestrator implements PumpContext {
     }
   }
 
-  /**
-   * After a session-chat actor settles from spawn (or from project_ready
-   * re-broadcast), examine its state and emit the projection-shaping events
-   * to the session-chat flow log. Matches the project-context emission
-   * pattern in `beginIfNotStarted` — events are the SSOT for projection
-   * reconstruction.
-   */
-  private async emitSessionChatSpawnEvents(
-    flow_id: string,
-    actor: AnyActorRef,
-    correlation_id: string,
-    spawn: {
-      org_id?: string;
-      project_id?: string;
-      project_name?: string;
-    },
-  ): Promise<void> {
-    // ADR-030 LEAF-B: state-value is the only legal read off the actor
-    // snapshot at the emission boundary; identity fields come from the
-    // spawn input (the orchestrator's own contract) rather than from
-    // snapshot.context, per ADR-030 §"Decision outcome".
-    const stateValue = actor.getSnapshot().value as string;
-    const orgId = spawn.org_id || "";
-    const projectId = spawn.project_id || null;
-    if (!orgId || !projectId) return;
-
-    // Per DWD-13 §2B the session-chat flow's log carries the
-    // `project_context_inherited` event as its first marker so the projection
-    // reducer knows session-chat has been spawned for this principal.
-    await this.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "project_context_inherited",
-      payload: {
-        org_id: orgId,
-        project_id: projectId,
-        project_name: spawn.project_name ?? "",
-      },
-      correlation_id,
-    });
-
-    // RC-2: the spawn path (project_ready → loading_session_list →
-    // session_list_loaded) is where every mr_2/mr_3 precondition funnels.
-    // Without harvesting the settled actor state here, the
-    // `session_list_loaded` emission reads the empty prior-tick list off
-    // the projection-of-log and the entire cluster fails its
-    // `_wait_for_session_chat_state(session_list_loaded)` + list assertion.
-    // Same boundary discipline the send-path callers already apply.
-    await this.appendSessionChatTerminalEvents(
-      flow_id,
-      stateValue,
-      correlation_id,
-      undefined,
-      harvestSettledSessionChatState(actor),
-    );
-  }
+  // ADR-040 LEAF-3 MR-L3c/N12: the private `emitSessionChatSpawnEvents`
+  // (session-chat spawn terminal-emission) is CARVED into
+  // sessionChatStrategy.settleSpawn (machines/session-chat/strategy.ts).
+  // Both pre-carve call sites in `beginIfNotStarted` (the idempotency
+  // re-broadcast path + the fresh-spawn path) now dispatch
+  // `sessionChatStrategy.settleSpawn`; this private is dead and retired
+  // with the node that killed its callers (mirrors MR-L3b retiring the
+  // carved project-context privates). Behavior-neutral.
 
   /**
    * Emit the terminal-for-now events that match a session-chat actor's
