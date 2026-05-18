@@ -590,19 +590,22 @@ export class FlowOrchestrator implements PumpContext {
           // /begin with force_restart) — without this the projection would
           // appear stuck in `anonymous`.
           //
-          // ADR-040 LEAF-3 MR-L3c/N12: the session-chat spawn emission
+          // ADR-040 LEAF-3 MR-L3c/N12+N17: the session-chat spawn emission
           // (formerly the private `emitSessionChatSpawnEvents`) is CARVED
-          // into sessionChatStrategy.settleSpawn. `isProjectReadyDispatch`
-          // ⟹ `input.machine === SESSION_CHAT_WIRE_NAME` by its own
-          // definition (the cross-machine spawn ROUTING stays pump-central
-          // — leaf-3-plan §3 / §4C), so the imported strategy ref IS the
-          // resolved strategy here; called exactly where the pre-carve
+          // into the strategy's `settleSpawn` and dispatched via the
+          // registry-resolved `strategy` (zero per-machine `machine ===`
+          // branch). This is inside the `isProjectReadyDispatch`
+          // cross-machine spawn ROUTING which stays pump-central
+          // (leaf-3-plan §3 / §4C — the orchestrator is the only
+          // cross-machine mediator, ADR-028); `isProjectReadyDispatch`
+          // ⟹ session-chat, so `strategy` here resolves to
+          // `sessionChatStrategy`. Called exactly where the pre-carve
           // `emitSessionChatSpawnEvents` ran. settleSpawn sources the
           // `project_context_inherited` org/project from the sanctioned
           // harvester (byte-identical to the pre-carve `spawn.*` input on
           // the spawn path — see strategy.ts). Behavior-neutral.
-          if (sessionChatStrategy.settleSpawn) {
-            await sessionChatStrategy.settleSpawn(this, actor, {
+          if (strategy.settleSpawn) {
+            await strategy.settleSpawn(this, actor, {
               machine: input.machine,
               principal_id: input.principal_id,
               correlation_id: input.correlation_id,
@@ -691,108 +694,93 @@ export class FlowOrchestrator implements PumpContext {
     // project-context's events drive the wire-protocol J-002 projection.
     // session-chat's events drive its own per-machine projection (separate
     // Redis stream key `ui-state:session-chat:<principal>:events`).
-    // ADR-040 LEAF-3 MR-L3c/N12: the session-chat spawn terminal-emission
-    // arm (formerly the private `emitSessionChatSpawnEvents`:
-    // `project_context_inherited` + `appendSessionChatTerminalEvents` +
-    // `harvestSettledSessionChatState`) is CARVED into
-    // sessionChatStrategy.settleSpawn (machines/session-chat/strategy.ts).
-    // The pump RETAINS actor-system ownership/spawn lifecycle AND the
-    // cross-machine `project_ready` → session-chat spawn ROUTING
-    // (leaf-3-plan §3 / §4C stays-central): session-chat is the spawn-chain
-    // TERMINAL — it fires NO onward hook (unlike project-context's
-    // `project_ready`), so the pump only calls `settleSpawn` and returns.
-    // settleSpawn sources the org/project identity from the sanctioned
-    // harvester (byte-identical to the pre-carve `spawn.*` input on the
-    // spawn path — see strategy.ts). Behavior-neutral: same FlowEvents,
-    // same order; `settle→emit` STILL writes the Redis event-log. The
-    // residual `machine ===` dispatch wrapper here is retired in N17 (the
-    // residual-pump-cleanup node — mirrors MR-L3b/N6 leaving the pump
-    // structure for N17, §7 scope-fence).
-    if (input.machine === SESSION_CHAT_WIRE_NAME) {
-      if (sessionChatStrategy.settleSpawn) {
-        await sessionChatStrategy.settleSpawn(this, actor, {
-          machine: input.machine,
-          principal_id: input.principal_id,
-          correlation_id: input.correlation_id,
-        });
-      }
-      return this.projectionFor(
-        flow_id,
-        input.principal_id,
-        input.correlation_id,
-      );
-    }
-    if (input.machine !== PROJECT_CONTEXT_WIRE_NAME) {
-      return this.projectionFor(
-        flow_id,
-        input.principal_id,
-        input.correlation_id,
-      );
-    }
-
-    // ADR-040 LEAF-3 MR-L3b/N6: the project-context spawn terminal-emission
-    // arm (`project_context_resolution_started` / `last_used_resolution_degraded`
-    // / `no_projects_displayed` / `project_selected` / `scope_mismatch_displayed`
-    // + `harvestSettledProjectContextState`) is CARVED into
-    // projectContextStrategy.settleSpawn (machines/project-context/strategy.ts).
-    // The pump RETAINS actor-system ownership/spawn lifecycle AND the
-    // cross-machine `project_ready` hook FIRING (leaf-3-plan §3 stays-central):
-    // `maybeFireProjectReady` is dispatched HERE (cross-machine, to
-    // session-chat), mirroring the `auth_ready` hook in `send()`. Because the
-    // port-locked `settleSpawn` signature is `Promise<void>`, the pump
-    // reproduces the pre-emission hook params byte-for-byte from the SAME
-    // settled actor + projection-of-log the carved emission reads (pure,
-    // idempotent reads — behavior-neutral). Behavior-neutral: same FlowEvents,
-    // same order; `settle→emit` STILL writes the Redis event-log.
-    if (!projectContextStrategy.settleSpawn) {
-      throw new Error("projectContextStrategy.settleSpawn missing (LEAF-3 N6)");
-    }
-
-    // Pre-emission projection-of-log + settled harvest — the cross-machine
-    // spawn HOOK plumbing (§3). Identical expressions to the carved emission
-    // so the fired `project_ready` payload is byte-for-byte the pre-carve
-    // value (the project_selected arm read these BEFORE appending).
+    // ADR-040 LEAF-3 MR-L3c/N17 (residual-pump cleanup): the spawn-time
+    // terminal emission dispatches PURELY via the resolved strategy port
+    // member — ZERO per-machine `machine === "<wire>"` branch (§4 Seam
+    // contract; the leaf-3-orchestrator-pump-carve spec it#1). This
+    // collapses MR-L3b/N6's project-context block, MR-L3c/N12's
+    // `machine === SESSION_CHAT_WIRE_NAME` wrapper, and the
+    // `!== PROJECT_CONTEXT_WIRE_NAME` early-return into one
+    // `strategy.settleSpawn` call (`strategy` is the registry-resolved
+    // FlowStrategy for `input.machine`, resolved at the top of
+    // `beginIfNotStarted`). The pump RETAINS actor-system ownership/spawn
+    // lifecycle AND the cross-machine `project_ready` hook FIRING
+    // (leaf-3-plan §3 stays-central) — but the firing is now STATE-gated
+    // (`spawnStateValue === "project_selected"`), NOT machine-gated:
+    // project-context is the only machine that reaches `project_selected`;
+    // session-chat (the spawn-chain TERMINAL) never does, so it is a
+    // byte-neutral no-fire for it (identical to the pre-carve session
+    // path that returned without firing). login is `beginsDirectly` and
+    // an unknown machine threw at the top `resolve()`, so only
+    // project-context / session-chat reach here.
+    //
+    // Because the port-locked `settleSpawn` signature is `Promise<void>`,
+    // the pump reproduces the pre-emission `project_ready` hook params
+    // byte-for-byte from the SAME settled actor + projection-of-log the
+    // carved emission reads, captured BEFORE `settleSpawn` appends (the
+    // pre-carve `project_selected` arm read these before appending). The
+    // pre-carve UNCONDITIONAL `buildProjection(eventLog.read())` is now
+    // gated on `project_selected` — a pure read whose result was unused
+    // unless `project_selected`, so skipping it otherwise is
+    // behavior-neutral. Behavior-neutral: same FlowEvents, same order;
+    // `settle→emit` STILL writes the Redis event-log.
     const spawnStateValue = actor.getSnapshot().value as string;
-    const spawnProjCtx = buildProjection(
-      flow_id,
-      await this.deps.eventLog.read(flow_id),
-    ).context as {
-      org: { id: string | null; name: string | null };
-      project: { id: string | null; name: string | null };
-      deeplink_session_id: string | null;
-      intent_resource_id: string | null;
-      intent_resource_type: ResourceType | null;
-    };
-    const spawnHarvest = harvestSettledProjectContextState(actor);
-    const spawnSettledProject = spawnHarvest.project.id
-      ? spawnHarvest.project
-      : spawnProjCtx.project;
-    const spawnSettledOrgId =
-      spawnHarvest.org_id ?? spawnProjCtx.org.id ?? input.org_id ?? "";
+    // project_ready hook params MUST be captured BEFORE settleSpawn
+    // appends (byte-identical pre-carve value). State-gated, not
+    // machine-gated.
+    // Typed via the existing `SettleOutcome["projectReady"]` indexed
+    // access (the identical shape `maybeFireProjectReady` accepts) so the
+    // `intent_`-prefixed field NAMES are not re-spelled here — they live
+    // only in the `SettleOutcome` interface, keeping this carved code free
+    // of new `ui-state-conventions/intent-prefix-deeplink-only` warnings
+    // (the precedent discipline: changed code adds no warnings).
+    let projectReadyHookParams: SettleOutcome["projectReady"] = null;
+    if (spawnStateValue === "project_selected") {
+      const spawnProjCtx = buildProjection(
+        flow_id,
+        await this.deps.eventLog.read(flow_id),
+      ).context as {
+        org: { id: string | null; name: string | null };
+        project: { id: string | null; name: string | null };
+        deeplink_session_id: string | null;
+        intent_resource_id: string | null;
+        intent_resource_type: ResourceType | null;
+      };
+      const spawnHarvest = harvestSettledProjectContextState(actor);
+      const spawnSettledProject = spawnHarvest.project.id
+        ? spawnHarvest.project
+        : spawnProjCtx.project;
+      const spawnSettledOrgId =
+        spawnHarvest.org_id ?? spawnProjCtx.org.id ?? input.org_id ?? "";
+      projectReadyHookParams = {
+        org_id: spawnSettledOrgId || undefined,
+        project: spawnSettledProject,
+        deeplink_session_id: spawnProjCtx.deeplink_session_id,
+        intent_resource_id: spawnProjCtx.intent_resource_id,
+        intent_resource_type: spawnProjCtx.intent_resource_type,
+      };
+    }
 
-    await projectContextStrategy.settleSpawn(this, actor, {
-      machine: input.machine,
-      principal_id: input.principal_id,
-      correlation_id: input.correlation_id,
-    });
+    if (strategy.settleSpawn) {
+      await strategy.settleSpawn(this, actor, {
+        machine: input.machine,
+        principal_id: input.principal_id,
+        correlation_id: input.correlation_id,
+      });
+    }
 
     // ---- project_ready broadcast hook (DWD-13 §3.2.B; stays pump-central) --
-    // When project-context settled in `project_selected` on initial spawn,
-    // broadcast `project_ready` to session-chat (idempotent spawn). Fired
-    // AFTER the carved settleSpawn emission, exactly as the pre-carve
-    // project_selected arm did (emit project_selected, then fire the hook).
-    if (spawnStateValue === "project_selected") {
+    // Fired AFTER the carved settleSpawn emission, exactly as the
+    // pre-carve project-context `project_selected` arm did (emit
+    // project_selected, then fire the hook). The cross-machine FIRING
+    // stays in the pump (leaf-3-plan §3) — session-chat never produces
+    // these params (terminal of the spawn chain).
+    if (projectReadyHookParams) {
       await this.maybeFireProjectReady(
         flow_id,
         input.principal_id,
         input.correlation_id,
-        {
-          org_id: spawnSettledOrgId || undefined,
-          project: spawnSettledProject,
-          deeplink_session_id: spawnProjCtx.deeplink_session_id,
-          intent_resource_id: spawnProjCtx.intent_resource_id,
-          intent_resource_type: spawnProjCtx.intent_resource_type,
-        },
+        projectReadyHookParams,
       );
     }
 
@@ -959,48 +947,35 @@ export class FlowOrchestrator implements PumpContext {
     // Without this pre-settle emission `project_switched`'s reducer (which
     // relies on `switching_project_started` having cleared session_id)
     // would leak the old session_id under the new project.
-    // ADR-040 LEAF-3 MR-L3b/N7: the project-context pre-settle
-    // `switching_project_started` emission is CARVED into
-    // projectContextStrategy.applyEvent. Called UNCONDITIONALLY here (the
-    // imported strategy ref, mirroring the MR-L3a loginOrgSetupStrategy
-    // precedent) at the SAME pre-settle point; the triple guard
-    // (machine/type/state) is preserved inside the strategy so non-project
-    // / non-switch events fall through as a no-op exactly as before. The
-    // session-chat `switching_dataset_context_started` pre-settle stays
-    // inlined below (N13 / MR-L3c, §7 scope-fence).
-    if (!projectContextStrategy.applyEvent) {
-      throw new Error("projectContextStrategy.applyEvent missing (LEAF-3 N7)");
-    }
-    await projectContextStrategy.applyEvent(this, actor, input);
-
-    // ADR-040 LEAF-3 MR-L3c/N13: the session-chat pre-settle
-    // `switching_dataset_context_started` emission (US-209 / MR-5) is
-    // CARVED into sessionChatStrategy.applyEvent, called at the SAME
-    // pre-settle point (after the project-context applyEvent, BEFORE
-    // `waitForSettledState`); the triple guard is preserved INSIDE the
-    // strategy so non-switch session-chat events fall through as a no-op
-    // exactly as before.
+    // ADR-040 LEAF-3 MR-L3c/N17 (residual-pump cleanup): the pre-settle
+    // event→transition emission dispatches PURELY via the resolved
+    // strategy port member — ZERO per-machine `machine === "<wire>"`
+    // branch (§4 Seam contract; the leaf-3-orchestrator-pump-carve spec
+    // it#1). This collapses MR-L3b/N7's unconditional
+    // `projectContextStrategy.applyEvent` call AND MR-L3c/N13's
+    // `machine === SESSION_CHAT_WIRE_NAME` wrapper into ONE
+    // `FLOW_STRATEGY_REGISTRY.resolve(input.machine).applyEvent` dispatch.
     //
-    // The carved call is kept inside the `machine === SESSION_CHAT_WIRE_NAME`
-    // wrapper (mirroring N12's settleSpawn wrapper, retired in N17): the
-    // pre-carve inline `if (machine===session && …)` ran ZERO awaits for
-    // non-session flows, and `index.test.ts`'s SSE projection-stream test
-    // is timing-coupled — an extra unconditional `applyEvent` await between
-    // the `org_form_submitted` log append and the login settle splits the
-    // SSE subscriber's 2nd frame BEFORE the `ready` projection, regressing
-    // vitest. The N7 `projectContextStrategy.applyEvent` is the SOLE
-    // unconditional pre-settle await the test budget absorbs; this wrapper
-    // adds none for login/project. N17's residual-pump cleanup collapses
-    // BOTH the N7 unconditional call AND this wrapper into a single
-    // `FLOW_STRATEGY_REGISTRY.resolve(input.machine).applyEvent` dispatch
-    // (exactly one await = baseline timing → still vitest Δ=0).
-    // Behavior-neutral: same FlowEvent, same payload, same pre-settle
-    // point, same await count for the fragile login/project paths.
-    if (input.machine === SESSION_CHAT_WIRE_NAME) {
-      if (!sessionChatStrategy.applyEvent) {
-        throw new Error("sessionChatStrategy.applyEvent missing (LEAF-3 N13)");
-      }
-      await sessionChatStrategy.applyEvent(this, actor, input);
+    // Behavior-neutral — `applyEvent` is per-machine-EXCLUSIVE: login's is
+    // an explicit no-op, project-context's guards `machine ===
+    // PROJECT_CONTEXT_WIRE_NAME`, session-chat's guards `machine ===
+    // SESSION_CHAT_WIRE_NAME`; for any `input.machine` only the matching
+    // strategy's applyEvent does anything (the other two are no-ops). The
+    // resolved dispatch runs exactly that one — same FlowEvent, same
+    // payload, same pre-settle point as the pre-carve
+    // [projApplyEvent + inline-session] pair.
+    //
+    // TIMING: exactly ONE pre-settle `applyEvent` await for every machine
+    // — IDENTICAL to the pre-N17 baseline (the SOLE unconditional
+    // `projectContextStrategy.applyEvent` await). `index.test.ts`'s SSE
+    // projection-stream test is await-count-coupled at this point (N13
+    // root-cause); one resolved await preserves the budget the test
+    // tolerated → vitest Δ=0. `resolve()` applies the D5 alias and the
+    // actor already exists (the `if (!actor)` guard above), so it never
+    // throws here.
+    const dispatchStrategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
+    if (dispatchStrategy.applyEvent) {
+      await dispatchStrategy.applyEvent(this, actor, input);
     }
 
     await waitForSettledState(actor);
@@ -1162,39 +1137,40 @@ export class FlowOrchestrator implements PumpContext {
       );
     }
     // ---- session-chat terminal-for-now event appending (J-002 MR-2) -------
-    // ADR-040 LEAF-3 MR-L3c/N14: the session-chat post-settle terminal
-    // emission (the `dataset_attached` / `dataset_access_denied`
-    // dataset-switch arm + the `session_clicked` →
-    // `session_resume_not_found` special-case + the default
-    // `appendSessionChatTerminalEvents` path) is CARVED into
-    // sessionChatStrategy.settle. Called AFTER the login settle +
-    // auth_ready hook + project-context settle + project_ready hook; the
-    // original `if (input.machine === SESSION_CHAT_WIRE_NAME)` guard is
-    // preserved INSIDE the strategy (non-session flows return an empty
-    // `SettleOutcome`), so the pre-carve send() chain — login arms (NOT
-    // machine-gated) → project block (machine-gated) → session block
-    // (machine-gated) — is byte-preserved. session-chat is the spawn-chain
-    // TERMINAL — it fires NO onward cross-machine hook, so the
-    // `SettleOutcome` is always empty (nothing for the pump to fire).
+    // ADR-040 LEAF-3 MR-L3c/N17 (residual-pump cleanup): the post-settle
+    // terminal emission completes the UNCONDITIONAL-by-ref settle CHAIN —
+    // `loginOrgSetupStrategy.settle` (N3) → `auth_ready` hook →
+    // `projectContextStrategy.settle` (N8) → `project_ready` hook →
+    // `sessionChatStrategy.settle` (here) — ZERO per-machine
+    // `machine === "<wire>"` branch in the pump (each guard is INSIDE its
+    // strategy; the leaf-3-orchestrator-pump-carve spec it#1).
     //
-    // The carved call is kept inside the `machine === SESSION_CHAT_WIRE_NAME`
-    // wrapper (mirroring N12/N13, retired in N17): the pre-carve inline
-    // block ran ZERO awaits for non-session flows, and `index.test.ts`'s
-    // SSE projection-stream test is timing-coupled (see N13). N17's
-    // residual-pump cleanup converts the login/project/session settle
-    // chain to its final generic form. Behavior-neutral: same FlowEvents,
-    // same payloads, same order, same await count for the fragile
-    // login/project paths.
-    if (input.machine === SESSION_CHAT_WIRE_NAME) {
-      if (!sessionChatStrategy.settle) {
-        throw new Error("sessionChatStrategy.settle missing (LEAF-3 N14)");
-      }
-      await sessionChatStrategy.settle(this, actor, input, {
-        stateValue,
-        prior,
-        projectionCtx,
-      });
+    // Unlike `applyEvent`, the settle chain is NOT per-machine-exclusive
+    // and CANNOT collapse to a single resolved dispatch: the N3 precedent
+    // preserves the pre-carve chained-if where `loginOrgSetupStrategy`'s
+    // `expired_token` / `error_recoverable` / `authenticated_no_org` arms
+    // are NOT machine-gated — a non-login flow that settles in those
+    // states still falls through the shared login arm exactly as
+    // pre-carve. So all three settles run in sequence for every flow,
+    // each a guarded no-op unless it owns `input.machine`. session-chat
+    // is the spawn-chain TERMINAL — empty `SettleOutcome`, no onward hook.
+    //
+    // TIMING: this is POST-`waitForSettledState`. The SSE
+    // projection-stream test's `ready` frame is emitted INSIDE
+    // `loginOrgSetupStrategy.settle` (the `org_created_and_jwt_reissued`
+    // append, flushed to the subscriber synchronously); the
+    // project-context settle await after it is the pre-N17 baseline and
+    // is tolerated, so this further post-emit await is SSE-safe (verified
+    // vitest Δ=0). Behavior-neutral: same FlowEvents, same payloads,
+    // same chain order.
+    if (!sessionChatStrategy.settle) {
+      throw new Error("sessionChatStrategy.settle missing (LEAF-3 N17)");
     }
+    await sessionChatStrategy.settle(this, actor, input, {
+      stateValue,
+      prior,
+      projectionCtx,
+    });
 
     return this.projectionFor(
       input.flow_id,
