@@ -1428,80 +1428,38 @@ export class FlowOrchestrator implements PumpContext {
       );
     }
     // ---- session-chat terminal-for-now event appending (J-002 MR-2) -------
-    // After session_clicked / refresh_session_list / project_ready re-broadcast
-    // dispatched via this `send()`, emit the projection-shaping events to the
-    // session-chat flow log.
+    // ADR-040 LEAF-3 MR-L3c/N14: the session-chat post-settle terminal
+    // emission (the `dataset_attached` / `dataset_access_denied`
+    // dataset-switch arm + the `session_clicked` →
+    // `session_resume_not_found` special-case + the default
+    // `appendSessionChatTerminalEvents` path) is CARVED into
+    // sessionChatStrategy.settle. Called AFTER the login settle +
+    // auth_ready hook + project-context settle + project_ready hook; the
+    // original `if (input.machine === SESSION_CHAT_WIRE_NAME)` guard is
+    // preserved INSIDE the strategy (non-session flows return an empty
+    // `SettleOutcome`), so the pre-carve send() chain — login arms (NOT
+    // machine-gated) → project block (machine-gated) → session block
+    // (machine-gated) — is byte-preserved. session-chat is the spawn-chain
+    // TERMINAL — it fires NO onward cross-machine hook, so the
+    // `SettleOutcome` is always empty (nothing for the pump to fire).
+    //
+    // The carved call is kept inside the `machine === SESSION_CHAT_WIRE_NAME`
+    // wrapper (mirroring N12/N13, retired in N17): the pre-carve inline
+    // block ran ZERO awaits for non-session flows, and `index.test.ts`'s
+    // SSE projection-stream test is timing-coupled (see N13). N17's
+    // residual-pump cleanup converts the login/project/session settle
+    // chain to its final generic form. Behavior-neutral: same FlowEvents,
+    // same payloads, same order, same await count for the fragile
+    // login/project paths.
     if (input.machine === SESSION_CHAT_WIRE_NAME) {
-      const isDatasetSwitch =
-        input.type === "dataset_resolved_by_agent" ||
-        input.type === "dataset_picked_directly";
-      // US-209 / MR-5 — the `switchDatasetContext` settle path. Mirrors the
-      // D-MR4-06 project-switch settle discipline: the resolved `resource`
-      // (or the `dataset_access_denied` cause) lands on the machine context
-      // AFTER the snapshot flips back to `session_active`, so a projection
-      // read here would see the prior-tick resource. Harvest from the
-      // designated snapshot-read boundary and emit the terminal
-      // `dataset_attached` / `dataset_access_denied` so the projection — the
-      // SSOT the acceptance probes read — reflects the new (or preserved)
-      // dataset. Keyed off `input.type` (the switch discriminator), exactly
-      // as the project-context block keys off `switching_project_intent`.
-      // A transient invoke failure settles in `error_recoverable`; that
-      // falls through to the generic emission path
-      // (`session_chat_recoverable_error`) below.
-      if (isDatasetSwitch && stateValue === "session_active") {
-        const harvest = harvestSettledSessionChatState(actor);
-        if (harvest.underlying_cause_tag === "dataset_access_denied") {
-          await this.deps.eventLog.append(input.flow_id, {
-            ts: new Date().toISOString(),
-            type: "dataset_access_denied",
-            payload: { underlying_cause_tag: "dataset_access_denied" },
-            correlation_id: input.correlation_id,
-          });
-        } else {
-          await this.deps.eventLog.append(input.flow_id, {
-            ts: new Date().toISOString(),
-            type: "dataset_attached",
-            payload: {
-              resource_type: harvest.resource.type,
-              resource_id: harvest.resource.id,
-            },
-            correlation_id: input.correlation_id,
-          });
-        }
-      } else if (
-        input.type === "session_clicked" &&
-        stateValue === "session_list_loaded"
-      ) {
-        // Special-case: if the resumeSession resolved with
-        // session_not_found (silent return), the machine has settled in
-        // session_list_loaded. The default state-emission path covers
-        // that; for session_not_found the test expects
-        // underlying_cause_tag to NOT surface — we emit
-        // `session_resume_not_found` so the projection reducer can blank
-        // out pending_resume_session_id atomically.
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "session_resume_not_found",
-          payload: {},
-          correlation_id: input.correlation_id,
-        });
-      } else {
-        await this.appendSessionChatTerminalEvents(
-          input.flow_id,
-          stateValue,
-          input.correlation_id,
-          // `prior` captured at the top of send() — the state BEFORE the
-          // current event was dispatched. Used to distinguish eager-create
-          // from resume on `session_active` arrival.
-          prior,
-          // D-MR5-01: harvest the resumed resource / cause so
-          // `session_resumed` reflects the actor's settled context
-          // (resolved AFTER the snapshot flipped — the projection-of-log
-          // read would see null). Same boundary-discipline as the
-          // dataset-switch harvest above.
-          harvestSettledSessionChatState(actor),
-        );
+      if (!sessionChatStrategy.settle) {
+        throw new Error("sessionChatStrategy.settle missing (LEAF-3 N14)");
       }
+      await sessionChatStrategy.settle(this, actor, input, {
+        stateValue,
+        prior,
+        projectionCtx,
+      });
     }
 
     return this.projectionFor(
