@@ -1614,8 +1614,23 @@ export class FlowOrchestrator {
       // pre-emit pattern. Scoped to the switch path (input.type ===
       // `switching_project_intent`) so create / deep-link / re-resolve
       // emission is unchanged.
-      const isSwitchSettle = input.type === "switching_project_intent";
-      const switchHarvest = isSwitchSettle
+      // RC-1: `open_deep_link` is a post-settle re-resolve — the machine's
+      // root `on.open_deep_link` re-enters `resolving_initial_scope` and the
+      // re-run `resolveInitialScope` invoke writes the resolved `project` /
+      // `underlying_cause_tag` (cross_tenant / project_not_found) onto the
+      // machine context AFTER the snapshot flips and BEFORE any FlowEvent
+      // captures it — the SAME D-MR4-06 emission-completeness failure class
+      // the switch-settle path already harvests for. Without harvesting,
+      // `scope_mismatch_displayed` emitted the stale prior-state cause
+      // (US-204 cross-tenant / deleted observed `no_projects`) and
+      // `project_selected` emitted the stale prior project id (cold deep
+      // link / intent-resource observed the wrong / null `project_id`).
+      // Broaden the harvest to the open_deep_link re-resolve, mirroring the
+      // begin path's `beginHarvest`.
+      const isSettleHarvestPath =
+        input.type === "switching_project_intent" ||
+        input.type === "open_deep_link";
+      const switchHarvest = isSettleHarvestPath
         ? harvestSettledProjectContextState(actor)
         : null;
       const switchSettledProject = switchHarvest?.project ?? null;
@@ -1630,23 +1645,44 @@ export class FlowOrchestrator {
       // from the projection (the open_deep_link event's payload has
       // already been folded in by buildProjection above).
       if (input.type === "open_deep_link") {
+        // RC-1: source the URL wish (intent_resource_*, deeplink ids) from
+        // the open_deep_link event payload directly — there is no
+        // `open_deep_link` projection reducer, so a projection-of-log read
+        // here sees them null (US-204 intent-resource observed a missing
+        // `intent_resource_id`). The resolved project comes from the
+        // harvested settled context (the re-run resolver's output, not yet
+        // in the log); on the cross_tenant / project_not_found branches the
+        // machine leaves `project` null, so `project` stays null too.
+        const resolvedProject = switchSettledProject ?? projectionCtx.project;
+        const dlProjectId =
+          (input.payload.intent_project_id as string | undefined) ??
+          projectionCtx.deeplink_project_id;
+        const dlSessionId =
+          (input.payload.intent_session_id as string | undefined) ??
+          projectionCtx.deeplink_session_id;
+        const dlResourceId =
+          (input.payload.intent_resource_id as string | undefined) ??
+          projectionCtx.intent_resource_id;
+        const dlResourceType =
+          (input.payload.intent_resource_type as ResourceType | undefined) ??
+          projectionCtx.intent_resource_type;
         const resolvedScope = {
           org_id: orgId,
-          project_id: projectionCtx.project.id,
-          resource_type: projectionCtx.intent_resource_type,
-          resource_id: projectionCtx.intent_resource_id,
+          project_id: resolvedProject?.id ?? null,
+          resource_type: dlResourceType,
+          resource_id: dlResourceId,
         };
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "deep_link_opened",
           payload: {
             scope: resolvedScope,
-            project: projectionCtx.project,
+            project: resolvedProject?.id ? resolvedProject : null,
             reconciled: false,
-            deeplink_project_id: projectionCtx.deeplink_project_id,
-            deeplink_session_id: projectionCtx.deeplink_session_id,
-            intent_resource_id: projectionCtx.intent_resource_id,
-            intent_resource_type: projectionCtx.intent_resource_type,
+            deeplink_project_id: dlProjectId,
+            deeplink_session_id: dlSessionId,
+            intent_resource_id: dlResourceId,
+            intent_resource_type: dlResourceType,
           },
           correlation_id: input.correlation_id,
         });
