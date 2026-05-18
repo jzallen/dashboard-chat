@@ -1160,64 +1160,14 @@ export class FlowOrchestrator implements PumpContext {
     }
   }
 
-  /**
-   * MR-6 / US-210 — emission-completeness for the project-context THAW
-   * history-target re-entry. When `last_live_state` was the invoke-driven
-   * `switching_project` (US-210 scenario 2), `freeze → switching_project`
-   * re-runs `switchProject` with the fresh post-re-auth JWT and settles
-   * into `project_selected` / `scope_mismatch_terminal` /
-   * `error_recoverable`. That settle lands on the machine context AFTER
-   * the snapshot flips and BEFORE any FlowEvent captures it — the
-   * D-MR4-06 class. Source the terminal payload from the designated
-   * harvest boundary (mirrors the `switching_project_intent` settle path
-   * in `send()`), so the projection advances to the switched project
-   * instead of staying at `project_context_thawed`. Non-transient
-   * `last_live_state` values restore via the `project_context_thawed`
-   * reducer alone — no terminal emission needed.
-   */
-  private async appendProjectContextThawTerminal(
-    flow_id: string,
-    actor: AnyActorRef,
-    settledState: string,
-    correlation_id: string,
-  ): Promise<void> {
-    const h = harvestSettledProjectContextState(actor);
-    if (settledState === "project_selected") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_switched",
-        payload: { org_id: h.org_id ?? "", project: h.project },
-        correlation_id,
-      });
-      // Re-broadcast project_ready so a frozen-then-thawed session-chat
-      // re-binds to the switched project (idempotent on same id).
-      await this.maybeFireProjectReady(
-        flow_id,
-        parsePrincipal(flow_id),
-        correlation_id,
-        { org_id: h.org_id ?? "", project: h.project },
-      );
-    } else if (settledState === "scope_mismatch_terminal") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "scope_mismatch_displayed",
-        payload: {
-          org_id: h.org_id ?? "",
-          underlying_cause_tag: h.underlying_cause_tag ?? "access_revoked",
-        },
-        correlation_id,
-      });
-    } else if (settledState === "error_recoverable") {
-      await this.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_context_recoverable_error",
-        payload: {
-          underlying_cause_tag: h.underlying_cause_tag ?? "transient",
-        },
-        correlation_id,
-      });
-    }
-  }
+  // ADR-040 LEAF-3 MR-L3b/N10: the project-context THAW history-target
+  // re-entry terminal (formerly the private `appendProjectContextThawTerminal`
+  // — MR-6 / US-210 project_switched / scope_mismatch_displayed /
+  // project_context_recoverable_error) is CARVED into
+  // projectContextStrategy.settleThaw. The pump's broadcastThaw LOOP stays
+  // central (AMB-3) and calls strategy.settleThaw per frozen flow; the
+  // cross-machine project_ready re-broadcast (maybeFireProjectReady) stays
+  // pump-fired AFTER it returns (§3 / §4B). Behavior-neutral.
 
   async send(input: SendEventInput): Promise<FlowProjection> {
     const actor = this.actors.get(input.flow_id);
@@ -1645,31 +1595,38 @@ export class FlowOrchestrator implements PumpContext {
       // D-MR4-06 / D-MR5-01 emission-completeness failure class. Harvest
       // the settled freeze state and append the per-machine `*_frozen`
       // FlowEvent so the projection reflects `freeze`.
+      // ADR-040 LEAF-3 MR-L3b/N10 + AMB-3: the FREEZE broadcast LOOP stays
+      // central (this method); the per-machine `*_frozen` emission tail
+      // moves to the strategy. The pump pre-gates `J002 && state==="freeze"`
+      // and dispatches per machine — project-context →
+      // projectContextStrategy.settleFreeze (carved); session-chat →
+      // `session_chat_frozen` stays inlined (N15 / MR-L3c, §7 scope-fence).
       const machine = machineOfFlow(flow_id);
       if (
         J002_MACHINES.has(machine) &&
         (actor.getSnapshot().value as string) === "freeze"
       ) {
-        const h = harvestSettledFreezeState(actor);
-        await this.deps.eventLog.append(flow_id, {
-          ts: new Date().toISOString(),
-          type:
-            machine === SESSION_CHAT_WIRE_NAME
-              ? "session_chat_frozen"
-              : "project_context_frozen",
-          payload: {
-            last_live_state: h.last_live_state,
-            // Originating user-action preserved from the freeze moment so
-            // it survives into error_recoverable on the abandoned path
-            // (US-210 AC — "preserved in the failure event payload for
-            // re-issue"). The *_started events that normally write these
-            // never fired when FREEZE pre-empted the in-flight invoke.
-            pending_resume_session_id: h.pending_resume_session_id,
-            pending_first_message: h.pending_first_message,
-            pending_project_name: h.pending_project_name,
-          },
-          correlation_id: h.correlation_id,
-        });
+        if (machine === SESSION_CHAT_WIRE_NAME) {
+          const h = harvestSettledFreezeState(actor);
+          await this.deps.eventLog.append(flow_id, {
+            ts: new Date().toISOString(),
+            type: "session_chat_frozen",
+            payload: {
+              last_live_state: h.last_live_state,
+              // Originating user-action preserved from the freeze moment
+              // so it survives into error_recoverable on the abandoned
+              // path (US-210 AC). The *_started events that normally write
+              // these never fired when FREEZE pre-empted the in-flight
+              // invoke.
+              pending_resume_session_id: h.pending_resume_session_id,
+              pending_first_message: h.pending_first_message,
+              pending_project_name: h.pending_project_name,
+            },
+            correlation_id: h.correlation_id,
+          });
+        } else if (projectContextStrategy.settleFreeze) {
+          await projectContextStrategy.settleFreeze(this, actor, flow_id);
+        }
       }
     }
   }
@@ -1826,12 +1783,32 @@ export class FlowOrchestrator implements PumpContext {
           machine === PROJECT_CONTEXT_WIRE_NAME &&
           PC_TRANSIENTS.has(h.last_live_state ?? "")
         ) {
-          await this.appendProjectContextThawTerminal(
-            flow_id,
-            actor,
-            settledState,
-            h.correlation_id,
-          );
+          // ADR-040 LEAF-3 MR-L3b/N10 + AMB-3: the THAW broadcast LOOP
+          // stays central (this method); the project-context
+          // history-target re-entry terminal (formerly
+          // appendProjectContextThawTerminal) moves to the strategy. The
+          // cross-machine `project_ready` re-broadcast via
+          // maybeFireProjectReady stays pump-fired AFTER settleThaw
+          // returns (leaf-3-plan §3 / §4B) — it was the LAST statement of
+          // the project_selected arm, so the order is byte-preserved; the
+          // params are re-derived byte-identically (idempotent harvest).
+          if (projectContextStrategy.settleThaw) {
+            await projectContextStrategy.settleThaw(
+              this,
+              actor,
+              flow_id,
+              "thaw",
+            );
+          }
+          if (settledState === "project_selected") {
+            const hpc = harvestSettledProjectContextState(actor);
+            await this.maybeFireProjectReady(
+              flow_id,
+              parsePrincipal(flow_id),
+              h.correlation_id,
+              { org_id: hpc.org_id ?? "", project: hpc.project },
+            );
+          }
         }
       }
 

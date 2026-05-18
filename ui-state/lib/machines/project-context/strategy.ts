@@ -29,7 +29,10 @@ import type {
   SettleContext,
   SettleOutcome,
 } from "../../orchestrator.ts";
-import { harvestSettledProjectContextState } from "../../orchestrator-harvester.ts";
+import {
+  harvestSettledFreezeState,
+  harvestSettledProjectContextState,
+} from "../../orchestrator-harvester.ts";
 import type { FlowEvent } from "../../projection.ts";
 import { buildProjection } from "../../projection.ts";
 import {
@@ -572,6 +575,110 @@ export const projectContextStrategy: FlowStrategy = {
         correlation_id: input.correlation_id,
       };
       await pump.deps.eventLog.append(input.flow_id, flowEvent);
+    }
+  },
+
+  /**
+   * Per-frozen-flow FREEZE emission tail (the broadcast LOOP stays central
+   * per ADR-040 §D2 / AMB-3). Carved verbatim from the `broadcastFreeze`
+   * `project_context_frozen` tail in MR-L3b/N10. BEHAVIOR-NEUTRAL — same
+   * FlowEvent, same payload; `settle→emit` STILL appends to the
+   * Redis-Streams event-log.
+   *
+   * The pump's FREEZE broadcast LOOP stays central (§3 / AMB-3) and
+   * pre-gates `J002 && state==="freeze"`, dispatching the session-chat
+   * `session_chat_frozen` tail inline (N15 / MR-L3c, §7 scope-fence) and
+   * this for project-context. `harvestSettledFreezeState` is re-derived
+   * here (the sanctioned snapshot boundary, AMB-1) — idempotent, identical
+   * to the pump's prior `h`.
+   */
+  async settleFreeze(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    flow_id: string,
+  ): Promise<void> {
+    const h = harvestSettledFreezeState(actor);
+    await pump.deps.eventLog.append(flow_id, {
+      ts: new Date().toISOString(),
+      type: "project_context_frozen",
+      payload: {
+        last_live_state: h.last_live_state,
+        // Originating user-action preserved from the freeze moment so it
+        // survives into error_recoverable on the abandoned path (US-210
+        // AC). The *_started events that normally write these never fired
+        // when FREEZE pre-empted the in-flight invoke.
+        pending_resume_session_id: h.pending_resume_session_id,
+        pending_first_message: h.pending_first_message,
+        pending_project_name: h.pending_project_name,
+      },
+      correlation_id: h.correlation_id,
+    });
+  },
+
+  /**
+   * Per-frozen-flow THAW emission tail (broadcast LOOP stays central per
+   * ADR-040 §D2 / AMB-3). Carved verbatim from the
+   * `appendProjectContextThawTerminal` body in MR-L3b/N10 — the MR-6 /
+   * US-210 project-context THAW history-target re-entry terminal
+   * (`project_switched` / `scope_mismatch_displayed` /
+   * `project_context_recoverable_error` when the re-run invoke settles).
+   * BEHAVIOR-NEUTRAL — same FlowEvents, same payloads, same order;
+   * `settle→emit` STILL appends to the Redis-Streams event-log.
+   *
+   * Only the successful-thaw history-target re-entry (`kind === "thaw"`);
+   * the abandoned path's `replay_abandoned` / `*_recoverable_error`
+   * emission stays in the central broadcast loop (§7 scope-fence — it is
+   * machine-generic loop bookkeeping; full symmetry is MR-L3c). The pump
+   * pre-gates `machine === PROJECT_CONTEXT_WIRE_NAME &&
+   * PC_TRANSIENTS.has(last_live_state)`.
+   *
+   * `settledState` is read from `.value` (allowed; not `.context`);
+   * `correlation_id` from `harvestSettledFreezeState` (the sanctioned
+   * boundary) — both byte-identical to the pump's prior `settledState` /
+   * `h.correlation_id` (idempotent). The cross-machine `project_ready`
+   * re-broadcast (`maybeFireProjectReady`) stays pump-fired AFTER this
+   * returns (leaf-3-plan §3 — it was the LAST statement of the
+   * `project_selected` arm, so no reorder).
+   */
+  async settleThaw(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    flow_id: string,
+    kind: "thaw" | "abandoned",
+  ): Promise<void> {
+    if (kind !== "thaw") return;
+    const settledState = actor.getSnapshot().value as string;
+    const correlation_id = harvestSettledFreezeState(actor).correlation_id;
+    const h = harvestSettledProjectContextState(actor);
+    if (settledState === "project_selected") {
+      await pump.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "project_switched",
+        payload: { org_id: h.org_id ?? "", project: h.project },
+        correlation_id,
+      });
+      // Re-broadcast project_ready so a frozen-then-thawed session-chat
+      // re-binds to the switched project (idempotent on same id) — stays
+      // pump-fired AFTER this returns (leaf-3-plan §3 / §4B).
+    } else if (settledState === "scope_mismatch_terminal") {
+      await pump.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "scope_mismatch_displayed",
+        payload: {
+          org_id: h.org_id ?? "",
+          underlying_cause_tag: h.underlying_cause_tag ?? "access_revoked",
+        },
+        correlation_id,
+      });
+    } else if (settledState === "error_recoverable") {
+      await pump.deps.eventLog.append(flow_id, {
+        ts: new Date().toISOString(),
+        type: "project_context_recoverable_error",
+        payload: {
+          underlying_cause_tag: h.underlying_cause_tag ?? "transient",
+        },
+        correlation_id,
+      });
     }
   },
 };
