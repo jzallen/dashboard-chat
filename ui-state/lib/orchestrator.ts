@@ -1239,33 +1239,34 @@ export class FlowOrchestrator implements PumpContext {
     }
     await projectContextStrategy.applyEvent(this, actor, input);
 
-    // US-209 / MR-5 — `switching_dataset_context` is an invoke-driven
-    // transient state (the `switchDatasetContext` actor performs
-    // GET /api/datasets/:id + PATCH session.active_dataset_id). Mirrors the
-    // D-MR4-06 `switching_project_started` pre-settle emission: emit
-    // `switching_dataset_context_started` BEFORE awaiting the settle so an
-    // SSE consumer observes the (state=switching_dataset_context) tick.
-    // The post-settle block below then emits the terminal `dataset_attached`
-    // / `dataset_access_denied` once `switchDatasetContext` resolves —
-    // sourced from the harvested machine context (the resolved resource
-    // lands on ctx after the snapshot flips, the D-MR4-06 problem #2).
-    if (
-      input.machine === SESSION_CHAT_WIRE_NAME &&
-      (input.type === "dataset_resolved_by_agent" ||
-        input.type === "dataset_picked_directly") &&
-      (actor.getSnapshot().value as string) === "switching_dataset_context"
-    ) {
-      await this.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "switching_dataset_context_started",
-        payload: {
-          intended_resource_id:
-            (input.payload.resource_id as string | undefined) ?? null,
-          intended_resource_type:
-            (input.payload.resource_type as string | undefined) ?? "dataset",
-        },
-        correlation_id: input.correlation_id,
-      });
+    // ADR-040 LEAF-3 MR-L3c/N13: the session-chat pre-settle
+    // `switching_dataset_context_started` emission (US-209 / MR-5) is
+    // CARVED into sessionChatStrategy.applyEvent, called at the SAME
+    // pre-settle point (after the project-context applyEvent, BEFORE
+    // `waitForSettledState`); the triple guard is preserved INSIDE the
+    // strategy so non-switch session-chat events fall through as a no-op
+    // exactly as before.
+    //
+    // The carved call is kept inside the `machine === SESSION_CHAT_WIRE_NAME`
+    // wrapper (mirroring N12's settleSpawn wrapper, retired in N17): the
+    // pre-carve inline `if (machine===session && …)` ran ZERO awaits for
+    // non-session flows, and `index.test.ts`'s SSE projection-stream test
+    // is timing-coupled — an extra unconditional `applyEvent` await between
+    // the `org_form_submitted` log append and the login settle splits the
+    // SSE subscriber's 2nd frame BEFORE the `ready` projection, regressing
+    // vitest. The N7 `projectContextStrategy.applyEvent` is the SOLE
+    // unconditional pre-settle await the test budget absorbs; this wrapper
+    // adds none for login/project. N17's residual-pump cleanup collapses
+    // BOTH the N7 unconditional call AND this wrapper into a single
+    // `FLOW_STRATEGY_REGISTRY.resolve(input.machine).applyEvent` dispatch
+    // (exactly one await = baseline timing → still vitest Δ=0).
+    // Behavior-neutral: same FlowEvent, same payload, same pre-settle
+    // point, same await count for the fragile login/project paths.
+    if (input.machine === SESSION_CHAT_WIRE_NAME) {
+      if (!sessionChatStrategy.applyEvent) {
+        throw new Error("sessionChatStrategy.applyEvent missing (LEAF-3 N13)");
+      }
+      await sessionChatStrategy.applyEvent(this, actor, input);
     }
 
     await waitForSettledState(actor);
