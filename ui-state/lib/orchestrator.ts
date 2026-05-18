@@ -166,15 +166,34 @@ export interface SettleContext {
 /**
  * What the pump must do CENTRALLY after a strategy's `settle` returns.
  * Cross-machine hook FIRING stays central (ADR-040 §D2 / leaf-3-plan §3 +
- * §4A): the login `ready` settle emits its own FlowEvent inside `settle`,
- * but the `auth_ready` → spawn-project-context dispatch is cross-machine and
- * is fired by the pump after `settle` returns this signal.
+ * §4A/§4B): the login `ready` settle emits its own FlowEvent inside
+ * `settle`, but the `auth_ready` → spawn-project-context dispatch is
+ * cross-machine and is fired by the pump after `settle` returns the
+ * `authReady` signal. Symmetrically (leaf-3-plan §4B MR-L3b/N8), the
+ * project-context `project_selected` settle emits its own FlowEvents
+ * inside `settle`, but the `project_ready` → spawn-session-chat dispatch
+ * (`maybeFireProjectReady`) stays pump-fired AFTER `settle` returns the
+ * `projectReady` signal. Each strategy's cross-machine signal is an
+ * independent optional field on this shared outcome (login → `authReady`,
+ * project-context → `projectReady`); the port `settle` SIGNATURE is
+ * unchanged (it still returns `Promise<SettleOutcome>`).
  */
 export interface SettleOutcome {
   /** Non-null exactly when the login machine reached `ready` for the first
    *  time with a resolved org — the pump then fires
    *  `beginIfNotStarted(PROJECT_CONTEXT…)` (cross-machine dispatch). */
   authReady?: { org_id: string; user_first_name: string } | null;
+  /** Non-null exactly when project-context settled in `project_selected`
+   *  on a `send()` path — the pump then fires `maybeFireProjectReady`
+   *  (cross-machine dispatch to session-chat). Carries the exact
+   *  pre-carve `maybeFireProjectReady` 4th-arg shape. */
+  projectReady?: {
+    org_id?: string;
+    project?: { id: string | null; name: string | null };
+    deeplink_session_id?: string | null;
+    intent_resource_id?: string | null;
+    intent_resource_type?: ResourceType | null;
+  } | null;
 }
 
 /**
@@ -1437,259 +1456,44 @@ export class FlowOrchestrator implements PumpContext {
     }
 
     // ---- project-context terminal-for-now event appending ----------------
-    // The project-context machine's events do not share J-001's state names, so
-    // the existing branches above don't fire for it. Project a state-specific
-    // event into the log so subsequent projection reads can reconstruct.
-    // Per DWD-13 the wire name is still `project-and-chat-session-management`;
-    // the source-tree splits but the wire-protocol log key + URL prefix stays.
-    if (input.machine === PROJECT_CONTEXT_WIRE_NAME) {
-      // ADR-030 LEAF-B: project-context emission reads now flow through
-      // the projection.  `projectionCtx.org.id` mirrors the actor's
-      // single-field `org_id`; the rest of the shape matches the
-      // projection's reducer-populated context.
-      const orgId = projectionCtx.org.id ?? "";
-
-      // D-MR4-06 — the `switchProject` actor's resolved project (and the
-      // access_revoked / project_not_found / transient cause it sets on
-      // its error branches) settles on the machine context AFTER the
-      // snapshot value flips and BEFORE any FlowEvent has captured it, so
-      // `projectionCtx.project` / `projectionCtx.underlying_cause_tag`
-      // read null/empty here (the LEAF-B trade-off documented in
-      // `beginIfNotStarted`). Harvest from the designated snapshot-read
-      // boundary (`orchestrator-harvester.ts`, exempt from the LEAF-D
-      // rule) so the switch-settle terminal events carry the real
-      // resolved values — mirrors the login `harvestSettledLoginState`
-      // pre-emit pattern. Scoped to the switch path (input.type ===
-      // `switching_project_intent`) so create / deep-link / re-resolve
-      // emission is unchanged.
-      // RC-1: `open_deep_link` is a post-settle re-resolve — the machine's
-      // root `on.open_deep_link` re-enters `resolving_initial_scope` and the
-      // re-run `resolveInitialScope` invoke writes the resolved `project` /
-      // `underlying_cause_tag` (cross_tenant / project_not_found) onto the
-      // machine context AFTER the snapshot flips and BEFORE any FlowEvent
-      // captures it — the SAME D-MR4-06 emission-completeness failure class
-      // the switch-settle path already harvests for. Without harvesting,
-      // `scope_mismatch_displayed` emitted the stale prior-state cause
-      // (US-204 cross-tenant / deleted observed `no_projects`) and
-      // `project_selected` emitted the stale prior project id (cold deep
-      // link / intent-resource observed the wrong / null `project_id`).
-      // Broaden the harvest to the open_deep_link re-resolve, mirroring the
-      // begin path's `beginHarvest`.
-      // RCA §6.2 step 5 (create-path): `create_project_submitted` settles
-      // via the `createProject` invoke (→ `project_selected`) or the
-      // empty-name guard arm (→ stays `no_projects` with
-      // `project_validation_error`) or a transient invoke failure (→
-      // `error_recoverable`). In every case the terminal values
-      // (`project`, `underlying_cause_tag`, `pending_project_name`,
-      // `project_validation_error`) land on the machine context AFTER the
-      // snapshot flips and BEFORE the first FlowEvent captures them — the
-      // SAME emission-completeness class D-MR4-06 fixed for the switch
-      // path and D-MR5-01 fixed for begin. The create counterpart was
-      // never added to the harvest, so `project_created` carried a null
-      // project (IC-J002-2 / creating_first_project), the empty-name
-      // `project_validation_failed` never fired, and the transient
-      // `project_context_recoverable_error` lost `pending_project_name`.
-      const isSettleHarvestPath =
-        input.type === "switching_project_intent" ||
-        input.type === "open_deep_link" ||
-        input.type === "create_project_submitted";
-      const switchHarvest = isSettleHarvestPath
-        ? harvestSettledProjectContextState(actor)
-        : null;
-      const switchSettledProject = switchHarvest?.project ?? null;
-      const switchSettledCause = switchHarvest?.underlying_cause_tag ?? null;
-
-      // When the incoming event is `open_deep_link`, also append a
-      // `deep_link_opened` projection event so the projection's context
-      // carries the URL-level wish + resource_* fields (per DWD-9).
-      // Post-MR-D the projection field names are `deeplink_*` (URL half)
-      // + `intent_resource_*` (forward-compat slots still routed through
-      // the projection — see audit §5 / §7 Tier-1 #2). The values come
-      // from the projection (the open_deep_link event's payload has
-      // already been folded in by buildProjection above).
-      if (input.type === "open_deep_link") {
-        // RC-1: source the URL wish (intent_resource_*, deeplink ids) from
-        // the open_deep_link event payload directly — there is no
-        // `open_deep_link` projection reducer, so a projection-of-log read
-        // here sees them null (US-204 intent-resource observed a missing
-        // `intent_resource_id`). The resolved project comes from the
-        // harvested settled context (the re-run resolver's output, not yet
-        // in the log); on the cross_tenant / project_not_found branches the
-        // machine leaves `project` null, so `project` stays null too.
-        const resolvedProject = switchSettledProject ?? projectionCtx.project;
-        const dlProjectId =
-          (input.payload.intent_project_id as string | undefined) ??
-          projectionCtx.deeplink_project_id;
-        const dlSessionId =
-          (input.payload.intent_session_id as string | undefined) ??
-          projectionCtx.deeplink_session_id;
-        const dlResourceId =
-          (input.payload.intent_resource_id as string | undefined) ??
-          projectionCtx.intent_resource_id;
-        const dlResourceType =
-          (input.payload.intent_resource_type as ResourceType | undefined) ??
-          projectionCtx.intent_resource_type;
-        const resolvedScope = {
-          org_id: orgId,
-          project_id: resolvedProject?.id ?? null,
-          resource_type: dlResourceType,
-          resource_id: dlResourceId,
-        };
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "deep_link_opened",
-          payload: {
-            scope: resolvedScope,
-            project: resolvedProject?.id ? resolvedProject : null,
-            reconciled: false,
-            deeplink_project_id: dlProjectId,
-            deeplink_session_id: dlSessionId,
-            intent_resource_id: dlResourceId,
-            intent_resource_type: dlResourceType,
-          },
-          correlation_id: input.correlation_id,
-        });
-      }
-
-      // The empty/invalid-name guard arm writes `project_validation_error`
-      // onto the machine context only (the machine stays in `no_projects`
-      // with no invoke), so the projection-of-log read is null at emission
-      // time — harvest it (US-201 inline-error AC).
-      const settledValidationError =
-        switchHarvest?.project_validation_error ??
-        projectionCtx.project_validation_error;
-      // `capturePendingProjectName` likewise lands only on the machine
-      // context; harvest it so `project_creation_started` /
-      // `project_context_recoverable_error` carry the composer text across
-      // the `creating_project ↔ error_recoverable` retry boundary.
-      const settledPendingProjectName =
-        switchHarvest?.pending_project_name || projectionCtx.pending_project_name;
-
-      if (stateValue === "no_projects" && settledValidationError) {
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "project_validation_failed",
-          payload: { error: settledValidationError },
-          correlation_id: input.correlation_id,
-        });
-      } else if (stateValue === "no_projects") {
-        // Re-resolved into no_projects (e.g., after back_to_projects_clicked).
-        // Emit no_projects_displayed so the projection settles correctly.
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "no_projects_displayed",
-          payload: {
-            org_id: orgId,
-            user: { first_name: projectionCtx.user.first_name },
-          },
-          correlation_id: input.correlation_id,
-        });
-      } else if (stateValue === "creating_project") {
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "project_creation_started",
-          payload: {
-            pending_project_name: settledPendingProjectName,
-          },
-          correlation_id: input.correlation_id,
-        });
-      } else if (stateValue === "project_selected") {
-        // Emit `project_selected` (not `project_created`) when this transition
-        // is the result of a re-resolve (open_deep_link or back_to_projects_clicked).
-        // The projection reducer handles both event types similarly; the
-        // distinction is semantic for downstream consumers (a deep-link
-        // resolution is not a creation).
-        const isFromCreate = input.type === "create_project_submitted";
-        // D-MR4-06: on the switch-settle path the resolved project lives
-        // only on the harvested machine context (see switchHarvest above).
-        const settledProject =
-          switchSettledProject ?? projectionCtx.project;
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: isFromCreate ? "project_created" : "project_selected",
-          payload: {
-            org_id: orgId,
-            project: settledProject,
-          },
-          correlation_id: input.correlation_id,
-        });
-        // ---- project_ready broadcast hook (DWD-13 §3.2.B; send-path) -----
-        // When project-context re-enters `project_selected` from create_project_submitted
-        // or from back_to_projects_clicked → resolveInitialScope → project_selected,
-        // broadcast `project_ready` so session-chat spawns (or, post-MR-4, re-invalidates
-        // on project switch). Idempotent on the same project_id.
-        await this.maybeFireProjectReady(
-          input.flow_id,
-          principal_id,
-          input.correlation_id,
-          {
-            org_id: orgId,
-            project: settledProject,
-            deeplink_session_id: projectionCtx.deeplink_session_id,
-            intent_resource_id: projectionCtx.intent_resource_id,
-            intent_resource_type: projectionCtx.intent_resource_type,
-          },
-        );
-        // MR-4 — when the entry was a switch settle (the prior state was
-        // `switching_project`), also emit a `project_switched` projection
-        // event so SSE consumers can distinguish "initial select" from
-        // "switch settle". The orchestrator can't read XState's prior state
-        // directly; we discriminate by input.type since switching_project_intent
-        // is the ONLY event that lifts switching_project → project_selected.
-        if (input.type === "switching_project_intent") {
-          await this.deps.eventLog.append(input.flow_id, {
-            ts: new Date().toISOString(),
-            type: "project_switched",
-            payload: {
-              org_id: orgId,
-              project: settledProject,
-            },
-            correlation_id: input.correlation_id,
-          });
-        }
-      } else if (stateValue === "switching_project") {
-        // MR-4 / IC-J002-4 — emit `switching_project_started` atomically with
-        // the state surface so SSE consumers see (state=switching_project,
-        // session_id=null, resource=null) in the same projection tick.
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "switching_project_started",
-          payload: {
-            org_id: orgId,
-            deeplink_project_id: projectionCtx.deeplink_project_id,
-          },
-          correlation_id: input.correlation_id,
-        });
-      } else if (stateValue === "error_recoverable") {
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "project_context_recoverable_error",
-          payload: {
-            underlying_cause_tag:
-              switchSettledCause ??
-              projectionCtx.underlying_cause_tag ??
-              "transient",
-            pending_project_name: settledPendingProjectName,
-          },
-          correlation_id: input.correlation_id,
-        });
-      } else if (stateValue === "scope_mismatch_terminal") {
-        await this.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "scope_mismatch_displayed",
-          payload: {
-            org_id: orgId,
-            underlying_cause_tag:
-              switchSettledCause ??
-              projectionCtx.underlying_cause_tag ??
-              "cross_tenant",
-            deeplink_project_id: projectionCtx.deeplink_project_id,
-          },
-          correlation_id: input.correlation_id,
-        });
-      }
+    // ADR-040 LEAF-3 MR-L3b/N8: the project-context post-settle terminal
+    // emission (the big block: deep_link_opened; no_projects+validation /
+    // no_projects / creating_project / project_selected (create vs
+    // re-resolve) / switching_project / error_recoverable / scope_mismatch
+    // arms + project_switched + harvestSettledProjectContextState) is
+    // CARVED into projectContextStrategy.settle. Called UNCONDITIONALLY
+    // here (the imported strategy ref, mirroring the MR-L3a
+    // loginOrgSetupStrategy precedent) AFTER the login settle + auth_ready
+    // hook; the original `if (input.machine === PROJECT_CONTEXT_WIRE_NAME)`
+    // guard is preserved INSIDE the strategy so the pre-carve send() chain
+    // (login arms — NOT machine-gated — then the machine-gated project
+    // block) is byte-preserved. The cross-machine `project_ready` hook
+    // FIRING via `maybeFireProjectReady` stays pump-central (leaf-3-plan
+    // §3 / §4B): `settle` returns the `projectReady` signal; the pump
+    // fires it AFTER (exactly the login `authReady` precedent — the
+    // pre-carve project_selected order [project_selected,
+    // maybeFireProjectReady, project_switched] becomes [project_selected,
+    // project_switched (in settle), maybeFireProjectReady (here)] which is
+    // behavior-neutral: disjoint Redis streams, explicit hook params
+    // computed pre-append). The session-chat terminal emission below stays
+    // inlined (N12-N15 / MR-L3c, §7 scope-fence).
+    if (!projectContextStrategy.settle) {
+      throw new Error("projectContextStrategy.settle missing (LEAF-3 N8)");
     }
-
+    const projectSettleOutcome = await projectContextStrategy.settle(
+      this,
+      actor,
+      input,
+      { stateValue, prior, projectionCtx },
+    );
+    if (projectSettleOutcome.projectReady) {
+      await this.maybeFireProjectReady(
+        input.flow_id,
+        principal_id,
+        input.correlation_id,
+        projectSettleOutcome.projectReady,
+      );
+    }
     // ---- session-chat terminal-for-now event appending (J-002 MR-2) -------
     // After session_clicked / refresh_session_list / project_ready re-broadcast
     // dispatched via this `send()`, emit the projection-shaping events to the
