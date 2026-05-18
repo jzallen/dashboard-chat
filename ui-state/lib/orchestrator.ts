@@ -1274,26 +1274,19 @@ export class FlowOrchestrator implements PumpContext {
     // Without this pre-settle emission `project_switched`'s reducer (which
     // relies on `switching_project_started` having cleared session_id)
     // would leak the old session_id under the new project.
-    if (
-      input.machine === PROJECT_CONTEXT_WIRE_NAME &&
-      input.type === "switching_project_intent" &&
-      (actor.getSnapshot().value as string) === "switching_project"
-    ) {
-      const preSettleCtx = buildProjection(
-        input.flow_id,
-        await this.deps.eventLog.read(input.flow_id),
-      ).context as { org: { id: string | null } };
-      await this.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "switching_project_started",
-        payload: {
-          org_id: preSettleCtx.org.id ?? "",
-          deeplink_project_id:
-            (input.payload.new_project_id as string | undefined) ?? null,
-        },
-        correlation_id: input.correlation_id,
-      });
+    // ADR-040 LEAF-3 MR-L3b/N7: the project-context pre-settle
+    // `switching_project_started` emission is CARVED into
+    // projectContextStrategy.applyEvent. Called UNCONDITIONALLY here (the
+    // imported strategy ref, mirroring the MR-L3a loginOrgSetupStrategy
+    // precedent) at the SAME pre-settle point; the triple guard
+    // (machine/type/state) is preserved inside the strategy so non-project
+    // / non-switch events fall through as a no-op exactly as before. The
+    // session-chat `switching_dataset_context_started` pre-settle stays
+    // inlined below (N13 / MR-L3c, §7 scope-fence).
+    if (!projectContextStrategy.applyEvent) {
+      throw new Error("projectContextStrategy.applyEvent missing (LEAF-3 N7)");
     }
+    await projectContextStrategy.applyEvent(this, actor, input);
 
     // US-209 / MR-5 — `switching_dataset_context` is an invoke-driven
     // transient state (the `switchDatasetContext` actor performs

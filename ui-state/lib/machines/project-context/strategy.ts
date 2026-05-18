@@ -22,7 +22,11 @@
 import { type AnyActorRef } from "xstate";
 
 import type { ResourceType } from "../../active-scope.ts";
-import type { FlowStrategy, PumpContext } from "../../orchestrator.ts";
+import type {
+  FlowStrategy,
+  PumpContext,
+  SendEventInput,
+} from "../../orchestrator.ts";
 import { harvestSettledProjectContextState } from "../../orchestrator-harvester.ts";
 import { buildProjection } from "../../projection.ts";
 import {
@@ -35,6 +39,16 @@ import {
  * `PROJECT_CONTEXT_MACHINE`.
  */
 const PROJECT_CONTEXT_MACHINE = "project-context";
+
+/**
+ * Wire-protocol machine name preserved through MR-1.5 (DWD-13 + the MR-1.5
+ * REC-2 decision). The source-tree split to `project-context`, but the HTTP
+ * URL path + Redis event-log key prefix remain
+ * `project-and-chat-session-management`. The carved branches are gated on
+ * this wire name verbatim from the pre-carve `send()` conditionals — the
+ * pump dispatches `flow_id` keyed by this name (behavior-neutral).
+ */
+const PROJECT_CONTEXT_WIRE_NAME = "project-and-chat-session-management";
 
 export const projectContextStrategy: FlowStrategy = {
   machineName: PROJECT_CONTEXT_MACHINE,
@@ -197,6 +211,56 @@ export const projectContextStrategy: FlowStrategy = {
         payload: {
           org_id: settledOrgId,
           underlying_cause_tag: settledCause ?? "cross_tenant",
+        },
+        correlation_id: input.correlation_id,
+      });
+    }
+  },
+
+  /**
+   * Pre-settle event→transition emission (ADR-040 §D2 event→transition).
+   * Carved verbatim from the `send()` project-context pre-settle arm in
+   * MR-L3b/N7 (the `switching_project_started` emission). BEHAVIOR-NEUTRAL
+   * — same FlowEvent, same payload, emitted at the same pre-settle point
+   * (after `actor.send(...)`, BEFORE `waitForSettledState`).
+   *
+   * The pump calls this UNCONDITIONALLY at the pre-settle point (the
+   * imported strategy ref, mirroring the MR-L3a `loginOrgSetupStrategy`
+   * precedent); the original triple guard
+   * (`input.machine === PROJECT_CONTEXT_WIRE_NAME` &&
+   * `input.type === "switching_project_intent"` && state ===
+   * `switching_project`) is preserved INSIDE here, so non-project / non-
+   * switch events fall through as a no-op exactly as before. The
+   * session-chat pre-settle (`switching_dataset_context_started`) stays
+   * inlined in the pump (N13 / MR-L3c, §7 scope-fence).
+   */
+  async applyEvent(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    input: SendEventInput,
+  ): Promise<void> {
+    // D-MR4-06 / IC-J002-4 — `switching_project` is an invoke-driven
+    // transient state. Emit `switching_project_started` BEFORE the settle
+    // so the projection writes the atomic invalidation (session_id +
+    // resource_* nulled) in the SAME tick the `switching_project` state
+    // surfaces. Without this the `project_switched` reducer would leak the
+    // old session_id under the new project.
+    if (
+      input.machine === PROJECT_CONTEXT_WIRE_NAME &&
+      input.type === "switching_project_intent" &&
+      (actor.getSnapshot().value as string) === "switching_project"
+    ) {
+      const preSettleCtx = buildProjection(
+        input.flow_id,
+        await pump.deps.eventLog.read(input.flow_id),
+      ).context as { org: { id: string | null } };
+      await pump.deps.eventLog.append(input.flow_id, {
+        ts: new Date().toISOString(),
+        type: "switching_project_started",
+        payload: {
+          org_id: preSettleCtx.org.id ?? "",
+          deeplink_project_id:
+            (input.payload.new_project_id as string | undefined) ?? null,
         },
         correlation_id: input.correlation_id,
       });
