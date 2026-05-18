@@ -118,13 +118,79 @@ const PROJECT_CONTEXT_MACHINE = "project-context";
 const SESSION_CHAT_MACHINE = "session-chat";
 
 /**
+ * ADR-040 §D2 / LEAF-3 — the capability surface the generic pump offers a
+ * `FlowStrategy`. The pump RETAINS actor-system ownership & spawn lifecycle
+ * (ADR-040 §D2 / leaf-3-plan §3 stays-central): a strategy never owns the
+ * actor map — it asks the pump to recycle/track actors and to resolve the
+ * projection. `deps` is the same `OrchestratorDeps` the pump holds. This is
+ * the seam through which the carved login `beginDirect` / `settle` bodies
+ * reach pump-central machinery without the strategy importing the pump.
+ */
+export interface PumpContext {
+  readonly deps: OrchestratorDeps;
+  /** Stop+forget any existing actor for this flow (begin re-click reset:
+   *  the persisted event log is the SoT, the actor is a process cache). */
+  recycleActor(flow_id: string): void;
+  /** Register a freshly created+started actor under its flow_id. */
+  trackActor(flow_id: string, actor: AnyActorRef): void;
+  /** Reset per-flow tracking (priorState/frozen/abandoned) — one unit with
+   *  the actor+log reset. */
+  resetFlowTracking(flow_id: string): void;
+  logTransition(record: Record<string, unknown>): void;
+  projectionFor(
+    flow_id: string,
+    principal_id: string,
+    correlation_id: string,
+  ): Promise<FlowProjection>;
+}
+
+/**
+ * Pump-computed inputs handed to `FlowStrategy.settle` so the strategy never
+ * reads `actor.getSnapshot().context` directly (ADR-030 LEAF-D / AMB-1: the
+ * sanctioned snapshot boundary is the `harvestSettled*` family, which the
+ * strategy calls itself; the settled state-VALUE and the live projection
+ * context are pump-read and passed in).
+ */
+export interface SettleContext {
+  /** Settled state-value (pump-read; never the strategy reading .context). */
+  readonly stateValue: string;
+  /** Prior tracked state for this flow at entry to the settle block —
+   *  drives silent-reauth-recovery + first-ready detection. */
+  readonly prior: string | undefined;
+  /** Live projection context (built from the FlowEvent log by the pump). */
+  readonly projectionCtx: {
+    org_validation_error: { kind: string; message: string } | null;
+  } & Record<string, unknown>;
+}
+
+/**
+ * What the pump must do CENTRALLY after a strategy's `settle` returns.
+ * Cross-machine hook FIRING stays central (ADR-040 §D2 / leaf-3-plan §3 +
+ * §4A): the login `ready` settle emits its own FlowEvent inside `settle`,
+ * but the `auth_ready` → spawn-project-context dispatch is cross-machine and
+ * is fired by the pump after `settle` returns this signal.
+ */
+export interface SettleOutcome {
+  /** Non-null exactly when the login machine reached `ready` for the first
+   *  time with a resolved org — the pump then fires
+   *  `beginIfNotStarted(PROJECT_CONTEXT…)` (cross-machine dispatch). */
+  authReady?: { org_id: string; user_first_name: string } | null;
+}
+
+/**
  * ADR-040 §D1/§D5 — the `FlowStrategy` port. The orchestrator dispatch fork
  * resolves a machine to its strategy through the registry instead of a
  * hardcoded `if (input.machine === "…")` conditional table (the legacy
- * machine-factory record per DWD-8, now retired). LEAF-1 carves the
- * machine-RESOLUTION fork onto these typed members; the per-machine
- * begin/event/settle bodies stay in the orchestrator (transition-logic
- * relocation is LEAF-3 — delegation, not relocation).
+ * machine-factory record per DWD-8, now retired). LEAF-1 carved the
+ * machine-RESOLUTION fork onto `machineName`/`beginsDirectly`/`buildMachine`.
+ *
+ * LEAF-3 (N0/N1, AMB-2 RATIFIED 2026-05-18) GROWS the port with the typed
+ * begin/event/settle members below. They are OPTIONAL through the LEAF-3
+ * migration: only the machine carved by the current MR implements them
+ * (MR-L3a = login). The pump still inlines the project-context/session-chat
+ * branches until MR-L3b/MR-L3c carve them (leaf-3-plan §7 scope-fence). The
+ * member NAMES + signatures are design-locked here (N0); MR-L3b/c only fill
+ * in `ProjectContextStrategy`/`SessionChatStrategy` impls.
  */
 export interface FlowStrategy {
   /** Canonical machine-name (ADR-039) — the registry key. Never a flow-id
@@ -132,9 +198,8 @@ export interface FlowStrategy {
    *  explicitly rejected as the dispatch key — ADR-040 D5). */
   readonly machineName: string;
   /** Begin-semantics discriminator (ADR-040 D2). `login-and-org-setup` runs
-   *  the orchestrator's direct WorkOS begin body; the J-002 machines are
-   *  spawned via the cross-machine broadcast hook (`beginIfNotStarted`).
-   *  The begin body itself is carved onto the strategy in LEAF-3. */
+   *  the direct WorkOS begin body (`beginDirect`); the J-002 machines are
+   *  spawned via the cross-machine broadcast hook (`beginIfNotStarted`). */
   readonly beginsDirectly: boolean;
   /** Machine definition (ADR-040 D2): construct the XState machine for this
    *  flow from the orchestrator deps. */
@@ -142,6 +207,64 @@ export interface FlowStrategy {
     deps: OrchestratorDeps,
     input: { correlation_id: string; principal_id: string; existing_org_names?: string[] },
   ): AnyStateMachine;
+
+  // ── ADR-040 §D2 LEAF-3 carved members (port grown N1; design-locked N0).
+  //    Optional through the migration — see interface doc. ──
+
+  /** Direct begin body (ADR-040 §D2 begin-semantics). Carved for login in
+   *  MR-L3a/N2: the pump calls this when `beginsDirectly`. */
+  beginDirect?(pump: PumpContext, input: BeginFlowInput): Promise<FlowProjection>;
+  /** Pre-settle event→transition emission (ADR-040 §D2 event→transition).
+   *  Login has none (no-op); project/session carved MR-L3b/c. */
+  applyEvent?(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    input: SendEventInput,
+  ): Promise<void>;
+  /** Post-settle terminal emission (ADR-040 §D2 settle = the typed emit
+   *  obligation). Carved for login in MR-L3a/N3. Returns the central
+   *  cross-machine hook signal (firing stays in the pump). */
+  settle?(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    input: SendEventInput,
+    ctx: SettleContext,
+  ): Promise<SettleOutcome>;
+  /** Spawn-time terminal emission (`beginIfNotStarted`). Login is never
+   *  spawned (it is the only `beginsDirectly` machine) → no-op (MR-L3a/N4).
+   *  project/session carved MR-L3b/c. */
+  settleSpawn?(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    input: { machine: string; principal_id: string; correlation_id: string },
+  ): Promise<void>;
+  /** Per-frozen-flow FREEZE emission tail (the broadcast LOOP stays central
+   *  per ADR-040 §D2 / AMB-3). Login has no FREEZE handler → no-op
+   *  (MR-L3a/N4). */
+  settleFreeze?(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    flow_id: string,
+  ): Promise<void>;
+  /** Per-frozen-flow THAW emission tail (broadcast LOOP stays central).
+   *  Login has no FREEZE handler → no-op (MR-L3a/N4). */
+  settleThaw?(
+    pump: PumpContext,
+    actor: AnyActorRef,
+    flow_id: string,
+    kind: "thaw" | "abandoned",
+  ): Promise<void>;
+  /** Deep-link re-resolve emission (`appendDeepLinkEvents`). Login has none
+   *  → no-op (MR-L3a/N4); project carved MR-L3b. */
+  applyDeepLink?(
+    pump: PumpContext,
+    input: {
+      machine: string;
+      flow_id: string;
+      correlation_id: string;
+      events: Array<{ type: string; payload: Record<string, unknown> }>;
+    },
+  ): Promise<void>;
 }
 
 /** Thrown on a registry miss. The HTTP edge maps this to a clean 404
