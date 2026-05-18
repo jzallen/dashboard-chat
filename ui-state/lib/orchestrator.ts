@@ -1945,16 +1945,20 @@ export class FlowOrchestrator implements PumpContext {
     correlation_id: string;
     events: Array<{ type: string; payload: Record<string, unknown> }>;
   }): Promise<FlowProjection> {
+    // ADR-040 LEAF-3 MR-L3b/N9: the deep-link event-append loop is CARVED
+    // into projectContextStrategy.applyDeepLink (deep-link is a
+    // project-context concern; §4B). The pump RETAINS the LEAF-1
+    // registry-resolve VALIDATION (UnknownMachineError → clean 404) and
+    // the FE projection-read (parsePrincipal + projectionFor) — both stay
+    // central (§3). applyDeepLink is called UNCONDITIONALLY (the imported
+    // strategy ref, mirroring the MR-L3a loginOrgSetupStrategy precedent);
+    // the pre-carve loop had no machine guard so the carved one has none
+    // either → byte-identical for every machine.
     FLOW_STRATEGY_REGISTRY.resolve(input.machine);
-    for (const ev of input.events) {
-      const flowEvent: FlowEvent = {
-        ts: new Date().toISOString(),
-        type: ev.type,
-        payload: ev.payload,
-        correlation_id: input.correlation_id,
-      };
-      await this.deps.eventLog.append(input.flow_id, flowEvent);
+    if (!projectContextStrategy.applyDeepLink) {
+      throw new Error("projectContextStrategy.applyDeepLink missing (LEAF-3 N9)");
     }
+    await projectContextStrategy.applyDeepLink(this, input);
     const principal_id = parsePrincipal(input.flow_id);
     return this.projectionFor(
       input.flow_id,

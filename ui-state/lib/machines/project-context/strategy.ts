@@ -30,6 +30,7 @@ import type {
   SettleOutcome,
 } from "../../orchestrator.ts";
 import { harvestSettledProjectContextState } from "../../orchestrator-harvester.ts";
+import type { FlowEvent } from "../../projection.ts";
 import { buildProjection } from "../../projection.ts";
 import {
   createProjectContextMachine,
@@ -536,5 +537,41 @@ export const projectContextStrategy: FlowStrategy = {
     }
 
     return { projectReady };
+  },
+
+  /**
+   * Deep-link re-resolve emission (`appendDeepLinkEvents`). Carved verbatim
+   * from the `appendDeepLinkEvents` body in MR-L3b/N9 — the
+   * machine-agnostic `for (ev of input.events) eventLog.append(...)` loop
+   * (deep-link is a project-context concern; ADR-040 §4B). BEHAVIOR-NEUTRAL
+   * — same FlowEvents, same order; `settle→emit` STILL appends to the
+   * Redis-Streams event-log (LEAF-5 swap is out of scope).
+   *
+   * The pump calls this UNCONDITIONALLY (the imported strategy ref,
+   * mirroring the MR-L3a `loginOrgSetupStrategy` precedent). The pre-carve
+   * `appendDeepLinkEvents` had NO machine guard (it appended for any
+   * machine), so this has none either → byte-identical for every machine.
+   * The pump RETAINS the LEAF-1 `FLOW_STRATEGY_REGISTRY.resolve(machine)`
+   * validation (UnknownMachineError → 404) and the FE projection-read
+   * (`parsePrincipal` + `projectionFor`) — both stay central (§3).
+   */
+  async applyDeepLink(
+    pump: PumpContext,
+    input: {
+      machine: string;
+      flow_id: string;
+      correlation_id: string;
+      events: Array<{ type: string; payload: Record<string, unknown> }>;
+    },
+  ): Promise<void> {
+    for (const ev of input.events) {
+      const flowEvent: FlowEvent = {
+        ts: new Date().toISOString(),
+        type: ev.type,
+        payload: ev.payload,
+        correlation_id: input.correlation_id,
+      };
+      await pump.deps.eventLog.append(input.flow_id, flowEvent);
+    }
   },
 };
