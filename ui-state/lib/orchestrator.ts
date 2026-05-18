@@ -755,8 +755,14 @@ export class FlowOrchestrator {
     // failures on list_sessions, emit the degraded event so projection
     // consumers can surface a banner / metric. Emitted BEFORE the terminal
     // event so the projection reducer sees them in causal order.
-    const degradedIds =
-      ctx.last_used_resolution_degraded?.failed_project_ids ?? [];
+    //
+    // RC-1: the degraded set lands on the machine context (resolveInitialScope
+    // onDone assign) AFTER the snapshot flips and BEFORE the first FlowEvent —
+    // exactly the D-MR4-06 / D-MR5-01 emission-completeness failure class. A
+    // projection-of-log read here is always empty on the first write
+    // (US-202 degraded scenario observed `last_used_resolution_degraded:
+    // null`). Source it from the designated harvest boundary instead.
+    const degradedIds = beginHarvest.last_used_degraded_project_ids ?? [];
     if (degradedIds.length > 0) {
       await this.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),

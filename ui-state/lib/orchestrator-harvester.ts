@@ -87,13 +87,24 @@ export function harvestSettledProjectContextState(actor: AnyActorRef): {
   org_id: string | null;
   project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
+  last_used_degraded_project_ids: string[];
 } {
   const ctx = actor.getSnapshot().context as {
     org_id: string | null;
     project: { id: string | null; name: string | null };
     underlying_cause_tag: string | null;
+    last_used_degraded_project_ids?: string[];
   };
   return {
+    // OQ-J002-5 degraded path (RC-1): `resolveInitialScope`'s onDone assign
+    // writes `last_used_degraded_project_ids` onto the machine context AFTER
+    // the snapshot flips to `project_selected` and BEFORE the first
+    // FlowEvent captures it — the SAME D-MR4-06 / D-MR5-01 emission-
+    // completeness failure class. The begin path's
+    // `last_used_resolution_degraded` emission therefore read an empty list
+    // from the projection-of-log (US-202 degraded scenario observed
+    // `last_used_resolution_degraded: null`). Harvest the settled set here.
+    last_used_degraded_project_ids: ctx.last_used_degraded_project_ids ?? [],
     // D-MR5-01: the begin path needs `org_id` too — it lands on the
     // project-context machine context (from the `auth_ready` event /
     // spawn input) and, like `project`, is absent from the
