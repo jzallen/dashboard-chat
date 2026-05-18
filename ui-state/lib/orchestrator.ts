@@ -795,7 +795,13 @@ export class FlowOrchestrator {
         payload: {
           org_id: settledOrgId,
           project: settledProject,
-          most_recent_session_per_project: ctx.most_recent_session_per_project,
+          // OQ-J002-5 (US-202 last-used resolution): `resolveInitialScope`
+          // onDone writes the per-project last_active_at map onto the
+          // machine context AFTER the snapshot flips — the projection-of-log
+          // read (`ctx`) is empty at first write (observed `keys=[]`).
+          // Harvest it from the same boundary as `settledProject`.
+          most_recent_session_per_project:
+            beginHarvest.most_recent_session_per_project,
         },
         correlation_id: input.correlation_id,
       });
@@ -1627,9 +1633,24 @@ export class FlowOrchestrator {
       // link / intent-resource observed the wrong / null `project_id`).
       // Broaden the harvest to the open_deep_link re-resolve, mirroring the
       // begin path's `beginHarvest`.
+      // RCA §6.2 step 5 (create-path): `create_project_submitted` settles
+      // via the `createProject` invoke (→ `project_selected`) or the
+      // empty-name guard arm (→ stays `no_projects` with
+      // `project_validation_error`) or a transient invoke failure (→
+      // `error_recoverable`). In every case the terminal values
+      // (`project`, `underlying_cause_tag`, `pending_project_name`,
+      // `project_validation_error`) land on the machine context AFTER the
+      // snapshot flips and BEFORE the first FlowEvent captures them — the
+      // SAME emission-completeness class D-MR4-06 fixed for the switch
+      // path and D-MR5-01 fixed for begin. The create counterpart was
+      // never added to the harvest, so `project_created` carried a null
+      // project (IC-J002-2 / creating_first_project), the empty-name
+      // `project_validation_failed` never fired, and the transient
+      // `project_context_recoverable_error` lost `pending_project_name`.
       const isSettleHarvestPath =
         input.type === "switching_project_intent" ||
-        input.type === "open_deep_link";
+        input.type === "open_deep_link" ||
+        input.type === "create_project_submitted";
       const switchHarvest = isSettleHarvestPath
         ? harvestSettledProjectContextState(actor)
         : null;
@@ -1688,14 +1709,25 @@ export class FlowOrchestrator {
         });
       }
 
-      if (
-        stateValue === "no_projects" &&
-        projectionCtx.project_validation_error
-      ) {
+      // The empty/invalid-name guard arm writes `project_validation_error`
+      // onto the machine context only (the machine stays in `no_projects`
+      // with no invoke), so the projection-of-log read is null at emission
+      // time — harvest it (US-201 inline-error AC).
+      const settledValidationError =
+        switchHarvest?.project_validation_error ??
+        projectionCtx.project_validation_error;
+      // `capturePendingProjectName` likewise lands only on the machine
+      // context; harvest it so `project_creation_started` /
+      // `project_context_recoverable_error` carry the composer text across
+      // the `creating_project ↔ error_recoverable` retry boundary.
+      const settledPendingProjectName =
+        switchHarvest?.pending_project_name || projectionCtx.pending_project_name;
+
+      if (stateValue === "no_projects" && settledValidationError) {
         await this.deps.eventLog.append(input.flow_id, {
           ts: new Date().toISOString(),
           type: "project_validation_failed",
-          payload: { error: projectionCtx.project_validation_error },
+          payload: { error: settledValidationError },
           correlation_id: input.correlation_id,
         });
       } else if (stateValue === "no_projects") {
@@ -1715,7 +1747,7 @@ export class FlowOrchestrator {
           ts: new Date().toISOString(),
           type: "project_creation_started",
           payload: {
-            pending_project_name: projectionCtx.pending_project_name,
+            pending_project_name: settledPendingProjectName,
           },
           correlation_id: input.correlation_id,
         });
@@ -1795,7 +1827,7 @@ export class FlowOrchestrator {
               switchSettledCause ??
               projectionCtx.underlying_cause_tag ??
               "transient",
-            pending_project_name: projectionCtx.pending_project_name,
+            pending_project_name: settledPendingProjectName,
           },
           correlation_id: input.correlation_id,
         });

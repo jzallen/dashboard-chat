@@ -88,14 +88,36 @@ export function harvestSettledProjectContextState(actor: AnyActorRef): {
   project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
   last_used_degraded_project_ids: string[];
+  most_recent_session_per_project: Record<string, string>;
+  pending_project_name: string;
+  project_validation_error: { kind: string; message: string } | null;
 } {
   const ctx = actor.getSnapshot().context as {
     org_id: string | null;
     project: { id: string | null; name: string | null };
     underlying_cause_tag: string | null;
     last_used_degraded_project_ids?: string[];
+    most_recent_session_per_project?: Record<string, string>;
+    pending_project_name?: string;
+    project_validation_error?: { kind: string; message: string } | null;
   };
   return {
+    // MR-1 create-path + OQ-J002-5 (RC-1 / step-5): the create-project
+    // sub-flow's terminal values land on the machine context AFTER the
+    // snapshot flips and BEFORE the first FlowEvent captures them — the
+    // SAME D-MR4-06 / D-MR5-01 emission-completeness failure class the
+    // switch / begin paths already harvest for:
+    //   - `most_recent_session_per_project` — `resolveInitialScope` onDone
+    //     assign (US-202 last-used resolution; observed `keys=[]`).
+    //   - `pending_project_name` — `capturePendingProjectName` on the
+    //     `create_project_submitted` guard arm (preserved across
+    //     `creating_project ↔ error_recoverable`; transient-retry AC).
+    //   - `project_validation_error` — `recordProjectValidationError` on
+    //     the empty/invalid-name arm (US-201 inline-error AC).
+    most_recent_session_per_project:
+      ctx.most_recent_session_per_project ?? {},
+    pending_project_name: ctx.pending_project_name ?? "",
+    project_validation_error: ctx.project_validation_error ?? null,
     // OQ-J002-5 degraded path (RC-1): `resolveInitialScope`'s onDone assign
     // writes `last_used_degraded_project_ids` onto the machine context AFTER
     // the snapshot flips to `project_selected` and BEFORE the first
