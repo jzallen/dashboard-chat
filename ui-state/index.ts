@@ -36,6 +36,7 @@ import {
   createWorkOSUserInfoActor,
   reissueOrgJwtFn,
 } from "./lib/machines/login-and-org-setup/index.ts";
+import { buildLoginAndOrgSetupRouter } from "./lib/machines/login-and-org-setup/router.ts";
 import {
   createProjectActor,
   resolveInitialScopeActor,
@@ -829,8 +830,13 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
   // through the migration with no 404 window. session-chat /
   // login-and-org-setup have canonical == legacy segment (no true alias
   // pair) and mount once.
-  const loginRouter = makeFlowRouter(
-    FLOW_STRATEGY_REGISTRY.resolve("login-and-org-setup"),
+  // LEAF-2 sequential carve: login routes through the co-located per-
+  // machine router (`lib/machines/login-and-org-setup/router.ts`); the
+  // remaining mounts still go through the legacy in-file `makeFlowRouter`
+  // factory until they are carved in the next steps. Behavior-neutral
+  // through every intermediate state.
+  const loginRouter = buildLoginAndOrgSetupRouter(
+    orchestrator,
     "login-and-org-setup",
   );
   app.route("/flow/login-and-org-setup", loginRouter);
