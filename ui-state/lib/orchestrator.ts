@@ -16,21 +16,18 @@
 //      any individual machine.
 //   4. Actor identity = (flow_id, principal_id).
 
-import { type AnyActorRef, type AnyStateMachine,createActor } from "xstate";
+import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { ResourceType } from "./active-scope.ts";
+import { type Result, ok, err } from "./flow-result.ts";
 import {
   type CreateOrgAndReissueInput,
   type LoginMachineDeps,
 } from "./machines/login-and-org-setup/index.ts";
 import { loginOrgSetupStrategy } from "./machines/login-and-org-setup/strategy.ts";
-import {
-  type ProjectContextMachineDeps,
-} from "./machines/project-context/index.ts";
+import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
-import {
-  type SessionChatMachineDeps,
-} from "./machines/session-chat/index.ts";
+import { type SessionChatMachineDeps } from "./machines/session-chat/index.ts";
 import { sessionChatStrategy } from "./machines/session-chat/strategy.ts";
 import {
   harvestSettledFreezeState,
@@ -102,9 +99,10 @@ export interface OrchestratorDeps {
   createOrgFn?: (
     input: CreateOrgAndReissueInput,
   ) => Promise<{ org_id: string; org_name: string }>;
-  reissueOrgJwtFn?: (
-    input: { org_id: string; correlation_id: string },
-  ) => Promise<void>;
+  reissueOrgJwtFn?: (input: {
+    org_id: string;
+    correlation_id: string;
+  }) => Promise<void>;
   log?: (record: Record<string, unknown>) => void;
 }
 
@@ -224,7 +222,11 @@ export interface FlowStrategy {
    *  flow from the orchestrator deps. */
   buildMachine(
     deps: OrchestratorDeps,
-    input: { correlation_id: string; principal_id: string; existing_org_names?: string[] },
+    input: {
+      correlation_id: string;
+      principal_id: string;
+      existing_org_names?: string[];
+    },
   ): AnyStateMachine;
 
   // ── ADR-040 §D2 LEAF-3 carved members (port grown N1; design-locked N0).
@@ -232,7 +234,10 @@ export interface FlowStrategy {
 
   /** Direct begin body (ADR-040 §D2 begin-semantics). Carved for login in
    *  MR-L3a/N2: the pump calls this when `beginsDirectly`. */
-  beginDirect?(pump: PumpContext, input: BeginFlowInput): Promise<FlowProjection>;
+  beginDirect?(
+    pump: PumpContext,
+    input: BeginFlowInput,
+  ): Promise<FlowProjection>;
   /** Pre-settle event→transition emission (ADR-040 §D2 event→transition).
    *  Login has none (no-op); project/session carved MR-L3b/c. */
   applyEvent?(
@@ -296,6 +301,18 @@ export class UnknownMachineError extends Error {
     super(`Unknown machine: ${machine}`);
     this.name = "UnknownMachineError";
   }
+}
+
+/** Boundary translator: the throwing `*Core` bodies keep exception semantics
+ *  for internal self-calls; the public facades funnel every exception through
+ *  here so external callers get a Result. `unknown_machine` is the registry
+ *  miss (HTTP 404); every other error carries its message verbatim so the
+ *  prior `{ error, message }` 500 shape stays byte-identical. */
+function toFlowError(e: unknown): Result<never> {
+  if (e instanceof UnknownMachineError) {
+    return err({ kind: "unknown_machine", machine: e.machine });
+  }
+  return err({ kind: "dispatch_error", message: (e as Error).message });
 }
 
 /**
@@ -424,6 +441,32 @@ interface FrozenFlowState {
   queued: Array<{ input: SendEventInput; seq: number }>;
 }
 
+export type BeginIfNotStartedInput = {
+  machine: string;
+  principal_id: string;
+  correlation_id: string;
+  // `auth_ready` payload (project-context dispatch):
+  org_id?: string;
+  user_first_name?: string;
+  // `project_ready` payload (session-chat dispatch — DWD-13 §3.2.B):
+  project_id?: string;
+  project_name?: string;
+  deeplink_session_id?: string | null;
+  intent_resource_id?: string | null;
+  intent_resource_type?: ResourceType | null;
+  /** When true, stop+respawn the actor and reset its event log. Used by
+   *  HTTP `/begin` direct posts (broadcast-hook calls leave this false so
+   *  cross-machine entry is idempotent). */
+  force_restart?: boolean;
+};
+
+export type AppendDeepLinkEventsInput = {
+  machine: string;
+  flow_id: string;
+  correlation_id: string;
+  events: Array<{ type: string; payload: Record<string, unknown> }>;
+};
+
 export class FlowOrchestrator implements PumpContext {
   private readonly actors = new Map<string, AnyActorRef>();
   /** Per-flow freeze state. Absent key = flow is not frozen. */
@@ -470,7 +513,15 @@ export class FlowOrchestrator implements PumpContext {
    * below; other machines (J-002+) plug in via the registry and are
    * begun via `beginIfNotStarted` from the auth_ready broadcast hook.
    */
-  async begin(input: BeginFlowInput): Promise<FlowProjection> {
+  async begin(input: BeginFlowInput): Promise<Result<FlowProjection>> {
+    try {
+      return ok(await this.beginCore(input));
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async beginCore(input: BeginFlowInput): Promise<FlowProjection> {
     const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
 
     // J-002 and other machines are spawned via beginIfNotStarted (called by
@@ -478,7 +529,7 @@ export class FlowOrchestrator implements PumpContext {
     // bypass the cross-machine entry contract. Allow them only when the
     // existing flow is already started (idempotent no-op).
     if (!strategy.beginsDirectly) {
-      return this.beginIfNotStarted({
+      return this.beginIfNotStartedCore({
         machine: input.machine,
         principal_id: input.principal_id,
         correlation_id: input.correlation_id,
@@ -522,24 +573,19 @@ export class FlowOrchestrator implements PumpContext {
    *     transition out of `waiting_for_project` (MR-2+) and consume any
    *     forwarded deep-link target per DESIGN §3.4.
    */
-  async beginIfNotStarted(input: {
-    machine: string;
-    principal_id: string;
-    correlation_id: string;
-    // `auth_ready` payload (project-context dispatch):
-    org_id?: string;
-    user_first_name?: string;
-    // `project_ready` payload (session-chat dispatch — DWD-13 §3.2.B):
-    project_id?: string;
-    project_name?: string;
-    deeplink_session_id?: string | null;
-    intent_resource_id?: string | null;
-    intent_resource_type?: ResourceType | null;
-    /** When true, stop+respawn the actor and reset its event log. Used by
-     *  HTTP `/begin` direct posts (broadcast-hook calls leave this false so
-     *  cross-machine entry is idempotent). */
-    force_restart?: boolean;
-  }): Promise<FlowProjection> {
+  async beginIfNotStarted(
+    input: BeginIfNotStartedInput,
+  ): Promise<Result<FlowProjection>> {
+    try {
+      return ok(await this.beginIfNotStartedCore(input));
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async beginIfNotStartedCore(
+    input: BeginIfNotStartedInput,
+  ): Promise<FlowProjection> {
     const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
     const flow_id = `${input.machine}:${input.principal_id}`;
 
@@ -825,7 +871,7 @@ export class FlowOrchestrator implements PumpContext {
     const projectId = ctx.project?.id ?? null;
     if (!orgId || !projectId) return;
     try {
-      await this.beginIfNotStarted({
+      await this.beginIfNotStartedCore({
         machine: SESSION_CHAT_WIRE_NAME,
         principal_id,
         correlation_id,
@@ -873,7 +919,15 @@ export class FlowOrchestrator implements PumpContext {
   // cross-machine project_ready re-broadcast (maybeFireProjectReady) stays
   // pump-fired AFTER it returns (§3 / §4B). Behavior-neutral.
 
-  async send(input: SendEventInput): Promise<FlowProjection> {
+  async send(input: SendEventInput): Promise<Result<FlowProjection>> {
+    try {
+      return ok(await this.sendCore(input));
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async sendCore(input: SendEventInput): Promise<FlowProjection> {
     const actor = this.actors.get(input.flow_id);
     if (!actor) {
       throw new Error(`unknown flow_id: ${input.flow_id}`);
@@ -1039,16 +1093,19 @@ export class FlowOrchestrator implements PumpContext {
     // failure), broadcast THAW.
     const prior = this.priorState.get(input.flow_id);
     if (stateValue === "expired_token" && prior !== "expired_token") {
-      await this.broadcastFreeze(input.flow_id);
+      await this.broadcastFreezeCore(input.flow_id);
     } else if (prior === "expired_token" && stateValue === "ready") {
       // Silent re-auth succeeded → THAW: each frozen J-002 machine
       // returns to its `last_live_state` and queued intents replay FIFO.
-      await this.broadcastThaw(input.flow_id, "thaw");
-    } else if (prior === "expired_token" && stateValue === "error_recoverable") {
+      await this.broadcastThawCore(input.flow_id, "thaw");
+    } else if (
+      prior === "expired_token" &&
+      stateValue === "error_recoverable"
+    ) {
       // Silent re-auth FAILED (US-210 Example 3): the buffered intents are
       // abandoned and each frozen J-002 machine falls through
       // `freeze → error_recoverable` (cause `replay_abandoned`).
-      await this.broadcastThaw(input.flow_id, "abandoned");
+      await this.broadcastThawCore(input.flow_id, "abandoned");
     }
     this.priorState.set(input.flow_id, stateValue);
     // ---- End freeze/thaw signaling --------------------------------------
@@ -1075,12 +1132,9 @@ export class FlowOrchestrator implements PumpContext {
       input,
       { stateValue, prior, projectionCtx },
     );
-    if (
-      loginSettleOutcome.authReady &&
-      this.deps.projectContextMachineDeps
-    ) {
+    if (loginSettleOutcome.authReady && this.deps.projectContextMachineDeps) {
       try {
-        await this.beginIfNotStarted({
+        await this.beginIfNotStartedCore({
           machine: PROJECT_CONTEXT_WIRE_NAME,
           principal_id: parsePrincipal(input.flow_id),
           correlation_id: input.correlation_id,
@@ -1179,7 +1233,15 @@ export class FlowOrchestrator implements PumpContext {
     );
   }
 
-  async getProjection(flow_id: string): Promise<FlowProjection> {
+  async getProjection(flow_id: string): Promise<Result<FlowProjection>> {
+    try {
+      return ok(await this.getProjectionCore(flow_id));
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async getProjectionCore(flow_id: string): Promise<FlowProjection> {
     const principal_id = parsePrincipal(flow_id);
     return this.projectionFor(flow_id, principal_id, "");
   }
@@ -1215,7 +1277,15 @@ export class FlowOrchestrator implements PumpContext {
    * tracks the freeze state at this level so `send()` can queue intent
    * events arriving at frozen actors into the bounded replay buffer.
    */
-  async broadcastFreeze(originFlowId: string): Promise<void> {
+  async broadcastFreeze(originFlowId: string): Promise<Result<void>> {
+    try {
+      return ok(await this.broadcastFreezeCore(originFlowId));
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async broadcastFreezeCore(originFlowId: string): Promise<void> {
     const now = Date.now();
     for (const [flow_id, actor] of this.actors.entries()) {
       if (flow_id === originFlowId) continue;
@@ -1277,6 +1347,17 @@ export class FlowOrchestrator implements PumpContext {
    * (overflow or 5s timeout) in which case the queue is dropped.
    */
   async broadcastThaw(
+    originFlowId: string,
+    reason: "thaw" | "abandoned" = "thaw",
+  ): Promise<Result<void>> {
+    try {
+      return ok(await this.broadcastThawCore(originFlowId, reason));
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async broadcastThawCore(
     originFlowId: string,
     reason: "thaw" | "abandoned" = "thaw",
   ): Promise<void> {
@@ -1427,12 +1508,7 @@ export class FlowOrchestrator implements PumpContext {
           // fires NO onward cross-machine re-broadcast (unlike
           // project-context's `project_ready`).
           if (sessionChatStrategy.settleThaw) {
-            await sessionChatStrategy.settleThaw(
-              this,
-              actor,
-              flow_id,
-              "thaw",
-            );
+            await sessionChatStrategy.settleThaw(this, actor, flow_id, "thaw");
           }
         } else if (
           machine === PROJECT_CONTEXT_WIRE_NAME &&
@@ -1490,7 +1566,7 @@ export class FlowOrchestrator implements PumpContext {
         isJ002 && actor
           ? harvestSettledFreezeState(actor).stale_intents_dropped_count
           : 0;
-      await this.send(input);
+      await this.sendCore(input);
       if (isJ002 && actor) {
         const after = harvestSettledFreezeState(actor);
         const isDatasetPick =
@@ -1514,12 +1590,11 @@ export class FlowOrchestrator implements PumpContext {
             ts: new Date().toISOString(),
             type: "stale_intent_dropped_after_thaw",
             payload: {
-              intent_type:
-                after.last_stale_intent?.intent_type ?? input.type,
+              intent_type: after.last_stale_intent?.intent_type ?? input.type,
               target_id:
                 after.last_stale_intent?.target_id ??
                 (datasetStale
-                  ? (input.payload.resource_id as string | undefined) ?? ""
+                  ? ((input.payload.resource_id as string | undefined) ?? "")
                   : ""),
             },
             correlation_id: input.correlation_id,
@@ -1557,7 +1632,9 @@ export class FlowOrchestrator implements PumpContext {
     const snap = snapshot as { children?: Record<string, unknown> } | null;
     const children = snap?.children;
     if (!children || typeof children !== "object") return false;
-    return Object.keys(children).some((key) => key.startsWith("0.expired_token"));
+    return Object.keys(children).some((key) =>
+      key.startsWith("0.expired_token"),
+    );
   }
 
   /**
@@ -1571,12 +1648,19 @@ export class FlowOrchestrator implements PumpContext {
    * XState actor does NOT need to know about scope events because scope is
    * orthogonal to the login statechart.
    */
-  async appendDeepLinkEvents(input: {
-    machine: string;
-    flow_id: string;
-    correlation_id: string;
-    events: Array<{ type: string; payload: Record<string, unknown> }>;
-  }): Promise<FlowProjection> {
+  async appendDeepLinkEvents(
+    input: AppendDeepLinkEventsInput,
+  ): Promise<Result<FlowProjection>> {
+    try {
+      return ok(await this.appendDeepLinkEventsCore(input));
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async appendDeepLinkEventsCore(
+    input: AppendDeepLinkEventsInput,
+  ): Promise<FlowProjection> {
     // ADR-040 LEAF-3 MR-L3b/N9: the deep-link event-append loop is CARVED
     // into projectContextStrategy.applyDeepLink (deep-link is a
     // project-context concern; §4B). The pump RETAINS the LEAF-1
@@ -1588,7 +1672,9 @@ export class FlowOrchestrator implements PumpContext {
     // either → byte-identical for every machine.
     FLOW_STRATEGY_REGISTRY.resolve(input.machine);
     if (!projectContextStrategy.applyDeepLink) {
-      throw new Error("projectContextStrategy.applyDeepLink missing (LEAF-3 N9)");
+      throw new Error(
+        "projectContextStrategy.applyDeepLink missing (LEAF-3 N9)",
+      );
     }
     await projectContextStrategy.applyDeepLink(this, input);
     const principal_id = parsePrincipal(input.flow_id);

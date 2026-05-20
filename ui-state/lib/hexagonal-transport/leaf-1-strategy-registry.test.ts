@@ -152,12 +152,15 @@ describe("LEAF-1 FlowStrategy registry", () => {
     // login-and-org-setup is the only direct-begin machine (the WorkOS
     // entry body); the J-002 machines are spawned via the cross-machine
     // broadcast hook (beginIfNotStarted).
-    expect(FLOW_STRATEGY_REGISTRY.get("login-and-org-setup")!.beginsDirectly)
-      .toBe(true);
-    expect(FLOW_STRATEGY_REGISTRY.get("project-context")!.beginsDirectly)
-      .toBe(false);
-    expect(FLOW_STRATEGY_REGISTRY.get("session-chat")!.beginsDirectly)
-      .toBe(false);
+    expect(
+      FLOW_STRATEGY_REGISTRY.get("login-and-org-setup")!.beginsDirectly,
+    ).toBe(true);
+    expect(FLOW_STRATEGY_REGISTRY.get("project-context")!.beginsDirectly).toBe(
+      false,
+    );
+    expect(FLOW_STRATEGY_REGISTRY.get("session-chat")!.beginsDirectly).toBe(
+      false,
+    );
   });
 
   it("unknown machine resolves to a clean 404 via the registry, no conditional fall-through", async () => {
@@ -188,7 +191,7 @@ describe("LEAF-1 FlowStrategy registry", () => {
     ).toThrow(UnknownMachineError);
   });
 
-  it("the carved dispatch path contains no per-machine `machine === \"<name>\"` conditional", () => {
+  it('the carved dispatch path contains no per-machine `machine === "<name>"` conditional', () => {
     // Structural contract (the new delta the acceptance suite cannot pin):
     // the LEAF-1 carved dispatch path = the machine-RESOLUTION fork in
     // begin / beginIfNotStarted / appendDeepLinkEvents. The per-machine
@@ -201,10 +204,13 @@ describe("LEAF-1 FlowStrategy registry", () => {
     expect(ORCHESTRATOR_SRC).not.toMatch(/MACHINE_REGISTRY/);
     expect(ORCHESTRATOR_SRC).not.toMatch(/MachineFactory/);
 
+    // Dispatch logic lives in the throwing `*Core` methods; the public
+    // methods are thin Result facades (`ok(await this.<x>Core(...))`). The
+    // carve invariant is unchanged — introspect where the logic now lives.
     for (const method of [
-      "begin",
-      "beginIfNotStarted",
-      "appendDeepLinkEvents",
+      "beginCore",
+      "beginIfNotStartedCore",
+      "appendDeepLinkEventsCore",
     ]) {
       const body = methodBody(ORCHESTRATOR_SRC, method);
       // No per-machine string conditional in the carved resolution fork.

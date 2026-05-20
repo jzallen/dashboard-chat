@@ -199,7 +199,13 @@ describe("LEAF-3 orchestrator-pump carve", () => {
     // transition-dispatch comparison. (This is the LEAF-3 delta beyond
     // leaf-1's it: the per-machine settle/emit fan-out that lived in
     // `send` is now fully carved into the strategy ports.)
-    for (const method of ["begin", "send", "appendDeepLinkEvents"]) {
+    // Dispatch/settle logic lives in the throwing `*Core` methods; the
+    // public methods are thin Result facades. Carve invariant unchanged.
+    for (const method of [
+      "beginCore",
+      "sendCore",
+      "appendDeepLinkEventsCore",
+    ]) {
       const body = stripComments(methodBody(ORCHESTRATOR_SRC, method));
       for (const cmp of WIRE_COMPARISONS) {
         expect(body, `${method} :: ${cmp}`).not.toMatch(cmp);
@@ -210,14 +216,14 @@ describe("LEAF-3 orchestrator-pump carve", () => {
     // strategy for the pre-settle event->transition emission AND runs the
     // typed-port settle chain; `appendDeepLinkEvents` resolves + calls the
     // port member.
-    const sendBody = methodBody(ORCHESTRATOR_SRC, "send");
+    const sendBody = methodBody(ORCHESTRATOR_SRC, "sendCore");
     expect(sendBody).toMatch(/FLOW_STRATEGY_REGISTRY\.resolve\(/);
     expect(sendBody).toMatch(/loginOrgSetupStrategy\.settle\(/);
     expect(sendBody).toMatch(/projectContextStrategy\.settle\(/);
     expect(sendBody).toMatch(/sessionChatStrategy\.settle\(/);
-    expect(
-      methodBody(ORCHESTRATOR_SRC, "appendDeepLinkEvents"),
-    ).toMatch(/FLOW_STRATEGY_REGISTRY\.resolve\(/);
+    expect(methodBody(ORCHESTRATOR_SRC, "appendDeepLinkEventsCore")).toMatch(
+      /FLOW_STRATEGY_REGISTRY\.resolve\(/,
+    );
 
     // `beginIfNotStarted`: the spawn-time terminal emission dispatches via
     // the resolved port member (`strategy.settleSpawn`) — ZERO per-machine
@@ -227,7 +233,7 @@ describe("LEAF-3 orchestrator-pump carve", () => {
     // wire-name comparison line is part of an `isProjectReadyDispatch` /
     // `isAuthReadyDispatch` detection — never a per-machine transition
     // dispatch.
-    const binsBody = methodBody(ORCHESTRATOR_SRC, "beginIfNotStarted");
+    const binsBody = methodBody(ORCHESTRATOR_SRC, "beginIfNotStartedCore");
     const binsCode = stripComments(binsBody);
     // Spawn-time terminal emission dispatches via the resolved port
     // member (no per-machine branch); the project-context-specific
@@ -390,9 +396,7 @@ describe("LEAF-3 orchestrator-pump carve", () => {
     expect(ESLINT_CONFIG_SRC).toMatch(
       /files:\s*\[\s*["']ui-state\/lib\/orchestrator\.ts["']\s*\]/,
     );
-    expect(ESLINT_CONFIG_SRC).toMatch(
-      /no-orchestrator-snapshot-reads/,
-    );
+    expect(ESLINT_CONFIG_SRC).toMatch(/no-orchestrator-snapshot-reads/);
     // The carved pump never READS `.getSnapshot().context` in CODE (the
     // LEAF-D invariant; the strategies own all settled-context reads via
     // the harvestSettled* boundary). Scanned comment-stripped — the
@@ -435,7 +439,7 @@ describe("LEAF-3 orchestrator-pump carve", () => {
     // The pump delegates the per-machine settle obligation to the typed
     // port chain (no inlined per-machine settle/emit survives — the exact
     // structural precondition the mr_1..mr_6 A/B Δ=0 result certifies).
-    const sendBody = methodBody(ORCHESTRATOR_SRC, "send");
+    const sendBody = methodBody(ORCHESTRATOR_SRC, "sendCore");
     expect(sendBody).toMatch(/loginOrgSetupStrategy\.settle\(/);
     expect(sendBody).toMatch(/projectContextStrategy\.settle\(/);
     expect(sendBody).toMatch(/sessionChatStrategy\.settle\(/);

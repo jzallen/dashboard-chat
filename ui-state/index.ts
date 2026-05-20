@@ -29,6 +29,7 @@ import type { Context } from "hono";
 
 import type { ResourceType } from "./lib/active-scope.ts";
 import { resolveActiveScope } from "./lib/active-scope.ts";
+import { type Result, errorMessage } from "./lib/flow-result.ts";
 import {
   createOrgAndReissueActor,
   createOrgFn,
@@ -314,19 +315,15 @@ app.get("/health", (c) => c.json({ status: "ok" }));
         if (id) forceListSessionsFailures.add(id);
       }
     }
-    try {
-      const projection = await orchestrator.beginIfNotStarted({
-        machine,
-        principal_id,
-        correlation_id,
-        org_id: orgId,
-        user_first_name: firstName,
-        force_restart: true,
-      });
-      return c.json(projection);
-    } catch (err) {
-      return flowDispatchError(c, err, "begin_failed");
-    }
+    const result = await orchestrator.beginIfNotStarted({
+      machine,
+      principal_id,
+      correlation_id,
+      org_id: orgId,
+      user_first_name: firstName,
+      force_restart: true,
+    });
+    return resultToJson(c, result, "begin_failed");
   }
 
   // force-reissue-failures knob — body-field transport. Phase-2 vocabulary
@@ -340,22 +337,18 @@ app.get("/health", (c) => c.json({ status: "ok" }));
     correlationId: correlation_id,
     serviceName: "ui-state",
   });
-  try {
-    const projection = await orchestrator.begin({
-      machine,
-      principal_id,
-      persona_email: body.persona_email ?? "",
-      persona_display_name: body.persona_display_name ?? "",
-      correlation_id,
-      existing_org_names: body.existing_org_names,
-      force_reissue_failures: reissueFailuresAllowed
-        ? body.force_reissue_failures
-        : undefined,
-    });
-    return c.json(projection);
-  } catch (err) {
-    return flowDispatchError(c, err, "begin_failed");
-  }
+  const result = await orchestrator.begin({
+    machine,
+    principal_id,
+    persona_email: body.persona_email ?? "",
+    persona_display_name: body.persona_display_name ?? "",
+    correlation_id,
+    existing_org_names: body.existing_org_names,
+    force_reissue_failures: reissueFailuresAllowed
+      ? body.force_reissue_failures
+      : undefined,
+  });
+  return resultToJson(c, result, "begin_failed");
 });
 
     router.post("/event", async (c) => {
@@ -498,18 +491,14 @@ app.get("/health", (c) => c.json({ status: "ok" }));
     forceSlowSwitchMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
   }
 
-  try {
-    const projection = await orchestrator.send({
-      machine,
-      flow_id: body.flow_id,
-      type: body.type,
-      payload: body.payload ?? {},
-      correlation_id,
-    });
-    return c.json(projection);
-  } catch (err) {
-    return flowDispatchError(c, err, "event_failed");
-  }
+  const result = await orchestrator.send({
+    machine,
+    flow_id: body.flow_id,
+    type: body.type,
+    payload: body.payload ?? {},
+    correlation_id,
+  });
+  return resultToJson(c, result, "event_failed");
 });
 
 // Cross-machine FREEZE / THAW test-driving endpoints (US-005 / US-210).
@@ -565,20 +554,20 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
       );
     }
     const originFlowId = `login-and-org-setup:${principal_id}`;
-    try {
-      if (kind === "freeze") {
-        await orchestrator.broadcastFreeze(originFlowId);
-      } else {
-        const reason = body.reason === "abandoned" ? "abandoned" : "thaw";
-        await orchestrator.broadcastThaw(originFlowId, reason);
-      }
-      return c.json({ status: "ok", kind, principal_id });
-    } catch (err) {
+    const result =
+      kind === "freeze"
+        ? await orchestrator.broadcastFreeze(originFlowId)
+        : await orchestrator.broadcastThaw(
+            originFlowId,
+            body.reason === "abandoned" ? "abandoned" : "thaw",
+          );
+    if (!result.ok) {
       return c.json(
-        { error: `${kind}_failed`, message: (err as Error).message },
+        { error: `${kind}_failed`, message: errorMessage(result.error) },
         500,
       );
     }
+    return c.json({ status: "ok", kind, principal_id });
   };
 }
     router.post("/freeze", freezeThawHandler("freeze"));
@@ -654,37 +643,36 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
     const orgId = c.req.header("X-Org-Id") ?? "";
     const userEmail = c.req.header("X-User-Email") ?? "";
     const firstName = (userEmail.split("@")[0] || "").trim() || null;
-    try {
-      // Ensure J-002 is spawned; idempotent.
-      await orchestrator.beginIfNotStarted({
-        machine,
-        principal_id: principalId,
-        correlation_id,
-        org_id: orgId,
-        user_first_name: firstName ?? "",
-      });
-      // Forward open_deep_link to the J-002 actor.
-      const flowId = body.flow_id ?? `${machine}:${principalId}`;
-      const payload: Record<string, unknown> = {};
-      if (body.intent_project_id !== undefined)
-        payload.intent_project_id = body.intent_project_id;
-      if (body.intent_session_id !== undefined)
-        payload.intent_session_id = body.intent_session_id;
-      if (body.intent_resource_id !== undefined)
-        payload.intent_resource_id = body.intent_resource_id;
-      if (body.intent_resource_type !== undefined)
-        payload.intent_resource_type = body.intent_resource_type;
-      const projection = await orchestrator.send({
-        machine,
-        flow_id: flowId,
-        type: "open_deep_link",
-        payload,
-        correlation_id,
-      });
-      return c.json(projection);
-    } catch (err) {
-      return flowDispatchError(c, err, "open_deep_link_failed");
+    // Ensure J-002 is spawned; idempotent.
+    const spawn = await orchestrator.beginIfNotStarted({
+      machine,
+      principal_id: principalId,
+      correlation_id,
+      org_id: orgId,
+      user_first_name: firstName ?? "",
+    });
+    if (!spawn.ok) {
+      return resultToJson(c, spawn, "open_deep_link_failed");
     }
+    // Forward open_deep_link to the J-002 actor.
+    const flowId = body.flow_id ?? `${machine}:${principalId}`;
+    const payload: Record<string, unknown> = {};
+    if (body.intent_project_id !== undefined)
+      payload.intent_project_id = body.intent_project_id;
+    if (body.intent_session_id !== undefined)
+      payload.intent_session_id = body.intent_session_id;
+    if (body.intent_resource_id !== undefined)
+      payload.intent_resource_id = body.intent_resource_id;
+    if (body.intent_resource_type !== undefined)
+      payload.intent_resource_type = body.intent_resource_type;
+    const result = await orchestrator.send({
+      machine,
+      flow_id: flowId,
+      type: "open_deep_link",
+      payload,
+      correlation_id,
+    });
+    return resultToJson(c, result, "open_deep_link_failed");
   }
 
   // ─── Legacy route-shaped deep link (J-001 / ScopeResolver path) ─────────
@@ -707,50 +695,46 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
     },
   );
 
-  try {
-    if (!resolution.ok) {
-      // I1 / I4: cross-tenant URL. Surface the named diagnostic via a
-      // scope_access_denied event. The projection's `state` flips to
-      // `access_denied` and `scope_resolution_error.reason` names the cause.
-      const projection = await orchestrator.appendDeepLinkEvents({
-        machine,
-        flow_id: body.flow_id,
-        correlation_id,
-        events: [
-          {
-            type: "scope_access_denied",
-            payload: { reason: "cross-tenant access" },
-          },
-        ],
-      });
-      return c.json(projection);
-    }
-
-    // Successful resolution: emit deep_link_opened. If reconciled (I5), the
-    // event payload carries reconciled=true; the reducer surfaces a
-    // scope_reconciled signal in the projection that an accompanying test
-    // agent can observe.
-    const projection = await orchestrator.appendDeepLinkEvents({
+  if (!resolution.ok) {
+    // I1 / I4: cross-tenant URL. Surface the named diagnostic via a
+    // scope_access_denied event. The projection's `state` flips to
+    // `access_denied` and `scope_resolution_error.reason` names the cause.
+    const result = await orchestrator.appendDeepLinkEvents({
       machine,
       flow_id: body.flow_id,
       correlation_id,
       events: [
         {
-          type: "deep_link_opened",
-          payload: {
-            scope: resolution.scope,
-            project: route.project
-              ? { id: route.project, name: body.project_name ?? null }
-              : null,
-            reconciled: resolution.reconciled,
-          },
+          type: "scope_access_denied",
+          payload: { reason: "cross-tenant access" },
         },
       ],
     });
-    return c.json(projection);
-  } catch (err) {
-    return flowDispatchError(c, err, "open_deep_link_failed");
+    return resultToJson(c, result, "open_deep_link_failed");
   }
+
+  // Successful resolution: emit deep_link_opened. If reconciled (I5), the
+  // event payload carries reconciled=true; the reducer surfaces a
+  // scope_reconciled signal in the projection that an accompanying test
+  // agent can observe.
+  const result = await orchestrator.appendDeepLinkEvents({
+    machine,
+    flow_id: body.flow_id,
+    correlation_id,
+    events: [
+      {
+        type: "deep_link_opened",
+        payload: {
+          scope: resolution.scope,
+          project: route.project
+            ? { id: route.project, name: body.project_name ?? null }
+            : null,
+          reconciled: resolution.reconciled,
+        },
+      },
+    ],
+  });
+  return resultToJson(c, result, "open_deep_link_failed");
 });
 
     router.get("/projection", async (c) => {
@@ -758,15 +742,14 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
   if (!flow_id) {
     return c.json({ error: "flow_id required" }, 400);
   }
-  try {
-    const projection = await orchestrator.getProjection(flow_id);
-    return c.json(projection);
-  } catch (err) {
+  const result = await orchestrator.getProjection(flow_id);
+  if (!result.ok) {
     return c.json(
-      { error: "projection_failed", message: (err as Error).message },
+      { error: "projection_failed", message: errorMessage(result.error) },
       500,
     );
   }
+  return c.json(result.value);
 });
 
 // SSE projection-stream per DWD-9 + RD2 (cross-tab refresh substrate for
@@ -806,7 +789,8 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
         // First frame: the current projection (so callers don't need to
         // race a separate GET /projection request).
         const initial = await orchestrator.getProjection(flow_id);
-        writeEvent("projection", initial);
+        if (!initial.ok) throw new Error(errorMessage(initial.error));
+        writeEvent("projection", initial.value);
         // Then subscribe to subsequent events. Each new event triggers a
         // fresh projection read so consumers see the up-to-date envelope.
         for await (const _event of orchestrator.subscribeToFlow(
@@ -815,7 +799,8 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
           budgetMs,
         )) {
           const projection = await orchestrator.getProjection(flow_id);
-          writeEvent("projection", projection);
+          if (!projection.ok) throw new Error(errorMessage(projection.error));
+          writeEvent("projection", projection.value);
         }
       } catch (err) {
         writeEvent("error", { message: (err as Error).message });
@@ -917,6 +902,29 @@ function flowDispatchError(
   }
   return c.json(
     { error: fallbackError, message: (err as Error).message },
+    500,
+  );
+}
+
+// Total mapper for the orchestrator's Result API: success serializes the
+// projection; `unknown_machine` is the registry-miss 404; every other
+// failure keeps the prior `{ error, message }` 500 shape byte-identical.
+function resultToJson(
+  c: Context,
+  result: Result<unknown>,
+  fallbackError: string,
+): Response {
+  if (result.ok) {
+    return c.json(result.value);
+  }
+  if (result.error.kind === "unknown_machine") {
+    return c.json(
+      { error: "unknown_machine", machine: result.error.machine },
+      404,
+    );
+  }
+  return c.json(
+    { error: fallbackError, message: result.error.message },
     500,
   );
 }

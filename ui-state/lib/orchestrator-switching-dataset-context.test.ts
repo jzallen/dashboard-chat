@@ -33,6 +33,7 @@ import {
   type SwitchDatasetContextInput,
   type SwitchDatasetContextOutput,
 } from "./machines/session-chat/index.ts";
+import { type Result } from "./flow-result.ts";
 import { FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEvent } from "./projection.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
@@ -142,24 +143,37 @@ async function buildSessionActiveFlow(
   });
   // project_ready dispatch → spawns session-chat, settles in
   // session_list_loaded.
-  await orch.beginIfNotStarted({
-    machine: WIRE,
-    principal_id: PRINCIPAL,
-    correlation_id: "R-spawn",
-    org_id: "dev-org-001",
-    project_id: "proj-q4",
-    project_name: "Q4 Analytics",
-  });
+  unwrap(
+    await orch.beginIfNotStarted({
+      machine: WIRE,
+      principal_id: PRINCIPAL,
+      correlation_id: "R-spawn",
+      org_id: "dev-org-001",
+      project_id: "proj-q4",
+      project_name: "Q4 Analytics",
+    }),
+  );
   // Resume the session → session_active.
-  const resumed = await orch.send({
-    machine: WIRE,
-    flow_id: FLOW_ID,
-    type: "session_clicked",
-    payload: { session_id: SESSION_ID },
-    correlation_id: "R-resume",
-  });
+  const resumed = unwrap(
+    await orch.send({
+      machine: WIRE,
+      flow_id: FLOW_ID,
+      type: "session_clicked",
+      payload: { session_id: SESSION_ID },
+      correlation_id: "R-resume",
+    }),
+  );
   expect(resumed.state).toBe("session_active");
   return { orch, log };
+}
+
+// The orchestrator's public API returns Result; these tests assert the
+// settled projection, so unwrap (a failure throws — same loud signal the
+// prior throwing API gave).
+function unwrap<T>(r: Result<T>): T {
+  if (!r.ok)
+    throw new Error(`expected ok Result, got ${JSON.stringify(r.error)}`);
+  return r.value;
 }
 
 describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-209)", () => {
@@ -177,13 +191,15 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
     });
     const { orch, log } = await buildSessionActiveFlow(switchDatasetContext);
 
-    const projection = await orch.send({
-      machine: WIRE,
-      flow_id: FLOW_ID,
-      type: "dataset_resolved_by_agent",
-      payload: { resource_id: "ds-patients-2025", resource_type: "dataset" },
-      correlation_id: "R-attach",
-    });
+    const projection = unwrap(
+      await orch.send({
+        machine: WIRE,
+        flow_id: FLOW_ID,
+        type: "dataset_resolved_by_agent",
+        payload: { resource_id: "ds-patients-2025", resource_type: "dataset" },
+        correlation_id: "R-attach",
+      }),
+    );
 
     // The send() response already reflects the settled switch — the
     // acceptance probe reads exactly this projection.
@@ -193,7 +209,7 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
 
     // A re-read built from the event-log SSOT must agree (proves the
     // settle was persisted as FlowEvents, not observed transiently).
-    const reread = await orch.getProjection(FLOW_ID);
+    const reread = unwrap(await orch.getProjection(FLOW_ID));
     expect(reread.active_scope.resource_id).toBe("ds-patients-2025");
 
     const types = (log.dump().get(FLOW_ID) ?? []).map((e) => e.type);
@@ -219,16 +235,18 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
       switchDatasetContext,
       "ds-sales-2026",
     );
-    const before = await orch.getProjection(FLOW_ID);
+    const before = unwrap(await orch.getProjection(FLOW_ID));
     expect(before.active_scope.resource_id).toBe("ds-sales-2026");
 
-    const projection = await orch.send({
-      machine: WIRE,
-      flow_id: FLOW_ID,
-      type: "dataset_picked_directly",
-      payload: { resource_id: "ds-restricted", resource_type: "dataset" },
-      correlation_id: "R-denied",
-    });
+    const projection = unwrap(
+      await orch.send({
+        machine: WIRE,
+        flow_id: FLOW_ID,
+        type: "dataset_picked_directly",
+        payload: { resource_id: "ds-restricted", resource_type: "dataset" },
+        correlation_id: "R-denied",
+      }),
+    );
 
     expect(projection.state).toBe("session_active");
     // Prior scope preserved — the rejected pick did NOT retarget.

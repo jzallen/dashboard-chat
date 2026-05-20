@@ -22,6 +22,7 @@
 import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
+import { type Result } from "./flow-result.ts";
 import { FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEvent } from "./projection.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
@@ -38,7 +39,9 @@ const FLOW_ID = `${WIRE}:${PRINCIPAL}`;
 
 /** In-memory FlowEventLog — buildProjection reads from this exactly as the
  *  Redis tier would in production. */
-function createInMemoryFlowEventLog(): FlowEventLog & { dump(): Map<string, FlowEvent[]> } {
+function createInMemoryFlowEventLog(): FlowEventLog & {
+  dump(): Map<string, FlowEvent[]>;
+} {
   const streams = new Map<string, FlowEvent[]>();
   return {
     async append(flow_id, event) {
@@ -81,14 +84,20 @@ function projectContextDeps(
   );
   return {
     resolveInitialScope,
-    createProject: fromPromise(async () => ({ id: "proj-A", name: "Project A" })),
+    createProject: fromPromise(async () => ({
+      id: "proj-A",
+      name: "Project A",
+    })),
     switchProject,
   };
 }
 
 async function buildSettledProjectContextFlow(
   switchProject: SwitchProjectActor,
-): Promise<{ orch: FlowOrchestrator; log: ReturnType<typeof createInMemoryFlowEventLog> }> {
+): Promise<{
+  orch: FlowOrchestrator;
+  log: ReturnType<typeof createInMemoryFlowEventLog>;
+}> {
   const log = createInMemoryFlowEventLog();
   const orch = new FlowOrchestrator({
     eventLog: log,
@@ -96,16 +105,27 @@ async function buildSettledProjectContextFlow(
     projectContextMachineDeps: projectContextDeps(switchProject),
     log: () => {},
   });
-  const initial = await orch.beginIfNotStarted({
-    machine: WIRE,
-    principal_id: PRINCIPAL,
-    correlation_id: "R-begin",
-    org_id: "dev-org-001",
-    user_first_name: "Dev",
-  });
+  const initial = unwrap(
+    await orch.beginIfNotStarted({
+      machine: WIRE,
+      principal_id: PRINCIPAL,
+      correlation_id: "R-begin",
+      org_id: "dev-org-001",
+      user_first_name: "Dev",
+    }),
+  );
   // Precondition: the flow settles in project_selected on project A.
   expect(initial.state).toBe("project_selected");
   return { orch, log };
+}
+
+// The orchestrator's public API returns Result; these tests assert the
+// settled projection, so unwrap (a failure throws — same loud signal the
+// prior throwing API gave).
+function unwrap<T>(r: Result<T>): T {
+  if (!r.ok)
+    throw new Error(`expected ok Result, got ${JSON.stringify(r.error)}`);
+  return r.value;
 }
 
 describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)", () => {
@@ -118,13 +138,15 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
     });
     const { orch, log } = await buildSettledProjectContextFlow(switchProject);
 
-    const projection = await orch.send({
-      machine: WIRE,
-      flow_id: FLOW_ID,
-      type: "switching_project_intent",
-      payload: { new_project_id: "proj-B" },
-      correlation_id: "R-switch",
-    });
+    const projection = unwrap(
+      await orch.send({
+        machine: WIRE,
+        flow_id: FLOW_ID,
+        type: "switching_project_intent",
+        payload: { new_project_id: "proj-B" },
+        correlation_id: "R-switch",
+      }),
+    );
 
     // The send() response must already reflect the settled switch — the
     // acceptance probe reads exactly this projection.
@@ -134,7 +156,7 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
     // And a re-read of the projection (built from the event log SSOT) must
     // agree — proving the settle was persisted as FlowEvents, not just
     // observed transiently on the actor.
-    const reread = await orch.getProjection(FLOW_ID);
+    const reread = unwrap(await orch.getProjection(FLOW_ID));
     expect(reread.state).toBe("project_selected");
     expect((reread.context as { project: { id: string } }).project.id).toBe(
       "proj-B",
@@ -157,13 +179,15 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
     });
     const { orch } = await buildSettledProjectContextFlow(switchProject);
 
-    const projection = await orch.send({
-      machine: WIRE,
-      flow_id: FLOW_ID,
-      type: "switching_project_intent",
-      payload: { new_project_id: "p-revoked" },
-      correlation_id: "R-switch-revoked",
-    });
+    const projection = unwrap(
+      await orch.send({
+        machine: WIRE,
+        flow_id: FLOW_ID,
+        type: "switching_project_intent",
+        payload: { new_project_id: "p-revoked" },
+        correlation_id: "R-switch-revoked",
+      }),
+    );
 
     expect(projection.state).toBe("scope_mismatch_terminal");
     expect(
