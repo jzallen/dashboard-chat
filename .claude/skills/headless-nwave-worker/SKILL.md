@@ -523,13 +523,65 @@ gt mq status <mr-id>
 
 ## Cleanup After Merge
 
-Per saved memory feedback, remove the crew workspace once the work has landed:
+Crew teardown is **three steps**, not one. The git clone is the obvious bit; the Docker artifacts the crew session created during `docker compose up` are silent disk eaters that nothing else collects.
+
+### 1. Remove the crew workspace
 
 ```bash
 gt crew remove <worker-name> --force
 ```
 
 Full git clones in `~/gt/<rig>/crew/` accumulate fast. The merged branch survives in `origin/main`'s history; the local crew clone is disposable.
+
+### 2. Remove crew-tagged Docker images
+
+When a crew runs `docker compose up` without `COMPOSE_PROJECT_NAME` pinned, compose derives the project name from the crew workspace directory (e.g. `pyrite`, `mr5_dataset_ctx`, `rc1_deeplink`) and tags every locally-built image with that prefix — `pyrite-ui-state:latest`, `mr5_dataset_ctx-ui-state:latest`, etc. `gt crew remove` does NOT clean these up; they sit in the local Docker daemon until something prunes them. A week of headless work can pile up 10–20GB this way.
+
+**Note: we deliberately do NOT pin `COMPOSE_PROJECT_NAME=dashboard-chat` in crews.** Doing so makes crew `docker compose` commands operate on the *shared* dashboard-chat stack — including `docker rm` of the user's running services. This was the failure mode that killed RC-1 attempt 1 (see saved memory `feedback_headless_crew_compose_project_pin.md`). Teardown-time `docker rmi` is the safer cleanup point.
+
+After `gt crew remove`, run:
+
+```bash
+# Remove every *-ui-state image that isn't the canonical dashboard-chat-ui-state.
+# Mirror this for any other compose-built service that accumulates (api, agent, etc.)
+docker rmi $(docker images --filter "reference=*-ui-state" --format '{{.Repository}}:{{.Tag}}' \
+  | grep -v '^dashboard-chat-ui-state:') 2>/dev/null
+
+# Sweep up any dangling images left behind (untagged layers from rebuilds)
+docker image prune -f
+```
+
+For a periodic sweep across all crew-tagged images at once:
+
+```bash
+# Untag every image whose repo prefix isn't the canonical dashboard-chat* or a base image.
+docker images --format '{{.Repository}}:{{.Tag}}' \
+  | grep -E -- '-(ui-state|api|agent|auth-proxy|reverse-proxy|web-ssr):' \
+  | grep -vE '^(dashboard-chat[-/]|<none>)' \
+  | xargs -r docker rmi 2>/dev/null
+docker image prune -f
+```
+
+### 3. Optional: prune the build cache
+
+BuildKit's layer cache is **per-daemon, not per-project**, so successful rebuilds across all crews share it — but failed/abandoned builds leak orphan layers. After a long stretch of headless work, the cache can reach tens of GB without ever being load-bearing.
+
+```bash
+docker system df                # see what's reclaimable before deciding
+docker builder prune -f         # prune the build cache (takes minutes)
+```
+
+Skip this when you're mid-iteration on the same Bazel/Docker targets — rebuilding from cold cache adds 5–10 min per service. Run it weekly, or when `docker system df` shows the build cache over ~20GB.
+
+### 4. Stopped containers (any time)
+
+`docker compose down` on the crew clone leaves stopped containers behind. They cost very little (KB of writable layer) but pile up:
+
+```bash
+docker container prune -f
+```
+
+Safe to run any time — only removes containers in `Exited` state.
 
 ## Failure Modes & Recovery
 
@@ -685,7 +737,17 @@ tmux -L gt-0c0ae3 new-session -d -s "${SESSION}-r1" \
 git push -u origin <branch>
 gt mq submit
 
-# 8. After landing
+# 8. After landing — three-step teardown
 tmux -L gt-0c0ae3 kill-session -t "$SESSION" 2>/dev/null
 gt crew remove <worker> --force
+
+# Crew-tagged docker images do NOT get cleaned by `gt crew remove` —
+# COMPOSE_PROJECT_NAME defaults to the crew dir name and tags every built image.
+docker rmi $(docker images --filter "reference=*-ui-state" --format '{{.Repository}}:{{.Tag}}' \
+  | grep -v '^dashboard-chat-ui-state:') 2>/dev/null
+docker image prune -f
+docker container prune -f
+
+# Heavy sweep (run weekly or when `docker system df` shows builder cache >20GB):
+# docker builder prune -f
 ```
