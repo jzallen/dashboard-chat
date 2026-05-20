@@ -12,9 +12,14 @@ build --stamp
 # layered above BuildBuddy remote cache, so misses are cheap; the larger cap
 # trades disk for fewer cold rebuilds. Adjust down if disk pressure returns.
 # Stale per-workspace output_bases (~/.cache/bazel/_bazel_*/<hash>/) are NOT
-# GC'd by these flags — clean orphans manually:
-#   find ~/.cache/bazel/_bazel_node -maxdepth 1 -type d -mtime +14 \
-#     -not -name install -not -name cache -exec rm -rf {} +
+# GC'd by these flags — clean orphans manually. rules_oci writes blobs with
+# read-only perms (OCI integrity), so plain `rm -rf` fails; chmod first:
+#   ACTIVE=$(bazel info output_base 2>/dev/null | xargs basename)
+#   for d in ~/.cache/bazel/_bazel_node/*/; do
+#     n=$(basename "$d")
+#     case "$n" in install|cache|"$ACTIVE") continue;; esac
+#     chmod -R u+w "$d" 2>/dev/null; rm -rf "$d"
+#   done
 build --experimental_disk_cache_gc_max_size=15G
 build --experimental_disk_cache_gc_max_age=7d
 build --experimental_disk_cache_gc_idle_delay=2m
