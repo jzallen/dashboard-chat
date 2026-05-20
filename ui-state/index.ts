@@ -4,7 +4,7 @@
 //   GET  /health                                    — liveness check
 //   {/flow/login-and-org-setup, /flow/project-context (+ legacy alias
 //    /flow/project-and-chat-session-management), /flow/session-chat} each
-//    mount a makeFlowRouter() instance carrying:
+//    mount a per-machine sub-router carrying:
 //      POST .../begin            — begin a flow, returns projection
 //      POST .../event            — send event to existing flow
 //      POST .../freeze|/thaw     — cross-machine FREEZE/THAW (US-210)
@@ -14,6 +14,15 @@
 //   A terminal /flow/:machine/* guard maps an unknown machine to the
 //   LEAF-1 clean 404 (registry miss); it is a boundary, not dispatch.
 //
+// Each per-machine sub-router lives at `lib/machines/<machine>/router.ts`
+// — co-located with the XState machine it transports (ADR-028 invariant:
+// no machine imports another machine; the orchestrator stays the sole
+// cross-machine mediator). The strategy-agnostic routes (`/freeze`,
+// `/thaw`, `/projection`, `/projection/stream`) are mounted by the shared
+// substrate at `lib/hexagonal-transport/flow-router.ts` so the per-machine
+// routers carry only their machine-specific transport (begin / event /
+// open-deep-link).
+//
 // Wiring: composition root creates the FlowEventLog adapter via
 // capability-presence dispatch (REDIS_URL set → Redis tier; unset → noop),
 // builds the LoginAndOrgSetup machine deps, and constructs the orchestrator.
@@ -22,14 +31,11 @@
 // injected by auth-proxy upstream (ADR-016). It does NOT re-verify JWTs.
 // In AUTH_MODE=dev the headers identify the dev user.
 
-import { KNOB, probe, shouldInject } from "@dashboard-chat/shared-failure-simulation";
+import { probe } from "@dashboard-chat/shared-failure-simulation";
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
 import type { Context } from "hono";
+import { Hono } from "hono";
 
-import type { ResourceType } from "./lib/active-scope.ts";
-import { resolveActiveScope } from "./lib/active-scope.ts";
-import { type Result, errorMessage } from "./lib/flow-result.ts";
 import {
   createOrgAndReissueActor,
   createOrgFn,
@@ -55,9 +61,14 @@ import {
   switchDatasetContextActor,
 } from "./lib/machines/session-chat/index.ts";
 import {
+  buildSessionChatRouter,
+  forceCreateSessionFailureFlag,
+  slowResumeMsFlag,
+} from "./lib/machines/session-chat/router.ts";
+import {
   FLOW_STRATEGY_REGISTRY,
-  type FlowStrategy,
   FlowOrchestrator,
+  type FlowStrategy,
   UnknownMachineError,
 } from "./lib/orchestrator.ts";
 import { selectFlowEventLog } from "./lib/persistence/redis.ts";
@@ -80,33 +91,6 @@ const DEFAULT_PRINCIPAL_HEADERS = {
 };
 
 const eventLog = selectFlowEventLog(REDIS_URL);
-
-// J-002 MR-3 harness knob: the next `first_message_sent` event whose
-// request bears `X-Force-Create-Session-Failure: transient` makes the
-// `createSessionEagerly` actor throw a transient error before any backend
-// call. Used by the US-206 transient-failure acceptance scenario (mirrors
-// the `forceCreateProjectFailureNext` flag at the create-project boundary).
-let forceCreateSessionFailureNext = false;
-function forceCreateSessionFailureFlag(): boolean {
-  if (forceCreateSessionFailureNext) {
-    forceCreateSessionFailureNext = false;
-    return true;
-  }
-  return false;
-}
-
-// US-210 test-infra knob (consume-once, gated). The next session-chat
-// `session_clicked` whose request bears `X-Force-Slow-Resume: <ms>` holds
-// the `resumeSession` invoke for <ms> before the backend round-trip, so
-// the acceptance scenario can broadcast FREEZE deterministically while the
-// machine is still in `resuming_session` (US-210 scenario 1). Not a
-// product behavior — gated by the failure-simulation registry.
-let forceSlowResumeMsNext = 0;
-function slowResumeMsFlag(): number {
-  const v = forceSlowResumeMsNext;
-  forceSlowResumeMsNext = 0;
-  return v;
-}
 
 const orchestrator = new FlowOrchestrator({
   eventLog,
@@ -165,6 +149,25 @@ const orchestrator = new FlowOrchestrator({
 const app = new Hono();
 
 /**
+ * Per-machine router builder map (ADR-040 §D4/§D5 — strategy-keyed by
+ * canonical machine-name; ADR-028 — orchestrator is the sole cross-machine
+ * mediator, so importing all three machine packages from this composition
+ * root is the one allowed cross-machine reach). Keyed by canonical name
+ * because the registry already canonicalizes legacy wire names via the
+ * D5 alias map — `makeFlowRouter` resolves the strategy first, then looks
+ * the builder up by `strategy.machineName`. Zero `machine === "<wire>"`
+ * branches in the dispatch path.
+ */
+const FLOW_ROUTER_BUILDERS: Record<
+  string,
+  (orchestrator: FlowOrchestrator, wireName: string) => Hono
+> = {
+  "login-and-org-setup": buildLoginAndOrgSetupRouter,
+  "project-context": buildProjectContextRouter,
+  "session-chat": buildSessionChatRouter,
+};
+
+/**
  * Wire the ui-state routes onto the supplied Hono app, using the supplied
  * orchestrator as the state owner. Extracted so tests can build a scenario-
  * scoped app + orchestrator pair without invoking the production composition
@@ -172,519 +175,49 @@ const app = new Hono();
  * adapters).
  */
 export function wireRoutes(app: Hono, orchestrator: FlowOrchestrator): void {
+  // Composition-root failure-simulation probe per ADR-035 + ADR-036. Runs
+  // once per wireRoutes invocation: production binds routes once at module
+  // load (`wireRoutes(app, orchestrator)` below); per-scenario test
+  // harnesses build a fresh app + orchestrator pair and call `wireRoutes`
+  // themselves, so the gate verdict is refreshed against the scenario's
+  // process.env at that point. The verdict is cached inside the shared
+  // package and consumed by `shouldInject()` callsites in the per-machine
+  // router layer.
+  probe(process.env, "ui-state");
 
-// Composition-root failure-simulation probe per ADR-035 + ADR-036. Runs once
-// per wireRoutes invocation: production binds routes once at module load
-// (`wireRoutes(app, orchestrator)` below); per-scenario test harnesses build
-// a fresh app + orchestrator pair and call `wireRoutes` themselves, so the
-// gate verdict is refreshed against the scenario's process.env at that
-// point. The verdict is cached inside the shared package and consumed by
-// `shouldInject()` callsites elsewhere in this module + the machine layer.
-probe(process.env, "ui-state");
-
-app.get("/health", (c) => c.json({ status: "ok" }));
+  app.get("/health", (c) => c.json({ status: "ok" }));
 
   /**
-   * ADR-040 §D4/§D5 (LEAF-2) — per-machine sub-router factory. Produces a
-   * Hono instance carrying the full flow transport surface (begin / event /
-   * freeze / thaw / open-deep-link / projection / projection-stream). One
-   * instance is mounted per canonical machine-name AND, for the project
-   * machine, additionally at its legacy feature-slug path against the SAME
-   * instance — so the ADR-027 §1 FE projection contract and the nginx /
-   * auth-proxy `/ui-state/` proxy resolve identically through the migration
-   * with NO 404 window. The `:machine` dispatch parameter is retired.
-   *
-   * `wireName` is the wire-protocol machine name forwarded to the
-   * orchestrator. It is intentionally the established (legacy-stable)
-   * segment — `project-and-chat-session-management` for the project
-   * machine — because `flow_id = "<wireName>:<principal_id>"` (orchestrator
-   * §8) is the Redis event-log key, the `J002_MACHINES` membership key, and
-   * the `FlowProjection.flow_id` wire field. Forwarding the established
-   * name keeps every byte identical to the pre-LEAF-2 baseline through
-   * BOTH mounts; the LEAF-1 registry still canonicalizes it via the D5
-   * alias (`resolve()`), so no alias logic is reimplemented here. LEAF-6
-   * flips this to the canonical name once the FE/suite migrate.
+   * ADR-040 §D4/§D5 (LEAF-2) — per-machine sub-router factory. Resolves
+   * the FlowStrategy via the LEAF-1 registry (D5 alias-aware) and produces
+   * the corresponding per-machine Hono router. Dispatch is strategy-keyed:
+   * the resolved `strategy.machineName` indexes `FLOW_ROUTER_BUILDERS`, so
+   * there is no `machine === "<wire>"` conditional in the pump or here.
+   * A mis-wired mount fails loudly at startup (registry miss throws; an
+   * unknown canonical name throws below) so it cannot introduce a runtime
+   * behavior delta. `wireName` is the wire-protocol machine name forwarded
+   * to the orchestrator — intentionally the established (legacy-stable)
+   * segment for project-context (`project-and-chat-session-management`)
+   * because `flow_id = "<wireName>:<principal_id>"` (orchestrator §8) is
+   * the Redis event-log key, the J002 membership key, and the
+   * `FlowProjection.flow_id` wire field. LEAF-6 flips this to the
+   * canonical name once the FE / acceptance suite migrate.
    */
   function makeFlowRouter(strategy: FlowStrategy, wireName: string): Hono {
-    // Composition-time guard: the wire name MUST resolve, via the LEAF-1
-    // registry's D5 alias, to exactly this strategy. Keeps the HTTP mount
-    // and registry dispatch in lockstep (ADR-040 C4: router -> registry ->
-    // strategy) — a mis-wired mount fails loudly at startup, never at
-    // request time (so it cannot introduce a runtime behavior delta).
     if (FLOW_STRATEGY_REGISTRY.resolve(wireName) !== strategy) {
       throw new Error(
         `makeFlowRouter: wire name "${wireName}" does not resolve to ` +
           `strategy "${strategy.machineName}"`,
       );
     }
-    const router = new Hono();
-
-    router.post("/begin", async (c) => {
-  const machine = wireName;
-  const correlation_id =
-    c.req.header("X-Correlation-Id") ?? cryptoRandomId();
-  let body: {
-    persona_email?: string;
-    persona_display_name?: string;
-    existing_org_names?: string[];
-    force_reissue_failures?: number;
-    principal_id?: string;
-  };
-  try {
-    body = (await c.req.json()) as typeof body;
-  } catch {
-    return c.json({ error: "invalid_request" }, 400);
-  }
-
-  // J-001 requires the persona_email to drive the WorkOS exchange. J-002
-  // (and other non-J-001 machines) spawn via the orchestrator's auth_ready
-  // broadcast hook, so a direct `/begin` POST for them is idempotent —
-  // returns the existing projection or spawns a fresh actor.
-  if (machine === "login-and-org-setup") {
-    if (!body.persona_email) {
-      return c.json({ error: "persona_email required" }, 400);
-    }
-  }
-
-  // Principal: in dev mode auth-proxy injects X-User-Id. Otherwise derive
-  // from the persona email (deterministic, multi-tenant-safe per ADR-030).
-  const principal_id =
-    c.req.header("X-User-Id") ||
-    body.principal_id ||
-    (body.persona_email ? derivePrincipalId(body.persona_email) : "anon");
-
-  // For non-J-001 machines (J-002+), prefer the explicit beginIfNotStarted
-  // path that takes auth-proxy-injected identity headers. This bypasses
-  // the J-001 persona/WorkOS preconditions and lets the dev compose stack
-  // exercise J-002 without dragging a fake WorkOS server into scope.
-  // Direct HTTP `/begin` always resets the actor + event log so the call
-  // is idempotent for re-runs (matches J-001's begin semantics).
-  if (machine !== "login-and-org-setup") {
-    // session-chat /begin (project-context owns its own router now). J-002
-    // spawn via the orchestrator's auth_ready broadcast hook is the
-    // production path; a direct `/begin` POST is idempotent via
-    // beginIfNotStarted with auth-proxy-injected identity headers. The
-    // force-list-sessions knob lives with project-context (its consumer).
-    const orgId = c.req.header("X-Org-Id") ?? "";
-    const userEmail = c.req.header("X-User-Email") ?? "";
-    const firstName =
-      (body.persona_display_name ?? "").split(/\s+/)[0] ||
-      (userEmail ? userEmail.split("@")[0] : "") ||
-      "";
-    const result = await orchestrator.beginIfNotStarted({
-      machine,
-      principal_id,
-      correlation_id,
-      org_id: orgId,
-      user_first_name: firstName,
-      force_restart: true,
-    });
-    return resultToJson(c, result, "begin_failed");
-  }
-
-  // force-reissue-failures knob — body-field transport. Phase-2 vocabulary
-  // cleanup per ADR-038: the wire body field is `force_reissue_failures`,
-  // the legacyAlias bridge is dropped. The gate routes through the shared
-  // registry so the verdict + audit envelope are uniform across all six
-  // knobs. The orchestrator retains its own NWAVE_HARNESS_KNOBS check as
-  // defense in depth during the one-release env-var overlap window.
-  const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
-    body: body as Record<string, unknown>,
-    correlationId: correlation_id,
-    serviceName: "ui-state",
-  });
-  const result = await orchestrator.begin({
-    machine,
-    principal_id,
-    persona_email: body.persona_email ?? "",
-    persona_display_name: body.persona_display_name ?? "",
-    correlation_id,
-    existing_org_names: body.existing_org_names,
-    force_reissue_failures: reissueFailuresAllowed
-      ? body.force_reissue_failures
-      : undefined,
-  });
-  return resultToJson(c, result, "begin_failed");
-});
-
-    router.post("/event", async (c) => {
-  const machine = wireName;
-  const correlation_id =
-    c.req.header("X-Correlation-Id") ?? cryptoRandomId();
-  let body: {
-    flow_id?: string;
-    type?: string;
-    payload?: Record<string, unknown>;
-  };
-  try {
-    body = (await c.req.json()) as typeof body;
-  } catch {
-    return c.json({ error: "invalid_request" }, 400);
-  }
-  if (!body.flow_id || !body.type) {
-    return c.json({ error: "flow_id and type required" }, 400);
-  }
-
-  // force-failure-on-auth-retry knob — event transport. The __force_failure__
-  // wire event drives the login-and-org-setup machine into error_recoverable
-  // with the supplied cause tag (DWD-1). Production deployments must refuse
-  // this event so a malicious caller can't bypass real auth flow logic; the
-  // ADR-035 gate (ENVIRONMENT × flag) is the closed-by-default decision and
-  // the registry surfaces a failure-simulation.rejected audit entry when the
-  // event arrives in a denying tier. Wire form `__force_failure__` derives
-  // from canonical via the eventDistinguisher rendering rule (ADR-038).
-  if (body.type === "__force_failure__") {
-    const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
-      event: { type: body.type },
-      correlationId: correlation_id,
-      serviceName: "ui-state",
-    });
-    if (!allowed) {
-      return c.json(
-        {
-          error:
-            "failure-simulation knob disabled: __force_failure__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
-        },
-        403,
+    const build = FLOW_ROUTER_BUILDERS[strategy.machineName];
+    if (!build) {
+      throw new Error(
+        `makeFlowRouter: no router builder for "${strategy.machineName}"`,
       );
     }
+    return build(orchestrator, wireName);
   }
-
-  // expire-token knob — event transport. The __expire_token__ wire event
-  // drives the login-and-org-setup machine from `ready` into `expired_token`
-  // to exercise silent re-auth (DWD-1). The gate decision routes through
-  // shouldInject(KNOB.expireToken, { event, ... }) and emits the ADR-037
-  // audit envelope. Phase-2 vocabulary cleanup per ADR-038 — the legacyAlias
-  // bridge is dropped and the wire event type now matches the registry's
-  // canonical-derived rendering.
-  if (body.type === "__expire_token__") {
-    const allowed = shouldInject(KNOB.expireToken, {
-      event: { type: body.type },
-      correlationId: correlation_id,
-      serviceName: "ui-state",
-    });
-    if (!allowed) {
-      return c.json(
-        {
-          error:
-            "failure-simulation knob disabled: __expire_token__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
-        },
-        403,
-      );
-    }
-  }
-
-  // J-002 force-create-session-failure knob — header transport. The
-  // X-Force-Create-Session-Failure wire header is unchanged; the gate
-  // consultation routes through the shared failure-simulation registry per
-  // ADR-035 / ADR-038. Matches the create-project pattern (which lives in
-  // project-context's router) — gated, consumed once by the actor's
-  // per-invoke check.
-  if (
-    machine === "session-chat" &&
-    body.type === "first_message_sent" &&
-    shouldInject(KNOB.forceCreateSessionFailure, {
-      headers: c.req.raw.headers,
-      correlationId: correlation_id,
-      serviceName: "ui-state",
-    })
-  ) {
-    forceCreateSessionFailureNext = true;
-  }
-
-  // US-210 slow-resume knob — header transport (X-Force-Slow-Resume: <ms>).
-  // Gated via the same KNOB.expireToken freeze/expiry test family. Lets the
-  // scenario-1 acceptance test broadcast FREEZE while resuming_session is
-  // still in flight (the in-flight 401-discard contract). Consumed once.
-  if (
-    machine === "session-chat" &&
-    body.type === "session_clicked" &&
-    c.req.header("X-Force-Slow-Resume") &&
-    shouldInject(KNOB.expireToken, {
-      event: { type: "__expire_token__" },
-      correlationId: correlation_id,
-      serviceName: "ui-state",
-    })
-  ) {
-    const ms = Number.parseInt(
-      c.req.header("X-Force-Slow-Resume") ?? "0",
-      10,
-    );
-    forceSlowResumeMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
-  }
-
-  const result = await orchestrator.send({
-    machine,
-    flow_id: body.flow_id,
-    type: body.type,
-    payload: body.payload ?? {},
-    correlation_id,
-  });
-  return resultToJson(c, result, "event_failed");
-});
-
-// Cross-machine FREEZE / THAW test-driving endpoints (US-005 / US-210).
-//
-// Per the harness four-piece contract
-// (`tests/acceptance/user-flow-state-machines/harness/README.md` §1):
-// `POST /flow/<machine>/freeze` and `/thaw` represent the orchestrator
-// broadcast J-001's `expired_token` → silent-reauth lifecycle drives.
-// The live compose stack does NOT wire a `silentReauth` actor (recovery
-// is deferred-to-UI2 in J-001's own suite), so these endpoints expose the
-// EXISTING `orchestrator.broadcastFreeze` / `broadcastThaw` substrate
-// methods (byte-unchanged — ADR-028 / DWD-6 / C9) to the test wire,
-// exactly as `__expire_token__` exposes token expiry. They are test-only:
-// gated by the same `KNOB.expireToken` failure-simulation gate (ADR-035 ×
-// flag, closed by default in production). J-002 emits NOTHING here — it is
-// a pure downstream consumer (ADR-028:46-48).
-//
-// `originFlowId` is the J-001 login flow id for the principal. The
-// broadcast loop skips the origin and reaches every other spawned actor
-// (both J-002 flows for the principal) — so the J-001 actor need not even
-// exist; the id is only the skip key.
-function freezeThawHandler(kind: "freeze" | "thaw") {
-  return async (c: Context) => {
-    const correlation_id =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
-    let body: { principal_id?: string; reason?: "thaw" | "abandoned" };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      body = {};
-    }
-    const principal_id =
-      c.req.header("X-User-Id") || body.principal_id || "anon";
-    // Gate under the expire-token knob: /freeze + /thaw ARE the
-    // orchestrator broadcast lifecycle that J-001's `__expire_token__` →
-    // silent-reauth drives. The manifest gates `KNOB.expireToken` to the
-    // `__expire_token__` wire event (transport-match), so consult it with
-    // that canonical type — these endpoints belong to the same
-    // token-expiry test family (ADR-035 closed-by-default in production).
-    const allowed = shouldInject(KNOB.expireToken, {
-      event: { type: "__expire_token__" },
-      correlationId: correlation_id,
-      serviceName: "ui-state",
-    });
-    if (!allowed) {
-      return c.json(
-        {
-          error:
-            `failure-simulation knob disabled: /${kind} requires the gate ` +
-            `enabled (ENVIRONMENT=dev|ci + flag set)`,
-        },
-        403,
-      );
-    }
-    const originFlowId = `login-and-org-setup:${principal_id}`;
-    const result =
-      kind === "freeze"
-        ? await orchestrator.broadcastFreeze(originFlowId)
-        : await orchestrator.broadcastThaw(
-            originFlowId,
-            body.reason === "abandoned" ? "abandoned" : "thaw",
-          );
-    if (!result.ok) {
-      return c.json(
-        { error: `${kind}_failed`, message: errorMessage(result.error) },
-        500,
-      );
-    }
-    return c.json({ status: "ok", kind, principal_id });
-  };
-}
-    router.post("/freeze", freezeThawHandler("freeze"));
-    router.post("/thaw", freezeThawHandler("thaw"));
-
-// Deep-link / scope-resolution endpoint per ADR-029 (Step 01-03).
-//
-// The HTTP layer is the canonical place where route params meet the JWT.
-// `resolveActiveScope` is invoked here; the resulting scope is appended to
-// the flow's event log as a `deep_link_opened` event so subsequent
-// projection reads observe the same authoritative scope.
-//
-// Wire shape (POST body):
-//   {
-//     flow_id: string,                                  // existing flow
-//     route: {
-//       org?: string, project?: string,
-//       resource_type?: "dataset",       // see ADR-039 §Q1
-//       resource_id?: string,
-//     },
-//     project_name?: string,                            // server-known name (current)
-//     bookmarked_project_name?: string,                 // URL-carried name (possibly stale)
-//   }
-//
-// Headers (injected by auth-proxy):
-//   X-User-Id, X-Org-Id, X-User-Email
-//
-// Returns: the updated FlowProjection envelope.
-    router.post("/open-deep-link", async (c) => {
-  const machine = wireName;
-  const correlation_id =
-    c.req.header("X-Correlation-Id") ?? cryptoRandomId();
-  let body: {
-    flow_id?: string;
-    route?: {
-      org?: string;
-      project?: string;
-      resource_type?: ResourceType;
-      resource_id?: string;
-    };
-    project_name?: string;
-    bookmarked_project_name?: string;
-  };
-  try {
-    body = (await c.req.json()) as typeof body;
-  } catch {
-    return c.json({ error: "invalid_request" }, 400);
-  }
-
-  // session-chat /open-deep-link — legacy route-shaped scope-resolution
-  // body. The J-002 intent-shaped branch lives with project-context (its
-  // sole consumer).
-  if (!body.flow_id) {
-    return c.json({ error: "flow_id required" }, 400);
-  }
-
-  // The auth-proxy injects identity headers. In dev mode X-Org-Id is
-  // "dev-org-001"; in prod it's the verified JWT's org_id claim.
-  const principalId = c.req.header("X-User-Id") ?? "";
-  const orgId = c.req.header("X-Org-Id") ?? null;
-
-  const route = body.route ?? {};
-  const resolution = resolveActiveScope(
-    route,
-    { sub: principalId, org_id: orgId },
-    {
-      bookmarked_project_name: body.bookmarked_project_name ?? null,
-      current_project_name: body.project_name ?? null,
-    },
-  );
-
-  if (!resolution.ok) {
-    // I1 / I4: cross-tenant URL. Surface the named diagnostic via a
-    // scope_access_denied event. The projection's `state` flips to
-    // `access_denied` and `scope_resolution_error.reason` names the cause.
-    const result = await orchestrator.appendDeepLinkEvents({
-      machine,
-      flow_id: body.flow_id,
-      correlation_id,
-      events: [
-        {
-          type: "scope_access_denied",
-          payload: { reason: "cross-tenant access" },
-        },
-      ],
-    });
-    return resultToJson(c, result, "open_deep_link_failed");
-  }
-
-  // Successful resolution: emit deep_link_opened. If reconciled (I5), the
-  // event payload carries reconciled=true; the reducer surfaces a
-  // scope_reconciled signal in the projection that an accompanying test
-  // agent can observe.
-  const result = await orchestrator.appendDeepLinkEvents({
-    machine,
-    flow_id: body.flow_id,
-    correlation_id,
-    events: [
-      {
-        type: "deep_link_opened",
-        payload: {
-          scope: resolution.scope,
-          project: route.project
-            ? { id: route.project, name: body.project_name ?? null }
-            : null,
-          reconciled: resolution.reconciled,
-        },
-      },
-    ],
-  });
-  return resultToJson(c, result, "open_deep_link_failed");
-});
-
-    router.get("/projection", async (c) => {
-  const flow_id = c.req.query("flow_id");
-  if (!flow_id) {
-    return c.json({ error: "flow_id required" }, 400);
-  }
-  const result = await orchestrator.getProjection(flow_id);
-  if (!result.ok) {
-    return c.json(
-      { error: "projection_failed", message: errorMessage(result.error) },
-      500,
-    );
-  }
-  return c.json(result.value);
-});
-
-// SSE projection-stream per DWD-9 + RD2 (cross-tab refresh substrate for
-// US-203 Example 4). Long-polls the flow's Redis event-log via XREAD BLOCK
-// and pushes a freshly-computed projection on each new event. Bounded by a
-// server-side budget (default 25s) so intermediaries don't trip; clients
-// reconnect on close. The reverse-proxy must NOT buffer this response (the
-// `X-Accel-Buffering: no` header is the canonical nginx hint).
-    router.get("/projection/stream", async (c) => {
-  const flow_id = c.req.query("flow_id");
-  if (!flow_id) {
-    return c.json({ error: "flow_id required" }, 400);
-  }
-  const sinceParam = c.req.query("since") ?? "$";
-  const budgetMsParam = c.req.query("budget_ms");
-  const budgetMs = Math.min(
-    Math.max(parseInt(budgetMsParam ?? "25000", 10) || 25_000, 1_000),
-    60_000,
-  );
-
-  const headers: Record<string, string> = {
-    "content-type": "text/event-stream",
-    "cache-control": "no-cache",
-    "x-accel-buffering": "no",
-    connection: "keep-alive",
-  };
-
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      const writeEvent = (event: string, data: unknown): void => {
-        controller.enqueue(
-          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-        );
-      };
-      try {
-        // First frame: the current projection (so callers don't need to
-        // race a separate GET /projection request).
-        const initial = await orchestrator.getProjection(flow_id);
-        if (!initial.ok) throw new Error(errorMessage(initial.error));
-        writeEvent("projection", initial.value);
-        // Then subscribe to subsequent events. Each new event triggers a
-        // fresh projection read so consumers see the up-to-date envelope.
-        for await (const _event of orchestrator.subscribeToFlow(
-          flow_id,
-          sinceParam,
-          budgetMs,
-        )) {
-          const projection = await orchestrator.getProjection(flow_id);
-          if (!projection.ok) throw new Error(errorMessage(projection.error));
-          writeEvent("projection", projection.value);
-        }
-      } catch (err) {
-        writeEvent("error", { message: (err as Error).message });
-      } finally {
-        try {
-          controller.close();
-        } catch {
-          // Defensive — the client may have closed the connection already.
-        }
-      }
-    },
-  });
-
-  return new Response(stream, { headers, status: 200 });
-});
-
-    return router;
-  } // end makeFlowRouter
 
   // ── Per-machine mounts (ADR-040 §D4/§D5, LEAF-2) ──────────────────────
   // Each strategy is resolved from the LEAF-1 registry by its canonical
@@ -695,27 +228,17 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
   // through the migration with no 404 window. session-chat /
   // login-and-org-setup have canonical == legacy segment (no true alias
   // pair) and mount once.
-  // LEAF-2 sequential carve: login routes through the co-located per-
-  // machine router (`lib/machines/login-and-org-setup/router.ts`); the
-  // remaining mounts still go through the legacy in-file `makeFlowRouter`
-  // factory until they are carved in the next steps. Behavior-neutral
-  // through every intermediate state.
-  const loginRouter = buildLoginAndOrgSetupRouter(
-    orchestrator,
+  const loginRouter = makeFlowRouter(
+    FLOW_STRATEGY_REGISTRY.resolve("login-and-org-setup"),
     "login-and-org-setup",
   );
   app.route("/flow/login-and-org-setup", loginRouter);
 
-  // Project-context: dual-mount the SAME router instance at the canonical
-  // path AND the legacy feature-slug alias (ADR-040 §D5) so the ADR-027 §1
-  // FE projection contract resolves identically through the migration with
-  // no 404 window. Established wire name (`project-and-chat-session-
-  // management`) is forwarded to the orchestrator so flow_id / Redis key /
-  // projection bytes stay byte-identical to the pre-LEAF-2 baseline through
-  // BOTH mounts. LEAF-6 flips this to the canonical name once the FE/suite
-  // migrate.
-  const projectRouter = buildProjectContextRouter(
-    orchestrator,
+  const projectRouter = makeFlowRouter(
+    FLOW_STRATEGY_REGISTRY.resolve("project-context"),
+    // Established wire name — keeps flow_id / Redis key / projection bytes
+    // identical to the pre-LEAF-2 baseline through BOTH mounts. LEAF-6
+    // flips this to the canonical name once the FE/suite migrate.
     "project-and-chat-session-management",
   );
   app.route("/flow/project-context", projectRouter);
@@ -745,24 +268,10 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
     }
     return c.notFound();
   });
-
-} // end wireRoutes
+}
 
 // Production composition: wire routes onto the module-level app + orchestrator.
 wireRoutes(app, orchestrator);
-
-function derivePrincipalId(email: string): string {
-  // Replace non-alphanum with underscore; gives a stable principal_id from
-  // a persona email without exposing the email in the URL/key. Matches the
-  // shape "user_<localpart>" used in `tests/.../fixtures/personas.ts`.
-  const local = email.split("@")[0]?.replace(/[^a-zA-Z0-9]/g, "_") ?? "anon";
-  return `user_${local}`;
-}
-
-function cryptoRandomId(): string {
-  // Hono's runtime exposes globalThis.crypto; randomUUID is in Node 19+.
-  return globalThis.crypto?.randomUUID?.() ?? `corr-${Date.now()}`;
-}
 
 // ADR-040 §D5 / Consequences: an unknown machine is a clean 404 registry
 // miss, never a 500 conditional fall-through. Every other dispatch failure
@@ -778,29 +287,6 @@ function flowDispatchError(
   }
   return c.json(
     { error: fallbackError, message: (err as Error).message },
-    500,
-  );
-}
-
-// Total mapper for the orchestrator's Result API: success serializes the
-// projection; `unknown_machine` is the registry-miss 404; every other
-// failure keeps the prior `{ error, message }` 500 shape byte-identical.
-function resultToJson(
-  c: Context,
-  result: Result<unknown>,
-  fallbackError: string,
-): Response {
-  if (result.ok) {
-    return c.json(result.value);
-  }
-  if (result.error.kind === "unknown_machine") {
-    return c.json(
-      { error: "unknown_machine", machine: result.error.machine },
-      404,
-    );
-  }
-  return c.json(
-    { error: fallbackError, message: result.error.message },
     500,
   );
 }
@@ -823,7 +309,6 @@ if (process.env.UI_STATE_AUTOSTART !== "false") {
       );
     })
     .catch((err) => {
-       
       console.error(
         JSON.stringify({
           event: "flow.startup.fatal",
