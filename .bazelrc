@@ -6,12 +6,20 @@ build --workspace_status_command=tools/workspace_status.sh
 # Cache hygiene: STABLE_* keys only invalidate the small version_layer tar,
 # not dependent actions, so day-to-day builds stay incremental.
 build --stamp
-# Disk-cache + install-base GC: cap unbounded growth that has caused inode
-# exhaustion under multi-polecat concurrency (see dc-99b).
-build --experimental_disk_cache_gc_max_size=5G
+# Disk-cache + install-base + action-cache GC: cap unbounded growth that has
+# caused inode exhaustion under multi-polecat concurrency (see dc-99b).
+# Size cap (15G) bumped above the conservative 5G after 2026-05-20 disk audit:
+# layered above BuildBuddy remote cache, so misses are cheap; the larger cap
+# trades disk for fewer cold rebuilds. Adjust down if disk pressure returns.
+# Stale per-workspace output_bases (~/.cache/bazel/_bazel_*/<hash>/) are NOT
+# GC'd by these flags — clean orphans manually:
+#   find ~/.cache/bazel/_bazel_node -maxdepth 1 -type d -mtime +14 \
+#     -not -name install -not -name cache -exec rm -rf {} +
+build --experimental_disk_cache_gc_max_size=15G
 build --experimental_disk_cache_gc_max_age=7d
 build --experimental_disk_cache_gc_idle_delay=2m
 build --experimental_install_base_gc_max_age=3d
+build --experimental_action_cache_gc_max_age=7d
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 test --test_output=errors
@@ -28,10 +36,11 @@ test:e2e --test_timeout=300
 
 # ─── CI ───────────────────────────────────────────────────────────────────────
 build:ci --disk_cache=~/.cache/bazel-disk
-build:ci --experimental_disk_cache_gc_max_size=5G
+build:ci --experimental_disk_cache_gc_max_size=15G
 build:ci --experimental_disk_cache_gc_max_age=7d
 build:ci --experimental_disk_cache_gc_idle_delay=2m
 build:ci --experimental_install_base_gc_max_age=3d
+build:ci --experimental_action_cache_gc_max_age=7d
 test:ci --test_output=all
 test:ci --local_test_jobs=HOST_CPUS
 test:ci --experimental_reuse_sandbox_directories
