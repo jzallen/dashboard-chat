@@ -43,6 +43,12 @@ import {
   switchProjectActor,
 } from "./lib/machines/project-context/index.ts";
 import {
+  buildProjectContextRouter,
+  forceCreateProjectFailureFlag,
+  shouldFailListSessions,
+  slowSwitchMsFlag,
+} from "./lib/machines/project-context/router.ts";
+import {
   createSessionEagerlyActor,
   loadSessionListActor,
   resumeSessionActor,
@@ -75,29 +81,6 @@ const DEFAULT_PRINCIPAL_HEADERS = {
 
 const eventLog = selectFlowEventLog(REDIS_URL);
 
-// J-002 harness knob: per-process counter; the next `create_project_submitted`
-// event whose request bears `X-Force-Create-Project-Failure: transient`
-// makes the actor throw a transient error before any backend call. Used by
-// the US-201 transient-failure acceptance scenario (mirrors J-001's
-// `__force_failure__` pattern but at the actor level).
-let forceCreateProjectFailureNext = false;
-function forceCreateProjectFailureFlag(): boolean {
-  if (forceCreateProjectFailureNext) {
-    forceCreateProjectFailureNext = false;
-    return true;
-  }
-  return false;
-}
-
-// J-002 harness knob: header-gated set of project ids whose list_sessions
-// the resolver should treat as 5xx-failed. Used by the US-202 degraded path
-// scenario (`X-Force-List-Sessions-Failure: <id>[, <id>]`). Consumed once
-// per `/begin` call — cleared after the resolver has run.
-const forceListSessionsFailures = new Set<string>();
-function shouldFailListSessions(project_id: string): boolean {
-  return forceListSessionsFailures.has(project_id);
-}
-
 // J-002 MR-3 harness knob: the next `first_message_sent` event whose
 // request bears `X-Force-Create-Session-Failure: transient` makes the
 // `createSessionEagerly` actor throw a transient error before any backend
@@ -122,18 +105,6 @@ let forceSlowResumeMsNext = 0;
 function slowResumeMsFlag(): number {
   const v = forceSlowResumeMsNext;
   forceSlowResumeMsNext = 0;
-  return v;
-}
-
-// US-210 test-infra knob (consume-once, gated) — project-context analog
-// of slowResumeMsFlag. The next switching_project_intent bearing
-// X-Force-Slow-Switch-Project: <ms> holds the switchProject invoke so
-// the scenario-2 acceptance test can broadcast FREEZE while the machine
-// is still in `switching_project`. Not a product behavior.
-let forceSlowSwitchMsNext = 0;
-function slowSwitchMsFlag(): number {
-  const v = forceSlowSwitchMsNext;
-  forceSlowSwitchMsNext = 0;
   return v;
 }
 
@@ -289,33 +260,17 @@ app.get("/health", (c) => c.json({ status: "ok" }));
   // Direct HTTP `/begin` always resets the actor + event log so the call
   // is idempotent for re-runs (matches J-001's begin semantics).
   if (machine !== "login-and-org-setup") {
+    // session-chat /begin (project-context owns its own router now). J-002
+    // spawn via the orchestrator's auth_ready broadcast hook is the
+    // production path; a direct `/begin` POST is idempotent via
+    // beginIfNotStarted with auth-proxy-injected identity headers. The
+    // force-list-sessions knob lives with project-context (its consumer).
     const orgId = c.req.header("X-Org-Id") ?? "";
     const userEmail = c.req.header("X-User-Email") ?? "";
     const firstName =
       (body.persona_display_name ?? "").split(/\s+/)[0] ||
       (userEmail ? userEmail.split("@")[0] : "") ||
       "";
-    // J-002 force-list-sessions-failure knob — header transport. The
-    // X-Force-List-Sessions-Failure wire value (comma-separated project ids)
-    // is unchanged; the gate consultation routes through the shared
-    // failure-simulation registry so the verdict honors the ADR-035 gate and
-    // the audit envelope captures the header value. Cleared each /begin so
-    // test scenarios don't leak state.
-    forceListSessionsFailures.clear();
-    if (
-      machine === "project-and-chat-session-management" &&
-      shouldInject(KNOB.forceListSessionsFailure, {
-        headers: c.req.raw.headers,
-        correlationId: correlation_id,
-        serviceName: "ui-state",
-      })
-    ) {
-      const forceFailHeader = c.req.header("X-Force-List-Sessions-Failure") ?? "";
-      for (const raw of forceFailHeader.split(",")) {
-        const id = raw.trim();
-        if (id) forceListSessionsFailures.add(id);
-      }
-    }
     const result = await orchestrator.beginIfNotStarted({
       machine,
       principal_id,
@@ -419,29 +374,12 @@ app.get("/health", (c) => c.json({ status: "ok" }));
     }
   }
 
-  // J-002 force-create-project-failure knob — header transport. The wire
-  // signal (X-Force-Create-Project-Failure) is unchanged; the gate
-  // consultation routes through the shared failure-simulation registry
-  // (ADR-035 + ADR-038) so the verdict honors ENVIRONMENT × flag composition
-  // and emits the audit envelope. The post-knob effect (consume-once flag)
-  // is preserved end-to-end so the actor's per-invoke check is unchanged.
-  if (
-    machine === "project-and-chat-session-management" &&
-    body.type === "create_project_submitted" &&
-    shouldInject(KNOB.forceCreateProjectFailure, {
-      headers: c.req.raw.headers,
-      correlationId: correlation_id,
-      serviceName: "ui-state",
-    })
-  ) {
-    forceCreateProjectFailureNext = true;
-  }
-
   // J-002 force-create-session-failure knob — header transport. The
   // X-Force-Create-Session-Failure wire header is unchanged; the gate
   // consultation routes through the shared failure-simulation registry per
-  // ADR-035 / ADR-038. Matches the create-project pattern above — gated,
-  // consumed once by the actor's per-invoke check.
+  // ADR-035 / ADR-038. Matches the create-project pattern (which lives in
+  // project-context's router) — gated, consumed once by the actor's
+  // per-invoke check.
   if (
     machine === "session-chat" &&
     body.type === "first_message_sent" &&
@@ -473,23 +411,6 @@ app.get("/health", (c) => c.json({ status: "ok" }));
       10,
     );
     forceSlowResumeMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
-  }
-
-  if (
-    machine === "project-and-chat-session-management" &&
-    body.type === "switching_project_intent" &&
-    c.req.header("X-Force-Slow-Switch-Project") &&
-    shouldInject(KNOB.expireToken, {
-      event: { type: "__expire_token__" },
-      correlationId: correlation_id,
-      serviceName: "ui-state",
-    })
-  ) {
-    const ms = Number.parseInt(
-      c.req.header("X-Force-Slow-Switch-Project") ?? "0",
-      10,
-    );
-    forceSlowSwitchMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
   }
 
   const result = await orchestrator.send({
@@ -603,7 +524,6 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
     c.req.header("X-Correlation-Id") ?? cryptoRandomId();
   let body: {
     flow_id?: string;
-    principal_id?: string;
     route?: {
       org?: string;
       project?: string;
@@ -612,11 +532,6 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
     };
     project_name?: string;
     bookmarked_project_name?: string;
-    // J-002 intent-shaped payload (US-204 / DWD-9):
-    intent_project_id?: string;
-    intent_session_id?: string;
-    intent_resource_id?: string;
-    intent_resource_type?: ResourceType;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -624,59 +539,9 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
     return c.json({ error: "invalid_request" }, 400);
   }
 
-  // ─── J-002 intent-shaped deep link (US-204) ─────────────────────────────
-  // The J-002 surface takes a different deep-link shape: instead of route
-  // params + ScopeResolver, the caller supplies intent_* fields directly.
-  // The orchestrator forwards an `open_deep_link` event to the J-002 actor
-  // which re-enters resolving_initial_scope with the new intent. The flow
-  // is auto-spawned if not yet started.
-  const isProjectFlowDeepLinkIntent =
-    machine === "project-and-chat-session-management" &&
-    (body.intent_project_id !== undefined ||
-      body.intent_session_id !== undefined ||
-      body.intent_resource_id !== undefined);
-  if (isProjectFlowDeepLinkIntent) {
-    const principalId =
-      c.req.header("X-User-Id") ?? body.principal_id ?? "";
-    if (!principalId) {
-      return c.json({ error: "principal_id required" }, 400);
-    }
-    const orgId = c.req.header("X-Org-Id") ?? "";
-    const userEmail = c.req.header("X-User-Email") ?? "";
-    const firstName = (userEmail.split("@")[0] || "").trim() || null;
-    // Ensure J-002 is spawned; idempotent.
-    const spawn = await orchestrator.beginIfNotStarted({
-      machine,
-      principal_id: principalId,
-      correlation_id,
-      org_id: orgId,
-      user_first_name: firstName ?? "",
-    });
-    if (!spawn.ok) {
-      return resultToJson(c, spawn, "open_deep_link_failed");
-    }
-    // Forward open_deep_link to the J-002 actor.
-    const flowId = body.flow_id ?? `${machine}:${principalId}`;
-    const payload: Record<string, unknown> = {};
-    if (body.intent_project_id !== undefined)
-      payload.intent_project_id = body.intent_project_id;
-    if (body.intent_session_id !== undefined)
-      payload.intent_session_id = body.intent_session_id;
-    if (body.intent_resource_id !== undefined)
-      payload.intent_resource_id = body.intent_resource_id;
-    if (body.intent_resource_type !== undefined)
-      payload.intent_resource_type = body.intent_resource_type;
-    const result = await orchestrator.send({
-      machine,
-      flow_id: flowId,
-      type: "open_deep_link",
-      payload,
-      correlation_id,
-    });
-    return resultToJson(c, result, "open_deep_link_failed");
-  }
-
-  // ─── Legacy route-shaped deep link (J-001 / ScopeResolver path) ─────────
+  // session-chat /open-deep-link — legacy route-shaped scope-resolution
+  // body. The J-002 intent-shaped branch lives with project-context (its
+  // sole consumer).
   if (!body.flow_id) {
     return c.json({ error: "flow_id required" }, 400);
   }
@@ -841,11 +706,16 @@ function freezeThawHandler(kind: "freeze" | "thaw") {
   );
   app.route("/flow/login-and-org-setup", loginRouter);
 
-  const projectRouter = makeFlowRouter(
-    FLOW_STRATEGY_REGISTRY.resolve("project-context"),
-    // Established wire name — keeps flow_id / Redis key / projection bytes
-    // identical to the pre-LEAF-2 baseline through BOTH mounts. LEAF-6
-    // flips this to the canonical name once the FE/suite migrate.
+  // Project-context: dual-mount the SAME router instance at the canonical
+  // path AND the legacy feature-slug alias (ADR-040 §D5) so the ADR-027 §1
+  // FE projection contract resolves identically through the migration with
+  // no 404 window. Established wire name (`project-and-chat-session-
+  // management`) is forwarded to the orchestrator so flow_id / Redis key /
+  // projection bytes stay byte-identical to the pre-LEAF-2 baseline through
+  // BOTH mounts. LEAF-6 flips this to the canonical name once the FE/suite
+  // migrate.
+  const projectRouter = buildProjectContextRouter(
+    orchestrator,
     "project-and-chat-session-management",
   );
   app.route("/flow/project-context", projectRouter);
