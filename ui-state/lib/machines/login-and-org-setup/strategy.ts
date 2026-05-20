@@ -65,6 +65,21 @@ function mintAccessTokenForReady(org_id: string): string {
   return `${header}.${payload}.ui-state-mint`;
 }
 
+/**
+ * Derive a stable principal_id from a persona email by mapping non-
+ * alphanumerics to underscores. Avoids exposing the email in URLs / keys
+ * and matches the `user_<localpart>` shape the persona fixtures depend on.
+ *
+ * Used by the login router as the fallback identity channel when
+ * auth-proxy has not injected X-User-Id and the request body carries no
+ * principal_id. Lives here (below the transport boundary) because
+ * identity derivation is a login-domain rule, not router business.
+ */
+export function derivePrincipalId(email: string): string {
+  const local = email.split("@")[0]?.replace(/[^a-zA-Z0-9]/g, "_") ?? "anon";
+  return `user_${local}`;
+}
+
 export const loginOrgSetupStrategy: FlowStrategy = {
   machineName: LOGIN_AND_ORG_SETUP_MACHINE,
   beginsDirectly: true,
