@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { type Context, Hono } from "hono";
 
+import { loadConfig } from "./config.ts";
 import { resolveActiveScope } from "./lib/active-scope.ts";
 import {
   createForcedFailureOrgAndReissueActor,
@@ -18,18 +19,6 @@ import {
   type FlowOrchestrator,
 } from "./lib/orchestrator.ts";
 import type { FlowEventLog } from "./lib/persistence/redis.ts";
-
-// Endpoints the ui-state tier calls on behalf of a flow's principal. In dev
-// these are compose-network hostnames; in production the backend call routes
-// through auth-proxy with a real bearer (the fixed dev-principal headers below
-// are replaced by a service-to-service M2M token).
-const WORKOS_URL = process.env.FAKE_WORKOS_URL ?? "http://fake-workos:14299";
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://api:8000";
-const DEFAULT_PRINCIPAL_HEADERS = {
-  "x-user-id": "dev-user-001",
-  "x-org-id": "dev-org-001",
-  "x-user-email": "dev@localhost",
-};
 
 /**
  * Mint a reference code — the support-facing trace handle a flow surfaces to
@@ -64,6 +53,9 @@ type LoginRouterEnv = {
 };
 
 function loginRouter(): Hono<LoginRouterEnv> {
+  // Validate the environment once at startup (throws here if a required var is
+  // missing — no inline defaults; the environment is the single source).
+  const config = loadConfig();
   // FlowOrchestrator + eventLog + logTransition stay placeholders for now —
   // they back the not-yet-refactored /event, /open-deep-link, and
   // freeze/thaw/projection routes plus the real projection store.
@@ -74,15 +66,15 @@ function loginRouter(): Hono<LoginRouterEnv> {
   // gated at the router edge) selects a fresh failure-injecting createOrgAndReissue
   // — N forced failures then success — otherwise the real backend actor.
   const buildLoginDeps: BuildLoginDeps = ({ forceReissueFailures }) => ({
-    workosUserInfo: createWorkOSUserInfoActor(WORKOS_URL),
+    workosUserInfo: createWorkOSUserInfoActor(config),
     createOrgAndReissue:
       forceReissueFailures && forceReissueFailures > 0
         ? createForcedFailureOrgAndReissueActor(
-            createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
-            reissueOrgJwtFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+            createOrgFn(config),
+            reissueOrgJwtFn(config),
             forceReissueFailures,
           )
-        : createOrgAndReissueActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+        : createOrgAndReissueActor(config),
   });
   // Begin runs through its own context-manager orchestrator, sharing the
   // FlowOrchestrator's actor registry so the begun actor is reachable by

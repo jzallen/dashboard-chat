@@ -15,10 +15,11 @@
 
 import { assign, fromPromise, setup } from "xstate";
 
+import type { Config } from "../../../config.ts";
 import {
   classifyFailure,
-  validateOrgName,
   type UnderlyingCauseTag,
+  validateOrgName,
 } from "../validation.ts";
 
 export type LoginState =
@@ -404,7 +405,8 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
  * `/oauth/userinfo` endpoint. Used in production; tests can substitute via
  * `.provide({ actors: { workosUserInfo: fromPromise(...) } })`.
  */
-export function createWorkOSUserInfoActor(workosUrl: string): WorkOSUserInfoActor {
+export function createWorkOSUserInfoActor(config: Config): WorkOSUserInfoActor {
+  const { workosUrl } = config;
   return fromPromise<WorkOSProfile, WorkOSUserInfoInput>(async ({ input }) => {
     // First do the token exchange.
     const tokenResp = await fetch(`${workosUrl}/oauth/token`, {
@@ -463,14 +465,14 @@ export function createWorkOSUserInfoActor(workosUrl: string): WorkOSUserInfoActo
  * injected only at the reissue step.
  */
 export function createOrgFn(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
+  config: Config,
 ): (input: CreateOrgAndReissueInput) => Promise<{ org_id: string; org_name: string }> {
+  const { backendUrl, devUserHeadersFixture } = config;
   return async (input) => {
       const baseHeaders = {
         "content-type": "application/json",
         "x-correlation-id": input.correlation_id,
-        ...principalHeaders,
+        ...devUserHeadersFixture,
       };
 
       // Step 1: create the org. The backend's middleware accepts the
@@ -541,16 +543,16 @@ export function createOrgFn(
  * AC semantics.
  */
 export function reissueOrgJwtFn(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
+  config: Config,
 ): (input: { org_id: string; correlation_id: string }) => Promise<void> {
+  const { backendUrl, devUserHeadersFixture } = config;
   return async ({ org_id, correlation_id }) => {
     const reissueResp = await fetch(`${backendUrl}/api/auth/reissue`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-correlation-id": correlation_id,
-        ...principalHeaders,
+        ...devUserHeadersFixture,
       },
       body: JSON.stringify({ org_id }),
     });
@@ -565,11 +567,10 @@ export function reissueOrgJwtFn(
  * for the production composition root so the wiring stays a one-liner.
  */
 export function createOrgAndReissueFn(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
+  config: Config,
 ): (input: CreateOrgAndReissueInput) => Promise<CreateOrgAndReissueOutput> {
-  const createOrg = createOrgFn(backendUrl, principalHeaders);
-  const reissue = reissueOrgJwtFn(backendUrl, principalHeaders);
+  const createOrg = createOrgFn(config);
+  const reissue = reissueOrgJwtFn(config);
   return async (input) => {
     const created = await createOrg(input);
     await reissue({
@@ -587,11 +588,8 @@ export function createOrgAndReissueFn(
  * into deps by the injected buildLoginDeps factory) without rebuilding the
  * actor surface.
  */
-export function createOrgAndReissueActor(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-): CreateOrgAndReissueActor {
-  const fn = createOrgAndReissueFn(backendUrl, principalHeaders);
+export function createOrgAndReissueActor(config: Config): CreateOrgAndReissueActor {
+  const fn = createOrgAndReissueFn(config);
   return fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>(
     ({ input }) => fn(input),
   );
