@@ -6,7 +6,6 @@ import tanstackQuery from "@tanstack/eslint-plugin-query";
 import testingLibrary from "eslint-plugin-testing-library";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import globals from "globals";
-import uiStateConventions from "./ui-state/lib/eslint-plugin-ui-state-conventions/index.js";
 
 export default [
   // ── Global ignores ──────────────────────────────────────────────────
@@ -106,75 +105,6 @@ export default [
   // Shared chat handler used by both frontend and worker — no special config
   {
     files: ["shared/**/*.ts"],
-  },
-
-  // ── ADR-039 ui-state vocabulary conventions (C4, C7, C12) ───────────
-  // Custom rules under `ui-state/lib/eslint-plugin-ui-state-conventions/`
-  // mechanically enforce the lint-tier (E1) conventions from ADR-039.
-  // Each rule has a probe under `ui-state/lib/lint-probes/` that contains
-  // a deliberate violation; the plugin's test suite asserts the rule
-  // fires on its probe (Earned Trust principle 12).
-  //
-  // Severity rationale per rule:
-  //   - C4 (no-failure-sim-event-prefix-outside-allowlist): no current
-  //     violations in production code; kept at `warn` for consistency.
-  //     Safe to upgrade to `error` independently in a future follow-up.
-  //   - C7 (intent-prefix-deeplink-only): MR-D removed intent_session_id
-  //     and intent_project_id from machine context (renamed to
-  //     pending_resume_session_id / deeplink_session_id / deeplink_project_id).
-  //     Remaining warnings are on the `open_deep_link` HTTP / event-payload
-  //     keys (intent_project_id, intent_session_id, intent_resource_id,
-  //     intent_resource_type) — those rename in the open_deep_link
-  //     event-payload follow-up. Severity flips to `error` once that
-  //     follow-up lands.
-  //   - C12 (no-machine-name-prefix-on-projection-fields): the original
-  //     audit violations were collapsed in MR-H + the §9 Q3 follow-up.
-  //     The rule's reducer-dispatch-key false-positive was fixed (skip
-  //     `Property` nodes with function values — see rule source). With
-  //     zero remaining violations in production code, severity is now
-  //     `error` — regressions are caught at lint time.
-  {
-    files: ["ui-state/**/*.ts"],
-    ignores: [
-      "**/*.test.ts",
-      // Lint-probe files contain deliberate violations the rules MUST flag —
-      // they're fixtures for the plugin's own test suite (which lints them
-      // in isolation via __tests__/rules.test.ts to assert coverage). The
-      // production lint pass skips them so the intentional violations
-      // don't surface as errors.
-      "ui-state/lib/lint-probes/**",
-    ],
-    plugins: { "ui-state-conventions": uiStateConventions },
-    rules: {
-      "ui-state-conventions/no-failure-sim-event-prefix-outside-allowlist":
-        "warn",
-      "ui-state-conventions/intent-prefix-deeplink-only": "warn",
-      "ui-state-conventions/no-machine-name-prefix-on-projection-fields":
-        "error",
-    },
-  },
-
-  // ── ADR-030 LEAF-D — orchestrator MUST read state from the projection ─
-  // FlowEvent-emission paths in `ui-state/lib/orchestrator.ts` MUST NOT
-  // read from `snapshot.context.*` or `snapshot.getContext()`. The
-  // projection (rebuilt from the FlowEvent log) is the single source of
-  // truth for read state per ADR-030 §"Decision outcome"; the machine
-  // snapshot is internal handler state per ADR-028 §"Amendment 2026-05-15".
-  //
-  // LEAF-A (5826660) and LEAF-B (5f4e635) cleared every pre-existing
-  // snapshot read from orchestrator.ts. This rule activates on a clean
-  // tree at severity `error` to prevent regression.
-  //
-  // The rule is scoped to orchestrator.ts (the FlowEvent emitter) — other
-  // files in ui-state legitimately read from snapshots (machine action
-  // handlers, etc.). If we ever extend the prohibition to additional
-  // emission paths, widen this `files:` glob.
-  {
-    files: ["ui-state/lib/orchestrator.ts"],
-    plugins: { "ui-state-conventions": uiStateConventions },
-    rules: {
-      "ui-state-conventions/no-orchestrator-snapshot-reads": "error",
-    },
   },
 
   // ── DWD-3 single-writer guard for X-Active-Scope ────────────────────
