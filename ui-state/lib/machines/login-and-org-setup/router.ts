@@ -25,6 +25,7 @@
 
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import type { Hono } from "hono";
+import { z } from "zod";
 
 import type { ResolveActiveScope } from "../../active-scope.ts";
 import {
@@ -34,7 +35,6 @@ import {
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
 import type { LoginMachineDeps } from "./index.ts";
-import { derivePrincipalId } from "./strategy.ts";
 
 /**
  * Context this router consumes from its host app. The composition root sets
@@ -58,6 +58,26 @@ export type BuildLoginDeps = (opts: {
   forceReissueFailures?: number;
 }) => LoginMachineDeps;
 
+/**
+ * The login /begin request DTO: the two trusted-ingress values the outer
+ * router resolves into context vars (referenceCode + userId) plus the HTTP
+ * body. This schema is the route's single validation gate — persona_email is
+ * the only required body field, and identity (userId) carries no fallback (it
+ * comes solely from the X-User-Id header).
+ */
+const loginRequestSchema = z.object({
+  referenceCode: z.string(),
+  userId: z.string(),
+  body: z.object({
+    persona_email: z.string().min(1),
+    persona_display_name: z.string().optional(),
+    existing_org_names: z.array(z.string()).optional(),
+    force_reissue_failures: z.number().optional(),
+  }),
+});
+
+export type LoginRequest = z.infer<typeof loginRequestSchema>;
+
 export function buildLoginAndOrgSetupRouter(
   router: Hono<LoginRouterContext>,
   orchestrator: FlowOrchestrator,
@@ -67,54 +87,52 @@ export function buildLoginAndOrgSetupRouter(
   const wireName = "login-and-org-setup";
 
   router.post("/begin", async (c) => {
-    const referenceCode = c.get("referenceCode");
-    let body: {
-      persona_email?: string;
-      persona_display_name?: string;
-      existing_org_names?: string[];
-      force_reissue_failures?: number;
-      principal_id?: string;
-    };
+    let rawBody: unknown;
     try {
-      body = (await c.req.json()) as typeof body;
+      rawBody = await c.req.json();
     } catch {
       return c.json({ error: "invalid_request" }, 400);
     }
 
-    if (!body.persona_email) {
-      return c.json({ error: "persona_email required" }, 400);
+    // Assemble + validate the LoginRequest from trusted ingress (referenceCode
+    // + userId, resolved into context vars by the outer router) and the HTTP
+    // body. The schema is the route's single validation gate.
+    const parsed = loginRequestSchema.safeParse({
+      referenceCode: c.get("referenceCode"),
+      userId: c.get("userId"),
+      body: rawBody,
+    });
+    if (!parsed.success) {
+      return c.json(
+        { error: "invalid_request", issues: parsed.error.issues },
+        400,
+      );
     }
-
-    // Identity channels (highest priority first): trusted ingress
-    // (X-User-Id, resolved by the outer router), body field, then a
-    // deterministic derivation from persona_email.
-    const userId =
-      c.get("userId") ||
-      body.principal_id ||
-      derivePrincipalId(body.persona_email);
+    const request = parsed.data;
 
     // force-reissue-failures gate: the harness knob that wraps
     // createOrgAndReissue with a failure-injecting counter. Resolve it into
     // machine deps HERE (via the injected factory) so the orchestrator
     // receives pre-built deps and never sees the raw knob. Closed-by-default
-    // in production (ENVIRONMENT × flag, ADR-035).
+    // in production (ENVIRONMENT × flag, ADR-035). The gate reads the body
+    // field directly, so it is consulted with the raw parsed body.
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
-      body: body as Record<string, unknown>,
-      correlationId: referenceCode,
+      body: rawBody as Record<string, unknown>,
+      correlationId: request.referenceCode,
       serviceName: "ui-state",
     });
     const deps = buildLoginDeps({
       forceReissueFailures: reissueFailuresAllowed
-        ? body.force_reissue_failures
+        ? request.body.force_reissue_failures
         : undefined,
     });
     const result = await orchestrator.begin({
       machine: wireName,
-      principal_id: userId,
-      persona_email: body.persona_email ?? "",
-      persona_display_name: body.persona_display_name ?? "",
-      correlation_id: referenceCode,
-      existing_org_names: body.existing_org_names,
+      principal_id: request.userId,
+      persona_email: request.body.persona_email,
+      persona_display_name: request.body.persona_display_name ?? "",
+      correlation_id: request.referenceCode,
+      existing_org_names: request.body.existing_org_names,
       deps,
     });
     return resultToJson(c, result, "begin_failed");
