@@ -24,8 +24,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fromPromise } from "xstate";
 
-import { FlowOrchestrator } from "./orchestrator.ts";
-import { createNoopFlowEventLog } from "./persistence/redis.ts";
 import type {
   CreateOrgAndReissueActor,
   CreateOrgAndReissueInput,
@@ -33,6 +31,9 @@ import type {
   LoginMachineDeps,
   WorkOSUserInfoActor,
 } from "./machines/login-and-org-setup/index.ts";
+import { LoginBeginStrategy } from "./machines/login-and-org-setup/strategy.ts";
+import { FlowOrchestrator } from "./orchestrator.ts";
+import { createNoopFlowEventLog } from "./persistence/redis.ts";
 
 const PROFILE_MAYA = {
   email: "maya.chen@acme-data.example",
@@ -77,14 +78,19 @@ async function driveToReady(
   profile = PROFILE_MAYA,
   deps: LoginMachineDeps = buildDeps(profile),
 ): Promise<{ flow_id: string }> {
-  await orch.begin({
-    machine: "login-and-org-setup",
-    principal_id: principal,
-    persona_email: profile.email,
-    persona_display_name: profile.display_name,
-    correlation_id: correlation,
+  const strategy = new LoginBeginStrategy(
+    {
+      machine: "login-and-org-setup",
+      principal_id: principal,
+      persona_email: profile.email,
+      persona_display_name: profile.display_name,
+      correlation_id: correlation,
+    },
     deps,
-  });
+    orch.deps.eventLog,
+    () => {},
+  );
+  await orch.begin(strategy);
   const flow_id = `login-and-org-setup:${principal}`;
   await orch.send({
     machine: "login-and-org-setup",

@@ -58,7 +58,6 @@ const PROJECT_CONTEXT_WIRE_NAME = "project-and-chat-session-management";
 
 export const projectContextStrategy: FlowStrategy = {
   machineName: PROJECT_CONTEXT_MACHINE,
-  beginsDirectly: false,
   buildMachine: (deps) => {
     if (!deps.projectContextMachineDeps) {
       throw new Error(

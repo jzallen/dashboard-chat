@@ -17,6 +17,7 @@ import { type AnyActorRef, createActor } from "xstate";
 
 import type {
   BeginFlowInput,
+  BeginStrategy,
   FlowStrategy,
   PumpContext,
   SendEventInput,
@@ -24,10 +25,14 @@ import type {
   SettleOutcome,
 } from "../../orchestrator.ts";
 import { harvestSettledLoginState } from "../../orchestrator-harvester.ts";
-import type { FlowEvent, FlowProjection } from "../../projection.ts";
+import type { FlowEventLog } from "../../persistence/redis.ts";
+import type { FlowEvent } from "../../projection.ts";
 import { buildProjection } from "../../projection.ts";
 import { waitForSettledState } from "../../wait-for-settled-state.ts";
-import { createLoginAndOrgSetupMachine } from "./index.ts";
+import {
+  createLoginAndOrgSetupMachine,
+  type LoginMachineDeps,
+} from "./index.ts";
 
 /**
  * Canonical machine-name (ADR-039) — the FlowStrategy registry key. The
@@ -63,142 +68,11 @@ function mintAccessTokenForReady(org_id: string): string {
 
 export const loginOrgSetupStrategy: FlowStrategy = {
   machineName: LOGIN_AND_ORG_SETUP_MACHINE,
-  beginsDirectly: true,
   buildMachine: () => {
-    // Unreachable for login: it is the only beginsDirectly machine, so it is
-    // begun via beginDirect (which builds its actor from input.deps) and is
-    // never spawned through the generic buildMachine path.
+    // Login is begun via LoginBeginStrategy (constructed in the router), not
+    // spawned through the generic buildMachine path — nothing spawns login.
     throw new Error(
-      "login-and-org-setup is begun via beginDirect; buildMachine is never invoked",
-    );
-  },
-
-  /**
-   * Direct WorkOS + org-create begin body (ADR-040 §D2 begin-semantics).
-   * Carved verbatim from `FlowOrchestrator.begin` (the `beginsDirectly`
-   * arm) in MR-L3a/N2 — behavior-neutral: same FlowEvents, same order,
-   * same `waitForSettledState`/projection reads. The pump retains
-   * actor-system ownership; this body reaches it through `pump`.
-   */
-  async beginDirect(
-    pump: PumpContext,
-    input: BeginFlowInput,
-  ): Promise<FlowProjection> {
-    const flow_id = `${input.machine}:${input.principal_id}`;
-    const start = Date.now();
-
-    // Re-clicking sign-in is the entry to a NEW auth attempt — reset the
-    // prior actor (if any) and event log so we don't replay a stale flow.
-    // The persisted event log is the source of truth; the actor is a
-    // process-local cache. Without this reset, a second sign-in inherits
-    // the previous attempt's terminal state and never re-enters
-    // `authenticating`.
-    pump.recycleActor(flow_id);
-    await pump.deps.eventLog.reset(flow_id);
-    pump.resetFlowTracking(flow_id);
-
-    // Deps arrive pre-built from the login router (input.deps). When the
-    // forced-failure harness knob is active the router has already wrapped
-    // createOrgAndReissue with the failure-injecting counter, so the gate +
-    // env recheck no longer live here (ADR-035 closed-by-default at the edge).
-    const machine = createLoginAndOrgSetupMachine(input.deps);
-    const actor = createActor(machine, {
-      input: {
-        correlation_id: input.correlation_id,
-        principal_id: input.principal_id,
-        existing_org_names: input.existing_org_names,
-      },
-    });
-    pump.trackActor(flow_id, actor);
-    actor.start();
-    pump.logTransition({
-      flow_id,
-      from_state: null,
-      to_state: "anonymous",
-      correlation_id: input.correlation_id,
-      principal_id: input.principal_id,
-      duration_ms: 0,
-    });
-
-    // Append sign_in_clicked event to the log and dispatch it.
-    const signInEvent: FlowEvent = {
-      ts: new Date().toISOString(),
-      type: "sign_in_clicked",
-      payload: {
-        persona_email: input.persona_email,
-        persona_display_name: input.persona_display_name,
-      },
-      correlation_id: input.correlation_id,
-    };
-    await pump.deps.eventLog.append(flow_id, signInEvent);
-
-    actor.send({
-      type: "sign_in_clicked",
-      persona_email: input.persona_email,
-      persona_display_name: input.persona_display_name,
-    });
-
-    // Wait for the authenticating invoke to resolve.
-    await waitForSettledState(actor);
-
-    const stateValue = actor.getSnapshot().value as string;
-
-    // ADR-030 LEAF-B: read user / underlying_cause_tag from the live
-    // projection (built from the FlowEvent log) rather than from the
-    // machine snapshot context, per ADR-030 §"Decision outcome" — the
-    // projection is the only legal read source for the emission path.
-    //
-    // Risk noted for reviewer: at this code point the projection has only
-    // observed `sign_in_clicked`, so `context.user` is still the empty
-    // initial shape and `context.underlying_cause_tag` is null. The
-    // workos-profile / cause-classification harvest currently lives in
-    // the actor's settled context and is not yet a FlowEvent-derivable
-    // value. LEAF-C+ work (see ADR-030 §"Migration sequencing") will land
-    // an upstream event that captures the workos invoke output so this
-    // read site sees the resolved profile; until then `auth_callback_resolved`
-    // / `auth_failed` may carry placeholder values. Mirrors the LEAF-A
-    // session-list trade-off (`appendSessionChatTerminalEvents`).
-    const preEmitEvents = await pump.deps.eventLog.read(flow_id);
-    const preEmitProjection = buildProjection(flow_id, preEmitEvents);
-    const preEmitCtx = preEmitProjection.context as {
-      user: { email: string | null; display_name: string | null };
-      underlying_cause_tag: string | null;
-    };
-
-    // On successful auth, append auth_callback_resolved so the projection
-    // matches the wire contract from the event log even without a snapshot.
-    if (stateValue === "authenticated_no_org") {
-      const user = preEmitCtx.user;
-      const resolvedEvent: FlowEvent = {
-        ts: new Date().toISOString(),
-        type: "auth_callback_resolved",
-        payload: { user },
-        correlation_id: input.correlation_id,
-      };
-      await pump.deps.eventLog.append(flow_id, resolvedEvent);
-      pump.logTransition({
-        flow_id,
-        from_state: "authenticating",
-        to_state: "authenticated_no_org",
-        correlation_id: input.correlation_id,
-        principal_id: input.principal_id,
-        duration_ms: Date.now() - start,
-      });
-    } else if (stateValue === "error_recoverable") {
-      const cause = preEmitCtx.underlying_cause_tag ?? "transient";
-      const failedEvent: FlowEvent = {
-        ts: new Date().toISOString(),
-        type: "auth_failed",
-        payload: { underlying_cause_tag: cause },
-        correlation_id: input.correlation_id,
-      };
-      await pump.deps.eventLog.append(flow_id, failedEvent);
-    }
-
-    return pump.projectionFor(
-      flow_id,
-      input.principal_id,
-      input.correlation_id,
+      "login-and-org-setup is begun via LoginBeginStrategy; buildMachine is never invoked",
     );
   },
 
@@ -393,3 +267,134 @@ export const loginOrgSetupStrategy: FlowStrategy = {
     // No-op: login has no deep-link re-resolve (project-context only).
   },
 };
+
+/**
+ * Per-request begin command for the login flow (ADR-040 §D2 begin-semantics).
+ * Constructed by the login router: builds its actor up front from the machine
+ * deps, then `Orchestrator.begin` tracks the actor (enter), calls `begin()`
+ * (this body), and returns the projection (exit). This object owns the actor,
+ * its transitions, and its event-log writes; it never reaches into the
+ * orchestrator — `eventLog` + `logTransition` are injected directly.
+ *
+ * Behavior-neutral carve from the former `loginOrgSetupStrategy.beginDirect`:
+ * same FlowEvents, same order, same `waitForSettledState`/projection reads.
+ */
+export class LoginBeginStrategy implements BeginStrategy {
+  readonly flow_id: string;
+  readonly actor: AnyActorRef;
+  readonly correlationId: string;
+  private readonly input: BeginFlowInput;
+  private readonly eventLog: FlowEventLog;
+  private readonly logTransition: (record: Record<string, unknown>) => void;
+
+  constructor(
+    input: BeginFlowInput,
+    deps: LoginMachineDeps,
+    eventLog: FlowEventLog,
+    logTransition: (record: Record<string, unknown>) => void,
+  ) {
+    this.input = input;
+    this.eventLog = eventLog;
+    this.logTransition = logTransition;
+    this.flow_id = `${input.machine}:${input.principal_id}`;
+    this.correlationId = input.correlation_id;
+    const machine = createLoginAndOrgSetupMachine(deps);
+    this.actor = createActor(machine, {
+      input: {
+        correlation_id: input.correlation_id,
+        principal_id: input.principal_id,
+        existing_org_names: input.existing_org_names,
+      },
+    });
+  }
+
+  async begin(): Promise<void> {
+    const { input, flow_id, actor } = this;
+    const start = Date.now();
+
+    // Re-clicking sign-in is the entry to a NEW auth attempt — reset the
+    // persisted event log so we don't replay a stale flow (the actor recycle
+    // + tracking reset is the orchestrator's enter). The persisted log is the
+    // source of truth; without this reset a second sign-in inherits the prior
+    // attempt's terminal state and never re-enters `authenticating`.
+    await this.eventLog.reset(flow_id);
+
+    actor.start();
+    this.logTransition({
+      flow_id,
+      from_state: null,
+      to_state: "anonymous",
+      correlation_id: input.correlation_id,
+      principal_id: input.principal_id,
+      duration_ms: 0,
+    });
+
+    // Append sign_in_clicked event to the log and dispatch it.
+    const signInEvent: FlowEvent = {
+      ts: new Date().toISOString(),
+      type: "sign_in_clicked",
+      payload: {
+        persona_email: input.persona_email,
+        persona_display_name: input.persona_display_name,
+      },
+      correlation_id: input.correlation_id,
+    };
+    await this.eventLog.append(flow_id, signInEvent);
+
+    actor.send({
+      type: "sign_in_clicked",
+      persona_email: input.persona_email,
+      persona_display_name: input.persona_display_name,
+    });
+
+    // Wait for the authenticating invoke to resolve.
+    await waitForSettledState(actor);
+
+    const stateValue = actor.getSnapshot().value as string;
+
+    // ADR-030 LEAF-B: read user / underlying_cause_tag from the live
+    // projection (built from the FlowEvent log), not the machine snapshot —
+    // the projection is the only legal read source for the emission path.
+    // Risk: at this point the projection has only observed `sign_in_clicked`,
+    // so the workos-profile / cause harvest still lives in the actor's settled
+    // context; LEAF-C+ lands an upstream event so this read sees the resolved
+    // profile. Until then `auth_callback_resolved` / `auth_failed` may carry
+    // placeholder values (mirrors the LEAF-A session-list trade-off).
+    const preEmitEvents = await this.eventLog.read(flow_id);
+    const preEmitProjection = buildProjection(flow_id, preEmitEvents);
+    const preEmitCtx = preEmitProjection.context as {
+      user: { email: string | null; display_name: string | null };
+      underlying_cause_tag: string | null;
+    };
+
+    // On successful auth, append auth_callback_resolved so the projection
+    // matches the wire contract from the event log even without a snapshot.
+    if (stateValue === "authenticated_no_org") {
+      const user = preEmitCtx.user;
+      const resolvedEvent: FlowEvent = {
+        ts: new Date().toISOString(),
+        type: "auth_callback_resolved",
+        payload: { user },
+        correlation_id: input.correlation_id,
+      };
+      await this.eventLog.append(flow_id, resolvedEvent);
+      this.logTransition({
+        flow_id,
+        from_state: "authenticating",
+        to_state: "authenticated_no_org",
+        correlation_id: input.correlation_id,
+        principal_id: input.principal_id,
+        duration_ms: Date.now() - start,
+      });
+    } else if (stateValue === "error_recoverable") {
+      const cause = preEmitCtx.underlying_cause_tag ?? "transient";
+      const failedEvent: FlowEvent = {
+        ts: new Date().toISOString(),
+        type: "auth_failed",
+        payload: { underlying_cause_tag: cause },
+        correlation_id: input.correlation_id,
+      };
+      await this.eventLog.append(flow_id, failedEvent);
+    }
+  }
+}

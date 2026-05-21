@@ -33,8 +33,7 @@
 import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { ResourceType } from "./active-scope.ts";
-import { type Result, ok, err } from "./flow-result.ts";
-import { type LoginMachineDeps } from "./machines/login-and-org-setup/index.ts";
+import { err,ok, type Result } from "./flow-result.ts";
 import { loginOrgSetupStrategy } from "./machines/login-and-org-setup/strategy.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
@@ -164,9 +163,6 @@ export interface SettleOutcome {
 export interface FlowStrategy {
   /** Canonical machine-name — the registry key. Never a flow-id. */
   readonly machineName: string;
-  /** True for the direct begin path (login). False for machines spawned via
-   *  the cross-machine broadcast hook (`beginIfNotStarted`). */
-  readonly beginsDirectly: boolean;
   buildMachine(
     deps: OrchestratorDeps,
     input: {
@@ -176,11 +172,6 @@ export interface FlowStrategy {
     },
   ): AnyStateMachine;
 
-  /** Direct begin body — called by the pump when `beginsDirectly`. */
-  beginDirect?(
-    pump: PumpContext,
-    input: BeginFlowInput,
-  ): Promise<FlowProjection>;
   /** Pre-settle event→transition emission (currently project-context only). */
   applyEvent?(
     pump: PumpContext,
@@ -302,12 +293,21 @@ export interface BeginFlowInput {
   correlation_id: string;
   /** Seed for the duplicate-org-name fixture path. */
   existing_org_names?: string[];
-  /** Machine deps for the actor this begin spins up. Built by the flow's
-   *  driving router (the composition root injects the concretions), so the
-   *  orchestrator never holds login-domain deps on its global surface. When
-   *  the forced-failure harness knob is active, its wrapper is already baked
-   *  into `createOrgAndReissue` here. */
-  deps: LoginMachineDeps;
+}
+
+/**
+ * A per-request begin command. The driving router constructs one (building its
+ * actor up front from the machine deps), then hands it to `begin`, which acts
+ * as a context manager: it recycles + tracks the actor (enter), runs
+ * `strategy.begin()` (the machine-specific drive), and returns the projection
+ * (exit). The strategy owns its actor, transitions, and event-log writes; the
+ * orchestrator owns actor tracking and the final projection.
+ */
+export interface BeginStrategy {
+  readonly flow_id: string;
+  readonly actor: AnyActorRef;
+  readonly correlationId: string;
+  begin(): Promise<void>;
 }
 
 export interface SendEventInput {
@@ -387,36 +387,29 @@ export class FlowOrchestrator implements PumpContext {
   }
 
   /**
-   * Begin a flow. For `beginsDirectly` machines (login), runs the direct
-   * begin body. For spawn-only machines (J-002), forwards to
-   * `beginIfNotStarted` so direct `/begin` HTTP posts cannot bypass the
-   * cross-machine entry contract (idempotent no-op when already started).
+   * Begin a flow. Acts as a context manager around a per-request
+   * `BeginStrategy`: open a fresh slot for the strategy's actor (enter), run
+   * its machine-specific drive (body), and return the projection (exit). The
+   * strategy owns its actor, transitions, and event-log writes; the
+   * orchestrator owns actor tracking and the final projection.
    */
-  async begin(input: BeginFlowInput): Promise<Result<FlowProjection>> {
+  async begin(strategy: BeginStrategy): Promise<Result<FlowProjection>> {
     try {
-      return ok(await this.beginCore(input));
+      // enter: clear any prior actor + tracking for this flow_id, then
+      // register the strategy's freshly-built actor (the persisted event log
+      // is the source of truth; the in-process actor is a cache).
+      this.recycleActor(strategy.flow_id);
+      this.resetFlowTracking(strategy.flow_id);
+      this.trackActor(strategy.flow_id, strategy.actor);
+      // body: the machine-specific begin sequence
+      await strategy.begin();
+      // exit: the freshly-built projection is the response
+      return ok(
+        await this.projectionFor(strategy.flow_id, "", strategy.correlationId),
+      );
     } catch (e) {
       return toFlowError(e);
     }
-  }
-
-  private async beginCore(input: BeginFlowInput): Promise<FlowProjection> {
-    const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
-
-    if (!strategy.beginsDirectly) {
-      return this.beginIfNotStartedCore({
-        machine: input.machine,
-        principal_id: input.principal_id,
-        correlation_id: input.correlation_id,
-      });
-    }
-
-    if (!strategy.beginDirect) {
-      throw new Error(
-        `strategy '${strategy.machineName}' is beginsDirectly but has no beginDirect impl`,
-      );
-    }
-    return strategy.beginDirect(this, input);
   }
 
   /**

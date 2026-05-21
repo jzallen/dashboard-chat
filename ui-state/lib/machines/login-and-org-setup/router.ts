@@ -34,7 +34,9 @@ import {
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
+import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { LoginMachineDeps } from "./index.ts";
+import { LoginBeginStrategy } from "./strategy.ts";
 
 /**
  * Context this router consumes from its host app. The composition root sets
@@ -84,6 +86,8 @@ export function buildLoginAndOrgSetupRouter(
   orchestrator: FlowOrchestrator,
   resolveActiveScope: ResolveActiveScope,
   buildLoginDeps: BuildLoginDeps,
+  eventLog: FlowEventLog,
+  logTransition: (record: Record<string, unknown>) => void,
 ): Hono<LoginRouterContext> {
   const wireName = "login-and-org-setup";
 
@@ -112,6 +116,8 @@ export function buildLoginAndOrgSetupRouter(
     // receives pre-built deps and never sees the raw knob. Closed-by-default
     // in production (ENVIRONMENT × flag, ADR-035). The gate reads the body
     // field directly, so it is consulted with the raw parsed body.
+    //
+    // TODO: consider replacing with contract test and mocked external dependencies
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
       body: (rawBody ?? {}) as Record<string, unknown>,
       correlationId: request.referenceCode,
@@ -122,15 +128,20 @@ export function buildLoginAndOrgSetupRouter(
         ? request.body.force_reissue_failures
         : undefined,
     });
-    const result = await orchestrator.begin({
-      machine: wireName,
-      principal_id: request.userId,
-      persona_email: request.body.persona_email,
-      persona_display_name: request.body.persona_display_name ?? "",
-      correlation_id: request.referenceCode,
-      existing_org_names: request.body.existing_org_names,
+    const strategy = new LoginBeginStrategy(
+      {
+        machine: wireName,
+        principal_id: request.userId,
+        persona_email: request.body.persona_email,
+        persona_display_name: request.body.persona_display_name ?? "",
+        correlation_id: request.referenceCode,
+        existing_org_names: request.body.existing_org_names,
+      },
       deps,
-    });
+      eventLog,
+      logTransition,
+    );
+    const result = await orchestrator.begin(strategy);
     return resultToJson(c, result, "begin_failed");
   });
 

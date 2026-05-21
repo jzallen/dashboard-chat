@@ -8,6 +8,7 @@ import {
   type BuildLoginDeps,
 } from "./lib/machines/login-and-org-setup/router.ts";
 import type { FlowOrchestrator } from "./lib/orchestrator.ts";
+import type { FlowEventLog } from "./lib/persistence/redis.ts";
 
 /**
  * Mint a reference code — the support-facing trace handle a flow surfaces to
@@ -45,9 +46,13 @@ function loginRouter(): Hono<LoginRouterEnv> {
   // Placeholders — real orchestrator + login-deps construction (WorkOS
   // userinfo, org-create + reissue, silent reauth, and the forced-failure
   // wrapper) get wired here next. buildLoginDeps is the single seam where the
-  // force-reissue-failures knob resolves into the createOrgAndReissue actor.
+  // force-reissue-failures knob resolves into the createOrgAndReissue actor;
+  // eventLog + logTransition are handed to each per-request LoginBeginStrategy
+  // (the same eventLog instance the real orchestrator will read for projections).
   const orchestrator = {} as FlowOrchestrator;
   const buildLoginDeps: BuildLoginDeps = () => ({}) as LoginMachineDeps;
+  const eventLog = {} as FlowEventLog;
+  const logTransition = (_record: Record<string, unknown>): void => {};
   const router = new Hono<LoginRouterEnv>();
 
   // Ingress header management: read the auth-proxy headers once at the
@@ -71,6 +76,8 @@ function loginRouter(): Hono<LoginRouterEnv> {
     orchestrator,
     resolveActiveScope,
     buildLoginDeps,
+    eventLog,
+    logTransition,
   );
 }
 

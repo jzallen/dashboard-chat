@@ -343,7 +343,6 @@ async function appendSessionChatTerminalEvents(
 
 export const sessionChatStrategy: FlowStrategy = {
   machineName: SESSION_CHAT_MACHINE,
-  beginsDirectly: false,
   buildMachine: (deps) =>
     createSessionChatMachine(deps.sessionChatMachineDeps ?? {}),
 
