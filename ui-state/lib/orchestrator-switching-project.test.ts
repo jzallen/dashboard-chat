@@ -31,7 +31,6 @@ import type {
   ResolveInitialScopeActor,
   SwitchProjectActor,
 } from "./machines/project-context/machine.ts";
-import type { LoginMachineDeps } from "./machines/login-and-org-setup/index.ts";
 
 const WIRE = "project-and-chat-session-management";
 const PRINCIPAL = "dev-user-001";
@@ -65,17 +64,6 @@ function createInMemoryFlowEventLog(): FlowEventLog & {
   };
 }
 
-const NOOP_LOGIN_DEPS: LoginMachineDeps = {
-  workosUserInfo: fromPromise(async () => ({
-    email: "dev@localhost",
-    display_name: "Dev User",
-  })),
-  createOrgAndReissue: fromPromise(async () => ({
-    org_id: "dev-org-001",
-    org_name: "Dev Org",
-  })),
-};
-
 function projectContextDeps(
   switchProject: SwitchProjectActor,
 ): ProjectContextMachineDeps {
@@ -101,7 +89,6 @@ async function buildSettledProjectContextFlow(
   const log = createInMemoryFlowEventLog();
   const orch = new FlowOrchestrator({
     eventLog: log,
-    loginMachineDeps: NOOP_LOGIN_DEPS,
     projectContextMachineDeps: projectContextDeps(switchProject),
     log: () => {},
   });

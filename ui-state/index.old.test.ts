@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { fromPromise } from "xstate";
 
-import { wireRoutes } from "./index.ts";
+import { wireRoutes } from "./index.old.ts";
 import { FlowOrchestrator } from "./lib/orchestrator.ts";
 import { createNoopFlowEventLog } from "./lib/persistence/redis.ts";
 import type {

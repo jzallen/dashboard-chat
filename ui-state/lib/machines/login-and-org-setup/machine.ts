@@ -583,8 +583,9 @@ export function createOrgAndReissueFn(
 /**
  * XState actor wrapper around `createOrgAndReissueFn`. Production
  * composition root calls this; tests can substitute via the failure-
- * simulation knob (orchestrator-level `force_reissue_failures`) without
- * rebuilding the actor surface.
+ * simulation knob (the login router's `force_reissue_failures`, resolved
+ * into deps by the injected buildLoginDeps factory) without rebuilding the
+ * actor surface.
  */
 export function createOrgAndReissueActor(
   backendUrl: string,

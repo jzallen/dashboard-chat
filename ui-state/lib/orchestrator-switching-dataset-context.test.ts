@@ -37,7 +37,6 @@ import { type Result } from "./flow-result.ts";
 import { FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEvent } from "./projection.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import type { LoginMachineDeps } from "./machines/login-and-org-setup/index.ts";
 
 const WIRE = "session-chat";
 const PRINCIPAL = "dev-user-001";
@@ -68,17 +67,6 @@ function createInMemoryFlowEventLog(): FlowEventLog & {
     dump: () => streams,
   };
 }
-
-const NOOP_LOGIN_DEPS: LoginMachineDeps = {
-  workosUserInfo: fromPromise(async () => ({
-    email: "dev@localhost",
-    display_name: "Dev User",
-  })),
-  createOrgAndReissue: fromPromise(async () => ({
-    org_id: "dev-org-001",
-    org_name: "Dev Org",
-  })),
-};
 
 const SESSION_ID = "sess-q4";
 
@@ -137,7 +125,6 @@ async function buildSessionActiveFlow(
   const { deps } = sessionChatDeps(switchDatasetContext, priorDatasetId);
   const orch = new FlowOrchestrator({
     eventLog: log,
-    loginMachineDeps: NOOP_LOGIN_DEPS,
     sessionChatMachineDeps: deps,
     log: () => {},
   });

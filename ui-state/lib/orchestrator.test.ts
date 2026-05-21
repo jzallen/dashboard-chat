@@ -63,10 +63,9 @@ function buildDeps(profile = PROFILE_MAYA): LoginMachineDeps {
   };
 }
 
-function buildOrchestrator(deps?: LoginMachineDeps): FlowOrchestrator {
+function buildOrchestrator(): FlowOrchestrator {
   return new FlowOrchestrator({
     eventLog: createNoopFlowEventLog(),
-    loginMachineDeps: deps ?? buildDeps(),
     log: () => {},
   });
 }
@@ -76,6 +75,7 @@ async function driveToReady(
   principal: string,
   correlation: string,
   profile = PROFILE_MAYA,
+  deps: LoginMachineDeps = buildDeps(profile),
 ): Promise<{ flow_id: string }> {
   await orch.begin({
     machine: "login-and-org-setup",
@@ -83,6 +83,7 @@ async function driveToReady(
     persona_email: profile.email,
     persona_display_name: profile.display_name,
     correlation_id: correlation,
+    deps,
   });
   const flow_id = `login-and-org-setup:${principal}`;
   await orch.send({
@@ -335,16 +336,16 @@ describe("Login machine returning to ready after silent reauth triggers broadcas
         createOrgAndReissue: succeedingCreateOrg(),
         silentReauth: silentReauthOk,
       } as unknown as LoginMachineDeps;
-      orch = new FlowOrchestrator({
-        eventLog: createNoopFlowEventLog(),
-        loginMachineDeps: deps,
-        log: () => {},
-      });
+      orch = buildOrchestrator();
 
+      // Maya is the origin flow that expires + silently reauths, so her begin
+      // gets the silentReauth-wired deps; Kai never reaches expired_token.
       const { flow_id: mayaFlow } = await driveToReady(
         orch,
         "user_maya",
         "R-1",
+        PROFILE_MAYA,
+        deps,
       );
       const { flow_id: kaiFlow } = await driveToReady(
         orch,

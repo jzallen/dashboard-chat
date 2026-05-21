@@ -34,10 +34,7 @@ import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { ResourceType } from "./active-scope.ts";
 import { type Result, ok, err } from "./flow-result.ts";
-import {
-  type CreateOrgAndReissueInput,
-  type LoginMachineDeps,
-} from "./machines/login-and-org-setup/index.ts";
+import { type LoginMachineDeps } from "./machines/login-and-org-setup/index.ts";
 import { loginOrgSetupStrategy } from "./machines/login-and-org-setup/strategy.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
@@ -77,24 +74,20 @@ function machineOfFlow(flow_id: string): string {
 
 export interface OrchestratorDeps {
   eventLog: FlowEventLog;
-  loginMachineDeps: LoginMachineDeps;
   /** Optional — when absent, the `auth_ready` spawn hook becomes a no-op
    *  (legacy J-001-only deployments). */
   projectContextMachineDeps?: ProjectContextMachineDeps;
   /** Optional — when absent, the `project_ready` spawn hook becomes a no-op. */
   sessionChatMachineDeps?: SessionChatMachineDeps;
-  /** Harness-knob seam: org-create function consumed by the failure-injection
-   *  wrapper that sequences create + reissue with forced reissue failures.
-   *  Only exercised when `NWAVE_HARNESS_KNOBS=true`. */
-  createOrgFn?: (
-    input: CreateOrgAndReissueInput,
-  ) => Promise<{ org_id: string; org_name: string }>;
-  reissueOrgJwtFn?: (input: {
-    org_id: string;
-    correlation_id: string;
-  }) => Promise<void>;
   log?: (record: Record<string, unknown>) => void;
 }
+
+// Login deps (the machine impls + the org-create/reissue concretions the
+// forced-failure wrapper needs) deliberately do NOT live here. Login is the
+// only `beginsDirectly` machine, so its driver — the login router — supplies
+// them per begin via `BeginFlowInput.deps`. The J-002 deps above stay because
+// the orchestrator originates those flows itself (the auth_ready/project_ready
+// spawn hooks), so it must hold their construction inputs.
 
 /** Canonical machine-name used as the FlowStrategy registry key and the
  *  alias-map target for the legacy wire name. */
@@ -309,10 +302,12 @@ export interface BeginFlowInput {
   correlation_id: string;
   /** Seed for the duplicate-org-name fixture path. */
   existing_org_names?: string[];
-  /** Harness-only failure-simulation knob: pre-load the machine with N
-   *  forced failures of the createOrgAndReissue actor (the (N+1)-th call
-   *  succeeds). Honored only when `NWAVE_HARNESS_KNOBS=true`. */
-  force_reissue_failures?: number;
+  /** Machine deps for the actor this begin spins up. Built by the flow's
+   *  driving router (the composition root injects the concretions), so the
+   *  orchestrator never holds login-domain deps on its global surface. When
+   *  the forced-failure harness knob is active, its wrapper is already baked
+   *  into `createOrgAndReissue` here. */
+  deps: LoginMachineDeps;
 }
 
 export interface SendEventInput {

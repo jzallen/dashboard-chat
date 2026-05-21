@@ -144,3 +144,7 @@ export function resolveActiveScope(
     reconciled,
   };
 }
+
+/** Injectable signature of {@link resolveActiveScope} for routers that
+ *  receive scope resolution as a dependency rather than importing it. */
+export type ResolveActiveScope = typeof resolveActiveScope;

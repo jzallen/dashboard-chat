@@ -24,26 +24,50 @@
  */
 
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
-import { Hono } from "hono";
+import type { Hono } from "hono";
 
-import { resolveActiveScope } from "../../active-scope.ts";
+import type { ResolveActiveScope } from "../../active-scope.ts";
 import {
   cryptoRandomId,
   mountUniformFlowRoutes,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
+import type { LoginMachineDeps } from "./index.ts";
 import { derivePrincipalId } from "./strategy.ts";
 
+/**
+ * Context this router consumes from its host app. The composition root sets
+ * these variables (and may carry more); the login routes require only these.
+ */
+export interface LoginRouterContext {
+  Variables: {
+    referenceCode: string;
+    userId: string;
+  };
+}
+
+/**
+ * Factory the composition root injects so the router can hand the orchestrator
+ * pre-built login machine deps. The concretions (WorkOS userinfo, org-create +
+ * reissue, silent reauth) stay in the composition root; the router only decides
+ * whether to request the forced-failure variant via `forceReissueFailures`
+ * (the harness knob, already gated at the edge).
+ */
+export type BuildLoginDeps = (opts: {
+  forceReissueFailures?: number;
+}) => LoginMachineDeps;
+
 export function buildLoginAndOrgSetupRouter(
+  router: Hono<LoginRouterContext>,
   orchestrator: FlowOrchestrator,
-  wireName: string,
-): Hono {
-  const router = new Hono();
+  resolveActiveScope: ResolveActiveScope,
+  buildLoginDeps: BuildLoginDeps,
+): Hono<LoginRouterContext> {
+  const wireName = "login-and-org-setup";
 
   router.post("/begin", async (c) => {
-    const correlationId =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    const referenceCode = c.get("referenceCode");
     let body: {
       persona_email?: string;
       persona_display_name?: string;
@@ -61,31 +85,37 @@ export function buildLoginAndOrgSetupRouter(
       return c.json({ error: "persona_email required" }, 400);
     }
 
-    // Identity channels (highest priority first): auth-proxy header,
-    // body field, then a deterministic derivation from persona_email.
+    // Identity channels (highest priority first): trusted ingress
+    // (X-User-Id, resolved by the outer router), body field, then a
+    // deterministic derivation from persona_email.
     const userId =
-      c.req.header("X-User-Id") ||
+      c.get("userId") ||
       body.principal_id ||
       derivePrincipalId(body.persona_email);
 
-    // force-reissue-failures gate. The orchestrator keeps its own
-    // NWAVE_HARNESS_KNOBS check as defense in depth during the env-var
-    // overlap window.
+    // force-reissue-failures gate: the harness knob that wraps
+    // createOrgAndReissue with a failure-injecting counter. Resolve it into
+    // machine deps HERE (via the injected factory) so the orchestrator
+    // receives pre-built deps and never sees the raw knob. Closed-by-default
+    // in production (ENVIRONMENT × flag, ADR-035).
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
       body: body as Record<string, unknown>,
-      correlationId,
+      correlationId: referenceCode,
       serviceName: "ui-state",
+    });
+    const deps = buildLoginDeps({
+      forceReissueFailures: reissueFailuresAllowed
+        ? body.force_reissue_failures
+        : undefined,
     });
     const result = await orchestrator.begin({
       machine: wireName,
       principal_id: userId,
       persona_email: body.persona_email ?? "",
       persona_display_name: body.persona_display_name ?? "",
-      correlation_id: correlationId,
+      correlation_id: referenceCode,
       existing_org_names: body.existing_org_names,
-      force_reissue_failures: reissueFailuresAllowed
-        ? body.force_reissue_failures
-        : undefined,
+      deps,
     });
     return resultToJson(c, result, "begin_failed");
   });

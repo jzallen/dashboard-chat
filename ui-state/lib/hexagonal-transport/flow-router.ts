@@ -23,7 +23,7 @@
 // dispatch hint). Identical to the pre-carve factory closure.
 
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
-import type { Context, Hono } from "hono";
+import type { Context, Env, Hono } from "hono";
 
 import { errorMessage,type Result } from "../flow-result.ts";
 import type { FlowOrchestrator } from "../orchestrator.ts";
@@ -136,8 +136,8 @@ export function freezeThawHandler(
  *   GET  /projection          — single FlowProjection read
  *   GET  /projection/stream   — SSE projection-stream (DWD-9 / RD2)
  */
-export function mountUniformFlowRoutes(
-  router: Hono,
+export function mountUniformFlowRoutes<E extends Env>(
+  router: Hono<E>,
   orchestrator: FlowOrchestrator,
 ): void {
   router.post("/freeze", freezeThawHandler(orchestrator, "freeze"));

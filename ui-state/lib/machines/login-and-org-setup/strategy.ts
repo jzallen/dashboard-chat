@@ -27,11 +27,7 @@ import { harvestSettledLoginState } from "../../orchestrator-harvester.ts";
 import type { FlowEvent, FlowProjection } from "../../projection.ts";
 import { buildProjection } from "../../projection.ts";
 import { waitForSettledState } from "../../wait-for-settled-state.ts";
-import {
-  createForcedFailureOrgAndReissueActor,
-  createLoginAndOrgSetupMachine,
-  type LoginMachineDeps,
-} from "./index.ts";
+import { createLoginAndOrgSetupMachine } from "./index.ts";
 
 /**
  * Canonical machine-name (ADR-039) — the FlowStrategy registry key. The
@@ -83,7 +79,14 @@ export function derivePrincipalId(email: string): string {
 export const loginOrgSetupStrategy: FlowStrategy = {
   machineName: LOGIN_AND_ORG_SETUP_MACHINE,
   beginsDirectly: true,
-  buildMachine: (deps) => createLoginAndOrgSetupMachine(deps.loginMachineDeps),
+  buildMachine: () => {
+    // Unreachable for login: it is the only beginsDirectly machine, so it is
+    // begun via beginDirect (which builds its actor from input.deps) and is
+    // never spawned through the generic buildMachine path.
+    throw new Error(
+      "login-and-org-setup is begun via beginDirect; buildMachine is never invoked",
+    );
+  },
 
   /**
    * Direct WorkOS + org-create begin body (ADR-040 §D2 begin-semantics).
@@ -109,34 +112,11 @@ export const loginOrgSetupStrategy: FlowStrategy = {
     await pump.deps.eventLog.reset(flow_id);
     pump.resetFlowTracking(flow_id);
 
-    // Failure-simulation knob: wrap createOrgAndReissue with a failure-
-    // injecting counter for slice-1 scenarios that exercise the retry
-    // budget. The knob is gated by NWAVE_HARNESS_KNOBS (legacy env-var,
-    // honored during the one-release overlap per ADR-035) so production
-    // builds ignore the field even if a caller tries to set it.
-    const failureSimulationEnabled = process.env.NWAVE_HARNESS_KNOBS === "true";
-    const forceFailures = failureSimulationEnabled
-      ? input.force_reissue_failures ?? 0
-      : 0;
-    const machineDeps: LoginMachineDeps =
-      forceFailures > 0
-        ? {
-            ...pump.deps.loginMachineDeps,
-            createOrgAndReissue: createForcedFailureOrgAndReissueActor(
-              pump.deps.createOrgFn ??
-                (async () => {
-                  throw new Error("no real createOrgFn wired");
-                }),
-              pump.deps.reissueOrgJwtFn ??
-                (async () => {
-                  throw new Error("no real reissueOrgJwtFn wired");
-                }),
-              forceFailures,
-            ),
-          }
-        : pump.deps.loginMachineDeps;
-
-    const machine = createLoginAndOrgSetupMachine(machineDeps);
+    // Deps arrive pre-built from the login router (input.deps). When the
+    // forced-failure harness knob is active the router has already wrapped
+    // createOrgAndReissue with the failure-injecting counter, so the gate +
+    // env recheck no longer live here (ADR-035 closed-by-default at the edge).
+    const machine = createLoginAndOrgSetupMachine(input.deps);
     const actor = createActor(machine, {
       input: {
         correlation_id: input.correlation_id,
