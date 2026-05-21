@@ -44,6 +44,7 @@ export interface LoginRouterContext {
   Variables: {
     referenceCode: string;
     userId: string;
+    body: unknown;
   };
 }
 
@@ -87,16 +88,11 @@ export function buildLoginAndOrgSetupRouter(
   const wireName = "login-and-org-setup";
 
   router.post("/begin", async (c) => {
-    let rawBody: unknown;
-    try {
-      rawBody = await c.req.json();
-    } catch {
-      return c.json({ error: "invalid_request" }, 400);
-    }
-
-    // Assemble + validate the LoginRequest from trusted ingress (referenceCode
-    // + userId, resolved into context vars by the outer router) and the HTTP
-    // body. The schema is the route's single validation gate.
+    // The body is deserialized once by the outer router and exposed as a
+    // context var; assemble + validate the LoginRequest here (the route's
+    // single validation gate). An undefined body (no payload / malformed
+    // JSON) fails the schema and surfaces as invalid_request.
+    const rawBody = c.get("body");
     const parsed = loginRequestSchema.safeParse({
       referenceCode: c.get("referenceCode"),
       userId: c.get("userId"),
@@ -117,7 +113,7 @@ export function buildLoginAndOrgSetupRouter(
     // in production (ENVIRONMENT × flag, ADR-035). The gate reads the body
     // field directly, so it is consulted with the raw parsed body.
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
-      body: rawBody as Record<string, unknown>,
+      body: (rawBody ?? {}) as Record<string, unknown>,
       correlationId: request.referenceCode,
       serviceName: "ui-state",
     });

@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 
 import { resolveActiveScope } from "./lib/active-scope.ts";
 import type { LoginMachineDeps } from "./lib/machines/login-and-org-setup/index.ts";
@@ -18,10 +18,26 @@ function generateReferenceCode(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * Best-effort JSON body deserialization for the boundary middleware. Returns
+ * undefined for body-less requests (GET/HEAD) and for malformed JSON — inner
+ * handlers validate the parsed value (e.g. the /begin LoginRequest schema)
+ * and surface their own 400. Shared by the top-level routes that take a body.
+ */
+async function readJsonBody(c: Context): Promise<unknown> {
+  if (c.req.method === "GET" || c.req.method === "HEAD") return undefined;
+  try {
+    return await c.req.json();
+  } catch {
+    return undefined;
+  }
+}
+
 type LoginRouterEnv = {
   Variables: {
     referenceCode: string;
     userId: string;
+    body: unknown;
   };
 };
 
@@ -43,6 +59,10 @@ function loginRouter(): Hono<LoginRouterEnv> {
       c.req.header("X-Correlation-Id") ?? generateReferenceCode(),
     );
     c.set("userId", c.req.header("X-User-Id") ?? "");
+    // Deserialize the JSON body once at the boundary; inner handlers consume
+    // the parsed value via c.get("body") and validate it, instead of each
+    // touching the request stream.
+    c.set("body", await readJsonBody(c));
     await next();
   });
 
