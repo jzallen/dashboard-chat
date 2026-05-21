@@ -18,7 +18,7 @@ import {
   BeginFlowOrchestrator,
   type FlowOrchestrator,
 } from "./lib/orchestrator.ts";
-import type { FlowEventLog } from "./lib/persistence/redis.ts";
+import { selectFlowEventLog } from "./lib/persistence/redis.ts";
 
 /**
  * Mint a reference code — the support-facing trace handle a flow surfaces to
@@ -70,15 +70,20 @@ type LoginRouterEnv = {
  *   at the boundary, so inner handlers read `c.get(...)` rather than the raw
  *   request.
  *
- * `flowOrchestrator`, `eventLog`, and `logTransition` are still placeholders —
- * they back the not-yet-refactored `/event`, `/open-deep-link`, and
- * freeze/thaw/projection routes (and the real projection store).
+ * `flowOrchestrator` is still a placeholder — it backs the not-yet-refactored
+ * `/event`, `/open-deep-link`, and freeze/thaw/projection routes, so its actor
+ * registry (which `beginOrchestrator` shares) is not live yet.
  */
 function loginRouter(): Hono<LoginRouterEnv> {
   const config = loadConfig();
   const flowOrchestrator = {} as FlowOrchestrator;
-  const eventLog = {} as FlowEventLog;
-  const logTransition = (_record: Record<string, unknown>): void => {};
+  // Redis-backed when REDIS_URL is set, in-memory otherwise.
+  const eventLog = selectFlowEventLog(config.redisUrl);
+  const logTransition = (record: Record<string, unknown>): void => {
+    process.stdout.write(
+      `${JSON.stringify({ event: "flow.transition", ...record })}\n`,
+    );
+  };
   const buildLoginDeps: BuildLoginDeps = ({ forceReissueFailures }) => ({
     workosUserInfo: createWorkOSUserInfoActor(config),
     createOrgAndReissue:

@@ -12,6 +12,9 @@ const envSchema = z.object({
   workosUrl: z.string().url(),
   /** Backend the ui-state tier calls on behalf of a principal — from `BACKEND_URL`. */
   backendUrl: z.string().url(),
+  /** Redis backing for the flow event log — from `REDIS_URL`. Absent ⇒ the
+   *  in-memory (noop) event log; this is an explicit mode, not a missing var. */
+  redisUrl: z.string().optional(),
 });
 
 /**
@@ -38,6 +41,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = envSchema.parse({
     workosUrl: env.FAKE_WORKOS_URL,
     backendUrl: env.BACKEND_URL,
+    redisUrl: env.REDIS_URL,
   });
   return { ...parsed, devUserHeadersFixture: DEV_USER_HEADERS_FIXTURE };
 }
