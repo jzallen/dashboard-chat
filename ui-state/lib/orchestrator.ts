@@ -100,13 +100,6 @@ const PROJECT_CONTEXT_MACHINE = "project-context";
  */
 export interface PumpContext {
   readonly deps: OrchestratorDeps;
-  /** Stop+forget any existing actor for this flow. The persisted event log
-   *  is the source of truth; the in-process actor is just a cache. */
-  recycleActor(flow_id: string): void;
-  trackActor(flow_id: string, actor: AnyActorRef): void;
-  /** Reset priorState/frozen/abandoned tracking — one unit with the
-   *  actor+log reset to prevent cross-flow contamination on flow_id reuse. */
-  resetFlowTracking(flow_id: string): void;
   logTransition(record: Record<string, unknown>): void;
   projectionFor(
     flow_id: string,
@@ -357,22 +350,25 @@ export type AppendDeepLinkEventsInput = {
   events: Array<{ type: string; payload: Record<string, unknown> }>;
 };
 
-export class FlowOrchestrator implements PumpContext {
-  private readonly actors = new Map<string, AnyActorRef>();
+/**
+ * Shared per-flow actor + lifecycle-tracking state. The begin path
+ * (`BeginFlowOrchestrator`) and the send/broadcast path (`FlowOrchestrator`)
+ * hold the SAME registry instance, so an actor tracked at begin is reachable
+ * by `send` / FREEZE-THAW afterwards.
+ */
+export class FlowActorRegistry {
+  readonly actors = new Map<string, AnyActorRef>();
   /** Absent key = flow is not frozen. */
-  private readonly frozen = new Map<string, FrozenFlowState>();
+  readonly frozen = new Map<string, FrozenFlowState>();
   /** Set when the replay buffer overflows or the 5-second freeze window
    *  elapses with events still queued. */
-  private readonly abandoned = new Set<string>();
+  readonly abandoned = new Set<string>();
   /** Used to detect transitions out of `expired_token` so the orchestrator
    *  can broadcast THAW once silent reauth settles. */
-  private readonly priorState = new Map<string, string>();
-  /** Process-global monotonic counter stamped on every intent queued
-   *  during a freeze window — the cross-flow FIFO key for THAW replay. */
-  private replaySeq = 0;
+  readonly priorState = new Map<string, string>();
 
-  constructor(readonly deps: OrchestratorDeps) {}
-
+  /** Stop+forget any existing actor for this flow. The persisted event log is
+   *  the source of truth; the in-process actor is just a cache. */
   recycleActor(flow_id: string): void {
     const existing = this.actors.get(flow_id);
     if (existing) {
@@ -386,29 +382,39 @@ export class FlowOrchestrator implements PumpContext {
   }
 
   /**
-   * Begin a flow. Acts as a context manager around a per-request
-   * `BeginStrategy`: open a fresh slot for the strategy's actor (enter), run
-   * its machine-specific drive (body), and return the projection (exit). The
-   * strategy owns its actor, transitions, and event-log writes; the
-   * orchestrator owns actor tracking and the final projection.
+   * Reset per-flow tracking when the actor + event log are reset (begin /
+   * force_restart). The actor, log, and in-memory trackers are one unit: a
+   * fresh flow must not inherit the prior flow's `priorState` (a stale value
+   * makes a replayed THAW resume emit the wrong terminal) nor a stale
+   * `frozen` / `abandoned` entry. Required when flow_ids are reused across
+   * scenarios (e.g. shared dev-user principal).
    */
-  async begin(strategy: BeginStrategy): Promise<Result<FlowProjection>> {
-    try {
-      // enter: clear any prior actor + tracking for this flow_id, then
-      // register the strategy's freshly-built actor (the persisted event log
-      // is the source of truth; the in-process actor is a cache).
-      this.recycleActor(strategy.flow_id);
-      this.resetFlowTracking(strategy.flow_id);
-      this.trackActor(strategy.flow_id, strategy.actor);
-      // body: the machine-specific begin sequence
-      await strategy.begin();
-      // exit: the freshly-built projection is the response
-      return ok(
-        await this.projectionFor(strategy.flow_id, strategy.correlationId),
-      );
-    } catch (e) {
-      return toFlowError(e);
-    }
+  resetFlowTracking(flow_id: string): void {
+    this.priorState.delete(flow_id);
+    this.frozen.delete(flow_id);
+    this.abandoned.delete(flow_id);
+  }
+}
+
+export class FlowOrchestrator implements PumpContext {
+  /** Aliased from the shared registry so this send/broadcast path and the
+   *  begin path operate on the same actor + tracking maps. */
+  private readonly actors: Map<string, AnyActorRef>;
+  private readonly frozen: Map<string, FrozenFlowState>;
+  private readonly abandoned: Set<string>;
+  private readonly priorState: Map<string, string>;
+  /** Process-global monotonic counter stamped on every intent queued
+   *  during a freeze window — the cross-flow FIFO key for THAW replay. */
+  private replaySeq = 0;
+
+  constructor(
+    readonly deps: OrchestratorDeps,
+    readonly registry: FlowActorRegistry,
+  ) {
+    this.actors = registry.actors;
+    this.frozen = registry.frozen;
+    this.abandoned = registry.abandoned;
+    this.priorState = registry.priorState;
   }
 
   /**
@@ -453,7 +459,7 @@ export class FlowOrchestrator implements PumpContext {
         this.actors.delete(flow_id);
       }
       await this.deps.eventLog.reset(flow_id);
-      this.resetFlowTracking(flow_id);
+      this.registry.resetFlowTracking(flow_id);
     }
 
     if (this.actors.has(flow_id)) {
@@ -1220,21 +1226,6 @@ export class FlowOrchestrator implements PumpContext {
     return this.projectionFor(input.flow_id, input.correlation_id);
   }
 
-  /**
-   * Reset per-flow orchestrator tracking when the actor + event log are
-   * reset (begin / force_restart). The actor, log, and in-memory trackers
-   * are one unit: a fresh flow must not inherit the prior flow's
-   * `priorState` (a stale value here makes a replayed THAW resume emit
-   * the wrong terminal) nor a stale `frozen` / `abandoned` entry.
-   * Required when flow_ids are reused across scenarios (e.g. shared
-   * dev-user principal).
-   */
-  resetFlowTracking(flow_id: string): void {
-    this.priorState.delete(flow_id);
-    this.frozen.delete(flow_id);
-    this.abandoned.delete(flow_id);
-  }
-
   async projectionFor(
     flow_id: string,
     correlation_id: string,
@@ -1301,4 +1292,49 @@ function waitForLeavingState(
       }
     });
   });
+}
+
+/**
+ * Begin-only orchestrator — a context manager around a per-request
+ * `BeginStrategy`. Constructed by the driving router with just the eventLog
+ * and the shared `FlowActorRegistry`: it opens a fresh slot + tracks the
+ * strategy's actor into the same registry `FlowOrchestrator`'s send/broadcast
+ * read (so the begun flow is reachable afterwards), runs the strategy's
+ * machine-specific drive, and returns the projection.
+ */
+export class BeginFlowOrchestrator {
+  constructor(
+    private readonly eventLog: FlowEventLog,
+    private readonly registry: FlowActorRegistry,
+  ) {}
+
+  async begin(strategy: BeginStrategy): Promise<Result<FlowProjection>> {
+    try {
+      // enter: clear any prior actor + tracking for this flow_id, then
+      // register the strategy's freshly-built actor.
+      this.registry.recycleActor(strategy.flow_id);
+      this.registry.resetFlowTracking(strategy.flow_id);
+      this.registry.trackActor(strategy.flow_id, strategy.actor);
+      // body: the machine-specific begin sequence
+      await strategy.begin();
+      // exit: the freshly-built projection is the response
+      return ok(
+        await this.projectionFor(strategy.flow_id, strategy.correlationId),
+      );
+    } catch (e) {
+      return toFlowError(e);
+    }
+  }
+
+  private async projectionFor(
+    flow_id: string,
+    correlation_id: string,
+  ): Promise<FlowProjection> {
+    const events = await this.eventLog.read(flow_id);
+    const projection = buildProjection(flow_id, events);
+    return {
+      ...projection,
+      correlation_id: correlation_id || projection.correlation_id,
+    };
+  }
 }

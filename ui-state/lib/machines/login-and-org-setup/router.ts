@@ -33,7 +33,7 @@ import {
   mountUniformFlowRoutes,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
-import type { FlowOrchestrator } from "../../orchestrator.ts";
+import { BeginFlowOrchestrator, type FlowOrchestrator } from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { LoginMachineDeps } from "./index.ts";
 import { LoginBeginStrategy } from "./strategy.ts";
@@ -90,6 +90,13 @@ export function buildLoginAndOrgSetupRouter(
   logTransition: (record: Record<string, unknown>) => void,
 ): Hono<LoginRouterContext> {
   const wireName = "login-and-org-setup";
+  // Begin runs through its own context-manager orchestrator, sharing the main
+  // orchestrator's actor registry so the begun actor is reachable by /event +
+  // FREEZE/THAW (which go through `orchestrator`).
+  const beginOrchestrator = new BeginFlowOrchestrator(
+    eventLog,
+    orchestrator.registry,
+  );
 
   router.post("/begin", async (c) => {
     // The body is deserialized once by the outer router and exposed as a
@@ -141,7 +148,7 @@ export function buildLoginAndOrgSetupRouter(
       eventLog,
       logTransition,
     );
-    const result = await orchestrator.begin(strategy);
+    const result = await beginOrchestrator.begin(strategy);
     return resultToJson(c, result, "begin_failed");
   });
 

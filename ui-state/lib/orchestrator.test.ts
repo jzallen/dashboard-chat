@@ -32,7 +32,11 @@ import type {
   WorkOSUserInfoActor,
 } from "./machines/login-and-org-setup/index.ts";
 import { LoginBeginStrategy } from "./machines/login-and-org-setup/strategy.ts";
-import { FlowOrchestrator } from "./orchestrator.ts";
+import {
+  BeginFlowOrchestrator,
+  FlowActorRegistry,
+  FlowOrchestrator,
+} from "./orchestrator.ts";
 import { createNoopFlowEventLog } from "./persistence/redis.ts";
 
 const PROFILE_MAYA = {
@@ -65,10 +69,13 @@ function buildDeps(profile = PROFILE_MAYA): LoginMachineDeps {
 }
 
 function buildOrchestrator(): FlowOrchestrator {
-  return new FlowOrchestrator({
-    eventLog: createNoopFlowEventLog(),
-    log: () => {},
-  });
+  return new FlowOrchestrator(
+    {
+      eventLog: createNoopFlowEventLog(),
+      log: () => {},
+    },
+    new FlowActorRegistry(),
+  );
 }
 
 async function driveToReady(
@@ -78,6 +85,10 @@ async function driveToReady(
   profile = PROFILE_MAYA,
   deps: LoginMachineDeps = buildDeps(profile),
 ): Promise<{ flow_id: string }> {
+  const beginOrchestrator = new BeginFlowOrchestrator(
+    orch.deps.eventLog,
+    orch.registry,
+  );
   const strategy = new LoginBeginStrategy(
     {
       machine: "login-and-org-setup",
@@ -90,7 +101,7 @@ async function driveToReady(
     orch.deps.eventLog,
     () => {},
   );
-  await orch.begin(strategy);
+  await beginOrchestrator.begin(strategy);
   const flow_id = `login-and-org-setup:${principal}`;
   await orch.send({
     machine: "login-and-org-setup",

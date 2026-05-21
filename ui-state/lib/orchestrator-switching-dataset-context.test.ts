@@ -21,22 +21,22 @@
 import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
+import { type Result } from "./flow-result.ts";
 import {
   createSessionChatMachine,
-  type ResumeSessionActor,
-  type ResumeSessionInput,
-  type ResumeSessionOutput,
   type LoadSessionListActor,
   type LoadSessionListInput,
   type LoadSessionListOutput,
+  type ResumeSessionActor,
+  type ResumeSessionInput,
+  type ResumeSessionOutput,
   type SwitchDatasetContextActor,
   type SwitchDatasetContextInput,
   type SwitchDatasetContextOutput,
 } from "./machines/session-chat/index.ts";
-import { type Result } from "./flow-result.ts";
-import { FlowOrchestrator } from "./orchestrator.ts";
-import type { FlowEvent } from "./projection.ts";
+import { FlowActorRegistry, FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
+import type { FlowEvent } from "./projection.ts";
 
 const WIRE = "session-chat";
 const PRINCIPAL = "dev-user-001";
@@ -123,11 +123,14 @@ async function buildSessionActiveFlow(
 }> {
   const log = createInMemoryFlowEventLog();
   const { deps } = sessionChatDeps(switchDatasetContext, priorDatasetId);
-  const orch = new FlowOrchestrator({
-    eventLog: log,
-    sessionChatMachineDeps: deps,
-    log: () => {},
-  });
+  const orch = new FlowOrchestrator(
+    {
+      eventLog: log,
+      sessionChatMachineDeps: deps,
+      log: () => {},
+    },
+    new FlowActorRegistry(),
+  );
   // project_ready dispatch → spawns session-chat, settles in
   // session_list_loaded.
   unwrap(

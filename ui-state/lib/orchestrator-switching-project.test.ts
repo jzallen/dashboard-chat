@@ -23,14 +23,14 @@ import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
 import { type Result } from "./flow-result.ts";
-import { FlowOrchestrator } from "./orchestrator.ts";
-import type { FlowEvent } from "./projection.ts";
-import type { FlowEventLog } from "./persistence/redis.ts";
 import type {
   ProjectContextMachineDeps,
   ResolveInitialScopeActor,
   SwitchProjectActor,
 } from "./machines/project-context/machine.ts";
+import { FlowActorRegistry, FlowOrchestrator } from "./orchestrator.ts";
+import type { FlowEventLog } from "./persistence/redis.ts";
+import type { FlowEvent } from "./projection.ts";
 
 const WIRE = "project-and-chat-session-management";
 const PRINCIPAL = "dev-user-001";
@@ -87,11 +87,14 @@ async function buildSettledProjectContextFlow(
   log: ReturnType<typeof createInMemoryFlowEventLog>;
 }> {
   const log = createInMemoryFlowEventLog();
-  const orch = new FlowOrchestrator({
-    eventLog: log,
-    projectContextMachineDeps: projectContextDeps(switchProject),
-    log: () => {},
-  });
+  const orch = new FlowOrchestrator(
+    {
+      eventLog: log,
+      projectContextMachineDeps: projectContextDeps(switchProject),
+      log: () => {},
+    },
+    new FlowActorRegistry(),
+  );
   const initial = unwrap(
     await orch.beginIfNotStarted({
       machine: WIRE,
