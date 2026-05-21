@@ -33,7 +33,10 @@ import {
   mountUniformFlowRoutes,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
-import { BeginFlowOrchestrator, type FlowOrchestrator } from "../../orchestrator.ts";
+import type {
+  BeginFlowOrchestrator,
+  FlowOrchestrator,
+} from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { LoginMachineDeps } from "./index.ts";
 import { LoginBeginStrategy } from "./strategy.ts";
@@ -83,20 +86,14 @@ export type LoginRequest = z.infer<typeof loginRequestSchema>;
 
 export function buildLoginAndOrgSetupRouter(
   router: Hono<LoginRouterContext>,
-  orchestrator: FlowOrchestrator,
+  orchestrator: BeginFlowOrchestrator,
+  flowOrchestrator: FlowOrchestrator,
   resolveActiveScope: ResolveActiveScope,
   buildLoginDeps: BuildLoginDeps,
   eventLog: FlowEventLog,
   logTransition: (record: Record<string, unknown>) => void,
 ): Hono<LoginRouterContext> {
   const wireName = "login-and-org-setup";
-  // Begin runs through its own context-manager orchestrator, sharing the main
-  // orchestrator's actor registry so the begun actor is reachable by /event +
-  // FREEZE/THAW (which go through `orchestrator`).
-  const beginOrchestrator = new BeginFlowOrchestrator(
-    eventLog,
-    orchestrator.registry,
-  );
 
   router.post("/begin", async (c) => {
     // The body is deserialized once by the outer router and exposed as a
@@ -148,7 +145,7 @@ export function buildLoginAndOrgSetupRouter(
       eventLog,
       logTransition,
     );
-    const result = await beginOrchestrator.begin(strategy);
+    const result = await orchestrator.begin(strategy);
     return resultToJson(c, result, "begin_failed");
   });
 
@@ -209,7 +206,7 @@ export function buildLoginAndOrgSetupRouter(
       }
     }
 
-    const result = await orchestrator.send({
+    const result = await flowOrchestrator.send({
       machine: wireName,
       flow_id: body.flow_id,
       type: body.type,
@@ -268,7 +265,7 @@ export function buildLoginAndOrgSetupRouter(
       // scope_access_denied event. The projection's `state` flips to
       // `access_denied` and `scope_resolution_error.reason` names the
       // cause.
-      const result = await orchestrator.appendDeepLinkEvents({
+      const result = await flowOrchestrator.appendDeepLinkEvents({
         machine: wireName,
         flow_id: body.flow_id,
         correlation_id: correlationId,
@@ -285,7 +282,7 @@ export function buildLoginAndOrgSetupRouter(
     // Successful resolution → deep_link_opened. On reconciled
     // resolution, payload carries reconciled=true so the reducer
     // surfaces scope_reconciled in the projection.
-    const result = await orchestrator.appendDeepLinkEvents({
+    const result = await flowOrchestrator.appendDeepLinkEvents({
       machine: wireName,
       flow_id: body.flow_id,
       correlation_id: correlationId,
@@ -305,7 +302,7 @@ export function buildLoginAndOrgSetupRouter(
     return resultToJson(c, result, "open_deep_link_failed");
   });
 
-  mountUniformFlowRoutes(router, orchestrator);
+  mountUniformFlowRoutes(router, flowOrchestrator);
 
   return router;
 }

@@ -7,7 +7,10 @@ import {
   buildLoginAndOrgSetupRouter,
   type BuildLoginDeps,
 } from "./lib/machines/login-and-org-setup/router.ts";
-import type { FlowOrchestrator } from "./lib/orchestrator.ts";
+import {
+  BeginFlowOrchestrator,
+  type FlowOrchestrator,
+} from "./lib/orchestrator.ts";
 import type { FlowEventLog } from "./lib/persistence/redis.ts";
 
 /**
@@ -49,10 +52,19 @@ function loginRouter(): Hono<LoginRouterEnv> {
   // force-reissue-failures knob resolves into the createOrgAndReissue actor;
   // eventLog + logTransition are handed to each per-request LoginBeginStrategy
   // (the same eventLog instance the real orchestrator will read for projections).
-  const orchestrator = {} as FlowOrchestrator;
+  // FlowOrchestrator stays a placeholder for now — it backs the not-yet-
+  // refactored /event, /open-deep-link, and freeze/thaw/projection routes.
+  const flowOrchestrator = {} as FlowOrchestrator;
   const buildLoginDeps: BuildLoginDeps = () => ({}) as LoginMachineDeps;
   const eventLog = {} as FlowEventLog;
   const logTransition = (_record: Record<string, unknown>): void => {};
+  // Begin runs through its own context-manager orchestrator, sharing the
+  // FlowOrchestrator's actor registry so the begun actor is reachable by
+  // /event + FREEZE/THAW (which go through `flowOrchestrator`).
+  const beginOrchestrator = new BeginFlowOrchestrator(
+    eventLog,
+    flowOrchestrator.registry,
+  );
   const router = new Hono<LoginRouterEnv>();
 
   // Ingress header management: read the auth-proxy headers once at the
@@ -73,7 +85,8 @@ function loginRouter(): Hono<LoginRouterEnv> {
 
   return buildLoginAndOrgSetupRouter(
     router,
-    orchestrator,
+    beginOrchestrator,
+    flowOrchestrator,
     resolveActiveScope,
     buildLoginDeps,
     eventLog,
