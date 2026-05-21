@@ -52,19 +52,33 @@ type LoginRouterEnv = {
   };
 };
 
+/**
+ * Compose the outer `/flow/login-and-org-setup` router.
+ *
+ * Validates the environment once (`loadConfig` — throws at startup if a
+ * required var is missing; no inline defaults) and assembles the login surface:
+ *
+ * - `buildLoginDeps` — per-request login machine deps. The forced-failure
+ *   harness knob (already gated at the router edge) swaps in a fresh
+ *   failure-injecting `createOrgAndReissue` (N failures then success);
+ *   otherwise the real backend actor.
+ * - `beginOrchestrator` — `/begin` runs through its own context-manager
+ *   orchestrator, sharing the `FlowOrchestrator`'s actor registry so the begun
+ *   actor stays reachable by `/event` and FREEZE/THAW.
+ * - the `*` middleware resolves trusted ingress (the auth-proxy headers and the
+ *   JSON body) into typed context vars (`referenceCode`, `userId`, `body`) once
+ *   at the boundary, so inner handlers read `c.get(...)` rather than the raw
+ *   request.
+ *
+ * `flowOrchestrator`, `eventLog`, and `logTransition` are still placeholders —
+ * they back the not-yet-refactored `/event`, `/open-deep-link`, and
+ * freeze/thaw/projection routes (and the real projection store).
+ */
 function loginRouter(): Hono<LoginRouterEnv> {
-  // Validate the environment once at startup (throws here if a required var is
-  // missing — no inline defaults; the environment is the single source).
   const config = loadConfig();
-  // FlowOrchestrator + eventLog + logTransition stay placeholders for now —
-  // they back the not-yet-refactored /event, /open-deep-link, and
-  // freeze/thaw/projection routes plus the real projection store.
   const flowOrchestrator = {} as FlowOrchestrator;
   const eventLog = {} as FlowEventLog;
   const logTransition = (_record: Record<string, unknown>): void => {};
-  // Per-request login machine deps. The forced-failure harness knob (already
-  // gated at the router edge) selects a fresh failure-injecting createOrgAndReissue
-  // — N forced failures then success — otherwise the real backend actor.
   const buildLoginDeps: BuildLoginDeps = ({ forceReissueFailures }) => ({
     workosUserInfo: createWorkOSUserInfoActor(config),
     createOrgAndReissue:
@@ -76,27 +90,18 @@ function loginRouter(): Hono<LoginRouterEnv> {
           )
         : createOrgAndReissueActor(config),
   });
-  // Begin runs through its own context-manager orchestrator, sharing the
-  // FlowOrchestrator's actor registry so the begun actor is reachable by
-  // /event + FREEZE/THAW (which go through `flowOrchestrator`).
   const beginOrchestrator = new BeginFlowOrchestrator(
     eventLog,
     flowOrchestrator.registry,
   );
   const router = new Hono<LoginRouterEnv>();
 
-  // Ingress header management: read the auth-proxy headers once at the
-  // outer boundary and expose them as typed context variables. Inner
-  // handlers consume them via c.get() instead of touching c.req.header().
   router.use("*", async (c, next) => {
     c.set(
       "referenceCode",
       c.req.header("X-Correlation-Id") ?? generateReferenceCode(),
     );
     c.set("userId", c.req.header("X-User-Id") ?? "");
-    // Deserialize the JSON body once at the boundary; inner handlers consume
-    // the parsed value via c.get("body") and validate it, instead of each
-    // touching the request stream.
     c.set("body", await readJsonBody(c));
     await next();
   });
