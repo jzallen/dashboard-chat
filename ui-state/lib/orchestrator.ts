@@ -110,7 +110,6 @@ export interface PumpContext {
   logTransition(record: Record<string, unknown>): void;
   projectionFor(
     flow_id: string,
-    principal_id: string,
     correlation_id: string,
   ): Promise<FlowProjection>;
 }
@@ -405,7 +404,7 @@ export class FlowOrchestrator implements PumpContext {
       await strategy.begin();
       // exit: the freshly-built projection is the response
       return ok(
-        await this.projectionFor(strategy.flow_id, "", strategy.correlationId),
+        await this.projectionFor(strategy.flow_id, strategy.correlationId),
       );
     } catch (e) {
       return toFlowError(e);
@@ -495,11 +494,7 @@ export class FlowOrchestrator implements PumpContext {
       } catch {
         // Defensive — never blow up on a re-emission.
       }
-      return this.projectionFor(
-        flow_id,
-        input.principal_id,
-        input.correlation_id,
-      );
+      return this.projectionFor(flow_id, input.correlation_id);
     }
 
     const machine = strategy.buildMachine(this.deps, {
@@ -613,11 +608,7 @@ export class FlowOrchestrator implements PumpContext {
       );
     }
 
-    return this.projectionFor(
-      flow_id,
-      input.principal_id,
-      input.correlation_id,
-    );
+    return this.projectionFor(flow_id, input.correlation_id);
   }
 
   /**
@@ -707,12 +698,7 @@ export class FlowOrchestrator implements PumpContext {
         correlation_id: input.correlation_id,
       };
       await this.deps.eventLog.append(input.flow_id, queuedEvent);
-      const principal_id = parsePrincipal(input.flow_id);
-      return this.projectionFor(
-        input.flow_id,
-        principal_id,
-        input.correlation_id,
-      );
+      return this.projectionFor(input.flow_id, input.correlation_id);
     }
 
     const event: FlowEvent = {
@@ -864,11 +850,7 @@ export class FlowOrchestrator implements PumpContext {
       projectionCtx,
     });
 
-    return this.projectionFor(
-      input.flow_id,
-      principal_id,
-      input.correlation_id,
-    );
+    return this.projectionFor(input.flow_id, input.correlation_id);
   }
 
   async getProjection(flow_id: string): Promise<Result<FlowProjection>> {
@@ -880,8 +862,7 @@ export class FlowOrchestrator implements PumpContext {
   }
 
   private async getProjectionCore(flow_id: string): Promise<FlowProjection> {
-    const principal_id = parsePrincipal(flow_id);
-    return this.projectionFor(flow_id, principal_id, "");
+    return this.projectionFor(flow_id, "");
   }
 
   /**
@@ -1236,12 +1217,7 @@ export class FlowOrchestrator implements PumpContext {
       );
     }
     await projectContextStrategy.applyDeepLink(this, input);
-    const principal_id = parsePrincipal(input.flow_id);
-    return this.projectionFor(
-      input.flow_id,
-      principal_id,
-      input.correlation_id,
-    );
+    return this.projectionFor(input.flow_id, input.correlation_id);
   }
 
   /**
@@ -1261,7 +1237,6 @@ export class FlowOrchestrator implements PumpContext {
 
   async projectionFor(
     flow_id: string,
-    _principal_id: string,
     correlation_id: string,
   ): Promise<FlowProjection> {
     const events = await this.deps.eventLog.read(flow_id);
