@@ -2,7 +2,13 @@ import { serve } from "@hono/node-server";
 import { type Context, Hono } from "hono";
 
 import { resolveActiveScope } from "./lib/active-scope.ts";
-import type { LoginMachineDeps } from "./lib/machines/login-and-org-setup/index.ts";
+import {
+  createForcedFailureOrgAndReissueActor,
+  createOrgAndReissueActor,
+  createOrgFn,
+  createWorkOSUserInfoActor,
+  reissueOrgJwtFn,
+} from "./lib/machines/login-and-org-setup/index.ts";
 import {
   buildLoginAndOrgSetupRouter,
   type BuildLoginDeps,
@@ -12,6 +18,18 @@ import {
   type FlowOrchestrator,
 } from "./lib/orchestrator.ts";
 import type { FlowEventLog } from "./lib/persistence/redis.ts";
+
+// Endpoints the ui-state tier calls on behalf of a flow's principal. In dev
+// these are compose-network hostnames; in production the backend call routes
+// through auth-proxy with a real bearer (the fixed dev-principal headers below
+// are replaced by a service-to-service M2M token).
+const WORKOS_URL = process.env.FAKE_WORKOS_URL ?? "http://fake-workos:14299";
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://api:8000";
+const DEFAULT_PRINCIPAL_HEADERS = {
+  "x-user-id": "dev-user-001",
+  "x-org-id": "dev-org-001",
+  "x-user-email": "dev@localhost",
+};
 
 /**
  * Mint a reference code — the support-facing trace handle a flow surfaces to
@@ -46,18 +64,26 @@ type LoginRouterEnv = {
 };
 
 function loginRouter(): Hono<LoginRouterEnv> {
-  // Placeholders — real orchestrator + login-deps construction (WorkOS
-  // userinfo, org-create + reissue, silent reauth, and the forced-failure
-  // wrapper) get wired here next. buildLoginDeps is the single seam where the
-  // force-reissue-failures knob resolves into the createOrgAndReissue actor;
-  // eventLog + logTransition are handed to each per-request LoginBeginStrategy
-  // (the same eventLog instance the real orchestrator will read for projections).
-  // FlowOrchestrator stays a placeholder for now — it backs the not-yet-
-  // refactored /event, /open-deep-link, and freeze/thaw/projection routes.
+  // FlowOrchestrator + eventLog + logTransition stay placeholders for now —
+  // they back the not-yet-refactored /event, /open-deep-link, and
+  // freeze/thaw/projection routes plus the real projection store.
   const flowOrchestrator = {} as FlowOrchestrator;
-  const buildLoginDeps: BuildLoginDeps = () => ({}) as LoginMachineDeps;
   const eventLog = {} as FlowEventLog;
   const logTransition = (_record: Record<string, unknown>): void => {};
+  // Per-request login machine deps. The forced-failure harness knob (already
+  // gated at the router edge) selects a fresh failure-injecting createOrgAndReissue
+  // — N forced failures then success — otherwise the real backend actor.
+  const buildLoginDeps: BuildLoginDeps = ({ forceReissueFailures }) => ({
+    workosUserInfo: createWorkOSUserInfoActor(WORKOS_URL),
+    createOrgAndReissue:
+      forceReissueFailures && forceReissueFailures > 0
+        ? createForcedFailureOrgAndReissueActor(
+            createOrgFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+            reissueOrgJwtFn(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+            forceReissueFailures,
+          )
+        : createOrgAndReissueActor(BACKEND_URL, DEFAULT_PRINCIPAL_HEADERS),
+  });
   // Begin runs through its own context-manager orchestrator, sharing the
   // FlowOrchestrator's actor registry so the begun actor is reachable by
   // /event + FREEZE/THAW (which go through `flowOrchestrator`).
