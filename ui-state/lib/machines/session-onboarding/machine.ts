@@ -226,7 +226,6 @@ export function createSessionOnboardingMachine() {
         context.retry_budget_used_count + 1 >= USER_RETRY_BUDGET,
     },
     actions: {
-      // Assign the verified identity from the `verifying` done-event output.
       assignVerifiedUser: assign({
         user: ({ event }) => {
           const output = (event as unknown as { output: VerifiedSession })
@@ -238,10 +237,6 @@ export function createSessionOnboardingMachine() {
           };
         },
       }),
-      // Returning-user [hasOrg] arm: populate context.org from the backend org
-      // (`/api/orgs/me`) carried on the done-event output — id AND real name
-      // (the backend is the SSOT, so unlike the old header claim the name is
-      // present).
       assignResolvedOrg: assign({
         org: ({ event }) => {
           const org = (event as unknown as { output: VerifiedSession }).output
@@ -275,9 +270,6 @@ export function createSessionOnboardingMachine() {
           return { kind, message: messages[kind] };
         },
       }),
-      // The create-org actor rejected a globally-duplicate name (backend 409).
-      // Surface it as the inline duplicate error and return to needs_org so Maya
-      // can pick another name (NOT a transient retry / error_recoverable).
       recordOrgNameTaken: assign({
         org_validation_error: () => ({
           kind: "duplicate" as const,
