@@ -265,7 +265,6 @@ export function createSessionOnboardingMachine() {
             empty: "Please enter an organization name",
             too_short: "Organization name is too short",
             too_long: "Organization name is too long",
-            duplicate: "That name is already in use in your organization",
           };
           return { kind, message: messages[kind] };
         },

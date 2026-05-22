@@ -20,11 +20,14 @@ export type UnderlyingCauseTag =
   | "workos-profile-corrupt"
   | "silent-reauth-failed";
 
+// Shape errors only. There is no `duplicate` variant: org-name uniqueness is
+// global and enforced by the backend (the SSOT), so a collision surfaces from
+// the create-org path as a `duplicate` inline error on the machine context
+// (OrgValidationInlineError via recordOrgNameTaken), NOT from validateOrgName.
 export type OrgNameValidationError =
   | { kind: "empty" }
   | { kind: "too_short"; min: number; actual: number }
-  | { kind: "too_long"; max: number; actual: number }
-  | { kind: "duplicate"; name: string };
+  | { kind: "too_long"; max: number; actual: number };
 
 export type ValidatedOrgName = { value: string };
 
