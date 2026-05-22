@@ -269,6 +269,18 @@ export const loginOrgSetupStrategy: FlowStrategy = {
 };
 
 /**
+ * The fields the terminal-emission path reads off the login flow's projection
+ * (the read model folded from the FlowEvent log). `FlowProjection.context` is
+ * `Record<string, unknown>`, so this narrows it to the slice that becomes the
+ * `auth_callback_resolved` / `auth_failed` payloads: the resolved WorkOS
+ * profile and the failure cause tag.
+ */
+type LoginProjectionContext = {
+  user: { email: string | null; display_name: string | null };
+  underlying_cause_tag: string | null;
+};
+
+/**
  * Per-request begin command for the login flow (ADR-040 §D2 begin-semantics).
  * Constructed by the login router: builds its actor up front from the machine
  * deps, then `Orchestrator.begin` tracks the actor (enter), calls `begin()`
@@ -360,17 +372,15 @@ export class LoginBeginStrategy implements BeginStrategy {
     // context; LEAF-C+ lands an upstream event so this read sees the resolved
     // profile. Until then `auth_callback_resolved` / `auth_failed` may carry
     // placeholder values (mirrors the LEAF-A session-list trade-off).
-    const preEmitEvents = await this.eventLog.read(flow_id);
-    const preEmitProjection = buildProjection(flow_id, preEmitEvents);
-    const preEmitCtx = preEmitProjection.context as {
-      user: { email: string | null; display_name: string | null };
-      underlying_cause_tag: string | null;
-    };
+    const projectionContext = buildProjection(
+      flow_id,
+      await this.eventLog.read(flow_id),
+    ).context as LoginProjectionContext;
 
     // On successful auth, append auth_callback_resolved so the projection
     // matches the wire contract from the event log even without a snapshot.
     if (stateValue === "authenticated_no_org") {
-      const user = preEmitCtx.user;
+      const user = projectionContext.user;
       const resolvedEvent: FlowEvent = {
         ts: new Date().toISOString(),
         type: "auth_callback_resolved",
@@ -387,7 +397,7 @@ export class LoginBeginStrategy implements BeginStrategy {
         duration_ms: Date.now() - start,
       });
     } else if (stateValue === "error_recoverable") {
-      const cause = preEmitCtx.underlying_cause_tag ?? "transient";
+      const cause = projectionContext.underlying_cause_tag ?? "transient";
       const failedEvent: FlowEvent = {
         ts: new Date().toISOString(),
         type: "auth_failed",
