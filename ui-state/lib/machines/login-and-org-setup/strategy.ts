@@ -320,15 +320,23 @@ export class LoginBeginStrategy implements BeginStrategy {
     });
   }
 
+  /**
+   * Run the login begin sequence: reset the persisted event log (a re-click is
+   * a fresh auth attempt, so a stale terminal state must not replay), start the
+   * actor, append + dispatch `sign_in_clicked`, wait for the `authenticating`
+   * invoke to settle, then append the terminal event (`auth_callback_resolved`
+   * or `auth_failed`) whose payload is read from the projection — the only
+   * legal read source for the emission path (ADR-030).
+   *
+   * TODO(ADR-030): at the emission read the projection has only observed
+   * `sign_in_clicked`, so the resolved profile / cause still live in the actor
+   * snapshot; terminal payloads may carry placeholder values until an upstream
+   * event lands the resolved profile in the log.
+   */
   async begin(): Promise<void> {
     const { input, flow_id, actor } = this;
     const start = Date.now();
 
-    // Re-clicking sign-in is the entry to a NEW auth attempt — reset the
-    // persisted event log so we don't replay a stale flow (the actor recycle
-    // + tracking reset is the orchestrator's enter). The persisted log is the
-    // source of truth; without this reset a second sign-in inherits the prior
-    // attempt's terminal state and never re-enters `authenticating`.
     await this.eventLog.reset(flow_id);
 
     actor.start();
@@ -341,7 +349,6 @@ export class LoginBeginStrategy implements BeginStrategy {
       duration_ms: 0,
     });
 
-    // Append sign_in_clicked event to the log and dispatch it.
     const signInEvent: FlowEvent = {
       ts: new Date().toISOString(),
       type: "sign_in_clicked",
@@ -359,26 +366,15 @@ export class LoginBeginStrategy implements BeginStrategy {
       persona_display_name: input.persona_display_name,
     });
 
-    // Wait for the authenticating invoke to resolve.
     await waitForSettledState(actor);
 
     const stateValue = actor.getSnapshot().value as string;
 
-    // ADR-030 LEAF-B: read user / underlying_cause_tag from the live
-    // projection (built from the FlowEvent log), not the machine snapshot —
-    // the projection is the only legal read source for the emission path.
-    // Risk: at this point the projection has only observed `sign_in_clicked`,
-    // so the workos-profile / cause harvest still lives in the actor's settled
-    // context; LEAF-C+ lands an upstream event so this read sees the resolved
-    // profile. Until then `auth_callback_resolved` / `auth_failed` may carry
-    // placeholder values (mirrors the LEAF-A session-list trade-off).
     const projectionContext = buildProjection(
       flow_id,
       await this.eventLog.read(flow_id),
     ).context as LoginProjectionContext;
 
-    // On successful auth, append auth_callback_resolved so the projection
-    // matches the wire contract from the event log even without a snapshot.
     if (stateValue === "authenticated_no_org") {
       const user = projectionContext.user;
       const resolvedEvent: FlowEvent = {
