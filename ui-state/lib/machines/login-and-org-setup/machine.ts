@@ -60,8 +60,6 @@ export interface LoginMachineContext {
 
 export type LoginEvent =
   | { type: "sign_in_clicked"; persona_email: string; persona_display_name: string }
-  | { type: "auth_callback_resolved" }
-  | { type: "auth_failed"; underlying_cause_tag: UnderlyingCauseTag }
   | { type: "org_form_submitted"; org_name: string }
   | { type: "retry_clicked" }
   | { type: "__force_failure__"; tag: UnderlyingCauseTag }
