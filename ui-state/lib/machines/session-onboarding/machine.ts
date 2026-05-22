@@ -293,15 +293,6 @@ export function createSessionOnboardingMachine() {
       tagPartialSetup: assign({
         underlying_cause_tag: () => "partial-setup" as const,
       }),
-      capturePartialOrgFromError: assign({
-        org: ({ context, event }) => {
-          // XState wraps invoke errors in `{ type: "...", error: <thrown> }`.
-          const errEvent = event as { error?: unknown };
-          const partial = (errEvent.error as { partial_org?: { id: string; name: string } })?.partial_org;
-          if (!partial) return context.org;
-          return { id: partial.id, name: partial.name };
-        },
-      }),
     },
   }).createMachine({
     id: "session-onboarding",
@@ -425,18 +416,11 @@ export function createSessionOnboardingMachine() {
             {
               guard: "isReissueBudgetExhausted",
               target: "error_recoverable",
-              actions: [
-                "incrementReissueAttempts",
-                "tagPartialSetup",
-                "capturePartialOrgFromError",
-              ],
+              actions: ["incrementReissueAttempts", "tagPartialSetup"],
             },
             {
               target: "creating_org",
-              actions: [
-                "incrementReissueAttempts",
-                "capturePartialOrgFromError",
-              ],
+              actions: "incrementReissueAttempts",
               reenter: true,
             },
           ],

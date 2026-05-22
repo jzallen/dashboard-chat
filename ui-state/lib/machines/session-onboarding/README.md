@@ -97,7 +97,7 @@ The double-underscore prefix is the project-wide convention for "this event must
 | `createOrgAndReissue` | `{ org_name, principal_id, correlation_id, attempt }` | `{ org_id, org_name }` | `creating_org` (each attempt within the 3-retry budget) |
 | `silentReauth` | `{ correlation_id }` | `{ ok: true }` | `expired_token` |
 
-`createOrgAndReissue` is idempotent on `(org_name, principal_id)`. On partial failure (org created but reissue failed), the machine captures the partial org id so the retry doesn't double-create. See [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md).
+`createOrgAndReissue` is idempotent on `(org_name, principal_id)`: org creation always runs first, and a retry after a failed reissue re-creates nothing — `createOrgFn` reuses the existing org via `GET /api/orgs/me`. See [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md).
 
 ## FlowEvents emitted
 

@@ -396,11 +396,11 @@ export function reissueOrgJwtFn(
  *
  * It folds the forced-failure harness in STATELESSLY via attempt-vs-budget:
  *   1. ALWAYS create the org first (idempotent — preserves the "org row exists
- *      even when reissue fails" invariant; retries hit /api/orgs/me).
+ *      even when reissue fails" invariant; a retry re-creates nothing because
+ *      createOrgFn reuses the existing org via /api/orgs/me).
  *   2. If `force_reissue_failures` is set AND `attempt <= force_reissue_failures`,
- *      throw a partial-setup error carrying `partial_org = { id, name }` (the
- *      same field `capturePartialOrgFromError` reads), so the machine lands in
- *      error_recoverable / re-enters creating_org with the org.id populated.
+ *      throw a reissue failure (failure simulation), so the machine retries
+ *      within budget and then lands in error_recoverable tagged partial-setup.
  *      (Verified: N=2 → fail,fail,succeed→ready; N=3 → fail,fail,budget-
  *      exhausted→error_recoverable, because isReissueBudgetExhausted checks
  *      reissue_attempts_count+1 >= REISSUE_BUDGET (3) pre-increment.)
@@ -428,17 +428,9 @@ export async function getOrgAndReissue({
   const created = await createOrgFn(input.config, requestClient)(input);
 
   if (input.force_reissue_failures && input.attempt <= input.force_reissue_failures) {
-    const err = new Error(
+    throw new Error(
       `reissue forced-failure (attempt=${input.attempt}, budget=${input.force_reissue_failures})`,
     );
-    // Attach the partial-org marker so capturePartialOrgFromError can read the
-    // org.id from context even on the failure path (the "Try again" action then
-    // only retries reissue, not org create).
-    (err as Error & { partial_org?: { id: string; name: string } }).partial_org = {
-      id: created.org_id,
-      name: created.org_name,
-    };
-    throw err;
   }
 
   await reissueOrgJwtFn(input.config, requestClient)({
