@@ -206,26 +206,17 @@ export function createSessionOnboardingMachine() {
       ),
     },
     guards: {
-      // The org comes from the backend (`/api/orgs/me`, the org SSOT), resolved
-      // by the `verifying` step and carried on the done-event output. Reading
-      // `event.output.org` here is the contract surface between states — NOT the
-      // assign-after-guard context trap (that only bites when reading context a
-      // sibling action assigns). hasOrg = the backend reported an org.
       hasOrg: ({ event }) =>
         Boolean((event as { output?: VerifiedSession }).output?.org?.id),
-      orgNameValid: ({ event }) => {
+      isOrgNameValid: ({ event }) => {
         if (event.type !== "org_form_submitted") return false;
         return validateOrgName(event.org_name).ok;
       },
-      // The create-org actor throws a `name_taken`-tagged error when the
-      // backend rejects a globally-duplicate name (409). Read the marker off
-      // the XState invoke-error event so creating_org routes it to an inline
-      // duplicate error instead of a retry/error_recoverable.
-      isNameTaken: ({ event }) =>
+      isOrgNameTaken: ({ event }) =>
         Boolean((event as { error?: { name_taken?: boolean } }).error?.name_taken),
-      reissueBudgetExhausted: ({ context }) =>
+      isReissueBudgetExhausted: ({ context }) =>
         context.reissue_attempts_count + 1 >= REISSUE_BUDGET,
-      userRetryBudgetExhausted: ({ context }) =>
+      isUserRetryBudgetExhausted: ({ context }) =>
         context.retry_budget_used_count + 1 >= USER_RETRY_BUDGET,
     },
     actions: {
@@ -368,7 +359,7 @@ export function createSessionOnboardingMachine() {
         on: {
           org_form_submitted: [
             {
-              guard: "orgNameValid",
+              guard: "isOrgNameValid",
               target: "creating_org",
               actions: [
                 "clearOrgValidationError",
@@ -428,12 +419,12 @@ export function createSessionOnboardingMachine() {
             {
               // Globally-duplicate name (backend 409) → inline error, back to
               // needs_org. NOT a transient failure: no budget burn, no retry.
-              guard: "isNameTaken",
+              guard: "isOrgNameTaken",
               target: "needs_org",
               actions: "recordOrgNameTaken",
             },
             {
-              guard: "reissueBudgetExhausted",
+              guard: "isReissueBudgetExhausted",
               target: "error_recoverable",
               actions: [
                 "incrementReissueAttempts",
@@ -468,7 +459,7 @@ export function createSessionOnboardingMachine() {
               // 4th total attempt at the same cause tag (= 3 user retries
               // counted). Escalate to error_terminal so the UI moves Maya
               // to a contact-support page (no further retry CTA).
-              guard: "userRetryBudgetExhausted",
+              guard: "isUserRetryBudgetExhausted",
               target: "error_terminal",
               actions: "incrementUserRetryBudget",
             },

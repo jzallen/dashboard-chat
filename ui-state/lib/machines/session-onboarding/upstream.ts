@@ -402,7 +402,7 @@ export function reissueOrgJwtFn(
  *      same field `capturePartialOrgFromError` reads), so the machine lands in
  *      error_recoverable / re-enters creating_org with the org.id populated.
  *      (Verified: N=2 → fail,fail,succeed→ready; N=3 → fail,fail,budget-
- *      exhausted→error_recoverable, because reissueBudgetExhausted checks
+ *      exhausted→error_recoverable, because isReissueBudgetExhausted checks
  *      reissue_attempts_count+1 >= REISSUE_BUDGET (3) pre-increment.)
  *   3. Otherwise reissue the JWT and return the created org.
  */
