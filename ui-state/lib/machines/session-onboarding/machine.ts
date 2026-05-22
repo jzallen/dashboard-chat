@@ -22,7 +22,6 @@
 
 import { assign, fromPromise, setup } from "xstate";
 
-import type { Config } from "../../../config.ts";
 import {
   classifyFailure,
   type UnderlyingCauseTag,
@@ -32,7 +31,10 @@ import {
 // org-create/reissue) and the I/O contracts those resolvers exchange with this
 // machine live in ./upstream.ts. machine.ts wires the resolvers as config-driven
 // default actors; the dependency is one-way (upstream.ts imports nothing here).
+// `Config` comes from there too — the machine only threads it opaquely to the
+// resolvers, so it references the package boundary type, not the ui-state root.
 import {
+  type Config,
   type CreateOrgAndReissueInput,
   type CreateOrgAndReissueOutput,
   getOrgAndReissue,

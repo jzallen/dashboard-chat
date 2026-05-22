@@ -10,7 +10,22 @@
 // library), both threaded composition root → machine input → context → invoke
 // input. Tests inject a mock `fetch` as `request_client`.
 
-import type { Config } from "../../../config.ts";
+/**
+ * The slice of the ui-state env config this package's resolvers actually read —
+ * the package's own config contract. Declared locally (not imported from the
+ * ui-state root) so the machine and resolvers state exactly the env they depend
+ * on. The root `Config` is a structural superset, so the composition root passes
+ * it straight in with no cast; `redisUrl` and any future root-only fields stay
+ * the composition root's concern, not this package's.
+ */
+export interface Config {
+  /** WorkOS-compatible `/oauth/userinfo` base URL (the re-verify endpoint). */
+  workosUrl: string;
+  /** Backend base URL the resolvers call on behalf of the principal. */
+  backendUrl: string;
+  /** Identity headers presented to the backend (dev fixture; M2M in prod). */
+  devUserHeadersFixture: Record<string, string>;
+}
 
 /**
  * The I/O port for this machine's network side-effects: literally the `fetch`
