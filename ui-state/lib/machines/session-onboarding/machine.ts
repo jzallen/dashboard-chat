@@ -699,21 +699,94 @@ export async function loadVerifiedSession({
   return { email: identity.email, display_name: identity.display_name, org };
 }
 
+/** A backend org response body — JSON:API (`data.id`/`data.attributes.name`)
+ *  or flat (`id`/`org_id`/`name`). */
+interface OrgResponseBody {
+  id?: string;
+  org_id?: string;
+  name?: string;
+  data?: { id?: string; attributes?: { name?: string } };
+}
+
+/** Per-call context the status-rule resolvers need (the factory-closed I/O port
+ *  + URL, the per-call headers, and the request input), bundled so the rules
+ *  can live at module scope. */
+interface CreateOrgContext {
+  requestClient: RequestClient;
+  backendUrl: string;
+  baseHeaders: Record<string, string>;
+  input: CreateOrgAndReissueInput;
+}
+
+/** Dispatch rule for a `POST /api/orgs` response status. `resolve` either
+ *  yields the created org (org_id may be "" → caught by the shared post-check in
+ *  createOrgFn) or throws. First matching rule wins (list order = precedence). */
+interface CreateOrgStatusRule {
+  matches: (status: number) => boolean;
+  resolve: (
+    resp: Response,
+    ctx: CreateOrgContext,
+  ) => Promise<{ org_id: string; org_name: string }>;
+}
+
+const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
+  // 201/200 → created. Read the org id/name from the response body.
+  {
+    matches: (s) => s === 201 || s === 200,
+    resolve: async (resp, ctx) => {
+      const body = (await resp.json()) as OrgResponseBody;
+      return {
+        org_id: body.id ?? body.org_id ?? body.data?.id ?? "",
+        org_name:
+          body.name ?? body.data?.attributes?.name ?? ctx.input.org_name,
+      };
+    },
+  },
+  // 409 → globally-duplicate name (org names are globally unique). Tag + throw
+  // so the machine maps it to an inline duplicate-name error (needs_org), NOT a
+  // retry/error_recoverable.
+  {
+    matches: (s) => s === 409,
+    resolve: async (_resp, ctx) => {
+      const err = new Error(
+        `org name '${ctx.input.org_name}' is already in use`,
+      );
+      (err as Error & { name_taken?: boolean }).name_taken = true;
+      throw err;
+    },
+  },
+  // 500 → "user already belongs to an organization" (the dev DEV_USER
+  // pre-assigned-org quirk): treat as idempotent — fetch the existing org via
+  // /api/orgs/me and reuse it. Prefer Maya's submitted name in the projection
+  // (the test asserts what she SUBMITTED, not what an upstream provisioner stored).
+  {
+    matches: (s) => s === 500,
+    resolve: async (_resp, ctx) => {
+      const meResp = await ctx.requestClient(`${ctx.backendUrl}/api/orgs/me`, {
+        method: "GET",
+        headers: ctx.baseHeaders,
+      });
+      if (!meResp.ok) {
+        throw new Error(
+          `org create failed: 500; /api/orgs/me lookup also failed: ${meResp.status}`,
+        );
+      }
+      const meBody = (await meResp.json()) as OrgResponseBody;
+      return {
+        org_id: meBody.id ?? meBody.data?.id ?? "",
+        org_name: ctx.input.org_name,
+      };
+    },
+  },
+];
+
 /**
- * Build a createOrgAndReissue actor that POSTs to /api/orgs and then
- * /api/auth/reissue. Per ADR-029 invariant 4 the reissue must be
- * idempotent: if the user already owns the org, re-mint without
- * recreating. The actor surfaces the org_id on success.
- *
- * `backendUrl` is the auth-proxy URL — the production composition root
- * routes through auth-proxy so the same identity headers flow through.
- * Tests inject a mock `fetch` as `request_client` to canned-respond per scenario.
- */
-/**
- * Pure async function form of the org-create step. Exported so the
- * harness-knob wrapper can sequence create + reissue with forced failures
- * injected only at the reissue step. The network I/O runs through the injected
- * `requestClient` (= the `fetch` library).
+ * Pure async function form of the org-create step (a POST to `/api/orgs`),
+ * exported so the create+reissue resolver can sequence it with the reissue step
+ * (and inject forced failures only at reissue). Dispatches on the response
+ * status via CREATE_ORG_STATUS_RULES. Network I/O runs through the injected
+ * `requestClient` (= the `fetch` library); `backendUrl` is the auth-proxy URL,
+ * so the same identity headers flow through (ADR-029).
  */
 export function createOrgFn(
   config: Config,
@@ -727,72 +800,31 @@ export function createOrgFn(
         ...devUserHeadersFixture,
       };
 
-      // Step 1: create the org. The backend's middleware accepts the
-      // X-User-Id/X-Org-Id/X-User-Email headers (trust_proxy_headers in dev).
-      // Status handling:
-      //   201/200 → created.
-      //   409     → OrganizationNameTakenError — org names are globally unique
-      //             and this one is taken. Tagged + thrown so the machine maps
-      //             it to an inline duplicate-name error (needs_org), NOT a
-      //             retry/error_recoverable.
-      //   500     → "user already belongs to an organization" (the dev DEV_USER
-      //             pre-assigned-org quirk): treat as idempotent — fetch the
-      //             existing org via /api/orgs/me and reuse it.
+      // Create the org, then dispatch on the response status via the ordered
+      // rule list (CREATE_ORG_STATUS_RULES). The matched rule yields
+      // { org_id, org_name } or throws; an unmatched status is a generic
+      // failure. The shared post-check rejects an empty org_id.
       const orgResp = await requestClient(`${backendUrl}/api/orgs`, {
         method: "POST",
         headers: baseHeaders,
         body: JSON.stringify({ name: input.org_name }),
       });
-      let orgId = "";
-      let orgName = input.org_name;
-      if (orgResp.status === 201 || orgResp.status === 200) {
-        const orgBody = (await orgResp.json()) as {
-          id?: string;
-          org_id?: string;
-          name?: string;
-          data?: { id?: string; attributes?: { name?: string } };
-        };
-        orgId =
-          orgBody.id ??
-          orgBody.org_id ??
-          orgBody.data?.id ??
-          "";
-        orgName =
-          orgBody.name ?? orgBody.data?.attributes?.name ?? input.org_name;
-      } else if (orgResp.status === 409) {
-        const err = new Error(
-          `org name '${input.org_name}' is already in use`,
-        );
-        (err as Error & { name_taken?: boolean }).name_taken = true;
-        throw err;
-      } else if (orgResp.status === 500) {
-        const meResp = await requestClient(`${backendUrl}/api/orgs/me`, {
-          method: "GET",
-          headers: baseHeaders,
-        });
-        if (!meResp.ok) {
-          throw new Error(
-            `org create failed: ${orgResp.status}; /api/orgs/me lookup also failed: ${meResp.status}`,
-          );
-        }
-        const meBody = (await meResp.json()) as {
-          id?: string;
-          name?: string;
-          data?: { id?: string; attributes?: { name?: string } };
-        };
-        orgId = meBody.id ?? meBody.data?.id ?? "";
-        // Prefer Maya's requested name in the projection — the test asserts
-        // what she SUBMITTED, not what an upstream provisioner stored. The
-        // server-side name lives in /api/orgs/me; the SSOT for "Maya's
-        // active organization" view label is the request she made.
-        orgName = input.org_name;
-      } else {
+      const rule = CREATE_ORG_STATUS_RULES.find((r) =>
+        r.matches(orgResp.status),
+      );
+      if (!rule) {
         throw new Error(`org create failed: ${orgResp.status}`);
       }
-      if (!orgId) {
+      const created = await rule.resolve(orgResp, {
+        requestClient,
+        backendUrl,
+        baseHeaders,
+        input,
+      });
+      if (!created.org_id) {
         throw new Error("org create returned no org_id");
       }
-      return { org_id: orgId, org_name: orgName };
+      return created;
   };
 }
 
