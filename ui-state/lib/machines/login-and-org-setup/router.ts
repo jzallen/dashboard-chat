@@ -24,14 +24,14 @@
  */
 
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { z } from "zod";
 
 import type { ResolveActiveScope } from "../../active-scope.ts";
+import type { Result } from "../../flow-result.ts";
 import {
   cryptoRandomId,
   mountUniformFlowRoutes,
-  resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type {
   BeginFlowOrchestrator,
@@ -65,6 +65,18 @@ export type BuildLoginDeps = (opts: {
 }) => LoginMachineDeps;
 
 /**
+ * Total mapper from the orchestrator's Result API to an HTTP Response. The
+ * composition root injects the substrate's `resultToJson` here so the login
+ * package depends on the orchestrator Result shape, not the transport
+ * substrate — one fewer cross-package import as the login routes are migrated.
+ */
+export type SerializeResult = (
+  c: Context,
+  result: Result<unknown>,
+  fallbackError: string,
+) => Response;
+
+/**
  * The login /begin request DTO: the two trusted-ingress values the outer
  * router resolves into context vars (referenceCode + userId) plus the HTTP
  * body. This schema is the route's single validation gate — persona_email is
@@ -92,6 +104,7 @@ export function buildLoginAndOrgSetupRouter(
   buildLoginDeps: BuildLoginDeps,
   eventLog: FlowEventLog,
   logTransition: (record: Record<string, unknown>) => void,
+  serializeResult: SerializeResult,
 ): Hono<LoginRouterContext> {
   const wireName = "login-and-org-setup";
 
@@ -146,7 +159,7 @@ export function buildLoginAndOrgSetupRouter(
       logTransition,
     );
     const result = await orchestrator.begin(strategy);
-    return resultToJson(c, result, "begin_failed");
+    return serializeResult(c, result, "begin_failed");
   });
 
   router.post("/event", async (c) => {
@@ -213,7 +226,7 @@ export function buildLoginAndOrgSetupRouter(
       payload: body.payload ?? {},
       correlation_id: correlationId,
     });
-    return resultToJson(c, result, "event_failed");
+    return serializeResult(c, result, "event_failed");
   });
 
   // Deep-link / scope-resolution endpoint. The HTTP layer is the
@@ -276,7 +289,7 @@ export function buildLoginAndOrgSetupRouter(
           },
         ],
       });
-      return resultToJson(c, result, "open_deep_link_failed");
+      return serializeResult(c, result, "open_deep_link_failed");
     }
 
     // Successful resolution → deep_link_opened. On reconciled
@@ -299,7 +312,7 @@ export function buildLoginAndOrgSetupRouter(
         },
       ],
     });
-    return resultToJson(c, result, "open_deep_link_failed");
+    return serializeResult(c, result, "open_deep_link_failed");
   });
 
   mountUniformFlowRoutes(router, flowOrchestrator);

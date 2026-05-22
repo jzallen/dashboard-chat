@@ -3,6 +3,7 @@ import { type Context, Hono } from "hono";
 
 import { loadConfig } from "./config.ts";
 import { resolveActiveScope } from "./lib/active-scope.ts";
+import { resultToJson } from "./lib/hexagonal-transport/flow-router.ts";
 import {
   createForcedFailureOrgAndReissueActor,
   createOrgAndReissueActor,
@@ -119,6 +120,7 @@ function loginRouter(): Hono<LoginRouterEnv> {
     buildLoginDeps,
     eventLog,
     logTransition,
+    resultToJson,
   );
 }
 
