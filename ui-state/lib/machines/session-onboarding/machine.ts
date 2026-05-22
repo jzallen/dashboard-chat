@@ -263,30 +263,13 @@ export function createSessionOnboardingMachine() {
       },
     },
     actors: {
-      // The config-agnostic verifying resolver. `loadVerifiedSession`
-      // re-verifies identity via WorkOS `/oauth/userinfo` AND loads the user's
-      // org from the backend (`/api/orgs/me`, the org SSOT) — both through
-      // input.deps.request_client, with URLs from input.config. Returns the
-      // combined { identity, org }; the `[hasOrg]` guard reads `org` off the
-      // output. Tests inject a mock `fetch` as request_client to drive
-      // identity (200/401) and org (200/404) per scenario.
       loadSession: fromPromise<VerifiedSession, LoadSessionInput>(
         loadVerifiedSession,
       ),
-      // The real config-agnostic org-create + reissue resolver. Reads
-      // `backendUrl` from input.config, performs its HTTP calls through
-      // input.deps.request_client; folds the forced-failure harness in via
-      // input.force_reissue_failures (attempt-vs-budget). Tests inject a mock
-      // `fetch` as request_client and pass force_reissue_failures to drive the
-      // failure path — no actor stubbing.
       createOrgAndReissue: fromPromise<
         CreateOrgAndReissueOutput,
         CreateOrgAndReissueInput
       >(getOrgAndReissue),
-      // Config/input-driven silent-reauth resolver (NO `.provide(...)`
-      // injection). `getSilentReauth` reads `input.outcome` (threaded from
-      // context.silent_reauth_outcome): "success" → resolve, "fail" → throw
-      // silent-reauth-failed, "pending" (production default) → never resolve.
       silentReauth: fromPromise<{ ok: true }, SilentReauthInput>(
         getSilentReauth,
       ),
