@@ -34,10 +34,8 @@ import { createActor } from "xstate";
 
 import { makeMockFetch, makeTestConfig } from "../../testing/test-config.ts";
 import type { UnderlyingCauseTag } from "../validation.ts";
-import {
-  createSessionOnboardingMachine,
-  type RequestClient,
-} from "./machine.ts";
+import { createSessionOnboardingMachine } from "./machine.ts";
+import type { RequestClient } from "./upstream.ts";
 
 const CONFIG = makeTestConfig();
 
