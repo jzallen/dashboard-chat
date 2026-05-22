@@ -83,9 +83,10 @@ export interface SessionOnboardingContext {
   /** The forwarded Bearer (L4) — threaded from the router's Authorization
    *  header into the re-verify invoke input. Never a client body claim. */
   bearer_token: string;
-  /** Env config (provides `workosUrl`), threaded from the composition root via
-   *  the machine input so the `workosUserInfo` re-verify invoke gets its URL
-   *  from input rather than a closure. Null in tests that stub the actor. */
+  /** Env config (provides `workosUrl` + `backendUrl`), threaded from the
+   *  composition root via the machine input so the `loadSession` resolver gets
+   *  its URLs from input rather than a closure. Null in tests that stub the
+   *  actor. */
   config: Config | null;
   /** The I/O port (the `fetch` library), threaded composition root → machine
    *  input → context → invoke `input:` mapper → actor input → resolver. The
@@ -108,14 +109,6 @@ export interface SessionOnboardingContext {
   /** The org name Maya last submitted -- preserved across `creating_org`
    *  re-entries so each retry sees the same name as the first attempt. */
   pending_org_name: string;
-  /** The verified org claim auth-proxy injects via `X-Org-Id`, pre-seeded into
-   *  context at machine creation (FIX D1). It is the SOLE source for the
-   *  `[hasOrg]` returning-user shortcut — available BEFORE the re-verify invoke
-   *  settles, so the guard reads it from context (not the actor output). Empty
-   *  string / null means "no org" (new user). The org NAME is not in the header,
-   *  so the seeded `org` carries `name: null` until the FE / a later read fills
-   *  it in. */
-  existing_org_id: string | null;
   underlying_cause_tag: UnderlyingCauseTag | null;
   retries_count: number;
   reissue_attempts_count: number;
@@ -137,10 +130,9 @@ export type SessionOnboardingEvent =
 
 /**
  * The verified-user IDENTITY returned by the WorkOS `/oauth/userinfo`
- * re-verification call (L5). Real WorkOS `/oauth/userinfo` does NOT return an
- * app-level org binding, so this is identity ONLY (email + display_name). The
- * `[hasOrg]` shortcut is driven by the verified `X-Org-Id` header instead,
- * seeded into context as `existing_org_id` (FIX D1).
+ * re-verification call (L5) — identity ONLY (email + display_name). Real WorkOS
+ * `/oauth/userinfo` carries no app-level org binding; the org is sourced
+ * separately from the backend (the org SSOT, `GET /api/orgs/me`).
  */
 export interface WorkOSProfile {
   email: string;
@@ -148,25 +140,36 @@ export interface WorkOSProfile {
 }
 
 /**
- * Re-verify actor input (L4): the forwarded Bearer token (from the
- * `Authorization` header), threaded router → machine input → invoke. NEVER a
- * client body claim.
+ * The combined verified session the `verifying` step resolves: the WorkOS
+ * identity PLUS the user's org as reported by the backend (`GET /api/orgs/me`),
+ * the org SSOT — `null` when the user has no org yet (new user). The `[hasOrg]`
+ * guard reads `org` off this done-event output; the verified `X-Org-Id` header
+ * is demoted to an audit field at the route boundary (it is a cached JWT claim,
+ * not the authoritative org state).
  */
-export interface WorkOSUserInfoInput {
+export interface VerifiedSession {
+  email: string;
+  display_name: string;
+  org: { id: string; name: string } | null;
+}
+
+/**
+ * Input for the `verifying` resolvers (`getWorkOSUserInfo` re-verify +
+ * `getUserOrg` backend org lookup). The forwarded Bearer (L4) re-verifies
+ * identity; `config`/`deps` carry the WorkOS + backend URLs and the `fetch` I/O
+ * port; `correlation_id` traces the backend call. Threaded router → machine
+ * input → context → invoke input. NEVER a client body claim. `config`/`deps` are
+ * null only in tests that stub the actor (the stub ignores them).
+ */
+export interface LoadSessionInput {
   bearer_token: string;
-  /** Env config (provides `workosUrl`) attached to the actor input so the
-   *  re-verify resolver stays config-agnostic — no factory closure and no
-   *  import of the resolver at the composition root. Threaded composition root
-   *  → machine input → context → this invoke input. Null only in tests that
-   *  stub `workosUserInfo` (the stub ignores it). */
+  correlation_id: string;
   config: Config | null;
-  /** The I/O port (the `fetch` library) the resolver calls directly. Threaded
-   *  the same path as `config`. Null only in tests that stub `workosUserInfo`. */
   deps: SessionOnboardingDeps | null;
 }
 
-export type WorkOSUserInfoActor = ReturnType<
-  typeof fromPromise<WorkOSProfile, WorkOSUserInfoInput>
+export type LoadSessionActor = ReturnType<
+  typeof fromPromise<VerifiedSession, LoadSessionInput>
 >;
 
 export interface CreateOrgAndReissueInput {
@@ -230,10 +233,11 @@ const USER_RETRY_BUDGET = 3;
 
 /**
  * Build the session-onboarding machine. Takes NO params — every external actor
- * is a config-driven DEFAULT (ADR-041 inversion): `workosUserInfo` and
- * `createOrgAndReissue` are config-agnostic resolvers that read their URLs from
- * the actor input (config threaded composition root → machine input → context →
- * invoke input) and perform their network I/O through the injected
+ * is a config-driven DEFAULT (ADR-041 inversion): `loadSession` (WorkOS
+ * re-verify + backend org lookup) and `createOrgAndReissue` are config-agnostic
+ * resolvers that read their URLs from the actor input (config threaded
+ * composition root → machine input → context → invoke input) and perform their
+ * network I/O through the injected
  * `deps.request_client` (= the `fetch` library), and `silentReauth` reads its
  * outcome from the actor input (`input.outcome`, threaded from
  * context.silent_reauth_outcome) — "pending" by default (production noop). There
@@ -251,7 +255,6 @@ export function createSessionOnboardingMachine() {
         correlation_id: string;
         principal_id: string;
         bearer_token?: string;
-        existing_org_id?: string | null;
         existing_org_names?: string[];
         config?: Config | null;
         deps?: SessionOnboardingDeps | null;
@@ -260,13 +263,15 @@ export function createSessionOnboardingMachine() {
       },
     },
     actors: {
-      // The real config-agnostic re-verify resolver. `getWorkOSUserInfo` reads
-      // `workosUrl` from its input (input.config), which the machine threads
-      // from context, and performs its HTTP GET through input.deps.request_client
-      // — so the composition root never imports it just to inject env config.
-      // Tests inject a mock `fetch` as request_client.
-      workosUserInfo: fromPromise<WorkOSProfile, WorkOSUserInfoInput>(
-        getWorkOSUserInfo,
+      // The config-agnostic verifying resolver. `loadVerifiedSession`
+      // re-verifies identity via WorkOS `/oauth/userinfo` AND loads the user's
+      // org from the backend (`/api/orgs/me`, the org SSOT) — both through
+      // input.deps.request_client, with URLs from input.config. Returns the
+      // combined { identity, org }; the `[hasOrg]` guard reads `org` off the
+      // output. Tests inject a mock `fetch` as request_client to drive
+      // identity (200/401) and org (200/404) per scenario.
+      loadSession: fromPromise<VerifiedSession, LoadSessionInput>(
+        loadVerifiedSession,
       ),
       // The real config-agnostic org-create + reissue resolver. Reads
       // `backendUrl` from input.config, performs its HTTP calls through
@@ -287,12 +292,13 @@ export function createSessionOnboardingMachine() {
       ),
     },
     guards: {
-      // The org binding comes from the verified `X-Org-Id` header, pre-seeded
-      // into context as `existing_org_id` at machine creation (FIX D1). It is
-      // available BEFORE the re-verify invoke settles — reading it from context
-      // (not `event.output`) sidesteps the assign-after-guard ordering trap.
-      // hasOrg = a present, non-empty existing_org_id.
-      hasOrg: ({ context }) => Boolean(context.existing_org_id),
+      // The org comes from the backend (`/api/orgs/me`, the org SSOT), resolved
+      // by the `verifying` step and carried on the done-event output. Reading
+      // `event.output.org` here is the contract surface between states — NOT the
+      // assign-after-guard context trap (that only bites when reading context a
+      // sibling action assigns). hasOrg = the backend reported an org.
+      hasOrg: ({ event }) =>
+        Boolean((event as { output?: VerifiedSession }).output?.org?.id),
       orgNameValid: ({ context, event }) => {
         if (event.type !== "org_form_submitted") return false;
         const result = validateOrgName(
@@ -307,12 +313,11 @@ export function createSessionOnboardingMachine() {
         context.retry_budget_used_count + 1 >= USER_RETRY_BUDGET,
     },
     actions: {
-      // Re-verify returns IDENTITY ONLY (FIX D1) — assign user from the actor
-      // output. The org is NOT in the output; it is sourced from context's
-      // pre-seeded existing_org_id (see assignSeededOrg).
+      // Assign the verified identity from the `verifying` done-event output.
       assignVerifiedUser: assign({
         user: ({ event }) => {
-          const output = (event as unknown as { output: WorkOSProfile }).output;
+          const output = (event as unknown as { output: VerifiedSession })
+            .output;
           return {
             email: output.email,
             display_name: output.display_name,
@@ -320,14 +325,16 @@ export function createSessionOnboardingMachine() {
           };
         },
       }),
-      // Returning-user [hasOrg] arm: populate context.org from the header-seeded
-      // existing_org_id. The org NAME is not in the header, so name stays null
-      // (the projection tolerates a null name).
-      assignSeededOrg: assign({
-        org: ({ context }) =>
-          context.existing_org_id
-            ? { id: context.existing_org_id, name: null }
-            : { id: null, name: null },
+      // Returning-user [hasOrg] arm: populate context.org from the backend org
+      // (`/api/orgs/me`) carried on the done-event output — id AND real name
+      // (the backend is the SSOT, so unlike the old header claim the name is
+      // present).
+      assignResolvedOrg: assign({
+        org: ({ event }) => {
+          const org = (event as unknown as { output: VerifiedSession }).output
+            .org;
+          return org ? { id: org.id, name: org.name } : { id: null, name: null };
+        },
       }),
       tagSessionRejected: assign({
         underlying_cause_tag: ({ event }) => {
@@ -396,7 +403,6 @@ export function createSessionOnboardingMachine() {
       silent_reauth_outcome: input.silent_reauth_outcome ?? "pending",
       user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
-      existing_org_id: input.existing_org_id ?? null,
       pending_org_name: "",
       underlying_cause_tag: null,
       retries_count: 0,
@@ -406,14 +412,16 @@ export function createSessionOnboardingMachine() {
       existing_org_names: input.existing_org_names ?? [],
     }),
     states: {
-      // Re-verify the forwarded Bearer (defense in depth, L3). On success the
-      // verified user + org binding land on the snapshot; the [hasOrg] guard
-      // forks ready vs needs_org. On failure the session is rejected.
+      // Re-verify the forwarded Bearer (defense in depth, L3) AND load the
+      // user's org from the backend (the org SSOT). On success the verified
+      // identity + resolved org land on the done-event output; the [hasOrg]
+      // guard forks ready vs needs_org. On failure the session is rejected.
       verifying: {
         invoke: {
-          src: "workosUserInfo",
+          src: "loadSession",
           input: ({ context }) => ({
             bearer_token: context.bearer_token,
+            correlation_id: context.correlation_id,
             config: context.config,
             deps: context.deps,
           }),
@@ -421,7 +429,7 @@ export function createSessionOnboardingMachine() {
             {
               guard: "hasOrg",
               target: "ready",
-              actions: ["assignVerifiedUser", "assignSeededOrg"],
+              actions: ["assignVerifiedUser", "assignResolvedOrg"],
             },
             {
               target: "needs_org",
@@ -467,6 +475,11 @@ export function createSessionOnboardingMachine() {
         },
       },
       creating_org: {
+        // TODO: sync WorkOS Organizations with the app-level backend orgs.
+        // When a backend org is created/changed here, propagate it to WorkOS so
+        // the two stores stay consistent. This machine is a natural home — it
+        // already holds a WorkOS handle (the re-verify call) and is event-driven,
+        // so org create/membership transitions can fan out to WorkOS.
         invoke: {
           src: "createOrgAndReissue",
           input: ({ context }) => {
@@ -577,27 +590,19 @@ export function createSessionOnboardingMachine() {
 
 /**
  * Re-verify the forwarded Bearer against the WorkOS-compatible
- * `/oauth/userinfo` endpoint (L3/L4) and return the verified user identity.
+ * `/oauth/userinfo` endpoint (L3/L4) and return the verified user IDENTITY.
  *
- * This is the actor RESOLVER itself (an `async ({ input }) => profile`), not a
- * factory: the machine wraps it once as the default `workosUserInfo` actor
- * (`fromPromise(getWorkOSUserInfo)`), and its env config (`workosUrl`) arrives
- * on `input.config` — threaded composition root → machine input → context →
- * invoke input. The network GET runs through `input.deps.request_client` (= the
- * `fetch` library), threaded the same path. That keeps it config-agnostic so the
- * composition root never imports it just to inject env. Tests inject a mock
- * `fetch` as `request_client`.
- *
- * Identity comes from the verified token (the `Authorization: Bearer` header
- * auth-proxy forwards), NEVER a client body claim. Returns IDENTITY ONLY
- * (email + display_name) — real WorkOS `/oauth/userinfo` carries no app-level
- * org binding, so the returning-user org comes from the verified `X-Org-Id`
- * header instead (FIX D1).
+ * Config-agnostic: `workosUrl` comes from `input.config` and the network GET
+ * runs through `input.deps.request_client` (= the `fetch` library), both
+ * threaded composition root → machine input → context → invoke input. Tests
+ * inject a mock `fetch` as `request_client`. Identity comes from the verified
+ * token (the `Authorization: Bearer` auth-proxy forwards), NEVER a client body
+ * claim. Returns IDENTITY ONLY — the org is loaded separately by `getUserOrg`.
  */
 export async function getWorkOSUserInfo({
   input,
 }: {
-  input: WorkOSUserInfoInput;
+  input: LoadSessionInput;
 }): Promise<WorkOSProfile> {
   if (!input.config) {
     throw new Error(
@@ -631,6 +636,71 @@ export async function getWorkOSUserInfo({
     email: profile.email,
     display_name: profile.name ?? "",
   };
+}
+
+/**
+ * Load the user's org from the backend (`GET /api/orgs/me`) — the org SSOT.
+ * Returns `{ id, name }` for a returning user (200) or `null` when the user has
+ * no org yet (404, new user). This is why the `[hasOrg]` decision is
+ * authoritative + carries the real org NAME, rather than trusting the cached
+ * `X-Org-Id` JWT claim. Config-agnostic: `backendUrl` + the identity header
+ * fixture come from `input.config`, the call runs through
+ * `input.deps.request_client` (same auth/header shape `createOrgFn` uses for the
+ * idempotent fallback). Non-200/404 statuses throw so a backend outage surfaces
+ * as `session_rejected` rather than silently looking like a new user.
+ */
+export async function getUserOrg({
+  input,
+}: {
+  input: LoadSessionInput;
+}): Promise<{ id: string; name: string } | null> {
+  if (!input.config) {
+    throw new Error(
+      "session-onboarding: backend config missing from org-lookup input",
+    );
+  }
+  if (!input.deps?.request_client) {
+    throw new Error(
+      "session-onboarding: request_client missing from org-lookup input",
+    );
+  }
+  const { backendUrl, devUserHeadersFixture } = input.config;
+  const resp = await input.deps.request_client(`${backendUrl}/api/orgs/me`, {
+    method: "GET",
+    headers: {
+      "x-correlation-id": input.correlation_id,
+      ...devUserHeadersFixture,
+    },
+  });
+  if (resp.status === 404) return null;
+  if (!resp.ok) {
+    throw new Error(`org lookup failed: ${resp.status}`);
+  }
+  const body = (await resp.json()) as {
+    id?: string;
+    name?: string;
+    data?: { id?: string; attributes?: { name?: string } };
+  };
+  const id = body.id ?? body.data?.id ?? "";
+  if (!id) return null;
+  const name = body.name ?? body.data?.attributes?.name ?? "";
+  return { id, name };
+}
+
+/**
+ * The `verifying` actor resolver: re-verify identity (WorkOS) AND load the org
+ * (backend SSOT) into one combined `VerifiedSession`. The `[hasOrg]` guard reads
+ * `org` off this output. A WorkOS 401 (re-verify failure) propagates → the
+ * machine lands in `session_rejected`.
+ */
+export async function loadVerifiedSession({
+  input,
+}: {
+  input: LoadSessionInput;
+}): Promise<VerifiedSession> {
+  const identity = await getWorkOSUserInfo({ input });
+  const org = await getUserOrg({ input });
+  return { email: identity.email, display_name: identity.display_name, org };
 }
 
 /**

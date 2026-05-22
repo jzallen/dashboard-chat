@@ -9,8 +9,10 @@
 //   - GET  /oauth/userinfo   — WorkOS re-verify. 200 {email,name} for a normal
 //                              Bearer; 401 when the Bearer matches `badToken`
 //                              (drives session_rejected).
+//   - GET  /api/orgs/me      — backend org lookup (the org SSOT, drives [hasOrg]).
+//                              200 {id,name} when `existingOrg` is set (returning
+//                              user); 404 otherwise (new user → needs_org).
 //   - POST /api/orgs         — backend org-create. 201 {id,name}.
-//   - GET  /api/orgs/me      — backend org lookup (idempotent fallback). 200.
 //   - POST /api/auth/reissue — backend JWT reissue. 200.
 //
 // The backend endpoints ALWAYS succeed: the forced-reissue-failure path is
@@ -34,7 +36,11 @@ export interface MockFetchOptions {
    *  session_rejected path. When unset, no token is rejected (but a MISSING
    *  bearer is always 401). */
   badToken?: string;
-  /** Org id POST /api/orgs and GET /api/orgs/me echo back. */
+  /** The user's existing org as the backend SSOT (`GET /api/orgs/me`) reports
+   *  it. Set ⇒ returning user (200 → `[hasOrg]` → ready). Null/absent ⇒ new user
+   *  (404 → needs_org). */
+  existingOrg?: { id: string; name: string } | null;
+  /** Org id `POST /api/orgs` echoes back on the new-user create path. */
   orgId?: string;
 }
 
@@ -79,6 +85,7 @@ export function makeMockFetch(options: MockFetchOptions = {}): RequestClient {
   const profile = options.profile ?? DEFAULT_PROFILE;
   const badToken = options.badToken ?? "";
   const orgId = options.orgId ?? DEFAULT_ORG_ID;
+  const existingOrg = options.existingOrg ?? null;
 
   const impl = async (
     input: RequestInfo | URL,
@@ -97,9 +104,12 @@ export function makeMockFetch(options: MockFetchOptions = {}): RequestClient {
       return jsonResponse({ email: profile.email, name: profile.name }, 200);
     }
 
-    // Backend org-lookup (idempotent-create fallback path) — ALWAYS succeeds.
+    // Backend org-lookup (the org SSOT, drives [hasOrg]). Returning user → 200
+    // {id,name}; new user → 404 (→ needs_org).
     if (url.includes("/api/orgs/me") && method === "GET") {
-      return jsonResponse({ id: orgId, name: profile.name }, 200);
+      return existingOrg
+        ? jsonResponse({ id: existingOrg.id, name: existingOrg.name }, 200)
+        : jsonResponse({ error: "no_org" }, 404);
     }
     // Backend org-create — ALWAYS succeeds. Echo the submitted name so the
     // projection asserts what Maya submitted.

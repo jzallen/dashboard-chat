@@ -29,10 +29,17 @@ const MAYA_PROFILE = {
   name: "Maya Chen",
 };
 
-/** Mock fetch that re-verifies any bearer OK with Maya's identity and
- *  creates/reissues orgs OK (org id "org-1"). */
+/** Mock fetch for a NEW user — re-verify OK, backend /api/orgs/me 404 (no org),
+ *  create/reissue OK (org id "org-1"). */
 function okFetch(): RequestClient {
   return makeMockFetch({ profile: MAYA_PROFILE, orgId: "org-1" });
+}
+
+/** Mock fetch for a RETURNING user — backend /api/orgs/me reports an org. */
+function returningFetch(
+  org: { id: string; name: string } = { id: "org-1", name: "Acme Data" },
+): RequestClient {
+  return makeMockFetch({ profile: MAYA_PROFILE, existingOrg: org });
 }
 
 /** Mock fetch that answers 401 for the designated bad bearer at
@@ -73,8 +80,9 @@ async function begin(
   opts: {
     userId: string;
     bearer: string;
-    /** The verified org claim auth-proxy injects. Present → returning user
-     *  ([hasOrg] shortcut → ready); absent/empty → new user (needs_org). */
+    /** The `X-Org-Id` claim auth-proxy injects — AUDIT-ONLY now (the [hasOrg]
+     *  decision comes from the backend `/api/orgs/me`, driven by the mock fetch).
+     *  Sent here only to exercise the audit path; it does not drive the outcome. */
     orgId?: string;
     existing_org_names?: string[];
   },
@@ -106,12 +114,12 @@ afterEach(() => {
 });
 
 // ── Spec 1 — Returning user with an org lands ready (NEW [hasOrg] branch) ──
-// The org-source is the verified `X-Org-Id` header auth-proxy injects (FIX D1),
-// NOT the WorkOS re-verify output. The org NAME is not in the header, so
-// session_started carries `org={id, name:null}`.
+// The org-source is the backend (`GET /api/orgs/me`, the org SSOT), loaded
+// during `verifying` — NOT the `X-Org-Id` header (audit-only). The backend
+// returns the org NAME, so session_started carries `org={id, name}`.
 describe("Spec 1: returning user with an org lands ready", () => {
-  it("emits session_started{user, org} from the X-Org-Id header and projects ready with user populated", async () => {
-    active = buildScenario({ requestClient: okFetch() });
+  it("emits session_started{user, org} from the backend org lookup and projects ready with user populated", async () => {
+    active = buildScenario({ requestClient: returningFetch() });
     const proj = await begin(active.app, {
       userId: "u1",
       bearer: "tok-1",
@@ -121,12 +129,12 @@ describe("Spec 1: returning user with an org lands ready", () => {
     expect(proj.state).toBe("ready");
     expect(proj.context.user.display_name).toBe("Maya Chen");
     expect(proj.context.user.email).toBe("maya@acme");
-    // Org id comes from the verified header; name is not in the header (null).
-    expect(proj.context.org).toEqual({ id: "org-1", name: null });
+    // Org id AND name come from the backend (the SSOT), not the header.
+    expect(proj.context.org).toEqual({ id: "org-1", name: "Acme Data" });
   });
 
-  it("records exactly one session_started event carrying the verified user + the header org", async () => {
-    active = buildScenario({ requestClient: okFetch() });
+  it("records exactly one session_started event carrying the verified user + the backend org", async () => {
+    active = buildScenario({ requestClient: returningFetch() });
     await begin(active.app, { userId: "u1", bearer: "tok-1", orgId: "org-1" });
 
     const events = await active.eventLog.read("session-onboarding:u1");
@@ -134,13 +142,13 @@ describe("Spec 1: returning user with an org lands ready", () => {
     expect(started).toHaveLength(1);
     expect(started[0].payload).toMatchObject({
       user: { email: "maya@acme", display_name: "Maya Chen" },
-      org: { id: "org-1", name: null },
+      org: { id: "org-1", name: "Acme Data" },
     });
   });
 });
 
 // ── Spec 2 — New user with no org reaches needs_org (defect-closing) ──
-// No X-Org-Id header → new user → org:null → needs_org.
+// Backend /api/orgs/me 404 → new user → org:null → needs_org.
 describe("Spec 2: new user with no org reaches needs_org with identity populated", () => {
   it("emits session_started{user, org:null} and projects needs_org with email non-null", async () => {
     active = buildScenario({ requestClient: okFetch() });
@@ -153,14 +161,16 @@ describe("Spec 2: new user with no org reaches needs_org with identity populated
     expect(proj.context.user.display_name).toBe("Maya Chen");
   });
 
-  it("treats an empty-string X-Org-Id as no org (new user → needs_org)", async () => {
+  it("ignores the X-Org-Id header for the decision (audit-only): backend 404 → needs_org even when X-Org-Id is present", async () => {
     active = buildScenario({ requestClient: okFetch() });
     const proj = await begin(active.app, {
       userId: "u2",
       bearer: "tok-2",
-      orgId: "",
+      orgId: "org-stale-claim",
     });
 
+    // The backend (404) is authoritative; the stale X-Org-Id claim does NOT
+    // drive the user to ready.
     expect(proj.state).toBe("needs_org");
     expect(proj.context.org.id).toBeNull();
   });
@@ -262,7 +272,8 @@ describe("Legacy alias: /flow/session-onboarding accepts the legacy machine name
   });
 
   it("does not 404 on the legacy /flow/login-and-org-setup HTTP path", async () => {
-    active = buildScenario({ requestClient: okFetch() });
+    // Returning user (backend /api/orgs/me reports an org) → [hasOrg] → ready.
+    active = buildScenario({ requestClient: returningFetch() });
     const res = await active.app.fetch(
       new Request("http://t/flow/login-and-org-setup/begin", {
         method: "POST",
@@ -270,8 +281,6 @@ describe("Legacy alias: /flow/session-onboarding accepts the legacy machine name
           "content-type": "application/json",
           "X-User-Id": "u1",
           authorization: "Bearer tok-1",
-          // Returning-user org claim → [hasOrg] shortcut → ready (FIX D1).
-          "X-Org-Id": "org-1",
         },
         body: JSON.stringify({}),
       }),

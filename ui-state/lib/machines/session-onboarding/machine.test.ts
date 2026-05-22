@@ -11,8 +11,9 @@
 // → error_recoverable, "pending" (default) → never resolves. No injection.
 //
 // Entry assumes an already-authenticated principal: the machine starts in
-// `verifying`, auto-invokes the `workosUserInfo` re-verify actor, and forks
-// `ready` ([hasOrg]) vs `needs_org` (no org) vs `session_rejected` (failure).
+// `verifying`, auto-invokes the `loadSession` resolver (WorkOS re-verify +
+// backend /api/orgs/me org lookup), and forks `ready` ([hasOrg]) vs `needs_org`
+// (no org) vs `session_rejected` (failure).
 //
 // Behavior budget:
 //   B1 — retry-budget counter on error_recoverable: 4th attempt at same
@@ -53,16 +54,27 @@ const MAYA_PROFILE = {
   display_name: "Maya Chen",
 };
 
-/** Mock fetch that re-verifies any bearer OK and creates/reissues orgs OK. */
+/** Mock fetch for a NEW user — re-verify OK, backend /api/orgs/me 404 (no org),
+ *  create/reissue OK. */
 function okFetch(): RequestClient {
   return makeMockFetch({
     profile: { email: MAYA_PROFILE.email, name: MAYA_PROFILE.display_name },
   });
 }
 
+/** Mock fetch for a RETURNING user — backend /api/orgs/me reports an org. */
+function returningFetch(
+  org: { id: string; name: string } = { id: "org-1", name: "Acme Data" },
+): RequestClient {
+  return makeMockFetch({
+    profile: { email: MAYA_PROFILE.email, name: MAYA_PROFILE.display_name },
+    existingOrg: org,
+  });
+}
+
 /**
  * Build the machine input with a mock `fetch` injected as the I/O port. Extra
- * input fields (existing_org_id, force_reissue_failures) merge over MAYA_INPUT.
+ * input fields (e.g. force_reissue_failures) merge over MAYA_INPUT.
  */
 function inputWith(
   requestClient: RequestClient,
@@ -115,25 +127,23 @@ function waitFor<TActor extends ReturnType<typeof createActor>>(
 }
 
 describe("verifying [hasOrg] shortcut (B7)", () => {
-  it("a returning user with a seeded existing_org_id reaches ready directly", async () => {
+  it("a returning user (backend reports an org) reaches ready directly with the org id + name", async () => {
     const machine = createSessionOnboardingMachine();
-    // existing_org_id is pre-seeded into context at machine creation (sourced
-    // from the verified X-Org-Id header), so the hasOrg guard sees it BEFORE
-    // the re-verify invoke settles. Org NAME is not in the header → null.
-    const actor = createActor(machine, {
-      input: inputWith(okFetch(), { existing_org_id: "org-1" }),
-    });
+    // The org is loaded from the backend (/api/orgs/me, the org SSOT) during
+    // verifying; the hasOrg guard reads it off the done-event output. The name
+    // comes from the backend (not a header claim), so it is populated.
+    const actor = createActor(machine, { input: inputWith(returningFetch()) });
     actor.start();
     await waitFor(actor, (s) => s.value === "ready");
     expect(actor.getSnapshot().value).toBe("ready");
     expect(actor.getSnapshot().context.org).toEqual({
       id: "org-1",
-      name: null,
+      name: "Acme Data",
     });
     expect(actor.getSnapshot().context.user.email).toBe(MAYA_PROFILE.email);
   });
 
-  it("a new user with no existing_org_id reaches needs_org with identity populated", async () => {
+  it("a new user (backend reports no org, 404) reaches needs_org with identity populated", async () => {
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });
     actor.start();
@@ -143,10 +153,10 @@ describe("verifying [hasOrg] shortcut (B7)", () => {
     expect(actor.getSnapshot().context.org.id).toBeNull();
   });
 
-  it("treats an empty-string existing_org_id as no org (new user → needs_org)", async () => {
+  it("treats a backend org response with a blank id as no org (new user → needs_org)", async () => {
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, {
-      input: inputWith(okFetch(), { existing_org_id: "" }),
+      input: inputWith(returningFetch({ id: "", name: "" })),
     });
     actor.start();
     await waitFor(actor, (s) => s.value === "needs_org");

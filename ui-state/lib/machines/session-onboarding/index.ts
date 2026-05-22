@@ -12,8 +12,9 @@
 //   - getOrgAndReissue (the config-agnostic org-create + reissue resolver that
 //     folds the forced-failure harness in via input.force_reissue_failures; the
 //     machine wraps it as the default createOrgAndReissue actor)
-//   - getWorkOSUserInfo (the config-agnostic WorkOS-userinfo re-verify resolver;
-//     the machine wraps it as the default workosUserInfo actor)
+//   - getWorkOSUserInfo (WorkOS-userinfo re-verify, identity only), getUserOrg
+//     (backend /api/orgs/me org lookup — the org SSOT), loadVerifiedSession
+//     (combines them; the machine wraps it as the default `loadSession` actor)
 //   - RequestClient (= typeof fetch — the injected I/O port alias) +
 //     SessionOnboardingDeps (the { request_client } bundle threaded into input)
 //   - all context / event / state / actor I-O types
@@ -27,7 +28,11 @@ export {
   createSessionOnboardingMachine,
   getOrgAndReissue,
   getSilentReauth,
+  getUserOrg,
   getWorkOSUserInfo,
+  type LoadSessionActor,
+  type LoadSessionInput,
+  loadVerifiedSession,
   type OrgValidationInlineError,
   reissueOrgJwtFn,
   type RequestClient,
@@ -39,7 +44,6 @@ export {
   type SilentReauthInput,
   type SilentReauthOutcome,
   type UnderlyingCauseTag,
+  type VerifiedSession,
   type WorkOSProfile,
-  type WorkOSUserInfoActor,
-  type WorkOSUserInfoInput,
 } from "./machine.ts";

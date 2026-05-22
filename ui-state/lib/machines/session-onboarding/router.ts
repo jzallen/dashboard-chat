@@ -113,13 +113,14 @@ export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
  *
  * `/begin` validates the trusted-ingress DTO (identity from headers, never a
  * body claim — the ADR-041 ACL rule) and seeds the `BeginFlowInput` with
- * composition-root inputs rather than request data: `config`, the
- * `request_client` I/O port, and the verified `existing_org_id` (the `X-Org-Id`
- * claim — the SOLE source of the `[hasOrg]` returning-user shortcut, FIX D1; an
- * empty value means "no org" / new user). The force-reissue-failures harness
- * knob is gated by `shouldInject` (closed-by-default in production, ENVIRONMENT ×
- * flag, ADR-035); its verdict decides whether the body's `force_reissue_failures`
- * count is threaded through to drive `getOrgAndReissue`'s attempt-vs-budget path.
+ * composition-root inputs rather than request data: `config` and the
+ * `request_client` I/O port. The `[hasOrg]` org binding is NOT taken from the
+ * `X-Org-Id` header — that cached JWT claim is logged for audit only; the
+ * authoritative org is loaded from the backend (`GET /api/orgs/me`, the org
+ * SSOT) during `verifying`. The force-reissue-failures harness knob is gated by
+ * `shouldInject` (closed-by-default in production, ENVIRONMENT × flag, ADR-035);
+ * its verdict decides whether the body's `force_reissue_failures` count is
+ * threaded through to drive `getOrgAndReissue`'s attempt-vs-budget path.
  *
  * `/event` closed-by-default-gates the `__force_failure__` / `__expire_token__`
  * harness events (403 when the gate is disabled) so production cannot bypass real
@@ -163,6 +164,17 @@ export function buildSessionOnboardingRouter(
     }
     const request = parsed.data;
 
+    // X-Org-Id is a cached JWT claim, NOT the authoritative org state — the
+    // `[hasOrg]` decision is loaded from the backend (`/api/orgs/me`) during
+    // `verifying`. Log the claimed org here for audit so claimed-vs-resolved is
+    // traceable, but do not feed it into the flow.
+    logTransition({
+      event: "session_onboarding.org_claim",
+      correlation_id: request.referenceCode,
+      principal_id: request.userId,
+      claimed_org_id: request.orgId || null,
+    });
+
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
       body: (rawBody ?? {}) as Record<string, unknown>,
       correlationId: request.referenceCode,
@@ -173,7 +185,6 @@ export function buildSessionOnboardingRouter(
         machine: SESSION_ONBOARDING_MACHINE,
         principal_id: request.userId,
         bearer_token: request.bearerToken,
-        existing_org_id: request.orgId || null,
         correlation_id: request.referenceCode,
         existing_org_names: request.body.existing_org_names,
         config,

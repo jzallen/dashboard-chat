@@ -62,10 +62,18 @@ const PROFILE_KAI = {
 
 const CONFIG = makeTestConfig();
 
-/** Mock fetch that re-verifies any bearer OK with the given profile and
- *  creates/reissues orgs OK. */
+/** Mock fetch for a NEW user — re-verify OK, backend /api/orgs/me 404 (no org),
+ *  create/reissue OK. */
 function okFetch(profile = PROFILE_MAYA): RequestClient {
   return makeMockFetch({ profile });
+}
+
+/** Mock fetch for a RETURNING user — backend /api/orgs/me reports an org. */
+function returningFetch(
+  org: { id: string; name: string },
+  profile = PROFILE_MAYA,
+): RequestClient {
+  return makeMockFetch({ profile, existingOrg: org });
 }
 
 function buildOrchestrator(): FlowOrchestrator {
@@ -442,8 +450,9 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
       new FlowActorRegistry(),
     );
 
-    // Returning user: seed existing_org_id so begin lands DIRECTLY in `ready`
-    // via the [hasOrg] shortcut (no creating_org, no org_form_submitted).
+    // Returning user: the backend (/api/orgs/me) reports an org, so begin lands
+    // DIRECTLY in `ready` via the [hasOrg] shortcut (no creating_org, no
+    // org_form_submitted).
     const principal = "user_returning";
     const correlation = "R-hasorg";
     const beginOrchestrator = new BeginFlowOrchestrator(
@@ -455,10 +464,14 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
         machine: "session-onboarding",
         principal_id: principal,
         bearer_token: "tok-returning",
-        existing_org_id: "org-returning",
         correlation_id: correlation,
         config: CONFIG,
-        deps: { request_client: okFetch(PROFILE_MAYA) },
+        deps: {
+          request_client: returningFetch({
+            id: "org-returning",
+            name: "Acme Data",
+          }),
+        },
       },
       orch.deps.eventLog,
       () => {},

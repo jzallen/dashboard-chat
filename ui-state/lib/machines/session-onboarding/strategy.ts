@@ -274,7 +274,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     this.flow_id = `${input.machine}:${input.principal_id}`;
     this.correlationId = input.correlation_id;
     // Every actor is config/input-driven (no `.provide(...)`): the fetch-driven
-    // actors (workosUserInfo / createOrgAndReissue) read their I/O port from
+    // actors (loadSession / createOrgAndReissue) read their I/O port from
     // input.deps.request_client, and silentReauth reads its outcome from
     // input.silent_reauth_outcome (threaded into the machine input below).
     const machine = createSessionOnboardingMachine();
@@ -283,9 +283,6 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         correlation_id: input.correlation_id,
         principal_id: input.principal_id,
         bearer_token: input.bearer_token,
-        // Seed the verified X-Org-Id claim into context so the [hasOrg] guard
-        // sees it BEFORE the re-verify invoke settles (FIX D1).
-        existing_org_id: input.existing_org_id,
         existing_org_names: input.existing_org_names,
         // Env config (workosUrl + backendUrl) for the re-verify + org-create
         // resolvers, sourced from the composition root — keeps the resolvers
@@ -348,16 +345,16 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
       return;
     }
 
-    // ready (returning user) or needs_org (new user): emit the
-    // self-contained session_started carrying the harvested verified user. The
-    // org comes from the verified X-Org-Id claim (input.existing_org_id), NOT
-    // the harvester/snapshot (FIX D1) — re-verify no longer returns an org. The
-    // org NAME is not in the header, so name is null at t=0 (the projection
-    // tolerates a null name). The projection reducer replicates the [hasOrg]
+    // ready (returning user) or needs_org (new user): emit the self-contained
+    // session_started carrying the harvested verified user + org. The org was
+    // loaded from the backend (`/api/orgs/me`, the org SSOT) during `verifying`
+    // and assigned into the snapshot (id AND real name) — so it comes from the
+    // sanctioned harvester, like the user, not a header claim. New users have no
+    // org (id null) → emit null. The projection reducer replicates the [hasOrg]
     // guard (org?.id ? ready : needs_org).
     const harvested = harvestSettledLoginState(actor);
-    const org = input.existing_org_id
-      ? { id: input.existing_org_id, name: null }
+    const org = harvested.org.id
+      ? { id: harvested.org.id, name: harvested.org.name }
       : null;
     const startedEvent: FlowEvent = {
       ts: new Date().toISOString(),

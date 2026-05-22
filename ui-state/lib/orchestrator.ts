@@ -295,12 +295,10 @@ export interface BeginFlowInput {
   machine: string;
   principal_id: string;
   /** The forwarded Bearer (L4) — re-verified against WorkOS /oauth/userinfo.
-   *  Identity comes from the verified token, never a client body claim. */
+   *  Identity comes from the verified token, never a client body claim. The
+   *  `[hasOrg]` org binding is loaded from the backend (`/api/orgs/me`, the org
+   *  SSOT) during `verifying`, NOT from the `X-Org-Id` header (audit-only). */
   bearer_token: string;
-  /** The verified org claim auth-proxy injects via `X-Org-Id` (FIX D1). It is
-   *  the SOLE source for the `[hasOrg]` returning-user shortcut — seeded into
-   *  the machine context. Empty / null means "no org" (new user). */
-  existing_org_id?: string | null;
   correlation_id: string;
   /** Seed for the duplicate-org-name fixture path. */
   existing_org_names?: string[];
