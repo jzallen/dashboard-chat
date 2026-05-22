@@ -5,13 +5,6 @@ import { type Config, loadConfig } from "./config.ts";
 import { resolveActiveScope } from "./lib/active-scope.ts";
 import { resultToJson } from "./lib/hexagonal-transport/flow-router.ts";
 import {
-  createForcedFailureOrgAndReissueActor,
-  createOrgAndReissueActor,
-  createOrgFn,
-  reissueOrgJwtFn,
-} from "./lib/machines/session-onboarding/index.ts";
-import {
-  type BuildLoginDeps,
   buildSessionOnboardingRouter,
   type SessionOnboardingRouterContext,
 } from "./lib/machines/session-onboarding/router.ts";
@@ -21,8 +14,6 @@ import {
   FlowOrchestrator,
 } from "./lib/orchestrator.ts";
 import { type FlowEventLog, selectFlowEventLog } from "./lib/persistence/redis.ts";
-
-export type { BuildLoginDeps } from "./lib/machines/session-onboarding/router.ts";
 
 /**
  * Mint a reference code — the support-facing trace handle a flow surfaces to
@@ -62,22 +53,30 @@ function readBearerToken(c: Context): string {
  * Compose the `/flow/session-onboarding` router into a fresh Hono app.
  *
  * This is the composition seam: the production entry point calls it with
- * config-derived deps + the selected event-log; the in-process tests call it
- * with stubbed deps + a noop event-log. A single shared `FlowActorRegistry`
+ * config + the real `globalThis.fetch` (the default) + the selected event-log;
+ * the in-process tests call it with placeholder config + a mock `fetch` (the
+ * `requestClient` opt) + a noop event-log. A single shared `FlowActorRegistry`
  * backs BOTH the `BeginFlowOrchestrator` (drives `/begin`) and the
  * `FlowOrchestrator` (drives `/event`, `/freeze`, `/thaw`, `/projection`), so
  * an actor begun via `/begin` is reachable by subsequent `/event` posts.
  */
 export function buildSessionOnboardingApp(opts: {
   eventLog: FlowEventLog;
-  buildLoginDeps: BuildLoginDeps;
   logTransition?: (record: Record<string, unknown>) => void;
   /** Env config threaded into the machine input so the `getWorkOSUserInfo`
-   *  re-verify resolver reads its `workosUrl` from input (not a closure).
-   *  Optional — the in-process tests stub `workosUserInfo` and pass none. */
+   *  re-verify resolver + the `getOrgAndReissue` org-create resolver read their
+   *  URLs (workosUrl/backendUrl) from input (not a closure). The in-process
+   *  tests carry placeholder URLs because the injected mock `fetch` decides the
+   *  responses. */
   config?: Config | null;
+  /** The I/O port (the `fetch` library) the re-verify + org-create resolvers
+   *  call directly, threaded into the machine input as `deps.request_client`.
+   *  Defaults to `globalThis.fetch` so production needs no extra wiring; the
+   *  in-process tests inject a mock `fetch`. */
+  requestClient?: typeof fetch;
 }): Hono {
-  const { eventLog, buildLoginDeps } = opts;
+  const { eventLog } = opts;
+  const requestClient = opts.requestClient ?? globalThis.fetch;
   const logTransition =
     opts.logTransition ??
     ((record: Record<string, unknown>): void => {
@@ -113,11 +112,11 @@ export function buildSessionOnboardingApp(opts: {
     beginOrchestrator,
     flowOrchestrator,
     resolveActiveScope,
-    buildLoginDeps,
     eventLog,
     logTransition,
     resultToJson,
     opts.config ?? null,
+    requestClient,
   );
 
   const app = new Hono();
@@ -137,27 +136,20 @@ export function buildSessionOnboardingApp(opts: {
 
 /**
  * Production entry point: validate the environment (`loadConfig` throws at
- * startup if a required var is missing) and build the app with real
- * config-derived deps. The forced-failure harness knob (already gated at the
- * router edge) swaps in a failure-injecting `createOrgAndReissue`.
+ * startup if a required var is missing) and build the app with real config.
+ *
+ * The only injected I/O port is `request_client` (= the `fetch` library);
+ * production relies on the `globalThis.fetch` default, so no extra wiring is
+ * needed. `getWorkOSUserInfo` + `getOrgAndReissue` read their URLs from the
+ * config threaded into the machine input and perform their network calls through
+ * `deps.request_client`; the forced-failure harness knob (already gated at the
+ * router edge) is threaded as `force_reissue_failures` and folded into
+ * `getOrgAndReissue` via attempt-vs-budget.
  */
 function buildProductionApp(): Hono {
   const config = loadConfig();
   const eventLog = selectFlowEventLog(config.redisUrl);
-  const buildLoginDeps: BuildLoginDeps = ({ forceReissueFailures }) => ({
-    // workosUserInfo is NOT injected here — the machine defaults to the real
-    // `getWorkOSUserInfo` resolver, which reads its workosUrl from the input
-    // (config threaded below). Only the org-create actor needs config-closure.
-    createOrgAndReissue:
-      forceReissueFailures && forceReissueFailures > 0
-        ? createForcedFailureOrgAndReissueActor(
-            createOrgFn(config),
-            reissueOrgJwtFn(config),
-            forceReissueFailures,
-          )
-        : createOrgAndReissueActor(config),
-  });
-  return buildSessionOnboardingApp({ eventLog, buildLoginDeps, config });
+  return buildSessionOnboardingApp({ eventLog, config });
 }
 
 const app =

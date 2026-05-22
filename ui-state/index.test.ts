@@ -3,67 +3,42 @@
 // These map directly to the Event-Model Phase-4 Given/When/Then specs
 // (docs/feature/session-onboarding/design/event-model.md). They drive the
 // in-process Hono app via `app.fetch` (no live socket, no compose stack),
-// stub the `workosUserInfo` re-verify actor at the driven-port boundary, and
-// assert on the public projection shape — the single read contract.
+// inject a MOCK `fetch` as the I/O port (deps.request_client) so the re-verify
+// + org-create resolvers exercise their real code paths against canned
+// `Response`s, and assert on the public projection shape — the single read
+// contract.
 //
 // Port-to-port: every test enters through the `/flow/session-onboarding/*`
 // driving port (the ACL router) and asserts at the projection / FlowEventLog
-// driven-port boundary. The only test double is `workosUserInfo`, the WorkOS
-// `/oauth/userinfo` re-verification port (a true external boundary, L3/L4).
+// driven-port boundary. The only test double is the mock `fetch` at the WorkOS
+// `/oauth/userinfo` + backend org-create driven-port boundary (a true external
+// boundary, L3/L4).
 
 import { afterEach, describe, expect, it } from "vitest";
-import { fromPromise } from "xstate";
 
-import {
-  type BuildLoginDeps,
-  buildSessionOnboardingApp,
-} from "./index.ts";
-import type {
-  CreateOrgAndReissueActor,
-  CreateOrgAndReissueInput,
-  CreateOrgAndReissueOutput,
-  WorkOSProfile,
-  WorkOSUserInfoActor,
-} from "./lib/machines/session-onboarding/index.ts";
+import { buildSessionOnboardingApp } from "./index.ts";
+import type { RequestClient } from "./lib/machines/session-onboarding/index.ts";
 import {
   createNoopFlowEventLog,
   type FlowEventLog,
 } from "./lib/persistence/redis.ts";
+import { makeMockFetch, makeTestConfig } from "./lib/testing/test-config.ts";
 
 const MAYA_PROFILE = {
   email: "maya@acme",
-  display_name: "Maya Chen",
+  name: "Maya Chen",
 };
 
-/**
- * A re-verify actor that returns Maya's IDENTITY ONLY (email + display_name).
- * The re-verify call no longer carries an app-level org binding — real WorkOS
- * `/oauth/userinfo` does not return one (FIX D1). The org for the returning-user
- * `[hasOrg]` shortcut comes from the verified `X-Org-Id` header instead.
- */
-function reverifyOk(): WorkOSUserInfoActor {
-  return fromPromise(
-    async (): Promise<WorkOSProfile> => ({
-      email: MAYA_PROFILE.email,
-      display_name: MAYA_PROFILE.display_name,
-    }),
-  );
+/** Mock fetch that re-verifies any bearer OK with Maya's identity and
+ *  creates/reissues orgs OK (org id "org-1"). */
+function okFetch(): RequestClient {
+  return makeMockFetch({ profile: MAYA_PROFILE, orgId: "org-1" });
 }
 
-/** A re-verify actor that rejects (WorkOS /oauth/userinfo 401). */
-function reverifyRejected(): WorkOSUserInfoActor {
-  return fromPromise(async (): Promise<WorkOSProfile> => {
-    throw new Error("workos userinfo failed: 401");
-  });
-}
-
-function succeedingCreateOrg(): CreateOrgAndReissueActor {
-  return fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>(
-    async ({ input }) => ({
-      org_id: "org-1",
-      org_name: input.org_name,
-    }),
-  );
+/** Mock fetch that answers 401 for the designated bad bearer at
+ *  /oauth/userinfo, driving the session_rejected path. */
+function rejectingFetch(badToken: string): RequestClient {
+  return makeMockFetch({ profile: MAYA_PROFILE, orgId: "org-1", badToken });
 }
 
 interface Scenario {
@@ -71,18 +46,12 @@ interface Scenario {
   eventLog: FlowEventLog;
 }
 
-function buildScenario(opts: {
-  workosUserInfo: WorkOSUserInfoActor;
-  createOrgAndReissue?: CreateOrgAndReissueActor;
-}): Scenario {
+function buildScenario(opts: { requestClient: RequestClient }): Scenario {
   const eventLog = createNoopFlowEventLog();
-  const buildLoginDeps: BuildLoginDeps = () => ({
-    workosUserInfo: opts.workosUserInfo,
-    createOrgAndReissue: opts.createOrgAndReissue ?? succeedingCreateOrg(),
-  });
   const app = buildSessionOnboardingApp({
     eventLog,
-    buildLoginDeps,
+    config: makeTestConfig(),
+    requestClient: opts.requestClient,
     logTransition: () => undefined,
   });
   return { app, eventLog };
@@ -142,9 +111,7 @@ afterEach(() => {
 // session_started carries `org={id, name:null}`.
 describe("Spec 1: returning user with an org lands ready", () => {
   it("emits session_started{user, org} from the X-Org-Id header and projects ready with user populated", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     const proj = await begin(active.app, {
       userId: "u1",
       bearer: "tok-1",
@@ -159,9 +126,7 @@ describe("Spec 1: returning user with an org lands ready", () => {
   });
 
   it("records exactly one session_started event carrying the verified user + the header org", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     await begin(active.app, { userId: "u1", bearer: "tok-1", orgId: "org-1" });
 
     const events = await active.eventLog.read("session-onboarding:u1");
@@ -178,9 +143,7 @@ describe("Spec 1: returning user with an org lands ready", () => {
 // No X-Org-Id header → new user → org:null → needs_org.
 describe("Spec 2: new user with no org reaches needs_org with identity populated", () => {
   it("emits session_started{user, org:null} and projects needs_org with email non-null", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     const proj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
     expect(proj.state).toBe("needs_org");
@@ -191,9 +154,7 @@ describe("Spec 2: new user with no org reaches needs_org with identity populated
   });
 
   it("treats an empty-string X-Org-Id as no org (new user → needs_org)", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     const proj = await begin(active.app, {
       userId: "u2",
       bearer: "tok-2",
@@ -208,9 +169,7 @@ describe("Spec 2: new user with no org reaches needs_org with identity populated
 // ── Spec 3 — Re-verification failure → session_rejected (NEW rejection path) ──
 describe("Spec 3: re-verification failure rejects the session", () => {
   it("projects session_rejected over HTTP 200 with no session_started and no user state", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyRejected(),
-    });
+    active = buildScenario({ requestClient: rejectingFetch("tok-bad") });
     const proj = await begin(active.app, { userId: "u3", bearer: "tok-bad" });
 
     expect(proj.state).toBe("session_rejected");
@@ -226,9 +185,7 @@ describe("Spec 3: re-verification failure rejects the session", () => {
 // ── Spec 4 — Org submission from needs_org reaches ready (preserved) ──
 describe("Spec 4: org submission from needs_org reaches ready", () => {
   it("creates the org, reaches ready, and the user stays populated", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
     expect(beginProj.state).toBe("needs_org");
 
@@ -256,9 +213,7 @@ describe("Spec 4: org submission from needs_org reaches ready", () => {
 // ── Spec 5 — Invalid org name keeps needs_org (preserved, renamed state) ──
 describe("Spec 5: invalid org name keeps needs_org", () => {
   it("surfaces a validation error and stays in needs_org", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
     const res = await active.app.fetch(
@@ -286,9 +241,7 @@ describe("Spec 5: invalid org name keeps needs_org", () => {
 // ── Legacy-path alias — login-and-org-setup must still resolve (LEAF-2) ──
 describe("Legacy alias: /flow/session-onboarding accepts the legacy machine name on /event", () => {
   it("resolves the legacy login-and-org-setup machine name without 404", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
     const res = await active.app.fetch(
@@ -309,9 +262,7 @@ describe("Legacy alias: /flow/session-onboarding accepts the legacy machine name
   });
 
   it("does not 404 on the legacy /flow/login-and-org-setup HTTP path", async () => {
-    active = buildScenario({
-      workosUserInfo: reverifyOk(),
-    });
+    active = buildScenario({ requestClient: okFetch() });
     const res = await active.app.fetch(
       new Request("http://t/flow/login-and-org-setup/begin", {
         method: "POST",

@@ -42,7 +42,7 @@ import type {
   FlowOrchestrator,
 } from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
-import type { SessionOnboardingDeps } from "./index.ts";
+import type { RequestClient } from "./index.ts";
 import { SessionOnboardingBeginStrategy } from "./strategy.ts";
 
 /** The canonical machine name (ADR-039) — also the wire path segment. */
@@ -66,17 +66,6 @@ export interface SessionOnboardingRouterContext {
     body: unknown;
   };
 }
-
-/**
- * Factory the composition root injects so the router can hand the orchestrator
- * pre-built machine deps. The concretions (WorkOS userinfo re-verify, org-create
- * + reissue, silent reauth) stay in the composition root; the router only
- * decides whether to request the forced-failure variant via
- * `forceReissueFailures` (the harness knob, already gated at the edge).
- */
-export type BuildLoginDeps = (opts: {
-  forceReissueFailures?: number;
-}) => SessionOnboardingDeps;
 
 /**
  * Total mapper from the orchestrator's Result API to an HTTP Response. The
@@ -118,11 +107,11 @@ export function buildSessionOnboardingRouter(
   orchestrator: BeginFlowOrchestrator,
   flowOrchestrator: FlowOrchestrator,
   resolveActiveScope: ResolveActiveScope,
-  buildLoginDeps: BuildLoginDeps,
   eventLog: FlowEventLog,
   logTransition: (record: Record<string, unknown>) => void,
   serializeResult: SerializeResult,
   config: Config | null,
+  requestClient: RequestClient,
 ): Hono<SessionOnboardingRouterContext> {
   router.post("/begin", async (c) => {
     const rawBody = c.get("body");
@@ -141,21 +130,17 @@ export function buildSessionOnboardingRouter(
     }
     const request = parsed.data;
 
-    // force-reissue-failures gate: the harness knob that wraps
-    // createOrgAndReissue with a failure-injecting counter. Resolve it into
-    // machine deps HERE (via the injected factory). Closed-by-default in
-    // production (ENVIRONMENT × flag, ADR-035).
+    // force-reissue-failures gate: the harness knob driving getOrgAndReissue's
+    // attempt-vs-budget forced-failure path. The gate result feeds the
+    // BeginFlowInput's force_reissue_failures (threaded into the machine input),
+    // NOT a deps factory. Closed-by-default in production (ENVIRONMENT × flag,
+    // ADR-035).
     //
     // TODO: consider replacing with contract test and mocked external dependencies
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
       body: (rawBody ?? {}) as Record<string, unknown>,
       correlationId: request.referenceCode,
       serviceName: "ui-state",
-    });
-    const deps = buildLoginDeps({
-      forceReissueFailures: reissueFailuresAllowed
-        ? request.body.force_reissue_failures
-        : undefined,
     });
     const strategy = new SessionOnboardingBeginStrategy(
       {
@@ -167,11 +152,19 @@ export function buildSessionOnboardingRouter(
         existing_org_id: request.orgId || null,
         correlation_id: request.referenceCode,
         existing_org_names: request.body.existing_org_names,
-        // Env config for the re-verify resolver — injected by the composition
-        // root, not derived from the request.
+        // Env config for the re-verify + org-create resolvers — injected by the
+        // composition root, not derived from the request.
         config,
+        // The I/O port (the `fetch` library) the resolvers call directly,
+        // injected by the composition root (defaults to globalThis.fetch in
+        // production). Threaded into the machine input as deps.request_client.
+        deps: { request_client: requestClient },
+        // Forced-failure budget, gated at the edge: pass through only when the
+        // gate is enabled; otherwise null (no forced failures in production).
+        force_reissue_failures: reissueFailuresAllowed
+          ? request.body.force_reissue_failures ?? null
+          : null,
       },
-      deps,
       eventLog,
       logTransition,
     );

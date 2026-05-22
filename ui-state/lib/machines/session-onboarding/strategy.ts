@@ -25,10 +25,7 @@ import type {
 import { harvestSettledLoginState } from "../../orchestrator-harvester.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { FlowEvent } from "../../projection.ts";
-import {
-  createSessionOnboardingMachine,
-  type SessionOnboardingDeps,
-} from "./index.ts";
+import { createSessionOnboardingMachine } from "./index.ts";
 
 /**
  * Canonical machine-name (ADR-039) — the FlowStrategy registry key. The
@@ -268,7 +265,6 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
 
   constructor(
     input: BeginFlowInput,
-    deps: SessionOnboardingDeps,
     eventLog: FlowEventLog,
     logTransition: (record: Record<string, unknown>) => void,
   ) {
@@ -277,7 +273,11 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     this.logTransition = logTransition;
     this.flow_id = `${input.machine}:${input.principal_id}`;
     this.correlationId = input.correlation_id;
-    const machine = createSessionOnboardingMachine(deps);
+    // Every actor is config/input-driven (no `.provide(...)`): the fetch-driven
+    // actors (workosUserInfo / createOrgAndReissue) read their I/O port from
+    // input.deps.request_client, and silentReauth reads its outcome from
+    // input.silent_reauth_outcome (threaded into the machine input below).
+    const machine = createSessionOnboardingMachine();
     this.actor = createActor(machine, {
       input: {
         correlation_id: input.correlation_id,
@@ -287,9 +287,21 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         // sees it BEFORE the re-verify invoke settles (FIX D1).
         existing_org_id: input.existing_org_id,
         existing_org_names: input.existing_org_names,
-        // Env config (workosUrl) for the re-verify resolver, sourced from the
-        // composition root — keeps `getWorkOSUserInfo` config-agnostic.
+        // Env config (workosUrl + backendUrl) for the re-verify + org-create
+        // resolvers, sourced from the composition root — keeps the resolvers
+        // config-agnostic.
         config: input.config ?? null,
+        // The I/O port (the `fetch` library) the resolvers call directly,
+        // threaded the same path as config: composition root → BeginFlowInput
+        // → here → machine input → context → invoke input → resolver.
+        deps: input.deps ?? null,
+        // Failure-simulation budget (already gated at the HTTP edge); folded
+        // into getOrgAndReissue via attempt-vs-budget.
+        force_reissue_failures: input.force_reissue_failures ?? null,
+        // Silent-reauth outcome (config/input-driven, no `.provide(...)`). A
+        // harness/test control set only by tests; absent ⇒ machine defaults to
+        // "pending" (the production silent-reauth noop).
+        silent_reauth_outcome: input.silent_reauth_outcome ?? "pending",
       },
     });
   }

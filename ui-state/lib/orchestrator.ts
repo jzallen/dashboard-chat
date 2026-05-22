@@ -32,13 +32,17 @@
 
 import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
-import type { ResourceType } from "./active-scope.ts";
 import type { Config } from "../config.ts";
+import type { ResourceType } from "./active-scope.ts";
 import { err,ok, type Result } from "./flow-result.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import { type SessionChatMachineDeps } from "./machines/session-chat/index.ts";
 import { sessionChatStrategy } from "./machines/session-chat/strategy.ts";
+import type {
+  SessionOnboardingDeps,
+  SilentReauthOutcome,
+} from "./machines/session-onboarding/index.ts";
 import { sessionOnboardingStrategy } from "./machines/session-onboarding/strategy.ts";
 import {
   harvestSettledFreezeState,
@@ -300,11 +304,27 @@ export interface BeginFlowInput {
   correlation_id: string;
   /** Seed for the duplicate-org-name fixture path. */
   existing_org_names?: string[];
-  /** Env config (provides `workosUrl`) seeded into the machine input so the
-   *  `getWorkOSUserInfo` re-verify resolver reads its URL from input rather
-   *  than a closure. Supplied by the composition root; null in tests that stub
-   *  `workosUserInfo`. */
+  /** Env config (provides `workosUrl` + `backendUrl`) seeded into the machine
+   *  input so the `getWorkOSUserInfo` re-verify resolver + the
+   *  `getOrgAndReissue` org-create resolver read their URLs from input rather
+   *  than a closure. Supplied by the composition root; in tests it carries
+   *  placeholder URLs because the injected mock `fetch` decides the responses. */
   config?: Config | null;
+  /** The I/O port (the `fetch` library) bundle, threaded the SAME PATH as
+   *  `config`: composition root → here → machine input → context → invoke input
+   *  → resolver. The resolvers call `deps.request_client(url, init)` directly. In
+   *  tests it carries a mock `fetch`. */
+  deps?: SessionOnboardingDeps | null;
+  /** Failure-simulation budget (ADR-035): the count of synthetic reissue
+   *  failures `getOrgAndReissue` injects (attempt-vs-budget) before succeeding.
+   *  Already gated at the HTTP edge by the router; threaded into the machine
+   *  input. Null/absent ⇒ no forced failures. */
+  force_reissue_failures?: number | null;
+  /** Drives the `expired_token` silent-reauth resolver (config/input-driven —
+   *  no actor injection). A harness/test control: set ONLY by tests, never by
+   *  the production request path (nothing in the router exposes it). Absent ⇒
+   *  the machine defaults to "pending" (the production silent-reauth noop). */
+  silent_reauth_outcome?: SilentReauthOutcome;
 }
 
 /**

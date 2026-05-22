@@ -29,6 +29,23 @@ import {
   validateOrgName,
 } from "../validation.ts";
 
+/**
+ * The I/O port for this machine's network side-effects: literally the `fetch`
+ * function (NOT a custom wrapper interface). Injected via `input.deps.request_client`
+ * — threaded the SAME PATH `config` takes (composition root → BeginFlowInput.deps
+ * → machine input → context → invoke `input:` mapper → actor input → resolver).
+ * Resolvers call `request_client(url, init)` directly. The local alias documents
+ * the surface without inventing a new abstraction over `fetch`.
+ */
+export type RequestClient = typeof fetch;
+
+/** The injected I/O port bundle. Mirrors `config`'s `Config | null` nullable +
+ *  fail-fast pattern: null in tests that stub the actor; resolvers fail fast
+ *  with a clear message when `request_client` is absent. */
+export interface SessionOnboardingDeps {
+  request_client: RequestClient;
+}
+
 export type SessionOnboardingState =
   | "verifying"
   | "needs_org"
@@ -38,6 +55,20 @@ export type SessionOnboardingState =
   | "expired_token"
   | "error_terminal"
   | "session_rejected";
+
+/**
+ * The silent-reauth outcome the machine resolves on `expired_token` — driven by
+ * the `silent_reauth_outcome` input (config/input-driven, like every other
+ * actor). NOT an injected actor:
+ *   - "success" → resolve `{ ok: true }`            → back to `ready`.
+ *   - "fail"    → throw `silent-reauth-failed`      → `error_recoverable`.
+ *   - "pending" → never resolve (production default) → stays in `expired_token`.
+ *
+ * Production stays at "pending": `expired_token` is harness-gated (the
+ * `__expire_token__` side-channel is closed by the failure-sim gate), and real
+ * silent re-auth is handled by auth-proxy — ui-state only learns the outcome.
+ */
+export type SilentReauthOutcome = "success" | "fail" | "pending";
 
 export type { UnderlyingCauseTag } from "../validation.ts";
 
@@ -56,6 +87,22 @@ export interface SessionOnboardingContext {
    *  the machine input so the `workosUserInfo` re-verify invoke gets its URL
    *  from input rather than a closure. Null in tests that stub the actor. */
   config: Config | null;
+  /** The I/O port (the `fetch` library), threaded composition root → machine
+   *  input → context → invoke `input:` mapper → actor input → resolver. The
+   *  resolvers call `deps.request_client(url, init)` directly. Mirrors the
+   *  `config: Config | null` nullable + fail-fast pattern — null in tests that
+   *  stub the actor (the stub ignores it). */
+  deps: SessionOnboardingDeps | null;
+  /** Failure-simulation budget threaded from the machine input → the
+   *  `creating_org` invoke input so `getOrgAndReissue` can fold the forced-
+   *  failure harness in statelessly (attempt-vs-budget). Null ⇒ no forced
+   *  failures. */
+  force_reissue_failures: number | null;
+  /** Drives the `expired_token` silent-reauth resolver (config/input-driven,
+   *  like every other actor — no `.provide(...)` injection). Threaded machine
+   *  input → context → the `expired_token` invoke input → `getSilentReauth`.
+   *  Defaults to "pending" (production noop). */
+  silent_reauth_outcome: SilentReauthOutcome;
   user: { email: string | null; display_name: string | null; first_name: string | null };
   org: { id: string | null; name: string | null };
   /** The org name Maya last submitted -- preserved across `creating_org`
@@ -113,6 +160,9 @@ export interface WorkOSUserInfoInput {
    *  → machine input → context → this invoke input. Null only in tests that
    *  stub `workosUserInfo` (the stub ignores it). */
   config: Config | null;
+  /** The I/O port (the `fetch` library) the resolver calls directly. Threaded
+   *  the same path as `config`. Null only in tests that stub `workosUserInfo`. */
+  deps: SessionOnboardingDeps | null;
 }
 
 export type WorkOSUserInfoActor = ReturnType<
@@ -124,6 +174,23 @@ export interface CreateOrgAndReissueInput {
   principal_id: string;
   correlation_id: string;
   attempt: number;
+  /** Env config (provides `backendUrl` + the dev-user header fixture) threaded
+   *  composition root → machine input → context → invoke input so the
+   *  `getOrgAndReissue` resolver stays config-agnostic — no factory closure.
+   *  Null only when the machine is created without config (the resolver then
+   *  throws a clear "config missing" error). */
+  config: Config | null;
+  /** The I/O port (the `fetch` library) the resolver passes into `createOrgFn`
+   *  + `reissueOrgJwtFn`. Threaded the same path as `config`. Null only in tests
+   *  that stub `createOrgAndReissue` (the resolver then throws a clear
+   *  "request_client missing" error). */
+  deps: SessionOnboardingDeps | null;
+  /** Failure-simulation budget (ADR-035): when set, `getOrgAndReissue` throws a
+   *  partial-setup error for attempts 1..N (org is ALWAYS created first, so the
+   *  "org row exists even when reissue fails" invariant holds), then succeeds.
+   *  Folds the old closure-counter harness into a stateless attempt-vs-budget
+   *  check. Null/0/absent ⇒ no forced failures. */
+  force_reissue_failures?: number | null;
 }
 
 export interface CreateOrgAndReissueOutput {
@@ -136,34 +203,46 @@ export type CreateOrgAndReissueActor = ReturnType<
 >;
 
 /**
+ * Silent re-auth actor input — invoked from `expired_token`. The `outcome` is
+ * threaded from `context.silent_reauth_outcome` (config/input-driven, NOT an
+ * injected actor): "success" → resolve, "fail" → throw, "pending" → never
+ * resolve. Per ADR-028 the input is minimal because the real re-auth credential
+ * lookup is handled by auth-proxy (the ui-state tier only learns the outcome).
+ */
+export interface SilentReauthInput {
+  correlation_id: string;
+  outcome: SilentReauthOutcome;
+}
+
+/**
  * Silent re-auth actor — invoked from `expired_token`. On success the
  * machine transitions back to `ready`; on failure it falls through to
- * `error_recoverable` with tag `silent-reauth-failed`. Per ADR-028 this
- * actor's input/output are minimal because the re-auth credential lookup
- * is handled by auth-proxy (the ui-state tier only learns about the
- * outcome).
+ * `error_recoverable` with tag `silent-reauth-failed`.
  */
 export type SilentReauthActor = ReturnType<
-  typeof fromPromise<{ ok: true }, { correlation_id: string }>
+  typeof fromPromise<{ ok: true }, SilentReauthInput>
 >;
-
-export interface SessionOnboardingDeps {
-  /** Optional — defaults to the real `getWorkOSUserInfo` resolver, which reads
-   *  its `workosUrl` from the actor input (config threaded via the machine
-   *  input). Tests inject a stub here to override. */
-  workosUserInfo?: WorkOSUserInfoActor;
-  createOrgAndReissue: CreateOrgAndReissueActor;
-  /** Optional — when absent, expired_token has no invocation (matches the
-   *  pre-Step-03-01 behavior of an empty state body). */
-  silentReauth?: SilentReauthActor;
-}
 
 const REISSUE_BUDGET = 3;
 /** User-retry budget on error_recoverable. The 4th total attempt at the
  *  same underlying_cause_tag (= 3 user retries) escalates to error_terminal. */
 const USER_RETRY_BUDGET = 3;
 
-export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
+/**
+ * Build the session-onboarding machine. Takes NO params — every external actor
+ * is a config-driven DEFAULT (ADR-041 inversion): `workosUserInfo` and
+ * `createOrgAndReissue` are config-agnostic resolvers that read their URLs from
+ * the actor input (config threaded composition root → machine input → context →
+ * invoke input) and perform their network I/O through the injected
+ * `deps.request_client` (= the `fetch` library), and `silentReauth` reads its
+ * outcome from the actor input (`input.outcome`, threaded from
+ * context.silent_reauth_outcome) — "pending" by default (production noop). There
+ * is NO deps-injection mechanism FOR THE ACTOR LOGIC and NO `.provide(...)`:
+ * tests drive behavior by injecting a MOCK `fetch` as `deps.request_client` (a
+ * `vi.fn()` typed as `typeof fetch` returning canned `Response`s) and by setting
+ * the `silent_reauth_outcome` input flag for the silent-reauth side-state.
+ */
+export function createSessionOnboardingMachine() {
   return setup({
     types: {
       context: {} as SessionOnboardingContext,
@@ -175,25 +254,37 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
         existing_org_id?: string | null;
         existing_org_names?: string[];
         config?: Config | null;
+        deps?: SessionOnboardingDeps | null;
+        force_reissue_failures?: number | null;
+        silent_reauth_outcome?: SilentReauthOutcome;
       },
     },
     actors: {
-      // Default to the real config-agnostic resolver; tests override via deps.
-      // `getWorkOSUserInfo` reads `workosUrl` from its input (input.config),
-      // which the machine threads from context — so the composition root never
-      // imports it just to inject env config.
-      workosUserInfo:
-        deps.workosUserInfo ??
-        fromPromise<WorkOSProfile, WorkOSUserInfoInput>(getWorkOSUserInfo),
-      createOrgAndReissue: deps.createOrgAndReissue,
-      // Fallback noop actor — never resolves. The `expired_token` invoke
-      // only fires when `deps.silentReauth` is provided; if a caller forgets
-      // to wire it AND drives the machine into expired_token, the actor sits
-      // pending rather than blowing up the chart. This is also what we want
-      // for the orchestrator-level freeze tests that don't care about reauth.
-      silentReauth:
-        deps.silentReauth ??
-        (fromPromise(async () => new Promise<{ ok: true }>(() => {})) as SilentReauthActor),
+      // The real config-agnostic re-verify resolver. `getWorkOSUserInfo` reads
+      // `workosUrl` from its input (input.config), which the machine threads
+      // from context, and performs its HTTP GET through input.deps.request_client
+      // — so the composition root never imports it just to inject env config.
+      // Tests inject a mock `fetch` as request_client.
+      workosUserInfo: fromPromise<WorkOSProfile, WorkOSUserInfoInput>(
+        getWorkOSUserInfo,
+      ),
+      // The real config-agnostic org-create + reissue resolver. Reads
+      // `backendUrl` from input.config, performs its HTTP calls through
+      // input.deps.request_client; folds the forced-failure harness in via
+      // input.force_reissue_failures (attempt-vs-budget). Tests inject a mock
+      // `fetch` as request_client and pass force_reissue_failures to drive the
+      // failure path — no actor stubbing.
+      createOrgAndReissue: fromPromise<
+        CreateOrgAndReissueOutput,
+        CreateOrgAndReissueInput
+      >(getOrgAndReissue),
+      // Config/input-driven silent-reauth resolver (NO `.provide(...)`
+      // injection). `getSilentReauth` reads `input.outcome` (threaded from
+      // context.silent_reauth_outcome): "success" → resolve, "fail" → throw
+      // silent-reauth-failed, "pending" (production default) → never resolve.
+      silentReauth: fromPromise<{ ok: true }, SilentReauthInput>(
+        getSilentReauth,
+      ),
     },
     guards: {
       // The org binding comes from the verified `X-Org-Id` header, pre-seeded
@@ -300,6 +391,9 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
       principal_id: input.principal_id,
       bearer_token: input.bearer_token ?? "",
       config: input.config ?? null,
+      deps: input.deps ?? null,
+      force_reissue_failures: input.force_reissue_failures ?? null,
+      silent_reauth_outcome: input.silent_reauth_outcome ?? "pending",
       user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
       existing_org_id: input.existing_org_id ?? null,
@@ -321,6 +415,7 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
           input: ({ context }) => ({
             bearer_token: context.bearer_token,
             config: context.config,
+            deps: context.deps,
           }),
           onDone: [
             {
@@ -380,6 +475,9 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
               principal_id: context.principal_id,
               correlation_id: context.correlation_id,
               attempt: context.reissue_attempts_count + 1,
+              config: context.config,
+              deps: context.deps,
+              force_reissue_failures: context.force_reissue_failures,
             };
           },
           onDone: {
@@ -456,6 +554,7 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
           src: "silentReauth",
           input: ({ context }) => ({
             correlation_id: context.correlation_id,
+            outcome: context.silent_reauth_outcome,
           }),
           onDone: {
             target: "ready",
@@ -484,9 +583,10 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
  * factory: the machine wraps it once as the default `workosUserInfo` actor
  * (`fromPromise(getWorkOSUserInfo)`), and its env config (`workosUrl`) arrives
  * on `input.config` — threaded composition root → machine input → context →
- * invoke input. That keeps it config-agnostic so the composition root never
- * imports it just to inject env. Tests substitute via `.provide(...)` or a deps
- * stub (the stub ignores `input.config`).
+ * invoke input. The network GET runs through `input.deps.request_client` (= the
+ * `fetch` library), threaded the same path. That keeps it config-agnostic so the
+ * composition root never imports it just to inject env. Tests inject a mock
+ * `fetch` as `request_client`.
  *
  * Identity comes from the verified token (the `Authorization: Bearer` header
  * auth-proxy forwards), NEVER a client body claim. Returns IDENTITY ONLY
@@ -504,8 +604,14 @@ export async function getWorkOSUserInfo({
       "session-onboarding: workos config missing from re-verify input",
     );
   }
+  if (!input.deps?.request_client) {
+    throw new Error(
+      "session-onboarding: request_client missing from re-verify input",
+    );
+  }
   const { workosUrl } = input.config;
-  const userResp = await fetch(`${workosUrl}/oauth/userinfo`, {
+  const requestClient = input.deps.request_client;
+  const userResp = await requestClient(`${workosUrl}/oauth/userinfo`, {
     method: "GET",
     headers: {
       authorization: `Bearer ${input.bearer_token}`,
@@ -535,15 +641,17 @@ export async function getWorkOSUserInfo({
  *
  * `backendUrl` is the auth-proxy URL — the production composition root
  * routes through auth-proxy so the same identity headers flow through.
- * Tests can override via `.provide({ actors: { createOrgAndReissue: ... } })`.
+ * Tests inject a mock `fetch` as `request_client` to canned-respond per scenario.
  */
 /**
  * Pure async function form of the org-create step. Exported so the
  * harness-knob wrapper can sequence create + reissue with forced failures
- * injected only at the reissue step.
+ * injected only at the reissue step. The network I/O runs through the injected
+ * `requestClient` (= the `fetch` library).
  */
 export function createOrgFn(
   config: Config,
+  requestClient: RequestClient,
 ): (input: CreateOrgAndReissueInput) => Promise<{ org_id: string; org_name: string }> {
   const { backendUrl, devUserHeadersFixture } = config;
   return async (input) => {
@@ -561,7 +669,7 @@ export function createOrgFn(
       // where DEV_USER carries a pre-assigned org_id — the AC for slice 1
       // is about the state-machine flow, not the backend's per-user-org
       // uniqueness constraint.
-      const orgResp = await fetch(`${backendUrl}/api/orgs`, {
+      const orgResp = await requestClient(`${backendUrl}/api/orgs`, {
         method: "POST",
         headers: baseHeaders,
         body: JSON.stringify({ name: input.org_name }),
@@ -583,7 +691,7 @@ export function createOrgFn(
         orgName =
           orgBody.name ?? orgBody.data?.attributes?.name ?? input.org_name;
       } else if (orgResp.status === 409 || orgResp.status === 500) {
-        const meResp = await fetch(`${backendUrl}/api/orgs/me`, {
+        const meResp = await requestClient(`${backendUrl}/api/orgs/me`, {
           method: "GET",
           headers: baseHeaders,
         });
@@ -622,10 +730,11 @@ export function createOrgFn(
  */
 export function reissueOrgJwtFn(
   config: Config,
+  requestClient: RequestClient,
 ): (input: { org_id: string; correlation_id: string }) => Promise<void> {
   const { backendUrl, devUserHeadersFixture } = config;
   return async ({ org_id, correlation_id }) => {
-    const reissueResp = await fetch(`${backendUrl}/api/auth/reissue`, {
+    const reissueResp = await requestClient(`${backendUrl}/api/auth/reissue`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -641,80 +750,95 @@ export function reissueOrgJwtFn(
 }
 
 /**
- * Legacy combined function — chains createOrgFn + reissueOrgJwtFn. Kept
- * for the production composition root so the wiring stays a one-liner.
+ * The config-driven `createOrgAndReissue` actor RESOLVER (an
+ * `async ({ input }) => CreateOrgAndReissueOutput`), wrapped once as the
+ * machine's default `createOrgAndReissue` actor (`fromPromise(getOrgAndReissue)`).
+ * Its env config (`backendUrl` + the dev-user header fixture) arrives on
+ * `input.config` — threaded composition root → machine input → context → invoke
+ * input — so it stays config-agnostic and the composition root never imports it
+ * just to inject env.
+ *
+ * It folds the forced-failure harness in STATELESSLY via attempt-vs-budget:
+ *   1. ALWAYS create the org first (idempotent — preserves the "org row exists
+ *      even when reissue fails" invariant; retries hit /api/orgs/me).
+ *   2. If `force_reissue_failures` is set AND `attempt <= force_reissue_failures`,
+ *      throw a partial-setup error carrying `partial_org = { id, name }` (the
+ *      same field `capturePartialOrgFromError` reads), so the machine lands in
+ *      error_recoverable / re-enters creating_org with the org.id populated.
+ *      (Verified: N=2 → fail,fail,succeed→ready; N=3 → fail,fail,budget-
+ *      exhausted→error_recoverable, because reissueBudgetExhausted checks
+ *      reissue_attempts_count+1 >= REISSUE_BUDGET (3) pre-increment.)
+ *   3. Otherwise reissue the JWT and return the created org.
  */
-export function createOrgAndReissueFn(
-  config: Config,
-): (input: CreateOrgAndReissueInput) => Promise<CreateOrgAndReissueOutput> {
-  const createOrg = createOrgFn(config);
-  const reissue = reissueOrgJwtFn(config);
-  return async (input) => {
-    const created = await createOrg(input);
-    await reissue({
-      org_id: created.org_id,
-      correlation_id: input.correlation_id,
-    });
-    return created;
-  };
+export async function getOrgAndReissue({
+  input,
+}: {
+  input: CreateOrgAndReissueInput;
+}): Promise<CreateOrgAndReissueOutput> {
+  if (!input.config) {
+    throw new Error(
+      "session-onboarding: backend config missing from create-org input",
+    );
+  }
+  if (!input.deps?.request_client) {
+    throw new Error(
+      "session-onboarding: request_client missing from create-org input",
+    );
+  }
+  const requestClient = input.deps.request_client;
+  // ALWAYS create the org first — preserves the "org row exists even when
+  // reissue fails" invariant. Idempotent: subsequent retries hit /api/orgs/me
+  // and return the same org.
+  const created = await createOrgFn(input.config, requestClient)(input);
+
+  if (input.force_reissue_failures && input.attempt <= input.force_reissue_failures) {
+    const err = new Error(
+      `reissue forced-failure (attempt=${input.attempt}, budget=${input.force_reissue_failures})`,
+    );
+    // Attach the partial-org marker so capturePartialOrgFromError can read the
+    // org.id from context even on the failure path (the "Try again" action then
+    // only retries reissue, not org create).
+    (err as Error & { partial_org?: { id: string; name: string } }).partial_org = {
+      id: created.org_id,
+      name: created.org_name,
+    };
+    throw err;
+  }
+
+  await reissueOrgJwtFn(input.config, requestClient)({
+    org_id: created.org_id,
+    correlation_id: input.correlation_id,
+  });
+  return created;
 }
 
 /**
- * XState actor wrapper around `createOrgAndReissueFn`. Production
- * composition root calls this; tests can substitute via the failure-
- * simulation knob (the router's `force_reissue_failures`, resolved
- * into deps by the injected buildLoginDeps factory) without rebuilding the
- * actor surface.
+ * The config-agnostic silent-reauth actor RESOLVER (an
+ * `async ({ input }) => { ok: true }`), wrapped once as the machine's default
+ * `silentReauth` actor (`fromPromise(getSilentReauth)`). Driven by `input.outcome`
+ * (threaded from context.silent_reauth_outcome) — no actor injection, no
+ * `.provide(...)`:
+ *   - "success" → resolve `{ ok: true }`            → machine returns to `ready`.
+ *   - "fail"    → throw `silent-reauth-failed`      → `error_recoverable`.
+ *   - "pending" → never resolve (production default) → stays in `expired_token`.
+ *
+ * Production stays at "pending": `expired_token` is harness-gated and real
+ * silent re-auth is auth-proxy's job (ui-state only learns the outcome). The
+ * pending promise preserves today's noop behavior exactly.
  */
-export function createOrgAndReissueActor(config: Config): CreateOrgAndReissueActor {
-  const fn = createOrgAndReissueFn(config);
-  return fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>(
-    ({ input }) => fn(input),
-  );
-}
-
-/**
- * Build an actor that DOES create the org (via the real create path) but
- * fails the REISSUE step the first N attempts. Models the scenario
- * "@jwt_reissue_failed_after_org_create" where the org row gets created
- * but the reissue step fails — Maya should land in error_recoverable
- * with the partial-setup tag, and the org.id MUST be populated so the
- * "Try again" action only retries reissue, not org create.
- */
-export function createForcedFailureOrgAndReissueActor(
-  realCreateOnly: (
-    input: CreateOrgAndReissueInput,
-  ) => Promise<{ org_id: string; org_name: string }>,
-  realReissueOnly: (
-    input: { org_id: string; correlation_id: string },
-  ) => Promise<void>,
-  initialFailureBudget: number,
-): CreateOrgAndReissueActor {
-  let remaining = initialFailureBudget;
-  return fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>(
-    async ({ input }) => {
-      // ALWAYS create the org first — this preserves the "org row exists
-      // even when reissue fails" invariant. Idempotent: subsequent retries
-      // hit /api/orgs/me and return the same org.
-      const created = await realCreateOnly(input);
-      if (remaining > 0) {
-        remaining -= 1;
-        const err = new Error(
-          `reissue forced-failure (remaining=${remaining}, attempt=${input.attempt})`,
-        );
-        // Attach a marker so the orchestrator's settle step can read the
-        // org.id from context even on the failure path.
-        (err as Error & { partial_org?: { id: string; name: string } }).partial_org = {
-          id: created.org_id,
-          name: created.org_name,
-        };
-        throw err;
-      }
-      await realReissueOnly({
-        org_id: created.org_id,
-        correlation_id: input.correlation_id,
-      });
-      return { org_id: created.org_id, org_name: created.org_name };
-    },
-  );
+export async function getSilentReauth({
+  input,
+}: {
+  input: SilentReauthInput;
+}): Promise<{ ok: true }> {
+  if (input.outcome === "success") {
+    return { ok: true };
+  }
+  if (input.outcome === "fail") {
+    throw new Error("silent-reauth-failed");
+  }
+  // "pending": never resolve — preserves the production noop (the invoke sits
+  // in flight; the harness-gated expired_token side-state only resolves when a
+  // test requests "success"/"fail").
+  return new Promise<{ ok: true }>(() => {});
 }

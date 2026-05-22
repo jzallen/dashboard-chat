@@ -20,6 +20,11 @@
 // 7 behaviors × 2 = 14 max. Port-to-port: every test enters through the
 // FlowOrchestrator's public surface (begin, send, broadcastFreeze,
 // broadcastThaw, isFrozen) and observes via the projection or those methods.
+//
+// The session-onboarding actors are driven by a MOCK `fetch` injected as the I/O
+// port (deps.request_client) — threaded through the BeginFlowInput. The silent-
+// reauth outcome is also config/input-driven: B7 requests "success" via
+// BeginFlowInput.silent_reauth_outcome (no actor injection).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fromPromise } from "xstate";
@@ -34,12 +39,8 @@ import type {
   SwitchProjectOutput,
 } from "./machines/project-context/index.ts";
 import type {
-  CreateOrgAndReissueActor,
-  CreateOrgAndReissueInput,
-  CreateOrgAndReissueOutput,
-  SessionOnboardingDeps,
-  WorkOSProfile,
-  WorkOSUserInfoActor,
+  RequestClient,
+  SilentReauthOutcome,
 } from "./machines/session-onboarding/index.ts";
 import { SessionOnboardingBeginStrategy } from "./machines/session-onboarding/strategy.ts";
 import {
@@ -48,37 +49,23 @@ import {
   FlowOrchestrator,
 } from "./orchestrator.ts";
 import { createNoopFlowEventLog } from "./persistence/redis.ts";
+import { makeMockFetch, makeTestConfig } from "./testing/test-config.ts";
 
 const PROFILE_MAYA = {
   email: "maya.chen@acme-data.example",
-  display_name: "Maya Chen",
+  name: "Maya Chen",
 };
 const PROFILE_KAI = {
   email: "kai.lee@acme-data.example",
-  display_name: "Kai Lee",
+  name: "Kai Lee",
 };
 
-function workosOkProfile(p: typeof PROFILE_MAYA): WorkOSUserInfoActor {
-  // Re-verify returns IDENTITY ONLY (FIX D1) — no org binding. driveToReady
-  // begins with no existing_org_id, so the begin path lands in needs_org, then
-  // submits an org name to reach ready (the new-user path).
-  return fromPromise(async (): Promise<WorkOSProfile> => ({ ...p }));
-}
+const CONFIG = makeTestConfig();
 
-function succeedingCreateOrg(): CreateOrgAndReissueActor {
-  return fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>(
-    async ({ input }) => ({
-      org_id: `org-${input.org_name.toLowerCase().replace(/\s+/g, "-")}`,
-      org_name: input.org_name,
-    }),
-  );
-}
-
-function buildDeps(profile = PROFILE_MAYA): SessionOnboardingDeps {
-  return {
-    workosUserInfo: workosOkProfile(profile),
-    createOrgAndReissue: succeedingCreateOrg(),
-  };
+/** Mock fetch that re-verifies any bearer OK with the given profile and
+ *  creates/reissues orgs OK. */
+function okFetch(profile = PROFILE_MAYA): RequestClient {
+  return makeMockFetch({ profile });
 }
 
 function buildOrchestrator(): FlowOrchestrator {
@@ -96,7 +83,10 @@ async function driveToReady(
   principal: string,
   correlation: string,
   profile = PROFILE_MAYA,
-  deps: SessionOnboardingDeps = buildDeps(profile),
+  options: {
+    requestClient?: RequestClient;
+    silentReauthOutcome?: SilentReauthOutcome;
+  } = {},
 ): Promise<{ flow_id: string }> {
   const beginOrchestrator = new BeginFlowOrchestrator(
     orch.deps.eventLog,
@@ -108,8 +98,10 @@ async function driveToReady(
       principal_id: principal,
       bearer_token: `tok-${principal}`,
       correlation_id: correlation,
+      config: CONFIG,
+      deps: { request_client: options.requestClient ?? okFetch(profile) },
+      silent_reauth_outcome: options.silentReauthOutcome,
     },
-    deps,
     orch.deps.eventLog,
     () => {},
   );
@@ -358,23 +350,17 @@ describe("Login machine returning to ready after silent reauth triggers broadcas
   it("thaws other actors when the origin login flow returns to ready", async () => {
     process.env.NWAVE_HARNESS_KNOBS = "true";
     try {
-      // Build deps with a silent reauth that succeeds on the first try.
-      const silentReauthOk = fromPromise(async () => ({ ok: true as const }));
-      const deps: SessionOnboardingDeps = {
-        workosUserInfo: workosOkProfile(PROFILE_MAYA),
-        createOrgAndReissue: succeedingCreateOrg(),
-        silentReauth: silentReauthOk,
-      } as unknown as SessionOnboardingDeps;
       orch = buildOrchestrator();
 
-      // Maya is the origin flow that expires + silently reauths, so her begin
-      // gets the silentReauth-wired deps; Kai never reaches expired_token.
+      // silent reauth is now config/input-driven — Maya's begin requests the
+      // "success" outcome via BeginFlowInput so her machine returns to `ready`
+      // after expired_token; Kai stays on the "pending" default (never expires).
       const { flow_id: mayaFlow } = await driveToReady(
         orch,
         "user_maya",
         "R-1",
         PROFILE_MAYA,
-        deps,
+        { silentReauthOutcome: "success" },
       );
       const { flow_id: kaiFlow } = await driveToReady(
         orch,
@@ -471,8 +457,9 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
         bearer_token: "tok-returning",
         existing_org_id: "org-returning",
         correlation_id: correlation,
+        config: CONFIG,
+        deps: { request_client: okFetch(PROFILE_MAYA) },
       },
-      buildDeps(PROFILE_MAYA),
       orch.deps.eventLog,
       () => {},
     );
