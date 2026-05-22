@@ -328,14 +328,15 @@ export class LoginBeginStrategy implements BeginStrategy {
    * or `auth_failed`) whose payload is read from the projection — the only
    * legal read source for the emission path (ADR-030).
    *
-   * TODO(ADR-030): give the resolved WorkOS profile / cause a producer that
-   * persists them to the log upstream of this read — a real auth-callback event
-   * or the machine emitting its invoke output for the strategy to append — plus
-   * the matching projection reducer entry, so this read observes them and the
-   * placeholder fallback can be removed. This is not a local edit to `begin`:
-   * today the machine never touches the event log, so the values live only in
-   * the actor snapshot (which the emission path may not legally read), and
-   * terminal payloads carry placeholders until that producer exists.
+   * TODO(ADR-030): no component lands these in the log today — the OAuth
+   * handshake is collapsed into the machine's `workosUserInfo` invoke, which
+   * assigns the profile to actor context only (`auth_callback_resolved` is an
+   * aspirational name; there is no real WorkOS redirect/callback producer).
+   * Make that invoke the producer — emit its output for the strategy to append
+   * as a FlowEvent — and add the matching projection reducer, so this read
+   * observes the profile / cause and the placeholder fallback can be removed.
+   * Not a local edit to `begin`: until then the values live only in the actor
+   * snapshot, which the emission path may not legally read.
    */
   async begin(): Promise<void> {
     const { input, flow_id, actor } = this;
