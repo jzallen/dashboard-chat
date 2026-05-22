@@ -36,6 +36,30 @@ const MIN_ORG_NAME = 2;
 const MAX_ORG_NAME = 64;
 
 /**
+ * One shape-validation rule. `failsWhen` is the violation predicate; `error`
+ * builds the typed closed-union variant for that violation. Split so the rule
+ * is evaluated once (predicate to find the first failure, builder only on the
+ * matched rule) — see validateOrgName.
+ */
+interface OrgNameRule {
+  failsWhen: (trimmed: string) => boolean;
+  error: (trimmed: string) => OrgNameValidationError;
+}
+
+/** Ordered shape rules — first failure wins (list order = precedence). */
+const ORG_NAME_RULES: readonly OrgNameRule[] = [
+  { failsWhen: (s) => s.length === 0, error: () => ({ kind: "empty" }) },
+  {
+    failsWhen: (s) => s.length < MIN_ORG_NAME,
+    error: (s) => ({ kind: "too_short", min: MIN_ORG_NAME, actual: s.length }),
+  },
+  {
+    failsWhen: (s) => s.length > MAX_ORG_NAME,
+    error: (s) => ({ kind: "too_long", max: MAX_ORG_NAME, actual: s.length }),
+  },
+];
+
+/**
  * Validate the SHAPE of an organization-name submission.
  *
  * Rules:
@@ -43,29 +67,19 @@ const MAX_ORG_NAME = 64;
  *   - non-empty after trim
  *   - length in [MIN_ORG_NAME, MAX_ORG_NAME]
  *
- * Duplicate detection is intentionally NOT done here (org names are globally
- * unique; the backend create is the authority — a collision yields a
- * `duplicate` inline error from the create-org path). Returns a closed Result
- * union — the machine guard branches on `ok`.
+ * Applied as an ordered rule list: `find` returns the first violated rule
+ * (short-circuiting), and that rule builds the typed error. Duplicate detection
+ * is intentionally NOT a rule here (org names are globally unique; the backend
+ * create is the authority — a collision yields a `duplicate` inline error from
+ * the create-org path). Returns a closed Result union — the machine guard
+ * branches on `ok`.
  */
 export function validateOrgName(raw: string): OrgNameResult {
   const trimmed = raw.trim();
-  if (trimmed.length === 0) {
-    return { ok: false, error: { kind: "empty" } };
-  }
-  if (trimmed.length < MIN_ORG_NAME) {
-    return {
-      ok: false,
-      error: { kind: "too_short", min: MIN_ORG_NAME, actual: trimmed.length },
-    };
-  }
-  if (trimmed.length > MAX_ORG_NAME) {
-    return {
-      ok: false,
-      error: { kind: "too_long", max: MAX_ORG_NAME, actual: trimmed.length },
-    };
-  }
-  return { ok: true, value: { value: trimmed } };
+  const broken = ORG_NAME_RULES.find((rule) => rule.failsWhen(trimmed));
+  return broken
+    ? { ok: false, error: broken.error(trimmed) }
+    : { ok: true, value: { value: trimmed } };
 }
 
 export interface ClassifiableFailure {
