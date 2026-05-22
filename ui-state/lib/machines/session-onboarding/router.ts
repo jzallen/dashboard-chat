@@ -102,6 +102,39 @@ const beginRequestSchema = z.object({
 
 export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
 
+/**
+ * Mount the session-onboarding routes onto `router` and return it. Everything
+ * the routes need is injected by the composition root: `orchestrator` drives
+ * `/begin`; `flowOrchestrator` drives `/event`, `/open-deep-link`, and (via
+ * `mountUniformFlowRoutes`) the machine-agnostic substrate routes (`/freeze`,
+ * `/thaw`, `/projection`, `/projection/stream`); `config` + `requestClient` are
+ * the env config and the `fetch` I/O port the machine resolvers read from their
+ * input; `serializeResult` maps the orchestrator Result to an HTTP Response.
+ *
+ * `/begin` validates the trusted-ingress DTO (identity from headers, never a
+ * body claim — the ADR-041 ACL rule) and seeds the `BeginFlowInput` with
+ * composition-root inputs rather than request data: `config`, the
+ * `request_client` I/O port, and the verified `existing_org_id` (the `X-Org-Id`
+ * claim — the SOLE source of the `[hasOrg]` returning-user shortcut, FIX D1; an
+ * empty value means "no org" / new user). The force-reissue-failures harness
+ * knob is gated by `shouldInject` (closed-by-default in production, ENVIRONMENT ×
+ * flag, ADR-035); its verdict decides whether the body's `force_reissue_failures`
+ * count is threaded through to drive `getOrgAndReissue`'s attempt-vs-budget path.
+ *
+ * `/event` closed-by-default-gates the `__force_failure__` / `__expire_token__`
+ * harness events (403 when the gate is disabled) so production cannot bypass real
+ * auth-flow logic; a legacy `login-and-org-setup` `machine` name is canonicalized
+ * by the orchestrator's LEAF-2 alias map.
+ *
+ * `/open-deep-link` is the HTTP edge where route params meet the JWT:
+ * `resolveActiveScope` runs here (identity from the auth-proxy headers — in dev
+ * `X-Org-Id` is `dev-org-001`, in prod the verified `org_id` claim) and the
+ * resolved scope — or a cross-tenant `scope_access_denied` — is appended to the
+ * flow's event log.
+ *
+ * TODO: consider replacing the failure-simulation gate wiring with a contract
+ * test + mocked external dependencies.
+ */
 export function buildSessionOnboardingRouter(
   router: Hono<SessionOnboardingRouterContext>,
   orchestrator: BeginFlowOrchestrator,
@@ -130,13 +163,6 @@ export function buildSessionOnboardingRouter(
     }
     const request = parsed.data;
 
-    // force-reissue-failures gate: the harness knob driving getOrgAndReissue's
-    // attempt-vs-budget forced-failure path. The gate result feeds the
-    // BeginFlowInput's force_reissue_failures (threaded into the machine input),
-    // NOT a deps factory. Closed-by-default in production (ENVIRONMENT × flag,
-    // ADR-035).
-    //
-    // TODO: consider replacing with contract test and mocked external dependencies
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
       body: (rawBody ?? {}) as Record<string, unknown>,
       correlationId: request.referenceCode,
@@ -147,20 +173,11 @@ export function buildSessionOnboardingRouter(
         machine: SESSION_ONBOARDING_MACHINE,
         principal_id: request.userId,
         bearer_token: request.bearerToken,
-        // Empty string → "no org" (new user); a non-empty value drives the
-        // [hasOrg] returning-user shortcut (FIX D1).
         existing_org_id: request.orgId || null,
         correlation_id: request.referenceCode,
         existing_org_names: request.body.existing_org_names,
-        // Env config for the re-verify + org-create resolvers — injected by the
-        // composition root, not derived from the request.
         config,
-        // The I/O port (the `fetch` library) the resolvers call directly,
-        // injected by the composition root (defaults to globalThis.fetch in
-        // production). Threaded into the machine input as deps.request_client.
         deps: { request_client: requestClient },
-        // Forced-failure budget, gated at the edge: pass through only when the
-        // gate is enabled; otherwise null (no forced failures in production).
         force_reissue_failures: reissueFailuresAllowed
           ? request.body.force_reissue_failures ?? null
           : null,
@@ -190,9 +207,6 @@ export function buildSessionOnboardingRouter(
       return c.json({ error: "flow_id and type required" }, 400);
     }
 
-    // __force_failure__ — drives session-onboarding into error_recoverable
-    // with the supplied cause tag. Production must refuse this; the gate is
-    // closed-by-default (ENVIRONMENT × flag).
     if (body.type === "__force_failure__") {
       const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
         event: { type: body.type },
@@ -210,8 +224,6 @@ export function buildSessionOnboardingRouter(
       }
     }
 
-    // __expire_token__ — drives ready → expired_token to exercise silent
-    // re-auth. Same closed-by-default gate as __force_failure__.
     if (body.type === "__expire_token__") {
       const allowed = shouldInject(KNOB.expireToken, {
         event: { type: body.type },
@@ -229,9 +241,6 @@ export function buildSessionOnboardingRouter(
       }
     }
 
-    // The body's `machine` (when present) may be the legacy
-    // `login-and-org-setup` wire name; the orchestrator's alias map (LEAF-2)
-    // canonicalizes it. Default to the canonical name.
     const result = await flowOrchestrator.send({
       machine: body.machine ?? SESSION_ONBOARDING_MACHINE,
       flow_id: body.flow_id,
@@ -242,9 +251,6 @@ export function buildSessionOnboardingRouter(
     return serializeResult(c, result, "event_failed");
   });
 
-  // Deep-link / scope-resolution endpoint. The HTTP layer is the canonical
-  // place where route params meet the JWT; resolveActiveScope runs here and
-  // the resulting scope is appended to the flow's event log.
   router.post("/open-deep-link", async (c) => {
     const correlationId =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
@@ -269,8 +275,6 @@ export function buildSessionOnboardingRouter(
       return c.json({ error: "flow_id required" }, 400);
     }
 
-    // auth-proxy injects identity headers; in dev X-Org-Id is dev-org-001, in
-    // prod it's the verified JWT's org_id claim.
     const userId = c.req.header("X-User-Id") ?? "";
     const orgId = c.req.header("X-Org-Id") ?? null;
 
