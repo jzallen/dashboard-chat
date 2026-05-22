@@ -62,9 +62,9 @@ interface ReducedContext {
   /** The resolved scope from the most recent deep_link_opened event. The
    *  projection-level `active_scope` field is derived from this. */
   resolved_scope: ActiveScope | null;
-  /** Per ADR-029 invariant 4: the access_token minted at the
-   *  org_created_and_jwt_reissued boundary. The TS harness's
-   *  assert_jwt_carries_org_claim reads this. */
+  /** Per ADR-029 invariant 4: the non-security org-claim echo composed at the
+   *  org_created boundary (OQ-5). The TS harness's
+   *  assert_jwt_carries_org_claim reads this. NOT a real credential. */
   access_token: string | null;
   /** project-and-chat-session-management context — populated by j002_*
    *  event handlers. The shape mirrors the project flow machine's
@@ -204,26 +204,30 @@ type EventHandler = (
  * Adding a new event type means adding one entry here; no changes to
  * `applyEvent` or `buildProjection` are needed.
  *
- * Order below mirrors the J-001 state-chart progression so the file reads
- * as the flow's narrative: anonymous → authenticating → authenticated_no_org
- * → creating_org → ready → expired_token → (error states), then ADR-029
+ * Order below mirrors the session-onboarding state-chart progression so the
+ * file reads as the flow's narrative: session_started → needs_org →
+ * creating_org → ready → expired_token → (error states), then ADR-029
  * deep-link scope-resolution events.
  */
 const EVENT_HANDLERS: Record<string, EventHandler> = {
-  sign_in_clicked: (_state, context, _event) => ({
-    state: "authenticating",
-    context,
-  }),
-
-  auth_callback_resolved: (_state, context, event) => {
+  // session_started — the SELF-CONTAINED opening event (ADR-041 D2). Carries
+  // the verified user (re-verify WorkOS profile, L5) and the org binding
+  // (returning user) or null (new user). The reducer FOLDS it directly — it
+  // never looks anything up, so the user is populated at t=0 (defect closed).
+  // The [hasOrg] branch is replicated here (matching the machine guard): a
+  // non-null org reaches `ready`; a null org reaches `needs_org`.
+  session_started: (_state, context, event) => {
     const userPayload =
       (event.payload.user as Partial<ReducedContext["user"]>) ?? {};
     const displayName = userPayload.display_name ?? null;
     const firstName =
       userPayload.first_name ??
       (displayName ? displayName.split(/\s+/)[0] || null : null);
+    const orgPayload =
+      (event.payload.org as Partial<ReducedContext["org"]> | null) ?? null;
+    const hasOrg = Boolean(orgPayload?.id);
     return {
-      state: "authenticated_no_org",
+      state: hasOrg ? "ready" : "needs_org",
       context: {
         ...context,
         user: {
@@ -231,23 +235,29 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
           display_name: displayName,
           first_name: firstName,
         },
+        org: orgPayload
+          ? { id: orgPayload.id ?? null, name: orgPayload.name ?? null }
+          : { id: null, name: null },
       },
     };
   },
 
-  auth_failed: (_state, context, event) => {
-    const cause =
-      (event.payload.underlying_cause_tag as string | undefined) ?? null;
+  // session_rejected — terminal: re-verify failed (OQ-2). HTTP stays 200; the
+  // rejection is encoded in the projection with a distinct cause tag. No user
+  // state advances (the event carries no user/org).
+  session_rejected: (_state, context, event) => {
+    const reason =
+      (event.payload.reason as string | undefined) ?? "session_rejected";
     return {
-      state: "error_recoverable",
-      context: { ...context, underlying_cause_tag: cause },
+      state: "session_rejected",
+      context: { ...context, underlying_cause_tag: reason },
     };
   },
 
   // Submission enters creating_org transiently; the projection observed after
-  // settle reflects the terminal state (ready / authenticated_no_org /
-  // error_recoverable). Until that next event lands, the table shows
-  // creating_org so a concurrent reader can see the "Creating..." state.
+  // settle reflects the terminal state (ready / needs_org / error_recoverable).
+  // Until that next event lands, the table shows creating_org so a concurrent
+  // reader can see the "Creating..." state.
   org_form_submitted: (_state, context, _event) => ({
     state: "creating_org",
     context: { ...context, org_validation_error: null },
@@ -257,12 +267,12 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     const err =
       (event.payload.error as ReducedContext["org_validation_error"]) ?? null;
     return {
-      state: "authenticated_no_org",
+      state: "needs_org",
       context: { ...context, org_validation_error: err },
     };
   },
 
-  org_created_and_jwt_reissued: (_state, context, event) => {
+  org_created: (_state, context, event) => {
     const orgPayload =
       (event.payload.org as Partial<ReducedContext["org"]>) ?? {};
     const accessToken =
@@ -969,7 +979,7 @@ export function buildProjection(
   events: FlowEvent[],
   _snapshot?: FlowProjection,
 ): FlowProjection {
-  let state = "anonymous";
+  let state = "verifying";
   let context = initialContext();
   let lastEventAt = "";
   let correlationId = "";

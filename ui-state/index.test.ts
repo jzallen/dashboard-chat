@@ -1,0 +1,332 @@
+// Acceptance / integration tests for the session-onboarding HTTP tier.
+//
+// These map directly to the Event-Model Phase-4 Given/When/Then specs
+// (docs/feature/session-onboarding/design/event-model.md). They drive the
+// in-process Hono app via `app.fetch` (no live socket, no compose stack),
+// stub the `workosUserInfo` re-verify actor at the driven-port boundary, and
+// assert on the public projection shape — the single read contract.
+//
+// Port-to-port: every test enters through the `/flow/session-onboarding/*`
+// driving port (the ACL router) and asserts at the projection / FlowEventLog
+// driven-port boundary. The only test double is `workosUserInfo`, the WorkOS
+// `/oauth/userinfo` re-verification port (a true external boundary, L3/L4).
+
+import { afterEach, describe, expect, it } from "vitest";
+import { fromPromise } from "xstate";
+
+import {
+  type BuildLoginDeps,
+  buildSessionOnboardingApp,
+} from "./index.ts";
+import type {
+  CreateOrgAndReissueActor,
+  CreateOrgAndReissueInput,
+  CreateOrgAndReissueOutput,
+  WorkOSProfile,
+  WorkOSUserInfoActor,
+} from "./lib/machines/session-onboarding/index.ts";
+import {
+  createNoopFlowEventLog,
+  type FlowEventLog,
+} from "./lib/persistence/redis.ts";
+
+const MAYA_PROFILE = {
+  email: "maya@acme",
+  display_name: "Maya Chen",
+};
+
+/**
+ * A re-verify actor that returns Maya's IDENTITY ONLY (email + display_name).
+ * The re-verify call no longer carries an app-level org binding — real WorkOS
+ * `/oauth/userinfo` does not return one (FIX D1). The org for the returning-user
+ * `[hasOrg]` shortcut comes from the verified `X-Org-Id` header instead.
+ */
+function reverifyOk(): WorkOSUserInfoActor {
+  return fromPromise(
+    async (): Promise<WorkOSProfile> => ({
+      email: MAYA_PROFILE.email,
+      display_name: MAYA_PROFILE.display_name,
+    }),
+  );
+}
+
+/** A re-verify actor that rejects (WorkOS /oauth/userinfo 401). */
+function reverifyRejected(): WorkOSUserInfoActor {
+  return fromPromise(async (): Promise<WorkOSProfile> => {
+    throw new Error("workos userinfo failed: 401");
+  });
+}
+
+function succeedingCreateOrg(): CreateOrgAndReissueActor {
+  return fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>(
+    async ({ input }) => ({
+      org_id: "org-1",
+      org_name: input.org_name,
+    }),
+  );
+}
+
+interface Scenario {
+  app: ReturnType<typeof buildSessionOnboardingApp>;
+  eventLog: FlowEventLog;
+}
+
+function buildScenario(opts: {
+  workosUserInfo: WorkOSUserInfoActor;
+  createOrgAndReissue?: CreateOrgAndReissueActor;
+}): Scenario {
+  const eventLog = createNoopFlowEventLog();
+  const buildLoginDeps: BuildLoginDeps = () => ({
+    workosUserInfo: opts.workosUserInfo,
+    createOrgAndReissue: opts.createOrgAndReissue ?? succeedingCreateOrg(),
+  });
+  const app = buildSessionOnboardingApp({
+    eventLog,
+    buildLoginDeps,
+    logTransition: () => undefined,
+  });
+  return { app, eventLog };
+}
+
+interface BeginResult {
+  flow_id: string;
+  correlation_id: string;
+  state: string;
+  context: {
+    user: { email: string | null; display_name: string | null; first_name: string | null };
+    org: { id: string | null; name: string | null };
+    underlying_cause_tag: string | null;
+  };
+}
+
+async function begin(
+  app: Scenario["app"],
+  opts: {
+    userId: string;
+    bearer: string;
+    /** The verified org claim auth-proxy injects. Present → returning user
+     *  ([hasOrg] shortcut → ready); absent/empty → new user (needs_org). */
+    orgId?: string;
+    existing_org_names?: string[];
+  },
+): Promise<BeginResult> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "X-User-Id": opts.userId,
+    authorization: `Bearer ${opts.bearer}`,
+  };
+  if (opts.orgId !== undefined) {
+    headers["X-Org-Id"] = opts.orgId;
+  }
+  const res = await app.fetch(
+    new Request("http://t/flow/session-onboarding/begin", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        existing_org_names: opts.existing_org_names,
+      }),
+    }),
+  );
+  expect(res.status).toBe(200);
+  return (await res.json()) as BeginResult;
+}
+
+let active: Scenario | null = null;
+afterEach(() => {
+  active = null;
+});
+
+// ── Spec 1 — Returning user with an org lands ready (NEW [hasOrg] branch) ──
+// The org-source is the verified `X-Org-Id` header auth-proxy injects (FIX D1),
+// NOT the WorkOS re-verify output. The org NAME is not in the header, so
+// session_started carries `org={id, name:null}`.
+describe("Spec 1: returning user with an org lands ready", () => {
+  it("emits session_started{user, org} from the X-Org-Id header and projects ready with user populated", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    const proj = await begin(active.app, {
+      userId: "u1",
+      bearer: "tok-1",
+      orgId: "org-1",
+    });
+
+    expect(proj.state).toBe("ready");
+    expect(proj.context.user.display_name).toBe("Maya Chen");
+    expect(proj.context.user.email).toBe("maya@acme");
+    // Org id comes from the verified header; name is not in the header (null).
+    expect(proj.context.org).toEqual({ id: "org-1", name: null });
+  });
+
+  it("records exactly one session_started event carrying the verified user + the header org", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    await begin(active.app, { userId: "u1", bearer: "tok-1", orgId: "org-1" });
+
+    const events = await active.eventLog.read("session-onboarding:u1");
+    const started = events.filter((e) => e.type === "session_started");
+    expect(started).toHaveLength(1);
+    expect(started[0].payload).toMatchObject({
+      user: { email: "maya@acme", display_name: "Maya Chen" },
+      org: { id: "org-1", name: null },
+    });
+  });
+});
+
+// ── Spec 2 — New user with no org reaches needs_org (defect-closing) ──
+// No X-Org-Id header → new user → org:null → needs_org.
+describe("Spec 2: new user with no org reaches needs_org with identity populated", () => {
+  it("emits session_started{user, org:null} and projects needs_org with email non-null", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    const proj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+
+    expect(proj.state).toBe("needs_org");
+    expect(proj.context.org.id).toBeNull();
+    // THE bug: this was null end-to-end before the realignment.
+    expect(proj.context.user.email).toBe("maya@acme");
+    expect(proj.context.user.display_name).toBe("Maya Chen");
+  });
+
+  it("treats an empty-string X-Org-Id as no org (new user → needs_org)", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    const proj = await begin(active.app, {
+      userId: "u2",
+      bearer: "tok-2",
+      orgId: "",
+    });
+
+    expect(proj.state).toBe("needs_org");
+    expect(proj.context.org.id).toBeNull();
+  });
+});
+
+// ── Spec 3 — Re-verification failure → session_rejected (NEW rejection path) ──
+describe("Spec 3: re-verification failure rejects the session", () => {
+  it("projects session_rejected over HTTP 200 with no session_started and no user state", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyRejected(),
+    });
+    const proj = await begin(active.app, { userId: "u3", bearer: "tok-bad" });
+
+    expect(proj.state).toBe("session_rejected");
+    expect(proj.context.underlying_cause_tag).toBeTruthy();
+    expect(proj.context.user.email).toBeNull();
+
+    const events = await active.eventLog.read("session-onboarding:u3");
+    expect(events.some((e) => e.type === "session_started")).toBe(false);
+    expect(events.some((e) => e.type === "session_rejected")).toBe(true);
+  });
+});
+
+// ── Spec 4 — Org submission from needs_org reaches ready (preserved) ──
+describe("Spec 4: org submission from needs_org reaches ready", () => {
+  it("creates the org, reaches ready, and the user stays populated", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    expect(beginProj.state).toBe("needs_org");
+
+    const res = await active.app.fetch(
+      new Request("http://t/flow/session-onboarding/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          machine: "session-onboarding",
+          flow_id: beginProj.flow_id,
+          type: "org_form_submitted",
+          payload: { org_name: "Acme Data" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const proj = (await res.json()) as BeginResult;
+    expect(proj.state).toBe("ready");
+    expect(proj.context.org.id).toBe("org-1");
+    // user carried from session_started, not re-fetched.
+    expect(proj.context.user.email).toBe("maya@acme");
+  });
+});
+
+// ── Spec 5 — Invalid org name keeps needs_org (preserved, renamed state) ──
+describe("Spec 5: invalid org name keeps needs_org", () => {
+  it("surfaces a validation error and stays in needs_org", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+
+    const res = await active.app.fetch(
+      new Request("http://t/flow/session-onboarding/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          machine: "session-onboarding",
+          flow_id: beginProj.flow_id,
+          type: "org_form_submitted",
+          payload: { org_name: "" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const proj = (await res.json()) as BeginResult & {
+      context: { org_validation_error: { kind: string } | null };
+    };
+    expect(proj.state).toBe("needs_org");
+    expect(proj.context.org_validation_error?.kind).toBe("empty");
+    expect(proj.context.org.id).toBeNull();
+  });
+});
+
+// ── Legacy-path alias — login-and-org-setup must still resolve (LEAF-2) ──
+describe("Legacy alias: /flow/session-onboarding accepts the legacy machine name on /event", () => {
+  it("resolves the legacy login-and-org-setup machine name without 404", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+
+    const res = await active.app.fetch(
+      new Request("http://t/flow/session-onboarding/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          machine: "login-and-org-setup",
+          flow_id: beginProj.flow_id,
+          type: "org_form_submitted",
+          payload: { org_name: "Acme Data" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const proj = (await res.json()) as BeginResult;
+    expect(proj.state).toBe("ready");
+  });
+
+  it("does not 404 on the legacy /flow/login-and-org-setup HTTP path", async () => {
+    active = buildScenario({
+      workosUserInfo: reverifyOk(),
+    });
+    const res = await active.app.fetch(
+      new Request("http://t/flow/login-and-org-setup/begin", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-User-Id": "u1",
+          authorization: "Bearer tok-1",
+          // Returning-user org claim → [hasOrg] shortcut → ready (FIX D1).
+          "X-Org-Id": "org-1",
+        },
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const proj = (await res.json()) as BeginResult;
+    expect(proj.state).toBe("ready");
+  });
+});

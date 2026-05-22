@@ -4,11 +4,12 @@
 // calling them directly IS port-to-port testing because the function signature
 // is the public interface.
 //
-// Behavior budget for step 01-01:
-//   - Empty event log → initial-state projection (state=anonymous).
-//   - sign_in_clicked + auth_callback_resolved sequence → authenticated_no_org.
+// Behavior budget:
+//   - Empty event log → initial-state projection (state=verifying).
+//   - session_started{user, org:null} → needs_org with user populated at t=0.
+//   - session_started{user, org} → ready ([hasOrg] branch replicated).
 
-import { describe, it, expect } from "vitest";
+import { describe, expect,it } from "vitest";
 
 import { buildProjection, type FlowEvent } from "./projection.ts";
 
@@ -25,39 +26,61 @@ const baseEvent = (
 
 describe("buildProjection (pure projection builder)", () => {
   it("returns the initial state when no events have been recorded", () => {
-    const projection = buildProjection("login-and-org-setup:user_maya_chen", []);
+    const projection = buildProjection("session-onboarding:user_maya_chen", []);
 
-    expect(projection.state).toBe("anonymous");
+    expect(projection.state).toBe("verifying");
     expect(projection.sequence_id).toBe(0);
-    expect(projection.flow_id).toBe("login-and-org-setup:user_maya_chen");
+    expect(projection.flow_id).toBe("session-onboarding:user_maya_chen");
     expect(projection.context).toMatchObject({
       user: { email: null, display_name: null },
     });
   });
 
-  it("reaches authenticated_no_org after a successful sign-in sequence", () => {
+  it("reaches needs_org with the user populated after session_started{org:null}", () => {
     const events: FlowEvent[] = [
-      baseEvent("sign_in_clicked", {}),
-      baseEvent("auth_callback_resolved", {
+      baseEvent("session_started", {
         user: {
           email: "maya.chen@acme-data.example",
           display_name: "Maya Chen",
         },
+        org: null,
       }),
     ];
 
     const projection = buildProjection(
-      "login-and-org-setup:user_maya_chen",
+      "session-onboarding:user_maya_chen",
       events,
     );
 
-    expect(projection.state).toBe("authenticated_no_org");
+    expect(projection.state).toBe("needs_org");
     expect(projection.context).toMatchObject({
       user: {
         email: "maya.chen@acme-data.example",
         display_name: "Maya Chen",
       },
     });
-    expect(projection.sequence_id).toBe(2);
+    expect(projection.sequence_id).toBe(1);
+  });
+
+  it("reaches ready directly when session_started carries an org ([hasOrg])", () => {
+    const events: FlowEvent[] = [
+      baseEvent("session_started", {
+        user: {
+          email: "maya.chen@acme-data.example",
+          display_name: "Maya Chen",
+        },
+        org: { id: "org-1", name: "Acme Data" },
+      }),
+    ];
+
+    const projection = buildProjection(
+      "session-onboarding:user_maya_chen",
+      events,
+    );
+
+    expect(projection.state).toBe("ready");
+    expect(projection.context).toMatchObject({
+      org: { id: "org-1", name: "Acme Data" },
+    });
   });
 });

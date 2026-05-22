@@ -104,7 +104,7 @@ export function freezeThawHandler(
         403,
       );
     }
-    const originFlowId = `login-and-org-setup:${principal_id}`;
+    const originFlowId = `session-onboarding:${principal_id}`;
     const result =
       kind === "freeze"
         ? await orchestrator.broadcastFreeze(originFlowId)

@@ -14,8 +14,8 @@
 //   B3 — events sent to a frozen flow are queued in the replay buffer.
 //   B4 — 5s freeze window: events arriving after window are dropped.
 //   B5 — 16-event cap: 17th event in window triggers abandonment.
-//   B6 — login machine reaching expired_token triggers broadcastFreeze.
-//   B7 — login machine returning to ready triggers broadcastThaw of others.
+//   B6 — session-onboarding reaching expired_token triggers broadcastFreeze.
+//   B7 — session-onboarding returning to ready triggers broadcastThaw of others.
 //
 // 7 behaviors × 2 = 14 max. Port-to-port: every test enters through the
 // FlowOrchestrator's public surface (begin, send, broadcastFreeze,
@@ -25,13 +25,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fromPromise } from "xstate";
 
 import type {
+  CreateProjectActor,
+  ProjectContextMachineDeps,
+  ResolveInitialScopeActor,
+  ResolveInitialScopeInput,
+  ResolveInitialScopeOutput,
+  SwitchProjectActor,
+  SwitchProjectOutput,
+} from "./machines/project-context/index.ts";
+import type {
   CreateOrgAndReissueActor,
   CreateOrgAndReissueInput,
   CreateOrgAndReissueOutput,
-  LoginMachineDeps,
+  SessionOnboardingDeps,
+  WorkOSProfile,
   WorkOSUserInfoActor,
-} from "./machines/login-and-org-setup/index.ts";
-import { LoginBeginStrategy } from "./machines/login-and-org-setup/strategy.ts";
+} from "./machines/session-onboarding/index.ts";
+import { SessionOnboardingBeginStrategy } from "./machines/session-onboarding/strategy.ts";
 import {
   BeginFlowOrchestrator,
   FlowActorRegistry,
@@ -49,7 +59,10 @@ const PROFILE_KAI = {
 };
 
 function workosOkProfile(p: typeof PROFILE_MAYA): WorkOSUserInfoActor {
-  return fromPromise(async () => p);
+  // Re-verify returns IDENTITY ONLY (FIX D1) — no org binding. driveToReady
+  // begins with no existing_org_id, so the begin path lands in needs_org, then
+  // submits an org name to reach ready (the new-user path).
+  return fromPromise(async (): Promise<WorkOSProfile> => ({ ...p }));
 }
 
 function succeedingCreateOrg(): CreateOrgAndReissueActor {
@@ -61,7 +74,7 @@ function succeedingCreateOrg(): CreateOrgAndReissueActor {
   );
 }
 
-function buildDeps(profile = PROFILE_MAYA): LoginMachineDeps {
+function buildDeps(profile = PROFILE_MAYA): SessionOnboardingDeps {
   return {
     workosUserInfo: workosOkProfile(profile),
     createOrgAndReissue: succeedingCreateOrg(),
@@ -83,18 +96,17 @@ async function driveToReady(
   principal: string,
   correlation: string,
   profile = PROFILE_MAYA,
-  deps: LoginMachineDeps = buildDeps(profile),
+  deps: SessionOnboardingDeps = buildDeps(profile),
 ): Promise<{ flow_id: string }> {
   const beginOrchestrator = new BeginFlowOrchestrator(
     orch.deps.eventLog,
     orch.registry,
   );
-  const strategy = new LoginBeginStrategy(
+  const strategy = new SessionOnboardingBeginStrategy(
     {
-      machine: "login-and-org-setup",
+      machine: "session-onboarding",
       principal_id: principal,
-      persona_email: profile.email,
-      persona_display_name: profile.display_name,
+      bearer_token: `tok-${principal}`,
       correlation_id: correlation,
     },
     deps,
@@ -102,9 +114,9 @@ async function driveToReady(
     () => {},
   );
   await beginOrchestrator.begin(strategy);
-  const flow_id = `login-and-org-setup:${principal}`;
+  const flow_id = `session-onboarding:${principal}`;
   await orch.send({
-    machine: "login-and-org-setup",
+    machine: "session-onboarding",
     flow_id,
     type: "org_form_submitted",
     payload: { org_name: "Acme Data" },
@@ -129,7 +141,7 @@ describe("FlowOrchestrator.broadcastFreeze (B1)", () => {
       PROFILE_KAI,
     );
 
-    // Maya is the origin (her login machine reached expired_token).
+    // Maya is the origin (her session-onboarding flow reached expired_token).
     orch.broadcastFreeze(mayaFlow);
 
     expect(orch.isFrozen(mayaFlow)).toBe(false);
@@ -185,21 +197,21 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
 
     // Send three intent events to Kai while frozen.
     await orch.send({
-      machine: "login-and-org-setup",
+      machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
       correlation_id: "R-2",
     });
     await orch.send({
-      machine: "login-and-org-setup",
+      machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
       correlation_id: "R-2",
     });
     await orch.send({
-      machine: "login-and-org-setup",
+      machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
@@ -228,7 +240,7 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
     // Push exactly 16 events — at the cap, still queued.
     for (let i = 0; i < 16; i += 1) {
       await orch.send({
-        machine: "login-and-org-setup",
+        machine: "session-onboarding",
         flow_id: kaiFlow,
         type: "retry_clicked",
         payload: { i },
@@ -240,7 +252,7 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
 
     // 17th event triggers overflow — buffer abandoned, future replay is a no-op.
     await orch.send({
-      machine: "login-and-org-setup",
+      machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: { i: 16 },
@@ -273,7 +285,7 @@ describe("FlowOrchestrator replay buffer 5s timeout (B4)", () => {
     orch.broadcastFreeze(mayaFlow);
     // One event in-window — queued.
     await orch.send({
-      machine: "login-and-org-setup",
+      machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
@@ -286,7 +298,7 @@ describe("FlowOrchestrator replay buffer 5s timeout (B4)", () => {
 
     // Post-window event is dropped (not added to buffer).
     await orch.send({
-      machine: "login-and-org-setup",
+      machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: { late: true },
@@ -321,7 +333,7 @@ describe("Login machine reaching expired_token triggers broadcastFreeze (B6)", (
 
       // Drive Maya into expired_token via the harness side-channel.
       await orch.send({
-        machine: "login-and-org-setup",
+        machine: "session-onboarding",
         flow_id: mayaFlow,
         type: "__expire_token__",
         payload: {},
@@ -348,11 +360,11 @@ describe("Login machine returning to ready after silent reauth triggers broadcas
     try {
       // Build deps with a silent reauth that succeeds on the first try.
       const silentReauthOk = fromPromise(async () => ({ ok: true as const }));
-      const deps: LoginMachineDeps = {
+      const deps: SessionOnboardingDeps = {
         workosUserInfo: workosOkProfile(PROFILE_MAYA),
         createOrgAndReissue: succeedingCreateOrg(),
         silentReauth: silentReauthOk,
-      } as unknown as LoginMachineDeps;
+      } as unknown as SessionOnboardingDeps;
       orch = buildOrchestrator();
 
       // Maya is the origin flow that expires + silently reauths, so her begin
@@ -373,7 +385,7 @@ describe("Login machine returning to ready after silent reauth triggers broadcas
 
       // Expire — should freeze Kai and invoke silent reauth which succeeds.
       await orch.send({
-        machine: "login-and-org-setup",
+        machine: "session-onboarding",
         flow_id: mayaFlow,
         type: "__expire_token__",
         payload: {},
@@ -384,6 +396,126 @@ describe("Login machine returning to ready after silent reauth triggers broadcas
       expect(orch.isFrozen(kaiFlow)).toBe(false);
     } finally {
       delete process.env.NWAVE_HARNESS_KNOBS;
+    }
+  });
+});
+
+// ── FIX D2 — auth_ready broadcast fires on the [hasOrg] shortcut path ──────
+// Event-model Spec-1 last bullet (ratified 2026-05-22): a RETURNING user who
+// reaches `ready` directly from `verifying` (the [hasOrg] shortcut, NO
+// creating_org predecessor) must ALSO spawn project-context via the auth_ready
+// broadcast carrying { org_id, first_name }. This was previously unasserted.
+//
+// The broadcast is observed by its SIDE EFFECT — the spawned project-context
+// flow. We wire projectContextMachineDeps with a spy on resolveInitialScope:
+//   - the spy's captured `org_id` input proves the broadcast carried org_id;
+//   - the spawned project-context projection's context.user.first_name proves
+//     the broadcast carried first_name (the machine seeds it from auth_ready).
+// Neither is a tautology — both are downstream effects of the broadcast firing.
+const PROJECT_CONTEXT_WIRE = "project-and-chat-session-management";
+
+describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
+  let orch: FlowOrchestrator;
+  afterEach(async () => {
+    await orch.dispose();
+  });
+
+  it("verifying → ready (returning user, no creating_org) fires auth_ready with org_id + first_name", async () => {
+    const seenScopeInputs: ResolveInitialScopeInput[] = [];
+    const resolveInitialScope: ResolveInitialScopeActor = fromPromise(
+      async ({
+        input,
+      }: {
+        input: ResolveInitialScopeInput;
+      }): Promise<ResolveInitialScopeOutput> => {
+        seenScopeInputs.push(input);
+        return { project: { id: "proj-A", name: "Project A" } };
+      },
+    );
+    const createProject: CreateProjectActor = fromPromise(async () => ({
+      id: "proj-A",
+      name: "Project A",
+    }));
+    const switchProject: SwitchProjectActor = fromPromise(
+      async (): Promise<SwitchProjectOutput> => ({
+        project: { id: "proj-A", name: "Project A" },
+      }),
+    );
+    const projectContextMachineDeps: ProjectContextMachineDeps = {
+      resolveInitialScope,
+      createProject,
+      switchProject,
+    };
+
+    orch = new FlowOrchestrator(
+      {
+        eventLog: createNoopFlowEventLog(),
+        projectContextMachineDeps,
+        log: () => {},
+      },
+      new FlowActorRegistry(),
+    );
+
+    // Returning user: seed existing_org_id so begin lands DIRECTLY in `ready`
+    // via the [hasOrg] shortcut (no creating_org, no org_form_submitted).
+    const principal = "user_returning";
+    const correlation = "R-hasorg";
+    const beginOrchestrator = new BeginFlowOrchestrator(
+      orch.deps.eventLog,
+      orch.registry,
+    );
+    const strategy = new SessionOnboardingBeginStrategy(
+      {
+        machine: "session-onboarding",
+        principal_id: principal,
+        bearer_token: "tok-returning",
+        existing_org_id: "org-returning",
+        correlation_id: correlation,
+      },
+      buildDeps(PROFILE_MAYA),
+      orch.deps.eventLog,
+      () => {},
+    );
+    const beginResult = await beginOrchestrator.begin(strategy);
+    expect(beginResult.ok).toBe(true);
+    const loginFlow = `session-onboarding:${principal}`;
+
+    // Drive a settle through send() on the already-`ready` returning-user flow.
+    // prior is unset → isFirstReady (`!prior`) AND the predecessor was
+    // `verifying` (begin's only transition) → settle returns authReady → the
+    // pump fires beginIfNotStarted(project-context). An unknown event keeps the
+    // machine in `ready` so the settle observes the [hasOrg] ready arm.
+    await orch.send({
+      machine: "session-onboarding",
+      flow_id: loginFlow,
+      type: "noop_settle_trigger",
+      payload: {},
+      correlation_id: correlation,
+    });
+
+    // Side effect 1: the broadcast spawned project-context, and its
+    // resolveInitialScope invoke ran with the org_id the broadcast carried.
+    // (The machine fires the invoke on initial entry with org_id="" then
+    // re-enters on the auth_ready event with the broadcast's org_id — so we
+    // assert the broadcast value is among the captured inputs, not an exact
+    // invoke count, which would couple to the spawn mechanism's internals.)
+    expect(
+      seenScopeInputs.map((i) => i.org_id),
+    ).toContain("org-returning");
+
+    // Side effect 2: the spawned project-context projection carries the
+    // first_name the broadcast forwarded (Maya Chen → "Maya").
+    const pcProjection = await orch.getProjection(
+      `${PROJECT_CONTEXT_WIRE}:${principal}`,
+    );
+    expect(pcProjection.ok).toBe(true);
+    if (pcProjection.ok) {
+      const ctx = pcProjection.value.context as {
+        org: { id: string | null };
+        user: { first_name: string | null };
+      };
+      expect(ctx.user.first_name).toBe("Maya");
+      expect(ctx.org.id).toBe("org-returning");
     }
   });
 });

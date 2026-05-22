@@ -25,20 +25,25 @@
 import type { AnyActorRef } from "xstate";
 
 /**
- * Login-and-org-setup machine's settled-state harvest.
+ * Session-onboarding machine's settled-state harvest (ADR-041).
  *
- * Reads `org`, `user`, and `underlying_cause_tag` from the actor's
- * current snapshot context. Used by `orchestrator.ts` `send()` to source
- * the terminal-event payload for:
- *   - `ready` → `org_created_and_jwt_reissued` (needs `org.id` to mint
- *     the access_token, and `org` / `user` to populate the event payload)
- *   - `error_recoverable` → `reissue_failed_partial` (needs
- *     `underlying_cause_tag` and `org` for the payload)
+ * Reads `org`, `user`, and `underlying_cause_tag` from the actor's current
+ * snapshot context. This is the SANCTIONED snapshot-read boundary the begin
+ * sequence + the settle path use to source terminal-event payloads:
+ *   - begin `verifying → ready|needs_org` → `session_started{user, org}`
+ *     (the re-verify actor's resolved user/org land on the snapshot AFTER the
+ *     control-state settles; harvesting them here is what seeds the projection
+ *     at t=0 — the ADR-041 D2 defect fix).
+ *   - begin `verifying → session_rejected` → `session_rejected{reason}`
+ *     (needs `underlying_cause_tag`).
+ *   - settle `ready` → `org_created` (needs `org` for the payload + org_id for
+ *     the non-security org-claim echo).
+ *   - settle `error_recoverable` → `reissue_failed_partial` (needs
+ *     `underlying_cause_tag` and `org`).
  *
- * The fields harvested here are exactly those the LEAF-B commit body
- * flagged as "carrying placeholder values" when read from the projection
- * directly — the projection reducer for the terminal event populates
- * them, so reads from projection at the moment of emission see null.
+ * The fields harvested here are exactly those that "carry placeholder values"
+ * when read from the projection directly at emission time — the snapshot is
+ * the only legal source until the LEAF-5 store model lands.
  */
 export function harvestSettledLoginState(actor: AnyActorRef): {
   org: { id: string | null; name: string | null };
@@ -48,6 +53,7 @@ export function harvestSettledLoginState(actor: AnyActorRef): {
     first_name: string | null;
   };
   underlying_cause_tag: string | null;
+  org_validation_error: { kind: string; message: string } | null;
 } {
   const ctx = actor.getSnapshot().context as {
     org: { id: string | null; name: string | null };
@@ -57,11 +63,17 @@ export function harvestSettledLoginState(actor: AnyActorRef): {
       first_name: string | null;
     };
     underlying_cause_tag: string | null;
+    org_validation_error: { kind: string; message: string } | null;
   };
   return {
     org: ctx.org,
     user: ctx.user,
     underlying_cause_tag: ctx.underlying_cause_tag,
+    // The invalid-name self-loop sets org_validation_error on the snapshot and
+    // stays in `needs_org`; no FlowEvent has captured it yet, so the settle
+    // path harvests it here to emit `validation_failed` (the projection's only
+    // source for the inline error).
+    org_validation_error: ctx.org_validation_error ?? null,
   };
 }
 

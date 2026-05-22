@@ -34,11 +34,11 @@ import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { ResourceType } from "./active-scope.ts";
 import { err,ok, type Result } from "./flow-result.ts";
-import { loginOrgSetupStrategy } from "./machines/login-and-org-setup/strategy.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import { type SessionChatMachineDeps } from "./machines/session-chat/index.ts";
 import { sessionChatStrategy } from "./machines/session-chat/strategy.ts";
+import { sessionOnboardingStrategy } from "./machines/session-onboarding/strategy.ts";
 import {
   harvestSettledFreezeState,
   harvestSettledProjectContextState,
@@ -91,6 +91,12 @@ export interface OrchestratorDeps {
 /** Canonical machine-name used as the FlowStrategy registry key and the
  *  alias-map target for the legacy wire name. */
 const PROJECT_CONTEXT_MACHINE = "project-context";
+
+/** Canonical session-onboarding machine-name (ADR-041) and the legacy wire
+ *  name it replaced. The alias map (LEAF-2) canonicalizes the legacy name so
+ *  pre-rename FE/harness paths + existing flow_ids do not 404. */
+const SESSION_ONBOARDING_MACHINE = "session-onboarding";
+const LOGIN_AND_ORG_SETUP_WIRE_NAME = "login-and-org-setup";
 
 /**
  * Pump/strategy seam — the capability surface a `FlowStrategy` may use
@@ -234,6 +240,9 @@ function toFlowError(e: unknown): Result<never> {
  */
 const MACHINE_NAME_ALIASES: Readonly<Record<string, string>> = {
   [PROJECT_CONTEXT_WIRE_NAME]: PROJECT_CONTEXT_MACHINE,
+  // ADR-041 / LEAF-2: the legacy login-and-org-setup wire path + pre-rename
+  // flow_ids resolve to the renamed session-onboarding strategy.
+  [LOGIN_AND_ORG_SETUP_WIRE_NAME]: SESSION_ONBOARDING_MACHINE,
 };
 
 /**
@@ -269,7 +278,7 @@ class FlowStrategyRegistry {
 
 export const FLOW_STRATEGY_REGISTRY = new FlowStrategyRegistry();
 
-FLOW_STRATEGY_REGISTRY.register(loginOrgSetupStrategy);
+FLOW_STRATEGY_REGISTRY.register(sessionOnboardingStrategy);
 FLOW_STRATEGY_REGISTRY.register(projectContextStrategy);
 // Session-chat is normally spawned via the `project_ready` broadcast hook
 // (project-context → `project_selected`). Direct `/begin` HTTP posts route
@@ -280,8 +289,13 @@ FLOW_STRATEGY_REGISTRY.register(sessionChatStrategy);
 export interface BeginFlowInput {
   machine: string;
   principal_id: string;
-  persona_email: string;
-  persona_display_name: string;
+  /** The forwarded Bearer (L4) — re-verified against WorkOS /oauth/userinfo.
+   *  Identity comes from the verified token, never a client body claim. */
+  bearer_token: string;
+  /** The verified org claim auth-proxy injects via `X-Org-Id` (FIX D1). It is
+   *  the SOLE source for the `[hasOrg]` returning-user shortcut — seeded into
+   *  the machine context. Empty / null means "no org" (new user). */
+  existing_org_id?: string | null;
   correlation_id: string;
   /** Seed for the duplicate-org-name fixture path. */
   existing_org_names?: string[];
@@ -790,20 +804,20 @@ export class FlowOrchestrator implements PumpContext {
 
     // Post-settle terminal-emission CHAIN. All three strategies are called
     // unconditionally in sequence — `settle` is NOT per-machine-exclusive:
-    // login's `expired_token` / `error_recoverable` / `authenticated_no_org`
-    // arms are state-gated, not machine-gated, so a non-login flow that
-    // settles in those states still falls through the shared login arm.
+    // session-onboarding's `expired_token` / `error_recoverable` / `needs_org`
+    // arms are state-gated, not machine-gated, so a non-onboarding flow that
+    // settles in those states still falls through the shared arm.
     // Each strategy guards its own machine-specific arms internally, so
     // the two siblings act as no-ops for the matching machine's flow.
     // The pump retains all cross-machine hook firing (`auth_ready` after
-    // login.settle returns `authReady`; `project_ready` after
+    // session-onboarding.settle returns `authReady`; `project_ready` after
     // project.settle returns `projectReady`). session-chat is the spawn-
     // chain terminal — empty `SettleOutcome`, no onward hook.
 
-    if (!loginOrgSetupStrategy.settle) {
-      throw new Error("loginOrgSetupStrategy.settle missing (LEAF-3 N3)");
+    if (!sessionOnboardingStrategy.settle) {
+      throw new Error("sessionOnboardingStrategy.settle missing (LEAF-3 N3)");
     }
-    const loginSettleOutcome = await loginOrgSetupStrategy.settle(
+    const loginSettleOutcome = await sessionOnboardingStrategy.settle(
       this,
       actor,
       input,

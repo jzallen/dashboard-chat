@@ -1,17 +1,24 @@
-// LoginAndOrgSetupMachine — XState v5 statechart for J-001.
+// SessionOnboardingMachine — XState v5 statechart for the OnboardSession
+// aggregate (ADR-041).
 //
-// Per `docs/product/journeys/login-and-org-setup.yaml` the machine has 8
-// states: anonymous, authenticating, authenticated_no_org, creating_org,
-// ready, error_recoverable, expired_token, error_terminal.
+// Entry assumes an ALREADY-AUTHENTICATED principal (auth-proxy verified the
+// user upstream and injected X-User-Id + forwarded the Bearer). The machine
+// does not re-enact a sign-in handshake; it brings the verified principal to
+// an org-scoped, app-ready state.
 //
-// Step 01-01 (walking skeleton) wired the happy path through
-// authenticated_no_org. Step 01-02 extends the chart with:
-//   - authenticated_no_org --[org_form_submitted | validateOrgName ok]--> creating_org
-//   - authenticated_no_org --[org_form_submitted | validateOrgName fail]--> stay (inline error in context)
-//   - creating_org --[invoke: createOrgAndReissue onDone]--> ready
-//   - creating_org --[invoke: createOrgAndReissue onError | retries < 3]--> creating_org (retry)
-//   - creating_org --[invoke: createOrgAndReissue onError | retries == 3]--> error_recoverable (partial-setup)
-//   - authenticating --[invoke: workosUserInfo onError]--> error_recoverable
+// States (L6):
+//   - verifying      — re-verify the forwarded Bearer against WorkOS
+//                      /oauth/userinfo (defense-in-depth, L3). Collapses the
+//                      retired `anonymous` + `authenticating` states.
+//   - needs_org      — verified, no org binding yet (renamed from
+//                      authenticated_no_org). Awaits org_form_submitted.
+//   - creating_org   — POST /api/orgs (+ reissue). Retries within budget.
+//   - ready          — signed in with an org. Reached directly from verifying
+//                      on the [hasOrg] returning-user shortcut, or from
+//                      creating_org for a new user.
+//   - expired_token  — silent-reauth side-state.
+//   - error_recoverable / error_terminal — org-setup error landing zones.
+//   - session_rejected — terminal: re-verify failed (token/user invalid).
 
 import { assign, fromPromise, setup } from "xstate";
 
@@ -22,15 +29,15 @@ import {
   validateOrgName,
 } from "../validation.ts";
 
-export type LoginState =
-  | "anonymous"
-  | "authenticating"
-  | "authenticated_no_org"
+export type SessionOnboardingState =
+  | "verifying"
+  | "needs_org"
   | "creating_org"
   | "ready"
   | "error_recoverable"
   | "expired_token"
-  | "error_terminal";
+  | "error_terminal"
+  | "session_rejected";
 
 export type { UnderlyingCauseTag } from "../validation.ts";
 
@@ -39,14 +46,25 @@ export interface OrgValidationInlineError {
   message: string;
 }
 
-export interface LoginMachineContext {
+export interface SessionOnboardingContext {
   correlation_id: string;
   principal_id: string;
+  /** The forwarded Bearer (L4) — threaded from the router's Authorization
+   *  header into the re-verify invoke input. Never a client body claim. */
+  bearer_token: string;
   user: { email: string | null; display_name: string | null; first_name: string | null };
   org: { id: string | null; name: string | null };
   /** The org name Maya last submitted -- preserved across `creating_org`
    *  re-entries so each retry sees the same name as the first attempt. */
   pending_org_name: string;
+  /** The verified org claim auth-proxy injects via `X-Org-Id`, pre-seeded into
+   *  context at machine creation (FIX D1). It is the SOLE source for the
+   *  `[hasOrg]` returning-user shortcut — available BEFORE the re-verify invoke
+   *  settles, so the guard reads it from context (not the actor output). Empty
+   *  string / null means "no org" (new user). The org NAME is not in the header,
+   *  so the seeded `org` carries `name: null` until the FE / a later read fills
+   *  it in. */
+  existing_org_id: string | null;
   underlying_cause_tag: UnderlyingCauseTag | null;
   retries_count: number;
   reissue_attempts_count: number;
@@ -58,8 +76,7 @@ export interface LoginMachineContext {
   existing_org_names: string[];
 }
 
-export type LoginEvent =
-  | { type: "sign_in_clicked"; persona_email: string; persona_display_name: string }
+export type SessionOnboardingEvent =
   | { type: "org_form_submitted"; org_name: string }
   | { type: "retry_clicked" }
   | { type: "__force_failure__"; tag: UnderlyingCauseTag }
@@ -67,14 +84,25 @@ export type LoginEvent =
   | { type: "FREEZE" }
   | { type: "THAW" };
 
+/**
+ * The verified-user IDENTITY returned by the WorkOS `/oauth/userinfo`
+ * re-verification call (L5). Real WorkOS `/oauth/userinfo` does NOT return an
+ * app-level org binding, so this is identity ONLY (email + display_name). The
+ * `[hasOrg]` shortcut is driven by the verified `X-Org-Id` header instead,
+ * seeded into context as `existing_org_id` (FIX D1).
+ */
 export interface WorkOSProfile {
   email: string;
   display_name: string;
 }
 
+/**
+ * Re-verify actor input (L4): the forwarded Bearer token (from the
+ * `Authorization` header), threaded router → machine input → invoke. NEVER a
+ * client body claim.
+ */
 export interface WorkOSUserInfoInput {
-  persona_email: string;
-  persona_display_name: string;
+  bearer_token: string;
 }
 
 export type WorkOSUserInfoActor = ReturnType<
@@ -109,7 +137,7 @@ export type SilentReauthActor = ReturnType<
   typeof fromPromise<{ ok: true }, { correlation_id: string }>
 >;
 
-export interface LoginMachineDeps {
+export interface SessionOnboardingDeps {
   workosUserInfo: WorkOSUserInfoActor;
   createOrgAndReissue: CreateOrgAndReissueActor;
   /** Optional — when absent, expired_token has no invocation (matches the
@@ -122,14 +150,16 @@ const REISSUE_BUDGET = 3;
  *  same underlying_cause_tag (= 3 user retries) escalates to error_terminal. */
 const USER_RETRY_BUDGET = 3;
 
-export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
+export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
   return setup({
     types: {
-      context: {} as LoginMachineContext,
-      events: {} as LoginEvent,
+      context: {} as SessionOnboardingContext,
+      events: {} as SessionOnboardingEvent,
       input: {} as {
         correlation_id: string;
         principal_id: string;
+        bearer_token?: string;
+        existing_org_id?: string | null;
         existing_org_names?: string[];
       },
     },
@@ -146,6 +176,12 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
         (fromPromise(async () => new Promise<{ ok: true }>(() => {})) as SilentReauthActor),
     },
     guards: {
+      // The org binding comes from the verified `X-Org-Id` header, pre-seeded
+      // into context as `existing_org_id` at machine creation (FIX D1). It is
+      // available BEFORE the re-verify invoke settles — reading it from context
+      // (not `event.output`) sidesteps the assign-after-guard ordering trap.
+      // hasOrg = a present, non-empty existing_org_id.
+      hasOrg: ({ context }) => Boolean(context.existing_org_id),
       orgNameValid: ({ context, event }) => {
         if (event.type !== "org_form_submitted") return false;
         const result = validateOrgName(
@@ -160,6 +196,37 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
         context.retry_budget_used_count + 1 >= USER_RETRY_BUDGET,
     },
     actions: {
+      // Re-verify returns IDENTITY ONLY (FIX D1) — assign user from the actor
+      // output. The org is NOT in the output; it is sourced from context's
+      // pre-seeded existing_org_id (see assignSeededOrg).
+      assignVerifiedUser: assign({
+        user: ({ event }) => {
+          const output = (event as unknown as { output: WorkOSProfile }).output;
+          return {
+            email: output.email,
+            display_name: output.display_name,
+            first_name: (output.display_name ?? "").split(/\s+/)[0] || null,
+          };
+        },
+      }),
+      // Returning-user [hasOrg] arm: populate context.org from the header-seeded
+      // existing_org_id. The org NAME is not in the header, so name stays null
+      // (the projection tolerates a null name).
+      assignSeededOrg: assign({
+        org: ({ context }) =>
+          context.existing_org_id
+            ? { id: context.existing_org_id, name: null }
+            : { id: null, name: null },
+      }),
+      tagSessionRejected: assign({
+        underlying_cause_tag: ({ event }) => {
+          const err = (event as { error?: unknown }).error as
+            | { message?: string }
+            | string;
+          const message = typeof err === "string" ? err : err?.message;
+          return classifyFailure({ message });
+        },
+      }),
       recordOrgValidationError: assign({
         org_validation_error: ({ context, event }) => {
           if (event.type !== "org_form_submitted") return null;
@@ -206,13 +273,15 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
       }),
     },
   }).createMachine({
-    id: "login-and-org-setup",
-    initial: "anonymous",
+    id: "session-onboarding",
+    initial: "verifying",
     context: ({ input }) => ({
       correlation_id: input.correlation_id,
       principal_id: input.principal_id,
+      bearer_token: input.bearer_token ?? "",
       user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
+      existing_org_id: input.existing_org_id ?? null,
       pending_org_name: "",
       underlying_cause_tag: null,
       retries_count: 0,
@@ -222,49 +291,31 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
       existing_org_names: input.existing_org_names ?? [],
     }),
     states: {
-      anonymous: {
-        on: {
-          sign_in_clicked: {
-            target: "authenticating",
-          },
-        },
-      },
-      authenticating: {
+      // Re-verify the forwarded Bearer (defense in depth, L3). On success the
+      // verified user + org binding land on the snapshot; the [hasOrg] guard
+      // forks ready vs needs_org. On failure the session is rejected.
+      verifying: {
         invoke: {
           src: "workosUserInfo",
-          input: ({ event }) => {
-            if (event.type !== "sign_in_clicked") {
-              return { persona_email: "", persona_display_name: "" };
-            }
-            return {
-              persona_email: event.persona_email,
-              persona_display_name: event.persona_display_name,
-            };
-          },
-          onDone: {
-            target: "authenticated_no_org",
-            actions: assign({
-              user: ({ event }) => ({
-                email: event.output.email,
-                display_name: event.output.display_name,
-                first_name:
-                  (event.output.display_name ?? "").split(/\s+/)[0] || null,
-              }),
-            }),
-          },
+          input: ({ context }) => ({ bearer_token: context.bearer_token }),
+          onDone: [
+            {
+              guard: "hasOrg",
+              target: "ready",
+              actions: ["assignVerifiedUser", "assignSeededOrg"],
+            },
+            {
+              target: "needs_org",
+              actions: "assignVerifiedUser",
+            },
+          ],
           onError: {
-            target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: ({ event }) => {
-                const err = event.error as { message?: string } | string;
-                const message = typeof err === "string" ? err : err.message;
-                return classifyFailure({ message });
-              },
-            }),
+            target: "session_rejected",
+            actions: "tagSessionRejected",
           },
         },
       },
-      authenticated_no_org: {
+      needs_org: {
         on: {
           org_form_submitted: [
             {
@@ -285,8 +336,8 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
           ],
           // Harness-only side-channel: force the machine into
           // error_recoverable carrying the supplied cause tag. Gated at the
-          // HTTP layer (index.ts) by NWAVE_HARNESS_KNOBS=true so production
-          // builds never see this event.
+          // HTTP layer (router.ts) by the failure-simulation gate so
+          // production builds never see this event.
           __force_failure__: {
             target: "error_recoverable",
             actions: assign({
@@ -340,7 +391,7 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
       ready: {
         on: {
           // Harness-only side-channel: force the machine from ready to
-          // expired_token. Gated at the HTTP layer by NWAVE_HARNESS_KNOBS.
+          // expired_token. Gated at the HTTP layer by the failure-sim gate.
           __expire_token__: {
             target: "expired_token",
           },
@@ -394,40 +445,32 @@ export function createLoginAndOrgSetupMachine(deps: LoginMachineDeps) {
         },
       },
       error_terminal: {},
+      // Terminal: re-verify failed. No user state advances; no session_started
+      // is emitted. The projection surfaces session_rejected (OQ-2).
+      session_rejected: {},
     },
   });
 }
 
 /**
- * Build a WorkOS user-info actor that calls the real WorkOS-compatible
- * `/oauth/userinfo` endpoint. Used in production; tests can substitute via
- * `.provide({ actors: { workosUserInfo: fromPromise(...) } })`.
+ * Build a WorkOS user-info actor that re-verifies the forwarded Bearer
+ * against the WorkOS-compatible `/oauth/userinfo` endpoint (L3/L4). Used in
+ * production; tests substitute via `.provide({ actors: { workosUserInfo:
+ * fromPromise(...) } })` or by injecting a stub through the deps factory.
+ *
+ * Identity comes from the verified token (the `Authorization: Bearer` header
+ * auth-proxy forwards), NEVER a client body claim. Re-verify returns IDENTITY
+ * ONLY (email + display_name) — real WorkOS `/oauth/userinfo` carries no
+ * app-level org binding, so the returning-user org comes from the verified
+ * `X-Org-Id` header instead (FIX D1).
  */
 export function createWorkOSUserInfoActor(config: Config): WorkOSUserInfoActor {
   const { workosUrl } = config;
   return fromPromise<WorkOSProfile, WorkOSUserInfoInput>(async ({ input }) => {
-    // First do the token exchange.
-    const tokenResp = await fetch(`${workosUrl}/oauth/token`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        // The fake-workos `set_profile_for(code, ...)` keys profiles by code.
-        // Persona name doubles as the auth code for fixture lookup.
-        code: derivePersonaCode(input.persona_email),
-      }),
-    });
-    if (!tokenResp.ok) {
-      throw new Error(`workos token exchange failed: ${tokenResp.status}`);
-    }
-    const tokenBody = (await tokenResp.json()) as { access_token: string };
-
-    // Then fetch the user profile.
     const userResp = await fetch(`${workosUrl}/oauth/userinfo`, {
       method: "GET",
       headers: {
-        authorization: `Bearer ${tokenBody.access_token}`,
-        // The fake server keys profile lookup by `x-fake-workos-code` header.
-        "x-fake-workos-code": derivePersonaCode(input.persona_email),
+        authorization: `Bearer ${input.bearer_token}`,
       },
     });
     if (!userResp.ok) {
@@ -582,7 +625,7 @@ export function createOrgAndReissueFn(
 /**
  * XState actor wrapper around `createOrgAndReissueFn`. Production
  * composition root calls this; tests can substitute via the failure-
- * simulation knob (the login router's `force_reissue_failures`, resolved
+ * simulation knob (the router's `force_reissue_failures`, resolved
  * into deps by the injected buildLoginDeps factory) without rebuilding the
  * actor surface.
  */
@@ -593,12 +636,6 @@ export function createOrgAndReissueActor(config: Config): CreateOrgAndReissueAct
   );
 }
 
-/**
- * Build a createOrgAndReissue actor that injects N forced failures before
- * delegating to a real implementation. The (N+1)-th call hits the real
- * backend; earlier calls throw "reissue forced-failure". Used by the
- * harness knob — production builds never construct this.
- */
 /**
  * Build an actor that DOES create the org (via the real create path) but
  * fails the REISSUE step the first N attempts. Models the scenario
@@ -643,17 +680,4 @@ export function createForcedFailureOrgAndReissueActor(
       return { org_id: created.org_id, org_name: created.org_name };
     },
   );
-}
-
-/**
- * Map persona email → fake-workos lookup code. The fake server's harness
- * sets `set_profile_for("maya-auth-code", { ... })`; persona local-part
- * doubles as the code so production-shaped calls find the fixture.
- */
-function derivePersonaCode(email: string): string {
-  const local = email.split("@")[0] ?? "";
-  // "maya.chen" → "maya-auth-code"; preserves the fixture contract the
-  // walking-skeleton step set up.
-  const first = local.split(".")[0];
-  return `${first}-auth-code`;
 }

@@ -1,26 +1,29 @@
 /**
- * Login-and-org-setup HTTP transport — per-machine flow router.
+ * Session-onboarding HTTP transport — per-machine flow router (ADR-041).
  *
- * Owns the login-specific endpoints (`/begin`, `/event`, `/open-deep-link`);
- * the shared substrate at `hexagonal-transport/flow-router.ts` mounts the
- * machine-agnostic routes (`/freeze`, `/thaw`, `/projection`,
- * `/projection/stream`).
+ * This is the Anti-Corruption Layer (wave-decisions §1): it translates the
+ * Authentication context's wire vocabulary (`X-User-Id`, `Authorization:
+ * Bearer`) into the domain's language (`principal_id`, `session_started`).
+ * The ACL rule it enforces: identity comes from the verified token / verified
+ * header, NEVER a client body claim (L4). `persona_email` is no longer a
+ * required production DTO field.
  *
- *   POST /begin            — direct WorkOS + org-create begin (login is
- *                            the only `beginsDirectly` machine);
- *                            persona_email is mandatory.
- *   POST /event            — accepts `__force_failure__` and
- *                            `__expire_token__` wire events under the
- *                            failure-simulation gate.
- *   POST /open-deep-link   — legacy ScopeResolver path; the intent-shaped
- *                            branch lives on project-context.
+ *   POST /begin            — re-verify the forwarded Bearer + seed the
+ *                            projection from session_started (session-onboarding
+ *                            is the only `beginsDirectly` machine).
+ *   POST /event            — accepts org_form_submitted, retry_clicked, and the
+ *                            `__force_failure__` / `__expire_token__` wire
+ *                            events under the failure-simulation gate.
+ *   POST /open-deep-link   — legacy ScopeResolver path.
  *
  * Design rationale lives in the ADRs (not at the call sites):
- *   - ADR-028  This module imports the substrate + orchestrator TYPES
- *              only; the orchestrator stays the sole cross-machine mediator.
+ *   - ADR-028  Imports the substrate + orchestrator TYPES only.
  *   - ADR-029  Deep-link scope resolution at the HTTP edge.
  *   - ADR-035  Failure-simulation gate composition.
- *   - ADR-040  FlowStrategy port + the `mountUniformFlowRoutes` substrate.
+ *   - ADR-040  FlowStrategy port + the `mountUniformFlowRoutes` substrate;
+ *              LEAF-2 alias map keeps the legacy `login-and-org-setup` wire
+ *              name resolving during migration.
+ *   - ADR-041  Domain realignment to session-onboarding.
  */
 
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
@@ -38,37 +41,46 @@ import type {
   FlowOrchestrator,
 } from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
-import type { LoginMachineDeps } from "./index.ts";
-import { LoginBeginStrategy } from "./strategy.ts";
+import type { SessionOnboardingDeps } from "./index.ts";
+import { SessionOnboardingBeginStrategy } from "./strategy.ts";
+
+/** The canonical machine name (ADR-039) — also the wire path segment. */
+const SESSION_ONBOARDING_MACHINE = "session-onboarding";
 
 /**
  * Context this router consumes from its host app. The composition root sets
- * these variables (and may carry more); the login routes require only these.
+ * these variables (and may carry more); the session-onboarding routes require
+ * the trusted-ingress identity (`userId`), the forwarded Bearer
+ * (`bearerToken`), the reference code, and the parsed body.
  */
-export interface LoginRouterContext {
+export interface SessionOnboardingRouterContext {
   Variables: {
     referenceCode: string;
     userId: string;
+    bearerToken: string;
+    /** The verified org claim auth-proxy injects via `X-Org-Id` (FIX D1) —
+     *  the SOLE source for the `[hasOrg]` returning-user shortcut. Empty
+     *  string / absent means "no org" (new user). */
+    orgId: string;
     body: unknown;
   };
 }
 
 /**
  * Factory the composition root injects so the router can hand the orchestrator
- * pre-built login machine deps. The concretions (WorkOS userinfo, org-create +
- * reissue, silent reauth) stay in the composition root; the router only decides
- * whether to request the forced-failure variant via `forceReissueFailures`
- * (the harness knob, already gated at the edge).
+ * pre-built machine deps. The concretions (WorkOS userinfo re-verify, org-create
+ * + reissue, silent reauth) stay in the composition root; the router only
+ * decides whether to request the forced-failure variant via
+ * `forceReissueFailures` (the harness knob, already gated at the edge).
  */
 export type BuildLoginDeps = (opts: {
   forceReissueFailures?: number;
-}) => LoginMachineDeps;
+}) => SessionOnboardingDeps;
 
 /**
  * Total mapper from the orchestrator's Result API to an HTTP Response. The
- * composition root injects the substrate's `resultToJson` here so the login
- * package depends on the orchestrator Result shape, not the transport
- * substrate — one fewer cross-package import as the login routes are migrated.
+ * composition root injects the substrate's `resultToJson` here so the package
+ * depends on the orchestrator Result shape, not the transport substrate.
  */
 export type SerializeResult = (
   c: Context,
@@ -77,27 +89,31 @@ export type SerializeResult = (
 ) => Response;
 
 /**
- * The login /begin request DTO: the two trusted-ingress values the outer
- * router resolves into context vars (referenceCode + userId) plus the HTTP
- * body. This schema is the route's single validation gate — persona_email is
- * the only required body field, and identity (userId) carries no fallback (it
- * comes solely from the X-User-Id header).
+ * The /begin request DTO. Identity (userId) and the Bearer are trusted-ingress
+ * values resolved into context vars by the composition root; the body carries
+ * only the org-setup hints. No `persona_email` (L4 — identity is never a client
+ * body claim). `persona_email` may still arrive as a harmless dev-fixture hint
+ * but is NOT consumed as the identity source.
  */
-const loginRequestSchema = z.object({
+const beginRequestSchema = z.object({
   referenceCode: z.string(),
   userId: z.string(),
-  body: z.object({
-    persona_email: z.string().min(1),
-    persona_display_name: z.string().optional(),
-    existing_org_names: z.array(z.string()).optional(),
-    force_reissue_failures: z.number().optional(),
-  }),
+  bearerToken: z.string(),
+  // The verified org claim (X-Org-Id). Empty string when absent — treated as
+  // "no org" (new user) downstream (FIX D1).
+  orgId: z.string(),
+  body: z
+    .object({
+      existing_org_names: z.array(z.string()).optional(),
+      force_reissue_failures: z.number().optional(),
+    })
+    .passthrough(),
 });
 
-export type LoginRequest = z.infer<typeof loginRequestSchema>;
+export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
 
-export function buildLoginAndOrgSetupRouter(
-  router: Hono<LoginRouterContext>,
+export function buildSessionOnboardingRouter(
+  router: Hono<SessionOnboardingRouterContext>,
   orchestrator: BeginFlowOrchestrator,
   flowOrchestrator: FlowOrchestrator,
   resolveActiveScope: ResolveActiveScope,
@@ -105,17 +121,15 @@ export function buildLoginAndOrgSetupRouter(
   eventLog: FlowEventLog,
   logTransition: (record: Record<string, unknown>) => void,
   serializeResult: SerializeResult,
-): Hono<LoginRouterContext> {
+): Hono<SessionOnboardingRouterContext> {
   router.post("/begin", async (c) => {
-    // The body is deserialized once by the outer router and exposed as a
-    // context var; assemble + validate the LoginRequest here (the route's
-    // single validation gate). An undefined body (no payload / malformed
-    // JSON) fails the schema and surfaces as invalid_request.
     const rawBody = c.get("body");
-    const parsed = loginRequestSchema.safeParse({
+    const parsed = beginRequestSchema.safeParse({
       referenceCode: c.get("referenceCode"),
       userId: c.get("userId"),
-      body: rawBody,
+      bearerToken: c.get("bearerToken"),
+      orgId: c.get("orgId"),
+      body: rawBody ?? {},
     });
     if (!parsed.success) {
       return c.json(
@@ -127,10 +141,8 @@ export function buildLoginAndOrgSetupRouter(
 
     // force-reissue-failures gate: the harness knob that wraps
     // createOrgAndReissue with a failure-injecting counter. Resolve it into
-    // machine deps HERE (via the injected factory) so the orchestrator
-    // receives pre-built deps and never sees the raw knob. Closed-by-default
-    // in production (ENVIRONMENT × flag, ADR-035). The gate reads the body
-    // field directly, so it is consulted with the raw parsed body.
+    // machine deps HERE (via the injected factory). Closed-by-default in
+    // production (ENVIRONMENT × flag, ADR-035).
     //
     // TODO: consider replacing with contract test and mocked external dependencies
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
@@ -143,12 +155,14 @@ export function buildLoginAndOrgSetupRouter(
         ? request.body.force_reissue_failures
         : undefined,
     });
-    const strategy = new LoginBeginStrategy(
+    const strategy = new SessionOnboardingBeginStrategy(
       {
-        machine: "login-and-org-setup",
+        machine: SESSION_ONBOARDING_MACHINE,
         principal_id: request.userId,
-        persona_email: request.body.persona_email,
-        persona_display_name: request.body.persona_display_name ?? "",
+        bearer_token: request.bearerToken,
+        // Empty string → "no org" (new user); a non-empty value drives the
+        // [hasOrg] returning-user shortcut (FIX D1).
+        existing_org_id: request.orgId || null,
         correlation_id: request.referenceCode,
         existing_org_names: request.body.existing_org_names,
       },
@@ -165,6 +179,7 @@ export function buildLoginAndOrgSetupRouter(
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
     let body: {
       flow_id?: string;
+      machine?: string;
       type?: string;
       payload?: Record<string, unknown>;
     };
@@ -177,9 +192,8 @@ export function buildLoginAndOrgSetupRouter(
       return c.json({ error: "flow_id and type required" }, 400);
     }
 
-    // __force_failure__ — drives login into error_recoverable with the
-    // supplied cause tag. Production must refuse this so a malicious
-    // caller cannot bypass real auth-flow logic; the gate is
+    // __force_failure__ — drives session-onboarding into error_recoverable
+    // with the supplied cause tag. Production must refuse this; the gate is
     // closed-by-default (ENVIRONMENT × flag).
     if (body.type === "__force_failure__") {
       const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
@@ -198,8 +212,8 @@ export function buildLoginAndOrgSetupRouter(
       }
     }
 
-    // __expire_token__ — drives ready → expired_token to exercise
-    // silent re-auth. Same closed-by-default gate as __force_failure__.
+    // __expire_token__ — drives ready → expired_token to exercise silent
+    // re-auth. Same closed-by-default gate as __force_failure__.
     if (body.type === "__expire_token__") {
       const allowed = shouldInject(KNOB.expireToken, {
         event: { type: body.type },
@@ -217,8 +231,11 @@ export function buildLoginAndOrgSetupRouter(
       }
     }
 
+    // The body's `machine` (when present) may be the legacy
+    // `login-and-org-setup` wire name; the orchestrator's alias map (LEAF-2)
+    // canonicalizes it. Default to the canonical name.
     const result = await flowOrchestrator.send({
-      machine: "login-and-org-setup",
+      machine: body.machine ?? SESSION_ONBOARDING_MACHINE,
       flow_id: body.flow_id,
       type: body.type,
       payload: body.payload ?? {},
@@ -227,11 +244,9 @@ export function buildLoginAndOrgSetupRouter(
     return serializeResult(c, result, "event_failed");
   });
 
-  // Deep-link / scope-resolution endpoint. The HTTP layer is the
-  // canonical place where route params meet the JWT; resolveActiveScope
-  // runs here and the resulting scope is appended to the flow's event
-  // log so subsequent projection reads observe the same authoritative
-  // scope. Login uses the legacy route-shaped body only.
+  // Deep-link / scope-resolution endpoint. The HTTP layer is the canonical
+  // place where route params meet the JWT; resolveActiveScope runs here and
+  // the resulting scope is appended to the flow's event log.
   router.post("/open-deep-link", async (c) => {
     const correlationId =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
@@ -256,8 +271,8 @@ export function buildLoginAndOrgSetupRouter(
       return c.json({ error: "flow_id required" }, 400);
     }
 
-    // auth-proxy injects identity headers; in dev X-Org-Id is
-    // dev-org-001, in prod it's the verified JWT's org_id claim.
+    // auth-proxy injects identity headers; in dev X-Org-Id is dev-org-001, in
+    // prod it's the verified JWT's org_id claim.
     const userId = c.req.header("X-User-Id") ?? "";
     const orgId = c.req.header("X-Org-Id") ?? null;
 
@@ -272,12 +287,8 @@ export function buildLoginAndOrgSetupRouter(
     );
 
     if (!resolution.ok) {
-      // Cross-tenant URL → surface the named diagnostic via a
-      // scope_access_denied event. The projection's `state` flips to
-      // `access_denied` and `scope_resolution_error.reason` names the
-      // cause.
       const result = await flowOrchestrator.appendDeepLinkEvents({
-        machine: "login-and-org-setup",
+        machine: SESSION_ONBOARDING_MACHINE,
         flow_id: body.flow_id,
         correlation_id: correlationId,
         events: [
@@ -290,11 +301,8 @@ export function buildLoginAndOrgSetupRouter(
       return serializeResult(c, result, "open_deep_link_failed");
     }
 
-    // Successful resolution → deep_link_opened. On reconciled
-    // resolution, payload carries reconciled=true so the reducer
-    // surfaces scope_reconciled in the projection.
     const result = await flowOrchestrator.appendDeepLinkEvents({
-      machine: "login-and-org-setup",
+      machine: SESSION_ONBOARDING_MACHINE,
       flow_id: body.flow_id,
       correlation_id: correlationId,
       events: [
