@@ -258,7 +258,7 @@ describe("correlation_id threading across retries (B2)", () => {
     );
     const unique = Array.from(new Set(seenCorrelationIds));
     expect(unique).toEqual([MAYA_INPUT.correlation_id]);
-    expect(actor.getSnapshot().context.correlation_id).toBe(
+    expect(actor.getSnapshot().context.params.correlation_id).toBe(
       MAYA_INPUT.correlation_id,
     );
   });

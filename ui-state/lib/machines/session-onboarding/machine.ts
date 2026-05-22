@@ -75,40 +75,46 @@ export interface OrgValidationInlineError {
   message: string;
 }
 
-export interface SessionOnboardingContext {
+/**
+ * The immutable envelope injected at begin (= the machine input, normalized).
+ * Written once by the context factory and NEVER reassigned; it lives in context
+ * only because the invoke `input:` mappers + guards can read `context` but not
+ * the actor's spawn `input`, and the input-driven (no-closure) actor design
+ * means `config`/`deps` must reach the resolvers this way.
+ */
+export interface SessionOnboardingParams {
   correlation_id: string;
   principal_id: string;
-  /** The forwarded Bearer (L4) — threaded from the router's Authorization
-   *  header into the re-verify invoke input. Never a client body claim. */
+  /** The forwarded Bearer (L4) — from the router's Authorization header into the
+   *  re-verify invoke input. Never a client body claim. */
   bearer_token: string;
-  /** Env config (provides `workosUrl` + `backendUrl`), threaded from the
-   *  composition root via the machine input so the `loadSession` resolver gets
-   *  its URLs from input rather than a closure. Null in tests that stub the
-   *  actor. */
+  /** Env config (`workosUrl` + `backendUrl`) the `loadSession` resolver reads
+   *  from input rather than a closure. Null in tests that stub the actor. */
   config: Config | null;
-  /** The I/O port (the `fetch` library), threaded composition root → machine
-   *  input → context → invoke `input:` mapper → actor input → resolver. The
-   *  resolvers call `deps.request_client(url, init)` directly. Mirrors the
-   *  `config: Config | null` nullable + fail-fast pattern — null in tests that
-   *  stub the actor (the stub ignores it). */
+  /** The I/O port (the `fetch` library) the resolvers call directly. Mirrors
+   *  `config`'s nullable + fail-fast pattern — null in tests that stub the actor. */
   deps: SessionOnboardingDeps | null;
-  /** Failure-simulation budget threaded from the machine input → the
-   *  `creating_org` invoke input so `getOrgAndReissue` can fold the forced-
-   *  failure harness in statelessly (attempt-vs-budget). Null ⇒ no forced
-   *  failures. */
+  /** Failure-simulation budget the `creating_org` invoke input passes to
+   *  `getOrgAndReissue` (stateless attempt-vs-budget). Null ⇒ no forced failures. */
   force_reissue_failures: number | null;
-  /** Drives the `expired_token` silent-reauth resolver (config/input-driven,
-   *  like every other actor — no `.provide(...)` injection). Threaded machine
-   *  input → context → the `expired_token` invoke input → `getSilentReauth`.
-   *  Defaults to "pending" (production noop). */
+  /** Drives the `expired_token` silent-reauth resolver. "pending" by default
+   *  (production noop). */
   silent_reauth_outcome: SilentReauthOutcome;
+}
+
+export interface SessionOnboardingContext {
+  /** Write-once injected envelope — see SessionOnboardingParams. */
+  params: SessionOnboardingParams;
+
+  // Outputs — the verified session being assembled.
   user: { email: string | null; display_name: string | null; first_name: string | null };
   org: { id: string | null; name: string | null };
+
+  // Bookkeeping / coordination state.
   /** The org name Maya last submitted -- preserved across `creating_org`
    *  re-entries so each retry sees the same name as the first attempt. */
   pending_org_name: string;
   underlying_cause_tag: UnderlyingCauseTag | null;
-  retries_count: number;
   reissue_attempts_count: number;
   /** Counts USER-initiated retries from error_recoverable. The 4th total
    *  attempt at the same underlying_cause_tag escalates to error_terminal
@@ -298,18 +304,19 @@ export function createSessionOnboardingMachine() {
     id: "session-onboarding",
     initial: "verifying",
     context: ({ input }) => ({
-      correlation_id: input.correlation_id,
-      principal_id: input.principal_id,
-      bearer_token: input.bearer_token ?? "",
-      config: input.config ?? null,
-      deps: input.deps ?? null,
-      force_reissue_failures: input.force_reissue_failures ?? null,
-      silent_reauth_outcome: input.silent_reauth_outcome ?? "pending",
+      params: {
+        correlation_id: input.correlation_id,
+        principal_id: input.principal_id,
+        bearer_token: input.bearer_token ?? "",
+        config: input.config ?? null,
+        deps: input.deps ?? null,
+        force_reissue_failures: input.force_reissue_failures ?? null,
+        silent_reauth_outcome: input.silent_reauth_outcome ?? "pending",
+      },
       user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
       pending_org_name: "",
       underlying_cause_tag: null,
-      retries_count: 0,
       reissue_attempts_count: 0,
       retry_budget_used_count: 0,
       org_validation_error: null,
@@ -323,10 +330,10 @@ export function createSessionOnboardingMachine() {
         invoke: {
           src: "loadSession",
           input: ({ context }) => ({
-            bearer_token: context.bearer_token,
-            correlation_id: context.correlation_id,
-            config: context.config,
-            deps: context.deps,
+            bearer_token: context.params.bearer_token,
+            correlation_id: context.params.correlation_id,
+            config: context.params.config,
+            deps: context.params.deps,
           }),
           onDone: [
             {
@@ -388,12 +395,12 @@ export function createSessionOnboardingMachine() {
           input: ({ context }) => {
             return {
               org_name: context.pending_org_name,
-              principal_id: context.principal_id,
-              correlation_id: context.correlation_id,
+              principal_id: context.params.principal_id,
+              correlation_id: context.params.correlation_id,
               attempt: context.reissue_attempts_count + 1,
-              config: context.config,
-              deps: context.deps,
-              force_reissue_failures: context.force_reissue_failures,
+              config: context.params.config,
+              deps: context.params.deps,
+              force_reissue_failures: context.params.force_reissue_failures,
             };
           },
           onDone: {
@@ -469,8 +476,8 @@ export function createSessionOnboardingMachine() {
         invoke: {
           src: "silentReauth",
           input: ({ context }) => ({
-            correlation_id: context.correlation_id,
-            outcome: context.silent_reauth_outcome,
+            correlation_id: context.params.correlation_id,
+            outcome: context.params.silent_reauth_outcome,
           }),
           onDone: {
             target: "ready",
