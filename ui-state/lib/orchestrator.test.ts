@@ -22,9 +22,7 @@
 // broadcastThaw, isFrozen) and observes via the projection or those methods.
 //
 // The session-onboarding actors are driven by a MOCK `fetch` injected as the I/O
-// port (deps.request_client) — threaded through the BeginFlowInput. The silent-
-// reauth outcome is also config/input-driven: B7 requests "success" via
-// BeginFlowInput.silent_reauth_outcome (no actor injection).
+// port (deps.request_client) — threaded through the BeginFlowInput.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fromPromise } from "xstate";
@@ -38,10 +36,7 @@ import type {
   SwitchProjectActor,
   SwitchProjectOutput,
 } from "./machines/project-context/index.ts";
-import type {
-  RequestClient,
-  SilentReauthOutcome,
-} from "./machines/session-onboarding/index.ts";
+import type { RequestClient } from "./machines/session-onboarding/index.ts";
 import { SessionOnboardingBeginStrategy } from "./machines/session-onboarding/strategy.ts";
 import {
   BeginFlowOrchestrator,
@@ -93,7 +88,6 @@ async function driveToReady(
   profile = PROFILE_MAYA,
   options: {
     requestClient?: RequestClient;
-    silentReauthOutcome?: SilentReauthOutcome;
   } = {},
 ): Promise<{ flow_id: string }> {
   const beginOrchestrator = new BeginFlowOrchestrator(
@@ -108,7 +102,6 @@ async function driveToReady(
       correlation_id: correlation,
       config: CONFIG,
       deps: { request_client: options.requestClient ?? okFetch(profile) },
-      silent_reauth_outcome: options.silentReauthOutcome,
     },
     orch.deps.eventLog,
     () => {},
@@ -306,91 +299,6 @@ describe("FlowOrchestrator replay buffer 5s timeout (B4)", () => {
     });
     expect(orch.replayBufferSize(kaiFlow)).toBe(1);
     expect(orch.isAbandoned(kaiFlow)).toBe(true);
-  });
-});
-
-describe("Login machine reaching expired_token triggers broadcastFreeze (B6)", () => {
-  let orch: FlowOrchestrator;
-  afterEach(async () => {
-    await orch.dispose();
-  });
-
-  it("freezes all other actors when the login flow enters expired_token", async () => {
-    process.env.NWAVE_HARNESS_KNOBS = "true";
-    try {
-      orch = buildOrchestrator();
-      const { flow_id: mayaFlow } = await driveToReady(
-        orch,
-        "user_maya",
-        "R-1",
-      );
-      const { flow_id: kaiFlow } = await driveToReady(
-        orch,
-        "user_kai",
-        "R-2",
-        PROFILE_KAI,
-      );
-
-      // Drive Maya into expired_token via the harness side-channel.
-      await orch.send({
-        machine: "session-onboarding",
-        flow_id: mayaFlow,
-        type: "__expire_token__",
-        payload: {},
-        correlation_id: "R-1",
-      });
-
-      // Maya is origin — not frozen. Kai is — frozen.
-      expect(orch.isFrozen(mayaFlow)).toBe(false);
-      expect(orch.isFrozen(kaiFlow)).toBe(true);
-    } finally {
-      delete process.env.NWAVE_HARNESS_KNOBS;
-    }
-  });
-});
-
-describe("Login machine returning to ready after silent reauth triggers broadcastThaw (B7)", () => {
-  let orch: FlowOrchestrator;
-  afterEach(async () => {
-    await orch.dispose();
-  });
-
-  it("thaws other actors when the origin login flow returns to ready", async () => {
-    process.env.NWAVE_HARNESS_KNOBS = "true";
-    try {
-      orch = buildOrchestrator();
-
-      // silent reauth is now config/input-driven — Maya's begin requests the
-      // "success" outcome via BeginFlowInput so her machine returns to `ready`
-      // after expired_token; Kai stays on the "pending" default (never expires).
-      const { flow_id: mayaFlow } = await driveToReady(
-        orch,
-        "user_maya",
-        "R-1",
-        PROFILE_MAYA,
-        { silentReauthOutcome: "success" },
-      );
-      const { flow_id: kaiFlow } = await driveToReady(
-        orch,
-        "user_kai",
-        "R-2",
-        PROFILE_KAI,
-      );
-
-      // Expire — should freeze Kai and invoke silent reauth which succeeds.
-      await orch.send({
-        machine: "session-onboarding",
-        flow_id: mayaFlow,
-        type: "__expire_token__",
-        payload: {},
-        correlation_id: "R-1",
-      });
-
-      // Kai is no longer frozen — Maya's machine returned to ready.
-      expect(orch.isFrozen(kaiFlow)).toBe(false);
-    } finally {
-      delete process.env.NWAVE_HARNESS_KNOBS;
-    }
   });
 });
 

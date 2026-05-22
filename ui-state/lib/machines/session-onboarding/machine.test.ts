@@ -6,9 +6,7 @@
 // (= the `fetch` library). Tests inject a mock `fetch` (makeMockFetch) via the
 // machine input `deps: { request_client: mockFetch }`, threaded into context →
 // invoke input → resolver. The forced-failure path is driven by the
-// `force_reissue_failures` input; the silent-reauth side-state (B5/B6) is
-// driven by the `silent_reauth_outcome` input flag — "success" → ready, "fail"
-// → error_recoverable, "pending" (default) → never resolves. No injection.
+// `force_reissue_failures` input.
 //
 // Entry assumes an already-authenticated principal: the machine starts in
 // `verifying`, auto-invokes the `loadSession` resolver (WorkOS re-verify +
@@ -20,9 +18,6 @@
 //        underlying_cause_tag transitions to error_terminal.
 //   B2 — correlation_id persists across retry attempts (never regenerated).
 //   B3 — harness __force_failure__ drives needs_org → error_recoverable.
-//   B4 — harness __expire_token__ drives ready → expired_token.
-//   B5 — expired_token invokes silent reauth; success → ready.
-//   B6 — silent reauth failure → error_recoverable (silent-reauth-failed).
 //   B7 — verifying [hasOrg] shortcut: returning user → ready directly.
 //   B8 — verifying onError → session_rejected (terminal).
 //
@@ -300,20 +295,6 @@ describe("harness force_failure event drives into error_recoverable (B3)", () =>
   });
 });
 
-describe("harness expire_token event drives into expired_token (B4)", () => {
-  it("transitions from ready to expired_token", async () => {
-    const machine = createSessionOnboardingMachine();
-    const actor = createActor(machine, { input: inputWith(okFetch()) });
-    actor.start();
-    await waitFor(actor, (s) => s.value === "needs_org");
-    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
-    await waitFor(actor, (s) => s.value === "ready");
-    actor.send({ type: "__expire_token__" });
-    await waitFor(actor, (s) => s.value === "expired_token");
-    expect(actor.getSnapshot().value).toBe("expired_token");
-  });
-});
-
 describe("closed-union underlying_cause_tag (compile-time)", () => {
   it("only assigns members of the closed UnderlyingCauseTag union", () => {
     const all: UnderlyingCauseTag[] = [
@@ -333,46 +314,5 @@ describe("closed-union underlying_cause_tag (compile-time)", () => {
       | "silent-reauth-failed"
     > = undefined as never;
     void _exhaustive;
-  });
-});
-
-describe("expired_token invokes silent reauth (B5)", () => {
-  it("returns to ready when silent reauth succeeds", async () => {
-    // silentReauth is now config/input-driven like every other actor — drive
-    // the success path via the `silent_reauth_outcome` input flag (no injection).
-    const machine = createSessionOnboardingMachine();
-    const actor = createActor(machine, {
-      input: inputWith(okFetch(), { silent_reauth_outcome: "success" }),
-    });
-    actor.start();
-    await waitFor(actor, (s) => s.value === "needs_org");
-    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
-    await waitFor(actor, (s) => s.value === "ready");
-    actor.send({ type: "__expire_token__" });
-    await waitFor(actor, (s) => s.value === "expired_token");
-    await waitFor(actor, (s) => s.value === "ready");
-    expect(actor.getSnapshot().value).toBe("ready");
-  });
-});
-
-describe("expired_token routes failed silent reauth to error_recoverable (B6)", () => {
-  it("tags the failure as silent-reauth-failed", async () => {
-    // Drive the failure path via the input flag — the resolver throws
-    // `silent-reauth-failed`, the onError arm tags it.
-    const machine = createSessionOnboardingMachine();
-    const actor = createActor(machine, {
-      input: inputWith(okFetch(), { silent_reauth_outcome: "fail" }),
-    });
-    actor.start();
-    await waitFor(actor, (s) => s.value === "needs_org");
-    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
-    await waitFor(actor, (s) => s.value === "ready");
-    actor.send({ type: "__expire_token__" });
-    await waitFor(actor, (s) => s.value === "expired_token");
-    await waitFor(actor, (s) => s.value === "error_recoverable");
-    expect(actor.getSnapshot().value).toBe("error_recoverable");
-    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
-      "silent-reauth-failed",
-    );
   });
 });

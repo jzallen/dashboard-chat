@@ -39,10 +39,7 @@ import { type ProjectContextMachineDeps } from "./machines/project-context/index
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import { type SessionChatMachineDeps } from "./machines/session-chat/index.ts";
 import { sessionChatStrategy } from "./machines/session-chat/strategy.ts";
-import type {
-  SessionOnboardingDeps,
-  SilentReauthOutcome,
-} from "./machines/session-onboarding/index.ts";
+import type { SessionOnboardingDeps } from "./machines/session-onboarding/index.ts";
 import { sessionOnboardingStrategy } from "./machines/session-onboarding/strategy.ts";
 import {
   harvestSettledFreezeState,
@@ -315,11 +312,6 @@ export interface BeginFlowInput {
    *  Already gated at the HTTP edge by the router; threaded into the machine
    *  input. Null/absent ⇒ no forced failures. */
   force_reissue_failures?: number | null;
-  /** Drives the `expired_token` silent-reauth resolver (config/input-driven —
-   *  no actor injection). A harness/test control: set ONLY by tests, never by
-   *  the production request path (nothing in the router exposes it). Absent ⇒
-   *  the machine defaults to "pending" (the production silent-reauth noop). */
-  silent_reauth_outcome?: SilentReauthOutcome;
 }
 
 /**

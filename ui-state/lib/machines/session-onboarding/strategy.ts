@@ -110,16 +110,12 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       // Non-security org-claim echo (OQ-5) so the FE / TS harness can read the
       // org_id claim. NOT a real credential — auth-proxy is the SSOT.
       const access_token = composeOrgClaimEcho(orgCtx.id ?? "");
-      // If this ready transition came FROM expired_token, mark the event
-      // payload so auth-proxy can emit silent_reauth_ok.
-      const silentReauthRecovery = prior === "expired_token";
       await pump.deps.eventLog.append(input.flow_id, {
         ts: new Date().toISOString(),
         type: "org_created",
         payload: {
           org: orgCtx,
           access_token,
-          ...(silentReauthRecovery ? { silent_reauth_ok: true } : {}),
         },
         correlation_id: input.correlation_id,
       });
@@ -139,16 +135,6 @@ export const sessionOnboardingStrategy: FlowStrategy = {
         };
       }
       return { authReady: null };
-    } else if (stateValue === "expired_token") {
-      // Harness-driven (or future production-driven) transition into the
-      // expired_token state. The projection reducer derives state from this
-      // event so subsequent reads see expired_token without the actor.
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "token_expired",
-        payload: {},
-        correlation_id: input.correlation_id,
-      });
     } else if (stateValue === "error_recoverable") {
       // underlying_cause_tag is set on the machine by the __force_failure__
       // handler or by classifyFailure on a transient onError; the
@@ -275,8 +261,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     this.correlationId = input.correlation_id;
     // Every actor is config/input-driven (no `.provide(...)`): the fetch-driven
     // actors (loadSession / createOrgAndReissue) read their I/O port from
-    // input.deps.request_client, and silentReauth reads its outcome from
-    // input.silent_reauth_outcome (threaded into the machine input below).
+    // input.deps.request_client (threaded into the machine input below).
     const machine = createSessionOnboardingMachine();
     this.actor = createActor(machine, {
       input: {
@@ -294,10 +279,6 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         // Failure-simulation budget (already gated at the HTTP edge); folded
         // into getOrgAndReissue via attempt-vs-budget.
         force_reissue_failures: input.force_reissue_failures ?? null,
-        // Silent-reauth outcome (config/input-driven, no `.provide(...)`). A
-        // harness/test control set only by tests; absent ⇒ machine defaults to
-        // "pending" (the production silent-reauth noop).
-        silent_reauth_outcome: input.silent_reauth_outcome ?? "pending",
       },
     });
   }

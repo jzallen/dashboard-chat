@@ -16,7 +16,6 @@
 //   - ready          — signed in with an org. Reached directly from verifying
 //                      on the [hasOrg] returning-user shortcut, or from
 //                      creating_org for a new user.
-//   - expired_token  — silent-reauth side-state.
 //   - error_recoverable / error_terminal — org-setup error landing zones.
 //   - session_rejected — terminal: re-verify failed (token/user invalid).
 
@@ -50,23 +49,8 @@ export type SessionOnboardingState =
   | "creating_org"
   | "ready"
   | "error_recoverable"
-  | "expired_token"
   | "error_terminal"
   | "session_rejected";
-
-/**
- * The silent-reauth outcome the machine resolves on `expired_token` — driven by
- * the `silent_reauth_outcome` input (config/input-driven, like every other
- * actor). NOT an injected actor:
- *   - "success" → resolve `{ ok: true }`            → back to `ready`.
- *   - "fail"    → throw `silent-reauth-failed`      → `error_recoverable`.
- *   - "pending" → never resolve (production default) → stays in `expired_token`.
- *
- * Production stays at "pending": `expired_token` is harness-gated (the
- * `__expire_token__` side-channel is closed by the failure-sim gate), and real
- * silent re-auth is handled by auth-proxy — ui-state only learns the outcome.
- */
-export type SilentReauthOutcome = "success" | "fail" | "pending";
 
 export type { UnderlyingCauseTag } from "../validation.ts";
 
@@ -97,9 +81,6 @@ export interface SessionOnboardingParams {
   /** Failure-simulation budget the `creating_org` invoke input passes to
    *  `getOrgAndReissue` (stateless attempt-vs-budget). Null ⇒ no forced failures. */
   force_reissue_failures: number | null;
-  /** Drives the `expired_token` silent-reauth resolver. "pending" by default
-   *  (production noop). */
-  silent_reauth_outcome: SilentReauthOutcome;
 }
 
 export interface SessionOnboardingContext {
@@ -126,10 +107,7 @@ export interface SessionOnboardingContext {
 export type SessionOnboardingEvent =
   | { type: "org_form_submitted"; org_name: string }
   | { type: "retry_clicked" }
-  | { type: "__force_failure__"; tag: UnderlyingCauseTag }
-  | { type: "__expire_token__" }
-  | { type: "FREEZE" }
-  | { type: "THAW" };
+  | { type: "__force_failure__"; tag: UnderlyingCauseTag };
 
 // The actor I/O contracts (WorkOSProfile, VerifiedSession, LoadSessionInput,
 // CreateOrgAndReissueInput/Output) are defined in ./upstream.ts alongside the
@@ -143,27 +121,6 @@ export type CreateOrgAndReissueActor = ReturnType<
   typeof fromPromise<CreateOrgAndReissueOutput, CreateOrgAndReissueInput>
 >;
 
-/**
- * Silent re-auth actor input — invoked from `expired_token`. The `outcome` is
- * threaded from `context.silent_reauth_outcome` (config/input-driven, NOT an
- * injected actor): "success" → resolve, "fail" → throw, "pending" → never
- * resolve. Per ADR-028 the input is minimal because the real re-auth credential
- * lookup is handled by auth-proxy (the ui-state tier only learns the outcome).
- */
-export interface SilentReauthInput {
-  correlation_id: string;
-  outcome: SilentReauthOutcome;
-}
-
-/**
- * Silent re-auth actor — invoked from `expired_token`. On success the
- * machine transitions back to `ready`; on failure it falls through to
- * `error_recoverable` with tag `silent-reauth-failed`.
- */
-export type SilentReauthActor = ReturnType<
-  typeof fromPromise<{ ok: true }, SilentReauthInput>
->;
-
 const REISSUE_BUDGET = 3;
 /** User-retry budget on error_recoverable. The 4th total attempt at the
  *  same underlying_cause_tag (= 3 user retries) escalates to error_terminal. */
@@ -175,14 +132,11 @@ const USER_RETRY_BUDGET = 3;
  * re-verify + backend org lookup) and `createOrgAndReissue` are config-agnostic
  * resolvers that read their URLs from the actor input (config threaded
  * composition root → machine input → context → invoke input) and perform their
- * network I/O through the injected
- * `deps.request_client` (= the `fetch` library), and `silentReauth` reads its
- * outcome from the actor input (`input.outcome`, threaded from
- * context.silent_reauth_outcome) — "pending" by default (production noop). There
- * is NO deps-injection mechanism FOR THE ACTOR LOGIC and NO `.provide(...)`:
- * tests drive behavior by injecting a MOCK `fetch` as `deps.request_client` (a
- * `vi.fn()` typed as `typeof fetch` returning canned `Response`s) and by setting
- * the `silent_reauth_outcome` input flag for the silent-reauth side-state.
+ * network I/O through the injected `deps.request_client` (= the `fetch`
+ * library). There is NO deps-injection mechanism FOR THE ACTOR LOGIC and NO
+ * `.provide(...)`: tests drive behavior by injecting a MOCK `fetch` as
+ * `deps.request_client` (a `vi.fn()` typed as `typeof fetch` returning canned
+ * `Response`s).
  */
 export function createSessionOnboardingMachine() {
   return setup({
@@ -196,7 +150,6 @@ export function createSessionOnboardingMachine() {
         config?: Config | null;
         deps?: SessionOnboardingDeps | null;
         force_reissue_failures?: number | null;
-        silent_reauth_outcome?: SilentReauthOutcome;
       },
     },
     actors: {
@@ -207,9 +160,6 @@ export function createSessionOnboardingMachine() {
         CreateOrgAndReissueOutput,
         CreateOrgAndReissueInput
       >(getOrgAndReissue),
-      silentReauth: fromPromise<{ ok: true }, SilentReauthInput>(
-        getSilentReauth,
-      ),
     },
     guards: {
       hasOrg: ({ event }) =>
@@ -300,7 +250,6 @@ export function createSessionOnboardingMachine() {
         config: input.config ?? null,
         deps: input.deps ?? null,
         force_reissue_failures: input.force_reissue_failures ?? null,
-        silent_reauth_outcome: input.silent_reauth_outcome ?? "pending",
       },
       user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
@@ -422,15 +371,7 @@ export function createSessionOnboardingMachine() {
           ],
         },
       },
-      ready: {
-        on: {
-          // Harness-only side-channel: force the machine from ready to
-          // expired_token. Gated at the HTTP layer by the failure-sim gate.
-          __expire_token__: {
-            target: "expired_token",
-          },
-        },
-      },
+      ready: {},
       error_recoverable: {
         on: {
           retry_clicked: [
@@ -456,29 +397,6 @@ export function createSessionOnboardingMachine() {
           ],
         },
       },
-      expired_token: {
-        // Per ADR-028 §"Decision outcome": the silent-reauth path is an
-        // invoked actor on `expired_token`. Success returns Maya to `ready`
-        // with her existing context intact; failure falls through to
-        // `error_recoverable` tagged `silent-reauth-failed`, which drives
-        // the recoverable-error page worded for the sign-in-again case.
-        invoke: {
-          src: "silentReauth",
-          input: ({ context }) => ({
-            correlation_id: context.params.correlation_id,
-            outcome: context.params.silent_reauth_outcome,
-          }),
-          onDone: {
-            target: "ready",
-          },
-          onError: {
-            target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: () => "silent-reauth-failed" as const,
-            }),
-          },
-        },
-      },
       error_terminal: {},
       // Terminal: re-verify failed. No user state advances; no session_started
       // is emitted. The projection surfaces session_rejected (OQ-2).
@@ -487,33 +405,3 @@ export function createSessionOnboardingMachine() {
   });
 }
 
-/**
- * The config-agnostic silent-reauth actor RESOLVER (an
- * `async ({ input }) => { ok: true }`), wrapped once as the machine's default
- * `silentReauth` actor (`fromPromise(getSilentReauth)`). Driven by `input.outcome`
- * (threaded from context.silent_reauth_outcome) — no actor injection, no
- * `.provide(...)`:
- *   - "success" → resolve `{ ok: true }`            → machine returns to `ready`.
- *   - "fail"    → throw `silent-reauth-failed`      → `error_recoverable`.
- *   - "pending" → never resolve (production default) → stays in `expired_token`.
- *
- * Production stays at "pending": `expired_token` is harness-gated and real
- * silent re-auth is auth-proxy's job (ui-state only learns the outcome). The
- * pending promise preserves today's noop behavior exactly.
- */
-export async function getSilentReauth({
-  input,
-}: {
-  input: SilentReauthInput;
-}): Promise<{ ok: true }> {
-  if (input.outcome === "success") {
-    return { ok: true };
-  }
-  if (input.outcome === "fail") {
-    throw new Error("silent-reauth-failed");
-  }
-  // "pending": never resolve — preserves the production noop (the invoke sits
-  // in flight; the harness-gated expired_token side-state only resolves when a
-  // test requests "success"/"fail").
-  return new Promise<{ ok: true }>(() => {});
-}

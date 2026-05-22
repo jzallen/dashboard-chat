@@ -6,8 +6,7 @@
 //
 // The surface is split across two modules:
 //   - machine.ts  — the statechart (createSessionOnboardingMachine), the
-//     no-I/O silent-reauth resolver (getSilentReauth), the context/event/state
-//     types, and the XState-bound actor-type aliases.
+//     context/event/state types, and the XState-bound actor-type aliases.
 //   - upstream.ts — the external-service request layer: the resolvers that talk
 //     to WorkOS + the backend (getWorkOSUserInfo, getUserOrg, loadVerifiedSession,
 //     createOrgFn, reissueOrgJwtFn, getOrgAndReissue) and the I/O contracts they
@@ -17,15 +16,11 @@
 export {
   type CreateOrgAndReissueActor,
   createSessionOnboardingMachine,
-  getSilentReauth,
   type LoadSessionActor,
   type OrgValidationInlineError,
   type SessionOnboardingContext,
   type SessionOnboardingEvent,
   type SessionOnboardingState,
-  type SilentReauthActor,
-  type SilentReauthInput,
-  type SilentReauthOutcome,
   type UnderlyingCauseTag,
 } from "./machine.ts";
 export {

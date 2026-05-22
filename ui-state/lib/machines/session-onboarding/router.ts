@@ -12,8 +12,8 @@
  *                            projection from session_started (session-onboarding
  *                            is the only `beginsDirectly` machine).
  *   POST /event            — accepts org_form_submitted, retry_clicked, and the
- *                            `__force_failure__` / `__expire_token__` wire
- *                            events under the failure-simulation gate.
+ *                            `__force_failure__` wire event under the
+ *                            failure-simulation gate.
  *   POST /open-deep-link   — legacy ScopeResolver path.
  *
  * Design rationale lives in the ADRs (not at the call sites):
@@ -121,8 +121,8 @@ export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
  * its verdict decides whether the body's `force_reissue_failures` count is
  * threaded through to drive `getOrgAndReissue`'s attempt-vs-budget path.
  *
- * `/event` closed-by-default-gates the `__force_failure__` / `__expire_token__`
- * harness events (403 when the gate is disabled) so production cannot bypass real
+ * `/event` closed-by-default-gates the `__force_failure__` harness event (403
+ * when the gate is disabled) so production cannot bypass real
  * auth-flow logic; a legacy `login-and-org-setup` `machine` name is canonicalized
  * by the orchestrator's LEAF-2 alias map.
  *
@@ -227,23 +227,6 @@ export function buildSessionOnboardingRouter(
           {
             error:
               "failure-simulation knob disabled: __force_failure__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
-          },
-          403,
-        );
-      }
-    }
-
-    if (body.type === "__expire_token__") {
-      const allowed = shouldInject(KNOB.expireToken, {
-        event: { type: body.type },
-        correlationId,
-        serviceName: "ui-state",
-      });
-      if (!allowed) {
-        return c.json(
-          {
-            error:
-              "failure-simulation knob disabled: __expire_token__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
           },
           403,
         );
