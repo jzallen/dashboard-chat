@@ -324,9 +324,12 @@ export class LoginBeginStrategy implements BeginStrategy {
    * Run the login begin sequence: reset the persisted event log (a re-click is
    * a fresh auth attempt, so a stale terminal state must not replay), start the
    * actor, append + dispatch `sign_in_clicked`, wait for the `authenticating`
-   * invoke to settle, then append the terminal event (`auth_callback_resolved`
-   * or `auth_failed`) whose payload is read from the projection — the only
-   * legal read source for the emission path (ADR-030).
+   * invoke to settle, then branch on the settled `snapshot.value` to append the
+   * terminal event (`auth_callback_resolved` or `auth_failed`). The event's data
+   * payload is read from the projection: ADR-030 forbids sourcing FlowEvent
+   * *data* from `snapshot.context`, naming the projection the single legal read
+   * source for it. The `snapshot.value` branch above is a control-state read,
+   * not in scope of that prohibition.
    *
    * TODO(ADR-030): no component lands these in the log today — the OAuth
    * handshake is collapsed into the machine's `workosUserInfo` invoke, which
