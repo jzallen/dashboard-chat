@@ -106,8 +106,6 @@ export function buildLoginAndOrgSetupRouter(
   logTransition: (record: Record<string, unknown>) => void,
   serializeResult: SerializeResult,
 ): Hono<LoginRouterContext> {
-  const wireName = "login-and-org-setup";
-
   router.post("/begin", async (c) => {
     // The body is deserialized once by the outer router and exposed as a
     // context var; assemble + validate the LoginRequest here (the route's
@@ -147,7 +145,7 @@ export function buildLoginAndOrgSetupRouter(
     });
     const strategy = new LoginBeginStrategy(
       {
-        machine: wireName,
+        machine: "login-and-org-setup",
         principal_id: request.userId,
         persona_email: request.body.persona_email,
         persona_display_name: request.body.persona_display_name ?? "",
@@ -220,7 +218,7 @@ export function buildLoginAndOrgSetupRouter(
     }
 
     const result = await flowOrchestrator.send({
-      machine: wireName,
+      machine: "login-and-org-setup",
       flow_id: body.flow_id,
       type: body.type,
       payload: body.payload ?? {},
@@ -279,7 +277,7 @@ export function buildLoginAndOrgSetupRouter(
       // `access_denied` and `scope_resolution_error.reason` names the
       // cause.
       const result = await flowOrchestrator.appendDeepLinkEvents({
-        machine: wireName,
+        machine: "login-and-org-setup",
         flow_id: body.flow_id,
         correlation_id: correlationId,
         events: [
@@ -296,7 +294,7 @@ export function buildLoginAndOrgSetupRouter(
     // resolution, payload carries reconciled=true so the reducer
     // surfaces scope_reconciled in the projection.
     const result = await flowOrchestrator.appendDeepLinkEvents({
-      machine: wireName,
+      machine: "login-and-org-setup",
       flow_id: body.flow_id,
       correlation_id: correlationId,
       events: [
