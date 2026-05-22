@@ -30,6 +30,7 @@ import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 
+import type { Config } from "../../../config.ts";
 import type { ResolveActiveScope } from "../../active-scope.ts";
 import type { Result } from "../../flow-result.ts";
 import {
@@ -121,6 +122,7 @@ export function buildSessionOnboardingRouter(
   eventLog: FlowEventLog,
   logTransition: (record: Record<string, unknown>) => void,
   serializeResult: SerializeResult,
+  config: Config | null,
 ): Hono<SessionOnboardingRouterContext> {
   router.post("/begin", async (c) => {
     const rawBody = c.get("body");
@@ -165,6 +167,9 @@ export function buildSessionOnboardingRouter(
         existing_org_id: request.orgId || null,
         correlation_id: request.referenceCode,
         existing_org_names: request.body.existing_org_names,
+        // Env config for the re-verify resolver — injected by the composition
+        // root, not derived from the request.
+        config,
       },
       deps,
       eventLog,

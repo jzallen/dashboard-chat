@@ -10,7 +10,8 @@
 //   - createForcedFailureOrgAndReissueActor (harness-knob construction site;
 //     gated by the failure-simulation gate at the HTTP layer)
 //   - createOrgFn, reissueOrgJwtFn (split halves of the create+reissue path)
-//   - createWorkOSUserInfoActor (production WorkOS-userinfo re-verify wiring)
+//   - getWorkOSUserInfo (the config-agnostic WorkOS-userinfo re-verify resolver;
+//     the machine wraps it as the default workosUserInfo actor)
 //   - all context / event / state / actor I-O types
 //   - re-exported UnderlyingCauseTag (re-exported from `../validation.ts`)
 
@@ -23,7 +24,7 @@ export {
   type CreateOrgAndReissueOutput,
   createOrgFn,
   createSessionOnboardingMachine,
-  createWorkOSUserInfoActor,
+  getWorkOSUserInfo,
   type OrgValidationInlineError,
   reissueOrgJwtFn,
   type SessionOnboardingContext,

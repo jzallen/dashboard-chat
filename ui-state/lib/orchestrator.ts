@@ -33,6 +33,7 @@
 import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { ResourceType } from "./active-scope.ts";
+import type { Config } from "../config.ts";
 import { err,ok, type Result } from "./flow-result.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
@@ -299,6 +300,11 @@ export interface BeginFlowInput {
   correlation_id: string;
   /** Seed for the duplicate-org-name fixture path. */
   existing_org_names?: string[];
+  /** Env config (provides `workosUrl`) seeded into the machine input so the
+   *  `getWorkOSUserInfo` re-verify resolver reads its URL from input rather
+   *  than a closure. Supplied by the composition root; null in tests that stub
+   *  `workosUserInfo`. */
+  config?: Config | null;
 }
 
 /**

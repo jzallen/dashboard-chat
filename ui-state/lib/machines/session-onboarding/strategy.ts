@@ -287,6 +287,9 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         // sees it BEFORE the re-verify invoke settles (FIX D1).
         existing_org_id: input.existing_org_id,
         existing_org_names: input.existing_org_names,
+        // Env config (workosUrl) for the re-verify resolver, sourced from the
+        // composition root — keeps `getWorkOSUserInfo` config-agnostic.
+        config: input.config ?? null,
       },
     });
   }

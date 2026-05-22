@@ -52,6 +52,10 @@ export interface SessionOnboardingContext {
   /** The forwarded Bearer (L4) — threaded from the router's Authorization
    *  header into the re-verify invoke input. Never a client body claim. */
   bearer_token: string;
+  /** Env config (provides `workosUrl`), threaded from the composition root via
+   *  the machine input so the `workosUserInfo` re-verify invoke gets its URL
+   *  from input rather than a closure. Null in tests that stub the actor. */
+  config: Config | null;
   user: { email: string | null; display_name: string | null; first_name: string | null };
   org: { id: string | null; name: string | null };
   /** The org name Maya last submitted -- preserved across `creating_org`
@@ -103,6 +107,12 @@ export interface WorkOSProfile {
  */
 export interface WorkOSUserInfoInput {
   bearer_token: string;
+  /** Env config (provides `workosUrl`) attached to the actor input so the
+   *  re-verify resolver stays config-agnostic — no factory closure and no
+   *  import of the resolver at the composition root. Threaded composition root
+   *  → machine input → context → this invoke input. Null only in tests that
+   *  stub `workosUserInfo` (the stub ignores it). */
+  config: Config | null;
 }
 
 export type WorkOSUserInfoActor = ReturnType<
@@ -138,7 +148,10 @@ export type SilentReauthActor = ReturnType<
 >;
 
 export interface SessionOnboardingDeps {
-  workosUserInfo: WorkOSUserInfoActor;
+  /** Optional — defaults to the real `getWorkOSUserInfo` resolver, which reads
+   *  its `workosUrl` from the actor input (config threaded via the machine
+   *  input). Tests inject a stub here to override. */
+  workosUserInfo?: WorkOSUserInfoActor;
   createOrgAndReissue: CreateOrgAndReissueActor;
   /** Optional — when absent, expired_token has no invocation (matches the
    *  pre-Step-03-01 behavior of an empty state body). */
@@ -161,10 +174,17 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
         bearer_token?: string;
         existing_org_id?: string | null;
         existing_org_names?: string[];
+        config?: Config | null;
       },
     },
     actors: {
-      workosUserInfo: deps.workosUserInfo,
+      // Default to the real config-agnostic resolver; tests override via deps.
+      // `getWorkOSUserInfo` reads `workosUrl` from its input (input.config),
+      // which the machine threads from context — so the composition root never
+      // imports it just to inject env config.
+      workosUserInfo:
+        deps.workosUserInfo ??
+        fromPromise<WorkOSProfile, WorkOSUserInfoInput>(getWorkOSUserInfo),
       createOrgAndReissue: deps.createOrgAndReissue,
       // Fallback noop actor — never resolves. The `expired_token` invoke
       // only fires when `deps.silentReauth` is provided; if a caller forgets
@@ -279,6 +299,7 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
       correlation_id: input.correlation_id,
       principal_id: input.principal_id,
       bearer_token: input.bearer_token ?? "",
+      config: input.config ?? null,
       user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
       existing_org_id: input.existing_org_id ?? null,
@@ -297,7 +318,10 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
       verifying: {
         invoke: {
           src: "workosUserInfo",
-          input: ({ context }) => ({ bearer_token: context.bearer_token }),
+          input: ({ context }) => ({
+            bearer_token: context.bearer_token,
+            config: context.config,
+          }),
           onDone: [
             {
               guard: "hasOrg",
@@ -453,41 +477,54 @@ export function createSessionOnboardingMachine(deps: SessionOnboardingDeps) {
 }
 
 /**
- * Build a WorkOS user-info actor that re-verifies the forwarded Bearer
- * against the WorkOS-compatible `/oauth/userinfo` endpoint (L3/L4). Used in
- * production; tests substitute via `.provide({ actors: { workosUserInfo:
- * fromPromise(...) } })` or by injecting a stub through the deps factory.
+ * Re-verify the forwarded Bearer against the WorkOS-compatible
+ * `/oauth/userinfo` endpoint (L3/L4) and return the verified user identity.
+ *
+ * This is the actor RESOLVER itself (an `async ({ input }) => profile`), not a
+ * factory: the machine wraps it once as the default `workosUserInfo` actor
+ * (`fromPromise(getWorkOSUserInfo)`), and its env config (`workosUrl`) arrives
+ * on `input.config` — threaded composition root → machine input → context →
+ * invoke input. That keeps it config-agnostic so the composition root never
+ * imports it just to inject env. Tests substitute via `.provide(...)` or a deps
+ * stub (the stub ignores `input.config`).
  *
  * Identity comes from the verified token (the `Authorization: Bearer` header
- * auth-proxy forwards), NEVER a client body claim. Re-verify returns IDENTITY
- * ONLY (email + display_name) — real WorkOS `/oauth/userinfo` carries no
- * app-level org binding, so the returning-user org comes from the verified
- * `X-Org-Id` header instead (FIX D1).
+ * auth-proxy forwards), NEVER a client body claim. Returns IDENTITY ONLY
+ * (email + display_name) — real WorkOS `/oauth/userinfo` carries no app-level
+ * org binding, so the returning-user org comes from the verified `X-Org-Id`
+ * header instead (FIX D1).
  */
-export function createWorkOSUserInfoActor(config: Config): WorkOSUserInfoActor {
-  const { workosUrl } = config;
-  return fromPromise<WorkOSProfile, WorkOSUserInfoInput>(async ({ input }) => {
-    const userResp = await fetch(`${workosUrl}/oauth/userinfo`, {
-      method: "GET",
-      headers: {
-        authorization: `Bearer ${input.bearer_token}`,
-      },
-    });
-    if (!userResp.ok) {
-      throw new Error(`workos userinfo failed: ${userResp.status}`);
-    }
-    const profile = (await userResp.json()) as {
-      email?: string;
-      name?: string;
-    };
-    if (!profile.email) {
-      throw new Error("workos profile missing email");
-    }
-    return {
-      email: profile.email,
-      display_name: profile.name ?? "",
-    };
+export async function getWorkOSUserInfo({
+  input,
+}: {
+  input: WorkOSUserInfoInput;
+}): Promise<WorkOSProfile> {
+  if (!input.config) {
+    throw new Error(
+      "session-onboarding: workos config missing from re-verify input",
+    );
+  }
+  const { workosUrl } = input.config;
+  const userResp = await fetch(`${workosUrl}/oauth/userinfo`, {
+    method: "GET",
+    headers: {
+      authorization: `Bearer ${input.bearer_token}`,
+    },
   });
+  if (!userResp.ok) {
+    throw new Error(`workos userinfo failed: ${userResp.status}`);
+  }
+  const profile = (await userResp.json()) as {
+    email?: string;
+    name?: string;
+  };
+  if (!profile.email) {
+    throw new Error("workos profile missing email");
+  }
+  return {
+    email: profile.email,
+    display_name: profile.name ?? "",
+  };
 }
 
 /**

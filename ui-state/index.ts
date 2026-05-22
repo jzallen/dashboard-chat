@@ -1,14 +1,13 @@
 import { serve } from "@hono/node-server";
 import { type Context, Hono } from "hono";
 
-import { loadConfig } from "./config.ts";
+import { type Config, loadConfig } from "./config.ts";
 import { resolveActiveScope } from "./lib/active-scope.ts";
 import { resultToJson } from "./lib/hexagonal-transport/flow-router.ts";
 import {
   createForcedFailureOrgAndReissueActor,
   createOrgAndReissueActor,
   createOrgFn,
-  createWorkOSUserInfoActor,
   reissueOrgJwtFn,
 } from "./lib/machines/session-onboarding/index.ts";
 import {
@@ -73,6 +72,10 @@ export function buildSessionOnboardingApp(opts: {
   eventLog: FlowEventLog;
   buildLoginDeps: BuildLoginDeps;
   logTransition?: (record: Record<string, unknown>) => void;
+  /** Env config threaded into the machine input so the `getWorkOSUserInfo`
+   *  re-verify resolver reads its `workosUrl` from input (not a closure).
+   *  Optional — the in-process tests stub `workosUserInfo` and pass none. */
+  config?: Config | null;
 }): Hono {
   const { eventLog, buildLoginDeps } = opts;
   const logTransition =
@@ -114,6 +117,7 @@ export function buildSessionOnboardingApp(opts: {
     eventLog,
     logTransition,
     resultToJson,
+    opts.config ?? null,
   );
 
   const app = new Hono();
@@ -141,7 +145,9 @@ function buildProductionApp(): Hono {
   const config = loadConfig();
   const eventLog = selectFlowEventLog(config.redisUrl);
   const buildLoginDeps: BuildLoginDeps = ({ forceReissueFailures }) => ({
-    workosUserInfo: createWorkOSUserInfoActor(config),
+    // workosUserInfo is NOT injected here — the machine defaults to the real
+    // `getWorkOSUserInfo` resolver, which reads its workosUrl from the input
+    // (config threaded below). Only the org-create actor needs config-closure.
     createOrgAndReissue:
       forceReissueFailures && forceReissueFailures > 0
         ? createForcedFailureOrgAndReissueActor(
@@ -151,7 +157,7 @@ function buildProductionApp(): Hono {
           )
         : createOrgAndReissueActor(config),
   });
-  return buildSessionOnboardingApp({ eventLog, buildLoginDeps });
+  return buildSessionOnboardingApp({ eventLog, buildLoginDeps, config });
 }
 
 const app =
