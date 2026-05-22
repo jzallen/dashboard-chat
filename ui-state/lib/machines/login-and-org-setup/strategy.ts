@@ -328,10 +328,11 @@ export class LoginBeginStrategy implements BeginStrategy {
    * or `auth_failed`) whose payload is read from the projection — the only
    * legal read source for the emission path (ADR-030).
    *
-   * TODO(ADR-030): at the emission read the projection has only observed
-   * `sign_in_clicked`, so the resolved profile / cause still live in the actor
-   * snapshot; terminal payloads may carry placeholder values until an upstream
-   * event lands the resolved profile in the log.
+   * TODO(ADR-030): append an upstream FlowEvent carrying the resolved WorkOS
+   * profile / cause to the log before this emission read, so the projection
+   * observes it and the placeholder fallback can be removed. Today the log
+   * holds only `sign_in_clicked` here, so those values still live in the actor
+   * snapshot and terminal payloads may carry placeholders.
    */
   async begin(): Promise<void> {
     const { input, flow_id, actor } = this;
