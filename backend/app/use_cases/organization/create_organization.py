@@ -9,7 +9,10 @@ from app.auth.types import AuthUser
 from app.config import get_settings
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.organization.exceptions import ExternalServiceError
+from app.use_cases.organization.exceptions import (
+    ExternalServiceError,
+    OrganizationNameTakenError,
+)
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
@@ -35,6 +38,12 @@ async def create_organization(
 
     metadata_repo = repositories.metadata
     settings = get_settings()
+
+    # Org names are globally unique. Reject a collision with a cheap point
+    # lookup on the unique name index before creating; the unique constraint is
+    # the DB backstop for the rare check-then-create race.
+    if await metadata_repo.get_organization_by_name(name) is not None:
+        raise OrganizationNameTakenError(f"Organization name '{name}' is already in use")
 
     org, requires_reauth = await _create_org_record(name, user.id, metadata_repo, settings)
     org_id = org["id"]

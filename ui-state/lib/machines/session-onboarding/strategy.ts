@@ -283,7 +283,6 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         correlation_id: input.correlation_id,
         principal_id: input.principal_id,
         bearer_token: input.bearer_token,
-        existing_org_names: input.existing_org_names,
         // Env config (workosUrl + backendUrl) for the re-verify + org-create
         // resolvers, sourced from the composition root — keeps the resolvers
         // config-agnostic.

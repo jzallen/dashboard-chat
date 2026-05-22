@@ -3,47 +3,47 @@
 //
 // Behavior budget for step 01-02 (2 distinct behaviors):
 //   B1 — validateOrgName parses and either yields a ValidatedOrgName or a
-//        typed error variant (parametrized over the 4 error kinds + happy).
+//        typed shape-error variant (parametrized over the 3 shape-error kinds
+//        + happy; duplicate detection is backend-side, not here).
 //   B2 — classifyFailure maps a Failure shape to a closed UnderlyingCauseTag.
 //
 // Test count budget: 2 behaviors × 2 = 4 unit tests max. Variations of the
 // same behavior are parametrized (Mandate 5).
 
-import { describe, it, expect } from "vitest";
+import { describe, expect,it } from "vitest";
 
 import {
   classifyFailure,
-  validateOrgName,
   type OrgNameValidationError,
   type UnderlyingCauseTag,
+  validateOrgName,
 } from "./validation.ts";
 
 describe("validateOrgName — yields ValidatedOrgName or typed error", () => {
   it("accepts a clean name and returns the trimmed value", () => {
-    const result = validateOrgName("  Acme Data  ", new Set());
+    const result = validateOrgName("  Acme Data  ");
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.value).toBe("Acme Data");
     }
   });
 
-  it.each<[string, ReadonlySet<string>, OrgNameValidationError["kind"]]>([
-    ["", new Set(), "empty"],
-    ["   ", new Set(), "empty"],
-    ["a", new Set(), "too_short"],
-    ["x".repeat(65), new Set(), "too_long"],
-    ["Acme Data", new Set(["Acme Data"]), "duplicate"],
-    ["acme data", new Set(["Acme Data"]), "duplicate"], // case-insensitive
-  ])(
-    "rejects %j (existing=%j) with error kind %j",
-    (input, existing, expectedKind) => {
-      const result = validateOrgName(input, existing);
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.kind).toBe(expectedKind);
-      }
-    },
-  );
+  // Shape errors only — duplicate detection moved to the backend (global org-
+  // name uniqueness; collision surfaces from the create-org path, covered by the
+  // machine + index suites), so validateOrgName no longer takes an existing-names
+  // set or yields a "duplicate" kind.
+  it.each<[string, OrgNameValidationError["kind"]]>([
+    ["", "empty"],
+    ["   ", "empty"],
+    ["a", "too_short"],
+    ["x".repeat(65), "too_long"],
+  ])("rejects %j with error kind %j", (input, expectedKind) => {
+    const result = validateOrgName(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe(expectedKind);
+    }
+  });
 });
 
 describe("classifyFailure — closed UnderlyingCauseTag union", () => {

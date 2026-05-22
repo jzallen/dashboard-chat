@@ -84,7 +84,6 @@ async function begin(
      *  decision comes from the backend `/api/orgs/me`, driven by the mock fetch).
      *  Sent here only to exercise the audit path; it does not drive the outcome. */
     orgId?: string;
-    existing_org_names?: string[];
   },
 ): Promise<BeginResult> {
   const headers: Record<string, string> = {
@@ -99,9 +98,7 @@ async function begin(
     new Request("http://t/flow/session-onboarding/begin", {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        existing_org_names: opts.existing_org_names,
-      }),
+      body: JSON.stringify({}),
     }),
   );
   expect(res.status).toBe(200);
@@ -244,6 +241,39 @@ describe("Spec 5: invalid org name keeps needs_org", () => {
     };
     expect(proj.state).toBe("needs_org");
     expect(proj.context.org_validation_error?.kind).toBe("empty");
+    expect(proj.context.org.id).toBeNull();
+  });
+});
+
+// ── Spec 7 — Globally-duplicate org name → inline duplicate error (NEW) ──
+// Org names are globally unique (backend SSOT). A collision returns 409 from
+// POST /api/orgs; the machine routes it to needs_org with the duplicate error.
+describe("Spec 7: a taken org name keeps needs_org with a duplicate error", () => {
+  it("maps the backend name-collision (409) to an inline duplicate error", async () => {
+    active = buildScenario({
+      requestClient: makeMockFetch({ profile: MAYA_PROFILE, orgNameTaken: true }),
+    });
+    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    expect(beginProj.state).toBe("needs_org");
+
+    const res = await active.app.fetch(
+      new Request("http://t/flow/session-onboarding/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          machine: "session-onboarding",
+          flow_id: beginProj.flow_id,
+          type: "org_form_submitted",
+          payload: { org_name: "Acme Data" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const proj = (await res.json()) as BeginResult & {
+      context: { org_validation_error: { kind: string } | null };
+    };
+    expect(proj.state).toBe("needs_org");
+    expect(proj.context.org_validation_error?.kind).toBe("duplicate");
     expect(proj.context.org.id).toBeNull();
   });
 });

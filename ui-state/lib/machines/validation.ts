@@ -3,9 +3,11 @@
 // CM-D: these functions take zero fixtures and zero I/O. They convert raw
 // inputs from the wire into closed-union shapes the machine can branch on.
 //
-// validateOrgName: parses + validates the org name Maya submits. Duplicate-
-// name detection is done against a caller-supplied set (the state machine
-// supplies the set from machine context, kept by the application layer).
+// validateOrgName: parses + validates the SHAPE of the org name Maya submits
+// (non-empty, length bounds). Duplicate detection is NOT done here — org names
+// are globally unique and the backend (the SSOT, `POST /api/orgs`) is the
+// authority; a collision surfaces as a `duplicate` inline error from the
+// create-org path, not from this pure shape check.
 //
 // classifyFailure: maps a raw Error / payload into the closed UnderlyingCauseTag
 // union the machine + projection use to drive copy variants on the recoverable-
@@ -34,20 +36,19 @@ const MIN_ORG_NAME = 2;
 const MAX_ORG_NAME = 64;
 
 /**
- * Validate an organization-name submission.
+ * Validate the SHAPE of an organization-name submission.
  *
  * Rules:
  *   - trim leading/trailing whitespace
  *   - non-empty after trim
  *   - length in [MIN_ORG_NAME, MAX_ORG_NAME]
- *   - not already present in `existingNames` (case-insensitive)
  *
- * Returns a closed Result union — the machine guard branches on `ok`.
+ * Duplicate detection is intentionally NOT done here (org names are globally
+ * unique; the backend create is the authority — a collision yields a
+ * `duplicate` inline error from the create-org path). Returns a closed Result
+ * union — the machine guard branches on `ok`.
  */
-export function validateOrgName(
-  raw: string,
-  existingNames: ReadonlySet<string>,
-): OrgNameResult {
+export function validateOrgName(raw: string): OrgNameResult {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
     return { ok: false, error: { kind: "empty" } };
@@ -63,12 +64,6 @@ export function validateOrgName(
       ok: false,
       error: { kind: "too_long", max: MAX_ORG_NAME, actual: trimmed.length },
     };
-  }
-  const normalized = trimmed.toLowerCase();
-  for (const existing of existingNames) {
-    if (existing.toLowerCase() === normalized) {
-      return { ok: false, error: { kind: "duplicate", name: trimmed } };
-    }
   }
   return { ok: true, value: { value: trimmed } };
 }

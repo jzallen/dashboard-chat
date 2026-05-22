@@ -662,6 +662,19 @@ class MetadataRepository:
             return None
         return _mappers.organization_to_dict(org)
 
+    @handle_repository_exceptions
+    async def get_organization_by_name(self, name: str) -> dict[str, Any] | None:
+        """Get an organization by name (point lookup on the unique name index).
+
+        Used by create_organization to reject a globally-duplicate name before
+        insert; the unique constraint is the DB backstop for the TOCTOU race.
+        """
+        result = await self._session.execute(select(OrganizationRecord).where(OrganizationRecord.name == name))
+        org = result.scalar_one_or_none()
+        if not org:
+            return None
+        return _mappers.organization_to_dict(org)
+
     # -------------------------------------------------------------------------
     # View operations
     # -------------------------------------------------------------------------

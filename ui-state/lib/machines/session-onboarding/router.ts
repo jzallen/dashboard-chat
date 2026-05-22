@@ -94,7 +94,6 @@ const beginRequestSchema = z.object({
   orgId: z.string(),
   body: z
     .object({
-      existing_org_names: z.array(z.string()).optional(),
       force_reissue_failures: z.number().optional(),
     })
     .passthrough(),
@@ -186,7 +185,6 @@ export function buildSessionOnboardingRouter(
         principal_id: request.userId,
         bearer_token: request.bearerToken,
         correlation_id: request.referenceCode,
-        existing_org_names: request.body.existing_org_names,
         config,
         deps: { request_client: requestClient },
         force_reissue_failures: reissueFailuresAllowed

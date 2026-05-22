@@ -171,7 +171,6 @@ export interface FlowStrategy {
     input: {
       correlation_id: string;
       principal_id: string;
-      existing_org_names?: string[];
     },
   ): AnyStateMachine;
 
@@ -300,8 +299,6 @@ export interface BeginFlowInput {
    *  SSOT) during `verifying`, NOT from the `X-Org-Id` header (audit-only). */
   bearer_token: string;
   correlation_id: string;
-  /** Seed for the duplicate-org-name fixture path. */
-  existing_org_names?: string[];
   /** Env config (provides `workosUrl` + `backendUrl`) seeded into the machine
    *  input so the `getWorkOSUserInfo` re-verify resolver + the
    *  `getOrgAndReissue` org-create resolver read their URLs from input rather

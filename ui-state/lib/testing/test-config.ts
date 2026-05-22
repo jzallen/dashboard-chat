@@ -42,6 +42,10 @@ export interface MockFetchOptions {
   existingOrg?: { id: string; name: string } | null;
   /** Org id `POST /api/orgs` echoes back on the new-user create path. */
   orgId?: string;
+  /** When true, `POST /api/orgs` answers 409 with the JSON:API
+   *  "Organization name already in use" body — the global-uniqueness collision
+   *  (drives the inline duplicate error → needs_org). */
+  orgNameTaken?: boolean;
 }
 
 const DEFAULT_PROFILE: MockFetchProfile = {
@@ -86,6 +90,7 @@ export function makeMockFetch(options: MockFetchOptions = {}): RequestClient {
   const badToken = options.badToken ?? "";
   const orgId = options.orgId ?? DEFAULT_ORG_ID;
   const existingOrg = options.existingOrg ?? null;
+  const orgNameTaken = options.orgNameTaken ?? false;
 
   const impl = async (
     input: RequestInfo | URL,
@@ -111,9 +116,20 @@ export function makeMockFetch(options: MockFetchOptions = {}): RequestClient {
         ? jsonResponse({ id: existingOrg.id, name: existingOrg.name }, 200)
         : jsonResponse({ error: "no_org" }, 404);
     }
-    // Backend org-create — ALWAYS succeeds. Echo the submitted name so the
-    // projection asserts what Maya submitted.
+    // Backend org-create. 409 = globally-duplicate name (the JSON:API shape the
+    // backend's OrganizationNameTakenError produces); else 201, echoing the
+    // submitted name so the projection asserts what Maya submitted.
     if (url.includes("/api/orgs") && method === "POST") {
+      if (orgNameTaken) {
+        return jsonResponse(
+          {
+            errors: [
+              { status: "409", title: "Organization name already in use" },
+            ],
+          },
+          409,
+        );
+      }
       const body = init?.body
         ? (JSON.parse(init.body as string) as { name?: string })
         : {};

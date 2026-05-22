@@ -45,7 +45,6 @@ const MAYA_INPUT = {
   correlation_id: "R-7a4f-901c",
   principal_id: "user_maya",
   bearer_token: "tok-maya",
-  existing_org_names: [],
   config: CONFIG,
 };
 
@@ -180,6 +179,35 @@ describe("verifying onError → session_rejected (B8)", () => {
     // "workos userinfo failed: 401" message (no kind, no tag, no keyword
     // match for missing-email/cookie/reissue) to the default "transient".
     expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");
+  });
+});
+
+describe("creating_org → needs_org on a globally-duplicate org name (B9)", () => {
+  it("routes a backend name-collision (409) to needs_org with the inline duplicate error", async () => {
+    // New user (no org → needs_org); the backend POST /api/orgs answers 409
+    // (the name is globally taken). The org-create actor throws name_taken →
+    // creating_org's onError routes to needs_org with the duplicate error —
+    // NOT error_recoverable, and the reissue budget is untouched.
+    const nameTakenFetch = makeMockFetch({
+      profile: { email: MAYA_PROFILE.email, name: MAYA_PROFILE.display_name },
+      orgNameTaken: true,
+    });
+    const machine = createSessionOnboardingMachine();
+    const actor = createActor(machine, { input: inputWith(nameTakenFetch) });
+    actor.start();
+    await waitFor(actor, (s) => s.value === "needs_org");
+    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
+    await waitFor(
+      actor,
+      (s) => s.value === "needs_org" && s.context.org_validation_error !== null,
+    );
+    expect(actor.getSnapshot().value).toBe("needs_org");
+    expect(actor.getSnapshot().context.org_validation_error?.kind).toBe(
+      "duplicate",
+    );
+    // It is an inline-name error, not a transient/partial failure.
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBeNull();
+    expect(actor.getSnapshot().context.reissue_attempts_count).toBe(0);
   });
 });
 

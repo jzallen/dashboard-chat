@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import set_session
 from app.repositories.metadata import OrganizationRecord, ProjectRecord
 from app.use_cases.organization import create_organization
-from app.use_cases.organization.exceptions import ExternalServiceError
+from app.use_cases.organization.exceptions import (
+    ExternalServiceError,
+    OrganizationNameTakenError,
+)
 from tests.use_cases.organization.conftest import TEST_USER, TEST_USER_WITH_ORG
 
 
@@ -61,6 +64,24 @@ class TestCreateOrganization:
                 assert "already belongs to an organization" in str(error)
             case Success(_):
                 pytest.fail("Expected failure when user already has an org")
+
+    async def test_create_org_when_name_already_taken_fails(self, db_session: AsyncSession):
+        set_session(db_session)
+
+        first = await create_organization(name="Acme Corp", user=TEST_USER)
+        assert isinstance(first, Success), f"setup create failed: {first}"
+
+        # Org names are globally unique — a second create with the same name is
+        # rejected before insert (TEST_USER.org_id is None, so the user-already-
+        # has-org guard does not short-circuit it).
+        result = await create_organization(name="Acme Corp", user=TEST_USER)
+
+        match result:
+            case Failure(error):
+                assert isinstance(error, OrganizationNameTakenError)
+                assert "Acme Corp" in str(error)
+            case Success(_):
+                pytest.fail("Expected failure when org name is already taken")
 
     async def test_create_org_when_successful_persists_org_in_db(self, db_session: AsyncSession):
         set_session(db_session)

@@ -117,7 +117,6 @@ export interface SessionOnboardingContext {
    *  (3 user retries from the user's POV including the original failure). */
   retry_budget_used_count: number;
   org_validation_error: OrgValidationInlineError | null;
-  existing_org_names: string[];
 }
 
 export type SessionOnboardingEvent =
@@ -255,7 +254,6 @@ export function createSessionOnboardingMachine() {
         correlation_id: string;
         principal_id: string;
         bearer_token?: string;
-        existing_org_names?: string[];
         config?: Config | null;
         deps?: SessionOnboardingDeps | null;
         force_reissue_failures?: number | null;
@@ -282,14 +280,16 @@ export function createSessionOnboardingMachine() {
       // sibling action assigns). hasOrg = the backend reported an org.
       hasOrg: ({ event }) =>
         Boolean((event as { output?: VerifiedSession }).output?.org?.id),
-      orgNameValid: ({ context, event }) => {
+      orgNameValid: ({ event }) => {
         if (event.type !== "org_form_submitted") return false;
-        const result = validateOrgName(
-          event.org_name,
-          new Set(context.existing_org_names ?? []),
-        );
-        return result.ok;
+        return validateOrgName(event.org_name).ok;
       },
+      // The create-org actor throws a `name_taken`-tagged error when the
+      // backend rejects a globally-duplicate name (409). Read the marker off
+      // the XState invoke-error event so creating_org routes it to an inline
+      // duplicate error instead of a retry/error_recoverable.
+      isNameTaken: ({ event }) =>
+        Boolean((event as { error?: { name_taken?: boolean } }).error?.name_taken),
       reissueBudgetExhausted: ({ context }) =>
         context.reissue_attempts_count + 1 >= REISSUE_BUDGET,
       userRetryBudgetExhausted: ({ context }) =>
@@ -329,14 +329,12 @@ export function createSessionOnboardingMachine() {
         },
       }),
       recordOrgValidationError: assign({
-        org_validation_error: ({ context, event }) => {
+        org_validation_error: ({ event }) => {
           if (event.type !== "org_form_submitted") return null;
-          // Recompute against the same set the guard saw so the closed-union
-          // result the action persists matches the branch we took.
-          const result = validateOrgName(
-            event.org_name,
-            new Set(context.existing_org_names ?? []),
-          );
+          // Recompute so the closed-union result the action persists matches the
+          // branch the guard took. Shape-only (no duplicate detection — that is
+          // the backend's job, surfaced via recordOrgNameTaken).
+          const result = validateOrgName(event.org_name);
           if (result.ok) return null;
           const kind = result.error.kind;
           const messages: Record<typeof kind, string> = {
@@ -347,6 +345,15 @@ export function createSessionOnboardingMachine() {
           };
           return { kind, message: messages[kind] };
         },
+      }),
+      // The create-org actor rejected a globally-duplicate name (backend 409).
+      // Surface it as the inline duplicate error and return to needs_org so Maya
+      // can pick another name (NOT a transient retry / error_recoverable).
+      recordOrgNameTaken: assign({
+        org_validation_error: () => ({
+          kind: "duplicate" as const,
+          message: "That name is already in use in your organization",
+        }),
       }),
       clearOrgValidationError: assign({
         org_validation_error: () => null,
@@ -392,7 +399,6 @@ export function createSessionOnboardingMachine() {
       reissue_attempts_count: 0,
       retry_budget_used_count: 0,
       org_validation_error: null,
-      existing_org_names: input.existing_org_names ?? [],
     }),
     states: {
       // Re-verify the forwarded Bearer (defense in depth, L3) AND load the
@@ -486,6 +492,13 @@ export function createSessionOnboardingMachine() {
             }),
           },
           onError: [
+            {
+              // Globally-duplicate name (backend 409) → inline error, back to
+              // needs_org. NOT a transient failure: no budget burn, no retry.
+              guard: "isNameTaken",
+              target: "needs_org",
+              actions: "recordOrgNameTaken",
+            },
             {
               guard: "reissueBudgetExhausted",
               target: "error_recoverable",
@@ -715,13 +728,16 @@ export function createOrgFn(
       };
 
       // Step 1: create the org. The backend's middleware accepts the
-      // X-User-Id/X-Org-Id/X-User-Email headers (trust_proxy_headers in
-      // dev). On 409 ("already exists") OR a 500 "user already belongs to
-      // an organization" we treat the request as idempotent: fetch the
-      // existing org via /api/orgs/me. The 500 path is the dev-mode shape
-      // where DEV_USER carries a pre-assigned org_id — the AC for slice 1
-      // is about the state-machine flow, not the backend's per-user-org
-      // uniqueness constraint.
+      // X-User-Id/X-Org-Id/X-User-Email headers (trust_proxy_headers in dev).
+      // Status handling:
+      //   201/200 → created.
+      //   409     → OrganizationNameTakenError — org names are globally unique
+      //             and this one is taken. Tagged + thrown so the machine maps
+      //             it to an inline duplicate-name error (needs_org), NOT a
+      //             retry/error_recoverable.
+      //   500     → "user already belongs to an organization" (the dev DEV_USER
+      //             pre-assigned-org quirk): treat as idempotent — fetch the
+      //             existing org via /api/orgs/me and reuse it.
       const orgResp = await requestClient(`${backendUrl}/api/orgs`, {
         method: "POST",
         headers: baseHeaders,
@@ -743,7 +759,13 @@ export function createOrgFn(
           "";
         orgName =
           orgBody.name ?? orgBody.data?.attributes?.name ?? input.org_name;
-      } else if (orgResp.status === 409 || orgResp.status === 500) {
+      } else if (orgResp.status === 409) {
+        const err = new Error(
+          `org name '${input.org_name}' is already in use`,
+        );
+        (err as Error & { name_taken?: boolean }).name_taken = true;
+        throw err;
+      } else if (orgResp.status === 500) {
         const meResp = await requestClient(`${backendUrl}/api/orgs/me`, {
           method: "GET",
           headers: baseHeaders,
