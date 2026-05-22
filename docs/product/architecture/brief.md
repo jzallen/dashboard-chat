@@ -105,9 +105,136 @@ Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`ui
 
 ## Domain Model
 
-*(Bootstrapped by Hera when the first domain-modeling-shaped feature runs
-DESIGN. Currently absent — the existing taxonomy `dataset` / `view` /
-`report` is documented inline in ADR-015's "Naming discipline" section.)*
+Bootstrapped 2026-05-22 by Hera (nw-ddd-architect) when the first
+domain-modeling-shaped feature (`session-onboarding`) ran DESIGN. Each
+domain-scope DESIGN pass appends a sub-heading. The existing taxonomy
+`dataset` / `view` / `report` remains documented inline in ADR-015's "Naming
+discipline" section (not re-derived here).
+
+### Bounded contexts (current map)
+
+`ui-state/` is **one bounded context** (ADR-039 TL;DR) — the
+project-context / session-chat / session-onboarding split is a
+Single-Responsibility partition inside one ubiquitous language, not a
+context-map boundary. The system-level context map relevant to
+`session-onboarding`:
+
+| Context | Owner (source tree) | Subdomain class | Role |
+|---|---|---|---|
+| **Authentication** | `auth-proxy/` | Generic (commodity — JWT verify, identity injection, token SSOT) | Verifies the WorkOS-issued JWT, injects identity headers, forwards the Bearer. Token SSOT (ADR-016). |
+| **Session-Onboarding** | `ui-state/` (the realigned machine) | Supporting (enables core; bespoke org-binding flow) | Brings an already-authenticated principal to an org-scoped, app-ready state. |
+| **Org / Project** | `backend/` | Supporting | Owns org + project + dataset state; org creation + JWT reissue. |
+| **WorkOS** (external) | external IdP (fake-workos in dev/ci) | Generic | OIDC handshake (upstream, out of band) + `/oauth/userinfo` re-verification target. |
+
+### Context map (session-onboarding)
+
+```mermaid
+flowchart LR
+    subgraph external["External"]
+        WORKOS["WorkOS<br/>(OIDC IdP)"]
+    end
+    subgraph generic["Generic subdomains"]
+        AUTH["Authentication<br/>(auth-proxy — token SSOT)"]
+    end
+    subgraph supporting["Supporting subdomains"]
+        SO["Session-Onboarding<br/>(ui-state — realigned machine)"]
+        ORG["Org / Project<br/>(backend)"]
+    end
+
+    AUTH -->|"Customer-Supplier + ACL at router<br/>(verified headers + forwarded Bearer)"| SO
+    SO -->|"Conformist via re-verification<br/>(GET /oauth/userinfo, Bearer)"| WORKOS
+    SO -->|"Customer-Supplier<br/>(POST /api/orgs, reissue)"| ORG
+    AUTH -.->|"verifies JWT against (JWKS)"| WORKOS
+```
+
+**ACL annotation.** The `/flow/session-onboarding/*` router is the
+Anti-Corruption Layer between Authentication's wire vocabulary
+(`X-User-Id`, `Authorization: Bearer`) and the Session-Onboarding domain
+(`principal_id`, `session_started{user, org}`). ACL rule enforced:
+**identity from the verified token / verified headers, never a client body
+claim** (closes the pre-existing `persona_email`-as-DTO production gap).
+
+### Aggregate — OnboardSession
+
+One aggregate, root entity with value-typed properties (Vernon's ~70%
+root-only case). The aggregate is the noun/thing the flow manages
+(`OnboardSession`); the flow/machine that onboards it stays named
+`session-onboarding` / `SessionOnboardingMachine` — a deliberate
+aggregate-noun vs flow-descriptor distinction (ratified 2026-05-22).
+
+| Vernon rule | How this aggregate satisfies it |
+|---|---|
+| **1 — true invariants in the boundary** | A single principal's (verified `user`, `org` binding, settled `state`) tuple is one consistency boundary. No second entity must change in the same transaction. |
+| **2 — small aggregate** | Root-only: `user` (VO), `org` (VO), state value, validation/error VOs. No child entities. |
+| **3 — reference other aggregates by id** | `Org` is referenced by id; org *creation* is a call to the backend Org aggregate (separate context). The onboarding aggregate holds `{org_id, org_name}` as a value snapshot, not an Org entity. |
+| **4 — eventual consistency outside** | The `auth_ready` broadcast to project-context is a pump-mediated cross-aggregate signal, not a shared transaction. |
+
+Flow / stream identity: `flow_id = session-onboarding:<principal_id>`
+(ADR-030 §6 per-user flow naming).
+
+### Event model (corrected flow)
+
+Opening event `session_started{user, org|null}` is self-contained and seeds
+the projection (closes the placeholder defect). Lifecycle:
+`session_started → [hasOrg] ready | [else] needs_org → org_created → ready`,
+with `session_rejected` (terminal, re-verify failure), and the preserved
+`expired_token` / `error_recoverable` / `error_terminal` side-states. Full
+Given/When/Then specs:
+`docs/feature/session-onboarding/design/event-model.md`.
+
+Retired wire vocabulary (was authentication-context leakage):
+`sign_in_clicked`, `auth_callback_resolved`, `auth_failed`, `anonymous`,
+`authenticating`. Renamed: `authenticated_no_org → needs_org`.
+
+### Read-model substrate (ES-vs-store)
+
+Session-onboarding adopts the **server-authoritative `SettledStateStore`**
+(ADR-040 D3 inheritance — ADR-042), NOT event-sourcing. Rationale: thinnest
+flow in the system, no written audit/temporal requirement, and the store
+eliminates the emission-completeness invariant that produced this feature's
+defect. Lands after ADR-040 LEAF-5 (sequencing constraint).
+
+### Ubiquitous language glossary (Session-Onboarding context)
+
+| Term | Meaning | Replaces |
+|---|---|---|
+| Session onboarding | Bringing an already-authenticated principal to an org-scoped app-ready state | "login" (happens upstream) |
+| Principal | Verified user identity injected by auth-proxy (`X-User-Id`) | `persona` (a dev fixture) |
+| Re-verification | Defense-in-depth re-check of the forwarded Bearer against WorkOS `/oauth/userinfo` | "authentication" |
+| Verified user | The WorkOS profile (`email`, `display_name`) from re-verification | `persona_email`/`persona_display_name` body claims |
+| Org binding | The (org_id, org_name) the principal operates under | — |
+| Session rejected | Terminal state when re-verification fails | — (new) |
+
+### Domain-model features
+
+#### `session-onboarding` (DESIGN — 2026-05-22 — domain scope, propose mode)
+
+**Author:** Hera (nw-ddd-architect)
+**ADRs:** ADR-041 (domain realignment, Proposed), ADR-042 (store-model inheritance, Proposed)
+**Seed:** `docs/feature/session-onboarding/design-intent.md`
+**Deliverables:** `docs/feature/session-onboarding/design/{wave-decisions.md, c4-diagrams.md, event-model.md}`
+**Status:** PROPOSED → awaiting user ratification of L1–L6 inheritance + OQ-1..6 (esp. OQ-4 ES-vs-store) → ddd-architect-reviewer → DISTILL
+
+**Decision summary.** Realign the `login-and-org-setup` machine to
+`session-onboarding`: it modeled an authentication handshake that completes
+upstream (a bounded-context leak), producing a probe-verified defect (resolved
+user profile never reaches the projection). The corrected flow opens with a
+self-contained `session_started{user, org|null}` event that seeds the
+projection (defect closed by construction), repurposes the `workosUserInfo`
+invoke as Bearer-based re-verification (defense-in-depth, not the
+authenticator), adds a `[hasOrg]` returning-user shortcut and a
+`session_rejected` terminal, and adopts ADR-040's server-authoritative store.
+This is a behavior change → needs RED acceptance coverage (session_rejected,
+[hasOrg], identity-at-t0) at DISTILL.
+
+**Reuse verdict:** correction-in-place — 0 net-new domain artifacts; EXTEND
+the machine / strategy / projection / router; DELETE `derivePersonaCode`;
+defer `harvestSettled*` deletion to ADR-040 LEAF-5 and the reissue path to an
+OQ-5 empirical check. Full table: `wave-decisions.md` §2.
+
+**Sequencing constraint.** Lands AFTER ADR-040 LEAF-4/5/6 (do not entangle
+with the in-flight hexagonal-transport series). The store substrate (ADR-042)
+is only real after LEAF-5.
 
 ---
 
@@ -320,3 +447,5 @@ Probe failure for HARD adapters → process exits with `health.startup.refused` 
 | ADR-029 | Application | `active_scope` propagation contract (Proposed) |
 | ADR-030 | System | UI-state tier topology + single-replica scaling (Proposed) |
 | ADR-031 | System | Frontend tier transition — Remix alongside nginx (Proposed) |
+| ADR-041 | Domain | Session-onboarding domain realignment (Proposed) |
+| ADR-042 | Domain | Session-onboarding adopts the server-authoritative store (Proposed) |
