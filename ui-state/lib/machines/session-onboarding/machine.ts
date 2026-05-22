@@ -256,9 +256,6 @@ export function createSessionOnboardingMachine() {
       recordOrgValidationError: assign({
         org_validation_error: ({ event }) => {
           if (event.type !== "org_form_submitted") return null;
-          // Recompute so the closed-union result the action persists matches the
-          // branch the guard took. Shape-only (no duplicate detection — that is
-          // the backend's job, surfaced via recordOrgNameTaken).
           const result = validateOrgName(event.org_name);
           if (result.ok) return null;
           const kind = result.error.kind;
