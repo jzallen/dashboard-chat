@@ -113,17 +113,45 @@ The machine never writes FlowEvents itself (ADR-028/030). The begin strategy + t
 
 This machine never sends events to other machines directly. The orchestrator watches for first `ready` entry and broadcasts `auth_ready` with `{ org_id, user: { first_name } }` to the `project-context` machine, which uses it to start scope resolution. The event is named after **what it carries** rather than the sender (ADR-039 §C3).
 
+## Validation, guards, and actions
+
+Three roles that are easy to conflate — kept strictly separate. The org-name rule
+is the worked example (see the docstrings atop `setup/domain.ts`,
+`setup/guards.ts`, `setup/actions.ts`):
+
+| Role | Question it answers | May read | May write |
+|---|---|---|---|
+| **The value object** (`setup/domain.ts`) | "Is this domain datum well-formed, and if not, what *exactly* is wrong?" | the raw input | nothing — pure; `constructOrgName(raw)` returns a value object with `isValid()` / `getError()` |
+| **Guards** (`setup/guards.ts`) | "May this transition fire?" | `context`, `event`, `.isValid()` | nothing — pure predicate; routes only |
+| **Actions** (`setup/actions.ts`) | *(no question — apply a decided effect)* | `context`, `event`, `.getError()` | `context`, via `assign` — the only writers |
+
+`OrgName` owns its rule (in `constructOrgName`). On `org_form_submitted` the
+**guard** `isOrgNameValid` calls `.isValid()` to route (valid → `creating_org`;
+invalid → fall through). The fallthrough's **action** `recordOrgValidationError`
+re-constructs the value object and calls `.getError()` for the typed rejection,
+then renders it to the user-facing `org_validation_error` — the kind→copy mapping
+is *presentation*, so it lives in the action, not on the model. The re-derivation
+is intentional: a guard can *route* on a verdict but cannot *write* it (guards are
+pure and may be evaluated more than once), so the action materializes it. In
+short — **the value object evaluates, guards route, actions write.**
+
 ## Files
 
-- `machine.ts` — the XState v5 machine + types + actor factories (`createWorkOSUserInfoActor`, `createOrgAndReissueActor`, plus the split pure helpers `createOrgFn` / `reissueOrgJwtFn`)
+The machine is split so `machine.ts` reads as state transitions; the XState
+wiring it references by name lives under `setup/`. The `setup/` modules form a
+one-way dependency chain — `domain` is the leaf → `actors` → `types` → `guards` /
+`actions` → `machine` — so there are no cycles.
+
+- `machine.ts` — the XState v5 statechart, **mapping only**: `setup({ actors, guards, actions }).createMachine(...)`. Names actors/guards/actions by string; no definitions inline, no inline `assign`
+- `setup/domain.ts` — the OnboardSession **domain model**: branded primitives (`PrincipalId`, `OrgId`, `OrgName`) + the value objects (`VerifiedUser`, `Org`, `VerifiedSession`) that replace anemic, provenance-named data shapes (e.g. `CreateOrgAndReissueOutput` → `Org`). The `OrgName` value object owns its invariant via `constructOrgName(raw)` → `{ value, isValid(), getError() }`. Also owns the **failure-cause vocabulary**: the closed `UnderlyingCauseTag` union plus `failWithCause` (an actor brands a thrown Error with its cause at the seam that knows it) / `causeOf` (a downstream action reads it back, defaulting untagged or foreign throws to `transient`) — the structured replacement for downstream message-sniffing. Stored forms are plain serializable shapes (branded strings + `readonly` records, never class instances) so they survive the Redis context round-trip; the value object's methods are transient (used at the guard/action boundary)
+- `setup/types.ts` — context / event / state / input types + the `ActionArgs` / `GuardArgs` arg aliases the extracted guards + actions annotate their params with
+- `setup/actors.ts` — the external-service resolvers (WorkOS re-verify, backend org SSOT, org-create/reissue) that return the domain model (`VerifiedSession`, `Org`), their transport DTOs, the `fromPromise` actor aliases, and the wired `actors` bundle threaded into `setup({ actors })`
+- `setup/guards.ts` — the `guards` bundle (transition predicates + the reissue/user-retry budgets)
+- `setup/actions.ts` — the `actions` bundle (every `assign`, including the two formerly inline in the statechart, `assignPendingOrgName` + `assignCreatedOrg`, and the parameterized `tagCause` that records the cause tag on both the `__force_failure__` and budget-exhausted arms)
 - `strategy.ts` — the `FlowStrategy` impl (`sessionOnboardingStrategy`) + the per-request `SessionOnboardingBeginStrategy`
 - `router.ts` — the ACL HTTP transport (`buildSessionOnboardingRouter`); identity from the verified header + forwarded Bearer, never a client body claim (ADR-041 D4)
-- `index.ts` — barrel; re-exports the public surface
-- `machine.test.ts` — vitest unit tests at the actor's `send` / snapshot boundary
-
-Shared with siblings (kept at `machines/` root):
-
-- `../validation.ts` — `validateOrgName`, `classifyFailure`, and the `UnderlyingCauseTag` union
+- `index.ts` — barrel; exports the **minimal** public surface only: `createSessionOnboardingMachine` plus the `RequestClient` / `SessionOnboardingDeps` wiring types a composition root needs
+- `machine.test.ts`, `setup/domain.test.ts` — vitest unit tests
 
 ## See also
 

@@ -136,8 +136,8 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       }
       return { authReady: null };
     } else if (stateValue === "error_recoverable") {
-      // underlying_cause_tag is set on the machine by the __force_failure__
-      // handler or by classifyFailure on a transient onError; the
+      // underlying_cause_tag is set on the machine by the `tagCause` action (the
+      // __force_failure__ jump, or the budget-exhausted partial-setup arm); the
       // `reissue_failed_partial` event we emit is what populates it in the
       // projection. Source the values from the sanctioned harvester.
       const harvested = harvestSettledLoginState(actor);

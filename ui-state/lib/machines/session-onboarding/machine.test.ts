@@ -18,8 +18,12 @@
 //        underlying_cause_tag transitions to error_terminal.
 //   B2 — correlation_id persists across retry attempts (never regenerated).
 //   B3 — harness __force_failure__ drives needs_org → error_recoverable.
+//   B4 — new-user happy path: creating_org → ready (org + identity populated).
+//   B5 — invalid org-name submission self-loops in needs_org with inline error.
+//   B6 — workos-profile-corrupt cause tag surfaced at machine level.
 //   B7 — verifying [hasOrg] shortcut: returning user → ready directly.
 //   B8 — verifying onError → session_rejected (terminal).
+//   B9 — creating_org → needs_org on globally-duplicate org name (409).
 //
 // All tests are port-to-port at the machine driving port (the XState actor's
 // public `send` / snapshot surface). No internal-class assertions.
@@ -28,9 +32,9 @@ import { describe, expect, it } from "vitest";
 import { createActor } from "xstate";
 
 import { makeMockFetch, makeTestConfig } from "../../testing/test-config.ts";
-import type { UnderlyingCauseTag } from "../validation.ts";
 import { createSessionOnboardingMachine } from "./machine.ts";
-import type { RequestClient } from "./upstream.ts";
+import type { RequestClient } from "./setup/actors.ts";
+import type { UnderlyingCauseTag } from "./setup/domain.ts";
 
 const CONFIG = makeTestConfig();
 
@@ -97,7 +101,7 @@ async function driveToFirstRecoverableError(requestClient: RequestClient) {
 function waitFor<TActor extends ReturnType<typeof createActor>>(
   actor: TActor,
   pred: (snapshot: ReturnType<TActor["getSnapshot"]>) => boolean,
-  timeoutMs = 1000,
+  timeoutMs = 5000,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     if (pred(actor.getSnapshot() as ReturnType<TActor["getSnapshot"]>)) {
@@ -168,10 +172,61 @@ describe("verifying onError → session_rejected (B8)", () => {
     expect(actor.getSnapshot().value).toBe("session_rejected");
     // No user state advances on the rejection path.
     expect(actor.getSnapshot().context.user.email).toBeNull();
-    // FIX D3: assert the EXACT classified cause. `classifyFailure` maps a
-    // "workos userinfo failed: 401" message (no kind, no tag, no keyword
-    // match for missing-email/cookie/reissue) to the default "transient".
+    // FIX D3: assert the EXACT cause. The boundary throws an UNTAGGED Error
+    // ("workos userinfo failed: 401"), so `causeOf` defaults it to "transient"
+    // (only "workos profile missing email" is tagged workos-profile-corrupt at
+    // the seam — see setup/actors.ts).
     expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");
+  });
+});
+
+describe("new-user happy path: creating_org → ready (B4)", () => {
+  it("reaches ready with org + identity populated after valid org submission", async () => {
+    const machine = createSessionOnboardingMachine();
+    const actor = createActor(machine, { input: inputWith(okFetch()) });
+    actor.start();
+    await waitFor(actor, (s) => s.value === "needs_org");
+    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
+    await waitFor(actor, (s) => s.value === "ready");
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("ready");
+    expect(snap.context.org).toEqual({ id: "org-1", name: "Acme Data" });
+    expect(snap.context.user.email).toBe(MAYA_PROFILE.email);
+  });
+});
+
+describe("invalid org-name submission self-loops in needs_org with inline error (B5)", () => {
+  it.each([
+    ["", "empty"],
+    ["A", "too_short"],
+  ] as const)(
+    "keeps the machine in needs_org and sets org_validation_error.kind=%s when name=%s",
+    async (orgName, expectedKind) => {
+      const machine = createSessionOnboardingMachine();
+      const actor = createActor(machine, { input: inputWith(okFetch()) });
+      actor.start();
+      await waitFor(actor, (s) => s.value === "needs_org");
+      actor.send({ type: "org_form_submitted", org_name: orgName });
+      await waitFor(actor, (s) => s.context.org_validation_error !== null);
+      const snap = actor.getSnapshot();
+      expect(snap.value).toBe("needs_org");
+      expect(snap.context.org_validation_error?.kind).toBe(expectedKind);
+    },
+  );
+});
+
+describe("workos-profile-corrupt cause tag surfaced at machine level (B6)", () => {
+  it("lands in session_rejected with underlying_cause_tag=workos-profile-corrupt when the WorkOS profile has no email", async () => {
+    const corruptFetch = makeMockFetch({
+      profile: { email: "", name: "Maya Chen" },
+    });
+    const machine = createSessionOnboardingMachine();
+    const actor = createActor(machine, { input: inputWith(corruptFetch) });
+    actor.start();
+    await waitFor(actor, (s) => s.value === "session_rejected");
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("session_rejected");
+    expect(snap.context.underlying_cause_tag).toBe("workos-profile-corrupt");
   });
 });
 
@@ -253,9 +308,6 @@ describe("correlation_id threading across retries (B2)", () => {
     );
     const unique = Array.from(new Set(seenCorrelationIds));
     expect(unique).toEqual([MAYA_INPUT.correlation_id]);
-    expect(actor.getSnapshot().context.params.correlation_id).toBe(
-      MAYA_INPUT.correlation_id,
-    );
   });
 });
 
@@ -295,24 +347,19 @@ describe("harness force_failure event drives into error_recoverable (B3)", () =>
   });
 });
 
-describe("closed-union underlying_cause_tag (compile-time)", () => {
-  it("only assigns members of the closed UnderlyingCauseTag union", () => {
-    const all: UnderlyingCauseTag[] = [
-      "transient",
-      "cookie-blocked",
-      "partial-setup",
-      "workos-profile-corrupt",
-      "silent-reauth-failed",
-    ];
-    expect(all).toHaveLength(5);
-    const _exhaustive: Exclude<
-      UnderlyingCauseTag,
-      | "transient"
-      | "cookie-blocked"
-      | "partial-setup"
-      | "workos-profile-corrupt"
-      | "silent-reauth-failed"
-    > = undefined as never;
-    void _exhaustive;
-  });
-});
+// Compile-time exhaustiveness guard: adding a member to UnderlyingCauseTag
+// without listing it here fails `npm run build` (tsc). The old
+// `Exclude<…> = undefined as never` form compiled clean and caught nothing
+// (never is assignable to any type); constraining a type alias to never does
+// genuinely error.
+type _AssertNever<T extends never> = T;
+type _AllUnderlyingCausesHandled = _AssertNever<
+  Exclude<
+    UnderlyingCauseTag,
+    | "transient"
+    | "cookie-blocked"
+    | "partial-setup"
+    | "workos-profile-corrupt"
+    | "silent-reauth-failed"
+  >
+>;

@@ -1,39 +1,16 @@
 // Barrel for the session-onboarding XState machine directory.
 //
-// Re-exports the public surface of the SessionOnboardingMachine. Callers
-// (orchestrator.ts, ui-state/index.ts, the in-package tests) resolve
-// `./machines/session-onboarding` through this barrel.
+// The public surface is intentionally MINIMAL (the only things consumed outside
+// this directory):
+//   - createSessionOnboardingMachine — the statechart factory (used by
+//     strategy.ts to spawn the actor).
+//   - RequestClient + SessionOnboardingDeps — the two I/O-contract types a
+//     composition root needs to WIRE the machine (the `fetch` port + its deps
+//     bundle); consumed by orchestrator.ts, router.ts, and the test configs.
 //
-// The surface is split across two modules:
-//   - machine.ts  — the statechart (createSessionOnboardingMachine), the
-//     context/event/state types, and the XState-bound actor-type aliases.
-//   - upstream.ts — the external-service request layer: the resolvers that talk
-//     to WorkOS + the backend (getWorkOSUserInfo, getUserOrg, loadVerifiedSession,
-//     createOrgFn, reissueOrgJwtFn, getOrgAndReissue) and the I/O contracts they
-//     exchange with the machine (RequestClient, SessionOnboardingDeps,
-//     WorkOSProfile, VerifiedSession, LoadSessionInput, CreateOrgAndReissue*).
+// Everything else — the context/event/state types, the guards, actions,
+// resolvers, and validation — is an implementation detail of the machine and
+// lives under ./machine.ts + ./setup/. It is deliberately NOT re-exported here.
 
-export {
-  type CreateOrgAndReissueActor,
-  createSessionOnboardingMachine,
-  type LoadSessionActor,
-  type OrgValidationInlineError,
-  type SessionOnboardingContext,
-  type SessionOnboardingEvent,
-  type SessionOnboardingState,
-  type UnderlyingCauseTag,
-} from "./machine.ts";
-export {
-  type CreateOrgAndReissueInput,
-  type CreateOrgAndReissueOutput,
-  createOrgFn,
-  getOrgAndReissue,
-  getUserOrg,
-  getWorkOSUserInfo,
-  type LoadSessionInput,
-  loadVerifiedSession,
-  type RequestClient,
-  type SessionOnboardingDeps,
-  type VerifiedSession,
-  type WorkOSProfile,
-} from "./upstream.ts";
+export { createSessionOnboardingMachine } from "./machine.ts";
+export type { RequestClient, SessionOnboardingDeps } from "./setup/actors.ts";

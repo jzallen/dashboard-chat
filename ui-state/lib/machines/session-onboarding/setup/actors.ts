@@ -1,14 +1,29 @@
-// session-onboarding/upstream.ts — the external-service request layer for the
-// OnboardSession aggregate (ADR-041). Houses every actor RESOLVER that performs
-// network I/O (WorkOS re-verify, the backend org SSOT, and org-create/reissue)
-// plus the I/O contracts they exchange with the machine. machine.ts imports the
-// resolvers to wire them as config-driven default actors; this file imports
-// NOTHING from machine.ts (one-way dependency — no cycle).
+// session-onboarding/setup/actors.ts — the external-service request layer for
+// the OnboardSession aggregate (ADR-041). Houses every actor RESOLVER that
+// performs network I/O (WorkOS re-verify, the backend org SSOT, and
+// org-create/reissue), the I/O contracts they exchange with the machine, the
+// `fromPromise`-bound actor-type aliases, and the wired `actors` bundle that
+// machine.ts threads straight into `setup({ actors })`. It imports from `xstate`
+// and the domain model (./domain.ts) ONLY — never machine.ts or the other setup
+// modules (one-way dependency, no cycle): the resolvers speak the domain
+// vocabulary (return `VerifiedSession`/`Org`, tag failures via `failWithCause`).
 //
 // Config-agnostic by design: every resolver reads its URLs from `input.config`
 // and performs network I/O through `input.deps.request_client` (= the `fetch`
 // library), both threaded composition root → machine input → context → invoke
 // input. Tests inject a mock `fetch` as `request_client`.
+
+import { fromPromise } from "xstate";
+
+import type {
+  Org,
+  OrgId,
+  OrgName,
+  PrincipalId,
+  VerifiedSession,
+  VerifiedUser,
+} from "./domain.ts";
+import { failWithCause } from "./domain.ts";
 
 /**
  * The slice of the ui-state env config this package's resolvers actually read —
@@ -44,30 +59,13 @@ export interface SessionOnboardingDeps {
   request_client: RequestClient;
 }
 
-/**
- * The verified-user IDENTITY returned by the WorkOS `/oauth/userinfo`
- * re-verification call (L5) — identity ONLY (email + display_name). Real WorkOS
- * `/oauth/userinfo` carries no app-level org binding; the org is sourced
- * separately from the backend (the org SSOT, `GET /api/orgs/me`).
- */
-export interface WorkOSProfile {
-  email: string;
-  display_name: string;
-}
-
-/**
- * The combined verified session the `verifying` step resolves: the WorkOS
- * identity PLUS the user's org as reported by the backend (`GET /api/orgs/me`),
- * the org SSOT — `null` when the user has no org yet (new user). The `[hasOrg]`
- * guard reads `org` off this done-event output; the verified `X-Org-Id` header
- * is demoted to an audit field at the route boundary (it is a cached JWT claim,
- * not the authoritative org state).
- */
-export interface VerifiedSession {
-  email: string;
-  display_name: string;
-  org: { id: string; name: string } | null;
-}
+// The verified identity (VerifiedUser), the org binding (Org), and the combined
+// VerifiedSession the `verifying` step resolves are the OnboardSession domain
+// model — defined in ./domain.ts and imported above. Real WorkOS
+// `/oauth/userinfo` carries no app-level org binding; the org is sourced
+// separately from the backend (the org SSOT, `GET /api/orgs/me`), and the
+// verified `X-Org-Id` header is demoted to an audit field at the route boundary
+// (a cached JWT claim, not the authoritative org state).
 
 /**
  * Input for the `verifying` resolvers (`getWorkOSUserInfo` re-verify +
@@ -85,8 +83,12 @@ export interface LoadSessionInput {
 }
 
 export interface CreateOrgAndReissueInput {
-  org_name: string;
-  principal_id: string;
+  /** The validated org name to create. `OrgName` (branded) makes "this passed
+   *  the submission rule" a type fact, threaded from `pending_org_name`. Null
+   *  only when the machine is stubbed without a pending name — createOrgFn fails
+   *  fast on null, mirroring the config/deps nullable pattern below. */
+  org_name: OrgName | null;
+  principal_id: PrincipalId;
   correlation_id: string;
   attempt: number;
   /** Env config (provides `backendUrl` + the dev-user header fixture) threaded
@@ -108,11 +110,6 @@ export interface CreateOrgAndReissueInput {
   force_reissue_failures?: number | null;
 }
 
-export interface CreateOrgAndReissueOutput {
-  org_id: string;
-  org_name: string;
-}
-
 /**
  * Re-verify the forwarded Bearer against the WorkOS-compatible
  * `/oauth/userinfo` endpoint (L3/L4) and return the verified user IDENTITY.
@@ -128,7 +125,7 @@ export async function getWorkOSUserInfo({
   input,
 }: {
   input: LoadSessionInput;
-}): Promise<WorkOSProfile> {
+}): Promise<VerifiedUser> {
   if (!input.config) {
     throw new Error(
       "session-onboarding: workos config missing from re-verify input",
@@ -155,11 +152,21 @@ export async function getWorkOSUserInfo({
     name?: string;
   };
   if (!profile.email) {
-    throw new Error("workos profile missing email");
+    // A corrupt WorkOS profile is a KNOWN, non-transient cause — tag it at the
+    // seam that detected it. The other throws here (config/deps missing, a
+    // userinfo non-200) carry no tag, so `causeOf` defaults them to `transient`.
+    throw failWithCause(
+      "workos-profile-corrupt",
+      "workos profile missing email",
+    );
   }
+  const display_name = profile.name ?? "";
   return {
     email: profile.email,
-    display_name: profile.name ?? "",
+    display_name,
+    // Derived ONCE here at the parse boundary (was in the assignVerifiedUser
+    // action); the VerifiedUser value object carries it from the seam onward.
+    first_name: display_name.split(/\s+/)[0] || null,
   };
 }
 
@@ -178,7 +185,7 @@ export async function getUserOrg({
   input,
 }: {
   input: LoadSessionInput;
-}): Promise<{ id: string; name: string } | null> {
+}): Promise<Org | null> {
   if (!input.config) {
     throw new Error(
       "session-onboarding: backend config missing from org-lookup input",
@@ -209,7 +216,8 @@ export async function getUserOrg({
   const id = body.id ?? body.data?.id ?? "";
   if (!id) return null;
   const name = body.name ?? body.data?.attributes?.name ?? "";
-  return { id, name };
+  // Trust-boundary brand: the backend is authoritative for an existing org id.
+  return { id: id as OrgId, name };
 }
 
 /**
@@ -223,9 +231,9 @@ export async function loadVerifiedSession({
 }: {
   input: LoadSessionInput;
 }): Promise<VerifiedSession> {
-  const identity = await getWorkOSUserInfo({ input });
+  const user = await getWorkOSUserInfo({ input });
   const org = await getUserOrg({ input });
-  return { email: identity.email, display_name: identity.display_name, org };
+  return { user, org };
 }
 
 /** A backend org response body — JSON:API (`data.id`/`data.attributes.name`)
@@ -244,7 +252,8 @@ interface CreateOrgContext {
   requestClient: RequestClient;
   backendUrl: string;
   baseHeaders: Record<string, string>;
-  input: CreateOrgAndReissueInput;
+  /** The validated name, narrowed non-null by createOrgFn before dispatch. */
+  orgName: OrgName;
 }
 
 /** Dispatch rule for a `POST /api/orgs` response status. `resolve` either
@@ -252,10 +261,7 @@ interface CreateOrgContext {
  *  createOrgFn) or throws. First matching rule wins (list order = precedence). */
 interface CreateOrgStatusRule {
   matches: (status: number) => boolean;
-  resolve: (
-    resp: Response,
-    ctx: CreateOrgContext,
-  ) => Promise<{ org_id: string; org_name: string }>;
+  resolve: (resp: Response, ctx: CreateOrgContext) => Promise<Org>;
 }
 
 const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
@@ -265,9 +271,8 @@ const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
     resolve: async (resp, ctx) => {
       const body = (await resp.json()) as OrgResponseBody;
       return {
-        org_id: body.id ?? body.org_id ?? body.data?.id ?? "",
-        org_name:
-          body.name ?? body.data?.attributes?.name ?? ctx.input.org_name,
+        id: (body.id ?? body.org_id ?? body.data?.id ?? "") as OrgId,
+        name: body.name ?? body.data?.attributes?.name ?? ctx.orgName,
       };
     },
   },
@@ -277,17 +282,15 @@ const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
   {
     matches: (s) => s === 409,
     resolve: async (_resp, ctx) => {
-      const err = new Error(
-        `org name '${ctx.input.org_name}' is already in use`,
-      );
+      const err = new Error(`org name '${ctx.orgName}' is already in use`);
       (err as Error & { name_taken?: boolean }).name_taken = true;
       throw err;
     },
   },
   // 500 → "user already belongs to an organization" (the dev DEV_USER
   // pre-assigned-org quirk): treat as idempotent — fetch the existing org via
-  // /api/orgs/me and reuse it. Prefer Maya's submitted name in the projection
-  // (the test asserts what she SUBMITTED, not what an upstream provisioner stored).
+  // /api/orgs/me and reuse it. Prefer the SUBMITTED name in the projection (the
+  // test asserts what was submitted, not what an upstream provisioner stored).
   {
     matches: (s) => s === 500,
     resolve: async (_resp, ctx) => {
@@ -302,8 +305,8 @@ const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
       }
       const meBody = (await meResp.json()) as OrgResponseBody;
       return {
-        org_id: meBody.id ?? meBody.data?.id ?? "",
-        org_name: ctx.input.org_name,
+        id: (meBody.id ?? meBody.data?.id ?? "") as OrgId,
+        name: ctx.orgName,
       };
     },
   },
@@ -320,40 +323,44 @@ const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
 export function createOrgFn(
   config: Config,
   requestClient: RequestClient,
-): (input: CreateOrgAndReissueInput) => Promise<{ org_id: string; org_name: string }> {
+): (input: CreateOrgAndReissueInput) => Promise<Org> {
   const { backendUrl, devUserHeadersFixture } = config;
   return async (input) => {
-      const baseHeaders = {
-        "content-type": "application/json",
-        "x-correlation-id": input.correlation_id,
-        ...devUserHeadersFixture,
-      };
-
-      // Create the org, then dispatch on the response status via the ordered
-      // rule list (CREATE_ORG_STATUS_RULES). The matched rule yields
-      // { org_id, org_name } or throws; an unmatched status is a generic
-      // failure. The shared post-check rejects an empty org_id.
-      const orgResp = await requestClient(`${backendUrl}/api/orgs`, {
-        method: "POST",
-        headers: baseHeaders,
-        body: JSON.stringify({ name: input.org_name }),
-      });
-      const rule = CREATE_ORG_STATUS_RULES.find((r) =>
-        r.matches(orgResp.status),
+    if (input.org_name === null) {
+      throw new Error(
+        "session-onboarding: create-org invoked without a validated org name",
       );
-      if (!rule) {
-        throw new Error(`org create failed: ${orgResp.status}`);
-      }
-      const created = await rule.resolve(orgResp, {
-        requestClient,
-        backendUrl,
-        baseHeaders,
-        input,
-      });
-      if (!created.org_id) {
-        throw new Error("org create returned no org_id");
-      }
-      return created;
+    }
+    const orgName = input.org_name;
+    const baseHeaders = {
+      "content-type": "application/json",
+      "x-correlation-id": input.correlation_id,
+      ...devUserHeadersFixture,
+    };
+
+    // Create the org, then dispatch on the response status via the ordered rule
+    // list (CREATE_ORG_STATUS_RULES). The matched rule yields an `Org` or
+    // throws; an unmatched status is a generic failure. The shared post-check
+    // rejects an empty id.
+    const orgResp = await requestClient(`${backendUrl}/api/orgs`, {
+      method: "POST",
+      headers: baseHeaders,
+      body: JSON.stringify({ name: orgName }),
+    });
+    const rule = CREATE_ORG_STATUS_RULES.find((r) => r.matches(orgResp.status));
+    if (!rule) {
+      throw new Error(`org create failed: ${orgResp.status}`);
+    }
+    const created = await rule.resolve(orgResp, {
+      requestClient,
+      backendUrl,
+      baseHeaders,
+      orgName,
+    });
+    if (!created.id) {
+      throw new Error("org create returned no org_id");
+    }
+    return created;
   };
 }
 
@@ -387,8 +394,8 @@ export function reissueOrgJwtFn(
 
 /**
  * The config-driven `createOrgAndReissue` actor RESOLVER (an
- * `async ({ input }) => CreateOrgAndReissueOutput`), wrapped once as the
- * machine's default `createOrgAndReissue` actor (`fromPromise(getOrgAndReissue)`).
+ * `async ({ input }) => Org`), wrapped once as the machine's default
+ * `createOrgAndReissue` actor (`fromPromise(getOrgAndReissue)`).
  * Its env config (`backendUrl` + the dev-user header fixture) arrives on
  * `input.config` — threaded composition root → machine input → context → invoke
  * input — so it stays config-agnostic and the composition root never imports it
@@ -410,7 +417,7 @@ export async function getOrgAndReissue({
   input,
 }: {
   input: CreateOrgAndReissueInput;
-}): Promise<CreateOrgAndReissueOutput> {
+}): Promise<Org> {
   if (!input.config) {
     throw new Error(
       "session-onboarding: backend config missing from create-org input",
@@ -434,8 +441,55 @@ export async function getOrgAndReissue({
   }
 
   await reissueOrgJwtFn(input.config, requestClient)({
-    org_id: created.org_id,
+    org_id: created.id,
     correlation_id: input.correlation_id,
   });
   return created;
 }
+
+// Actor-type ALIASES bound to XState's `fromPromise`. They live here, next to
+// the resolvers + the `fromPromise` wiring below, rather than in machine.ts —
+// the machine references them only via the `actors` bundle.
+export type LoadSessionActor = ReturnType<
+  typeof fromPromise<VerifiedSession, LoadSessionInput>
+>;
+
+export type CreateOrgAndReissueActor = ReturnType<
+  typeof fromPromise<Org, CreateOrgAndReissueInput>
+>;
+
+/**
+ * The machine's default actor map — the resolvers wrapped once as `fromPromise`
+ * actors. machine.ts threads this straight into `setup({ actors })` so the
+ * statechart only names actors (`src: "loadSession"`), never wires them. These
+ * are config-driven DEFAULTS (ADR-041 inversion): there is no `.provide(...)`;
+ * tests drive behavior by injecting a mock `fetch` as `deps.request_client`.
+ */
+export const actors = {
+  loadSession: fromPromise<VerifiedSession, LoadSessionInput>(
+    loadVerifiedSession,
+  ),
+  createOrgAndReissue: fromPromise<Org, CreateOrgAndReissueInput>(
+    getOrgAndReissue,
+  ),
+};
+
+/**
+ * The ProvidedActor union XState derives from `actors` when it types
+ * `setup({ actors })`. XState's own `ToProvidedActor` is internal (not exported),
+ * so we mirror its shape here — `{ src, logic, id }` per actor — DERIVED from
+ * `typeof actors`, so adding/removing an actor updates it automatically. The
+ * extracted actions (./actions.ts) pin `assign`'s `TActor` generic to this so
+ * the actions bundle is assignable to `setup({ actions })`; without it the
+ * actions would carry the generic `ProvidedActor` and the bundle would be
+ * rejected. (No children map → `id: string | undefined`, matching XState.)
+ */
+type ProvidedActorOf<TActors extends Record<string, unknown>> = {
+  [K in keyof TActors as K & string]: {
+    src: K & string;
+    logic: TActors[K];
+    id: string | undefined;
+  };
+}[keyof TActors & string];
+
+export type SessionOnboardingActor = ProvidedActorOf<typeof actors>;
