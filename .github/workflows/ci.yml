@@ -1,14 +1,20 @@
 name: CI
+# NOTE: Automatic CI is DISABLED while the GitHub Actions quota is exhausted.
+# Run the equivalent checks locally instead (see tools/test/test.sh, or the
+# bazel commands mirrored in the jobs below).
+# To re-enable when the quota refreshes: uncomment the push/pull_request
+# triggers below and delete the workflow_dispatch stub.
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - 'CHANGELOG.md'
-      - '.gitignore'
+  workflow_dispatch: {}
+  # pull_request:
+  #   branches: [main]
+  # push:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - 'docs/**'
+  #     - '**.md'
+  #     - 'CHANGELOG.md'
+  #     - '.gitignore'
 
 # Concurrency: feature branches cancel in-progress on new push (saves runner
 # minutes during iteration); main lets every merge's CI run to completion so
