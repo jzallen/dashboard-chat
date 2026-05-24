@@ -352,4 +352,51 @@ updated to assert the broadcast fires on both `creating_org → ready` and `veri
   actor input type changes `{ persona_email: string }` → `{ bearer_token: string }`, sourced
   from the router's forwarded `Authorization` header; thread it through machine input → actor
   invocation → strategy. One-line type change, but call it out so the crafter doesn't re-derive.
+
+---
+
+## 9. `/event`-to-`/begin` parity slice (DESIGN delta — 2026-05-24)
+
+**Author:** Hera (nw-ddd-architect) · **Status:** RATIFIED 2026-05-24 (OQ-E1/E2/E3 all decided) — ready for DISTILL
+**Deliverable:** `event-slice-scope.md` (the thin-slice plan + G/W/T seeds).
+**Subject:** Bring `/event` (`router.ts:201-244`) to parity with the already-realigned `/begin`
+slice under the current organizing pattern. This does NOT re-open the §1-8 realignment; it
+closes the transport-side asymmetry only.
+
+### New decisions (each PROPOSED)
+
+- **D-E1 — Inbound command vocabulary stays at the ACL, NOT in `setup/domain.ts`.** The
+  `SubmitOrgName` / `RetrySetup` commands carry no aggregate invariant beyond the org-name
+  shape rule, which already lives on the `constructOrgName` value object (`domain.ts:97-106`).
+  Add a zod `eventRequestSchema` + a `translateWireEvent` ACL function at `router.ts`; add
+  nothing to the domain model for the command surface. **Anemic-but-correct is the verdict** —
+  the ACL is the DDD home for wire→domain translation (Translation pattern), and the
+  serialization constraint (`domain.ts:22-28`) forbids behavior-bearing command objects in
+  context regardless. Asymmetry with `/begin`'s `SessionOnboardingBeginStrategy` class is
+  justified: begin has real orchestration (reset/start/await/branch/emit, `strategy.ts:286-361`);
+  `/event` forwards one event and lets `settle(...)` emit — a class would be empty ceremony.
+- **D-E2 — Validate `__force_failure__.tag` against `UnderlyingCauseTag` at the ACL,** reusing
+  the domain's own `isUnderlyingCauseTag` (`domain.ts:175-183`, widened to `export`). The only
+  `setup/domain.ts` touch in the whole slice — an export-widening, not new modeling. Invalid
+  tag → 400; it must never reach `tagCause` (`machine.ts:122-128`).
+- **D-E3 — Derive aggregate identity from the verified principal.** Compute
+  `flow_id = session-onboarding:<X-User-Id>` at the ACL and corroborate (or reject) the body
+  `flow_id` — the L4 ACL rule `/begin` already enforces, applied to `/event`. The composition
+  root already sets `userId` on every route (`index.ts:101`); `/event` simply does not read it
+  today (`router.ts:215`).
+
+### New open questions (relay list — ratify before DISTILL)
+
+- **OQ-E1 — Cross-principal `/event` enforcement — RATIFIED 2026-05-24: ENFORCE (403).**
+  Slice 5 derives `flow_id = session-onboarding:<verified X-User-Id>` and rejects a mismatched
+  body `flow_id` with 403 — the same L4 ACL rule `/begin` enforces, closing the cross-principal
+  hole (`router.ts:215`) now rather than deferring it. The FE + TS-harness audit (do they send
+  `X-User-Id` on every `/event` path?) becomes a WORK ITEM INSIDE Slice 5, not a blocker: the
+  acceptance suite surfaces any client that omits the header (fails loudly, not silently). No
+  longer gates DISTILL.
+- **OQ-E2 — Command function vs. class for `/event` — RATIFIED 2026-05-24: FUNCTION.** A typed
+  ACL translation *function* (`translateWireEvent`), not a near-empty
+  `SessionOnboardingEventCommand` class; `/event` has no orchestration to justify a class.
+- **OQ-E3 — DTO sizing — RATIFIED 2026-05-24: INCREMENTAL.** Per-event validation lands across
+  Slices 1/4/6 (thin-slice discipline), not one discriminated-union schema up front.
 </content>

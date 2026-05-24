@@ -184,5 +184,23 @@ noun/thing the flow manages; the flow/machine that onboards it stays named `sess
 
 Stream / flow identity: `flow_id = session-onboarding:<principal_id>` (ADR-030 §6 per-user
 flow naming — carried through the rename).
+
+---
+
+## Addendum — `/event` command surface (DESIGN delta, 2026-05-24)
+
+The `/event`-driven commands **SubmitOrgName** (Specs 4/5) and **RetrySetup** (Phase 3
+"Org-create retry") are already modeled above; this addendum records that the
+`/event`-to-`/begin` parity slice (`event-slice-scope.md`) adds **no new domain events**.
+
+The parity work is **boundary-validation** of the existing commands, not new model elements:
+the inbound command vocabulary stays at the ACL (wave-decisions §9 D-E1) — it carries no
+aggregate invariant beyond the org-name shape rule, which already lives on the
+`constructOrgName` value object. The transport-layer G/W/T seeds DISTILL should add (the
+`__force_failure__` failure-simulation gate, the retry-budget exhaustion path, the
+`tag`/`payload` well-formedness checks, and the cross-principal identity guard) are derived
+from this model and live in `event-slice-scope.md` §4 — they are transport specs, not
+additions to the event vocabulary. No event-vocabulary change is required; the command
+modeling is complete.
 </content>
 </invoke>
