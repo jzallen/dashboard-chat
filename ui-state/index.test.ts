@@ -583,8 +583,7 @@ describe("Slice 3: the forced-failure side-channel is gated unless the failure-s
 // the widened-to-export `isUnderlyingCauseTag`): an unrecognized cause → 400, the
 // projection UNCHANGED (still needs_org), nothing reaches the actor.
 describe("Slice 4: a forced failure naming an unrecognized cause is refused at the boundary", () => {
-  // RED until DELIVER Slice 4 — ACL tag validation against the domain failure vocabulary.
-  it.skip("refuses a forced failure whose cause is not in the failure vocabulary", async () => {
+  it("refuses a forced failure whose cause is not in the failure vocabulary", async () => {
     enableFailureSimulation();
     active = buildScenario({ requestClient: okFetch() });
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });

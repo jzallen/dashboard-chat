@@ -43,6 +43,7 @@ import type {
 } from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { RequestClient } from "./index.ts";
+import { isUnderlyingCauseTag } from "./setup/domain.ts";
 import { SessionOnboardingBeginStrategy } from "./strategy.ts";
 
 /** The canonical machine name (ADR-039) — also the wire path segment. */
@@ -258,6 +259,26 @@ export function buildSessionOnboardingRouter(
               "failure-simulation knob disabled: __force_failure__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
           },
           403,
+        );
+      }
+
+      // The gate is open; now validate the forced cause against the domain's
+      // closed failure vocabulary (D-E2) so a tag the projection cannot map
+      // never reaches `tagCause` in the actor. The ACL and the domain share one
+      // source of truth via the widened-to-export `isUnderlyingCauseTag`.
+      const tag = event.payload?.tag;
+      if (typeof tag !== "string" || !isUnderlyingCauseTag(tag)) {
+        return c.json(
+          {
+            error: "invalid_request",
+            issues: [
+              {
+                path: ["payload", "tag"],
+                message: "tag must be a known UnderlyingCauseTag",
+              },
+            ],
+          },
+          400,
         );
       }
     }

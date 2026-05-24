@@ -172,7 +172,9 @@ export function causeOf(error: unknown): UnderlyingCauseTag {
     : "transient";
 }
 
-function isUnderlyingCauseTag(value: string): value is UnderlyingCauseTag {
+export function isUnderlyingCauseTag(
+  value: string,
+): value is UnderlyingCauseTag {
   return (
     value === "transient" ||
     value === "cookie-blocked" ||
