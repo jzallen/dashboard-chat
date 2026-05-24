@@ -327,6 +327,29 @@ export function buildSessionOnboardingRouter(
       }
     }
 
+    // Payload well-formedness for org_form_submitted (D-E1, OQ-E3 INCREMENTAL):
+    // the ACL checks only that the COMMAND is well-formed — `org_name` is a
+    // string at all — so a malformed command cannot reach the actor as a silent
+    // state change. The DOMAIN rule (is the string a valid name?) deliberately
+    // stays on `constructOrgName`: an empty string is well-formed here and still
+    // settles to the empty-name validation error in the model, NOT promoted up.
+    if (event.type === "org_form_submitted") {
+      if (typeof event.payload?.org_name !== "string") {
+        return c.json(
+          {
+            error: "invalid_request",
+            issues: [
+              {
+                path: ["payload", "org_name"],
+                message: "org_name must be a string",
+              },
+            ],
+          },
+          400,
+        );
+      }
+    }
+
     const result = await flowOrchestrator.send(
       translateWireEvent(event, correlationId),
     );

@@ -678,8 +678,7 @@ describe("Slice 5: an event is accepted only for the verified principal's own fl
 // needs_org with the empty-name validation error (Spec 5 — the domain rule stays
 // on the value object, NOT promoted to the ACL).
 describe("Slice 6: a malformed org submission is refused while the empty-name domain rule stays in the model", () => {
-  // RED until DELIVER Slice 6 — ACL well-formedness check (org_name must be a string).
-  it.skip("refuses an org submission that carries no organization name", async () => {
+  it("refuses an org submission that carries no organization name", async () => {
     active = buildScenario({ requestClient: okFetch() });
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
