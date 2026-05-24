@@ -13,20 +13,11 @@
 // backend /api/orgs/me org lookup), and forks `ready` ([hasOrg]) vs `needs_org`
 // (no org) vs `session_rejected` (failure).
 //
-// Behavior budget:
-//   B1 — retry-budget counter on error_recoverable: 4th attempt at same
-//        underlying_cause_tag transitions to error_terminal.
-//   B2 — correlation_id persists across retry attempts (never regenerated).
-//   B3 — harness __force_failure__ drives needs_org → error_recoverable.
-//   B4 — new-user happy path: creating_org → ready (org + identity populated).
-//   B5 — invalid org-name submission self-loops in needs_org with inline error.
-//   B6 — workos-profile-corrupt cause tag surfaced at machine level.
-//   B7 — verifying [hasOrg] shortcut: returning user → ready directly.
-//   B8 — verifying onError → session_rejected (terminal).
-//   B9 — creating_org → needs_org on globally-duplicate org name (409).
-//
 // All tests are port-to-port at the machine driving port (the XState actor's
-// public `send` / snapshot surface). No internal-class assertions.
+// public `send` / snapshot surface). No internal-class assertions. Each
+// `describe` sets up a user situation and each `it` states the outcome the
+// caller observes — phrased as behavior the user experiences, not machine
+// internals.
 
 import { describe, expect, it } from "vitest";
 import { createActor } from "xstate";
@@ -50,6 +41,18 @@ const MAYA_PROFILE = {
   display_name: "Maya Chen",
 };
 
+/** The verified identity Maya's WorkOS re-verify yields. `first_name` is derived
+ *  from `display_name` at the parse boundary (getWorkOSUserInfo: "Maya Chen" →
+ *  "Maya"). Asserted as a whole object so a dropped or extra field is caught. */
+const MAYA_USER = {
+  email: MAYA_PROFILE.email,
+  display_name: MAYA_PROFILE.display_name,
+  first_name: "Maya",
+};
+
+/** Pre-verification identity — every field still null. */
+const NO_USER = { email: null, display_name: null, first_name: null };
+
 /** Mock fetch for a NEW user — re-verify OK, backend /api/orgs/me 404 (no org),
  *  create/reissue OK. */
 function okFetch(): RequestClient {
@@ -66,6 +69,29 @@ function returningFetch(
     profile: { email: MAYA_PROFILE.email, name: MAYA_PROFILE.display_name },
     existingOrg: org,
   });
+}
+
+/**
+ * A mock fetch that records the `x-correlation-id` header from every POST
+ * /api/orgs call into `sink`, then delegates the response shaping to the
+ * standard ok mock. Org-create always succeeds; the reissue forced-failure is
+ * driven by the machine's force_reissue_failures input.
+ */
+function makeRecordingFetch(sink: string[]): RequestClient {
+  const base = okFetch();
+  const impl = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/orgs") && (init?.method ?? "GET") === "POST") {
+      const headers = init?.headers as Record<string, string> | undefined;
+      const cid = headers?.["x-correlation-id"] ?? "";
+      sink.push(cid);
+    }
+    return base(input, init);
+  };
+  return impl as unknown as RequestClient;
 }
 
 /**
@@ -122,8 +148,8 @@ function waitFor<TActor extends ReturnType<typeof createActor>>(
   });
 }
 
-describe("verifying [hasOrg] shortcut (B7)", () => {
-  it("a returning user (backend reports an org) reaches ready directly with the org id + name", async () => {
+describe("when a signed-in user's session is verified on arrival", () => {
+  it("a returning user with an organization is taken straight into the app", async () => {
     const machine = createSessionOnboardingMachine();
     // The org is loaded from the backend (/api/orgs/me, the org SSOT) during
     // verifying; the hasOrg guard reads it off the done-event output. The name
@@ -131,57 +157,59 @@ describe("verifying [hasOrg] shortcut (B7)", () => {
     const actor = createActor(machine, { input: inputWith(returningFetch()) });
     actor.start();
     await waitFor(actor, (s) => s.value === "ready");
-    expect(actor.getSnapshot().value).toBe("ready");
-    expect(actor.getSnapshot().context.org).toEqual({
-      id: "org-1",
-      name: "Acme Data",
-    });
-    expect(actor.getSnapshot().context.user.email).toBe(MAYA_PROFILE.email);
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("ready");
+    expect(snap.context.org).toEqual({ id: "org-1", name: "Acme Data" });
+    expect(snap.context.user).toEqual(MAYA_USER);
   });
 
-  it("a new user (backend reports no org, 404) reaches needs_org with identity populated", async () => {
+  it("a brand-new user is asked to create their organization", async () => {
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });
     actor.start();
     await waitFor(actor, (s) => s.value === "needs_org");
-    expect(actor.getSnapshot().value).toBe("needs_org");
-    expect(actor.getSnapshot().context.user.display_name).toBe("Maya Chen");
-    expect(actor.getSnapshot().context.org.id).toBeNull();
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("needs_org");
+    expect(snap.context.user).toEqual(MAYA_USER);
+    expect(snap.context.org).toEqual({ id: null, name: null });
   });
 
-  it("treats a backend org response with a blank id as no org (new user → needs_org)", async () => {
+  it("a user whose organization comes back empty is treated as new and asked to create one", async () => {
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, {
       input: inputWith(returningFetch({ id: "", name: "" })),
     });
     actor.start();
     await waitFor(actor, (s) => s.value === "needs_org");
-    expect(actor.getSnapshot().value).toBe("needs_org");
-    expect(actor.getSnapshot().context.org.id).toBeNull();
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("needs_org");
+    expect(snap.context.org).toEqual({ id: null, name: null });
   });
 });
 
-describe("verifying onError → session_rejected (B8)", () => {
-  it("rejects the session when re-verification fails", async () => {
+describe("when a user's session can no longer be verified", () => {
+  it("their session is rejected and no profile is loaded", async () => {
     // The mock answers 401 for Maya's bearer → getWorkOSUserInfo throws.
     const rejectingFetch = makeMockFetch({ badToken: MAYA_INPUT.bearer_token });
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(rejectingFetch) });
     actor.start();
     await waitFor(actor, (s) => s.value === "session_rejected");
-    expect(actor.getSnapshot().value).toBe("session_rejected");
-    // No user state advances on the rejection path.
-    expect(actor.getSnapshot().context.user.email).toBeNull();
-    // FIX D3: assert the EXACT cause. The boundary throws an UNTAGGED Error
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("session_rejected");
+    // No user state advances on the rejection path — the whole identity stays
+    // blank (no partial population).
+    expect(snap.context.user).toEqual(NO_USER);
+    // Assert the EXACT cause: the boundary throws an UNTAGGED Error
     // ("workos userinfo failed: 401"), so `causeOf` defaults it to "transient"
     // (only "workos profile missing email" is tagged workos-profile-corrupt at
     // the seam — see setup/actors.ts).
-    expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");
+    expect(snap.context.underlying_cause_tag).toBe("transient");
   });
 });
 
-describe("new-user happy path: creating_org → ready (B4)", () => {
-  it("reaches ready with org + identity populated after valid org submission", async () => {
+describe("when a new user submits a valid organization name", () => {
+  it("their organization is created and they enter the app", async () => {
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });
     actor.start();
@@ -191,17 +219,17 @@ describe("new-user happy path: creating_org → ready (B4)", () => {
     const snap = actor.getSnapshot();
     expect(snap.value).toBe("ready");
     expect(snap.context.org).toEqual({ id: "org-1", name: "Acme Data" });
-    expect(snap.context.user.email).toBe(MAYA_PROFILE.email);
+    expect(snap.context.user).toEqual(MAYA_USER);
   });
 });
 
-describe("invalid org-name submission self-loops in needs_org with inline error (B5)", () => {
+describe("when a user submits an organization name that breaks the naming rules", () => {
   it.each([
-    ["", "empty"],
-    ["A", "too_short"],
+    ["", "empty", "Please enter an organization name"],
+    ["A", "too_short", "Organization name is too short"],
   ] as const)(
-    "keeps the machine in needs_org and sets org_validation_error.kind=%s when name=%s",
-    async (orgName, expectedKind) => {
+    'keeps them on the naming form, flagging "%s" as %s',
+    async (orgName, expectedKind, expectedMessage) => {
       const machine = createSessionOnboardingMachine();
       const actor = createActor(machine, { input: inputWith(okFetch()) });
       actor.start();
@@ -210,13 +238,16 @@ describe("invalid org-name submission self-loops in needs_org with inline error 
       await waitFor(actor, (s) => s.context.org_validation_error !== null);
       const snap = actor.getSnapshot();
       expect(snap.value).toBe("needs_org");
-      expect(snap.context.org_validation_error?.kind).toBe(expectedKind);
+      expect(snap.context.org_validation_error).toEqual({
+        kind: expectedKind,
+        message: expectedMessage,
+      });
     },
   );
 });
 
-describe("workos-profile-corrupt cause tag surfaced at machine level (B6)", () => {
-  it("lands in session_rejected with underlying_cause_tag=workos-profile-corrupt when the WorkOS profile has no email", async () => {
+describe("when the identity provider returns a profile missing required details", () => {
+  it("the session is rejected and the failure is attributed to the corrupt profile", async () => {
     const corruptFetch = makeMockFetch({
       profile: { email: "", name: "Maya Chen" },
     });
@@ -230,8 +261,8 @@ describe("workos-profile-corrupt cause tag surfaced at machine level (B6)", () =
   });
 });
 
-describe("creating_org → needs_org on a globally-duplicate org name (B9)", () => {
-  it("routes a backend name-collision (409) to needs_org with the inline duplicate error", async () => {
+describe("when a user submits an organization name that is already taken", () => {
+  it("sends them back to the naming form told the name is taken, without spending a retry", async () => {
     // New user (no org → needs_org); the backend POST /api/orgs answers 409
     // (the name is globally taken). The org-create actor throws name_taken →
     // creating_org's onError routes to needs_org with the duplicate error —
@@ -249,18 +280,20 @@ describe("creating_org → needs_org on a globally-duplicate org name (B9)", () 
       actor,
       (s) => s.value === "needs_org" && s.context.org_validation_error !== null,
     );
-    expect(actor.getSnapshot().value).toBe("needs_org");
-    expect(actor.getSnapshot().context.org_validation_error?.kind).toBe(
-      "duplicate",
-    );
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("needs_org");
+    expect(snap.context.org_validation_error).toEqual({
+      kind: "duplicate",
+      message: "That name is already in use in your organization",
+    });
     // It is an inline-name error, not a transient/partial failure.
-    expect(actor.getSnapshot().context.underlying_cause_tag).toBeNull();
-    expect(actor.getSnapshot().context.reissue_attempts_count).toBe(0);
+    expect(snap.context.underlying_cause_tag).toBeNull();
+    expect(snap.context.reissue_attempts_count).toBe(0);
   });
 });
 
-describe("retry budget on error_recoverable (B1)", () => {
-  it("transitions to error_terminal on the 4th user-initiated attempt at the same cause tag", async () => {
+describe("when org setup keeps failing and the user keeps retrying", () => {
+  it("they reach an unrecoverable error after exhausting their retries", async () => {
     const actor = await driveToFirstRecoverableError(okFetch());
     expect(actor.getSnapshot().value).toBe("error_recoverable");
     expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
@@ -281,8 +314,8 @@ describe("retry budget on error_recoverable (B1)", () => {
   });
 });
 
-describe("correlation_id threading across retries (B2)", () => {
-  it("reuses the original correlation_id on every retry attempt", async () => {
+describe("when a user retries after a recoverable failure", () => {
+  it("the retry continues the same onboarding session rather than starting a new one", async () => {
     // Observe the correlation_id the resolver threads upstream: createOrgFn
     // sends it as the `x-correlation-id` header on POST /api/orgs. Every
     // internal create attempt (each failing via force_reissue_failures) and
@@ -311,31 +344,8 @@ describe("correlation_id threading across retries (B2)", () => {
   });
 });
 
-/**
- * A mock fetch that records the `x-correlation-id` header from every POST
- * /api/orgs call into `sink`, then delegates the response shaping to the
- * standard ok mock. Org-create always succeeds; the reissue forced-failure is
- * driven by the machine's force_reissue_failures input.
- */
-function makeRecordingFetch(sink: string[]): RequestClient {
-  const base = okFetch();
-  const impl = async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    const url = typeof input === "string" ? input : input.toString();
-    if (url.includes("/api/orgs") && (init?.method ?? "GET") === "POST") {
-      const headers = init?.headers as Record<string, string> | undefined;
-      const cid = headers?.["x-correlation-id"] ?? "";
-      sink.push(cid);
-    }
-    return base(input, init);
-  };
-  return impl as unknown as RequestClient;
-}
-
-describe("harness force_failure event drives into error_recoverable (B3)", () => {
-  it("transitions from needs_org to error_recoverable carrying the supplied cause tag", async () => {
+describe("when a failure is surfaced before the user retries (via the test harness)", () => {
+  it("the user is moved to the recoverable error screen carrying the failure reason", async () => {
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });
     actor.start();

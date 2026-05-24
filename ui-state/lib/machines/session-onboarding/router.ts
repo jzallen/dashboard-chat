@@ -59,9 +59,9 @@ export interface SessionOnboardingRouterContext {
     referenceCode: string;
     userId: string;
     bearerToken: string;
-    /** The verified org claim auth-proxy injects via `X-Org-Id` (FIX D1) —
-     *  the SOLE source for the `[hasOrg]` returning-user shortcut. Empty
-     *  string / absent means "no org" (new user). */
+    /** The verified org claim auth-proxy injects via `X-Org-Id` — the SOLE
+     *  source for the `[hasOrg]` returning-user shortcut. Empty string /
+     *  absent means "no org" (new user). */
     orgId: string;
     body: unknown;
   };
@@ -90,7 +90,7 @@ const beginRequestSchema = z.object({
   userId: z.string(),
   bearerToken: z.string(),
   // The verified org claim (X-Org-Id). Empty string when absent — treated as
-  // "no org" (new user) downstream (FIX D1).
+  // "no org" (new user) downstream.
   orgId: z.string(),
   body: z
     .object({
