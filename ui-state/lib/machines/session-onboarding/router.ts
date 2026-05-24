@@ -40,6 +40,7 @@ import {
 import type {
   BeginFlowOrchestrator,
   FlowOrchestrator,
+  SendEventInput,
 } from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { RequestClient } from "./index.ts";
@@ -118,6 +119,28 @@ const eventRequestSchema = z.object({
   type: z.string().min(1),
   payload: z.record(z.unknown()).optional(),
 });
+
+/**
+ * Translate a validated wire `/event` request into the typed inbound command the
+ * orchestrator's machine-agnostic `send` consumes (OQ-E2: a translation
+ * FUNCTION, not a command class — `/event` forwards one event to an
+ * already-running actor and has no orchestration to justify a class, D-E1). The
+ * structural analogue of `/begin`'s command construction: the wire `machine`
+ * alias defaults to the canonical machine name. Identity has already been
+ * corroborated against the verified principal by the caller before this runs.
+ */
+function translateWireEvent(
+  event: z.infer<typeof eventRequestSchema>,
+  correlationId: string,
+): SendEventInput {
+  return {
+    machine: event.machine ?? SESSION_ONBOARDING_MACHINE,
+    flow_id: event.flow_id,
+    type: event.type,
+    payload: event.payload ?? {},
+    correlation_id: correlationId,
+  };
+}
 
 /**
  * Mount the session-onboarding routes onto `router` and return it. Everything
@@ -246,6 +269,27 @@ export function buildSessionOnboardingRouter(
       event_type: event.type,
     });
 
+    // Cross-principal guard (D-E3, OQ-E1 ENFORCE): the aggregate identity is the
+    // verified principal's own flow, never a raw body claim (the same L4 ACL
+    // rule /begin enforces). When the request carries a verified principal
+    // (X-User-Id), the body `flow_id` MUST be the flow that principal owns; a
+    // mismatch is rejected at the boundary with 403 before any event can reach
+    // another principal's actor. A request without a verified principal falls
+    // through unchanged — there is no principal to corroborate the flow against.
+    const principalId = c.get("userId");
+    if (principalId) {
+      const ownFlowId = `${SESSION_ONBOARDING_MACHINE}:${principalId}`;
+      if (event.flow_id !== ownFlowId) {
+        return c.json(
+          {
+            error: "forbidden",
+            reason: "flow_id does not belong to the verified principal",
+          },
+          403,
+        );
+      }
+    }
+
     if (event.type === "__force_failure__") {
       const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
         event: { type: event.type },
@@ -283,13 +327,9 @@ export function buildSessionOnboardingRouter(
       }
     }
 
-    const result = await flowOrchestrator.send({
-      machine: event.machine ?? SESSION_ONBOARDING_MACHINE,
-      flow_id: event.flow_id,
-      type: event.type,
-      payload: event.payload ?? {},
-      correlation_id: correlationId,
-    });
+    const result = await flowOrchestrator.send(
+      translateWireEvent(event, correlationId),
+    );
     return serializeResult(c, result, "event_failed");
   });
 

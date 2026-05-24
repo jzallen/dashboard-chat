@@ -619,8 +619,7 @@ describe("Slice 4: a forced failure naming an unrecognized cause is refused at t
 // X-User-Id>` and REJECTS a mismatched body flow_id with 403 (D-E3, OQ-E1
 // ENFORCE). The matching-principal happy path is now authorized (Spec 4).
 describe("Slice 5: an event is accepted only for the verified principal's own flow", () => {
-  // RED until DELIVER Slice 5 — cross-principal guard (derive flow_id from X-User-Id, reject mismatch with 403).
-  it.skip("refuses an event whose flow belongs to a different principal", async () => {
+  it("refuses an event whose flow belongs to a different principal", async () => {
     active = buildScenario({ requestClient: okFetch() });
     // The verified principal is u2 (their flow is begun and in needs_org).
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
@@ -650,8 +649,7 @@ describe("Slice 5: an event is accepted only for the verified principal's own fl
     expect(proj.state).toBe("needs_org");
   });
 
-  // RED until DELIVER Slice 5 — matching-principal happy path, now authorized.
-  it.skip("accepts an event for the verified principal's own flow and reaches ready", async () => {
+  it("accepts an event for the verified principal's own flow and reaches ready", async () => {
     active = buildScenario({ requestClient: okFetch() });
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
