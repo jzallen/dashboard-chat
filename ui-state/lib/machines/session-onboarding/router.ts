@@ -102,6 +102,23 @@ const beginRequestSchema = z.object({
 export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
 
 /**
+ * The /event request DTO — the wire vocabulary an already-running flow accepts:
+ * the target `flow_id`, an optional `machine` name (the LEAF-2 legacy alias is
+ * canonicalized downstream), the event `type`, and an open `payload` carried
+ * through to the actor. Mirrors `beginRequestSchema`: a parse failure → 400 with
+ * `issues`, replacing the hand-rolled `if (!flow_id || !type)` presence check
+ * with `.min(1)` (the same empty-is-missing contract). Per OQ-E3 the schema
+ * grows INCREMENTALLY — Slice 1 validates presence only; later slices add
+ * `tag` / `org_name` well-formedness at this same boundary.
+ */
+const eventRequestSchema = z.object({
+  flow_id: z.string().min(1),
+  machine: z.string().optional(),
+  type: z.string().min(1),
+  payload: z.record(z.unknown()).optional(),
+});
+
+/**
  * Mount the session-onboarding routes onto `router` and return it. Everything
  * the routes need is injected by the composition root: `orchestrator` drives
  * `/begin`; `flowOrchestrator` drives `/event`, `/open-deep-link`, and (via
@@ -201,24 +218,36 @@ export function buildSessionOnboardingRouter(
   router.post("/event", async (c) => {
     const correlationId =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
-    let body: {
-      flow_id?: string;
-      machine?: string;
-      type?: string;
-      payload?: Record<string, unknown>;
-    };
+    let rawBody: unknown;
     try {
-      body = (await c.req.json()) as typeof body;
+      rawBody = await c.req.json();
     } catch {
       return c.json({ error: "invalid_request" }, 400);
     }
-    if (!body.flow_id || !body.type) {
-      return c.json({ error: "flow_id and type required" }, 400);
+    const parsed = eventRequestSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return c.json(
+        { error: "invalid_request", issues: parsed.error.issues },
+        400,
+      );
     }
+    const event = parsed.data;
 
-    if (body.type === "__force_failure__") {
+    // Structured audit of the inbound event — the /event analogue of /begin's
+    // `session_onboarding.org_claim` log (event type + verified principal +
+    // target flow + correlation). Identity is logged for traceability only;
+    // it is not yet enforced here (the cross-principal guard lands in Slice 5).
+    logTransition({
+      event: "session_onboarding.event_received",
+      correlation_id: correlationId,
+      principal_id: c.get("userId") || null,
+      flow_id: event.flow_id,
+      event_type: event.type,
+    });
+
+    if (event.type === "__force_failure__") {
       const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
-        event: { type: body.type },
+        event: { type: event.type },
         correlationId,
         serviceName: "ui-state",
       });
@@ -234,10 +263,10 @@ export function buildSessionOnboardingRouter(
     }
 
     const result = await flowOrchestrator.send({
-      machine: body.machine ?? SESSION_ONBOARDING_MACHINE,
-      flow_id: body.flow_id,
-      type: body.type,
-      payload: body.payload ?? {},
+      machine: event.machine ?? SESSION_ONBOARDING_MACHINE,
+      flow_id: event.flow_id,
+      type: event.type,
+      payload: event.payload ?? {},
       correlation_id: correlationId,
     });
     return serializeResult(c, result, "event_failed");
