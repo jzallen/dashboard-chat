@@ -1,0 +1,156 @@
+{
+  "roadmap": {
+    "feature_id": "session-onboarding",
+    "slice": "/event-to-/begin parity",
+    "wave": "DISTILL",
+    "produced_at": "2026-05-24",
+    "acceptance_designer": "nw-acceptance-designer (Quinn) — DESIGN-entry brownfield delta",
+    "kind": "brownfield-refactor + boundary-validation",
+    "binding_source": "docs/feature/session-onboarding/design/event-slice-scope.md (RATIFIED 2026-05-24; OQ-E1 enforce·403 / OQ-E2 function / OQ-E3 incremental)",
+    "extends": [
+      "docs/feature/session-onboarding/design/event-model.md (Specs 4/5 reused; addendum: no new domain events)",
+      "docs/feature/session-onboarding/design/wave-decisions.md §9 (D-E1/D-E2/D-E3)"
+    ],
+    "total_steps": 6,
+    "phases": 1
+  },
+  "test_strategy": {
+    "stack": "TypeScript + vitest + Hono. NOT pytest-bdd. No .feature files, no step definitions, no Python scaffolds — wrong for this stack.",
+    "strategy_label": "Strategy B equivalent — real local in-process transport (the Hono app via app.fetch), costly external boundary (WorkOS /oauth/userinfo + backend /api/orgs) faked by an injected mock `fetch`.",
+    "test_home": "ui-state/index.test.ts (extended in place — the existing Spec-style describe/it template; all /event-parity scenarios appended).",
+    "driving_port": "POST /flow/session-onboarding/event (the ACL router, router.ts:201-244). Every scenario enters here; assertions are at the projection / HTTP-status boundary (GET /flow/session-onboarding/projection or the /event response body). No internal-component access.",
+    "driven_port": "WorkOS /oauth/userinfo + backend /api/orgs(/me)+/api/auth/reissue, exercised through the injected mock `fetch` (deps.request_client). The ONLY test double; a true external boundary (L3/L4).",
+    "mandate_7_na": "RED tests go RED because the validation behavior is unwritten, NOT because of a missing module — all production modules already exist (router.ts, machine.ts, setup/domain.ts). There is nothing to scaffold; the __SCAFFOLD__/ImportError convention does not apply.",
+    "characterization_first": "Per Feathers + CLAUDE.md Iron Rule, Slices 1-3 are CHARACTERIZATION written GREEN against current code — they pin currently-untested observable behavior of the existing /event handler so Slices 4-6 can edit it safely. This is the brownfield analog of the walking skeleton.",
+    "red_convention": "Slices 4-6 are BEHAVIOR CHANGES marked it.skip with a leading `// RED until DELIVER Slice N — <behavior>` comment, encoding the POST-implementation TARGET assertion. The suite stays green; DELIVER un-skips one at a time (Outside-In: un-skip → watch RED → implement minimum → GREEN). Iron Rule: a skipped spec is implemented to green, never weakened to pass.",
+    "failure_sim_gate_mechanism": "The __force_failure__ + force_reissue_failures harness side-channels are gated by @dashboard-chat/shared-failure-simulation `shouldInject`, which reads a MODULE-SCOPED verdict cache populated by `probe(env, service)`. Tests enable the gate with `probe({ENVIRONMENT:'ci', FAILURE_SIMULATION_ENABLED:'true'}, 'ui-state')` (enableFailureSimulation helper) and the production fail-closed default disables it (disableFailureSimulation helper = `probe({}, 'ui-state')`). afterEach ALWAYS restores the disabled default because the cache is process-global; Vitest's per-file worker isolation plus this reset keep the gate from leaking across files (verified: full ui-state suite 152 pass / 4 skip, no regressions).",
+    "error_path_ratio": "9 error/edge scenarios of 14 parity scenarios (~64%) — well above the 40% mandate. (Slice1 2 refusals, Slice2 2 recoverable-error, Slice3 1 refusal, Slice4 1 refusal, Slice5 1 refusal, Slice6 1 refusal + 1 domain-rule contrast.)",
+    "kpi_contracts": "docs/product/kpi-contracts.yaml NOT present — @kpi observability scenarios skipped (soft gate, warning logged).",
+    "story_traceability": "docs/feature/session-onboarding/discuss/ NOT present (DESIGN-entry brownfield). ACs derived from DESIGN (event-slice-scope.md §4 G/W/T seeds); story-to-scenario traceability mapping is N/A and skipped per graceful-degradation."
+  },
+  "regression_gate_definition": {
+    "id": "RG-EVENT",
+    "applies_to": "every slice (1..6), as the merge prerequisite",
+    "steps": [
+      "cd ui-state && npx vitest run    # full ui-state suite GREEN (incl. the slice's own un-skipped spec); baseline 152 pass / 4 skip",
+      "cd ui-state && npx eslint index.test.ts    # 0 errors",
+      "./tools/test/test.sh --auto      # merge-queue gate (ruff+pytest on code touch; ui-state vitest unaffected by the --auto selector)"
+    ],
+    "invariants": [
+      "The 10 pre-existing Specs (1-5, 7, legacy-alias x2) and the Slice 1-3 + Slice 6-contrast characterization tests stay GREEN with ZERO regression — never weakened or re-skipped to make a behavior-change slice pass.",
+      "All payload/identity translation lands in session-onboarding/router.ts ONLY — never in the shared orchestrator.ts `send` (machine-agnostic; ADR-028 'no machine knows another'). Tests assert at the HTTP/projection boundary so they don't dictate this, but a fix that leaked translation into the orchestrator would break sibling-machine suites.",
+      "The afterEach gate reset (disableFailureSimulation) must remain — without it an enabled scenario leaks the open verdict into the next file."
+    ],
+    "known_hazard": {
+      "id": "D-EVENT-01",
+      "description": "The failure-simulation verdict cache is module-global. Any new test that enables the gate MUST restore it (the file-level afterEach already does). A test that forgets could open the gate for a later file's force-failure assertion. Vitest per-file worker isolation mitigates this across files; the afterEach mitigates it within the file."
+    }
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "/event-to-/begin parity — DTO + ACL boundary validation",
+      "description": "Bring POST /flow/session-onboarding/event to parity with the realigned /begin: zod request DTO, ACL identity translation (flow_id from the verified principal), tag validation against the domain failure vocabulary, and payload well-formedness — all at the router (ACL), none in the domain model (D-E1) beyond export-widening isUnderlyingCauseTag (D-E2). Strict order: characterization (1-3) before behavior change (4-6).",
+      "default_agent": "nw-software-crafter",
+      "default_deps_strategy": "sequential",
+      "steps": [
+        {
+          "id": "SLICE-1",
+          "name": "Introduce eventRequestSchema (zod DTO) — behavior-preserving",
+          "nature": "characterization (GREEN now) — the DELIVER refactor must preserve the pinned 400 contract",
+          "binding_source": "event-slice-scope.md §4 Slice 1; OQ-E3 INCREMENTAL (minimal schema first: flow_id/type presence + passthrough payload)",
+          "deps": [],
+          "driving_port": "POST /flow/session-onboarding/event",
+          "observable_outcome": "A malformed event (no flow_id OR no type) is refused with HTTP 400; a well-formed org submission still reaches ready.",
+          "gating_tests": [
+            "index.test.ts :: Slice 1: a malformed event missing its flow id or type is refused > refuses an org-submission that names no flow (GREEN)",
+            "index.test.ts :: Slice 1: ... > refuses an event that names a flow but no event type (GREEN)",
+            "index.test.ts :: Slice 1: ... > accepts a well-formed org submission and reaches ready (GREEN)"
+          ],
+          "files_to_touch": ["ui-state/lib/machines/session-onboarding/router.ts (replace inline body type + manual `if (!flow_id || !type)` with a zod eventRequestSchema; add the session_onboarding.event_received audit log)"],
+          "note": "The characterization tests pin the OBSERVABLE 400 contract (error present, status 400) — deliberately NOT the exact error string, so the DTO refactor may upgrade the body to carry zod `issues` without breaking the test."
+        },
+        {
+          "id": "SLICE-2",
+          "name": "Characterize retry_clicked over /event at the HTTP layer",
+          "nature": "characterization (GREEN now) — test-only, no production change",
+          "binding_source": "event-slice-scope.md §4 Slice 2; event-model.md Phase 3 'Org-create retry'; journey failure_mode jwt_reissue_failed_after_org_create",
+          "deps": ["SLICE-1"],
+          "driving_port": "POST /flow/session-onboarding/event (retry_clicked) — driven into error_recoverable via the force_reissue_failures budget side-channel on /begin",
+          "observable_outcome": "Org-create reissue-budget exhaustion settles to error_recoverable{partial-setup}; each retry_clicked over /event is accepted (200) and the user REMAINS on the recoverable-error screen.",
+          "gating_tests": [
+            "index.test.ts :: Slice 2: retrying after a recoverable org-setup failure keeps the recoverable-error screen > lands on the recoverable-error screen when the org-setup reissue budget is exhausted (GREEN)",
+            "index.test.ts :: Slice 2: ... > accepts each retry over /event and keeps the user on the recoverable-error screen (GREEN)"
+          ],
+          "files_to_touch": ["ui-state/index.test.ts (test-only — no production change)"],
+          "finding": "The seed's assertion `error_recoverable -> ... -> error_terminal` and `retry_budget_used_count == 3` are NOT observable at the projection boundary: the projection has NO error_terminal reducer and no terminal event is emitted when the actor escalates, and retry_budget_used_count is actor-internal (absent from the projected context). The characterization pins the actual observable truth (retry accepted, stays recoverable) per the Iron Rule. See distill/upstream-issues.md observability gap U-E1."
+        },
+        {
+          "id": "SLICE-3",
+          "name": "Characterize the __force_failure__ gate (both arms) over /event",
+          "nature": "characterization (GREEN now) — test-only, no production change",
+          "binding_source": "event-slice-scope.md §4 Slice 3; ADR-035 failure-simulation gate",
+          "deps": ["SLICE-1"],
+          "driving_port": "POST /flow/session-onboarding/event (__force_failure__) under the failure-simulation gate",
+          "observable_outcome": "Switch OFF (production default): 403 with the gate-disabled message, projection unchanged (needs_org). Switch ON (dev/ci tier + flag): 200, error_recoverable, underlying_cause_tag == 'transient'.",
+          "gating_tests": [
+            "index.test.ts :: Slice 3: the forced-failure side-channel is gated unless the failure-simulation switch is on > refuses a forced failure when the failure-simulation switch is off (GREEN)",
+            "index.test.ts :: Slice 3: ... > routes a forced failure into the recoverable-error screen when the switch is on (GREEN)"
+          ],
+          "files_to_touch": ["ui-state/index.test.ts (test-only — no production change)"],
+          "note": "The gate is enabled in-test via probe({ENVIRONMENT:'ci', FAILURE_SIMULATION_ENABLED:'true'}, 'ui-state'); the disabled arm needs no setup (fail-closed default). The needs_org source-state precondition is asserted explicitly so the machine's silent-ignore-elsewhere behavior (event-slice-scope.md §6 risk) is documented, not discovered later."
+        },
+        {
+          "id": "SLICE-4",
+          "name": "Validate __force_failure__.tag against UnderlyingCauseTag at the ACL — behavior change",
+          "nature": "behavior change (RED — it.skip until DELIVER)",
+          "binding_source": "event-slice-scope.md §4 Slice 4; D-E2 (reuse the domain's closed failure vocabulary)",
+          "deps": ["SLICE-3"],
+          "driving_port": "POST /flow/session-onboarding/event (__force_failure__ with an out-of-vocabulary tag), gate ON",
+          "observable_outcome": "A forced failure whose cause is not in the failure vocabulary -> HTTP 400 (invalid_request); the projection is UNCHANGED (still needs_org, underlying_cause_tag null); no forced-failure event reaches the actor.",
+          "gating_tests": [
+            "index.test.ts :: Slice 4: a forced failure naming an unrecognized cause is refused at the boundary > refuses a forced failure whose cause is not in the failure vocabulary (RED — it.skip)"
+          ],
+          "files_to_touch": [
+            "ui-state/lib/machines/session-onboarding/router.ts (after the gate passes, validate payload.tag with the imported isUnderlyingCauseTag; invalid/absent -> 400)",
+            "ui-state/lib/machines/session-onboarding/setup/domain.ts (export-widen isUnderlyingCauseTag — the ONLY domain touch in the whole slice, an export, not new modeling; D-E2)"
+          ],
+          "red_now": true
+        },
+        {
+          "id": "SLICE-5",
+          "name": "Derive flow_id from the verified principal (cross-principal guard) — behavior change",
+          "nature": "behavior change (RED — it.skip until DELIVER)",
+          "binding_source": "event-slice-scope.md §4 Slice 5; D-E3; OQ-E1 RATIFIED ENFORCE (403); OQ-E2 RATIFIED FUNCTION (translateWireEvent, not a class)",
+          "deps": ["SLICE-1"],
+          "driving_port": "POST /flow/session-onboarding/event with X-User-Id verified-principal header + body flow_id",
+          "observable_outcome": "A body flow_id that does not belong to the verified principal -> HTTP 403, no event reaches the other flow. The matching-principal happy path -> 200 + ready (Spec 4 behavior, now authorized).",
+          "gating_tests": [
+            "index.test.ts :: Slice 5: an event is accepted only for the verified principal's own flow > refuses an event whose flow belongs to a different principal (RED — it.skip)",
+            "index.test.ts :: Slice 5: ... > accepts an event for the verified principal's own flow and reaches ready (RED — it.skip)"
+          ],
+          "files_to_touch": ["ui-state/lib/machines/session-onboarding/router.ts (read c.get('userId'); compute expected = `session-onboarding:${userId}`; reject mismatch with 403; add the translateWireEvent ACL function returning the typed inbound command the orchestrator's send consumes)"],
+          "work_item_inside_slice": "FE + TS-harness X-User-Id audit (OQ-E1): the acceptance suite fails loudly on any /event client that omits X-User-Id. The current /event Specs (4/5/7) send NO X-User-Id — that is the gap this slice's RED tests expose. The harness (tests/acceptance/user-flow-state-machines/harness/) must be confirmed to send X-User-Id on every /event path during DELIVER.",
+          "red_now": true,
+          "current_behavior_observed": "Today a mismatched flow_id for a NONEXISTENT actor returns 500 (unknown flow_id throw), not 403 — the cross-principal hole is real for an EXISTING sibling actor. The RED test asserts the TARGET 403 (rejected at the ACL before reaching the orchestrator)."
+        },
+        {
+          "id": "SLICE-6",
+          "name": "Payload well-formedness for org_form_submitted at the ACL — behavior change",
+          "nature": "behavior change (RED for well-formedness; GREEN contrast for the domain rule)",
+          "binding_source": "event-slice-scope.md §4 Slice 6; D-E1 (the empty-string DOMAIN rule stays on constructOrgName, NOT promoted to the ACL); OQ-E3 INCREMENTAL",
+          "deps": ["SLICE-1"],
+          "driving_port": "POST /flow/session-onboarding/event (org_form_submitted with malformed vs domain-invalid payload)",
+          "observable_outcome": "payload:{} (org_name absent) -> HTTP 400 at the boundary, projection unchanged (needs_org). CONTRAST: payload:{org_name:''} STILL -> 200 + validation_failed{empty} in needs_org (Spec 5, the domain rule, unchanged).",
+          "gating_tests": [
+            "index.test.ts :: Slice 6: a malformed org submission is refused while the empty-name domain rule stays in the model > refuses an org submission that carries no organization name (RED — it.skip)",
+            "index.test.ts :: Slice 6: ... > still surfaces the empty-name validation error for an empty organization name (domain rule, unchanged) (GREEN — the contrast, characterizes that the rule was NOT promoted to the ACL)"
+          ],
+          "files_to_touch": ["ui-state/lib/machines/session-onboarding/router.ts (validate org_form_submitted carries payload.org_name:string at the boundary — presence/type only; the shape rule stays on constructOrgName)"],
+          "red_now": true,
+          "current_behavior_observed": "Today payload:{} slips through to the actor and proceeds to creating_org as a silent malformed-command no-op (observed: 200 + state creating_org). The RED test asserts the TARGET 400 + unchanged needs_org. The empty-string contrast already behaves correctly (200 + empty validation error) and stays green."
+        }
+      ]
+    }
+  ]
+}
