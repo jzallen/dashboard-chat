@@ -7,17 +7,22 @@ role and the first faithful implementation of ADR-028's "one root orchestrator
 actor mediating parent-ignorant children" (see
 [ADR-044](../../../../docs/decisions/adr-044-chatapp-coordinator-supersedes-orchestrator.md)).
 
-> **Status: Phase 2 — real children wired in-process.** The parent is wired to
-> the REAL `session-onboarding` / `project-context` / `session-chat` machines via
-> the composition root `createChatApp` ([`index.ts`](./index.ts)) and proven by
-> in-process integration tests ([`integration.test.ts`](./integration.test.ts)).
-> Still **no** HTTP/Redis/persistence boundaries: ChatApp is **not** wired into
-> `ui-state/index.ts`/HTTP routing or the projection contract, and it runs
-> ALONGSIDE the orchestrator (which stays the live coordinator). Phase 1's
-> isolated FAKE-children statechart tests ([`machine.test.ts`](./machine.test.ts)
-> + [`fakes.ts`](./fakes.ts)) still pass unchanged. Later phases reconcile
-> persistence (Phase 3) and swap the composition root + delete the orchestrator
-> (Phase 4).
+> **Status: Phase 3 — hybrid persistence reconciled (in isolation).** On top of
+> Phase 2's real-children wiring, ChatApp now has (1) a byte-stable **derived-view
+> projection mapper** ([`projection/derive-projection.ts`](./projection/derive-projection.ts))
+> that reproduces the per-machine ADR-027 `FlowProjection` from a ChatApp snapshot
+> — proven byte-identical to the `buildProjection` log fold by golden contract
+> tests — and (2) **snapshot restart recovery** ([`snapshot.ts`](./snapshot.ts) +
+> [`../../persistence/chatapp-snapshot-store.ts`](../../persistence/chatapp-snapshot-store.ts))
+> making `getPersistedSnapshot()` the internal state-of-record (R3 self-heal
+> reproduced on the real wired actor). Still **no** HTTP/Redis boundaries: none of
+> this is wired into `ui-state/index.ts`/HTTP routing, the `/projection` endpoints,
+> or `orchestrator.projectionFor`; the append-only event log stays load-bearing on
+> the live path; ChatApp runs ALONGSIDE the orchestrator (still the live
+> coordinator). Phase 1's FAKE-children statechart tests
+> ([`machine.test.ts`](./machine.test.ts) + [`fakes.ts`](./fakes.ts)) and Phase 2's
+> integration tests ([`integration.test.ts`](./integration.test.ts)) still pass
+> unchanged. Phase 4 swaps the composition root + deletes the orchestrator.
 
 ## Two parallel regions
 
@@ -101,17 +106,26 @@ The children's DI styles differ, and `createChatApp` honors both:
 
 ```
 chat-app/
-├── machine.ts          the statechart + the inline actions (writers + forwarders)
+├── machine.ts          the statechart + the inline actions (writers + forwarders + onboarding-outcome retention)
 ├── index.ts            barrel + composition root (createChatApp + createChatAppMachine + contract types)
+├── snapshot.ts         Phase-3 restart recovery seam (persist/rehydrate + R3 settled-state guard)
 ├── fakes.ts            TEST-ONLY fake children + createChatAppWithFakes()
 ├── machine.test.ts     Phase-1 pure statechart unit tests (fake children)
 ├── integration.test.ts Phase-2 in-process integration tests (real children, mocked ports)
+├── snapshot.test.ts    Phase-3 snapshot round-trip + R3 self-heal on the real wired actor
 ├── README.md
+├── projection/         Phase-3 derived-view projection (the ADR-027 wire contract, derived)
+│   ├── derive-projection.ts             deriveProjection mapper + wire-name aliases + bookkeeping
+│   ├── derive-projection.test.ts        pure unit tests (hand-built snapshot views)
+│   └── derive-projection.contract.test.ts  R1 golden byte-identity vs buildProjection
 └── setup/
-    ├── types.ts      context / events / input / hand-offs / snapshot views
+    ├── types.ts      context / events / input / hand-offs / snapshot views / OnboardingResult
     ├── guards.ts     onSnapshot predicates (childReachedReady, advanceToChat, …)
     └── actors.ts     placeholder children (the DI seam) + ChatAppChildLogic
 ```
+
+Phase-3 persistence companion: [`../../persistence/chatapp-snapshot-store.ts`](../../persistence/chatapp-snapshot-store.ts)
+(the snapshot store port + Redis/noop adapters, mirroring `redis.ts`).
 
 > The actions are **inline** in `machine.ts` (not extracted under `setup/`):
 > they mix context writers (`assign`) with parent→child forwarders

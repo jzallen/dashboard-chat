@@ -137,6 +137,20 @@ Additive only; nothing else changes behavior.
 
 ---
 
+## Phase 3 — what landed in this slice (the §2 hybrid persistence)
+
+Additive only; the live app, the orchestrator, and the event-log fold path are untouched (boundaries are Phase 4). Built + tested on ChatApp in isolation.
+
+- **Derived-view projection mapper** at `ui-state/lib/machines/chat-app/projection/derive-projection.ts`: a PURE `deriveProjection(snapshot, wireMachineName, bookkeeping) → FlowProjection` that reproduces the per-machine ADR-027 envelope from a ChatApp actor snapshot, BYTE-IDENTICAL to today's `buildProjection` log fold. It picks the child slice by wire name (`login-and-org-setup` → onboarding, `project-and-chat-session-management` → project-context, `session-chat` → session-chat; canonical aliases resolve too — R7), maps `child.value` → projection `state` via an explicit per-machine table (overwhelmingly identity — the children were named to the ~21-state vocabulary), builds the `context` from `initialContext()` defaults overridden only by the fields the machine's event handlers write, reuses the SAME `deriveActiveScope` tier logic, and applies the **freeze overlay** (`connectivity:frozen` → `freeze` for the J-002 machines + `expired_token` for login, with `last_live_state` from the live child value). `sequence_id`/`last_event_at`/`request_id` stay **log-sourced** (`bookkeepingFromLog`) — the log is RETAINED for SSE/audit (§2), STATE comes from the snapshot, so there is no "forgot-to-emit" gap for state yet the envelope stays complete.
+- **`projection.ts` made reusable** (behavior-preserving refactor, guarded by its existing tests): exports `ReducedContext`, `initialContext()`, and the extracted `deriveActiveScope()` — so the mapper does not duplicate the context shape or the scope tiers divergently.
+- **Onboarding-outcome retention** in the ChatApp machine (additive): the phase-scoped onboarding child is STOPPED on the advance to `engaged`/`rejected` and disappears from the snapshot, but the FE root loader reads `login-and-org-setup` on every request — so the parent now RETAINS the onboarding outcome (`onboarding_result`, captured on both onSnapshot arms) as the state-of-record for that slice. `auth_handoff` keeps its exact prior shape; existing tests stay green.
+- **R1 golden / contract tests** (`derive-projection.contract.test.ts`, 12 cases): drive the REAL wired ChatApp to each scenario the integration suite exercises (login→project→chat; needs_org; error_recoverable+cause; project_selected; switching_project; session_active; freeze; session_rejected), snapshot it, and assert `deriveProjection` === `buildProjection(equivalent log)` field-by-field. Pin the auth-proxy literals (`state ∈ {ready, error_recoverable}`, `context.underlying_cause_tag`, absent `silent_reauth_ok`) and the FE reads (`context.org/user/project`, `session_list`, `active_scope`). Plus `derive-projection.test.ts` (16 pure unit cases over hand-built snapshot views).
+- **Snapshot restart recovery**: a `ChatAppSnapshotStore` port + Redis/noop adapters (`lib/persistence/chatapp-snapshot-store.ts`, mirroring `redis.ts` capability-presence dispatch; ONE record per principal at `ui-state:chatapp:{principal}:snapshot`, distinct from the event-log keyspace), and a recovery seam (`lib/machines/chat-app/snapshot.ts`: `persistChatApp`/`rehydrateChatApp`/`loadChatAppSnapshot`/`saveChatAppSnapshot` + the R3 `isSettledForSnapshot` settled-states-only guard). Tests round-trip a REAL wired ChatApp through the store (JSON), rehydrate via `createActor({ snapshot })`, and confirm lifecycle/connectivity + child states restore, the parent freeze buffer survives, and an in-flight invoke **self-heals** on the real wired machine (R3 reproduced).
+
+**Explicitly NOT done in Phase 3** (Phase 4): wiring any of this into the live `ui-state/index.ts` bootstrap, the `/projection` + `/projection/stream` endpoints, or `orchestrator.projectionFor`; the append-only `FlowEventLog` stays the load-bearing state-of-record on the live path; the children's `freeze`/`THAW` handlers are untouched.
+
+---
+
 ## Consequences
 
 **Positive**
