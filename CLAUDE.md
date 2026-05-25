@@ -134,3 +134,15 @@ npm run dev                          # start all services
 
 - **TypeScript**: strict mode, Prettier
 - **Python**: Black, type hints throughout
+
+## Domain Modeling (TS: `type` / `interface` / `class` / Zod)
+
+When modeling a concept, the **hexagonal layer** + the **DDD building block** pick the
+tool — see the [`domain-modeling`](.claude/skills/domain-modeling/SKILL.md) skill.
+In short: **classes** for the domain core (entities, aggregates, value objects with
+behavior, domain services) and the **interfaces** it owns (repository ports); **branded
+`type`** for validated primitives; **`type`/`interface`** for application
+commands/queries and boundary DTOs (`z.infer` when derived from a schema); **Zod**
+only at the inbound adapter boundary to validate untrusted input. Dependencies point
+inward — no Zod/ORM/HTTP in the domain; don't put a `class` on the wire; no `I`-prefix
+interfaces or first-party `.d.ts` for domain types.
