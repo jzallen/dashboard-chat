@@ -31,7 +31,7 @@ export interface ProjectionShape {
   active_scope: ActiveScopeShape;
   sequence_id: number;
   last_event_at: string;
-  correlation_id: string;
+  request_id: string;
 }
 
 async function fetchProjection(

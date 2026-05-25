@@ -6,7 +6,7 @@
 // later step.
 //
 // The component is pure: it takes the closed-vocabulary cause tag and
-// the correlation_id ("reference code" in Maya-facing language) and
+// the request_id ("reference code" in Maya-facing language) and
 // renders the appropriate variant. The reference code is visibly
 // rendered so Maya can share it with support without re-typing.
 
@@ -16,8 +16,8 @@ import { COPY_VARIANTS, type UnderlyingCauseTag } from "./copy-variants.ts";
 
 export interface RecoverableErrorProps {
   underlyingCauseTag: UnderlyingCauseTag;
-  /** Reference code Maya can share with support (== correlation_id). */
-  correlationId: string;
+  /** Reference code Maya can share with support (== request_id). */
+  requestId: string;
   /** Called when Maya clicks the primary retry CTA. */
   onRetry?: () => void;
 }
@@ -33,7 +33,7 @@ export function RecoverableError(props: RecoverableErrorProps): React.ReactEleme
       </button>
       <p>
         <span>Reference code: </span>
-        <code>{props.correlationId}</code>
+        <code>{props.requestId}</code>
       </p>
     </main>
   );

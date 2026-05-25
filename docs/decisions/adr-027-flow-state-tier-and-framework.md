@@ -116,11 +116,27 @@ type FlowProjection = {
   active_scope: ActiveScope;        // ADR-029 contract
   sequence_id: number;              // monotonic per-flow; for SSE replay-from-cursor
   last_event_at: string;            // ISO timestamp
-  correlation_id: string;           // current attempt's correlation id
+  request_id: string;               // current request's id (honor inbound X-Request-Id, else minted)
 };
 ```
 
 The FE and the TS harness consume identical JSON. No parallel state. No FE-internal-only field.
+
+> **Amendment (request-id rename, no back-compat).** The envelope field was
+> originally `correlation_id`, fed by the inline `X-Correlation-Id ?? mint`
+> expression duplicated across every ui-state route. It is now `request_id`,
+> minted once per request by Hono's first-party `requestId()` middleware at the
+> composition root (honor an inbound `X-Request-Id` header, mint a UUID
+> otherwise) — see `docs/research/hono-request-id-middleware.md`. The rename is
+> end-to-end with **no legacy acceptance**: the wire header is `X-Request-Id`,
+> the projection/persisted field is `request_id`, and the FE consumes
+> `request_id`. The persisted Redis event field renamed in lockstep
+> (`redis.ts` reads `obj.request_id ?? ""`); there is **no dual-read
+> back-compat** — the ephemeral `ui-state:` keyspace is flushed on deploy, so a
+> pre-rename event simply deserializes with an empty `request_id` rather than
+> crashing. The shared failure-simulation audit envelope keeps its own
+> `correlation_id` field (ADR-037 contract); ui-state feeds the request id into
+> it but does not rename it.
 
 ### 5. Cross-machine freeze contract (resolves OQ-5 from DISCUSS)
 
@@ -129,8 +145,8 @@ On entry to the `expired_token` state, the `LoginAndOrgSetupMachine` emits a `FR
 The replay buffer:
 - Lives in the ui-state tier (NOT the FE).
 - Bounded: 5 second wall-clock timeout from FREEZE; 16 max queued mutations per flow.
-- Per-mutation entry: `{ flow_id, intent_event, original_correlation_id, queued_at }`.
-- Flush on THAW: each queued intent re-sent to its flow with the original `correlation_id`.
+- Per-mutation entry: `{ flow_id, intent_event, original_request_id, queued_at }`.
+- Flush on THAW: each queued intent re-sent to its flow with the original `request_id`.
 - Overflow / timeout: queued mutations are abandoned with a `replay_abandoned` event emitted; the FE/harness can observe this via the projection and surface a UX path (preserve original input in the chat composer per US-005).
 
 ### 6. Earned Trust — adapter probes

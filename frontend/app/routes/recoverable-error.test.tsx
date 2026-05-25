@@ -25,7 +25,7 @@ describe("RecoverableError component (B5)", () => {
       render(
         <RecoverableError
           underlyingCauseTag={tag}
-          correlationId={refCode}
+          requestId={refCode}
         />,
       );
       const variant = COPY_VARIANTS[tag];
