@@ -8,7 +8,8 @@
 
 import { Redis } from "ioredis";
 
-import type { FlowEvent } from "../projection.ts";
+import { FlowId } from "../flow-id.ts";
+import { FlowEvent } from "../projection.ts";
 
 export interface FlowEventLog {
   append(flow_id: string, event: FlowEvent): Promise<void>;
@@ -119,12 +120,15 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
 
     async probe(): Promise<void> {
       const probeKey = `ui-state:__probe__:${Date.now()}`;
-      const probeEvent: FlowEvent = {
-        ts: new Date().toISOString(),
+      // The probe is a health-check, not a real flow event; its transient
+      // flowId is synthetic and ignored by serialize() (the 4-field
+      // allow-list). Routed through FlowEvent.from so no `ts: new Date()`
+      // literal survives.
+      const probeEvent = FlowEvent.from(FlowId.of("__probe__", ""), {
         type: "probe",
         payload: {},
         request_id: "probe",
-      };
+      });
       await client.xadd(probeKey, "*", ...serialize(probeEvent));
       const read = await client.xrange(probeKey, "-", "+");
       if (read.length !== 1) {
