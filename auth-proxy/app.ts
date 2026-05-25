@@ -296,7 +296,7 @@ async function peekInboundEventType(req: Request): Promise<string | null> {
 /**
  * Inspect the upstream response and emit any matching KPI K3 events to
  * stdout as JSON lines. The ui-state tier's projection envelope shape
- * is `{ state, correlation_id, context: { underlying_cause_tag? } }`.
+ * is `{ state, request_id, context: { underlying_cause_tag? } }`.
  * Events:
  *   - state === "error_recoverable"  → auth_recoverable_error_shown
  *   - state === "ready"              → ready_reached
@@ -310,7 +310,7 @@ async function emitKpiEventsForResponse(
   if (!contentType.includes("application/json")) return;
   let body: {
     state?: unknown;
-    correlation_id?: unknown;
+    request_id?: unknown;
     context?: { underlying_cause_tag?: unknown; silent_reauth_ok?: unknown };
   };
   try {
@@ -318,8 +318,8 @@ async function emitKpiEventsForResponse(
   } catch {
     return;
   }
-  const correlationId =
-    typeof body?.correlation_id === "string" ? body.correlation_id : undefined;
+  const requestId =
+    typeof body?.request_id === "string" ? body.request_id : undefined;
   const state = typeof body?.state === "string" ? body.state : undefined;
   const tag =
     typeof body?.context?.underlying_cause_tag === "string"
@@ -330,14 +330,14 @@ async function emitKpiEventsForResponse(
   if (inboundEventType === "retry_clicked") {
     emitKpiEvent({
       event: "auth_retry_clicked",
-      correlation_id: correlationId,
+      request_id: requestId,
       underlying_cause_tag: tag,
     });
   }
   if (state === "error_recoverable") {
     emitKpiEvent({
       event: "auth_recoverable_error_shown",
-      correlation_id: correlationId,
+      request_id: requestId,
       underlying_cause_tag: tag,
     });
     // Step 03-01: silent re-auth failure surfaces as error_recoverable with
@@ -346,7 +346,7 @@ async function emitKpiEventsForResponse(
     if (tag === "silent-reauth-failed") {
       emitKpiEvent({
         event: "silent_reauth_failed",
-        correlation_id: correlationId,
+        request_id: requestId,
         underlying_cause_tag: tag,
       });
     }
@@ -354,7 +354,7 @@ async function emitKpiEventsForResponse(
   if (state === "ready") {
     emitKpiEvent({
       event: "ready_reached",
-      correlation_id: correlationId,
+      request_id: requestId,
     });
     // Step 03-01: when the projection signals silent_reauth_ok in context,
     // emit the KPI alongside ready_reached. The flag is set by the
@@ -363,7 +363,7 @@ async function emitKpiEventsForResponse(
     if (silentReauthOk) {
       emitKpiEvent({
         event: "silent_reauth_ok",
-        correlation_id: correlationId,
+        request_id: requestId,
       });
     }
   }
@@ -371,7 +371,7 @@ async function emitKpiEventsForResponse(
 
 function emitKpiEvent(payload: {
   event: string;
-  correlation_id?: string;
+  request_id?: string;
   underlying_cause_tag?: string;
 }): void {
   // stdout-JSON observability per ADR-030 §SD4. One event per line so

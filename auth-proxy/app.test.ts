@@ -6,7 +6,7 @@
 //   - auth_retry_clicked            — caller forwarded a retry_clicked event
 //   - ready_reached                 — upstream returned state=ready
 //
-// Each event carries the correlation_id from the projection envelope and
+// Each event carries the request_id from the projection envelope and
 // the underlying_cause_tag where relevant.
 //
 // Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max.
@@ -32,7 +32,7 @@ function makeRequest(path: string, init: RequestInit = {}) {
 
 interface CapturedEvent {
   event: string;
-  correlation_id?: string;
+  request_id?: string;
   underlying_cause_tag?: string;
 }
 
@@ -79,7 +79,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
       "auth_recoverable_error_shown",
       {
         state: "error_recoverable",
-        correlation_id: "R-7a4f-901c",
+        request_id: "R-7a4f-901c",
         context: { underlying_cause_tag: "partial-setup" },
       },
       "/ui-state/flow/login-and-org-setup/begin",
@@ -89,7 +89,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
       "ready_reached",
       {
         state: "ready",
-        correlation_id: "R-7a4f-901c",
+        request_id: "R-7a4f-901c",
         context: {},
       },
       "/ui-state/flow/login-and-org-setup/event",
@@ -121,7 +121,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
         (e) => e.event === expectedEventName,
       );
       expect(matching).toBeDefined();
-      expect(matching?.correlation_id).toBe("R-7a4f-901c");
+      expect(matching?.request_id).toBe("R-7a4f-901c");
       if (expectedTag) {
         expect(matching?.underlying_cause_tag).toBe(expectedTag);
       }
@@ -148,7 +148,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
       new Response(
         JSON.stringify({
           state: "ready",
-          correlation_id: "R-chat-9b2a",
+          request_id: "R-chat-9b2a",
           context: { silent_reauth_ok: true },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -170,7 +170,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
     }
     const matching = capture.events.find((e) => e.event === "silent_reauth_ok");
     expect(matching).toBeDefined();
-    expect(matching?.correlation_id).toBe("R-chat-9b2a");
+    expect(matching?.request_id).toBe("R-chat-9b2a");
   });
 
   it("emits silent_reauth_failed when projection returns error_recoverable with silent-reauth-failed tag", async () => {
@@ -178,7 +178,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
       new Response(
         JSON.stringify({
           state: "error_recoverable",
-          correlation_id: "R-chat-9b2a",
+          request_id: "R-chat-9b2a",
           context: { underlying_cause_tag: "silent-reauth-failed" },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -202,7 +202,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
       (e) => e.event === "silent_reauth_failed",
     );
     expect(matching).toBeDefined();
-    expect(matching?.correlation_id).toBe("R-chat-9b2a");
+    expect(matching?.request_id).toBe("R-chat-9b2a");
     expect(matching?.underlying_cause_tag).toBe("silent-reauth-failed");
   });
 
@@ -211,7 +211,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
       new Response(
         JSON.stringify({
           state: "creating_org",
-          correlation_id: "R-7a4f-901c",
+          request_id: "R-7a4f-901c",
           context: {},
         }),
         {
@@ -241,7 +241,7 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
 
     const matching = capture.events.find((e) => e.event === "auth_retry_clicked");
     expect(matching).toBeDefined();
-    expect(matching?.correlation_id).toBe("R-7a4f-901c");
+    expect(matching?.request_id).toBe("R-7a4f-901c");
   });
 });
 
