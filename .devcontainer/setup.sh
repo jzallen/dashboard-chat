@@ -15,7 +15,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Python backend dependencies
-cd backend && uv sync && cd ..
+cd backend && uv sync --extra test && cd ..
 
 # Git hooks
 npx husky init

@@ -183,7 +183,7 @@ if [ $backend -eq 1 ]; then
     if [ $integration -eq 1 ]; then
       ignore=""
     fi
-    ( cd backend && uv run pytest -x --tb=short $ignore ) || rc=$?
+    ( cd backend && uv run --extra test pytest -x --tb=short $ignore ) || rc=$?
   fi
 fi
 
