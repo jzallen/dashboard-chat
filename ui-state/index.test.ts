@@ -731,6 +731,30 @@ describe("Slice 6: a malformed org submission is refused while the empty-name do
   });
 });
 
+// ── Characterization — an unknown event type is currently ignored (200) ──
+// PRE-CHANGE SAFETY NET (Feathers / Iron Rule). Today `eventRequestSchema`
+// accepts ANY non-empty `type` string, so an unmodeled event parses, is
+// forwarded to the actor, and XState v5 silently ignores it: the route answers
+// 200 and the flow no-ops. This pins that contract so the discriminated-union
+// change that deliberately CLOSES the event vocabulary (200-ignore → 400) is a
+// visible, intentional diff. The assertion flips to 400 in that same change.
+describe("Characterization: an unknown event type is currently ignored (200, no-op)", () => {
+  it("returns 200 and leaves the flow unchanged for an unmodeled event type", async () => {
+    active = buildScenario({ requestClient: okFetch() });
+    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    expect(beginProj.state).toBe("needs_org");
+
+    const { status, body } = await postEvent(
+      active.app,
+      { type: "totally_unknown_event", payload: {} },
+      { "X-User-Id": "u2" },
+    );
+
+    expect(status).toBe(200);
+    expect(body.state).toBe("needs_org");
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Centralized request-id minting (research: hono-request-id-middleware.md)
 //
