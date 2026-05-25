@@ -200,7 +200,7 @@ export async function getUserOrg({
   const resp = await input.deps.request_client(`${backendUrl}/api/orgs/me`, {
     method: "GET",
     headers: {
-      "x-correlation-id": input.correlation_id,
+      "x-request-id": input.correlation_id,
       ...devUserHeadersFixture,
     },
   });
@@ -334,7 +334,7 @@ export function createOrgFn(
     const orgName = input.org_name;
     const baseHeaders = {
       "content-type": "application/json",
-      "x-correlation-id": input.correlation_id,
+      "x-request-id": input.correlation_id,
       ...devUserHeadersFixture,
     };
 
@@ -381,7 +381,7 @@ export function reissueOrgJwtFn(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-correlation-id": correlation_id,
+        "x-request-id": correlation_id,
         ...devUserHeadersFixture,
       },
       body: JSON.stringify({ org_id }),

@@ -995,7 +995,7 @@ export function loadSessionListFn(
     const resp = await fetch(url, {
       method: "GET",
       headers: {
-        "x-correlation-id": "session-chat-list",
+        "x-request-id": "session-chat-list",
         ...principalHeaders,
       },
     });
@@ -1120,7 +1120,7 @@ export function resumeSessionFn(
       {
         method: "GET",
         headers: {
-          "x-correlation-id": "session-chat-resume",
+          "x-request-id": "session-chat-resume",
           ...principalHeaders,
         },
       },
@@ -1168,7 +1168,7 @@ export function resumeSessionFn(
         {
           method: "GET",
           headers: {
-            "x-correlation-id": "session-chat-resume-transcript",
+            "x-request-id": "session-chat-resume-transcript",
             ...principalHeaders,
           },
         },
@@ -1218,7 +1218,7 @@ export function resumeSessionFn(
           {
             method: "GET",
             headers: {
-              "x-correlation-id": "session-chat-resume-dataset",
+              "x-request-id": "session-chat-resume-dataset",
               ...principalHeaders,
             },
           },
@@ -1301,7 +1301,7 @@ export function switchDatasetContextFn(
       {
         method: "GET",
         headers: {
-          "x-correlation-id": "switch-dataset-context",
+          "x-request-id": "switch-dataset-context",
           ...principalHeaders,
         },
       },
@@ -1355,7 +1355,7 @@ export function switchDatasetContextFn(
         method: "PATCH",
         headers: {
           "content-type": "application/json",
-          "x-correlation-id": "switch-dataset-context-persist",
+          "x-request-id": "switch-dataset-context-persist",
           ...principalHeaders,
         },
         body: JSON.stringify({ active_dataset_id: input.intended_resource_id }),
@@ -1412,7 +1412,7 @@ export function createSessionEagerlyFn(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-correlation-id": "session-chat-create",
+          "x-request-id": "session-chat-create",
           ...principalHeaders,
         },
         // The backend's create_session route does NOT accept a body today —
@@ -1441,7 +1441,7 @@ export function createSessionEagerlyFn(
         method: "PATCH",
         headers: {
           "content-type": "application/json",
-          "x-correlation-id": "session-chat-create-title",
+          "x-request-id": "session-chat-create-title",
           ...principalHeaders,
         },
         body: JSON.stringify({ title }),

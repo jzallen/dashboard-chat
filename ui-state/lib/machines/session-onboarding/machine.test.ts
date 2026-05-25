@@ -72,7 +72,7 @@ function returningFetch(
 }
 
 /**
- * A mock fetch that records the `x-correlation-id` header from every POST
+ * A mock fetch that records the `x-request-id` header from every POST
  * /api/orgs call into `sink`, then delegates the response shaping to the
  * standard ok mock. Org-create always succeeds; the reissue forced-failure is
  * driven by the machine's force_reissue_failures input.
@@ -86,7 +86,7 @@ function makeRecordingFetch(sink: string[]): RequestClient {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/api/orgs") && (init?.method ?? "GET") === "POST") {
       const headers = init?.headers as Record<string, string> | undefined;
-      const cid = headers?.["x-correlation-id"] ?? "";
+      const cid = headers?.["x-request-id"] ?? "";
       sink.push(cid);
     }
     return base(input, init);
@@ -317,7 +317,7 @@ describe("when org setup keeps failing and the user keeps retrying", () => {
 describe("when a user retries after a recoverable failure", () => {
   it("the retry continues the same onboarding session rather than starting a new one", async () => {
     // Observe the correlation_id the resolver threads upstream: createOrgFn
-    // sends it as the `x-correlation-id` header on POST /api/orgs. Every
+    // sends it as the `x-request-id` header on POST /api/orgs. Every
     // internal create attempt (each failing via force_reissue_failures) and
     // every user retry must carry the SAME original correlation_id.
     const seenCorrelationIds: string[] = [];

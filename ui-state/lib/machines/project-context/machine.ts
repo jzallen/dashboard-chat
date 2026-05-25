@@ -613,7 +613,7 @@ export function resolveInitialScopeFn(
         {
           method: "GET",
           headers: {
-            "x-correlation-id": "j002-resolve-intent",
+            "x-request-id": "j002-resolve-intent",
             ...principalHeaders,
           },
         },
@@ -648,7 +648,7 @@ export function resolveInitialScopeFn(
     const resp = await fetch(`${backendUrl}/api/projects`, {
       method: "GET",
       headers: {
-        "x-correlation-id": "j002-resolve",
+        "x-request-id": "j002-resolve",
         ...principalHeaders,
       },
     });
@@ -702,7 +702,7 @@ export function resolveInitialScopeFn(
             {
               method: "GET",
               headers: {
-                "x-correlation-id": "j002-list-sessions",
+                "x-request-id": "j002-list-sessions",
                 ...principalHeaders,
               },
             },
@@ -830,7 +830,7 @@ export function createProjectFn(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-correlation-id": input.correlation_id,
+        "x-request-id": input.correlation_id,
         ...principalHeaders,
       },
       body: JSON.stringify({ name: input.org_name }),
@@ -887,7 +887,7 @@ export function switchProjectFn(
       {
         method: "GET",
         headers: {
-          "x-correlation-id": input.correlation_id,
+          "x-request-id": input.correlation_id,
           ...principalHeaders,
         },
       },
