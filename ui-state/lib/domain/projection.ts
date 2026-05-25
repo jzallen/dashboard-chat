@@ -21,7 +21,15 @@ const EMPTY_SCOPE: ActiveScope = {
   resource_id: null,
 };
 
-interface ReducedContext {
+/**
+ * The folded read-model context buildProjection assembles event-by-event and
+ * exposes (opaquely) as `FlowProjection.context`. Exported so the ChatApp
+ * derived-view mapper (lib/machines/chat-app/projection/derive-projection.ts)
+ * can produce the SAME shape from actor state instead of an event log —
+ * guaranteeing the per-machine projection contract (ADR-027) stays byte-stable
+ * whether it is folded from the log or derived from the snapshot (ADR-044 §2).
+ */
+export interface ReducedContext {
   user: {
     email: string | null;
     display_name: string | null;
@@ -133,7 +141,13 @@ interface ReducedContext {
   last_stale_intent: { intent_type: string; target_id: string } | null;
 }
 
-function initialContext(): ReducedContext {
+/**
+ * The zero-event projection context (every field at its initial value).
+ * Exported so the derived-view mapper starts from the EXACT same defaults the
+ * log fold does — any field the mapper does not explicitly populate then matches
+ * buildProjection's default byte-for-byte.
+ */
+export function initialContext(): ReducedContext {
   return {
     user: { email: null, display_name: null, first_name: null },
     org: { id: null, name: null },
@@ -959,6 +973,49 @@ function applyEvent(
   return handler ? handler(state, context, event) : { state, context };
 }
 
+/**
+ * Build the projection-level active_scope from the (folded OR derived) context.
+ * Precedence:
+ *   1. resolved_scope (from deep_link_opened)
+ *   2. context.project (set by project_selected on project-context flows
+ *      or project_context_inherited on session-chat flows — same shape per
+ *      audit §9 Q3 collapse, see projection-property.test.ts). Carries
+ *      `resource_*` from session_resumed when session-chat has settled;
+ *      `resource` stays { type: null, id: null } on project-context flows.
+ *   3. org-only
+ *   4. empty
+ *
+ * Extracted so the ChatApp derived-view mapper reuses the SAME tiered logic —
+ * the active_scope contract is not duplicated divergently (ADR-044 §C1). Pure.
+ */
+export function deriveActiveScope(
+  context: Pick<
+    ReducedContext,
+    "resolved_scope" | "project" | "org" | "resource"
+  >,
+): ActiveScope {
+  if (context.resolved_scope) {
+    return context.resolved_scope;
+  }
+  if (context.project.id && context.org.id) {
+    return {
+      org_id: context.org.id,
+      project_id: context.project.id,
+      resource_type: context.resource.type,
+      resource_id: context.resource.id,
+    };
+  }
+  if (context.org.id) {
+    return {
+      org_id: context.org.id,
+      project_id: null,
+      resource_type: null,
+      resource_id: null,
+    };
+  }
+  return EMPTY_SCOPE;
+}
+
 export function buildProjection(
   flow_id: string,
   events: FlowEvent[],
@@ -977,40 +1034,11 @@ export function buildProjection(
     requestId = event.request_id;
   }
 
-  // Build the projection-level active_scope from the running context.
-  // Precedence:
-  //   1. resolved_scope (from deep_link_opened)
-  //   2. context.project (set by project_selected on project-context flows
-  //      or project_context_inherited on session-chat flows — same shape per
-  //      audit §9 Q3 collapse, see projection-property.test.ts). Carries
-  //      `resource_*` from session_resumed when session-chat has settled;
-  //      `resource` stays { type: null, id: null } on project-context flows.
-  //   3. org-only
-  //   4. empty
-  let scope: ActiveScope = EMPTY_SCOPE;
-  if (context.resolved_scope) {
-    scope = context.resolved_scope;
-  } else if (context.project.id && context.org.id) {
-    scope = {
-      org_id: context.org.id,
-      project_id: context.project.id,
-      resource_type: context.resource.type,
-      resource_id: context.resource.id,
-    };
-  } else if (context.org.id) {
-    scope = {
-      org_id: context.org.id,
-      project_id: null,
-      resource_type: null,
-      resource_id: null,
-    };
-  }
-
   return {
     flow_id,
     state,
     context: context as unknown as Record<string, unknown>,
-    active_scope: scope,
+    active_scope: deriveActiveScope(context),
     sequence_id: events.length,
     last_event_at: lastEventAt,
     request_id: requestId,
