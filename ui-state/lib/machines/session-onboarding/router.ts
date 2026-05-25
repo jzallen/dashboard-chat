@@ -350,7 +350,6 @@ export function buildSessionOnboardingRouter(
     const correlationId =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
     let body: {
-      flow_id?: string;
       route?: {
         org?: string;
         project?: string;
@@ -366,12 +365,12 @@ export function buildSessionOnboardingRouter(
       return c.json({ error: "invalid_request" }, 400);
     }
 
-    if (!body.flow_id) {
-      return c.json({ error: "flow_id required" }, 400);
-    }
-
     const userId = c.req.header("X-User-Id") ?? "";
     const orgId = c.req.header("X-Org-Id") ?? null;
+    // flow_id is derived from the verified principal (ADR-040), never accepted
+    // from the body — the deep link is always resolved against the caller's
+    // own flow.
+    const flowId = `${SESSION_ONBOARDING_MACHINE}:${userId}`;
 
     const route = body.route ?? {};
     const resolution = resolveActiveScope(
@@ -386,7 +385,7 @@ export function buildSessionOnboardingRouter(
     if (!resolution.ok) {
       const result = await flowOrchestrator.appendDeepLinkEvents({
         machine: SESSION_ONBOARDING_MACHINE,
-        flow_id: body.flow_id,
+        flow_id: flowId,
         correlation_id: correlationId,
         events: [
           {
@@ -400,7 +399,7 @@ export function buildSessionOnboardingRouter(
 
     const result = await flowOrchestrator.appendDeepLinkEvents({
       machine: SESSION_ONBOARDING_MACHINE,
-      flow_id: body.flow_id,
+      flow_id: flowId,
       correlation_id: correlationId,
       events: [
         {
