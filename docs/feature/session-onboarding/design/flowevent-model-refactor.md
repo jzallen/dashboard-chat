@@ -819,3 +819,22 @@ private async sendCore(event: FlowEvent): Promise<FlowProjection> {
 `shouldAbandon` is read exactly once (first branch); the queue branch tests `frozenState` truthiness only
 (no recompute, nothing to cache). Behavior is byte-identical to today — pure structural refactor; the
 existing freeze/thaw (US-210) + abandon/queue tests must stay green unchanged.
+
+## §16 — Ratified `lib/domain/` package layout (FOLLOW-UP slice, structural move)
+
+A separate, contained slice landed AFTER the `FlowId`/`FlowEvent` refactor: the domain **types** are
+collected under `ui-state/lib/domain/`. PURE structural move — same types, same logic, only file
+locations + import paths change.
+
+| New file | Contents | Source |
+|---|---|---|
+| `lib/domain/flow-event.ts` | `FlowEvent` (interface + `from`/`getMachine` companion) **AND `FlowId`** (interface + `of`/`toKey`/`fromKey` companion) | merged `lib/flow-id.ts` + the `FlowEvent` block from `lib/projection.ts`; `lib/flow-id.ts` deleted |
+| `lib/domain/flow-projection.ts` | the `FlowProjection` interface | moved from `lib/projection.ts` |
+| `lib/domain/flow-result.ts` | `Result`/`FlowError`/`ok`/`err`/`errorMessage` | moved whole from `lib/flow-result.ts`; old file deleted |
+| `lib/domain/active-scope.ts` | `ActiveScope`/`ResourceType`/`RouteParams`/`JwtClaims`/`MachineContext`/`ScopeResolution` + `resolveActiveScope` + `ResolveActiveScope` | moved whole from `lib/active-scope.ts`; old file deleted |
+
+**Rationale:** the domain TYPES move to `lib/domain/`; `FlowId` lives with `FlowEvent` (it is `FlowEvent`'s
+identity, not a distinct concept); `buildProjection` stays in `lib/projection.ts` as the application FOLD
+service. `projection.ts` now imports `FlowEvent`/`FlowProjection`/`ActiveScope`/`ResourceType` from
+`lib/domain/` and keeps re-exporting `ResourceType` (now sourced from `lib/domain/active-scope.ts`) so
+existing importers don't break.
