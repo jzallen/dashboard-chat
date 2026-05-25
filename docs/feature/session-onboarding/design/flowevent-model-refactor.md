@@ -771,3 +771,51 @@ of truth; route `begin`'s persisted-event construction through `FlowEvent.from`.
 `appendDeepLinkEvents` / legacy `/open-deep-link` `machine` deconfliation DEFERRED (separate concern).
 Characterization: pin the `begin → projection` key identity and the cross-machine `auth_ready` /
 `project_ready` dispatch (actor tracked by `flow_id`) green before/after.
+
+---
+
+## §15 — `sendCore` freeze-handling cleanup (FOLLOW-UP slice, lands AFTER this MR)
+
+A separate, contained slice on top of the `send(event)` shape this MR produces. Goal: lift the freeze
+arithmetic out of `sendCore` and dedupe the append/return.
+
+**`FrozenState` becomes a class** (replaces the `FrozenFlowState` interface) owning `frozenAt`, `origin`,
+`queued: Array<{ flowId, event, seq }>`, with a **computed getter** (NOT a construction-time field — both
+inputs vary after construction):
+
+```ts
+get shouldAbandon(): boolean {
+  return Date.now() - this.frozenAt > FREEZE_WINDOW_MS
+      || this.queued.length >= REPLAY_BUFFER_CAP;
+}
+```
+
+**Orchestrator gains** `abandonEvent(key)` (= `this.abandoned.add(key)`) and
+`queueEvent(frozenState, event)` (= `frozenState.queued.push({ flowId: event.flowId, event, seq: this.replaySeq++ })`),
+plus a private `dispatchAndSettle(actor, event)` extracting the current 746–884 body (actor.send +
+applyEvent + waitForSettled + freeze/thaw broadcast + the 3-strategy settle chain + hooks). There are NO
+early returns in 746–884, so extraction is clean.
+
+**`sendCore` flattens to** (append hoisted ABOVE the branch — it must precede the settle chain's own
+appends, so the inbound event stays first in the log; only the projection return drops to the bottom):
+
+```ts
+private async sendCore(event: FlowEvent): Promise<FlowProjection> {
+  const key = event.flowId.toKey();
+  const actor = this.actors.get(key);
+  if (!actor) throw new Error(`unknown flow_id: ${key}`);
+
+  await this.deps.eventLog.append(key, event);            // persisted regardless of freeze
+
+  const frozenState = this.frozen.get(key);
+  if (frozenState?.shouldAbandon)  this.abandonEvent(key);          // getter read once
+  else if (frozenState)            this.queueEvent(frozenState, event);
+  else                             await this.dispatchAndSettle(actor, event);
+
+  return this.projectionFor(key, event.request_id);
+}
+```
+
+`shouldAbandon` is read exactly once (first branch); the queue branch tests `frozenState` truthiness only
+(no recompute, nothing to cache). Behavior is byte-identical to today — pure structural refactor; the
+existing freeze/thaw (US-210) + abandon/queue tests must stay green unchanged.

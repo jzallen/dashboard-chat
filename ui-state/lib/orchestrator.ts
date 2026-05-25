@@ -337,18 +337,41 @@ export interface BeginStrategy {
 export const FREEZE_WINDOW_MS = 5_000;
 export const REPLAY_BUFFER_CAP = 16;
 
-interface FrozenFlowState {
-  frozenAt: number;
-  /** Origin flow that triggered the freeze — the broadcaster. */
-  origin: string;
-  /** Queued events waiting for thaw, bounded to REPLAY_BUFFER_CAP. The `seq`
-   *  is process-global so THAW pass-2 can replay events across all frozen
-   *  flows in true arrival order, even though they sit on separate per-flow
-   *  buffers. Each slot carries the fully-built FlowEvent (its `ts` is the
-   *  original arrival time) + its `flowId`; THAW pass-2 re-dispatches the
-   *  SAME event through `sendCore`, which re-derives the key from
-   *  `event.flowId`. */
-  queued: Array<{ flowId: FlowId; event: FlowEvent; seq: number }>;
+/**
+ * Per-flow freeze state: a flow frozen by a sibling's `expired_token` holds
+ * when the freeze began, the origin that froze it, and the bounded buffer of
+ * events queued for THAW replay.
+ *
+ * The `seq` on each queued slot is process-global so THAW pass-2 can replay
+ * events across all frozen flows in true arrival order, even though they sit
+ * on separate per-flow buffers. Each slot carries the fully-built FlowEvent
+ * (its `ts` is the original arrival time) + its `flowId`; THAW pass-2
+ * re-dispatches the SAME event through `sendCore`, which re-derives the key
+ * from `event.flowId`.
+ */
+export class FrozenState {
+  /** Queued events waiting for thaw, bounded to REPLAY_BUFFER_CAP. */
+  readonly queued: Array<{ flowId: FlowId; event: FlowEvent; seq: number }> = [];
+
+  constructor(
+    /** `Date.now()` at the broadcast that froze this flow. */
+    readonly frozenAt: number,
+    /** Origin flow that triggered the freeze — the broadcaster. */
+    readonly origin: string,
+  ) {}
+
+  /**
+   * A frozen flow is abandoned (rather than queued) once its freeze window has
+   * elapsed OR its replay buffer is full. Both inputs vary after construction
+   * — the window by wall-clock, the buffer by arrival — so this is a computed
+   * getter, read fresh on each inbound event, never a construction-time field.
+   */
+  get shouldAbandon(): boolean {
+    return (
+      Date.now() - this.frozenAt > FREEZE_WINDOW_MS ||
+      this.queued.length >= REPLAY_BUFFER_CAP
+    );
+  }
 }
 
 export type BeginIfNotStartedInput = {
@@ -387,7 +410,7 @@ export type AppendDeepLinkEventsInput = {
 export class FlowActorRegistry {
   readonly actors = new Map<string, AnyActorRef>();
   /** Absent key = flow is not frozen. */
-  readonly frozen = new Map<string, FrozenFlowState>();
+  readonly frozen = new Map<string, FrozenState>();
   /** Set when the replay buffer overflows or the 5-second freeze window
    *  elapses with events still queued. */
   readonly abandoned = new Set<string>();
@@ -428,7 +451,7 @@ export class FlowOrchestrator implements PumpContext {
   /** Aliased from the shared registry so this send/broadcast path and the
    *  begin path operate on the same actor + tracking maps. */
   private readonly actors: Map<string, AnyActorRef>;
-  private readonly frozen: Map<string, FrozenFlowState>;
+  private readonly frozen: Map<string, FrozenState>;
   private readonly abandoned: Set<string>;
   private readonly priorState: Map<string, string>;
   /** Process-global monotonic counter stamped on every intent queued
@@ -713,35 +736,65 @@ export class FlowOrchestrator implements PumpContext {
       throw new Error(`unknown flow_id: ${flow_id}`);
     }
 
-    // Cross-machine FREEZE handling: if this flow is currently frozen (a
-    // sibling entered `expired_token`), queue the event in the bounded
-    // replay buffer instead of dispatching to the XState actor. The
-    // persisted event log is still appended so projection consumers see
-    // the attempt; the actor advances only on THAW replay.
-    const frozenState = this.frozen.get(flow_id);
-    if (frozenState) {
-      const elapsed = Date.now() - frozenState.frozenAt;
-      if (elapsed > FREEZE_WINDOW_MS) {
-        this.abandoned.add(flow_id);
-      } else {
-        if (frozenState.queued.length >= REPLAY_BUFFER_CAP) {
-          this.abandoned.add(flow_id);
-        } else {
-          frozenState.queued.push({
-            flowId: event.flowId!,
-            event,
-            seq: this.replaySeq++,
-          });
-        }
-      }
-      // The buffered event IS the appended event (one object, one `ts`); THAW
-      // pass-2 replays this same event.
-      await this.deps.eventLog.append(flow_id, event);
-      return this.projectionFor(flow_id, event.request_id);
-    }
-
+    // Persist the inbound event FIRST — before the freeze branch and before
+    // the settle chain's own appends — so it stays first in the log whether
+    // the flow dispatches live, queues for replay, or is abandoned. The
+    // buffered event IS the appended event (one object, one `ts`); THAW
+    // pass-2 replays this same event.
     await this.deps.eventLog.append(flow_id, event);
 
+    // Cross-machine FREEZE handling: a flow frozen by a sibling's
+    // `expired_token` buffers the event for THAW replay instead of
+    // dispatching it to the XState actor — unless its freeze window has
+    // elapsed or its replay buffer is full, in which case the flow is
+    // abandoned (THAW then drives `freeze → error_recoverable`). A live flow
+    // dispatches + settles normally. The persisted append above means
+    // projection consumers see the attempt in every case.
+    const frozenState = this.frozen.get(flow_id);
+    if (frozenState?.shouldAbandon) {
+      this.abandonEvent(flow_id);
+    } else if (frozenState) {
+      this.queueEvent(frozenState, event);
+    } else {
+      await this.dispatchAndSettle(actor, event, flow_id, machine);
+    }
+
+    return this.projectionFor(flow_id, event.request_id);
+  }
+
+  /** Mark a frozen flow abandoned: its buffered intents are dropped and THAW
+   *  drives `freeze → error_recoverable` instead of replaying. */
+  private abandonEvent(flow_id: string): void {
+    this.abandoned.add(flow_id);
+  }
+
+  /** Buffer an event arriving at a frozen flow for THAW replay. The slot
+   *  carries the fully-built event (its `ts` is the arrival time) + its
+   *  `flowId`, stamped with a process-global `seq` so THAW pass-2 replays
+   *  across all frozen flows in true cross-flow arrival order. */
+  private queueEvent(frozenState: FrozenState, event: FlowEvent): void {
+    frozenState.queued.push({
+      flowId: event.flowId!,
+      event,
+      seq: this.replaySeq++,
+    });
+  }
+
+  /**
+   * Dispatch a live (non-frozen) event to its XState actor and run the full
+   * settle sequence: the actor transition, the pre-settle `applyEvent`
+   * emission, the silent-reauth wait, the cross-machine FREEZE/THAW
+   * broadcast, and the three-strategy post-settle terminal-emission chain
+   * (with its `auth_ready` / `project_ready` hooks). The inbound event is
+   * already appended by `sendCore`; this body appends only the settle chain's
+   * own terminal events.
+   */
+  private async dispatchAndSettle(
+    actor: AnyActorRef,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
+  ): Promise<void> {
     // XState v5 ignores unknown event types by default.
     actor.send({ type: event.type, ...event.payload } as never);
 
@@ -885,8 +938,6 @@ export class FlowOrchestrator implements PumpContext {
       prior,
       projectionCtx,
     });
-
-    return this.projectionFor(flow_id, event.request_id);
   }
 
   async getProjection(flow_id: string): Promise<Result<FlowProjection>> {
@@ -939,11 +990,7 @@ export class FlowOrchestrator implements PumpContext {
       // observes `isFrozen` immediately, and `send()` consults this when
       // deciding to forward vs. queue.
       if (!this.frozen.has(flow_id)) {
-        this.frozen.set(flow_id, {
-          frozenAt: now,
-          origin: originFlowId,
-          queued: [],
-        });
+        this.frozen.set(flow_id, new FrozenState(now, originFlowId));
       }
       try {
         actor.send({ type: "FREEZE" } as never);
