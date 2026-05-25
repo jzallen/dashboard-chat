@@ -14,10 +14,8 @@
 
 import type { LoaderFunctionArgs } from "react-router";
 
-import { PROJECT_FLOW_MACHINE, uiStateClient } from "../lib/ui-state-client";
 import { ProjectsPage } from "../../src/ui/components/OrgView";
-
-const DEFAULT_PRINCIPAL_ID = "dev-user-001";
+import { PROJECT_FLOW_MACHINE, uiStateClient } from "../lib/ui-state-client";
 
 export interface ProjectsLoaderData {
   org_id: string;
@@ -33,12 +31,11 @@ export interface ProjectsLoaderData {
 export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<ProjectsLoaderData> {
-  const principalId = DEFAULT_PRINCIPAL_ID;
-  const projectFlowId = `${PROJECT_FLOW_MACHINE}:${principalId}`;
+  // flow_id is derived server-side from the verified principal (ADR-040).
   const client = uiStateClient(request);
 
   try {
-    const projection = await client.getProjection(PROJECT_FLOW_MACHINE, projectFlowId);
+    const projection = await client.getProjection(PROJECT_FLOW_MACHINE);
     const ctx = projection.context as {
       project?: { id: string | null; name: string | null };
       most_recent_session_per_project?: Record<string, string>;

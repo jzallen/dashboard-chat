@@ -678,11 +678,13 @@ function emitDatasetPickToJ002(
     ) {
       return;
     }
+    // The principal gate above keeps this a no-op until the SSR shell wires the
+    // identity; the flow_id itself is DERIVED server-side from the verified
+    // principal (ADR-040), so the client no longer constructs or sends it.
     void fetch("/ui-state/flow/session-chat/event", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        flow_id: `session-chat:${principal}`,
         type,
         payload: { resource_id: datasetId, resource_type: "dataset" },
       }),

@@ -72,7 +72,8 @@ export async function loader({
   params,
 }: LoaderFunctionArgs): Promise<ChatLoaderData> {
   const principalId = DEFAULT_PRINCIPAL_ID;
-  const sessionChatFlowId = `${SESSION_CHAT_MACHINE}:${principalId}`;
+  // flow_id is derived server-side from the verified principal (ADR-040); only
+  // the deep-link intent still needs principalId on the wire.
   const client = uiStateClient(request);
   const channelId = (params.channelId as string | undefined) ?? null;
 
@@ -93,10 +94,7 @@ export async function loader({
         // resolved to a deleted session).
       }
     }
-    const sessionChat = await client.getProjection(
-      SESSION_CHAT_MACHINE,
-      sessionChatFlowId,
-    );
+    const sessionChat = await client.getProjection(SESSION_CHAT_MACHINE);
     const ctx = sessionChat.context as {
       project?: { id: string | null; name: string | null };
       session_id?: string | null;

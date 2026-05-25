@@ -19,9 +19,9 @@
 import { HydrationBoundary,QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode,useState } from "react";
 import {
-  type LoaderFunctionArgs,
   isRouteErrorResponse,
   Links,
+  type LoaderFunctionArgs,
   Meta,
   Outlet,
   Scripts,
@@ -33,14 +33,9 @@ import {
 import { AuthProvider } from "../src/ui/context/AuthContext";
 import {
   PROJECT_FLOW_MACHINE,
-  uiStateClient,
   type ProjectionShape,
+  uiStateClient,
 } from "./lib/ui-state-client";
-
-// Dev-mode principal — auth-proxy hardcodes DEV_USER's identity headers,
-// so the per-flow id is deterministic at runtime. In production this is
-// derived from the verified JWT's `sub` claim (Phase 04 wiring).
-const DEFAULT_PRINCIPAL_ID = "dev-user-001";
 
 interface RootLoaderData {
   org_id: string;
@@ -78,10 +73,8 @@ export async function loader({
   // dispatch). The walking-skeleton scenario relies on the SSR pass
   // observing project_flow_state === "no_projects" so first
   // paint carries the welcome panel — no client roundtrip needed.
-  const principalId = DEFAULT_PRINCIPAL_ID;
-  const loginFlowId = `login-and-org-setup:${principalId}`;
-  const projectFlowId = `${PROJECT_FLOW_MACHINE}:${principalId}`;
-
+  // flow_id is derived server-side from the verified principal (ADR-040); the
+  // loader sends only the machine + its forwarded Bearer.
   const client = uiStateClient(request);
 
   let org_id = "";
@@ -99,7 +92,7 @@ export async function loader({
   };
 
   try {
-    const login = await client.getProjection("login-and-org-setup", loginFlowId);
+    const login = await client.getProjection("login-and-org-setup");
     const loginContext = (login as ProjectionShape).context as {
       org?: { id: string | null; name: string | null };
       user?: { display_name: string | null; first_name?: string | null };
@@ -116,10 +109,7 @@ export async function loader({
   }
 
   try {
-    const projection = await client.getProjection(
-      PROJECT_FLOW_MACHINE,
-      projectFlowId,
-    );
+    const projection = await client.getProjection(PROJECT_FLOW_MACHINE);
     project_flow_state = projection.state;
     active_scope = projection.active_scope;
     const projectContext = projection.context as {

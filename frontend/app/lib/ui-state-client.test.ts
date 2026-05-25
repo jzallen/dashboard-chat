@@ -39,7 +39,6 @@ describe("uiStateClient — 5s loader timeout (DD-16)", () => {
     });
     const result = await uiStateClient(makeRequest()).getProjection(
       "login-and-org-setup",
-      "test-loader-probe",
     );
     expect(result).toEqual({ kind: "ready" });
   });
@@ -66,7 +65,7 @@ describe("uiStateClient — 5s loader timeout (DD-16)", () => {
         }),
     );
     const promise = uiStateClient(makeRequest())
-      .getProjection("login-and-org-setup", "test-loader-probe")
+      .getProjection("login-and-org-setup")
       .catch((e: unknown) => e); // attach handler now to avoid unhandled-rejection noise
     // Advance fake clock past the 5s budget; this fires the AbortController
     // → mock fetch rejects → production code converts to Response(504).
@@ -84,10 +83,7 @@ describe("uiStateClient — 5s loader timeout (DD-16)", () => {
     });
     let caught: unknown;
     try {
-      await uiStateClient(makeRequest()).getProjection(
-        "login-and-org-setup",
-        "test-loader-probe",
-      );
+      await uiStateClient(makeRequest()).getProjection("login-and-org-setup");
     } catch (err) {
       caught = err;
     }

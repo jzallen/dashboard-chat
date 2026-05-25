@@ -22,8 +22,6 @@ import {
   uiStateClient,
 } from "../lib/ui-state-client";
 
-const DEFAULT_PRINCIPAL_ID = "dev-user-001";
-
 export interface SessionListItem {
   id: string;
   title: string | null;
@@ -43,15 +41,13 @@ export interface SessionsLoaderData {
 export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<SessionsLoaderData> {
-  const principalId = DEFAULT_PRINCIPAL_ID;
-  const projectFlowId = `${PROJECT_FLOW_MACHINE}:${principalId}`;
-  const sessionChatFlowId = `${SESSION_CHAT_MACHINE}:${principalId}`;
+  // flow_id is derived server-side from the verified principal (ADR-040).
   const client = uiStateClient(request);
 
   try {
     const [projectContext, sessionChat] = await Promise.all([
-      client.getProjection(PROJECT_FLOW_MACHINE, projectFlowId),
-      client.getProjection(SESSION_CHAT_MACHINE, sessionChatFlowId),
+      client.getProjection(PROJECT_FLOW_MACHINE),
+      client.getProjection(SESSION_CHAT_MACHINE),
     ]);
     const projectCtx = projectContext.context as {
       project?: { id: string | null; name: string | null };

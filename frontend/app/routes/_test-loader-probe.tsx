@@ -17,8 +17,8 @@ import {
   QueryClient,
 } from "@tanstack/react-query";
 import {
-  type LoaderFunctionArgs,
   isRouteErrorResponse,
+  type LoaderFunctionArgs,
   useLoaderData,
   useRouteError,
 } from "react-router";
@@ -47,12 +47,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   );
   try {
     await client.prefetchQuery({
-      queryKey: ["projection", "login-and-org-setup", "test-loader-probe"],
+      queryKey: ["projection", "login-and-org-setup"],
       queryFn: () =>
-        uiStateClient(request).getProjection(
-          "login-and-org-setup",
-          "test-loader-probe",
-        ),
+        uiStateClient(request).getProjection("login-and-org-setup"),
     });
   } catch (err) {
     // DD-16: a timeout surfaces as Response(504) from uiStateClient — let it

@@ -67,25 +67,27 @@ export function uiStateClient(request: Request) {
   const authHeader = request.headers.get("authorization") ?? "";
   return {
     /**
-     * Read a flow's projection. Per DWD-4, flow_id is principal-scoped:
-     * `<machine>:<principal_id>`. When the caller passes no flowId, the
-     * server returns a fresh anonymous projection (matches buildProjection's
-     * default) — used for cold loader reads before a flow has been started.
+     * Read a flow's projection. Per DWD-4 the flow_id is principal-scoped
+     * (`<machine>:<principal_id>`), but the client no longer constructs or
+     * sends it: the server DERIVES it from the route's machine + the verified
+     * principal (ADR-040), which auth-proxy injects as X-User-Id from the
+     * forwarded Bearer. A cold read before any flow has started folds to the
+     * anonymous projection (matches buildProjection's default).
      */
-    async getProjection(machine: string, flowId?: string) {
+    async getProjection(machine: string) {
       const url = new URL(`/ui-state/flow/${machine}/projection`, AUTH_PROXY_URL);
-      if (flowId) url.searchParams.set("flow_id", flowId);
       return fetchProjection(url, authHeader);
     },
 
     /**
      * Post an event to a flow, returning the updated projection. Used by
      * route loaders that need to drive a machine forward (e.g. submit a
-     * create-project intent). Body shape mirrors `/flow/:machine/event`.
+     * create-project intent). The target flow_id is derived server-side from
+     * the route's machine + the verified principal (ADR-040); the client sends
+     * only the event. Body shape mirrors `/flow/:machine/event`.
      */
     async postEvent(
       machine: string,
-      flowId: string,
       event: { type: string; payload?: Record<string, unknown> },
     ): Promise<ProjectionShape> {
       const url = new URL(`/ui-state/flow/${machine}/event`, AUTH_PROXY_URL);
@@ -99,7 +101,6 @@ export function uiStateClient(request: Request) {
             authorization: authHeader,
           },
           body: JSON.stringify({
-            flow_id: flowId,
             type: event.type,
             payload: event.payload ?? {},
           }),
