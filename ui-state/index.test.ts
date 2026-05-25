@@ -731,15 +731,16 @@ describe("Slice 6: a malformed org submission is refused while the empty-name do
   });
 });
 
-// ── Characterization — an unknown event type is currently ignored (200) ──
-// PRE-CHANGE SAFETY NET (Feathers / Iron Rule). Today `eventRequestSchema`
-// accepts ANY non-empty `type` string, so an unmodeled event parses, is
-// forwarded to the actor, and XState v5 silently ignores it: the route answers
-// 200 and the flow no-ops. This pins that contract so the discriminated-union
-// change that deliberately CLOSES the event vocabulary (200-ignore → 400) is a
-// visible, intentional diff. The assertion flips to 400 in that same change.
-describe("Characterization: an unknown event type is currently ignored (200, no-op)", () => {
-  it("returns 200 and leaves the flow unchanged for an unmodeled event type", async () => {
+// ── Vocabulary closed — an unknown event type is refused at the ACL (400) ──
+// FLIPPED from the pre-union characterization no-op (200). The old
+// `eventRequestSchema` accepted any non-empty `type`, forwarded it, and XState
+// v5 silently ignored unmodeled events. The discriminated union now CLOSES the
+// `/event` vocabulary to the machine's event set, so an unmodeled `type` is
+// rejected at the boundary (400 `invalid_request`) and never reaches the actor
+// — the deliberate contract change pinned by the characterization before the
+// union landed (silent-ignore is a worse contract than an explicit refusal).
+describe("Vocabulary closed: an unknown event type is refused at the ACL (400, no-op)", () => {
+  it("refuses an unmodeled event type at the boundary and leaves the flow unchanged", async () => {
     active = buildScenario({ requestClient: okFetch() });
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
     expect(beginProj.state).toBe("needs_org");
@@ -750,8 +751,12 @@ describe("Characterization: an unknown event type is currently ignored (200, no-
       { "X-User-Id": "u2" },
     );
 
-    expect(status).toBe(200);
-    expect(body.state).toBe("needs_org");
+    expect(status).toBe(400);
+    expect(String(body.error)).toMatch(/invalid_request/);
+
+    // The unmodeled event never reached the actor — the flow is unchanged.
+    const proj = await readProjection(active.app, "u2");
+    expect(proj.state).toBe("needs_org");
   });
 });
 

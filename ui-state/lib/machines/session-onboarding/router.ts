@@ -100,22 +100,40 @@ const beginRequestSchema = z.object({
 
 export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
 
-/**
- * The /event request DTO — the wire vocabulary an already-running flow accepts:
- * an optional `machine` name (the LEAF-2 legacy alias is canonicalized
- * downstream), the event `type`, and an open `payload` carried through to the
- * actor. The target `flow_id` is NOT a wire field (ADR-040): it is derived
- * server-side from the route's machine + the verified principal, so the client
- * supplies only what it actually knows. A parse failure → 400 with `issues`;
- * `type` is the sole remaining required field (`.min(1)` keeps the
- * empty-is-missing contract). Per OQ-E3 the schema grows INCREMENTALLY — later
- * slices add `tag` / `org_name` well-formedness at this same boundary.
- */
-const eventRequestSchema = z.object({
-  machine: z.string().optional(),
-  type: z.string().min(1),
-  payload: z.record(z.unknown()).optional(),
+/** A failure-simulation cause `tag`, validated against the DOMAIN's own closed
+ *  vocabulary (D-E2) so the boundary and the failure tags never drift. `.refine`
+ *  over the predicate keeps a single source of truth — no re-listed enum. */
+const causeTag = z.string().refine(isUnderlyingCauseTag, {
+  message: "tag must be a known UnderlyingCauseTag",
 });
+
+/**
+ * The /event wire DTO — a discriminated union over `type` enumerating the closed
+ * set of events an already-running session-onboarding flow accepts (the
+ * machine's event union, ADR-041). An unmodeled `type` is rejected at the ACL
+ * (400 `invalid_request`); each arm carries only its payload's WELL-FORMEDNESS
+ * (string-ness; a known cause tag) while DOMAIN rules (is the org name valid?)
+ * stay on the value object (D-E1). `machine` is the optional LEAF-2 wire alias,
+ * canonicalized downstream; `flow_id` is never a wire field — it is derived from
+ * the verified principal (ADR-040).
+ */
+const eventRequestSchema = z.discriminatedUnion("type", [
+  z.object({
+    machine: z.string().optional(),
+    type: z.literal("org_form_submitted"),
+    payload: z.object({ org_name: z.string() }).passthrough(),
+  }),
+  z.object({
+    machine: z.string().optional(),
+    type: z.literal("retry_clicked"),
+    payload: z.record(z.unknown()).optional(),
+  }),
+  z.object({
+    machine: z.string().optional(),
+    type: z.literal("__force_failure__"),
+    payload: z.object({ tag: causeTag }).passthrough(),
+  }),
+]);
 
 /**
  * Translate a validated wire `/event` request into the typed inbound command the
@@ -160,13 +178,6 @@ function translateWireEvent(
  * `shouldInject` (closed-by-default in production, ENVIRONMENT × flag, ADR-035);
  * its verdict decides whether the body's `force_reissue_failures` count is
  * threaded through to drive `getOrgAndReissue`'s attempt-vs-budget path.
- *
- * `/event` derives the target flow_id from the verified principal + this
- * route's machine (ADR-040) — the client never sends `flow_id`, so an event
- * can only ever reach the caller's own flow. It closed-by-default-gates the
- * `__force_failure__` harness event (403 when the gate is disabled) so
- * production cannot bypass real auth-flow logic; a legacy `login-and-org-setup`
- * `machine` name is canonicalized by the orchestrator's LEAF-2 alias map.
  *
  * `/open-deep-link` is the HTTP edge where route params meet the JWT:
  * `resolveActiveScope` runs here (identity from the auth-proxy headers — in dev
@@ -242,14 +253,26 @@ export function buildSessionOnboardingRouter(
     return serializeResult(c, result, "begin_failed");
   });
 
+  /**
+   * POST /event — forward ONE event to the caller's OWN already-running
+   * session-onboarding flow. The target `flow_id` is DERIVED from the verified
+   * principal, never accepted from the body (ADR-040). Payload shapes are
+   * validated by `eventRequestSchema` at this ACL; domain rules (is the org name
+   * valid?) stay on the value object (D-E1). The `__force_failure__` harness
+   * event crosses an explicit failure-simulation authorization gate (ADR-035),
+   * kept distinct from shape validation. Validation + translation live at this
+   * port; the orchestrator core is untouched (ADR-028). See ADR-040 / ADR-041.
+   */
   router.post("/event", async (c) => {
     const requestId = c.get("requestId");
+
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
     } catch {
       return c.json({ error: "invalid_request" }, 400);
     }
+
     const parsed = eventRequestSchema.safeParse(rawBody);
     if (!parsed.success) {
       return c.json(
@@ -259,17 +282,7 @@ export function buildSessionOnboardingRouter(
     }
     const event = parsed.data;
 
-    // Flow identity is DERIVED, never accepted (ADR-040): the target flow is
-    // always the verified principal's own flow for this route's machine —
-    // `session-onboarding:<X-User-Id>`. The client no longer sends a `flow_id`,
-    // so addressing another principal's actor is structurally impossible and
-    // the former cross-principal 403 guard is gone as dead code. The string is
-    // byte-identical to what /begin + the orchestrator key the actor by.
     const flowId = `${SESSION_ONBOARDING_MACHINE}:${c.get("userId")}`;
-
-    // Structured audit of the inbound event — the /event analogue of /begin's
-    // `session_onboarding.org_claim` log (event type + verified principal +
-    // derived flow + request id).
     logTransition({
       event: "session_onboarding.event_received",
       request_id: requestId,
@@ -278,66 +291,24 @@ export function buildSessionOnboardingRouter(
       event_type: event.type,
     });
 
-    if (event.type === "__force_failure__") {
-      const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
+    // ADR-035 failure-simulation AUTHORIZATION gate — a policy check kept
+    // distinct from shape validation: production cannot drive the forced-failure
+    // side-channel even with a well-formed event.
+    if (
+      event.type === "__force_failure__" &&
+      !shouldInject(KNOB.forceFailureOnAuthRetry, {
         event: { type: event.type },
-        // `correlationId` is the shared failure-simulation audit-envelope arg
-        // (ADR-037); we feed it the request id.
         correlationId: requestId,
         serviceName: "ui-state",
-      });
-      if (!allowed) {
-        return c.json(
-          {
-            error:
-              "failure-simulation knob disabled: __force_failure__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
-          },
-          403,
-        );
-      }
-
-      // The gate is open; now validate the forced cause against the domain's
-      // closed failure vocabulary (D-E2) so a tag the projection cannot map
-      // never reaches `tagCause` in the actor. The ACL and the domain share one
-      // source of truth via the widened-to-export `isUnderlyingCauseTag`.
-      const tag = event.payload?.tag;
-      if (typeof tag !== "string" || !isUnderlyingCauseTag(tag)) {
-        return c.json(
-          {
-            error: "invalid_request",
-            issues: [
-              {
-                path: ["payload", "tag"],
-                message: "tag must be a known UnderlyingCauseTag",
-              },
-            ],
-          },
-          400,
-        );
-      }
-    }
-
-    // Payload well-formedness for org_form_submitted (D-E1, OQ-E3 INCREMENTAL):
-    // the ACL checks only that the COMMAND is well-formed — `org_name` is a
-    // string at all — so a malformed command cannot reach the actor as a silent
-    // state change. The DOMAIN rule (is the string a valid name?) deliberately
-    // stays on `constructOrgName`: an empty string is well-formed here and still
-    // settles to the empty-name validation error in the model, NOT promoted up.
-    if (event.type === "org_form_submitted") {
-      if (typeof event.payload?.org_name !== "string") {
-        return c.json(
-          {
-            error: "invalid_request",
-            issues: [
-              {
-                path: ["payload", "org_name"],
-                message: "org_name must be a string",
-              },
-            ],
-          },
-          400,
-        );
-      }
+      })
+    ) {
+      return c.json(
+        {
+          error:
+            "failure-simulation knob disabled: __force_failure__ requires the gate enabled (ENVIRONMENT=dev|ci + flag set)",
+        },
+        403,
+      );
     }
 
     const result = await flowOrchestrator.send(
