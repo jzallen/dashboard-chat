@@ -10,7 +10,7 @@
 // XState runtime) and gives the orchestrator + persistence layer a clear
 // contract: events go in, the projection is the public read shape.
 
-import type { ActiveScope, ResourceType } from "./active-scope.ts";
+import type { ActiveScope, ResourceType } from "./domain/active-scope.ts";
 import type { FlowId } from "./flow-id.ts";
 
 export interface FlowEvent {

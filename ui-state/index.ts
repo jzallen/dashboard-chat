@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { type Context, Hono } from "hono";
 
 import { type Config, loadConfig } from "./config.ts";
-import { resolveActiveScope } from "./lib/active-scope.ts";
+import { resolveActiveScope } from "./lib/domain/active-scope.ts";
 import {
   requestIdMiddleware,
   resultToJson,

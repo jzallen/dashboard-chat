@@ -12,9 +12,9 @@
 //   - No-org walking-skeleton path  (1 test — already present)
 // Total: 10 tests covering 5 invariants ≤ 2× behavior budget.
 
-import { describe, it, expect } from "vitest";
+import { describe, expect,it } from "vitest";
 
-import { resolveActiveScope } from "./active-scope.ts";
+import { resolveActiveScope } from "./domain/active-scope.ts";
 
 describe("resolveActiveScope — no-org case (first-time user, I1 boundary)", () => {
   it("returns an empty-org scope when the user has no organization yet", () => {

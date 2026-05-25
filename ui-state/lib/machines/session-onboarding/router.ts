@@ -31,7 +31,7 @@ import type { Context, Hono } from "hono";
 import { z } from "zod";
 
 import type { Config } from "../../../config.ts";
-import type { ResolveActiveScope } from "../../active-scope.ts";
+import type { ResolveActiveScope } from "../../domain/active-scope.ts";
 import type { Result } from "../../domain/flow-result.ts";
 import { FlowId } from "../../flow-id.ts";
 import { mountUniformFlowRoutes } from "../../hexagonal-transport/flow-router.ts";

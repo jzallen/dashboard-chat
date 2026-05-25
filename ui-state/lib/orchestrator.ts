@@ -33,7 +33,7 @@
 import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { Config } from "../config.ts";
-import type { ResourceType } from "./active-scope.ts";
+import type { ResourceType } from "./domain/active-scope.ts";
 import { err, ok, type Result } from "./domain/flow-result.ts";
 import { FlowId } from "./flow-id.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";

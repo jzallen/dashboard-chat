@@ -37,7 +37,7 @@
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { Hono } from "hono";
 
-import { resolveActiveScope, type ResourceType } from "../../active-scope.ts";
+import { resolveActiveScope, type ResourceType } from "../../domain/active-scope.ts";
 import { FlowId } from "../../flow-id.ts";
 import {
   mountUniformFlowRoutes,

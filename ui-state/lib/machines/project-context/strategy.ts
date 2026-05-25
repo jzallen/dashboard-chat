@@ -21,7 +21,7 @@
 
 import { type AnyActorRef } from "xstate";
 
-import type { ResourceType } from "../../active-scope.ts";
+import type { ResourceType } from "../../domain/active-scope.ts";
 import { FlowId } from "../../flow-id.ts";
 import type {
   FlowStrategy,

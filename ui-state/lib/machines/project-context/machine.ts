@@ -29,7 +29,7 @@
 
 import { assign, fromPromise, setup } from "xstate";
 
-import type { ActiveScope, ResourceType } from "../../active-scope.ts";
+import type { ActiveScope, ResourceType } from "../../domain/active-scope.ts";
 import {
   type ProjectValidationError,
   validateProjectName,
