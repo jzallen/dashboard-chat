@@ -10,7 +10,8 @@
 //     wiring ChatApp into HTTP routing is Phase 4.)
 //   - createChatAppMachine — the bare parent-coordinator statechart factory
 //     (children left as inert placeholders). Phase-1 tests provide FAKES over it
-//     via fakes.ts; createChatApp provides the REAL machines.
+//     (the fakes are inline in machine.test.ts); createChatApp provides the REAL
+//     machines.
 //   - ChatAppChildLogic — the actor-logic slot type a caller casts a provided
 //     child to (XState's `provide` is type-invariant in a child's context).
 //   - The wire/hand-off contract types a caller needs to drive or wire ChatApp.

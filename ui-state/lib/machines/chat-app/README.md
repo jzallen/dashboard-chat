@@ -77,8 +77,8 @@ The three children are **logical actors** declared in `setup({ actors })` with
 minimal placeholders (`setup/actors.ts`) and swapped via
 `machine.provide({ actors })`:
 
-- **Phase 1** provides the FAKES in [`fakes.ts`](./fakes.ts) (test scope) over
-  the bare `createChatAppMachine()`.
+- **Phase 1** provides FAKE children (test fixtures defined inline in
+  [`machine.test.ts`](./machine.test.ts)) over the bare `createChatAppMachine()`.
 - **Phase 2** provides the real `session-onboarding` / `project-context` /
   `session-chat` machines through the composition root `createChatApp(deps)`
   ([`index.ts`](./index.ts)).
@@ -109,8 +109,7 @@ chat-app/
 ├── machine.ts          the statechart + the inline actions (writers + forwarders + onboarding-outcome retention)
 ├── index.ts            barrel + composition root (createChatApp + createChatAppMachine + contract types)
 ├── snapshot.ts         Phase-3 restart recovery seam (persist/rehydrate + R3 settled-state guard)
-├── fakes.ts            TEST-ONLY fake children + createChatAppWithFakes()
-├── machine.test.ts     Phase-1 pure statechart unit tests (fake children)
+├── machine.test.ts     Phase-1 pure statechart unit tests (inline fake children + createChatAppWithFakes)
 ├── integration.test.ts Phase-2 in-process integration tests (real children, mocked ports)
 ├── snapshot.test.ts    Phase-3 snapshot round-trip + R3 self-heal on the real wired actor
 ├── README.md
