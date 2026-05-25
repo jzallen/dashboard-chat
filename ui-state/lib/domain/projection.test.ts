@@ -11,7 +11,7 @@
 
 import { describe, expect,it } from "vitest";
 
-import { FlowEvent } from "./domain/flow-event.ts";
+import { FlowEvent } from "./flow-event.ts";
 import { buildProjection } from "./projection.ts";
 
 // Events as if read back from the cache — built via fromCache because a plain

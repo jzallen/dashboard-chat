@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { FlowId } from "./domain/flow-event.ts";
+import { FlowId } from "./flow-event.ts";
 
 describe("FlowId#toKey", () => {
   it("encodes the pair as `${machine}:${principal_id}`", () => {

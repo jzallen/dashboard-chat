@@ -28,6 +28,7 @@ import { type AnyActorRef } from "xstate";
 
 import type { ResourceType } from "../../domain/active-scope.ts";
 import { FlowEvent } from "../../domain/flow-event.ts";
+import { buildProjection } from "../../domain/projection.ts";
 import type {
   FlowStrategy,
   PumpContext,
@@ -38,7 +39,6 @@ import {
   harvestSettledFreezeState,
   harvestSettledSessionChatState,
 } from "../../orchestrator-harvester.ts";
-import { buildProjection } from "../../projection.ts";
 import { createSessionChatMachine } from "./index.ts";
 
 /**

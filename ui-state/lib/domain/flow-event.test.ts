@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { FlowEvent, type FlowEventRecord } from "./domain/flow-event.ts";
+import { FlowEvent, type FlowEventRecord } from "./flow-event.ts";
 
 describe("FlowEvent.create", () => {
   it("builds the owned FlowId from machine+principal and defaults ts/payload", () => {

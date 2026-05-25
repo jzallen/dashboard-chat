@@ -14,7 +14,7 @@
 
 import { describe, expect,it } from "vitest";
 
-import { resolveActiveScope } from "./domain/active-scope.ts";
+import { resolveActiveScope } from "./active-scope.ts";
 
 describe("resolveActiveScope — no-org case (first-time user, I1 boundary)", () => {
   it("returns an empty-org scope when the user has no organization yet", () => {

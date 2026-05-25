@@ -35,7 +35,7 @@
 
 import { describe, expect,it } from "vitest";
 
-import { FlowEvent } from "./domain/flow-event.ts";
+import { FlowEvent } from "./flow-event.ts";
 import { buildProjection } from "./projection.ts";
 
 // ── Test fixtures ────────────────────────────────────────────────────────

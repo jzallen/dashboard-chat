@@ -37,6 +37,7 @@ import type { ResourceType } from "./domain/active-scope.ts";
 import { FlowEvent, FlowId } from "./domain/flow-event.ts";
 import type { FlowProjection } from "./domain/flow-projection.ts";
 import { err, ok, type Result } from "./domain/flow-result.ts";
+import { buildProjection } from "./domain/projection.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import { type SessionChatMachineDeps } from "./machines/session-chat/index.ts";
@@ -49,7 +50,6 @@ import {
   harvestSettledSessionChatState,
 } from "./orchestrator-harvester.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import { buildProjection } from "./projection.ts";
 import { waitForSettledState } from "./wait-for-settled-state.ts";
 
 /**

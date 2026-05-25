@@ -23,6 +23,7 @@ import { type AnyActorRef } from "xstate";
 
 import type { ResourceType } from "../../domain/active-scope.ts";
 import { FlowEvent } from "../../domain/flow-event.ts";
+import { buildProjection } from "../../domain/projection.ts";
 import type {
   FlowStrategy,
   PumpContext,
@@ -33,7 +34,6 @@ import {
   harvestSettledFreezeState,
   harvestSettledProjectContextState,
 } from "../../orchestrator-harvester.ts";
-import { buildProjection } from "../../projection.ts";
 import { createProjectContextMachine } from "./index.ts";
 
 /**
