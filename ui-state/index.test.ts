@@ -297,10 +297,9 @@ describe("Spec 4: org submission from needs_org reaches ready", () => {
     const res = await active.app.fetch(
       new Request("http://t/flow/session-onboarding/event", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "X-User-Id": "u2" },
         body: JSON.stringify({
           machine: "session-onboarding",
-          flow_id: beginProj.flow_id,
           type: "org_form_submitted",
           payload: { org_name: "Acme Data" },
         }),
@@ -319,15 +318,14 @@ describe("Spec 4: org submission from needs_org reaches ready", () => {
 describe("Spec 5: invalid org name keeps needs_org", () => {
   it("surfaces a validation error and stays in needs_org", async () => {
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
     const res = await active.app.fetch(
       new Request("http://t/flow/session-onboarding/event", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "X-User-Id": "u2" },
         body: JSON.stringify({
           machine: "session-onboarding",
-          flow_id: beginProj.flow_id,
           type: "org_form_submitted",
           payload: { org_name: "" },
         }),
@@ -357,10 +355,9 @@ describe("Spec 7: a taken org name keeps needs_org with a duplicate error", () =
     const res = await active.app.fetch(
       new Request("http://t/flow/session-onboarding/event", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "X-User-Id": "u2" },
         body: JSON.stringify({
           machine: "session-onboarding",
-          flow_id: beginProj.flow_id,
           type: "org_form_submitted",
           payload: { org_name: "Acme Data" },
         }),
@@ -380,15 +377,14 @@ describe("Spec 7: a taken org name keeps needs_org with a duplicate error", () =
 describe("Legacy alias: /flow/session-onboarding accepts the legacy machine name on /event", () => {
   it("resolves the legacy login-and-org-setup machine name without 404", async () => {
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
     const res = await active.app.fetch(
       new Request("http://t/flow/session-onboarding/event", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "X-User-Id": "u2" },
         body: JSON.stringify({
           machine: "login-and-org-setup",
-          flow_id: beginProj.flow_id,
           type: "org_form_submitted",
           payload: { org_name: "Acme Data" },
         }),
@@ -434,43 +430,51 @@ describe("Legacy alias: /flow/session-onboarding accepts the legacy machine name
 // DELIVER un-skips one at a time (Outside-In: un-skip → RED → implement → GREEN).
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Slice 1 — A malformed event without flow id or type is refused ──
-// CHARACTERIZATION (green): the handler already refuses an event that names no
-// flow or no type with a 400. The Slice-1 zod-DTO refactor (DELIVER) must
-// PRESERVE this observable 400 contract — this test is what holds it in place.
-describe("Slice 1: a malformed event missing its flow id or type is refused", () => {
-  it("refuses an org-submission that names no flow", async () => {
+// ── Slice 1 — A malformed event missing its event type is refused ──
+// RE-SPECIFIED to the post-ADR-040 contract. flow_id was removed from the wire
+// DTO (it is derived from the verified principal), so "names no flow" is no
+// longer a malformedness concept — `type` is the sole remaining required field.
+// The surviving 400 contract is "no type → 400", pinned here from two angles
+// (with and without a stray, now-ignored flow_id) plus the happy path.
+describe("Slice 1: a malformed event missing its event type is refused", () => {
+  it("refuses an event that names no event type", async () => {
     active = buildScenario({ requestClient: okFetch() });
-    const { status, body } = await postEvent(active.app, {
-      type: "org_form_submitted",
-      payload: { org_name: "Acme Data" },
-    });
+    const { status, body } = await postEvent(
+      active.app,
+      { payload: { org_name: "Acme Data" } },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(400);
     expect(body.error).toBeTruthy();
   });
 
-  it("refuses an event that names a flow but no event type", async () => {
+  it("ignores a stray client-supplied flow_id and still refuses when no type is named", async () => {
+    // flow_id is no longer a wire field (ADR-040): a stray one is stripped and
+    // never honored, so it cannot stand in for the still-required `type`.
     active = buildScenario({ requestClient: okFetch() });
-    const { status, body } = await postEvent(active.app, {
-      flow_id: "session-onboarding:u2",
-    });
+    const { status, body } = await postEvent(
+      active.app,
+      { flow_id: "session-onboarding:u2" },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(400);
     expect(body.error).toBeTruthy();
   });
 
   it("accepts a well-formed org submission and reaches ready", async () => {
-    // The success counterpart to the two refusals above — pins that a complete
+    // The success counterpart to the refusals above — pins that a complete
     // command still settles through the same handler (Spec 4, restated at the
-    // /event parity boundary so the DTO refactor cannot regress the happy path).
+    // /event parity boundary). No flow_id on the wire: the server derives it
+    // from the verified principal (X-User-Id).
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
-    const { status, body } = await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "org_form_submitted",
-      payload: { org_name: "Acme Data" },
-    });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    const { status, body } = await postEvent(
+      active.app,
+      { type: "org_form_submitted", payload: { org_name: "Acme Data" } },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(200);
     expect(body.state).toBe("ready");
@@ -505,11 +509,11 @@ describe("Slice 2: retrying after a recoverable org-setup failure keeps the reco
     });
     expect(beginProj.state).toBe("needs_org");
 
-    const submitted = await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "org_form_submitted",
-      payload: { org_name: "Acme Data" },
-    });
+    const submitted = await postEvent(
+      active.app,
+      { type: "org_form_submitted", payload: { org_name: "Acme Data" } },
+      { "X-User-Id": "u2" },
+    );
 
     expect(submitted.status).toBe(200);
     expect(submitted.body.state).toBe("error_recoverable");
@@ -521,25 +525,25 @@ describe("Slice 2: retrying after a recoverable org-setup failure keeps the reco
   it("accepts each retry over /event and keeps the user on the recoverable-error screen", async () => {
     enableFailureSimulation();
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await beginWithBody(active.app, {
+    await beginWithBody(active.app, {
       userId: "u2",
       bearer: "tok-2",
       body: { force_reissue_failures: 99 },
     });
-    await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "org_form_submitted",
-      payload: { org_name: "Acme Data" },
-    });
+    await postEvent(
+      active.app,
+      { type: "org_form_submitted", payload: { org_name: "Acme Data" } },
+      { "X-User-Id": "u2" },
+    );
 
     // Three user retries — each accepted over the HTTP transport, each leaving
     // the user on the recoverable-error screen (the budget keeps re-exhausting).
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const retried = await postEvent(active.app, {
-        flow_id: beginProj.flow_id,
-        type: "retry_clicked",
-        payload: {},
-      });
+      const retried = await postEvent(
+        active.app,
+        { type: "retry_clicked", payload: {} },
+        { "X-User-Id": "u2" },
+      );
       expect(retried.status).toBe(200);
       expect(retried.body.state).toBe("error_recoverable");
     }
@@ -556,13 +560,13 @@ describe("Slice 3: the forced-failure side-channel is gated unless the failure-s
   it("refuses a forced failure when the failure-simulation switch is off (production default)", async () => {
     // No enableFailureSimulation() call → the fail-closed production default.
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
-    const { status, body } = await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "__force_failure__",
-      payload: { tag: "transient" },
-    });
+    const { status, body } = await postEvent(
+      active.app,
+      { type: "__force_failure__", payload: { tag: "transient" } },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(403);
     expect(String(body.error)).toMatch(/failure-simulation/i);
@@ -577,11 +581,11 @@ describe("Slice 3: the forced-failure side-channel is gated unless the failure-s
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
     expect(beginProj.state).toBe("needs_org"); // the source state the machine handles
 
-    const { status, body } = await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "__force_failure__",
-      payload: { tag: "transient" },
-    });
+    const { status, body } = await postEvent(
+      active.app,
+      { type: "__force_failure__", payload: { tag: "transient" } },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(200);
     expect(body.state).toBe("error_recoverable");
@@ -601,13 +605,13 @@ describe("Slice 4: a forced failure naming an unrecognized cause is refused at t
   it("refuses a forced failure whose cause is not in the failure vocabulary", async () => {
     enableFailureSimulation();
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
-    const { status, body } = await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "__force_failure__",
-      payload: { tag: "not-a-cause" },
-    });
+    const { status, body } = await postEvent(
+      active.app,
+      { type: "__force_failure__", payload: { tag: "not-a-cause" } },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(400);
     expect(String(body.error)).toMatch(/invalid_request/);
@@ -620,22 +624,25 @@ describe("Slice 4: a forced failure naming an unrecognized cause is refused at t
   });
 });
 
-// ── Slice 5 — An event's flow must belong to the verified principal ──
-// BEHAVIOR CHANGE (RED). Today `/event` trusts the body `flow_id` and never
-// reads the verified principal, so a caller can post to any flow (today this
-// merely 500s for a nonexistent actor — the hole is real for an existing one).
-// After Slice 5 the ACL derives `flow_id = session-onboarding:<verified
-// X-User-Id>` and REJECTS a mismatched body flow_id with 403 (D-E3, OQ-E1
-// ENFORCE). The matching-principal happy path is now authorized (Spec 4).
-describe("Slice 5: an event is accepted only for the verified principal's own flow", () => {
-  it("refuses an event whose flow belongs to a different principal", async () => {
+// ── Slice 5 — An event always targets the verified principal's own flow ──
+// RE-SPECIFIED to the post-ADR-040 contract. flow_id was removed from the wire
+// DTO and is DERIVED as `session-onboarding:<verified X-User-Id>`. The old
+// "cross-principal flow_id → 403" guard tested a contract that no longer
+// exists: a client cannot express another principal's flow, so there is no
+// cross-principal path left to forbid. The new behavior asserted here: a stray
+// body flow_id is IGNORED (stripped, never honored) and the event still reaches
+// the caller's OWN flow. Re-pointing the test at the deliberately-changed
+// contract — rather than keeping a 403 that can no longer occur — is correct,
+// not Iron-Rule gaming.
+describe("Slice 5: an event always targets the verified principal's own flow", () => {
+  it("ignores a stray flow_id naming another principal and targets the caller's own flow", async () => {
     active = buildScenario({ requestClient: okFetch() });
-    // The verified principal is u2 (their flow is begun and in needs_org).
+    // u2's flow is begun and in needs_org. u9 has no flow at all.
     const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
     expect(beginProj.state).toBe("needs_org");
 
-    // u2 posts an event naming u9's flow.
-    const { status } = await postEvent(
+    // u2 posts an org submission carrying a stray flow_id that names u9.
+    const { status, body } = await postEvent(
       active.app,
       {
         flow_id: "session-onboarding:u9",
@@ -645,24 +652,25 @@ describe("Slice 5: an event is accepted only for the verified principal's own fl
       { "X-User-Id": "u2", authorization: "Bearer tok-2" },
     );
 
-    expect(status).toBe(403);
+    // The stray flow_id is ignored: the event reached u2's OWN flow, which
+    // advanced to ready — it was NOT forbidden and did NOT reach u9.
+    expect(status).toBe(200);
+    expect(body.state).toBe("ready");
 
-    // No event reached u9's flow — u2's own flow is also untouched.
-    const proj = await readProjection(active.app, "u2");
-    expect(proj.state).toBe("needs_org");
+    // u9's flow was never touched — reading as u9 yields the anonymous default.
+    const u9 = await readProjection(active.app, "u9");
+    expect(u9.state).not.toBe("ready");
+    expect(u9.context.org.id).toBeNull();
   });
 
   it("accepts an event for the verified principal's own flow and reaches ready", async () => {
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
+    // No flow_id on the wire — the server derives it from the verified principal.
     const { status, body } = await postEvent(
       active.app,
-      {
-        flow_id: beginProj.flow_id,
-        type: "org_form_submitted",
-        payload: { org_name: "Acme Data" },
-      },
+      { type: "org_form_submitted", payload: { org_name: "Acme Data" } },
       { "X-User-Id": "u2", authorization: "Bearer tok-2" },
     );
 
@@ -683,13 +691,13 @@ describe("Slice 5: an event is accepted only for the verified principal's own fl
 describe("Slice 6: a malformed org submission is refused while the empty-name domain rule stays in the model", () => {
   it("refuses an org submission that carries no organization name", async () => {
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
-    const { status, body } = await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "org_form_submitted",
-      payload: {},
-    });
+    const { status, body } = await postEvent(
+      active.app,
+      { type: "org_form_submitted", payload: {} },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(400);
     expect(String(body.error)).toMatch(/invalid_request/);
@@ -706,13 +714,13 @@ describe("Slice 6: a malformed org submission is refused while the empty-name do
     // with the empty-name inline error in needs_org), proving the rule was NOT
     // promoted to the boundary.
     active = buildScenario({ requestClient: okFetch() });
-    const beginProj = await begin(active.app, { userId: "u2", bearer: "tok-2" });
+    await begin(active.app, { userId: "u2", bearer: "tok-2" });
 
-    const { status, body } = await postEvent(active.app, {
-      flow_id: beginProj.flow_id,
-      type: "org_form_submitted",
-      payload: { org_name: "" },
-    });
+    const { status, body } = await postEvent(
+      active.app,
+      { type: "org_form_submitted", payload: { org_name: "" } },
+      { "X-User-Id": "u2" },
+    );
 
     expect(status).toBe(200);
     expect(body.state).toBe("needs_org");

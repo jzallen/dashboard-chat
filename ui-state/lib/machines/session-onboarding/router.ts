@@ -105,16 +105,16 @@ export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
 
 /**
  * The /event request DTO — the wire vocabulary an already-running flow accepts:
- * the target `flow_id`, an optional `machine` name (the LEAF-2 legacy alias is
- * canonicalized downstream), the event `type`, and an open `payload` carried
- * through to the actor. Mirrors `beginRequestSchema`: a parse failure → 400 with
- * `issues`, replacing the hand-rolled `if (!flow_id || !type)` presence check
- * with `.min(1)` (the same empty-is-missing contract). Per OQ-E3 the schema
- * grows INCREMENTALLY — Slice 1 validates presence only; later slices add
- * `tag` / `org_name` well-formedness at this same boundary.
+ * an optional `machine` name (the LEAF-2 legacy alias is canonicalized
+ * downstream), the event `type`, and an open `payload` carried through to the
+ * actor. The target `flow_id` is NOT a wire field (ADR-040): it is derived
+ * server-side from the route's machine + the verified principal, so the client
+ * supplies only what it actually knows. A parse failure → 400 with `issues`;
+ * `type` is the sole remaining required field (`.min(1)` keeps the
+ * empty-is-missing contract). Per OQ-E3 the schema grows INCREMENTALLY — later
+ * slices add `tag` / `org_name` well-formedness at this same boundary.
  */
 const eventRequestSchema = z.object({
-  flow_id: z.string().min(1),
   machine: z.string().optional(),
   type: z.string().min(1),
   payload: z.record(z.unknown()).optional(),
@@ -126,16 +126,18 @@ const eventRequestSchema = z.object({
  * FUNCTION, not a command class — `/event` forwards one event to an
  * already-running actor and has no orchestration to justify a class, D-E1). The
  * structural analogue of `/begin`'s command construction: the wire `machine`
- * alias defaults to the canonical machine name. Identity has already been
- * corroborated against the verified principal by the caller before this runs.
+ * alias defaults to the canonical machine name. The `flow_id` is supplied by
+ * the caller — derived from the verified principal, never read from the wire
+ * body.
  */
 function translateWireEvent(
   event: z.infer<typeof eventRequestSchema>,
+  flowId: string,
   correlationId: string,
 ): SendEventInput {
   return {
     machine: event.machine ?? SESSION_ONBOARDING_MACHINE,
-    flow_id: event.flow_id,
+    flow_id: flowId,
     type: event.type,
     payload: event.payload ?? {},
     correlation_id: correlationId,
@@ -162,10 +164,12 @@ function translateWireEvent(
  * its verdict decides whether the body's `force_reissue_failures` count is
  * threaded through to drive `getOrgAndReissue`'s attempt-vs-budget path.
  *
- * `/event` closed-by-default-gates the `__force_failure__` harness event (403
- * when the gate is disabled) so production cannot bypass real
- * auth-flow logic; a legacy `login-and-org-setup` `machine` name is canonicalized
- * by the orchestrator's LEAF-2 alias map.
+ * `/event` derives the target flow_id from the verified principal + this
+ * route's machine (ADR-040) — the client never sends `flow_id`, so an event
+ * can only ever reach the caller's own flow. It closed-by-default-gates the
+ * `__force_failure__` harness event (403 when the gate is disabled) so
+ * production cannot bypass real auth-flow logic; a legacy `login-and-org-setup`
+ * `machine` name is canonicalized by the orchestrator's LEAF-2 alias map.
  *
  * `/open-deep-link` is the HTTP edge where route params meet the JWT:
  * `resolveActiveScope` runs here (identity from the auth-proxy headers — in dev
@@ -257,38 +261,24 @@ export function buildSessionOnboardingRouter(
     }
     const event = parsed.data;
 
+    // Flow identity is DERIVED, never accepted (ADR-040): the target flow is
+    // always the verified principal's own flow for this route's machine —
+    // `session-onboarding:<X-User-Id>`. The client no longer sends a `flow_id`,
+    // so addressing another principal's actor is structurally impossible and
+    // the former cross-principal 403 guard is gone as dead code. The string is
+    // byte-identical to what /begin + the orchestrator key the actor by.
+    const flowId = `${SESSION_ONBOARDING_MACHINE}:${c.get("userId")}`;
+
     // Structured audit of the inbound event — the /event analogue of /begin's
     // `session_onboarding.org_claim` log (event type + verified principal +
-    // target flow + correlation). Identity is logged for traceability only;
-    // it is not yet enforced here (the cross-principal guard lands in Slice 5).
+    // derived flow + correlation).
     logTransition({
       event: "session_onboarding.event_received",
       correlation_id: correlationId,
       principal_id: c.get("userId") || null,
-      flow_id: event.flow_id,
+      flow_id: flowId,
       event_type: event.type,
     });
-
-    // Cross-principal guard (D-E3, OQ-E1 ENFORCE): the aggregate identity is the
-    // verified principal's own flow, never a raw body claim (the same L4 ACL
-    // rule /begin enforces). When the request carries a verified principal
-    // (X-User-Id), the body `flow_id` MUST be the flow that principal owns; a
-    // mismatch is rejected at the boundary with 403 before any event can reach
-    // another principal's actor. A request without a verified principal falls
-    // through unchanged — there is no principal to corroborate the flow against.
-    const principalId = c.get("userId");
-    if (principalId) {
-      const ownFlowId = `${SESSION_ONBOARDING_MACHINE}:${principalId}`;
-      if (event.flow_id !== ownFlowId) {
-        return c.json(
-          {
-            error: "forbidden",
-            reason: "flow_id does not belong to the verified principal",
-          },
-          403,
-        );
-      }
-    }
 
     if (event.type === "__force_failure__") {
       const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
@@ -351,7 +341,7 @@ export function buildSessionOnboardingRouter(
     }
 
     const result = await flowOrchestrator.send(
-      translateWireEvent(event, correlationId),
+      translateWireEvent(event, flowId, correlationId),
     );
     return serializeResult(c, result, "event_failed");
   });
