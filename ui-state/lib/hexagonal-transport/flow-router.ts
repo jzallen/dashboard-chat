@@ -4,7 +4,7 @@
 //
 //   - this substrate — the machine-agnostic routes (`/freeze`, `/thaw`,
 //     `/projection`, `/projection/stream`) + the shared HTTP helpers
-//     (`resultToJson`, `cryptoRandomId`, `freezeThawHandler`);
+//     (`resultToJson`, `requestIdMiddleware`, `freezeThawHandler`);
 //   - per-machine `router.ts` files at `ui-state/lib/machines/<machine>/
 //     router.ts` — each builds a Hono router with its `/begin`, `/event`,
 //     `/open-deep-link` handlers + calls `mountUniformFlowRoutes()` to
@@ -24,6 +24,7 @@
 
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import type { Context, Env, Hono } from "hono";
+import { requestId } from "hono/request-id";
 
 import { errorMessage,type Result } from "../flow-result.ts";
 import type { FlowOrchestrator } from "../orchestrator.ts";
@@ -50,10 +51,21 @@ export function resultToJson(
   return c.json({ error: fallbackError, message: result.error.message }, 500);
 }
 
-/** Hono's runtime exposes globalThis.crypto; randomUUID is in Node 19+. */
-export function cryptoRandomId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `corr-${Date.now()}`;
-}
+/**
+ * The single request-id minting policy for every ui-state flow app
+ * (research: docs/research/hono-request-id-middleware.md). Hono's first-party
+ * middleware honors an inbound `X-Request-Id` header when present, mints a UUID
+ * otherwise, exposes it via `c.get("requestId")`, and echoes it on the
+ * response. Registered once at each composition root, it replaces the formerly
+ * ~10 inline `?? cryptoRandomId()` mint sites — so `/begin` and `/event` of a
+ * request no longer mint divergent ids on a header-less call. `globalThis
+ * .crypto` exposes `randomUUID` on Node 19+; `req-<epoch>` is the crypto-less
+ * fallback (parity with the retired `cryptoRandomId`).
+ */
+export const requestIdMiddleware = requestId({
+  headerName: "X-Request-Id",
+  generator: () => globalThis.crypto?.randomUUID?.() ?? `req-${Date.now()}`,
+});
 
 /**
  * Cross-machine FREEZE / THAW test-driving endpoint factory (US-005 /
@@ -73,8 +85,7 @@ export function freezeThawHandler(
   kind: "freeze" | "thaw",
 ) {
   return async (c: Context) => {
-    const correlation_id =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    const correlation_id = c.get("requestId");
     let body: { principal_id?: string; reason?: "thaw" | "abandoned" };
     try {
       body = (await c.req.json()) as typeof body;

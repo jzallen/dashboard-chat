@@ -33,10 +33,7 @@ import { z } from "zod";
 import type { Config } from "../../../config.ts";
 import type { ResolveActiveScope } from "../../active-scope.ts";
 import type { Result } from "../../flow-result.ts";
-import {
-  cryptoRandomId,
-  mountUniformFlowRoutes,
-} from "../../hexagonal-transport/flow-router.ts";
+import { mountUniformFlowRoutes } from "../../hexagonal-transport/flow-router.ts";
 import type {
   BeginFlowOrchestrator,
   FlowOrchestrator,
@@ -244,8 +241,7 @@ export function buildSessionOnboardingRouter(
   });
 
   router.post("/event", async (c) => {
-    const correlationId =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    const correlationId = c.get("requestId");
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
@@ -347,8 +343,7 @@ export function buildSessionOnboardingRouter(
   });
 
   router.post("/open-deep-link", async (c) => {
-    const correlationId =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    const correlationId = c.get("requestId");
     let body: {
       route?: {
         org?: string;

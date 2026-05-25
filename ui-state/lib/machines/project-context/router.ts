@@ -39,8 +39,8 @@ import { Hono } from "hono";
 
 import { resolveActiveScope,type ResourceType } from "../../active-scope.ts";
 import {
-  cryptoRandomId,
   mountUniformFlowRoutes,
+  requestIdMiddleware,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
@@ -94,10 +94,13 @@ export function buildProjectContextRouter(
   wireName: string,
 ): Hono {
   const router = new Hono();
+  // Centralized request-id minting — honor an inbound X-Request-Id, mint
+  // otherwise. One registration replaces the per-handler inline mint sites;
+  // handlers read the id via c.get("requestId").
+  router.use("*", requestIdMiddleware);
 
   router.post("/begin", async (c) => {
-    const correlation_id =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    const correlation_id = c.get("requestId");
     let body: {
       persona_display_name?: string;
       principal_id?: string;
@@ -156,8 +159,7 @@ export function buildProjectContextRouter(
   });
 
   router.post("/event", async (c) => {
-    const correlation_id =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    const correlation_id = c.get("requestId");
     let body: {
       type?: string;
       payload?: Record<string, unknown>;
@@ -232,8 +234,7 @@ export function buildProjectContextRouter(
   // appends a `deep_link_opened` (or `scope_access_denied`) event so
   // subsequent projection reads observe the same authoritative scope.
   router.post("/open-deep-link", async (c) => {
-    const correlation_id =
-      c.req.header("X-Correlation-Id") ?? cryptoRandomId();
+    const correlation_id = c.get("requestId");
     let body: {
       principal_id?: string;
       route?: {

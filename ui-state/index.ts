@@ -3,7 +3,10 @@ import { type Context, Hono } from "hono";
 
 import { type Config, loadConfig } from "./config.ts";
 import { resolveActiveScope } from "./lib/active-scope.ts";
-import { resultToJson } from "./lib/hexagonal-transport/flow-router.ts";
+import {
+  requestIdMiddleware,
+  resultToJson,
+} from "./lib/hexagonal-transport/flow-router.ts";
 import {
   buildSessionOnboardingRouter,
   type SessionOnboardingRouterContext,
@@ -14,15 +17,6 @@ import {
   FlowOrchestrator,
 } from "./lib/orchestrator.ts";
 import { type FlowEventLog, selectFlowEventLog } from "./lib/persistence/redis.ts";
-
-/**
- * Mint a reference code — the support-facing trace handle a flow surfaces to
- * the user. Honored from the X-Correlation-Id ingress header when present,
- * generated otherwise.
- */
-function generateReferenceCode(): string {
-  return crypto.randomUUID();
-}
 
 /**
  * Best-effort JSON body deserialization for the boundary middleware. Returns
@@ -93,11 +87,14 @@ export function buildSessionOnboardingApp(opts: {
   const beginOrchestrator = new BeginFlowOrchestrator(eventLog, registry);
 
   const router = new Hono<SessionOnboardingRouterContext>();
+  // Centralized request-id minting (research: hono-request-id-middleware.md):
+  // honor an inbound X-Request-Id, mint otherwise. Registered first so the
+  // boundary middleware below — and every handler — reads one consistent id
+  // via c.get("requestId"). The support-facing `referenceCode` is now just
+  // that id under its user-facing name.
+  router.use("*", requestIdMiddleware);
   router.use("*", async (c, next) => {
-    c.set(
-      "referenceCode",
-      c.req.header("X-Correlation-Id") ?? generateReferenceCode(),
-    );
+    c.set("referenceCode", c.get("requestId"));
     c.set("userId", c.req.header("X-User-Id") ?? "");
     c.set("bearerToken", readBearerToken(c));
     // The verified org claim auth-proxy injects (FIX D1). Empty string when

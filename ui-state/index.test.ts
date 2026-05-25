@@ -730,3 +730,105 @@ describe("Slice 6: a malformed org submission is refused while the empty-name do
     ).toBe("empty");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Centralized request-id minting (research: hono-request-id-middleware.md)
+//
+// The id is minted ONCE per request by Hono's requestId() middleware at the
+// composition root: an inbound X-Request-Id is honored, else a fresh id is
+// minted. Both /begin (via referenceCode) and /event read that one id — so the
+// former begin/event divergence on a header-less request is gone. Observed two
+// ways: the response echoes X-Request-Id, and the structured audit log stamps
+// the same value as correlation_id.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Centralized request-id minting via requestId() middleware", () => {
+  function buildSpyScenario(): {
+    app: ReturnType<typeof buildSessionOnboardingApp>;
+    records: Record<string, unknown>[];
+  } {
+    const records: Record<string, unknown>[] = [];
+    const app = buildSessionOnboardingApp({
+      eventLog: createNoopFlowEventLog(),
+      config: makeTestConfig(),
+      requestClient: okFetch(),
+      logTransition: (r) => records.push(r),
+    });
+    return { app, records };
+  }
+
+  it("honors an inbound X-Request-Id across both /begin and /event", async () => {
+    const { app, records } = buildSpyScenario();
+    const inbound = "inbound-req-id-123";
+
+    const beginRes = await app.fetch(
+      new Request("http://t/flow/session-onboarding/begin", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-User-Id": "u2",
+          "X-Request-Id": inbound,
+          authorization: "Bearer tok-2",
+        },
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(beginRes.status).toBe(200);
+    // The middleware echoes the honored id onto the response.
+    expect(beginRes.headers.get("x-request-id")).toBe(inbound);
+
+    const eventRes = await app.fetch(
+      new Request("http://t/flow/session-onboarding/event", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-User-Id": "u2",
+          "X-Request-Id": inbound,
+        },
+        body: JSON.stringify({
+          type: "org_form_submitted",
+          payload: { org_name: "Acme Data" },
+        }),
+      }),
+    );
+    expect(eventRes.status).toBe(200);
+    expect(eventRes.headers.get("x-request-id")).toBe(inbound);
+
+    // Both handlers stamped the SAME inbound id onto their audit logs — the
+    // begin/event consistency the centralization guarantees.
+    const orgClaim = records.find(
+      (r) => r.event === "session_onboarding.org_claim",
+    );
+    const eventReceived = records.find(
+      (r) => r.event === "session_onboarding.event_received",
+    );
+    expect(orgClaim?.correlation_id).toBe(inbound);
+    expect(eventReceived?.correlation_id).toBe(inbound);
+  });
+
+  it("mints a request id when no inbound header is present", async () => {
+    const { app, records } = buildSpyScenario();
+
+    const res = await app.fetch(
+      new Request("http://t/flow/session-onboarding/begin", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-User-Id": "u2",
+          authorization: "Bearer tok-2",
+        },
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const minted = res.headers.get("x-request-id");
+    expect(minted).toBeTruthy();
+    expect(minted).not.toBe("");
+
+    // The handler read the same minted id the middleware echoed — one source.
+    const orgClaim = records.find(
+      (r) => r.event === "session_onboarding.org_claim",
+    );
+    expect(orgClaim?.correlation_id).toBe(minted);
+  });
+});
