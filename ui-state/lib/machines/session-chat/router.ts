@@ -111,7 +111,6 @@ export function buildSessionChatRouter(
     const correlation_id =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
     let body: {
-      flow_id?: string;
       type?: string;
       payload?: Record<string, unknown>;
     };
@@ -120,9 +119,12 @@ export function buildSessionChatRouter(
     } catch {
       return c.json({ error: "invalid_request" }, 400);
     }
-    if (!body.flow_id || !body.type) {
-      return c.json({ error: "flow_id and type required" }, 400);
+    if (!body.type) {
+      return c.json({ error: "type required" }, 400);
     }
+    // flow_id is derived from the verified principal + this route's machine
+    // (ADR-040), never accepted from the body.
+    const flow_id = `${wireName}:${c.req.header("X-User-Id") ?? ""}`;
 
     // J-002 force-create-session-failure knob — header transport. The
     // X-Force-Create-Session-Failure wire header is unchanged; the gate
@@ -163,7 +165,7 @@ export function buildSessionChatRouter(
 
     const result = await orchestrator.send({
       machine: wireName,
-      flow_id: body.flow_id,
+      flow_id,
       type: body.type,
       payload: body.payload ?? {},
       correlation_id,
@@ -181,7 +183,6 @@ export function buildSessionChatRouter(
     const correlation_id =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
     let body: {
-      flow_id?: string;
       route?: {
         org?: string;
         project?: string;
@@ -197,12 +198,11 @@ export function buildSessionChatRouter(
       return c.json({ error: "invalid_request" }, 400);
     }
 
-    if (!body.flow_id) {
-      return c.json({ error: "flow_id required" }, 400);
-    }
-
     const principalId = c.req.header("X-User-Id") ?? "";
     const orgId = c.req.header("X-Org-Id") ?? null;
+    // flow_id is derived from the verified principal (ADR-040), never accepted
+    // from the body.
+    const flowId = `${wireName}:${principalId}`;
 
     const route = body.route ?? {};
     const resolution = resolveActiveScope(
@@ -217,7 +217,7 @@ export function buildSessionChatRouter(
     if (!resolution.ok) {
       const result = await orchestrator.appendDeepLinkEvents({
         machine: wireName,
-        flow_id: body.flow_id,
+        flow_id: flowId,
         correlation_id,
         events: [
           {
@@ -231,7 +231,7 @@ export function buildSessionChatRouter(
 
     const result = await orchestrator.appendDeepLinkEvents({
       machine: wireName,
-      flow_id: body.flow_id,
+      flow_id: flowId,
       correlation_id,
       events: [
         {

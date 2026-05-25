@@ -159,7 +159,6 @@ export function buildProjectContextRouter(
     const correlation_id =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
     let body: {
-      flow_id?: string;
       type?: string;
       payload?: Record<string, unknown>;
     };
@@ -168,9 +167,12 @@ export function buildProjectContextRouter(
     } catch {
       return c.json({ error: "invalid_request" }, 400);
     }
-    if (!body.flow_id || !body.type) {
-      return c.json({ error: "flow_id and type required" }, 400);
+    if (!body.type) {
+      return c.json({ error: "type required" }, 400);
     }
+    // flow_id is derived from the verified principal + this route's machine
+    // (ADR-040), never accepted from the body.
+    const flow_id = `${wireName}:${c.req.header("X-User-Id") ?? ""}`;
 
     // J-002 force-create-project-failure knob — header transport. The wire
     // signal (X-Force-Create-Project-Failure) is unchanged; the gate
@@ -212,7 +214,7 @@ export function buildProjectContextRouter(
 
     const result = await orchestrator.send({
       machine: wireName,
-      flow_id: body.flow_id,
+      flow_id,
       type: body.type,
       payload: body.payload ?? {},
       correlation_id,
@@ -233,7 +235,6 @@ export function buildProjectContextRouter(
     const correlation_id =
       c.req.header("X-Correlation-Id") ?? cryptoRandomId();
     let body: {
-      flow_id?: string;
       principal_id?: string;
       route?: {
         org?: string;
@@ -285,8 +286,9 @@ export function buildProjectContextRouter(
       if (!spawn.ok) {
         return resultToJson(c, spawn, "open_deep_link_failed");
       }
-      // Forward open_deep_link to the J-002 actor.
-      const flowId = body.flow_id ?? `${wireName}:${principalId}`;
+      // Forward open_deep_link to the J-002 actor. flow_id is derived from the
+      // verified principal (ADR-040), never accepted from the body.
+      const flowId = `${wireName}:${principalId}`;
       const payload: Record<string, unknown> = {};
       if (body.intent_project_id !== undefined)
         payload.intent_project_id = body.intent_project_id;
@@ -307,14 +309,13 @@ export function buildProjectContextRouter(
     }
 
     // ─── Legacy route-shaped deep link (J-001 / ScopeResolver path) ────
-    if (!body.flow_id) {
-      return c.json({ error: "flow_id required" }, 400);
-    }
-
     // The auth-proxy injects identity headers. In dev mode X-Org-Id is
     // "dev-org-001"; in prod it's the verified JWT's org_id claim.
     const principalId = c.req.header("X-User-Id") ?? "";
     const orgId = c.req.header("X-Org-Id") ?? null;
+    // flow_id is derived from the verified principal (ADR-040), never accepted
+    // from the body.
+    const flowId = `${wireName}:${principalId}`;
 
     const route = body.route ?? {};
     const resolution = resolveActiveScope(
@@ -332,7 +333,7 @@ export function buildProjectContextRouter(
       // `access_denied` and `scope_resolution_error.reason` names the cause.
       const result = await orchestrator.appendDeepLinkEvents({
         machine: wireName,
-        flow_id: body.flow_id,
+        flow_id: flowId,
         correlation_id,
         events: [
           {
@@ -350,7 +351,7 @@ export function buildProjectContextRouter(
     // agent can observe.
     const result = await orchestrator.appendDeepLinkEvents({
       machine: wireName,
-      flow_id: body.flow_id,
+      flow_id: flowId,
       correlation_id,
       events: [
         {
