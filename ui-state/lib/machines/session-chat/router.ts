@@ -249,7 +249,7 @@ export function buildSessionChatRouter(
     return resultToJson(c, result, "open_deep_link_failed");
   });
 
-  mountUniformFlowRoutes(router, orchestrator);
+  mountUniformFlowRoutes(router, orchestrator, wireName);
 
   return router;
 }

@@ -428,7 +428,7 @@ export function buildSessionOnboardingRouter(
     return serializeResult(c, result, "open_deep_link_failed");
   });
 
-  mountUniformFlowRoutes(router, flowOrchestrator);
+  mountUniformFlowRoutes(router, flowOrchestrator, SESSION_ONBOARDING_MACHINE);
 
   return router;
 }

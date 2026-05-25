@@ -161,6 +161,27 @@ async function postEvent(
 }
 
 /**
+ * Read a flow's projection through the substrate's GET /projection route.
+ * Post-ADR-040 the route DERIVES the flow_id from the verified `X-User-Id`
+ * header + the route's machine — it no longer accepts a `?flow_id=` query
+ * param. A read therefore names its principal by header, exactly as the real
+ * auth-proxy ingress injects it; the principal's own flow is the only one
+ * addressable.
+ */
+async function readProjection(
+  app: Scenario["app"],
+  userId: string,
+): Promise<BeginResult> {
+  const res = await app.fetch(
+    new Request("http://t/flow/session-onboarding/projection", {
+      method: "GET",
+      headers: { "X-User-Id": userId },
+    }),
+  );
+  return (await res.json()) as BeginResult;
+}
+
+/**
  * Enable / disable the failure-simulation gate for the `__force_failure__`
  * and `force_reissue_failures` harness side-channels (ADR-035).
  *
@@ -546,13 +567,7 @@ describe("Slice 3: the forced-failure side-channel is gated unless the failure-s
     expect(status).toBe(403);
     expect(String(body.error)).toMatch(/failure-simulation/i);
     // The flow is untouched — no forced failure reached the actor.
-    const stillNeedsOrg = await active.app.fetch(
-      new Request(
-        `http://t/flow/session-onboarding/projection?flow_id=${encodeURIComponent(beginProj.flow_id)}`,
-        { method: "GET" },
-      ),
-    );
-    const proj = (await stillNeedsOrg.json()) as BeginResult;
+    const proj = await readProjection(active.app, "u2");
     expect(proj.state).toBe("needs_org");
   });
 
@@ -599,13 +614,7 @@ describe("Slice 4: a forced failure naming an unrecognized cause is refused at t
 
     // The projection is unchanged — the malformed forced failure never reached
     // the actor.
-    const after = await active.app.fetch(
-      new Request(
-        `http://t/flow/session-onboarding/projection?flow_id=${encodeURIComponent(beginProj.flow_id)}`,
-        { method: "GET" },
-      ),
-    );
-    const proj = (await after.json()) as BeginResult;
+    const proj = await readProjection(active.app, "u2");
     expect(proj.state).toBe("needs_org");
     expect(proj.context.underlying_cause_tag).toBeNull();
   });
@@ -639,13 +648,7 @@ describe("Slice 5: an event is accepted only for the verified principal's own fl
     expect(status).toBe(403);
 
     // No event reached u9's flow — u2's own flow is also untouched.
-    const after = await active.app.fetch(
-      new Request(
-        `http://t/flow/session-onboarding/projection?flow_id=${encodeURIComponent(beginProj.flow_id)}`,
-        { method: "GET" },
-      ),
-    );
-    const proj = (await after.json()) as BeginResult;
+    const proj = await readProjection(active.app, "u2");
     expect(proj.state).toBe("needs_org");
   });
 
@@ -692,13 +695,7 @@ describe("Slice 6: a malformed org submission is refused while the empty-name do
     expect(String(body.error)).toMatch(/invalid_request/);
 
     // The malformed command never reached the actor — the flow is unchanged.
-    const after = await active.app.fetch(
-      new Request(
-        `http://t/flow/session-onboarding/projection?flow_id=${encodeURIComponent(beginProj.flow_id)}`,
-        { method: "GET" },
-      ),
-    );
-    const proj = (await after.json()) as BeginResult;
+    const proj = await readProjection(active.app, "u2");
     expect(proj.state).toBe("needs_org");
   });
 

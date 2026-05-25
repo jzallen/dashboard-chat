@@ -126,10 +126,19 @@ export function freezeThawHandler(
  * Attach the strategy-agnostic flow-router routes to `router`. These four
  * endpoints have ZERO per-machine branches today and are pure
  * `orchestrator.*` calls — every per-machine router mounts them
- * identically. The `wireName` argument is unused here but kept on the
- * signature so the substrate can grow per-machine substitution points
- * later without touching callers; for now it documents which mount this
- * substrate is sitting under.
+ * identically.
+ *
+ * `machineName` is the canonical flow-id head segment for the machine this
+ * substrate is mounted under (ADR-040). The read routes DERIVE the target
+ * flow_id as `${machineName}:${verified-principal}` from the auth-proxy
+ * `X-User-Id` header instead of accepting a client-supplied `?flow_id=`
+ * query param. Flow identity is `machine:principal` — both halves of which
+ * the server already knows (the route's machine + the verified principal) —
+ * so a client `flow_id` carried ZERO information and was a leaky abstraction
+ * (ADR-040). `freezeThawHandler` likewise derives the broadcast origin from
+ * `X-User-Id`. An absent principal derives the `${machineName}:` head whose
+ * empty event log folds to the anonymous projection — preserving the prior
+ * cold-read semantics without a client-supplied flow_id.
  *
  *   POST /freeze              — cross-machine FREEZE broadcast (US-005)
  *   POST /thaw                — cross-machine THAW broadcast (US-005)
@@ -139,15 +148,13 @@ export function freezeThawHandler(
 export function mountUniformFlowRoutes<E extends Env>(
   router: Hono<E>,
   orchestrator: FlowOrchestrator,
+  machineName: string,
 ): void {
   router.post("/freeze", freezeThawHandler(orchestrator, "freeze"));
   router.post("/thaw", freezeThawHandler(orchestrator, "thaw"));
 
   router.get("/projection", async (c) => {
-    const flow_id = c.req.query("flow_id");
-    if (!flow_id) {
-      return c.json({ error: "flow_id required" }, 400);
-    }
+    const flow_id = `${machineName}:${c.req.header("X-User-Id") ?? ""}`;
     const result = await orchestrator.getProjection(flow_id);
     if (!result.ok) {
       return c.json(
@@ -165,10 +172,7 @@ export function mountUniformFlowRoutes<E extends Env>(
   // reconnect on close. The reverse-proxy must NOT buffer this response (the
   // `X-Accel-Buffering: no` header is the canonical nginx hint).
   router.get("/projection/stream", async (c) => {
-    const flow_id = c.req.query("flow_id");
-    if (!flow_id) {
-      return c.json({ error: "flow_id required" }, 400);
-    }
+    const flow_id = `${machineName}:${c.req.header("X-User-Id") ?? ""}`;
     const sinceParam = c.req.query("since") ?? "$";
     const budgetMsParam = c.req.query("budget_ms");
     const budgetMs = Math.min(
