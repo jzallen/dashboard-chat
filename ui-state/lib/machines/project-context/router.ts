@@ -37,7 +37,7 @@
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { Hono } from "hono";
 
-import { resolveActiveScope,type ResourceType } from "../../active-scope.ts";
+import { resolveActiveScope, type ResourceType } from "../../active-scope.ts";
 import { FlowId } from "../../flow-id.ts";
 import {
   mountUniformFlowRoutes,
@@ -150,8 +150,7 @@ export function buildProjectContextRouter(
       }
     }
     const result = await orchestrator.beginIfNotStarted({
-      machine: wireName,
-      principal_id,
+      flowId: FlowId.of(wireName, principal_id),
       request_id,
       org_id: orgId,
       user_first_name: firstName,
@@ -270,8 +269,7 @@ export function buildProjectContextRouter(
       body.intent_session_id !== undefined ||
       body.intent_resource_id !== undefined;
     if (isProjectFlowDeepLinkIntent) {
-      const principalId =
-        c.req.header("X-User-Id") ?? body.principal_id ?? "";
+      const principalId = c.req.header("X-User-Id") ?? body.principal_id ?? "";
       if (!principalId) {
         return c.json({ error: "principal_id required" }, 400);
       }
@@ -280,8 +278,7 @@ export function buildProjectContextRouter(
       const firstName = (userEmail.split("@")[0] || "").trim() || null;
       // Ensure J-002 is spawned; idempotent.
       const spawn = await orchestrator.beginIfNotStarted({
-        machine: wireName,
-        principal_id: principalId,
+        flowId: FlowId.of(wireName, principalId),
         request_id,
         org_id: orgId,
         user_first_name: firstName ?? "",

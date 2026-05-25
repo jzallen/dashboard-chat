@@ -72,7 +72,10 @@ function projectContextDeps(
   );
   return {
     resolveInitialScope,
-    createProject: fromPromise(async () => ({ id: "proj-A", name: "Project A" })),
+    createProject: fromPromise(async () => ({
+      id: "proj-A",
+      name: "Project A",
+    })),
     switchProject,
   };
 }
@@ -98,8 +101,7 @@ async function buildSettledFlow(): Promise<FlowOrchestrator> {
   );
   const initial = unwrap(
     await orch.beginIfNotStarted({
-      machine: WIRE,
-      principal_id: PRINCIPAL,
+      flowId: FlowId.of(WIRE, PRINCIPAL),
       request_id: "R-begin",
       org_id: "dev-org-001",
       user_first_name: "Dev",

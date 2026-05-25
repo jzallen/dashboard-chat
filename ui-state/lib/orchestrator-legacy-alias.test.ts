@@ -65,8 +65,7 @@ async function beginLegacy(
   );
   const strategy = new SessionOnboardingBeginStrategy(
     {
-      machine: LEGACY_MACHINE,
-      principal_id: principal,
+      flowId: FlowId.of(LEGACY_MACHINE, principal),
       bearer_token: `tok-${principal}`,
       request_id: requestId,
       config: CONFIG,

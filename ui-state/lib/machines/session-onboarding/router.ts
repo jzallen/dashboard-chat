@@ -211,14 +211,13 @@ export function buildSessionOnboardingRouter(
     });
     const strategy = new SessionOnboardingBeginStrategy(
       {
-        machine: SESSION_ONBOARDING_MACHINE,
-        principal_id: request.userId,
+        flowId: FlowId.of(SESSION_ONBOARDING_MACHINE, request.userId),
         bearer_token: request.bearerToken,
         request_id: request.referenceCode,
         config,
         deps: { request_client: requestClient },
         force_reissue_failures: reissueFailuresAllowed
-          ? request.body.force_reissue_failures ?? null
+          ? (request.body.force_reissue_failures ?? null)
           : null,
       },
       eventLog,

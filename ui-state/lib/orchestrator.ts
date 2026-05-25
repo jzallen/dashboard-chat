@@ -291,8 +291,10 @@ FLOW_STRATEGY_REGISTRY.register(projectContextStrategy);
 FLOW_STRATEGY_REGISTRY.register(sessionChatStrategy);
 
 export interface BeginFlowInput {
-  machine: string;
-  principal_id: string;
+  /** The flow identity, constructed by the router from the route's
+   *  machine-constant + the verified principal — the single FlowId
+   *  construction site for begin (ADR-040). */
+  flowId: FlowId;
   /** The forwarded Bearer (L4) — re-verified against WorkOS /oauth/userinfo.
    *  Identity comes from the verified token, never a client body claim. The
    *  `[hasOrg]` org binding is loaded from the backend (`/api/orgs/me`, the org
@@ -326,7 +328,7 @@ export interface BeginFlowInput {
  * orchestrator owns actor tracking and the final projection.
  */
 export interface BeginStrategy {
-  readonly flow_id: string;
+  readonly flowId: FlowId;
   readonly actor: AnyActorRef;
   readonly requestId: string;
   begin(): Promise<void>;
@@ -350,8 +352,9 @@ interface FrozenFlowState {
 }
 
 export type BeginIfNotStartedInput = {
-  machine: string;
-  principal_id: string;
+  /** The flow identity, constructed by the caller (router or cross-machine
+   *  hook) from the target machine + the verified principal. */
+  flowId: FlowId;
   request_id: string;
   // `auth_ready` payload (project-context dispatch):
   org_id?: string;
@@ -466,11 +469,12 @@ export class FlowOrchestrator implements PumpContext {
   private async beginIfNotStartedCore(
     input: BeginIfNotStartedInput,
   ): Promise<FlowProjection> {
-    const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
-    const flow_id = `${input.machine}:${input.principal_id}`;
+    const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.flowId.machine);
+    const flow_id = FlowId.toKey(input.flowId);
+    const principal_id = input.flowId.principal_id;
 
     const isProjectReadyDispatch =
-      input.machine === SESSION_CHAT_WIRE_NAME &&
+      input.flowId.machine === SESSION_CHAT_WIRE_NAME &&
       typeof input.project_id === "string";
     const isAuthReadyDispatch =
       !isProjectReadyDispatch &&
@@ -509,8 +513,8 @@ export class FlowOrchestrator implements PumpContext {
           await waitForSettledState(actor);
           if (strategy.settleSpawn) {
             await strategy.settleSpawn(this, actor, {
-              machine: input.machine,
-              principal_id: input.principal_id,
+              machine: input.flowId.machine,
+              principal_id,
               request_id: input.request_id,
             });
           }
@@ -530,12 +534,12 @@ export class FlowOrchestrator implements PumpContext {
 
     const machine = strategy.buildMachine(this.deps, {
       request_id: input.request_id,
-      principal_id: input.principal_id,
+      principal_id,
     });
     const actor = createActor(machine, {
       input: {
         request_id: input.request_id,
-        principal_id: input.principal_id,
+        principal_id,
         org_id: input.org_id,
         user:
           input.user_first_name !== undefined
@@ -621,8 +625,8 @@ export class FlowOrchestrator implements PumpContext {
 
     if (strategy.settleSpawn) {
       await strategy.settleSpawn(this, actor, {
-        machine: input.machine,
-        principal_id: input.principal_id,
+        machine: input.flowId.machine,
+        principal_id,
         request_id: input.request_id,
       });
     }
@@ -633,7 +637,7 @@ export class FlowOrchestrator implements PumpContext {
     if (projectReadyHookParams) {
       await this.maybeFireProjectReady(
         flow_id,
-        input.principal_id,
+        principal_id,
         input.request_id,
         projectReadyHookParams,
       );
@@ -672,8 +676,7 @@ export class FlowOrchestrator implements PumpContext {
     if (!orgId || !projectId) return;
     try {
       await this.beginIfNotStartedCore({
-        machine: SESSION_CHAT_WIRE_NAME,
-        principal_id,
+        flowId: FlowId.of(SESSION_CHAT_WIRE_NAME, principal_id),
         request_id,
         org_id: orgId,
         project_id: projectId,
@@ -838,8 +841,7 @@ export class FlowOrchestrator implements PumpContext {
     if (loginSettleOutcome.authReady && this.deps.projectContextMachineDeps) {
       try {
         await this.beginIfNotStartedCore({
-          machine: PROJECT_CONTEXT_WIRE_NAME,
-          principal_id,
+          flowId: FlowId.of(PROJECT_CONTEXT_WIRE_NAME, principal_id),
           request_id: event.request_id,
           org_id: loginSettleOutcome.authReady.org_id,
           user_first_name: loginSettleOutcome.authReady.user_first_name,
@@ -1347,15 +1349,16 @@ export class BeginFlowOrchestrator {
 
   async begin(strategy: BeginStrategy): Promise<Result<FlowProjection>> {
     try {
-      // enter: clear any prior actor + tracking for this flow_id, then
-      // register the strategy's freshly-built actor.
-      this.registry.recycleActor(strategy.flow_id);
-      this.registry.resetFlowTracking(strategy.flow_id);
-      this.registry.trackActor(strategy.flow_id, strategy.actor);
+      // enter: clear any prior actor + tracking for this flow_id (bridged
+      // from the strategy's FlowId), then register the freshly-built actor.
+      const flow_id = FlowId.toKey(strategy.flowId);
+      this.registry.recycleActor(flow_id);
+      this.registry.resetFlowTracking(flow_id);
+      this.registry.trackActor(flow_id, strategy.actor);
       // body: the machine-specific begin sequence
       await strategy.begin();
       // exit: the freshly-built projection is the response
-      return ok(await this.projectionFor(strategy.flow_id, strategy.requestId));
+      return ok(await this.projectionFor(flow_id, strategy.requestId));
     } catch (e) {
       return toFlowError(e);
     }

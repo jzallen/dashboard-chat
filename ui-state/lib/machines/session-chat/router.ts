@@ -27,7 +27,7 @@
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { Hono } from "hono";
 
-import { resolveActiveScope,type ResourceType } from "../../active-scope.ts";
+import { resolveActiveScope, type ResourceType } from "../../active-scope.ts";
 import { FlowId } from "../../flow-id.ts";
 import {
   mountUniformFlowRoutes,
@@ -102,8 +102,7 @@ export function buildSessionChatRouter(
       (userEmail ? userEmail.split("@")[0] : "") ||
       "";
     const result = await orchestrator.beginIfNotStarted({
-      machine: wireName,
-      principal_id,
+      flowId: FlowId.of(wireName, principal_id),
       request_id,
       org_id: orgId,
       user_first_name: firstName,

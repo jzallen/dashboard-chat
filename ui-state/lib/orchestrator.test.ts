@@ -98,8 +98,7 @@ async function driveToReady(
   );
   const strategy = new SessionOnboardingBeginStrategy(
     {
-      machine: "session-onboarding",
-      principal_id: principal,
+      flowId: FlowId.of("session-onboarding", principal),
       bearer_token: `tok-${principal}`,
       request_id: requestId,
       config: CONFIG,
@@ -371,8 +370,7 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
     );
     const strategy = new SessionOnboardingBeginStrategy(
       {
-        machine: "session-onboarding",
-        principal_id: principal,
+        flowId: FlowId.of("session-onboarding", principal),
         bearer_token: "tok-returning",
         request_id: requestId,
         config: CONFIG,
@@ -409,9 +407,7 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
     // re-enters on the auth_ready event with the broadcast's org_id — so we
     // assert the broadcast value is among the captured inputs, not an exact
     // invoke count, which would couple to the spawn mechanism's internals.)
-    expect(
-      seenScopeInputs.map((i) => i.org_id),
-    ).toContain("org-returning");
+    expect(seenScopeInputs.map((i) => i.org_id)).toContain("org-returning");
 
     // Side effect 2: the spawned project-context projection carries the
     // first_name the broadcast forwarded (Maya Chen → "Maya").

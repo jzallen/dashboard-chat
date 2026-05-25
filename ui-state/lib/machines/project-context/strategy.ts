@@ -584,7 +584,9 @@ export const projectContextStrategy: FlowStrategy = {
    * machine), so this has none either → byte-identical for every machine.
    * The pump RETAINS the LEAF-1 `FLOW_STRATEGY_REGISTRY.resolve(machine)`
    * validation (UnknownMachineError → 404) and the FE projection-read
-   * (`parsePrincipal` + `projectionFor`) — both stay central (§3).
+   * (`projectionFor`) — both stay central (§3). The deep-link input still
+   * carries `machine` + a string `flow_id` (a deliberate, deferred
+   * deconfliation — not the send path).
    */
   async applyDeepLink(
     pump: PumpContext,

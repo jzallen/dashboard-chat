@@ -136,8 +136,7 @@ async function buildSessionActiveFlow(
   // session_list_loaded.
   unwrap(
     await orch.beginIfNotStarted({
-      machine: WIRE,
-      principal_id: PRINCIPAL,
+      flowId: FlowId.of(WIRE, PRINCIPAL),
       request_id: "R-spawn",
       org_id: "dev-org-001",
       project_id: "proj-q4",
@@ -186,7 +185,10 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
       await orch.send(
         FlowEvent.from(FlowId.fromKey(FLOW_ID), {
           type: "dataset_resolved_by_agent",
-          payload: { resource_id: "ds-patients-2025", resource_type: "dataset" },
+          payload: {
+            resource_id: "ds-patients-2025",
+            resource_type: "dataset",
+          },
           request_id: "R-attach",
         }),
       ),

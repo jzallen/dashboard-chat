@@ -248,7 +248,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
  *     session_started, no user state advances (OQ-2).
  */
 export class SessionOnboardingBeginStrategy implements BeginStrategy {
-  readonly flow_id: string;
+  readonly flowId: FlowId;
   readonly actor: AnyActorRef;
   readonly requestId: string;
   private readonly input: BeginFlowInput;
@@ -263,7 +263,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     this.input = input;
     this.eventLog = eventLog;
     this.logTransition = logTransition;
-    this.flow_id = `${input.machine}:${input.principal_id}`;
+    this.flowId = input.flowId;
     this.requestId = input.request_id;
     // Every actor is config/input-driven (no `.provide(...)`): the fetch-driven
     // actors (loadSession / createOrgAndReissue) read their I/O port from
@@ -272,7 +272,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     this.actor = createActor(machine, {
       input: {
         request_id: input.request_id,
-        principal_id: input.principal_id,
+        principal_id: input.flowId.principal_id,
         bearer_token: input.bearer_token,
         // Env config (workosUrl + backendUrl) for the re-verify + org-create
         // resolvers, sourced from the composition root — keeps the resolvers
@@ -290,7 +290,8 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
   }
 
   async begin(): Promise<void> {
-    const { input, flow_id, actor } = this;
+    const { input, flowId, actor } = this;
+    const flow_id = FlowId.toKey(flowId);
     const start = Date.now();
 
     await this.eventLog.reset(flow_id);
@@ -301,7 +302,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
       from_state: null,
       to_state: "verifying",
       request_id: input.request_id,
-      principal_id: input.principal_id,
+      principal_id: flowId.principal_id,
       duration_ms: 0,
     });
 
@@ -311,21 +312,20 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
 
     if (stateValue === "session_rejected") {
       const harvested = harvestSettledLoginState(actor);
-      const rejectedEvent: FlowEvent = {
-        ts: new Date().toISOString(),
+      const rejectedEvent = FlowEvent.from(flowId, {
         type: "session_rejected",
         payload: {
           reason: harvested.underlying_cause_tag ?? "session_rejected",
         },
         request_id: input.request_id,
-      };
+      });
       await this.eventLog.append(flow_id, rejectedEvent);
       this.logTransition({
         flow_id,
         from_state: "verifying",
         to_state: "session_rejected",
         request_id: input.request_id,
-        principal_id: input.principal_id,
+        principal_id: flowId.principal_id,
         duration_ms: Date.now() - start,
       });
       return;
@@ -342,8 +342,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     const org = harvested.org.id
       ? { id: harvested.org.id, name: harvested.org.name }
       : null;
-    const startedEvent: FlowEvent = {
-      ts: new Date().toISOString(),
+    const startedEvent = FlowEvent.from(flowId, {
       type: "session_started",
       payload: {
         user: {
@@ -354,14 +353,14 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         org,
       },
       request_id: input.request_id,
-    };
+    });
     await this.eventLog.append(flow_id, startedEvent);
     this.logTransition({
       flow_id,
       from_state: "verifying",
       to_state: stateValue,
       request_id: input.request_id,
-      principal_id: input.principal_id,
+      principal_id: flowId.principal_id,
       duration_ms: Date.now() - start,
     });
   }
