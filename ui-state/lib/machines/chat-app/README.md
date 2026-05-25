@@ -7,12 +7,17 @@ role and the first faithful implementation of ADR-028's "one root orchestrator
 actor mediating parent-ignorant children" (see
 [ADR-044](../../../../docs/decisions/adr-044-chatapp-coordinator-supersedes-orchestrator.md)).
 
-> **Status: Phase 1 — core only.** The machine is built and unit-tested in
-> isolation against FAKE children. It is **not** wired into `index.ts`/HTTP
-> routing, persistence, or the projection contract yet, and it runs ALONGSIDE
-> the orchestrator (which stays the live coordinator). Later phases wire the real
-> children (Phase 2), reconcile persistence (Phase 3), and swap the composition
-> root + delete the orchestrator (Phase 4).
+> **Status: Phase 2 — real children wired in-process.** The parent is wired to
+> the REAL `session-onboarding` / `project-context` / `session-chat` machines via
+> the composition root `createChatApp` ([`index.ts`](./index.ts)) and proven by
+> in-process integration tests ([`integration.test.ts`](./integration.test.ts)).
+> Still **no** HTTP/Redis/persistence boundaries: ChatApp is **not** wired into
+> `ui-state/index.ts`/HTTP routing or the projection contract, and it runs
+> ALONGSIDE the orchestrator (which stays the live coordinator). Phase 1's
+> isolated FAKE-children statechart tests ([`machine.test.ts`](./machine.test.ts)
+> + [`fakes.ts`](./fakes.ts)) still pass unchanged. Later phases reconcile
+> persistence (Phase 3) and swap the composition root + delete the orchestrator
+> (Phase 4).
 
 ## Two parallel regions
 
@@ -67,23 +72,40 @@ The three children are **logical actors** declared in `setup({ actors })` with
 minimal placeholders (`setup/actors.ts`) and swapped via
 `machine.provide({ actors })`:
 
-- **Phase 1** provides the FAKES in [`fakes.ts`](./fakes.ts) (test scope).
+- **Phase 1** provides the FAKES in [`fakes.ts`](./fakes.ts) (test scope) over
+  the bare `createChatAppMachine()`.
 - **Phase 2** provides the real `session-onboarding` / `project-context` /
-  `session-chat` machines.
+  `session-chat` machines through the composition root `createChatApp(deps)`
+  ([`index.ts`](./index.ts)).
 
 XState's `provide` is type-invariant in a child's context, so the swap site casts
 the provided machine to `ChatAppChildLogic` (a runtime no-op — the parent reads
 child readiness through the `onSnapshot` snapshot views in `setup/types.ts`, not
 the placeholder types).
 
+### Input / deps threading (Phase 2)
+
+The children's DI styles differ, and `createChatApp` honors both:
+
+- **session-onboarding** is config/input-driven — no construction deps. Its
+  WorkOS/backend URLs + `fetch` port + re-verify Bearer arrive per-instance on
+  `ChatAppInput` (`config` / `deps` / `bearer_token` / `force_reissue_failures`),
+  seeded write-once into `ChatAppContext` and projected into the child by the
+  **onboarding invoke `input:` mapper**.
+- **project-context** + **session-chat** inject their resolver actors at
+  construction (`ChatAppDeps.projectContext` / `.sessionChat`). Their invoke
+  `input:` mappers carry only the static `request_id` / `principal_id`; the
+  dynamic org/project arrive via the `auth_ready` / `project_ready` hand-offs.
+
 ## Layout
 
 ```
 chat-app/
-├── machine.ts        the statechart + the inline actions (writers + forwarders)
-├── index.ts          public barrel (createChatAppMachine + contract types)
-├── fakes.ts          TEST-ONLY fake children + createChatAppWithFakes()
-├── machine.test.ts   pure statechart unit tests
+├── machine.ts          the statechart + the inline actions (writers + forwarders)
+├── index.ts            barrel + composition root (createChatApp + createChatAppMachine + contract types)
+├── fakes.ts            TEST-ONLY fake children + createChatAppWithFakes()
+├── machine.test.ts     Phase-1 pure statechart unit tests (fake children)
+├── integration.test.ts Phase-2 in-process integration tests (real children, mocked ports)
 ├── README.md
 └── setup/
     ├── types.ts      context / events / input / hand-offs / snapshot views

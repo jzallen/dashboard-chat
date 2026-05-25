@@ -186,5 +186,9 @@ export function createChatAppWithFakes() {
   });
 }
 
-/** Convenience default input for tests. */
-export const TEST_INPUT: ChatAppInput = { request_id: "req-chat-app-test" };
+/** Convenience default input for tests. The fakes ignore the begin envelope
+ *  (no real I/O), but `principal_id` is now a required member of ChatAppInput. */
+export const TEST_INPUT: ChatAppInput = {
+  request_id: "req-chat-app-test",
+  principal_id: "dev-user-001",
+};

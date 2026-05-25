@@ -173,6 +173,12 @@ export function createChatAppMachine() {
     type: "parallel",
     context: ({ input }) => ({
       request_id: input.request_id,
+      // Begin envelope — write-once; threaded into each child's invoke input.
+      principal_id: input.principal_id,
+      bearer_token: input.bearer_token ?? "",
+      config: input.config ?? null,
+      deps: input.deps ?? null,
+      force_reissue_failures: input.force_reissue_failures ?? null,
       active_child_id: "session-onboarding",
       auth_handoff: null,
       project_handoff: null,
@@ -190,6 +196,19 @@ export function createChatAppMachine() {
               id: "session-onboarding",
               systemId: "session-onboarding",
               src: "onboarding",
+              // Begin envelope → the onboarding child's Input. Its resolvers read
+              // the WorkOS/backend URLs + fetch port from `config`/`deps`, the
+              // re-verify Bearer from `bearer_token`, and the forced-failure
+              // budget from `force_reissue_failures` (session-onboarding/setup/
+              // types.ts SessionOnboardingInput).
+              input: ({ context }) => ({
+                request_id: context.request_id,
+                principal_id: context.principal_id,
+                bearer_token: context.bearer_token,
+                config: context.config,
+                deps: context.deps,
+                force_reissue_failures: context.force_reissue_failures,
+              }),
               // Watch the onboarding child; advance on its own state value.
               onSnapshot: [
                 {
@@ -216,6 +235,15 @@ export function createChatAppMachine() {
               id: "project-context",
               systemId: "project-context",
               src: "projectContext",
+              // Static ids → the project-context child's Input. The dynamic
+              // org_id + identity arrive via the `auth_ready` hand-off (forwarded
+              // on this state's entry), so the input carries only the immutable
+              // request_id/principal_id (project-context's I/O ports are
+              // construction-time actors wired in ../index.ts).
+              input: ({ context }) => ({
+                request_id: context.request_id,
+                principal_id: context.principal_id,
+              }),
               onSnapshot: [
                 // First selection → advance project_context → chat (chat's entry
                 // forwards project_ready).
@@ -246,6 +274,15 @@ export function createChatAppMachine() {
                   id: "session-chat",
                   systemId: "session-chat",
                   src: "sessionChat",
+                  // Static ids → the session-chat child's Input. The dynamic
+                  // org_id + project arrive via the `project_ready` hand-off
+                  // (forwarded on chat entry), so the input carries only the
+                  // immutable request_id/principal_id (session-chat's I/O ports
+                  // are construction-time actors wired in ../index.ts).
+                  input: ({ context }) => ({
+                    request_id: context.request_id,
+                    principal_id: context.principal_id,
+                  }),
                 },
               },
             },

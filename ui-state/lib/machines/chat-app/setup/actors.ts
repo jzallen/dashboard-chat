@@ -24,14 +24,20 @@
 
 import { setup } from "xstate";
 
-import type { ChatAppChildEvent } from "./types.ts";
+import type { ChatAppChildEvent, ChatAppChildInput } from "./types.ts";
 
 /** A do-nothing child. It accepts (and ignores) every event the parent may
- *  forward, and never leaves `idle`, so an un-provided ChatApp is inert rather
- *  than crashing. Never used in tests or production — always provided over. */
+ *  forward, never leaves `idle`, and declares the `ChatAppChildInput` superset
+ *  as its input type so the parent's three `invoke.input` mappers (machine.ts)
+ *  type-check against this slot (the placeholder is swapped for the real machine
+ *  via `.provide({ actors })`). Never used in tests or production — always
+ *  provided over. */
 function createPlaceholderChild() {
   return setup({
-    types: { events: {} as ChatAppChildEvent },
+    types: {
+      events: {} as ChatAppChildEvent,
+      input: {} as ChatAppChildInput,
+    },
   }).createMachine({
     id: "chat-app-child-placeholder",
     initial: "idle",

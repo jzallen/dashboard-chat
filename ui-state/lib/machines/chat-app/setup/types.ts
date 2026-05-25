@@ -12,6 +12,17 @@
 // (ADR-028): no child references another; only the parent watches each via
 // `onSnapshot` and forwards hand-offs. This file is type-only and imports
 // nothing from machine.ts, so there is no machine ↔ types cycle.
+//
+// Phase 2 wires the REAL children, so this file now also imports the two
+// I/O-contract types the onboarding child reads from its machine INPUT — the
+// env `Config` and the `SessionOnboardingDeps` fetch-port bundle (project-context
+// + session-chat take their I/O ports as construction-time actors instead, wired
+// in ../index.ts). These are type-only imports of a child's public contract, not
+// a machine importing another machine (ADR-028 stands — the parent is the
+// composition root for its children).
+
+import type { Config } from "../../../../config.ts";
+import type { SessionOnboardingDeps } from "../../session-onboarding/index.ts";
 
 /** The two lifecycle phases observable to a consumer, plus the terminal. */
 export type ChatAppLifecycle =
@@ -83,6 +94,31 @@ export type ChatAppChildEvent =
 
 export interface ChatAppContext {
   request_id: string;
+
+  // ── begin envelope (write-once; seeded from ChatAppInput, threaded into each
+  //    child's invoke `input:` mapper) ──
+  // The static per-request identity + I/O ports each child needs at construction.
+  // Per-flow DYNAMIC data still arrives via the hand-off events (org binding via
+  // `auth_ready`, project via `project_ready`); this envelope carries only the
+  // immutable ids/config/ports. NOTE: `config` + `deps` feed the ONBOARDING child
+  // (its resolvers read the WorkOS/backend URLs + fetch port from input);
+  // project-context + session-chat take their I/O ports as construction-time
+  // actors (wired in ../index.ts), so they read only `request_id`/`principal_id`
+  // from input.
+  /** The verified principal (auth-proxy X-User-Id) — every child's input. */
+  principal_id: string;
+  /** The forwarded Bearer the onboarding child re-verifies against WorkOS. */
+  bearer_token: string;
+  /** Env config (workosUrl/backendUrl + dev header fixture) for the onboarding
+   *  child's re-verify + org-create resolvers. Null in tests that stub I/O. */
+  config: Config | null;
+  /** The fetch I/O port (request_client) the onboarding child's resolvers call.
+   *  Mirrors `config`'s nullable + fail-fast pattern. Null in stubbed tests. */
+  deps: SessionOnboardingDeps | null;
+  /** Failure-simulation budget for the onboarding child's createOrgAndReissue.
+   *  Null ⇒ no forced failures. */
+  force_reissue_failures: number | null;
+
   /** Which child currently receives forwarded user intents — re-pointed on each
    *  lifecycle phase entry. The single intent router (ADR-028) needs this
    *  because forwarding is phase-scoped: onboarding while onboarding, etc. */
@@ -119,9 +155,50 @@ export type ChatAppEvent =
   | { type: "REAUTH_OK" }
   | { type: "REAUTH_FAILED" };
 
-/** Raw machine input (the begin envelope). */
+/** Raw machine input (the begin envelope). The composition root (../index.ts)
+ *  hands this to `createActor(createChatApp(deps), { input })`; the context
+ *  factory normalizes the optionals (defaulting `bearer_token`/`config`/`deps`/
+ *  `force_reissue_failures`), and the three invoke `input:` mappers project it
+ *  into each child's own Input. */
 export interface ChatAppInput {
   request_id: string;
+  /** The verified principal (auth-proxy X-User-Id). Required — every child needs it. */
+  principal_id: string;
+  /** The forwarded Bearer for the onboarding child's WorkOS re-verify. */
+  bearer_token?: string;
+  /** Env config for the onboarding child's resolvers (null ⇒ stubbed I/O). */
+  config?: Config | null;
+  /** The fetch I/O port for the onboarding child's resolvers (null ⇒ stubbed). */
+  deps?: SessionOnboardingDeps | null;
+  /** Failure-simulation budget for the onboarding child (null ⇒ none). */
+  force_reissue_failures?: number | null;
+}
+
+/**
+ * The structural SUPERSET of everything any child reads from its machine input.
+ * The parent's three invoke `input:` mappers (machine.ts) each return the slice
+ * their child needs; the placeholder children (./actors.ts) type their input as
+ * this superset so all three mappers type-check against the single placeholder
+ * input type (the placeholders are swapped for the real machines via
+ * `.provide({ actors })`, whose typing is invariant in a child's context, so this
+ * is the one place the threaded input shape is statically pinned).
+ */
+export interface ChatAppChildInput {
+  request_id: string;
+  principal_id: string;
+  // onboarding child:
+  bearer_token?: string;
+  config?: Config | null;
+  deps?: SessionOnboardingDeps | null;
+  force_reissue_failures?: number | null;
+  // project-context child (org_id/user also arrive via `auth_ready`):
+  org_id?: string;
+  user?: { first_name?: string };
+  deeplink_project_id?: string;
+  // session-chat child (org_id/project also arrive via `project_ready`):
+  project_id?: string;
+  project_name?: string;
+  deeplink_session_id?: string | null;
 }
 
 // ─────────────────── Snapshot views (read at onSnapshot) ───────────────────
