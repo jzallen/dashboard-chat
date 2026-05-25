@@ -173,8 +173,9 @@ export function buildProjectContextRouter(
       return c.json({ error: "type required" }, 400);
     }
     // The flow is addressed by this route's machine + the verified principal
-    // (ADR-040), never accepted from the body.
-    const flowId = FlowId.of(wireName, c.req.header("X-User-Id") ?? "");
+    // (ADR-040), never accepted from the body — the FlowEvent factory builds
+    // the owned FlowId.
+    const principalId = c.req.header("X-User-Id") ?? "";
 
     // J-002 force-create-project-failure knob — header transport. The wire
     // signal (X-Force-Create-Project-Failure) is unchanged; the gate
@@ -215,7 +216,7 @@ export function buildProjectContextRouter(
     }
 
     const result = await orchestrator.send(
-      FlowEvent.from(flowId, {
+      FlowEvent.create(wireName, principalId, {
         type: body.type,
         payload: body.payload,
         request_id,
@@ -287,8 +288,7 @@ export function buildProjectContextRouter(
       }
       // Forward open_deep_link to the J-002 actor. The flow is addressed by
       // this route's machine + the verified principal (ADR-040), never accepted
-      // from the body.
-      const flowId = FlowId.of(wireName, principalId);
+      // from the body — the FlowEvent factory builds the owned FlowId.
       const payload: Record<string, unknown> = {};
       if (body.intent_project_id !== undefined)
         payload.intent_project_id = body.intent_project_id;
@@ -299,7 +299,7 @@ export function buildProjectContextRouter(
       if (body.intent_resource_type !== undefined)
         payload.intent_resource_type = body.intent_resource_type;
       const result = await orchestrator.send(
-        FlowEvent.from(flowId, {
+        FlowEvent.create(wireName, principalId, {
           type: "open_deep_link",
           payload,
           request_id,

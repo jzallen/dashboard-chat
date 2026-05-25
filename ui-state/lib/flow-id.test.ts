@@ -1,19 +1,20 @@
-// Unit tests for the FlowId value object (R6 — the design note's
-// fromKey∘toKey round-trip + first-colon contract).
+// Unit tests for the FlowId value object (the design note's fromKey∘toKey
+// round-trip + first-colon contract), now a class: `of`/`fromKey` statics +
+// a `toKey()` instance method.
 //
 // FlowId is the single home of the `${machine}:${principal_id}` encoding the
-// actor map, the Redis key prefix, and projection.flow_id all share. These
-// pin the encoding contract so the orchestrator's bridge sites
-// (FlowId.toKey / FlowId.fromKey) stay byte-faithful to the old
+// actor map, the Redis key prefix, and projection.flow_id all share. These pin
+// the encoding contract so the begin path + the orchestrator's broadcast-loop
+// bridge sites (FlowId.fromKey / .toKey) stay byte-faithful to the old
 // `flow_id.split(":")` readers they replace.
 
 import { describe, expect, it } from "vitest";
 
 import { FlowId } from "./domain/flow-event.ts";
 
-describe("FlowId.toKey", () => {
+describe("FlowId#toKey", () => {
   it("encodes the pair as `${machine}:${principal_id}`", () => {
-    expect(FlowId.toKey(FlowId.of("session-onboarding", "user-x"))).toBe(
+    expect(FlowId.of("session-onboarding", "user-x").toKey()).toBe(
       "session-onboarding:user-x",
     );
   });
@@ -21,7 +22,7 @@ describe("FlowId.toKey", () => {
   it("preserves a legacy-alias machine segment verbatim (LEAF-2)", () => {
     // toKey() must reproduce the EXACT minted key — canonicalization stays at
     // resolve(), never at FlowId construction.
-    expect(FlowId.toKey(FlowId.of("login-and-org-setup", "user-x"))).toBe(
+    expect(FlowId.of("login-and-org-setup", "user-x").toKey()).toBe(
       "login-and-org-setup:user-x",
     );
   });
@@ -59,7 +60,8 @@ describe("FlowId round-trip (fromKey ∘ toKey)", () => {
     ["machine", "b:c"],
   ])("toKey then fromKey reproduces (%s, %s)", (machine, principal) => {
     const original = FlowId.of(machine, principal);
-    const roundTripped = FlowId.fromKey(FlowId.toKey(original));
-    expect(roundTripped).toEqual(original);
+    const roundTripped = FlowId.fromKey(original.toKey());
+    expect(roundTripped.machine).toBe(original.machine);
+    expect(roundTripped.principal_id).toBe(original.principal_id);
   });
 });

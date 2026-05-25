@@ -121,7 +121,7 @@ describe("freeze → queue → thaw → replay transparency (R3 characterization
     // A switch intent arrives WHILE frozen — queued in the replay buffer,
     // not dispatched to the actor yet.
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+      FlowEvent.createForFlow(FLOW_ID, {
         type: "switching_project_intent",
         payload: { new_project_id: "proj-B" },
         request_id: "R-switch",

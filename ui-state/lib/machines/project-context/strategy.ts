@@ -22,7 +22,7 @@
 import { type AnyActorRef } from "xstate";
 
 import type { ResourceType } from "../../domain/active-scope.ts";
-import { FlowEvent, FlowId } from "../../domain/flow-event.ts";
+import { FlowEvent } from "../../domain/flow-event.ts";
 import type {
   FlowStrategy,
   PumpContext,
@@ -153,7 +153,7 @@ export const projectContextStrategy: FlowStrategy = {
     // Initial event — marks the J-002 actor as started for projection consumers.
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "project_context_resolution_started",
         payload: {
           org_id: settledOrgId,
@@ -171,7 +171,7 @@ export const projectContextStrategy: FlowStrategy = {
     if (degradedIds.length > 0) {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "last_used_resolution_degraded",
           payload: {
             failed_project_ids: degradedIds,
@@ -186,7 +186,7 @@ export const projectContextStrategy: FlowStrategy = {
     if (stateValue === "no_projects") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "no_projects_displayed",
           payload: {
             org_id: settledOrgId,
@@ -198,7 +198,7 @@ export const projectContextStrategy: FlowStrategy = {
     } else if (stateValue === "project_selected") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "project_selected",
           payload: {
             org_id: settledOrgId,
@@ -217,7 +217,7 @@ export const projectContextStrategy: FlowStrategy = {
     } else if (stateValue === "scope_mismatch_terminal") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "scope_mismatch_displayed",
           payload: {
             org_id: settledOrgId,
@@ -270,7 +270,7 @@ export const projectContextStrategy: FlowStrategy = {
       ).context as { org: { id: string | null } };
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "switching_project_started",
           payload: {
             org_id: preSettleCtx.org.id ?? "",
@@ -404,7 +404,7 @@ export const projectContextStrategy: FlowStrategy = {
       };
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "deep_link_opened",
           payload: {
             scope: resolvedScope,
@@ -440,7 +440,7 @@ export const projectContextStrategy: FlowStrategy = {
     if (stateValue === "no_projects" && settledValidationError) {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "project_validation_failed",
           payload: { error: settledValidationError },
           request_id: event.request_id,
@@ -450,7 +450,7 @@ export const projectContextStrategy: FlowStrategy = {
       // Re-resolved into no_projects (e.g., after back_to_projects_clicked).
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "no_projects_displayed",
           payload: {
             org_id: orgId,
@@ -462,7 +462,7 @@ export const projectContextStrategy: FlowStrategy = {
     } else if (stateValue === "creating_project") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "project_creation_started",
           payload: {
             pending_project_name: settledPendingProjectName,
@@ -481,7 +481,7 @@ export const projectContextStrategy: FlowStrategy = {
       const settledProject = switchSettledProject ?? projectionCtx.project;
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: isFromCreate ? "project_created" : "project_selected",
           payload: {
             org_id: orgId,
@@ -508,7 +508,7 @@ export const projectContextStrategy: FlowStrategy = {
       if (event.type === "switching_project_intent") {
         await pump.deps.eventLog.append(
           flow_id,
-          FlowEvent.from(FlowId.fromKey(flow_id), {
+          FlowEvent.createForFlow(flow_id, {
             type: "project_switched",
             payload: {
               org_id: orgId,
@@ -525,7 +525,7 @@ export const projectContextStrategy: FlowStrategy = {
       // same projection tick.
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "switching_project_started",
           payload: {
             org_id: orgId,
@@ -537,7 +537,7 @@ export const projectContextStrategy: FlowStrategy = {
     } else if (stateValue === "error_recoverable") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "project_context_recoverable_error",
           payload: {
             underlying_cause_tag:
@@ -552,7 +552,7 @@ export const projectContextStrategy: FlowStrategy = {
     } else if (stateValue === "scope_mismatch_terminal") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "scope_mismatch_displayed",
           payload: {
             org_id: orgId,
@@ -600,7 +600,7 @@ export const projectContextStrategy: FlowStrategy = {
     for (const ev of input.events) {
       await pump.deps.eventLog.append(
         input.flow_id,
-        FlowEvent.from(FlowId.fromKey(input.flow_id), {
+        FlowEvent.createForFlow(input.flow_id, {
           type: ev.type,
           payload: ev.payload,
           request_id: input.request_id,
@@ -631,7 +631,7 @@ export const projectContextStrategy: FlowStrategy = {
     const h = harvestSettledFreezeState(actor);
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "project_context_frozen",
         payload: {
           last_live_state: h.last_live_state,
@@ -686,7 +686,7 @@ export const projectContextStrategy: FlowStrategy = {
     if (settledState === "project_selected") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "project_switched",
           payload: { org_id: h.org_id ?? "", project: h.project },
           request_id,
@@ -698,7 +698,7 @@ export const projectContextStrategy: FlowStrategy = {
     } else if (settledState === "scope_mismatch_terminal") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "scope_mismatch_displayed",
           payload: {
             org_id: h.org_id ?? "",
@@ -710,7 +710,7 @@ export const projectContextStrategy: FlowStrategy = {
     } else if (settledState === "error_recoverable") {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "project_context_recoverable_error",
           payload: {
             underlying_cause_tag: h.underlying_cause_tag ?? "transient",

@@ -109,7 +109,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       const access_token = composeOrgClaimEcho(orgCtx.id ?? "");
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "org_created",
           payload: {
             org: orgCtx,
@@ -142,7 +142,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       const harvested = harvestSettledLoginState(actor);
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "reissue_failed_partial",
           payload: {
             underlying_cause_tag:
@@ -161,7 +161,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       if (harvested.org_validation_error) {
         await pump.deps.eventLog.append(
           flow_id,
-          FlowEvent.from(FlowId.fromKey(flow_id), {
+          FlowEvent.createForFlow(flow_id, {
             type: "validation_failed",
             payload: { error: harvested.org_validation_error },
             request_id: event.request_id,
@@ -290,7 +290,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
 
   async begin(): Promise<void> {
     const { input, flowId, actor } = this;
-    const flow_id = FlowId.toKey(flowId);
+    const flow_id = flowId.toKey();
     const start = Date.now();
 
     await this.eventLog.reset(flow_id);
@@ -311,7 +311,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
 
     if (stateValue === "session_rejected") {
       const harvested = harvestSettledLoginState(actor);
-      const rejectedEvent = FlowEvent.from(flowId, {
+      const rejectedEvent = FlowEvent.createForFlow(flow_id, {
         type: "session_rejected",
         payload: {
           reason: harvested.underlying_cause_tag ?? "session_rejected",
@@ -341,7 +341,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     const org = harvested.org.id
       ? { id: harvested.org.id, name: harvested.org.name }
       : null;
-    const startedEvent = FlowEvent.from(flowId, {
+    const startedEvent = FlowEvent.createForFlow(flow_id, {
       type: "session_started",
       payload: {
         user: {

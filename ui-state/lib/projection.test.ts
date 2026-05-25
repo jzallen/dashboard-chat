@@ -11,19 +11,25 @@
 
 import { describe, expect,it } from "vitest";
 
-import type { FlowEvent } from "./domain/flow-event.ts";
+import { FlowEvent } from "./domain/flow-event.ts";
 import { buildProjection } from "./projection.ts";
 
+// Events as if read back from the cache — built via fromCache because a plain
+// object literal no longer type-checks as a FlowEvent (the class is branded).
+// The flowKey is irrelevant to the reducers (buildProjection takes the flow_id
+// separately); the reducers read only ts/type/payload/request_id.
+const FLOW_KEY = "session-onboarding:user_maya_chen";
 const baseEvent = (
   type: string,
   payload: Record<string, unknown> = {},
   request_id = "corr-1",
-): FlowEvent => ({
-  ts: "2026-05-11T22:00:00.000Z",
-  type,
-  payload,
-  request_id,
-});
+): FlowEvent =>
+  FlowEvent.fromCache(FLOW_KEY, {
+    ts: "2026-05-11T22:00:00.000Z",
+    type,
+    payload,
+    request_id,
+  });
 
 describe("buildProjection (pure projection builder)", () => {
   it("returns the initial state when no events have been recorded", () => {

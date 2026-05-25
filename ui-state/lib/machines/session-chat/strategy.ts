@@ -27,7 +27,7 @@
 import { type AnyActorRef } from "xstate";
 
 import type { ResourceType } from "../../domain/active-scope.ts";
-import { FlowEvent, FlowId } from "../../domain/flow-event.ts";
+import { FlowEvent } from "../../domain/flow-event.ts";
 import type {
   FlowStrategy,
   PumpContext,
@@ -168,7 +168,7 @@ async function appendSessionChatTerminalEvents(
   if (stateValue === "loading_session_list") {
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_list_load_started",
         payload: { project_id: ctx.project.id },
         request_id,
@@ -196,7 +196,7 @@ async function appendSessionChatTerminalEvents(
         : ctx.session_list_has_more;
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_list_load_started",
         payload: { project_id: ctx.project.id },
         request_id,
@@ -204,7 +204,7 @@ async function appendSessionChatTerminalEvents(
     );
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_list_loaded",
         payload: {
           items: settledList,
@@ -216,7 +216,7 @@ async function appendSessionChatTerminalEvents(
     );
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_list_displayed",
         payload: {
           project_id: ctx.project.id,
@@ -230,7 +230,7 @@ async function appendSessionChatTerminalEvents(
   if (stateValue === "resuming_session") {
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_resume_started",
         payload: {
           session_id: ctx.pending_resume_session_id ?? ctx.session_id ?? null,
@@ -258,7 +258,7 @@ async function appendSessionChatTerminalEvents(
       // `session_resumed` branch below).
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "session_active_reached",
           payload: {
             session_id: harvestedResume?.session_id ?? ctx.session_id,
@@ -286,7 +286,7 @@ async function appendSessionChatTerminalEvents(
     const datasetUnavailable = resumedCause === "dataset_not_found";
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_resumed",
         payload: {
           session_id: resumedSessionId,
@@ -301,7 +301,7 @@ async function appendSessionChatTerminalEvents(
     if (datasetUnavailable) {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "session_dataset_unavailable",
           payload: {},
           request_id,
@@ -318,7 +318,7 @@ async function appendSessionChatTerminalEvents(
     // already holds it in context across that transition (app-arch §6.4).
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_welcome_displayed",
         payload: {
           project_id: ctx.project.id,
@@ -336,7 +336,7 @@ async function appendSessionChatTerminalEvents(
   if (stateValue === "error_recoverable") {
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_chat_recoverable_error",
         payload: {
           underlying_cause_tag:
@@ -417,7 +417,7 @@ export const sessionChatStrategy: FlowStrategy = {
     // principal.
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "project_context_inherited",
         payload: {
           org_id: orgId,
@@ -487,7 +487,7 @@ export const sessionChatStrategy: FlowStrategy = {
     ) {
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "switching_dataset_context_started",
           payload: {
             intended_resource_id:
@@ -555,7 +555,7 @@ export const sessionChatStrategy: FlowStrategy = {
       if (harvest.underlying_cause_tag === "dataset_access_denied") {
         await pump.deps.eventLog.append(
           flow_id,
-          FlowEvent.from(FlowId.fromKey(flow_id), {
+          FlowEvent.createForFlow(flow_id, {
             type: "dataset_access_denied",
             payload: { underlying_cause_tag: "dataset_access_denied" },
             request_id: event.request_id,
@@ -564,7 +564,7 @@ export const sessionChatStrategy: FlowStrategy = {
       } else {
         await pump.deps.eventLog.append(
           flow_id,
-          FlowEvent.from(FlowId.fromKey(flow_id), {
+          FlowEvent.createForFlow(flow_id, {
             type: "dataset_attached",
             payload: {
               resource_type: harvest.resource.type,
@@ -587,7 +587,7 @@ export const sessionChatStrategy: FlowStrategy = {
       // out pending_resume_session_id atomically.
       await pump.deps.eventLog.append(
         flow_id,
-        FlowEvent.from(FlowId.fromKey(flow_id), {
+        FlowEvent.createForFlow(flow_id, {
           type: "session_resume_not_found",
           payload: {},
           request_id: event.request_id,
@@ -637,7 +637,7 @@ export const sessionChatStrategy: FlowStrategy = {
     const h = harvestSettledFreezeState(actor);
     await pump.deps.eventLog.append(
       flow_id,
-      FlowEvent.from(FlowId.fromKey(flow_id), {
+      FlowEvent.createForFlow(flow_id, {
         type: "session_chat_frozen",
         payload: {
           last_live_state: h.last_live_state,

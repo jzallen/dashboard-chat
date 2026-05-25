@@ -125,8 +125,9 @@ export function buildSessionChatRouter(
       return c.json({ error: "type required" }, 400);
     }
     // The flow is addressed by this route's machine + the verified principal
-    // (ADR-040), never accepted from the body.
-    const flowId = FlowId.of(wireName, c.req.header("X-User-Id") ?? "");
+    // (ADR-040), never accepted from the body — the FlowEvent factory builds
+    // the owned FlowId.
+    const principalId = c.req.header("X-User-Id") ?? "";
 
     // J-002 force-create-session-failure knob — header transport. The
     // X-Force-Create-Session-Failure wire header is unchanged; the gate
@@ -166,7 +167,7 @@ export function buildSessionChatRouter(
     }
 
     const result = await orchestrator.send(
-      FlowEvent.from(flowId, {
+      FlowEvent.create(wireName, principalId, {
         type: body.type,
         payload: body.payload,
         request_id,

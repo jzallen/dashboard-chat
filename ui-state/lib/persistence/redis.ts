@@ -8,7 +8,7 @@
 
 import { Redis } from "ioredis";
 
-import { FlowEvent, FlowId } from "../domain/flow-event.ts";
+import { FlowEvent, type FlowEventRecord } from "../domain/flow-event.ts";
 
 export interface FlowEventLog {
   append(flow_id: string, event: FlowEvent): Promise<void>;
@@ -37,20 +37,29 @@ function streamKey(flow_id: string): string {
   return `ui-state:${flow_id}:events`;
 }
 
-function serialize(event: FlowEvent): string[] {
+// (de)serialization lives HERE, at the driven adapter boundary (the domain
+// never parses untrusted bytes). The model hands the adapter its plain
+// FlowEventRecord (`event.createCacheSerialization()`); the adapter encodes it
+// as the 4-field Redis hash. On read the adapter decodes the record and
+// rehydrates a domain FlowEvent via `FlowEvent.fromCache(flow_id, record)` —
+// reconstructing the flow identity from the STREAM KEY. The 4-field encoding
+// is BYTE-STABLE (ADR-027); changing it breaks persisted bytes + the
+// projection contract.
+
+function serialize(record: FlowEventRecord): string[] {
   return [
     "ts",
-    event.ts,
+    record.ts,
     "type",
-    event.type,
+    record.type,
     "payload",
-    JSON.stringify(event.payload),
+    JSON.stringify(record.payload),
     "request_id",
-    event.request_id,
+    record.request_id,
   ];
 }
 
-function deserialize(fields: string[]): FlowEvent {
+function deserialize(fields: string[]): FlowEventRecord {
   const obj: Record<string, string> = {};
   for (let i = 0; i < fields.length; i += 2) {
     obj[fields[i]] = fields[i + 1];
@@ -71,12 +80,20 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
 
   return {
     async append(flow_id: string, event: FlowEvent): Promise<void> {
-      await client.xadd(streamKey(flow_id), "*", ...serialize(event));
+      await client.xadd(
+        streamKey(flow_id),
+        "*",
+        ...serialize(event.createCacheSerialization()),
+      );
     },
 
     async read(flow_id: string): Promise<FlowEvent[]> {
       const entries = await client.xrange(streamKey(flow_id), "-", "+");
-      return entries.map(([, fields]) => deserialize(fields));
+      // A repository returns DOMAIN objects: rehydrate each record into a
+      // FlowEvent, reconstructing its identity from the stream key (flow_id).
+      return entries.map(([, fields]) =>
+        FlowEvent.fromCache(flow_id, deserialize(fields)),
+      );
     },
 
     async reset(flow_id: string): Promise<void> {
@@ -108,7 +125,7 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
           for (const [, entries] of res) {
             for (const [entryId, fields] of entries) {
               cursor = entryId;
-              yield deserialize(fields);
+              yield FlowEvent.fromCache(flow_id, deserialize(fields));
             }
           }
         }
@@ -119,16 +136,16 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
 
     async probe(): Promise<void> {
       const probeKey = `ui-state:__probe__:${Date.now()}`;
-      // The probe is a health-check, not a real flow event; its transient
-      // flowId is synthetic and ignored by serialize() (the 4-field
-      // allow-list). Routed through FlowEvent.from so no `ts: new Date()`
-      // literal survives.
-      const probeEvent = FlowEvent.from(FlowId.of("__probe__", ""), {
+      // The probe is a health-check, not a real flow event; its synthetic
+      // identity is irrelevant to the persisted record. Built via
+      // FlowEvent.create + createCacheSerialization so the adapter's sole
+      // encoder is the only event→bytes path (no `ts: new Date()` literal).
+      const probeRecord = FlowEvent.create("__probe__", "", {
         type: "probe",
         payload: {},
         request_id: "probe",
-      });
-      await client.xadd(probeKey, "*", ...serialize(probeEvent));
+      }).createCacheSerialization();
+      await client.xadd(probeKey, "*", ...serialize(probeRecord));
       const read = await client.xrange(probeKey, "-", "+");
       if (read.length !== 1) {
         throw new Error(`probe failed: expected 1 entry, got ${read.length}`);
@@ -145,21 +162,26 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
 export function createNoopFlowEventLog(): FlowEventLog {
   // In-memory map for single-process testing/dev when REDIS_URL is absent.
   // Per ADR-018, this is the noop fallback — NOT a Redis substitute for
-  // multi-replica scenarios.
-  const store = new Map<string, FlowEvent[]>();
+  // multi-replica scenarios. It mirrors the Redis tier's record round-trip:
+  // append stores the plain FlowEventRecord and read rehydrates a domain
+  // FlowEvent via fromCache, so the same (de)serialization seam is exercised
+  // in-process (no live Redis required).
+  const store = new Map<string, FlowEventRecord[]>();
   // Per-flow subscribers — invoked synchronously after append() lands.
   const subscribers = new Map<string, Set<(event: FlowEvent) => void>>();
 
   return {
     async append(flow_id: string, event: FlowEvent): Promise<void> {
+      const record = event.createCacheSerialization();
       const list = store.get(flow_id) ?? [];
-      list.push(event);
+      list.push(record);
       store.set(flow_id, list);
       const subs = subscribers.get(flow_id);
       if (subs) {
+        const rehydrated = FlowEvent.fromCache(flow_id, record);
         for (const cb of subs) {
           try {
-            cb(event);
+            cb(rehydrated);
           } catch {
             // Defensive — subscriber callbacks must not break append.
           }
@@ -168,7 +190,9 @@ export function createNoopFlowEventLog(): FlowEventLog {
     },
 
     async read(flow_id: string): Promise<FlowEvent[]> {
-      return store.get(flow_id) ?? [];
+      return (store.get(flow_id) ?? []).map((record) =>
+        FlowEvent.fromCache(flow_id, record),
+      );
     },
 
     async reset(flow_id: string): Promise<void> {

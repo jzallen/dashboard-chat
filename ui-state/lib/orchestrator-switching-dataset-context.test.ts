@@ -145,7 +145,7 @@ async function buildSessionActiveFlow(
   // Resume the session → session_active.
   const resumed = unwrap(
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+      FlowEvent.createForFlow(FLOW_ID, {
         type: "session_clicked",
         payload: { session_id: SESSION_ID },
         request_id: "R-resume",
@@ -182,7 +182,7 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
 
     const projection = unwrap(
       await orch.send(
-        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+        FlowEvent.createForFlow(FLOW_ID, {
           type: "dataset_resolved_by_agent",
           payload: {
             resource_id: "ds-patients-2025",
@@ -232,7 +232,7 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
 
     const projection = unwrap(
       await orch.send(
-        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+        FlowEvent.createForFlow(FLOW_ID, {
           type: "dataset_picked_directly",
           payload: { resource_id: "ds-restricted", resource_type: "dataset" },
           request_id: "R-denied",

@@ -129,7 +129,7 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
 
     const projection = unwrap(
       await orch.send(
-        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+        FlowEvent.createForFlow(FLOW_ID, {
           type: "switching_project_intent",
           payload: { new_project_id: "proj-B" },
           request_id: "R-switch",
@@ -170,7 +170,7 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
 
     const projection = unwrap(
       await orch.send(
-        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+        FlowEvent.createForFlow(FLOW_ID, {
           type: "switching_project_intent",
           payload: { new_project_id: "p-revoked" },
           request_id: "R-switch-revoked",

@@ -256,13 +256,22 @@ export function buildSessionOnboardingRouter(
     const event = parsed.data;
 
     // The flow is addressed by the route's machine-constant + the verified
-    // principal (ADR-040) — the single FlowId construction site for /event.
-    const flowId = FlowId.of(SESSION_ONBOARDING_MACHINE, c.get("userId"));
+    // principal (ADR-040): the FlowEvent factory builds the owned FlowId for
+    // /event — the router no longer constructs a FlowId directly.
+    const flowEvent = FlowEvent.create(
+      SESSION_ONBOARDING_MACHINE,
+      c.get("userId"),
+      {
+        type: event.type,
+        payload: event.payload,
+        request_id: requestId,
+      },
+    );
     logTransition({
       event: "session_onboarding.event_received",
       request_id: requestId,
       principal_id: c.get("userId") || null,
-      flow_id: FlowId.toKey(flowId),
+      flow_id: flowEvent.flowKey,
       event_type: event.type,
     });
 
@@ -286,13 +295,7 @@ export function buildSessionOnboardingRouter(
       );
     }
 
-    const result = await flowOrchestrator.send(
-      FlowEvent.from(flowId, {
-        type: event.type,
-        payload: event.payload,
-        request_id: requestId,
-      }),
-    );
+    const result = await flowOrchestrator.send(flowEvent);
     return serializeResult(c, result, "event_failed");
   });
 

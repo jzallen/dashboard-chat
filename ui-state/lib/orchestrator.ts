@@ -167,7 +167,8 @@ export interface FlowStrategy {
 
   /** Pre-settle event→transition emission (currently project-context only).
    *  The pump derives `flow_id` (bridged key) + `machine` (the minted segment
-   *  the gate compares) from `event.flowId` once and threads them. */
+   *  the gate compares) from the event's own FlowId once
+   *  (`event.flowKey` / `event.getMachine()`) and threads them. */
   applyEvent?(
     pump: PumpContext,
     actor: AnyActorRef,
@@ -342,13 +343,13 @@ export const REPLAY_BUFFER_CAP = 16;
  * The `seq` on each queued slot is process-global so THAW pass-2 can replay
  * events across all frozen flows in true arrival order, even though they sit
  * on separate per-flow buffers. Each slot carries the fully-built FlowEvent
- * (its `ts` is the original arrival time) + its `flowId`; THAW pass-2
- * re-dispatches the SAME event through `sendCore`, which re-derives the key
- * from `event.flowId`.
+ * (its `ts` is the original arrival time); since the event now OWNS its FlowId,
+ * THAW pass-2 re-dispatches the SAME event through `sendCore`, which re-derives
+ * the key from `event.getFlowId()` — no separate identity is stored on the slot.
  */
 export class FrozenState {
   /** Queued events waiting for thaw, bounded to REPLAY_BUFFER_CAP. */
-  readonly queued: Array<{ flowId: FlowId; event: FlowEvent; seq: number }> = [];
+  readonly queued: Array<{ event: FlowEvent; seq: number }> = [];
 
   constructor(
     /** `Date.now()` at the broadcast that froze this flow. */
@@ -490,7 +491,7 @@ export class FlowOrchestrator implements PumpContext {
     input: BeginIfNotStartedInput,
   ): Promise<FlowProjection> {
     const strategy = FLOW_STRATEGY_REGISTRY.resolve(input.flowId.machine);
-    const flow_id = FlowId.toKey(input.flowId);
+    const flow_id = input.flowId.toKey();
     const principal_id = input.flowId.principal_id;
 
     const isProjectReadyDispatch =
@@ -724,10 +725,10 @@ export class FlowOrchestrator implements PumpContext {
 
   private async sendCore(event: FlowEvent): Promise<FlowProjection> {
     // The event is self-addressing: derive the actor-map key + the strategy
-    // selector from its own FlowId. getMachine() throws loud on a flowId-less
-    // (deserialized) event reaching the dispatch path.
-    const machine = FlowEvent.getMachine(event);
-    const flow_id = FlowId.toKey(event.flowId!);
+    // selector from its own FlowId (the model owns its identity — total, never
+    // throws).
+    const machine = event.getMachine();
+    const flow_id = event.flowKey;
     const actor = this.actors.get(flow_id);
     if (!actor) {
       throw new Error(`unknown flow_id: ${flow_id}`);
@@ -766,12 +767,11 @@ export class FlowOrchestrator implements PumpContext {
   }
 
   /** Buffer an event arriving at a frozen flow for THAW replay. The slot
-   *  carries the fully-built event (its `ts` is the arrival time) + its
-   *  `flowId`, stamped with a process-global `seq` so THAW pass-2 replays
-   *  across all frozen flows in true cross-flow arrival order. */
+   *  carries the fully-built event (its `ts` is the arrival time; it owns its
+   *  FlowId), stamped with a process-global `seq` so THAW pass-2 replays across
+   *  all frozen flows in true cross-flow arrival order. */
   private queueEvent(frozenState: FrozenState, event: FlowEvent): void {
     frozenState.queued.push({
-      flowId: event.flowId!,
       event,
       seq: this.replaySeq++,
     });
@@ -827,7 +827,7 @@ export class FlowOrchestrator implements PumpContext {
     // Only the state-value is read from the snapshot here; all context
     // reads route through the live projection (the sanctioned boundary).
     const stateValue = actor.getSnapshot().value as string;
-    const principal_id = event.flowId!.principal_id;
+    const principal_id = event.getFlowId().principal_id;
     const projectionEvents = await this.deps.eventLog.read(flow_id);
     const projectionCtx = buildProjection(flow_id, projectionEvents)
       .context as {
@@ -1040,7 +1040,6 @@ export class FlowOrchestrator implements PumpContext {
     // re-broadcast (e.g. project_ready from a replayed switch) reaches a
     // live, non-event-dropping target.
     const allDrained: Array<{
-      flowId: FlowId;
       event: FlowEvent;
       seq: number;
       flow_id: string;
@@ -1076,7 +1075,7 @@ export class FlowOrchestrator implements PumpContext {
           const h = harvestSettledFreezeState(actor);
           await this.deps.eventLog.append(
             flow_id,
-            FlowEvent.from(FlowId.fromKey(flow_id), {
+            FlowEvent.createForFlow(flow_id, {
               type: "replay_abandoned",
               payload: {
                 last_live_state: h.last_live_state,
@@ -1092,7 +1091,7 @@ export class FlowOrchestrator implements PumpContext {
           );
           await this.deps.eventLog.append(
             flow_id,
-            FlowEvent.from(FlowId.fromKey(flow_id), {
+            FlowEvent.createForFlow(flow_id, {
               type:
                 machine === SESSION_CHAT_WIRE_NAME
                   ? "session_chat_recoverable_error"
@@ -1127,7 +1126,7 @@ export class FlowOrchestrator implements PumpContext {
         const settledState = actor.getSnapshot().value as string;
         await this.deps.eventLog.append(
           flow_id,
-          FlowEvent.from(FlowId.fromKey(flow_id), {
+          FlowEvent.createForFlow(flow_id, {
             type:
               machine === SESSION_CHAT_WIRE_NAME
                 ? "session_chat_thawed"
@@ -1190,7 +1189,6 @@ export class FlowOrchestrator implements PumpContext {
       // Defer this flow's queue to the global pass-2 replay.
       for (const q of drained) {
         allDrained.push({
-          flowId: q.flowId,
           event: q.event,
           seq: q.seq,
           flow_id,
@@ -1232,7 +1230,7 @@ export class FlowOrchestrator implements PumpContext {
         if (after.stale_intents_dropped_count > before || datasetStale) {
           await this.deps.eventLog.append(
             flow_id,
-            FlowEvent.from(FlowId.fromKey(flow_id), {
+            FlowEvent.createForFlow(flow_id, {
               type: "stale_intent_dropped_after_thaw",
               payload: {
                 intent_type: after.last_stale_intent?.intent_type ?? event.type,
@@ -1395,7 +1393,7 @@ export class BeginFlowOrchestrator {
     try {
       // enter: clear any prior actor + tracking for this flow_id (bridged
       // from the strategy's FlowId), then register the freshly-built actor.
-      const flow_id = FlowId.toKey(strategy.flowId);
+      const flow_id = strategy.flowId.toKey();
       this.registry.recycleActor(flow_id);
       this.registry.resetFlowTracking(flow_id);
       this.registry.trackActor(flow_id, strategy.actor);

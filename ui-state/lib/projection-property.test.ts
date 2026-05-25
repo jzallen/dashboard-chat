@@ -35,7 +35,7 @@
 
 import { describe, expect,it } from "vitest";
 
-import type { FlowEvent } from "./domain/flow-event.ts";
+import { FlowEvent } from "./domain/flow-event.ts";
 import { buildProjection } from "./projection.ts";
 
 // ── Test fixtures ────────────────────────────────────────────────────────
@@ -54,26 +54,34 @@ const PROJECTS: Project[] = [
   { id: "proj-data-eng", name: "Data Engineering" },
 ];
 
-const projectSelectedEvent = (project: Project, seq: number): FlowEvent => ({
-  ts: `2026-05-15T22:${String(seq).padStart(2, "0")}:00.000Z`,
-  type: "project_selected",
-  payload: { org_id: ORG_ID, project },
-  request_id: `corr-${seq}`,
-});
+// Events as if read back from the cache — built via fromCache because a plain
+// object literal no longer type-checks as a FlowEvent (the class is branded).
+// The flowKey matches the flow_id buildProjection is called with below; the
+// reducers read only ts/type/payload/request_id.
+const FLOW_KEY = "test-flow:property";
+
+const projectSelectedEvent = (project: Project, seq: number): FlowEvent =>
+  FlowEvent.fromCache(FLOW_KEY, {
+    ts: `2026-05-15T22:${String(seq).padStart(2, "0")}:00.000Z`,
+    type: "project_selected",
+    payload: { org_id: ORG_ID, project },
+    request_id: `corr-${seq}`,
+  });
 
 const projectContextInheritedEvent = (
   project: Project,
   seq: number,
-): FlowEvent => ({
-  ts: `2026-05-15T22:${String(seq).padStart(2, "0")}:00.000Z`,
-  type: "project_context_inherited",
-  payload: {
-    org_id: ORG_ID,
-    project_id: project.id,
-    project_name: project.name,
-  },
-  request_id: `corr-${seq}`,
-});
+): FlowEvent =>
+  FlowEvent.fromCache(FLOW_KEY, {
+    ts: `2026-05-15T22:${String(seq).padStart(2, "0")}:00.000Z`,
+    type: "project_context_inherited",
+    payload: {
+      org_id: ORG_ID,
+      project_id: project.id,
+      project_name: project.name,
+    },
+    request_id: `corr-${seq}`,
+  });
 
 // ── Seeded PRNG (mulberry32) — reproducible without a fast-check dep ─────
 

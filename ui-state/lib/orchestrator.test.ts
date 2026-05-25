@@ -109,7 +109,7 @@ async function driveToReady(
   await beginOrchestrator.begin(strategy);
   const flow_id = `session-onboarding:${principal}`;
   await orch.send(
-    FlowEvent.from(FlowId.fromKey(flow_id), {
+    FlowEvent.createForFlow(flow_id, {
       type: "org_form_submitted",
       payload: { org_name: "Acme Data" },
       request_id: requestId,
@@ -190,21 +190,21 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
 
     // Send three intent events to Kai while frozen.
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(kaiFlow), {
+      FlowEvent.createForFlow(kaiFlow, {
         type: "retry_clicked",
         payload: {},
         request_id: "R-2",
       }),
     );
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(kaiFlow), {
+      FlowEvent.createForFlow(kaiFlow, {
         type: "retry_clicked",
         payload: {},
         request_id: "R-2",
       }),
     );
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(kaiFlow), {
+      FlowEvent.createForFlow(kaiFlow, {
         type: "retry_clicked",
         payload: {},
         request_id: "R-2",
@@ -233,7 +233,7 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
     // Push exactly 16 events — at the cap, still queued.
     for (let i = 0; i < 16; i += 1) {
       await orch.send(
-        FlowEvent.from(FlowId.fromKey(kaiFlow), {
+        FlowEvent.createForFlow(kaiFlow, {
           type: "retry_clicked",
           payload: { i },
           request_id: "R-2",
@@ -245,7 +245,7 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
 
     // 17th event triggers overflow — buffer abandoned, future replay is a no-op.
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(kaiFlow), {
+      FlowEvent.createForFlow(kaiFlow, {
         type: "retry_clicked",
         payload: { i: 16 },
         request_id: "R-2",
@@ -278,7 +278,7 @@ describe("FlowOrchestrator replay buffer 5s timeout (B4)", () => {
     orch.broadcastFreeze(mayaFlow);
     // One event in-window — queued.
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(kaiFlow), {
+      FlowEvent.createForFlow(kaiFlow, {
         type: "retry_clicked",
         payload: {},
         request_id: "R-2",
@@ -291,7 +291,7 @@ describe("FlowOrchestrator replay buffer 5s timeout (B4)", () => {
 
     // Post-window event is dropped (not added to buffer).
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(kaiFlow), {
+      FlowEvent.createForFlow(kaiFlow, {
         type: "retry_clicked",
         payload: { late: true },
         request_id: "R-2",
@@ -393,7 +393,7 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
     // pump fires beginIfNotStarted(project-context). An unknown event keeps the
     // machine in `ready` so the settle observes the [hasOrg] ready arm.
     await orch.send(
-      FlowEvent.from(FlowId.fromKey(loginFlow), {
+      FlowEvent.createForFlow(loginFlow, {
         type: "noop_settle_trigger",
         payload: {},
         request_id: requestId,

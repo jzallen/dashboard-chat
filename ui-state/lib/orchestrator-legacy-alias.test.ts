@@ -74,7 +74,7 @@ async function beginLegacy(
     () => {},
   );
   await beginOrchestrator.begin(strategy);
-  return FlowId.toKey(FlowId.of(LEGACY_MACHINE, principal));
+  return FlowId.of(LEGACY_MACHINE, principal).toKey();
 }
 
 describe("LEAF-2 legacy-alias send path (R1 characterization)", () => {
@@ -103,7 +103,7 @@ describe("LEAF-2 legacy-alias send path (R1 characterization)", () => {
     // self-addressing: FlowId.fromKey recovers the legacy machine segment from
     // the flow_id key, getMachine() feeds it into resolve()'s alias map.
     const result = await orch.send(
-      FlowEvent.from(FlowId.fromKey(flowId), {
+      FlowEvent.createForFlow(flowId, {
         type: "org_form_submitted",
         payload: { org_name: "Acme Data" },
         request_id: "R-1",

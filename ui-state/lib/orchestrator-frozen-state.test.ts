@@ -11,18 +11,21 @@
 
 import { describe, expect, it } from "vitest";
 
-import { FlowEvent, FlowId } from "./domain/flow-event.ts";
+import { FlowEvent } from "./domain/flow-event.ts";
 import {
   FREEZE_WINDOW_MS,
   FrozenState,
   REPLAY_BUFFER_CAP,
 } from "./orchestrator.ts";
 
+// The replay-buffer slot is `{ event, seq }` — the event now OWNS its FlowId,
+// so no separate identity is stored on the slot.
 function queuedSlot(seq: number) {
-  const flowId = FlowId.of("project-and-chat-session-management", "dev-user");
   return {
-    flowId,
-    event: FlowEvent.from(flowId, { type: "retry_clicked", request_id: "R" }),
+    event: FlowEvent.createForFlow("project-and-chat-session-management:dev-user", {
+      type: "retry_clicked",
+      request_id: "R",
+    }),
     seq,
   };
 }

@@ -838,3 +838,110 @@ identity, not a distinct concept); `buildProjection` stays in `lib/projection.ts
 service. `projection.ts` now imports `FlowEvent`/`FlowProjection`/`ActiveScope`/`ResourceType` from
 `lib/domain/` and keeps re-exporting `ResourceType` (now sourced from `lib/domain/active-scope.ts`) so
 existing importers don't break.
+
+## §17 — From anemic companion-objects to a real domain model + an adapter (de)serialization boundary (DELIVERED)
+
+§1–§16 modelled `FlowEvent` / `FlowId` as **interface + companion `const`** (method-bag) with a
+**transient optional `flowId`** field on the event, a **throwing** `FlowEvent.getMachine(event)`, and the
+Redis hash (de)serialization baked into `redis.ts` against the raw interface. That is an **anemic** model:
+behavior (`getMachine`, `FlowId.toKey`) lives off the data as free functions; the router builds the
+`FlowId` then bolts it onto a `FlowEvent.from(...)`; a read-back event has *no* identity and
+`getMachine()` *throws* if one reaches dispatch. §17 makes it a real domain model and pushes
+(de)serialization to the driven adapter — following the `domain-modeling` skill (class for a model with
+behavior; `type` for the plain serialized DTO; the outbound adapter owns (de)serialization and returns
+domain objects).
+
+### 17.1 `FlowEventRecord` — the plain serialized DTO (`type`)
+
+`{ ts, type, payload, request_id }` — the EXACT Redis hash / wire shape, co-located with the class in
+`lib/domain/flow-event.ts`. BYTE-STABLE: the field set IS the ADR-027 persistence contract. It is a `type`
+(no behavior, erased at runtime); the adapter is the only code that produces or consumes it.
+
+### 17.2 `FlowEvent` — the domain model (`class`)
+
+A rich model that OWNS the four obligations the §1–§16 design scattered:
+
+- **Construction (incl. its FlowId).** Two birth factories, both applying the birth invariants
+  (`ts ?? now()`, `payload ?? {}`) and building the owned `FlowId` themselves:
+  - `static create(machine, principal_id, { type, payload?, request_id }, ts?)` — the **router send
+    path** (route machine-constant + verified principal). The router NO LONGER constructs a `FlowId` +
+    `FlowEvent.from`; it calls `FlowEvent.create(...)` and the model builds the identity.
+  - `static createForFlow(flowKey, { … }, ts?)` — the **strategy / orchestrator-broadcast emission
+    path**, which holds the bridged `flow_id` STRING for the flow it appends to. Replaces every
+    `FlowEvent.from(FlowId.fromKey(flow_id), …)` — these call sites no longer touch `FlowId` at all.
+- **Behavior.** `getMachine()` (strategy selector, minted segment verbatim — alias canonicalization
+  stays at `resolve()`), `getFlowId()`, and the `get flowKey()` getter (the bridged actor-map / Redis /
+  projection key). `FlowId.toKey(event.flowId)` → `event.flowKey`.
+- **Serialization on the model.** `createCacheSerialization(): FlowEventRecord` — the **SOLE** event→bytes
+  encoder. Nothing else serializes a FlowEvent.
+- **Rehydration (separate factory, trusts persisted state).**
+  `static fromCache(flowKey, record): FlowEvent` reconstructs the instance AND its `FlowId` from the
+  **stream key the adapter read from**. So `getMachine()` / `getFlowId()` / `flowKey` are **TOTAL** on a
+  read-back event — **the transient-flowId / getMachine-throws design (§4) is REMOVED**. (R6 is no longer
+  a "guard against a throw"; it is structurally impossible.)
+
+The four payload-bearing fields stay **public `readonly`** (the projection reducers and the orchestrator's
+`actor.send({ type, ...payload })` read them directly — zero churn in `projection.ts`). Identity is
+**private** behind getters because it carries behavior. The `#flowId` ECMAScript-private field doubles as a
+**nominal brand**: a plain `FlowEventRecord` cannot structurally impersonate a `FlowEvent` (TS type
+position is structural). Runtime proof: `projection.test.ts` / `projection-property.test.ts` had to switch
+from object literals to `FlowEvent.fromCache(...)` — a literal no longer type-checks as a `FlowEvent`.
+
+### 17.3 `FlowId` — value object FlowEvent owns
+
+Now a small `class` (was interface + companion `const`): `static of` / `static fromKey`, instance
+`toKey()`. FlowEvent constructs and owns it; the public surface callers reach is FlowEvent's methods. The
+`of` / `fromKey` statics remain for the two contexts that key off a raw string *before* any FlowEvent for
+that step exists: the **begin path** (`BeginFlowInput.flowId` / `BeginStrategy.flowId` /
+`beginIfNotStartedCore` / `maybeFireProjectReady` / the `auth_ready` hook) and the **broadcast loops**
+(`FlowId.fromKey(flow_id).machine|principal_id`). `FlowId.toKey(x)` → `x.toKey()` at those sites.
+
+### 17.4 `redis.ts` — the driven (outbound) adapter owns (de)serialization
+
+The (de)serialization moved OUT of the domain to the adapter boundary (the domain never parses untrusted
+bytes):
+
+- **append/write:** persists `event.createCacheSerialization()` — `serialize(record)` keeps the 4-field
+  hash encoding (`["ts", …, "type", …, "payload", JSON.stringify(payload), "request_id", …]`)
+  **byte-identical**, so persisted bytes + the ADR-027 projection contract are unchanged.
+- **read/subscribe:** decode the hash into a `FlowEventRecord`, then return DOMAIN objects via
+  `FlowEvent.fromCache(flow_id, record)` — a repository returns domain objects, not DTOs. `flow_id` is the
+  stream key the adapter read from (`ui-state:${flow_id}:events` / the `read(flow_id)` arg), so the
+  rehydrated identity is correct and total.
+- The **noop adapter** mirrors the same record round-trip in-process (append stores the
+  `FlowEventRecord`, read rehydrates via `fromCache`), so the FULL existing orchestrator suite — which
+  runs on the noop log — exercises the `createCacheSerialization` ↔ `fromCache` seam without a live Redis.
+- The probe builds its synthetic record via `FlowEvent.create(...).createCacheSerialization()`.
+
+### 17.5 Freeze replay buffer simplified to `{ event, seq }`
+
+Since the event now OWNS its FlowId, the slot no longer stores a separate `flowId` (`FrozenState.queued`
+and the THAW `allDrained` were `{ flowId, event, seq[, flow_id] }`; the `flowId` field was provably unused
+in pass-2, which re-derives the key from the replayed `event`). Net redundancy removed; replay semantics
+(cross-flow `seq` FIFO; the R3 one-`ts` arrival-time tightening) unchanged.
+
+### 17.6 Discipline — behavior byte-identical (verified)
+
+This is a structural/encapsulation change: same persisted `FlowEventRecord` shape, same projection output,
+same dispatch behavior.
+
+- **`createCacheSerialization()` is the sole encoder** — verified no `JSON.stringify(event)` /
+  whole-`FlowEvent` spread reaches persistence or the wire. (The SSE `/projection/stream` handler ignores
+  the subscribed event payload — `_event` — and re-reads the projection, so it never serializes a
+  FlowEvent.)
+- **No behavior test changed** — the orchestrator / projection / legacy-alias behavioral assertions are
+  byte-identical; only the Arrange sections migrated mechanically to the new factories
+  (`FlowEvent.from(FlowId.fromKey(x), …)` → `createForFlow(x, …)`; object literals → `fromCache`; the
+  frozen-state slot helper to `{ event, seq }`). The FlowEvent / FlowId **unit** tests were rewritten to
+  the new class API (the unit under refactor), preserving every encoding/round-trip assertion and ADDING
+  the `createCacheSerialization` ↔ `fromCache` round-trip + `getMachine` totality.
+- **Characterization seams:** (a) the adapter round-trip — new `lib/persistence/redis.test.ts` pins
+  append→read field preservation + flow-identity-from-stream-key totality; (b) a rehydrated event through
+  `buildProjection` — `projection*.test.ts` now feed `fromCache`-built events; (c) the legacy-alias
+  dispatch — `orchestrator-legacy-alias.test.ts` unchanged in intent (`login-and-org-setup:` keys
+  verbatim, resolves to session-onboarding, emits `org_created`).
+- **Gate:** `ui-state` vitest 17 files / 186 tests green (was 16 / 181: +1 file redis.test.ts; +5 tests).
+  `tsc --noEmit` adds ZERO new errors over the pre-existing baseline (17 errors, all in test files —
+  mock-actor types + `as` casts — unrelated to this refactor; 4 in `projection-property.test.ts` only
+  shifted line numbers as lines were added above them). The MQ gate (`test.sh --auto`) runs backend only;
+  ui-state tsc/vitest are local.
