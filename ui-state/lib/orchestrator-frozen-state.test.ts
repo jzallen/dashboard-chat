@@ -11,13 +11,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { FlowId } from "./flow-id.ts";
+import { FlowEvent, FlowId } from "./domain/flow-event.ts";
 import {
   FREEZE_WINDOW_MS,
   FrozenState,
   REPLAY_BUFFER_CAP,
 } from "./orchestrator.ts";
-import { FlowEvent } from "./projection.ts";
 
 function queuedSlot(seq: number) {
   const flowId = FlowId.of("project-and-chat-session-management", "dev-user");

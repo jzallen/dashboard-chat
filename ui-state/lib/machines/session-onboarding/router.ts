@@ -32,15 +32,14 @@ import { z } from "zod";
 
 import type { Config } from "../../../config.ts";
 import type { ResolveActiveScope } from "../../domain/active-scope.ts";
+import { FlowEvent, FlowId } from "../../domain/flow-event.ts";
 import type { Result } from "../../domain/flow-result.ts";
-import { FlowId } from "../../flow-id.ts";
 import { mountUniformFlowRoutes } from "../../hexagonal-transport/flow-router.ts";
 import type {
   BeginFlowOrchestrator,
   FlowOrchestrator,
 } from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
-import { FlowEvent } from "../../projection.ts";
 import type { RequestClient } from "./index.ts";
 import { isUnderlyingCauseTag } from "./setup/domain.ts";
 import { SessionOnboardingBeginStrategy } from "./strategy.ts";

@@ -21,8 +21,8 @@
 import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
+import { FlowEvent, FlowId } from "./domain/flow-event.ts";
 import { type Result } from "./domain/flow-result.ts";
-import { FlowId } from "./flow-id.ts";
 import {
   createSessionChatMachine,
   type LoadSessionListActor,
@@ -37,7 +37,6 @@ import {
 } from "./machines/session-chat/index.ts";
 import { FlowActorRegistry, FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import { FlowEvent } from "./projection.ts";
 
 const WIRE = "session-chat";
 const PRINCIPAL = "dev-user-001";

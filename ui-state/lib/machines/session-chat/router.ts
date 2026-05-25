@@ -28,14 +28,13 @@ import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { Hono } from "hono";
 
 import { resolveActiveScope, type ResourceType } from "../../domain/active-scope.ts";
-import { FlowId } from "../../flow-id.ts";
+import { FlowEvent, FlowId } from "../../domain/flow-event.ts";
 import {
   mountUniformFlowRoutes,
   requestIdMiddleware,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
-import { FlowEvent } from "../../projection.ts";
 
 // J-002 MR-3 harness knob: the next `first_message_sent` event whose
 // request bears `X-Force-Create-Session-Failure: transient` makes the

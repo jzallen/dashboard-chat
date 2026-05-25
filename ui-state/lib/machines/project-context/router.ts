@@ -38,14 +38,13 @@ import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { Hono } from "hono";
 
 import { resolveActiveScope, type ResourceType } from "../../domain/active-scope.ts";
-import { FlowId } from "../../flow-id.ts";
+import { FlowEvent, FlowId } from "../../domain/flow-event.ts";
 import {
   mountUniformFlowRoutes,
   requestIdMiddleware,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
-import { FlowEvent } from "../../projection.ts";
 
 // J-002 harness knob: per-process counter; the next `create_project_submitted`
 // event whose request bears `X-Force-Create-Project-Failure: transient`

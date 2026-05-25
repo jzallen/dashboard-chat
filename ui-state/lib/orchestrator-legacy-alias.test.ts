@@ -24,7 +24,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FlowId } from "./flow-id.ts";
+import { FlowEvent, FlowId } from "./domain/flow-event.ts";
 import type { RequestClient } from "./machines/session-onboarding/index.ts";
 import { SessionOnboardingBeginStrategy } from "./machines/session-onboarding/strategy.ts";
 import {
@@ -33,7 +33,6 @@ import {
   FlowOrchestrator,
 } from "./orchestrator.ts";
 import { createNoopFlowEventLog } from "./persistence/redis.ts";
-import { FlowEvent } from "./projection.ts";
 import { makeMockFetch, makeTestConfig } from "./testing/test-config.ts";
 
 const LEGACY_MACHINE = "login-and-org-setup";

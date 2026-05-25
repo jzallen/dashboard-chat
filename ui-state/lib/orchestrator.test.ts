@@ -27,7 +27,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fromPromise } from "xstate";
 
-import { FlowId } from "./flow-id.ts";
+import { FlowEvent, FlowId } from "./domain/flow-event.ts";
 import type {
   CreateProjectActor,
   ProjectContextMachineDeps,
@@ -45,7 +45,6 @@ import {
   FlowOrchestrator,
 } from "./orchestrator.ts";
 import { createNoopFlowEventLog } from "./persistence/redis.ts";
-import { FlowEvent } from "./projection.ts";
 import { makeMockFetch, makeTestConfig } from "./testing/test-config.ts";
 
 const PROFILE_MAYA = {

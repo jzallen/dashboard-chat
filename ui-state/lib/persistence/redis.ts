@@ -8,8 +8,7 @@
 
 import { Redis } from "ioredis";
 
-import { FlowId } from "../flow-id.ts";
-import { FlowEvent } from "../projection.ts";
+import { FlowEvent, FlowId } from "../domain/flow-event.ts";
 
 export interface FlowEventLog {
   append(flow_id: string, event: FlowEvent): Promise<void>;

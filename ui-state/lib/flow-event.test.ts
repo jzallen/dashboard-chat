@@ -10,10 +10,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { FlowId } from "./flow-id.ts";
 // FlowEvent is both an interface (type) and a companion const (value); a
-// single named import brings both.
-import { FlowEvent } from "./projection.ts";
+// single named import brings both. FlowId shares the same module.
+import { FlowEvent, FlowId } from "./domain/flow-event.ts";
 
 describe("FlowEvent.from", () => {
   it("defaults ts to now(), payload to {}, and attaches the flowId", () => {

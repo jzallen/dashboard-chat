@@ -11,74 +11,8 @@
 // contract: events go in, the projection is the public read shape.
 
 import type { ActiveScope, ResourceType } from "./domain/active-scope.ts";
-import type { FlowId } from "./flow-id.ts";
-
-export interface FlowEvent {
-  ts: string;
-  type: string;
-  payload: Record<string, unknown>;
-  request_id: string;
-  /** TRANSIENT routing property — present on freshly CONSTRUCTED events (via
-   *  FlowEvent.from), ABSENT on events DESERIALIZED from Redis. Never
-   *  persisted (redis serialize() is a 4-field allow-list) and never projected
-   *  (buildProjection ignores it). FlowEvent.getMachine() reads it. */
-  readonly flowId?: FlowId;
-}
-
-/**
- * Companion object merged with the FlowEvent interface (the same
- * interface+const pattern as FlowId). Owns event construction so the "an
- * event always has a ts" invariant lives on the model — not at ~40 call
- * sites — and so every freshly-built event carries its routing FlowId.
- * Machine-AGNOSTIC: it stores the FlowId it is handed and branches on
- * nothing.
- */
-export const FlowEvent = {
-  /** Named constructor. `ts` defaults to now() when absent (the
-   *  deterministic-clock seam survives via the optional last arg); `payload`
-   *  defaults to {} (absorbing the routers' `?? {}`). The FlowId leads —
-   *  addressing first. */
-  from(
-    flowId: FlowId,
-    fields: {
-      type: string;
-      payload?: Record<string, unknown>;
-      request_id: string;
-    },
-    ts?: string,
-  ): FlowEvent {
-    return {
-      ts: ts ?? new Date().toISOString(),
-      type: fields.type,
-      payload: fields.payload ?? {},
-      request_id: fields.request_id,
-      flowId,
-    };
-  },
-
-  /** The routing machine segment carried by a freshly-constructed event.
-   *  THROWS on a deserialized (flowId-less) event reaching the dispatch path
-   *  — a loud failure beats a silent wrong-machine dispatch (strictly better
-   *  than the old `flow_id.split(":")[0]`, which would happily mis-key). */
-  getMachine(event: FlowEvent): string {
-    if (!event.flowId) {
-      throw new Error(
-        "FlowEvent.getMachine: event has no flowId (deserialized event reached the dispatch path)",
-      );
-    }
-    return event.flowId.machine;
-  },
-};
-
-export interface FlowProjection {
-  flow_id: string;
-  state: string;
-  context: Record<string, unknown>;
-  active_scope: ActiveScope;
-  sequence_id: number;
-  last_event_at: string;
-  request_id: string;
-}
+import type { FlowEvent } from "./domain/flow-event.ts";
+import type { FlowProjection } from "./domain/flow-projection.ts";
 
 const EMPTY_SCOPE: ActiveScope = {
   org_id: "",

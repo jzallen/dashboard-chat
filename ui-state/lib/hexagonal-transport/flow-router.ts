@@ -11,7 +11,7 @@
 //     attach the substrate routes.
 //
 // ADR-028 invariant preserved: machine packages depend only on this
-// substrate + `flow-result.ts` + their own machine module — no machine
+// substrate + `domain/flow-result.ts` + their own machine module — no machine
 // imports another machine. The orchestrator stays the sole cross-machine
 // mediator (broadcastFreeze/Thaw is dispatched through the orchestrator,
 // which holds the strategy registry; the routes here are uniform glue).

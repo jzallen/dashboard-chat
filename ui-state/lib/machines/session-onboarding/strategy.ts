@@ -13,7 +13,7 @@
 
 import { type AnyActorRef, createActor } from "xstate";
 
-import { FlowId } from "../../flow-id.ts";
+import { FlowEvent, FlowId } from "../../domain/flow-event.ts";
 import type {
   BeginFlowInput,
   BeginStrategy,
@@ -24,7 +24,6 @@ import type {
 } from "../../orchestrator.ts";
 import { harvestSettledLoginState } from "../../orchestrator-harvester.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
-import { FlowEvent } from "../../projection.ts";
 import { createSessionOnboardingMachine } from "./index.ts";
 
 /**
