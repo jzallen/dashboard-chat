@@ -137,7 +137,7 @@ async function buildSessionActiveFlow(
     await orch.beginIfNotStarted({
       machine: WIRE,
       principal_id: PRINCIPAL,
-      correlation_id: "R-spawn",
+      request_id: "R-spawn",
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
@@ -150,7 +150,7 @@ async function buildSessionActiveFlow(
       flow_id: FLOW_ID,
       type: "session_clicked",
       payload: { session_id: SESSION_ID },
-      correlation_id: "R-resume",
+      request_id: "R-resume",
     }),
   );
   expect(resumed.state).toBe("session_active");
@@ -187,7 +187,7 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
         flow_id: FLOW_ID,
         type: "dataset_resolved_by_agent",
         payload: { resource_id: "ds-patients-2025", resource_type: "dataset" },
-        correlation_id: "R-attach",
+        request_id: "R-attach",
       }),
     );
 
@@ -234,7 +234,7 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
         flow_id: FLOW_ID,
         type: "dataset_picked_directly",
         payload: { resource_id: "ds-restricted", resource_type: "dataset" },
-        correlation_id: "R-denied",
+        request_id: "R-denied",
       }),
     );
 

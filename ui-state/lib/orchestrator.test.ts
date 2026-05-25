@@ -84,7 +84,7 @@ function buildOrchestrator(): FlowOrchestrator {
 async function driveToReady(
   orch: FlowOrchestrator,
   principal: string,
-  correlation: string,
+  requestId: string,
   profile = PROFILE_MAYA,
   options: {
     requestClient?: RequestClient;
@@ -99,7 +99,7 @@ async function driveToReady(
       machine: "session-onboarding",
       principal_id: principal,
       bearer_token: `tok-${principal}`,
-      correlation_id: correlation,
+      request_id: requestId,
       config: CONFIG,
       deps: { request_client: options.requestClient ?? okFetch(profile) },
     },
@@ -113,7 +113,7 @@ async function driveToReady(
     flow_id,
     type: "org_form_submitted",
     payload: { org_name: "Acme Data" },
-    correlation_id: correlation,
+    request_id: requestId,
   });
   return { flow_id };
 }
@@ -194,21 +194,21 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
-      correlation_id: "R-2",
+      request_id: "R-2",
     });
     await orch.send({
       machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
-      correlation_id: "R-2",
+      request_id: "R-2",
     });
     await orch.send({
       machine: "session-onboarding",
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
-      correlation_id: "R-2",
+      request_id: "R-2",
     });
 
     expect(orch.replayBufferSize(kaiFlow)).toBe(3);
@@ -237,7 +237,7 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
         flow_id: kaiFlow,
         type: "retry_clicked",
         payload: { i },
-        correlation_id: "R-2",
+        request_id: "R-2",
       });
     }
     expect(orch.replayBufferSize(kaiFlow)).toBe(16);
@@ -249,7 +249,7 @@ describe("FlowOrchestrator replay buffer (B3 + B5)", () => {
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: { i: 16 },
-      correlation_id: "R-2",
+      request_id: "R-2",
     });
     expect(orch.isAbandoned(kaiFlow)).toBe(true);
   });
@@ -282,7 +282,7 @@ describe("FlowOrchestrator replay buffer 5s timeout (B4)", () => {
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: {},
-      correlation_id: "R-2",
+      request_id: "R-2",
     });
     expect(orch.replayBufferSize(kaiFlow)).toBe(1);
 
@@ -295,7 +295,7 @@ describe("FlowOrchestrator replay buffer 5s timeout (B4)", () => {
       flow_id: kaiFlow,
       type: "retry_clicked",
       payload: { late: true },
-      correlation_id: "R-2",
+      request_id: "R-2",
     });
     expect(orch.replayBufferSize(kaiFlow)).toBe(1);
     expect(orch.isAbandoned(kaiFlow)).toBe(true);
@@ -362,7 +362,7 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
     // DIRECTLY in `ready` via the [hasOrg] shortcut (no creating_org, no
     // org_form_submitted).
     const principal = "user_returning";
-    const correlation = "R-hasorg";
+    const requestId = "R-hasorg";
     const beginOrchestrator = new BeginFlowOrchestrator(
       orch.deps.eventLog,
       orch.registry,
@@ -372,7 +372,7 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
         machine: "session-onboarding",
         principal_id: principal,
         bearer_token: "tok-returning",
-        correlation_id: correlation,
+        request_id: requestId,
         config: CONFIG,
         deps: {
           request_client: returningFetch({
@@ -398,7 +398,7 @@ describe("auth_ready broadcast on the [hasOrg] shortcut (FIX D2)", () => {
       flow_id: loginFlow,
       type: "noop_settle_trigger",
       payload: {},
-      correlation_id: correlation,
+      request_id: requestId,
     });
 
     // Side effect 1: the broadcast spawned project-context, and its

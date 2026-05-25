@@ -99,7 +99,7 @@ async function buildSettledProjectContextFlow(
     await orch.beginIfNotStarted({
       machine: WIRE,
       principal_id: PRINCIPAL,
-      correlation_id: "R-begin",
+      request_id: "R-begin",
       org_id: "dev-org-001",
       user_first_name: "Dev",
     }),
@@ -134,7 +134,7 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
         flow_id: FLOW_ID,
         type: "switching_project_intent",
         payload: { new_project_id: "proj-B" },
-        correlation_id: "R-switch",
+        request_id: "R-switch",
       }),
     );
 
@@ -175,7 +175,7 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
         flow_id: FLOW_ID,
         type: "switching_project_intent",
         payload: { new_project_id: "p-revoked" },
-        correlation_id: "R-switch-revoked",
+        request_id: "R-switch-revoked",
       }),
     );
 

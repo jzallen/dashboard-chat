@@ -36,7 +36,7 @@ import type {
 import { createSessionChatMachine } from "./machine.ts";
 
 const MAYA_INPUT = {
-  correlation_id: "R-7a4f-901c",
+  request_id: "R-7a4f-901c",
   principal_id: "dev-user-001",
 };
 
@@ -127,14 +127,14 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-broadcast-1",
+      request_id: "R-broadcast-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
     expect(ctx.org_id).toBe("dev-org-001");
     expect(ctx.project.id).toBe("proj-q4");
     expect(ctx.project.name).toBe("Q4 Analytics");
-    expect(ctx.correlation_id).toBe("R-broadcast-1");
+    expect(ctx.request_id).toBe("R-broadcast-1");
   });
 
   it("S3: project_ready forwards deeplink_session_id per DESIGN §3.4", async () => {
@@ -157,7 +157,7 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-broadcast-1",
+      request_id: "R-broadcast-1",
       // The URL-level deep-link wish flows in via the renamed key
       // (audit §5 / MR-D). intent_resource_id / intent_resource_type
       // remain on the event surface (forward-compat) but are no
@@ -211,7 +211,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
@@ -235,7 +235,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     expect(actor.getSnapshot().context.session_list).toEqual([]);
@@ -263,7 +263,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
       deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
@@ -310,7 +310,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-deeplink",
+      request_id: "R-deeplink",
       deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
@@ -350,7 +350,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-deeplink",
+      request_id: "R-deeplink",
       deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
@@ -373,7 +373,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "error_recoverable");
     const ctx = actor.getSnapshot().context;
@@ -401,7 +401,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "session_clicked", session_id: "sess-t3" });
@@ -450,7 +450,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
       deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
@@ -477,7 +477,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
       deeplink_session_id: "sess-deleted",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
@@ -510,7 +510,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
       deeplink_session_id: "sess-t4",
     });
     await waitFor(() => actor.getSnapshot().value === "session_active");
@@ -540,7 +540,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     expect(actor.getSnapshot().context.session_list).toHaveLength(1);
@@ -575,7 +575,7 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "error_recoverable");
     actor.send({ type: "retry_clicked" });
@@ -622,7 +622,7 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     return actor;
@@ -681,7 +681,7 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "new_session_clicked" });
@@ -711,7 +711,7 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "new_session_clicked" });
@@ -743,7 +743,7 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-1",
+      request_id: "R-1",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "new_session_clicked" });
@@ -779,7 +779,7 @@ describe("SessionChatMachine — MR-3 new-session lifecycle (US-206)", () => {
       org_id: "dev-org-001",
       project_id: "proj-q3",
       project_name: "Q3 Sales",
-      correlation_id: "R-2",
+      request_id: "R-2",
     });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     const ctx = actor.getSnapshot().context;
@@ -848,7 +848,7 @@ describe("SessionChatMachine — MR-5 dataset context switching (US-209)", () =>
       org_id: "dev-org-001",
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
-      correlation_id: "R-ds",
+      request_id: "R-ds",
     });
     return { actor, captured };
   }
@@ -1081,10 +1081,10 @@ describe("SessionChatMachine — MR-6 FREEZE/THAW (US-210)", () => {
       }),
     });
     const actor = createActor_(machine);
-    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
 
-    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    actor.send({ type: "FREEZE", origin_request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "freeze");
     expect(actor.getSnapshot().context.last_live_state).toBe("session_list_loaded");
   });
@@ -1110,12 +1110,12 @@ describe("SessionChatMachine — MR-6 FREEZE/THAW (US-210)", () => {
       ),
     });
     const actor = createActor_(machine);
-    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "session_clicked", session_id: "chat-9b2a" });
     await waitFor(() => actor.getSnapshot().value === "resuming_session");
 
-    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    actor.send({ type: "FREEZE", origin_request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "freeze");
     expect(actor.getSnapshot().context.last_live_state).toBe("resuming_session");
 
@@ -1139,7 +1139,7 @@ describe("SessionChatMachine — MR-6 FREEZE/THAW (US-210)", () => {
       } as ResumeSessionOutput),
     });
     const actor = createActor_(machine);
-    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
     actor.send({ type: "session_clicked", session_id: "chat-9b2a" });
     await waitFor(() =>
@@ -1147,7 +1147,7 @@ describe("SessionChatMachine — MR-6 FREEZE/THAW (US-210)", () => {
         actor.getSnapshot().value as string,
       ),
     );
-    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    actor.send({ type: "FREEZE", origin_request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "freeze");
 
     actor.send({ type: "THAW" });
@@ -1164,9 +1164,9 @@ describe("SessionChatMachine — MR-6 FREEZE/THAW (US-210)", () => {
       }),
     });
     const actor = createActor_(machine);
-    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", correlation_id: "R-1" });
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q4", request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
-    actor.send({ type: "FREEZE", origin_correlation_id: "R-1" });
+    actor.send({ type: "FREEZE", origin_request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "freeze");
 
     actor.send({ type: "replay_abandoned" });
@@ -1190,7 +1190,7 @@ describe("SessionChatMachine — MR-6 FREEZE/THAW (US-210)", () => {
       } as ResumeSessionOutput),
     });
     const actor = createActor_(machine);
-    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q3", correlation_id: "R-1" });
+    actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q3", request_id: "R-1" });
     await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
 
     // chat-xyz is NOT in the post-THAW list — stale (the user switched

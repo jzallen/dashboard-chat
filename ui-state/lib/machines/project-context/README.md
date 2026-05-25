@@ -99,14 +99,14 @@ The HTTP entry point is `POST /flow/:machine/open-deep-link`, which arrives via 
 | Actor | Input | Output | Invoked in |
 |---|---|---|---|
 | `resolveInitialScope` | `{ org_id, deeplink_project_id, principal_id }` | One of: `{ project }`, `{ no_projects: true }`, `{ cross_tenant: true }`, `{ project_not_found: true }`. May also include `most_recent_session_per_project` and `degraded_project_ids` | `resolving_initial_scope` |
-| `createProject` | `{ org_name, correlation_id, principal_id }` | `ProjectSummary` = `{ id, name }` | `creating_project` |
-| `switchProject` | `{ new_project_id, correlation_id, principal_id }` | One of: `{ project }`, `{ access_revoked: true }`, `{ project_not_found: true }` | `switching_project` |
+| `createProject` | `{ org_name, request_id, principal_id }` | `ProjectSummary` = `{ id, name }` | `creating_project` |
+| `switchProject` | `{ new_project_id, request_id, principal_id }` | One of: `{ project }`, `{ access_revoked: true }`, `{ project_not_found: true }` | `switching_project` |
 
 ## Context
 
 | Field | Type | When populated |
 |---|---|---|
-| `correlation_id` | `string` | spawn |
+| `request_id` | `string` | spawn |
 | `principal_id` | `string` | spawn (from auth-proxy's `X-User-Id` header) |
 | `org_id` | `string` | `auth_ready` (empty string until login settles) |
 | `user` | `{ first_name }` (`string \| null`) | `auth_ready` |

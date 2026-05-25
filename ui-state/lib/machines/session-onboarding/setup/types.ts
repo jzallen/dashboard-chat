@@ -37,7 +37,7 @@ export interface OrgValidationInlineError {
  * means `config`/`deps` must reach the resolvers this way.
  */
 export interface SessionOnboardingParams {
-  correlation_id: string;
+  request_id: string;
   /** Branded id of the verified principal (the auth-proxy X-User-Id), branded
    *  once in the context factory; the raw machine input carries it as a string. */
   principal_id: PrincipalId;
@@ -85,7 +85,7 @@ export type SessionOnboardingEvent =
 /** The raw machine input (the begin envelope before the context factory
  *  normalizes it into `params`). Mirrors `setup({ types: { input } })`. */
 export interface SessionOnboardingInput {
-  correlation_id: string;
+  request_id: string;
   principal_id: string;
   bearer_token?: string;
   config?: Config | null;

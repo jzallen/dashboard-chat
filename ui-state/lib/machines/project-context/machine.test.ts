@@ -42,7 +42,7 @@ function switchTo(output: SwitchProjectOutput): SwitchProjectActor {
 }
 
 function switchFails(message: string): SwitchProjectActor {
-  return fromPromise<SwitchProjectOutput, { new_project_id: string; correlation_id: string; principal_id: string }>(
+  return fromPromise<SwitchProjectOutput, { new_project_id: string; request_id: string; principal_id: string }>(
     async () => {
       throw new Error(message);
     },
@@ -50,7 +50,7 @@ function switchFails(message: string): SwitchProjectActor {
 }
 
 const MAYA_INPUT = {
-  correlation_id: "R-7a4f-901c",
+  request_id: "R-7a4f-901c",
   principal_id: "dev-user-001",
   org_id: "dev-org-001",
   user: { first_name: "Maya" },
@@ -65,7 +65,7 @@ function createProjectOk(summary: ProjectSummary): CreateProjectActor {
 }
 
 function createProjectFails(message: string): CreateProjectActor {
-  return fromPromise<ProjectSummary, { org_name: string; correlation_id: string; principal_id: string }>(
+  return fromPromise<ProjectSummary, { org_name: string; request_id: string; principal_id: string }>(
     async () => {
       throw new Error(message);
     },

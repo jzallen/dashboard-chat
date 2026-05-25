@@ -16,12 +16,12 @@ import { buildProjection, type FlowEvent } from "./projection.ts";
 const baseEvent = (
   type: string,
   payload: Record<string, unknown> = {},
-  correlation_id = "corr-1",
+  request_id = "corr-1",
 ): FlowEvent => ({
   ts: "2026-05-11T22:00:00.000Z",
   type,
   payload,
-  correlation_id,
+  request_id,
 });
 
 describe("buildProjection (pure projection builder)", () => {

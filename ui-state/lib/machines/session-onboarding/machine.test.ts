@@ -30,7 +30,7 @@ import type { UnderlyingCauseTag } from "./setup/domain.ts";
 const CONFIG = makeTestConfig();
 
 const MAYA_INPUT = {
-  correlation_id: "R-7a4f-901c",
+  request_id: "R-7a4f-901c",
   principal_id: "user_maya",
   bearer_token: "tok-maya",
   config: CONFIG,
@@ -316,12 +316,12 @@ describe("when org setup keeps failing and the user keeps retrying", () => {
 
 describe("when a user retries after a recoverable failure", () => {
   it("the retry continues the same onboarding session rather than starting a new one", async () => {
-    // Observe the correlation_id the resolver threads upstream: createOrgFn
+    // Observe the request_id the resolver threads upstream: createOrgFn
     // sends it as the `x-request-id` header on POST /api/orgs. Every
     // internal create attempt (each failing via force_reissue_failures) and
-    // every user retry must carry the SAME original correlation_id.
-    const seenCorrelationIds: string[] = [];
-    const recordingFetch = makeRecordingFetch(seenCorrelationIds);
+    // every user retry must carry the SAME original request_id.
+    const seenRequestIds: string[] = [];
+    const recordingFetch = makeRecordingFetch(seenRequestIds);
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, {
       input: inputWith(recordingFetch, { force_reissue_failures: 99 }),
@@ -330,17 +330,17 @@ describe("when a user retries after a recoverable failure", () => {
     await waitFor(actor, (s) => s.value === "needs_org");
     actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
     await waitFor(actor, (s) => s.value === "error_recoverable");
-    const internalAttempts = seenCorrelationIds.length;
+    const internalAttempts = seenRequestIds.length;
     expect(internalAttempts).toBeGreaterThan(0);
     actor.send({ type: "retry_clicked" });
     await waitFor(
       actor,
       (s) =>
-        seenCorrelationIds.length > internalAttempts &&
+        seenRequestIds.length > internalAttempts &&
         (s.value === "error_recoverable" || s.value === "error_terminal"),
     );
-    const unique = Array.from(new Set(seenCorrelationIds));
-    expect(unique).toEqual([MAYA_INPUT.correlation_id]);
+    const unique = Array.from(new Set(seenRequestIds));
+    expect(unique).toEqual([MAYA_INPUT.request_id]);
   });
 });
 

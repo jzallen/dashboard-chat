@@ -16,7 +16,7 @@ export interface FlowEvent {
   ts: string;
   type: string;
   payload: Record<string, unknown>;
-  correlation_id: string;
+  request_id: string;
 }
 
 export interface FlowProjection {
@@ -26,7 +26,7 @@ export interface FlowProjection {
   active_scope: ActiveScope;
   sequence_id: number;
   last_event_at: string;
-  correlation_id: string;
+  request_id: string;
 }
 
 const EMPTY_SCOPE: ActiveScope = {
@@ -982,14 +982,14 @@ export function buildProjection(
   let state = "verifying";
   let context = initialContext();
   let lastEventAt = "";
-  let correlationId = "";
+  let requestId = "";
 
   for (const event of events) {
     const next = applyEvent(state, context, event);
     state = next.state;
     context = next.context;
     lastEventAt = event.ts;
-    correlationId = event.correlation_id;
+    requestId = event.request_id;
   }
 
   // Build the projection-level active_scope from the running context.
@@ -1028,7 +1028,7 @@ export function buildProjection(
     active_scope: scope,
     sequence_id: events.length,
     last_event_at: lastEventAt,
-    correlation_id: correlationId,
+    request_id: requestId,
   };
 }
 

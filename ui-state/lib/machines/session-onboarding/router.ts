@@ -130,14 +130,14 @@ const eventRequestSchema = z.object({
 function translateWireEvent(
   event: z.infer<typeof eventRequestSchema>,
   flowId: string,
-  correlationId: string,
+  requestId: string,
 ): SendEventInput {
   return {
     machine: event.machine ?? SESSION_ONBOARDING_MACHINE,
     flow_id: flowId,
     type: event.type,
     payload: event.payload ?? {},
-    correlation_id: correlationId,
+    request_id: requestId,
   };
 }
 
@@ -211,13 +211,15 @@ export function buildSessionOnboardingRouter(
     // traceable, but do not feed it into the flow.
     logTransition({
       event: "session_onboarding.org_claim",
-      correlation_id: request.referenceCode,
+      request_id: request.referenceCode,
       principal_id: request.userId,
       claimed_org_id: request.orgId || null,
     });
 
     const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
       body: (rawBody ?? {}) as Record<string, unknown>,
+      // `correlationId` is the shared failure-simulation audit-envelope arg
+      // (ADR-037); we feed it the request id.
       correlationId: request.referenceCode,
       serviceName: "ui-state",
     });
@@ -226,7 +228,7 @@ export function buildSessionOnboardingRouter(
         machine: SESSION_ONBOARDING_MACHINE,
         principal_id: request.userId,
         bearer_token: request.bearerToken,
-        correlation_id: request.referenceCode,
+        request_id: request.referenceCode,
         config,
         deps: { request_client: requestClient },
         force_reissue_failures: reissueFailuresAllowed
@@ -241,7 +243,7 @@ export function buildSessionOnboardingRouter(
   });
 
   router.post("/event", async (c) => {
-    const correlationId = c.get("requestId");
+    const requestId = c.get("requestId");
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
@@ -267,10 +269,10 @@ export function buildSessionOnboardingRouter(
 
     // Structured audit of the inbound event — the /event analogue of /begin's
     // `session_onboarding.org_claim` log (event type + verified principal +
-    // derived flow + correlation).
+    // derived flow + request id).
     logTransition({
       event: "session_onboarding.event_received",
-      correlation_id: correlationId,
+      request_id: requestId,
       principal_id: c.get("userId") || null,
       flow_id: flowId,
       event_type: event.type,
@@ -279,7 +281,9 @@ export function buildSessionOnboardingRouter(
     if (event.type === "__force_failure__") {
       const allowed = shouldInject(KNOB.forceFailureOnAuthRetry, {
         event: { type: event.type },
-        correlationId,
+        // `correlationId` is the shared failure-simulation audit-envelope arg
+        // (ADR-037); we feed it the request id.
+        correlationId: requestId,
         serviceName: "ui-state",
       });
       if (!allowed) {
@@ -337,13 +341,13 @@ export function buildSessionOnboardingRouter(
     }
 
     const result = await flowOrchestrator.send(
-      translateWireEvent(event, flowId, correlationId),
+      translateWireEvent(event, flowId, requestId),
     );
     return serializeResult(c, result, "event_failed");
   });
 
   router.post("/open-deep-link", async (c) => {
-    const correlationId = c.get("requestId");
+    const requestId = c.get("requestId");
     let body: {
       route?: {
         org?: string;
@@ -381,7 +385,7 @@ export function buildSessionOnboardingRouter(
       const result = await flowOrchestrator.appendDeepLinkEvents({
         machine: SESSION_ONBOARDING_MACHINE,
         flow_id: flowId,
-        correlation_id: correlationId,
+        request_id: requestId,
         events: [
           {
             type: "scope_access_denied",
@@ -395,7 +399,7 @@ export function buildSessionOnboardingRouter(
     const result = await flowOrchestrator.appendDeepLinkEvents({
       machine: SESSION_ONBOARDING_MACHINE,
       flow_id: flowId,
-      correlation_id: correlationId,
+      request_id: requestId,
       events: [
         {
           type: "deep_link_opened",

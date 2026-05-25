@@ -57,7 +57,7 @@ const projectSelectedEvent = (project: Project, seq: number): FlowEvent => ({
   ts: `2026-05-15T22:${String(seq).padStart(2, "0")}:00.000Z`,
   type: "project_selected",
   payload: { org_id: ORG_ID, project },
-  correlation_id: `corr-${seq}`,
+  request_id: `corr-${seq}`,
 });
 
 const projectContextInheritedEvent = (
@@ -71,7 +71,7 @@ const projectContextInheritedEvent = (
     project_id: project.id,
     project_name: project.name,
   },
-  correlation_id: `corr-${seq}`,
+  request_id: `corr-${seq}`,
 });
 
 // ── Seeded PRNG (mulberry32) — reproducible without a fast-check dep ─────

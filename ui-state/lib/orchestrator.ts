@@ -111,7 +111,7 @@ export interface PumpContext {
   logTransition(record: Record<string, unknown>): void;
   projectionFor(
     flow_id: string,
-    correlation_id: string,
+    request_id: string,
   ): Promise<FlowProjection>;
 }
 
@@ -166,7 +166,7 @@ export interface FlowStrategy {
   buildMachine(
     deps: OrchestratorDeps,
     input: {
-      correlation_id: string;
+      request_id: string;
       principal_id: string;
     },
   ): AnyStateMachine;
@@ -189,7 +189,7 @@ export interface FlowStrategy {
   settleSpawn?(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: { machine: string; principal_id: string; correlation_id: string },
+    input: { machine: string; principal_id: string; request_id: string },
   ): Promise<void>;
   /** Per-frozen-flow FREEZE emission tail; the broadcast loop stays central. */
   settleFreeze?(
@@ -210,7 +210,7 @@ export interface FlowStrategy {
     input: {
       machine: string;
       flow_id: string;
-      correlation_id: string;
+      request_id: string;
       events: Array<{ type: string; payload: Record<string, unknown> }>;
     },
   ): Promise<void>;
@@ -295,7 +295,7 @@ export interface BeginFlowInput {
    *  `[hasOrg]` org binding is loaded from the backend (`/api/orgs/me`, the org
    *  SSOT) during `verifying`, NOT from the `X-Org-Id` header (audit-only). */
   bearer_token: string;
-  correlation_id: string;
+  request_id: string;
   /** Env config (provides `workosUrl` + `backendUrl`) seeded into the machine
    *  input so the `getWorkOSUserInfo` re-verify resolver + the
    *  `getOrgAndReissue` org-create resolver read their URLs from input rather
@@ -325,7 +325,7 @@ export interface BeginFlowInput {
 export interface BeginStrategy {
   readonly flow_id: string;
   readonly actor: AnyActorRef;
-  readonly correlationId: string;
+  readonly requestId: string;
   begin(): Promise<void>;
 }
 
@@ -334,7 +334,7 @@ export interface SendEventInput {
   flow_id: string;
   type: string;
   payload: Record<string, unknown>;
-  correlation_id: string;
+  request_id: string;
 }
 
 export const FREEZE_WINDOW_MS = 5_000;
@@ -354,7 +354,7 @@ interface FrozenFlowState {
 export type BeginIfNotStartedInput = {
   machine: string;
   principal_id: string;
-  correlation_id: string;
+  request_id: string;
   // `auth_ready` payload (project-context dispatch):
   org_id?: string;
   user_first_name?: string;
@@ -373,7 +373,7 @@ export type BeginIfNotStartedInput = {
 export type AppendDeepLinkEventsInput = {
   machine: string;
   flow_id: string;
-  correlation_id: string;
+  request_id: string;
   events: Array<{ type: string; payload: Record<string, unknown> }>;
 };
 
@@ -503,7 +503,7 @@ export class FlowOrchestrator implements PumpContext {
             org_id: input.org_id ?? "",
             project_id: input.project_id!,
             project_name: input.project_name ?? "",
-            correlation_id: input.correlation_id,
+            request_id: input.request_id,
             deeplink_session_id: input.deeplink_session_id ?? null,
             intent_resource_id: input.intent_resource_id ?? null,
             intent_resource_type: input.intent_resource_type ?? null,
@@ -513,7 +513,7 @@ export class FlowOrchestrator implements PumpContext {
             await strategy.settleSpawn(this, actor, {
               machine: input.machine,
               principal_id: input.principal_id,
-              correlation_id: input.correlation_id,
+              request_id: input.request_id,
             });
           }
         } else if (isAuthReadyDispatch && actor) {
@@ -527,16 +527,16 @@ export class FlowOrchestrator implements PumpContext {
       } catch {
         // Defensive — never blow up on a re-emission.
       }
-      return this.projectionFor(flow_id, input.correlation_id);
+      return this.projectionFor(flow_id, input.request_id);
     }
 
     const machine = strategy.buildMachine(this.deps, {
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
       principal_id: input.principal_id,
     });
     const actor = createActor(machine, {
       input: {
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
         principal_id: input.principal_id,
         org_id: input.org_id,
         user:
@@ -561,7 +561,7 @@ export class FlowOrchestrator implements PumpContext {
           org_id: input.org_id ?? "",
           project_id: input.project_id!,
           project_name: input.project_name ?? "",
-          correlation_id: input.correlation_id,
+          request_id: input.request_id,
           deeplink_session_id: input.deeplink_session_id ?? null,
           intent_resource_id: input.intent_resource_id ?? null,
           intent_resource_type: input.intent_resource_type ?? null,
@@ -625,7 +625,7 @@ export class FlowOrchestrator implements PumpContext {
       await strategy.settleSpawn(this, actor, {
         machine: input.machine,
         principal_id: input.principal_id,
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     }
 
@@ -636,12 +636,12 @@ export class FlowOrchestrator implements PumpContext {
       await this.maybeFireProjectReady(
         flow_id,
         input.principal_id,
-        input.correlation_id,
+        input.request_id,
         projectReadyHookParams,
       );
     }
 
-    return this.projectionFor(flow_id, input.correlation_id);
+    return this.projectionFor(flow_id, input.request_id);
   }
 
   /**
@@ -659,7 +659,7 @@ export class FlowOrchestrator implements PumpContext {
   private async maybeFireProjectReady(
     originFlowId: string,
     principal_id: string,
-    correlation_id: string,
+    request_id: string,
     ctx: {
       org_id?: string;
       project?: { id: string | null; name: string | null };
@@ -676,7 +676,7 @@ export class FlowOrchestrator implements PumpContext {
       await this.beginIfNotStartedCore({
         machine: SESSION_CHAT_WIRE_NAME,
         principal_id,
-        correlation_id,
+        request_id,
         org_id: orgId,
         project_id: projectId,
         project_name: ctx.project?.name ?? "",
@@ -728,17 +728,17 @@ export class FlowOrchestrator implements PumpContext {
         ts: new Date().toISOString(),
         type: input.type,
         payload: input.payload,
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       };
       await this.deps.eventLog.append(input.flow_id, queuedEvent);
-      return this.projectionFor(input.flow_id, input.correlation_id);
+      return this.projectionFor(input.flow_id, input.request_id);
     }
 
     const event: FlowEvent = {
       ts: new Date().toISOString(),
       type: input.type,
       payload: input.payload,
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
     };
     await this.deps.eventLog.append(input.flow_id, event);
 
@@ -841,7 +841,7 @@ export class FlowOrchestrator implements PumpContext {
         await this.beginIfNotStartedCore({
           machine: PROJECT_CONTEXT_WIRE_NAME,
           principal_id: parsePrincipal(input.flow_id),
-          correlation_id: input.correlation_id,
+          request_id: input.request_id,
           org_id: loginSettleOutcome.authReady.org_id,
           user_first_name: loginSettleOutcome.authReady.user_first_name,
         });
@@ -869,7 +869,7 @@ export class FlowOrchestrator implements PumpContext {
       await this.maybeFireProjectReady(
         input.flow_id,
         principal_id,
-        input.correlation_id,
+        input.request_id,
         projectSettleOutcome.projectReady,
       );
     }
@@ -883,7 +883,7 @@ export class FlowOrchestrator implements PumpContext {
       projectionCtx,
     });
 
-    return this.projectionFor(input.flow_id, input.correlation_id);
+    return this.projectionFor(input.flow_id, input.request_id);
   }
 
   async getProjection(flow_id: string): Promise<Result<FlowProjection>> {
@@ -1035,10 +1035,10 @@ export class FlowOrchestrator implements PumpContext {
               abandoned_intents: drained.map((d) => ({
                 type: d.input.type,
                 payload: d.input.payload,
-                correlation_id: d.input.correlation_id,
+                request_id: d.input.request_id,
               })),
             },
-            correlation_id: h.correlation_id,
+            request_id: h.request_id,
           });
           await this.deps.eventLog.append(flow_id, {
             ts: new Date().toISOString(),
@@ -1050,7 +1050,7 @@ export class FlowOrchestrator implements PumpContext {
               underlying_cause_tag: "replay_abandoned",
               originating_state: h.last_live_state,
             },
-            correlation_id: h.correlation_id,
+            request_id: h.request_id,
           });
         }
         continue;
@@ -1080,7 +1080,7 @@ export class FlowOrchestrator implements PumpContext {
               ? "session_chat_thawed"
               : "project_context_thawed",
           payload: { last_live_state: h.last_live_state },
-          correlation_id: h.correlation_id,
+          request_id: h.request_id,
         });
         // Emit a history-target re-entry terminal ONLY when last_live_state
         // was an invoke-driven transient that actually re-ran on THAW. For
@@ -1126,7 +1126,7 @@ export class FlowOrchestrator implements PumpContext {
             await this.maybeFireProjectReady(
               flow_id,
               parsePrincipal(flow_id),
-              h.correlation_id,
+              h.request_id,
               { org_id: hpc.org_id ?? "", project: hpc.project },
             );
           }
@@ -1182,7 +1182,7 @@ export class FlowOrchestrator implements PumpContext {
                   ? ((input.payload.resource_id as string | undefined) ?? "")
                   : ""),
             },
-            correlation_id: input.correlation_id,
+            request_id: input.request_id,
           });
         }
       }
@@ -1250,12 +1250,12 @@ export class FlowOrchestrator implements PumpContext {
       );
     }
     await projectContextStrategy.applyDeepLink(this, input);
-    return this.projectionFor(input.flow_id, input.correlation_id);
+    return this.projectionFor(input.flow_id, input.request_id);
   }
 
   async projectionFor(
     flow_id: string,
-    correlation_id: string,
+    request_id: string,
   ): Promise<FlowProjection> {
     const events = await this.deps.eventLog.read(flow_id);
     const projection = buildProjection(flow_id, events);
@@ -1265,7 +1265,7 @@ export class FlowOrchestrator implements PumpContext {
     // `deep_link_opened` event for the reducer to consume.
     return {
       ...projection,
-      correlation_id: correlation_id || projection.correlation_id,
+      request_id: request_id || projection.request_id,
     };
   }
 
@@ -1346,7 +1346,7 @@ export class BeginFlowOrchestrator {
       await strategy.begin();
       // exit: the freshly-built projection is the response
       return ok(
-        await this.projectionFor(strategy.flow_id, strategy.correlationId),
+        await this.projectionFor(strategy.flow_id, strategy.requestId),
       );
     } catch (e) {
       return toFlowError(e);
@@ -1355,13 +1355,13 @@ export class BeginFlowOrchestrator {
 
   private async projectionFor(
     flow_id: string,
-    correlation_id: string,
+    request_id: string,
   ): Promise<FlowProjection> {
     const events = await this.eventLog.read(flow_id);
     const projection = buildProjection(flow_id, events);
     return {
       ...projection,
-      correlation_id: correlation_id || projection.correlation_id,
+      request_id: request_id || projection.request_id,
     };
   }
 }

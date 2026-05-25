@@ -61,7 +61,7 @@ export function createSessionOnboardingMachine() {
     initial: "verifying",
     context: ({ input }) => ({
       params: {
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
         principal_id: input.principal_id as PrincipalId,
         bearer_token: input.bearer_token ?? "",
         config: input.config ?? null,
@@ -82,7 +82,7 @@ export function createSessionOnboardingMachine() {
           src: "loadSession",
           input: ({ context }) => ({
             bearer_token: context.params.bearer_token,
-            correlation_id: context.params.correlation_id,
+            request_id: context.params.request_id,
             config: context.params.config,
             deps: context.params.deps,
           }),
@@ -140,7 +140,7 @@ export function createSessionOnboardingMachine() {
             return {
               org_name: context.pending_org_name,
               principal_id: context.params.principal_id,
-              correlation_id: context.params.correlation_id,
+              request_id: context.params.request_id,
               attempt: context.reissue_attempts_count + 1,
               config: context.params.config,
               deps: context.params.deps,

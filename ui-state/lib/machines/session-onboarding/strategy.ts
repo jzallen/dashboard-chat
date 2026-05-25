@@ -117,7 +117,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
           org: orgCtx,
           access_token,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
 
       // ---- auth_ready broadcast hook ------------------------------------
@@ -149,7 +149,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
             harvested.underlying_cause_tag ?? "partial-setup",
           org: harvested.org,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else if (stateValue === "needs_org") {
       // org_form_submitted with an invalid name → stay in needs_org but
@@ -162,7 +162,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
           ts: new Date().toISOString(),
           type: "validation_failed",
           payload: { error: harvested.org_validation_error },
-          correlation_id: input.correlation_id,
+          request_id: input.request_id,
         });
       }
     }
@@ -180,7 +180,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
   async settleSpawn(
     _pump: PumpContext,
     _actor: AnyActorRef,
-    _input: { machine: string; principal_id: string; correlation_id: string },
+    _input: { machine: string; principal_id: string; request_id: string },
   ): Promise<void> {
     // No-op: session-onboarding is never spawned (only beginsDirectly machine).
   },
@@ -215,7 +215,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
     _input: {
       machine: string;
       flow_id: string;
-      correlation_id: string;
+      request_id: string;
       events: Array<{ type: string; payload: Record<string, unknown> }>;
     },
   ): Promise<void> {
@@ -244,7 +244,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
 export class SessionOnboardingBeginStrategy implements BeginStrategy {
   readonly flow_id: string;
   readonly actor: AnyActorRef;
-  readonly correlationId: string;
+  readonly requestId: string;
   private readonly input: BeginFlowInput;
   private readonly eventLog: FlowEventLog;
   private readonly logTransition: (record: Record<string, unknown>) => void;
@@ -258,14 +258,14 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     this.eventLog = eventLog;
     this.logTransition = logTransition;
     this.flow_id = `${input.machine}:${input.principal_id}`;
-    this.correlationId = input.correlation_id;
+    this.requestId = input.request_id;
     // Every actor is config/input-driven (no `.provide(...)`): the fetch-driven
     // actors (loadSession / createOrgAndReissue) read their I/O port from
     // input.deps.request_client (threaded into the machine input below).
     const machine = createSessionOnboardingMachine();
     this.actor = createActor(machine, {
       input: {
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
         principal_id: input.principal_id,
         bearer_token: input.bearer_token,
         // Env config (workosUrl + backendUrl) for the re-verify + org-create
@@ -294,7 +294,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
       flow_id,
       from_state: null,
       to_state: "verifying",
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
       principal_id: input.principal_id,
       duration_ms: 0,
     });
@@ -311,14 +311,14 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         payload: {
           reason: harvested.underlying_cause_tag ?? "session_rejected",
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       };
       await this.eventLog.append(flow_id, rejectedEvent);
       this.logTransition({
         flow_id,
         from_state: "verifying",
         to_state: "session_rejected",
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
         principal_id: input.principal_id,
         duration_ms: Date.now() - start,
       });
@@ -347,14 +347,14 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         },
         org,
       },
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
     };
     await this.eventLog.append(flow_id, startedEvent);
     this.logTransition({
       flow_id,
       from_state: "verifying",
       to_state: stateValue,
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
       principal_id: input.principal_id,
       duration_ms: Date.now() - start,
     });

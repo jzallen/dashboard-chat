@@ -200,7 +200,7 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
   // present context fields through the sanctioned snapshot-read boundary
   // (AMB-1) so `SessionChatStrategy.settleSpawn` can source the
   // `project_context_inherited` payload from the harvest rather than the
-  // port-locked `{ machine, principal_id, correlation_id }` input — the
+  // port-locked `{ machine, principal_id, request_id }` input — the
   // exact `harvestSettledProjectContextState` org_id precedent (D-MR5-01).
   // Behavior-neutral: on the spawn path the machine context value is
   // byte-identical to the pump's pre-carve `spawn.org_id` /
@@ -293,7 +293,7 @@ export function harvestSettledSessionChatState(actor: AnyActorRef): {
  * freeze lifecycle instead of going stale at the pre-freeze state.
  */
 export function harvestSettledFreezeState(actor: AnyActorRef): {
-  correlation_id: string;
+  request_id: string;
   last_live_state: string | null;
   stale_intents_dropped_count: number;
   last_stale_intent: { intent_type: string; target_id: string } | null;
@@ -311,7 +311,7 @@ export function harvestSettledFreezeState(actor: AnyActorRef): {
   pending_project_name: string | null;
 } {
   const ctx = actor.getSnapshot().context as {
-    correlation_id: string;
+    request_id: string;
     last_live_state: string | null;
     stale_intents_dropped_count: number;
     last_stale_intent: { intent_type: string; target_id: string } | null;
@@ -324,10 +324,10 @@ export function harvestSettledFreezeState(actor: AnyActorRef): {
     pending_resume_session_id: ctx.pending_resume_session_id ?? null,
     pending_first_message: ctx.pending_first_message ?? null,
     pending_project_name: ctx.pending_project_name ?? null,
-    // US-210: the original correlation reference is preserved across the
+    // US-210: the original request-id reference is preserved across the
     // whole freeze→thaw lifecycle (it lives on the machine context, set
     // at spawn / project_ready and never rewritten by FREEZE/THAW).
-    correlation_id: ctx.correlation_id ?? "",
+    request_id: ctx.request_id ?? "",
     last_live_state: ctx.last_live_state ?? null,
     stale_intents_dropped_count: ctx.stale_intents_dropped_count ?? 0,
     last_stale_intent: ctx.last_stale_intent ?? null,

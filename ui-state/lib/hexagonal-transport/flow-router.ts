@@ -85,7 +85,7 @@ export function freezeThawHandler(
   kind: "freeze" | "thaw",
 ) {
   return async (c: Context) => {
-    const correlation_id = c.get("requestId");
+    const request_id = c.get("requestId");
     let body: { principal_id?: string; reason?: "thaw" | "abandoned" };
     try {
       body = (await c.req.json()) as typeof body;
@@ -102,7 +102,7 @@ export function freezeThawHandler(
     // token-expiry test family (ADR-035 closed-by-default in production).
     const allowed = shouldInject(KNOB.expireToken, {
       event: { type: "__expire_token__" },
-      correlationId: correlation_id,
+      correlationId: request_id,
       serviceName: "ui-state",
     });
     if (!allowed) {

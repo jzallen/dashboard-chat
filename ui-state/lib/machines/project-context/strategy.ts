@@ -86,14 +86,14 @@ export const projectContextStrategy: FlowStrategy = {
    * Identity (`user.first_name`, `org_id`) is sourced from the harvester
    * (the sanctioned snapshot boundary, AMB-1) rather than the pump's
    * `input.user_first_name` / `input.org_id` — the port-locked input
-   * `{ machine, principal_id, correlation_id }` does not carry them, and
+   * `{ machine, principal_id, request_id }` does not carry them, and
    * the machine context value is byte-identical to them on every spawn
    * path (machine.ts initial-context seed + the `auth_ready` assign).
    */
   async settleSpawn(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: { machine: string; principal_id: string; correlation_id: string },
+    input: { machine: string; principal_id: string; request_id: string },
   ): Promise<void> {
     const flow_id = `${input.machine}:${input.principal_id}`;
 
@@ -160,9 +160,9 @@ export const projectContextStrategy: FlowStrategy = {
       payload: {
         org_id: settledOrgId,
         user: { first_name: firstName },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       },
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
     });
 
     // OQ-J002-5 / RC-1: the degraded set lands on the machine context
@@ -177,7 +177,7 @@ export const projectContextStrategy: FlowStrategy = {
           failed_project_ids: degradedIds,
           partial_result: true,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     }
 
@@ -190,7 +190,7 @@ export const projectContextStrategy: FlowStrategy = {
           org_id: settledOrgId,
           user: { first_name: firstName },
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else if (stateValue === "project_selected") {
       await pump.deps.eventLog.append(flow_id, {
@@ -204,7 +204,7 @@ export const projectContextStrategy: FlowStrategy = {
           most_recent_session_per_project:
             beginHarvest.most_recent_session_per_project,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
       // The `project_ready` broadcast hook FIRING stays pump-central
       // (leaf-3-plan §3 / §4B) — the pump calls `maybeFireProjectReady`
@@ -217,7 +217,7 @@ export const projectContextStrategy: FlowStrategy = {
           org_id: settledOrgId,
           underlying_cause_tag: settledCause ?? "cross_tenant",
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     }
   },
@@ -267,7 +267,7 @@ export const projectContextStrategy: FlowStrategy = {
           deeplink_project_id:
             (input.payload.new_project_id as string | undefined) ?? null,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     }
   },
@@ -401,7 +401,7 @@ export const projectContextStrategy: FlowStrategy = {
           intent_resource_id: dlResourceId,
           intent_resource_type: dlResourceType,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     }
 
@@ -428,7 +428,7 @@ export const projectContextStrategy: FlowStrategy = {
         ts: new Date().toISOString(),
         type: "project_validation_failed",
         payload: { error: settledValidationError },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else if (stateValue === "no_projects") {
       // Re-resolved into no_projects (e.g., after back_to_projects_clicked).
@@ -439,7 +439,7 @@ export const projectContextStrategy: FlowStrategy = {
           org_id: orgId,
           user: { first_name: projectionCtx.user.first_name },
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else if (stateValue === "creating_project") {
       await pump.deps.eventLog.append(input.flow_id, {
@@ -448,7 +448,7 @@ export const projectContextStrategy: FlowStrategy = {
         payload: {
           pending_project_name: settledPendingProjectName,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else if (stateValue === "project_selected") {
       // Emit `project_selected` (not `project_created`) when this
@@ -467,7 +467,7 @@ export const projectContextStrategy: FlowStrategy = {
           org_id: orgId,
           project: settledProject,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
       // ---- project_ready broadcast hook (DWD-13 §3.2.B; pump-fired) ----
       // The pump calls `maybeFireProjectReady` AFTER settle returns this
@@ -492,7 +492,7 @@ export const projectContextStrategy: FlowStrategy = {
             org_id: orgId,
             project: settledProject,
           },
-          correlation_id: input.correlation_id,
+          request_id: input.request_id,
         });
       }
     } else if (stateValue === "switching_project") {
@@ -507,7 +507,7 @@ export const projectContextStrategy: FlowStrategy = {
           org_id: orgId,
           deeplink_project_id: projectionCtx.deeplink_project_id,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else if (stateValue === "error_recoverable") {
       await pump.deps.eventLog.append(input.flow_id, {
@@ -520,7 +520,7 @@ export const projectContextStrategy: FlowStrategy = {
             "transient",
           pending_project_name: settledPendingProjectName,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else if (stateValue === "scope_mismatch_terminal") {
       await pump.deps.eventLog.append(input.flow_id, {
@@ -534,7 +534,7 @@ export const projectContextStrategy: FlowStrategy = {
             "cross_tenant",
           deeplink_project_id: projectionCtx.deeplink_project_id,
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     }
 
@@ -562,7 +562,7 @@ export const projectContextStrategy: FlowStrategy = {
     input: {
       machine: string;
       flow_id: string;
-      correlation_id: string;
+      request_id: string;
       events: Array<{ type: string; payload: Record<string, unknown> }>;
     },
   ): Promise<void> {
@@ -571,7 +571,7 @@ export const projectContextStrategy: FlowStrategy = {
         ts: new Date().toISOString(),
         type: ev.type,
         payload: ev.payload,
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       };
       await pump.deps.eventLog.append(input.flow_id, flowEvent);
     }
@@ -610,7 +610,7 @@ export const projectContextStrategy: FlowStrategy = {
         pending_first_message: h.pending_first_message,
         pending_project_name: h.pending_project_name,
       },
-      correlation_id: h.correlation_id,
+      request_id: h.request_id,
     });
   },
 
@@ -632,9 +632,9 @@ export const projectContextStrategy: FlowStrategy = {
    * PC_TRANSIENTS.has(last_live_state)`.
    *
    * `settledState` is read from `.value` (allowed; not `.context`);
-   * `correlation_id` from `harvestSettledFreezeState` (the sanctioned
+   * `request_id` from `harvestSettledFreezeState` (the sanctioned
    * boundary) — both byte-identical to the pump's prior `settledState` /
-   * `h.correlation_id` (idempotent). The cross-machine `project_ready`
+   * `h.request_id` (idempotent). The cross-machine `project_ready`
    * re-broadcast (`maybeFireProjectReady`) stays pump-fired AFTER this
    * returns (leaf-3-plan §3 — it was the LAST statement of the
    * `project_selected` arm, so no reorder).
@@ -647,14 +647,14 @@ export const projectContextStrategy: FlowStrategy = {
   ): Promise<void> {
     if (kind !== "thaw") return;
     const settledState = actor.getSnapshot().value as string;
-    const correlation_id = harvestSettledFreezeState(actor).correlation_id;
+    const request_id = harvestSettledFreezeState(actor).request_id;
     const h = harvestSettledProjectContextState(actor);
     if (settledState === "project_selected") {
       await pump.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "project_switched",
         payload: { org_id: h.org_id ?? "", project: h.project },
-        correlation_id,
+        request_id,
       });
       // Re-broadcast project_ready so a frozen-then-thawed session-chat
       // re-binds to the switched project (idempotent on same id) — stays
@@ -667,7 +667,7 @@ export const projectContextStrategy: FlowStrategy = {
           org_id: h.org_id ?? "",
           underlying_cause_tag: h.underlying_cause_tag ?? "access_revoked",
         },
-        correlation_id,
+        request_id,
       });
     } else if (settledState === "error_recoverable") {
       await pump.deps.eventLog.append(flow_id, {
@@ -676,7 +676,7 @@ export const projectContextStrategy: FlowStrategy = {
         payload: {
           underlying_cause_tag: h.underlying_cause_tag ?? "transient",
         },
-        correlation_id,
+        request_id,
       });
     }
   },

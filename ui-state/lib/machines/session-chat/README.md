@@ -94,8 +94,8 @@ These events are never FE-emitted — they arrive from the orchestrator.
 
 | Event | Payload | What it does |
 |---|---|---|
-| `project_ready` | `{ org_id, project_id, project_name, correlation_id, deeplink_session_id?, intent_resource_id?, intent_resource_type? }` | Initial wake-up from `waiting_for_project`. The `deeplink_session_id` value (when present) lands in `pending_resume_session_id` so the upcoming `loadSessionList` can echo it through `event.output.resume_target`. `intent_resource_*` are forward-compat slots — accepted but not stored on this machine's context (the orchestrator routes them through the projection directly). On subsequent broadcasts (the user switched projects), the cross-project guard clears session/transcript/resource state before re-entering `loading_session_list`. Idempotent on the same `project_id` |
-| `FREEZE` | `{ origin_correlation_id? }` | Reserved — the freeze/replay handler isn't yet declared in this machine |
+| `project_ready` | `{ org_id, project_id, project_name, request_id, deeplink_session_id?, intent_resource_id?, intent_resource_type? }` | Initial wake-up from `waiting_for_project`. The `deeplink_session_id` value (when present) lands in `pending_resume_session_id` so the upcoming `loadSessionList` can echo it through `event.output.resume_target`. `intent_resource_*` are forward-compat slots — accepted but not stored on this machine's context (the orchestrator routes them through the projection directly). On subsequent broadcasts (the user switched projects), the cross-project guard clears session/transcript/resource state before re-entering `loading_session_list`. Idempotent on the same `project_id` |
+| `FREEZE` | `{ origin_request_id? }` | Reserved — the freeze/replay handler isn't yet declared in this machine |
 | `THAW` | (none) | Reserved companion to `FREEZE` |
 
 ## Actors invoked
@@ -112,7 +112,7 @@ These events are never FE-emitted — they arrive from the orchestrator.
 
 | Field | Type | When populated |
 |---|---|---|
-| `correlation_id` | `string` | spawn; refreshed on `project_ready` if the payload supplies one |
+| `request_id` | `string` | spawn; refreshed on `project_ready` if the payload supplies one |
 | `principal_id` | `string` | spawn (from auth-proxy's `X-User-Id` header) |
 | `org_id` | `string` | `project_ready` (empty string until project-context settles) |
 | `project` | `{ id, name }` (both `string \| null`) | `project_ready`. Cleared on cross-project `project_ready` |

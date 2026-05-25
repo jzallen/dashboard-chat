@@ -78,7 +78,7 @@ async function appendSessionChatTerminalEvents(
   pump: PumpContext,
   flow_id: string,
   stateValue: string,
-  correlation_id: string,
+  request_id: string,
   /** Optional: the machine's state value immediately before this settle.
    *  Used to distinguish eager-create from resume on `session_active`
    *  arrival (US-206 vs US-205) so the projection log records the right
@@ -170,7 +170,7 @@ async function appendSessionChatTerminalEvents(
       ts: new Date().toISOString(),
       type: "session_list_load_started",
       payload: { project_id: ctx.project.id },
-      correlation_id,
+      request_id,
     });
     return;
   }
@@ -196,7 +196,7 @@ async function appendSessionChatTerminalEvents(
       ts: new Date().toISOString(),
       type: "session_list_load_started",
       payload: { project_id: ctx.project.id },
-      correlation_id,
+      request_id,
     });
     await pump.deps.eventLog.append(flow_id, {
       ts: new Date().toISOString(),
@@ -206,7 +206,7 @@ async function appendSessionChatTerminalEvents(
         next_cursor: settledNextCursor,
         has_more: settledHasMore,
       },
-      correlation_id,
+      request_id,
     });
     await pump.deps.eventLog.append(flow_id, {
       ts: new Date().toISOString(),
@@ -215,7 +215,7 @@ async function appendSessionChatTerminalEvents(
         project_id: ctx.project.id,
         session_count: settledList.length,
       },
-      correlation_id,
+      request_id,
     });
     return;
   }
@@ -227,7 +227,7 @@ async function appendSessionChatTerminalEvents(
         session_id:
           ctx.pending_resume_session_id ?? ctx.session_id ?? null,
       },
-      correlation_id,
+      request_id,
     });
     return;
   }
@@ -253,7 +253,7 @@ async function appendSessionChatTerminalEvents(
         payload: {
           session_id: harvestedResume?.session_id ?? ctx.session_id,
         },
-        correlation_id,
+        request_id,
       });
       return;
     }
@@ -284,14 +284,14 @@ async function appendSessionChatTerminalEvents(
         resource_id: resumedResource.id,
         dataset_unavailable: datasetUnavailable,
       },
-      correlation_id,
+      request_id,
     });
     if (datasetUnavailable) {
       await pump.deps.eventLog.append(flow_id, {
         ts: new Date().toISOString(),
         type: "session_dataset_unavailable",
         payload: {},
-        correlation_id,
+        request_id,
       });
     }
     return;
@@ -313,7 +313,7 @@ async function appendSessionChatTerminalEvents(
         pending_first_message:
           harvestedResume?.pending_first_message ?? ctx.pending_first_message,
       },
-      correlation_id,
+      request_id,
     });
     return;
   }
@@ -336,7 +336,7 @@ async function appendSessionChatTerminalEvents(
         pending_first_message:
           harvestedResume?.pending_first_message ?? ctx.pending_first_message,
       },
-      correlation_id,
+      request_id,
     });
   }
 }
@@ -367,7 +367,7 @@ export const sessionChatStrategy: FlowStrategy = {
    * harvester (the sanctioned snapshot boundary, AMB-1) rather than the
    * pump's pre-carve `spawn.org_id` / `spawn.project_id` /
    * `spawn.project_name` — the port-locked input
-   * `{ machine, principal_id, correlation_id }` does not carry them, and
+   * `{ machine, principal_id, request_id }` does not carry them, and
    * the machine context value is byte-identical to them on every spawn
    * path (machine.ts initial-context seed `org_id: input.org_id ?? ""` /
    * `project: { id: input.project_id ?? null, … }` + the
@@ -377,7 +377,7 @@ export const sessionChatStrategy: FlowStrategy = {
   async settleSpawn(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: { machine: string; principal_id: string; correlation_id: string },
+    input: { machine: string; principal_id: string; request_id: string },
   ): Promise<void> {
     const flow_id = `${input.machine}:${input.principal_id}`;
     // ADR-030 LEAF-B: state-value is the only legal read off the actor
@@ -405,7 +405,7 @@ export const sessionChatStrategy: FlowStrategy = {
         project_id: projectId,
         project_name: spawnHarvest.project.name ?? "",
       },
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
     });
 
     // RC-2: the spawn path (project_ready → loading_session_list →
@@ -419,7 +419,7 @@ export const sessionChatStrategy: FlowStrategy = {
       pump,
       flow_id,
       stateValue,
-      input.correlation_id,
+      input.request_id,
       undefined,
       spawnHarvest,
     );
@@ -472,7 +472,7 @@ export const sessionChatStrategy: FlowStrategy = {
           intended_resource_type:
             (input.payload.resource_type as string | undefined) ?? "dataset",
         },
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     }
   },
@@ -531,7 +531,7 @@ export const sessionChatStrategy: FlowStrategy = {
           ts: new Date().toISOString(),
           type: "dataset_access_denied",
           payload: { underlying_cause_tag: "dataset_access_denied" },
-          correlation_id: input.correlation_id,
+          request_id: input.request_id,
         });
       } else {
         await pump.deps.eventLog.append(input.flow_id, {
@@ -541,7 +541,7 @@ export const sessionChatStrategy: FlowStrategy = {
             resource_type: harvest.resource.type,
             resource_id: harvest.resource.id,
           },
-          correlation_id: input.correlation_id,
+          request_id: input.request_id,
         });
       }
     } else if (
@@ -559,14 +559,14 @@ export const sessionChatStrategy: FlowStrategy = {
         ts: new Date().toISOString(),
         type: "session_resume_not_found",
         payload: {},
-        correlation_id: input.correlation_id,
+        request_id: input.request_id,
       });
     } else {
       await appendSessionChatTerminalEvents(
         pump,
         input.flow_id,
         stateValue,
-        input.correlation_id,
+        input.request_id,
         // `prior` captured at the top of send() — the state BEFORE the
         // current event was dispatched. Used to distinguish eager-create
         // from resume on `session_active` arrival.
@@ -616,7 +616,7 @@ export const sessionChatStrategy: FlowStrategy = {
         pending_first_message: h.pending_first_message,
         pending_project_name: h.pending_project_name,
       },
-      correlation_id: h.correlation_id,
+      request_id: h.request_id,
     });
   },
 
@@ -638,9 +638,9 @@ export const sessionChatStrategy: FlowStrategy = {
    * SC_TRANSIENTS.has(last_live_state)`.
    *
    * `settledState` is read from `.value` (allowed; not `.context`);
-   * `correlation_id` + `last_live_state` from `harvestSettledFreezeState`
+   * `request_id` + `last_live_state` from `harvestSettledFreezeState`
    * (the sanctioned boundary) — byte-identical to the pump's prior
-   * `settledState` / `h.correlation_id` / `h.last_live_state`
+   * `settledState` / `h.request_id` / `h.last_live_state`
    * (idempotent). session-chat is the spawn-chain TERMINAL — it fires NO
    * onward cross-machine re-broadcast (unlike project-context's
    * `project_ready`).
@@ -658,7 +658,7 @@ export const sessionChatStrategy: FlowStrategy = {
       pump,
       flow_id,
       settledState,
-      h.correlation_id,
+      h.request_id,
       h.last_live_state ?? undefined,
       harvestSettledSessionChatState(actor),
     );

@@ -59,7 +59,7 @@ export type ProjectContextCauseTag =
   | "replay_abandoned";
 
 export interface ProjectContextMachineContext {
-  correlation_id: string;
+  request_id: string;
   principal_id: string;
 
   // From J-001 projection — set on auth_ready event entry:
@@ -138,7 +138,7 @@ export type ProjectContextEvent =
   // new project's loading_session_list fires) is enforced at the
   // projection layer via the `switching_project_started` event handler.
   | { type: "switching_project_intent"; new_project_id: string }
-  | { type: "FREEZE"; origin_correlation_id?: string }
+  | { type: "FREEZE"; origin_request_id?: string }
   | { type: "THAW" }
   // Orchestrator-emitted on the 5s replay-buffer timeout (ADR-027 §5):
   // silent re-auth never succeeded; freeze → error_recoverable.
@@ -166,7 +166,7 @@ export type ResolveInitialScopeActor = ReturnType<
 
 export interface CreateProjectInput {
   org_name: string;
-  correlation_id: string;
+  request_id: string;
   principal_id: string;
 }
 
@@ -189,7 +189,7 @@ export type SwitchProjectOutput =
 
 export interface SwitchProjectInput {
   new_project_id: string;
-  correlation_id: string;
+  request_id: string;
   principal_id: string;
 }
 
@@ -212,7 +212,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       context: {} as ProjectContextMachineContext,
       events: {} as ProjectContextEvent,
       input: {} as {
-        correlation_id: string;
+        request_id: string;
         principal_id: string;
         org_id?: string;
         user?: { first_name?: string };
@@ -303,7 +303,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       },
     },
     context: ({ input }) => ({
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
       principal_id: input.principal_id,
       org_id: input.org_id ?? "",
       user: { first_name: input.user?.first_name ?? null },
@@ -424,7 +424,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           src: "createProject",
           input: ({ context }) => ({
             org_name: context.pending_project_name,
-            correlation_id: context.correlation_id,
+            request_id: context.request_id,
             principal_id: context.principal_id,
           }),
           onDone: {
@@ -478,7 +478,7 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           src: "switchProject",
           input: ({ context }) => ({
             new_project_id: context.deeplink_project_id ?? "",
-            correlation_id: context.correlation_id,
+            request_id: context.request_id,
             principal_id: context.principal_id,
           }),
           onDone: [
@@ -830,7 +830,7 @@ export function createProjectFn(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-request-id": input.correlation_id,
+        "x-request-id": input.request_id,
         ...principalHeaders,
       },
       body: JSON.stringify({ name: input.org_name }),
@@ -887,7 +887,7 @@ export function switchProjectFn(
       {
         method: "GET",
         headers: {
-          "x-request-id": input.correlation_id,
+          "x-request-id": input.request_id,
           ...principalHeaders,
         },
       },

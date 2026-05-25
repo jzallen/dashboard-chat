@@ -45,8 +45,8 @@ function serialize(event: FlowEvent): string[] {
     event.type,
     "payload",
     JSON.stringify(event.payload),
-    "correlation_id",
-    event.correlation_id,
+    "request_id",
+    event.request_id,
   ];
 }
 
@@ -59,7 +59,7 @@ function deserialize(fields: string[]): FlowEvent {
     ts: obj.ts ?? "",
     type: obj.type ?? "",
     payload: obj.payload ? (JSON.parse(obj.payload) as Record<string, unknown>) : {},
-    correlation_id: obj.correlation_id ?? "",
+    request_id: obj.request_id ?? "",
   };
 }
 
@@ -123,7 +123,7 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
         ts: new Date().toISOString(),
         type: "probe",
         payload: {},
-        correlation_id: "probe",
+        request_id: "probe",
       };
       await client.xadd(probeKey, "*", ...serialize(probeEvent));
       const read = await client.xrange(probeKey, "-", "+");

@@ -71,13 +71,13 @@ export interface SessionOnboardingDeps {
  * Input for the `verifying` resolvers (`getWorkOSUserInfo` re-verify +
  * `getUserOrg` backend org lookup). The forwarded Bearer (L4) re-verifies
  * identity; `config`/`deps` carry the WorkOS + backend URLs and the `fetch` I/O
- * port; `correlation_id` traces the backend call. Threaded router → machine
+ * port; `request_id` traces the backend call. Threaded router → machine
  * input → context → invoke input. NEVER a client body claim. `config`/`deps` are
  * null only in tests that stub the actor (the stub ignores them).
  */
 export interface LoadSessionInput {
   bearer_token: string;
-  correlation_id: string;
+  request_id: string;
   config: Config | null;
   deps: SessionOnboardingDeps | null;
 }
@@ -89,7 +89,7 @@ export interface CreateOrgAndReissueInput {
    *  fast on null, mirroring the config/deps nullable pattern below. */
   org_name: OrgName | null;
   principal_id: PrincipalId;
-  correlation_id: string;
+  request_id: string;
   attempt: number;
   /** Env config (provides `backendUrl` + the dev-user header fixture) threaded
    *  composition root → machine input → context → invoke input so the
@@ -200,7 +200,7 @@ export async function getUserOrg({
   const resp = await input.deps.request_client(`${backendUrl}/api/orgs/me`, {
     method: "GET",
     headers: {
-      "x-request-id": input.correlation_id,
+      "x-request-id": input.request_id,
       ...devUserHeadersFixture,
     },
   });
@@ -334,7 +334,7 @@ export function createOrgFn(
     const orgName = input.org_name;
     const baseHeaders = {
       "content-type": "application/json",
-      "x-request-id": input.correlation_id,
+      "x-request-id": input.request_id,
       ...devUserHeadersFixture,
     };
 
@@ -374,14 +374,14 @@ export function createOrgFn(
 export function reissueOrgJwtFn(
   config: Config,
   requestClient: RequestClient,
-): (input: { org_id: string; correlation_id: string }) => Promise<void> {
+): (input: { org_id: string; request_id: string }) => Promise<void> {
   const { backendUrl, devUserHeadersFixture } = config;
-  return async ({ org_id, correlation_id }) => {
+  return async ({ org_id, request_id }) => {
     const reissueResp = await requestClient(`${backendUrl}/api/auth/reissue`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-request-id": correlation_id,
+        "x-request-id": request_id,
         ...devUserHeadersFixture,
       },
       body: JSON.stringify({ org_id }),
@@ -442,7 +442,7 @@ export async function getOrgAndReissue({
 
   await reissueOrgJwtFn(input.config, requestClient)({
     org_id: created.id,
-    correlation_id: input.correlation_id,
+    request_id: input.request_id,
   });
   return created;
 }

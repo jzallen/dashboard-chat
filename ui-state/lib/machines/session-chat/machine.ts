@@ -67,7 +67,7 @@ export type SessionChatCauseTag =
   | "replay_abandoned";
 
 export interface SessionChatMachineContext {
-  correlation_id: string;
+  request_id: string;
   principal_id: string;
 
   // Received via `project_ready` orchestrator broadcast — populated on entry
@@ -152,7 +152,7 @@ export type SessionChatEvent =
       org_id: string;
       project_id: string;
       project_name: string;
-      correlation_id: string;
+      request_id: string;
       // The URL-level deep-link session wish (renamed from
       // intent_session_id in MR-D). Captured into
       // pending_resume_session_id on entry.
@@ -164,7 +164,7 @@ export type SessionChatEvent =
       intent_resource_id?: string | null;
       intent_resource_type?: ResourceType | null;
     }
-  | { type: "FREEZE"; origin_correlation_id?: string }
+  | { type: "FREEZE"; origin_request_id?: string }
   | { type: "THAW" }
   // Orchestrator-emitted on the 5s replay-buffer timeout (ADR-027 §5):
   // silent re-auth never succeeded, the buffered intents are abandoned,
@@ -333,7 +333,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       context: {} as SessionChatMachineContext,
       events: {} as SessionChatEvent,
       input: {} as {
-        correlation_id: string;
+        request_id: string;
         principal_id: string;
         org_id?: string;
         project_id?: string;
@@ -411,7 +411,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
     id: "session-chat",
     initial: "waiting_for_project",
     context: ({ input }) => ({
-      correlation_id: input.correlation_id,
+      request_id: input.request_id,
       principal_id: input.principal_id,
       org_id: input.org_id ?? "",
       project: {
@@ -458,8 +458,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                 id: event.project_id,
                 name: event.project_name,
               }),
-              correlation_id: ({ event, context }) =>
-                event.correlation_id ?? context.correlation_id,
+              request_id: ({ event, context }) =>
+                event.request_id ?? context.request_id,
               pending_resume_session_id: ({ event, context }) =>
                 event.deeplink_session_id ?? context.pending_resume_session_id,
             }),
@@ -480,8 +480,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                 id: event.project_id,
                 name: event.project_name,
               }),
-              correlation_id: ({ event, context }) =>
-                event.correlation_id ?? context.correlation_id,
+              request_id: ({ event, context }) =>
+                event.request_id ?? context.request_id,
               session_id: () => null,
               transcript: () => [],
               resource: () => ({ type: null, id: null }),
@@ -587,8 +587,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                   id: event.project_id,
                   name: event.project_name,
                 }),
-                correlation_id: ({ event, context }) =>
-                  event.correlation_id ?? context.correlation_id,
+                request_id: ({ event, context }) =>
+                  event.request_id ?? context.request_id,
                 session_id: () => null,
                 transcript: () => [],
                 resource: () => ({ type: null, id: null }),
@@ -721,8 +721,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                   id: event.project_id,
                   name: event.project_name,
                 }),
-                correlation_id: ({ event, context }) =>
-                  event.correlation_id ?? context.correlation_id,
+                request_id: ({ event, context }) =>
+                  event.request_id ?? context.request_id,
                 session_id: () => null,
                 transcript: () => [],
                 resource: () => ({ type: null, id: null }),
@@ -853,8 +853,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
                   id: event.project_id,
                   name: event.project_name,
                 }),
-                correlation_id: ({ event, context }) =>
-                  event.correlation_id ?? context.correlation_id,
+                request_id: ({ event, context }) =>
+                  event.request_id ?? context.request_id,
                 session_id: () => null,
                 transcript: () => [],
                 resource: () => ({ type: null, id: null }),

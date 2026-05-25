@@ -100,7 +100,7 @@ export function buildProjectContextRouter(
   router.use("*", requestIdMiddleware);
 
   router.post("/begin", async (c) => {
-    const correlation_id = c.get("requestId");
+    const request_id = c.get("requestId");
     let body: {
       persona_display_name?: string;
       principal_id?: string;
@@ -136,7 +136,7 @@ export function buildProjectContextRouter(
     if (
       shouldInject(KNOB.forceListSessionsFailure, {
         headers: c.req.raw.headers,
-        correlationId: correlation_id,
+        correlationId: request_id,
         serviceName: "ui-state",
       })
     ) {
@@ -150,7 +150,7 @@ export function buildProjectContextRouter(
     const result = await orchestrator.beginIfNotStarted({
       machine: wireName,
       principal_id,
-      correlation_id,
+      request_id,
       org_id: orgId,
       user_first_name: firstName,
       force_restart: true,
@@ -159,7 +159,7 @@ export function buildProjectContextRouter(
   });
 
   router.post("/event", async (c) => {
-    const correlation_id = c.get("requestId");
+    const request_id = c.get("requestId");
     let body: {
       type?: string;
       payload?: Record<string, unknown>;
@@ -186,7 +186,7 @@ export function buildProjectContextRouter(
       body.type === "create_project_submitted" &&
       shouldInject(KNOB.forceCreateProjectFailure, {
         headers: c.req.raw.headers,
-        correlationId: correlation_id,
+        correlationId: request_id,
         serviceName: "ui-state",
       })
     ) {
@@ -203,7 +203,7 @@ export function buildProjectContextRouter(
       c.req.header("X-Force-Slow-Switch-Project") &&
       shouldInject(KNOB.expireToken, {
         event: { type: "__expire_token__" },
-        correlationId: correlation_id,
+        correlationId: request_id,
         serviceName: "ui-state",
       })
     ) {
@@ -219,7 +219,7 @@ export function buildProjectContextRouter(
       flow_id,
       type: body.type,
       payload: body.payload ?? {},
-      correlation_id,
+      request_id,
     });
     return resultToJson(c, result, "event_failed");
   });
@@ -234,7 +234,7 @@ export function buildProjectContextRouter(
   // appends a `deep_link_opened` (or `scope_access_denied`) event so
   // subsequent projection reads observe the same authoritative scope.
   router.post("/open-deep-link", async (c) => {
-    const correlation_id = c.get("requestId");
+    const request_id = c.get("requestId");
     let body: {
       principal_id?: string;
       route?: {
@@ -280,7 +280,7 @@ export function buildProjectContextRouter(
       const spawn = await orchestrator.beginIfNotStarted({
         machine: wireName,
         principal_id: principalId,
-        correlation_id,
+        request_id,
         org_id: orgId,
         user_first_name: firstName ?? "",
       });
@@ -304,7 +304,7 @@ export function buildProjectContextRouter(
         flow_id: flowId,
         type: "open_deep_link",
         payload,
-        correlation_id,
+        request_id,
       });
       return resultToJson(c, result, "open_deep_link_failed");
     }
@@ -335,7 +335,7 @@ export function buildProjectContextRouter(
       const result = await orchestrator.appendDeepLinkEvents({
         machine: wireName,
         flow_id: flowId,
-        correlation_id,
+        request_id,
         events: [
           {
             type: "scope_access_denied",
@@ -353,7 +353,7 @@ export function buildProjectContextRouter(
     const result = await orchestrator.appendDeepLinkEvents({
       machine: wireName,
       flow_id: flowId,
-      correlation_id,
+      request_id,
       events: [
         {
           type: "deep_link_opened",

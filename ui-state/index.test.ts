@@ -67,7 +67,7 @@ function buildScenario(opts: { requestClient: RequestClient }): Scenario {
 
 interface BeginResult {
   flow_id: string;
-  correlation_id: string;
+  request_id: string;
   state: string;
   context: {
     user: { email: string | null; display_name: string | null; first_name: string | null };
@@ -739,7 +739,7 @@ describe("Slice 6: a malformed org submission is refused while the empty-name do
 // minted. Both /begin (via referenceCode) and /event read that one id — so the
 // former begin/event divergence on a header-less request is gone. Observed two
 // ways: the response echoes X-Request-Id, and the structured audit log stamps
-// the same value as correlation_id.
+// the same value as request_id.
 // ═══════════════════════════════════════════════════════════════════════════
 describe("Centralized request-id minting via requestId() middleware", () => {
   function buildSpyScenario(): {
@@ -801,8 +801,8 @@ describe("Centralized request-id minting via requestId() middleware", () => {
     const eventReceived = records.find(
       (r) => r.event === "session_onboarding.event_received",
     );
-    expect(orgClaim?.correlation_id).toBe(inbound);
-    expect(eventReceived?.correlation_id).toBe(inbound);
+    expect(orgClaim?.request_id).toBe(inbound);
+    expect(eventReceived?.request_id).toBe(inbound);
   });
 
   it("mints a request id when no inbound header is present", async () => {
@@ -829,6 +829,6 @@ describe("Centralized request-id minting via requestId() middleware", () => {
     const orgClaim = records.find(
       (r) => r.event === "session_onboarding.org_claim",
     );
-    expect(orgClaim?.correlation_id).toBe(minted);
+    expect(orgClaim?.request_id).toBe(minted);
   });
 });

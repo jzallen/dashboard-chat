@@ -94,8 +94,8 @@ The double-underscore prefix is the project-wide convention for "this event must
 | Actor | Input | Output | Invoked in |
 |---|---|---|---|
 | `workosUserInfo` | `{ bearer_token }` | `WorkOSProfile` = `{ email, display_name, org? }` | `verifying` |
-| `createOrgAndReissue` | `{ org_name, principal_id, correlation_id, attempt }` | `{ org_id, org_name }` | `creating_org` (each attempt within the 3-retry budget) |
-| `silentReauth` | `{ correlation_id }` | `{ ok: true }` | `expired_token` |
+| `createOrgAndReissue` | `{ org_name, principal_id, request_id, attempt }` | `{ org_id, org_name }` | `creating_org` (each attempt within the 3-retry budget) |
+| `silentReauth` | `{ request_id }` | `{ ok: true }` | `expired_token` |
 
 `createOrgAndReissue` is idempotent on `(org_name, principal_id)`: org creation always runs first, and a retry after a failed reissue re-creates nothing — `createOrgFn` reuses the existing org via `GET /api/orgs/me`. See [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md).
 
