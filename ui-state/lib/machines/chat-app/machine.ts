@@ -1,0 +1,289 @@
+// ChatAppMachine — the XState v5 PARENT coordinator that cycles
+// onboarding → project-context → chat and overlays a freeze/reauth region
+// (ADR-044). It supersedes the imperative FlowOrchestrator's coordination role
+// (spawn hand-offs, freeze/thaw, child choreography) with a declarative
+// statechart — the first faithful implementation of ADR-028's "one root
+// orchestrator actor mediating parent-ignorant children."
+//
+// TWO PARALLEL REGIONS (the machine is in one state in EACH at once):
+//
+//   region: lifecycle
+//     onboarding ─(child→ready)─► project_context ─(child→project_selected)─► chat
+//                 └(child→session_rejected)─► rejected
+//     (project-context is invoked on `engaged`, the ancestor of project_context
+//      AND chat, so it stays live for switching while in chat; session-chat is
+//      invoked on `chat` only.)
+//
+//   region: connectivity   (orthogonal — applies in ANY lifecycle phase)
+//     live ─(TOKEN_EXPIRED)─► frozen ─(REAUTH_OK)─► live
+//                            frozen ─(REAUTH_FAILED)─► live + lifecycle→rejected
+//     While frozen the parent HOLDS inbound user intents (a parent buffer) and
+//     replays them in order on REAUTH_OK.
+//
+// COORDINATION (children stay parent-ignorant, ADR-028): the parent watches each
+// child via `onSnapshot` and advances on the child's OWN state value; hand-offs
+// are parent `entry` actions that `sendTo` the next child (the declarative form
+// of the orchestrator's authReady→begin / projectReady pump callbacks).
+//
+// Children are dependency-injected: the logical actors (./setup/actors.ts) are
+// placeholders, swapped via `machine.provide({ actors })` (Phase 1 = fakes,
+// Phase 2 = the real machines). See ./README.md.
+//
+// `types` / `guards` / `actors` are extracted under ./setup/. The ACTIONS are
+// inline here: they mix context writers (`assign`) with parent→child forwarders
+// (`enqueueActions` → `sendTo`), and a pre-built mixed bundle is not assignable
+// to `setup({ actions })` (assign yields TEmitted = never, enqueueActions yields
+// EventObject — a heterogeneous object literal). Defining them inline lets setup
+// infer each action's actor/event generics directly, which is also where the
+// `sendTo` target ids and forwarded-event types are checked.
+
+import { assign, enqueueActions, setup } from "xstate";
+
+import { actors } from "./setup/actors.ts";
+import { guards } from "./setup/guards.ts";
+import type {
+  ChatAppContext,
+  ChatAppEvent,
+  ChatAppInput,
+  ChatUserIntent,
+  OnboardingSnapshotView,
+  ProjectContextSnapshotView,
+} from "./setup/types.ts";
+
+// ── snapshot readers — the parent watches children via onSnapshot; the snapshot
+// events are not members of ChatAppEvent, so read them through the narrow views
+// (./setup/types.ts), the same cast convention the guards + child machines use. ──
+function onboardingSnapshot(event: ChatAppEvent): OnboardingSnapshotView {
+  return (event as unknown as { snapshot: OnboardingSnapshotView }).snapshot;
+}
+function projectContextSnapshot(
+  event: ChatAppEvent,
+): ProjectContextSnapshotView {
+  return (event as unknown as { snapshot: ProjectContextSnapshotView })
+    .snapshot;
+}
+function intentOf(event: ChatAppEvent): ChatUserIntent {
+  return (event as { type: "user_intent"; intent: ChatUserIntent }).intent;
+}
+
+export function createChatAppMachine() {
+  return setup({
+    types: {
+      context: {} as ChatAppContext,
+      events: {} as ChatAppEvent,
+      input: {} as ChatAppInput,
+    },
+    actors,
+    guards,
+    actions: {
+      // ── active-child routing (re-pointed on each phase entry) ──
+      markOnboardingActive: assign({ active_child_id: "session-onboarding" }),
+      markProjectContextActive: assign({ active_child_id: "project-context" }),
+      markChatActive: assign({ active_child_id: "session-chat" }),
+
+      // ── hand-off capture (read the child snapshot, stage the payload) ──
+      /** onboarding → project_context: stage org + identity for `auth_ready`. */
+      captureAuthHandoff: assign({
+        auth_handoff: ({ event }) => {
+          const snapshot = onboardingSnapshot(event);
+          return {
+            org_id: snapshot.context.org.id ?? "",
+            user: { first_name: snapshot.context.user.first_name ?? "" },
+          };
+        },
+      }),
+      /** project_context → chat (and switch): stage the selected project for
+       *  `project_ready` and record it as the last-forwarded id (the
+       *  discriminator the guards use to tell first-selection from a switch). */
+      captureProjectHandoff: assign(({ context, event }) => {
+        const snapshot = projectContextSnapshot(event);
+        const projectId = snapshot.context.project.id ?? "";
+        return {
+          project_handoff: {
+            org_id: context.auth_handoff?.org_id ?? "",
+            project_id: projectId,
+            project_name: snapshot.context.project.name ?? "",
+            request_id: context.request_id,
+          },
+          last_forwarded_project_id: projectId,
+        };
+      }),
+
+      // ── freeze buffer ──
+      /** Buffer a user intent that arrived while frozen (replayed on REAUTH_OK). */
+      holdIntent: assign({
+        held_events: ({ context, event }) => [
+          ...context.held_events,
+          intentOf(event),
+        ],
+      }),
+
+      // ── forwarders (parent → child) ──
+      /** entry of the project-context-owning state: deliver staged auth_ready. */
+      forwardAuthReady: enqueueActions(({ context, enqueue }) => {
+        const handoff = context.auth_handoff;
+        if (handoff) {
+          enqueue.sendTo("project-context", {
+            type: "auth_ready",
+            org_id: handoff.org_id,
+            user: handoff.user,
+          });
+        }
+      }),
+      /** entry of chat AND the switch re-forward: deliver staged project_ready. */
+      forwardProjectReady: enqueueActions(({ context, enqueue }) => {
+        const handoff = context.project_handoff;
+        if (handoff) {
+          enqueue.sendTo("session-chat", {
+            type: "project_ready",
+            org_id: handoff.org_id,
+            project_id: handoff.project_id,
+            project_name: handoff.project_name,
+            request_id: handoff.request_id,
+          });
+        }
+      }),
+      /** PROJECT_SWITCH: drive project-context's switch by forwarding its intent. */
+      forwardSwitchToProjectContext: enqueueActions(({ event, enqueue }) => {
+        const switchEvent = event as {
+          type: "PROJECT_SWITCH";
+          new_project_id: string;
+        };
+        enqueue.sendTo("project-context", {
+          type: "switching_project_intent",
+          new_project_id: switchEvent.new_project_id,
+        });
+      }),
+      /** live user_intent: route to whichever child owns the current phase. */
+      forwardIntentToActiveChild: enqueueActions(
+        ({ context, event, enqueue }) => {
+          enqueue.sendTo(context.active_child_id, intentOf(event));
+        },
+      ),
+      /** REAUTH_OK: replay the held buffer to the active child IN ORDER, clear. */
+      replayHeldIntents: enqueueActions(({ context, enqueue }) => {
+        for (const intent of context.held_events) {
+          enqueue.sendTo(context.active_child_id, intent);
+        }
+        enqueue.assign({ held_events: [] });
+      }),
+    },
+  }).createMachine({
+    id: "chat-app",
+    type: "parallel",
+    context: ({ input }) => ({
+      request_id: input.request_id,
+      active_child_id: "session-onboarding",
+      auth_handoff: null,
+      project_handoff: null,
+      last_forwarded_project_id: null,
+      held_events: [],
+    }),
+    states: {
+      // ───────────────────────── lifecycle region ─────────────────────────
+      lifecycle: {
+        initial: "onboarding",
+        states: {
+          onboarding: {
+            entry: "markOnboardingActive",
+            invoke: {
+              id: "session-onboarding",
+              systemId: "session-onboarding",
+              src: "onboarding",
+              // Watch the onboarding child; advance on its own state value.
+              onSnapshot: [
+                {
+                  guard: "childReachedReady",
+                  target: "engaged",
+                  actions: "captureAuthHandoff",
+                },
+                {
+                  guard: "childReachedSessionRejected",
+                  target: "rejected",
+                },
+              ],
+            },
+          },
+
+          // `engaged` owns the project-context child for BOTH project_context
+          // and chat (invoked here so it survives the move into chat, where it
+          // still serves project switches).
+          engaged: {
+            initial: "project_context",
+            // Deliver the staged auth_ready to the freshly-invoked child.
+            entry: "forwardAuthReady",
+            invoke: {
+              id: "project-context",
+              systemId: "project-context",
+              src: "projectContext",
+              onSnapshot: [
+                // First selection → advance project_context → chat (chat's entry
+                // forwards project_ready).
+                {
+                  guard: "advanceToChat",
+                  target: ".chat",
+                  actions: "captureProjectHandoff",
+                },
+                // Later selection with a changed id → project switch: re-forward
+                // project_ready in place (no re-entry of engaged/chat).
+                {
+                  guard: "reforwardProjectReady",
+                  actions: ["captureProjectHandoff", "forwardProjectReady"],
+                },
+              ],
+            },
+            // A project switch drives project-context's own switch path.
+            on: {
+              PROJECT_SWITCH: { actions: "forwardSwitchToProjectContext" },
+            },
+            states: {
+              project_context: {
+                entry: "markProjectContextActive",
+              },
+              chat: {
+                entry: ["markChatActive", "forwardProjectReady"],
+                invoke: {
+                  id: "session-chat",
+                  systemId: "session-chat",
+                  src: "sessionChat",
+                },
+              },
+            },
+          },
+
+          rejected: {},
+        },
+      },
+
+      // ──────────────────────── connectivity region ────────────────────────
+      connectivity: {
+        initial: "live",
+        states: {
+          live: {
+            on: {
+              TOKEN_EXPIRED: { target: "frozen" },
+              // Live: route the intent straight to the active child.
+              user_intent: { actions: "forwardIntentToActiveChild" },
+            },
+          },
+          frozen: {
+            on: {
+              // Frozen: HOLD inbound intents instead of forwarding them.
+              user_intent: { actions: "holdIntent" },
+              // Reauth succeeded → thaw + replay the buffer in order.
+              REAUTH_OK: { target: "live", actions: "replayHeldIntents" },
+              // Reauth failed → thaw the overlay AND reject the session
+              // (multi-target across the two parallel regions).
+              REAUTH_FAILED: {
+                target: [
+                  "#chat-app.connectivity.live",
+                  "#chat-app.lifecycle.rejected",
+                ],
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+}
