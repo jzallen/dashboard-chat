@@ -82,15 +82,60 @@ export function createChatAppMachine() {
       markChatActive: assign({ active_child_id: "session-chat" }),
 
       // ── hand-off capture (read the child snapshot, stage the payload) ──
-      /** onboarding → project_context: stage org + identity for `auth_ready`. */
-      captureAuthHandoff: assign({
-        auth_handoff: ({ event }) => {
-          const snapshot = onboardingSnapshot(event);
-          return {
+      /** onboarding → project_context: stage org + identity for `auth_ready` AND
+       *  retain the full onboarding outcome (ADR-044 §2). The onboarding child is
+       *  phase-scoped — it is stopped on this very advance — so its resolved
+       *  identity/org must survive into parent context for the derived
+       *  `login-and-org-setup` projection to reproduce `ready` byte-identically
+       *  once the child is gone. `auth_handoff` keeps its exact prior shape
+       *  (org_id + first_name); `onboarding_result` is the additive retention. */
+      captureAuthHandoff: assign(({ event }) => {
+        const snapshot = onboardingSnapshot(event);
+        return {
+          auth_handoff: {
             org_id: snapshot.context.org.id ?? "",
             user: { first_name: snapshot.context.user.first_name ?? "" },
-          };
-        },
+          },
+          onboarding_result: {
+            state: "ready" as const,
+            user: {
+              email: snapshot.context.user.email ?? null,
+              display_name: snapshot.context.user.display_name ?? null,
+              first_name: snapshot.context.user.first_name ?? null,
+            },
+            org: {
+              id: snapshot.context.org.id ?? null,
+              name: snapshot.context.org.name ?? null,
+            },
+            underlying_cause_tag: null,
+            org_validation_error: null,
+          },
+        };
+      }),
+      /** onboarding → rejected: retain the rejected outcome (cause + any
+       *  validation error) so the derived `login-and-org-setup` projection
+       *  reproduces `session_rejected` after the child is stopped. Mirrors
+       *  buildProjection's session_rejected fold (user/org stay null; only the
+       *  cause carries). */
+      captureSessionRejected: assign(({ event }) => {
+        const snapshot = onboardingSnapshot(event);
+        return {
+          onboarding_result: {
+            state: "session_rejected" as const,
+            user: {
+              email: snapshot.context.user.email ?? null,
+              display_name: snapshot.context.user.display_name ?? null,
+              first_name: snapshot.context.user.first_name ?? null,
+            },
+            org: {
+              id: snapshot.context.org.id ?? null,
+              name: snapshot.context.org.name ?? null,
+            },
+            underlying_cause_tag:
+              snapshot.context.underlying_cause_tag ?? null,
+            org_validation_error: snapshot.context.org_validation_error ?? null,
+          },
+        };
       }),
       /** project_context → chat (and switch): stage the selected project for
        *  `project_ready` and record it as the last-forwarded id (the
@@ -184,6 +229,7 @@ export function createChatAppMachine() {
       project_handoff: null,
       last_forwarded_project_id: null,
       held_events: [],
+      onboarding_result: null,
     }),
     states: {
       // ───────────────────────── lifecycle region ─────────────────────────
@@ -219,6 +265,7 @@ export function createChatAppMachine() {
                 {
                   guard: "childReachedSessionRejected",
                   target: "rejected",
+                  actions: "captureSessionRejected",
                 },
               ],
             },
