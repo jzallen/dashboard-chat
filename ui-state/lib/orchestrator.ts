@@ -34,8 +34,8 @@ import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { Config } from "../config.ts";
 import type { ResourceType } from "./active-scope.ts";
+import { err, ok, type Result } from "./domain/flow-result.ts";
 import { FlowId } from "./flow-id.ts";
-import { err, ok, type Result } from "./flow-result.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import { type SessionChatMachineDeps } from "./machines/session-chat/index.ts";

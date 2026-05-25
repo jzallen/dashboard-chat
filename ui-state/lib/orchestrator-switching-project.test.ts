@@ -22,8 +22,8 @@
 import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
+import { type Result } from "./domain/flow-result.ts";
 import { FlowId } from "./flow-id.ts";
-import { type Result } from "./flow-result.ts";
 import type {
   ProjectContextMachineDeps,
   ResolveInitialScopeActor,

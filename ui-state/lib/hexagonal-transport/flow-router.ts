@@ -26,7 +26,7 @@ import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import type { Context, Env, Hono } from "hono";
 import { requestId } from "hono/request-id";
 
-import { errorMessage,type Result } from "../flow-result.ts";
+import { errorMessage,type Result } from "../domain/flow-result.ts";
 import type { FlowOrchestrator } from "../orchestrator.ts";
 
 export { errorMessage };

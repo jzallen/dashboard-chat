@@ -32,8 +32,8 @@ import { z } from "zod";
 
 import type { Config } from "../../../config.ts";
 import type { ResolveActiveScope } from "../../active-scope.ts";
+import type { Result } from "../../domain/flow-result.ts";
 import { FlowId } from "../../flow-id.ts";
-import type { Result } from "../../flow-result.ts";
 import { mountUniformFlowRoutes } from "../../hexagonal-transport/flow-router.ts";
 import type {
   BeginFlowOrchestrator,
