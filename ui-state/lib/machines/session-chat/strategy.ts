@@ -27,10 +27,10 @@
 import { type AnyActorRef } from "xstate";
 
 import type { ResourceType } from "../../active-scope.ts";
+import { FlowId } from "../../flow-id.ts";
 import type {
   FlowStrategy,
   PumpContext,
-  SendEventInput,
   SettleContext,
   SettleOutcome,
 } from "../../orchestrator.ts";
@@ -38,7 +38,7 @@ import {
   harvestSettledFreezeState,
   harvestSettledSessionChatState,
 } from "../../orchestrator-harvester.ts";
-import { buildProjection } from "../../projection.ts";
+import { buildProjection, FlowEvent } from "../../projection.ts";
 import { createSessionChatMachine } from "./index.ts";
 
 /**
@@ -166,12 +166,14 @@ async function appendSessionChatTerminalEvents(
     pending_first_message: string;
   };
   if (stateValue === "loading_session_list") {
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_list_load_started",
-      payload: { project_id: ctx.project.id },
-      request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_list_load_started",
+        payload: { project_id: ctx.project.id },
+        request_id,
+      }),
+    );
     return;
   }
   if (stateValue === "session_list_loaded") {
@@ -192,43 +194,50 @@ async function appendSessionChatTerminalEvents(
       harvestedResume?.session_list_has_more !== undefined
         ? harvestedResume.session_list_has_more
         : ctx.session_list_has_more;
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_list_load_started",
-      payload: { project_id: ctx.project.id },
-      request_id,
-    });
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_list_loaded",
-      payload: {
-        items: settledList,
-        next_cursor: settledNextCursor,
-        has_more: settledHasMore,
-      },
-      request_id,
-    });
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_list_displayed",
-      payload: {
-        project_id: ctx.project.id,
-        session_count: settledList.length,
-      },
-      request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_list_load_started",
+        payload: { project_id: ctx.project.id },
+        request_id,
+      }),
+    );
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_list_loaded",
+        payload: {
+          items: settledList,
+          next_cursor: settledNextCursor,
+          has_more: settledHasMore,
+        },
+        request_id,
+      }),
+    );
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_list_displayed",
+        payload: {
+          project_id: ctx.project.id,
+          session_count: settledList.length,
+        },
+        request_id,
+      }),
+    );
     return;
   }
   if (stateValue === "resuming_session") {
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_resume_started",
-      payload: {
-        session_id:
-          ctx.pending_resume_session_id ?? ctx.session_id ?? null,
-      },
-      request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_resume_started",
+        payload: {
+          session_id: ctx.pending_resume_session_id ?? ctx.session_id ?? null,
+        },
+        request_id,
+      }),
+    );
     return;
   }
   if (stateValue === "session_active") {
@@ -247,14 +256,16 @@ async function appendSessionChatTerminalEvents(
       // read still holds null at this emission point, so prefer the
       // harvested settled value (same boundary discipline as the
       // `session_resumed` branch below).
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_active_reached",
-        payload: {
-          session_id: harvestedResume?.session_id ?? ctx.session_id,
-        },
-        request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "session_active_reached",
+          payload: {
+            session_id: harvestedResume?.session_id ?? ctx.session_id,
+          },
+          request_id,
+        }),
+      );
       return;
     }
     // D-MR5-01: prefer the harvested settled context (the resume
@@ -266,33 +277,36 @@ async function appendSessionChatTerminalEvents(
     const resumedCause =
       harvestedResume?.underlying_cause_tag ?? ctx.underlying_cause_tag;
     const resumedSessionId = harvestedResume?.session_id ?? ctx.session_id;
-    const resumedTranscript =
-      harvestedResume?.transcript ?? ctx.transcript;
+    const resumedTranscript = harvestedResume?.transcript ?? ctx.transcript;
     // `dataset_unavailable` is TRUE only when the resume actor detected a
     // stored active_dataset_id that 404'd (graceful degradation per US-205
     // Example 3). A null active_dataset_id is the conversational-mode
     // default — NOT a degraded state. The machine signals the degraded
     // case by setting underlying_cause_tag = "dataset_not_found".
     const datasetUnavailable = resumedCause === "dataset_not_found";
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_resumed",
-      payload: {
-        session_id: resumedSessionId,
-        transcript: resumedTranscript,
-        resource_type: resumedResource.type,
-        resource_id: resumedResource.id,
-        dataset_unavailable: datasetUnavailable,
-      },
-      request_id,
-    });
-    if (datasetUnavailable) {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_dataset_unavailable",
-        payload: {},
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_resumed",
+        payload: {
+          session_id: resumedSessionId,
+          transcript: resumedTranscript,
+          resource_type: resumedResource.type,
+          resource_id: resumedResource.id,
+          dataset_unavailable: datasetUnavailable,
+        },
         request_id,
-      });
+      }),
+    );
+    if (datasetUnavailable) {
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "session_dataset_unavailable",
+          payload: {},
+          request_id,
+        }),
+      );
     }
     return;
   }
@@ -302,42 +316,46 @@ async function appendSessionChatTerminalEvents(
     // Carry pending_first_message so the projection reducer preserves the
     // composer text when re-entering from `retry_clicked` — the machine
     // already holds it in context across that transition (app-arch §6.4).
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_welcome_displayed",
-      payload: {
-        project_id: ctx.project.id,
-        // RC-2 (US-206): capturePendingFirstMessage assigns the composer
-        // text AFTER the snapshot flips, so the projection-of-log read is
-        // empty at this emission point — prefer the harvested value.
-        pending_first_message:
-          harvestedResume?.pending_first_message ?? ctx.pending_first_message,
-      },
-      request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_welcome_displayed",
+        payload: {
+          project_id: ctx.project.id,
+          // RC-2 (US-206): capturePendingFirstMessage assigns the composer
+          // text AFTER the snapshot flips, so the projection-of-log read is
+          // empty at this emission point — prefer the harvested value.
+          pending_first_message:
+            harvestedResume?.pending_first_message ?? ctx.pending_first_message,
+        },
+        request_id,
+      }),
+    );
     return;
   }
   if (stateValue === "error_recoverable") {
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_chat_recoverable_error",
-      payload: {
-        underlying_cause_tag:
-          harvestedResume?.underlying_cause_tag ??
-          ctx.underlying_cause_tag ??
-          "transient",
-        // US-206 composer-preservation: carry the welcome-state composer
-        // text on the FlowEvent so the projection reducer preserves it
-        // across reload (DWD-9 SSOT — projection is rebuilt from log).
-        // RC-2: the transient-create-session failure sets the cause +
-        // preserves pending_first_message AFTER the snapshot flips to
-        // `error_recoverable`; the projection-of-log read is stale here,
-        // so prefer the harvested settled values.
-        pending_first_message:
-          harvestedResume?.pending_first_message ?? ctx.pending_first_message,
-      },
-      request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_chat_recoverable_error",
+        payload: {
+          underlying_cause_tag:
+            harvestedResume?.underlying_cause_tag ??
+            ctx.underlying_cause_tag ??
+            "transient",
+          // US-206 composer-preservation: carry the welcome-state composer
+          // text on the FlowEvent so the projection reducer preserves it
+          // across reload (DWD-9 SSOT — projection is rebuilt from log).
+          // RC-2: the transient-create-session failure sets the cause +
+          // preserves pending_first_message AFTER the snapshot flips to
+          // `error_recoverable`; the projection-of-log read is stale here,
+          // so prefer the harvested settled values.
+          pending_first_message:
+            harvestedResume?.pending_first_message ?? ctx.pending_first_message,
+        },
+        request_id,
+      }),
+    );
   }
 }
 
@@ -397,16 +415,18 @@ export const sessionChatStrategy: FlowStrategy = {
     // `project_context_inherited` event as its first marker so the
     // projection reducer knows session-chat has been spawned for this
     // principal.
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "project_context_inherited",
-      payload: {
-        org_id: orgId,
-        project_id: projectId,
-        project_name: spawnHarvest.project.name ?? "",
-      },
-      request_id: input.request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "project_context_inherited",
+        payload: {
+          org_id: orgId,
+          project_id: projectId,
+          project_name: spawnHarvest.project.name ?? "",
+        },
+        request_id: input.request_id,
+      }),
+    );
 
     // RC-2: the spawn path (project_ready → loading_session_list →
     // session_list_loaded) is where every mr_2/mr_3 precondition funnels.
@@ -444,7 +464,9 @@ export const sessionChatStrategy: FlowStrategy = {
   async applyEvent(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: SendEventInput,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
   ): Promise<void> {
     // US-209 / MR-5 — `switching_dataset_context` is an invoke-driven
     // transient state (the `switchDatasetContext` actor performs
@@ -458,22 +480,24 @@ export const sessionChatStrategy: FlowStrategy = {
     // context (the resolved resource lands on ctx after the snapshot
     // flips, the D-MR4-06 problem #2).
     if (
-      input.machine === SESSION_CHAT_WIRE_NAME &&
-      (input.type === "dataset_resolved_by_agent" ||
-        input.type === "dataset_picked_directly") &&
+      machine === SESSION_CHAT_WIRE_NAME &&
+      (event.type === "dataset_resolved_by_agent" ||
+        event.type === "dataset_picked_directly") &&
       (actor.getSnapshot().value as string) === "switching_dataset_context"
     ) {
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "switching_dataset_context_started",
-        payload: {
-          intended_resource_id:
-            (input.payload.resource_id as string | undefined) ?? null,
-          intended_resource_type:
-            (input.payload.resource_type as string | undefined) ?? "dataset",
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "switching_dataset_context_started",
+          payload: {
+            intended_resource_id:
+              (event.payload.resource_id as string | undefined) ?? null,
+            intended_resource_type:
+              (event.payload.resource_type as string | undefined) ?? "dataset",
+          },
+          request_id: event.request_id,
+        }),
+      );
     }
   },
 
@@ -501,16 +525,18 @@ export const sessionChatStrategy: FlowStrategy = {
   async settle(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: SendEventInput,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
     ctx: SettleContext,
   ): Promise<SettleOutcome> {
     const { stateValue, prior } = ctx;
-    if (input.machine !== SESSION_CHAT_WIRE_NAME) {
+    if (machine !== SESSION_CHAT_WIRE_NAME) {
       return {};
     }
     const isDatasetSwitch =
-      input.type === "dataset_resolved_by_agent" ||
-      input.type === "dataset_picked_directly";
+      event.type === "dataset_resolved_by_agent" ||
+      event.type === "dataset_picked_directly";
     // US-209 / MR-5 — the `switchDatasetContext` settle path. Mirrors the
     // D-MR4-06 project-switch settle discipline: the resolved `resource`
     // (or the `dataset_access_denied` cause) lands on the machine context
@@ -527,25 +553,29 @@ export const sessionChatStrategy: FlowStrategy = {
     if (isDatasetSwitch && stateValue === "session_active") {
       const harvest = harvestSettledSessionChatState(actor);
       if (harvest.underlying_cause_tag === "dataset_access_denied") {
-        await pump.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "dataset_access_denied",
-          payload: { underlying_cause_tag: "dataset_access_denied" },
-          request_id: input.request_id,
-        });
+        await pump.deps.eventLog.append(
+          flow_id,
+          FlowEvent.from(FlowId.fromKey(flow_id), {
+            type: "dataset_access_denied",
+            payload: { underlying_cause_tag: "dataset_access_denied" },
+            request_id: event.request_id,
+          }),
+        );
       } else {
-        await pump.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "dataset_attached",
-          payload: {
-            resource_type: harvest.resource.type,
-            resource_id: harvest.resource.id,
-          },
-          request_id: input.request_id,
-        });
+        await pump.deps.eventLog.append(
+          flow_id,
+          FlowEvent.from(FlowId.fromKey(flow_id), {
+            type: "dataset_attached",
+            payload: {
+              resource_type: harvest.resource.type,
+              resource_id: harvest.resource.id,
+            },
+            request_id: event.request_id,
+          }),
+        );
       }
     } else if (
-      input.type === "session_clicked" &&
+      event.type === "session_clicked" &&
       stateValue === "session_list_loaded"
     ) {
       // Special-case: if the resumeSession resolved with
@@ -555,18 +585,20 @@ export const sessionChatStrategy: FlowStrategy = {
       // underlying_cause_tag to NOT surface — we emit
       // `session_resume_not_found` so the projection reducer can blank
       // out pending_resume_session_id atomically.
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "session_resume_not_found",
-        payload: {},
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "session_resume_not_found",
+          payload: {},
+          request_id: event.request_id,
+        }),
+      );
     } else {
       await appendSessionChatTerminalEvents(
         pump,
-        input.flow_id,
+        flow_id,
         stateValue,
-        input.request_id,
+        event.request_id,
         // `prior` captured at the top of send() — the state BEFORE the
         // current event was dispatched. Used to distinguish eager-create
         // from resume on `session_active` arrival.
@@ -603,21 +635,23 @@ export const sessionChatStrategy: FlowStrategy = {
     flow_id: string,
   ): Promise<void> {
     const h = harvestSettledFreezeState(actor);
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "session_chat_frozen",
-      payload: {
-        last_live_state: h.last_live_state,
-        // Originating user-action preserved from the freeze moment so it
-        // survives into error_recoverable on the abandoned path (US-210
-        // AC). The *_started events that normally write these never fired
-        // when FREEZE pre-empted the in-flight invoke.
-        pending_resume_session_id: h.pending_resume_session_id,
-        pending_first_message: h.pending_first_message,
-        pending_project_name: h.pending_project_name,
-      },
-      request_id: h.request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "session_chat_frozen",
+        payload: {
+          last_live_state: h.last_live_state,
+          // Originating user-action preserved from the freeze moment so it
+          // survives into error_recoverable on the abandoned path (US-210
+          // AC). The *_started events that normally write these never fired
+          // when FREEZE pre-empted the in-flight invoke.
+          pending_resume_session_id: h.pending_resume_session_id,
+          pending_first_message: h.pending_first_message,
+          pending_project_name: h.pending_project_name,
+        },
+        request_id: h.request_id,
+      }),
+    );
   },
 
   /**

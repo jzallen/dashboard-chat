@@ -35,7 +35,7 @@ import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 import type { Config } from "../config.ts";
 import type { ResourceType } from "./active-scope.ts";
 import { FlowId } from "./flow-id.ts";
-import { err,ok, type Result } from "./flow-result.ts";
+import { err, ok, type Result } from "./flow-result.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
 import { type SessionChatMachineDeps } from "./machines/session-chat/index.ts";
@@ -48,7 +48,11 @@ import {
   harvestSettledSessionChatState,
 } from "./orchestrator-harvester.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import { buildProjection, FlowEvent,type FlowProjection } from "./projection.ts";
+import {
+  buildProjection,
+  FlowEvent,
+  type FlowProjection,
+} from "./projection.ts";
 import { waitForSettledState } from "./wait-for-settled-state.ts";
 
 /**
@@ -105,10 +109,7 @@ const LOGIN_AND_ORG_SETUP_WIRE_NAME = "login-and-org-setup";
 export interface PumpContext {
   readonly deps: OrchestratorDeps;
   logTransition(record: Record<string, unknown>): void;
-  projectionFor(
-    flow_id: string,
-    request_id: string,
-  ): Promise<FlowProjection>;
+  projectionFor(flow_id: string, request_id: string): Promise<FlowProjection>;
 }
 
 /**
@@ -167,18 +168,24 @@ export interface FlowStrategy {
     },
   ): AnyStateMachine;
 
-  /** Pre-settle event→transition emission (currently project-context only). */
+  /** Pre-settle event→transition emission (currently project-context only).
+   *  The pump derives `flow_id` (bridged key) + `machine` (the minted segment
+   *  the gate compares) from `event.flowId` once and threads them. */
   applyEvent?(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: SendEventInput,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
   ): Promise<void>;
   /** Post-settle terminal emission. Returns any cross-machine hook signal
    *  (the pump fires the downstream dispatch). */
   settle?(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: SendEventInput,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
     ctx: SettleContext,
   ): Promise<SettleOutcome>;
   /** Spawn-time terminal emission (called from `beginIfNotStarted`). */
@@ -323,14 +330,6 @@ export interface BeginStrategy {
   readonly actor: AnyActorRef;
   readonly requestId: string;
   begin(): Promise<void>;
-}
-
-export interface SendEventInput {
-  machine: string;
-  flow_id: string;
-  type: string;
-  payload: Record<string, unknown>;
-  request_id: string;
 }
 
 export const FREEZE_WINDOW_MS = 5_000;
@@ -711,17 +710,6 @@ export class FlowOrchestrator implements PumpContext {
       throw new Error(`unknown flow_id: ${flow_id}`);
     }
 
-    // Transitional shim: the FlowStrategy port still consumes a
-    // SendEventInput until the port change in the next commit. Reconstruct it
-    // from the self-addressing event so this commit is behavior-identical.
-    const dispatchInput: SendEventInput = {
-      machine,
-      flow_id,
-      type: event.type,
-      payload: event.payload,
-      request_id: event.request_id,
-    };
-
     // Cross-machine FREEZE handling: if this flow is currently frozen (a
     // sibling entered `expired_token`), queue the event in the bounded
     // replay buffer instead of dispatching to the XState actor. The
@@ -764,7 +752,7 @@ export class FlowOrchestrator implements PumpContext {
     // session_id under the new project.
     const dispatchStrategy = FLOW_STRATEGY_REGISTRY.resolve(machine);
     if (dispatchStrategy.applyEvent) {
-      await dispatchStrategy.applyEvent(this, actor, dispatchInput);
+      await dispatchStrategy.applyEvent(this, actor, event, flow_id, machine);
     }
 
     await waitForSettledState(actor);
@@ -842,7 +830,9 @@ export class FlowOrchestrator implements PumpContext {
     const loginSettleOutcome = await sessionOnboardingStrategy.settle(
       this,
       actor,
-      dispatchInput,
+      event,
+      flow_id,
+      machine,
       { stateValue, prior, projectionCtx },
     );
     if (loginSettleOutcome.authReady && this.deps.projectContextMachineDeps) {
@@ -871,7 +861,9 @@ export class FlowOrchestrator implements PumpContext {
     const projectSettleOutcome = await projectContextStrategy.settle(
       this,
       actor,
-      dispatchInput,
+      event,
+      flow_id,
+      machine,
       { stateValue, prior, projectionCtx },
     );
     if (projectSettleOutcome.projectReady) {
@@ -886,7 +878,7 @@ export class FlowOrchestrator implements PumpContext {
     if (!sessionChatStrategy.settle) {
       throw new Error("sessionChatStrategy.settle missing (LEAF-3 N17)");
     }
-    await sessionChatStrategy.settle(this, actor, dispatchInput, {
+    await sessionChatStrategy.settle(this, actor, event, flow_id, machine, {
       stateValue,
       prior,
       projectionCtx,
@@ -1363,9 +1355,7 @@ export class BeginFlowOrchestrator {
       // body: the machine-specific begin sequence
       await strategy.begin();
       // exit: the freshly-built projection is the response
-      return ok(
-        await this.projectionFor(strategy.flow_id, strategy.requestId),
-      );
+      return ok(await this.projectionFor(strategy.flow_id, strategy.requestId));
     } catch (e) {
       return toFlowError(e);
     }

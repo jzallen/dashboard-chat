@@ -22,10 +22,10 @@
 import { type AnyActorRef } from "xstate";
 
 import type { ResourceType } from "../../active-scope.ts";
+import { FlowId } from "../../flow-id.ts";
 import type {
   FlowStrategy,
   PumpContext,
-  SendEventInput,
   SettleContext,
   SettleOutcome,
 } from "../../orchestrator.ts";
@@ -33,11 +33,8 @@ import {
   harvestSettledFreezeState,
   harvestSettledProjectContextState,
 } from "../../orchestrator-harvester.ts";
-import type { FlowEvent } from "../../projection.ts";
-import { buildProjection } from "../../projection.ts";
-import {
-  createProjectContextMachine,
-} from "./index.ts";
+import { buildProjection, FlowEvent } from "../../projection.ts";
+import { createProjectContextMachine } from "./index.ts";
 
 /**
  * Canonical machine-name (ADR-039) — the FlowStrategy registry key. The
@@ -119,9 +116,10 @@ export const projectContextStrategy: FlowStrategy = {
       project: { id: string | null; name: string | null };
       underlying_cause_tag: string | null;
       most_recent_session_per_project: Record<string, string>;
-      last_used_resolution_degraded:
-        | { failed_project_ids: string[]; partial_result: boolean }
-        | null;
+      last_used_resolution_degraded: {
+        failed_project_ids: string[];
+        partial_result: boolean;
+      } | null;
       deeplink_session_id: string | null;
       intent_resource_id: string | null;
       intent_resource_type: ResourceType | null;
@@ -146,79 +144,88 @@ export const projectContextStrategy: FlowStrategy = {
     // on the spawn path (machine.ts seeds `org_id: input.org_id ?? ""` and
     // the `auth_ready` assign sets it from `event.org_id`), so dropping the
     // pump-only `?? input.org_id` fallback is behavior-neutral.
-    const settledOrgId =
-      beginHarvest.org_id ?? ctx.org.id ?? "";
+    const settledOrgId = beginHarvest.org_id ?? ctx.org.id ?? "";
     // Identity first-name: projection-of-log (empty at first write) →
     // harvester (machine ctx, == the pump's `input.user_first_name`).
     const firstName =
       ctx.user.first_name ?? beginHarvest.user.first_name ?? null;
 
     // Initial event — marks the J-002 actor as started for projection consumers.
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "project_context_resolution_started",
-      payload: {
-        org_id: settledOrgId,
-        user: { first_name: firstName },
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "project_context_resolution_started",
+        payload: {
+          org_id: settledOrgId,
+          user: { first_name: firstName },
+          request_id: input.request_id,
+        },
         request_id: input.request_id,
-      },
-      request_id: input.request_id,
-    });
+      }),
+    );
 
     // OQ-J002-5 / RC-1: the degraded set lands on the machine context
     // (resolveInitialScope onDone) AFTER the snapshot flips and BEFORE the
     // first FlowEvent — source it from the harvest boundary.
     const degradedIds = beginHarvest.last_used_degraded_project_ids ?? [];
     if (degradedIds.length > 0) {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "last_used_resolution_degraded",
-        payload: {
-          failed_project_ids: degradedIds,
-          partial_result: true,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "last_used_resolution_degraded",
+          payload: {
+            failed_project_ids: degradedIds,
+            partial_result: true,
+          },
+          request_id: input.request_id,
+        }),
+      );
     }
 
     // Terminal-for-now event reflecting settle.
     if (stateValue === "no_projects") {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "no_projects_displayed",
-        payload: {
-          org_id: settledOrgId,
-          user: { first_name: firstName },
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "no_projects_displayed",
+          payload: {
+            org_id: settledOrgId,
+            user: { first_name: firstName },
+          },
+          request_id: input.request_id,
+        }),
+      );
     } else if (stateValue === "project_selected") {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_selected",
-        payload: {
-          org_id: settledOrgId,
-          project: settledProject,
-          // OQ-J002-5 (US-202 last-used resolution): harvested from the
-          // same boundary as `settledProject`.
-          most_recent_session_per_project:
-            beginHarvest.most_recent_session_per_project,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "project_selected",
+          payload: {
+            org_id: settledOrgId,
+            project: settledProject,
+            // OQ-J002-5 (US-202 last-used resolution): harvested from the
+            // same boundary as `settledProject`.
+            most_recent_session_per_project:
+              beginHarvest.most_recent_session_per_project,
+          },
+          request_id: input.request_id,
+        }),
+      );
       // The `project_ready` broadcast hook FIRING stays pump-central
       // (leaf-3-plan §3 / §4B) — the pump calls `maybeFireProjectReady`
       // AFTER this returns.
     } else if (stateValue === "scope_mismatch_terminal") {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "scope_mismatch_displayed",
-        payload: {
-          org_id: settledOrgId,
-          underlying_cause_tag: settledCause ?? "cross_tenant",
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "scope_mismatch_displayed",
+          payload: {
+            org_id: settledOrgId,
+            underlying_cause_tag: settledCause ?? "cross_tenant",
+          },
+          request_id: input.request_id,
+        }),
+      );
     }
   },
 
@@ -242,7 +249,9 @@ export const projectContextStrategy: FlowStrategy = {
   async applyEvent(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: SendEventInput,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
   ): Promise<void> {
     // D-MR4-06 / IC-J002-4 — `switching_project` is an invoke-driven
     // transient state. Emit `switching_project_started` BEFORE the settle
@@ -251,24 +260,26 @@ export const projectContextStrategy: FlowStrategy = {
     // surfaces. Without this the `project_switched` reducer would leak the
     // old session_id under the new project.
     if (
-      input.machine === PROJECT_CONTEXT_WIRE_NAME &&
-      input.type === "switching_project_intent" &&
+      machine === PROJECT_CONTEXT_WIRE_NAME &&
+      event.type === "switching_project_intent" &&
       (actor.getSnapshot().value as string) === "switching_project"
     ) {
       const preSettleCtx = buildProjection(
-        input.flow_id,
-        await pump.deps.eventLog.read(input.flow_id),
+        flow_id,
+        await pump.deps.eventLog.read(flow_id),
       ).context as { org: { id: string | null } };
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "switching_project_started",
-        payload: {
-          org_id: preSettleCtx.org.id ?? "",
-          deeplink_project_id:
-            (input.payload.new_project_id as string | undefined) ?? null,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "switching_project_started",
+          payload: {
+            org_id: preSettleCtx.org.id ?? "",
+            deeplink_project_id:
+              (event.payload.new_project_id as string | undefined) ?? null,
+          },
+          request_id: event.request_id,
+        }),
+      );
     }
   },
 
@@ -308,7 +319,9 @@ export const projectContextStrategy: FlowStrategy = {
   async settle(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: SendEventInput,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
     ctx: SettleContext,
   ): Promise<SettleOutcome> {
     const { stateValue } = ctx;
@@ -337,7 +350,7 @@ export const projectContextStrategy: FlowStrategy = {
     // names, so the login arms (called first by the pump, NOT
     // machine-gated) don't fire for it. Per DWD-13 the wire name is still
     // `project-and-chat-session-management`.
-    if (input.machine !== PROJECT_CONTEXT_WIRE_NAME) {
+    if (machine !== PROJECT_CONTEXT_WIRE_NAME) {
       return {};
     }
     // ADR-030 LEAF-B: project-context emission reads flow through the
@@ -354,9 +367,9 @@ export const projectContextStrategy: FlowStrategy = {
     // boundary (the sanctioned exception, AMB-1), scoped to the
     // switch/deep-link/create settle paths so other emission is unchanged.
     const isSettleHarvestPath =
-      input.type === "switching_project_intent" ||
-      input.type === "open_deep_link" ||
-      input.type === "create_project_submitted";
+      event.type === "switching_project_intent" ||
+      event.type === "open_deep_link" ||
+      event.type === "create_project_submitted";
     const switchHarvest = isSettleHarvestPath
       ? harvestSettledProjectContextState(actor)
       : null;
@@ -366,22 +379,22 @@ export const projectContextStrategy: FlowStrategy = {
     // When the incoming event is `open_deep_link`, also append a
     // `deep_link_opened` projection event so the projection's context
     // carries the URL-level wish + resource_* fields (per DWD-9 / MR-D).
-    if (input.type === "open_deep_link") {
+    if (event.type === "open_deep_link") {
       // RC-1: source the URL wish from the open_deep_link event payload
       // directly (no open_deep_link projection reducer); the resolved
       // project comes from the harvested settled context.
       const resolvedProject = switchSettledProject ?? projectionCtx.project;
       const dlProjectId =
-        (input.payload.intent_project_id as string | undefined) ??
+        (event.payload.intent_project_id as string | undefined) ??
         projectionCtx.deeplink_project_id;
       const dlSessionId =
-        (input.payload.intent_session_id as string | undefined) ??
+        (event.payload.intent_session_id as string | undefined) ??
         projectionCtx.deeplink_session_id;
       const dlResourceId =
-        (input.payload.intent_resource_id as string | undefined) ??
+        (event.payload.intent_resource_id as string | undefined) ??
         projectionCtx.intent_resource_id;
       const dlResourceType =
-        (input.payload.intent_resource_type as ResourceType | undefined) ??
+        (event.payload.intent_resource_type as ResourceType | undefined) ??
         projectionCtx.intent_resource_type;
       const resolvedScope = {
         org_id: orgId,
@@ -389,20 +402,22 @@ export const projectContextStrategy: FlowStrategy = {
         resource_type: dlResourceType,
         resource_id: dlResourceId,
       };
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "deep_link_opened",
-        payload: {
-          scope: resolvedScope,
-          project: resolvedProject?.id ? resolvedProject : null,
-          reconciled: false,
-          deeplink_project_id: dlProjectId,
-          deeplink_session_id: dlSessionId,
-          intent_resource_id: dlResourceId,
-          intent_resource_type: dlResourceType,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "deep_link_opened",
+          payload: {
+            scope: resolvedScope,
+            project: resolvedProject?.id ? resolvedProject : null,
+            reconciled: false,
+            deeplink_project_id: dlProjectId,
+            deeplink_session_id: dlSessionId,
+            intent_resource_id: dlResourceId,
+            intent_resource_type: dlResourceType,
+          },
+          request_id: event.request_id,
+        }),
+      );
     }
 
     // The empty/invalid-name guard arm writes `project_validation_error`
@@ -415,8 +430,7 @@ export const projectContextStrategy: FlowStrategy = {
     // `project_context_recoverable_error` carry the composer text across
     // the `creating_project ↔ error_recoverable` retry boundary.
     const settledPendingProjectName =
-      switchHarvest?.pending_project_name ||
-      projectionCtx.pending_project_name;
+      switchHarvest?.pending_project_name || projectionCtx.pending_project_name;
 
     // Cross-machine `project_ready` hook stays pump-fired (§3/§4B) — the
     // `project_selected` arm sets this and the pump fires
@@ -424,51 +438,58 @@ export const projectContextStrategy: FlowStrategy = {
     let projectReady: SettleOutcome["projectReady"] = null;
 
     if (stateValue === "no_projects" && settledValidationError) {
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_validation_failed",
-        payload: { error: settledValidationError },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "project_validation_failed",
+          payload: { error: settledValidationError },
+          request_id: event.request_id,
+        }),
+      );
     } else if (stateValue === "no_projects") {
       // Re-resolved into no_projects (e.g., after back_to_projects_clicked).
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "no_projects_displayed",
-        payload: {
-          org_id: orgId,
-          user: { first_name: projectionCtx.user.first_name },
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "no_projects_displayed",
+          payload: {
+            org_id: orgId,
+            user: { first_name: projectionCtx.user.first_name },
+          },
+          request_id: event.request_id,
+        }),
+      );
     } else if (stateValue === "creating_project") {
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_creation_started",
-        payload: {
-          pending_project_name: settledPendingProjectName,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "project_creation_started",
+          payload: {
+            pending_project_name: settledPendingProjectName,
+          },
+          request_id: event.request_id,
+        }),
+      );
     } else if (stateValue === "project_selected") {
       // Emit `project_selected` (not `project_created`) when this
       // transition is a re-resolve (open_deep_link or
       // back_to_projects_clicked). The reducer handles both similarly; the
       // distinction is semantic for downstream consumers.
-      const isFromCreate = input.type === "create_project_submitted";
+      const isFromCreate = event.type === "create_project_submitted";
       // D-MR4-06: on the switch-settle path the resolved project lives
       // only on the harvested machine context.
-      const settledProject =
-        switchSettledProject ?? projectionCtx.project;
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: isFromCreate ? "project_created" : "project_selected",
-        payload: {
-          org_id: orgId,
-          project: settledProject,
-        },
-        request_id: input.request_id,
-      });
+      const settledProject = switchSettledProject ?? projectionCtx.project;
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: isFromCreate ? "project_created" : "project_selected",
+          payload: {
+            org_id: orgId,
+            project: settledProject,
+          },
+          request_id: event.request_id,
+        }),
+      );
       // ---- project_ready broadcast hook (DWD-13 §3.2.B; pump-fired) ----
       // The pump calls `maybeFireProjectReady` AFTER settle returns this
       // signal (cross-machine FIRING stays central — leaf-3-plan §3/§4B).
@@ -482,60 +503,68 @@ export const projectContextStrategy: FlowStrategy = {
       // MR-4 — when the entry was a switch settle (prior state
       // `switching_project`), also emit `project_switched` so SSE
       // consumers can distinguish "initial select" from "switch settle".
-      // Discriminated by input.type (switching_project_intent is the ONLY
+      // Discriminated by event.type (switching_project_intent is the ONLY
       // event that lifts switching_project → project_selected).
-      if (input.type === "switching_project_intent") {
-        await pump.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "project_switched",
-          payload: {
-            org_id: orgId,
-            project: settledProject,
-          },
-          request_id: input.request_id,
-        });
+      if (event.type === "switching_project_intent") {
+        await pump.deps.eventLog.append(
+          flow_id,
+          FlowEvent.from(FlowId.fromKey(flow_id), {
+            type: "project_switched",
+            payload: {
+              org_id: orgId,
+              project: settledProject,
+            },
+            request_id: event.request_id,
+          }),
+        );
       }
     } else if (stateValue === "switching_project") {
       // MR-4 / IC-J002-4 — emit `switching_project_started` atomically
       // with the state surface so SSE consumers see
       // (state=switching_project, session_id=null, resource=null) in the
       // same projection tick.
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "switching_project_started",
-        payload: {
-          org_id: orgId,
-          deeplink_project_id: projectionCtx.deeplink_project_id,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "switching_project_started",
+          payload: {
+            org_id: orgId,
+            deeplink_project_id: projectionCtx.deeplink_project_id,
+          },
+          request_id: event.request_id,
+        }),
+      );
     } else if (stateValue === "error_recoverable") {
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_context_recoverable_error",
-        payload: {
-          underlying_cause_tag:
-            switchSettledCause ??
-            projectionCtx.underlying_cause_tag ??
-            "transient",
-          pending_project_name: settledPendingProjectName,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "project_context_recoverable_error",
+          payload: {
+            underlying_cause_tag:
+              switchSettledCause ??
+              projectionCtx.underlying_cause_tag ??
+              "transient",
+            pending_project_name: settledPendingProjectName,
+          },
+          request_id: event.request_id,
+        }),
+      );
     } else if (stateValue === "scope_mismatch_terminal") {
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "scope_mismatch_displayed",
-        payload: {
-          org_id: orgId,
-          underlying_cause_tag:
-            switchSettledCause ??
-            projectionCtx.underlying_cause_tag ??
-            "cross_tenant",
-          deeplink_project_id: projectionCtx.deeplink_project_id,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "scope_mismatch_displayed",
+          payload: {
+            org_id: orgId,
+            underlying_cause_tag:
+              switchSettledCause ??
+              projectionCtx.underlying_cause_tag ??
+              "cross_tenant",
+            deeplink_project_id: projectionCtx.deeplink_project_id,
+          },
+          request_id: event.request_id,
+        }),
+      );
     }
 
     return { projectReady };
@@ -567,13 +596,14 @@ export const projectContextStrategy: FlowStrategy = {
     },
   ): Promise<void> {
     for (const ev of input.events) {
-      const flowEvent: FlowEvent = {
-        ts: new Date().toISOString(),
-        type: ev.type,
-        payload: ev.payload,
-        request_id: input.request_id,
-      };
-      await pump.deps.eventLog.append(input.flow_id, flowEvent);
+      await pump.deps.eventLog.append(
+        input.flow_id,
+        FlowEvent.from(FlowId.fromKey(input.flow_id), {
+          type: ev.type,
+          payload: ev.payload,
+          request_id: input.request_id,
+        }),
+      );
     }
   },
 
@@ -597,21 +627,23 @@ export const projectContextStrategy: FlowStrategy = {
     flow_id: string,
   ): Promise<void> {
     const h = harvestSettledFreezeState(actor);
-    await pump.deps.eventLog.append(flow_id, {
-      ts: new Date().toISOString(),
-      type: "project_context_frozen",
-      payload: {
-        last_live_state: h.last_live_state,
-        // Originating user-action preserved from the freeze moment so it
-        // survives into error_recoverable on the abandoned path (US-210
-        // AC). The *_started events that normally write these never fired
-        // when FREEZE pre-empted the in-flight invoke.
-        pending_resume_session_id: h.pending_resume_session_id,
-        pending_first_message: h.pending_first_message,
-        pending_project_name: h.pending_project_name,
-      },
-      request_id: h.request_id,
-    });
+    await pump.deps.eventLog.append(
+      flow_id,
+      FlowEvent.from(FlowId.fromKey(flow_id), {
+        type: "project_context_frozen",
+        payload: {
+          last_live_state: h.last_live_state,
+          // Originating user-action preserved from the freeze moment so it
+          // survives into error_recoverable on the abandoned path (US-210
+          // AC). The *_started events that normally write these never fired
+          // when FREEZE pre-empted the in-flight invoke.
+          pending_resume_session_id: h.pending_resume_session_id,
+          pending_first_message: h.pending_first_message,
+          pending_project_name: h.pending_project_name,
+        },
+        request_id: h.request_id,
+      }),
+    );
   },
 
   /**
@@ -650,34 +682,40 @@ export const projectContextStrategy: FlowStrategy = {
     const request_id = harvestSettledFreezeState(actor).request_id;
     const h = harvestSettledProjectContextState(actor);
     if (settledState === "project_selected") {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_switched",
-        payload: { org_id: h.org_id ?? "", project: h.project },
-        request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "project_switched",
+          payload: { org_id: h.org_id ?? "", project: h.project },
+          request_id,
+        }),
+      );
       // Re-broadcast project_ready so a frozen-then-thawed session-chat
       // re-binds to the switched project (idempotent on same id) — stays
       // pump-fired AFTER this returns (leaf-3-plan §3 / §4B).
     } else if (settledState === "scope_mismatch_terminal") {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "scope_mismatch_displayed",
-        payload: {
-          org_id: h.org_id ?? "",
-          underlying_cause_tag: h.underlying_cause_tag ?? "access_revoked",
-        },
-        request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "scope_mismatch_displayed",
+          payload: {
+            org_id: h.org_id ?? "",
+            underlying_cause_tag: h.underlying_cause_tag ?? "access_revoked",
+          },
+          request_id,
+        }),
+      );
     } else if (settledState === "error_recoverable") {
-      await pump.deps.eventLog.append(flow_id, {
-        ts: new Date().toISOString(),
-        type: "project_context_recoverable_error",
-        payload: {
-          underlying_cause_tag: h.underlying_cause_tag ?? "transient",
-        },
-        request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "project_context_recoverable_error",
+          payload: {
+            underlying_cause_tag: h.underlying_cause_tag ?? "transient",
+          },
+          request_id,
+        }),
+      );
     }
   },
 };

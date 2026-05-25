@@ -13,18 +13,18 @@
 
 import { type AnyActorRef, createActor } from "xstate";
 
+import { FlowId } from "../../flow-id.ts";
 import type {
   BeginFlowInput,
   BeginStrategy,
   FlowStrategy,
   PumpContext,
-  SendEventInput,
   SettleContext,
   SettleOutcome,
 } from "../../orchestrator.ts";
 import { harvestSettledLoginState } from "../../orchestrator-harvester.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
-import type { FlowEvent } from "../../projection.ts";
+import { FlowEvent } from "../../projection.ts";
 import { createSessionOnboardingMachine } from "./index.ts";
 
 /**
@@ -44,9 +44,7 @@ const SESSION_ONBOARDING_MACHINE = "session-onboarding";
 const LEGACY_WIRE_NAME = "login-and-org-setup";
 
 function isSessionOnboarding(machine: string): boolean {
-  return (
-    machine === SESSION_ONBOARDING_MACHINE || machine === LEGACY_WIRE_NAME
-  );
+  return machine === SESSION_ONBOARDING_MACHINE || machine === LEGACY_WIRE_NAME;
 }
 
 /**
@@ -62,9 +60,7 @@ function composeOrgClaimEcho(org_id: string): string {
   const header = Buffer.from(
     JSON.stringify({ alg: "none", typ: "JWT" }),
   ).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({ org_id })).toString(
-    "base64url",
-  );
+  const payload = Buffer.from(JSON.stringify({ org_id })).toString("base64url");
   return `${header}.${payload}.ui-state-mint`;
 }
 
@@ -94,12 +90,14 @@ export const sessionOnboardingStrategy: FlowStrategy = {
   async settle(
     pump: PumpContext,
     actor: AnyActorRef,
-    input: SendEventInput,
+    event: FlowEvent,
+    flow_id: string,
+    machine: string,
     ctx: SettleContext,
   ): Promise<SettleOutcome> {
     const { stateValue, prior } = ctx;
 
-    if (stateValue === "ready" && isSessionOnboarding(input.machine)) {
+    if (stateValue === "ready" && isSessionOnboarding(machine)) {
       // The org is set on the machine snapshot by the createOrgAndReissue
       // actor's onDone (new user) or by assignVerifiedUser (returning user);
       // the `org_created` event we are about to emit is what populates it in
@@ -110,15 +108,17 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       // Non-security org-claim echo (OQ-5) so the FE / TS harness can read the
       // org_id claim. NOT a real credential — auth-proxy is the SSOT.
       const access_token = composeOrgClaimEcho(orgCtx.id ?? "");
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "org_created",
-        payload: {
-          org: orgCtx,
-          access_token,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "org_created",
+          payload: {
+            org: orgCtx,
+            access_token,
+          },
+          request_id: event.request_id,
+        }),
+      );
 
       // ---- auth_ready broadcast hook ------------------------------------
       // First `ready` via EITHER path spawns project-context (carries org_id
@@ -141,16 +141,18 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       // `reissue_failed_partial` event we emit is what populates it in the
       // projection. Source the values from the sanctioned harvester.
       const harvested = harvestSettledLoginState(actor);
-      await pump.deps.eventLog.append(input.flow_id, {
-        ts: new Date().toISOString(),
-        type: "reissue_failed_partial",
-        payload: {
-          underlying_cause_tag:
-            harvested.underlying_cause_tag ?? "partial-setup",
-          org: harvested.org,
-        },
-        request_id: input.request_id,
-      });
+      await pump.deps.eventLog.append(
+        flow_id,
+        FlowEvent.from(FlowId.fromKey(flow_id), {
+          type: "reissue_failed_partial",
+          payload: {
+            underlying_cause_tag:
+              harvested.underlying_cause_tag ?? "partial-setup",
+            org: harvested.org,
+          },
+          request_id: event.request_id,
+        }),
+      );
     } else if (stateValue === "needs_org") {
       // org_form_submitted with an invalid name → stay in needs_org but
       // attach the validation error to context. The error lives only on the
@@ -158,12 +160,14 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       // so source it from the sanctioned harvester.
       const harvested = harvestSettledLoginState(actor);
       if (harvested.org_validation_error) {
-        await pump.deps.eventLog.append(input.flow_id, {
-          ts: new Date().toISOString(),
-          type: "validation_failed",
-          payload: { error: harvested.org_validation_error },
-          request_id: input.request_id,
-        });
+        await pump.deps.eventLog.append(
+          flow_id,
+          FlowEvent.from(FlowId.fromKey(flow_id), {
+            type: "validation_failed",
+            payload: { error: harvested.org_validation_error },
+            request_id: event.request_id,
+          }),
+        );
       }
     }
 
@@ -205,7 +209,9 @@ export const sessionOnboardingStrategy: FlowStrategy = {
   async applyEvent(
     _pump: PumpContext,
     _actor: AnyActorRef,
-    _input: SendEventInput,
+    _event: FlowEvent,
+    _flow_id: string,
+    _machine: string,
   ): Promise<void> {
     // No-op: session-onboarding has no pre-settle event→transition emission.
   },
