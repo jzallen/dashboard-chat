@@ -23,6 +23,7 @@
 import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
+import { FlowId } from "./flow-id.ts";
 import { type Result } from "./flow-result.ts";
 import type {
   ProjectContextMachineDeps,
@@ -31,7 +32,7 @@ import type {
 } from "./machines/project-context/machine.ts";
 import { FlowActorRegistry, FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import type { FlowEvent } from "./projection.ts";
+import { FlowEvent } from "./projection.ts";
 
 const WIRE = "project-and-chat-session-management";
 const PRINCIPAL = "dev-user-001";
@@ -118,13 +119,13 @@ describe("freeze → queue → thaw → replay transparency (R3 characterization
 
     // A switch intent arrives WHILE frozen — queued in the replay buffer,
     // not dispatched to the actor yet.
-    await orch.send({
-      machine: WIRE,
-      flow_id: FLOW_ID,
-      type: "switching_project_intent",
-      payload: { new_project_id: "proj-B" },
-      request_id: "R-switch",
-    });
+    await orch.send(
+      FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+        type: "switching_project_intent",
+        payload: { new_project_id: "proj-B" },
+        request_id: "R-switch",
+      }),
+    );
     expect(orch.replayBufferSize(FLOW_ID)).toBe(1);
 
     // Thaw → pass-2 replays the queued intent through send(); the switch

@@ -21,6 +21,7 @@
 import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
+import { FlowId } from "./flow-id.ts";
 import { type Result } from "./flow-result.ts";
 import {
   createSessionChatMachine,
@@ -36,7 +37,7 @@ import {
 } from "./machines/session-chat/index.ts";
 import { FlowActorRegistry, FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import type { FlowEvent } from "./projection.ts";
+import { FlowEvent } from "./projection.ts";
 
 const WIRE = "session-chat";
 const PRINCIPAL = "dev-user-001";
@@ -145,13 +146,13 @@ async function buildSessionActiveFlow(
   );
   // Resume the session → session_active.
   const resumed = unwrap(
-    await orch.send({
-      machine: WIRE,
-      flow_id: FLOW_ID,
-      type: "session_clicked",
-      payload: { session_id: SESSION_ID },
-      request_id: "R-resume",
-    }),
+    await orch.send(
+      FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+        type: "session_clicked",
+        payload: { session_id: SESSION_ID },
+        request_id: "R-resume",
+      }),
+    ),
   );
   expect(resumed.state).toBe("session_active");
   return { orch, log };
@@ -182,13 +183,13 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
     const { orch, log } = await buildSessionActiveFlow(switchDatasetContext);
 
     const projection = unwrap(
-      await orch.send({
-        machine: WIRE,
-        flow_id: FLOW_ID,
-        type: "dataset_resolved_by_agent",
-        payload: { resource_id: "ds-patients-2025", resource_type: "dataset" },
-        request_id: "R-attach",
-      }),
+      await orch.send(
+        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+          type: "dataset_resolved_by_agent",
+          payload: { resource_id: "ds-patients-2025", resource_type: "dataset" },
+          request_id: "R-attach",
+        }),
+      ),
     );
 
     // The send() response already reflects the settled switch — the
@@ -229,13 +230,13 @@ describe("FlowOrchestrator — switching_dataset_context settles end-to-end (US-
     expect(before.active_scope.resource_id).toBe("ds-sales-2026");
 
     const projection = unwrap(
-      await orch.send({
-        machine: WIRE,
-        flow_id: FLOW_ID,
-        type: "dataset_picked_directly",
-        payload: { resource_id: "ds-restricted", resource_type: "dataset" },
-        request_id: "R-denied",
-      }),
+      await orch.send(
+        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+          type: "dataset_picked_directly",
+          payload: { resource_id: "ds-restricted", resource_type: "dataset" },
+          request_id: "R-denied",
+        }),
+      ),
     );
 
     expect(projection.state).toBe("session_active");

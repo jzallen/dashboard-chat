@@ -34,6 +34,7 @@ import { type AnyActorRef, type AnyStateMachine, createActor } from "xstate";
 
 import type { Config } from "../config.ts";
 import type { ResourceType } from "./active-scope.ts";
+import { FlowId } from "./flow-id.ts";
 import { err,ok, type Result } from "./flow-result.ts";
 import { type ProjectContextMachineDeps } from "./machines/project-context/index.ts";
 import { projectContextStrategy } from "./machines/project-context/strategy.ts";
@@ -47,8 +48,7 @@ import {
   harvestSettledSessionChatState,
 } from "./orchestrator-harvester.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import type { FlowEvent, FlowProjection } from "./projection.ts";
-import { buildProjection } from "./projection.ts";
+import { buildProjection, FlowEvent,type FlowProjection } from "./projection.ts";
 import { waitForSettledState } from "./wait-for-settled-state.ts";
 
 /**
@@ -68,10 +68,6 @@ const J002_MACHINES = new Set([
   PROJECT_CONTEXT_WIRE_NAME,
   SESSION_CHAT_WIRE_NAME,
 ]);
-
-function machineOfFlow(flow_id: string): string {
-  return flow_id.split(":")[0] ?? "";
-}
 
 export interface OrchestratorDeps {
   eventLog: FlowEventLog;
@@ -347,8 +343,11 @@ interface FrozenFlowState {
   /** Queued events waiting for thaw, bounded to REPLAY_BUFFER_CAP. The `seq`
    *  is process-global so THAW pass-2 can replay events across all frozen
    *  flows in true arrival order, even though they sit on separate per-flow
-   *  buffers. */
-  queued: Array<{ input: SendEventInput; seq: number }>;
+   *  buffers. Each slot carries the fully-built FlowEvent (its `ts` is the
+   *  original arrival time) + its `flowId`; THAW pass-2 re-dispatches the
+   *  SAME event through `sendCore`, which re-derives the key from
+   *  `event.flowId`. */
+  queued: Array<{ flowId: FlowId; event: FlowEvent; seq: number }>;
 }
 
 export type BeginIfNotStartedInput = {
@@ -693,57 +692,67 @@ export class FlowOrchestrator implements PumpContext {
     }
   }
 
-  async send(input: SendEventInput): Promise<Result<FlowProjection>> {
+  async send(event: FlowEvent): Promise<Result<FlowProjection>> {
     try {
-      return ok(await this.sendCore(input));
+      return ok(await this.sendCore(event));
     } catch (e) {
       return toFlowError(e);
     }
   }
 
-  private async sendCore(input: SendEventInput): Promise<FlowProjection> {
-    const actor = this.actors.get(input.flow_id);
+  private async sendCore(event: FlowEvent): Promise<FlowProjection> {
+    // The event is self-addressing: derive the actor-map key + the strategy
+    // selector from its own FlowId. getMachine() throws loud on a flowId-less
+    // (deserialized) event reaching the dispatch path.
+    const machine = FlowEvent.getMachine(event);
+    const flow_id = FlowId.toKey(event.flowId!);
+    const actor = this.actors.get(flow_id);
     if (!actor) {
-      throw new Error(`unknown flow_id: ${input.flow_id}`);
+      throw new Error(`unknown flow_id: ${flow_id}`);
     }
+
+    // Transitional shim: the FlowStrategy port still consumes a
+    // SendEventInput until the port change in the next commit. Reconstruct it
+    // from the self-addressing event so this commit is behavior-identical.
+    const dispatchInput: SendEventInput = {
+      machine,
+      flow_id,
+      type: event.type,
+      payload: event.payload,
+      request_id: event.request_id,
+    };
 
     // Cross-machine FREEZE handling: if this flow is currently frozen (a
     // sibling entered `expired_token`), queue the event in the bounded
     // replay buffer instead of dispatching to the XState actor. The
     // persisted event log is still appended so projection consumers see
     // the attempt; the actor advances only on THAW replay.
-    const frozenState = this.frozen.get(input.flow_id);
+    const frozenState = this.frozen.get(flow_id);
     if (frozenState) {
       const elapsed = Date.now() - frozenState.frozenAt;
       if (elapsed > FREEZE_WINDOW_MS) {
-        this.abandoned.add(input.flow_id);
+        this.abandoned.add(flow_id);
       } else {
         if (frozenState.queued.length >= REPLAY_BUFFER_CAP) {
-          this.abandoned.add(input.flow_id);
+          this.abandoned.add(flow_id);
         } else {
-          frozenState.queued.push({ input, seq: this.replaySeq++ });
+          frozenState.queued.push({
+            flowId: event.flowId!,
+            event,
+            seq: this.replaySeq++,
+          });
         }
       }
-      const queuedEvent: FlowEvent = {
-        ts: new Date().toISOString(),
-        type: input.type,
-        payload: input.payload,
-        request_id: input.request_id,
-      };
-      await this.deps.eventLog.append(input.flow_id, queuedEvent);
-      return this.projectionFor(input.flow_id, input.request_id);
+      // The buffered event IS the appended event (one object, one `ts`); THAW
+      // pass-2 replays this same event.
+      await this.deps.eventLog.append(flow_id, event);
+      return this.projectionFor(flow_id, event.request_id);
     }
 
-    const event: FlowEvent = {
-      ts: new Date().toISOString(),
-      type: input.type,
-      payload: input.payload,
-      request_id: input.request_id,
-    };
-    await this.deps.eventLog.append(input.flow_id, event);
+    await this.deps.eventLog.append(flow_id, event);
 
     // XState v5 ignores unknown event types by default.
-    actor.send({ type: input.type, ...input.payload } as never);
+    actor.send({ type: event.type, ...event.payload } as never);
 
     // Pre-settle event→transition emission. `switching_project` is an
     // invoke-driven transient; emitting `switching_project_started` here
@@ -753,9 +762,9 @@ export class FlowOrchestrator implements PumpContext {
     // (state, session_id, resource) tuple together. Without this
     // pre-settle emission `project_switched`'s reducer would leak the old
     // session_id under the new project.
-    const dispatchStrategy = FLOW_STRATEGY_REGISTRY.resolve(input.machine);
+    const dispatchStrategy = FLOW_STRATEGY_REGISTRY.resolve(machine);
     if (dispatchStrategy.applyEvent) {
-      await dispatchStrategy.applyEvent(this, actor, input);
+      await dispatchStrategy.applyEvent(this, actor, dispatchInput);
     }
 
     await waitForSettledState(actor);
@@ -777,9 +786,9 @@ export class FlowOrchestrator implements PumpContext {
     // Only the state-value is read from the snapshot here; all context
     // reads route through the live projection (the sanctioned boundary).
     const stateValue = actor.getSnapshot().value as string;
-    const principal_id = parsePrincipal(input.flow_id);
-    const projectionEvents = await this.deps.eventLog.read(input.flow_id);
-    const projectionCtx = buildProjection(input.flow_id, projectionEvents)
+    const principal_id = event.flowId!.principal_id;
+    const projectionEvents = await this.deps.eventLog.read(flow_id);
+    const projectionCtx = buildProjection(flow_id, projectionEvents)
       .context as {
       user: {
         email: string | null;
@@ -802,18 +811,18 @@ export class FlowOrchestrator implements PumpContext {
     // `expired_token` on the origin flow. Silent reauth success → THAW
     // replay; silent reauth failure → THAW abandoned (each frozen J-002
     // machine falls through `freeze → error_recoverable`).
-    const prior = this.priorState.get(input.flow_id);
+    const prior = this.priorState.get(flow_id);
     if (stateValue === "expired_token" && prior !== "expired_token") {
-      await this.broadcastFreezeCore(input.flow_id);
+      await this.broadcastFreezeCore(flow_id);
     } else if (prior === "expired_token" && stateValue === "ready") {
-      await this.broadcastThawCore(input.flow_id, "thaw");
+      await this.broadcastThawCore(flow_id, "thaw");
     } else if (
       prior === "expired_token" &&
       stateValue === "error_recoverable"
     ) {
-      await this.broadcastThawCore(input.flow_id, "abandoned");
+      await this.broadcastThawCore(flow_id, "abandoned");
     }
-    this.priorState.set(input.flow_id, stateValue);
+    this.priorState.set(flow_id, stateValue);
 
     // Post-settle terminal-emission CHAIN. All three strategies are called
     // unconditionally in sequence — `settle` is NOT per-machine-exclusive:
@@ -833,15 +842,15 @@ export class FlowOrchestrator implements PumpContext {
     const loginSettleOutcome = await sessionOnboardingStrategy.settle(
       this,
       actor,
-      input,
+      dispatchInput,
       { stateValue, prior, projectionCtx },
     );
     if (loginSettleOutcome.authReady && this.deps.projectContextMachineDeps) {
       try {
         await this.beginIfNotStartedCore({
           machine: PROJECT_CONTEXT_WIRE_NAME,
-          principal_id: parsePrincipal(input.flow_id),
-          request_id: input.request_id,
+          principal_id,
+          request_id: event.request_id,
           org_id: loginSettleOutcome.authReady.org_id,
           user_first_name: loginSettleOutcome.authReady.user_first_name,
         });
@@ -851,7 +860,7 @@ export class FlowOrchestrator implements PumpContext {
         this.logTransition({
           event_kind: "auth_ready_hook.failed",
           error: (err as Error).message,
-          origin_flow_id: input.flow_id,
+          origin_flow_id: flow_id,
         });
       }
     }
@@ -862,14 +871,14 @@ export class FlowOrchestrator implements PumpContext {
     const projectSettleOutcome = await projectContextStrategy.settle(
       this,
       actor,
-      input,
+      dispatchInput,
       { stateValue, prior, projectionCtx },
     );
     if (projectSettleOutcome.projectReady) {
       await this.maybeFireProjectReady(
-        input.flow_id,
+        flow_id,
         principal_id,
-        input.request_id,
+        event.request_id,
         projectSettleOutcome.projectReady,
       );
     }
@@ -877,13 +886,13 @@ export class FlowOrchestrator implements PumpContext {
     if (!sessionChatStrategy.settle) {
       throw new Error("sessionChatStrategy.settle missing (LEAF-3 N17)");
     }
-    await sessionChatStrategy.settle(this, actor, input, {
+    await sessionChatStrategy.settle(this, actor, dispatchInput, {
       stateValue,
       prior,
       projectionCtx,
     });
 
-    return this.projectionFor(input.flow_id, input.request_id);
+    return this.projectionFor(flow_id, event.request_id);
   }
 
   async getProjection(flow_id: string): Promise<Result<FlowProjection>> {
@@ -952,7 +961,7 @@ export class FlowOrchestrator implements PumpContext {
       // downstream reader observes) would stay at the pre-freeze state.
       // Only J-002 machines have a `freeze` side-state; the login machine
       // has no FREEZE handler at all.
-      const machine = machineOfFlow(flow_id);
+      const machine = FlowId.fromKey(flow_id).machine;
       if (
         J002_MACHINES.has(machine) &&
         (actor.getSnapshot().value as string) === "freeze"
@@ -993,7 +1002,8 @@ export class FlowOrchestrator implements PumpContext {
     // re-broadcast (e.g. project_ready from a replayed switch) reaches a
     // live, non-event-dropping target.
     const allDrained: Array<{
-      input: SendEventInput;
+      flowId: FlowId;
+      event: FlowEvent;
       seq: number;
       flow_id: string;
     }> = [];
@@ -1010,7 +1020,7 @@ export class FlowOrchestrator implements PumpContext {
       this.frozen.delete(flow_id);
       const abandoned = this.abandoned.has(flow_id) || reason === "abandoned";
       const actor = this.actors.get(flow_id);
-      const machine = machineOfFlow(flow_id);
+      const machine = FlowId.fromKey(flow_id).machine;
       const isJ002 = J002_MACHINES.has(machine);
 
       if (abandoned) {
@@ -1026,32 +1036,36 @@ export class FlowOrchestrator implements PumpContext {
         this.abandoned.delete(flow_id);
         if (isJ002 && actor) {
           const h = harvestSettledFreezeState(actor);
-          await this.deps.eventLog.append(flow_id, {
-            ts: new Date().toISOString(),
-            type: "replay_abandoned",
-            payload: {
-              last_live_state: h.last_live_state,
-              // Originating user actions preserved for re-issue.
-              abandoned_intents: drained.map((d) => ({
-                type: d.input.type,
-                payload: d.input.payload,
-                request_id: d.input.request_id,
-              })),
-            },
-            request_id: h.request_id,
-          });
-          await this.deps.eventLog.append(flow_id, {
-            ts: new Date().toISOString(),
-            type:
-              machine === SESSION_CHAT_WIRE_NAME
-                ? "session_chat_recoverable_error"
-                : "project_context_recoverable_error",
-            payload: {
-              underlying_cause_tag: "replay_abandoned",
-              originating_state: h.last_live_state,
-            },
-            request_id: h.request_id,
-          });
+          await this.deps.eventLog.append(
+            flow_id,
+            FlowEvent.from(FlowId.fromKey(flow_id), {
+              type: "replay_abandoned",
+              payload: {
+                last_live_state: h.last_live_state,
+                // Originating user actions preserved for re-issue.
+                abandoned_intents: drained.map((d) => ({
+                  type: d.event.type,
+                  payload: d.event.payload,
+                  request_id: d.event.request_id,
+                })),
+              },
+              request_id: h.request_id,
+            }),
+          );
+          await this.deps.eventLog.append(
+            flow_id,
+            FlowEvent.from(FlowId.fromKey(flow_id), {
+              type:
+                machine === SESSION_CHAT_WIRE_NAME
+                  ? "session_chat_recoverable_error"
+                  : "project_context_recoverable_error",
+              payload: {
+                underlying_cause_tag: "replay_abandoned",
+                originating_state: h.last_live_state,
+              },
+              request_id: h.request_id,
+            }),
+          );
         }
         continue;
       }
@@ -1073,15 +1087,17 @@ export class FlowOrchestrator implements PumpContext {
       if (isJ002 && actor) {
         const h = harvestSettledFreezeState(actor);
         const settledState = actor.getSnapshot().value as string;
-        await this.deps.eventLog.append(flow_id, {
-          ts: new Date().toISOString(),
-          type:
-            machine === SESSION_CHAT_WIRE_NAME
-              ? "session_chat_thawed"
-              : "project_context_thawed",
-          payload: { last_live_state: h.last_live_state },
-          request_id: h.request_id,
-        });
+        await this.deps.eventLog.append(
+          flow_id,
+          FlowEvent.from(FlowId.fromKey(flow_id), {
+            type:
+              machine === SESSION_CHAT_WIRE_NAME
+                ? "session_chat_thawed"
+                : "project_context_thawed",
+            payload: { last_live_state: h.last_live_state },
+            request_id: h.request_id,
+          }),
+        );
         // Emit a history-target re-entry terminal ONLY when last_live_state
         // was an invoke-driven transient that actually re-ran on THAW. For
         // non-transient freezes (e.g. session_list_loaded / project_selected)
@@ -1125,7 +1141,7 @@ export class FlowOrchestrator implements PumpContext {
             const hpc = harvestSettledProjectContextState(actor);
             await this.maybeFireProjectReady(
               flow_id,
-              parsePrincipal(flow_id),
+              FlowId.fromKey(flow_id).principal_id,
               h.request_id,
               { org_id: hpc.org_id ?? "", project: hpc.project },
             );
@@ -1135,7 +1151,12 @@ export class FlowOrchestrator implements PumpContext {
 
       // Defer this flow's queue to the global pass-2 replay.
       for (const q of drained) {
-        allDrained.push({ input: q.input, seq: q.seq, flow_id });
+        allDrained.push({
+          flowId: q.flowId,
+          event: q.event,
+          seq: q.seq,
+          flow_id,
+        });
       }
     }
 
@@ -1147,19 +1168,19 @@ export class FlowOrchestrator implements PumpContext {
     // no longer resolves post-THAW) emit the observability-only
     // `stale_intent_dropped_after_thaw`.
     allDrained.sort((a, b) => a.seq - b.seq);
-    for (const { input, flow_id } of allDrained) {
+    for (const { event, flow_id } of allDrained) {
       const actor = this.actors.get(flow_id);
-      const isJ002 = J002_MACHINES.has(machineOfFlow(flow_id));
+      const isJ002 = J002_MACHINES.has(FlowId.fromKey(flow_id).machine);
       const before =
         isJ002 && actor
           ? harvestSettledFreezeState(actor).stale_intents_dropped_count
           : 0;
-      await this.sendCore(input);
+      await this.sendCore(event);
       if (isJ002 && actor) {
         const after = harvestSettledFreezeState(actor);
         const isDatasetPick =
-          input.type === "dataset_resolved_by_agent" ||
-          input.type === "dataset_picked_directly";
+          event.type === "dataset_resolved_by_agent" ||
+          event.type === "dataset_picked_directly";
         // A REPLAYED dataset pick that fails ScopeResolver (deleted /
         // cross-tenant) is silent-dropped here — distinct from the
         // interactive `dataset_access_denied` gutter-hint path, which is
@@ -1171,19 +1192,21 @@ export class FlowOrchestrator implements PumpContext {
           harvestSettledSessionChatState(actor).underlying_cause_tag ===
             "dataset_access_denied";
         if (after.stale_intents_dropped_count > before || datasetStale) {
-          await this.deps.eventLog.append(flow_id, {
-            ts: new Date().toISOString(),
-            type: "stale_intent_dropped_after_thaw",
-            payload: {
-              intent_type: after.last_stale_intent?.intent_type ?? input.type,
-              target_id:
-                after.last_stale_intent?.target_id ??
-                (datasetStale
-                  ? ((input.payload.resource_id as string | undefined) ?? "")
-                  : ""),
-            },
-            request_id: input.request_id,
-          });
+          await this.deps.eventLog.append(
+            flow_id,
+            FlowEvent.from(FlowId.fromKey(flow_id), {
+              type: "stale_intent_dropped_after_thaw",
+              payload: {
+                intent_type: after.last_stale_intent?.intent_type ?? event.type,
+                target_id:
+                  after.last_stale_intent?.target_id ??
+                  (datasetStale
+                    ? ((event.payload.resource_id as string | undefined) ?? "")
+                    : ""),
+              },
+              request_id: event.request_id,
+            }),
+          );
         }
       }
     }
@@ -1284,11 +1307,6 @@ export class FlowOrchestrator implements PumpContext {
     }
     this.actors.clear();
   }
-}
-
-function parsePrincipal(flow_id: string): string {
-  const parts = flow_id.split(":");
-  return parts[1] ?? "";
 }
 
 /**

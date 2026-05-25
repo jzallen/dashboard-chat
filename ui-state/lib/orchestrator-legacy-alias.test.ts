@@ -33,6 +33,7 @@ import {
   FlowOrchestrator,
 } from "./orchestrator.ts";
 import { createNoopFlowEventLog } from "./persistence/redis.ts";
+import { FlowEvent } from "./projection.ts";
 import { makeMockFetch, makeTestConfig } from "./testing/test-config.ts";
 
 const LEGACY_MACHINE = "login-and-org-setup";
@@ -100,15 +101,16 @@ describe("LEAF-2 legacy-alias send path (R1 characterization)", () => {
     orch = buildOrchestrator();
     const flowId = await beginLegacy(orch, "user-x", "R-1");
 
-    // Send the org submission to the legacy-prefixed flow, carrying the legacy
-    // machine name on the wire (as the pre-refactor send path required).
-    const result = await orch.send({
-      machine: LEGACY_MACHINE,
-      flow_id: flowId,
-      type: "org_form_submitted",
-      payload: { org_name: "Acme Data" },
-      request_id: "R-1",
-    });
+    // Send the org submission to the legacy-prefixed flow. The event is
+    // self-addressing: FlowId.fromKey recovers the legacy machine segment from
+    // the flow_id key, getMachine() feeds it into resolve()'s alias map.
+    const result = await orch.send(
+      FlowEvent.from(FlowId.fromKey(flowId), {
+        type: "org_form_submitted",
+        payload: { org_name: "Acme Data" },
+        request_id: "R-1",
+      }),
+    );
 
     // Resolves to session-onboarding (alias canonicalized at resolve()) and
     // settles ready.

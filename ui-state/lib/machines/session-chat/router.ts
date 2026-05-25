@@ -28,12 +28,14 @@ import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { Hono } from "hono";
 
 import { resolveActiveScope,type ResourceType } from "../../active-scope.ts";
+import { FlowId } from "../../flow-id.ts";
 import {
   mountUniformFlowRoutes,
   requestIdMiddleware,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
+import { FlowEvent } from "../../projection.ts";
 
 // J-002 MR-3 harness knob: the next `first_message_sent` event whose
 // request bears `X-Force-Create-Session-Failure: transient` makes the
@@ -124,9 +126,9 @@ export function buildSessionChatRouter(
     if (!body.type) {
       return c.json({ error: "type required" }, 400);
     }
-    // flow_id is derived from the verified principal + this route's machine
+    // The flow is addressed by this route's machine + the verified principal
     // (ADR-040), never accepted from the body.
-    const flow_id = `${wireName}:${c.req.header("X-User-Id") ?? ""}`;
+    const flowId = FlowId.of(wireName, c.req.header("X-User-Id") ?? "");
 
     // J-002 force-create-session-failure knob — header transport. The
     // X-Force-Create-Session-Failure wire header is unchanged; the gate
@@ -165,13 +167,13 @@ export function buildSessionChatRouter(
       forceSlowResumeMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
     }
 
-    const result = await orchestrator.send({
-      machine: wireName,
-      flow_id,
-      type: body.type,
-      payload: body.payload ?? {},
-      request_id,
-    });
+    const result = await orchestrator.send(
+      FlowEvent.from(flowId, {
+        type: body.type,
+        payload: body.payload,
+        request_id,
+      }),
+    );
     return resultToJson(c, result, "event_failed");
   });
 

@@ -38,12 +38,14 @@ import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { Hono } from "hono";
 
 import { resolveActiveScope,type ResourceType } from "../../active-scope.ts";
+import { FlowId } from "../../flow-id.ts";
 import {
   mountUniformFlowRoutes,
   requestIdMiddleware,
   resultToJson,
 } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowOrchestrator } from "../../orchestrator.ts";
+import { FlowEvent } from "../../projection.ts";
 
 // J-002 harness knob: per-process counter; the next `create_project_submitted`
 // event whose request bears `X-Force-Create-Project-Failure: transient`
@@ -172,9 +174,9 @@ export function buildProjectContextRouter(
     if (!body.type) {
       return c.json({ error: "type required" }, 400);
     }
-    // flow_id is derived from the verified principal + this route's machine
+    // The flow is addressed by this route's machine + the verified principal
     // (ADR-040), never accepted from the body.
-    const flow_id = `${wireName}:${c.req.header("X-User-Id") ?? ""}`;
+    const flowId = FlowId.of(wireName, c.req.header("X-User-Id") ?? "");
 
     // J-002 force-create-project-failure knob — header transport. The wire
     // signal (X-Force-Create-Project-Failure) is unchanged; the gate
@@ -214,13 +216,13 @@ export function buildProjectContextRouter(
       forceSlowSwitchMsNext = Number.isFinite(ms) && ms > 0 ? ms : 0;
     }
 
-    const result = await orchestrator.send({
-      machine: wireName,
-      flow_id,
-      type: body.type,
-      payload: body.payload ?? {},
-      request_id,
-    });
+    const result = await orchestrator.send(
+      FlowEvent.from(flowId, {
+        type: body.type,
+        payload: body.payload,
+        request_id,
+      }),
+    );
     return resultToJson(c, result, "event_failed");
   });
 
@@ -287,9 +289,10 @@ export function buildProjectContextRouter(
       if (!spawn.ok) {
         return resultToJson(c, spawn, "open_deep_link_failed");
       }
-      // Forward open_deep_link to the J-002 actor. flow_id is derived from the
-      // verified principal (ADR-040), never accepted from the body.
-      const flowId = `${wireName}:${principalId}`;
+      // Forward open_deep_link to the J-002 actor. The flow is addressed by
+      // this route's machine + the verified principal (ADR-040), never accepted
+      // from the body.
+      const flowId = FlowId.of(wireName, principalId);
       const payload: Record<string, unknown> = {};
       if (body.intent_project_id !== undefined)
         payload.intent_project_id = body.intent_project_id;
@@ -299,13 +302,13 @@ export function buildProjectContextRouter(
         payload.intent_resource_id = body.intent_resource_id;
       if (body.intent_resource_type !== undefined)
         payload.intent_resource_type = body.intent_resource_type;
-      const result = await orchestrator.send({
-        machine: wireName,
-        flow_id: flowId,
-        type: "open_deep_link",
-        payload,
-        request_id,
-      });
+      const result = await orchestrator.send(
+        FlowEvent.from(flowId, {
+          type: "open_deep_link",
+          payload,
+          request_id,
+        }),
+      );
       return resultToJson(c, result, "open_deep_link_failed");
     }
 

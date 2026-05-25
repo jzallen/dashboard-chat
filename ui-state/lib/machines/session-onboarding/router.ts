@@ -32,14 +32,15 @@ import { z } from "zod";
 
 import type { Config } from "../../../config.ts";
 import type { ResolveActiveScope } from "../../active-scope.ts";
+import { FlowId } from "../../flow-id.ts";
 import type { Result } from "../../flow-result.ts";
 import { mountUniformFlowRoutes } from "../../hexagonal-transport/flow-router.ts";
 import type {
   BeginFlowOrchestrator,
   FlowOrchestrator,
-  SendEventInput,
 } from "../../orchestrator.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
+import { FlowEvent } from "../../projection.ts";
 import type { RequestClient } from "./index.ts";
 import { isUnderlyingCauseTag } from "./setup/domain.ts";
 import { SessionOnboardingBeginStrategy } from "./strategy.ts";
@@ -113,51 +114,25 @@ const causeTag = z.string().refine(isUnderlyingCauseTag, {
  * machine's event union, ADR-041). An unmodeled `type` is rejected at the ACL
  * (400 `invalid_request`); each arm carries only its payload's WELL-FORMEDNESS
  * (string-ness; a known cause tag) while DOMAIN rules (is the org name valid?)
- * stay on the value object (D-E1). `machine` is the optional LEAF-2 wire alias,
- * canonicalized downstream; `flow_id` is never a wire field — it is derived from
- * the verified principal (ADR-040).
+ * stay on the value object (D-E1). `flow_id` is never a wire field, and neither
+ * is `machine`: the flow is addressed by `FlowId.of(routeMachine,
+ * verifiedPrincipal)` (ADR-040), and the legacy wire alias is canonicalized at
+ * `resolve()` against the flow's own minted machine segment — not a body field.
  */
 const eventRequestSchema = z.discriminatedUnion("type", [
   z.object({
-    machine: z.string().optional(),
     type: z.literal("org_form_submitted"),
     payload: z.object({ org_name: z.string() }).passthrough(),
   }),
   z.object({
-    machine: z.string().optional(),
     type: z.literal("retry_clicked"),
     payload: z.record(z.unknown()).optional(),
   }),
   z.object({
-    machine: z.string().optional(),
     type: z.literal("__force_failure__"),
     payload: z.object({ tag: causeTag }).passthrough(),
   }),
 ]);
-
-/**
- * Translate a validated wire `/event` request into the typed inbound command the
- * orchestrator's machine-agnostic `send` consumes (OQ-E2: a translation
- * FUNCTION, not a command class — `/event` forwards one event to an
- * already-running actor and has no orchestration to justify a class, D-E1). The
- * structural analogue of `/begin`'s command construction: the wire `machine`
- * alias defaults to the canonical machine name. The `flow_id` is supplied by
- * the caller — derived from the verified principal, never read from the wire
- * body.
- */
-function translateWireEvent(
-  event: z.infer<typeof eventRequestSchema>,
-  flowId: string,
-  requestId: string,
-): SendEventInput {
-  return {
-    machine: event.machine ?? SESSION_ONBOARDING_MACHINE,
-    flow_id: flowId,
-    type: event.type,
-    payload: event.payload ?? {},
-    request_id: requestId,
-  };
-}
 
 /**
  * Mount the session-onboarding routes onto `router` and return it. Everything
@@ -282,12 +257,14 @@ export function buildSessionOnboardingRouter(
     }
     const event = parsed.data;
 
-    const flowId = `${SESSION_ONBOARDING_MACHINE}:${c.get("userId")}`;
+    // The flow is addressed by the route's machine-constant + the verified
+    // principal (ADR-040) — the single FlowId construction site for /event.
+    const flowId = FlowId.of(SESSION_ONBOARDING_MACHINE, c.get("userId"));
     logTransition({
       event: "session_onboarding.event_received",
       request_id: requestId,
       principal_id: c.get("userId") || null,
-      flow_id: flowId,
+      flow_id: FlowId.toKey(flowId),
       event_type: event.type,
     });
 
@@ -312,7 +289,11 @@ export function buildSessionOnboardingRouter(
     }
 
     const result = await flowOrchestrator.send(
-      translateWireEvent(event, flowId, requestId),
+      FlowEvent.from(flowId, {
+        type: event.type,
+        payload: event.payload,
+        request_id: requestId,
+      }),
     );
     return serializeResult(c, result, "event_failed");
   });

@@ -22,6 +22,7 @@
 import { describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
+import { FlowId } from "./flow-id.ts";
 import { type Result } from "./flow-result.ts";
 import type {
   ProjectContextMachineDeps,
@@ -30,7 +31,7 @@ import type {
 } from "./machines/project-context/machine.ts";
 import { FlowActorRegistry, FlowOrchestrator } from "./orchestrator.ts";
 import type { FlowEventLog } from "./persistence/redis.ts";
-import type { FlowEvent } from "./projection.ts";
+import { FlowEvent } from "./projection.ts";
 
 const WIRE = "project-and-chat-session-management";
 const PRINCIPAL = "dev-user-001";
@@ -129,13 +130,13 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
     const { orch, log } = await buildSettledProjectContextFlow(switchProject);
 
     const projection = unwrap(
-      await orch.send({
-        machine: WIRE,
-        flow_id: FLOW_ID,
-        type: "switching_project_intent",
-        payload: { new_project_id: "proj-B" },
-        request_id: "R-switch",
-      }),
+      await orch.send(
+        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+          type: "switching_project_intent",
+          payload: { new_project_id: "proj-B" },
+          request_id: "R-switch",
+        }),
+      ),
     );
 
     // The send() response must already reflect the settled switch — the
@@ -170,13 +171,13 @@ describe("FlowOrchestrator — switching_project settles end-to-end (D-MR4-06)",
     const { orch } = await buildSettledProjectContextFlow(switchProject);
 
     const projection = unwrap(
-      await orch.send({
-        machine: WIRE,
-        flow_id: FLOW_ID,
-        type: "switching_project_intent",
-        payload: { new_project_id: "p-revoked" },
-        request_id: "R-switch-revoked",
-      }),
+      await orch.send(
+        FlowEvent.from(FlowId.fromKey(FLOW_ID), {
+          type: "switching_project_intent",
+          payload: { new_project_id: "p-revoked" },
+          request_id: "R-switch-revoked",
+        }),
+      ),
     );
 
     expect(projection.state).toBe("scope_mismatch_terminal");
