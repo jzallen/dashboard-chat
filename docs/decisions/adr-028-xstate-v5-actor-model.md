@@ -45,7 +45,7 @@ Concretely:
 - **Per-flow actors** spawned by the orchestrator as flows are activated for a session: `LoginAndOrgSetupMachine`, `ProjectSessionMachine` (J-002, future), `TransformMachine` (J-005, future), etc.
 - **Cross-machine signaling**: orchestrator listens for `token_expired` events from `LoginAndOrgSetupMachine`; broadcasts `FREEZE` to all other spawned children via `system.get(<actor_id>).send({ type: 'FREEZE' })`. On `THAW`, same broadcast.
 - **Replay buffer** is a property of the orchestrator (NOT of any machine). It captures intent events that arrive at child actors during the freeze window and re-sends them on THAW.
-- **Persistence**: machine context is rebuilt from the Redis flow-event log on cold restart (event-sourced); the actor tree is rehydrated from the most recent event per flow. The actor identity is `(flow_id, principal_id)` so a restarted tier picks up where the previous instance left off.
+- **Persistence**: machine context is rebuilt from the Redis flow-event log on cold restart (event-sourced); the actor tree is rehydrated from the most recent event per flow. The actor identity is `(flow_id, principal_id)` so a restarted tier picks up where the previous instance left off. (`flow_id` is `${machine}:${principal_id}`, DERIVED at the HTTP edge from the verified principal rather than client-supplied — ADR-040 amendment 2026-05-25; the derived value is byte-identical, so actor identity here is unchanged.)
 - **No machine imports another machine.** Machines communicate via the orchestrator. This is the dependency-inversion boundary; without it, the actor tree becomes an implicit dependency graph.
 
 ### Library version pin

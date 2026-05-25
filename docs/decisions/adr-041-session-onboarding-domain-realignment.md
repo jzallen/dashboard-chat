@@ -113,7 +113,9 @@ state) tuple is one consistency boundary; no second entity changes in the same t
 (Org creation is a call to the backend Org aggregate in a separate context — referenced by id,
 Vernon rule 3). Cross-aggregate signaling (the `auth_ready` broadcast to project-context) is
 eventual-consistency via the pump (Vernon rule 4). Flow identity:
-`flow_id = session-onboarding:<principal_id>` (ADR-030 §6).
+`flow_id = session-onboarding:<principal_id>` (ADR-030 §6) — DERIVED server-side
+from the verified principal at the HTTP edge, never accepted from the client
+(ADR-040 amendment 2026-05-25).
 
 ## Considered options (the realignment shape)
 

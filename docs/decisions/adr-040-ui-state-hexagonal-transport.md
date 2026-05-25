@@ -114,3 +114,56 @@ Behavior-neutral steps; each LEAF independently mergeable through the refinery q
 
 1. **When is the LEAF series scheduled?** Deferred-journey posture (per ADR-030 precedent). Owner: a future DISTILL pass when delivery capacity is committed. Not feature-blocking.
 2. **SettledStateStore backing** — Redis hash per `flow_id` is the assumed substrate (reuses the existing Redis dependency; ADR-030 §"Negative" Redis-blast-radius note still applies and is not worsened — one key-shape replaces one stream-shape). Confirm at LEAF-5 DISTILL.
+
+## Amendment (2026-05-25) — flows are addressed by the VERIFIED IDENTITY, not a client-supplied `flow_id`
+
+**Status:** Accepted (2026-05-25) — ratified by the project overseer; "derive everywhere" scope.
+
+The transport described above carried `flow_id` on the wire: the read substrate
+read it from `GET …/projection?flow_id=…` (and the SSE stream), and the
+per-machine write routes (`/event`, `/open-deep-link`) read it from the request
+body. This amendment **removes `flow_id` from the HTTP surface entirely**. It is
+now DERIVED server-side on every route.
+
+**Rationale — the leaky abstraction.** A flow id is `${machine}:${principal_id}`
+(ADR-030 §6) — a pure function of two things the server *already* knows on any
+authenticated request: the route's machine constant, and the verified principal
+(the `X-User-Id` header auth-proxy injects from the re-verified Bearer). The
+orchestrator already computed exactly this string at spawn time
+(`orchestrator.ts` `beginIfNotStartedCore`, `strategy.ts` begin). So the client,
+by sending `flow_id`, supplied **zero** information the server lacked — it merely
+re-stated a derivable value, opening a gap between *claimed* and *derivable*
+identity that the Slice-5 ACL then had to police with a 403. Removing the field
+closes the gap by construction.
+
+**What changed.**
+- The uniform read substrate (`mountUniformFlowRoutes`) takes a `machineName`
+  argument (the machine it is mounted under — the substrate is otherwise
+  machine-agnostic) and derives `flow_id = ${machineName}:${X-User-Id}` for
+  `GET /projection` and `GET /projection/stream`. The `?flow_id=` query param
+  is gone. `freezeThawHandler` already derived its broadcast origin from
+  `X-User-Id`.
+- The per-machine write routes (`/event`, `/open-deep-link` on
+  session-onboarding, project-context, session-chat) drop `flow_id` from their
+  DTOs and derive it from the route's machine + `X-User-Id`. The project-context
+  intent deep link's `body.flow_id ?? ${wireName}:${principalId}` collapses to
+  the derived form — generalizing the "derive, don't accept" pattern that route
+  already half-applied.
+- The session-onboarding `/event` **cross-principal 403 guard is DELETED as dead
+  code**: once identity is derived from the verified principal, a request can
+  only ever address its own flow, so the mismatch branch is unreachable. A stray
+  client `flow_id` (if any survives in a caller) is stripped by the schema and
+  ignored — not honored, not an error.
+- Frontend callers (`ui-state-client`, the route loaders, `useChatEngine`) stop
+  constructing and sending `flow_id`.
+
+**Invariants preserved.** The derived string is **byte-identical** to the prior
+value, so Redis keys, the projection `flow_id` field, and actor identity (ADR-028)
+are untouched — this is an interface simplification, not a behavior change. The
+only observable deltas are (1) the client no longer sends `flow_id`, and (2) the
+now-impossible cross-principal path's 403 is gone.
+
+**Supersedes within this ADR:** the `GET /flow/:machine/projection?flow_id=…`
+surface noted in *Context*, and D5's parenthetical describing `flow-id` as an
+instance identifier "rejected as the key" — instance identity is now *derived at
+the edge*, never transported. D5's machine-name registry key is unchanged.
