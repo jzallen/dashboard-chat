@@ -16,7 +16,6 @@
  *
  * | # | Scenario | Input | Expected |
  * |---|---|---|---|
- * | 1 | `set` then `get` round-trips the payload | `set(sid, payload)` then `get(sid)` | Returns the same payload, byte-identical (or structurally equal) |
  * | 2 | `get` of an unknown sid returns null | `get("never-set")` | Returns `null` (not throws, not undefined) |
  * | 3 | `delete` removes the entry | `set(sid, p)`, then `delete(sid)`, then `get(sid)` | `get` returns `null` |
  * | 4 | `delete` is idempotent on unknown sid | `delete("never-set")` | No throw; subsequent `get` still returns `null` |
@@ -38,6 +37,45 @@
  * - This file probably also exports a `_resetForTests()` similar to `m2m.ts` and `pat.ts`. Symmetry.
  */
 
-import { describe } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-describe.todo("session-store — see test plan in the file's top docstring");
+import { _resetForTests, getSession, setSession } from "./session-store.ts";
+
+const ORIG_ENV = { ...process.env };
+
+function resetEnv() {
+  for (const key of Object.keys(process.env)) {
+    if (key === "SESSION_STORE_PATH") delete process.env[key];
+  }
+  for (const [k, v] of Object.entries(ORIG_ENV)) {
+    if (k === "SESSION_STORE_PATH" && v !== undefined) process.env[k] = v;
+  }
+}
+
+beforeEach(() => {
+  resetEnv();
+  _resetForTests();
+});
+
+afterEach(() => {
+  resetEnv();
+  _resetForTests();
+});
+
+const VALID_PAYLOAD = {
+  workos_refresh_token: "wos-r-abc",
+  expires_at: Math.floor(Date.now() / 1000) + 3600,
+  user_claims: {
+    sub: "user-1",
+    email: "u@example.com",
+    name: "U",
+    org_id: "org-1",
+  },
+};
+
+describe("session-store — set/get round trip", () => {
+  it("get(sid) returns the same payload that set(sid, payload) stored", () => {
+    setSession("sid-1", VALID_PAYLOAD);
+    expect(getSession("sid-1")).toEqual(VALID_PAYLOAD);
+  });
+});

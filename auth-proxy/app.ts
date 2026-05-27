@@ -1,3 +1,5 @@
+import { randomBytes, randomUUID } from "node:crypto";
+
 import { Hono } from "hono";
 
 import { IDENTITY_HEADERS, isPublicPath, verifyToken } from "./lib/auth.ts";
@@ -15,6 +17,21 @@ import {
   patListItem,
   revokePat,
 } from "./lib/pat.ts";
+import {
+  deleteSession,
+  getSession,
+  getSessionStatus,
+  setSession,
+} from "./lib/session-store.ts";
+import { mintUserToken, verifyUserToken } from "./lib/user-token.ts";
+
+const DEV_USER = {
+  sub: "dev-user-001",
+  email: "dev@localhost",
+  name: "Dev User",
+  org_id: "dev-org-001",
+};
+const DEV_AUTH_CODE = "dev-auth-code";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
 const UI_STATE_URL = process.env.UI_STATE_URL || "http://ui-state:8788";
@@ -34,6 +51,246 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 // OpenAPI 3.x spec for the auth-proxy's owned surface (token + PAT lifecycle).
 // Built once at module load from the Zod schemas in lib/schemas.ts.
 app.get("/openapi.json", (c) => c.json(openApiDocument));
+
+// User-token login — initiates the OIDC/dev login flow.
+// In AUTH_MODE=dev the auth-proxy short-circuits the WorkOS round-trip and
+// returns a redirect URL that carries the synthetic "dev-auth-code" the
+// `/api/auth/callback` handler recognises. In AUTH_MODE=workos this will
+// (under later rows) return the WorkOS authorize URL with a CSRF state.
+app.get("/api/auth/login", async (c) => {
+  const authMode = process.env.AUTH_MODE || "dev";
+  if (authMode === "dev") {
+    const redirectUri =
+      process.env.WORKOS_REDIRECT_URI || "http://localhost:5173/auth/callback";
+    return c.json({ url: `${redirectUri}?code=dev-auth-code` });
+  }
+
+  // workos mode: build the authorize URL with a per-request CSRF state
+  // that /api/auth/callback validates against the value remembered here.
+  const clientId = process.env.WORKOS_CLIENT_ID || "";
+  const redirectUri = process.env.WORKOS_REDIRECT_URI || "";
+  const state = randomBytes(24).toString("base64url");
+  rememberLoginState(state);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    provider: "authkit",
+    state,
+  });
+  return c.json({
+    url: `https://api.workos.com/user_management/authorize?${params.toString()}`,
+  });
+});
+
+// In-memory CSRF state store for OIDC login. States are short-lived
+// (one-shot per login) so an in-process Set is sufficient; we'll
+// replace this with the session-store seam once row #4 lands.
+const pendingLoginStates = new Set<string>();
+function rememberLoginState(state: string): void {
+  pendingLoginStates.add(state);
+}
+function consumeLoginState(state: string): boolean {
+  return pendingLoginStates.delete(state);
+}
+
+// Exchange an auth code for a user token. In AUTH_MODE=dev the only
+// accepted code is "dev-auth-code" and identity is the standard DEV_USER
+// (per CLAUDE.md). AUTH_MODE=workos is wired in a subsequent row.
+app.post("/api/auth/callback", async (c) => {
+  const authMode = process.env.AUTH_MODE || "dev";
+
+  let body: { code?: unknown } = {};
+  try {
+    body = (await c.req.raw.json()) as { code?: unknown };
+  } catch {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  const code = typeof body.code === "string" ? body.code : "";
+
+  if (authMode === "dev") {
+    if (code !== DEV_AUTH_CODE) {
+      return c.json({ error: "invalid_code" }, 401);
+    }
+    return mintFromCallback(c, {
+      sub: DEV_USER.sub,
+      email: DEV_USER.email,
+      name: DEV_USER.name,
+      org_id: DEV_USER.org_id,
+      workosRefreshToken: "dev-refresh-token-001",
+    });
+  }
+
+  // workos mode: exchange the {code,state} pair with WorkOS authenticate.
+  // State must round-trip through a prior /api/auth/login — otherwise the
+  // request is a CSRF attempt and is rejected before the WorkOS round-trip.
+  const state = typeof (body as { state?: unknown }).state === "string"
+    ? (body as { state: string }).state
+    : "";
+  if (!state || !consumeLoginState(state)) {
+    return c.json({ error: "state_mismatch" }, 400);
+  }
+
+  const workosRes = await fetch(
+    "https://api.workos.com/user_management/authenticate",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_id: process.env.WORKOS_CLIENT_ID || "",
+        client_secret: process.env.WORKOS_API_KEY || "",
+        code,
+        grant_type: "authorization_code",
+        redirect_uri: process.env.WORKOS_REDIRECT_URI || "",
+      }),
+    },
+  );
+  if (!workosRes.ok) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const workos = (await workosRes.json()) as {
+    refresh_token: string;
+    user: { id: string; email: string; first_name?: string };
+    organization_id?: string;
+  };
+  return mintFromCallback(c, {
+    sub: workos.user.id,
+    email: workos.user.email,
+    name: workos.user.first_name || "",
+    org_id: workos.organization_id || "",
+    workosRefreshToken: workos.refresh_token,
+  });
+});
+
+// Exchange a still-valid user token for a fresh one. The Bearer carries
+// the sid; the session-store entry resolves the user_claims to embed in
+// the freshly-minted token. The session-store's WorkOS refresh token is
+// NOT returned in the body — it never leaves the server (OQ1 (b)).
+app.post("/api/auth/refresh", async (c) => {
+  const authHeader = c.req.header("Authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return c.json({ error: "invalid_session" }, 401);
+  }
+  const inbound = authHeader.slice(7);
+
+  let payload: Awaited<ReturnType<typeof verifyUserToken>>;
+  try {
+    payload = await verifyUserToken(inbound);
+  } catch {
+    return c.json({ error: "invalid_session" }, 401);
+  }
+
+  const sid = typeof payload.sid === "string" ? payload.sid : "";
+  if (!sid) {
+    return c.json({ error: "invalid_session" }, 401);
+  }
+  const lookup = getSessionStatus(sid);
+  if (lookup.status === "missing") {
+    return c.json({ error: "invalid_session" }, 401);
+  }
+  if (lookup.status === "expired") {
+    return c.json({ error: "session_expired" }, 401);
+  }
+  const session = lookup.payload;
+
+  // In workos mode, exchange the stored refresh_token for a new one
+  // BEFORE we mint the local token. WorkOS rotates the refresh credential
+  // on each call; if we don't store the new one the next /refresh fails.
+  let nextWorkosRefreshToken = session.workos_refresh_token;
+  if ((process.env.AUTH_MODE || "dev") !== "dev") {
+    const workosRes = await fetch(
+      "https://api.workos.com/user_management/authenticate",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client_id: process.env.WORKOS_CLIENT_ID || "",
+          client_secret: process.env.WORKOS_API_KEY || "",
+          grant_type: "refresh_token",
+          refresh_token: session.workos_refresh_token,
+        }),
+      },
+    );
+    if (!workosRes.ok) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+    const rotated = (await workosRes.json()) as { refresh_token?: string };
+    if (typeof rotated.refresh_token === "string") {
+      nextWorkosRefreshToken = rotated.refresh_token;
+    }
+  }
+
+  const { token, expiresIn } = await mintUserToken({
+    sub: session.user_claims.sub,
+    email: session.user_claims.email,
+    name: session.user_claims.name,
+    org_id: session.user_claims.org_id,
+    sid,
+  });
+  // Refresh the session's expires_at so the lifetime tracks the token's.
+  setSession(sid, {
+    workos_refresh_token: nextWorkosRefreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+    user_claims: session.user_claims,
+  });
+  return c.json({ access_token: token, expires_in: expiresIn });
+});
+
+// Log out: delete the server-held session entry so subsequent refresh
+// attempts with the same token fail with invalid_session. 204 is
+// returned regardless of whether the Bearer was valid — the FE just
+// wants to know the server let go (idempotency by design).
+app.post("/api/auth/logout", async (c) => {
+  const authHeader = c.req.header("Authorization") || "";
+  if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    try {
+      const payload = await verifyUserToken(token);
+      const sid = typeof payload.sid === "string" ? payload.sid : "";
+      if (sid) deleteSession(sid);
+    } catch {
+      // Verification failure: treat as already-logged-out, no-op delete.
+    }
+  }
+  return c.body(null, 204);
+});
+
+/**
+ * Mint a user token + persist a session entry for the resolved identity,
+ * then return the standard `{access_token, expires_in}` payload. Used by
+ * both the dev and workos callback branches so the wire shape is
+ * identical across modes.
+ */
+async function mintFromCallback(
+  c: Parameters<Parameters<typeof app.post>[1]>[0],
+  identity: {
+    sub: string;
+    email: string;
+    name: string;
+    org_id: string;
+    workosRefreshToken: string;
+  },
+): Promise<Response> {
+  const sid = randomUUID();
+  const { token, expiresIn } = await mintUserToken({
+    sub: identity.sub,
+    email: identity.email,
+    name: identity.name,
+    org_id: identity.org_id,
+    sid,
+  });
+  setSession(sid, {
+    workos_refresh_token: identity.workosRefreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+    user_claims: {
+      sub: identity.sub,
+      email: identity.email,
+      name: identity.name,
+      org_id: identity.org_id,
+    },
+  });
+  return c.json({ access_token: token, expires_in: expiresIn });
+}
 
 // M2M token issuance — OAuth2 client_credentials grant.
 // Flag-gated by M2M_ENABLED. Disabled by default; returns 404 until enabled.

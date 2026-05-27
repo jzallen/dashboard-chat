@@ -2,6 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 
 import { isM2mToken, verifyM2mToken } from "./m2m.ts";
 import { isPatToken, verifyPatToken } from "./pat.ts";
+import { isUserToken, verifyUserToken } from "./user-token.ts";
 
 /**
  * Auth-proxy ingress verification.
@@ -98,6 +99,18 @@ export async function verifyToken(token: string): Promise<AuthResult> {
   // JWT expiry.
   if (isPatToken(token)) {
     const payload = await verifyPatToken(token);
+    return {
+      userId: (payload.sub as string) || "",
+      orgId: (payload.org_id as string) || "",
+      email: (payload.email as string) || "",
+    };
+  }
+
+  // User tokens are auth-proxy-minted (Stage 1 of the
+  // auth-proxy-mints-user-tokens feature). Distinguished by their kid,
+  // verified against the same shared keypair.
+  if (isUserToken(token)) {
+    const payload = await verifyUserToken(token);
     return {
       userId: (payload.sub as string) || "",
       orgId: (payload.org_id as string) || "",

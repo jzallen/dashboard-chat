@@ -18,28 +18,9 @@
  * the WorkOS token) and row #19 (identity-header stripping) are the load-bearing
  * security invariants.
  *
- * | # | Group | Scenario | Input | Expected |
- * |---|---|---|---|---|
- * | 1 | login | dev mode returns FE-redirect URL | `GET /api/auth/login`, `AUTH_MODE=dev` | 200 with `{url: "<dev-redirect>"}` (or 302 redirect) |
- * | 2 | login | workos mode returns WorkOS authorize URL | `GET /api/auth/login`, `AUTH_MODE=workos` | 200/302 with URL = `https://api.workos.com/user_management/authorize?client_id=…&redirect_uri=…&state=…` |
- * | 3 | login | workos URL includes a non-empty CSRF state | as #2 | `state` query param is present, non-empty, opaque |
- * | 4 | callback | dev mode mints with `dev-auth-code` | `POST /api/auth/callback {code: "dev-auth-code"}`, `AUTH_MODE=dev` | 200 with `{access_token, expires_in}`; token verifies via auth-proxy keypair; session-store has an entry for the issued `sid` |
- * | 5 | callback | workos mode exchanges with WorkOS | `POST /api/auth/callback {code, state}`, `AUTH_MODE=workos`, mocked WorkOS happy path | 200 with local JWT; WorkOS `authenticate` was called once with the right body |
- * | 6 | callback | state mismatch rejected | as #5 but with `state` value that doesn't match what `login` issued | 400 with `state_mismatch`; no token issued |
- * | 7 | callback | dev mode refuses to mint when `AUTH_MODE != "dev"` | `POST /api/auth/callback {code: "dev-auth-code"}`, `AUTH_MODE=workos` | 401 or 400 — dev path inactive |
- * | 8 | refresh | valid sid mints fresh access_token | `POST /api/auth/refresh` with Bearer = user-token containing `sid` that's in the session store | 200 with new `access_token`; new token has different `iat` but same `sub`/`org_id`/`sid` |
- * | 9 | refresh | invalid sid returns 401 | Bearer JWT carries `sid` not in the session store | 401 `invalid_session` |
- * | 10 | refresh | post-logout sid returns 401 | call `/logout` first, then `/refresh` with same sid | 401 `invalid_session` |
- * | 11 | refresh | expired session returns 401 | session-store entry's `expires_at < now` | 401 `session_expired`; entry deleted lazily |
- * | 12 | refresh | rotates WorkOS refresh_token in session store | mocked WorkOS returns new `refresh_token: "wos-r-456"` | Session-store entry's `workos_refresh_token` is now `"wos-r-456"` |
- * | 13 | refresh | **does NOT return WorkOS refresh_token in response** | as #12 | Response body contains `access_token` (local JWT) but no `refresh_token` field, and no header carries it. OQ1 (b) invariant. |
- * | 14 | logout | deletes session and returns 204 | `POST /api/auth/logout` with Bearer = valid user-token | 204; session-store `get(sid)` returns null |
- * | 15 | logout | idempotent on already-logged-out | call `/logout` twice with the same token | First: 204. Second: 204 (or 401 if Bearer validation strict — pick one and assert) |
- * | 16 | round-trip | issued token authenticates on a protected endpoint | issue via `/callback` → use as Bearer on a protected mock endpoint | 200 from the protected endpoint; X-User-Id / X-Org-Id / X-User-Email headers forwarded |
- * | 17 | round-trip | tampered token returns 401 | flip a bit in the JWT signature | 401 at the protected endpoint |
- * | 18 | round-trip | claims-modified token (re-signed by different key) rejected | mint with a foreign keypair, same payload shape | 401 — kid lookup fails / signature invalid |
- * | 19 | security | **strips client-supplied identity headers** | request includes `X-User-Id: attacker-001` AND a valid Bearer | Upstream receives `X-User-Id` from the *token*, not from the client header. Mirror of `pat-issuance.test.ts:459-498`. |
- * | 20 | dev parity | dev path works without WorkOS env vars set | unset `WORKOS_API_KEY` etc.; `POST /api/auth/callback {code: "dev-auth-code"}`, `AUTH_MODE=dev` | 200 with local JWT; no WorkOS fetch was attempted (mock fetch records zero calls) |
+ * All 20 acceptance rows of Stage 1 are landed. The table is intentionally
+ * empty — see the implemented `describe`/`it` blocks below for the pinned
+ * behavior, and the git log for the row-by-row landing history.
  *
  * **Notes for the agent:**
  * - Mirror the harness shape from `m2m-issuance.test.ts:228+` (round-trip section) for rows #16–#19.
@@ -49,6 +30,780 @@
  * - For #11 (expired session): set a small TTL in the test or stub `Date.now()` via vitest's fake timers.
  */
 
-import { describe } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-describe.todo("user-token issuance endpoints — see test plan in the file's top docstring");
+import { decodeJwt, generateKeyPair, SignJWT } from "jose";
+
+import { app } from "./app.ts";
+import { _resetForTests as resetM2m } from "./lib/m2m.ts";
+import {
+  _resetForTests as resetSessionStore,
+  getSession,
+  setSession,
+} from "./lib/session-store.ts";
+
+const ORIG_ENV = { ...process.env };
+
+function resetEnv() {
+  for (const key of Object.keys(process.env)) {
+    if (
+      key.startsWith("M2M_") ||
+      key.startsWith("WORKOS_") ||
+      key === "AUTH_MODE" ||
+      key === "AUTH_PROXY_KEYPAIR_PATH" ||
+      key === "BACKEND_URL" ||
+      key === "JWKS_URL" ||
+      key === "SESSION_STORE_PATH" ||
+      key === "USER_TOKEN_TTL_SECONDS"
+    ) {
+      delete process.env[key];
+    }
+  }
+  for (const [k, v] of Object.entries(ORIG_ENV)) {
+    if (
+      k.startsWith("M2M_") ||
+      k.startsWith("WORKOS_") ||
+      k === "AUTH_MODE" ||
+      k === "AUTH_PROXY_KEYPAIR_PATH" ||
+      k === "BACKEND_URL" ||
+      k === "JWKS_URL" ||
+      k === "SESSION_STORE_PATH" ||
+      k === "USER_TOKEN_TTL_SECONDS"
+    ) {
+      if (v !== undefined) process.env[k] = v;
+    }
+  }
+}
+
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+
+beforeEach(() => {
+  resetEnv();
+  resetM2m();
+  resetSessionStore();
+  vi.clearAllMocks();
+  process.env.AUTH_MODE = "dev";
+  mockFetch.mockResolvedValue(
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  );
+});
+
+afterEach(() => {
+  resetEnv();
+  resetM2m();
+  resetSessionStore();
+});
+
+describe("login — dev mode", () => {
+  it("returns a JSON redirect URL the FE can navigate to", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/login", { method: "GET" }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { url: string };
+    expect(typeof body.url).toBe("string");
+    expect(body.url.length).toBeGreaterThan(0);
+    // Dev login completes locally: the redirect URL carries the dev auth
+    // code that /api/auth/callback recognises.
+    expect(body.url).toContain("code=dev-auth-code");
+  });
+});
+
+describe("login — workos mode", () => {
+  beforeEach(() => {
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    process.env.WORKOS_REDIRECT_URI = "https://app.example.com/auth/callback";
+  });
+
+  it("returns the WorkOS authorize URL with client_id, redirect_uri, and state", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/login", { method: "GET" }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { url: string };
+    const url = new URL(body.url);
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://api.workos.com/user_management/authorize",
+    );
+    expect(url.searchParams.get("client_id")).toBe("test-workos-client");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://app.example.com/auth/callback",
+    );
+    const state = url.searchParams.get("state");
+    expect(state).not.toBeNull();
+    // CSRF state must be non-empty and opaque (no semantic structure the
+    // attacker could guess). A reasonable proxy for "opaque" is length —
+    // 16+ base64url chars is ~96+ bits of entropy.
+    expect(state!.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it("emits a unique state per login (no replay across separate calls)", async () => {
+    const a = await app.fetch(
+      new Request("http://localhost/api/auth/login", { method: "GET" }),
+    );
+    const b = await app.fetch(
+      new Request("http://localhost/api/auth/login", { method: "GET" }),
+    );
+    const stateA = new URL(((await a.json()) as { url: string }).url)
+      .searchParams.get("state");
+    const stateB = new URL(((await b.json()) as { url: string }).url)
+      .searchParams.get("state");
+    expect(stateA).not.toBe(stateB);
+  });
+});
+
+describe("callback — dev mode", () => {
+  it("mints a verifiable access_token for the dev auth code", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      access_token: string;
+      expires_in: number;
+    };
+    expect(typeof body.access_token).toBe("string");
+    expect(body.access_token.split(".")).toHaveLength(3);
+    expect(body.expires_in).toBeGreaterThan(0);
+
+    // The minted token must verify through auth-proxy's verifyToken
+    // dispatch — i.e. the kid lookup hits the local user-token branch.
+    const { verifyToken } = await import("./lib/auth.ts");
+    const identity = await verifyToken(body.access_token);
+    expect(identity).toEqual({
+      userId: "dev-user-001",
+      orgId: "dev-org-001",
+      email: "dev@localhost",
+    });
+
+    // The callback handler must also remember the session server-side
+    // keyed by the sid claim — `/api/auth/refresh` will look it up later.
+    const payload = decodeJwt(body.access_token);
+    const sid = payload.sid as string;
+    expect(typeof sid).toBe("string");
+    expect(sid.length).toBeGreaterThan(0);
+    const stored = getSession(sid);
+    expect(stored).not.toBeNull();
+    expect(stored!.user_claims).toEqual({
+      sub: "dev-user-001",
+      email: "dev@localhost",
+      name: "Dev User",
+      org_id: "dev-org-001",
+    });
+  });
+});
+
+describe("callback — workos mode", () => {
+  beforeEach(() => {
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    process.env.WORKOS_API_KEY = "sk_test_workos";
+    process.env.WORKOS_REDIRECT_URI = "https://app.example.com/auth/callback";
+  });
+
+  it("exchanges {code,state} with WorkOS authenticate and returns a local JWT", async () => {
+    // Issue a login first so the state value is remembered server-side.
+    const loginRes = await app.fetch(
+      new Request("http://localhost/api/auth/login", { method: "GET" }),
+    );
+    const { url: loginUrl } = (await loginRes.json()) as { url: string };
+    const state = new URL(loginUrl).searchParams.get("state")!;
+
+    // Mock WorkOS exchange happy-path. The mock matcher inspects the
+    // outbound URL so we can assert the right WorkOS endpoint was called.
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+      if (url === "https://api.workos.com/user_management/authenticate") {
+        return new Response(
+          JSON.stringify({
+            access_token: "wos-access-stand-in",
+            refresh_token: "wos-r-123",
+            user: {
+              id: "wos-user-42",
+              email: "alice@workos.example",
+              first_name: "Alice",
+            },
+            organization_id: "wos-org-1",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "wos-code-real", state }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      access_token: string;
+      expires_in: number;
+    };
+    expect(typeof body.access_token).toBe("string");
+    expect(body.access_token.split(".")).toHaveLength(3);
+
+    // Single WorkOS exchange call, no extras.
+    const workosCalls = mockFetch.mock.calls.filter(
+      ([input]) =>
+        (typeof input === "string" ? input : (input as URL).toString?.() || (input as Request).url) ===
+        "https://api.workos.com/user_management/authenticate",
+    );
+    expect(workosCalls).toHaveLength(1);
+
+    // The minted token carries the WorkOS user identity.
+    const payload = decodeJwt(body.access_token);
+    expect(payload.sub).toBe("wos-user-42");
+    expect(payload.email).toBe("alice@workos.example");
+    expect(payload.org_id).toBe("wos-org-1");
+  });
+
+  it("rejects a state value that doesn't match a remembered login state", async () => {
+    // No prior /api/auth/login → no state remembered; an attacker-supplied
+    // state must be rejected before any WorkOS round-trip.
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "wos-code-real", state: "forged-state" }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("state_mismatch");
+
+    // And no WorkOS call was made.
+    const workosCalls = mockFetch.mock.calls.filter(
+      ([input]) =>
+        (typeof input === "string"
+          ? input
+          : (input as URL).toString?.() || (input as Request).url) ===
+        "https://api.workos.com/user_management/authenticate",
+    );
+    expect(workosCalls).toHaveLength(0);
+  });
+
+  it("refuses to honour the dev auth code when AUTH_MODE is not dev", async () => {
+    // Same dev-auth-code that would mint in dev mode — must NOT mint here.
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+
+    expect(res.status).not.toBe(200);
+    const body = (await res.json()) as { access_token?: string };
+    expect(body.access_token).toBeUndefined();
+    // The session-store must NOT have grown a dev entry by side-effect.
+    const stored = getSession("dev-user-001");
+    expect(stored).toBeNull();
+  });
+});
+
+describe("dev parity — no WorkOS env vars required", () => {
+  it("mints in dev mode with no WORKOS_* env set and no WorkOS fetch attempt", async () => {
+    // Ensure every WORKOS_* env is unset.
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith("WORKOS_")) delete process.env[key];
+    }
+    // The shared beforeEach mock returns {ok: true} — if any code path
+    // tried to talk to WorkOS, mockFetch would record the call.
+    const callsBefore = mockFetch.mock.calls.length;
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(body.access_token.split(".")).toHaveLength(3);
+
+    // No additional fetch calls were issued during the dev-mode mint.
+    expect(mockFetch.mock.calls.length).toBe(callsBefore);
+  });
+});
+
+describe("security — identity-header stripping", () => {
+  it("strips client-supplied X-User-* / X-Org-* headers and replaces with token-derived ones", async () => {
+    const issueRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+    const { access_token } = (await issueRes.json()) as {
+      access_token: string;
+    };
+
+    await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+          "X-User-Id": "attacker-001",
+          "X-Org-Id": "evil-org",
+          "X-User-Email": "attacker@evil.example",
+        },
+      }),
+    );
+
+    const lastCall = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = lastCall[1].headers as Headers;
+    // Token-derived identity, NOT attacker-supplied.
+    expect(headers.get("X-User-Id")).toBe("dev-user-001");
+    expect(headers.get("X-Org-Id")).toBe("dev-org-001");
+    expect(headers.get("X-User-Email")).toBe("dev@localhost");
+  });
+});
+
+describe("round-trip — issued user token as Bearer", () => {
+  it("rejects a foreign-key-signed token even when the kid header matches", async () => {
+    // Forge a token using a freshly-generated keypair but with the
+    // legitimate user-token kid in the header. A naive verifier that
+    // trusted the kid alone would accept this; verifyToken must
+    // verify against the actual auth-proxy keypair.
+    const { privateKey } = await generateKeyPair("RS256");
+    const forged = await new SignJWT({
+      email: "attacker@evil",
+      name: "Attacker",
+      org_id: "evil-org",
+      sid: "forged-sid",
+    })
+      .setProtectedHeader({ alg: "RS256", kid: "auth-proxy:user:1" })
+      .setSubject("attacker")
+      .setIssuer("auth-proxy")
+      .setAudience("dev-client")
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(privateKey);
+
+    const before = mockFetch.mock.calls.length;
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Authorization: `Bearer ${forged}` },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockFetch.mock.calls.length).toBe(before);
+  });
+
+  it("returns 401 for a tampered signature on a user-token Bearer", async () => {
+    const issueRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+    const { access_token } = (await issueRes.json()) as {
+      access_token: string;
+    };
+
+    // Flip the first char of the signature segment.
+    const [header, payload, sig] = access_token.split(".");
+    const tampered = `${header}.${payload}.${
+      sig.startsWith("A") ? "B" : "A"
+    }${sig.slice(1)}`;
+
+    const before = mockFetch.mock.calls.length;
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Authorization: `Bearer ${tampered}` },
+      }),
+    );
+    expect(res.status).toBe(401);
+    // And no upstream call was made for the tampered request.
+    expect(mockFetch.mock.calls.length).toBe(before);
+  });
+
+  it("authenticates on a protected endpoint and forwards identity headers", async () => {
+    const issueRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+    const { access_token } = (await issueRes.json()) as {
+      access_token: string;
+    };
+
+    const protectedRes = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Authorization: `Bearer ${access_token}` },
+      }),
+    );
+    expect(protectedRes.status).toBe(200);
+
+    // The upstream backend call carried the identity headers derived
+    // from the user-token claims, not from any client-supplied headers.
+    const lastCall = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = lastCall[1].headers as Headers;
+    expect(headers.get("X-User-Id")).toBe("dev-user-001");
+    expect(headers.get("X-Org-Id")).toBe("dev-org-001");
+    expect(headers.get("X-User-Email")).toBe("dev@localhost");
+  });
+});
+
+describe("logout — dev mode", () => {
+  it("is idempotent: a second logout with the same token still returns 204", async () => {
+    const callbackRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+    const { access_token } = (await callbackRes.json()) as {
+      access_token: string;
+    };
+
+    const first = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${access_token}` },
+      }),
+    );
+    expect(first.status).toBe(204);
+
+    const second = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${access_token}` },
+      }),
+    );
+    expect(second.status).toBe(204);
+  });
+
+  it("returns 204 and deletes the session entry by sid", async () => {
+    const callbackRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+    const { access_token } = (await callbackRes.json()) as {
+      access_token: string;
+    };
+    const sid = decodeJwt(access_token).sid as string;
+    expect(getSession(sid)).not.toBeNull();
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${access_token}` },
+      }),
+    );
+    expect(res.status).toBe(204);
+    expect(getSession(sid)).toBeNull();
+  });
+});
+
+describe("refresh — workos mode", () => {
+  beforeEach(() => {
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    process.env.WORKOS_API_KEY = "sk_test_workos";
+    process.env.WORKOS_REDIRECT_URI = "https://app.example.com/auth/callback";
+  });
+
+  /**
+   * Helper: issue a fresh access_token via the workos callback flow,
+   * with a mock for the initial WorkOS authenticate call. Returns the
+   * token + sid + the refresh_token that WorkOS handed us (which is
+   * now living in the session-store).
+   */
+  async function issueWorkosToken(opts: {
+    initialRefreshToken: string;
+  }): Promise<{ token: string; sid: string }> {
+    mockFetch.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "wos-access",
+            refresh_token: opts.initialRefreshToken,
+            user: {
+              id: "wos-user-1",
+              email: "alice@workos.example",
+              first_name: "Alice",
+            },
+            organization_id: "wos-org-1",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    const loginRes = await app.fetch(
+      new Request("http://localhost/api/auth/login", { method: "GET" }),
+    );
+    const { url } = (await loginRes.json()) as { url: string };
+    const state = new URL(url).searchParams.get("state")!;
+    const callbackRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "wos-code", state }),
+      }),
+    );
+    const { access_token } = (await callbackRes.json()) as {
+      access_token: string;
+    };
+    const sid = decodeJwt(access_token).sid as string;
+    return { token: access_token, sid };
+  }
+
+  it("OQ1 (b) invariant: refresh response NEVER contains the WorkOS refresh_token", async () => {
+    const { token } = await issueWorkosToken({
+      initialRefreshToken: "wos-r-secret-OLD",
+    });
+
+    mockFetch.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "wos-access-2",
+            refresh_token: "wos-r-secret-NEW",
+            user: {
+              id: "wos-user-1",
+              email: "alice@workos.example",
+              first_name: "Alice",
+            },
+            organization_id: "wos-org-1",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+
+    const refreshRes = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(refreshRes.status).toBe(200);
+
+    // 1. Body must not contain the WorkOS refresh_token (old or new)
+    //    as a JSON field, anywhere.
+    const raw = await refreshRes.clone().text();
+    expect(raw).not.toContain("wos-r-secret-OLD");
+    expect(raw).not.toContain("wos-r-secret-NEW");
+    const body = (await refreshRes.clone().json()) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("refresh_token");
+    expect(body.access_token).toBeTypeOf("string");
+
+    // 2. No response header carries either refresh_token value.
+    let foundSecret = false;
+    refreshRes.headers.forEach((value) => {
+      if (
+        value.includes("wos-r-secret-OLD") ||
+        value.includes("wos-r-secret-NEW")
+      ) {
+        foundSecret = true;
+      }
+    });
+    expect(foundSecret).toBe(false);
+  });
+
+  it("rotates the stored WorkOS refresh_token using the prior one", async () => {
+    const { token, sid } = await issueWorkosToken({
+      initialRefreshToken: "wos-r-old",
+    });
+    expect(getSession(sid)?.workos_refresh_token).toBe("wos-r-old");
+
+    // Capture the outbound /authenticate body to verify we sent the
+    // prior refresh_token. WorkOS returns a new refresh_token in the
+    // response which the handler must store.
+    let capturedAuthenticateBody: Record<string, unknown> | null = null;
+    mockFetch.mockImplementationOnce(async (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+      expect(url).toBe(
+        "https://api.workos.com/user_management/authenticate",
+      );
+      capturedAuthenticateBody = JSON.parse(
+        (init as { body: string }).body,
+      );
+      return new Response(
+        JSON.stringify({
+          access_token: "wos-access-2",
+          refresh_token: "wos-r-new",
+          user: {
+            id: "wos-user-1",
+            email: "alice@workos.example",
+            first_name: "Alice",
+          },
+          organization_id: "wos-org-1",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const refreshRes = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+
+    expect(refreshRes.status).toBe(200);
+    // The outbound call carried the OLD refresh_token.
+    expect(capturedAuthenticateBody).toMatchObject({
+      refresh_token: "wos-r-old",
+      grant_type: "refresh_token",
+    });
+    // The session-store now holds the NEW refresh_token.
+    expect(getSession(sid)?.workos_refresh_token).toBe("wos-r-new");
+  });
+});
+
+describe("refresh — dev mode", () => {
+  /**
+   * Helper: issue a fresh access_token via the dev callback, returning
+   * both the token and the sid claim embedded in it. Used by every
+   * refresh test so the setup stays atomic per test.
+   */
+  async function issueDevToken(): Promise<{ token: string; sid: string }> {
+    const callbackRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+    const { access_token } = (await callbackRes.json()) as {
+      access_token: string;
+    };
+    const sid = decodeJwt(access_token).sid as string;
+    return { token: access_token, sid };
+  }
+
+  it("rejects with 401 session_expired when the session has aged out", async () => {
+    const original = await issueDevToken();
+    // Backdate the session-store entry so its expires_at is in the past.
+    setSession(original.sid, {
+      workos_refresh_token: "dev-refresh-token-001",
+      expires_at: Math.floor(Date.now() / 1000) - 60,
+      user_claims: {
+        sub: "dev-user-001",
+        email: "dev@localhost",
+        name: "Dev User",
+        org_id: "dev-org-001",
+      },
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${original.token}` },
+      }),
+    );
+
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("session_expired");
+
+    // Expired entry is lazily evicted: a follow-up getSession returns null.
+    expect(getSession(original.sid)).toBeNull();
+  });
+
+  it("rejects with 401 invalid_session after the session was logged out", async () => {
+    const original = await issueDevToken();
+
+    const logoutRes = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${original.token}` },
+      }),
+    );
+    expect(logoutRes.status).toBe(204);
+
+    const refreshRes = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${original.token}` },
+      }),
+    );
+    expect(refreshRes.status).toBe(401);
+    const body = (await refreshRes.json()) as { error: string };
+    expect(body.error).toBe("invalid_session");
+  });
+
+  it("rejects with 401 invalid_session when the Bearer's sid isn't in the store", async () => {
+    const original = await issueDevToken();
+    // Wipe the server-side session store but keep the token valid (kid +
+    // signature unchanged). The sid claim no longer resolves.
+    resetSessionStore();
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${original.token}` },
+      }),
+    );
+
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_session");
+  });
+
+  it("mints a fresh access_token whose claims match the original session", async () => {
+    const original = await issueDevToken();
+    // Wait a beat so the new token's iat is observably later (jose sets
+    // iat at second resolution).
+    await new Promise((r) => setTimeout(r, 1100));
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${original.token}` },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(typeof body.access_token).toBe("string");
+    expect(body.access_token).not.toBe(original.token);
+
+    const originalClaims = decodeJwt(original.token);
+    const refreshedClaims = decodeJwt(body.access_token);
+    expect(refreshedClaims.sub).toBe(originalClaims.sub);
+    expect(refreshedClaims.org_id).toBe(originalClaims.org_id);
+    expect(refreshedClaims.sid).toBe(originalClaims.sid);
+    expect(refreshedClaims.iat).toBeGreaterThan(originalClaims.iat as number);
+  });
+});

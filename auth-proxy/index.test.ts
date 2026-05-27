@@ -109,16 +109,17 @@ describe("Auth Proxy", () => {
   });
 
   describe("public path passthrough", () => {
-    const publicPaths = [
-      "/api/auth/login",
-      "/api/auth/callback",
-      "/api/auth/logout",
-      "/api/auth/refresh",
-    ];
+    // After Stage 1 of the auth-proxy-mints-user-tokens feature, the
+    // /api/auth/{login,callback,logout,refresh} endpoints are answered
+    // by auth-proxy itself (see user-token-issuance.test.ts). The
+    // remaining public passthrough is the JWKS endpoint and any other
+    // path explicitly listed in PUBLIC_PATHS that auth-proxy doesn't
+    // own. We assert that surface here.
+    const publicPaths = ["/.well-known/jwks.json"];
 
     for (const path of publicPaths) {
       it(`forwards ${path} without authentication`, async () => {
-        const res = await makeRequest(path, { method: "POST" });
+        const res = await makeRequest(path);
         expect(res.status).toBe(200);
         expect(mockFetch).toHaveBeenCalledOnce();
       });
@@ -146,7 +147,13 @@ describe("Auth Proxy", () => {
     });
 
     it("strips identity headers from public path requests", async () => {
-      await makeRequest("/api/auth/login", {
+      // After Stage 1 of the auth-proxy-mints-user-tokens feature,
+      // `/api/auth/login` is answered by auth-proxy itself, so the original
+      // login-based assertion no longer exercises the upstream proxy path.
+      // The surviving public-passthrough path is `/.well-known/jwks.json`,
+      // which preserves the test's intent: identity-header stripping on
+      // unauthenticated forwarded requests.
+      await makeRequest("/.well-known/jwks.json", {
         headers: {
           "X-User-Id": "attacker-id",
           "X-Org-Id": "attacker-org",
