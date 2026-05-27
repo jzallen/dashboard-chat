@@ -26,6 +26,17 @@
  * never inadvertently expose it.
  */
 
+// TODO(architecture): Audit how ui-state and agent authenticate to the backend.
+// Currently both appear to forward the inbound user bearer JWT (see
+// `agent/lib/chat/backend-client.ts:22-28`), and neither service is configured
+// with M2M_CLIENTS credentials of its own. Decide whether service-to-backend
+// calls should instead mint an M2M token here (via POST /api/auth/token) and
+// propagate the user's identity as a separate claim/header — pros: distinct
+// service identity in audit logs, decouples service-token lifetime from user
+// session, per-service scopes constrain blast radius. Also verify these calls
+// actually route through the auth-proxy ingress (not the container-internal
+// backend URL directly).
+
 import { timingSafeEqual } from "node:crypto";
 
 import {
