@@ -40,8 +40,9 @@ import type {
  *
  * Asymmetry by design (it mirrors the children's own DI styles):
  *   - session-onboarding is config/input-driven — it needs NO construction deps;
- *     its WorkOS/backend URLs + fetch port arrive per-instance on ChatAppInput
- *     (`config`/`deps`), threaded through the onboarding invoke `input:` mapper.
+ *     its WorkOS/backend URLs + fetch port arrive per-instance on
+ *     SessionOnboardingInput (`config`/`deps`), threaded through the onboarding
+ *     invoke `input:` mapper.
  *   - project-context + session-chat inject their resolver actors at construction
  *     (`createProjectContextMachine(deps)` / `createSessionChatMachine(deps)`).
  *     Production builds these from the env (`resolveInitialScopeActor(backendUrl,
@@ -63,8 +64,8 @@ export interface ChatAppDeps {
  * through the slot type.
  *
  * Returns the wired machine; the caller does
- * `createActor(createChatApp(deps), { input })` (see ChatAppInput for the begin
- * envelope the onboarding child needs).
+ * `createActor(createChatApp(deps), { input })` — the parent's only cold-start
+ * path bootstraps into onboarding, so `input` is `SessionOnboardingInput`.
  */
 export function createChatApp(deps: ChatAppDeps) {
   const onboarding = createSessionOnboardingMachine();
@@ -93,11 +94,10 @@ export type {
   ChatAppConnectivity,
   ChatAppContext,
   ChatAppEvent,
-  ChatAppInput,
   ChatAppLifecycle,
   ChatUserIntent,
-  OnboardingChildInput,
-  ProjectContextChildInput,
+  ProjectContextInput,
   ProjectHandoff,
-  SessionChatChildInput,
+  SessionChatInput,
+  SessionOnboardingInput,
 } from "./setup/types.ts";

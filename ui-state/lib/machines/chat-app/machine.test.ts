@@ -32,7 +32,7 @@ import type {
   ChatAppProjectContextLogic,
   ChatAppSessionChatLogic,
 } from "./setup/actors.ts";
-import type { ChatAppChildEvent, ChatAppInput } from "./setup/types.ts";
+import type { ChatAppChildEvent, SessionOnboardingInput } from "./setup/types.ts";
 
 // ───────────────────────────── FAKE CHILDREN (test fixtures) ─────────────────
 // Tiny, parent-ignorant stubs that expose JUST enough to drive the parent's
@@ -149,8 +149,8 @@ function createChatAppWithFakes() {
 }
 
 /** Convenience default input for tests. The fakes ignore the begin envelope
- *  (no real I/O), but `principal_id` is a required member of ChatAppInput. */
-const TEST_INPUT: ChatAppInput = {
+ *  (no real I/O), but `principal_id` is a required member of SessionOnboardingInput. */
+const TEST_INPUT: SessionOnboardingInput = {
   request_id: "req-chat-app-test",
   principal_id: "dev-user-001",
 };

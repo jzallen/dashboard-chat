@@ -44,10 +44,10 @@ import { guards } from "./setup/guards.ts";
 import type {
   ChatAppContext,
   ChatAppEvent,
-  ChatAppInput,
   ChatUserIntent,
   OnboardingSnapshotView,
   ProjectContextSnapshotView,
+  SessionOnboardingInput,
 } from "./setup/types.ts";
 
 // ── snapshot readers — the parent watches children via onSnapshot; the snapshot
@@ -71,7 +71,7 @@ export function createChatAppMachine() {
     types: {
       context: {} as ChatAppContext,
       events: {} as ChatAppEvent,
-      input: {} as ChatAppInput,
+      input: {} as SessionOnboardingInput,
     },
     actors,
     guards,

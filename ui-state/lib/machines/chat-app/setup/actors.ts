@@ -13,9 +13,9 @@ import { setup } from "xstate";
 
 import type {
   ChatAppChildEvent,
-  OnboardingChildInput,
-  ProjectContextChildInput,
-  SessionChatChildInput,
+  ProjectContextInput,
+  SessionChatInput,
+  SessionOnboardingInput,
 } from "./types.ts";
 
 /** Build a do-nothing child whose input type is pinned by the caller. It
@@ -40,9 +40,9 @@ function createPlaceholderChild<TInput>() {
  *  `invoke.input` mapper in ../machine.ts) is typed against its OWN child-input
  *  contract — no cross-slot field leakage. */
 export const actors = {
-  onboarding: createPlaceholderChild<OnboardingChildInput>(),
-  projectContext: createPlaceholderChild<ProjectContextChildInput>(),
-  sessionChat: createPlaceholderChild<SessionChatChildInput>(),
+  onboarding: createPlaceholderChild<SessionOnboardingInput>(),
+  projectContext: createPlaceholderChild<ProjectContextInput>(),
+  sessionChat: createPlaceholderChild<SessionChatInput>(),
 };
 
 /** Cast target for a concrete onboarding machine provided over the `onboarding`

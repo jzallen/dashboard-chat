@@ -45,7 +45,7 @@ import type {
   SessionSummary,
 } from "../../session-chat/index.ts";
 import { createChatApp } from "../index.ts";
-import type { ChatAppInput, ChatUserIntent } from "../setup/types.ts";
+import type { SessionOnboardingInput, ChatUserIntent } from "../setup/types.ts";
 import {
   bookkeepingFromLog,
   type ChatAppSnapshotView,
@@ -149,7 +149,7 @@ function makeDeps(
   };
 }
 
-function makeInput(opts: { badToken?: boolean; newUser?: boolean } = {}): ChatAppInput {
+function makeInput(opts: { badToken?: boolean; newUser?: boolean } = {}): SessionOnboardingInput {
   const bearer_token = opts.badToken ? "tok-bad" : "tok-maya";
   return {
     request_id: REQ,

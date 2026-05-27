@@ -40,7 +40,7 @@ import type {
   SessionSummary,
 } from "../session-chat/index.ts";
 import { createChatApp } from "./index.ts";
-import type { ChatAppInput, ChatUserIntent } from "./setup/types.ts";
+import type { SessionOnboardingInput, ChatUserIntent } from "./setup/types.ts";
 
 // ───────────────────────────── fixtures ─────────────────────────────
 
@@ -109,7 +109,7 @@ function makeDeps(rec: Recorder, sessions: SessionSummary[]) {
 /** Begin envelope for a RETURNING user (org present → onboarding lands `ready`
  *  directly). `deps.request_client` is the mock fetch the onboarding resolvers
  *  call. Pass `badToken` to drive the re-verify 401 → session_rejected path. */
-function makeInput(opts: { badToken?: boolean } = {}): ChatAppInput {
+function makeInput(opts: { badToken?: boolean } = {}): SessionOnboardingInput {
   const bearer_token = opts.badToken ? "tok-bad" : "tok-maya";
   return {
     request_id: "R-int-1",
