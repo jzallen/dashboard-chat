@@ -12,6 +12,9 @@
  * by simply rebooting against the same file.
  */
 
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+
 export interface SessionUserClaims {
   sub: string;
   email: string;
@@ -27,9 +30,57 @@ export interface SessionPayload {
 }
 
 const entries = new Map<string, SessionPayload>();
+let storeLoadedFor: string | null = null;
+
+function storePath(): string | null {
+  return process.env.SESSION_STORE_PATH || null;
+}
+
+type JsonlEntry =
+  | { op: "set"; sid: string; payload: SessionPayload }
+  | { op: "delete"; sid: string };
+
+function loadFromDiskIfNeeded(): void {
+  const path = storePath();
+  if (!path) return;
+  if (storeLoadedFor === path) return;
+
+  entries.clear();
+  storeLoadedFor = path;
+
+  if (!existsSync(path)) return;
+
+  const raw = readFileSync(path, "utf8");
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const entry = JSON.parse(trimmed) as JsonlEntry;
+      if (entry.op === "set") {
+        entries.set(entry.sid, entry.payload);
+      } else if (entry.op === "delete") {
+        entries.delete(entry.sid);
+      }
+    } catch {
+      // Skip unparseable lines rather than failing boot.
+    }
+  }
+}
+
+function persist(entry: JsonlEntry): void {
+  const path = storePath();
+  if (!path) return;
+  const dir = dirname(path);
+  if (dir && !existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  appendFileSync(path, JSON.stringify(entry) + "\n", "utf8");
+}
 
 export function setSession(sid: string, payload: SessionPayload): void {
+  loadFromDiskIfNeeded();
   entries.set(sid, payload);
+  persist({ op: "set", sid, payload });
 }
 
 export type SessionLookup =
@@ -45,6 +96,7 @@ export type SessionLookup =
  * directly; ergonomic `getSession` is a thin wrapper.
  */
 export function getSessionStatus(sid: string): SessionLookup {
+  loadFromDiskIfNeeded();
   const entry = entries.get(sid);
   if (!entry) return { status: "missing" };
   if (entry.expires_at < Math.floor(Date.now() / 1000)) {
@@ -66,9 +118,15 @@ export function getSession(sid: string): SessionPayload | null {
  * the first delete from a duplicate.
  */
 export function deleteSession(sid: string): boolean {
-  return entries.delete(sid);
+  loadFromDiskIfNeeded();
+  const existed = entries.delete(sid);
+  if (existed) {
+    persist({ op: "delete", sid });
+  }
+  return existed;
 }
 
 export function _resetForTests(): void {
   entries.clear();
+  storeLoadedFor = null;
 }
