@@ -103,6 +103,30 @@ async function tokenRequest(
   );
 }
 
+/**
+ * Read the identity headers (X-User-Id / X-Org-Id / X-User-Email) that the
+ * proxy forwarded to the upstream on the most recent fetch call. Throws if
+ * the call count isn't exactly 1 so callers don't need a separate
+ * `toHaveBeenCalledOnce` assertion.
+ */
+function forwardedIdentity(mock: typeof mockFetch): {
+  userId: string | null;
+  orgId: string | null;
+  email: string | null;
+} {
+  const calls = mock.mock.calls;
+  if (calls.length !== 1) {
+    throw new Error(`expected exactly 1 fetch call, got ${calls.length}`);
+  }
+  const [, fetchOptions] = calls[0];
+  const headers = (fetchOptions as RequestInit).headers as Headers;
+  return {
+    userId: headers.get("X-User-Id"),
+    orgId: headers.get("X-Org-Id"),
+    email: headers.get("X-User-Email"),
+  };
+}
+
 describe("M2M issuance endpoint — flag off", () => {
   it("returns 404 when M2M_ENABLED is unset", async () => {
     delete process.env.M2M_ENABLED;
@@ -160,57 +184,57 @@ describe("M2M issuance endpoint — flag on", () => {
     expect(typeof body.access_token).toBe("string");
   });
 
-  it("returns 401 invalid_client for unknown client_id", async () => {
-    const res = await tokenRequest({
-      grant_type: "client_credentials",
-      client_id: "ghost",
-      client_secret: "shh-shh-shh",
-    });
-    expect(res.status).toBe(401);
+  it.each([
+    {
+      case: "unknown client_id",
+      payload: {
+        grant_type: "client_credentials",
+        client_id: "ghost",
+        client_secret: "shh-shh-shh",
+      },
+      status: 401,
+      error: "invalid_client",
+    },
+    {
+      case: "wrong client_secret",
+      payload: {
+        grant_type: "client_credentials",
+        client_id: "svc-a",
+        client_secret: "wrong",
+      },
+      status: 401,
+      error: "invalid_client",
+    },
+    {
+      case: "non-client-credentials grant_type",
+      payload: {
+        grant_type: "password",
+        client_id: "svc-a",
+        client_secret: "shh-shh-shh",
+      },
+      status: 400,
+      error: "unsupported_grant_type",
+    },
+    {
+      case: "missing client_id",
+      payload: {
+        grant_type: "client_credentials",
+        client_secret: "shh-shh-shh",
+      },
+      status: 400,
+      error: "invalid_request",
+    },
+    {
+      case: "missing client_secret",
+      payload: { grant_type: "client_credentials", client_id: "svc-a" },
+      status: 400,
+      error: "invalid_request",
+    },
+  ])("returns $status $error for $case", async ({ payload, status, error }) => {
+    const res = await tokenRequest(payload);
+    expect(res.status).toBe(status);
     const body = (await res.json()) as ErrorResponse & Partial<TokenResponse>;
-    expect(body.error).toBe("invalid_client");
-  });
-
-  it("returns 401 invalid_client for wrong client_secret", async () => {
-    const res = await tokenRequest({
-      grant_type: "client_credentials",
-      client_id: "svc-a",
-      client_secret: "wrong",
-    });
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as ErrorResponse & Partial<TokenResponse>;
-    expect(body.error).toBe("invalid_client");
-  });
-
-  it("returns 400 unsupported_grant_type for non-client-credentials grants", async () => {
-    const res = await tokenRequest({
-      grant_type: "password",
-      client_id: "svc-a",
-      client_secret: "shh-shh-shh",
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as ErrorResponse & Partial<TokenResponse>;
-    expect(body.error).toBe("unsupported_grant_type");
-  });
-
-  it("returns 400 invalid_request for missing client_id", async () => {
-    const res = await tokenRequest({
-      grant_type: "client_credentials",
-      client_secret: "shh-shh-shh",
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as ErrorResponse & Partial<TokenResponse>;
-    expect(body.error).toBe("invalid_request");
-  });
-
-  it("returns 400 invalid_request for missing client_secret", async () => {
-    const res = await tokenRequest({
-      grant_type: "client_credentials",
-      client_id: "svc-a",
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as ErrorResponse & Partial<TokenResponse>;
-    expect(body.error).toBe("invalid_request");
+    expect(body.error).toBe(error);
   });
 
   it("returns 400 invalid_request for malformed body", async () => {
@@ -249,14 +273,16 @@ describe("M2M token round-trip — issuance verifies through proxy auth path", (
     expect(protectedRes.status).toBe(200);
 
     // Step 3: assert the identity headers were forwarded to the backend.
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [, fetchOptions] = mockFetch.mock.calls[0];
-    const headers = fetchOptions.headers as Headers;
-    expect(headers.get("X-User-Id")).toBe("service-account:svc-a");
-    expect(headers.get("X-Org-Id")).toBe("org-a");
-    expect(headers.get("X-User-Email")).toBe("svc-a@example.com");
-    // And client-supplied identity headers are still stripped.
-    expect(headers.get("Authorization")).toBe(`Bearer ${access_token}`);
+    expect(forwardedIdentity(mockFetch)).toEqual({
+      userId: "service-account:svc-a",
+      orgId: "org-a",
+      email: "svc-a@example.com",
+    });
+    // And the inbound Bearer was forwarded unchanged.
+    const [, opts] = mockFetch.mock.calls[0];
+    expect((opts.headers as Headers).get("Authorization")).toBe(
+      `Bearer ${access_token}`,
+    );
   });
 
   it("rejects a tampered token at the protected endpoint with 401", async () => {
@@ -305,12 +331,11 @@ describe("M2M token round-trip — issuance verifies through proxy auth path", (
       }),
     );
 
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [, fetchOptions] = mockFetch.mock.calls[0];
-    const headers = fetchOptions.headers as Headers;
-    expect(headers.get("X-User-Id")).toBe("service-account:svc-a");
-    expect(headers.get("X-Org-Id")).toBe("org-a");
-    expect(headers.get("X-User-Email")).toBe("svc-a@example.com");
+    expect(forwardedIdentity(mockFetch)).toEqual({
+      userId: "service-account:svc-a",
+      orgId: "org-a",
+      email: "svc-a@example.com",
+    });
   });
 });
 
@@ -349,13 +374,11 @@ describe("M2M issuance — dev-mode parity (built-in dev client)", () => {
       }),
     );
     expect(protectedRes.status).toBe(200);
-    expect(mockFetch).toHaveBeenCalledOnce();
-
-    const [, fetchOptions] = mockFetch.mock.calls[0];
-    const headers = fetchOptions.headers as Headers;
-    expect(headers.get("X-User-Id")).toBe("dev-user-001");
-    expect(headers.get("X-Org-Id")).toBe("dev-org-001");
-    expect(headers.get("X-User-Email")).toBe("dev@localhost");
+    expect(forwardedIdentity(mockFetch)).toEqual({
+      userId: "dev-user-001",
+      orgId: "dev-org-001",
+      email: "dev@localhost",
+    });
   });
 
   it("rejects an unknown client in dev mode (built-in is not a wildcard)", async () => {
