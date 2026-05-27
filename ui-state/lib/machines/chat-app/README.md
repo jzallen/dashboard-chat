@@ -93,23 +93,28 @@ types.
 ### Input / deps threading (Phase 2)
 
 The children's DI styles differ, and `createChatApp` honors both. Each child
-slot also pins its own **per-slot input contract**
-(`OnboardingChildInput` / `ProjectContextChildInput` / `SessionChatChildInput`
-in `setup/types.ts`), so the parent's three `invoke.input` mappers are
-type-checked against the right slot — there is no single permissive superset
-where one mapper could accidentally return another slot's fields.
+slot pins its own **per-slot input contract** so the parent's three
+`invoke.input` mappers are type-checked against the right slot — there is no
+single permissive superset where one mapper could accidentally return another
+slot's fields. The onboarding slot uses `SessionOnboardingInput` directly (the
+real onboarding machine publishes it from `../session-onboarding/index.ts` and
+chat-app re-exports it from `setup/types.ts`); the other two slots declare local
+`ProjectContextInput` / `SessionChatInput` interfaces in `setup/types.ts`.
+
+The parent machine's own `types.input` is `SessionOnboardingInput` — the
+parent's only cold-start path bootstraps into the onboarding phase, so the
+parent's begin envelope IS the onboarding child's input.
 
 - **session-onboarding** is config/input-driven — no construction deps. Its
   WorkOS/backend URLs + `fetch` port + re-verify Bearer arrive per-instance on
-  `ChatAppInput` (`config` / `deps` / `bearer_token` / `force_reissue_failures`),
-  seeded write-once into `ChatAppContext` and projected into the child by the
-  **onboarding invoke `input:` mapper** (typed against `OnboardingChildInput`).
+  `SessionOnboardingInput` (`config` / `deps` / `bearer_token` /
+  `force_reissue_failures`), seeded write-once into `ChatAppContext` and
+  projected into the child by the **onboarding invoke `input:` mapper**.
 - **project-context** + **session-chat** inject their resolver actors at
   construction (`ChatAppDeps.projectContext` / `.sessionChat`). Their invoke
-  `input:` mappers (typed against `ProjectContextChildInput` /
-  `SessionChatChildInput`) carry only the static `request_id` / `principal_id`;
-  the dynamic org/project arrive via the `auth_ready` / `project_ready`
-  hand-offs.
+  `input:` mappers (typed against `ProjectContextInput` / `SessionChatInput`)
+  carry only the static `request_id` / `principal_id`; the dynamic org/project
+  arrive via the `auth_ready` / `project_ready` hand-offs.
 
 ## Layout
 
