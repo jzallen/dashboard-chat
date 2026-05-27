@@ -313,6 +313,33 @@ describe("ChatApp Phase 2 — token-expiry freeze → reauth → thaw", () => {
     expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.session_id).toBe("s1");
   });
 
+  it("REAUTH_OK delivers multiple held intents to the active child in arrival order", async () => {
+    // Hold [refresh, click]: refresh transitions session-chat to
+    // loading_session_list which does NOT accept session_clicked, so the
+    // second intent is dropped at the child mailbox. That observable
+    // asymmetry — loadCalls grows but resumeCalls stays empty — is the
+    // signature of "refresh was delivered FIRST." A swapped delivery would
+    // run resume first and drop the refresh, producing the opposite recorder.
+    const { actor, rec } = await arriveAtChat();
+    expect(rec.loadCalls).toEqual(["proj-A"]); // initial load
+
+    actor.send({ type: "TOKEN_EXPIRED" });
+    userIntent(actor, { type: "refresh_session_list" });
+    userIntent(actor, { type: "session_clicked", session_id: "s1" });
+    expect(held(actor)).toEqual([
+      { type: "refresh_session_list" },
+      { type: "session_clicked", session_id: "s1" },
+    ]);
+
+    actor.send({ type: "REAUTH_OK" });
+    expect(held(actor)).toEqual([]); // buffer cleared on replay
+
+    // Wait for the refresh-driven reload to settle.
+    await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
+    expect(rec.loadCalls).toEqual(["proj-A", "proj-A"]); // refresh delivered
+    expect(rec.resumeCalls).toEqual([]); // click arrived while busy, dropped
+  });
+
   it("REAUTH_FAILED rejects the session and thaws the overlay", async () => {
     const { actor } = await arriveAtChat();
 

@@ -1,25 +1,27 @@
-// Unit tests for the ChatApp coordinator (ADR-044, Phase 1) — PURE statechart
-// tests driving the parent via a created actor with FAKE children provided over
-// the placeholder slots (the fakes are defined inline below — they are fixtures
-// for THIS test only). No network, no Redis, no boundaries.
+// Parent-only choreography tests for the ChatApp coordinator (ADR-044). These
+// drive the parent via a created actor with FAKE children provided over the
+// placeholder slots (the fakes are defined inline below — they are fixtures for
+// THIS test only). No network, no Redis, no boundaries.
 //
-// What is asserted, at the parent's driving port (its (lifecycle, connectivity)
-// state value) + the fakes' recorded inboxes (`context.rx`):
-//   - the happy cycle onboarding → project_context → chat advances on each
-//     child's OWN readiness state (the onSnapshot watcher);
-//   - the hand-offs land at the RIGHT child (auth_ready → project-context,
-//     project_ready → session-chat);
-//   - freeze/thaw: TOKEN_EXPIRED freezes; intents sent while frozen are HELD,
-//     not forwarded; REAUTH_OK thaws + replays them IN ORDER; REAUTH_FAILED
-//     rejects the session;
-//   - freeze is ORTHOGONAL — it works in the onboarding + project_context
-//     phases too;
-//   - a project switch re-forwards project_ready to session-chat in place;
-//   - unknown events are ignored (state-machine discipline).
+// The unique surface covered HERE (not redundantly with integration.test.ts):
+//   - the connectivity (freeze) region is ORTHOGONAL to the lifecycle phase:
+//     freeze + replay also work while still in onboarding / project_context,
+//     which is structurally unreachable from the real-children suite because
+//     the real onboarding child resolves to ready too quickly to park there;
+//   - drivable parking of children at specific values (`verifying`,
+//     `resolving`) lets us assert the parent's intent buffer accumulates +
+//     replays without depending on a held-promise dance;
+//   - per-child inbox NEGATIVE assertions: an intent sent while frozen does
+//     NOT reach the active child, proving the parent's hold buffer interposed;
+//   - unknown events are no-ops (state-machine discipline).
+//
+// Coverage of the full forward cycle, hand-off payload contents, in-chat
+// freeze/replay, REAUTH_FAILED rejection, and PROJECT_SWITCH semantics lives in
+// integration.test.ts against the real children. The two suites are
+// complementary — choreography lives here, production-like behavior there.
 //
 // Children stay parent-ignorant (ADR-028): the test drives a child directly via
-// its actor ref (the real WorkOS/backend drive in Phase 2), and the parent only
-// ever watches + forwards.
+// its actor ref, and the parent only ever watches + forwards.
 
 import { describe, expect, it } from "vitest";
 import { type AnyActorRef, assign, createActor, setup } from "xstate";
@@ -34,27 +36,22 @@ import type { ChatAppChildEvent, ChatAppInput } from "./setup/types.ts";
 
 // ───────────────────────────── FAKE CHILDREN (test fixtures) ─────────────────
 // Tiny, parent-ignorant stubs that expose JUST enough to drive the parent's
-// choreography in isolation — no network, no Redis, no real WorkOS. Each one:
-//   - reaches the readiness state the parent watches via `onSnapshot`
-//     (onboarding → `ready`, project-context → `project_selected`,
-//     session-chat → `session_active`),
-//   - RECORDS every event it receives in `context.rx`, so a test can assert the
-//     parent forwarded the right hand-off / intent to the right child.
-// They are deliberately DRIVABLE (explicit `DRIVE_*` events) rather than
-// auto-advancing, so a test can park the machine in any lifecycle phase to prove
-// the connectivity (freeze) region is orthogonal to it. Phase 2's REAL children
-// are wired the same `.provide({ actors })` seam (see integration.test.ts).
+// choreography in isolation. Each fake:
+//   - parks in a drivable state the parent watches via `onSnapshot`, so a test
+//     can hold the parent in any lifecycle phase to prove the connectivity
+//     (freeze) region is orthogonal to it;
+//   - RECORDS every event it receives in `context.rx`, so a test can assert
+//     the parent forwarded — or DID NOT forward — a given intent.
 //
 // `record` is declared inside each fake's own `setup({ actions })` so XState
-// infers it against that fake's context/event (a shared standalone action would
-// be typed too narrowly to drop into a wider machine).
+// infers it against that fake's context/event (a shared standalone action
+// would be typed too narrowly to drop into a wider machine).
 
 /** Anything a fake recorded — the parent forwards child events plus the test's
  *  drive events arrive here too; tests filter by `type`. */
 type ReceivedEvent = { type: string } & Record<string, unknown>;
 
-// verifying ─(DRIVE_READY)─► ready          (carries org_id + first_name)
-//           └(DRIVE_REJECTED)─► session_rejected
+// Drivable onboarding: parks at `verifying`; DRIVE_READY advances to `ready`.
 const fakeOnboarding = setup({
   types: {
     context: {} as {
@@ -64,8 +61,7 @@ const fakeOnboarding = setup({
     },
     events: {} as
       | ChatAppChildEvent
-      | { type: "DRIVE_READY"; org_id: string; first_name: string }
-      | { type: "DRIVE_REJECTED" },
+      | { type: "DRIVE_READY"; org_id: string; first_name: string },
   },
   actions: {
     record: assign({
@@ -89,26 +85,21 @@ const fakeOnboarding = setup({
             }),
           ],
         },
-        DRIVE_REJECTED: { target: "session_rejected", actions: "record" },
         "*": { actions: "record" },
       },
     },
     ready: { on: { "*": { actions: "record" } } },
-    session_rejected: {},
   },
 });
 
-// waiting_for_auth ─(auth_ready)─► resolving ─(DRIVE_SELECT)─► project_selected
-//                  project_selected ─(switching_project_intent)─► project_selected'
+// Drivable project-context: parks at `resolving` once auth_ready arrives.
 const fakeProjectContext = setup({
   types: {
     context: {} as {
       rx: ReceivedEvent[];
       project: { id: string | null; name: string | null };
     },
-    events: {} as
-      | ChatAppChildEvent
-      | { type: "DRIVE_SELECT"; project_id: string; project_name: string },
+    events: {} as ChatAppChildEvent,
   },
   actions: {
     record: assign({
@@ -126,77 +117,26 @@ const fakeProjectContext = setup({
         "*": { actions: "record" },
       },
     },
-    resolving: {
-      on: {
-        DRIVE_SELECT: {
-          target: "project_selected",
-          actions: [
-            "record",
-            assign({
-              project: ({ event }) => ({
-                id: event.project_id,
-                name: event.project_name,
-              }),
-            }),
-          ],
-        },
-        "*": { actions: "record" },
-      },
-    },
-    project_selected: {
-      on: {
-        switching_project_intent: {
-          target: "project_selected",
-          reenter: true,
-          actions: [
-            "record",
-            assign({
-              project: ({ event }) => ({
-                id: event.new_project_id,
-                name: `Project ${event.new_project_id}`,
-              }),
-            }),
-          ],
-        },
-        "*": { actions: "record" },
-      },
-    },
+    resolving: { on: { "*": { actions: "record" } } },
   },
 });
 
-// waiting_for_project ─(project_ready)─► session_active   (records all intents)
+// Inert session-chat — never reached by the retained tests (none drive to the
+// chat lifecycle phase), but the parent's `setup({ actors })` still needs a
+// concrete logic for the slot.
 const fakeSessionChat = setup({
-  types: {
-    context: {} as { rx: ReceivedEvent[] },
-    events: {} as ChatAppChildEvent,
-  },
-  actions: {
-    record: assign({
-      rx: ({ context, event }) => [...context.rx, event as ReceivedEvent],
-    }),
-  },
+  types: { events: {} as ChatAppChildEvent },
 }).createMachine({
   id: "fake-session-chat",
-  initial: "waiting_for_project",
-  context: { rx: [] },
-  states: {
-    waiting_for_project: {
-      on: {
-        project_ready: { target: "session_active", actions: "record" },
-        "*": { actions: "record" },
-      },
-    },
-    // Records re-forwarded project_ready (switch) AND user intents.
-    session_active: { on: { "*": { actions: "record" } } },
-  },
+  initial: "idle",
+  states: { idle: {} },
 });
 
 /**
- * Build a ChatApp machine with the fakes provided over the placeholder children.
- * The casts bridge XState's invariant `provide` typing (the fakes are
- * structurally wider than the placeholders); they are runtime no-ops — the
- * parent reads child readiness through the onSnapshot snapshot views, not these
- * types.
+ * Build a ChatApp machine with the fakes provided over the placeholder
+ * children. The casts bridge XState's invariant `provide` typing per slot;
+ * they are runtime no-ops — the parent reads child readiness through the
+ * onSnapshot snapshot views, not these types.
  */
 function createChatAppWithFakes() {
   return createChatAppMachine().provide({
@@ -209,7 +149,7 @@ function createChatAppWithFakes() {
 }
 
 /** Convenience default input for tests. The fakes ignore the begin envelope
- *  (no real I/O), but `principal_id` is now a required member of ChatAppInput. */
+ *  (no real I/O), but `principal_id` is a required member of ChatAppInput. */
 const TEST_INPUT: ChatAppInput = {
   request_id: "req-chat-app-test",
   principal_id: "dev-user-001",
@@ -245,11 +185,8 @@ function childRx(actor: ChatApp, id: string): ReceivedEvent[] {
 function rxTypes(actor: ChatApp, id: string): string[] {
   return childRx(actor, id).map((event) => event.type);
 }
-function held(actor: ChatApp) {
-  return actor.getSnapshot().context.held_events;
-}
 
-// ── drive the fakes (stand-ins for the real children's own progressions) ──
+// ── drive the fakes ──
 function driveOnboardingReady(
   actor: ChatApp,
   identity: { org_id: string; first_name: string },
@@ -258,12 +195,6 @@ function driveOnboardingReady(
     type: "DRIVE_READY",
     ...identity,
   });
-}
-function driveProjectSelected(
-  actor: ChatApp,
-  project: { project_id: string; project_name: string },
-) {
-  childRef(actor, "project-context").send({ type: "DRIVE_SELECT", ...project });
 }
 function userIntent(
   actor: ChatApp,
@@ -276,149 +207,6 @@ function userIntent(
 }
 
 const MAYA = { org_id: "org-acme", first_name: "Maya" };
-const PROJECT_A = { project_id: "proj-A", project_name: "Project A" };
-
-/** Drive the whole forward cycle to a settled chat session. */
-function driveToChat(actor: ChatApp) {
-  driveOnboardingReady(actor, MAYA);
-  driveProjectSelected(actor, PROJECT_A);
-}
-
-describe("ChatApp — happy forward cycle", () => {
-  it("starts in onboarding + live", () => {
-    const actor = startChatApp();
-    expect(lifecycle(actor)).toBe("onboarding");
-    expect(connectivity(actor)).toBe("live");
-  });
-
-  it("advances onboarding → project_context when the onboarding child reaches ready", () => {
-    const actor = startChatApp();
-    driveOnboardingReady(actor, MAYA);
-    expect(lifecycle(actor)).toEqual({ engaged: "project_context" });
-  });
-
-  it("advances project_context → chat when the project-context child selects a project", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-    expect(lifecycle(actor)).toEqual({ engaged: "chat" });
-    expect(connectivity(actor)).toBe("live");
-  });
-
-  it("routes the onboarding child to session_rejected → lifecycle rejected", () => {
-    const actor = startChatApp();
-    childRef(actor, "session-onboarding").send({ type: "DRIVE_REJECTED" });
-    expect(lifecycle(actor)).toBe("rejected");
-  });
-});
-
-describe("ChatApp — hand-offs reach the right child", () => {
-  it("forwards auth_ready (with the captured org + identity) to project-context only", () => {
-    const actor = startChatApp();
-    driveOnboardingReady(actor, MAYA);
-
-    const authReady = childRx(actor, "project-context").find(
-      (event) => event.type === "auth_ready",
-    );
-    expect(authReady).toMatchObject({
-      type: "auth_ready",
-      org_id: "org-acme",
-      user: { first_name: "Maya" },
-    });
-    // session-chat is not even invoked yet — it certainly has no auth_ready.
-    expect(rxTypes(actor, "session-chat")).not.toContain("auth_ready");
-  });
-
-  it("forwards project_ready (with the selected project) to session-chat", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-
-    const projectReady = childRx(actor, "session-chat").find(
-      (event) => event.type === "project_ready",
-    );
-    expect(projectReady).toMatchObject({
-      type: "project_ready",
-      org_id: "org-acme",
-      project_id: "proj-A",
-      project_name: "Project A",
-      request_id: TEST_INPUT.request_id,
-    });
-  });
-});
-
-describe("ChatApp — connectivity (freeze) in the chat phase", () => {
-  it("forwards live intents straight to the active child", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-    userIntent(actor, { type: "session_clicked", session_id: "s-live" });
-
-    expect(
-      childRx(actor, "session-chat").filter(
-        (e) => e.type === "session_clicked",
-      ),
-    ).toEqual([{ type: "session_clicked", session_id: "s-live" }]);
-  });
-
-  it("TOKEN_EXPIRED flips connectivity live → frozen without touching lifecycle", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-    actor.send({ type: "TOKEN_EXPIRED" });
-
-    expect(connectivity(actor)).toBe("frozen");
-    expect(lifecycle(actor)).toEqual({ engaged: "chat" });
-  });
-
-  it("HOLDS intents that arrive while frozen instead of forwarding them", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-    const before = childRx(actor, "session-chat").length;
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    userIntent(actor, { type: "session_clicked", session_id: "s1" });
-    userIntent(actor, { type: "session_clicked", session_id: "s2" });
-
-    // Nothing reached the child; both are parked in the parent buffer.
-    expect(childRx(actor, "session-chat").length).toBe(before);
-    expect(held(actor)).toEqual([
-      { type: "session_clicked", session_id: "s1" },
-      { type: "session_clicked", session_id: "s2" },
-    ]);
-  });
-
-  it("REAUTH_OK thaws and replays the held intents IN ORDER, then clears the buffer", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    userIntent(actor, { type: "session_clicked", session_id: "s1" });
-    userIntent(actor, { type: "refresh_session_list" });
-    userIntent(actor, { type: "session_clicked", session_id: "s2" });
-    actor.send({ type: "REAUTH_OK" });
-
-    expect(connectivity(actor)).toBe("live");
-    expect(held(actor)).toEqual([]);
-    // The child received exactly the held intents, in the order they arrived.
-    expect(
-      rxTypes(actor, "session-chat").filter(
-        (type) => type === "session_clicked" || type === "refresh_session_list",
-      ),
-    ).toEqual(["session_clicked", "refresh_session_list", "session_clicked"]);
-    expect(
-      childRx(actor, "session-chat")
-        .filter((e) => e.type === "session_clicked")
-        .map((e) => e.session_id),
-    ).toEqual(["s1", "s2"]);
-  });
-
-  it("REAUTH_FAILED rejects the session and thaws the overlay", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-    actor.send({ type: "TOKEN_EXPIRED" });
-    actor.send({ type: "REAUTH_FAILED" });
-
-    expect(lifecycle(actor)).toBe("rejected");
-    expect(connectivity(actor)).toBe("live");
-  });
-});
 
 describe("ChatApp — freeze is orthogonal to the lifecycle phase", () => {
   it("freezes + replays while still in the onboarding phase", () => {
@@ -430,6 +218,7 @@ describe("ChatApp — freeze is orthogonal to the lifecycle phase", () => {
     expect(lifecycle(actor)).toBe("onboarding"); // untouched
 
     userIntent(actor, { type: "session_clicked", session_id: "s-onb" });
+    // Negative inbox assertion: the intent did NOT reach the active child.
     expect(rxTypes(actor, "session-onboarding")).not.toContain(
       "session_clicked",
     );
@@ -453,7 +242,8 @@ describe("ChatApp — freeze is orthogonal to the lifecycle phase", () => {
     expect(lifecycle(actor)).toEqual({ engaged: "project_context" }); // untouched
 
     userIntent(actor, { type: "refresh_session_list" });
-    // project-context has only the auth_ready hand-off so far — no intent leaked.
+    // Negative inbox assertion: project-context has only the auth_ready
+    // hand-off so far — no intent leaked through the freeze.
     expect(rxTypes(actor, "project-context")).not.toContain(
       "refresh_session_list",
     );
@@ -463,55 +253,18 @@ describe("ChatApp — freeze is orthogonal to the lifecycle phase", () => {
   });
 });
 
-describe("ChatApp — project switch", () => {
-  it("re-forwards project_ready to session-chat with the new project, in place", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-
-    // One project_ready so far (the initial selection).
-    expect(
-      childRx(actor, "session-chat").filter((e) => e.type === "project_ready")
-        .length,
-    ).toBe(1);
-
-    actor.send({ type: "PROJECT_SWITCH", new_project_id: "proj-B" });
-
-    // Still in chat (re-forward in place, no phase change).
-    expect(lifecycle(actor)).toEqual({ engaged: "chat" });
-    const projectReadies = childRx(actor, "session-chat").filter(
-      (e) => e.type === "project_ready",
-    );
-    expect(projectReadies.length).toBe(2);
-    expect(projectReadies[1]).toMatchObject({
-      type: "project_ready",
-      project_id: "proj-B",
-    });
-  });
-
-  it("does not re-forward when the same project is re-selected (idempotent)", () => {
-    const actor = startChatApp();
-    driveToChat(actor);
-    // Re-send the SAME project id through the switch path.
-    actor.send({ type: "PROJECT_SWITCH", new_project_id: "proj-A" });
-
-    expect(
-      childRx(actor, "session-chat").filter((e) => e.type === "project_ready")
-        .length,
-    ).toBe(1);
-  });
-});
-
 describe("ChatApp — unknown events are ignored", () => {
   it("leaves (lifecycle, connectivity) unchanged and forwards nothing", () => {
     const actor = startChatApp();
-    driveToChat(actor);
     const before = actor.getSnapshot().value;
-    const chatRxBefore = childRx(actor, "session-chat").length;
+    const onboardingRxBefore = childRx(actor, "session-onboarding").length;
 
     // An event the machine declares nowhere.
     actor.send({ type: "totally_unknown_event" } as never);
 
     expect(actor.getSnapshot().value).toEqual(before);
-    expect(childRx(actor, "session-chat").length).toBe(chatRxBefore);
+    expect(childRx(actor, "session-onboarding").length).toBe(
+      onboardingRxBefore,
+    );
   });
 });
