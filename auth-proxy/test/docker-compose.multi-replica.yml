@@ -1,0 +1,10 @@
+services:
+  auth-proxy:
+    # Base compose maps a fixed host port (1042:3000) so the user's local
+    # dev stack has a stable AUTH_PROXY_URL. That fixed mapping blocks
+    # `--scale auth-proxy=2` — both replicas would try to bind the same
+    # host port. Replace it with an unmapped publish so compose picks an
+    # ephemeral host port per replica; the test reads them via
+    # `docker compose port`.
+    ports: !override
+      - "3000"

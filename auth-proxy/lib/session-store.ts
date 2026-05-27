@@ -6,13 +6,23 @@
  * (session id) claim baked into the auth-proxy user-token. The FE never
  * sees a WorkOS token; only the local auth-proxy JWT leaves the server.
  *
- * Persistence shape mirrors `lib/pat.ts`: in-memory Map by default,
- * JSONL on disk when `SESSION_STORE_PATH` is set. JSONL is append-only
- * with last-write-wins on replay, so a deploy can hot-reload the store
- * by simply rebooting against the same file.
+ * Persistence shape: in-memory Map by default, JSONL on disk when
+ * `SESSION_STORE_PATH` is set. JSONL is append-only with last-write-wins
+ * on replay. Every read/write tails any new bytes appended since the
+ * previous call, so a second replica sharing the same file observes
+ * writes (and delete tombstones) from peer replicas without restart —
+ * the load-bearing property for multi-replica deployments.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { dirname } from "node:path";
 
 export interface SessionUserClaims {
@@ -30,7 +40,9 @@ export interface SessionPayload {
 }
 
 const entries = new Map<string, SessionPayload>();
-let storeLoadedFor: string | null = null;
+let cachedPath: string | null = null;
+let readOffset = 0;
+let partialLine = "";
 
 function storePath(): string | null {
   return process.env.SESSION_STORE_PATH || null;
@@ -40,22 +52,54 @@ type JsonlEntry =
   | { op: "set"; sid: string; payload: SessionPayload }
   | { op: "delete"; sid: string };
 
-function loadFromDiskIfNeeded(): void {
+/**
+ * Catch up the in-memory map to any bytes appended to the JSONL file
+ * since the last call. Called before every read or write so a replica
+ * sharing the file with peers observes their writes incrementally —
+ * without this, a process that has cached the store can never see a
+ * peer's delete tombstone.
+ */
+function syncFromDisk(): void {
   const path = storePath();
   if (!path) return;
-  if (storeLoadedFor === path) return;
 
-  entries.clear();
-  storeLoadedFor = path;
+  // Path changed (test reset, env swap): replay from byte zero.
+  if (cachedPath !== path) {
+    entries.clear();
+    cachedPath = path;
+    readOffset = 0;
+    partialLine = "";
+  }
 
   if (!existsSync(path)) return;
 
-  const raw = readFileSync(path, "utf8");
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  const size = statSync(path).size;
+  // External truncation (rare — only test fixtures): start over.
+  if (size < readOffset) {
+    entries.clear();
+    readOffset = 0;
+    partialLine = "";
+  }
+  if (size === readOffset) return;
+
+  const fd = openSync(path, "r");
+  try {
+    const newBytes = size - readOffset;
+    const buf = Buffer.alloc(newBytes);
+    const n = readSync(fd, buf, 0, newBytes, readOffset);
+    readOffset += n;
+    partialLine += buf.subarray(0, n).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+
+  let nl: number;
+  while ((nl = partialLine.indexOf("\n")) >= 0) {
+    const line = partialLine.slice(0, nl).trim();
+    partialLine = partialLine.slice(nl + 1);
+    if (!line) continue;
     try {
-      const entry = JSON.parse(trimmed) as JsonlEntry;
+      const entry = JSON.parse(line) as JsonlEntry;
       if (entry.op === "set") {
         entries.set(entry.sid, entry.payload);
       } else if (entry.op === "delete") {
@@ -78,7 +122,7 @@ function persist(entry: JsonlEntry): void {
 }
 
 export function setSession(sid: string, payload: SessionPayload): void {
-  loadFromDiskIfNeeded();
+  syncFromDisk();
   entries.set(sid, payload);
   persist({ op: "set", sid, payload });
 }
@@ -96,7 +140,7 @@ export type SessionLookup =
  * directly; ergonomic `getSession` is a thin wrapper.
  */
 export function getSessionStatus(sid: string): SessionLookup {
-  loadFromDiskIfNeeded();
+  syncFromDisk();
   const entry = entries.get(sid);
   if (!entry) return { status: "missing" };
   if (entry.expires_at < Math.floor(Date.now() / 1000)) {
@@ -118,7 +162,7 @@ export function getSession(sid: string): SessionPayload | null {
  * the first delete from a duplicate.
  */
 export function deleteSession(sid: string): boolean {
-  loadFromDiskIfNeeded();
+  syncFromDisk();
   const existed = entries.delete(sid);
   if (existed) {
     persist({ op: "delete", sid });
@@ -128,5 +172,7 @@ export function deleteSession(sid: string): boolean {
 
 export function _resetForTests(): void {
   entries.clear();
-  storeLoadedFor = null;
+  cachedPath = null;
+  readOffset = 0;
+  partialLine = "";
 }

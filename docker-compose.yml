@@ -218,6 +218,7 @@ services:
       PORT: "3000"
       M2M_ENABLED: ${M2M_ENABLED:-true}
       AUTH_PROXY_KEYPAIR_PATH: /var/lib/auth-proxy/keypair.json
+      SESSION_STORE_PATH: /var/lib/auth-proxy/sessions.jsonl
     ports:
       # Fixed host port so AUTH_PROXY_URL in .env stays stable across `compose up`.
       # Override AUTH_PROXY_HOST_PORT in .env if 1042 collides.

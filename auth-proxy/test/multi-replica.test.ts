@@ -1,32 +1,16 @@
 /**
- * Test plan — multi-replica auth-proxy state sharing
+ * Multi-replica acceptance test for auth-proxy keypair + session sharing.
  *
- * | # | Scenario | Status |
- * |---|---|---|
- * | 1 | M2M token minted at replica 1 verifies at replica 2 | ✓ existing |
- * | 2 | M2M token minted at replica 2 verifies at replica 1 (symmetric) | ✓ existing |
- * | 3 | User-token minted at replica 1 verifies at replica 2 (kid `auth-proxy:user:1`, same shared keypair) | → Stage 1 |
- * | 4 | Session-store entry written on replica 1 is readable on replica 2 (shared `SESSION_STORE_PATH`) | → Stage 1 |
- * | 5 | After `/api/auth/logout` on replica 1, `/api/auth/refresh` on replica 2 with same sid returns 401 | → Stage 1 |
- *
- * **Notes for the agent:**
- * - Rows #3–#5 require `SESSION_STORE_PATH` mapped to a shared volume in the compose file (mirror of how `AUTH_PROXY_KEYPAIR_PATH` is shared in the existing 2-replica fixture).
- * - Row #5 is the load-bearing test for the OQ1 (b) revocation model: server-held sessions mean logout is *server-truth*, not FE-truth.
- * - This file is skipped without docker — keep that gate; do not weaken it for the new rows.
- *
- * ─────────────────────────────────────────────────────────────────────────
- *
- * Multi-replica acceptance test for auth-proxy keypair sharing.
- *
- * The contract this test pins down:
+ * The contracts this test pins down:
  *
  *   docker compose up -d --scale auth-proxy=2
  *
- * brings up two auth-proxy replicas that share signing key material —
- * a token minted by replica A verifies at replica B and vice-versa.
- * Without shared persistence, replica A and B generate independent
- * keypairs at boot and the signature verification at the wrong
- * replica returns 401.
+ * brings up two replicas that share both signing key material and the
+ * server-held session store — a token minted at replica A verifies at
+ * replica B, a session written by A is visible at B, and a logout at
+ * A revokes future refreshes at B. Without that shared state each
+ * replica would mint with an independent keypair (signatures rejected)
+ * and hold an independent session map (logouts not honored).
  *
  * The test orchestrates docker compose from outside the container —
  * Strategy C in the same family as
@@ -35,10 +19,12 @@
  * compose stacks (e.g. concurrent polecat worktrees) without
  * stepping on container names or volumes.
  *
- * Replicas are reached via `docker compose port` — auth-proxy now
- * publishes an ephemeral host port per replica (the fixed `3000:3000`
- * host mapping was dropped to support `--scale`). The slim runtime
- * image carries no http client, so we hit each replica from the host.
+ * Replicas are reached via `docker compose port`. The shared base
+ * compose file pins a fixed host port (so the user's local dev stack
+ * has a stable AUTH_PROXY_URL); a test-only override file in this
+ * directory drops the fixed mapping so compose can allocate an
+ * ephemeral host port per replica. The slim runtime image carries no
+ * http client, so we hit each replica from the host.
  *
  * Skipped automatically when:
  *   - `docker` CLI is not on PATH
@@ -46,10 +32,10 @@
  *     loaded in the local docker daemon
  *   - `SKIP_DOCKER_ACCEPTANCE=1` is set (CI escape hatch)
  *
- * The unit tests in `lib/secrets.test.ts` cover the provider
- * abstraction directly; this test is the production-fidelity gate
- * that the wiring from env → provider → keypair → multi-replica
- * really holds end-to-end.
+ * Unit tests in `lib/secrets.test.ts` and `lib/session-store.test.ts`
+ * cover the providers directly; this test is the production-fidelity
+ * gate that the wiring from env → provider → shared volume →
+ * multi-replica really holds end-to-end.
  */
 
 import { spawnSync } from "node:child_process";
@@ -64,6 +50,16 @@ const REPO_ROOT = resolve(HERE, "../..");
 const PROJECT = `auth-proxy-mr-${process.pid}`;
 const SERVICE = "auth-proxy";
 const IMAGE = "dashboard-chat/auth-proxy:bazel";
+
+// Test-only compose override: replaces the base file's fixed
+// `1042:3000` host port mapping with an unmapped publish so
+// `--scale auth-proxy=2` can allocate ephemeral host ports.
+const COMPOSE_FILES = [
+  "-f",
+  "docker-compose.yml",
+  "-f",
+  "auth-proxy/test/docker-compose.multi-replica.yml",
+];
 
 interface RunResult {
   status: number;
@@ -122,7 +118,7 @@ describe.skipIf(SKIP)(
     beforeAll(async () => {
       // Ensure a clean slate — a previous failed run could have left
       // a stack with the same project name behind.
-      run("docker", ["compose", "down", "-v", "--remove-orphans"]);
+      run("docker", ["compose", ...COMPOSE_FILES, "down", "-v", "--remove-orphans"]);
 
       // Scale auth-proxy to 2; --no-deps skips bringing up the
       // full stack (api, query-engine, etc.) since the keypair-sharing
@@ -130,6 +126,7 @@ describe.skipIf(SKIP)(
       // online and able to mint+verify each other's tokens.
       const up = run("docker", [
         "compose",
+        ...COMPOSE_FILES,
         "up",
         "-d",
         "--no-deps",
@@ -148,7 +145,7 @@ describe.skipIf(SKIP)(
     }, 120_000);
 
     afterAll(() => {
-      run("docker", ["compose", "down", "-v", "--remove-orphans"]);
+      run("docker", ["compose", ...COMPOSE_FILES, "down", "-v", "--remove-orphans"]);
     }, 60_000);
 
     it("token minted at replica 1 verifies at replica 2", async () => {
@@ -171,6 +168,37 @@ describe.skipIf(SKIP)(
       const status = await verify(replica1, token);
       expect(status).not.toBe(401);
     }, 60_000);
+
+    it("user token minted at replica 1 verifies at replica 2", async () => {
+      const token = await mintUserToken(replica1);
+      expect(token).toMatch(/^ey[A-Za-z0-9_.-]+$/);
+
+      const status = await verify(replica2, token);
+      expect(status).not.toBe(401);
+    }, 60_000);
+
+    it("session minted at replica 1 is refreshable at replica 2", async () => {
+      const token = await mintUserToken(replica1);
+      const result = await refreshUserToken(replica2, token);
+      expect(result.status).toBe(200);
+      expect(result.access_token).toMatch(/^ey[A-Za-z0-9_.-]+$/);
+    }, 60_000);
+
+    it("logout at replica 1 invalidates refresh at replica 2", async () => {
+      const token = await mintUserToken(replica1);
+
+      // Replica 2 sees the session before logout.
+      const before = await refreshUserToken(replica2, token);
+      expect(before.status).toBe(200);
+
+      const logoutStatus = await logoutUserToken(replica1, token);
+      expect(logoutStatus).toBe(204);
+
+      // After logout on replica 1, replica 2 must reject the same sid.
+      const after = await refreshUserToken(replica2, token);
+      expect(after.status).toBe(401);
+      expect(after.error).toBe("invalid_session");
+    }, 60_000);
   },
 );
 
@@ -183,6 +211,7 @@ describe.skipIf(SKIP)(
 function replicaUrl(index: 1 | 2): string {
   const r = run("docker", [
     "compose",
+    ...COMPOSE_FILES,
     "port",
     "--index",
     String(index),
@@ -204,6 +233,68 @@ function replicaUrl(index: 1 | 2): string {
     throw new Error(`unexpected port output: ${r.stdout.trim()}`);
   }
   return `http://127.0.0.1:${match[1]}`;
+}
+
+/**
+ * Run the dev login + callback flow and return the minted user token.
+ * In `AUTH_MODE=dev` the proxy short-circuits the WorkOS round-trip:
+ * `/api/auth/login` hands back a URL containing `?code=dev-auth-code`,
+ * and `/api/auth/callback` accepts that synthetic code with no state
+ * round-trip required.
+ */
+async function mintUserToken(baseUrl: string): Promise<string> {
+  const login = await fetch(`${baseUrl}/api/auth/login`);
+  if (!login.ok) {
+    throw new Error(`login at ${baseUrl} failed: ${login.status} ${await login.text()}`);
+  }
+  const { url } = (await login.json()) as { url?: string };
+  const code = new URL(url ?? "").searchParams.get("code");
+  if (!code) {
+    throw new Error(`login at ${baseUrl} returned no code: ${url}`);
+  }
+
+  const cb = await fetch(`${baseUrl}/api/auth/callback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, state: "" }),
+  });
+  if (!cb.ok) {
+    throw new Error(`callback at ${baseUrl} failed: ${cb.status} ${await cb.text()}`);
+  }
+  const { access_token } = (await cb.json()) as { access_token?: string };
+  if (!access_token) {
+    throw new Error(`callback at ${baseUrl} returned no access_token`);
+  }
+  return access_token;
+}
+
+interface RefreshResult {
+  status: number;
+  access_token?: string;
+  error?: string;
+}
+
+async function refreshUserToken(
+  baseUrl: string,
+  token: string,
+): Promise<RefreshResult> {
+  const res = await fetch(`${baseUrl}/api/auth/refresh`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    access_token?: string;
+    error?: string;
+  };
+  return { status: res.status, ...body };
+}
+
+async function logoutUserToken(baseUrl: string, token: string): Promise<number> {
+  const res = await fetch(`${baseUrl}/api/auth/logout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.status;
 }
 
 async function mintM2mToken(baseUrl: string): Promise<string> {
