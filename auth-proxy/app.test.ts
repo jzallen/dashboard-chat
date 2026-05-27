@@ -1,6 +1,33 @@
-// Unit tests for the auth-proxy KPI K3 event emission on the
-// /ui-state/* proxied surface. Per ADR-030 §SD4 the auth-proxy emits
-// three JSON events to stdout when it observes ui-state transitions:
+/**
+ * Tests for the auth-proxy Hono app's cross-cutting surfaces — KPI event
+ * emission on `/ui-state/*`, the test-mirror endpoint, the SLOW_MODE delay
+ * harness, and (after Stage 1 lands) `verifyToken` dispatch for the new
+ * user-token kid.
+ *
+ * | # | Group | Scenario | Status |
+ * |---|---|---|---|
+ * | 1 | KPI K3 | emits `silent_reauth_ok` when projection returns ready with `silent_reauth_ok` flag | ✓ existing |
+ * | 2 | KPI K3 | emits `silent_reauth_failed` when projection returns `error_recoverable` with `silent-reauth-failed` tag | ✓ existing |
+ * | 3 | KPI K3 | emits `auth_retry_clicked` when caller forwards a `retry_clicked` event | ✓ existing |
+ * | 4 | test-mirror | captures the most-recent `Authorization` header on `/ui-state/*` and returns it via `GET /test/last-seen-authorization` | ✓ existing |
+ * | 5 | test-mirror | returns 404 from `GET /test/last-seen-authorization` when `AUTH_MODE=production` | ✓ existing |
+ * | 6 | SLOW_MODE | delays `/ui-state/*` responses by `SLOW_MODE_DELAY_MS` when set | ✓ existing |
+ * | 7 | SLOW_MODE | does NOT delay when `SLOW_MODE_DELAY_MS` is unset | ✓ existing |
+ * | 8 | SLOW_MODE | ignores `SLOW_MODE_DELAY_MS` when `AUTH_MODE=production` | ✓ existing |
+ * | 9 | verifyToken | recognizes `kid=auth-proxy:user:1` and routes to the user-token verifier | → Stage 1 |
+ * | 10 | verifyToken | user-token Bearer forwards `X-User-Id` / `X-Org-Id` / `X-User-Email` identity headers to upstream (parity with M2M + PAT) | → Stage 1 |
+ * | 11 | verifyToken | three local kids coexist (M2M + PAT + user) — dispatch is exhaustive; unknown kids fall through to JWKS path during Stage 1 overlap | → Stage 1 |
+ * | 12 | verifyToken | tampered user-token (signature flipped) returns 401 at protected endpoint | → Stage 1 |
+ * | 13 | KPI cleanup | confirm silent-reauth KPI tests describe extant behavior post ADR-043 (the ui-state lifecycle modeling was retired — verify the projection paths they fire on still exist) | → Stage 1 audit (may delete) |
+ *
+ * **Notes for the agent:**
+ * - Rows #9–#12 are new; existing tests stay untouched. Append new describe blocks; do not interleave.
+ * - Row #13 is an audit, not necessarily a test: ADR-043 retired ui-state's `silent_reauth_*` modeling. If the projection paths those tests fire on are dead, the tests describe vestigial behavior and should be deleted, not migrated. Make a fact-check pass before adding new coverage to this file.
+ * - Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max per behavior. Variations of the same behavior are parametrized. New scenarios should respect the same budget — keep verifyToken to one happy-path + one failure per kid.
+ */
+
+// Per ADR-030 §SD4 the auth-proxy emits three JSON events to stdout when it
+// observes ui-state transitions:
 //
 //   - auth_recoverable_error_shown  — upstream returned state=error_recoverable
 //   - auth_retry_clicked            — caller forwarded a retry_clicked event
@@ -8,9 +35,6 @@
 //
 // Each event carries the request_id from the projection envelope and
 // the underlying_cause_tag where relevant.
-//
-// Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max.
-// Variations of the same behavior are parametrized.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

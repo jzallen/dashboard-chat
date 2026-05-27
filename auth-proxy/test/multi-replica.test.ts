@@ -1,4 +1,21 @@
 /**
+ * Test plan — multi-replica auth-proxy state sharing
+ *
+ * | # | Scenario | Status |
+ * |---|---|---|
+ * | 1 | M2M token minted at replica 1 verifies at replica 2 | ✓ existing |
+ * | 2 | M2M token minted at replica 2 verifies at replica 1 (symmetric) | ✓ existing |
+ * | 3 | User-token minted at replica 1 verifies at replica 2 (kid `auth-proxy:user:1`, same shared keypair) | → Stage 1 |
+ * | 4 | Session-store entry written on replica 1 is readable on replica 2 (shared `SESSION_STORE_PATH`) | → Stage 1 |
+ * | 5 | After `/api/auth/logout` on replica 1, `/api/auth/refresh` on replica 2 with same sid returns 401 | → Stage 1 |
+ *
+ * **Notes for the agent:**
+ * - Rows #3–#5 require `SESSION_STORE_PATH` mapped to a shared volume in the compose file (mirror of how `AUTH_PROXY_KEYPAIR_PATH` is shared in the existing 2-replica fixture).
+ * - Row #5 is the load-bearing test for the OQ1 (b) revocation model: server-held sessions mean logout is *server-truth*, not FE-truth.
+ * - This file is skipped without docker — keep that gate; do not weaken it for the new rows.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ *
  * Multi-replica acceptance test for auth-proxy keypair sharing.
  *
  * The contract this test pins down:

@@ -1,3 +1,25 @@
+/**
+ * Test plan — `/openapi.json` schema completeness
+ *
+ * | # | Scenario | Status |
+ * |---|---|---|
+ * | 1 | Serves a valid OpenAPI 3.x document | ✓ existing |
+ * | 2 | Documents `POST /api/auth/token` (M2M) with success + error responses | ✓ existing |
+ * | 3 | Documents PAT lifecycle endpoints (`/api/auth/pats[/{id}]`) | ✓ existing |
+ * | 4 | Registers reusable schemas + the `userBearer` security scheme | ✓ existing |
+ * | 5 | Excludes `/health` and the wildcard proxy from the spec | ✓ existing |
+ * | 6 | Documents `GET /api/auth/login` (workos: returns authorize URL; dev: returns FE-redirect URL) | → Stage 1 |
+ * | 7 | Documents `POST /api/auth/callback` (request `{code, state?}`, response `{access_token, expires_in}`) | → Stage 1 |
+ * | 8 | Documents `POST /api/auth/refresh` (request: Bearer; response `{access_token, expires_in}` — NOT a `refresh_token`) | → Stage 1 |
+ * | 9 | Documents `POST /api/auth/logout` (request: Bearer; response 204) | → Stage 1 |
+ * | 10 | Documents the `X-New-Access-Token` + `X-New-Token-Expires-In` response headers on `POST /api/orgs` | → Stage 2 |
+ *
+ * **Notes for the agent:**
+ * - Row #8: the OpenAPI schema asserts the OQ1 (b) invariant in machine-readable form — the response shape does NOT include a `refresh_token` field. If anyone in the future tries to add `refresh_token` to the response, this test fails.
+ * - Row #10: `X-New-Access-Token` is documented as an OPTIONAL response header on `POST /api/orgs` 201, with a note about R6 (header-logging redaction).
+ * - The spec is generated from Zod schemas in `lib/schemas.ts` via `@asteasolutions/zod-to-openapi`. Add the new schemas there; the spec test asserts the generated output.
+ */
+
 import { describe, expect, it, vi } from "vitest";
 
 // Mock jose so app.ts importing lib/auth doesn't try to fetch a JWKS at load time
