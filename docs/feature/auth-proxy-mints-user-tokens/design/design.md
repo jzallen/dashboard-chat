@@ -150,11 +150,12 @@ Three stages. Each stage is a separately mergeable MR. The order is non-negotiab
 **Scope:** `/api/auth/login`, `/api/auth/callback`, `/api/auth/refresh`, `/api/auth/logout` move to auth-proxy. Backend's `/api/auth/*` endpoints are **kept in place** for one MR cycle as a soft cutover (auth-proxy intercepts; backend's endpoints stop being called).
 
 **What gets added to auth-proxy:**
-- `auth-proxy/lib/user-token.ts` — `mintUserToken({ sub, orgId, email, name? })` returning an RS256 JWT with `kid=auth-proxy:user:1`. Wraps the shared `getKeypair()`.
-- `auth-proxy/lib/user-auth/dev.ts` — `DevUserAuthProvider`: stateless mint for `code=dev-auth-code`, refresh-token rotation pattern matching today's `backend/app/auth/dev_provider.py:67-75`.
-- `auth-proxy/lib/user-auth/workos.ts` — `WorkOsUserAuthProvider`: thin HTTP client to WorkOS `authenticate`/`refresh-token` (port of `backend/app/auth/workos_provider.py:89-120`), then re-mint as auth-proxy JWT.
-- `auth-proxy/app.ts` routes: `POST /api/auth/callback`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/login`. The `verifyToken` dispatch in `auth-proxy/lib/auth.ts:84-128` gains a third local-kid branch (`auth-proxy:user:1`).
-- Env additions: `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_REDIRECT_URI` (moved from backend's settings; backend stops needing them once stage 1 lands).
+- `auth-proxy/lib/user-token.ts` — `mintUserToken({ sub, orgId, email, name?, sid })` returning an RS256 JWT with `kid=auth-proxy:user:1`. Wraps the shared `getKeypair()`. The `sid` claim is the server-held session identifier (per OQ1 resolution → option (b)).
+- `auth-proxy/lib/session-store.ts` — JSONL-persisted session store keyed by `sid`, holding `{ workos_refresh_token, expires_at, user_claims }`. Mirrors the shape of `auth-proxy/lib/pat.ts`; uses a new env var `SESSION_STORE_PATH` (sibling of `PAT_STORE_PATH`). Multi-replica deploy uses the same persistence pattern as the keypair (shared disk or `AUTH_PROXY_SECRETS_PROVIDER`).
+- `auth-proxy/lib/user-auth/dev.ts` — `DevUserAuthProvider`: stateless mint for `code=dev-auth-code`, refresh-token rotation pattern matching today's `backend/app/auth/dev_provider.py:67-75`. In dev mode the session-store entry is trivial (no real WorkOS refresh_token to hold).
+- `auth-proxy/lib/user-auth/workos.ts` — `WorkOsUserAuthProvider`: thin HTTP client to WorkOS `authenticate`/`refresh-token` (port of `backend/app/auth/workos_provider.py:89-120`), then re-mint as auth-proxy JWT. The WorkOS `refresh_token` is stored in the session store keyed by `sid`; the FE never sees it.
+- `auth-proxy/app.ts` routes: `POST /api/auth/callback`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/login`. The `verifyToken` dispatch in `auth-proxy/lib/auth.ts:84-128` gains a third local-kid branch (`auth-proxy:user:1`). The `refresh` route reads `sid` from the inbound JWT, looks up the WorkOS refresh_token in the session store, exchanges, re-mints, returns the new auth-proxy JWT (NOT the WorkOS token). The `logout` route deletes the session-store entry for the `sid`.
+- Env additions: `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_REDIRECT_URI`, `SESSION_STORE_PATH` (moved from backend's settings + new for the session store; backend stops needing the WorkOS ones once stage 1 lands).
 
 **What gets deleted from backend:**
 - Nothing yet. Backend retains `app/auth/dev_provider.py`, `app/auth/workos_provider.py`, `app/routers/auth.py` as dead-code-but-still-importable. They are deleted in stage 3's cleanup commit.
@@ -166,7 +167,7 @@ Three stages. Each stage is a separately mergeable MR. The order is non-negotiab
 
 **MR shape:** one MR. Risk: medium (adds a new minting surface to a service that already mints, exercises new WorkOS HTTP code).
 
-**Blast radius:** auth-proxy gains ~400 lines; backend unchanged; FE unchanged (it still calls `/api/auth/callback`, but now lands on auth-proxy via the existing reverse-proxy routing rule that already proxies `/api/*`).
+**Blast radius:** auth-proxy gains ~550 lines (~400 for the user-token minting + auth providers, ~150 for the session store per OQ1 (b)); backend unchanged; FE unchanged (it still calls `/api/auth/callback`, but now lands on auth-proxy via the existing reverse-proxy routing rule that already proxies `/api/*`). Co-requisite: the `tests/acceptance/project-and-chat-session-management/` suite must migrate from `localhost:8000` to `localhost:1042` in the same MR (or paired MRs landing together) per OQ4 — Stage 1 invalidates the suite's direct-backend-port assumption.
 
 ### Stage 2 — Response-header reissue on org-create
 
@@ -235,7 +236,6 @@ Three stages. Each stage is a separately mergeable MR. The order is non-negotiab
 | **R7.** `withAuth.ts` consuming response headers from EVERY response (not just `/api/orgs`) means an attacker who can inject a response header into a downstream service could swap the user's token. | 2 | HIGH | The `X-New-Access-Token` header is set only by auth-proxy, on the response leg, AFTER auth-proxy has authenticated the upstream caller and minted the token itself. Backend cannot set this header — auth-proxy strips inbound identity headers (`auth-proxy/lib/auth.ts:67`); the symmetric strip on outbound response headers is added at stage 2 (`X-New-Access-Token` set by upstream → stripped by auth-proxy on response → only auth-proxy's own injection survives). Architectural enforcement: ADR-style invariant + an auth-proxy integration test asserting backend cannot smuggle the header. |
 | **R8.** Conway's Law: backend team owns auth-proxy too (both in `auth-proxy/` and `backend/`)? Confirm before stage 1. | All | LOW | Single team owns the repo; no team-boundary conflict. |
 | **R9.** Org-create is not the only operation that changes a user's effective org binding. Future: org-switch, org-invite-accept. | 2 | LOW (forward-looking) | Stage 2's hook is path-specific (`POST /api/orgs`). Future operations get their own path-specific hooks (e.g. `POST /api/orgs/:id/accept-invite`). The pattern generalizes without re-architecting. Open Question 2 captures this. |
-| **R10.** WorkOS refresh-token exposure in FE response. If Open Question 1 chooses round-trip refresh-token handling, the WorkOS `refresh_token` is sent to and stored by the FE, expanding the attack surface. FE `localStorage` compromise then bypasses WorkOS session revocation. | 1 | MEDIUM | Prefer server-held (OQ1 option b) in production; if round-trip is chosen, document as a token-storage risk for the FE hardening roadmap and pair the rollout with an FE security review before prod cutover. |
 
 ## 6. Non-goals
 
@@ -247,15 +247,47 @@ Three stages. Each stage is a separately mergeable MR. The order is non-negotiab
 - **Multi-replica auth-proxy already solved.** `auth-proxy/README.md:340-365`. No new work.
 - **PAT / M2M flows unchanged.** This design composes with them, doesn't restructure them.
 
-## 7. Open questions
+## 7. Open questions — status as of 2026-05-27
 
-1. **WorkOS refresh-token handling.** Two viable shapes for `POST /api/auth/refresh`:
-   - **(a) Round-trip:** auth-proxy returns the WorkOS refresh_token to the FE inside the auth-proxy JWT response body (alongside the auth-proxy access_token). FE stores both; on refresh, sends WorkOS refresh_token back; auth-proxy exchanges with WorkOS and re-mints. Mirrors today's backend behaviour at `backend/app/routers/auth.py:61-84`.
-   - **(b) Server-held:** auth-proxy stores the WorkOS refresh_token server-side keyed by a `sid` (session-id) claim in the auth-proxy JWT. FE never sees a WorkOS token. Cleaner, but adds a small persistence store to auth-proxy (could ride on the existing `PAT_STORE_PATH` JSONL pattern).
-   The implementation MR will pick. Today's behaviour is (a); (b) is a security upgrade that's natural to add but not load-bearing for this design.
+1. **WorkOS refresh-token handling — RESOLVED: option (b) server-held.**
 
-2. **Generalizing the response-header reissue to other scope-changing operations.** Today's only scope-changing operation post-onboarding is org-create. Future candidates: org-switch (`POST /api/users/me/active-org`), invite-accept, role-change. Does auth-proxy gain a *pattern* (a generic "operation outcome → token re-mint" hook) or a path-specific case list? The latter is simpler today; the former is cleaner once ≥3 such operations exist. Decide at the third occurrence.
+   Decision recorded: auth-proxy stores the WorkOS `refresh_token` server-side keyed by a `sid` (session-id) claim in the auth-proxy JWT. The FE never sees a WorkOS token. Implementation rides on the existing `PAT_STORE_PATH` JSONL pattern (`auth-proxy/lib/pat.ts`); add a sibling `SESSION_STORE_PATH` with the same shape.
 
-3. **Backend's `enrich_org_id` and `ensure_org_provisioned`.** `backend/app/auth/middleware.py:83` calls `enrich_org_id(user)`; `backend/app/routers/auth.py:45-46` calls `ensure_org_provisioned`. With auth-proxy minting and the JWT carrying `org_id` authoritatively, these helpers become dead. Confirm during stage 3b that nothing else (e.g. the `/api/orgs` router) depends on them.
+   Rationale: the alternative (round-trip — refresh_token in `localStorage`) preserves a known XSS anti-pattern. R10 (since removed from the risk register) captured the consequence: localStorage compromise → long-lived account takeover unbounded by access_token TTL. Server-held is the BFF (Backend-For-Frontend) OAuth2 pattern; the cost is small (~150 LOC extending the JSONL persistence pattern, one new `sid` claim, one new revoke path on logout).
 
-4. **Direct backend access for tooling.** ADR-016's load-bearing fact is "auth-proxy is the only allowed ingress in production." Today, dev compose lets some tooling skip auth-proxy via `TRUST_PROXY_HEADERS=true` + manually-set headers. Stage 3b removes that. Confirm no acceptance suite (`tests/acceptance/<feature>/`) relies on direct backend access with self-set identity headers; if any do, route them through auth-proxy first.
+   Stage 1 scope grows by ~150 LOC to accommodate. Stage 1's stated "~400 LOC" estimate (§4.1) becomes ~550 LOC.
+
+2. **Generalizing the response-header reissue to other scope-changing operations — DEFERRED.**
+
+   Decision: defer until the third such operation lands. Stage 2 implements a path-specific case for `POST /api/orgs`; future cases get their own path-specific hooks. The right abstraction is only legible once ≥3 cases exist (the dimensions of variation aren't predictable from one).
+
+   **Known future candidates (TODO — do not generalize prematurely, but record so future MRs cite this OQ):**
+   - **`POST /api/users/me/active-org` (org-switch).** Same shape as org-create: new `org_id` in body → re-mint with updated `claim.org_id`. Likely the second case. When it lands, add a path-specific hook mirroring org-create's.
+   - **Invite-accept** (path TBD; likely `POST /api/orgs/:id/accept-invite` or similar). Same claim-update shape. **Note: WorkOS may publish dedicated invite/membership tooling — confirm at implementation time, do not investigate now.** If WorkOS handles invites server-side (i.e. the membership transition happens in WorkOS not the app backend), the response-header pattern may be unnecessary for this case (auth-proxy can re-fetch claims from WorkOS during the next refresh instead).
+   - **Role-change** (path TBD). Different dimension of variation — claims to update are role-shaped, may include claim REMOVAL (revoke a role). Watch for this as the case that justifies abstraction.
+
+   At case #3 (whichever it turns out to be), revisit. Look at how much copying versus how much structure to extract. The dimensions of variation will be visible by then.
+
+3. **Backend's `enrich_org_id` and `ensure_org_provisioned` — CLOSED: callers confirmed.**
+
+   Verified via `grep`: the only non-test callers are the two sites the design already named — `backend/app/auth/middleware.py:83` (`enrich_org_id`) and `backend/app/routers/auth.py:45-46` (`enrich_org_id` + `ensure_org_provisioned`). Both definitions live in `backend/app/auth/__init__.py:27-110`. Test references are mocks in `backend/tests/auth/test_auth_routes.py:40-50` that disappear naturally when the helpers are removed.
+
+   Both helpers are dead-on-arrival after Stage 1 (auth-proxy authoritatively mints `org_id` into the JWT). Stage 3b deletes them along with the rest of `backend/app/auth/__init__.py`.
+
+4. **Direct backend access in acceptance suites — DISCOVERY COMPLETE: one suite affected.**
+
+   Surveyed all 11 acceptance suites under `tests/acceptance/`. Findings:
+
+   - **10 suites are compliant** — they either don't make HTTP calls to backend, or they correctly route through auth-proxy on `localhost:1042` (the host port mapped from auth-proxy's container port 3000 — see `docker-compose.yml:222-224`). The `user-flow-state-machines` and `dbt-test-validation-v2` suites are explicit good examples (use `AUTH_PROXY_URL`).
+   - **One suite is non-compliant — `tests/acceptance/project-and-chat-session-management/`**. It hits `localhost:8000` (backend's direct port) in 12 test files. The suite's `driver.py:285-310` documents that it mints a real backend-signed JWT via auth-proxy's PUBLIC_PATHS `/api/auth/callback` (legitimate today), then talks to backend directly with that JWT (the bypass).
+
+   Stage 1 effect on this suite: auth-proxy starts signing JWTs with auth-proxy's keypair (`kid=auth-proxy:user:1`). Backend's JWKS no longer recognises them, so the suite's direct-`:8000` calls return 401. Stage 1 cannot land in production until this suite is migrated.
+
+   Migration is mechanical:
+   - Search-replace `localhost:8000` → `localhost:1042` across the 12 files (auth-proxy proxies transparently to backend; request paths unchanged).
+   - The suite's JWT-mint helper at `driver.py:285-310` keeps working as-is (it already calls auth-proxy's PUBLIC_PATHS endpoint).
+   - Sanity-run the full suite post-migration.
+
+   Adding to Stage 1 scope as a co-requisite: **Stage 1 lands the auth-proxy minting changes AND the pcsm-suite migration in the same MR (or paired MRs landing together)**. Splitting them risks a window where the suite is broken on main.
+
+   Out-of-suite tooling: spot-check for hardcoded backend ports in operations/migration scripts before Stage 3b. Out of scope for this design — flagged as a Stage 3b pre-flight item.
