@@ -105,6 +105,27 @@ function workosOkResponse(overrides: Partial<{
   );
 }
 
+/**
+ * Unwrap a single recorded call on the fetch mock into a shape suitable for
+ * whole-object assertions: the JSON-stringified body becomes an object.
+ * Throws when the call count is not exactly 1 so the caller doesn't need
+ * a separate `toHaveBeenCalledTimes` assertion.
+ */
+function recordedFetchCall(
+  mockFetch: ReturnType<typeof vi.fn>,
+): { url: string; method: string | undefined; body: unknown } {
+  const calls = mockFetch.mock.calls;
+  if (calls.length !== 1) {
+    throw new Error(`expected exactly 1 fetch call, got ${calls.length}`);
+  }
+  const [url, init] = calls[0] as [string, RequestInit];
+  return {
+    url,
+    method: init.method,
+    body: typeof init.body === "string" ? JSON.parse(init.body) : init.body,
+  };
+}
+
 const NOW_SEC = 1_700_000_000;
 
 /**
@@ -145,16 +166,16 @@ describe("WorkOsUserAuthProvider", () => {
         state: "state-1",
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-      expect(url).toBe("https://workos.test/user_management/authenticate");
-      expect(init.method).toBe("POST");
-      expect(JSON.parse(init.body as string)).toEqual({
-        client_id: "test-client",
-        client_secret: "test-secret",
-        code: "wos-code-1",
-        grant_type: "authorization_code",
-        redirect_uri: "https://app.example/auth/callback",
+      expect(recordedFetchCall(mockFetch)).toEqual({
+        url: "https://workos.test/user_management/authenticate",
+        method: "POST",
+        body: {
+          client_id: "test-client",
+          client_secret: "test-secret",
+          code: "wos-code-1",
+          grant_type: "authorization_code",
+          redirect_uri: "https://app.example/auth/callback",
+        },
       });
 
       expect(decodeProtectedHeader(result.accessToken).kid).toBe(
@@ -250,14 +271,15 @@ describe("WorkOsUserAuthProvider", () => {
 
       await provider.refresh("sid-known");
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-      expect(url).toBe("https://workos.test/user_management/authenticate");
-      expect(JSON.parse(init.body as string)).toEqual({
-        client_id: "test-client",
-        client_secret: "test-secret",
-        grant_type: "refresh_token",
-        refresh_token: "wos-r-123",
+      expect(recordedFetchCall(mockFetch)).toEqual({
+        url: "https://workos.test/user_management/authenticate",
+        method: "POST",
+        body: {
+          client_id: "test-client",
+          client_secret: "test-secret",
+          grant_type: "refresh_token",
+          refresh_token: "wos-r-123",
+        },
       });
     });
 
@@ -429,12 +451,13 @@ describe("WorkOsUserAuthProvider", () => {
 
       await provider.logout("sid-revoke");
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-      expect(url).toMatch(/^https:\/\/workos\.test\/user_management\/.*revoke/);
-      expect(init.method).toBe("POST");
-      const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.refresh_token).toBe("wos-r-revoke-me");
+      expect(recordedFetchCall(mockFetch)).toEqual({
+        url: expect.stringMatching(
+          /^https:\/\/workos\.test\/user_management\/.*revoke/,
+        ),
+        method: "POST",
+        body: expect.objectContaining({ refresh_token: "wos-r-revoke-me" }),
+      });
       expect(sessionStore.get("sid-revoke")).toBeNull();
     });
   });
