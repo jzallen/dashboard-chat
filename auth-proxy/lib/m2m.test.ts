@@ -51,24 +51,15 @@ afterEach(() => {
 });
 
 describe("isM2mEnabled", () => {
-  it("returns false when M2M_ENABLED is unset", () => {
-    delete process.env.M2M_ENABLED;
-    expect(isM2mEnabled()).toBe(false);
-  });
-
-  it("returns false when M2M_ENABLED is false", () => {
-    process.env.M2M_ENABLED = "false";
-    expect(isM2mEnabled()).toBe(false);
-  });
-
-  it("returns true when M2M_ENABLED is true", () => {
-    process.env.M2M_ENABLED = "true";
-    expect(isM2mEnabled()).toBe(true);
-  });
-
-  it("is case-insensitive on the flag value", () => {
-    process.env.M2M_ENABLED = "TRUE";
-    expect(isM2mEnabled()).toBe(true);
+  it.each([
+    { label: "unset", env: undefined, expected: false },
+    { label: '"false"', env: "false", expected: false },
+    { label: '"true"', env: "true", expected: true },
+    { label: '"TRUE" (case-insensitive)', env: "TRUE", expected: true },
+  ])("returns $expected when M2M_ENABLED is $label", ({ env, expected }) => {
+    if (env === undefined) delete process.env.M2M_ENABLED;
+    else process.env.M2M_ENABLED = env;
+    expect(isM2mEnabled()).toBe(expected);
   });
 });
 
