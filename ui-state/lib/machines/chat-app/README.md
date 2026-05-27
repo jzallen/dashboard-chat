@@ -20,7 +20,7 @@ actor mediating parent-ignorant children" (see
 > or `orchestrator.projectionFor`; the append-only event log stays load-bearing on
 > the live path; ChatApp runs ALONGSIDE the orchestrator (still the live
 > coordinator). Phase 1's FAKE-children statechart tests
-> ([`machine.test.ts`](./machine.test.ts) + [`fakes.ts`](./fakes.ts)) and Phase 2's
+> ([`machine.test.ts`](./machine.test.ts), with the fakes defined inline) and Phase 2's
 > integration tests ([`integration.test.ts`](./integration.test.ts)) still pass
 > unchanged. Phase 4 swaps the composition root + deletes the orchestrator.
 
@@ -83,24 +83,33 @@ minimal placeholders (`setup/actors.ts`) and swapped via
   `session-chat` machines through the composition root `createChatApp(deps)`
   ([`index.ts`](./index.ts)).
 
-XState's `provide` is type-invariant in a child's context, so the swap site casts
-the provided machine to `ChatAppChildLogic` (a runtime no-op — the parent reads
-child readiness through the `onSnapshot` snapshot views in `setup/types.ts`, not
-the placeholder types).
+Each slot has its own actor-logic type — `ChatAppOnboardingLogic`,
+`ChatAppProjectContextLogic`, `ChatAppSessionChatLogic` — that the swap site
+casts the provided machine to. The casts are runtime no-ops (XState's `provide`
+is type-invariant in a child's context), and the parent reads child readiness
+through the `onSnapshot` snapshot views in `setup/types.ts`, not the placeholder
+types.
 
 ### Input / deps threading (Phase 2)
 
-The children's DI styles differ, and `createChatApp` honors both:
+The children's DI styles differ, and `createChatApp` honors both. Each child
+slot also pins its own **per-slot input contract**
+(`OnboardingChildInput` / `ProjectContextChildInput` / `SessionChatChildInput`
+in `setup/types.ts`), so the parent's three `invoke.input` mappers are
+type-checked against the right slot — there is no single permissive superset
+where one mapper could accidentally return another slot's fields.
 
 - **session-onboarding** is config/input-driven — no construction deps. Its
   WorkOS/backend URLs + `fetch` port + re-verify Bearer arrive per-instance on
   `ChatAppInput` (`config` / `deps` / `bearer_token` / `force_reissue_failures`),
   seeded write-once into `ChatAppContext` and projected into the child by the
-  **onboarding invoke `input:` mapper**.
+  **onboarding invoke `input:` mapper** (typed against `OnboardingChildInput`).
 - **project-context** + **session-chat** inject their resolver actors at
   construction (`ChatAppDeps.projectContext` / `.sessionChat`). Their invoke
-  `input:` mappers carry only the static `request_id` / `principal_id`; the
-  dynamic org/project arrive via the `auth_ready` / `project_ready` hand-offs.
+  `input:` mappers (typed against `ProjectContextChildInput` /
+  `SessionChatChildInput`) carry only the static `request_id` / `principal_id`;
+  the dynamic org/project arrive via the `auth_ready` / `project_ready`
+  hand-offs.
 
 ## Layout
 
@@ -118,9 +127,9 @@ chat-app/
 │   ├── derive-projection.test.ts        pure unit tests (hand-built snapshot views)
 │   └── derive-projection.contract.test.ts  R1 golden byte-identity vs buildProjection
 └── setup/
-    ├── types.ts      context / events / input / hand-offs / snapshot views / OnboardingResult
+    ├── types.ts      context / events / hand-offs / snapshot views / OnboardingResult / per-slot child inputs
     ├── guards.ts     onSnapshot predicates (childReachedReady, advanceToChat, …)
-    └── actors.ts     placeholder children (the DI seam) + ChatAppChildLogic
+    └── actors.ts     placeholder children (the DI seam) + per-slot logic aliases
 ```
 
 Phase-3 persistence companion: [`../../persistence/chatapp-snapshot-store.ts`](../../persistence/chatapp-snapshot-store.ts)
