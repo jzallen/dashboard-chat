@@ -24,6 +24,10 @@ import {
   setSession,
 } from "./lib/session-store.ts";
 import { mintUserToken, verifyUserToken } from "./lib/user-token.ts";
+import {
+  WorkOsUserAuthProvider,
+  type WorkOsConfig,
+} from "./lib/user-auth/workos.ts";
 
 const DEV_USER = {
   sub: "dev-user-001",
@@ -131,35 +135,13 @@ app.post("/api/auth/callback", async (c) => {
     return c.json({ error: "state_mismatch" }, 400);
   }
 
-  const workosRes = await fetch(
-    "https://api.workos.com/user_management/authenticate",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        client_id: process.env.WORKOS_CLIENT_ID || "",
-        client_secret: process.env.WORKOS_API_KEY || "",
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: process.env.WORKOS_REDIRECT_URI || "",
-      }),
-    },
-  );
-  if (!workosRes.ok) {
-    return c.json({ error: "unauthorized" }, 401);
+  try {
+    const { accessToken, expiresIn } = await createWorkOsProvider()
+      .handleCallback({ code, state });
+    return c.json({ access_token: accessToken, expires_in: expiresIn });
+  } catch (e) {
+    return mapProviderError(c, e);
   }
-  const workos = (await workosRes.json()) as {
-    refresh_token: string;
-    user: { id: string; email: string; first_name?: string };
-    organization_id?: string;
-  };
-  return mintFromCallback(c, {
-    sub: workos.user.id,
-    email: workos.user.email,
-    name: workos.user.first_name || "",
-    org_id: workos.organization_id || "",
-    workosRefreshToken: workos.refresh_token,
-  });
 });
 
 // Exchange a still-valid user token for a fresh one. The Bearer carries
@@ -193,30 +175,17 @@ app.post("/api/auth/refresh", async (c) => {
   }
   const session = lookup.payload;
 
-  // In workos mode, exchange the stored refresh_token for a new one
-  // BEFORE we mint the local token. WorkOS rotates the refresh credential
-  // on each call; if we don't store the new one the next /refresh fails.
-  let nextWorkosRefreshToken = session.workos_refresh_token;
+  // In workos mode, delegate the WorkOS round-trip and refresh-token
+  // rotation to the provider. Dev mode keeps minting locally without an
+  // upstream call — the session-store entry already carries everything
+  // we need for a fresh JWT.
   if ((process.env.AUTH_MODE || "dev") !== "dev") {
-    const workosRes = await fetch(
-      "https://api.workos.com/user_management/authenticate",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          client_id: process.env.WORKOS_CLIENT_ID || "",
-          client_secret: process.env.WORKOS_API_KEY || "",
-          grant_type: "refresh_token",
-          refresh_token: session.workos_refresh_token,
-        }),
-      },
-    );
-    if (!workosRes.ok) {
-      return c.json({ error: "unauthorized" }, 401);
-    }
-    const rotated = (await workosRes.json()) as { refresh_token?: string };
-    if (typeof rotated.refresh_token === "string") {
-      nextWorkosRefreshToken = rotated.refresh_token;
+    try {
+      const { accessToken, expiresIn } =
+        await createWorkOsProvider().refresh(sid);
+      return c.json({ access_token: accessToken, expires_in: expiresIn });
+    } catch (e) {
+      return mapProviderError(c, e);
     }
   }
 
@@ -229,7 +198,7 @@ app.post("/api/auth/refresh", async (c) => {
   });
   // Refresh the session's expires_at so the lifetime tracks the token's.
   setSession(sid, {
-    workos_refresh_token: nextWorkosRefreshToken,
+    workos_refresh_token: session.workos_refresh_token,
     expires_at: Math.floor(Date.now() / 1000) + expiresIn,
     user_claims: session.user_claims,
   });
@@ -254,6 +223,50 @@ app.post("/api/auth/logout", async (c) => {
   }
   return c.body(null, 204);
 });
+
+/**
+ * Construct a `WorkOsUserAuthProvider` from the current environment.
+ * Built per-request so each call observes the live env (matching the
+ * inlined-fetch behaviour this replaced); the session-store port is
+ * the shared module so the dev/workos branches see the same entries.
+ */
+function createWorkOsProvider(): WorkOsUserAuthProvider {
+  const config: WorkOsConfig = {
+    baseUrl: process.env.WORKOS_BASE || "https://api.workos.com",
+    clientId: process.env.WORKOS_CLIENT_ID || "",
+    clientSecret: process.env.WORKOS_API_KEY || "",
+    redirectUri: process.env.WORKOS_REDIRECT_URI || "",
+    sessionTtlSeconds: 3600,
+    revokeOnLogout: process.env.WORKOS_REVOKE_ON_LOGOUT === "true",
+  };
+  return new WorkOsUserAuthProvider({
+    sessionStore: {
+      set: setSession,
+      get: getSession,
+      getStatus: getSessionStatus,
+      delete: deleteSession,
+    },
+    config,
+  });
+}
+
+/**
+ * Translate a provider exception into the HTTP response the OAuth-style
+ * endpoints already returned for the inlined-fetch path.
+ */
+function mapProviderError(
+  c: { json: (body: unknown, status: number) => Response },
+  err: unknown,
+): Response {
+  const message = err instanceof Error ? err.message : "";
+  if (message === "unauthorized") {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  if (message === "invalid_session") {
+    return c.json({ error: "invalid_session" }, 401);
+  }
+  return c.json({ error: "service_error" }, 502);
+}
 
 /**
  * Mint a user token + persist a session entry for the resolved identity,
