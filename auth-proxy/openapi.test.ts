@@ -8,10 +8,6 @@
  * | 3 | Documents PAT lifecycle endpoints (`/api/auth/pats[/{id}]`) | ✓ existing |
  * | 4 | Registers reusable schemas + the `userBearer` security scheme | ✓ existing |
  * | 5 | Excludes `/health` and the wildcard proxy from the spec | ✓ existing |
- * | 6 | Documents `GET /api/auth/login` (workos: returns authorize URL; dev: returns FE-redirect URL) | → Stage 1 |
- * | 7 | Documents `POST /api/auth/callback` (request `{code, state?}`, response `{access_token, expires_in}`) | → Stage 1 |
- * | 8 | Documents `POST /api/auth/refresh` (request: Bearer; response `{access_token, expires_in}` — NOT a `refresh_token`) | → Stage 1 |
- * | 9 | Documents `POST /api/auth/logout` (request: Bearer; response 204) | → Stage 1 |
  * | 10 | Documents the `X-New-Access-Token` + `X-New-Token-Expires-In` response headers on `POST /api/orgs` | → Stage 2 |
  *
  * **Notes for the agent:**
@@ -47,6 +43,12 @@ interface OpenApiOperation {
   responses: Record<string, { content?: Record<string, unknown> }>;
   requestBody?: { content?: Record<string, unknown> };
   security?: Array<Record<string, string[]>>;
+}
+
+interface OpenApiObjectSchema {
+  type?: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
 }
 
 async function fetchSpec(): Promise<{ status: number; body: OpenApiSpec }> {
@@ -119,5 +121,77 @@ describe("/openapi.json", () => {
     // Spec only documents auth-proxy-owned endpoints; proxied paths
     // (e.g. /api/projects) are the FastAPI backend's contract.
     expect(body.paths["/api/projects"]).toBeUndefined();
+  });
+
+  it("documents GET /api/auth/login returning a redirect URL", async () => {
+    const { body } = await fetchSpec();
+    const op = body.paths["/api/auth/login"]?.get;
+    expect(op).toBeDefined();
+    expect(op?.responses["200"]).toBeDefined();
+    // Response is a JSON envelope carrying the URL the FE follows
+    // (workos: WorkOS authorize URL; dev: short-circuit FE callback URL).
+    const content = op?.responses["200"]?.content?.["application/json"] as
+      | { schema?: { $ref?: string } }
+      | undefined;
+    expect(content?.schema?.$ref).toContain("AuthLoginResponse");
+    expect(body.components?.schemas).toHaveProperty("AuthLoginResponse");
+  });
+
+  it("documents POST /api/auth/refresh, and the issued-token schema has NO refresh_token field", async () => {
+    const { body } = await fetchSpec();
+    const op = body.paths["/api/auth/refresh"]?.post;
+    expect(op).toBeDefined();
+    expect(op?.responses["200"]).toBeDefined();
+    expect(op?.responses["401"]).toBeDefined();
+    expect(op?.security?.[0]).toHaveProperty("userBearer");
+
+    const resJson = op?.responses["200"]?.content?.["application/json"] as
+      | { schema?: { $ref?: string } }
+      | undefined;
+    expect(resJson?.schema?.$ref).toContain("AuthTokenIssued");
+
+    // The schema the wire contract refers to MUST NOT expose a
+    // refresh_token field. This is the spec-level expression of the
+    // invariant that the WorkOS refresh token never leaves the
+    // auth-proxy — defence-in-depth alongside the HTTP-layer and
+    // provider-boundary tests.
+    const schemas = body.components?.schemas ?? {};
+    const issued = schemas["AuthTokenIssued"] as OpenApiObjectSchema | undefined;
+    expect(issued).toBeDefined();
+    expect(Object.keys(issued?.properties ?? {})).not.toContain("refresh_token");
+    expect(issued?.required ?? []).not.toContain("refresh_token");
+  });
+
+  it("documents POST /api/auth/logout as a 204-no-content Bearer-gated endpoint", async () => {
+    const { body } = await fetchSpec();
+    const op = body.paths["/api/auth/logout"]?.post;
+    expect(op).toBeDefined();
+    expect(op?.responses["204"]).toBeDefined();
+    // Idempotent by design: the FE just wants to know the server let go,
+    // so the spec advertises only the 204. No request body, Bearer-gated.
+    expect(op?.requestBody).toBeUndefined();
+    expect(op?.security?.[0]).toHaveProperty("userBearer");
+  });
+
+  it("documents POST /api/auth/callback with code+state in, token out", async () => {
+    const { body } = await fetchSpec();
+    const op = body.paths["/api/auth/callback"]?.post;
+    expect(op).toBeDefined();
+    expect(op?.responses["200"]).toBeDefined();
+    expect(op?.responses["400"]).toBeDefined();
+
+    const reqJson = op?.requestBody?.content?.["application/json"] as
+      | { schema?: { $ref?: string } }
+      | undefined;
+    expect(reqJson?.schema?.$ref).toContain("AuthCallbackRequest");
+
+    const resJson = op?.responses["200"]?.content?.["application/json"] as
+      | { schema?: { $ref?: string } }
+      | undefined;
+    expect(resJson?.schema?.$ref).toContain("AuthTokenIssued");
+
+    const schemas = body.components?.schemas ?? {};
+    expect(schemas).toHaveProperty("AuthCallbackRequest");
+    expect(schemas).toHaveProperty("AuthTokenIssued");
   });
 });

@@ -101,6 +101,53 @@ export const PatListResponseSchema = z
   })
   .openapi("PatListResponse");
 
+// ── /api/auth/login | /callback | /refresh | /logout (user-auth flow) ─
+
+export const AuthLoginResponseSchema = z
+  .object({
+    url: z.string().openapi({
+      description:
+        "Absolute URL the frontend redirects the user to in order to begin login. In `workos` mode this is the WorkOS authorize URL carrying a CSRF state; in `dev` mode it is the FE callback URL pre-populated with the synthetic `dev-auth-code` so the round-trip short-circuits.",
+    }),
+  })
+  .openapi("AuthLoginResponse");
+
+export const AuthCallbackRequestSchema = z
+  .object({
+    code: z.string().min(1).openapi({
+      description:
+        "Authorization code returned by the IdP to the frontend callback. In `dev` mode the literal `dev-auth-code` is accepted.",
+    }),
+    state: z.string().optional().openapi({
+      description:
+        "CSRF state echoed back from `GET /api/auth/login`. Required in `workos` mode (rejected with 400 if absent or unknown); ignored in `dev` mode.",
+    }),
+  })
+  .openapi("AuthCallbackRequest");
+
+/**
+ * Shape of a freshly-issued end-user token. Returned by both
+ * `/api/auth/callback` (initial issuance from an auth-code exchange) and
+ * `/api/auth/refresh` (silent re-issuance against the server-held session).
+ *
+ * The body deliberately does NOT carry a `refresh_token`: the WorkOS
+ * refresh token never leaves the auth-proxy. The `sid` claim embedded in
+ * the access_token JWT is the only handle the FE has on its session.
+ */
+export const AuthTokenIssuedSchema = z
+  .object({
+    access_token: z.string().openapi({
+      description:
+        "Signed end-user JWT. Carries the `sid` claim that the server uses to look up the WorkOS refresh token on `/api/auth/refresh`.",
+    }),
+    expires_in: z.number().int().positive().openapi({
+      description:
+        "Lifetime in seconds before the access token expires.",
+      example: 3600,
+    }),
+  })
+  .openapi("AuthTokenIssued");
+
 // ── Error envelope (shared across endpoints) ─────────────────────────
 
 export const ErrorResponseSchema = z
