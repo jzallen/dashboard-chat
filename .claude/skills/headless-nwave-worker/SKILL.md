@@ -3,11 +3,13 @@ name: headless-nwave-worker
 description: Use when the user wants to dispatch ANY long-running nwave-ai wave (nw-research, nw-discuss, nw-design, nw-distill, nw-deliver, nw-review, nw-bugfix, nw-spike, nw-refactor, nw-document, nw-mikado, nw-hotspot, etc.) as a detached headless Claude process inside a gastown crew workspace, optionally submitting code work to the headless merge queue. Triggers — "headless <wave>", "dispatch <wave>", "spin up a <wave> worker", "crew <wave> worker", "background nw-<wave>", "send /nw-<wave> to a headless session", "run <wave> in a crew", any phrasing combining a wave name with "headless" or "crew worker" or "MQ submit", and the historical alias "headless deliver worker".
 ---
 
-# Headless nWave Worker (gastown crew + optional MQ submission)
+# Headless nWave Worker (git worktree + MQ submission)
 
 ## Overview
 
-Recipe for dispatching any nwave-ai wave (`nw-*` skill) as a **detached headless Claude process** running inside a **gastown crew workspace** on its own branch. The worker submits via the **headless merge queue** (`gt mq submit`) regardless of wave type — the refinery's content-aware `--auto` gate decides whether to run backend tests (code touch) or skip the gate (docs-only diff). This is the project's trunk-based workflow: short-lived branches, refinery-arbitrated merges, no upstream GitHub PRs as a primary mechanism.
+Recipe for dispatching any nwave-ai wave (`nw-*` skill) as a **detached headless Claude process** running inside a **git worktree of the user's local repository** on its own branch. The worker submits via the **headless merge queue** (`gt mq submit`) regardless of wave type — the refinery's content-aware `--auto` gate decides whether to run backend tests (code touch) or skip the gate (docs-only diff). This is the project's trunk-based workflow: short-lived branches, refinery-arbitrated merges, no upstream GitHub PRs as a primary mechanism.
+
+> **Worktrees, not `gt crew add`, in headless mode.** Earlier revisions of this skill used `gt crew add` to create the worker's workspace. That command clones from the rig's `git_url` (the GitHub URL), which is **stale relative to local main** in any setup that uses the headless merge queue (refinery merges land local-only — see `gastown/references/headless-merge-queue.md`). A `gt crew add` workspace lacks every commit that hasn't been pushed to GitHub, which on this rig is most of them. **Use `git worktree add` from `local_repo` instead** — the worktree shares the user's local history at the moment of creation, and re-pointing its `origin` at `local_repo` makes `git push -u origin <branch>` land where the refinery's clone can see it. See Step 2.
 
 Use this when:
 
@@ -76,15 +78,15 @@ Concretely, when operating workers via this skill:
 |---|---|
 | "convoy" / "the convoy landed" | "dispatch" / "today's worker set" / "the workers landed" |
 | "I nudged the polecat" | "I sent a resume directive" / "the overseer message in `claude -p --resume`" |
-| "slinging work" | "launching a crew session" / "starting the tmux session" |
+| "slinging work" | "launching a worker session" / "starting the tmux session" |
 | "the engine" / "engine room" | "the refinery + Dolt" |
 | "Mayor coordinated …" | (skip — there is no Mayor in this mode) |
 | "Witness caught the stuck worker …" | "I noticed the worker stalled (you are the watchdog in headless mode)" |
-| "the polecat finished" | "the crew session emitted its final summary and `claude -p` exited" |
+| "the polecat finished" | "the worker session emitted its final summary and `claude -p` exited" |
 
-What IS real and addressable in headless mode: the Refinery, Dolt, the MQ queue, MR beads (`<prefix>-wisp-*`), rig identity beads (`<prefix>-rig-*`), agent beads created by `gt crew add`. Everything else gastown-named in this mode is non-operational and should not appear in narration.
+What IS real and addressable in headless mode: the Refinery, Dolt, the MQ queue, MR beads (`<prefix>-wisp-*`), rig identity beads (`<prefix>-rig-*`). Everything else gastown-named in this mode is non-operational and should not appear in narration.
 
-Crew workspaces from `gt crew add` are real (full git clones under `~/gt/<rig>/crew/<name>/`), but they are NOT the daemon-supervised crew of full gastown — they are workspaces you populate with a `claude -p` session via tmux. Refer to them as "crew sessions" or "crew workers", not as "polecats" or as part of a "convoy".
+Worker workspaces created by this skill are **git worktrees** of `local_repo` (under `~/gt/<rig>/worktrees/<name>/`), populated with a `claude -p` session via tmux. They are NOT the daemon-supervised crew of full gastown and NOT the legacy `gt crew add` clones the earlier revision of this skill used (those clone from GitHub and miss local-only commits — see the Overview callout). Refer to them as "worker workspaces" or "worker sessions", not as "polecats" or as part of a "convoy".
 
 See also `gastown/SKILL.md` §"Headless Mode — Which Characters Are Actually Running" for the parallel callout on the gastown side.
 
@@ -128,7 +130,7 @@ This means workers never need to choose how to land work — they always submit 
    - For MQ-bound waves: `gt refinery status` → running for the rig
    - For docs-only waves: refinery is optional but harmless.
 2. **Rig registered in `~/gt/rigs.json`** with `local_repo` pointing at the user's checkout.
-3. **Project `.claude/` accessible inside the crew clone** — gt's `crew add` clones the repo; project skills/agents live in `.claude/` and are automatically present.
+3. **Project `.claude/` accessible inside the worker workspace** — a `git worktree` shares the parent repo's working tree at the moment of creation, so `.claude/` (skills, agents, settings) is automatically present.
 4. **Saved memory consulted** — especially feedback memories that constrain this wave (e.g. `feedback_sequential_deliver_dispatch.md`).
 
 ### Wave-specific (verify before dispatch)
@@ -158,30 +160,51 @@ gt refinery status
 gt refinery queue
 ```
 
-### Step 2 — Create crew workspace
+### Step 2 — Create a worktree from `local_repo`
+
+Resolve the rig's local checkout and add a worktree on a fresh branch off `main`:
 
 ```bash
-gt crew add <worker-name> --branch       # creates ~/gt/<rig>/crew/<worker-name>/
-                                          # initial branch: crew/<worker-name>
-gt crew list
+LOCAL_REPO=$(jq -r ".rigs.\"<rig>\".local_repo" ~/gt/rigs.json)   # e.g. /workspaces/dashboard-chat
+WORK=~/gt/<rig>/worktrees/<worker-name>                            # one-per-worker; mirrors the old crew layout
+mkdir -p ~/gt/<rig>/worktrees
+
+cd "$LOCAL_REPO"
+git worktree add "$WORK" -b crew/<worker-name> main                # creates branch crew/<worker-name> from current local main
+git worktree list                                                  # confirm the new entry
+
+# Repoint the worktree's origin at the local repo so push lands where the refinery
+# can see it. (Worktrees inherit the parent repo's remote config, which on this
+# rig is the upstream GitHub URL — pushing there would silently fail to feed the
+# merge queue.)
+cd "$WORK"
+git remote set-url origin "$LOCAL_REPO"
+git push --dry-run -u origin crew/<worker-name>                    # sanity: "Would set upstream of … to origin"
 ```
 
-For non-DELIVER waves, rename the branch to match the strategy in the wave table:
+For non-DELIVER waves, name the branch to match the strategy in the wave table by passing `-b <branch-strategy>/<slug>` to `git worktree add` instead of `crew/<worker-name>` (or rename after the fact with `git branch -m`).
+
+**Naming:** pick a memorable distinct name. Personas from the feature's JTBD make good DELIVER worker names; for research/design/review, role-based names (e.g. `archivist`, `surveyor`, `umpire`) often read clearer. The worktree directory under `~/gt/<rig>/worktrees/` mirrors the worker name.
+
+**Why not `gt crew add`?** In headless merge-queue mode (`gastown/references/headless-merge-queue.md`), the rig's `git_url` (GitHub) is **stale** relative to `local_repo` — refinery merges land local-only and are never pushed upstream. `gt crew add` clones from `git_url`, which means the worker workspace is missing every commit since the last GitHub push (often dozens). A `git worktree add` from `local_repo` is always at the user's current local main.
+
+**Verify the worktree shows the work you expect:**
 
 ```bash
-cd ~/gt/<rig>/crew/<worker-name>
-git branch -m crew/<worker-name> <branch-strategy>/<slug>
+cd "$WORK"
+git log --oneline -5            # should match `git log --oneline -5` in $LOCAL_REPO
+ls <key-path-the-briefing-references>   # confirm directories the briefing mentions actually exist
 ```
 
-**Naming:** pick a memorable distinct name. Personas from the feature's JTBD make good DELIVER crew names; for research/design/review, role-based names (e.g. `archivist`, `surveyor`, `umpire`) often read clearer.
+If the briefing references a path that doesn't exist in the worktree, do NOT dispatch — fix the workspace first (likely `local_repo` doesn't have the work yet, or the rig's `local_repo` in `~/gt/rigs.json` points at the wrong checkout).
 
 ### Step 3 — Compose the prompt
 
 ```bash
-mkdir -p ~/gt/<rig>/crew/<worker-name>/.logs
+mkdir -p ~/gt/<rig>/worktrees/<worker-name>/.logs
 ```
 
-Write to `~/gt/<rig>/crew/<worker-name>/.logs/nw-<wave>-prompt.txt`. Use the base template below; overlay the wave-specific block.
+Write to `~/gt/<rig>/worktrees/<worker-name>/.logs/nw-<wave>-prompt.txt`. Use the base template below; overlay the wave-specific block.
 
 **Base template (every wave).** The header line uses a plain imperative — *not* `/<wave>` — so the prompt survives even if the target skill is `user-invocable: false` (see Mental Model). The "Begin by invoking …" footer is the load-bearing instruction either way.
 
@@ -191,9 +214,11 @@ Write to `~/gt/<rig>/crew/<worker-name>/.logs/nw-<wave>-prompt.txt`. Use the bas
 Context:
 
 - Branch: <branch-name> (push to origin/<branch-name> when committing).
-- This workspace is the gastown crew workspace `<worker-name>` at
-  ~/gt/<rig>/crew/<worker-name>/. Project conventions live in CLAUDE.md at
-  the repo root — follow Conventional Commits (no Claude attribution lines).
+- This workspace is a **git worktree** of the user's local checkout at
+  ~/gt/<rig>/worktrees/<worker-name>/. Its `origin` points at `local_repo`
+  (NOT GitHub) — push there so the refinery's clone can see the branch.
+  Project conventions live in CLAUDE.md at the repo root — follow
+  Conventional Commits (no Claude attribution lines).
 
 - Saved feedback you MUST honor:
   * <copy applicable items from ~/.claude/projects/.../memory/MEMORY.md>
@@ -348,7 +373,7 @@ Follow the same pattern: state inputs, outputs, exit criteria. All waves hand of
 This project already runs a long-lived gastown-managed tmux server at `-L gt-0c0ae3` (keeps refinery/deacon/dogs alive). Hitch the worker onto it:
 
 ```bash
-cd /home/node/gt/<rig>/crew/<worker-name>
+cd /home/node/gt/<rig>/worktrees/<worker-name>
 WAVE=<wave-name>      # e.g. design, distill, deliver, review, research
 SESSION=nw-${WAVE}-<worker-name>     # tmux session name; must be unique
 
@@ -404,7 +429,7 @@ tmux -L gt-0c0ae3 list-sessions | grep "$SESSION"
 
 **Pitfalls:**
 
-- The runner script's `cd $(pwd)` is evaluated WHEN THE HERE-DOC IS WRITTEN. If you move the crew workspace or generate the script then `cd` elsewhere before launching, it'll break. Re-generate the script after any move.
+- The runner script's `cd $(pwd)` is evaluated WHEN THE HERE-DOC IS WRITTEN. If you move the worktree or generate the script then `cd` elsewhere before launching, it'll break. Re-generate the script after any move.
 - `pgrep -f "^claude -p"` (anchored) avoids matching your *own* bash command line, which is the trap the `setsid`-era recipe fell into.
 - One tmux session per worker. If `$SESSION` collides with an existing session, `tmux new-session -d` errors out — pick a fresh name or `tmux kill-session -t "$SESSION"` first.
 
@@ -425,7 +450,7 @@ You are the watchdog — no Witness escalates stuck workers in headless mode. Po
 
 ```bash
 WAVE=<wave-name>
-WORK=~/gt/<rig>/crew/<worker-name>
+WORK=~/gt/<rig>/worktrees/<worker-name>
 PID=$(cat $WORK/.logs/nw-${WAVE}.pid)
 LOG=$WORK/.logs/nw-${WAVE}.log
 
@@ -499,9 +524,10 @@ The first failure-simulation-consolidation DELIVER worker (topaz, MR-1) hit two 
 ### Submit
 
 ```bash
-cd ~/gt/<rig>/crew/<worker-name>
+cd ~/gt/<rig>/worktrees/<worker-name>
 git status                           # confirm clean
 git log --oneline -5                 # spot-check
+git remote -v                        # MUST show origin = local_repo, NOT GitHub
 git push -u origin <branch>          # so refinery can find it
 gt mq submit                         # auto-detects branch + rig from cwd
 gt refinery queue                    # confirm MR enqueued
@@ -523,23 +549,26 @@ gt mq status <mr-id>
 
 ## Cleanup After Merge
 
-Crew teardown is **three steps**, not one. The git clone is the obvious bit; the Docker artifacts the crew session created during `docker compose up` are silent disk eaters that nothing else collects.
+Teardown is **three steps**, not one. The worktree is the obvious bit; the Docker artifacts the worker session created during `docker compose up` are silent disk eaters that nothing else collects.
 
-### 1. Remove the crew workspace
+### 1. Remove the worktree
 
 ```bash
-gt crew remove <worker-name> --force
+git worktree remove ~/gt/<rig>/worktrees/<worker-name> --force      # or omit --force if branch is clean
+git branch -D crew/<worker-name>                                    # optional: delete the merged branch locally
 ```
 
-Full git clones in `~/gt/<rig>/crew/` accumulate fast. The merged branch survives in `origin/main`'s history; the local crew clone is disposable.
+Run these from inside `local_repo` (e.g. `/workspaces/dashboard-chat`). The merged branch survives in main's history; the worktree directory is disposable. If the worktree was abandoned (uncommitted changes), `git worktree remove --force` is required.
 
-### 2. Remove crew-tagged Docker images
+**Legacy crew workspaces** (created via `gt crew add` before this skill switched to worktrees): tear down with `gt crew remove <worker-name> --force` instead.
 
-When a crew runs `docker compose up` without `COMPOSE_PROJECT_NAME` pinned, compose derives the project name from the crew workspace directory (e.g. `pyrite`, `mr5_dataset_ctx`, `rc1_deeplink`) and tags every locally-built image with that prefix — `pyrite-ui-state:latest`, `mr5_dataset_ctx-ui-state:latest`, etc. `gt crew remove` does NOT clean these up; they sit in the local Docker daemon until something prunes them. A week of headless work can pile up 10–20GB this way.
+### 2. Remove worker-tagged Docker images
 
-**Note: we deliberately do NOT pin `COMPOSE_PROJECT_NAME=dashboard-chat` in crews.** Doing so makes crew `docker compose` commands operate on the *shared* dashboard-chat stack — including `docker rm` of the user's running services. This was the failure mode that killed RC-1 attempt 1 (see saved memory `feedback_headless_crew_compose_project_pin.md`). Teardown-time `docker rmi` is the safer cleanup point.
+When a worker runs `docker compose up` without `COMPOSE_PROJECT_NAME` pinned, compose derives the project name from the workspace directory (e.g. `pyrite`, `mr5_dataset_ctx`, `rc1_deeplink`) and tags every locally-built image with that prefix — `pyrite-ui-state:latest`, `mr5_dataset_ctx-ui-state:latest`, etc. Removing the worktree does NOT clean these up; they sit in the local Docker daemon until something prunes them. A week of headless work can pile up 10–20GB this way.
 
-After `gt crew remove`, run:
+**Note: we deliberately do NOT pin `COMPOSE_PROJECT_NAME=dashboard-chat` in workers.** Doing so makes worker `docker compose` commands operate on the *shared* dashboard-chat stack — including `docker rm` of the user's running services. This was the failure mode that killed RC-1 attempt 1 (see saved memory `feedback_headless_crew_compose_project_pin.md`). Teardown-time `docker rmi` is the safer cleanup point.
+
+After removing the worktree, run:
 
 ```bash
 # Remove every *-ui-state image that isn't the canonical dashboard-chat-ui-state.
@@ -551,7 +580,7 @@ docker rmi $(docker images --filter "reference=*-ui-state" --format '{{.Reposito
 docker image prune -f
 ```
 
-For a periodic sweep across all crew-tagged images at once:
+For a periodic sweep across all worker-tagged images at once:
 
 ```bash
 # Untag every image whose repo prefix isn't the canonical dashboard-chat* or a base image.
@@ -564,7 +593,7 @@ docker image prune -f
 
 ### 3. Optional: prune the build cache
 
-BuildKit's layer cache is **per-daemon, not per-project**, so successful rebuilds across all crews share it — but failed/abandoned builds leak orphan layers. After a long stretch of headless work, the cache can reach tens of GB without ever being load-bearing.
+BuildKit's layer cache is **per-daemon, not per-project**, so successful rebuilds across all workers share it — but failed/abandoned builds leak orphan layers. After a long stretch of headless work, the cache can reach tens of GB without ever being load-bearing.
 
 ```bash
 docker system df                # see what's reclaimable before deciding
@@ -575,7 +604,7 @@ Skip this when you're mid-iteration on the same Bazel/Docker targets — rebuild
 
 ### 4. Stopped containers (any time)
 
-`docker compose down` on the crew clone leaves stopped containers behind. They cost very little (KB of writable layer) but pile up:
+`docker compose down` on a worker workspace leaves stopped containers behind. They cost very little (KB of writable layer) but pile up:
 
 ```bash
 docker container prune -f
@@ -596,8 +625,9 @@ Common causes:
 
 - **Leading `/<wave>` rejected at the CLI layer** (turn-0 exit): symptom is a `result` event right after init with `duration_ms` under ~100, `num_turns: 0`, `result: ""`, and `total_cost_usd: 0`. No API call was billed. The prompt's first line referenced a slash command that doesn't resolve in this env — usually a `user-invocable: false` skill (e.g. `nw-finalize`) or a skill missing from the installed nwave-ai release. Fix: rewrite the prompt with a plain-imperative header and point at the skill's SKILL.md by path in the body. See Mental Model §"Two common ways this bites you" for the pre-flight grep.
 - **Harness sweep killed it** (most common when launched from inside Claude Code without tmux): symptom is `stop_reason: None` on the final assistant block, mid-tool-call. The process is gone from `ps`. Diagnose by checking the final assistant message — if it was about to call a tool when it died, you got swept. Re-launch via tmux (see Step 4) and resume the session (see below).
-- **Missing project `.claude/` in crew clone**: `gt crew add` clones the repo (full clone, not worktree), which should bring `.claude/` along. Verify with `ls .claude/skills/`. If missing, the crew was created against the wrong remote — check `git remote -v` in the crew dir. The bare repo at `~/gt/<rig>/.repo.git/` may also be stale relative to `origin/main` — fix by pulling into `refinery/rig/` so the bare repo's `main` advances.
-- **JWKS / env mismatch**: crew clones may need `.env` symlinked or copied from the user's primary checkout if the wave needs env-dependent tooling. Per saved memory `feedback_env_profiles_outside_repo.md`, env files live at `~/.dashboard-chat/envs/`; symlink the right profile into the crew clone if needed.
+- **Worktree is missing the work the briefing references** (e.g. directories that exist in `local_repo` are absent in the worktree): the worktree was added off a stale `main`, or the `local_repo` in `~/gt/rigs.json` points at the wrong checkout. Re-verify with `git log --oneline -5` in both the worktree and `local_repo` — they should match. If they don't, `git fetch && git reset --hard <local-repo>/main` inside the worktree, then re-check.
+- **Worker created a `gt crew add` workspace by mistake (legacy recipe)**: symptom is `git remote -v` in the workspace showing the GitHub URL instead of `local_repo`, and `git log --oneline -5` lagging local main by many commits. Tear it down (`gt crew remove <worker> --force`) and switch to a worktree (Step 2).
+- **JWKS / env mismatch**: the worktree shares the parent repo's tree at the moment of creation; environment files outside the repo do NOT come along. Per saved memory `feedback_env_profiles_outside_repo.md`, env files live at `~/.dashboard-chat/envs/`; symlink the right profile into the worktree if the wave needs it.
 - **Out of tokens / rate limit**: log shows 429s. Pause and resume later. Note: `rate_limit_event` entries with `status: "allowed"` are advisory metadata, not the cause of death.
 - **Skill not found**: confirm `nw-<wave>` appears in the global skills index. Run `claude` interactively and check for the skill if uncertain.
 
@@ -606,7 +636,7 @@ Common causes:
 Claude Code persists every headless session's transcript to disk by default. If a worker dies — for any reason — you can resume it exactly where it left off, keeping all 30/50/100 turns of orientation and tool results. The model picks up with the full context, not from scratch.
 
 ```bash
-cd ~/gt/<rig>/crew/<worker-name>
+cd ~/gt/<rig>/worktrees/<worker-name>
 WAVE=<wave-name>
 SID=$(cat .logs/nw-${WAVE}.session_id)
 SESSION=nw-${WAVE}-<worker-name>-r1     # bump the suffix on each resume so tmux session names stay unique
@@ -668,7 +698,7 @@ Check the rig's test command:
 cat ~/gt/<rig>/settings/config.json | jq '.merge_queue.test_command'
 ```
 
-Run that locally in the crew workspace to reproduce. Fix, commit, re-`gt mq submit`. Do NOT bypass the gate (`--no-verify`, `--skip-deps`) without explicit user instruction.
+Run that locally in the worker's worktree to reproduce. Fix, commit, re-`gt mq submit`. Do NOT bypass the gate (`--no-verify`, `--skip-deps`) without explicit user instruction.
 
 ## Cost & Token Considerations
 
@@ -692,11 +722,16 @@ Surface the cost expectation to the user before launching expensive waves.
 cd ~/gt/<rig>
 gt dolt start && gt refinery start <rig>
 
-# 2. Crew workspace
-gt crew add <worker> --branch
-cd ~/gt/<rig>/crew/<worker>
-# Rename branch to wave-appropriate strategy if not deliver:
-# git branch -m crew/<worker> <branch-strategy>/<slug>
+# 2. Worktree from local_repo (NOT `gt crew add` — that clones stale GitHub)
+LOCAL_REPO=$(jq -r ".rigs.\"<rig>\".local_repo" ~/gt/rigs.json)
+WORK=~/gt/<rig>/worktrees/<worker>
+mkdir -p ~/gt/<rig>/worktrees
+cd "$LOCAL_REPO"
+git worktree add "$WORK" -b crew/<worker> main
+cd "$WORK"
+git remote set-url origin "$LOCAL_REPO"   # so push lands where refinery can see it
+git log --oneline -3                       # sanity: matches local main
+# Use a non-`crew/` branch prefix for non-DELIVER waves if your wave table says so
 
 # 3. Compose prompt
 mkdir -p .logs
@@ -739,10 +774,11 @@ gt mq submit
 
 # 8. After landing — three-step teardown
 tmux -L gt-0c0ae3 kill-session -t "$SESSION" 2>/dev/null
-gt crew remove <worker> --force
+cd "$LOCAL_REPO" && git worktree remove "$WORK" --force
+git branch -D crew/<worker>   # optional: clean up the merged branch locally
 
-# Crew-tagged docker images do NOT get cleaned by `gt crew remove` —
-# COMPOSE_PROJECT_NAME defaults to the crew dir name and tags every built image.
+# Worker-tagged docker images do NOT get cleaned by `git worktree remove` —
+# COMPOSE_PROJECT_NAME defaults to the worktree dir name and tags every built image.
 docker rmi $(docker images --filter "reference=*-ui-state" --format '{{.Repository}}:{{.Tag}}' \
   | grep -v '^dashboard-chat-ui-state:') 2>/dev/null
 docker image prune -f
