@@ -211,28 +211,51 @@ export interface ChatAppInput {
   force_reissue_failures?: number | null;
 }
 
-/**
- * The structural SUPERSET of everything any child reads from its machine input.
- * The parent's three invoke `input:` mappers (machine.ts) each return the slice
- * their child needs; the placeholder children (./actors.ts) type their input as
- * this superset so all three mappers type-check against the single placeholder
- * input type (the placeholders are swapped for the real machines via
- * `.provide({ actors })`, whose typing is invariant in a child's context, so this
- * is the one place the threaded input shape is statically pinned).
- */
-export interface ChatAppChildInput {
+// ─────────────────── Per-child machine-input contracts ───────────────────
+// Each child slot pins its OWN input shape — what the parent's `invoke.input`
+// mapper for that slot is allowed to produce, and what the real child reads on
+// construction. The three placeholders (./actors.ts) declare their `types.input`
+// against the matching interface here, so each `invoke.input` mapper in
+// machine.ts type-checks against its slot's contract specifically (no
+// cross-slot field leakage). The placeholders are swapped for the real
+// machines via `.provide({ actors })`; the per-slot input shape stays pinned
+// across the swap.
+
+/** Input contract for the `onboarding` slot — mirrors the real
+ *  `SessionOnboardingInput`. The onboarding child reads its WorkOS / backend
+ *  URLs + fetch port + re-verify Bearer + forced-failure budget at
+ *  construction (no actor-level DI), so all of those arrive on input. */
+export interface OnboardingChildInput {
   request_id: string;
   principal_id: string;
-  // onboarding child:
   bearer_token?: string;
   config?: Config | null;
   deps?: SessionOnboardingDeps | null;
   force_reissue_failures?: number | null;
-  // project-context child (org_id/user also arrive via `auth_ready`):
+}
+
+/** Input contract for the `projectContext` slot — mirrors the real
+ *  `project-context` machine's input. The dynamic `org_id` + first-name arrive
+ *  via the `auth_ready` hand-off (so the parent's current mapper carries only
+ *  the static ids), but the slot's contract still accepts what the real child
+ *  reads on construction. */
+export interface ProjectContextChildInput {
+  request_id: string;
+  principal_id: string;
   org_id?: string;
   user?: { first_name?: string };
   deeplink_project_id?: string;
-  // session-chat child (org_id/project also arrive via `project_ready`):
+}
+
+/** Input contract for the `sessionChat` slot — mirrors the real `session-chat`
+ *  machine's input. The dynamic `org_id` + project arrive via the
+ *  `project_ready` hand-off (so the parent's current mapper carries only the
+ *  static ids), but the slot's contract still accepts what the real child
+ *  reads on construction. */
+export interface SessionChatChildInput {
+  request_id: string;
+  principal_id: string;
+  org_id?: string;
   project_id?: string;
   project_name?: string;
   deeplink_session_id?: string | null;

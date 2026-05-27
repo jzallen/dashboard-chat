@@ -12,8 +12,11 @@
 //     (children left as inert placeholders). Phase-1 tests provide FAKES over it
 //     (the fakes are inline in machine.test.ts); createChatApp provides the REAL
 //     machines.
-//   - ChatAppChildLogic — the actor-logic slot type a caller casts a provided
-//     child to (XState's `provide` is type-invariant in a child's context).
+//   - ChatAppOnboardingLogic / ChatAppProjectContextLogic /
+//     ChatAppSessionChatLogic — the three per-slot actor-logic types a caller
+//     casts a provided child to (XState's `provide` is type-invariant in a
+//     child's context, so the cast is unavoidable; pinning it per slot keeps
+//     each provided machine attached to its own input contract).
 //   - The wire/hand-off contract types a caller needs to drive or wire ChatApp.
 //
 // The internal context/guards/actions live under ./machine.ts + ./setup/ and are
@@ -25,7 +28,11 @@ import type { SessionChatMachineDeps } from "../session-chat/index.ts";
 import { createSessionChatMachine } from "../session-chat/index.ts";
 import { createSessionOnboardingMachine } from "../session-onboarding/index.ts";
 import { createChatAppMachine } from "./machine.ts";
-import type { ChatAppChildLogic } from "./setup/actors.ts";
+import type {
+  ChatAppOnboardingLogic,
+  ChatAppProjectContextLogic,
+  ChatAppSessionChatLogic,
+} from "./setup/actors.ts";
 
 /**
  * The construction-time dependencies the composition root injects into the two
@@ -49,8 +56,8 @@ export interface ChatAppDeps {
  * Phase-2 composition root: build a ChatApp machine wired to the REAL children.
  *
  * Constructs each real child machine and swaps it over the corresponding
- * placeholder slot via `machine.provide({ actors })`. Each cast to
- * `ChatAppChildLogic` is the localized, runtime-noop bridge the fakes use too —
+ * placeholder slot via `machine.provide({ actors })`. Each cast to its per-slot
+ * logic type is the localized, runtime-noop bridge the fakes use too —
  * XState's `provide` is type-invariant in a child's context, and the parent reads
  * child readiness through the `onSnapshot` snapshot views (setup/types.ts), never
  * through the slot type.
@@ -66,25 +73,31 @@ export function createChatApp(deps: ChatAppDeps) {
 
   return createChatAppMachine().provide({
     actors: {
-      onboarding: onboarding as unknown as ChatAppChildLogic,
-      projectContext: projectContext as unknown as ChatAppChildLogic,
-      sessionChat: sessionChat as unknown as ChatAppChildLogic,
+      onboarding: onboarding as unknown as ChatAppOnboardingLogic,
+      projectContext: projectContext as unknown as ChatAppProjectContextLogic,
+      sessionChat: sessionChat as unknown as ChatAppSessionChatLogic,
     },
   });
 }
 
 export { createChatAppMachine } from "./machine.ts";
-export type { ChatAppChildLogic } from "./setup/actors.ts";
+export type {
+  ChatAppOnboardingLogic,
+  ChatAppProjectContextLogic,
+  ChatAppSessionChatLogic,
+} from "./setup/actors.ts";
 export type {
   AuthHandoff,
   ChatAppChildEvent,
   ChatAppChildId,
-  ChatAppChildInput,
   ChatAppConnectivity,
   ChatAppContext,
   ChatAppEvent,
   ChatAppInput,
   ChatAppLifecycle,
   ChatUserIntent,
+  OnboardingChildInput,
+  ProjectContextChildInput,
   ProjectHandoff,
+  SessionChatChildInput,
 } from "./setup/types.ts";

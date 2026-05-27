@@ -25,7 +25,11 @@ import { describe, expect, it } from "vitest";
 import { type AnyActorRef, assign, createActor, setup } from "xstate";
 
 import { createChatAppMachine } from "./machine.ts";
-import type { ChatAppChildLogic } from "./setup/actors.ts";
+import type {
+  ChatAppOnboardingLogic,
+  ChatAppProjectContextLogic,
+  ChatAppSessionChatLogic,
+} from "./setup/actors.ts";
 import type { ChatAppChildEvent, ChatAppInput } from "./setup/types.ts";
 
 // ───────────────────────────── FAKE CHILDREN (test fixtures) ─────────────────
@@ -197,9 +201,9 @@ const fakeSessionChat = setup({
 function createChatAppWithFakes() {
   return createChatAppMachine().provide({
     actors: {
-      onboarding: fakeOnboarding as unknown as ChatAppChildLogic,
-      projectContext: fakeProjectContext as unknown as ChatAppChildLogic,
-      sessionChat: fakeSessionChat as unknown as ChatAppChildLogic,
+      onboarding: fakeOnboarding as unknown as ChatAppOnboardingLogic,
+      projectContext: fakeProjectContext as unknown as ChatAppProjectContextLogic,
+      sessionChat: fakeSessionChat as unknown as ChatAppSessionChatLogic,
     },
   });
 }

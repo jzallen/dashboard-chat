@@ -1,42 +1,32 @@
-// Logical child actors for the ChatApp coordinator — the DEPENDENCY-INJECTION
-// seam (ADR-044, Phase 1).
+// This file declares the TYPE SURFACE for ChatApp's children — what each child
+// slot expects as input and accepts as events — so the parent statechart can be
+// type-checked in isolation. The actual child instances are built and injected
+// separately in `../index.ts` (the composition root), where the real
+// `session-onboarding`, `project-context`, and `session-chat` machines are wired
+// in over these placeholders.
 //
-// ChatApp declares three logical children in `setup({ actors })`:
-//   - onboarding      (systemId "session-onboarding")
-//   - projectContext  (systemId "project-context")
-//   - sessionChat     (systemId "session-chat")
-//
-// The implementations here are minimal PLACEHOLDERS. They establish the logical
-// actor identity + the event surface the parent statically `sendTo`s (the
-// ChatAppChildEvent union), and they are ALWAYS overridden via
-// `machine.provide({ actors })`:
-//   - Phase 1 provides FAKE children (test fixtures inline in ../machine.test.ts)
-//     to drive the parent's choreography in isolation.
-//   - Phase 2 provides the REAL session-onboarding / project-context /
-//     session-chat machines.
-//
-// Because XState's `provide` is type-invariant in a child's context, the
-// override site casts the swapped machine to the placeholder's actor logic type
-// (a localized, runtime-noop cast — see ../machine.test.ts). The placeholders therefore
-// need only accept the forwarded-event union; the parent reads child READINESS
-// through `onSnapshot` snapshot views (../setup/types.ts), never through these
-// placeholder types.
+// Splitting the concerns this way means the parent's invoke + sendTo type-check
+// against a stable per-child contract here, independent of which concrete
+// machine fills each slot.
 
 import { setup } from "xstate";
 
-import type { ChatAppChildEvent, ChatAppChildInput } from "./types.ts";
+import type {
+  ChatAppChildEvent,
+  OnboardingChildInput,
+  ProjectContextChildInput,
+  SessionChatChildInput,
+} from "./types.ts";
 
-/** A do-nothing child. It accepts (and ignores) every event the parent may
- *  forward, never leaves `idle`, and declares the `ChatAppChildInput` superset
- *  as its input type so the parent's three `invoke.input` mappers (machine.ts)
- *  type-check against this slot (the placeholder is swapped for the real machine
- *  via `.provide({ actors })`). Never used in tests or production — always
- *  provided over. */
-function createPlaceholderChild() {
+/** Build a do-nothing child whose input type is pinned by the caller. It
+ *  accepts (and ignores) every event the parent may forward and never leaves
+ *  `idle`; only ever exists to declare a slot's typing — `provide({ actors })`
+ *  swaps the real machine over it. */
+function createPlaceholderChild<TInput>() {
   return setup({
     types: {
       events: {} as ChatAppChildEvent,
-      input: {} as ChatAppChildInput,
+      input: {} as TInput,
     },
   }).createMachine({
     id: "chat-app-child-placeholder",
@@ -45,14 +35,24 @@ function createPlaceholderChild() {
   });
 }
 
-/** The three logical children threaded into `setup({ actors })`. Distinct
- *  instances keep each `invoke.src` independently typed. */
+/** The three logical children threaded into `setup({ actors })`. Each key is a
+ *  distinct placeholder so its `invoke.src` (and the corresponding
+ *  `invoke.input` mapper in ../machine.ts) is typed against its OWN child-input
+ *  contract — no cross-slot field leakage. */
 export const actors = {
-  onboarding: createPlaceholderChild(),
-  projectContext: createPlaceholderChild(),
-  sessionChat: createPlaceholderChild(),
+  onboarding: createPlaceholderChild<OnboardingChildInput>(),
+  projectContext: createPlaceholderChild<ProjectContextChildInput>(),
+  sessionChat: createPlaceholderChild<SessionChatChildInput>(),
 };
 
-/** The actor-logic type of a child slot — the cast target a caller uses when
- *  providing a concrete (fake or real) child over a placeholder. */
-export type ChatAppChildLogic = (typeof actors)["onboarding"];
+/** Cast target for a concrete onboarding machine provided over the `onboarding`
+ *  placeholder slot. */
+export type ChatAppOnboardingLogic = (typeof actors)["onboarding"];
+
+/** Cast target for a concrete project-context machine provided over the
+ *  `projectContext` placeholder slot. */
+export type ChatAppProjectContextLogic = (typeof actors)["projectContext"];
+
+/** Cast target for a concrete session-chat machine provided over the
+ *  `sessionChat` placeholder slot. */
+export type ChatAppSessionChatLogic = (typeof actors)["sessionChat"];
