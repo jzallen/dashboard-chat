@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { Hono } from "hono";
 
@@ -23,19 +23,14 @@ import {
   getSessionStatus,
   setSession,
 } from "./lib/session-store.ts";
-import { mintUserToken, verifyUserToken } from "./lib/user-token.ts";
+import { verifyUserToken } from "./lib/user-token.ts";
+import { createDevProvider } from "./lib/user-auth/dev.ts";
 import {
+  type SessionStorePort,
+  type UserAuthProvider,
   WorkOsUserAuthProvider,
   type WorkOsConfig,
 } from "./lib/user-auth/workos.ts";
-
-const DEV_USER = {
-  sub: "dev-user-001",
-  email: "dev@localhost",
-  name: "Dev User",
-  org_id: "dev-org-001",
-};
-const DEV_AUTH_CODE = "dev-auth-code";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
 const UI_STATE_URL = process.env.UI_STATE_URL || "http://ui-state:8788";
@@ -98,45 +93,29 @@ function consumeLoginState(state: string): boolean {
   return pendingLoginStates.delete(state);
 }
 
-// Exchange an auth code for a user token. In AUTH_MODE=dev the only
-// accepted code is "dev-auth-code" and identity is the standard DEV_USER
-// (per CLAUDE.md). AUTH_MODE=workos is wired in a subsequent row.
+// Exchange an auth code for a user token. The mode-dispatched provider
+// validates the code (and, in WorkOS mode, the CSRF state that must
+// round-trip through a prior /api/auth/login).
 app.post("/api/auth/callback", async (c) => {
   const authMode = process.env.AUTH_MODE || "dev";
 
-  let body: { code?: unknown } = {};
+  let body: { code?: unknown; state?: unknown } = {};
   try {
-    body = (await c.req.raw.json()) as { code?: unknown };
+    body = (await c.req.raw.json()) as { code?: unknown; state?: unknown };
   } catch {
     return c.json({ error: "invalid_request" }, 400);
   }
   const code = typeof body.code === "string" ? body.code : "";
+  const state = typeof body.state === "string" ? body.state : "";
 
-  if (authMode === "dev") {
-    if (code !== DEV_AUTH_CODE) {
-      return c.json({ error: "invalid_code" }, 401);
+  if (authMode !== "dev") {
+    if (!state || !consumeLoginState(state)) {
+      return c.json({ error: "state_mismatch" }, 400);
     }
-    return mintFromCallback(c, {
-      sub: DEV_USER.sub,
-      email: DEV_USER.email,
-      name: DEV_USER.name,
-      org_id: DEV_USER.org_id,
-      workosRefreshToken: "dev-refresh-token-001",
-    });
-  }
-
-  // workos mode: exchange the {code,state} pair with WorkOS authenticate.
-  // State must round-trip through a prior /api/auth/login — otherwise the
-  // request is a CSRF attempt and is rejected before the WorkOS round-trip.
-  const state = typeof (body as { state?: unknown }).state === "string"
-    ? (body as { state: string }).state
-    : "";
-  if (!state || !consumeLoginState(state)) {
-    return c.json({ error: "state_mismatch" }, 400);
   }
 
   try {
-    const { accessToken, expiresIn } = await createWorkOsProvider()
+    const { accessToken, expiresIn } = await createProviderForRequest()
       .handleCallback({ code, state });
     return c.json({ access_token: accessToken, expires_in: expiresIn });
   } catch (e) {
@@ -173,36 +152,14 @@ app.post("/api/auth/refresh", async (c) => {
   if (lookup.status === "expired") {
     return c.json({ error: "session_expired" }, 401);
   }
-  const session = lookup.payload;
 
-  // In workos mode, delegate the WorkOS round-trip and refresh-token
-  // rotation to the provider. Dev mode keeps minting locally without an
-  // upstream call — the session-store entry already carries everything
-  // we need for a fresh JWT.
-  if ((process.env.AUTH_MODE || "dev") !== "dev") {
-    try {
-      const { accessToken, expiresIn } =
-        await createWorkOsProvider().refresh(sid);
-      return c.json({ access_token: accessToken, expires_in: expiresIn });
-    } catch (e) {
-      return mapProviderError(c, e);
-    }
+  try {
+    const { accessToken, expiresIn } =
+      await createProviderForRequest().refresh(sid);
+    return c.json({ access_token: accessToken, expires_in: expiresIn });
+  } catch (e) {
+    return mapProviderError(c, e);
   }
-
-  const { token, expiresIn } = await mintUserToken({
-    sub: session.user_claims.sub,
-    email: session.user_claims.email,
-    name: session.user_claims.name,
-    org_id: session.user_claims.org_id,
-    sid,
-  });
-  // Refresh the session's expires_at so the lifetime tracks the token's.
-  setSession(sid, {
-    workos_refresh_token: session.workos_refresh_token,
-    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
-    user_claims: session.user_claims,
-  });
-  return c.json({ access_token: token, expires_in: expiresIn });
 });
 
 // Log out: delete the server-held session entry so subsequent refresh
@@ -216,7 +173,7 @@ app.post("/api/auth/logout", async (c) => {
     try {
       const payload = await verifyUserToken(token);
       const sid = typeof payload.sid === "string" ? payload.sid : "";
-      if (sid) deleteSession(sid);
+      if (sid) await createProviderForRequest().logout(sid);
     } catch {
       // Verification failure: treat as already-logged-out, no-op delete.
     }
@@ -225,12 +182,21 @@ app.post("/api/auth/logout", async (c) => {
 });
 
 /**
- * Construct a `WorkOsUserAuthProvider` from the current environment.
- * Built per-request so each call observes the live env (matching the
- * inlined-fetch behaviour this replaced); the session-store port is
- * the shared module so the dev/workos branches see the same entries.
+ * Construct the right `UserAuthProvider` for the current request based on
+ * `AUTH_MODE`. Built per-request so each call observes the live env; the
+ * session-store port is the shared module so dev/workos see the same
+ * entries.
  */
-function createWorkOsProvider(): WorkOsUserAuthProvider {
+function createProviderForRequest(): UserAuthProvider {
+  const sessionStore: SessionStorePort = {
+    set: setSession,
+    get: getSession,
+    getStatus: getSessionStatus,
+    delete: deleteSession,
+  };
+  if ((process.env.AUTH_MODE || "dev") === "dev") {
+    return createDevProvider({ sessionStore });
+  }
   const config: WorkOsConfig = {
     baseUrl: process.env.WORKOS_BASE || "https://api.workos.com",
     clientId: process.env.WORKOS_CLIENT_ID || "",
@@ -239,15 +205,7 @@ function createWorkOsProvider(): WorkOsUserAuthProvider {
     sessionTtlSeconds: 3600,
     revokeOnLogout: process.env.WORKOS_REVOKE_ON_LOGOUT === "true",
   };
-  return new WorkOsUserAuthProvider({
-    sessionStore: {
-      set: setSession,
-      get: getSession,
-      getStatus: getSessionStatus,
-      delete: deleteSession,
-    },
-    config,
-  });
+  return new WorkOsUserAuthProvider({ sessionStore, config });
 }
 
 /**
@@ -259,6 +217,9 @@ function mapProviderError(
   err: unknown,
 ): Response {
   const message = err instanceof Error ? err.message : "";
+  if (message === "invalid_code") {
+    return c.json({ error: "invalid_code" }, 401);
+  }
   if (message === "unauthorized") {
     return c.json({ error: "unauthorized" }, 401);
   }
@@ -266,43 +227,6 @@ function mapProviderError(
     return c.json({ error: "invalid_session" }, 401);
   }
   return c.json({ error: "service_error" }, 502);
-}
-
-/**
- * Mint a user token + persist a session entry for the resolved identity,
- * then return the standard `{access_token, expires_in}` payload. Used by
- * both the dev and workos callback branches so the wire shape is
- * identical across modes.
- */
-async function mintFromCallback(
-  c: Parameters<Parameters<typeof app.post>[1]>[0],
-  identity: {
-    sub: string;
-    email: string;
-    name: string;
-    org_id: string;
-    workosRefreshToken: string;
-  },
-): Promise<Response> {
-  const sid = randomUUID();
-  const { token, expiresIn } = await mintUserToken({
-    sub: identity.sub,
-    email: identity.email,
-    name: identity.name,
-    org_id: identity.org_id,
-    sid,
-  });
-  setSession(sid, {
-    workos_refresh_token: identity.workosRefreshToken,
-    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
-    user_claims: {
-      sub: identity.sub,
-      email: identity.email,
-      name: identity.name,
-      org_id: identity.org_id,
-    },
-  });
-  return c.json({ access_token: token, expires_in: expiresIn });
 }
 
 // M2M token issuance — OAuth2 client_credentials grant.
