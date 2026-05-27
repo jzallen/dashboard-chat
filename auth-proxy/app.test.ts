@@ -1,38 +1,19 @@
 /**
  * Tests for the auth-proxy Hono app's cross-cutting surfaces — KPI event
  * emission on `/ui-state/*`, the test-mirror endpoint, the SLOW_MODE delay
- * harness, and (after Stage 1 lands) `verifyToken` dispatch for the new
- * user-token kid.
+ * harness, and `verifyToken` dispatch for the user-token kid.
  *
- * | # | Group | Scenario | Status |
- * |---|---|---|---|
- * | 1 | KPI K3 | emits `silent_reauth_ok` when projection returns ready with `silent_reauth_ok` flag | ✓ existing |
- * | 2 | KPI K3 | emits `silent_reauth_failed` when projection returns `error_recoverable` with `silent-reauth-failed` tag | ✓ existing |
- * | 3 | KPI K3 | emits `auth_retry_clicked` when caller forwards a `retry_clicked` event | ✓ existing |
- * | 4 | test-mirror | captures the most-recent `Authorization` header on `/ui-state/*` and returns it via `GET /test/last-seen-authorization` | ✓ existing |
- * | 5 | test-mirror | returns 404 from `GET /test/last-seen-authorization` when `AUTH_MODE=production` | ✓ existing |
- * | 6 | SLOW_MODE | delays `/ui-state/*` responses by `SLOW_MODE_DELAY_MS` when set | ✓ existing |
- * | 7 | SLOW_MODE | does NOT delay when `SLOW_MODE_DELAY_MS` is unset | ✓ existing |
- * | 8 | SLOW_MODE | ignores `SLOW_MODE_DELAY_MS` when `AUTH_MODE=production` | ✓ existing |
+ * | # | Group | Scenario |
+ * |---|---|---|
+ * | 1 | KPI K3 | emits `auth_retry_clicked` when caller forwards a `retry_clicked` event |
+ * | 2 | test-mirror | captures the most-recent `Authorization` header on `/ui-state/*` and returns it via `GET /test/last-seen-authorization` |
+ * | 3 | test-mirror | returns 404 from `GET /test/last-seen-authorization` when `AUTH_MODE=production` |
+ * | 4 | SLOW_MODE | delays `/ui-state/*` responses by `SLOW_MODE_DELAY_MS` when set |
+ * | 5 | SLOW_MODE | does NOT delay when `SLOW_MODE_DELAY_MS` is unset |
+ * | 6 | SLOW_MODE | ignores `SLOW_MODE_DELAY_MS` when `AUTH_MODE=production` |
  *
  * **Notes for the agent:**
- * - Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max per behavior. Variations of the same behavior are parametrized. New scenarios should respect the same budget — keep verifyToken to one happy-path + one failure per kid.
- *
- * **ADR-043 audit (silent-reauth KPI receiving surface) — 2026-05-27:**
- * The auth-proxy's emit branches for `silent_reauth_ok` (state=ready +
- * `context.silent_reauth_ok===true`) and `silent_reauth_failed` (state=
- * error_recoverable + `tag==="silent-reauth-failed"`) remain in place and
- * are pinned by the KPI K3 tests above. ADR-043 retired ui-state's silent-
- * reauth subsystem, and ui-state's own contract test
- * (`derive-projection.contract.test.ts:303-305`) explicitly pins
- * `context.silent_reauth_ok` as NOT set today by fold or derive. The
- * `silent-reauth-failed` underlying-cause tag remains a closed-union
- * member of `UnderlyingCauseTag` (ui-state/.../domain.ts) but no
- * production code path emits it — only the harness `__force_failure__`
- * event in the ui-state contract test. The auth-proxy receiving surface
- * is therefore **latent**: byte-stable contract pin, no production
- * emitter today. Retiring it (and the tests) would span two services and
- * is left for a follow-up design decision.
+ * - Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max per behavior. Variations of the same behavior are parametrized.
  */
 
 // Per ADR-030 §SD4 the auth-proxy emits three JSON events to stdout when it
@@ -170,84 +151,6 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
       }
     },
   );
-
-  // ------------------------------------------------------------------------
-  // Step 03-01 — silent reauth KPI events (US-005)
-  // ------------------------------------------------------------------------
-  //
-  // The auth-proxy observes the projection coming back from the ui-state
-  // tier and emits an additional pair of KPI events for the silent-reauth
-  // outcome:
-  //   - state === "ready"             AND context.silent_reauth_ok === true
-  //       → silent_reauth_ok
-  //   - state === "error_recoverable" AND context.underlying_cause_tag
-  //                                       === "silent-reauth-failed"
-  //       → silent_reauth_failed
-  //
-  // Behavior budget extension: B5 (ok) + B6 (failed) = 2 behaviors × 2 = 4 tests max.
-
-  it("emits silent_reauth_ok when projection returns ready with silent_reauth_ok flag", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          state: "ready",
-          request_id: "R-chat-9b2a",
-          context: { silent_reauth_ok: true },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
-    const capture = captureStdout();
-    try {
-      const res = await makeRequest(
-        "/ui-state/flow/login-and-org-setup/event",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ flow_id: "f-1", type: "THAW" }),
-        },
-      );
-      expect(res.status).toBe(200);
-    } finally {
-      capture.restore();
-    }
-    const matching = capture.events.find((e) => e.event === "silent_reauth_ok");
-    expect(matching).toBeDefined();
-    expect(matching?.request_id).toBe("R-chat-9b2a");
-  });
-
-  it("emits silent_reauth_failed when projection returns error_recoverable with silent-reauth-failed tag", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          state: "error_recoverable",
-          request_id: "R-chat-9b2a",
-          context: { underlying_cause_tag: "silent-reauth-failed" },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
-    const capture = captureStdout();
-    try {
-      const res = await makeRequest(
-        "/ui-state/flow/login-and-org-setup/event",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ flow_id: "f-1", type: "THAW" }),
-        },
-      );
-      expect(res.status).toBe(200);
-    } finally {
-      capture.restore();
-    }
-    const matching = capture.events.find(
-      (e) => e.event === "silent_reauth_failed",
-    );
-    expect(matching).toBeDefined();
-    expect(matching?.request_id).toBe("R-chat-9b2a");
-    expect(matching?.underlying_cause_tag).toBe("silent-reauth-failed");
-  });
 
   it("emits auth_retry_clicked when caller forwards a retry_clicked event", async () => {
     mockFetch.mockResolvedValueOnce(
