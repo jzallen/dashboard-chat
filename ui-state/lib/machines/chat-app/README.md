@@ -31,13 +31,13 @@ The machine is `type: "parallel"` — it is in one state in **each** region at o
 ```
 ChatApp (parallel)
 ├── lifecycle
-│   onboarding ─(child→ready)─► engaged.project_context
-│                              ─(child→project_selected)─► engaged.chat
-│              └(child→session_rejected)─► rejected
+│   onboarding ─(isUserReady)─► engaged.project_context
+│                              ─(advanceToChat)─► engaged.chat
+│              └(isUserRejected)─► user_rejected
 │
 └── connectivity            (orthogonal — applies in ANY lifecycle phase)
     live ─(TOKEN_EXPIRED)─► frozen ─(REAUTH_OK)─► live   (+ replay held intents)
-                            frozen ─(REAUTH_FAILED)─► live + lifecycle→rejected
+                            frozen ─(REAUTH_FAILED)─► live + lifecycle→user_rejected
 ```
 
 - **`lifecycle`** is the forward cycle. `engaged` is a compound state that owns
@@ -133,7 +133,7 @@ chat-app/
 │   └── derive-projection.contract.test.ts  R1 golden byte-identity vs buildProjection
 └── setup/
     ├── types.ts      context / events / hand-offs / snapshot views / OnboardingResult / per-slot child inputs
-    ├── guards.ts     onSnapshot predicates (childReachedReady, advanceToChat, …)
+    ├── guards.ts     onSnapshot predicates (isUserReady, isUserRejected, advanceToChat, …)
     └── actors.ts     placeholder children (the DI seam) + per-slot logic aliases
 ```
 

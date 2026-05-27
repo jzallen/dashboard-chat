@@ -347,7 +347,7 @@ describe("ChatApp Phase 2 — token-expiry freeze → reauth → thaw", () => {
     expect(connectivity(actor)).toBe("frozen");
     actor.send({ type: "REAUTH_FAILED" });
 
-    expect(lifecycle(actor)).toBe("rejected");
+    expect(lifecycle(actor)).toBe("user_rejected");
     expect(connectivity(actor)).toBe("live");
   });
 });
@@ -355,15 +355,15 @@ describe("ChatApp Phase 2 — token-expiry freeze → reauth → thaw", () => {
 // ─────────────────────────── scenario 4 ───────────────────────────
 
 describe("ChatApp Phase 2 — onboarding re-verify failure", () => {
-  it("routes the onboarding child to session_rejected → lifecycle rejected, no advance", async () => {
+  it("rejects the user when re-verify fails, no advance to engaged", async () => {
     const rec: Recorder = { loadCalls: [], resumeCalls: [], switchCalls: [] };
     const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
       input: makeInput({ badToken: true }),
     }).start();
 
-    await waitFor(actor, (a) => lifecycle(a) === "rejected");
+    await waitFor(actor, (a) => lifecycle(a) === "user_rejected");
 
-    expect(lifecycle(actor)).toBe("rejected");
+    expect(lifecycle(actor)).toBe("user_rejected");
     expect(connectivity(actor)).toBe("live");
     // The engaged region was never entered → no project-context / session-chat
     // child, and no downstream port was ever touched.

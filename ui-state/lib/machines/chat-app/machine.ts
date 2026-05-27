@@ -8,15 +8,15 @@
 // TWO PARALLEL REGIONS (the machine is in one state in EACH at once):
 //
 //   region: lifecycle
-//     onboarding ─(child→ready)─► project_context ─(child→project_selected)─► chat
-//                 └(child→session_rejected)─► rejected
+//     onboarding ─(isUserReady)─► project_context ─(advanceToChat)─► chat
+//                 └(isUserRejected)─► user_rejected
 //     (project-context is invoked on `engaged`, the ancestor of project_context
 //      AND chat, so it stays live for switching while in chat; session-chat is
 //      invoked on `chat` only.)
 //
 //   region: connectivity   (orthogonal — applies in ANY lifecycle phase)
 //     live ─(TOKEN_EXPIRED)─► frozen ─(REAUTH_OK)─► live
-//                            frozen ─(REAUTH_FAILED)─► live + lifecycle→rejected
+//                            frozen ─(REAUTH_FAILED)─► live + lifecycle→user_rejected
 //     While frozen the parent HOLDS inbound user intents (a parent buffer) and
 //     replays them in order on REAUTH_OK.
 //
@@ -112,12 +112,14 @@ export function createChatAppMachine() {
           },
         };
       }),
-      /** onboarding → rejected: retain the rejected outcome (cause + any
+      /** onboarding → user_rejected: retain the rejected outcome (cause + any
        *  validation error) so the derived `login-and-org-setup` projection
        *  reproduces `session_rejected` after the child is stopped. Mirrors
        *  buildProjection's session_rejected fold (user/org stay null; only the
-       *  cause carries). */
-      captureSessionRejected: assign(({ event }) => {
+       *  cause carries). The action name reflects the domain outcome (user
+       *  rejected); the inner `state` value stays `session_rejected` because
+       *  it is the FE/auth-proxy wire-contract string for this projection. */
+      captureUserRejected: assign(({ event }) => {
         const snapshot = onboardingSnapshot(event);
         return {
           onboarding_result: {
@@ -258,14 +260,14 @@ export function createChatAppMachine() {
               // Watch the onboarding child; advance on its own state value.
               onSnapshot: [
                 {
-                  guard: "childReachedReady",
+                  guard: "isUserReady",
                   target: "engaged",
                   actions: "captureAuthHandoff",
                 },
                 {
-                  guard: "childReachedSessionRejected",
-                  target: "rejected",
-                  actions: "captureSessionRejected",
+                  guard: "isUserRejected",
+                  target: "user_rejected",
+                  actions: "captureUserRejected",
                 },
               ],
             },
@@ -335,7 +337,7 @@ export function createChatAppMachine() {
             },
           },
 
-          rejected: {},
+          user_rejected: {},
         },
       },
 
@@ -361,7 +363,7 @@ export function createChatAppMachine() {
               REAUTH_FAILED: {
                 target: [
                   "#chat-app.connectivity.live",
-                  "#chat-app.lifecycle.rejected",
+                  "#chat-app.lifecycle.user_rejected",
                 ],
               },
             },

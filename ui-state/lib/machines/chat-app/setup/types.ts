@@ -5,7 +5,7 @@
 //
 // ChatApp is a PARENT coordinator with TWO PARALLEL REGIONS (it is in one state
 // in EACH at once):
-//   - lifecycle    : onboarding → project_context → chat (with rejected)
+//   - lifecycle    : onboarding → project_context → chat (with user_rejected)
 //   - connectivity : live ⇄ frozen   (orthogonal — applies in ANY phase)
 //
 // The children are INVOKED (not spawned), phase-scoped, and parent-ignorant
@@ -39,7 +39,7 @@ export type ChatAppLifecycle =
   | "onboarding"
   | "project_context"
   | "chat"
-  | "rejected";
+  | "user_rejected";
 
 /** The orthogonal connectivity overlay (the freeze region). */
 export type ChatAppConnectivity = "live" | "frozen";
@@ -78,7 +78,7 @@ export interface ProjectHandoff {
  * The RETAINED onboarding outcome (ADR-044 §2 — make the actor the
  * state-of-record). The onboarding child is phase-scoped: its invoke lives on
  * the `onboarding` lifecycle state, so XState STOPS it the moment the parent
- * advances to `engaged` (or `rejected`) and it disappears from the snapshot
+ * advances to `engaged` (or `user_rejected`) and it disappears from the snapshot
  * (Phase-2 finding). But the FE root loader reads the `login-and-org-setup`
  * projection on EVERY request — including deep in chat — so its resolved
  * identity/org (and, on the reject path, the cause) must survive the child's
@@ -181,7 +181,7 @@ export interface ChatAppContext {
   /** The RETAINED onboarding outcome — the state-of-record for the
    *  `login-and-org-setup` derived projection once the phase-scoped onboarding
    *  child is stopped (it leaves the snapshot on the advance to `engaged` /
-   *  `rejected`). Captured on the onSnapshot transition that ends onboarding;
+   *  `user_rejected`). Captured on the onSnapshot transition that ends onboarding;
    *  null until then (while onboarding is live the mapper reads the child
    *  directly). See OnboardingResult. */
   onboarding_result: OnboardingResult | null;
@@ -258,7 +258,7 @@ export interface OnboardingSnapshotView {
   context: {
     // Widened (Phase 3) beyond the hand-off's org.id + user.first_name so the
     // onboarding-outcome capture (machine.ts captureAuthHandoff /
-    // captureSessionRejected) can RETAIN the full slice the derived
+    // captureUserRejected) can RETAIN the full slice the derived
     // login-and-org-setup projection reproduces (org name, full user, the
     // reject cause + any inline org-validation error). The real onboarding
     // child's context is structurally wider; this view names only what is read.

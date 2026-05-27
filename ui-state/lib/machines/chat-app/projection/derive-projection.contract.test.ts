@@ -503,7 +503,7 @@ describe("R1 — login-and-org-setup = session_rejected (re-verify failed)", () 
     const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
       input: makeInput({ badToken: true }),
     }).start();
-    await waitFor(actor, (a) => lifecycle(a) === "rejected");
+    await waitFor(actor, (a) => lifecycle(a) === "user_rejected");
     expect(childRef(actor, "session-onboarding")).toBeUndefined();
 
     // The 401 re-verify throw is untagged → causeOf defaults to "transient".
