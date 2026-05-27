@@ -14,16 +14,25 @@
  * | 6 | SLOW_MODE | delays `/ui-state/*` responses by `SLOW_MODE_DELAY_MS` when set | ✓ existing |
  * | 7 | SLOW_MODE | does NOT delay when `SLOW_MODE_DELAY_MS` is unset | ✓ existing |
  * | 8 | SLOW_MODE | ignores `SLOW_MODE_DELAY_MS` when `AUTH_MODE=production` | ✓ existing |
- * | 9 | verifyToken | recognizes `kid=auth-proxy:user:1` and routes to the user-token verifier | → Stage 1 |
- * | 10 | verifyToken | user-token Bearer forwards `X-User-Id` / `X-Org-Id` / `X-User-Email` identity headers to upstream (parity with M2M + PAT) | → Stage 1 |
- * | 11 | verifyToken | three local kids coexist (M2M + PAT + user) — dispatch is exhaustive; unknown kids fall through to JWKS path during Stage 1 overlap | → Stage 1 |
- * | 12 | verifyToken | tampered user-token (signature flipped) returns 401 at protected endpoint | → Stage 1 |
- * | 13 | KPI cleanup | confirm silent-reauth KPI tests describe extant behavior post ADR-043 (the ui-state lifecycle modeling was retired — verify the projection paths they fire on still exist) | → Stage 1 audit (may delete) |
  *
  * **Notes for the agent:**
- * - Rows #9–#12 are new; existing tests stay untouched. Append new describe blocks; do not interleave.
- * - Row #13 is an audit, not necessarily a test: ADR-043 retired ui-state's `silent_reauth_*` modeling. If the projection paths those tests fire on are dead, the tests describe vestigial behavior and should be deleted, not migrated. Make a fact-check pass before adding new coverage to this file.
  * - Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max per behavior. Variations of the same behavior are parametrized. New scenarios should respect the same budget — keep verifyToken to one happy-path + one failure per kid.
+ *
+ * **ADR-043 audit (silent-reauth KPI receiving surface) — 2026-05-27:**
+ * The auth-proxy's emit branches for `silent_reauth_ok` (state=ready +
+ * `context.silent_reauth_ok===true`) and `silent_reauth_failed` (state=
+ * error_recoverable + `tag==="silent-reauth-failed"`) remain in place and
+ * are pinned by the KPI K3 tests above. ADR-043 retired ui-state's silent-
+ * reauth subsystem, and ui-state's own contract test
+ * (`derive-projection.contract.test.ts:303-305`) explicitly pins
+ * `context.silent_reauth_ok` as NOT set today by fold or derive. The
+ * `silent-reauth-failed` underlying-cause tag remains a closed-union
+ * member of `UnderlyingCauseTag` (ui-state/.../domain.ts) but no
+ * production code path emits it — only the harness `__force_failure__`
+ * event in the ui-state contract test. The auth-proxy receiving surface
+ * is therefore **latent**: byte-stable contract pin, no production
+ * emitter today. Retiring it (and the tests) would span two services and
+ * is left for a follow-up design decision.
  */
 
 // Per ADR-030 §SD4 the auth-proxy emits three JSON events to stdout when it
@@ -38,14 +47,24 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock jose before importing app (no JWT verification needed for dev-mode
-// ui-state path; AUTH_MODE defaults to "dev").
-vi.mock("jose", () => ({
-  createRemoteJWKSet: vi.fn(() => vi.fn()),
-  jwtVerify: vi.fn(),
-}));
+// Only the JWKS resolver is mocked — it would otherwise reach out to the
+// network at module load. Real `jose.SignJWT` / `jose.jwtVerify` /
+// `jose.decodeProtectedHeader` are preserved so the kid-dispatch tests
+// below can mint real tokens through `lib/m2m.ts`, `lib/pat.ts`, and
+// `lib/user-token.ts` and exercise the real verifyToken path end-to-end.
+vi.mock("jose", async () => {
+  const actual = await vi.importActual<typeof import("jose")>("jose");
+  return {
+    ...actual,
+    createRemoteJWKSet: vi.fn(() => vi.fn()),
+  };
+});
 
 import { app } from "./app.ts";
+import { verifyToken } from "./lib/auth.ts";
+import { _resetForTests as resetM2m, issueM2mToken } from "./lib/m2m.ts";
+import { issuePat } from "./lib/pat.ts";
+import { mintUserToken } from "./lib/user-token.ts";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -420,12 +439,20 @@ describe("SLOW_MODE_DELAY_MS on /ui-state/* (frontend-coexistence Slice-4)", () 
     process.env.SLOW_MODE_DELAY_MS = "500";
     process.env.AUTH_MODE = "production";
     process.env.WORKOS_CLIENT_ID = "test-workos-client";
-    // Production branch requires a verified Bearer; stub jwtVerify to succeed.
-    const jose = await import("jose");
-    vi.mocked(jose.jwtVerify).mockResolvedValue({
-      payload: { sub: "u-1", org_id: "o-1", email: "u@x" },
-      protectedHeader: { alg: "RS256" },
-    } as never);
+    // Production branch requires a verified Bearer. A user-token's kid
+    // dispatch bypasses the JWKS path entirely (verifyToken's local-kid
+    // branch matches before fallthrough), so a real-minted user-token
+    // authenticates in production mode without any jose stubbing. Mint
+    // from the freshly re-imported module so the in-memory keypair the
+    // fresh app uses matches the one that signed the token.
+    const { mintUserToken: freshMint } = await import("./lib/user-token.ts");
+    const { token } = await freshMint({
+      sub: "u-1",
+      email: "u@x",
+      name: "U",
+      org_id: "o-1",
+      sid: "sid-1",
+    });
     const { app: freshApp } = await import("./app.ts");
     const start = Date.now();
     const res = await freshApp.fetch(
@@ -433,7 +460,7 @@ describe("SLOW_MODE_DELAY_MS on /ui-state/* (frontend-coexistence Slice-4)", () 
         "http://localhost/ui-state/flow/login-and-org-setup/projection",
         {
           method: "GET",
-          headers: { Authorization: "Bearer test-token" },
+          headers: { Authorization: `Bearer ${token}` },
         },
       ),
     );
@@ -441,5 +468,201 @@ describe("SLOW_MODE_DELAY_MS on /ui-state/* (frontend-coexistence Slice-4)", () 
     expect(res.status).toBe(200);
     expect(elapsed).toBeLessThan(100);
     delete process.env.WORKOS_CLIENT_ID;
+  });
+});
+
+// ----------------------------------------------------------------------------
+// verifyToken kid dispatch (B11)
+// ----------------------------------------------------------------------------
+//
+// The auth-proxy ingress verifier (`lib/auth.ts:verifyToken`) dispatches by
+// the `kid` header on the inbound JWT. Three local kids verify against the
+// shared auth-proxy keypair without any network round-trip:
+//
+//   auth-proxy:m2m:1   → verifyM2mToken    (lib/m2m.ts)
+//   auth-proxy:pat:1   → verifyPatToken    (lib/pat.ts)
+//   auth-proxy:user:1  → verifyUserToken   (lib/user-token.ts)
+//
+// Anything else falls through to the JWKS resolver. These tests pin that
+// dispatch contract directly at the verifyToken boundary — minting real
+// tokens through the shared keypair and asserting the {userId, orgId, email}
+// shape returned by each verifier path.
+
+describe("verifyToken kid dispatch (B11)", () => {
+  beforeEach(() => {
+    resetM2m();
+    process.env.AUTH_MODE = "dev";
+  });
+
+  afterEach(() => {
+    resetM2m();
+  });
+
+  describe.each([
+    {
+      kind: "M2M",
+      mint: async () =>
+        (
+          await issueM2mToken({
+            sub: "svc-1",
+            orgId: "org-m2m",
+            email: "m2m@example.com",
+          })
+        ).token,
+      expected: {
+        userId: "svc-1",
+        orgId: "org-m2m",
+        email: "m2m@example.com",
+      },
+    },
+    {
+      kind: "PAT",
+      mint: async () =>
+        (
+          await issuePat(
+            { sub: "user-pat", orgId: "org-pat", email: "pat@example.com" },
+            { name: "test-pat" },
+          )
+        ).token,
+      expected: {
+        userId: "user-pat",
+        orgId: "org-pat",
+        email: "pat@example.com",
+      },
+    },
+    {
+      kind: "user-token",
+      mint: async () =>
+        (
+          await mintUserToken({
+            sub: "user-abc",
+            email: "alice@example.com",
+            name: "Alice",
+            org_id: "org-1",
+            sid: "sid-xyz",
+          })
+        ).token,
+      expected: {
+        userId: "user-abc",
+        orgId: "org-1",
+        email: "alice@example.com",
+      },
+    },
+  ])("kid=$kind", ({ mint, expected }) => {
+    it("dispatches to the local verifier and returns the claim identity", async () => {
+      const token = await mint();
+      const result = await verifyToken(token);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  it("falls through to the JWKS resolver for tokens with non-local kids", async () => {
+    const { createRemoteJWKSet, generateKeyPair, SignJWT } = await import(
+      "jose"
+    );
+    const { privateKey } = await generateKeyPair("RS256");
+    const forged = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: "unknown:kid:1" })
+      .setSubject("u")
+      .setIssuer("http://localhost:8000")
+      .setAudience("dev-client")
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(privateKey);
+
+    const createJwksSpy = vi.mocked(createRemoteJWKSet);
+    createJwksSpy.mockClear();
+
+    await expect(verifyToken(forged)).rejects.toThrow();
+
+    // Proves dispatch fell through past every local-kid branch into the JWKS
+    // resolver path. The stubbed resolver yields no keys so verification
+    // cannot succeed — but the attempt to consult JWKS is what pins
+    // exhaustive dispatch.
+    expect(createJwksSpy).toHaveBeenCalled();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// user-token Bearer at protected endpoint (B12)
+// ----------------------------------------------------------------------------
+//
+// HTTP-layer parity with the M2M and PAT issuance round-trips: a user-token
+// Bearer at `/api/projects` must (a) strip any client-supplied identity
+// headers, (b) inject the verified identity from the token's claims into
+// the upstream request, and (c) reach the upstream proxy fetch.
+
+describe("user-token Bearer at protected endpoint (B12)", () => {
+  beforeEach(() => {
+    resetM2m();
+    vi.clearAllMocks();
+    process.env.AUTH_MODE = "dev";
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    resetM2m();
+  });
+
+  it("forwards token-derived identity headers and strips client-supplied ones", async () => {
+    const { token } = await mintUserToken({
+      sub: "user-bob",
+      email: "bob@example.com",
+      name: "Bob",
+      org_id: "org-2",
+      sid: "sid-bob",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-User-Id": "attacker",
+          "X-Org-Id": "evil-org",
+          "X-User-Email": "attacker@evil.example",
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [, init] = mockFetch.mock.calls[0] as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect({
+      userId: headers.get("X-User-Id"),
+      orgId: headers.get("X-Org-Id"),
+      email: headers.get("X-User-Email"),
+    }).toEqual({
+      userId: "user-bob",
+      orgId: "org-2",
+      email: "bob@example.com",
+    });
+  });
+
+  it("returns 401 when the user-token signature has been tampered", async () => {
+    const { token } = await mintUserToken({
+      sub: "user-bob",
+      email: "bob@example.com",
+      name: "Bob",
+      org_id: "org-2",
+      sid: "sid-bob",
+    });
+    const [header, payload, sig] = token.split(".");
+    const tampered = `${header}.${payload}.${
+      sig.startsWith("A") ? "B" : "A"
+    }${sig.slice(1)}`;
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Authorization: `Bearer ${tampered}` },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
