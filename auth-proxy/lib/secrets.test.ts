@@ -131,31 +131,23 @@ describe("FileSecretsProvider", () => {
 });
 
 describe("VaultSecretsProvider", () => {
-  it("requires addr / token / path", () => {
-    expect(
-      () =>
-        new VaultSecretsProvider({
-          addr: "",
-          token: "t",
-          path: "secret/data/x",
-        }),
-    ).toThrow(/addr/);
-    expect(
-      () =>
-        new VaultSecretsProvider({
-          addr: "https://vault",
-          token: "",
-          path: "secret/data/x",
-        }),
-    ).toThrow(/token/);
-    expect(
-      () =>
-        new VaultSecretsProvider({
-          addr: "https://vault",
-          token: "t",
-          path: "",
-        }),
-    ).toThrow(/path/);
+  it.each([
+    {
+      missing: "addr",
+      config: { addr: "", token: "t", path: "secret/data/x" },
+    },
+    {
+      missing: "token",
+      config: { addr: "https://vault", token: "", path: "secret/data/x" },
+    },
+    {
+      missing: "path",
+      config: { addr: "https://vault", token: "t", path: "" },
+    },
+  ])("constructor rejects empty $missing", ({ missing, config }) => {
+    expect(() => new VaultSecretsProvider(config)).toThrow(
+      new RegExp(missing),
+    );
   });
 
   it("returns null on a 404 (path not yet written)", async () => {
