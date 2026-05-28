@@ -1,9 +1,36 @@
 import { ensureFreshToken } from "./tokenRefresh";
-import { getAuthHeaders, getTokenExpiry, hardLogout } from "./tokenStorage";
+import {
+  getAuthHeaders,
+  getTokenExpiry,
+  hardLogout,
+  setToken,
+  setTokenExpiry,
+} from "./tokenStorage";
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 const EAGER_REFRESH_THRESHOLD_MS = 60_000;
+
+/**
+ * Consume a server-driven token reissue carried on a response (Stage 2 of
+ * auth-proxy-mints-user-tokens). auth-proxy mints a fresh user token on
+ * org-create and relays it as `X-New-Access-Token` (+ `X-New-Token-Expires-In`,
+ * a TTL in seconds). Only auth-proxy can set these headers — it strips any
+ * upstream-supplied values. When present and non-empty we adopt the new token
+ * via the existing storage primitives; no separate reissue round-trip.
+ */
+function consumeReissuedToken(response: Response): void {
+  // Defensive: withAuth wraps arbitrary fetch fns; inspecting an optional
+  // header must never crash the request if the response lacks a headers bag.
+  const newToken = response?.headers?.get?.("X-New-Access-Token");
+  if (!newToken || !newToken.trim()) return;
+
+  setToken(newToken);
+  const expiresIn = Number(response.headers.get("X-New-Token-Expires-In"));
+  if (Number.isFinite(expiresIn) && expiresIn > 0) {
+    setTokenExpiry(Date.now() + expiresIn * 1000);
+  }
+}
 
 /**
  * Wraps a fetch function with auth header injection and transparent 401 recovery.
@@ -36,6 +63,7 @@ export function withAuth(fetchFn: FetchFn): FetchFn {
       }
     }
 
+    consumeReissuedToken(response);
     return response;
   };
 }
