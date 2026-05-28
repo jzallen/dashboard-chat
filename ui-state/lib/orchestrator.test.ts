@@ -14,10 +14,8 @@
 //   B3 — events sent to a frozen flow are queued in the replay buffer.
 //   B4 — 5s freeze window: events arriving after window are dropped.
 //   B5 — 16-event cap: 17th event in window triggers abandonment.
-//   B6 — session-onboarding reaching expired_token triggers broadcastFreeze.
-//   B7 — session-onboarding returning to ready triggers broadcastThaw of others.
 //
-// 7 behaviors × 2 = 14 max. Port-to-port: every test enters through the
+// 5 behaviors × 2 = 10 max. Port-to-port: every test enters through the
 // FlowOrchestrator's public surface (begin, send, broadcastFreeze,
 // broadcastThaw, isFrozen) and observes via the projection or those methods.
 //
@@ -134,7 +132,9 @@ describe("FlowOrchestrator.broadcastFreeze (B1)", () => {
       PROFILE_KAI,
     );
 
-    // Maya is the origin (her session-onboarding flow reached expired_token).
+    // Maya's flow is the designated freeze origin, broadcast directly via the
+    // orchestrator's freeze entry point (the /freeze endpoint post-ADR-043 — no
+    // machine reaches expired_token any more).
     orch.broadcastFreeze(mayaFlow);
 
     expect(orch.isFrozen(mayaFlow)).toBe(false);

@@ -8,7 +8,6 @@ The flow that brings an **already-authenticated** principal to an org-scoped, ap
 
 1. **Re-verify (defense in depth).** Re-check the forwarded Bearer against WorkOS `/oauth/userinfo` (`workosUserInfo` invoke, ADR-041 L3). It is NOT the authenticator — it independently validates user + token in case a deployment misconfig exposed `ui-state` to the open web. The verified profile (`email`, `display_name`, ADR-041 L5) and any existing org binding seed the opening `session_started` event.
 2. **Bootstrap an org (new user).** A user with no org binding collects a name, then atomically creates the org row and reissues the org-scoped token.
-3. **Keep the token alive.** When the access token expires later, attempt a silent reauth without bouncing the user back to `/login`.
 
 A **returning user** whose re-verify carries an org binding takes the `[hasOrg]` shortcut straight to `ready`. The orchestrator broadcasts `auth_ready` to the sibling [`project-context`](../project-context/) machine on first `ready` via EITHER path (`creating_org → ready` for new users, `verifying → ready` for returning users — ADR-041 D5).
 
@@ -35,11 +34,6 @@ stateDiagram-v2
   creating_org --> creating_org: createOrgAndReissue onError [budget remaining]
   creating_org --> error_recoverable: createOrgAndReissue onError [budget exhausted]
 
-  ready --> expired_token: __expire_token__
-
-  expired_token --> ready: silentReauth onDone
-  expired_token --> error_recoverable: silentReauth onError
-
   error_recoverable --> creating_org: retry_clicked [budget remaining]
   error_recoverable --> error_terminal: retry_clicked [budget exhausted]
 
@@ -47,7 +41,7 @@ stateDiagram-v2
   session_rejected --> [*]
 ```
 
-`__force_failure__` and `__expire_token__` are failure-simulation entry points — see [Failure simulation](#failure-simulation) below.
+`__force_failure__` is a failure-simulation entry point — see [Failure simulation](#failure-simulation) below.
 
 ## States
 
@@ -56,8 +50,7 @@ stateDiagram-v2
 | `verifying` | Invokes the WorkOS `/oauth/userinfo` re-verify with the forwarded Bearer. On success `user.{email, display_name, first_name}` + the org binding populate | spawn / begin | `workosUserInfo` settles |
 | `needs_org` | Verified, no org binding yet. Waiting for the user to type an org name. Invalid submissions self-loop with `org_validation_error` set in context | `workosUserInfo` `onDone` [no org] | valid submit / invalid submit / failure-sim side channel |
 | `creating_org` | POST `/api/orgs` (+ reissue, one idempotent invoke). Retries up to **3 attempts** before falling through to `error_recoverable`. On success `org.{id, name}` populate | valid `org_form_submitted`, `retry_clicked` from recoverable, or self-loop on transient error | actor settles or budget exhausts |
-| `ready` | Signed in with org. The orchestrator broadcasts `auth_ready` on first entry | `workosUserInfo onDone` [hasOrg], `createOrgAndReissue` settles, `silentReauth` settles | token-expiry side channel |
-| `expired_token` | Attempts a silent token refresh without forcing the user back to `/login` | `__expire_token__` | `silentReauth` settles |
+| `ready` | Signed in with org. The orchestrator broadcasts `auth_ready` on first entry | `workosUserInfo onDone` [hasOrg], `createOrgAndReissue` settles | none |
 | `error_recoverable` | Shows a "Try again" CTA. User has **3 retries** at the same `underlying_cause_tag` before escalating | any org-setup actor error, or `__force_failure__` | `retry_clicked` |
 | `error_terminal` | Contact-support surface. The FE doesn't render an exit; the user must reload | `retry_clicked` with budget exhausted | none |
 | `session_rejected` | Terminal: re-verification failed (token/user invalid). No user state advanced; the FE renders a "sign in again" surface | `workosUserInfo onError` | none |
@@ -80,12 +73,11 @@ stateDiagram-v2
 
 ### Failure simulation
 
-`__force_failure__` and `__expire_token__` are dev-only side channels gated at the HTTP boundary (`router.ts`) by the failure-simulation gate (ADR-035). Production builds don't observe them — they exist so acceptance tests can rehearse failure modes without breaking real upstreams.
+`__force_failure__` is a dev-only side channel gated at the HTTP boundary (`router.ts`) by the failure-simulation gate (ADR-035). Production builds don't observe it — it exists so acceptance tests can rehearse failure modes without breaking real upstreams.
 
 | Event | Payload | What it does |
 |---|---|---|
 | `__force_failure__` | `{ tag: UnderlyingCauseTag }` | From `needs_org`, jump to `error_recoverable` with the supplied cause tag |
-| `__expire_token__` | (none) | From `ready`, jump to `expired_token` to rehearse the silent-reauth path |
 
 The double-underscore prefix is the project-wide convention for "this event must not exist in production." See [ADR-039 §C4](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md).
 
@@ -95,7 +87,6 @@ The double-underscore prefix is the project-wide convention for "this event must
 |---|---|---|---|
 | `workosUserInfo` | `{ bearer_token }` | `WorkOSProfile` = `{ email, display_name, org? }` | `verifying` |
 | `createOrgAndReissue` | `{ org_name, principal_id, request_id, attempt }` | `{ org_id, org_name }` | `creating_org` (each attempt within the 3-retry budget) |
-| `silentReauth` | `{ request_id }` | `{ ok: true }` | `expired_token` |
 
 `createOrgAndReissue` is idempotent on `(org_name, principal_id)`: org creation always runs first, and a retry after a failed reissue re-creates nothing — `createOrgFn` reuses the existing org via `GET /api/orgs/me`. See [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md).
 
@@ -107,7 +98,7 @@ The machine never writes FlowEvents itself (ADR-028/030). The begin strategy + t
 - `session_rejected{reason}` — emitted instead of `session_started` when re-verify fails.
 - `org_created{org, access_token}` — emitted on the `creating_org → ready` settle. `access_token` is a NON-SECURITY org-claim echo (ADR-016 / OQ-5), not a real credential.
 - `validation_failed{error}` — invalid org name on the `needs_org` self-loop.
-- `token_expired` / `reissue_failed_partial` — the expiry + partial-setup paths.
+- `reissue_failed_partial` — the partial-setup path.
 
 ## How it connects to siblings
 
