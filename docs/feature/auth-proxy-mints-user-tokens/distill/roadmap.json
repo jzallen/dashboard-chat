@@ -1,0 +1,119 @@
+{
+  "feature": "auth-proxy-mints-user-tokens",
+  "design": "docs/feature/auth-proxy-mints-user-tokens/design/design.md",
+  "adr": "docs/decisions/adr-043-retire-ui-state-token-lifecycle-modeling.md (Amendment 2026-05-27 — auth-proxy as issuer)",
+  "goal": "Consolidate user-token issuance in auth-proxy and make the backend a pure resource server.",
+  "wave": "DISTILL",
+  "date": "2026-05-28",
+  "notes": [
+    "Brownfield test convention: this repo uses co-located vitest suites, NOT pytest-bdd .feature files. Acceptance/integration coverage is expressed as auth-proxy/*.test.ts (full Hono app, real keypair) + frontend unit tests, per design.md §Stage 2 ('Prefer the LIGHTEST test level').",
+    "Stage 1 (issuance moved to auth-proxy) has ALREADY landed — see auth-proxy/user-token-issuance.test.ts (all 20 rows green) and lib/user-token.ts.",
+    "THIS RUN implements Stage 2 ONLY. Stage 3 steps are recorded for completeness but are explicitly out of scope and unstarted.",
+    "Driving ports for Stage 2: (P1) auth-proxy HTTP ingress `POST /api/orgs` (full Hono app); (P2) frontend `withAuth(fetchFn)` response interceptor."
+  ],
+  "stages": [
+    {
+      "stage": 2,
+      "title": "Response-header reissue on org-create",
+      "status": "in_progress",
+      "scope": "THIS RUN",
+      "risk": "low (additive; existing flows continue to work)",
+      "exit_criteria": [
+        "auth-proxy observes POST /api/orgs returning 201 and sets X-New-Access-Token + X-New-Token-Expires-In on the response, minted via the existing getKeypair()/jose user-token path with the new org_id claim.",
+        "auth-proxy strips any inbound X-New-Access-Token / X-New-Token-Expires-In on upstream responses so only auth-proxy's own injection survives (R7).",
+        "frontend withAuth consumes X-New-Access-Token + X-New-Token-Expires-In from every response and calls setToken + setTokenExpiry.",
+        "X-New-Access-Token (+ expires header) documented as sensitive in auth-proxy/README.md (R6).",
+        "backend untouched; ui-state onboarding retry loop still calls /api/auth/reissue and keeps working (independently deployable)."
+      ],
+      "steps": [
+        {
+          "id": "S2-1",
+          "description": "Org-create reissue hook: pure module that decides whether to reissue (POST /api/orgs + 201 + org_id in body) and mints a fresh user token preserving sub/email/sid/name with the new org_id.",
+          "driving_port": "lib/post-response-reissue.ts (unit) → app.ts ingress (integration)",
+          "acceptance": [
+            "Fires on POST /api/orgs 201 with an org id in the body; produces X-New-Access-Token + X-New-Token-Expires-In.",
+            "Does NOT fire on non-201, on GET /api/orgs, or on other paths (POST /api/projects).",
+            "Extracts org_id from flat ({id|org_id}) and JSON:API ({data.id}) body shapes.",
+            "Preserves sub/email/sid; only org_id changes; expires-in matches the token TTL.",
+            "Anonymous / non-user-token caller (no preservable sid): hook does NOT fire."
+          ],
+          "tests": [
+            "auth-proxy/lib/post-response-reissue.test.ts",
+            "auth-proxy/org-create-reissue.test.ts (rows 1-7,10-12)"
+          ],
+          "files": ["auth-proxy/lib/post-response-reissue.ts", "auth-proxy/app.ts"]
+        },
+        {
+          "id": "S2-2",
+          "description": "Symmetric outbound strip (R7): drop any upstream-supplied X-New-Access-Token / X-New-Token-Expires-In before relaying, mirroring the inbound identity-header strip. Only auth-proxy's own mint can reach the FE.",
+          "driving_port": "app.ts proxyRequest / proxyToUpstream",
+          "acceptance": [
+            "Backend-supplied X-New-Access-Token on a 200 POST /api/projects is stripped (row 8).",
+            "Smuggled header on a 201 from a non-org path is stripped and the hook does not fire (row 9).",
+            "Smuggled header on POST /api/orgs 201 is replaced — only auth-proxy's keypair-verifiable mint survives (row 10)."
+          ],
+          "tests": ["auth-proxy/org-create-reissue.test.ts (rows 8-10)"],
+          "files": ["auth-proxy/app.ts"]
+        },
+        {
+          "id": "S2-3",
+          "description": "Frontend consumes the reissue: withAuth reads X-New-Access-Token + X-New-Token-Expires-In from every response and, when present and non-empty, calls setToken + setTokenExpiry (expiry = now + expires_in*1000). Reuses existing tokenStorage primitives; no new flow.",
+          "driving_port": "frontend withAuth(fetchFn)",
+          "acceptance": [
+            "Response carrying X-New-Access-Token updates the stored token and expiry.",
+            "Response without the header leaves stored token untouched.",
+            "Empty/whitespace X-New-Access-Token is ignored.",
+            "Reissue consumption does not interfere with the existing 401-refresh-replay path."
+          ],
+          "tests": ["frontend/src/core/auth/__tests__/tokenReissueOnResponse.test.ts"],
+          "files": ["frontend/src/core/auth/withAuth.ts"]
+        },
+        {
+          "id": "S2-4",
+          "description": "Document X-New-Access-Token (+ X-New-Token-Expires-In) as sensitive in auth-proxy/README.md alongside Authorization; operators must apply the same header-logging redaction (R6).",
+          "driving_port": "n/a (docs)",
+          "acceptance": ["README names the headers as sensitive with the R6 redaction note."],
+          "tests": [],
+          "files": ["auth-proxy/README.md"]
+        }
+      ]
+    },
+    {
+      "stage": 3,
+      "title": "Dissolve the onboarding retry loop and delete the dead path",
+      "status": "not_started",
+      "scope": "OUT OF SCOPE FOR THIS RUN — follow-up MR(s)",
+      "risk": "high (deletes ~600 lines), but no callers remain after stages 1-2",
+      "exit_criteria": [
+        "ui-state creating_org → error_recoverable → error_terminal subgraph removed; reissueOrgJwtFn deleted; getOrgAndReissue becomes getOrg.",
+        "backend /api/auth/* endpoints deleted; direct-JWT-verification middleware branch removed; dev_provider/workos_provider/dev_keys/rate_limiter deleted.",
+        "FE /api/auth/reissue call site removed."
+      ],
+      "steps": [
+        {
+          "id": "S3a",
+          "description": "ui-state: dissolve the onboarding retry loop (states, guards, reissue actor, retry budgets).",
+          "status": "not_started",
+          "files": [
+            "ui-state/lib/machines/session-onboarding/setup/actors.ts",
+            "ui-state/lib/machines/session-onboarding/setup/guards.ts",
+            "ui-state/lib/machines/session-onboarding/machine.ts"
+          ]
+        },
+        {
+          "id": "S3b",
+          "description": "backend: delete /api/auth/* router, providers, dev keys, rate limiter; remove the direct-JWT-verification middleware branch; remove the FE /api/auth/reissue call.",
+          "status": "not_started",
+          "files": [
+            "backend/app/routers/auth.py",
+            "backend/app/auth/dev_provider.py",
+            "backend/app/auth/workos_provider.py",
+            "backend/app/auth/dev_keys.py",
+            "backend/app/auth/rate_limiter.py",
+            "backend/app/auth/middleware.py"
+          ]
+        }
+      ]
+    }
+  ]
+}
