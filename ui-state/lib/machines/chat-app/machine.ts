@@ -1,24 +1,24 @@
 // ChatAppMachine — the XState v5 PARENT coordinator that cycles
-// onboarding → project-context → chat and overlays a freeze/reauth region
-// (ADR-044). It supersedes the imperative FlowOrchestrator's coordination role
-// (spawn hand-offs, freeze/thaw, child choreography) with a declarative
-// statechart — the first faithful implementation of ADR-028's "one root
-// orchestrator actor mediating parent-ignorant children."
+// onboarding → project-context → chat (ADR-044). It supersedes the imperative
+// FlowOrchestrator's coordination role (spawn hand-offs, child choreography)
+// with a declarative statechart — the first faithful implementation of
+// ADR-028's "one root orchestrator actor mediating parent-ignorant children."
 //
-// TWO PARALLEL REGIONS (the machine is in one state in EACH at once):
+// SINGLE lifecycle region (one active state at a time):
 //
-//   region: lifecycle
 //     onboarding ─(isUserReady)─► project_context ─(advanceToChat)─► chat
 //                 └(isUserRejected)─► user_rejected
 //     (project-context is invoked on `engaged`, the ancestor of project_context
 //      AND chat, so it stays live for switching while in chat; session-chat is
 //      invoked on `chat` only.)
+//     Inbound user intents route to whichever child owns the current phase via a
+//     top-level `user_intent` handler (forwardIntentToActiveChild).
 //
-//   region: connectivity   (orthogonal — applies in ANY lifecycle phase)
-//     live ─(TOKEN_EXPIRED)─► frozen ─(REAUTH_OK)─► live
-//                            frozen ─(REAUTH_FAILED)─► live + lifecycle→user_rejected
-//     While frozen the parent HOLDS inbound user intents (a parent buffer) and
-//     replays them in order on REAUTH_OK.
+// The parent-level token-lifecycle (freeze/reauth) region was RETIRED (ADR-043):
+// auth-proxy owns the token lifecycle (ADR-016), so ui-state is never a
+// token-management participant — a backend-401 is an ordinary upstream error,
+// not a ui-state "reauth" event. ADR-044 §5 Open Question #2 is hereby resolved
+// TOWARD REMOVAL.
 //
 // COORDINATION (children stay parent-ignorant, ADR-028): the parent watches each
 // child via `onSnapshot` and advances on the child's OWN state value; hand-offs
@@ -156,15 +156,6 @@ export function createChatAppMachine() {
         };
       }),
 
-      // ── freeze buffer ──
-      /** Buffer a user intent that arrived while frozen (replayed on REAUTH_OK). */
-      holdIntent: assign({
-        held_events: ({ context, event }) => [
-          ...context.held_events,
-          intentOf(event),
-        ],
-      }),
-
       // ── forwarders (parent → child) ──
       /** entry of the project-context-owning state: deliver staged auth_ready. */
       forwardAuthReady: enqueueActions(({ context, enqueue }) => {
@@ -207,17 +198,10 @@ export function createChatAppMachine() {
           enqueue.sendTo(context.active_child_id, intentOf(event));
         },
       ),
-      /** REAUTH_OK: replay the held buffer to the active child IN ORDER, clear. */
-      replayHeldIntents: enqueueActions(({ context, enqueue }) => {
-        for (const intent of context.held_events) {
-          enqueue.sendTo(context.active_child_id, intent);
-        }
-        enqueue.assign({ held_events: [] });
-      }),
     },
   }).createMachine({
     id: "chat-app",
-    type: "parallel",
+    initial: "onboarding",
     context: ({ input }) => ({
       request_id: input.request_id,
       // Begin envelope — write-once; threaded into each child's invoke input.
@@ -230,146 +214,115 @@ export function createChatAppMachine() {
       auth_handoff: null,
       project_handoff: null,
       last_forwarded_project_id: null,
-      held_events: [],
       onboarding_result: null,
     }),
+    // Live user intent: route to whichever child owns the current phase. This is
+    // the single intent router (ADR-028) — a top-level handler now that the
+    // freeze/reauth region is retired (ADR-043); intents are never held.
+    on: {
+      user_intent: { actions: "forwardIntentToActiveChild" },
+    },
     states: {
-      // ───────────────────────── lifecycle region ─────────────────────────
-      lifecycle: {
-        initial: "onboarding",
-        states: {
-          onboarding: {
-            entry: "markOnboardingActive",
-            invoke: {
-              id: "session-onboarding",
-              systemId: "session-onboarding",
-              src: "onboarding",
-              // Begin envelope → the onboarding child's Input. Its resolvers read
-              // the WorkOS/backend URLs + fetch port from `config`/`deps`, the
-              // re-verify Bearer from `bearer_token`, and the forced-failure
-              // budget from `force_reissue_failures` (session-onboarding/setup/
-              // types.ts SessionOnboardingInput).
-              input: ({ context }) => ({
-                request_id: context.request_id,
-                principal_id: context.principal_id,
-                bearer_token: context.bearer_token,
-                config: context.config,
-                deps: context.deps,
-                force_reissue_failures: context.force_reissue_failures,
-              }),
-              // Watch the onboarding child; advance on its own state value.
-              onSnapshot: [
-                {
-                  guard: "isUserReady",
-                  target: "engaged",
-                  actions: "captureAuthHandoff",
-                },
-                {
-                  guard: "isUserRejected",
-                  target: "user_rejected",
-                  actions: "captureUserRejected",
-                },
-              ],
+      onboarding: {
+        entry: "markOnboardingActive",
+        invoke: {
+          id: "session-onboarding",
+          systemId: "session-onboarding",
+          src: "onboarding",
+          // Begin envelope → the onboarding child's Input. Its resolvers read
+          // the WorkOS/backend URLs + fetch port from `config`/`deps`, the
+          // re-verify Bearer from `bearer_token`, and the forced-failure
+          // budget from `force_reissue_failures` (session-onboarding/setup/
+          // types.ts SessionOnboardingInput).
+          input: ({ context }) => ({
+            request_id: context.request_id,
+            principal_id: context.principal_id,
+            bearer_token: context.bearer_token,
+            config: context.config,
+            deps: context.deps,
+            force_reissue_failures: context.force_reissue_failures,
+          }),
+          // Watch the onboarding child; advance on its own state value.
+          onSnapshot: [
+            {
+              guard: "isUserReady",
+              target: "engaged",
+              actions: "captureAuthHandoff",
             },
-          },
-
-          // `engaged` owns the project-context child for BOTH project_context
-          // and chat (invoked here so it survives the move into chat, where it
-          // still serves project switches).
-          engaged: {
-            initial: "project_context",
-            // Deliver the staged auth_ready to the freshly-invoked child.
-            entry: "forwardAuthReady",
-            invoke: {
-              id: "project-context",
-              systemId: "project-context",
-              src: "projectContext",
-              // Static ids → the project-context child's Input. The dynamic
-              // org_id + identity arrive via the `auth_ready` hand-off (forwarded
-              // on this state's entry), so the input carries only the immutable
-              // request_id/principal_id (project-context's I/O ports are
-              // construction-time actors wired in ../index.ts).
-              input: ({ context }) => ({
-                request_id: context.request_id,
-                principal_id: context.principal_id,
-              }),
-              onSnapshot: [
-                // First selection → advance project_context → chat (chat's entry
-                // forwards project_ready).
-                {
-                  guard: "advanceToChat",
-                  target: ".chat",
-                  actions: "captureProjectHandoff",
-                },
-                // Later selection with a changed id → project switch: re-forward
-                // project_ready in place (no re-entry of engaged/chat).
-                {
-                  guard: "reforwardProjectReady",
-                  actions: ["captureProjectHandoff", "forwardProjectReady"],
-                },
-              ],
+            {
+              guard: "isUserRejected",
+              target: "user_rejected",
+              actions: "captureUserRejected",
             },
-            // A project switch drives project-context's own switch path.
-            on: {
-              PROJECT_SWITCH: { actions: "forwardSwitchToProjectContext" },
-            },
-            states: {
-              project_context: {
-                entry: "markProjectContextActive",
-              },
-              chat: {
-                entry: ["markChatActive", "forwardProjectReady"],
-                invoke: {
-                  id: "session-chat",
-                  systemId: "session-chat",
-                  src: "sessionChat",
-                  // Static ids → the session-chat child's Input. The dynamic
-                  // org_id + project arrive via the `project_ready` hand-off
-                  // (forwarded on chat entry), so the input carries only the
-                  // immutable request_id/principal_id (session-chat's I/O ports
-                  // are construction-time actors wired in ../index.ts).
-                  input: ({ context }) => ({
-                    request_id: context.request_id,
-                    principal_id: context.principal_id,
-                  }),
-                },
-              },
-            },
-          },
-
-          user_rejected: {},
+          ],
         },
       },
 
-      // ──────────────────────── connectivity region ────────────────────────
-      connectivity: {
-        initial: "live",
-        states: {
-          live: {
-            on: {
-              TOKEN_EXPIRED: { target: "frozen" },
-              // Live: route the intent straight to the active child.
-              user_intent: { actions: "forwardIntentToActiveChild" },
+      // `engaged` owns the project-context child for BOTH project_context
+      // and chat (invoked here so it survives the move into chat, where it
+      // still serves project switches).
+      engaged: {
+        initial: "project_context",
+        // Deliver the staged auth_ready to the freshly-invoked child.
+        entry: "forwardAuthReady",
+        invoke: {
+          id: "project-context",
+          systemId: "project-context",
+          src: "projectContext",
+          // Static ids → the project-context child's Input. The dynamic
+          // org_id + identity arrive via the `auth_ready` hand-off (forwarded
+          // on this state's entry), so the input carries only the immutable
+          // request_id/principal_id (project-context's I/O ports are
+          // construction-time actors wired in ../index.ts).
+          input: ({ context }) => ({
+            request_id: context.request_id,
+            principal_id: context.principal_id,
+          }),
+          onSnapshot: [
+            // First selection → advance project_context → chat (chat's entry
+            // forwards project_ready).
+            {
+              guard: "advanceToChat",
+              target: ".chat",
+              actions: "captureProjectHandoff",
             },
+            // Later selection with a changed id → project switch: re-forward
+            // project_ready in place (no re-entry of engaged/chat).
+            {
+              guard: "reforwardProjectReady",
+              actions: ["captureProjectHandoff", "forwardProjectReady"],
+            },
+          ],
+        },
+        // A project switch drives project-context's own switch path.
+        on: {
+          PROJECT_SWITCH: { actions: "forwardSwitchToProjectContext" },
+        },
+        states: {
+          project_context: {
+            entry: "markProjectContextActive",
           },
-          frozen: {
-            on: {
-              // Frozen: HOLD inbound intents instead of forwarding them.
-              user_intent: { actions: "holdIntent" },
-              // Reauth succeeded → thaw + replay the buffer in order.
-              REAUTH_OK: { target: "live", actions: "replayHeldIntents" },
-              // Reauth failed → thaw the overlay AND reject the session
-              // (multi-target across the two parallel regions).
-              REAUTH_FAILED: {
-                target: [
-                  "#chat-app.connectivity.live",
-                  "#chat-app.lifecycle.user_rejected",
-                ],
-              },
+          chat: {
+            entry: ["markChatActive", "forwardProjectReady"],
+            invoke: {
+              id: "session-chat",
+              systemId: "session-chat",
+              src: "sessionChat",
+              // Static ids → the session-chat child's Input. The dynamic
+              // org_id + project arrive via the `project_ready` hand-off
+              // (forwarded on chat entry), so the input carries only the
+              // immutable request_id/principal_id (session-chat's I/O ports
+              // are construction-time actors wired in ../index.ts).
+              input: ({ context }) => ({
+                request_id: context.request_id,
+                principal_id: context.principal_id,
+              }),
             },
           },
         },
       },
+
+      user_rejected: {},
     },
   });
 }

@@ -177,7 +177,7 @@ function view(actor: ChatActor): ChatAppSnapshotView {
   return actor.getSnapshot() as unknown as ChatAppSnapshotView;
 }
 function lifecycle(actor: ChatActor): unknown {
-  return (actor.getSnapshot().value as { lifecycle: unknown }).lifecycle;
+  return actor.getSnapshot().value;
 }
 function childRef(actor: ChatActor, id: string): AnyActorRef | undefined {
   return (actor.getSnapshot().children as Record<string, AnyActorRef>)[id];
@@ -417,43 +417,6 @@ describe("R1 — session-chat = session_active (resumed)", () => {
     expect(out).toEqual(golden(SESSION_CHAT, log));
     expect(out.state).toBe("session_active");
     expect(out.context.session_id).toBe("s1");
-  });
-});
-
-// ═════════════════════════ Scenario 6 — freeze overlay (all three) ═════════════════════════
-
-describe("R1 — freeze overlay (connectivity frozen)", () => {
-  it("login = expired_token, project + session-chat = freeze, byte-identical to the *_frozen fold", async () => {
-    const sessions = [session("s1")];
-    const { actor } = await arriveAtChat(sessions);
-    actor.send({ type: "TOKEN_EXPIRED" });
-    expect((actor.getSnapshot().value as { connectivity: string }).connectivity).toBe("frozen");
-
-    // login-and-org-setup → expired_token (child stopped; retained outcome).
-    const loginLog = [...loginReadyEvents(), ev(LOGIN_LOG, "token_expired")];
-    const loginOut = derived(actor, LOGIN_AND_ORG_SETUP, loginLog);
-    expect(loginOut).toEqual(golden(LOGIN_AND_ORG_SETUP, loginLog));
-    expect(loginOut.state).toBe("expired_token");
-
-    // project-and-chat-session-management → freeze (last_live_state preserved).
-    const pcLog = [
-      ...pcSelectedEvents(),
-      ev(PC_LOG, "project_context_frozen", { last_live_state: "project_selected" }),
-    ];
-    const pcOut = derived(actor, PROJECT_AND_CHAT_SESSION_MANAGEMENT, pcLog);
-    expect(pcOut).toEqual(golden(PROJECT_AND_CHAT_SESSION_MANAGEMENT, pcLog));
-    expect(pcOut.state).toBe("freeze");
-    expect(pcOut.context.last_live_state).toBe("project_selected");
-
-    // session-chat → freeze (session_list preserved under the overlay).
-    const scLog = [
-      ...scListLoadedEvents(sessions),
-      ev(SC_LOG, "session_chat_frozen", { last_live_state: "session_list_loaded" }),
-    ];
-    const scOut = derived(actor, SESSION_CHAT, scLog);
-    expect(scOut).toEqual(golden(SESSION_CHAT, scLog));
-    expect(scOut.state).toBe("freeze");
-    expect(scOut.context.last_live_state).toBe("session_list_loaded");
   });
 });
 

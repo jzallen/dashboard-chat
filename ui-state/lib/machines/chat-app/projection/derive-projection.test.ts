@@ -2,9 +2,9 @@
 // views drive each branch in isolation (no wired actor, no I/O) — the contract
 // (byte-identity vs buildProjection across the real scenarios) is pinned
 // separately in derive-projection.contract.test.ts. These pin the mapper's
-// internal logic: the child.value→state map, the freeze overlay, the
-// phase-scoped no-child fallbacks, the full-ReducedContext shape, active_scope
-// tiers per machine, and bookkeeping.
+// internal logic: the child.value→state map, the phase-scoped no-child
+// fallbacks, the full-ReducedContext shape, active_scope tiers per machine, and
+// bookkeeping.
 
 import { describe, expect, it } from "vitest";
 
@@ -28,12 +28,11 @@ function child(value: string, context: Record<string, unknown>) {
 }
 
 function snap(opts: {
-  connectivity?: "live" | "frozen";
   onboarding_result?: OnboardingResult | null;
   children?: ChatAppSnapshotView["children"];
 }): ChatAppSnapshotView {
   return {
-    value: { lifecycle: "onboarding", connectivity: opts.connectivity ?? "live" },
+    value: "onboarding",
     context: {
       principal_id: "p1",
       onboarding_result: opts.onboarding_result ?? null,
@@ -130,42 +129,6 @@ describe("deriveProjection — login-and-org-setup", () => {
       resource_id: null,
     });
   });
-
-  it("freeze overlay: a ready login flow reports expired_token while frozen", () => {
-    const out = NOOP(
-      LOGIN_AND_ORG_SETUP,
-      snap({
-        connectivity: "frozen",
-        onboarding_result: {
-          state: "ready",
-          user: { email: null, display_name: null, first_name: null },
-          org: { id: "o1", name: "Org One" },
-          underlying_cause_tag: null,
-          org_validation_error: null,
-        },
-      }),
-    );
-    expect(out.state).toBe("expired_token");
-    expect(out.context.org).toEqual({ id: "o1", name: "Org One" });
-  });
-
-  it("freeze overlay does NOT override a terminal session_rejected", () => {
-    const out = NOOP(
-      LOGIN_AND_ORG_SETUP,
-      snap({
-        connectivity: "frozen",
-        onboarding_result: {
-          state: "session_rejected",
-          user: { email: null, display_name: null, first_name: null },
-          org: { id: null, name: null },
-          underlying_cause_tag: "transient",
-          org_validation_error: null,
-        },
-      }),
-    );
-    expect(out.state).toBe("session_rejected");
-    expect(out.context.underlying_cause_tag).toBe("transient");
-  });
 });
 
 // ───────────────────────── project-and-chat-session-management ─────────────────────────
@@ -222,20 +185,6 @@ describe("deriveProjection — project-and-chat-session-management", () => {
       failed_project_ids: ["p-x", "p-y"],
       partial_result: true,
     });
-  });
-
-  it("freeze overlay reports freeze with last_live_state = the live child value", () => {
-    const out = NOOP(
-      PROJECT_AND_CHAT_SESSION_MANAGEMENT,
-      snap({
-        connectivity: "frozen",
-        children: { "project-context": pcChild("project_selected") },
-      }),
-    );
-    expect(out.state).toBe("freeze");
-    expect(out.context.last_live_state).toBe("project_selected");
-    // The project + scope are preserved under the overlay.
-    expect(out.active_scope.project_id).toBe("p-A");
   });
 });
 
@@ -298,25 +247,6 @@ describe("deriveProjection — session-chat", () => {
     );
     expect(out.context.session_dataset_unavailable).toBe(true);
     expect(out.context.underlying_cause_tag).toBe("dataset_not_found");
-  });
-
-  it("freeze overlay reports freeze with last_live_state preserved", () => {
-    const out = NOOP(
-      SESSION_CHAT,
-      snap({
-        connectivity: "frozen",
-        children: {
-          "session-chat": scChild("session_list_loaded", {
-            session_list: [
-              { id: "s1", title: "S1", last_active_at: "t", active_dataset_id: null },
-            ],
-          }),
-        },
-      }),
-    );
-    expect(out.state).toBe("freeze");
-    expect(out.context.last_live_state).toBe("session_list_loaded");
-    expect(out.context.session_list).toHaveLength(1);
   });
 });
 

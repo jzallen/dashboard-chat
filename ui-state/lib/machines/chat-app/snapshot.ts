@@ -77,8 +77,8 @@ export function persistChatApp(
 /**
  * R3 settled-state guard: true when NO live invoked child is mid-invoke, so the
  * snapshot is safe to persist as the canonical restart point. Reads the live
- * snapshot's invoked-children values (the parent's `connectivity:frozen` state
- * carries no invoke in this build, so only children matter).
+ * snapshot's invoked-children values (the parent's own lifecycle states carry no
+ * invoke of their own beyond the children, so only children matter).
  */
 export function isSettledForSnapshot(snapshot: ChildrenView): boolean {
   for (const childId of Object.keys(TRANSIENT_CHILD_STATES) as ChatAppChildId[]) {

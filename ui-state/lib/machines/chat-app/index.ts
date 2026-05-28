@@ -91,7 +91,6 @@ export type {
   AuthHandoff,
   ChatAppChildEvent,
   ChatAppChildId,
-  ChatAppConnectivity,
   ChatAppContext,
   ChatAppEvent,
   ChatAppLifecycle,

@@ -11,12 +11,11 @@
 // (Phases 3-4).
 //
 // The orchestrator tests are the behavioral reference for the SAME observable
-// sequences (orchestrator.test.ts, orchestrator-freeze-replay.test.ts,
-// orchestrator-switching-project.test.ts): happy login→project→chat, project
-// switch (idempotent on same id), token-expiry freeze→reauth→thaw replay, and
+// sequences (orchestrator.test.ts, orchestrator-switching-project.test.ts):
+// happy login→project→chat, project switch (idempotent on same id), and
 // session_rejected. We assert the SAME behavior against the wired ChatApp, read
-// at the parent's (lifecycle, connectivity) value + the invoked children's own
-// state/context + the recorded port calls.
+// at the parent's lifecycle value + the invoked children's own state/context +
+// the recorded port calls.
 
 import { describe, expect, it } from "vitest";
 import { type AnyActorRef, createActor, fromPromise } from "xstate";
@@ -130,12 +129,7 @@ function makeInput(opts: { badToken?: boolean } = {}): SessionOnboardingInput {
 
 type ChatActor = ReturnType<typeof createActor>;
 
-function value(actor: ChatActor): { lifecycle: unknown; connectivity: unknown } {
-  return actor.getSnapshot().value as { lifecycle: unknown; connectivity: unknown };
-}
-const lifecycle = (a: ChatActor) => value(a).lifecycle;
-const connectivity = (a: ChatActor) => value(a).connectivity;
-const held = (a: ChatActor) => a.getSnapshot().context.held_events;
+const lifecycle = (a: ChatActor) => a.getSnapshot().value;
 const lastForwardedProject = (a: ChatActor) =>
   a.getSnapshot().context.last_forwarded_project_id;
 
@@ -198,9 +192,8 @@ describe("ChatApp Phase 2 — happy forward cycle (login → project → chat)",
   it("advances onboarding(ready) → project_context(project_selected) → chat, threading both hand-offs", async () => {
     const { actor, rec } = await arriveAtChat();
 
-    // Parent settled in chat + live.
+    // Parent settled in chat.
     expect(lifecycle(actor)).toEqual({ engaged: "chat" });
-    expect(connectivity(actor)).toBe("live");
 
     // onboarding resolved the returning user's org + identity and was then
     // stopped (its invoke is scoped to the `onboarding` state, left behind on
@@ -274,86 +267,6 @@ describe("ChatApp Phase 2 — project switch while in chat", () => {
 
 // ─────────────────────────── scenario 3 ───────────────────────────
 
-describe("ChatApp Phase 2 — token-expiry freeze → reauth → thaw", () => {
-  it("HOLDS user intents (in arrival order) while frozen, forwarding none", async () => {
-    const { actor, rec } = await arriveAtChat([session("s1"), session("s2")]);
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    expect(connectivity(actor)).toBe("frozen");
-    expect(lifecycle(actor)).toEqual({ engaged: "chat" }); // orthogonal — untouched
-
-    userIntent(actor, { type: "refresh_session_list" });
-    userIntent(actor, { type: "session_clicked", session_id: "s1" });
-
-    // Buffered in order; nothing reached the active child.
-    expect(held(actor)).toEqual([
-      { type: "refresh_session_list" },
-      { type: "session_clicked", session_id: "s1" },
-    ]);
-    expect(rec.loadCalls).toEqual(["proj-A"]); // the refresh was NOT processed
-    expect(rec.resumeCalls).toEqual([]);
-    expect(childState(actor, "session-chat")).toBe("session_list_loaded");
-  });
-
-  it("REAUTH_OK thaws and replays the held intent to the active child", async () => {
-    const { actor, rec } = await arriveAtChat();
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    userIntent(actor, { type: "session_clicked", session_id: "s1" });
-    expect(held(actor)).toHaveLength(1);
-    expect(rec.resumeCalls).toEqual([]); // held, not forwarded
-
-    actor.send({ type: "REAUTH_OK" });
-    expect(connectivity(actor)).toBe("live");
-    expect(held(actor)).toEqual([]); // buffer cleared
-
-    // The replayed session_clicked drove the REAL session-chat into resume.
-    await waitFor(actor, (a) => childState(a, "session-chat") === "session_active");
-    expect(rec.resumeCalls).toEqual(["s1"]);
-    expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.session_id).toBe("s1");
-  });
-
-  it("REAUTH_OK delivers multiple held intents to the active child in arrival order", async () => {
-    // Hold [refresh, click]: refresh transitions session-chat to
-    // loading_session_list which does NOT accept session_clicked, so the
-    // second intent is dropped at the child mailbox. That observable
-    // asymmetry — loadCalls grows but resumeCalls stays empty — is the
-    // signature of "refresh was delivered FIRST." A swapped delivery would
-    // run resume first and drop the refresh, producing the opposite recorder.
-    const { actor, rec } = await arriveAtChat();
-    expect(rec.loadCalls).toEqual(["proj-A"]); // initial load
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    userIntent(actor, { type: "refresh_session_list" });
-    userIntent(actor, { type: "session_clicked", session_id: "s1" });
-    expect(held(actor)).toEqual([
-      { type: "refresh_session_list" },
-      { type: "session_clicked", session_id: "s1" },
-    ]);
-
-    actor.send({ type: "REAUTH_OK" });
-    expect(held(actor)).toEqual([]); // buffer cleared on replay
-
-    // Wait for the refresh-driven reload to settle.
-    await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
-    expect(rec.loadCalls).toEqual(["proj-A", "proj-A"]); // refresh delivered
-    expect(rec.resumeCalls).toEqual([]); // click arrived while busy, dropped
-  });
-
-  it("REAUTH_FAILED rejects the session and thaws the overlay", async () => {
-    const { actor } = await arriveAtChat();
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    expect(connectivity(actor)).toBe("frozen");
-    actor.send({ type: "REAUTH_FAILED" });
-
-    expect(lifecycle(actor)).toBe("user_rejected");
-    expect(connectivity(actor)).toBe("live");
-  });
-});
-
-// ─────────────────────────── scenario 4 ───────────────────────────
-
 describe("ChatApp Phase 2 — onboarding re-verify failure", () => {
   it("rejects the user when re-verify fails, no advance to engaged", async () => {
     const rec: Recorder = { loadCalls: [], resumeCalls: [], switchCalls: [] };
@@ -364,7 +277,6 @@ describe("ChatApp Phase 2 — onboarding re-verify failure", () => {
     await waitFor(actor, (a) => lifecycle(a) === "user_rejected");
 
     expect(lifecycle(actor)).toBe("user_rejected");
-    expect(connectivity(actor)).toBe("live");
     // The engaged region was never entered → no project-context / session-chat
     // child, and no downstream port was ever touched.
     expect(childRef(actor, "project-context")).toBeUndefined();

@@ -125,7 +125,7 @@ sequenceDiagram
     M_B-->>O: new projection
 ```
 
-> **ADR-043:** no machine emits a token-expiry trigger any more — "silent reauth" was removed from `session-onboarding`. Freeze/thaw is reachable via the `/freeze` + `/thaw` endpoints (the failure-sim / harness path). The forthcoming `chat-app` coordinator (ADR-044) re-expresses freeze as a parallel **connectivity** region (`TOKEN_EXPIRED → frozen → REAUTH_OK/REAUTH_FAILED`) rather than a cross-machine broadcast.
+> **ADR-043:** no machine emits a token-expiry trigger any more — "silent reauth" was removed from `session-onboarding`. Freeze/thaw is reachable via the `/freeze` + `/thaw` endpoints (the failure-sim / harness path) on the live orchestrator. The `chat-app` coordinator (ADR-044) does **not** carry a freeze/reauth region: an early design overlaid a parallel `connectivity` region, but it was retired (ADR-043, resolving ADR-044 §5 Open Question #2 toward removal) because auth-proxy owns the token lifecycle (ADR-016) and ui-state is never a token-management participant.
 
 **Invariants (ADR-028):**
 

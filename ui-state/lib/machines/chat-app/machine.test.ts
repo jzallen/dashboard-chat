@@ -4,21 +4,14 @@
 // THIS test only). No network, no Redis, no boundaries.
 //
 // The unique surface covered HERE (not redundantly with integration.test.ts):
-//   - the connectivity (freeze) region is ORTHOGONAL to the lifecycle phase:
-//     freeze + replay also work while still in onboarding / project_context,
-//     which is structurally unreachable from the real-children suite because
-//     the real onboarding child resolves to ready too quickly to park there;
 //   - drivable parking of children at specific values (`verifying`,
-//     `resolving`) lets us assert the parent's intent buffer accumulates +
-//     replays without depending on a held-promise dance;
-//   - per-child inbox NEGATIVE assertions: an intent sent while frozen does
-//     NOT reach the active child, proving the parent's hold buffer interposed;
+//     `resolving`) so the parent can be held in any lifecycle phase;
 //   - unknown events are no-ops (state-machine discipline).
 //
-// Coverage of the full forward cycle, hand-off payload contents, in-chat
-// freeze/replay, REAUTH_FAILED rejection, and PROJECT_SWITCH semantics lives in
-// integration.test.ts against the real children. The two suites are
-// complementary — choreography lives here, production-like behavior there.
+// Coverage of the full forward cycle, hand-off payload contents, and
+// PROJECT_SWITCH semantics lives in integration.test.ts against the real
+// children. The two suites are complementary — choreography lives here,
+// production-like behavior there.
 //
 // Children stay parent-ignorant (ADR-028): the test drives a child directly via
 // its actor ref, and the parent only ever watches + forwards.
@@ -38,8 +31,7 @@ import type { ChatAppChildEvent, SessionOnboardingInput } from "./setup/types.ts
 // Tiny, parent-ignorant stubs that expose JUST enough to drive the parent's
 // choreography in isolation. Each fake:
 //   - parks in a drivable state the parent watches via `onSnapshot`, so a test
-//     can hold the parent in any lifecycle phase to prove the connectivity
-//     (freeze) region is orthogonal to it;
+//     can hold the parent in any lifecycle phase;
 //   - RECORDS every event it receives in `context.rx`, so a test can assert
 //     the parent forwarded — or DID NOT forward — a given intent.
 //
@@ -161,15 +153,10 @@ function startChatApp() {
   return createActor(createChatAppWithFakes(), { input: TEST_INPUT }).start();
 }
 
-// ── reading the parent's (lifecycle, connectivity) value ──
-function value(actor: ChatApp): { lifecycle: unknown; connectivity: unknown } {
-  return actor.getSnapshot().value as {
-    lifecycle: unknown;
-    connectivity: unknown;
-  };
+// ── reading the parent's lifecycle value (now a single region, read directly) ──
+function lifecycle(actor: ChatApp): unknown {
+  return actor.getSnapshot().value;
 }
-const lifecycle = (actor: ChatApp) => value(actor).lifecycle;
-const connectivity = (actor: ChatApp) => value(actor).connectivity;
 
 // ── reaching into the invoked fakes (typed as placeholders at the parent, so
 //    cast to read the fakes' recorded inbox) ──
@@ -182,79 +169,17 @@ function childRx(actor: ChatApp, id: string): ReceivedEvent[] {
     | undefined;
   return snapshot?.context?.rx ?? [];
 }
-function rxTypes(actor: ChatApp, id: string): string[] {
-  return childRx(actor, id).map((event) => event.type);
-}
 
-// ── drive the fakes ──
-function driveOnboardingReady(
-  actor: ChatApp,
-  identity: { org_id: string; first_name: string },
-) {
-  childRef(actor, "session-onboarding").send({
-    type: "DRIVE_READY",
-    ...identity,
-  });
-}
-function userIntent(
-  actor: ChatApp,
-  intent:
-    | { type: "session_clicked"; session_id: string }
-    | { type: "new_session_clicked" }
-    | { type: "refresh_session_list" },
-) {
-  actor.send({ type: "user_intent", intent });
-}
-
-const MAYA = { org_id: "org-acme", first_name: "Maya" };
-
-describe("ChatApp — freeze is orthogonal to the lifecycle phase", () => {
-  it("freezes + replays while still in the onboarding phase", () => {
+describe("ChatApp — starts in the onboarding phase", () => {
+  it("bootstraps into onboarding with the onboarding child invoked", () => {
     const actor = startChatApp();
     expect(lifecycle(actor)).toBe("onboarding");
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    expect(connectivity(actor)).toBe("frozen");
-    expect(lifecycle(actor)).toBe("onboarding"); // untouched
-
-    userIntent(actor, { type: "session_clicked", session_id: "s-onb" });
-    // Negative inbox assertion: the intent did NOT reach the active child.
-    expect(rxTypes(actor, "session-onboarding")).not.toContain(
-      "session_clicked",
-    );
-
-    actor.send({ type: "REAUTH_OK" });
-    expect(connectivity(actor)).toBe("live");
-    expect(
-      childRx(actor, "session-onboarding")
-        .filter((e) => e.type === "session_clicked")
-        .map((e) => e.session_id),
-    ).toEqual(["s-onb"]);
-  });
-
-  it("freezes + replays while still in the project_context phase", () => {
-    const actor = startChatApp();
-    driveOnboardingReady(actor, MAYA);
-    expect(lifecycle(actor)).toEqual({ engaged: "project_context" });
-
-    actor.send({ type: "TOKEN_EXPIRED" });
-    expect(connectivity(actor)).toBe("frozen");
-    expect(lifecycle(actor)).toEqual({ engaged: "project_context" }); // untouched
-
-    userIntent(actor, { type: "refresh_session_list" });
-    // Negative inbox assertion: project-context has only the auth_ready
-    // hand-off so far — no intent leaked through the freeze.
-    expect(rxTypes(actor, "project-context")).not.toContain(
-      "refresh_session_list",
-    );
-
-    actor.send({ type: "REAUTH_OK" });
-    expect(rxTypes(actor, "project-context")).toContain("refresh_session_list");
+    expect(childRef(actor, "session-onboarding")).toBeDefined();
   });
 });
 
 describe("ChatApp — unknown events are ignored", () => {
-  it("leaves (lifecycle, connectivity) unchanged and forwards nothing", () => {
+  it("leaves the lifecycle value unchanged and forwards nothing", () => {
     const actor = startChatApp();
     const before = actor.getSnapshot().value;
     const onboardingRxBefore = childRx(actor, "session-onboarding").length;

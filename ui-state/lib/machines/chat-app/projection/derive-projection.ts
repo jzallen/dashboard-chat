@@ -27,11 +27,10 @@
 //     them from the log (not the snapshot) keeps the SSE cursor coherent while
 //     STATE has no "forgot-to-emit" gap (the snapshot is the truth for state).
 //
-// The freeze overlay: while ChatApp's `connectivity` region is `frozen`, the
-// J-002 machines report `state: "freeze"` and the login flow reports
-// `expired_token` — exactly as the log-folded `*_frozen` / `token_expired`
-// handlers do today (the children themselves are NOT frozen by ChatApp; the
-// overlay is a parent-level read concern).
+// No freeze overlay: ChatApp's parent-level token-lifecycle (freeze/reauth)
+// region was retired (ADR-043 — auth-proxy owns the token lifecycle, ADR-016),
+// so there is no `connectivity:frozen` state to read and no `freeze` /
+// `expired_token` projection mapping. State derives purely from the child slice.
 //
 // Pure: same (snapshot, wireMachineName, bookkeeping) ⇒ same FlowProjection.
 
@@ -91,7 +90,10 @@ interface ChildActorLike {
 }
 
 export interface ChatAppSnapshotView {
-  value: { lifecycle: unknown; connectivity: unknown };
+  // The collapsed lifecycle value (single region; no parallel connectivity
+  // overlay since the freeze/reauth region was retired — ADR-043). The mapper
+  // derives state from the child slice, not the parent value.
+  value: unknown;
   context: { principal_id: string; onboarding_result: OnboardingResult | null };
   children: Partial<Record<ChatAppChildId, ChildActorLike | undefined>>;
 }
@@ -204,7 +206,6 @@ function mapState(
  *  the phase-scoped child is stopped on the advance to engaged/rejected). */
 function deriveOnboarding(
   snapshot: ChatAppSnapshotView,
-  frozen: boolean,
 ): { state: string; context: ReducedContext } {
   const context = initialContext();
   const child = readChild(snapshot, "session-onboarding");
@@ -219,11 +220,7 @@ function deriveOnboarding(
     context.org = { id: c.org.id, name: c.org.name };
     context.underlying_cause_tag = c.underlying_cause_tag ?? null;
     context.org_validation_error = c.org_validation_error ?? null;
-    const base = mapState(ONBOARDING_STATE_MAP, child.value as string);
-    // Freeze overlay: a live login flow shows `expired_token` while frozen
-    // (matching the log fold's `token_expired` handler). A terminal
-    // session_rejected stays rejected.
-    const state = frozen && base !== "session_rejected" ? "expired_token" : base;
+    const state = mapState(ONBOARDING_STATE_MAP, child.value as string);
     return { state, context };
   }
 
@@ -239,9 +236,7 @@ function deriveOnboarding(
     context.org = { id: result.org.id, name: result.org.name };
     context.underlying_cause_tag = result.underlying_cause_tag;
     context.org_validation_error = result.org_validation_error;
-    const state =
-      frozen && result.state === "ready" ? "expired_token" : result.state;
-    return { state, context };
+    return { state: result.state, context };
   }
 
   // Neither a live child nor a retained outcome → zero-event projection. (Not
@@ -253,7 +248,6 @@ function deriveOnboarding(
 /** project-and-chat-session-management ← project-context child. */
 function deriveProjectContext(
   snapshot: ChatAppSnapshotView,
-  frozen: boolean,
 ): { state: string; context: ReducedContext } {
   const context = initialContext();
   const child = readChild(snapshot, "project-context");
@@ -292,20 +286,12 @@ function deriveProjectContext(
   }
 
   const rawValue = child.value as string;
-  if (frozen) {
-    // Parent-driven freeze overlay: `freeze` over the live state, which the
-    // log-fold `project_context_frozen` records as `last_live_state` (the raw
-    // child state the orchestrator harvested).
-    context.last_live_state = rawValue;
-    return { state: "freeze", context };
-  }
   return { state: mapState(PROJECT_CONTEXT_STATE_MAP, rawValue), context };
 }
 
 /** session-chat ← session-chat child. */
 function deriveSessionChat(
   snapshot: ChatAppSnapshotView,
-  frozen: boolean,
 ): { state: string; context: ReducedContext } {
   const context = initialContext();
   const child = readChild(snapshot, "session-chat");
@@ -337,10 +323,6 @@ function deriveSessionChat(
     c.underlying_cause_tag === "dataset_not_found";
 
   const rawValue = child.value as string;
-  if (frozen) {
-    context.last_live_state = rawValue;
-    return { state: "freeze", context };
-  }
   return { state: mapState(SESSION_CHAT_STATE_MAP, rawValue), context };
 }
 
@@ -391,18 +373,17 @@ export function deriveProjection(
   if (!childId) {
     throw new UnknownWireMachineError(wireMachineName);
   }
-  const frozen = snapshot.value.connectivity === "frozen";
 
   let derived: { state: string; context: ReducedContext };
   switch (childId) {
     case "session-onboarding":
-      derived = deriveOnboarding(snapshot, frozen);
+      derived = deriveOnboarding(snapshot);
       break;
     case "project-context":
-      derived = deriveProjectContext(snapshot, frozen);
+      derived = deriveProjectContext(snapshot);
       break;
     case "session-chat":
-      derived = deriveSessionChat(snapshot, frozen);
+      derived = deriveSessionChat(snapshot);
       break;
   }
 

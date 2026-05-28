@@ -1,7 +1,7 @@
 # ChatApp coordinator machine
 
 `ChatApp` is the XState v5 **parent coordinator** that cycles a user through
-`onboarding → project-context → chat` and overlays a freeze/reauth region. It is
+`onboarding → project-context → chat`. It is
 the declarative replacement for the imperative `FlowOrchestrator`'s coordination
 role and the first faithful implementation of ADR-028's "one root orchestrator
 actor mediating parent-ignorant children" (see
@@ -24,35 +24,31 @@ actor mediating parent-ignorant children" (see
 > integration tests ([`integration.test.ts`](./integration.test.ts)) still pass
 > unchanged. Phase 4 swaps the composition root + deletes the orchestrator.
 
-## Two parallel regions
+## Single lifecycle region
 
-The machine is `type: "parallel"` — it is in one state in **each** region at once:
+The machine has one active state at a time — the forward cycle:
 
 ```
-ChatApp (parallel)
-├── lifecycle
-│   onboarding ─(isUserReady)─► engaged.project_context
-│                              ─(advanceToChat)─► engaged.chat
-│              └(isUserRejected)─► user_rejected
-│
-└── connectivity            (orthogonal — applies in ANY lifecycle phase)
-    live ─(TOKEN_EXPIRED)─► frozen ─(REAUTH_OK)─► live   (+ replay held intents)
-                            frozen ─(REAUTH_FAILED)─► live + lifecycle→user_rejected
+ChatApp
+  onboarding ─(isUserReady)─► engaged.project_context
+                             ─(advanceToChat)─► engaged.chat
+             └(isUserRejected)─► user_rejected
 ```
 
 - **`lifecycle`** is the forward cycle. `engaged` is a compound state that owns
   the project-context child for **both** `project_context` and `chat`, so it
   stays live for project switching after entering chat; session-chat is invoked
   on `chat` only.
-- **`connectivity`** is the freeze overlay. Because it is a *parallel region*,
-  freeze pauses intent-forwarding in place regardless of the lifecycle phase —
-  no per-child `FREEZE` broadcast, no per-child history bookkeeping. While
-  `frozen`, inbound user intents are **held** in a parent buffer
-  (`context.held_events`) and replayed **in order** on `REAUTH_OK`.
+- Inbound user intents route to whichever child owns the current phase via a
+  top-level `user_intent` handler (`forwardIntentToActiveChild`).
 
-`TOKEN_EXPIRED` is modeled as a parent event any phase can raise; in Phase 2 a
-child raises it via `sendParent` on a 401. `REAUTH_OK` / `REAUTH_FAILED` are the
-injectable reauth **outcomes** — no real WorkOS is wired in Phase 1.
+**No connectivity / freeze-reauth region.** An earlier design (ADR-044) carried a
+parallel `connectivity` (`live ⇄ frozen`) overlay that held user intents while
+frozen and replayed them on reauth. It was **retired** ([ADR-043](../../../../docs/decisions/adr-043-retire-ui-state-token-lifecycle-modeling.md),
+resolving ADR-044 §5 Open Question #2 toward removal): auth-proxy owns the token
+lifecycle ([ADR-016](../../../../docs/decisions/adr-016-auth-proxy-in-test-stack.md)), so
+ui-state is never a token-management participant — a backend-401 is an ordinary
+upstream error, not a ui-state "reauth" event.
 
 ## Coordination (children stay parent-ignorant — ADR-028)
 

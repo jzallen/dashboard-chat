@@ -3,9 +3,8 @@
 // These drive a real wired ChatApp actor through the ChatAppSnapshotStore
 // (noop tier — exercises the JSON round-trip) and rehydrate a FRESH wired
 // machine from the loaded snapshot, asserting:
-//   - settled-state round-trip restores lifecycle/connectivity + child states
+//   - settled-state round-trip restores the lifecycle value + child states
 //     (the happy hot-restart), with NO spurious re-fire of settled reads;
-//   - the parent freeze buffer (held_events) survives a frozen round-trip;
 //   - the R3 self-heal: a snapshot taken MID-INVOKE rehydrates and re-fires the
 //     in-flight child invoke automatically, settling without recovery code —
 //     reproduced here on the real wired ChatApp (the spike used a minimal shape);
@@ -120,16 +119,13 @@ function makeInput(): SessionOnboardingInput {
 
 // ── snapshot readers (same convention as the integration suite) ──
 type Actor = AnyActorRef;
-function valueOf(actor: Actor): { lifecycle: unknown; connectivity: unknown } {
-  return actor.getSnapshot().value as { lifecycle: unknown; connectivity: unknown };
+function valueOf(actor: Actor): unknown {
+  return actor.getSnapshot().value;
 }
 function childState(actor: Actor, id: string): string | undefined {
   const children = actor.getSnapshot().children as Record<string, AnyActorRef>;
   const snap = children[id]?.getSnapshot() as { value?: unknown } | undefined;
   return snap ? (snap.value as string) : undefined;
-}
-function held(actor: Actor): unknown[] {
-  return (actor.getSnapshot().context as { held_events: unknown[] }).held_events;
 }
 
 async function waitFor(actor: Actor, pred: () => boolean, timeoutMs = 2000): Promise<void> {
@@ -177,8 +173,7 @@ describe("ChatApp snapshot — settled-state hot restart", () => {
       loaded,
     );
 
-    expect(valueOf(restored).lifecycle).toEqual({ engaged: "chat" });
-    expect(valueOf(restored).connectivity).toBe("live");
+    expect(valueOf(restored)).toEqual({ engaged: "chat" });
     expect(childState(restored, "project-context")).toBe("project_selected");
     expect(childState(restored, "session-chat")).toBe("session_list_loaded");
     // The retained onboarding outcome survives the restart (state-of-record).
@@ -188,31 +183,6 @@ describe("ChatApp snapshot — settled-state hot restart", () => {
     ).toBe("ready");
     // A SETTLED child is NOT re-invoked on rehydration (R3 E4) — no read re-fires.
     expect(rec2.loadCalls).toEqual([]);
-
-    restored.stop();
-  });
-
-  it("preserves the parent freeze buffer (held_events) across a frozen round-trip", async () => {
-    const { actor } = await arriveAtChat([session("s1"), session("s2")]);
-    actor.send({ type: "TOKEN_EXPIRED" });
-    actor.send({ type: "user_intent", intent: { type: "session_clicked", session_id: "s1" } });
-    expect(valueOf(actor).connectivity).toBe("frozen");
-    expect(held(actor)).toHaveLength(1);
-
-    // Children are settled (chat steady state) even while the overlay is frozen.
-    const store = createNoopChatAppSnapshotStore();
-    expect(await saveChatAppSnapshot(store, PRINCIPAL, actor)).toBe(true);
-    actor.stop();
-
-    const rec2 = recorder();
-    const loaded = await loadChatAppSnapshot(store, PRINCIPAL);
-    const restored = rehydrateChatApp(
-      createChatApp(makeDeps(rec2, [session("s1"), session("s2")])) as AnyStateMachine,
-      loaded,
-    );
-
-    expect(valueOf(restored).connectivity).toBe("frozen");
-    expect(held(restored)).toEqual([{ type: "session_clicked", session_id: "s1" }]);
 
     restored.stop();
   });

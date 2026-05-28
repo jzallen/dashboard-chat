@@ -3,10 +3,13 @@
 // parent FORWARDS into its children, and the typed-arg + snapshot-view aliases
 // the extracted guards (./guards.ts) and actions (./actions.ts) annotate with.
 //
-// ChatApp is a PARENT coordinator with TWO PARALLEL REGIONS (it is in one state
-// in EACH at once):
-//   - lifecycle    : onboarding → project_context → chat (with user_rejected)
-//   - connectivity : live ⇄ frozen   (orthogonal — applies in ANY phase)
+// ChatApp is a PARENT coordinator with a SINGLE lifecycle region:
+//   - lifecycle : onboarding → project_context → chat (with user_rejected)
+//
+// The parent-level token-lifecycle (freeze/reauth) region was RETIRED (ADR-043):
+// auth-proxy owns the token lifecycle (ADR-016), so ui-state never participates
+// in token management — a backend-401 is an ordinary upstream error, not a
+// ui-state "reauth" event.
 //
 // The children are INVOKED (not spawned), phase-scoped, and parent-ignorant
 // (ADR-028): no child references another; only the parent watches each via
@@ -34,15 +37,12 @@ import type {
 // session-onboarding.
 export type { SessionOnboardingInput };
 
-/** The two lifecycle phases observable to a consumer, plus the terminal. */
+/** The lifecycle phases observable to a consumer, plus the terminal. */
 export type ChatAppLifecycle =
   | "onboarding"
   | "project_context"
   | "chat"
   | "user_rejected";
-
-/** The orthogonal connectivity overlay (the freeze region). */
-export type ChatAppConnectivity = "live" | "frozen";
 
 /** Stable child identities. These are the parent's `invoke` ids / `systemId`s —
  *  the parent's own observability + sendTo handles, NEVER child-to-child
@@ -107,9 +107,8 @@ export interface OnboardingResult {
 // ─────────────────────── Events the parent FORWARDS ───────────────────────
 
 /** A user intent the parent routes to whichever child is active for the current
- *  phase. While `connectivity = frozen` these are HELD (a parent buffer) and
- *  replayed in order on REAUTH_OK. Kept deliberately small for Phase 1; the
- *  real children's full intent surface lands when they are wired in Phase 2. */
+ *  phase. Kept deliberately small for Phase 1; the real children's full intent
+ *  surface lands when they are wired in Phase 2. */
 export type ChatUserIntent =
   | { type: "session_clicked"; session_id: string }
   | { type: "new_session_clicked" }
@@ -175,9 +174,6 @@ export interface ChatAppContext {
    *  (re-forward `project_ready` in place) and makes the same project_selected
    *  snapshot idempotent. */
   last_forwarded_project_id: string | null;
-  /** The parent-held buffer: user intents that arrived while `frozen`. Replayed
-   *  FIFO to the active child on REAUTH_OK, then cleared. */
-  held_events: ChatUserIntent[];
   /** The RETAINED onboarding outcome — the state-of-record for the
    *  `login-and-org-setup` derived projection once the phase-scoped onboarding
    *  child is stopped (it leaves the snapshot on the advance to `engaged` /
@@ -190,18 +186,11 @@ export interface ChatAppContext {
 // ───────────────────────────── Parent events ─────────────────────────────
 
 export type ChatAppEvent =
-  // A user intent to route to the active child (held while frozen).
+  // A user intent to route to the active child.
   | { type: "user_intent"; intent: ChatUserIntent }
   // Atomic project switch (forwarded to project-context as
   // switching_project_intent). Meaningful while engaged (project_context/chat).
-  | { type: "PROJECT_SWITCH"; new_project_id: string }
-  // Connectivity / reauth. TOKEN_EXPIRED is modeled as a PARENT event any phase
-  // can raise — in Phase 2 a child raises it via sendParent on a 401; here the
-  // test (or a fake) sends it directly. REAUTH_OK / REAUTH_FAILED are the
-  // injectable reauth OUTCOMES (no real WorkOS in Phase 1).
-  | { type: "TOKEN_EXPIRED" }
-  | { type: "REAUTH_OK" }
-  | { type: "REAUTH_FAILED" };
+  | { type: "PROJECT_SWITCH"; new_project_id: string };
 
 // ─────────────────── Per-child machine-input contracts ───────────────────
 // Each child slot pins its OWN input shape — what the parent's `invoke.input`

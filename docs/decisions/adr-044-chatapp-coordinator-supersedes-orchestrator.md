@@ -171,6 +171,56 @@ Additive only; the live app, the orchestrator, and the event-log fold path are u
 ## §5 Open questions (deferred)
 
 1. **Hybrid vs. full store model** — Hybrid now (preserves SSE + audit, least FE churn); ADR-030's store model is the more aggressive fallback.
-2. **Freeze region vs. ADR-043** — Phase 1 builds `connectivity` injectable + inert. Whether ChatApp wires a live freeze/reauth path (only meaningful with a future backend-401 boundary, review R4) or leaves it retired per ADR-043 is settled when boundaries land (Phase 4).
+2. **Freeze region vs. ADR-043** — ~~Phase 1 builds `connectivity` injectable + inert. Whether ChatApp wires a live freeze/reauth path (only meaningful with a future backend-401 boundary, review R4) or leaves it retired per ADR-043 is settled when boundaries land (Phase 4).~~ **RESOLVED 2026-05-28 — TOWARD REMOVAL. See the amendment below.**
 3. **Unify the external projection wire** (one ChatApp projection instead of per-machine) — a follow-on FE + auth-proxy story, not required for the pivot.
 4. **`sequence_id` monotonicity** in the derived view — keep appending to the per-machine log for streaming so `sequence_id` stays event-count-derived; confirm SSE cursor semantics survive (Phase 3).
+
+---
+
+## Amendment 2026-05-28 — §5 Open Question #2 RESOLVED: remove the `connectivity` region
+
+**Status:** Accepted · **Decision:** REMOVE (resolve OQ#2 toward removal) · **Grounds:** [ADR-043](adr-043-retire-ui-state-token-lifecycle-modeling.md)
+
+§5 OQ#2 deferred the keep-vs-remove decision for ChatApp's parent-level
+`connectivity` (`live ⇄ frozen`) region — built injectable + inert in Phase 1
+(§"Phase 1 — what landed") — until boundaries land. This amendment resolves it
+**toward removal**, applying ADR-043's logic directly:
+
+- **ADR-043 retired ui-state's token-lifecycle modeling** (freeze/thaw +
+  silent-reauth) because **auth-proxy owns the token lifecycle** ([ADR-016](adr-016-auth-proxy-in-test-stack.md)).
+  Inbound requests reaching ui-state are already authenticated, and outbound
+  backend calls refresh transparently — so ui-state is **never** a
+  token-management participant. A backend-401 is an ordinary upstream error, not
+  a ui-state "reauth" event. The `connectivity` region modeled exactly the
+  participation ADR-043 says ui-state does not have.
+- **The "future backend-401 boundary" (review R4) that would have justified
+  keeping the region did not materialize**, and ADR-043 establishes it is the
+  wrong layer for it regardless. Keeping an inert region as a speculative home
+  for semantics that belong elsewhere is dead structure, not optionality.
+- **chat-app is not yet wired into the live HTTP app** (`index.ts` wires only
+  session-onboarding), so this is a removal in a not-yet-live coordinator —
+  **no live-path behavior change.**
+
+**What was removed** (this refactor):
+
+- `machine.ts` — the `type: "parallel"` wrapper collapses to a single lifecycle
+  region (`initial: "onboarding"`); the `connectivity` region, the `holdIntent` /
+  `replayHeldIntents` actions, the `held_events` context field, and the
+  `REAUTH_FAILED` multi-target are deleted. The live intent router moves to a
+  top-level `on: { user_intent }` handler (`forwardIntentToActiveChild`).
+  `user_rejected` remains reachable via the onboarding `isUserRejected`
+  `onSnapshot` arm.
+- `setup/types.ts` — `ChatAppConnectivity`, the `held_events` field, and
+  `TOKEN_EXPIRED` / `REAUTH_OK` / `REAUTH_FAILED` from `ChatAppEvent` are removed.
+- `projection/derive-projection.ts` — the freeze overlay is removed end-to-end:
+  the snapshot `value` shape collapses (no `connectivity` read), and the `frozen`
+  param + the `expired_token` / `freeze` + `last_live_state` mappings are dropped.
+  The derived `FlowProjection` for every machine continues to be byte-identical
+  to the `buildProjection` log fold for the **non-frozen** states (the only
+  states ui-state ever reports, per ADR-043).
+
+**Consequence for §1 / "Persistence direction":** the description of ChatApp as a
+two-region parallel machine (§1, Consequences "Freeze becomes an orthogonal
+parent region") is **superseded by this amendment** — ChatApp is a single-region
+lifecycle coordinator. The orchestrator's own `/freeze` + `/thaw` failure-sim
+endpoints are a separate, still-live concern and are untouched here.
