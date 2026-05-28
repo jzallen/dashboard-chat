@@ -23,7 +23,11 @@ import {
   getSessionStatus,
   setSession,
 } from "./lib/session-store.ts";
-import { verifyUserToken } from "./lib/user-token.ts";
+import { isUserToken, verifyUserToken } from "./lib/user-token.ts";
+import {
+  computeOrgCreateReissue,
+  type ReissueBaseClaims,
+} from "./lib/post-response-reissue.ts";
 import { createDevProvider } from "./lib/user-auth/dev.ts";
 import {
   type SessionStorePort,
@@ -34,6 +38,20 @@ import {
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
 const UI_STATE_URL = process.env.UI_STATE_URL || "http://ui-state:8788";
+
+// Reissue headers that ONLY auth-proxy may set (Stage 2 of
+// auth-proxy-mints-user-tokens). Mirrors the inbound IDENTITY_HEADERS strip:
+// any value an upstream tries to set is dropped before relaying, so a
+// compromised backend cannot smuggle a token the FE would silently adopt
+// (design.md R7). auth-proxy's own injection is applied AFTER this strip.
+const REISSUE_HEADERS = ["x-new-access-token", "x-new-token-expires-in"];
+
+/** Copy `src` minus any upstream-supplied reissue headers (R7). */
+function stripReissueHeaders(src: Headers): Headers {
+  const headers = new Headers(src);
+  for (const name of REISSUE_HEADERS) headers.delete(name);
+  return headers;
+}
 
 // Test-mirror cell for the frontend-coexistence acceptance suite (DD-10,
 // Phase 02). Captures the most-recent `Authorization` header observed on
@@ -601,11 +619,71 @@ app.all("*", async (c) => {
     incomingHeaders.set("X-Org-Id", identity.orgId);
     incomingHeaders.set("X-User-Email", identity.email);
 
-    return proxyRequest(c, incomingHeaders);
+    const upstream = await proxyRequest(c, incomingHeaders);
+    return applyOrgCreateReissue(c, upstream, token);
   } catch {
     return c.json({ error: "Invalid or expired token" }, 401);
   }
 });
+
+/**
+ * Stage 2 reissue (design.md §3.4): when the just-proxied request was a
+ * successful `POST /api/orgs`, mint a fresh user token carrying the new
+ * `org_id` and attach it as `X-New-Access-Token` (+ `X-New-Token-Expires-In`)
+ * so the FE's stored token updates atomically with org-create — no separate
+ * `/api/auth/reissue` round-trip. The mint preserves the caller's identity
+ * (`sub`/`email`/`name`/`sid`) decoded from their verified user token; only
+ * `org_id` changes. Non-user callers (PAT/M2M) have no preservable session, so
+ * the hook does not fire. `proxyRequest` has already stripped any
+ * upstream-supplied reissue headers (R7), so only this injection survives.
+ */
+async function applyOrgCreateReissue(
+  c: { req: { raw: Request; url: string } },
+  upstream: Response,
+  token: string,
+): Promise<Response> {
+  // Cheap path/method/status guards before touching the body. The hook itself
+  // re-checks, but this keeps every non-org-create request zero-overhead.
+  if (c.req.raw.method.toUpperCase() !== "POST") return upstream;
+  if (new URL(c.req.url).pathname !== "/api/orgs") return upstream;
+  if (upstream.status !== 201) return upstream;
+
+  let baseClaims: ReissueBaseClaims | null = null;
+  if (isUserToken(token)) {
+    try {
+      const payload = await verifyUserToken(token);
+      baseClaims = {
+        sub: typeof payload.sub === "string" ? payload.sub : "",
+        email: typeof payload.email === "string" ? payload.email : "",
+        name: typeof payload.name === "string" ? payload.name : "",
+        sid: typeof payload.sid === "string" ? payload.sid : "",
+      };
+    } catch {
+      baseClaims = null;
+    }
+  }
+
+  let body: unknown = null;
+  try {
+    body = await upstream.clone().json();
+  } catch {
+    body = null;
+  }
+
+  const reissue = await computeOrgCreateReissue({
+    method: c.req.raw.method,
+    path: new URL(c.req.url).pathname,
+    status: upstream.status,
+    body,
+    baseClaims,
+  });
+  if (!reissue) return upstream;
+
+  const headers = stripReissueHeaders(upstream.headers);
+  headers.set("X-New-Access-Token", reissue.token);
+  headers.set("X-New-Token-Expires-In", String(reissue.expiresIn));
+  return new Response(upstream.body, { status: upstream.status, headers });
+}
 
 /**
  * Read an OAuth2 token-endpoint request body.
@@ -656,7 +734,7 @@ async function proxyRequest(c: { req: { raw: Request; url: string } }, headers: 
 
   return new Response(response.body, {
     status: response.status,
-    headers: response.headers,
+    headers: stripReissueHeaders(response.headers),
   });
 }
 
@@ -685,7 +763,7 @@ async function proxyToUpstream(
 
   return new Response(response.body, {
     status: response.status,
-    headers: response.headers,
+    headers: stripReissueHeaders(response.headers),
   });
 }
 

@@ -196,6 +196,39 @@ in that stack consumes the forwarded headers exactly as in production.
 The receiving half of this contract is exercised in
 [`backend/tests/integration/test_auth_proxy_m2m.py`](../backend/tests/integration/test_auth_proxy_m2m.py).
 
+## Org-create token reissue (`X-New-Access-Token`)
+
+When auth-proxy observes a successful `POST /api/orgs` (HTTP 201), the calling
+user's stored token is now stale — it still carries the *previous* `org_id`
+claim. Rather than force a separate `/api/auth/reissue` round-trip, auth-proxy
+mints a fresh user token (same identity, updated `org_id`) via the existing
+keypair path and attaches it to the org-create **response**:
+
+| Header | Meaning |
+|--------|---------|
+| `X-New-Access-Token` | A freshly-minted user JWT carrying the new `org_id`. |
+| `X-New-Token-Expires-In` | TTL in seconds (mirrors `/api/auth/refresh`'s `expires_in`). |
+
+The frontend's `withAuth` wrapper reads these headers off every response and,
+when present, adopts the new token via `tokenStorage` — so the stored token
+updates atomically with org-create. See
+[ADR-043](../docs/decisions/adr-043-retire-ui-state-token-lifecycle-modeling.md)
+(Amendment 2026-05-27, "auth-proxy as issuer") and
+`docs/feature/auth-proxy-mints-user-tokens/design/design.md` §3.4.
+
+> **Sensitive header (R6).** `X-New-Access-Token` is a bearer credential — treat
+> it with the **same sensitivity as the `Authorization` header**. Any proxy in
+> front of auth-proxy (nginx, CloudFront, ALB, log shippers) MUST apply the same
+> header-logging redaction it applies to `Authorization`; never log its value.
+> `X-New-Token-Expires-In` is non-secret but is redacted alongside it for
+> simplicity.
+
+> **Only auth-proxy may set it (R7).** auth-proxy **strips** any inbound
+> `X-New-Access-Token` / `X-New-Token-Expires-In` from upstream responses before
+> relaying them — mirroring the inbound identity-header strip — so a compromised
+> backend cannot smuggle a token the frontend would silently adopt. Only
+> auth-proxy's own injection, applied after the strip, survives.
+
 ## PAT (Personal Access Token) issuance
 
 In addition to the OAuth2 client_credentials flow above, auth-proxy can

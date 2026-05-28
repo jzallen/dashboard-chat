@@ -300,7 +300,16 @@ describe("org-create reissue — concurrency", () => {
       org_id: "",
       sid: "sid-B",
     });
-    upstreamResponds({ status: 201, body: { id: "org-new", name: "Acme" } });
+    // Fresh Response per call: two concurrent proxied calls must not share one
+    // upstream body stream (a single `mockResolvedValue` instance would be
+    // consumed twice — a test artifact; in production each fetch is distinct).
+    mockFetch.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ id: "org-new", name: "Acme" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+    );
 
     const [resA, resB] = await Promise.all([postOrgs(a.token), postOrgs(b.token)]);
 
