@@ -365,44 +365,6 @@ describe("R1 — login-and-org-setup = needs_org (new user, child live)", () => 
   });
 });
 
-// ═════════════════ Scenario 3 — error_recoverable + underlying_cause_tag (auth-proxy literal) ═════════════════
-
-describe("R1 — login-and-org-setup = error_recoverable (silent-reauth-failed)", () => {
-  it("pins the auth-proxy literal: state=error_recoverable + context.underlying_cause_tag", async () => {
-    const rec = recorder();
-    const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
-      input: makeInput({ newUser: true }),
-    }).start();
-    await waitFor(actor, (a) => childState(a, "session-onboarding") === "needs_org");
-
-    // Drive the onboarding child to error_recoverable carrying the cause the
-    // auth-proxy KPI sniffer keys off (the harness side-channel, child-direct).
-    childRef(actor, "session-onboarding")!.send({
-      type: "__force_failure__",
-      tag: "silent-reauth-failed",
-    });
-    await waitFor(actor, (a) => childState(a, "session-onboarding") === "error_recoverable");
-
-    const log = [
-      ev(LOGIN_LOG, "session_started", {
-        user: {
-          email: PROFILE.email,
-          display_name: PROFILE.name,
-          first_name: "Maya",
-        },
-        org: null,
-      }),
-      ev(LOGIN_LOG, "reissue_failed_partial", {
-        underlying_cause_tag: "silent-reauth-failed",
-      }),
-    ];
-    const out = derived(actor, LOGIN_AND_ORG_SETUP, log);
-    expect(out).toEqual(golden(LOGIN_AND_ORG_SETUP, log));
-    expect(out.state).toBe("error_recoverable");
-    expect(out.context.underlying_cause_tag).toBe("silent-reauth-failed");
-  });
-});
-
 // ═════════════════════════ Scenario 4 — switching_project (transient) ═════════════════════════
 
 describe("R1 — project-and-chat-session-management = switching_project", () => {

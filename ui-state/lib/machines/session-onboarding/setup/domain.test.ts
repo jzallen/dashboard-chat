@@ -50,7 +50,6 @@ describe("failWithCause / causeOf — the failure-cause round-trip", () => {
     "cookie-blocked",
     "partial-setup",
     "workos-profile-corrupt",
-    "silent-reauth-failed",
   ];
 
   it.each(members)("round-trips a %s cause through the thrown Error", (cause) => {

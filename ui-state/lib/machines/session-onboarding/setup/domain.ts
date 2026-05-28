@@ -145,8 +145,7 @@ export type UnderlyingCauseTag =
   | "transient"
   | "cookie-blocked"
   | "partial-setup"
-  | "workos-profile-corrupt"
-  | "silent-reauth-failed";
+  | "workos-profile-corrupt";
 
 /** Brand a thrown failure with its domain cause so a downstream action can route
  *  on the REASON, not a message substring. Mirrors the `name_taken` flag the 409
@@ -179,7 +178,6 @@ export function isUnderlyingCauseTag(
     value === "transient" ||
     value === "cookie-blocked" ||
     value === "partial-setup" ||
-    value === "workos-profile-corrupt" ||
-    value === "silent-reauth-failed"
+    value === "workos-profile-corrupt"
   );
 }

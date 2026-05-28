@@ -370,6 +370,5 @@ type _AllUnderlyingCausesHandled = _AssertNever<
     | "cookie-blocked"
     | "partial-setup"
     | "workos-profile-corrupt"
-    | "silent-reauth-failed"
   >
 >;
