@@ -1,6 +1,6 @@
 // Test-only probe route — frontend-coexistence Phase 04 / DD-16, DD-17, DD-18.
 //
-// Exercises the loader → uiStateClient → auth-proxy /ui-state/* path with a
+// Exercises the loader → fetchStateDocument → auth-proxy /ui-state/* path with a
 // fresh per-request QueryClient (§6.4 horizontal-scale invariant; DWD-2 SSR
 // pattern). Computes a SHA-256-derived fingerprint of the inbound
 // `Authorization` header and embeds it in both dehydrated state and the
@@ -23,7 +23,7 @@ import {
   useRouteError,
 } from "react-router";
 
-import { uiStateClient } from "../lib/ui-state-client";
+import { fetchStateDocument } from "../lib/ui-state-client";
 
 async function computeBearerFingerprint(authHeader: string): Promise<string> {
   if (!authHeader) return "anonymous";
@@ -47,13 +47,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   );
   try {
     await client.prefetchQuery({
-      queryKey: ["projection", "login-and-org-setup"],
-      queryFn: () =>
-        uiStateClient(request).getProjection("login-and-org-setup"),
+      queryKey: ["state-document"],
+      queryFn: () => fetchStateDocument(request),
     });
   } catch (err) {
-    // DD-16: a timeout surfaces as Response(504) from uiStateClient — let it
-    // bubble so the ErrorBoundary renders the 504 fallback. Other errors are
+    // DD-16: a timeout surfaces as Response(504) from fetchStateDocument — let
+    // it bubble so the ErrorBoundary renders the 504 fallback. Other errors are
     // swallowed so the probe still renders for the bearer-fingerprint check.
     if (err instanceof Response && err.status === 504) throw err;
   }

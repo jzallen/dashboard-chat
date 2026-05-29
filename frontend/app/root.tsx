@@ -9,14 +9,21 @@
 // future loader-driven dehydration, then <AuthProvider> (DWD-1 — client-only,
 // side effects fire in useEffect), then <Outlet />.
 //
-// `loader` (J-002 MR-1 sub-step 01-01) reads J-001's projection for
-// `active_scope.org_id` + `user.first_name` AND J-002's projection for
-// the current `state` per DWD-4 §6.1. When J-002's state is
-// `no_projects`, the SSR pass renders the welcome panel inline
-// so first-paint carries the no-projects shape without a client roundtrip.
+// `loader` (ADR-046 MR-4) fetches the ONE `/state` document once (the SSR seed)
+// instead of reading two per-machine projections. `Root` seeds
+// `createStateProxy({ seed })` from the loader's serialized document and reads
+// region slices via `useSelector` (no machine runs client-side). The
+// walking-skeleton first paint dispatches off `regions.projectContext.state ===
+// "no_projects"` to render the welcome panel inline — the same dispatch the old
+// loader did off `project_flow_state`, now off the document.
 //
 // `ErrorBoundary` surfaces RRv7 route errors with a minimal accessible fallback.
+import {
+  anonymousStateDocument,
+  type ChatAppStateDocument,
+} from "@dashboard-chat/ui-state-wire";
 import { HydrationBoundary,QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useSelector } from "@xstate/react";
 import { type ReactNode,useState } from "react";
 import {
   isRouteErrorResponse,
@@ -31,18 +38,27 @@ import {
 } from "react-router";
 
 import { AuthProvider } from "../src/ui/context/AuthContext";
-import {
-  PROJECT_FLOW_MACHINE,
-  type ProjectionShape,
-  uiStateClient,
-} from "./lib/ui-state-client";
+import { createStateProxy } from "./lib/state-proxy";
+import { fetchStateDocument } from "./lib/ui-state-client";
 
 interface RootLoaderData {
-  org_id: string;
-  user_first_name: string | null;
-  project_flow_state: string;
-  active_scope: ProjectionShape["active_scope"];
-  project: { id: string | null; name: string | null };
+  /** The SSR seed — the single `/state` document serialized into the hydration
+   *  payload so `createStateProxy({ seed })` returns the real document on first
+   *  render (no first-paint flash). */
+  document: ChatAppStateDocument;
+}
+
+/** First-name selector reused by `Root` (reactive, via useSelector) and
+ *  `HydrateFallback` (one-shot, off the seed). Reads the onboarding region first
+ *  (where login carried it), falling back to its display_name, then to the
+ *  project-context region — the same precedence the old two-projection loader used. */
+function selectFirstName(d: ChatAppStateDocument): string | null {
+  const onboarding = d.regions.onboarding.context.user;
+  return (
+    onboarding.first_name ??
+    ((onboarding.display_name ?? "").split(/\s+/)[0] || null) ??
+    d.regions.projectContext.context.user.first_name
+  );
 }
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -67,72 +83,22 @@ export function Layout({ children }: { children: ReactNode }) {
 export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<RootLoaderData> {
-  // MR-1: read both the login-and-org-setup projection (for org_id +
-  // user.first_name) and the project-and-chat-session-management
-  // projection (for the no_projects / project_selected
-  // dispatch). The walking-skeleton scenario relies on the SSR pass
-  // observing project_flow_state === "no_projects" so first
-  // paint carries the welcome panel — no client roundtrip needed.
-  // flow_id is derived server-side from the verified principal (ADR-040); the
-  // loader sends only the machine + its forwarded Bearer.
-  const client = uiStateClient(request);
-
-  let org_id = "";
-  let user_first_name: string | null = null;
-  let project_flow_state = "anonymous";
-  let active_scope: ProjectionShape["active_scope"] = {
-    org_id: "",
-    project_id: null,
-    resource_type: null,
-    resource_id: null,
-  };
-  let project: { id: string | null; name: string | null } = {
-    id: null,
-    name: null,
-  };
-
+  // ADR-046 MR-4: ONE GET /state read replaces the two per-machine projection
+  // reads. The document carries every region (onboarding + projectContext +
+  // sessionChat) at once, so the welcome-panel dispatch and the user's name both
+  // come from this single seed. Identity is header-derived (auth-proxy injects
+  // X-User-Id from the forwarded Bearer); the loader sends only the Bearer.
   try {
-    const login = await client.getProjection("login-and-org-setup");
-    const loginContext = (login as ProjectionShape).context as {
-      org?: { id: string | null; name: string | null };
-      user?: { display_name: string | null; first_name?: string | null };
-    };
-    org_id = loginContext?.org?.id ?? "";
-    user_first_name =
-      loginContext?.user?.first_name ??
-      ((loginContext?.user?.display_name ?? "").split(/\s+/)[0] || null);
+    const document = await fetchStateDocument(request);
+    return { document };
   } catch (err) {
-    // login-and-org-setup not yet started — leave defaults. The FE
-    // renders the login shell in that case (handled by the existing
-    // routes that this loader is composed under).
+    // A 504 surfaces to the ErrorBoundary (DD-16) rather than hanging SSR.
     if (err instanceof Response && err.status === 504) throw err;
+    // No live/persisted actor (or a transient non-504) — fold to the anonymous
+    // document so first paint still resolves a sensible phase + project region
+    // (the walking-skeleton no-flow case renders the login shell via Outlet).
+    return { document: anonymousStateDocument() };
   }
-
-  try {
-    const projection = await client.getProjection(PROJECT_FLOW_MACHINE);
-    project_flow_state = projection.state;
-    active_scope = projection.active_scope;
-    const projectContext = projection.context as {
-      project?: { id: string | null; name: string | null };
-      user?: { first_name?: string | null };
-    };
-    if (projectContext?.project) {
-      project = projectContext.project;
-    }
-    if (!user_first_name && projectContext?.user?.first_name) {
-      user_first_name = projectContext.user.first_name;
-    }
-  } catch (err) {
-    if (err instanceof Response && err.status === 504) throw err;
-  }
-
-  return {
-    org_id,
-    user_first_name,
-    project_flow_state,
-    active_scope,
-    project,
-  };
 }
 
 export default function Root() {
@@ -152,21 +118,27 @@ export default function Root() {
       }),
   );
 
-  // The loader populates the project flow's state for the SSR pass.
-  // When the user is in `no_projects`, render the welcome
-  // panel inline so first-paint carries the no-projects shape
-  // (walking-skeleton AC). Otherwise, defer to the route-level <Outlet />.
+  // ADR-046 MR-4: seed the StateProxy with the loader's document (no first-paint
+  // flash) and read region slices via useSelector. The machine stays on the
+  // server; the proxy is the client's stand-in. When the project region settles
+  // in `no_projects`, render the welcome panel inline (walking-skeleton AC);
+  // otherwise defer to the route-level <Outlet />.
   const data = useLoaderData<typeof loader>() as RootLoaderData | undefined;
+  const [stateProxy] = useState(() =>
+    createStateProxy({ seed: data?.document ?? anonymousStateDocument() }),
+  );
+  const projectState = useSelector(
+    stateProxy,
+    (d) => d.regions.projectContext.state,
+  );
+  const userFirstName = useSelector(stateProxy, selectFirstName);
 
   return (
     <QueryClientProvider client={queryClient}>
       <HydrationBoundary state={undefined}>
         <AuthProvider>
-          {data?.project_flow_state === "no_projects" ? (
-            <WelcomePanel
-              orgName={null}
-              userFirstName={data.user_first_name}
-            />
+          {projectState === "no_projects" ? (
+            <WelcomePanel orgName={null} userFirstName={userFirstName} />
           ) : (
             <Outlet />
           )}
@@ -216,12 +188,14 @@ export function HydrateFallback() {
   //
   // SSR-render the welcome panel here so first-paint carries the
   // no-projects shape for US-201. Post-hydration, the client takes over
-  // and the chat-route's clientLoader runs.
+  // and the chat-route's clientLoader runs. The name comes from the seed
+  // document's onboarding region (ADR-046 MR-4).
   const data = useLoaderData<typeof loader>() as RootLoaderData | undefined;
+  const userFirstName = data ? selectFirstName(data.document) : null;
   return (
     <main data-testid="no-projects-welcome-panel" role="main">
       <h1>
-        Welcome to Dashboard Chat, {data?.user_first_name ?? "there"}!
+        Welcome to Dashboard Chat, {userFirstName ?? "there"}!
       </h1>
       <p>Let&apos;s get started by creating your first project.</p>
     </main>

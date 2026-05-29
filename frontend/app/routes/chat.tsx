@@ -1,43 +1,35 @@
 // Framework-mode route — `/` (index) AND `/chat/:channelId`.
 //
-// MR-2 (DWD-4 + DWD-9): adds a server-side `loader` that resolves the
-// session-chat projection so the chat surface renders the welcome / session
-// list / resumed transcript on first paint (no client-side roundtrip).
+// ADR-046 MR-4: the server-side `loader` reads the `sessionChat` REGION off the
+// ONE `/state` document so the chat surface renders the welcome / session list /
+// resumed transcript on first paint (no client-side roundtrip).
 //
-// For `/chat/:channelId` the loader posts an `open_deep_link` with the
-// session id as `intent_session_id` (the HTTP/event-payload key still
-// uses the legacy prefix — its rename is a deferred follow-up to MR-D)
-// so the orchestrator drives project-context → project_ready →
-// session-chat → loading_session_list → resuming_session before the
-// loader returns. Inside ui-state the wish lands in
-// pending_resume_session_id (the renamed session-chat ctx field /
-// projection field post-MR-D). Per US-205 Example 1 the transcript +
-// dataset chip are visible on the SAME first paint.
+// For `/chat/:channelId` the loader sends an `open_deep_link` event (the standalone
+// /open-deep-link route collapsed onto the single write surface) carrying the
+// session id as `intent_session_id` (the event-payload key still uses the legacy
+// prefix — its rename is a deferred follow-up to MR-D) so the actor drives
+// project-context → project_ready → session-chat → loading_session_list →
+// resuming_session before responding. The event response IS the settled document.
+// Inside ui-state the wish lands in pending_resume_session_id (the renamed
+// session-chat ctx field post-MR-D). Per US-205 Example 1 the transcript + dataset
+// chip are visible on the SAME first paint.
 //
-// For `/` (index) the loader returns the current session-chat projection so
-// the FE renders whatever state Maya was last in (session_list_loaded /
-// session_active / etc).
+// For `/` (index) the loader reads the current sessionChat region so the FE renders
+// whatever state Maya was last in (session_list_loaded / session_active / etc).
 //
-// MR-3 (US-206 / DWD-10): the loader surfaces the new `session_welcome`
-// state and the `pending_first_message` context field via the projection
-// envelope (consumed below by ChatLoaderData). Composer-state preservation
-// across `error_recoverable → retry_clicked` is anchored on React's
-// component-local `useState` per app-arch §6.4 — no new abstraction is
-// required at the route level. A future MR rewires ChatView's submit
-// handler to dispatch `first_message_sent` against the session-chat machine
-// and to await `projection.session_id` (set by the machine's
-// createSessionEagerly invoke) before POSTing the chat turn to the agent;
-// MR-3 lands only the machine + projection substrate that wiring depends on.
+// US-206 / DWD-10: the region surfaces the `session_welcome` state and the
+// `pending_first_message` context field (consumed below by ChatLoaderData).
+// Composer-state preservation across `error_recoverable → retry_clicked` is
+// anchored on React's component-local `useState` per app-arch §6.4 — no new
+// abstraction is required at the route level. A future MR rewires ChatView's submit
+// handler to dispatch `first_message_sent` and to await the document's
+// `regions.sessionChat.context.session_id` before POSTing the chat turn to the
+// agent.
 
 import type { LoaderFunctionArgs } from "react-router";
 
 import { ChatView } from "../../src/ui/components/ChatView";
-import {
-  SESSION_CHAT_MACHINE,
-  uiStateClient,
-} from "../lib/ui-state-client";
-
-const DEFAULT_PRINCIPAL_ID = "dev-user-001";
+import { fetchStateDocument, postStateEvent } from "../lib/ui-state-client";
 
 export interface ChatLoaderData {
   org_id: string;
@@ -71,56 +63,44 @@ export async function loader({
   request,
   params,
 }: LoaderFunctionArgs): Promise<ChatLoaderData> {
-  const principalId = DEFAULT_PRINCIPAL_ID;
-  // flow_id is derived server-side from the verified principal (ADR-040); only
-  // the deep-link intent still needs principalId on the wire.
-  const client = uiStateClient(request);
+  // ADR-046 MR-4: identity is header-derived (auth-proxy injects X-User-Id from
+  // the forwarded Bearer). The deep-link is now an ordinary `open_deep_link` event
+  // on the single write surface — the standalone `/open-deep-link` route collapsed.
   const channelId = (params.channelId as string | undefined) ?? null;
 
   try {
-    // Deep-link path: /chat/:channelId — push the channel id through the
-    // orchestrator's project-context machine, which forwards it to
-    // session-chat via the `project_ready` broadcast hook (DESIGN §3.4).
-    // The HTTP body key `intent_session_id` is the wire surface — its
-    // rename to `deeplink_session_id` is a deferred follow-up to MR-D.
+    let document = null;
+    // Deep-link path: /chat/:channelId — send `open_deep_link` so the actor
+    // re-resolves through resolving_initial_scope; the event response IS the
+    // settled document (no second read). The payload key `intent_session_id`
+    // is the wire surface — its rename to `deeplink_session_id` is a deferred
+    // follow-up to MR-D.
     if (channelId) {
       try {
-        await client.openProjectDeepLink(principalId, {
-          intent_session_id: channelId,
+        document = await postStateEvent(request, {
+          type: "open_deep_link",
+          payload: { intent_session_id: channelId },
         });
       } catch {
-        // Defensive — projection read below still surfaces whatever state
+        // Defensive — the GET /state read below still surfaces whatever state
         // is currently visible (e.g. session_list_loaded if the deep link
         // resolved to a deleted session).
       }
     }
-    const sessionChat = await client.getProjection(SESSION_CHAT_MACHINE);
-    const ctx = sessionChat.context as {
-      project?: { id: string | null; name: string | null };
-      session_id?: string | null;
-      transcript?: Array<{
-        id: string;
-        role: "user" | "assistant" | "tool";
-        content: string;
-        ts: string;
-      }>;
-      resource?: {
-        type: "dataset" | "view" | "report" | null;
-        id: string | null;
-      };
-      session_dataset_unavailable?: boolean;
-      pending_resume_session_id?: string | null;
-      pending_first_message?: string;
-    };
-    // Project state on the session-chat projection lives on the shared
-    // `project: { id, name }` field after the audit §9 Q3 collapse — it is
-    // populated by `project_context_inherited` (the orchestrator's
-    // `project_ready` re-broadcast) with the same id/name that
-    // project-context settled on.
+    // Index path (or a deep-link that errored): read the current document.
+    if (!document) {
+      document = await fetchStateDocument(request);
+    }
+    const sessionChat = document.regions.sessionChat;
+    const ctx = sessionChat.context;
+    // Project on the sessionChat region lives on the shared `project: { id, name }`
+    // field after the audit §9 Q3 collapse — populated by
+    // `project_context_inherited` with the same id/name projectContext settled on.
+    // The single authoritative scope lives at the document's top level.
     return {
-      org_id: sessionChat.active_scope.org_id,
-      project_id: ctx.project?.id ?? null,
-      project_name: ctx.project?.name ?? null,
+      org_id: document.active_scope.org_id,
+      project_id: ctx.project.id ?? null,
+      project_name: ctx.project.name ?? null,
       session_id: ctx.session_id ?? null,
       state: sessionChat.state,
       transcript: ctx.transcript ?? [],

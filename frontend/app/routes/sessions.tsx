@@ -1,14 +1,10 @@
 // Framework-mode route — `/sessions`.
 //
-// MR-2 (DWD-4 + DWD-9): adds a server-side `loader` that reads BOTH the
-// project-context projection AND the session-chat projection. The
-// project-context projection carries the active project (Maya needs to see
-// "showing sessions for Q4 Analytics"); session-chat carries the actual
+// ADR-046 MR-4: the loader reads the `projectContext` + `sessionChat` REGIONS off
+// the ONE `/state` document (one GET instead of two per-machine projection reads).
+// The projectContext region carries the active project (Maya needs to see
+// "showing sessions for Q4 Analytics"); the sessionChat region carries the actual
 // `session_list` array sorted DESC by `last_active_at`.
-//
-// Per DWD-13 each machine has its OWN flow_id namespace:
-//   project-context flow_id = `project-and-chat-session-management:<principal>`
-//   session-chat   flow_id = `session-chat:<principal>`
 //
 // Per OQ-J002-5 / journey YAML's `session.list` shared artifact, the full-
 // list page is paginated client-side after the first page is loader-served.
@@ -16,11 +12,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 
 import { SessionList } from "../../src/ui/components/SessionList";
-import {
-  PROJECT_FLOW_MACHINE,
-  SESSION_CHAT_MACHINE,
-  uiStateClient,
-} from "../lib/ui-state-client";
+import { fetchStateDocument } from "../lib/ui-state-client";
 
 export interface SessionListItem {
   id: string;
@@ -41,33 +33,21 @@ export interface SessionsLoaderData {
 export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<SessionsLoaderData> {
-  // flow_id is derived server-side from the verified principal (ADR-040).
-  const client = uiStateClient(request);
-
+  // ADR-046 MR-4: one GET /state carries every region. Identity is
+  // header-derived (auth-proxy injects X-User-Id from the forwarded Bearer).
   try {
-    const [projectContext, sessionChat] = await Promise.all([
-      client.getProjection(PROJECT_FLOW_MACHINE),
-      client.getProjection(SESSION_CHAT_MACHINE),
-    ]);
-    const projectCtx = projectContext.context as {
-      project?: { id: string | null; name: string | null };
-    };
-    const sessionCtx = sessionChat.context as {
-      project?: { id: string | null; name: string | null };
-      session_list?: SessionListItem[];
-      session_list_next_cursor?: string | null;
-      session_list_has_more?: boolean;
-    };
-    // Project state on both projections converges on `project: { id, name }`
-    // (audit §9 Q3 / MR-H field collapse). The session-chat fallback to
-    // project-context covers the bootstrap race where project-context has
-    // settled but session-chat has not yet received `project_context_inherited`.
+    const document = await fetchStateDocument(request);
+    const projectCtx = document.regions.projectContext.context;
+    const sessionCtx = document.regions.sessionChat.context;
+    // Project state on both regions converges on `project: { id, name }`
+    // (audit §9 Q3 / MR-H field collapse). The sessionChat → projectContext
+    // fallback covers the bootstrap race where projectContext has settled but
+    // sessionChat has not yet received `project_context_inherited`. The single
+    // authoritative scope lives at the document's top level.
     return {
-      org_id: projectContext.active_scope.org_id,
-      project_id:
-        sessionCtx.project?.id ?? projectCtx.project?.id ?? null,
-      project_name:
-        sessionCtx.project?.name ?? projectCtx.project?.name ?? null,
+      org_id: document.active_scope.org_id,
+      project_id: sessionCtx.project.id ?? projectCtx.project.id ?? null,
+      project_name: sessionCtx.project.name ?? projectCtx.project.name ?? null,
       sessions: sessionCtx.session_list ?? [],
       next_cursor: sessionCtx.session_list_next_cursor ?? null,
       has_more: sessionCtx.session_list_has_more ?? false,
