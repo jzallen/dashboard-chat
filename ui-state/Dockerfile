@@ -30,7 +30,7 @@ RUN npm install --no-package-lock --omit=dev --ignore-scripts \
 COPY shared/failure-simulation/ ./node_modules/@dashboard-chat/shared-failure-simulation/
 
 # Copy source after deps so source-only changes don't bust the deps layer.
-COPY ui-state/index.ts ./
+COPY ui-state/index.ts ui-state/config.ts ./
 COPY ui-state/lib/ ./lib/
 
 # Run as non-root for production safety.
