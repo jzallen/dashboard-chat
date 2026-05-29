@@ -230,7 +230,9 @@ current per-child `last_live_state` history-target bookkeeping.
 
 ### invoke vs spawn
 
-**Use `invoke` for the children, keyed by `systemId`.** Rationale:
+**Use `invoke` for the children, keyed by `id`.** Rationale: _(corrected
+2026-05-29: originally said "keyed by `systemId`"; parent sendTo/snapshot
+resolution is keyed by the invoke `id`, not `systemId` — see the §3 note below.)_
 
 - The children are **phase-scoped**: project-context is meaningful while
   `lifecycle ∈ {project_context, chat}`; session-chat while `∈ {chat}`.
@@ -249,12 +251,14 @@ current per-child `last_live_state` history-target bookkeeping.
   invoke project-context on a state that is an ancestor of both
   `project_context` and `chat`, and session-chat on `chat` only.
 
-Assign each child a stable `systemId` (`session-onboarding`, `project-context`,
+Assign each child a stable `id` (`onboarding`, `project-context`,
 `session-chat`). The v5 actor `system` lets any actor resolve a sibling by
 `systemId` — but **do not use that to bypass the parent.** ADR-028's "no machine
-knows another" stands. `systemId` here is for the parent's own
-`sendTo`/observability and for snapshot identity stability across restart, NOT
-for child-to-child messaging.
+knows another" stands. _(corrected 2026-05-29: the parent's own
+`sendTo`/observability and snapshot-identity stability across restart all resolve
+through the invoke `id` via `snapshot.children[id]`, NOT `systemId`. `systemId`
+only matters for cross-hierarchy `system.get(systemId)`, which this design never
+uses — so the redundant `systemId` declarations were removed.)_
 
 ### parent ↔ child messaging
 

@@ -63,6 +63,14 @@ not the children — is the thing to replace.
 hand-offs. `systemId` is the parent's identity for observability / snapshot-stability, **not**
 child-to-child messaging.
 
+> **Correction (2026-05-29):** the `systemId` rationale above is factually wrong. In XState v5
+> `sendTo(child, …)` resolves its target through `snapshot.children[id]` and `getPersistedSnapshot()`
+> keys invoked-child snapshots by **`id`** — so the parent's own sendTo, observability, and
+> snapshot-identity stability are all the **`id`** handle, never `systemId`. `systemId` only
+> registers an actor for cross-hierarchy `system.get(systemId)` lookup, which this design never
+> uses. The three children had `systemId` set equal to their `id`, making it redundant-but-harmless;
+> it was removed in `refactor/remove-redundant-systemid`. (Original text retained above for the record.)
+
 **Children are dependency-injected** through `setup({ actors })` + `machine.provide({ actors })`,
 so the implementation is swappable: Phase 1 provides FAKES; Phase 2 provides the real machines.
 
