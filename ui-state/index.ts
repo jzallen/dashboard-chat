@@ -38,6 +38,7 @@ import { type Config, loadConfig } from "./config.ts";
 import type { ChatAppDeps } from "./lib/machines/chat-app/index.ts";
 import {
   buildChatAppRouter,
+  buildStateRouter,
   ChatAppActorRegistry,
   type ChatAppRuntime,
 } from "./lib/machines/chat-app/router.ts";
@@ -118,6 +119,9 @@ export function buildChatAppApp(opts: {
   for (const [path, wireMachine] of WIRE_PATHS) {
     app.route(path, buildChatAppRouter(runtime, wireMachine));
   }
+  // ADR-046 MR-2: the single `/state` actor surface, mounted ADDITIVELY alongside
+  // the per-machine wire (the latter is retired at MR-7). Same runtime, same actor.
+  app.route("/", buildStateRouter(runtime));
   return app;
 }
 
