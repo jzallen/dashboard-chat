@@ -6,7 +6,7 @@
 //
 // SINGLE lifecycle region (one active state at a time):
 //
-//     onboarding ─(isUserReady)─► project_context ─(advanceToChat)─► chat
+//     onboarding ─(isUserReady)─► project_context ─(isInitialProjectSelected)─► chat
 //                 └(isUserRejected)─► user_rejected
 //     (project-context is invoked on `engaged`, the ancestor of project_context
 //      AND chat, so it stays live for switching while in chat; session-chat is
@@ -300,14 +300,14 @@ export function createChatAppMachine() {
             // First selection → advance project_context → chat (chat's entry
             // forwards project_ready).
             {
-              guard: "advanceToChat",
+              guard: "isInitialProjectSelected",
               target: ".chat",
               actions: "captureProjectHandoff",
             },
             // Later selection with a changed id → project switch: re-forward
             // project_ready in place (no re-entry of engaged/chat).
             {
-              guard: "reforwardProjectReady",
+              guard: "shouldSwitchProject",
               actions: ["captureProjectHandoff", "forwardProjectReady"],
             },
           ],
