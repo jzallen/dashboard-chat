@@ -1,4 +1,4 @@
-// Unit tests for the SessionOnboardingMachine — drives the state machine
+// Unit tests for the OnboardingMachine — drives the state machine
 // through `createActor` injecting a MOCK `fetch` as the I/O port.
 //
 // The machine takes NO constructor params: every external actor is a
@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { createActor } from "xstate";
 
 import { makeMockFetch, makeTestConfig } from "../../testing/test-config.ts";
-import { createSessionOnboardingMachine } from "./machine.ts";
+import { createOnboardingMachine } from "./machine.ts";
 import type { RequestClient } from "./setup/actors.ts";
 import type { UnderlyingCauseTag } from "./setup/domain.ts";
 
@@ -111,7 +111,7 @@ function waitFor<TActor extends ReturnType<typeof createActor>>(
 
 describe("when a signed-in user's session is verified on arrival", () => {
   it("a returning user with an organization is taken straight into the app", async () => {
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     // The org is loaded from the backend (/api/orgs/me, the org SSOT) during
     // verifying; the hasOrg guard reads it off the done-event output. The name
     // comes from the backend (not a header claim), so it is populated.
@@ -125,7 +125,7 @@ describe("when a signed-in user's session is verified on arrival", () => {
   });
 
   it("a brand-new user is asked to create their organization", async () => {
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });
     actor.start();
     await waitFor(actor, (s) => s.value === "needs_org");
@@ -136,7 +136,7 @@ describe("when a signed-in user's session is verified on arrival", () => {
   });
 
   it("a user whose organization comes back empty is treated as new and asked to create one", async () => {
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     const actor = createActor(machine, {
       input: inputWith(returningFetch({ id: "", name: "" })),
     });
@@ -152,7 +152,7 @@ describe("when a user's session can no longer be verified", () => {
   it("their session is rejected and no profile is loaded", async () => {
     // The mock answers 401 for Maya's bearer → getWorkOSUserInfo throws.
     const rejectingFetch = makeMockFetch({ badToken: MAYA_INPUT.bearer_token });
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(rejectingFetch) });
     actor.start();
     await waitFor(actor, (s) => s.value === "session_rejected");
@@ -171,7 +171,7 @@ describe("when a user's session can no longer be verified", () => {
 
 describe("when a new user submits a valid organization name", () => {
   it("their organization is created and they enter the app", async () => {
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });
     actor.start();
     await waitFor(actor, (s) => s.value === "needs_org");
@@ -191,7 +191,7 @@ describe("when a user submits an organization name that breaks the naming rules"
   ] as const)(
     'keeps them on the naming form, flagging "%s" as %s',
     async (orgName, expectedKind, expectedMessage) => {
-      const machine = createSessionOnboardingMachine();
+      const machine = createOnboardingMachine();
       const actor = createActor(machine, { input: inputWith(okFetch()) });
       actor.start();
       await waitFor(actor, (s) => s.value === "needs_org");
@@ -212,7 +212,7 @@ describe("when the identity provider returns a profile missing required details"
     const corruptFetch = makeMockFetch({
       profile: { email: "", name: "Maya Chen" },
     });
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(corruptFetch) });
     actor.start();
     await waitFor(actor, (s) => s.value === "session_rejected");
@@ -232,7 +232,7 @@ describe("when a user submits an organization name that is already taken", () =>
       profile: { email: MAYA_PROFILE.email, name: MAYA_PROFILE.display_name },
       orgNameTaken: true,
     });
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(nameTakenFetch) });
     actor.start();
     await waitFor(actor, (s) => s.value === "needs_org");
@@ -254,7 +254,7 @@ describe("when a user submits an organization name that is already taken", () =>
 
 describe("when a failure is surfaced (via the test harness)", () => {
   it("the user is moved to the recoverable error screen carrying the failure reason", async () => {
-    const machine = createSessionOnboardingMachine();
+    const machine = createOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });
     actor.start();
     await waitFor(actor, (s) => s.value === "needs_org");

@@ -32,7 +32,7 @@ function snap(opts: {
   children?: ChatAppSnapshotView["children"];
 }): ChatAppSnapshotView {
   return {
-    value: "onboarding",
+    value: "login",
     context: {
       principal_id: "p1",
       onboarding_result: opts.onboarding_result ?? null,
@@ -89,7 +89,7 @@ describe("deriveProjection — login-and-org-setup", () => {
       LOGIN_AND_ORG_SETUP,
       snap({
         children: {
-          "session-onboarding": child("needs_org", {
+          "onboarding": child("needs_org", {
             user: { email: "m@x", display_name: "M X", first_name: "M" },
             org: { id: null, name: null },
             underlying_cause_tag: null,

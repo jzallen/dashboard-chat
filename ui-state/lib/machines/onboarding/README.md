@@ -1,4 +1,4 @@
-# session-onboarding machine
+# onboarding machine
 
 The flow that brings an **already-authenticated** principal to an org-scoped, app-ready state. Owned by `ui-state` (the Hono backend-for-frontend actor system). Realigned from the former `login-and-org-setup` machine per [ADR-041](../../../../docs/decisions/adr-041-session-onboarding-domain-realignment.md).
 
@@ -133,9 +133,9 @@ one-way dependency chain — `domain` is the leaf → `actors` → `types` → `
 - `setup/actors.ts` — the external-service resolvers (WorkOS re-verify, backend org SSOT, org-create) that return the domain model (`VerifiedSession`, `Org`), their transport DTOs, the `fromPromise` actor aliases, and the wired `actors` bundle threaded into `setup({ actors })`
 - `setup/guards.ts` — the `guards` bundle (transition predicates: `hasOrg`, `isOrgNameValid`, `isOrgNameTaken`)
 - `setup/actions.ts` — the `actions` bundle (every `assign`, including the two formerly inline in the statechart, `assignPendingOrgName` + `assignCreatedOrg`, and the parameterized `tagCause` that records the cause tag on both the `__force_failure__` jump and a genuine org-create failure)
-- `strategy.ts` — the `FlowStrategy` impl (`sessionOnboardingStrategy`) + the per-request `SessionOnboardingBeginStrategy`
-- `router.ts` — the ACL HTTP transport (`buildSessionOnboardingRouter`); identity from the verified header + forwarded Bearer, never a client body claim (ADR-041 D4)
-- `index.ts` — barrel; exports the **minimal** public surface only: `createSessionOnboardingMachine` plus the `RequestClient` / `SessionOnboardingDeps` wiring types a composition root needs
+- `strategy.ts` — the `FlowStrategy` impl (`onboardingStrategy`) + the per-request `OnboardingBeginStrategy`
+- `router.ts` — the ACL HTTP transport (`buildOnboardingRouter`); identity from the verified header + forwarded Bearer, never a client body claim (ADR-041 D4)
+- `index.ts` — barrel; exports the **minimal** public surface only: `createOnboardingMachine` plus the `RequestClient` / `OnboardingDeps` wiring types a composition root needs
 - `machine.test.ts`, `setup/domain.test.ts` — vitest unit tests
 
 ## See also

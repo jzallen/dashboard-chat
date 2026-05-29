@@ -1,4 +1,4 @@
-// session-onboarding/setup/actors.ts — the external-service request layer for
+// onboarding/setup/actors.ts — the external-service request layer for
 // the OnboardSession aggregate. Houses every actor RESOLVER that
 // performs network I/O (WorkOS re-verify and the backend org SSOT), the I/O
 // contracts they exchange with the machine, the
@@ -60,7 +60,7 @@ export type RequestClient = typeof fetch;
 /** The injected I/O port bundle. Mirrors `config`'s `Config | null` nullable +
  *  fail-fast pattern: null in tests that stub the actor; resolvers fail fast
  *  with a clear message when `request_client` is absent. */
-export interface SessionOnboardingDeps {
+export interface OnboardingDeps {
   request_client: RequestClient;
 }
 
@@ -84,7 +84,7 @@ export interface LoadSessionInput {
   bearer_token: string;
   request_id: string;
   config: Config | null;
-  deps: SessionOnboardingDeps | null;
+  deps: OnboardingDeps | null;
 }
 
 export interface CreateOrgInput {
@@ -104,7 +104,7 @@ export interface CreateOrgInput {
   /** The I/O port (the `fetch` library) the resolver passes into `createOrgFn`.
    *  Threaded the same path as `config`. Null only in tests that stub `createOrg`
    *  (the resolver then throws a clear "request_client missing" error). */
-  deps: SessionOnboardingDeps | null;
+  deps: OnboardingDeps | null;
 }
 
 /**
@@ -125,12 +125,12 @@ export async function getWorkOSUserInfo({
 }): Promise<VerifiedUser> {
   if (!input.config) {
     throw new Error(
-      "session-onboarding: workos config missing from re-verify input",
+      "onboarding: workos config missing from re-verify input",
     );
   }
   if (!input.deps?.request_client) {
     throw new Error(
-      "session-onboarding: request_client missing from re-verify input",
+      "onboarding: request_client missing from re-verify input",
     );
   }
   const { workosUrl } = input.config;
@@ -185,12 +185,12 @@ export async function getUserOrg({
 }): Promise<Org | null> {
   if (!input.config) {
     throw new Error(
-      "session-onboarding: backend config missing from org-lookup input",
+      "onboarding: backend config missing from org-lookup input",
     );
   }
   if (!input.deps?.request_client) {
     throw new Error(
-      "session-onboarding: request_client missing from org-lookup input",
+      "onboarding: request_client missing from org-lookup input",
     );
   }
   const { backendUrl, devUserHeadersFixture } = input.config;
@@ -326,7 +326,7 @@ export function createOrgFn(
   return async (input) => {
     if (input.org_name === null) {
       throw new Error(
-        "session-onboarding: create-org invoked without a validated org name",
+        "onboarding: create-org invoked without a validated org name",
       );
     }
     const orgName = input.org_name;
@@ -381,12 +381,12 @@ export async function getOrg({
 }): Promise<Org> {
   if (!input.config) {
     throw new Error(
-      "session-onboarding: backend config missing from create-org input",
+      "onboarding: backend config missing from create-org input",
     );
   }
   if (!input.deps?.request_client) {
     throw new Error(
-      "session-onboarding: request_client missing from create-org input",
+      "onboarding: request_client missing from create-org input",
     );
   }
   const requestClient = input.deps.request_client;
@@ -442,4 +442,4 @@ type ProvidedActorOf<TActors extends Record<string, unknown>> = {
   };
 }[keyof TActors & string];
 
-export type SessionOnboardingActor = ProvidedActorOf<typeof actors>;
+export type OnboardingActor = ProvidedActorOf<typeof actors>;

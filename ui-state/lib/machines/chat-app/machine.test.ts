@@ -25,7 +25,7 @@ import type {
   ChatAppProjectContextLogic,
   ChatAppSessionChatLogic,
 } from "./setup/actors.ts";
-import type { ChatAppChildEvent, SessionOnboardingInput } from "./setup/types.ts";
+import type { ChatAppChildEvent, OnboardingInput } from "./setup/types.ts";
 
 // ───────────────────────────── FAKE CHILDREN (test fixtures) ─────────────────
 // Tiny, parent-ignorant stubs that expose JUST enough to drive the parent's
@@ -141,8 +141,8 @@ function createChatAppWithFakes() {
 }
 
 /** Convenience default input for tests. The fakes ignore the begin envelope
- *  (no real I/O), but `principal_id` is a required member of SessionOnboardingInput. */
-const TEST_INPUT: SessionOnboardingInput = {
+ *  (no real I/O), but `principal_id` is a required member of OnboardingInput. */
+const TEST_INPUT: OnboardingInput = {
   request_id: "req-chat-app-test",
   principal_id: "dev-user-001",
 };
@@ -170,11 +170,11 @@ function childRx(actor: ChatApp, id: string): ReceivedEvent[] {
   return snapshot?.context?.rx ?? [];
 }
 
-describe("ChatApp — starts in the onboarding phase", () => {
-  it("bootstraps into onboarding with the onboarding child invoked", () => {
+describe("ChatApp — starts in the login phase", () => {
+  it("bootstraps into login with the onboarding child invoked", () => {
     const actor = startChatApp();
-    expect(lifecycle(actor)).toBe("onboarding");
-    expect(childRef(actor, "session-onboarding")).toBeDefined();
+    expect(lifecycle(actor)).toBe("login");
+    expect(childRef(actor, "onboarding")).toBeDefined();
   });
 });
 
@@ -182,13 +182,13 @@ describe("ChatApp — unknown events are ignored", () => {
   it("leaves the lifecycle value unchanged and forwards nothing", () => {
     const actor = startChatApp();
     const before = actor.getSnapshot().value;
-    const onboardingRxBefore = childRx(actor, "session-onboarding").length;
+    const onboardingRxBefore = childRx(actor, "onboarding").length;
 
     // An event the machine declares nowhere.
     actor.send({ type: "totally_unknown_event" } as never);
 
     expect(actor.getSnapshot().value).toEqual(before);
-    expect(childRx(actor, "session-onboarding").length).toBe(
+    expect(childRx(actor, "onboarding").length).toBe(
       onboardingRxBefore,
     );
   });

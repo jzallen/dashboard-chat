@@ -50,7 +50,7 @@ interface ChildrenView {
 const TRANSIENT_CHILD_STATES: Readonly<
   Record<ChatAppChildId, ReadonlySet<string>>
 > = {
-  "session-onboarding": new Set(["verifying", "creating_org"]),
+  "onboarding": new Set(["verifying", "creating_org"]),
   "project-context": new Set([
     "resolving_initial_scope",
     "creating_project",

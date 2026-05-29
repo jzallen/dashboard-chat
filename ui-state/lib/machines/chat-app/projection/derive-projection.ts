@@ -65,8 +65,8 @@ export const SESSION_CHAT = "session-chat";
  *  slice backs it. Mirrors the orchestrator's MACHINE_NAME_ALIASES so the
  *  derived view resolves the same names the log-fold path does. */
 const WIRE_TO_CHILD: Readonly<Record<string, ChatAppChildId>> = {
-  [LOGIN_AND_ORG_SETUP]: "session-onboarding",
-  "session-onboarding": "session-onboarding",
+  [LOGIN_AND_ORG_SETUP]: "onboarding",
+  "session-onboarding": "onboarding",
   [PROJECT_AND_CHAT_SESSION_MANAGEMENT]: "project-context",
   "project-context": "project-context",
   [SESSION_CHAT]: "session-chat",
@@ -218,13 +218,13 @@ function mapState(
 
 // ─────────────────────────────── per-machine derivation ───────────────────────────────
 
-/** login-and-org-setup ← session-onboarding child (or the retained outcome once
+/** login-and-org-setup ← onboarding child (or the retained outcome once
  *  the phase-scoped child is stopped on the advance to engaged/rejected). */
 function deriveOnboarding(
   snapshot: ChatAppSnapshotView,
 ): { state: string; context: ReducedContext } {
   const context = initialContext();
-  const child = readChild(snapshot, "session-onboarding");
+  const child = readChild(snapshot, "onboarding");
 
   if (child) {
     const c = child.context as OnboardingChildContext;
@@ -392,7 +392,7 @@ export function deriveProjection(
 
   let derived: { state: string; context: ReducedContext };
   switch (childId) {
-    case "session-onboarding":
+    case "onboarding":
       derived = deriveOnboarding(snapshot);
       break;
     case "project-context":

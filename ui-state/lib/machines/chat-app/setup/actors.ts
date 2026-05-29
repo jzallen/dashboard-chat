@@ -2,7 +2,7 @@
 // slot expects as input and accepts as events — so the parent statechart can be
 // type-checked in isolation. The actual child instances are built and injected
 // separately in `../index.ts` (the composition root), where the real
-// `session-onboarding`, `project-context`, and `session-chat` machines are wired
+// `onboarding`, `project-context`, and `session-chat` machines are wired
 // in over these placeholders.
 //
 // Splitting the concerns this way means the parent's invoke + sendTo type-check
@@ -15,7 +15,7 @@ import type {
   ChatAppChildEvent,
   ProjectContextInput,
   SessionChatInput,
-  SessionOnboardingInput,
+  OnboardingInput,
 } from "./types.ts";
 
 /** Build a do-nothing child whose input type is pinned by the caller. It
@@ -39,7 +39,7 @@ function createPlaceholderChild<TInput>() {
 // distinct placeholder so its `invoke.src` (and the corresponding
 // `invoke.input` mapper in ../machine.ts) is typed against its OWN child-input
 // contract — no cross-slot field leakage.
-const onboarding = createPlaceholderChild<SessionOnboardingInput>();
+const onboarding = createPlaceholderChild<OnboardingInput>();
 const projectContext = createPlaceholderChild<ProjectContextInput>();
 const sessionChat = createPlaceholderChild<SessionChatInput>();
 
@@ -72,8 +72,8 @@ export type ChatAppSessionChatLogic = (typeof actors)["sessionChat"];
  * `enqueueActions` to this so the actions bundle is assignable to
  * `setup({ actions })`; without it the actions would carry the generic
  * `ProvidedActor` and the bundle would be rejected. (No children map →
- * `id: string | undefined`, matching XState.) Mirrors session-onboarding's
- * `ProvidedActorOf` / `SessionOnboardingActor`.
+ * `id: string | undefined`, matching XState.) Mirrors onboarding's
+ * `ProvidedActorOf` / `OnboardingActor`.
  */
 type ProvidedActorOf<TActors extends Record<string, unknown>> = {
   [K in keyof TActors as K & string]: {

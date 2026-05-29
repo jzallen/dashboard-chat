@@ -1,11 +1,11 @@
 // ChatAppMachine — the XState v5 PARENT coordinator that declaratively cycles
-// onboarding → project-context → chat: one root orchestrator actor mediating
+// login → project-context → chat: one root orchestrator actor mediating
 // parent-ignorant children.
 //
 // SINGLE lifecycle region (one active state at a time):
 //
-//     onboarding ─(isUserReady)─► project_context ─(isInitialProjectSelected)─► chat
-//                 └(isUserRejected)─► user_rejected
+//     login ─(isUserReady)─► project_context ─(isInitialProjectSelected)─► chat
+//           └(isUserRejected)─► user_rejected
 //     (project-context is invoked on `engaged`, the ancestor of project_context
 //      AND chat, so it stays live for switching while in chat; session-chat is
 //      invoked on `chat` only.)
@@ -34,7 +34,7 @@
 // string without their definitions inline. The actions bundle — including the
 // `enqueueActions` → `sendTo` forwarders — is fully extractable: pinning each
 // action's generics to the chat-app Ctx/Evt/Actor (the same instantiation-
-// expression technique session-onboarding uses for its assigns) makes the
+// expression technique onboarding uses for its assigns) makes the
 // heterogeneous bundle assignable to `setup({ actions })`. (chat-app is a pure
 // coordinator with no domain value objects, so there is no setup/domain.ts.)
 //
@@ -53,7 +53,7 @@ import { guards } from "./setup/guards.ts";
 import type {
   ChatAppContext,
   ChatAppEvent,
-  SessionOnboardingInput,
+  OnboardingInput,
 } from "./setup/types.ts";
 
 export function createChatAppMachine() {
@@ -61,14 +61,14 @@ export function createChatAppMachine() {
     types: {
       context: {} as ChatAppContext,
       events: {} as ChatAppEvent,
-      input: {} as SessionOnboardingInput,
+      input: {} as OnboardingInput,
     },
     actors,
     guards,
     actions,
   }).createMachine({
     id: "chat-app",
-    initial: "onboarding",
+    initial: "login",
     context: ({ input }) => ({
       request_id: input.request_id,
       // Begin envelope — write-once; threaded into each child's invoke input.
@@ -76,7 +76,7 @@ export function createChatAppMachine() {
       bearer_token: input.bearer_token ?? "",
       config: input.config ?? null,
       deps: input.deps ?? null,
-      active_child_id: "session-onboarding",
+      active_child_id: "onboarding",
       auth_handoff: null,
       project_handoff: null,
       last_forwarded_project_id: null,
@@ -89,16 +89,16 @@ export function createChatAppMachine() {
       child_event: { actions: "forwardChildEventToActiveChild" },
     },
     states: {
-      onboarding: {
-        entry: "markOnboardingActive",
+      login: {
+        entry: "markLoginActive",
         invoke: {
-          id: "session-onboarding",
-          systemId: "session-onboarding",
+          id: "onboarding",
+          systemId: "onboarding",
           src: "onboarding",
           // Begin envelope → the onboarding child's Input. Its resolvers read
           // the WorkOS/backend URLs + fetch port from `config`/`deps` and the
-          // re-verify Bearer from `bearer_token` (session-onboarding/setup/
-          // types.ts SessionOnboardingInput).
+          // re-verify Bearer from `bearer_token` (onboarding/setup/
+          // types.ts OnboardingInput).
           input: ({ context }) => ({
             request_id: context.request_id,
             principal_id: context.principal_id,

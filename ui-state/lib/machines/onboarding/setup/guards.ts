@@ -1,4 +1,4 @@
-// Guard predicates for the session-onboarding statechart.
+// Guard predicates for the onboarding statechart.
 //
 // ROLE — guards are GATE CHECKS on state transitions: pure
 // `(context, event) => boolean` predicates answering "may this transition

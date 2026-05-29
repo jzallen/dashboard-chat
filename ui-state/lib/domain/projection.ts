@@ -210,7 +210,7 @@ type EventHandler = (
  * Adding a new event type means adding one entry here; no changes to
  * `applyEvent` or `buildProjection` are needed.
  *
- * Order below mirrors the session-onboarding state-chart progression so the
+ * Order below mirrors the onboarding state-chart progression so the
  * file reads as the flow's narrative: session_started → needs_org →
  * creating_org → ready → expired_token → (error states), then the deep-link
  * scope-resolution events.

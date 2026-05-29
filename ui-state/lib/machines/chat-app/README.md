@@ -79,7 +79,7 @@ minimal placeholders (`setup/actors.ts`) and swapped via
 
 - **Phase 1** provides FAKE children (test fixtures defined inline in
   [`machine.test.ts`](./machine.test.ts)) over the bare `createChatAppMachine()`.
-- **Phase 2** provides the real `session-onboarding` / `project-context` /
+- **Phase 2** provides the real `onboarding` / `project-context` /
   `session-chat` machines through the composition root `createChatApp(deps)`
   ([`index.ts`](./index.ts)).
 
@@ -96,18 +96,18 @@ The children's DI styles differ, and `createChatApp` honors both. Each child
 slot pins its own **per-slot input contract** so the parent's three
 `invoke.input` mappers are type-checked against the right slot — there is no
 single permissive superset where one mapper could accidentally return another
-slot's fields. The onboarding slot uses `SessionOnboardingInput` directly (the
-real onboarding machine publishes it from `../session-onboarding/index.ts` and
+slot's fields. The onboarding slot uses `OnboardingInput` directly (the
+real onboarding machine publishes it from `../onboarding/index.ts` and
 chat-app re-exports it from `setup/types.ts`); the other two slots declare local
 `ProjectContextInput` / `SessionChatInput` interfaces in `setup/types.ts`.
 
-The parent machine's own `types.input` is `SessionOnboardingInput` — the
+The parent machine's own `types.input` is `OnboardingInput` — the
 parent's only cold-start path bootstraps into the onboarding phase, so the
 parent's begin envelope IS the onboarding child's input.
 
-- **session-onboarding** is config/input-driven — no construction deps. Its
+- **onboarding** is config/input-driven — no construction deps. Its
   WorkOS/backend URLs + `fetch` port + re-verify Bearer arrive per-instance on
-  `SessionOnboardingInput` (`config` / `deps` / `bearer_token`), seeded
+  `OnboardingInput` (`config` / `deps` / `bearer_token`), seeded
   write-once into `ChatAppContext` and projected into the child by the
   **onboarding invoke `input:` mapper**.
 - **project-context** + **session-chat** inject their resolver actors at

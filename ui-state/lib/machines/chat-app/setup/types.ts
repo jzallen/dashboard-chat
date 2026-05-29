@@ -4,7 +4,7 @@
 // the extracted guards (./guards.ts) and actions (./actions.ts) annotate with.
 //
 // ChatApp is a PARENT coordinator with a SINGLE lifecycle region:
-//   - lifecycle : onboarding → project_context → chat (with user_rejected)
+//   - lifecycle : login → project_context → chat (with user_rejected)
 //
 // auth-proxy owns the token lifecycle, so ui-state never participates in token
 // management — a backend-401 is an ordinary upstream error, not a ui-state
@@ -16,8 +16,8 @@
 // machine.ts, so there is no machine ↔ types cycle.
 //
 // It imports the three I/O-contract types the onboarding child publishes for its
-// composition root — the env `Config`, the `SessionOnboardingDeps` fetch-port
-// bundle, and `SessionOnboardingInput` (the begin envelope the parent's
+// composition root — the env `Config`, the `OnboardingDeps` fetch-port
+// bundle, and `OnboardingInput` (the begin envelope the parent's
 // `types.input` pins against, because the parent's only cold-start path
 // bootstraps into onboarding). project-context + session-chat take their I/O
 // ports as construction-time actors instead (wired in ../index.ts). These are
@@ -32,18 +32,18 @@
 
 import type { Config } from "../../../../config.ts";
 import type {
-  SessionOnboardingDeps,
-  SessionOnboardingInput,
-} from "../../session-onboarding/index.ts";
+  OnboardingDeps,
+  OnboardingInput,
+} from "../../onboarding/index.ts";
 
 // Re-export so external callers of chat-app can name the parent's input by
 // importing from this directory; the canonical declaration lives in
-// session-onboarding.
-export type { SessionOnboardingInput };
+// onboarding.
+export type { OnboardingInput };
 
 /** The lifecycle phases observable to a consumer, plus the terminal. */
 export type ChatAppLifecycle =
-  | "onboarding"
+  | "login"
   | "project_context"
   | "chat"
   | "user_rejected";
@@ -52,7 +52,7 @@ export type ChatAppLifecycle =
  *  the parent's own observability + sendTo handles, NEVER child-to-child
  *  references. */
 export type ChatAppChildId =
-  | "session-onboarding"
+  | "onboarding"
   | "project-context"
   | "session-chat";
 
@@ -135,7 +135,7 @@ export type ChatAppChildEvent =
 export interface ChatAppContext {
   request_id: string;
 
-  // ── begin envelope (write-once; seeded from SessionOnboardingInput — the
+  // ── begin envelope (write-once; seeded from OnboardingInput — the
   //    parent's only cold-start path bootstraps into onboarding — threaded
   //    into each child's invoke `input:` mapper) ──
   // The static per-request identity + I/O ports each child needs at construction.
@@ -155,7 +155,7 @@ export interface ChatAppContext {
   config: Config | null;
   /** The fetch I/O port (request_client) the onboarding child's resolvers call.
    *  Mirrors `config`'s nullable + fail-fast pattern. Null in stubbed tests. */
-  deps: SessionOnboardingDeps | null;
+  deps: OnboardingDeps | null;
 
   /** Which child currently receives forwarded user intents — re-pointed on each
    *  lifecycle phase entry. The single intent router needs this because
@@ -210,7 +210,7 @@ export type ChatAppEvent =
 // leakage). The placeholders are swapped for the real machines via
 // `.provide({ actors })`; the per-slot input shape stays pinned across the swap.
 //
-// The onboarding slot's contract is `SessionOnboardingInput` re-exported from
+// The onboarding slot's contract is `OnboardingInput` re-exported from
 // the real machine — there is only one onboarding input shape, and the slot
 // uses it directly. The other two slots declare local interfaces because the
 // real project-context and session-chat machines don't yet publish named input
@@ -282,7 +282,7 @@ export interface ProjectContextSnapshotView {
  *  `setup()` infers inline: `{ context, event }` over the declared event union.
  *  The onSnapshot snapshot events are not members of `ChatAppEvent`, so the
  *  snapshot readers cast `event` to `{ snapshot: <View> }` — exactly the cost of
- *  extracting guards/actions out of `setup` (documented in session-onboarding). */
+ *  extracting guards/actions out of `setup` (documented in onboarding). */
 export interface ActionArgs {
   context: ChatAppContext;
   event: ChatAppEvent;

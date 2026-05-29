@@ -1,4 +1,4 @@
-// Test helpers for the session-onboarding suites.
+// Test helpers for the onboarding suites.
 //
 // The machine injects `deps.request_client` (= the `fetch` library) as its I/O
 // port, so tests drive the upstream side-effects with a MOCK `fetch` (a
@@ -19,7 +19,7 @@
 import { vi } from "vitest";
 
 import type { Config } from "../../config.ts";
-import type { RequestClient } from "../machines/session-onboarding/index.ts";
+import type { RequestClient } from "../machines/onboarding/index.ts";
 
 export interface MockFetchProfile {
   email: string;
@@ -78,7 +78,7 @@ function jsonResponse(body: unknown, status: number): Response {
 
 /**
  * Build a MOCK `fetch` (a `vi.fn()` typed as `typeof fetch`) that canned-responds
- * to the session-onboarding upstream surface, keyed on URL path + method. The
+ * to the onboarding upstream surface, keyed on URL path + method. The
  * placeholder URLs `makeTestConfig` hands the resolvers only need to carry the
  * right PATH suffixes — this mock branches on them.
  */

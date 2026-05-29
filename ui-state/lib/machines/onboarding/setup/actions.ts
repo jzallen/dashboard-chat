@@ -1,4 +1,4 @@
-// Actions for the session-onboarding statechart.
+// Actions for the onboarding statechart.
 //
 // ROLE — actions are the ONLY writers of machine context. When a transition must
 // RECORD a validation verdict as state (`recordOrgValidationError`,
@@ -32,7 +32,7 @@
 
 import { assign } from "xstate";
 
-import type { SessionOnboardingActor } from "./actors.ts";
+import type { OnboardingActor } from "./actors.ts";
 import type {
   Org,
   OrgName,
@@ -41,16 +41,16 @@ import type {
 } from "./domain.ts";
 import { causeOf, constructOrgName } from "./domain.ts";
 import type {
-  SessionOnboardingContext,
-  SessionOnboardingEvent,
+  OnboardingContext,
+  OnboardingEvent,
 } from "./types.ts";
 
 const updateContext = assign<
-  SessionOnboardingContext,
-  SessionOnboardingEvent,
+  OnboardingContext,
+  OnboardingEvent,
   undefined,
-  SessionOnboardingEvent,
-  SessionOnboardingActor
+  OnboardingEvent,
+  OnboardingActor
 >;
 
 const assignVerifiedUser = updateContext(({ event }) => {
@@ -108,11 +108,11 @@ const clearOrgValidationError = updateContext(() => ({
 // Needs its OWN `assign` because its TParams is `{ tag }`, not the `undefined`
 // updateContext pins — the one axis where per-action types legitimately differ.
 const tagCause = assign<
-  SessionOnboardingContext,
-  SessionOnboardingEvent,
+  OnboardingContext,
+  OnboardingEvent,
   { tag: UnderlyingCauseTag },
-  SessionOnboardingEvent,
-  SessionOnboardingActor
+  OnboardingEvent,
+  OnboardingActor
 >((_, params) => ({ underlying_cause_tag: params.tag }));
 
 /** needs_org → creating_org: preserve the submitted name across retries. The

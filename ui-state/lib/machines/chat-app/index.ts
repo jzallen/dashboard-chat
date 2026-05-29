@@ -2,7 +2,7 @@
 //
 // Public surface:
 //   - createChatApp — the composition root: it constructs the THREE REAL child
-//     machines (session-onboarding, project-context, session-chat) and swaps
+//     machines (onboarding, project-context, session-chat) and swaps
 //     them over the placeholder DI slots via `machine.provide({ actors })`. This
 //     is the one place that knows all three children — the "one root actor
 //     mediating parent-ignorant children".
@@ -28,7 +28,7 @@ import type { ProjectContextMachineDeps } from "../project-context/index.ts";
 import { createProjectContextMachine } from "../project-context/index.ts";
 import type { SessionChatMachineDeps } from "../session-chat/index.ts";
 import { createSessionChatMachine } from "../session-chat/index.ts";
-import { createSessionOnboardingMachine } from "../session-onboarding/index.ts";
+import { createOnboardingMachine } from "../onboarding/index.ts";
 import { createChatAppMachine } from "./machine.ts";
 import type {
   ChatAppOnboardingLogic,
@@ -41,9 +41,9 @@ import type {
  * children that take their I/O ports as actors (project-context + session-chat).
  *
  * Asymmetry by design (it mirrors the children's own DI styles):
- *   - session-onboarding is config/input-driven — it needs NO construction deps;
+ *   - onboarding is config/input-driven — it needs NO construction deps;
  *     its WorkOS/backend URLs + fetch port arrive per-instance on
- *     SessionOnboardingInput (`config`/`deps`), threaded through the onboarding
+ *     OnboardingInput (`config`/`deps`), threaded through the onboarding
  *     invoke `input:` mapper.
  *   - project-context + session-chat inject their resolver actors at construction
  *     (`createProjectContextMachine(deps)` / `createSessionChatMachine(deps)`).
@@ -67,10 +67,10 @@ export interface ChatAppDeps {
  *
  * Returns the wired machine; the caller does
  * `createActor(createChatApp(deps), { input })` — the parent's only cold-start
- * path bootstraps into onboarding, so `input` is `SessionOnboardingInput`.
+ * path bootstraps into onboarding, so `input` is `OnboardingInput`.
  */
 export function createChatApp(deps: ChatAppDeps) {
-  const onboarding = createSessionOnboardingMachine();
+  const onboarding = createOnboardingMachine();
   const projectContext = createProjectContextMachine(deps.projectContext);
   const sessionChat = createSessionChatMachine(deps.sessionChat);
 
@@ -100,5 +100,5 @@ export type {
   ProjectContextInput,
   ProjectHandoff,
   SessionChatInput,
-  SessionOnboardingInput,
+  OnboardingInput,
 } from "./setup/types.ts";

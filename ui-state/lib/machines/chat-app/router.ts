@@ -42,8 +42,8 @@ import type { FlowProjection } from "../../domain/flow-projection.ts";
 import { requestIdMiddleware } from "../../hexagonal-transport/flow-router.ts";
 import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { ChatAppSnapshotStore } from "../../persistence/chatapp-snapshot-store.ts";
-import type { RequestClient } from "../session-onboarding/index.ts";
-import { isUnderlyingCauseTag } from "../session-onboarding/setup/domain.ts";
+import type { RequestClient } from "../onboarding/index.ts";
+import { isUnderlyingCauseTag } from "../onboarding/setup/domain.ts";
 import { createChatApp, type ChatAppDeps } from "./index.ts";
 import {
   bookkeepingFromLog,
@@ -58,13 +58,13 @@ import {
   rehydrateChatApp,
   saveChatAppSnapshot,
 } from "./snapshot.ts";
-import type { ChatAppChildId, SessionOnboardingInput } from "./setup/types.ts";
+import type { ChatAppChildId, OnboardingInput } from "./setup/types.ts";
 
 /** The canonical child ids whose per-flow bookkeeping logs a principal owns. A
  *  `force_restart` begin resets all three so a fresh flow inherits no stale
  *  bookkeeping. */
 const CANONICAL_CHILDREN: readonly ChatAppChildId[] = [
-  "session-onboarding",
+  "onboarding",
   "project-context",
   "session-chat",
 ];
@@ -142,7 +142,7 @@ async function coldStart(
     ),
   );
 
-  const input: SessionOnboardingInput = {
+  const input: OnboardingInput = {
     request_id,
     principal_id,
     bearer_token,
@@ -262,7 +262,7 @@ function viewOf(actor: AnyActorRef): ChatAppSnapshotView {
  *  log-fold on the live read path). */
 function emptyView(principal_id: string): ChatAppSnapshotView {
   return {
-    value: "onboarding",
+    value: "login",
     context: { principal_id, onboarding_result: null },
     children: {},
   };
@@ -317,7 +317,7 @@ export function buildChatAppRouter(
   const router = new Hono();
   router.use("*", requestIdMiddleware);
 
-  const isOnboardingWire = childIdForWireMachine(wireMachine) === "session-onboarding";
+  const isOnboardingWire = childIdForWireMachine(wireMachine) === "onboarding";
 
   // POST /begin — cold-start the principal's ChatApp actor (onboarding entry).
   // Always (re)starts: the begin envelope re-verifies the forwarded Bearer and

@@ -45,7 +45,7 @@ import type {
   SessionSummary,
 } from "../../session-chat/index.ts";
 import { createChatApp } from "../index.ts";
-import type { SessionOnboardingInput, ChatUserIntent } from "../setup/types.ts";
+import type { OnboardingInput, ChatUserIntent } from "../setup/types.ts";
 import {
   bookkeepingFromLog,
   type ChatAppSnapshotView,
@@ -149,7 +149,7 @@ function makeDeps(
   };
 }
 
-function makeInput(opts: { badToken?: boolean; newUser?: boolean } = {}): SessionOnboardingInput {
+function makeInput(opts: { badToken?: boolean; newUser?: boolean } = {}): OnboardingInput {
   const bearer_token = opts.badToken ? "tok-bad" : "tok-maya";
   return {
     request_id: REQ,
@@ -281,7 +281,7 @@ describe("R1 — happy login → project → chat (all three machines byte-ident
   it("derives login-and-org-setup = ready (org + user) after the onboarding child is stopped", async () => {
     const { actor } = await arriveAtChat();
     // The phase-scoped onboarding child is gone at chat steady state.
-    expect(childRef(actor, "session-onboarding")).toBeUndefined();
+    expect(childRef(actor, "onboarding")).toBeUndefined();
 
     const out = derived(actor, LOGIN_AND_ORG_SETUP, loginReadyEvents());
     expect(out).toEqual(golden(LOGIN_AND_ORG_SETUP, loginReadyEvents()));
@@ -345,7 +345,7 @@ describe("R1 — login-and-org-setup = needs_org (new user, child live)", () => 
     const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
       input: makeInput({ newUser: true }),
     }).start();
-    await waitFor(actor, (a) => childState(a, "session-onboarding") === "needs_org");
+    await waitFor(actor, (a) => childState(a, "onboarding") === "needs_org");
 
     const log = [
       ev(LOGIN_LOG, "session_started", {
@@ -429,7 +429,7 @@ describe("R1 — login-and-org-setup = session_rejected (re-verify failed)", () 
       input: makeInput({ badToken: true }),
     }).start();
     await waitFor(actor, (a) => lifecycle(a) === "user_rejected");
-    expect(childRef(actor, "session-onboarding")).toBeUndefined();
+    expect(childRef(actor, "onboarding")).toBeUndefined();
 
     // The 401 re-verify throw is untagged → causeOf defaults to "transient".
     const log = [ev(LOGIN_LOG, "session_rejected", { reason: "transient" })];

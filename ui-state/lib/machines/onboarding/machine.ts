@@ -1,4 +1,4 @@
-// SessionOnboardingMachine — XState v5 statechart for the OnboardSession
+// OnboardingMachine — XState v5 statechart for the OnboardSession
 // aggregate.
 //
 // Entry assumes an ALREADY-AUTHENTICATED principal (auth-proxy verified the
@@ -43,23 +43,23 @@ import { actors } from "./setup/actors.ts";
 import type { PrincipalId } from "./setup/domain.ts";
 import { guards } from "./setup/guards.ts";
 import type {
-  SessionOnboardingContext,
-  SessionOnboardingEvent,
-  SessionOnboardingInput,
+  OnboardingContext,
+  OnboardingEvent,
+  OnboardingInput,
 } from "./setup/types.ts";
 
-export function createSessionOnboardingMachine() {
+export function createOnboardingMachine() {
   return setup({
     types: {
-      context: {} as SessionOnboardingContext,
-      events: {} as SessionOnboardingEvent,
-      input: {} as SessionOnboardingInput,
+      context: {} as OnboardingContext,
+      events: {} as OnboardingEvent,
+      input: {} as OnboardingInput,
     },
     actors,
     guards,
     actions,
   }).createMachine({
-    id: "session-onboarding",
+    id: "onboarding",
     initial: "verifying",
     context: ({ input }) => ({
       params: {

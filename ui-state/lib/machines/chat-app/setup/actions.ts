@@ -12,7 +12,7 @@
 //   - the `assign`s share `updateContext` — `assign` with its five generics
 //     pinned once via an instantiation expression (no defaults, so all five must
 //     be supplied; `TExpressionEvent` and `TEvent` are the same union here),
-//     mirroring session-onboarding/setup/actions.ts.
+//     mirroring onboarding/setup/actions.ts.
 //   - the forwarders share `forward` — `enqueueActions` with the same generics
 //     pinned. Pinning `TActor` to `ChatAppActor` (../setup/actors.ts) is what
 //     lets the pre-built bundle type-check inside `setup`; without it the
@@ -80,8 +80,8 @@ const forward = enqueueActions<
 >;
 
 // ── active-child routing (re-pointed on each phase entry) ──
-const markOnboardingActive = updateContext({
-  active_child_id: "session-onboarding",
+const markLoginActive = updateContext({
+  active_child_id: "onboarding",
 });
 const markProjectContextActive = updateContext({
   active_child_id: "project-context",
@@ -221,7 +221,7 @@ const forwardChildEventToActiveChild = forward(({ context, event, enqueue }) => 
 
 // name → action index (keys referenced by string in ../machine.ts).
 export const actions = {
-  markOnboardingActive,
+  markLoginActive,
   markProjectContextActive,
   markChatActive,
 

@@ -52,7 +52,7 @@ import {
   resumeSessionActor,
   switchDatasetContextActor,
 } from "./lib/machines/session-chat/index.ts";
-import type { RequestClient } from "./lib/machines/session-onboarding/index.ts";
+import type { RequestClient } from "./lib/machines/onboarding/index.ts";
 import {
   type ChatAppSnapshotStore,
   selectChatAppSnapshotStore,

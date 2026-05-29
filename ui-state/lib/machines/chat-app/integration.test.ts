@@ -36,7 +36,7 @@ import type {
   SessionSummary,
 } from "../session-chat/index.ts";
 import { createChatApp } from "./index.ts";
-import type { SessionOnboardingInput, ChatUserIntent } from "./setup/types.ts";
+import type { OnboardingInput, ChatUserIntent } from "./setup/types.ts";
 
 // ───────────────────────────── fixtures ─────────────────────────────
 
@@ -105,7 +105,7 @@ function makeDeps(rec: Recorder, sessions: SessionSummary[]) {
 /** Begin envelope for a RETURNING user (org present → onboarding lands `ready`
  *  directly). `deps.request_client` is the mock fetch the onboarding resolvers
  *  call. Pass `badToken` to drive the re-verify 401 → session_rejected path. */
-function makeInput(opts: { badToken?: boolean } = {}): SessionOnboardingInput {
+function makeInput(opts: { badToken?: boolean } = {}): OnboardingInput {
   const bearer_token = opts.badToken ? "tok-bad" : "tok-maya";
   return {
     request_id: "R-int-1",
@@ -195,7 +195,7 @@ describe("ChatApp Phase 2 — happy forward cycle (login → project → chat)",
     // onboarding resolved the returning user's org + identity and was then
     // stopped (its invoke is scoped to the `onboarding` state, left behind on
     // the advance); the parent captured the hand-off on the way out.
-    expect(childRef(actor, "session-onboarding")).toBeUndefined();
+    expect(childRef(actor, "onboarding")).toBeUndefined();
     expect(actor.getSnapshot().context.auth_handoff).toEqual({
       org_id: "org-acme",
       user: { first_name: "Maya" },

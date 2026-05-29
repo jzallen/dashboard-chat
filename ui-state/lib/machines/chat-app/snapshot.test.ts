@@ -33,7 +33,7 @@ import type {
   SessionSummary,
 } from "../session-chat/index.ts";
 import { createChatApp } from "./index.ts";
-import type { SessionOnboardingInput } from "./setup/types.ts";
+import type { OnboardingInput } from "./setup/types.ts";
 import {
   isSettledForSnapshot,
   loadChatAppSnapshot,
@@ -106,7 +106,7 @@ function makeDeps(
   };
 }
 
-function makeInput(): SessionOnboardingInput {
+function makeInput(): OnboardingInput {
   return {
     request_id: "R-snap",
     principal_id: PRINCIPAL,

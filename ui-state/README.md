@@ -18,7 +18,7 @@ flowchart LR
     subgraph "ui-state (this tier)"
         H["Hono HTTP layer<br/>index.ts"]
         ORCH["FlowOrchestrator<br/>(root supervisor + replay buffer)"]
-        M1["session-onboarding<br/>machine actor (wired)"]
+        M1["onboarding<br/>machine actor (wired)"]
         M2["project-context / session-chat /<br/>chat-app (in-tree, not yet wired)"]
         H --> ORCH
         ORCH -->|"spawn / send"| M1
@@ -43,7 +43,7 @@ flowchart LR
 
 | Machine | Owns | HTTP-wired? | README |
 |---|---|---|---|
-| `session-onboarding` | Brings an already-authenticated principal to an org-scoped, app-ready state (re-verify → org bootstrap) | **Yes** — the only machine reachable over HTTP today (ADR-041) | [`lib/machines/session-onboarding/`](lib/machines/session-onboarding/README.md) |
+| `onboarding` | Brings an already-authenticated principal to an org-scoped, app-ready state (re-verify → org bootstrap) | **Yes** — the only machine reachable over HTTP today (ADR-041) | [`lib/machines/onboarding/`](lib/machines/onboarding/README.md) |
 | `project-context` | "Which project am I in?" — project selection + active-scope | No (in-tree) | [`lib/machines/project-context/`](lib/machines/project-context/README.md) |
 | `session-chat` | "What's happening in my chat session?" — session list, resume, chat-turn surface | No (in-tree) | [`lib/machines/session-chat/`](lib/machines/session-chat/README.md) |
 | `chat-app` | XState v5 **parent coordinator** that cycles `onboarding → project-context → chat` with a freeze/reauth overlay | No — built to **supersede** the imperative orchestrator (ADR-044); runs alongside it, swapped in at Phase 4 | [`lib/machines/chat-app/`](lib/machines/chat-app/README.md) |
@@ -62,7 +62,7 @@ All flow routes are mounted under `/flow/session-onboarding` (with a legacy `/fl
 | `GET /flow/:machine/projection` | Read the current projection envelope (flow_id is derived from the machine name + `X-User-Id`) |
 | `GET /flow/:machine/projection/stream` | SSE stream: long-polls the flow's Redis log and pushes a fresh projection per new event (`since` / `budget_ms` query params; default 25s budget) |
 
-Auth: this tier trusts the `X-User-Id` / `X-Org-Id` / `X-User-Email` headers injected by auth-proxy upstream (ADR-016 pattern) and does **not** verify the JWT signature. As defense in depth, the `session-onboarding` machine independently re-checks the forwarded Bearer against WorkOS `/oauth/userinfo` (ADR-041 L3) — that is a re-verification, not the primary authenticator.
+Auth: this tier trusts the `X-User-Id` / `X-Org-Id` / `X-User-Email` headers injected by auth-proxy upstream (ADR-016 pattern) and does **not** verify the JWT signature. As defense in depth, the `onboarding` machine independently re-checks the forwarded Bearer against WorkOS `/oauth/userinfo` (ADR-041 L3) — that is a re-verification, not the primary authenticator.
 
 ## Request flow — begin → event → projection
 
@@ -72,7 +72,7 @@ sequenceDiagram
     participant AP as auth-proxy
     participant H as ui-state Hono
     participant O as FlowOrchestrator
-    participant M as session-onboarding<br/>machine actor
+    participant M as onboarding<br/>machine actor
     participant R as Redis log
 
     UI->>AP: POST /ui-state/flow/session-onboarding/begin<br/>+ JWT
@@ -125,7 +125,7 @@ sequenceDiagram
     M_B-->>O: new projection
 ```
 
-> **ADR-043:** no machine emits a token-expiry trigger any more — "silent reauth" was removed from `session-onboarding`. Freeze/thaw is reachable via the `/freeze` + `/thaw` endpoints (the failure-sim / harness path) on the live orchestrator. The `chat-app` coordinator (ADR-044) does **not** carry a freeze/reauth region: an early design overlaid a parallel `connectivity` region, but it was retired (ADR-043, resolving ADR-044 §5 Open Question #2 toward removal) because auth-proxy owns the token lifecycle (ADR-016) and ui-state is never a token-management participant.
+> **ADR-043:** no machine emits a token-expiry trigger any more — "silent reauth" was removed from `onboarding`. Freeze/thaw is reachable via the `/freeze` + `/thaw` endpoints (the failure-sim / harness path) on the live orchestrator. The `chat-app` coordinator (ADR-044) does **not** carry a freeze/reauth region: an early design overlaid a parallel `connectivity` region, but it was retired (ADR-043, resolving ADR-044 §5 Open Question #2 toward removal) because auth-proxy owns the token lifecycle (ADR-016) and ui-state is never a token-management participant.
 
 **Invariants (ADR-028):**
 
@@ -152,7 +152,7 @@ Identity headers ui-state presents to the backend are a dev fixture (`dev-user-0
 
 ```
 ui-state/
-├── index.ts                              # Hono server + composition root (buildSessionOnboardingApp)
+├── index.ts                              # Hono server + composition root (buildOnboardingApp)
 ├── config.ts                             # env → typed Config (zod, fail-fast)
 ├── lib/
 │   ├── orchestrator.ts                   # FlowOrchestrator (root supervisor + freeze/replay), BeginFlowOrchestrator, FlowActorRegistry
@@ -167,7 +167,7 @@ ui-state/
 │   ├── hexagonal-transport/
 │   │   └── flow-router.ts                # shared HTTP transport: request-id mw + /freeze /thaw /projection /projection/stream (ADR-040)
 │   ├── machines/
-│   │   ├── session-onboarding/           # the only HTTP-wired machine (ADR-041)
+│   │   ├── onboarding/                   # the only HTTP-wired machine (ADR-041)
 │   │   ├── project-context/              # "which project am I in?"
 │   │   ├── session-chat/                 # "what's happening in my chat session?"
 │   │   └── chat-app/                     # parent coordinator superseding the orchestrator (ADR-044, not yet wired)

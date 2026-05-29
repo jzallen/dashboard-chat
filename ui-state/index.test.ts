@@ -29,7 +29,7 @@ import {
   createNoopFlowEventLog,
   type FlowEventLog,
 } from "./lib/persistence/redis.ts";
-import type { RequestClient } from "./lib/machines/session-onboarding/index.ts";
+import type { RequestClient } from "./lib/machines/onboarding/index.ts";
 import { makeMockFetch, makeTestConfig } from "./lib/testing/test-config.ts";
 
 const MAYA_PROFILE = {

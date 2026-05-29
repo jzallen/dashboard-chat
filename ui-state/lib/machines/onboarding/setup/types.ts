@@ -1,4 +1,4 @@
-// Domain types for the session-onboarding statechart: the machine's
+// Domain types for the onboarding statechart: the machine's
 // context / event / state / input shapes, plus the typed-arg aliases the
 // guards (./guards.ts) and actions (./actions.ts) annotate their params with.
 // Named-action and named-guard definitions must spell their arg type out (only
@@ -13,12 +13,12 @@
 // References:
 //   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
-import type { Config, SessionOnboardingDeps } from "./actors.ts";
+import type { Config, OnboardingDeps } from "./actors.ts";
 import type { OrgName, PrincipalId, UnderlyingCauseTag } from "./domain.ts";
 
 export type { UnderlyingCauseTag } from "./domain.ts";
 
-export type SessionOnboardingState =
+export type OnboardingState =
   | "verifying"
   | "needs_org"
   | "creating_org"
@@ -38,7 +38,7 @@ export interface OrgValidationInlineError {
  * the actor's spawn `input`, and the input-driven (no-closure) actor design
  * means `config`/`deps` must reach the resolvers this way.
  */
-export interface SessionOnboardingParams {
+export interface OnboardingParams {
   request_id: string;
   /** Branded id of the verified principal (the auth-proxy X-User-Id), branded
    *  once in the context factory; the raw machine input carries it as a string. */
@@ -51,12 +51,12 @@ export interface SessionOnboardingParams {
   config: Config | null;
   /** The I/O port (the `fetch` library) the resolvers call directly. Mirrors
    *  `config`'s nullable + fail-fast pattern — null in tests that stub the actor. */
-  deps: SessionOnboardingDeps | null;
+  deps: OnboardingDeps | null;
 }
 
-export interface SessionOnboardingContext {
-  /** Write-once injected envelope — see SessionOnboardingParams. */
-  params: SessionOnboardingParams;
+export interface OnboardingContext {
+  /** Write-once injected envelope — see OnboardingParams. */
+  params: OnboardingParams;
 
   // Outputs — the verified session being assembled.
   user: { email: string | null; display_name: string | null; first_name: string | null };
@@ -71,18 +71,18 @@ export interface SessionOnboardingContext {
   org_validation_error: OrgValidationInlineError | null;
 }
 
-export type SessionOnboardingEvent =
+export type OnboardingEvent =
   | { type: "org_form_submitted"; org_name: string }
   | { type: "__force_failure__"; tag: UnderlyingCauseTag };
 
 /** The raw machine input (the begin envelope before the context factory
  *  normalizes it into `params`). Mirrors `setup({ types: { input } })`. */
-export interface SessionOnboardingInput {
+export interface OnboardingInput {
   request_id: string;
   principal_id: string;
   bearer_token?: string;
   config?: Config | null;
-  deps?: SessionOnboardingDeps | null;
+  deps?: OnboardingDeps | null;
 }
 
 /**
@@ -94,7 +94,7 @@ export interface SessionOnboardingInput {
  * `.output` / `.error`, exactly as they did when inline.
  */
 export interface ActionArgs {
-  context: SessionOnboardingContext;
-  event: SessionOnboardingEvent;
+  context: OnboardingContext;
+  event: OnboardingEvent;
 }
 export type GuardArgs = ActionArgs;
