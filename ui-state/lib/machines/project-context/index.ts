@@ -1,11 +1,8 @@
 // Barrel for the project-context XState machine directory.
 //
-// Re-exports the public surface that previously lived in the flat
-// `ui-state/lib/machines/project-context.ts` file, post-DWD-13 SRP split.
-// Callers (orchestrator.ts, ui-state/index.ts, the acceptance harness)
-// continue resolving `./machines/project-context` and pick up the same
-// named exports through this barrel — no caller import path change is
-// required at the bare-module-specifier level.
+// Re-exports the public surface so callers (orchestrator.ts, ui-state/index.ts,
+// the acceptance harness) resolve `./machines/project-context` and pick up the
+// named exports through this barrel.
 //
 // Public surface (alphabetical-by-export):
 //   - createProjectContextMachine + ProjectContextMachineDeps
@@ -14,8 +11,7 @@
 //   - switchProjectActor, switchProjectFn
 //   - validateProjectName + ProjectValidationError (from ./validation.ts)
 //   - all context / event / state / actor I-O types
-//   - re-exported ActiveScope (originally re-exported by the flat file
-//     for caller convenience)
+//   - re-exported ActiveScope (for caller convenience)
 
 export {
   createProjectActor,

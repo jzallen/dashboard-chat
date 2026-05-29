@@ -1,17 +1,17 @@
-// Project-name validation — extracted from `machine.ts` so that the barrel
-// re-exports a stable public surface (`validateProjectName` +
-// `ProjectValidationError`) without callers needing to reach into the
-// machine module itself.
+// Project-name validation — the barrel re-exports a stable public surface
+// (`validateProjectName` + `ProjectValidationError`) so callers need not reach
+// into the machine module itself.
 //
-// Per `docs/decisions/adr-028-machines-own-transitions-the-log-owns-state.md`
-// "Amendment 2026-05-15", internal handler state (transient composer +
-// inline-error fields) lives on machine context; the validation primitive
-// itself is a pure function with no XState dependency and belongs at the
-// directory's leaf alongside the machine that consumes it.
+// Internal handler state (transient composer + inline-error fields) lives on
+// machine context; the validation primitive itself is a pure function with no
+// XState dependency.
 //
 // Public surface (re-exported by `./index.ts`):
 //   - ProjectValidationError    — discriminated union of failure kinds
 //   - validateProjectName(raw)  — returns null on success, error otherwise
+//
+// References:
+//   docs/decisions/adr-028-*.md  — machines own transitions, the log owns state
 
 /**
  * Discriminated-union shape attached to `context.project_validation_error`

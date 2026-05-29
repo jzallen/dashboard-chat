@@ -1,13 +1,11 @@
 // ProjectContextMachine — XState v5 statechart for J-002's project-context half.
 //
-// Per `docs/feature/project-and-chat-session-management/design/application-architecture.md`
-// §2A (post-DWD-13 SRP amendment) this machine owns "Which project am I in?" —
-// initial scope resolution, project creation, mid-flow project switching (MR-4),
-// cross-tenant terminal failure, and the deep-link entry path. It owns the
-// `org_id` + `project_id` halves of `active_scope`.
+// This machine owns "Which project am I in?" — initial scope resolution, project
+// creation, mid-flow project switching, cross-tenant terminal failure, and the
+// deep-link entry path. It owns the `org_id` + `project_id` halves of
+// `active_scope`.
 //
-// MR-1 surface (lifted verbatim from the pre-split file at `cd4103e`, types
-// renamed to drop the J002/ProjectFlow prefixes per DWD-13):
+// State surface:
 //
 //   resolving_initial_scope (initial) ─┬─→ project_selected
 //                                       ├─→ no_projects
@@ -19,15 +17,19 @@
 //   project_selected                   (entry assigns context.project; emits project_selected)
 //   scope_mismatch_terminal            ─→ resolving_initial_scope (back_to_projects_clicked)
 //   error_recoverable                  ─→ creating_project        (retry_clicked; preserves pending_project_name)
+//   switching_project                  — atomic mid-flow project switch.
 //
-// MR-4 added `switching_project`. (A `freeze`/FREEZE overlay existed briefly for
-// the orchestrator's token-expiry broadcast; it was retired with the orchestrator
-// in ADR-044 Phase 4 — auth-proxy owns the token lifecycle, ADR-043/ADR-016.)
+// Cross-machine isolation invariant: this file does NOT import from
+// `session-chat.ts` or `login-and-org-setup.ts`. The orchestrator mediates all
+// cross-machine entry (`auth_ready` from login → project-context; `project_ready`
+// from project-context → session-chat).
 //
-// ADR-028:46-48 invariant: this file does NOT import from `session-chat.ts` or
-// `login-and-org-setup.ts`. The orchestrator mediates all cross-machine entry
-// (`auth_ready` from login → project-context; `project_ready` from project-context
-// → session-chat).
+// References:
+//   docs/decisions/adr-028-*.md  — machines own transitions; parent-ignorant children
+//   docs/decisions/adr-030-*.md  — flow_id key form / branch-relevant data flow
+//   docs/feature/project-and-chat-session-management/design/application-architecture.md
+//                                — machine SRP split (app-arch §2A)
+//   docs/discussion/ui-state-vocabulary-audit/findings.md — vocabulary audit
 
 import { assign, fromPromise, setup } from "xstate";
 
@@ -70,17 +72,15 @@ export interface ProjectContextMachineContext {
   project: { id: string | null; name: string | null };
 
   // Deep-link wish payloads — populated on open_deep_link; cleared on settle.
-  // Per audit §5 "intent" + §7 Tier-1 #2 (MR-D): these fields are URL-level
-  // user wishes that have not yet been confirmed or denied. They carry the
-  // shape the user requested from the URL through resolution; on settle
-  // (project_selected) the orchestrator forwards `deeplink_session_id` to
-  // session-chat via the `project_ready` payload.
+  // These fields are URL-level user wishes that have not yet been confirmed or
+  // denied. They carry the shape the user requested from the URL through
+  // resolution; on settle (project_selected) the orchestrator forwards
+  // `deeplink_session_id` to session-chat via the `project_ready` payload.
   //
-  // The pre-MR-D pair `intent_resource_id` + `intent_resource_type` was
-  // removed from this context: project-context never read them — they were
-  // pure pass-through (Direction F / ADR-030 §"Migration sequencing"). The
-  // orchestrator now forwards them from the `open_deep_link` event payload
-  // directly into `project_ready`, never touching this machine's ctx.
+  // `intent_resource_id` + `intent_resource_type` are not stored here:
+  // project-context never reads them — they are pure pass-through. The
+  // orchestrator forwards them from the `open_deep_link` event payload directly
+  // into `project_ready`, never touching this machine's ctx.
   deeplink_project_id: string | null;
   deeplink_session_id: string | null;
 
@@ -97,9 +97,9 @@ export interface ProjectContextMachineContext {
   // Observability counters:
   scope_reconciled_count: number;
   stale_intents_dropped_count: number;
-  // MR-6 / US-210 — the most recent DWD-7 stale-dropped intent; harvested
-  // by the orchestrator to emit stale_intent_dropped_after_thaw (machines
-  // never write FlowEvents — ADR-028/ADR-030).
+  // US-210 — the most recent stale-dropped intent; harvested by the
+  // orchestrator to emit stale_intent_dropped_after_thaw (machines never write
+  // FlowEvents).
   last_stale_intent: { intent_type: string; target_id: string } | null;
 
   // Per OQ-J002-5: per-project last_active_at map captured by resolveInitialScope.
@@ -118,9 +118,8 @@ export type ProjectContextEvent =
   | { type: "create_project_submitted"; org_name: string }
   | { type: "back_to_projects_clicked" }
   | { type: "retry_clicked" }
-  // The `open_deep_link` event payload keys retain the legacy `intent_*`
-  // prefix — that's a wire surface (FE + orchestrator) renamed in a
-  // separate follow-up MR. Post-MR-D the values land in `deeplink_*`
+  // The `open_deep_link` event payload keys use the `intent_*` prefix — that's
+  // the wire surface (FE + orchestrator). The values land in `deeplink_*`
   // context fields here.
   | {
       type: "open_deep_link";
@@ -129,7 +128,7 @@ export type ProjectContextEvent =
       intent_resource_id?: string;
       intent_resource_type?: ResourceType;
     }
-  // MR-4 — atomic project switching. Fired by a loader (mid-session
+  // Atomic project switching. Fired by a loader (mid-session
   // deep-link to a different project) OR by the chat-view's
   // project-picker. The machine invokes `switchProject` which validates
   // the target via the backend's `GET /api/projects/:id`; the IC-J002-4
@@ -169,7 +168,7 @@ export type CreateProjectActor = ReturnType<
 >;
 
 /**
- * MR-4 — switchProject actor. Given a target `new_project_id`, validates
+ * switchProject actor. Given a target `new_project_id`, validates
  * the user's access via `GET /api/projects/:id` and returns the new
  * ProjectSummary on success. The error variants mirror resolveInitialScope:
  * `{ access_revoked: true }` (403; named diagnostic surfaces in
@@ -194,9 +193,8 @@ export type SwitchProjectActor = ReturnType<
 export interface ProjectContextMachineDeps {
   resolveInitialScope: ResolveInitialScopeActor;
   createProject: CreateProjectActor;
-  /** Optional: MR-4 atomic project switching. When omitted, the
-   *  `switching_project_intent` event is dropped (no-op) — keeps the
-   *  machine backward-compatible with MR-1..MR-3 deployments. */
+  /** Optional: atomic project switching. When omitted, the
+   *  `switching_project_intent` event is dropped (no-op). */
   switchProject?: SwitchProjectActor;
 }
 
@@ -216,10 +214,9 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
     actors: {
       resolveInitialScope: deps.resolveInitialScope,
       createProject: deps.createProject,
-      // MR-4 — fromPromise fallback when deps.switchProject is absent (legacy
-      // MR-1..MR-3 deployments). The fallback throws so test setups that
-      // never wired it surface a named diagnostic rather than silently
-      // succeeding.
+      // fromPromise fallback when deps.switchProject is absent. The fallback
+      // throws so test setups that never wired it surface a named diagnostic
+      // rather than silently succeeding.
       switchProject:
         deps.switchProject ??
         fromPromise<SwitchProjectOutput, SwitchProjectInput>(async () => {
@@ -256,11 +253,11 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
   }).createMachine({
     id: "project-context",
     initial: "resolving_initial_scope",
-    // Root-level open_deep_link handler — available from ANY state. Per
-    // app-arch §2.3 / DWD-9: a cold deep-link can arrive while the machine
-    // is in no_projects, project_selected, or any other live state. The
-    // handler captures the URL wish into `deeplink_*` ctx and re-enters
-    // resolving_initial_scope so the resolver re-runs with the new wish.
+    // Root-level open_deep_link handler — available from ANY state. A cold
+    // deep-link can arrive while the machine is in no_projects,
+    // project_selected, or any other live state. The handler captures the URL
+    // wish into `deeplink_*` ctx and re-enters resolving_initial_scope so the
+    // resolver re-runs with the new wish.
     on: {
       open_deep_link: {
         actions: assign({
@@ -269,10 +266,9 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           deeplink_session_id: ({ event, context }) =>
             event.intent_session_id ?? context.deeplink_session_id,
           // `intent_resource_id` / `intent_resource_type` are carried in
-          // the event payload but no longer materialized here — the
-          // orchestrator forwards them directly from the event payload
-          // into the `project_ready` broadcast (audit §7 Tier-1 #2;
-          // Direction F / ADR-030 §"Migration sequencing").
+          // the event payload but not materialized here — the orchestrator
+          // forwards them directly from the event payload into the
+          // `project_ready` broadcast.
         }),
         target: ".resolving_initial_scope",
         reenter: true,
@@ -420,13 +416,12 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         },
       },
       project_selected: {
-        // MR-1 entry — the walking-skeleton's "project chip rendered"
-        // assertion reads context.project on entry. Per DESIGN §3.2.B the
-        // orchestrator's priorState watcher observes entry to this state and
-        // broadcasts `project_ready` to session-chat (idempotent on same
-        // project_id; invalidates session_id+resource_* on different project_id).
+        // Entry assigns context.project. The orchestrator's priorState watcher
+        // observes entry to this state and broadcasts `project_ready` to
+        // session-chat (idempotent on same project_id; invalidates
+        // session_id+resource_* on different project_id).
         //
-        // MR-4 — `switching_project_intent` moves the machine into
+        // `switching_project_intent` moves the machine into
         // `switching_project`. The IC-J002-4 invalidation contract
         // (session_id + resource_* cleared BEFORE the new project's
         // loading_session_list fires) is enforced via the
@@ -531,9 +526,9 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
 /**
  * Build the real `resolveInitialScope` actor that calls the backend's
  * `GET /api/projects` (page 1; we only need to learn whether any project
- * exists for MR-1). The `deeplink_project_id` branch is wired in 01-03;
- * in 01-01 we just check the project list and pick the first project (or
- * report no_projects).
+ * exists). Without a `deeplink_project_id` it checks the project list and
+ * picks the first project (or reports no_projects); with one it takes the
+ * deep-link fast-path below.
  *
  * NOTE: the backend's authorize_org middleware checks `X-Org-Id` against
  * the JWT. Auth-proxy injects these headers in dev mode (DEV_USER).
@@ -545,7 +540,7 @@ export function resolveInitialScopeFn(
 ): (input: ResolveInitialScopeInput) => Promise<ResolveInitialScopeOutput> {
   return async (input) => {
     // ─── Deep-link (deeplink_project_id) fast-path ────────────────────────
-    // Per US-204 / app-arch §2.3: when a deeplink_project_id is supplied, the
+    // US-204: when a deeplink_project_id is supplied, the
     // resolver consults the backend's `GET /api/projects/:id` directly so it
     // can distinguish 403 (cross-tenant / access revoked) from 404
     // (project_not_found). Listing all the user's projects can't make that
@@ -627,7 +622,7 @@ export function resolveInitialScopeFn(
       return { no_projects: true };
     }
 
-    // ─── Last-used resolution (OQ-J002-5 / DWD-9 / 01-02) ───────────────────
+    // ─── Last-used resolution (OQ-J002-5 / DWD-9) ──────────────────────────
     // Fire N parallel `list_sessions(project_id, limit=1)` reads. For each
     // project, capture the most-recent session's last_active_at (or NULL if
     // empty). Pick the project carrying the freshest last_active_at; ties
@@ -814,7 +809,7 @@ export function createProjectActor(
 }
 
 /**
- * MR-4 — switchProjectFn implementation. Mirrors resolveInitialScopeFn's
+ * switchProjectFn implementation. Mirrors resolveInitialScopeFn's
  * deep-link fast-path: `GET /api/projects/:id` distinguishes 200 (settled),
  * 403 (access_revoked / cross-tenant), 404 (project_not_found). All other
  * non-2xx statuses throw and land in error_recoverable.

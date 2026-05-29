@@ -1,7 +1,6 @@
 // Unit tests for the ProjectContext (J-002 project half) XState machine.
 //
-// Behaviors covered (post-DWD-13 SRP split — lifted from
-// `project-and-chat-session-management.test.ts` MR-1 budget):
+// Behaviors covered:
 //   B1 — resolveInitialScope → no_projects when backend returns empty.
 //   B2 — resolveInitialScope → project_selected when backend returns ≥1 project.
 //   B3 — creating_project → project_selected on success.
@@ -10,14 +9,14 @@
 //   B5 — empty project name (whitespace-only) keeps machine in
 //         no_projects with inline validation error.
 //
-// US-204 deep-link behaviors (sub-step 01-03):
+// US-204 deep-link behaviors:
 //   B6 — resolveInitialScope with deeplink_project_id + {cross_tenant: true}
 //         → scope_mismatch_terminal with cause "cross_tenant".
 //   B7 — resolveInitialScope with deeplink_project_id + {project_not_found: true}
 //         → scope_mismatch_terminal with cause "project_not_found".
 //   B8 — open_deep_link event re-enters resolving_initial_scope and assigns
 //         context.deeplink_* from the event payload (the event payload keys
-//         still use the legacy `intent_*` prefix — that's a deferred follow-up).
+//         use the `intent_*` prefix).
 //   B9 — back_to_projects_clicked from scope_mismatch_terminal clears
 //         context.deeplink_* and transitions to resolving_initial_scope.
 //
@@ -300,10 +299,10 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     const ctx = actor.getSnapshot().context;
     expect(ctx.deeplink_project_id).toBe("deep-link-proj");
     expect(ctx.deeplink_session_id).toBe("sess-1");
-    // `intent_resource_id` / `intent_resource_type` are no longer
-    // materialized into ctx (audit §7 Tier-1 #2 / MR-D): the orchestrator
-    // forwards them directly from the open_deep_link event payload into
-    // the project_ready broadcast, without ever touching this ctx.
+    // `intent_resource_id` / `intent_resource_type` are not materialized into
+    // ctx: the orchestrator forwards them directly from the open_deep_link
+    // event payload into the project_ready broadcast, without ever touching
+    // this ctx.
   });
 
   it("B9: back_to_projects_clicked clears all deeplink_* fields and exits scope_mismatch_terminal", async () => {
