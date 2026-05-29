@@ -22,8 +22,8 @@ export const err = <T = never>(error: FlowError): Result<T> => ({
 
 /** The message a thrown exception would have carried, for sites that keep a
  *  bespoke 500 shape (no unknown_machine 404 branch). `UnknownMachineError`'s
- *  own `.message` is `Unknown machine: <m>`, so this stays byte-identical to
- *  the prior `(err as Error).message`. */
+ *  own `.message` is `Unknown machine: <m>`, so this is byte-identical to
+ *  `(err as Error).message`. */
 export function errorMessage(error: FlowError): string {
   return error.kind === "unknown_machine"
     ? `Unknown machine: ${error.machine}`

@@ -1,10 +1,6 @@
 // Property test — project-context and session-chat agree on project state.
 //
-// Audit reference: docs/discussion/ui-state-vocabulary-audit/findings.md §9 Q3.
-// ADR reference:   docs/decisions/adr-039-ui-state-naming-conventions.md §C12.
-//
-// Gate for the field-collapse step. The projection currently maintains TWO
-// pairs of fields that carry project identity:
+// The projection carries project identity on two paths:
 //
 //   - `context.project.{id,name}`             — written by project_selected
 //                                                (project-context's settle).
@@ -16,9 +12,8 @@
 //                                                from project-context's own
 //                                                `project.{id,name}`).
 //
-// Audit §7 #5 + §9 Q3: the duplicate is a machine-name leak (C12) safe to
-// retire ONCE the two paths are proven to agree across arbitrary
-// project-switch sequences. This test is that proof.
+// The duplicate is a machine-name leak; this test proves the two paths agree
+// across arbitrary project-switch sequences.
 //
 // Production constraint encoded below: the orchestrator's project_ready
 // re-broadcast carries the SAME (project_id, project_name) tuple it just
@@ -26,12 +21,13 @@
 // sequences where each `project_context_inherited` payload is sourced from
 // the most-recent `project_selected` — mirroring production.
 //
-// Property-test framework choice: this repo does not have `fast-check` as a
-// dep (only acceptance-test comments mention it as a future enhancement).
-// The audit asks for a property test, not specifically fast-check. We use a
-// seeded deterministic generator that enumerates ~30 scenarios — covers the
-// shape space without adding a runtime dep, and the seed makes failures
-// reproducible.
+// The repo has no `fast-check` dependency, so this uses a seeded deterministic
+// generator that enumerates ~30 scenarios — covering the shape space without a
+// runtime dep, with a seed that makes failures reproducible.
+//
+// References:
+//   docs/discussion/ui-state-vocabulary-audit/findings.md  — vocabulary audit
+//   docs/decisions/adr-039-ui-state-naming-conventions.md  — naming conventions
 
 import { describe, expect,it } from "vitest";
 
@@ -149,14 +145,13 @@ function generateSequence(
 //   At every settle point in a sequence, the project-context view of project
 //   state and the session-chat view of project state agree.
 //
-// Pre-collapse this means:
+// When the legacy `session_chat_project_*` fields are present this means:
 //   context.project.id   === context.session_chat_project_id
 //   context.project.name === context.session_chat_project_name
 //
-// Post-collapse (after the field collapse lands) the legacy fields are gone
-// — `'session_chat_project_id' in context` returns false — and the
-// assertion narrows to: context.project.id matches the latest broadcast
-// payload. The `in`-guarded shape below survives the collapse without edit.
+// When those fields are absent — `'session_chat_project_id' in context`
+// returns false — the assertion narrows to: context.project.id matches the
+// latest broadcast payload. The `in`-guarded shape below handles both.
 
 interface AgreementContext {
   project: { id: string | null; name: string | null };
@@ -189,9 +184,9 @@ function assertProjectStateAgreement(
   }
 
   // Invariant for every intermediate settle point: agreement holds whenever
-  // both fields are non-null (pre-collapse). Replays the prefix of events
-  // up to each settle point and asserts. Post-collapse the second clause is
-  // a no-op (the legacy field is `undefined`, so the conjunction is false).
+  // both fields are non-null. Replays the prefix of events up to each settle
+  // point and asserts. When the legacy field is absent the second clause is
+  // a no-op (the field is `undefined`, so the conjunction is false).
   for (const settleAt of settlePoints) {
     const prefix = events.slice(0, settleAt);
     const p = buildProjection("test-flow:property", prefix);
@@ -241,8 +236,9 @@ describe("project-state agreement invariant (audit §9 Q3)", () => {
 
   it("bootstrap window: project.id set but session_chat_project_id null is tolerated", () => {
     // Only project_selected — no corresponding project_context_inherited.
-    // Pre-collapse, project.id is set and session_chat_project_id is null.
-    // The property allows this transient (no settle point asserted).
+    // When the legacy field is present, project.id is set and
+    // session_chat_project_id is null. The property allows this transient
+    // (no settle point asserted).
     const a = PROJECTS[0];
     const projection = buildProjection("test-flow:property", [
       projectSelectedEvent(a, 1),
@@ -257,8 +253,9 @@ describe("project-state agreement invariant (audit §9 Q3)", () => {
   it("session-chat-only bootstrap: project_context_inherited without a prior project_selected", () => {
     // In production this happens when session-chat is rehydrated from
     // Redis before project-context's log has been read into projection.
-    // Pre-collapse: session_chat_project_id is set; project.id is null.
-    // Post-collapse: project.id is set directly by project_context_inherited.
+    // With the legacy field present: session_chat_project_id is set and
+    // project.id is null. Without it: project.id is set directly by
+    // project_context_inherited.
     const a = PROJECTS[0];
     const projection = buildProjection("test-flow:property", [
       projectContextInheritedEvent(a, 1),
@@ -268,7 +265,7 @@ describe("project-state agreement invariant (audit §9 Q3)", () => {
       expect(ctx.session_chat_project_id).toBe(a.id);
       expect(ctx.project.id).toBeNull();
     } else {
-      // Post-collapse: project_context_inherited writes project.{id,name}.
+      // Without the legacy field: project_context_inherited writes project.{id,name}.
       expect(ctx.project.id).toBe(a.id);
       expect(ctx.project.name).toBe(a.name);
     }

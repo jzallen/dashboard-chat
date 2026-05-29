@@ -1,14 +1,24 @@
-// buildProjection — pure fold from FlowEvent[] into the public projection
-// shape declared by `design/handoff-design-to-distill.md` §4.
+// buildProjection — pure fold from FlowEvent[] into the public projection shape.
 //
 // The TS acceptance harness reads this shape; the FE renders from this shape;
 // the acceptance tests assert against this shape. Single source of truth.
 //
-// Design choice: the projection is built by replaying events through a
-// dispatch table (`EVENT_HANDLERS`) rather than by snapshotting the XState
-// machine. This keeps the projection a PURE function (testable without an
-// XState runtime) and gives the orchestrator + persistence layer a clear
-// contract: events go in, the projection is the public read shape.
+// The projection is built by replaying events through a dispatch table
+// (`EVENT_HANDLERS`) rather than by snapshotting the XState machine. This keeps
+// the projection a PURE function (testable without an XState runtime) and gives
+// the orchestrator + persistence layer a clear contract: events go in, the
+// projection is the public read shape.
+//
+// References:
+//   docs/decisions/adr-027-*.md  — per-machine projection wire contract
+//   docs/decisions/adr-028-*.md  — machines own transitions, never write events
+//   docs/decisions/adr-029-*.md  — ActiveScope invariants
+//   docs/decisions/adr-030-*.md  — flow_id key form / single-replica
+//   docs/decisions/adr-044-*.md  — hybrid log/derived-view projection
+//   design/handoff-design-to-distill.md                   — public projection shape
+//   docs/discussion/ui-state-vocabulary-audit/findings.md — vocabulary audit
+//   docs/feature/project-and-chat-session-management/design/application-architecture.md
+//                                                         — machine SRP split (app-arch)
 
 import type { ActiveScope, ResourceType } from "./active-scope.ts";
 import type { FlowEvent } from "./flow-event.ts";
@@ -26,8 +36,8 @@ const EMPTY_SCOPE: ActiveScope = {
  * exposes (opaquely) as `FlowProjection.context`. Exported so the ChatApp
  * derived-view mapper (lib/machines/chat-app/projection/derive-projection.ts)
  * can produce the SAME shape from actor state instead of an event log —
- * guaranteeing the per-machine projection contract (ADR-027) stays byte-stable
- * whether it is folded from the log or derived from the snapshot (ADR-044 §2).
+ * guaranteeing the per-machine projection contract stays byte-stable whether it
+ * is folded from the log or derived from the snapshot.
  */
 export interface ReducedContext {
   user: {
@@ -37,27 +47,27 @@ export interface ReducedContext {
   };
   org: { id: string | null; name: string | null };
   /**
-   * Per ADR-029, the projection's `context.project` carries the
-   * authoritative (current) project name as known to the user's machine.
-   * Populated by deep_link_opened / scope_reconciled / project_selected
-   * / project_created events.
+   * The projection's `context.project` carries the authoritative (current)
+   * project name as known to the user's machine. Populated by
+   * deep_link_opened / scope_reconciled / project_selected / project_created
+   * events.
    */
   project: { id: string | null; name: string | null };
   underlying_cause_tag: string | null;
   retries_count: number;
   org_validation_error: { kind: string; message: string } | null;
-  /** Per ADR-029 I5: true when last deep-link reconciliation rewrote the
-   *  bookmarked project name. The acceptance test agent inspects this. */
+  /** I5: true when last deep-link reconciliation rewrote the bookmarked
+   *  project name. The acceptance test agent inspects this. */
   scope_reconciled: boolean;
-  /** Per ADR-029 I4: surfaced when a deep link to a foreign tenant's
-   *  resource is rejected. Carries the named diagnostic. */
+  /** I4: surfaced when a deep link to a foreign tenant's resource is
+   *  rejected. Carries the named diagnostic. */
   scope_resolution_error: { reason: string } | null;
   /** The resolved scope from the most recent deep_link_opened event. The
    *  projection-level `active_scope` field is derived from this. */
   resolved_scope: ActiveScope | null;
-  /** Per ADR-029 invariant 4: the non-security org-claim echo composed at the
-   *  org_created boundary (OQ-5). The TS harness's
-   *  assert_jwt_carries_org_claim reads this. NOT a real credential. */
+  /** Invariant 4: the non-security org-claim echo composed at the org_created
+   *  boundary. The TS harness's assert_jwt_carries_org_claim reads this. NOT a
+   *  real credential. */
   access_token: string | null;
   /** project-and-chat-session-management context — populated by j002_*
    *  event handlers. The shape mirrors the project flow machine's
@@ -71,8 +81,7 @@ export interface ReducedContext {
   /** Per OQ-J002-5 degraded path: ids of projects whose list_sessions
    *  call 5xx-failed during last-used resolution. */
   last_used_resolution_degraded: { failed_project_ids: string[]; partial_result: boolean } | null;
-  /** J-002 deep-link WISH payload (US-204 / DWD-9, post-MR-D split per
-   *  audit §5 / §7 Tier-1 #2). Carries the URL-level user wish — what
+  /** J-002 deep-link WISH payload. Carries the URL-level user wish — what
    *  the user typed/landed on, not yet confirmed or denied. Cleared by
    *  back_to_projects_clicked. */
   deeplink_project_id: string | null;
@@ -90,14 +99,13 @@ export interface ReducedContext {
    *  switching_project_started. Pairs with the existing pending_*
    *  family (pending_project_name, pending_first_message). */
   pending_resume_session_id: string | null;
-  // ── session-chat context (J-002 MR-2 + DWD-13 §2B) ─────────────────────
+  // ── session-chat context ───────────────────────────────────────────────
   // Project identity on the session-chat projection lives on the shared
-  // `project: { id, name }` field above. Written here by
-  // `project_context_inherited` (the orchestrator's `project_ready`
-  // re-broadcast), the same shape project-context writes via
-  // `project_selected`. Audit §7 #5 + §9 Q3: the `session_chat_project_*`
-  // duplicate was collapsed — see the property test in
-  // projection-property.test.ts for the agreement invariant.
+  // `project: { id, name }` field above. Written by `project_context_inherited`
+  // (the orchestrator's `project_ready` re-broadcast), the same shape
+  // project-context writes via `project_selected` — a single project-state
+  // field, not a `session_chat_project_*` duplicate. See projection-property.test.ts
+  // for the agreement invariant.
   /** Sessions visible in the current project; populated on
    *  session_list_loaded. Sorted DESC by last_active_at. */
   session_list: Array<{
@@ -124,17 +132,16 @@ export interface ReducedContext {
   session_dataset_unavailable: boolean;
   /** US-206 composer-state preservation: the welcome-state's pending first
    *  message, populated by `first_message_sent` and preserved across the
-   *  `error_recoverable → retry_clicked → session_welcome` boundary
-   *  per app-arch §6.4. */
+   *  `error_recoverable → retry_clicked → session_welcome` boundary. */
   pending_first_message: string;
-  // ── MR-6 / US-210 cross-machine FREEZE/THAW ──────────────────────────
+  // ── cross-machine FREEZE/THAW ────────────────────────────────────────
   /** The live state the machine froze from; written by the per-machine
-   *  `*_frozen` event, read by `*_thawed` to restore (DWD-2/DWD-6 — the
-   *  history target is a queryable context field, not an XState history
-   *  node, so the TS harness can assert on it). */
+   *  `*_frozen` event, read by `*_thawed` to restore. The history target is a
+   *  queryable context field, not an XState history node, so the TS harness
+   *  can assert on it. */
   last_live_state: string | null;
-  /** Cumulative DWD-7 stale-intent drop counter (observability only —
-   *  the muscle-memory click that no longer resolves post-THAW). */
+  /** Cumulative stale-intent drop counter (observability only — the
+   *  muscle-memory click that no longer resolves post-THAW). */
   stale_intents_dropped_count: number;
   /** The most recent stale-dropped intent, for
    *  `harness.j002.assert_stale_intent_dropped(intent_type, target_id)`. */
@@ -205,11 +212,11 @@ type EventHandler = (
  *
  * Order below mirrors the session-onboarding state-chart progression so the
  * file reads as the flow's narrative: session_started → needs_org →
- * creating_org → ready → expired_token → (error states), then ADR-029
- * deep-link scope-resolution events.
+ * creating_org → ready → expired_token → (error states), then the deep-link
+ * scope-resolution events.
  */
 const EVENT_HANDLERS: Record<string, EventHandler> = {
-  // session_started — the SELF-CONTAINED opening event (ADR-041 D2). Carries
+  // session_started — the SELF-CONTAINED opening event. Carries
   // the verified user (re-verify WorkOS profile, L5) and the org binding
   // (returning user) or null (new user). The reducer FOLDS it directly — it
   // never looks anything up, so the user is populated at t=0 (defect closed).
@@ -241,7 +248,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // session_rejected — terminal: re-verify failed (OQ-2). HTTP stays 200; the
+  // session_rejected — terminal: re-verify failed. HTTP stays 200; the
   // rejection is encoded in the projection with a distinct cause tag. No user
   // state advances (the event carries no user/org).
   session_rejected: (_state, context, event) => {
@@ -315,15 +322,14 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // Payload shape (mirrors `open_deep_link` handler in `index.ts`,
-  // post-MR-D rename per audit §5 / §7 Tier-1 #2):
+  // Payload shape (mirrors the `open_deep_link` handler in `index.ts`):
   //   { scope: ActiveScope, project: { id, name } | null, reconciled: bool,
   //     deeplink_project_id?, deeplink_session_id?,
   //     intent_resource_id?, intent_resource_type? }
   //
-  // Per DWD-9: the J-002 deep-link wish fields are carried in the same
-  // event payload so future MR consumers (session resume, dataset
-  // switching) read them from the projection's context.
+  // The J-002 deep-link wish fields ride in the same event payload so
+  // downstream consumers (session resume, dataset switching) read them from
+  // the projection's context.
   deep_link_opened: (state, context, event) => {
     const payload = event.payload as {
       scope?: ActiveScope;
@@ -378,10 +384,10 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // ─────────────────── J-002 event handlers (MR-1 substrate) ──────────────
-  // Per DWD-9 the FlowProjection envelope is UNCHANGED; J-002 fields live
-  // inside `context.*`. The active_scope field is derived from context.org.id
-  // and context.project below in buildProjection.
+  // ─────────────────── J-002 event handlers ───────────────────────────────
+  // The FlowProjection envelope is UNCHANGED; J-002 fields live inside
+  // `context.*`. The active_scope field is derived from context.org.id and
+  // context.project below in buildProjection.
 
   project_context_resolution_started: (_state, context, event) => {
     const payload = event.payload as {
@@ -514,14 +520,14 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // ─────────────── MR-4 — project switching (US-207 + IC-J002-4) ────────
-  // Per DESIGN §2A the project-context machine owns the `switching_project`
-  // state. The IC-J002-4 invariant — session_id + resource_* MUST be
-  // cleared BEFORE the new project's loading_session_list fires — is
-  // enforced HERE in the projection layer (the cross-machine view): on
-  // `switching_project_started` the projection writes nulls atomically.
-  // Session-chat re-enters loading_session_list via the orchestrator's
-  // project_ready re-broadcast on settle (`project_switched`).
+  // ─────────────── project switching (US-207 + IC-J002-4) ──────────────
+  // The project-context machine owns the `switching_project` state. The
+  // IC-J002-4 invariant — session_id + resource_* MUST be cleared BEFORE the
+  // new project's loading_session_list fires — is enforced HERE in the
+  // projection layer (the cross-machine view): on `switching_project_started`
+  // the projection writes nulls atomically. Session-chat re-enters
+  // loading_session_list via the orchestrator's project_ready re-broadcast on
+  // settle (`project_switched`).
 
   switching_project_started: (_state, context, event) => {
     const payload = event.payload as {
@@ -549,7 +555,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
         pending_resume_session_id: null,
         intent_resource_id: null,
         intent_resource_type: null,
-        // D-MR4-06: a switch supersedes any prior deep-link-resolved scope.
+        // A switch supersedes any prior deep-link-resolved scope.
         // `resolved_scope` takes precedence in the projection's
         // active_scope derivation (see buildProjection); if a stale
         // deep_link_opened scope survived the switch it would mask the
@@ -622,9 +628,9 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // ───────────── session-chat handlers (J-002 MR-2, DWD-13 §2B) ──────────
-  // Each handler keeps the FlowProjection envelope unchanged (DWD-9) and
-  // writes session-chat fields under context.*. The session-chat flow's
+  // ───────────── session-chat handlers ──────────────────────────────────
+  // Each handler keeps the FlowProjection envelope unchanged and writes
+  // session-chat fields under context.*. The session-chat flow's
   // event log carries these events on the `session-chat:<principal>` Redis
   // stream key — separate from the project-context flow's log.
 
@@ -778,12 +784,12 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // ────────────── session-chat MR-3 (US-206) new-session lifecycle ──────────
+  // ────────────── session-chat new-session lifecycle (US-206) ──────────────
   // session_welcome_displayed: the machine entered `session_welcome`.
-  // session_id is null; no backend session row exists yet (DWD-10 lazy-create).
+  // session_id is null; no backend session row exists yet (lazy-create).
   // pending_first_message in the payload preserves composer text when the
-  // welcome state is re-entered via `retry_clicked` (app-arch §6.4 — machine
-  // retains the composer across error_recoverable → retry).
+  // welcome state is re-entered via `retry_clicked` (the machine retains the
+  // composer across error_recoverable → retry).
   session_welcome_displayed: (_state, context, event) => {
     const payload = event.payload as { pending_first_message?: string };
     return {
@@ -820,11 +826,10 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     };
   },
 
-  // ────────────── session-chat MR-5 (US-209) dataset switching ──────────
-  // Per app-arch §466 + DESIGN §2B the session-chat machine owns the
-  // `switching_dataset_context` state. The orchestrator emits these three
-  // events from the `switchDatasetContext` settle path (mirroring the
-  // D-MR4-06 switching_project emission discipline).
+  // ────────────── session-chat dataset switching (US-209) ──────────────
+  // The session-chat machine owns the `switching_dataset_context` state. The
+  // orchestrator emits these three events from the `switchDatasetContext`
+  // settle path (mirroring the switching_project emission discipline).
 
   // The machine entered `switching_dataset_context` (the
   // `switchDatasetContext` invoke is in flight). Unlike
@@ -872,11 +877,11 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     },
   }),
 
-  // ──────────── MR-6 / US-210 cross-machine FREEZE/THAW ────────────
-  // Per app-arch §2.3 the freeze lifecycle is per-machine; the
-  // orchestrator's broadcastFreeze/broadcastThaw emission arms append
-  // these (machines never write FlowEvents — ADR-028/ADR-030). `*_frozen`
-  // records `last_live_state` so `*_thawed` can restore it. All other
+  // ──────────── cross-machine FREEZE/THAW (US-210) ────────────
+  // The freeze lifecycle is per-machine; the orchestrator's
+  // broadcastFreeze/broadcastThaw emission arms append these (machines never
+  // write FlowEvents). `*_frozen` records `last_live_state` so `*_thawed` can
+  // restore it. All other
   // context is preserved untouched — the FE renders the "Refreshing your
   // session..." banner OVER the prior paint, so the welcome chips / scope
   // / transcript stay visible with no flicker (US-210 Example 5).
@@ -926,7 +931,7 @@ const EVENT_HANDLERS: Record<string, EventHandler> = {
     context: { ...context },
   }),
 
-  // DWD-7 — observability only, no state change, no UX surface. The
+  // Observability only, no state change, no UX surface. The
   // cumulative counter + last_stale_intent feed
   // `harness.j002.assert_stale_intent_dropped` / the
   // `assert_no_stale_intents_dropped` happy-path assertion.
@@ -978,15 +983,15 @@ function applyEvent(
  * Precedence:
  *   1. resolved_scope (from deep_link_opened)
  *   2. context.project (set by project_selected on project-context flows
- *      or project_context_inherited on session-chat flows — same shape per
- *      audit §9 Q3 collapse, see projection-property.test.ts). Carries
- *      `resource_*` from session_resumed when session-chat has settled;
- *      `resource` stays { type: null, id: null } on project-context flows.
+ *      or project_context_inherited on session-chat flows — the same shape,
+ *      see projection-property.test.ts). Carries `resource_*` from
+ *      session_resumed when session-chat has settled; `resource` stays
+ *      { type: null, id: null } on project-context flows.
  *   3. org-only
  *   4. empty
  *
- * Extracted so the ChatApp derived-view mapper reuses the SAME tiered logic —
- * the active_scope contract is not duplicated divergently (ADR-044 §C1). Pure.
+ * The ChatApp derived-view mapper reuses this SAME tiered logic, so the
+ * active_scope contract is not duplicated divergently. Pure.
  */
 export function deriveActiveScope(
   context: Pick<

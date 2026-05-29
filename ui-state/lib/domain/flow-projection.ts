@@ -1,7 +1,7 @@
 // FlowProjection — the public read-model envelope produced by `buildProjection`
 // (lib/projection.ts) and read by the FE, the agent (X-Active-Scope), and the
 // acceptance harness. The envelope shape is the SSOT contract every consumer
-// reads (DWD-9 / DWD-13); flow-specific state lives opaquely inside `context`.
+// reads; flow-specific state lives opaquely inside `context`.
 
 import type { ActiveScope } from "./active-scope.ts";
 

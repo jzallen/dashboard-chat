@@ -1,6 +1,6 @@
-// ScopeResolver — pure-function ActiveScope computation per DWD-4 (Mandate 4).
+// ScopeResolver — pure-function ActiveScope computation.
 //
-// Per ADR-029, ActiveScope must satisfy invariants I1-I5:
+// ActiveScope must satisfy invariants I1-I5:
 //   I1: active_scope.org_id === jwt.org_id (else 403/cross_tenant)
 //   I2: active_scope.project_id non-null when project context active
 //   I3: (resource_type === null) ↔ (resource_id === null) — atomic pair
@@ -11,15 +11,16 @@
 //   I5: stale-link reconciliation emits scope_reconciled FlowEvent when the
 //       project_id resolves to a name that differs from the bookmarked name
 //
-// Step 01-01 (walking skeleton) exercises ONLY the no-org case (I1 with
-// empty org). Step 01-03 extends to the full I1-I5 surface.
+// This function has ZERO fixture/IO dependency: its unit tests run with no
+// Redis, no backend, and no network.
 //
-// CM-D contract: this function has ZERO fixture/IO dependency. Its unit
-// tests run with no Redis, no backend, no network.
+// References:
+//   docs/decisions/adr-029-*.md  — ActiveScope invariants I1-I5
+//   docs/decisions/adr-039-*.md  — ResourceType single-literal collapse
 
-// `ResourceType` is YAGNI-collapsed to the single literal `"dataset"` per
-// ADR-039 §Q1. The alias name is retained so call sites read structurally;
-// the shape `resource: { type: ResourceType | null; id: string | null }` stays
+// `ResourceType` is the single literal `"dataset"`. The alias name lets call
+// sites read structurally; the shape
+// `resource: { type: ResourceType | null; id: string | null }` stays
 // polymorphism-ready for the day a second resource type actually ships.
 export type ResourceType = "dataset";
 
@@ -71,7 +72,7 @@ export type ScopeResolution =
  * Resolve the ActiveScope for a request.
  *
  * Decision matrix:
- *  - No org claim AND no route.org → empty-org scope (walking-skeleton path).
+ *  - No org claim AND no route.org → empty-org scope (no org setup yet).
  *  - Route names an org different from JWT → cross_tenant (I1, I4).
  *  - Route has resource_type without resource_id (or vice versa) → I3 policy:
  *    drop the partial resource pair and fall back to project-only scope.

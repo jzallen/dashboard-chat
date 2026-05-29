@@ -1,15 +1,18 @@
 // Unit tests for resolveActiveScope — the pure-function driving port for
-// ScopeResolver. Invariants I1-I5 from ADR-029 are enforced here.
+// ScopeResolver. Invariants I1-I5 are enforced here.
 //
-// CM-D contract: zero fixtures, zero I/O. Each test calls the resolver
-// directly with literal inputs and inspects the discriminated-union return.
+// Zero fixtures, zero I/O: each test calls the resolver directly with literal
+// inputs and inspects the discriminated-union return.
 //
-// Behavior budget (step 01-03):
+// Coverage:
 //   - I1/I4 cross-tenant            (2 tests: pass + fail)
 //   - I2 project_id passthrough     (1 test, parametrized across project)
 //   - I3 atomic resource pair       (3 tests: both null, both set, partial)
 //   - I5 stale-link reconciliation  (3 tests: same name, diff name, no project)
-//   - No-org walking-skeleton path  (1 test — already present)
+//   - No-org path                   (1 test)
+//
+// References:
+//   docs/decisions/adr-029-*.md  — ActiveScope invariants I1-I5
 // Total: 10 tests covering 5 invariants ≤ 2× behavior budget.
 
 import { describe, expect,it } from "vitest";

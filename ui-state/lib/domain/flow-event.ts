@@ -8,11 +8,18 @@
 // cache serialization, and its rehydration. The plain serialized shape lives
 // here only as a co-located DTO `type` (FlowEventRecord). The (de)serialization
 // itself lives in the OUTBOUND adapter (`persistence/redis.ts`) — the domain
-// never parses untrusted bytes. See the `domain-modeling` skill + ADR-028/041.
+// never parses untrusted bytes. See the `domain-modeling` skill.
+//
+// References:
+//   docs/decisions/adr-027-*.md  — persistence/wire record contract
+//   docs/decisions/adr-028-*.md  — machines own transitions, the log owns state
+//   docs/decisions/adr-030-*.md  — flow_id key form `<machine>:<principal_id>`
+//   docs/decisions/adr-040-*.md  — legacy machine-name aliases
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
 /**
  * The plain serialized shape of a flow event — the EXACT Redis hash / wire
- * record (ADR-027 §1 persistence contract). A DTO `type`, no behavior: the
+ * record (the persistence contract). A DTO `type`, no behavior: the
  * outbound adapter (`persistence/redis.ts`) is the only code that produces it
  * (via `FlowEvent.createCacheSerialization`) or consumes it (via
  * `FlowEvent.fromCache`). BYTE-STABLE — the field set IS the persisted-bytes
@@ -27,24 +34,24 @@ export type FlowEventRecord = {
 
 /**
  * FlowId — the structured flow-identity value object: which machine handles
- * the flow + which principal owns it. `:` never appears in a principal_id
- * (ADR-030 §SD3), so the key form is an unambiguous `${machine}:${principal_id}`
- * — the SAME string the actor map, the Redis key prefix
- * (`ui-state:{flow_id}:events`), the frozen/abandoned sets, and
- * `projection.flow_id` all use. FlowId is the ONE place that knows that
- * encoding; every string-keyed context bridges through `toKey`/`fromKey`.
+ * the flow + which principal owns it. `:` never appears in a principal_id, so
+ * the key form is an unambiguous `${machine}:${principal_id}` — the SAME string
+ * the actor map, the Redis key prefix (`ui-state:{flow_id}:events`), the
+ * frozen/abandoned sets, and `projection.flow_id` all use. FlowId is the ONE
+ * place that knows that encoding; every string-keyed context bridges through
+ * `toKey`/`fromKey`.
  *
  * `machine` carries the segment AS MINTED — possibly a legacy alias
- * (`login-and-org-setup`, `project-and-chat-session-management`; ADR-040/041
- * LEAF-2) — so `toKey()` reproduces the exact actor-map / Redis key. Alias
- * canonicalization stays at `FLOW_STRATEGY_REGISTRY.resolve()`, the single
- * canonicalization point; FlowId never canonicalizes.
+ * (`login-and-org-setup`, `project-and-chat-session-management`) — so `toKey()`
+ * reproduces the exact actor-map / Redis key. Alias canonicalization stays at
+ * `FLOW_STRATEGY_REGISTRY.resolve()`, the single canonicalization point; FlowId
+ * never canonicalizes.
  *
  * FlowId "doesn't exist apart from FlowEvent": FlowEvent constructs and owns
  * it, and callers reach a flow's identity through FlowEvent's surface
  * (`getFlowId()` / `flowKey` / `getMachine()`). The `of` / `fromKey` statics
- * remain for the begin path + the broadcast loops, which key off a raw
- * `flow_id` string before any FlowEvent for that step exists.
+ * serve the begin path + the broadcast loops, which key off a raw `flow_id`
+ * string before any FlowEvent for that step exists.
  */
 export class FlowId {
   constructor(
@@ -63,7 +70,7 @@ export class FlowId {
    *  the FIRST ":"; the principal_id is the remainder, preserving any embedded
    *  ":" (strictly safer than `split(":")[1]`, which would drop it). A key with
    *  no ":" yields an empty principal_id. Principals never contain ":" on real
-   *  data (ADR-030), so both forms agree there. */
+   *  data, so both forms agree there. */
   static fromKey(key: string): FlowId {
     const idx = key.indexOf(":");
     if (idx < 0) return new FlowId(key, "");
@@ -109,8 +116,8 @@ export class FlowEvent {
 
   /**
    * Birth a fresh event from explicit identity parts — the router send path
-   * (route machine-constant + verified principal, ADR-040). Builds the FlowId
-   * itself and applies birth invariants: `ts` defaults to now() (the
+   * (route machine-constant + verified principal). Builds the FlowId itself
+   * and applies birth invariants: `ts` defaults to now() (the
    * deterministic-clock seam survives via the optional last arg), `payload`
    * defaults to {} (absorbing the routers' `?? {}`).
    */
@@ -159,8 +166,7 @@ export class FlowEvent {
    * identity is reconstructed from the STREAM KEY the adapter read from, so
    * `getMachine()` / `getFlowId()` / `flowKey` are TOTAL on a read-back event
    * (they never throw — the persisted record carries no identity field by
-   * design). This replaces the prior transient-flowId / getMachine-throws
-   * design.
+   * design).
    */
   static fromCache(flowKey: string, record: FlowEventRecord): FlowEvent {
     return new FlowEvent(
