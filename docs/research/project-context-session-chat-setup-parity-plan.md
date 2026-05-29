@@ -54,7 +54,7 @@ The two reference machines establish the pattern this plan converges on:
 | `setup/types.ts` | context/event/input/state + `ActionArgs`/`GuardArgs` | + snapshot-view types |
 | `setup/actors.ts` | resolvers + `actors` bundle + `ProvidedActorOf`/`OnboardingActor` | child placeholders + `ChatAppActor` |
 | `setup/guards.ts` | named-closure index → `export const guards = {…}` | same |
-| `setup/actions.ts` | named-closure index; `updateContext = assign<…>` pinned once | + `forward = enqueueActions<…>` for `sendTo` |
+| `setup/actions.ts` | bare param-annotated closures (`ActionArgs`); `assign(...)` wrapped at the `setup()` site | + `enqueueActions(...)`-wrapped forwarder closures (`ForwardArgs`) for `sendTo` |
 | `setup/domain.ts` | **yes** — `OrgName` value object + failure vocab | **no** — pure coordinator |
 | shared readers | (n/a) | `setup/snapshot-readers.ts` imported by guards + actions |
 
@@ -63,8 +63,28 @@ reference machines — cite them, don't re-derive):
 
 1. **`machine.ts` is mapping-only:** `setup({ types, actors, guards, actions }).createMachine({…transitions…})`. Every actor/guard/action is referenced **by string**; no inline function bodies. A state-diagram header docstring, ADR bibliography terse at the **end** of the top docstring (`onboarding/machine.ts:34-37`, `chat-app/machine.ts:41-46`).
 2. **Each `setup/` bundle is a named-closure index:** every function is a private module-scope `const` with its own docstring; the export references them by property shorthand (`onboarding/setup/actions.ts:132-142`, `chat-app/setup/guards.ts:53-58`). **The map key === the string the statechart names.**
-3. **Type-pinning for the action bundle:** a shared `updateContext = assign<Ctx, Evt, undefined, Evt, Actor>` instantiation pins the five generics once; a per-action `assign<…>` only where `TParams` differs (onboarding's `tagCause`, `onboarding/setup/actions.ts:110-116`). chat-app proved a **mixed** bundle (`assign` + `enqueueActions`/`sendTo`) extracts cleanly by also pinning `forward = enqueueActions<…, never, never, never, never>` (`chat-app/setup/actions.ts:50-80`). **The "mixed bundle can't be extracted" worry is false.**
-4. **`TActor` must be pinned** to the machine's provided-actor union or `setup({ actions })` rejects the pre-built bundle. Both references mirror XState's internal `ToProvidedActor` as `ProvidedActorOf<typeof actors>` (`onboarding/setup/actors.ts:437-443`, `chat-app/setup/actors.ts:78-86`).
+3. **Actions are bare, param-annotated closures wrapped at the `setup()` site (canonical):**
+   each action is a module-scope `const` closure annotated with a shared `ActionArgs` (the
+   `assign` writers) or `ForwardArgs` (the forwarders) param from `setup/types.ts` — **no
+   `assign<…>` / `enqueueActions<…>` generics**. `machine.ts` calls `assign(closure)` /
+   `enqueueActions(closure)` **inside** `setup({ actions: { name: assign(name), … } })`, where
+   inference flows from `setup`'s `types` *and* the closure's own param annotation, so every
+   generic is inferred. Static property-assigners stay inline as `assign({ active_child_id: "…" })`
+   in the map (no closure). The parameterized `tagCause` is a bare 2-arg closure
+   `(_: ActionArgs, params: { tag }) => …` wrapped `assign(tagCause)` — `assign` infers `TParams`
+   from the 2nd-arg annotation (verified via `tsc`; **no explicit generics needed**). Calling
+   `enqueueActions(...)` inside `setup()` also dissolves the `ToParameterizedObject`
+   self-reference that previously forced four `never`s, so a `forward` alias is unnecessary.
+   Reference implementations: `onboarding/setup/actions.ts` + `chat-app/setup/actions.ts` and
+   their `machine.ts` (post-`refactor/actions-bare-closure-pattern`). **The earlier
+   `updateContext = assign<…>` / `forward = enqueueActions<…, never, never, never, never>`
+   generic-pinning approach is SUPERSEDED — do NOT reproduce it for project-context or
+   session-chat.**
+4. **`TActor` need NOT be pinned on the actions** under the canonical pattern — wrapping inside
+   `setup()` means there is no pre-built actions bundle to reject, so the actions carry no actor
+   generic at all. (`ProvidedActorOf<typeof actors>` may still be derived in `setup/actors.ts`
+   for typing actor refs where a consumer needs the union, but the actions bundle does not
+   depend on it.)
 5. **Shared readers live in one module** and are imported by both guards and actions, never duplicated (`chat-app/setup/snapshot-readers.ts`).
 
 Docstrings describe **behavior**, not dev history; ADR refs are a terse bibliography at the
@@ -162,8 +182,9 @@ re-exporting `validateProjectName` + `ProjectValidationError` (now sourced from
   type-pinning step** and the main thing to get right; verify with `npx tsc --noEmit`.
 - **Parameterized `tagCause` vs five constant assigns.** Five onError/guard-branch assigns
   set `underlying_cause_tag` to a constant (`cross_tenant`, `project_not_found`,
-  `transient`, `no_projects`, `access_revoked`). onboarding's `tagCause` (params `{ tag }`,
-  its own `assign<…,{tag},…>`) is the proven collapse. **Risk:** the cause-tag string values
+  `transient`, `no_projects`, `access_revoked`). onboarding's `tagCause` (a bare 2-arg closure
+  `(_: ActionArgs, params: { tag }) => …` wrapped `assign(tagCause)` at the setup() site, `TParams`
+  inferred from the 2nd-arg annotation) is the proven collapse. **Risk:** the cause-tag string values
   are projected (wire-frozen). Keep the **exact** string values; only the call site changes
   from inline `assign` to `{ type: "tagCause", params: { tag: "cross_tenant" } }`.
 - **Inline `onDone` guards read `event.output`,** which is not a member of
@@ -196,8 +217,10 @@ Verify after **every** step with:
    `const actors = buildActors(deps)`. (Biggest LOC move; behavior-neutral.)
 4. **Create `setup/guards.ts`** — extract the 1 setup guard + 5 inline `onDone` guards as
    named closures; `export const guards`. Replace statechart guard bodies with strings.
-5. **Create `setup/actions.ts`** — extract all named + 19 inline `assign`s; shared
-   `updateContext`, parameterized `tagCause`. Replace statechart action bodies with strings.
+5. **Create `setup/actions.ts`** — extract all named + 19 inline `assign`s as bare
+   param-annotated (`ActionArgs`) closures wrapped `assign(closure)` in `machine.ts`'s
+   `setup({ actions })` map (invariant 3); parameterized `tagCause` as a bare 2-arg closure.
+   Replace statechart action bodies with strings. **No `updateContext`/`assign<…>` pinning.**
 6. **Collapse `machine.ts`** — it is now `setup({…}).createMachine({…})` + context factory +
    transitions only. Rewrite the header docstring (state diagram + behavior + ADR
    bibliography at end). Update `README.md` with a "Source layout" section.
@@ -214,7 +237,11 @@ that's legitimate: project-context has **7 states** (vs onboarding's 6), a 17-fi
 factory (`277–294`), a root `open_deep_link` handler, and three multi-branch `onDone` arrays
 (`resolving_initial_scope` 4 branches, `switching_project` 3 branches). The irreducible
 statechart is simply bigger than onboarding's. The win is that every line that remains is a
-transition or a string reference — zero inline logic.
+transition or a string reference — zero inline logic. Note: under the canonical bare-closure
+pattern (invariant 3) the `setup({ actions })` block is an inline wrap map — one
+`name: assign(name)` / `enqueueActions(name)` line per action (~24 lines here), plus inline
+`assign({ … })` for the static property-assigners — so it adds ~20 lines to `machine.ts` over
+the old bare `actions,` import; the ~260 target already accounts for it.
 
 ---
 
@@ -331,10 +358,11 @@ Verify after every step:
 **MR-2 — guards + actions + collapse (the risky one):**
 4. `setup/guards.ts` — the 1 named guard + ~9 inline guards (share `isDifferentProject`;
    consider one parameterized `cameFrom` for the 4 retry guards).
-5. `setup/actions.ts` — all named + 25 inline `assign`s; shared `updateContext`;
-   `clearErrorAndBumpRetries` shared across the 4 retry branches; the **2 `project_ready`
-   variants** per the B.3 mitigation. **Diff field-by-field against B.2 before deleting any
-   inline body.**
+5. `setup/actions.ts` — all named + 25 inline `assign`s as bare param-annotated (`ActionArgs`)
+   closures wrapped `assign(closure)` in the `setup({ actions })` map (invariant 3; **no
+   `updateContext`/`assign<…>` pinning**); `clearErrorAndBumpRetries` shared across the 4 retry
+   branches; the **2 `project_ready` variants** per the B.3 mitigation. **Diff field-by-field
+   against B.2 before deleting any inline body.**
 6. Collapse `machine.ts` to mapping-only + rewritten header docstring (state diagram +
    behavior + ADR bibliography at end). Update `README.md` "Source layout".
 7. Full ui-state run: `cd ui-state && npx vitest run`.
@@ -352,6 +380,8 @@ should not be forced: session-chat has **9 states**, a 24-field context factory 
 two multi-branch `onDone` arrays, and a 4-branch `error_recoverable` retry table. The
 irreducible mapping-only statechart is genuinely ~360 LOC. As with project-context, the
 quality bar is "every remaining line is a transition or a string reference," not a fixed LOC.
+The inline `setup({ actions })` wrap map (invariant 3 — one `assign(name)` line per action,
+~25 lines here) is included in this count.
 
 ---
 
@@ -419,9 +449,18 @@ nil, but the second engineer should read the merged project-context MR for the
 
 ## 5. References (bibliography)
 
+> **Revision (2026-05-29, `refactor/actions-bare-closure-pattern`):** the action-extraction
+> guidance (§2 invariant 3/4, §A.2–A.5, §B.2–B.5) was revised to prescribe the **bare-closure +
+> inline-wrap** pattern (closures annotated with a shared `ActionArgs`/`ForwardArgs` alias;
+> `assign(...)`/`enqueueActions(...)` called at the `setup()` site in `machine.ts`), superseding
+> the earlier `updateContext`/`forward` generic-pinning approach. chat-app + onboarding are the
+> reference implementations.
+
 **Canonical reference machines (the target shape — study before executing):**
-- `ui-state/lib/machines/onboarding/machine.ts` — 175-LOC mapping-only machine; the
-  parameterized-`tagCause` + `updateContext` instantiation pattern.
+- `ui-state/lib/machines/onboarding/machine.ts` + `setup/actions.ts` — mapping-only machine
+  with the canonical **bare-closure + inline-wrap** action pattern (invariant 3): closures
+  annotated with `ActionArgs`, `assign(...)` wrapped in the `setup({ actions })` map; the
+  parameterized `tagCause` as a bare 2-arg closure.
 - `ui-state/lib/machines/onboarding/setup/{types,actors,guards,actions,domain}.ts` +
   `domain.test.ts` — the named-closure-index bundles and the `setup/domain.ts` value-object
   precedent (the analog for project-context's `validation.ts`).
@@ -429,8 +468,11 @@ nil, but the second engineer should read the merged project-context MR for the
   README convention to reproduce in each target.
 - `ui-state/lib/machines/chat-app/machine.ts` — 192-LOC mapping-only coordinator (no
   `domain.ts`); precedent that session-chat needs no `domain.ts`.
-- `ui-state/lib/machines/chat-app/setup/actions.ts:50-80` — the `forward = enqueueActions<…>`
-  pinning that proves a **mixed** `assign`+`sendTo` bundle extracts cleanly.
+- `ui-state/lib/machines/chat-app/setup/actions.ts` + `machine.ts` — the **mixed**
+  `assign`+`enqueueActions`/`sendTo` bundle as bare closures (`ActionArgs` / `ForwardArgs`)
+  wrapped at the `setup()` site; proves the mixed bundle needs no generic pinning (calling
+  `enqueueActions(...)` inside `setup()` dissolves the four `never`s the old `forward` alias
+  required).
 - `ui-state/lib/machines/chat-app/setup/{guards,snapshot-readers}.ts` — the shared-reader
   module imported by both guards and actions (the "extract shared helper, never duplicate"
   rule).
