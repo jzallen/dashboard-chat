@@ -507,12 +507,17 @@ async function peekInboundEventType(req: Request): Promise<string | null> {
 
 /**
  * Inspect the upstream response and emit any matching KPI K3 events to
- * stdout as JSON lines. The ui-state tier's projection envelope shape
- * is `{ state, request_id, context: { underlying_cause_tag? } }`.
+ * stdout as JSON lines. Reads the onboarding lifecycle from the ADR-046
+ * `/state` document, whose onboarding region lives at
+ * `regions.onboarding.{state, context.underlying_cause_tag}` with `request_id`
+ * hoisted to the document top level. A transitional fallback reads the legacy
+ * per-machine projection envelope (`{ state, context: { underlying_cause_tag } }`)
+ * — that surface still answers until ADR-046 MR-7 retires it, so the fallback
+ * keeps this MR independent of the per-machine-mount cutover's ordering.
  * Events:
- *   - state === "error_recoverable"  → auth_recoverable_error_shown
- *   - state === "ready"              → ready_reached
- *   - inbound type === "retry_clicked" → auth_retry_clicked
+ *   - onboarding state === "error_recoverable"  → auth_recoverable_error_shown
+ *   - onboarding state === "ready"              → ready_reached
+ *   - inbound type === "retry_clicked"          → auth_retry_clicked
  */
 async function emitKpiEventsForResponse(
   response: Response,
@@ -520,23 +525,13 @@ async function emitKpiEventsForResponse(
 ): Promise<void> {
   const contentType = (response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("application/json")) return;
-  let body: {
-    state?: unknown;
-    request_id?: unknown;
-    context?: { underlying_cause_tag?: unknown };
-  };
+  let body: unknown;
   try {
-    body = (await response.json()) as typeof body;
+    body = await response.json();
   } catch {
     return;
   }
-  const requestId =
-    typeof body?.request_id === "string" ? body.request_id : undefined;
-  const state = typeof body?.state === "string" ? body.state : undefined;
-  const tag =
-    typeof body?.context?.underlying_cause_tag === "string"
-      ? body.context.underlying_cause_tag
-      : undefined;
+  const { requestId, state, tag } = readOnboardingSignal(body);
 
   if (inboundEventType === "retry_clicked") {
     emitKpiEvent({
@@ -558,6 +553,55 @@ async function emitKpiEventsForResponse(
       request_id: requestId,
     });
   }
+}
+
+/**
+ * Resolve the onboarding lifecycle signal the KPI sniffer keys off, from
+ * either the ADR-046 `/state` document or the legacy per-machine projection
+ * envelope. `request_id` is top-level in BOTH shapes; the onboarding `state`
+ * + `underlying_cause_tag` live under `regions.onboarding` in the document and
+ * flat in the legacy envelope. The document shape is preferred; the flat
+ * envelope is the transitional fallback (retired at MR-7).
+ */
+function readOnboardingSignal(body: unknown): {
+  requestId?: string;
+  state?: string;
+  tag?: string;
+} {
+  const doc = (body ?? {}) as {
+    request_id?: unknown;
+    state?: unknown;
+    context?: { underlying_cause_tag?: unknown };
+    regions?: {
+      onboarding?: { state?: unknown; context?: { underlying_cause_tag?: unknown } };
+    };
+  };
+
+  const requestId =
+    typeof doc.request_id === "string" ? doc.request_id : undefined;
+
+  // ADR-046 /state document — onboarding lifecycle lives at regions.onboarding.
+  const onboarding = doc.regions?.onboarding;
+  if (onboarding && typeof onboarding === "object") {
+    return {
+      requestId,
+      state: typeof onboarding.state === "string" ? onboarding.state : undefined,
+      tag:
+        typeof onboarding.context?.underlying_cause_tag === "string"
+          ? onboarding.context.underlying_cause_tag
+          : undefined,
+    };
+  }
+
+  // Legacy per-machine projection envelope (flat). Retired at ADR-046 MR-7.
+  return {
+    requestId,
+    state: typeof doc.state === "string" ? doc.state : undefined,
+    tag:
+      typeof doc.context?.underlying_cause_tag === "string"
+        ? doc.context.underlying_cause_tag
+        : undefined,
+  };
 }
 
 function emitKpiEvent(payload: {

@@ -152,6 +152,76 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
     },
   );
 
+  // ADR-046 MR-5: the KPI sniffer reads the ChatApp `/state` document, whose
+  // onboarding lifecycle lives at `regions.onboarding.state` (and the cause tag
+  // at `regions.onboarding.context.underlying_cause_tag`), with `request_id`
+  // hoisted to the document's top level. The legacy per-machine flat envelope
+  // (asserted above) still exists until MR-7; this block pins the new shape.
+  it.each<[string, Record<string, unknown>, string, string | undefined]>([
+    [
+      "auth_recoverable_error_shown",
+      {
+        phase: "onboarding",
+        request_id: "R-doc-5c1a",
+        regions: {
+          onboarding: {
+            state: "error_recoverable",
+            context: { underlying_cause_tag: "partial-setup" },
+          },
+          projectContext: { state: "verifying", context: {} },
+          sessionChat: { state: "verifying", context: {} },
+        },
+      },
+      "/ui-state/state",
+      "partial-setup",
+    ],
+    [
+      "ready_reached",
+      {
+        phase: "project_context",
+        request_id: "R-doc-5c1a",
+        regions: {
+          onboarding: { state: "ready", context: {} },
+          projectContext: { state: "project_selected", context: {} },
+          sessionChat: { state: "verifying", context: {} },
+        },
+      },
+      "/ui-state/state/events",
+      undefined,
+    ],
+  ])(
+    "emits %s from the /state document onboarding region",
+    async (expectedEventName, upstreamBody, path, expectedTag) => {
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(upstreamBody), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      const capture = captureStdout();
+      try {
+        const res = await makeRequest(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "org_form_submitted" }),
+        });
+        expect(res.status).toBe(200);
+      } finally {
+        capture.restore();
+      }
+
+      const matching = capture.events.find(
+        (e) => e.event === expectedEventName,
+      );
+      expect(matching).toBeDefined();
+      expect(matching?.request_id).toBe("R-doc-5c1a");
+      if (expectedTag) {
+        expect(matching?.underlying_cause_tag).toBe(expectedTag);
+      }
+    },
+  );
+
   it("emits auth_retry_clicked when caller forwards a retry_clicked event", async () => {
     mockFetch.mockResolvedValueOnce(
       new Response(
