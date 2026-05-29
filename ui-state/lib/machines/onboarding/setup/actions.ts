@@ -1,38 +1,24 @@
-// Actions for the onboarding statechart.
+// Actions for the onboarding statechart — the ONLY writers of machine context.
+// Each is a bare `assign` closure, param-annotated with the shared `ActionArgs`
+// alias (./types.ts); the `assign(...)` wrap happens at the `setup()` call in
+// ../machine.ts, where inference flows from `setup`'s `types` — no xstate
+// generics are pinned here. `tagCause` is the one parameterized action — it reads
+// its tag from a 2nd `params` arg.
 //
-// ROLE — actions are the ONLY writers of machine context. When a transition must
-// RECORD a validation verdict as state (`recordOrgValidationError`,
-// `recordOrgNameTaken`), the action re-runs the OrgName value object
-// (`constructOrgName(...).getError()`, ./domain.ts) to read the structured
-// rejection and `assign`s the user-facing shape onto context. That re-derivation
-// — the guard already consumed `.isValid()` to route — is intentional and safe
-// (the value object is pure), and is forced by XState: guards cannot write
-// context. The value object evaluates, guards route, actions write. (See the
-// docstring atop ./domain.ts for the full split.)
+// When a transition must RECORD a validation verdict as state
+// (`recordOrgValidationError`, `recordOrgNameTaken`), the action re-runs the
+// OrgName value object (`constructOrgName(...).getError()`, ./domain.ts) to read
+// the structured rejection and assigns the user-facing shape onto context. That
+// re-derivation — the guard already consumed `.isValid()` to route — is
+// intentional and safe (the value object is pure), and is forced by XState:
+// guards cannot write context. The value object evaluates, guards route, actions
+// write. (See the docstring atop ./domain.ts for the full split.)
 //
-// Every `assign` lives here, including assignPendingOrgName, assignCreatedOrg,
-// and the parameterized `tagCause`, so machine.ts only ever names actions (with
-// `params` where they vary). Exported as one `actions` bundle threaded into
-// `setup({ actions })`.
-//
-// Most actions are no-param `assign`s sharing `updateContext` — `assign` with its
-// five generics pinned once via an instantiation expression (the generics have no
-// defaults, so all five must be supplied; `TExpressionEvent` and `TEvent` are
-// distinct `assign` generics that are the same union here).
-//
-// `event` is the FULL declared event union for EVERY action in this bundle:
-// `setup` types each named action's expression-event as the whole `TEvent`,
-// regardless of which transition references it (a named action may be attached to
-// any transition). So the actor-result readers must cast `event` to reach
-// `.output` — that is the cost of defining named actions in this bundle rather
-// than inline, NOT a side effect of `updateContext`. (An inline `onDone` action
-// would receive `DoneActorEvent<output>` and need no cast; the trade buys a
-// mapping-only machine.ts.) `tagCause` is the exception that proves the rule — it takes
-// `params`, so it needs its own `assign` with `TParams = { tag }`.
+// `event` is the FULL declared event union for EVERY action: `setup` types each
+// named action's expression-event as the whole `TEvent`, regardless of which
+// transition references it. Done/error events from invoked actors are NOT
+// members, so the actor-result readers cast `event` to reach `.output` / `.error`.
 
-import { assign } from "xstate";
-
-import type { OnboardingActor } from "./actors.ts";
 import type {
   Org,
   OrgName,
@@ -40,20 +26,9 @@ import type {
   VerifiedSession,
 } from "./domain.ts";
 import { causeOf, constructOrgName } from "./domain.ts";
-import type {
-  OnboardingContext,
-  OnboardingEvent,
-} from "./types.ts";
+import type { ActionArgs } from "./types.ts";
 
-const updateContext = assign<
-  OnboardingContext,
-  OnboardingEvent,
-  undefined,
-  OnboardingEvent,
-  OnboardingActor
->;
-
-const assignVerifiedUser = updateContext(({ event }) => {
+export const assignVerifiedUser = ({ event }: ActionArgs) => {
   // The verifying resolver returns a VerifiedSession; its `user` is a
   // VerifiedUser with first_name already derived at the boundary.
   const { user } = (event as unknown as { output: VerifiedSession }).output;
@@ -64,20 +39,20 @@ const assignVerifiedUser = updateContext(({ event }) => {
       first_name: user.first_name,
     },
   };
-});
-const assignResolvedOrg = updateContext(({ event }) => {
+};
+export const assignResolvedOrg = ({ event }: ActionArgs) => {
   const { org } = (event as unknown as { output: VerifiedSession }).output;
   return {
     org: org ? { id: org.id, name: org.name } : { id: null, name: null },
   };
-});
-const tagSessionRejected = updateContext(({ event }) => ({
+};
+export const tagSessionRejected = ({ event }: ActionArgs) => ({
   // The verifying actor branded its failure with a cause (./domain.ts
   // `failWithCause`); read it straight off the onError event. Untagged /
   // foreign throws default to "transient".
   underlying_cause_tag: causeOf((event as { error?: unknown }).error),
-}));
-const recordOrgValidationError = updateContext(({ event }) => {
+});
+export const recordOrgValidationError = ({ event }: ActionArgs) => {
   if (event.type !== "org_form_submitted") {
     return { org_validation_error: null };
   }
@@ -92,51 +67,34 @@ const recordOrgValidationError = updateContext(({ event }) => {
     too_long: "Organization name is too long",
   };
   return { org_validation_error: { kind, message: messages[kind] } };
-});
-const recordOrgNameTaken = updateContext(() => ({
+};
+export const recordOrgNameTaken = () => ({
   org_validation_error: {
     kind: "duplicate" as const,
     message: "That name is already in use in your organization",
   },
-}));
-const clearOrgValidationError = updateContext(() => ({
+});
+export const clearOrgValidationError = () => ({
   org_validation_error: null,
-}));
+});
 // Parameterized: ONE "set the cause tag" action, configured per transition via
 // `params` (XState's recommended way to keep an action event-agnostic).
 // Replaces tagPartialSetup (constant) + assignForcedFailureTag (read event.tag).
-// Needs its OWN `assign` because its TParams is `{ tag }`, not the `undefined`
-// updateContext pins — the one axis where per-action types legitimately differ.
-const tagCause = assign<
-  OnboardingContext,
-  OnboardingEvent,
-  { tag: UnderlyingCauseTag },
-  OnboardingEvent,
-  OnboardingActor
->((_, params) => ({ underlying_cause_tag: params.tag }));
+// The 2nd `params` arg carries the per-transition tag — `assign(tagCause)` at the
+// setup() site infers TParams from this annotation.
+export const tagCause = (_: ActionArgs, params: { tag: UnderlyingCauseTag }) => ({
+  underlying_cause_tag: params.tag,
+});
 
 /** needs_org → creating_org: preserve the submitted name across retries. The
  *  guard (isOrgNameValid) already validated it, so brand the raw name directly
  *  — re-running the constructor just to read `.value` would be redundant. */
-const assignPendingOrgName = updateContext(({ event }) => {
+export const assignPendingOrgName = ({ event }: ActionArgs) => {
   if (event.type !== "org_form_submitted") return {};
   return { pending_org_name: event.org_name as OrgName };
-});
+};
 /** creating_org onDone: land the created Org on context. */
-const assignCreatedOrg = updateContext(({ event }) => {
+export const assignCreatedOrg = ({ event }: ActionArgs) => {
   const createdOrg = (event as unknown as { output: Org }).output;
   return { org: { id: createdOrg.id, name: createdOrg.name } };
-});
-
-// name → action index (keys referenced by string in ../machine.ts).
-export const actions = {
-  assignVerifiedUser,
-  assignResolvedOrg,
-  tagSessionRejected,
-  recordOrgValidationError,
-  recordOrgNameTaken,
-  clearOrgValidationError,
-  tagCause,
-  assignPendingOrgName,
-  assignCreatedOrg,
 };

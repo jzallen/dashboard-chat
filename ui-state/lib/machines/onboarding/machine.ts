@@ -36,9 +36,19 @@
 //   docs/decisions/adr-043-*.md  — auth-proxy owns token lifecycle (no reissue)
 //   ./README.md                  — overview, state diagram, full ADR list
 
-import { setup } from "xstate";
+import { assign, setup } from "xstate";
 
-import { actions } from "./setup/actions.ts";
+import {
+  assignCreatedOrg,
+  assignPendingOrgName,
+  assignResolvedOrg,
+  assignVerifiedUser,
+  clearOrgValidationError,
+  recordOrgNameTaken,
+  recordOrgValidationError,
+  tagCause,
+  tagSessionRejected,
+} from "./setup/actions.ts";
 import { actors } from "./setup/actors.ts";
 import type { PrincipalId } from "./setup/domain.ts";
 import { guards } from "./setup/guards.ts";
@@ -57,7 +67,17 @@ export function createOnboardingMachine() {
     },
     actors,
     guards,
-    actions,
+    actions: {
+      assignVerifiedUser: assign(assignVerifiedUser),
+      assignResolvedOrg: assign(assignResolvedOrg),
+      tagSessionRejected: assign(tagSessionRejected),
+      recordOrgValidationError: assign(recordOrgValidationError),
+      recordOrgNameTaken: assign(recordOrgNameTaken),
+      clearOrgValidationError: assign(clearOrgValidationError),
+      tagCause: assign(tagCause),
+      assignPendingOrgName: assign(assignPendingOrgName),
+      assignCreatedOrg: assign(assignCreatedOrg),
+    },
   }).createMachine({
     id: "onboarding",
     initial: "verifying",
