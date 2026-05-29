@@ -1,4 +1,13 @@
-"""Auth middleware for FastAPI/Starlette."""
+"""Auth middleware for FastAPI/Starlette.
+
+Backend is a pure **resource server** (ADR-016 / ADR-043): auth-proxy is the
+single ingress and the single home for token verification *and* issuance. Every
+request that reaches backend has already been authenticated upstream by
+auth-proxy, which injects the verified identity as ``X-User-Id`` / ``X-Org-Id``
+/ ``X-User-Email`` headers. This middleware trusts those headers and sets the
+auth context; it does NOT verify JWTs (that role moved to auth-proxy when the
+backend ceased to mint tokens — ADR-043 stage 3).
+"""
 
 import logging
 
@@ -6,8 +15,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from . import enrich_org_id, get_auth_provider
 from .context import set_auth_user
+from .types import AuthUser
 
 logger = logging.getLogger(__name__)
 
@@ -17,78 +26,34 @@ PUBLIC_PATHS = {
     "/docs",
     "/openapi.json",
     "/redoc",
-    "/.well-known/jwks.json",
-    "/api/auth/login",
-    "/api/auth/callback",
-    "/api/auth/logout",
-    "/api/auth/refresh",
-}
-
-# Paths accessible to authenticated users even without an org
-ORG_LESS_PATHS = {
-    "/api/orgs",
-    "/api/orgs/me",
 }
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Middleware that validates Bearer tokens and sets auth context."""
+    """Trust the auth-proxy-injected identity headers and set the auth context."""
 
     async def dispatch(self, request: Request, call_next):
-        from app.config import get_settings
-
         path = request.url.path
 
         # Skip auth for public routes
         if path in PUBLIC_PATHS:
             return await call_next(request)
 
-        settings = get_settings()
-
-        # When behind the auth proxy, trust identity headers instead of verifying tokens
-        if settings.trust_proxy_headers:
-            user_id = request.headers.get("X-User-Id")
-            if user_id:
-                from .types import AuthUser
-
-                user = AuthUser(
-                    id=user_id,
-                    org_id=request.headers.get("X-Org-Id"),
-                    email=request.headers.get("X-User-Email", ""),
-                )
-                set_auth_user(user)
-                return await call_next(request)
-
-        # Extract Bearer token
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        # Resource-server path: identity comes from the auth-proxy-injected
+        # headers. There is no direct-JWT-verification fallback — backend no
+        # longer holds a verification keypair (ADR-043 stage 3).
+        user_id = request.headers.get("X-User-Id")
+        if not user_id:
             return JSONResponse(
-                {"detail": "Missing or invalid Authorization header"},
+                {"detail": "Missing identity headers"},
                 status_code=401,
             )
 
-        token = auth_header[7:]
-
-        try:
-            provider = get_auth_provider()
-            user = await provider.verify_token(token)
-        except Exception as e:
-            logger.error("Token verification failed for %s: %s", path, e)
-            return JSONResponse(
-                {"detail": "Invalid or expired token"},
-                status_code=401,
+        set_auth_user(
+            AuthUser(
+                id=user_id,
+                org_id=request.headers.get("X-Org-Id"),
+                email=request.headers.get("X-User-Email", ""),
             )
-
-        # Enrich org_id from local DB when JWT doesn't include it
-        user = await enrich_org_id(user)
-
-        set_auth_user(user)
-
-        # Authenticated but org-less users can only access org endpoints and auth
-        if user.org_id is None and path not in ORG_LESS_PATHS:
-            return JSONResponse(
-                {"detail": "Organization required"},
-                status_code=403,
-            )
-
+        )
         return await call_next(request)

@@ -16,7 +16,6 @@ from .controllers.response_wrapper import wrap_jsonapi_error
 from .database import async_session, close_db, init_db
 from .plugins import create_plugin_registry
 from .routers import (
-    auth_router,
     datasets_router,
     organizations_router,
     projects_router,
@@ -89,7 +88,7 @@ async def lifespan(app: FastAPI):
     # Seed default query engine node for dev org
     if settings.auto_provision_org:
         async with async_session() as session:
-            from .auth.dev_provider import DEV_USER
+            from .auth import DEV_USER
 
             await seed_default_query_engine_node(session, DEV_USER.org_id)
 
@@ -162,7 +161,6 @@ async def domain_exception_handler(request: Request, exc: DomainException):
 
 
 # Include routers
-app.include_router(auth_router)
 app.include_router(datasets_router)
 app.include_router(uploads_router)
 app.include_router(projects_router)
@@ -174,14 +172,6 @@ app.include_router(views_router)
 app.include_router(reports_router)
 app.include_router(sessions_router)
 app.include_router(session_replay_router)
-
-
-@app.get("/.well-known/jwks.json")
-async def jwks():
-    """Serve the dev-mode JWKS public key set."""
-    from .auth.dev_keys import get_jwks_dict
-
-    return get_jwks_dict()
 
 
 @app.get("/health")

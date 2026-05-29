@@ -1,7 +1,10 @@
 """Integration tests for authenticated API endpoints.
 
 These tests exercise the full ASGI stack (middleware -> router -> controller -> use case)
-using the dev auth provider. Requires a running PostgreSQL instance.
+as a resource server behind auth-proxy: identity arrives via the
+X-User-Id / X-Org-Id / X-User-Email headers auth-proxy injects after it has
+verified the caller upstream (ADR-016 / ADR-043). Requires a running PostgreSQL
+instance.
 
 Run with: RUN_INTEGRATION_TESTS=1 pytest tests/integration/
 """
@@ -11,7 +14,6 @@ import os
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.auth.dev_provider import _mint_jwt
 from app.main import app
 
 pytestmark = pytest.mark.skipif(
@@ -19,10 +21,12 @@ pytestmark = pytest.mark.skipif(
     reason="Set RUN_INTEGRATION_TESTS=1 to run integration tests (requires PostgreSQL)",
 )
 
-
-def _get_dev_token() -> str:
-    """Mint a fresh RS256 JWT for integration tests."""
-    return _mint_jwt()
+# Identity headers auth-proxy injects for the dev user after verifying it upstream.
+DEV_PROXY_HEADERS = {
+    "X-User-Id": "dev-user-001",
+    "X-Org-Id": "dev-org-001",
+    "X-User-Email": "dev@localhost",
+}
 
 
 @pytest.fixture
@@ -37,7 +41,7 @@ class TestProjectCRUD:
 
     @property
     def auth_headers(self):
-        return {"Authorization": f"Bearer {_get_dev_token()}"}
+        return dict(DEV_PROXY_HEADERS)
 
     async def test_create_project(self, client: AsyncClient):
         """POST /api/projects should create a project and return 201."""
@@ -163,7 +167,7 @@ class TestViewCRUD:
 
     @property
     def auth_headers(self):
-        return {"Authorization": f"Bearer {_get_dev_token()}"}
+        return dict(DEV_PROXY_HEADERS)
 
     async def _create_project(self, client: AsyncClient) -> str:
         """Helper to create a project and return its ID."""
@@ -289,8 +293,10 @@ class TestAuthRequired:
             )
         assert res.status_code == 401
 
-    async def test_list_projects_with_bad_token_returns_401(self, client: AsyncClient):
-        """GET /api/projects with invalid token should return 401."""
+    async def test_list_projects_without_identity_headers_returns_401(self, client: AsyncClient):
+        """GET /api/projects with a stray Bearer but no identity headers is
+        rejected: backend is a resource server and ignores the Bearer; only the
+        auth-proxy-injected identity headers authenticate (ADR-043)."""
         async with client:
             res = await client.get(
                 "/api/projects",
