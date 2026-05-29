@@ -35,14 +35,20 @@ function createPlaceholderChild<TInput>() {
   });
 }
 
-/** The three logical children threaded into `setup({ actors })`. Each key is a
- *  distinct placeholder so its `invoke.src` (and the corresponding
- *  `invoke.input` mapper in ../machine.ts) is typed against its OWN child-input
- *  contract — no cross-slot field leakage. */
+// The three logical children threaded into `setup({ actors })`. Each is a
+// distinct placeholder so its `invoke.src` (and the corresponding
+// `invoke.input` mapper in ../machine.ts) is typed against its OWN child-input
+// contract — no cross-slot field leakage.
+const onboarding = createPlaceholderChild<SessionOnboardingInput>();
+const projectContext = createPlaceholderChild<ProjectContextInput>();
+const sessionChat = createPlaceholderChild<SessionChatInput>();
+
+// name → child placeholder index (keys are the `invoke.src` strings used in
+// ../machine.ts).
 export const actors = {
-  onboarding: createPlaceholderChild<SessionOnboardingInput>(),
-  projectContext: createPlaceholderChild<ProjectContextInput>(),
-  sessionChat: createPlaceholderChild<SessionChatInput>(),
+  onboarding,
+  projectContext,
+  sessionChat,
 };
 
 /** Cast target for a concrete onboarding machine provided over the `onboarding`

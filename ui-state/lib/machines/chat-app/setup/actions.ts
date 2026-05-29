@@ -79,140 +79,159 @@ const forward = enqueueActions<
   never
 >;
 
-export const actions = {
-  // ── active-child routing (re-pointed on each phase entry) ──
-  markOnboardingActive: updateContext({ active_child_id: "session-onboarding" }),
-  markProjectContextActive: updateContext({ active_child_id: "project-context" }),
-  markChatActive: updateContext({ active_child_id: "session-chat" }),
+// ── active-child routing (re-pointed on each phase entry) ──
+const markOnboardingActive = updateContext({
+  active_child_id: "session-onboarding",
+});
+const markProjectContextActive = updateContext({
+  active_child_id: "project-context",
+});
+const markChatActive = updateContext({ active_child_id: "session-chat" });
 
-  // ── hand-off capture (read the child snapshot, stage the payload) ──
-  /** onboarding → project_context: stage org + identity for `auth_ready` AND
-   *  retain the full onboarding outcome. The onboarding child is
-   *  phase-scoped — it is stopped on this very advance — so its resolved
-   *  identity/org must survive into parent context for the derived
-   *  `login-and-org-setup` projection to reproduce `ready` byte-identically
-   *  once the child is gone. `auth_handoff` keeps its exact prior shape
-   *  (org_id + first_name); `onboarding_result` is the additive retention. */
-  captureAuthHandoff: updateContext(({ event }) => {
-    const snapshot = onboardingSnapshot(event);
-    return {
-      auth_handoff: {
-        org_id: snapshot.context.org.id ?? "",
-        user: { first_name: snapshot.context.user.first_name ?? "" },
+// ── hand-off capture (read the child snapshot, stage the payload) ──
+/** onboarding → project_context: stage org + identity for `auth_ready` AND
+ *  retain the full onboarding outcome. The onboarding child is
+ *  phase-scoped — it is stopped on this very advance — so its resolved
+ *  identity/org must survive into parent context for the derived
+ *  `login-and-org-setup` projection to reproduce `ready` byte-identically
+ *  once the child is gone. `auth_handoff` keeps its exact prior shape
+ *  (org_id + first_name); `onboarding_result` is the additive retention. */
+const captureAuthHandoff = updateContext(({ event }) => {
+  const snapshot = onboardingSnapshot(event);
+  return {
+    auth_handoff: {
+      org_id: snapshot.context.org.id ?? "",
+      user: { first_name: snapshot.context.user.first_name ?? "" },
+    },
+    onboarding_result: {
+      state: "ready" as const,
+      user: {
+        email: snapshot.context.user.email ?? null,
+        display_name: snapshot.context.user.display_name ?? null,
+        first_name: snapshot.context.user.first_name ?? null,
       },
-      onboarding_result: {
-        state: "ready" as const,
-        user: {
-          email: snapshot.context.user.email ?? null,
-          display_name: snapshot.context.user.display_name ?? null,
-          first_name: snapshot.context.user.first_name ?? null,
-        },
-        org: {
-          id: snapshot.context.org.id ?? null,
-          name: snapshot.context.org.name ?? null,
-        },
-        underlying_cause_tag: null,
-        org_validation_error: null,
+      org: {
+        id: snapshot.context.org.id ?? null,
+        name: snapshot.context.org.name ?? null,
       },
-    };
-  }),
-  /** onboarding → user_rejected: retain the rejected outcome (cause + any
-   *  validation error) so the derived `login-and-org-setup` projection
-   *  reproduces `session_rejected` after the child is stopped. Mirrors
-   *  buildProjection's session_rejected fold (user/org stay null; only the
-   *  cause carries). The action name reflects the domain outcome (user
-   *  rejected); the inner `state` value stays `session_rejected` because
-   *  it is the FE/auth-proxy wire-contract string for this projection. */
-  captureUserRejected: updateContext(({ event }) => {
-    const snapshot = onboardingSnapshot(event);
-    return {
-      onboarding_result: {
-        state: "session_rejected" as const,
-        user: {
-          email: snapshot.context.user.email ?? null,
-          display_name: snapshot.context.user.display_name ?? null,
-          first_name: snapshot.context.user.first_name ?? null,
-        },
-        org: {
-          id: snapshot.context.org.id ?? null,
-          name: snapshot.context.org.name ?? null,
-        },
-        underlying_cause_tag: snapshot.context.underlying_cause_tag ?? null,
-        org_validation_error: snapshot.context.org_validation_error ?? null,
+      underlying_cause_tag: null,
+      org_validation_error: null,
+    },
+  };
+});
+/** onboarding → user_rejected: retain the rejected outcome (cause + any
+ *  validation error) so the derived `login-and-org-setup` projection
+ *  reproduces `session_rejected` after the child is stopped. Mirrors
+ *  buildProjection's session_rejected fold (user/org stay null; only the
+ *  cause carries). The action name reflects the domain outcome (user
+ *  rejected); the inner `state` value stays `session_rejected` because
+ *  it is the FE/auth-proxy wire-contract string for this projection. */
+const captureUserRejected = updateContext(({ event }) => {
+  const snapshot = onboardingSnapshot(event);
+  return {
+    onboarding_result: {
+      state: "session_rejected" as const,
+      user: {
+        email: snapshot.context.user.email ?? null,
+        display_name: snapshot.context.user.display_name ?? null,
+        first_name: snapshot.context.user.first_name ?? null,
       },
-    };
-  }),
-  /** project_context → chat (and switch): stage the selected project for
-   *  `project_ready` and record it as the last-forwarded id (the
-   *  discriminator the guards use to tell first-selection from a switch). */
-  captureProjectHandoff: updateContext(({ context, event }) => {
-    const snapshot = projectContextSnapshot(event);
-    const projectId = snapshot.context.project.id ?? "";
-    return {
-      project_handoff: {
-        org_id: context.auth_handoff?.org_id ?? "",
-        project_id: projectId,
-        project_name: snapshot.context.project.name ?? "",
-        request_id: context.request_id,
+      org: {
+        id: snapshot.context.org.id ?? null,
+        name: snapshot.context.org.name ?? null,
       },
-      last_forwarded_project_id: projectId,
-    };
-  }),
+      underlying_cause_tag: snapshot.context.underlying_cause_tag ?? null,
+      org_validation_error: snapshot.context.org_validation_error ?? null,
+    },
+  };
+});
+/** project_context → chat (and switch): stage the selected project for
+ *  `project_ready` and record it as the last-forwarded id (the
+ *  discriminator the guards use to tell first-selection from a switch). */
+const captureProjectHandoff = updateContext(({ context, event }) => {
+  const snapshot = projectContextSnapshot(event);
+  const projectId = snapshot.context.project.id ?? "";
+  return {
+    project_handoff: {
+      org_id: context.auth_handoff?.org_id ?? "",
+      project_id: projectId,
+      project_name: snapshot.context.project.name ?? "",
+      request_id: context.request_id,
+    },
+    last_forwarded_project_id: projectId,
+  };
+});
 
-  // ── forwarders (parent → child) ──
-  /** entry of the project-context-owning state: deliver staged auth_ready. */
-  forwardAuthReady: forward(({ context, enqueue }) => {
-    const handoff = context.auth_handoff;
-    if (handoff) {
-      enqueue.sendTo("project-context", {
-        type: "auth_ready",
-        org_id: handoff.org_id,
-        user: handoff.user,
-      });
-    }
-  }),
-  /** entry of chat AND the switch re-forward: deliver staged project_ready. */
-  forwardProjectReady: forward(({ context, enqueue }) => {
-    const handoff = context.project_handoff;
-    if (handoff) {
-      enqueue.sendTo("session-chat", {
-        type: "project_ready",
-        org_id: handoff.org_id,
-        project_id: handoff.project_id,
-        project_name: handoff.project_name,
-        request_id: handoff.request_id,
-      });
-    }
-  }),
-  /** PROJECT_SWITCH: drive project-context's switch by forwarding its intent. */
-  forwardSwitchToProjectContext: forward(({ event, enqueue }) => {
-    const switchEvent = event as {
-      type: "PROJECT_SWITCH";
-      new_project_id: string;
-    };
+// ── forwarders (parent → child) ──
+/** entry of the project-context-owning state: deliver staged auth_ready. */
+const forwardAuthReady = forward(({ context, enqueue }) => {
+  const handoff = context.auth_handoff;
+  if (handoff) {
     enqueue.sendTo("project-context", {
-      type: "switching_project_intent",
-      new_project_id: switchEvent.new_project_id,
+      type: "auth_ready",
+      org_id: handoff.org_id,
+      user: handoff.user,
     });
-  }),
-  /** live user_intent: route to whichever child owns the current phase. */
-  forwardIntentToActiveChild: forward(({ context, event, enqueue }) => {
-    enqueue.sendTo(context.active_child_id, intentOf(event));
-  }),
-  /** live child_event: forward a raw domain event (the HTTP `/event` transport)
-   *  verbatim to whichever child owns the current phase. The child's own event
-   *  union decides whether to handle or ignore it (XState v5 ignores unknown
-   *  events), so this stays a total forward. */
-  forwardChildEventToActiveChild: forward(({ context, event, enqueue }) => {
-    const raw = (
-      event as {
-        type: "child_event";
-        child_event: { type: string; payload?: Record<string, unknown> };
-      }
-    ).child_event;
-    enqueue.sendTo(context.active_child_id, {
-      type: raw.type,
-      ...(raw.payload ?? {}),
-    } as never);
-  }),
+  }
+});
+/** entry of chat AND the switch re-forward: deliver staged project_ready. */
+const forwardProjectReady = forward(({ context, enqueue }) => {
+  const handoff = context.project_handoff;
+  if (handoff) {
+    enqueue.sendTo("session-chat", {
+      type: "project_ready",
+      org_id: handoff.org_id,
+      project_id: handoff.project_id,
+      project_name: handoff.project_name,
+      request_id: handoff.request_id,
+    });
+  }
+});
+/** PROJECT_SWITCH: drive project-context's switch by forwarding its intent. */
+const forwardSwitchToProjectContext = forward(({ event, enqueue }) => {
+  const switchEvent = event as {
+    type: "PROJECT_SWITCH";
+    new_project_id: string;
+  };
+  enqueue.sendTo("project-context", {
+    type: "switching_project_intent",
+    new_project_id: switchEvent.new_project_id,
+  });
+});
+/** live user_intent: route to whichever child owns the current phase. */
+const forwardIntentToActiveChild = forward(({ context, event, enqueue }) => {
+  enqueue.sendTo(context.active_child_id, intentOf(event));
+});
+/** live child_event: forward a raw domain event (the HTTP `/event` transport)
+ *  verbatim to whichever child owns the current phase. The child's own event
+ *  union decides whether to handle or ignore it (XState v5 ignores unknown
+ *  events), so this stays a total forward. */
+const forwardChildEventToActiveChild = forward(({ context, event, enqueue }) => {
+  const raw = (
+    event as {
+      type: "child_event";
+      child_event: { type: string; payload?: Record<string, unknown> };
+    }
+  ).child_event;
+  enqueue.sendTo(context.active_child_id, {
+    type: raw.type,
+    ...(raw.payload ?? {}),
+  } as never);
+});
+
+// name → action index (keys referenced by string in ../machine.ts).
+export const actions = {
+  markOnboardingActive,
+  markProjectContextActive,
+  markChatActive,
+
+  captureAuthHandoff,
+  captureUserRejected,
+  captureProjectHandoff,
+
+  forwardAuthReady,
+  forwardProjectReady,
+  forwardSwitchToProjectContext,
+  forwardIntentToActiveChild,
+  forwardChildEventToActiveChild,
 };

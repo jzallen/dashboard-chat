@@ -21,32 +21,38 @@ import {
 } from "./snapshot-readers.ts";
 import type { GuardArgs } from "./types.ts";
 
+/** The user is fully onboarded (identity verified, org resolved) → advance to
+ *  project_context. */
+const isUserReady = ({ event }: GuardArgs) =>
+  onboardingSnapshot(event).value === "ready";
+
+/** Onboarding re-verify failed (token/user invalid) → the user is rejected
+ *  and cannot proceed. */
+const isUserRejected = ({ event }: GuardArgs) =>
+  onboardingSnapshot(event).value === "session_rejected";
+
+/** True when project-context has selected its FIRST project (none forwarded
+ *  yet) — gates the project_context → chat advance. */
+const isInitialProjectSelected = ({ context, event }: GuardArgs) =>
+  projectContextSnapshot(event).value === "project_selected" &&
+  context.last_forwarded_project_id === null;
+
+/** True when project-context re-selected a DIFFERENT project than the one
+ *  already forwarded — gates the in-place project-switch re-forward. A same-id
+ *  snapshot is ignored (idempotent). */
+const shouldSwitchProject = ({ context, event }: GuardArgs) => {
+  const snapshot = projectContextSnapshot(event);
+  return (
+    snapshot.value === "project_selected" &&
+    context.last_forwarded_project_id !== null &&
+    snapshot.context.project.id !== context.last_forwarded_project_id
+  );
+};
+
+// name → guard predicate index (keys referenced by string in ../machine.ts).
 export const guards = {
-  /** The user is fully onboarded (identity verified, org resolved) → advance to
-   *  project_context. */
-  isUserReady: ({ event }: GuardArgs) =>
-    onboardingSnapshot(event).value === "ready",
-
-  /** Onboarding re-verify failed (token/user invalid) → the user is rejected
-   *  and cannot proceed. */
-  isUserRejected: ({ event }: GuardArgs) =>
-    onboardingSnapshot(event).value === "session_rejected",
-
-  /** True when project-context has selected its FIRST project (none forwarded
-   *  yet) — gates the project_context → chat advance. */
-  isInitialProjectSelected: ({ context, event }: GuardArgs) =>
-    projectContextSnapshot(event).value === "project_selected" &&
-    context.last_forwarded_project_id === null,
-
-  /** True when project-context re-selected a DIFFERENT project than the one
-   *  already forwarded — gates the in-place project-switch re-forward. A same-id
-   *  snapshot is ignored (idempotent). */
-  shouldSwitchProject: ({ context, event }: GuardArgs) => {
-    const snapshot = projectContextSnapshot(event);
-    return (
-      snapshot.value === "project_selected" &&
-      context.last_forwarded_project_id !== null &&
-      snapshot.context.project.id !== context.last_forwarded_project_id
-    );
-  },
+  isUserReady,
+  isUserRejected,
+  isInitialProjectSelected,
+  shouldSwitchProject,
 };
