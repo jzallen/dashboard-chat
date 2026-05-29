@@ -7,22 +7,26 @@ role and the first faithful implementation of ADR-028's "one root orchestrator
 actor mediating parent-ignorant children" (see
 [ADR-044](../../../../docs/decisions/adr-044-chatapp-coordinator-supersedes-orchestrator.md)).
 
-> **Status: Phase 3 — hybrid persistence reconciled (in isolation).** On top of
-> Phase 2's real-children wiring, ChatApp now has (1) a byte-stable **derived-view
-> projection mapper** ([`projection/derive-projection.ts`](./projection/derive-projection.ts))
-> that reproduces the per-machine ADR-027 `FlowProjection` from a ChatApp snapshot
-> — proven byte-identical to the `buildProjection` log fold by golden contract
-> tests — and (2) **snapshot restart recovery** ([`snapshot.ts`](./snapshot.ts) +
-> [`../../persistence/chatapp-snapshot-store.ts`](../../persistence/chatapp-snapshot-store.ts))
-> making `getPersistedSnapshot()` the internal state-of-record (R3 self-heal
-> reproduced on the real wired actor). Still **no** HTTP/Redis boundaries: none of
-> this is wired into `ui-state/index.ts`/HTTP routing, the `/projection` endpoints,
-> or `orchestrator.projectionFor`; the append-only event log stays load-bearing on
-> the live path; ChatApp runs ALONGSIDE the orchestrator (still the live
-> coordinator). Phase 1's FAKE-children statechart tests
-> ([`machine.test.ts`](./machine.test.ts), with the fakes defined inline) and Phase 2's
-> integration tests ([`integration.test.ts`](./integration.test.ts)) still pass
-> unchanged. Phase 4 swaps the composition root + deletes the orchestrator.
+> **Status: Phase 4 — LIVE. The orchestrator is deleted (ADR-044 complete).**
+> ChatApp is now the live ui-state coordinator. The composition root
+> ([`../../../index.ts`](../../../index.ts)) builds one ChatApp actor per principal
+> (registry + bounded settle + snapshot persistence) and mounts a single router
+> factory ([`router.ts`](./router.ts)) under every wire path; each mount derives
+> its own machine's `FlowProjection` from the shared snapshot via
+> [`projection/derive-projection.ts`](./projection/derive-projection.ts) — byte-stable
+> (ADR-027), proven by the golden contract tests. The hybrid persistence (ADR-044
+> §2) is live: `getPersistedSnapshot()` via the
+> [`ChatAppSnapshotStore`](../../persistence/chatapp-snapshot-store.ts) is the
+> state-of-record (hot-restart recovery); the append-only event log is RETAINED but
+> demoted to SSE/audit + projection bookkeeping. The `FlowOrchestrator`,
+> `orchestrator-harvester`, `wait-for-settled-state`, the per-machine strategies +
+> routers, `FlowActorRegistry`/`FrozenState`, and the children's `FREEZE`/`THAW`
+> handlers were deleted; there is **no** `/freeze` + `/thaw` (ADR-043 — auth-proxy
+> owns the token lifecycle). The Phase-1 FAKE-children statechart tests
+> ([`machine.test.ts`](./machine.test.ts)), the Phase-2 integration tests
+> ([`integration.test.ts`](./integration.test.ts)), the Phase-3 snapshot +
+> derive-projection contract tests, and the rewired app tests
+> ([`../../../index.test.ts`](../../../index.test.ts)) all pass.
 
 ## Single lifecycle region
 

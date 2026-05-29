@@ -151,6 +151,61 @@ Additive only; the live app, the orchestrator, and the event-log fold path are u
 
 ---
 
+## Phase 4 — what landed in this slice (the live wire-swap + orchestrator deletion)
+
+The orchestrator is **deleted**; ChatApp is the live ui-state coordinator. ADR-044
+is complete.
+
+- **Live composition root swapped** (`ui-state/index.ts`): `buildChatAppApp`
+  replaces `buildSessionOnboardingApp`. It builds `ChatAppDeps` (the project-context
+  + session-chat resolver actors), selects the `FlowEventLog` + `ChatAppSnapshotStore`,
+  and mounts ONE router factory (`lib/machines/chat-app/router.ts`) under every wire
+  path. One **ChatApp actor per principal** (in-memory registry — ui-state is
+  single-replica, ADR-030 §SD2 — backed by the snapshot store for hot restart)
+  serves all three machines' projections: cold-start bootstraps onboarding and the
+  parent cascades to project-context + session-chat internally (ADR-028 onSnapshot
+  hand-offs), so the project/chat projection serving the old live app had dropped
+  (it was session-onboarding-only) is **restored** from the single actor.
+- **Routers re-pointed to the ChatApp actor + the derived view.** `/begin`
+  (onboarding cold-start), `/event` (the closed onboarding ACL preserved verbatim;
+  a generic `child_event` forward-to-active-child for the rest;
+  `switching_project_intent` → the parent `PROJECT_SWITCH`), intent-shaped
+  `/open-deep-link` (→ the project-context child's `open_deep_link`), `/projection`
+  and `/projection/stream` all driven by `deriveProjection(snapshot, wireMachine,
+  bookkeepingFromLog(log))`. The legacy alias machine names keep resolving
+  (`childIdForWireMachine`); the `GET /flow/{machine}/projection` envelope is
+  **byte-stable** (the derive-projection contract tests stay green) and `flow_id` is
+  synthesized `{wireMachine}:{principal}` verbatim.
+- **Hybrid persistence is live** (§2): `getPersistedSnapshot()` via the
+  `ChatAppSnapshotStore` is the state-of-record (settled-states-only saves; R3
+  self-heal on restart); the append-only event log is RETAINED but demoted to
+  SSE/audit + projection bookkeeping (keyed by the canonical child so alias paths
+  share one log). No `buildProjection` log-fold on the live read path (a cold read
+  derives from a synthetic empty snapshot view).
+- **Deleted** (the orchestrator's coordination role + its scaffolding, only after
+  ChatApp subsumed its non-retired responsibilities): `lib/orchestrator.ts`
+  (`FlowOrchestrator`, `BeginFlowOrchestrator`, `FlowActorRegistry`, `FrozenState`,
+  `FLOW_STRATEGY_REGISTRY`), `lib/orchestrator-harvester.ts`,
+  `lib/wait-for-settled-state.ts`, the three per-machine `strategy.ts` + `router.ts`,
+  the six `orchestrator*.test.ts` characterization suites (their live behavior is
+  re-covered by `integration.test.ts` + `derive-projection.contract.test.ts` + the
+  rewired `index.test.ts`; the freeze family retires with the orchestrator per
+  ADR-043), the orchestrator-coupled `flow-router.ts` helpers
+  (`mountUniformFlowRoutes`/`freezeThawHandler`/`resultToJson` — `requestIdMiddleware`
+  is kept), and the dead `index.old.ts` / `index.old.test.ts`.
+- **Freeze/thaw retired end-to-end** (ADR-043): the `/freeze` + `/thaw` endpoints are
+  gone, and the children's `on.FREEZE` / `freeze` side-state / `THAW` /
+  `replay_abandoned` handlers were removed from `project-context` + `session-chat`.
+  `last_live_state` is RETAINED in session-chat — it is load-bearing for the
+  INTERACTIVE `retry_clicked` handler, independent of the retired freeze path.
+
+This realizes ADR-044 §4 Phase 4 and §"Inside-out build order": the orchestrator is
+deleted last, once ChatApp provably subsumes spawn hand-offs, terminal emission
+(now state-of-record + derived view), and projection resolution — with freeze/thaw
+retired rather than re-implemented (the §5 OQ#2 / 2026-05-28 amendment resolution).
+
+---
+
 ## Consequences
 
 **Positive**
