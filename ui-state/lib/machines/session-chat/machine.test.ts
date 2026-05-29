@@ -32,8 +32,8 @@ import type {
   SwitchDatasetContextInput,
   SwitchDatasetContextOutput,
   TranscriptMessage,
-} from "./machine.ts";
-import { createSessionChatMachine } from "./machine.ts";
+} from "./index.ts";
+import { createSessionChatMachine } from "./index.ts";
 
 const MAYA_INPUT = {
   request_id: "R-7a4f-901c",

@@ -143,8 +143,17 @@ It emits projection events to the FlowEvent log for FE consumption: `project_con
 
 ## Files
 
-- `machine.ts` — the XState v5 machine + types + actor factories (`loadSessionListActor`, `resumeSessionActor`, `createSessionEagerlyActor`)
-- `index.ts` — barrel; re-exports the public surface
+The machine is split so `machine.ts` reads as state transitions; the XState
+wiring it references by name lives under `setup/`. There is no `setup/domain.ts`
+— session-chat owns no value object with behavior (it is an I/O + coordination
+machine, parity with `chat-app`).
+
+- `machine.ts` — the XState v5 statechart, **mapping only**: `setup({ actors, guards, actions }).createMachine(...)`. Names actors/guards/actions by string; no definitions inline, no inline `assign`. The `project_ready` reset block (copied across four states with per-state field differences) is deduped into the composable `resetForProjectSwitch` + `captureDeeplinkResume` / `clearPendingFirstMessage` / `applyProjectReady` actions
+- `setup/types.ts` — context / event / state / summary / transcript / cause-tag / input types + the `ActionArgs` / `GuardArgs` arg aliases the extracted guards + actions annotate their params with
+- `setup/actors.ts` — the external-service resolvers (`loadSessionList`, `resumeSession`, `switchDatasetContext`, `createSessionEagerly`) + their `*Fn` / `*Actor` factories, the actor I/O contracts + `fromPromise` aliases, and `buildActors(deps)` (the deps-driven actor map threaded into `setup({ actors })`, with the four noop fallbacks)
+- `setup/guards.ts` — the `guards` bundle (transition predicates: `isStaleSessionClick`, the `onDone` branch readers `hasResumeTarget` / `isSessionNotFound` / `isDatasetAccessDenied`, the shared `isDifferentProject`, and the four retry routers `wasLoadingList` / `wasResuming` / `wasWelcome` / `wasSwitchingDataset`)
+- `setup/actions.ts` — the bare `assign` closures (every context write), wrapped `assign(...)` at the `setup()` call in `machine.ts`; the atomic `assignResumedSession` (IC-J002-3) and `assignSwitchedDataset` (IC-J002-5) carry their atomicity invariants
+- `index.ts` — barrel; re-exports the public surface (external consumers import through it)
 - `machine.test.ts` — vitest unit tests at the actor's `send` / snapshot boundary
 
 ## See also

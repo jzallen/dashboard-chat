@@ -2,18 +2,22 @@
 //
 // Re-exports the public surface so callers (orchestrator.ts, ui-state/index.ts,
 // the acceptance harness) resolve `./machines/session-chat` and pick up the
-// named exports through this barrel.
+// named exports through this barrel. The machine is mapping-only; its pieces
+// live under ./setup/ (actors.ts, guards.ts, actions.ts, types.ts) — the barrel
+// hides that split so the public surface is the same as before the extraction.
 //
 // Public surface (alphabetical-by-export):
 //   - createSessionChatMachine + SessionChatMachineDeps
 //   - loadSessionListActor, loadSessionListFn
 //   - resumeSessionActor, resumeSessionFn
 //   - createSessionEagerlyActor, createSessionEagerlyFn
+//   - switchDatasetContextActor, switchDatasetContextFn
 //   - all context / event / state / actor I-O types
 //   - re-exported ActiveScope (for caller convenience)
 
+export { createSessionChatMachine } from "./machine.ts";
+
 export {
-  createSessionChatMachine,
   createSessionEagerlyActor,
   createSessionEagerlyFn,
   loadSessionListActor,
@@ -32,14 +36,17 @@ export {
   type ResumeSessionActor,
   type ResumeSessionInput,
   type ResumeSessionOutput,
-  type SessionChatCauseTag,
-  type SessionChatEvent,
-  type SessionChatMachineContext,
   type SessionChatMachineDeps,
-  type SessionChatState,
-  type SessionSummary,
   type SwitchDatasetContextActor,
   type SwitchDatasetContextInput,
   type SwitchDatasetContextOutput,
-  type TranscriptMessage,
-} from "./machine.ts";
+} from "./setup/actors.ts";
+
+export type {
+  SessionChatCauseTag,
+  SessionChatEvent,
+  SessionChatMachineContext,
+  SessionChatState,
+  SessionSummary,
+  TranscriptMessage,
+} from "./setup/types.ts";

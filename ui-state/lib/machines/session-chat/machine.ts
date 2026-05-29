@@ -26,375 +26,89 @@
 // orchestrator broadcast on entry into `project_selected`, carrying org_id +
 // project_id + project_name + forwarded intent fields).
 //
+// This file is MAPPING ONLY: it wires the setup pieces and lays out the state
+// transitions. The pieces live under ./setup/ —
+//   - actors.ts   — the resolvers + `buildActors(deps)` (external-service I/O)
+//   - guards.ts   — the `guards` bundle (transition predicates)
+//   - actions.ts  — the bare assign closures (every context write)
+//   - types.ts    — context / event / state / summary / transcript / cause-tag / input types
+// so the statechart below reads as transitions, naming actors/guards/actions by
+// string without their definitions inline. session-chat owns no domain value
+// object with behavior (it is an I/O + coordination machine), so there is no
+// setup/domain.ts (parity with chat-app).
+//
 // References:
 //   docs/decisions/adr-014-*.md  — UI directives filtered from visible transcript
 //   docs/decisions/adr-028-*.md  — machines own transitions; parent-ignorant children
 //   docs/decisions/adr-029-*.md  — ActiveScope invariants / cross-tenant rejection
 //   docs/decisions/adr-030-*.md  — flow_id key form / branch-relevant data flow
-//   docs/feature/project-and-chat-session-management/design/application-architecture.md
+//   docs/evolution/2026-05-16-project-and-chat-session-management/design/application-architecture.md
 //                                — machine SRP split (app-arch §2B)
 //   docs/discussion/ui-state-vocabulary-audit/findings.md — vocabulary audit
+//   ./README.md                  — overview, state diagram, full ADR list
 
-import { assign, fromPromise, setup } from "xstate";
+import { assign, setup } from "xstate";
 
-import type { ActiveScope, ResourceType } from "../../domain/active-scope.ts";
-
-export type SessionChatState =
-  | "waiting_for_project"
-  | "loading_session_list"
-  | "session_list_loaded"
-  | "resuming_session"
-  | "session_welcome"
-  | "creating_session"
-  | "session_active"
-  | "switching_dataset_context"
-  | "error_recoverable";
-
-export interface SessionSummary {
-  id: string;
-  title: string | null;
-  last_active_at: string;
-  active_dataset_id: string | null;
-}
-
-export interface TranscriptMessage {
-  id: string;
-  role: "user" | "assistant" | "tool";
-  content: string;
-  ts: string;
-}
-
-export type SessionChatCauseTag =
-  | "transient"
-  | "list_sessions_degraded"
-  | "session_not_found"
-  | "dataset_not_found"
-  | "dataset_access_denied";
-
-export interface SessionChatMachineContext {
-  request_id: string;
-  principal_id: string;
-
-  // Received via `project_ready` orchestrator broadcast — populated on entry
-  // out of `waiting_for_project`:
-  org_id: string;
-  project: { id: string | null; name: string | null };
-
-  // Session list state — populated on session_list_loaded entry:
-  session_list: SessionSummary[];
-  session_list_next_cursor: string | null;
-  session_list_has_more: boolean;
-
-  // Active session — populated on session_active entry:
-  session_id: string | null;
-  transcript: TranscriptMessage[];
-
-  // Active resource (dataset) — populated on session_active entry from
-  // `session.active_dataset_id`; also on switching_dataset_context exit:
-  resource: { type: ResourceType | null; id: string | null };
-
-  // The dataset pick captured from a `dataset_resolved_by_agent` /
-  // `dataset_picked_directly` event in `session_active`, carried into the
-  // `switching_dataset_context` invoke's input (US-209). XState invoke
-  // `input` reads ctx, not the triggering event, so the pick MUST be
-  // captured here on the transition. Cleared on settle (success OR
-  // dataset_access_denied) so a stale pick can't bleed into a later
-  // switch.
-  intended_resource_id: string | null;
-  intended_resource_type: ResourceType | null;
-
-  // Pending session-resume target — populated EITHER by the inbound
-  // `project_ready` payload's `deeplink_session_id` key (URL-level wish
-  // forwarded by project-context) OR by a `session_clicked` event
-  // (capturePendingResumeIntent action). Both paths feed the same downstream
-  // consumer: the `loading_session_list → resuming_session` branch reads the
-  // actor output's `resume_target` (which echoes
-  // `input.pending_resume_session_id`) and the `resuming_session.invoke.input`
-  // reads ctx directly for the session id to resume. Cleared by the resume
-  // actor's onDone.
-  //
-  // `intent_resource_id` / `intent_resource_type` are not captured here — the
-  // dataset-switching events carry the resource id/type directly in their
-  // payload (see SessionChatEvent's `dataset_resolved_by_agent` and
-  // `dataset_picked_directly` variants). The orchestrator forwards them
-  // directly from the `open_deep_link` event payload into the `project_ready`
-  // broadcast; the session-chat input/event surface accepts them as no-op
-  // slots.
-  pending_resume_session_id: string | null;
-
-  // Cross-state plumbing:
-  underlying_cause_tag: SessionChatCauseTag | null;
-  last_live_state: SessionChatState | null;
-  retries_count: number;
-  /** Composer text preserved across session_welcome ↔ error_recoverable. */
-  pending_first_message: string;
-
-  // Observability counters:
-  stale_intents_dropped_count: number;
-  // The most recent stale intent the DWD-7 guard dropped after THAW.
-  // The orchestrator harvests this on the replay-settle path to emit the
-  // `stale_intent_dropped_after_thaw` FlowEvent (the projection/harness
-  // SSOT — machines never write FlowEvents).
-  last_stale_intent: { intent_type: string; target_id: string } | null;
-}
-
-export type SessionChatEvent =
-  // External (FE-emitted):
-  | { type: "session_clicked"; session_id: string }
-  | { type: "new_session_clicked" }
-  | { type: "first_message_sent"; content: string }
-  | { type: "refresh_session_list" }
-  | { type: "dataset_resolved_by_agent"; resource_id: string; resource_type: ResourceType }
-  | { type: "dataset_picked_directly"; resource_id: string; resource_type: ResourceType }
-  | { type: "retry_clicked" }
-  | { type: "suggestion_chip_clicked_upload" }
-  | { type: "suggestion_chip_clicked_browse_projects" }
-  // Cross-machine (orchestrator-emitted; never FE-emitted):
-  | {
-      type: "project_ready";
-      org_id: string;
-      project_id: string;
-      project_name: string;
-      request_id: string;
-      // The URL-level deep-link session wish. Captured into
-      // pending_resume_session_id on entry.
-      deeplink_session_id?: string | null;
-      // Accepted but not stored on ctx — the orchestrator routes them
-      // through the wire/projection directly. Kept on the event surface.
-      intent_resource_id?: string | null;
-      intent_resource_type?: ResourceType | null;
-    };
-
-// ─────────────────────────── Actor input / output ───────────────────────────
-
-export interface LoadSessionListInput {
-  project_id: string;
-  principal_id: string;
-  page_size?: number;
-  /** Pending session-resume target forwarded from ctx. The actor echoes
-   *  this through `resume_target` on its output so the
-   *  `loading_session_list → resuming_session` branch can guard on
-   *  `event.output.resume_target` instead of reading
-   *  `ctx.pending_resume_session_id` (LEAF-C / Direction F: branch-relevant
-   *  data MUST flow through `event.output`, never through context set before
-   *  the invoke). */
-  pending_resume_session_id?: string | null;
-}
-
-export interface LoadSessionListOutput {
-  items: SessionSummary[];
-  next_cursor: string | null;
-  has_more: boolean;
-  /** Echoes `input.pending_resume_session_id` so the `onDone` branch can
-   *  pick between `session_list_loaded` and `resuming_session` without
-   *  reading `ctx.pending_resume_session_id` (LEAF-C / Direction F). Null when
-   *  no resume target was carried in. */
-  resume_target: string | null;
-}
-
-export type LoadSessionListActor = ReturnType<
-  typeof fromPromise<LoadSessionListOutput, LoadSessionListInput>
->;
-
-export interface ResumeSessionInput {
-  session_id: string;
-  project_id: string;
-  principal_id: string;
-}
-
-export type ResumeSessionOutput =
-  | {
-      session_id: string;
-      transcript: TranscriptMessage[];
-      active_dataset_id: string | null;
-      /** Set when active_dataset_id resolves to a deleted/404 dataset — the
-       *  resource_* fields stay null and the projection emits
-       *  session_dataset_unavailable per US-205 Example 3. */
-      dataset_unavailable?: boolean;
-    }
-  | { session_not_found: true };
-
-export type ResumeSessionActor = ReturnType<
-  typeof fromPromise<ResumeSessionOutput, ResumeSessionInput>
->;
-
-/** US-206 / DWD-10 lazy-creation: invoked on `first_message_sent` from the
- *  welcome state. POSTs to `/api/projects/:id/sessions` and PATCHes the
- *  title in one fire-and-await sequence so the test can observe the title
- *  by the time `session_active` settles. */
-export interface CreateSessionEagerlyInput {
-  project_id: string;
-  principal_id: string;
-  first_message: string;
-}
-
-export interface CreateSessionEagerlyOutput {
-  session_id: string;
-}
-
-export type CreateSessionEagerlyActor = ReturnType<
-  typeof fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>
->;
-
-/**
- * US-209 — switchDatasetContext actor. Given the intended dataset
- * pick (from `dataset_resolved_by_agent` / `dataset_picked_directly`),
- * validates access via ScopeResolver invariant 4 (cross-tenant AND
- * cross-project rejection) by calling `GET /api/datasets/:id` and comparing
- * the dataset's `project_id` against the active project; on pass it persists
- * `session.active_dataset_id` via `update_session`
- * (`PATCH /api/projects/:pid/sessions/:sid`). On 403/404/cross-project the
- * pick is rejected with `{ dataset_access_denied: true }` and the prior
- * resource is preserved (US-209 Example 3/4). Mirrors the `switchProject`
- * actor's error-variant discipline.
- */
-export type SwitchDatasetContextOutput =
-  | { resource_type: ResourceType; resource_id: string; persisted: true }
-  | {
-      dataset_access_denied: true;
-      prior_resource: { type: ResourceType | null; id: string | null };
-    };
-
-export interface SwitchDatasetContextInput {
-  session_id: string;
-  project_id: string;
-  principal_id: string;
-  intended_resource_id: string;
-  intended_resource_type: ResourceType;
-  /** The resource attached BEFORE this pick. Echoed back on the
-   *  dataset_access_denied branch so the machine can leave
-   *  `context.resource` provably unchanged (US-209 Example 3). */
-  prior_resource: { type: ResourceType | null; id: string | null };
-}
-
-export type SwitchDatasetContextActor = ReturnType<
-  typeof fromPromise<SwitchDatasetContextOutput, SwitchDatasetContextInput>
->;
-
-export interface SessionChatMachineDeps {
-  /** Optional. When absent, the machine still spawns into
-   *  `waiting_for_project` cleanly — the project_ready transition fires but
-   *  loadSessionList throws when invoked, surfacing as error_recoverable. */
-  loadSessionList?: LoadSessionListActor;
-  resumeSession?: ResumeSessionActor;
-  /** US-206: invoked on `first_message_sent` from the welcome state.
-   *  Absent → first_message_sent surfaces error_recoverable (consistent with
-   *  the noop-actor pattern used for loadSessionList / resumeSession). */
-  createSessionEagerly?: CreateSessionEagerlyActor;
-  /** US-209: invoked on `dataset_resolved_by_agent` /
-   *  `dataset_picked_directly` from `session_active`. Absent → the pick
-   *  surfaces error_recoverable (same noop-actor pattern). */
-  switchDatasetContext?: SwitchDatasetContextActor;
-}
-
-// ──────────────────────────── Factory ────────────────────────────
+import {
+  applyProjectReady,
+  assignCreatedSession,
+  assignResumedSession,
+  assignSessionList,
+  assignSwitchedDataset,
+  captureDeeplinkResume,
+  captureIntendedResource,
+  capturePendingFirstMessage,
+  capturePendingResumeIntent,
+  clearErrorAndBumpRetries,
+  clearPendingFirstMessage,
+  clearResumeTarget,
+  enterWelcomeReset,
+  recordStaleSessionClicked,
+  resetForProjectSwitch,
+  tagDatasetDeniedClearPick,
+  tagListDegraded,
+  tagTransientCreating,
+  tagTransientResuming,
+  tagTransientSwitching,
+} from "./setup/actions.ts";
+import { buildActors, type SessionChatMachineDeps } from "./setup/actors.ts";
+import { guards } from "./setup/guards.ts";
+import type {
+  SessionChatEvent,
+  SessionChatInput,
+  SessionChatMachineContext,
+} from "./setup/types.ts";
 
 export function createSessionChatMachine(deps: SessionChatMachineDeps) {
-  // The noop actor is used when a dep is not provided — keeps the type system
-  // happy and surfaces a clean error_recoverable rather than crashing the
-  // orchestrator with an "unknown actor src" error if a future caller forgets
-  // to wire the dep.
-  const noopLoadSessionList: LoadSessionListActor =
-    deps.loadSessionList ??
-    fromPromise<LoadSessionListOutput, LoadSessionListInput>(async () => {
-      throw new Error("loadSessionList actor not wired");
-    });
-  const noopResumeSession: ResumeSessionActor =
-    deps.resumeSession ??
-    fromPromise<ResumeSessionOutput, ResumeSessionInput>(async () => {
-      throw new Error("resumeSession actor not wired");
-    });
-  const noopCreateSessionEagerly: CreateSessionEagerlyActor =
-    deps.createSessionEagerly ??
-    fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>(
-      async () => {
-        throw new Error("createSessionEagerly actor not wired");
-      },
-    );
-  const noopSwitchDatasetContext: SwitchDatasetContextActor =
-    deps.switchDatasetContext ??
-    fromPromise<SwitchDatasetContextOutput, SwitchDatasetContextInput>(
-      async () => {
-        throw new Error("switchDatasetContext actor not wired");
-      },
-    );
-
   return setup({
     types: {
       context: {} as SessionChatMachineContext,
       events: {} as SessionChatEvent,
-      input: {} as {
-        request_id: string;
-        principal_id: string;
-        org_id?: string;
-        project_id?: string;
-        project_name?: string;
-        // URL-level wish at spawn time — captured into
-        // pending_resume_session_id. Distinct from the click-captured resume
-        // target.
-        deeplink_session_id?: string | null;
-        // Accepted but not stored on ctx.
-        intent_resource_id?: string | null;
-        intent_resource_type?: ResourceType | null;
-      },
+      input: {} as SessionChatInput,
     },
-    actors: {
-      loadSessionList: noopLoadSessionList,
-      resumeSession: noopResumeSession,
-      createSessionEagerly: noopCreateSessionEagerly,
-      switchDatasetContext: noopSwitchDatasetContext,
-    },
+    actors: buildActors(deps),
+    guards,
     actions: {
-      capturePendingResumeIntent: assign({
-        pending_resume_session_id: ({ event, context }) =>
-          event.type === "session_clicked"
-            ? event.session_id
-            : context.pending_resume_session_id,
-      }),
-      capturePendingFirstMessage: assign({
-        pending_first_message: ({ event, context }) =>
-          event.type === "first_message_sent"
-            ? event.content
-            : context.pending_first_message,
-      }),
-      // US-209 — capture the dataset pick from
-      // `dataset_resolved_by_agent` / `dataset_picked_directly` so the
-      // `switching_dataset_context` invoke can read it from ctx (XState
-      // invoke input reads context, not the triggering event).
-      // DWD-7 — an intent whose target no longer
-      // resolves in the post-THAW state is silent-dropped (observability
-      // only, no UX surface). The count + last_stale_intent are harvested
-      // by the orchestrator to emit `stale_intent_dropped_after_thaw`.
-      recordStaleSessionClicked: assign({
-        stale_intents_dropped_count: ({ context }) =>
-          context.stale_intents_dropped_count + 1,
-        last_stale_intent: ({ event }) => ({
-          intent_type: "session_clicked",
-          target_id:
-            event.type === "session_clicked" ? event.session_id : "",
-        }),
-      }),
-      captureIntendedResource: assign({
-        intended_resource_id: ({ event, context }) =>
-          event.type === "dataset_resolved_by_agent" ||
-          event.type === "dataset_picked_directly"
-            ? event.resource_id
-            : context.intended_resource_id,
-        intended_resource_type: ({ event, context }) =>
-          event.type === "dataset_resolved_by_agent" ||
-          event.type === "dataset_picked_directly"
-            ? event.resource_type
-            : context.intended_resource_type,
-      }),
-    },
-    guards: {
-      /** True when a session_clicked targets a session absent from the current
-       *  session_list — a stale/replayed click (e.g. post-THAW muscle-memory
-       *  after the user switched projects during freeze). Silent-dropped via
-       *  recordStaleSessionClicked (observability only); no transition. */
-      isStaleSessionClick: ({ context, event }) =>
-        event.type === "session_clicked" &&
-        !context.session_list.some((s) => s.id === event.session_id),
+      applyProjectReady: assign(applyProjectReady),
+      resetForProjectSwitch: assign(resetForProjectSwitch),
+      captureDeeplinkResume: assign(captureDeeplinkResume),
+      clearPendingFirstMessage: assign(clearPendingFirstMessage),
+      capturePendingResumeIntent: assign(capturePendingResumeIntent),
+      capturePendingFirstMessage: assign(capturePendingFirstMessage),
+      recordStaleSessionClicked: assign(recordStaleSessionClicked),
+      captureIntendedResource: assign(captureIntendedResource),
+      assignSessionList: assign(assignSessionList),
+      enterWelcomeReset: assign(enterWelcomeReset),
+      clearResumeTarget: assign(clearResumeTarget),
+      assignResumedSession: assign(assignResumedSession),
+      tagDatasetDeniedClearPick: assign(tagDatasetDeniedClearPick),
+      assignSwitchedDataset: assign(assignSwitchedDataset),
+      assignCreatedSession: assign(assignCreatedSession),
+      tagListDegraded: assign(tagListDegraded),
+      tagTransientResuming: assign(tagTransientResuming),
+      tagTransientSwitching: assign(tagTransientSwitching),
+      tagTransientCreating: assign(tagTransientCreating),
+      clearErrorAndBumpRetries: assign(clearErrorAndBumpRetries),
     },
   }).createMachine({
     id: "session-chat",
@@ -428,17 +142,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         on: {
           project_ready: {
             target: "loading_session_list",
-            actions: assign({
-              org_id: ({ event }) => event.org_id,
-              project: ({ event }) => ({
-                id: event.project_id,
-                name: event.project_name,
-              }),
-              request_id: ({ event, context }) =>
-                event.request_id ?? context.request_id,
-              pending_resume_session_id: ({ event, context }) =>
-                event.deeplink_session_id ?? context.pending_resume_session_id,
-            }),
+            actions: "applyProjectReady",
           },
         },
       },
@@ -450,21 +154,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           project_ready: {
             target: "loading_session_list",
             reenter: true,
-            actions: assign({
-              org_id: ({ event }) => event.org_id,
-              project: ({ event }) => ({
-                id: event.project_id,
-                name: event.project_name,
-              }),
-              request_id: ({ event, context }) =>
-                event.request_id ?? context.request_id,
-              session_id: () => null,
-              transcript: () => [],
-              resource: () => ({ type: null, id: null }),
-              session_list: () => [],
-              pending_resume_session_id: ({ event, context }) =>
-                event.deeplink_session_id ?? context.pending_resume_session_id,
-            }),
+            actions: ["resetForProjectSwitch", "captureDeeplinkResume"],
           },
         },
         invoke: {
@@ -488,29 +178,18 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               // settles in resuming_session. `resuming_session.invoke.input`
               // reads `context.pending_resume_session_id` (still populated
               // by the `project_ready` handler).
-              guard: ({ event }) => event.output.resume_target !== null,
+              guard: "hasResumeTarget",
               target: "resuming_session",
-              actions: assign({
-                session_list: ({ event }) => event.output.items,
-                session_list_next_cursor: ({ event }) => event.output.next_cursor,
-                session_list_has_more: ({ event }) => event.output.has_more,
-              }),
+              actions: "assignSessionList",
             },
             {
               target: "session_list_loaded",
-              actions: assign({
-                session_list: ({ event }) => event.output.items,
-                session_list_next_cursor: ({ event }) => event.output.next_cursor,
-                session_list_has_more: ({ event }) => event.output.has_more,
-              }),
+              actions: "assignSessionList",
             },
           ],
           onError: {
             target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: () => "list_sessions_degraded" as const,
-              last_live_state: () => "loading_session_list" as const,
-            }),
+            actions: "tagListDegraded",
           },
         },
       },
@@ -533,12 +212,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             // US-206 / DWD-10: lazy-creation. Enter the welcome state with
             // session_id null; no backend write fires until `first_message_sent`.
             target: "session_welcome",
-            actions: assign({
-              session_id: () => null,
-              transcript: () => [],
-              resource: () => ({ type: null, id: null }),
-              pending_first_message: () => "",
-            }),
+            actions: "enterWelcomeReset",
           },
           refresh_session_list: {
             target: "loading_session_list",
@@ -546,23 +220,9 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           },
           project_ready: [
             {
-              guard: ({ context, event }) => context.project?.id !== event.project_id,
+              guard: "isDifferentProject",
               target: "loading_session_list",
-              actions: assign({
-                org_id: ({ event }) => event.org_id,
-                project: ({ event }) => ({
-                  id: event.project_id,
-                  name: event.project_name,
-                }),
-                request_id: ({ event, context }) =>
-                  event.request_id ?? context.request_id,
-                session_id: () => null,
-                transcript: () => [],
-                resource: () => ({ type: null, id: null }),
-                session_list: () => [],
-                pending_resume_session_id: ({ event, context }) =>
-                  event.deeplink_session_id ?? context.pending_resume_session_id,
-              }),
+              actions: ["resetForProjectSwitch", "captureDeeplinkResume"],
             },
             // Same project_id — idempotent no-op (the existing actor ignores
             // the re-emission).
@@ -580,64 +240,19 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           }),
           onDone: [
             {
-              guard: ({ event }) =>
-                (event.output as { session_not_found?: true }).session_not_found === true,
+              guard: "isSessionNotFound",
               target: "session_list_loaded",
-              actions: assign({
-                // Silent return per US-205 Example 4 — clear the pending
-                // resume target so we don't loop on re-emission.
-                pending_resume_session_id: () => null,
-                session_id: () => null,
-                transcript: () => [],
-                resource: () => ({ type: null, id: null }),
-                underlying_cause_tag: () => null,
-              }),
+              actions: "clearResumeTarget",
             },
             {
-              // Atomic materialization per IC-J002-3: transcript AND resource
-              // are populated in a SINGLE assign before transitioning to
-              // session_active. There is no intermediate snapshot where one
-              // is set but not the other.
+              // Atomic materialization per IC-J002-3 — see assignResumedSession.
               target: "session_active",
-              actions: assign({
-                session_id: ({ event }) => {
-                  const out = event.output as {
-                    session_id: string;
-                    transcript: TranscriptMessage[];
-                    active_dataset_id: string | null;
-                  };
-                  return out.session_id;
-                },
-                transcript: ({ event }) => {
-                  const out = event.output as {
-                    transcript: TranscriptMessage[];
-                  };
-                  return out.transcript;
-                },
-                resource: ({ event }) => {
-                  const out = event.output as {
-                    active_dataset_id: string | null;
-                    dataset_unavailable?: boolean;
-                  };
-                  if (out.dataset_unavailable === true || out.active_dataset_id === null) {
-                    return { type: null, id: null };
-                  }
-                  return { type: "dataset" as ResourceType, id: out.active_dataset_id };
-                },
-                underlying_cause_tag: ({ event }) => {
-                  const out = event.output as { dataset_unavailable?: boolean };
-                  return out.dataset_unavailable === true ? "dataset_not_found" : null;
-                },
-                pending_resume_session_id: () => null,
-              }),
+              actions: "assignResumedSession",
             },
           ],
           onError: {
             target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: () => "transient" as const,
-              last_live_state: () => "resuming_session" as const,
-            }),
+            actions: "tagTransientResuming",
           },
         },
       },
@@ -674,21 +289,9 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           },
           project_ready: [
             {
-              guard: ({ context, event }) => context.project?.id !== event.project_id,
+              guard: "isDifferentProject",
               target: "loading_session_list",
-              actions: assign({
-                org_id: ({ event }) => event.org_id,
-                project: ({ event }) => ({
-                  id: event.project_id,
-                  name: event.project_name,
-                }),
-                request_id: ({ event, context }) =>
-                  event.request_id ?? context.request_id,
-                session_id: () => null,
-                transcript: () => [],
-                resource: () => ({ type: null, id: null }),
-                session_list: () => [],
-              }),
+              actions: "resetForProjectSwitch",
             },
           ],
         },
@@ -709,7 +312,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             principal_id: context.principal_id,
             intended_resource_id: context.intended_resource_id ?? "",
             intended_resource_type:
-              context.intended_resource_type ?? ("dataset" as ResourceType),
+              context.intended_resource_type ?? ("dataset" as const),
             prior_resource: {
               type: context.resource.type,
               id: context.resource.id,
@@ -717,46 +320,22 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           }),
           onDone: [
             {
-              // ScopeResolver invariant 4 rejection (403 / 404 /
-              // cross-project): leave `context.resource` UNCHANGED, surface
-              // the named cause for the FE gutter copy, and clear the pick
-              // (US-209 Example 3/4 — prior scope preserved).
-              guard: ({ event }) =>
-                (event.output as { dataset_access_denied?: true })
-                  .dataset_access_denied === true,
+              // ScopeResolver invariant 4 rejection (403 / 404 / cross-project):
+              // leave `context.resource` UNCHANGED — see tagDatasetDeniedClearPick.
+              guard: "isDatasetAccessDenied",
               target: "session_active",
-              actions: assign({
-                underlying_cause_tag: () => "dataset_access_denied" as const,
-                intended_resource_id: () => null,
-                intended_resource_type: () => null,
-              }),
+              actions: "tagDatasetDeniedClearPick",
             },
             {
-              // Validated + persisted: retarget `context.resource` to the
-              // picked dataset. Single atomic assign — there is no
-              // intermediate snapshot where resource is half-updated
-              // (IC-J002-5: exactly ONE resource_* update).
+              // Validated + persisted: retarget `context.resource` (single
+              // atomic assign per IC-J002-5) — see assignSwitchedDataset.
               target: "session_active",
-              actions: assign({
-                resource: ({ event }) => {
-                  const out = event.output as {
-                    resource_type: ResourceType;
-                    resource_id: string;
-                  };
-                  return { type: out.resource_type, id: out.resource_id };
-                },
-                underlying_cause_tag: () => null,
-                intended_resource_id: () => null,
-                intended_resource_type: () => null,
-              }),
+              actions: "assignSwitchedDataset",
             },
           ],
           onError: {
             target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: () => "transient" as const,
-              last_live_state: () => "switching_dataset_context" as const,
-            }),
+            actions: "tagTransientSwitching",
           },
         },
       },
@@ -798,23 +377,9 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           // session row was ever created (the no-ghost-row invariant).
           project_ready: [
             {
-              guard: ({ context, event }) =>
-                context.project?.id !== event.project_id,
+              guard: "isDifferentProject",
               target: "loading_session_list",
-              actions: assign({
-                org_id: ({ event }) => event.org_id,
-                project: ({ event }) => ({
-                  id: event.project_id,
-                  name: event.project_name,
-                }),
-                request_id: ({ event, context }) =>
-                  event.request_id ?? context.request_id,
-                session_id: () => null,
-                transcript: () => [],
-                resource: () => ({ type: null, id: null }),
-                session_list: () => [],
-                pending_first_message: () => "",
-              }),
+              actions: ["resetForProjectSwitch", "clearPendingFirstMessage"],
             },
             // Same project_id — idempotent no-op (project_ready re-emission).
           ],
@@ -830,20 +395,11 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           }),
           onDone: {
             target: "session_active",
-            actions: assign({
-              session_id: ({ event }) => event.output.session_id,
-              transcript: () => [],
-              resource: () => ({ type: null, id: null }),
-              pending_first_message: () => "",
-              underlying_cause_tag: () => null,
-            }),
+            actions: "assignCreatedSession",
           },
           onError: {
             target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: () => "transient" as const,
-              last_live_state: () => "session_welcome" as const,
-            }),
+            actions: "tagTransientCreating",
           },
         },
       },
@@ -851,46 +407,32 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         on: {
           retry_clicked: [
             {
-              guard: ({ context }) => context.last_live_state === "loading_session_list",
+              guard: "wasLoadingList",
               target: "loading_session_list",
               reenter: true,
-              actions: assign({
-                underlying_cause_tag: () => null,
-                retries_count: ({ context }) => context.retries_count + 1,
-              }),
+              actions: "clearErrorAndBumpRetries",
             },
             {
-              guard: ({ context }) => context.last_live_state === "resuming_session",
+              guard: "wasResuming",
               target: "resuming_session",
               reenter: true,
-              actions: assign({
-                underlying_cause_tag: () => null,
-                retries_count: ({ context }) => context.retries_count + 1,
-              }),
+              actions: "clearErrorAndBumpRetries",
             },
             {
               // US-206: retry from a failed eager-create returns to the
               // welcome state with `pending_first_message` intact (the
               // composer-state preservation contract).
-              guard: ({ context }) =>
-                context.last_live_state === "session_welcome",
+              guard: "wasWelcome",
               target: "session_welcome",
-              actions: assign({
-                underlying_cause_tag: () => null,
-                retries_count: ({ context }) => context.retries_count + 1,
-              }),
+              actions: "clearErrorAndBumpRetries",
             },
             {
               // US-209: retry from a transient switchDatasetContext failure
               // re-enters the switch with the captured pick still in ctx.
-              guard: ({ context }) =>
-                context.last_live_state === "switching_dataset_context",
+              guard: "wasSwitchingDataset",
               target: "switching_dataset_context",
               reenter: true,
-              actions: assign({
-                underlying_cause_tag: () => null,
-                retries_count: ({ context }) => context.retries_count + 1,
-              }),
+              actions: "clearErrorAndBumpRetries",
             },
           ],
         },
@@ -898,495 +440,3 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
     },
   });
 }
-
-// ─────────────────────────── Production actor factories ───────────────────────────
-
-/**
- * Build the real `loadSessionList` actor — wraps `GET /api/projects/:id/sessions`.
- * Returns the session summaries with cursor + has_more shape.
- */
-export function loadSessionListFn(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-): (input: LoadSessionListInput) => Promise<LoadSessionListOutput> {
-  return async (input) => {
-    const pageSize = input.page_size ?? 30;
-    const url = `${backendUrl}/api/projects/${encodeURIComponent(input.project_id)}/sessions?page%5Bsize%5D=${pageSize}`;
-    const resp = await fetch(url, {
-      method: "GET",
-      headers: {
-        "x-request-id": "session-chat-list",
-        ...principalHeaders,
-      },
-    });
-    // Treat 404 as "no sessions yet" — the backend wraps the session list in a
-    // ProjectMemory row that is lazily created at first-session. A project
-    // without a memory means zero sessions, which lands cleanly in
-    // session_list_loaded (US-203 Example 3 no_sessions_empty_state sub-shape
-    // per DWD-1). The 404 is NOT a transient failure.
-    if (resp.status === 404) {
-      return {
-        items: [],
-        next_cursor: null,
-        has_more: false,
-        resume_target: input.pending_resume_session_id ?? null,
-      };
-    }
-    if (!resp.ok) {
-      throw new Error(`list_sessions failed: ${resp.status}`);
-    }
-    // The backend's list_sessions returns JSON:API: { data: [...], meta, links }.
-    // Tolerate the plain {items} or array shape for forward-compat.
-    const body = (await resp.json()) as
-      | {
-          items?: Array<{
-            id: string;
-            title?: string | null;
-            last_active_at?: string;
-            active_dataset_id?: string | null;
-          }>;
-        }
-      | {
-          data?: Array<{
-            id: string;
-            attributes?: {
-              title?: string | null;
-              last_active_at?: string;
-              active_dataset_id?: string | null;
-            };
-          }>;
-          links?: { next?: string | null };
-        }
-      | Array<{
-          id: string;
-          title?: string | null;
-          last_active_at?: string;
-          active_dataset_id?: string | null;
-        }>;
-
-    let rawItems: Array<{
-      id: string;
-      title?: string | null;
-      last_active_at?: string;
-      active_dataset_id?: string | null;
-    }>;
-    let nextCursor: string | null = null;
-
-    if (Array.isArray(body)) {
-      rawItems = body;
-    } else if ("data" in body && Array.isArray(body.data)) {
-      rawItems = body.data.map((row) => ({
-        id: row.id,
-        title: row.attributes?.title ?? null,
-        last_active_at: row.attributes?.last_active_at,
-        active_dataset_id: row.attributes?.active_dataset_id ?? null,
-      }));
-      nextCursor = body.links?.next ?? null;
-    } else if ("items" in body && Array.isArray(body.items)) {
-      rawItems = body.items;
-    } else {
-      rawItems = [];
-    }
-
-    const items: SessionSummary[] = rawItems
-      .filter((r) => typeof r.id === "string" && typeof r.last_active_at === "string")
-      .map((r) => ({
-        id: r.id,
-        title: r.title ?? null,
-        last_active_at: r.last_active_at as string,
-        active_dataset_id: r.active_dataset_id ?? null,
-      }))
-      // Sort DESC by last_active_at (lex-larger ISO timestamp wins). The
-      // backend SHOULD return them in this order already, but a defensive
-      // sort keeps the contract stable across backend variations.
-      .sort((a, b) => b.last_active_at.localeCompare(a.last_active_at));
-
-    return {
-      items,
-      next_cursor: nextCursor,
-      has_more: items.length >= pageSize,
-      resume_target: input.pending_resume_session_id ?? null,
-    };
-  };
-}
-
-export function loadSessionListActor(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-): LoadSessionListActor {
-  const fn = loadSessionListFn(backendUrl, principalHeaders);
-  return fromPromise<LoadSessionListOutput, LoadSessionListInput>(({ input }) =>
-    fn(input),
-  );
-}
-
-/**
- * Build the real `resumeSession` actor — wraps `GET /api/sessions/:id` +
- * `GET /api/sessions/:id/messages` (transcript) and (when active_dataset_id
- * is set) `GET /api/datasets/:id` to detect deletion (US-205 Example 3).
- *
- * The atomicity guarantee is delivered at the XState assign boundary in the
- * machine — this actor just gathers all three reads before resolving. The
- * machine's onDone assign populates transcript+resource in a single
- * transaction.
- */
-export function resumeSessionFn(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-): (input: ResumeSessionInput) => Promise<ResumeSessionOutput> {
-  return async (input) => {
-    const sessionResp = await fetch(
-      `${backendUrl}/api/sessions/${encodeURIComponent(input.session_id)}`,
-      {
-        method: "GET",
-        headers: {
-          "x-request-id": "session-chat-resume",
-          ...principalHeaders,
-        },
-      },
-    );
-    if (sessionResp.status === 404) {
-      return { session_not_found: true };
-    }
-    if (!sessionResp.ok) {
-      throw new Error(`get_session failed: ${sessionResp.status}`);
-    }
-    // Backend get_session route (DWD-2) returns JSON:API shape:
-    //   { data: { id, attributes: { active_dataset_id, ... } } }
-    // Tolerate the flat {id, active_dataset_id} shape for forward-compat.
-    const sessionBody = (await sessionResp.json()) as
-      | {
-          id?: string;
-          active_dataset_id?: string | null;
-        }
-      | {
-          data?: {
-            id?: string;
-            attributes?: { active_dataset_id?: string | null };
-          };
-        };
-    const sessionId =
-      (sessionBody as { id?: string }).id ??
-      (sessionBody as { data?: { id?: string } }).data?.id ??
-      input.session_id;
-    const activeDatasetId =
-      (sessionBody as { active_dataset_id?: string | null }).active_dataset_id ??
-      (sessionBody as { data?: { attributes?: { active_dataset_id?: string | null } } })
-        .data?.attributes?.active_dataset_id ??
-      null;
-
-    // Fetch transcript via the session-replay events endpoint. The
-    // /api/sessions/:id/events route returns persisted DomainEvents; we
-    // surface only the user/assistant message events (UI directives are
-    // filtered server-side). A brand-new session has no events; an empty
-    // transcript is a valid first-paint state per US-205 Example 1.
-    let transcript: TranscriptMessage[] = [];
-    try {
-      const eventsResp = await fetch(
-        `${backendUrl}/api/sessions/${encodeURIComponent(input.session_id)}/events?limit=100`,
-        {
-          method: "GET",
-          headers: {
-            "x-request-id": "session-chat-resume-transcript",
-            ...principalHeaders,
-          },
-        },
-      );
-      if (eventsResp.ok) {
-        const eventsBody = (await eventsResp.json()) as {
-          events?: Array<{
-            id?: string;
-            event_type?: string;
-            payload?: { role?: string; content?: string; text?: string };
-            ts?: string;
-          }>;
-        };
-        const events = eventsBody.events ?? [];
-        // Pull the user/assistant message events out of the DomainEvent
-        // stream; everything else (tool turns, audit events) is dropped
-        // from the visible transcript.
-        transcript = events
-          .filter((e) => {
-            const t = e.event_type ?? "";
-            return t === "user_message_sent" || t === "assistant_message_sent" || t === "tool_response_received";
-          })
-          .map((e, idx) => ({
-            id: e.id ?? `evt-${idx}`,
-            role: ((): "user" | "assistant" | "tool" => {
-              const t = e.event_type ?? "";
-              if (t === "assistant_message_sent") return "assistant";
-              if (t === "tool_response_received") return "tool";
-              return "user";
-            })(),
-            content: e.payload?.content ?? e.payload?.text ?? "",
-            ts: e.ts ?? new Date(0).toISOString(),
-          }));
-      }
-    } catch {
-      transcript = [];
-    }
-
-    // If active_dataset_id is set, verify the dataset still exists. 404 →
-    // session_dataset_unavailable per US-205 Example 3 (graceful degradation
-    // to conversational mode).
-    let datasetUnavailable = false;
-    if (activeDatasetId) {
-      try {
-        const dsResp = await fetch(
-          `${backendUrl}/api/datasets/${encodeURIComponent(activeDatasetId)}`,
-          {
-            method: "GET",
-            headers: {
-              "x-request-id": "session-chat-resume-dataset",
-              ...principalHeaders,
-            },
-          },
-        );
-        if (dsResp.status === 404 || dsResp.status === 410) {
-          datasetUnavailable = true;
-        }
-      } catch {
-        // Network error reading the dataset — treat as transient AT the
-        // dataset-probe boundary; the session is still resumable in
-        // conversational mode (per US-205 Example 3 the GREEN-path behavior).
-        datasetUnavailable = true;
-      }
-    }
-
-    return {
-      session_id: sessionId,
-      transcript,
-      active_dataset_id: datasetUnavailable ? null : activeDatasetId,
-      dataset_unavailable: datasetUnavailable,
-    };
-  };
-}
-
-export function resumeSessionActor(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-  /** US-210 test-infra knob (gated, consume-once). When it returns >0 the
-   *  resume holds for that many ms BEFORE the backend round-trip, so an
-   *  acceptance scenario can deterministically broadcast FREEZE while the
-   *  machine is still in `resuming_session` (US-210 scenario 1 — "while
-   *  J-002 is in resuming_session, J-001 transitions to expired_token").
-   *  Not a product behavior: gated by the failure-simulation registry
-   *  exactly like the X-Force-* family; ignored in production. */
-  slowResumeMsFn?: () => number,
-): ResumeSessionActor {
-  const fn = resumeSessionFn(backendUrl, principalHeaders);
-  return fromPromise<ResumeSessionOutput, ResumeSessionInput>(
-    async ({ input }) => {
-      const slowMs = slowResumeMsFn?.() ?? 0;
-      if (slowMs > 0) {
-        await new Promise((r) => setTimeout(r, slowMs));
-      }
-      return fn(input);
-    },
-  );
-}
-
-/**
- * US-209 — switchDatasetContextFn implementation. The session-chat
- * `switchDatasetContext` actor. Enforces ScopeResolver invariant 4
- * (cross-tenant AND cross-project rejection) as defense in depth at the
- * ui-state tier:
- *
- *   1. `GET /api/datasets/:id` — the backend's `authorize_dataset_access`
- *      dep returns 403 for cross-tenant (dataset's project belongs to a
- *      different org) and 404 for a non-existent dataset. Either → the
- *      pick is rejected.
- *   2. Cross-project: a 200 dataset whose `project_id` differs from the
- *      active project (`input.project_id`) is the US-209 Example 4 anomaly
- *      — also rejected (the inline list SHOULD be project-filtered; this
- *      is the belt-and-braces check).
- *   3. On pass: `PATCH /api/projects/:pid/sessions/:sid { active_dataset_id }`
- *      persists the pick via the existing `update_session` allowlist
- *      (DWD-2). A non-2xx persist throws → transient → error_recoverable.
- *
- * Mirrors `switchProjectFn`'s status-discrimination discipline.
- */
-export function switchDatasetContextFn(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-): (input: SwitchDatasetContextInput) => Promise<SwitchDatasetContextOutput> {
-  return async (input) => {
-    if (!input.intended_resource_id) {
-      throw new Error("switchDatasetContext: intended_resource_id is required");
-    }
-    // ─── ScopeResolver invariant 4: cross-tenant (403) / not-found (404) ──
-    const dsResp = await fetch(
-      `${backendUrl}/api/datasets/${encodeURIComponent(input.intended_resource_id)}?include_transforms=false`,
-      {
-        method: "GET",
-        headers: {
-          "x-request-id": "switch-dataset-context",
-          ...principalHeaders,
-        },
-      },
-    );
-    if (
-      dsResp.status === 403 ||
-      dsResp.status === 404 ||
-      dsResp.status === 410
-    ) {
-      return {
-        dataset_access_denied: true,
-        prior_resource: input.prior_resource,
-      };
-    }
-    if (!dsResp.ok) {
-      throw new Error(`get_dataset failed: ${dsResp.status}`);
-    }
-    // get_dataset is wrapped JSON:API: { data: { id, attributes: {
-    // project_id, name, ... } } }. Tolerate a flat { id, project_id }
-    // shape for forward-compat.
-    const dsBody = (await dsResp.json()) as
-      | { id?: string; project_id?: string | null }
-      | {
-          data?: {
-            id?: string;
-            attributes?: { project_id?: string | null };
-            project_id?: string | null;
-          };
-        };
-    const datasetProjectId =
-      (dsBody as { project_id?: string | null }).project_id ??
-      (dsBody as { data?: { attributes?: { project_id?: string | null } } })
-        .data?.attributes?.project_id ??
-      (dsBody as { data?: { project_id?: string | null } }).data?.project_id ??
-      null;
-    // ─── ScopeResolver invariant 4: cross-project rejection ───────────────
-    if (
-      datasetProjectId !== null &&
-      input.project_id !== "" &&
-      datasetProjectId !== input.project_id
-    ) {
-      return {
-        dataset_access_denied: true,
-        prior_resource: input.prior_resource,
-      };
-    }
-    // ─── Persist `session.active_dataset_id` (DWD-2) ──────────────────────
-    const patchResp = await fetch(
-      `${backendUrl}/api/projects/${encodeURIComponent(input.project_id)}/sessions/${encodeURIComponent(input.session_id)}`,
-      {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-          "x-request-id": "switch-dataset-context-persist",
-          ...principalHeaders,
-        },
-        body: JSON.stringify({ active_dataset_id: input.intended_resource_id }),
-      },
-    );
-    if (!patchResp.ok) {
-      throw new Error(
-        `persist active_dataset_id failed: ${patchResp.status}`,
-      );
-    }
-    return {
-      resource_type: input.intended_resource_type,
-      resource_id: input.intended_resource_id,
-      persisted: true,
-    };
-  };
-}
-
-export function switchDatasetContextActor(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-): SwitchDatasetContextActor {
-  const fn = switchDatasetContextFn(backendUrl, principalHeaders);
-  return fromPromise<SwitchDatasetContextOutput, SwitchDatasetContextInput>(
-    ({ input }) => fn(input),
-  );
-}
-
-/**
- * Build the real `createSessionEagerly` actor — wraps the two-call sequence
- *   1. POST /api/projects/:id/sessions     → creates the session row (title null)
- *   2. PATCH /api/projects/:id/sessions/:sid {title: first_message[:80]}
- *
- * US-206 Scenario 2: the title is materialized before the machine settles in
- * session_active so the test can observe the row with
- * title === first_message[:80] without races.
- *
- * `shouldFailNext` is the harness knob (consumed once per call) that lets
- * the US-206 transient-failure scenario simulate a 503 without coupling
- * the test to actual backend chaos.
- */
-export function createSessionEagerlyFn(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-  shouldFailNext: () => boolean = () => false,
-): (input: CreateSessionEagerlyInput) => Promise<CreateSessionEagerlyOutput> {
-  return async (input) => {
-    if (shouldFailNext()) {
-      throw new Error("transient: forced by X-Force-Create-Session-Failure");
-    }
-    const createResp = await fetch(
-      `${backendUrl}/api/projects/${encodeURIComponent(input.project_id)}/sessions`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-request-id": "session-chat-create",
-          ...principalHeaders,
-        },
-        // The backend's create_session route does NOT accept a body today —
-        // the title is set via PATCH below. Sending an empty body keeps the
-        // wire payload deterministic.
-        body: "{}",
-      },
-    );
-    if (!createResp.ok) {
-      throw new Error(`create_session failed: ${createResp.status}`);
-    }
-    const createBody = (await createResp.json()) as
-      | { id?: string }
-      | { data?: { id?: string } };
-    const sessionId =
-      (createBody as { id?: string }).id ??
-      (createBody as { data?: { id?: string } }).data?.id;
-    if (typeof sessionId !== "string" || sessionId.length === 0) {
-      throw new Error("create_session: missing session id in response");
-    }
-    // Title = first_message truncated to 80 chars (US-206 Scenario 2 contract).
-    const title = input.first_message.slice(0, 80);
-    const patchResp = await fetch(
-      `${backendUrl}/api/projects/${encodeURIComponent(input.project_id)}/sessions/${encodeURIComponent(sessionId)}`,
-      {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-          "x-request-id": "session-chat-create-title",
-          ...principalHeaders,
-        },
-        body: JSON.stringify({ title }),
-      },
-    );
-    if (!patchResp.ok) {
-      // The session row exists but title-set failed. We surface this as a
-      // create-session failure because the contract (row with title) is
-      // not met — the welcome-state composer text stays in pending_first_message
-      // so the retry path re-attempts atomically.
-      throw new Error(`set_session_title failed: ${patchResp.status}`);
-    }
-    return { session_id: sessionId };
-  };
-}
-
-export function createSessionEagerlyActor(
-  backendUrl: string,
-  principalHeaders: Record<string, string>,
-  shouldFailNext: () => boolean = () => false,
-): CreateSessionEagerlyActor {
-  const fn = createSessionEagerlyFn(backendUrl, principalHeaders, shouldFailNext);
-  return fromPromise<CreateSessionEagerlyOutput, CreateSessionEagerlyInput>(
-    ({ input }) => fn(input),
-  );
-}
-
-// Re-export ActiveScope so callers don't need a separate import path.
-export type { ActiveScope };
