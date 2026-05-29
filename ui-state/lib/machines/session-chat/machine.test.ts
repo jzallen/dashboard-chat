@@ -805,7 +805,7 @@ describe("SessionChatMachine — MR-5 dataset context switching (US-209)", () =>
   function buildSessionActive(
     switchOutput:
       | ((input: SwitchDatasetContextInput) => Promise<unknown> | unknown)
-      | unknown,
+      | SwitchDatasetContextOutput,
     priorDatasetId: string | null = null,
   ): {
     actor: ReturnType<typeof createActor_>;
@@ -1082,8 +1082,8 @@ describe("SessionChatMachine — DWD-7 stale-intent guard", () => {
       resumeSession: stubResumeSession({
         session_id: "in-list",
         transcript: [],
-        resource: { type: null, id: null },
-      } as ResumeSessionOutput),
+        active_dataset_id: null,
+      }),
     });
     const actor = createActor_(machine);
     actor.send({ type: "project_ready", org_id: "o", project_id: "p", project_name: "Q3", request_id: "R-1" });

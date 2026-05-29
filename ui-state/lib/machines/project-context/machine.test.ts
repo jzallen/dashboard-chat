@@ -32,6 +32,7 @@ import {
   type CreateProjectActor,
   type ProjectSummary,
   type ResolveInitialScopeActor,
+  type ResolveInitialScopeInput,
   type ResolveInitialScopeOutput,
   type SwitchProjectActor,
   type SwitchProjectOutput,
@@ -262,7 +263,10 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     // the THIRD call (triggered by open_deep_link) returns the project.
     const project: ProjectSummary = { id: "deep-link-proj", name: "Q4 Analytics" };
     let invokeCallCount = 0;
-    const resolveActor: ResolveInitialScopeActor = fromPromise(async () => {
+    const resolveActor: ResolveInitialScopeActor = fromPromise<
+      ResolveInitialScopeOutput,
+      ResolveInitialScopeInput
+    >(async () => {
       invokeCallCount += 1;
       if (invokeCallCount <= 2) {
         return { no_projects: true };
@@ -310,7 +314,10 @@ describe("ProjectContextMachine — US-204 deep-link behaviors", () => {
     // (triggered by back_to_projects_clicked → resolving_initial_scope) sees
     // the deeplink wish cleared and returns no_projects.
     let invokeCallCount = 0;
-    const resolveActor: ResolveInitialScopeActor = fromPromise(async () => {
+    const resolveActor: ResolveInitialScopeActor = fromPromise<
+      ResolveInitialScopeOutput,
+      ResolveInitialScopeInput
+    >(async () => {
       invokeCallCount += 1;
       if (invokeCallCount <= 2) {
         return { cross_tenant: true };

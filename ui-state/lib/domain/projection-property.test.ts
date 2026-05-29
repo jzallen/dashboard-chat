@@ -174,7 +174,7 @@ function assertProjectStateAgreement(
   // projection mirrors how the public projection shape would be observed
   // if a single consumer subscribed to both flow logs.
   const projection = buildProjection("test-flow:property", events);
-  const ctx = projection.context as AgreementContext;
+  const ctx = projection.context as unknown as AgreementContext;
 
   // Invariant for the *final* settled state: project.{id,name} matches the
   // expected most-recent selection (and, pre-collapse, agrees with the
@@ -195,7 +195,7 @@ function assertProjectStateAgreement(
   for (const settleAt of settlePoints) {
     const prefix = events.slice(0, settleAt);
     const p = buildProjection("test-flow:property", prefix);
-    const c = p.context as AgreementContext;
+    const c = p.context as unknown as AgreementContext;
     if (c.project.id !== null && c.session_chat_project_id != null) {
       expect(c.project.id).toBe(c.session_chat_project_id);
       expect(c.project.name).toBe(c.session_chat_project_name);
@@ -247,7 +247,7 @@ describe("project-state agreement invariant (audit §9 Q3)", () => {
     const projection = buildProjection("test-flow:property", [
       projectSelectedEvent(a, 1),
     ]);
-    const ctx = projection.context as AgreementContext;
+    const ctx = projection.context as unknown as AgreementContext;
     expect(ctx.project.id).toBe(a.id);
     if ("session_chat_project_id" in ctx) {
       expect(ctx.session_chat_project_id).toBeNull();
@@ -263,7 +263,7 @@ describe("project-state agreement invariant (audit §9 Q3)", () => {
     const projection = buildProjection("test-flow:property", [
       projectContextInheritedEvent(a, 1),
     ]);
-    const ctx = projection.context as AgreementContext;
+    const ctx = projection.context as unknown as AgreementContext;
     if ("session_chat_project_id" in ctx) {
       expect(ctx.session_chat_project_id).toBe(a.id);
       expect(ctx.project.id).toBeNull();
