@@ -406,18 +406,22 @@ export type CreateOrgActor = ReturnType<
   typeof fromPromise<Org, CreateOrgInput>
 >;
 
+// The resolvers wrapped once as `fromPromise` actors. These are config-driven
+// DEFAULTS: there is no `.provide(...)`; tests drive behavior by injecting a
+// mock `fetch` as `deps.request_client`.
+const loadSession = fromPromise<VerifiedSession, LoadSessionInput>(
+  loadVerifiedSession,
+);
+const createOrg = fromPromise<Org, CreateOrgInput>(getOrg);
+
 /**
- * The machine's default actor map — the resolvers wrapped once as `fromPromise`
- * actors. machine.ts threads this straight into `setup({ actors })` so the
- * statechart only names actors (`src: "loadSession"`), never wires them. These
- * are config-driven DEFAULTS: there is no `.provide(...)`; tests drive behavior
- * by injecting a mock `fetch` as `deps.request_client`.
+ * The machine's default actor map — name → `fromPromise` actor index. machine.ts
+ * threads this straight into `setup({ actors })` so the statechart only names
+ * actors (`src: "loadSession"`), never wires them.
  */
 export const actors = {
-  loadSession: fromPromise<VerifiedSession, LoadSessionInput>(
-    loadVerifiedSession,
-  ),
-  createOrg: fromPromise<Org, CreateOrgInput>(getOrg),
+  loadSession,
+  createOrg,
 };
 
 /**

@@ -53,77 +53,90 @@ const updateContext = assign<
   SessionOnboardingActor
 >;
 
-export const actions = {
-  assignVerifiedUser: updateContext(({ event }) => {
-    // The verifying resolver returns a VerifiedSession; its `user` is a
-    // VerifiedUser with first_name already derived at the boundary.
-    const { user } = (event as unknown as { output: VerifiedSession }).output;
-    return {
-      user: {
-        email: user.email,
-        display_name: user.display_name,
-        first_name: user.first_name,
-      },
-    };
-  }),
-  assignResolvedOrg: updateContext(({ event }) => {
-    const { org } = (event as unknown as { output: VerifiedSession }).output;
-    return {
-      org: org ? { id: org.id, name: org.name } : { id: null, name: null },
-    };
-  }),
-  tagSessionRejected: updateContext(({ event }) => ({
-    // The verifying actor branded its failure with a cause (./domain.ts
-    // `failWithCause`); read it straight off the onError event. Untagged /
-    // foreign throws default to "transient".
-    underlying_cause_tag: causeOf((event as { error?: unknown }).error),
-  })),
-  recordOrgValidationError: updateContext(({ event }) => {
-    if (event.type !== "org_form_submitted") {
-      return { org_validation_error: null };
-    }
-    const rejection = constructOrgName(event.org_name).getError();
-    if (rejection === null) return { org_validation_error: null };
-    // kind → UI copy is a PRESENTATION mapping, so it lives here in the action,
-    // not on the value object (the domain doesn't know UI strings).
-    const kind = rejection.kind;
-    const messages: Record<typeof kind, string> = {
-      empty: "Please enter an organization name",
-      too_short: "Organization name is too short",
-      too_long: "Organization name is too long",
-    };
-    return { org_validation_error: { kind, message: messages[kind] } };
-  }),
-  recordOrgNameTaken: updateContext(() => ({
-    org_validation_error: {
-      kind: "duplicate" as const,
-      message: "That name is already in use in your organization",
+const assignVerifiedUser = updateContext(({ event }) => {
+  // The verifying resolver returns a VerifiedSession; its `user` is a
+  // VerifiedUser with first_name already derived at the boundary.
+  const { user } = (event as unknown as { output: VerifiedSession }).output;
+  return {
+    user: {
+      email: user.email,
+      display_name: user.display_name,
+      first_name: user.first_name,
     },
-  })),
-  clearOrgValidationError: updateContext(() => ({ org_validation_error: null })),
-  // Parameterized: ONE "set the cause tag" action, configured per transition via
-  // `params` (XState's recommended way to keep an action event-agnostic).
-  // Replaces tagPartialSetup (constant) + assignForcedFailureTag (read event.tag).
-  // Needs its OWN `assign` because its TParams is `{ tag }`, not the `undefined`
-  // updateContext pins — the one axis where per-action types legitimately differ.
-  tagCause: assign<
-    SessionOnboardingContext,
-    SessionOnboardingEvent,
-    { tag: UnderlyingCauseTag },
-    SessionOnboardingEvent,
-    SessionOnboardingActor
-  >((_, params) => ({ underlying_cause_tag: params.tag })),
+  };
+});
+const assignResolvedOrg = updateContext(({ event }) => {
+  const { org } = (event as unknown as { output: VerifiedSession }).output;
+  return {
+    org: org ? { id: org.id, name: org.name } : { id: null, name: null },
+  };
+});
+const tagSessionRejected = updateContext(({ event }) => ({
+  // The verifying actor branded its failure with a cause (./domain.ts
+  // `failWithCause`); read it straight off the onError event. Untagged /
+  // foreign throws default to "transient".
+  underlying_cause_tag: causeOf((event as { error?: unknown }).error),
+}));
+const recordOrgValidationError = updateContext(({ event }) => {
+  if (event.type !== "org_form_submitted") {
+    return { org_validation_error: null };
+  }
+  const rejection = constructOrgName(event.org_name).getError();
+  if (rejection === null) return { org_validation_error: null };
+  // kind → UI copy is a PRESENTATION mapping, so it lives here in the action,
+  // not on the value object (the domain doesn't know UI strings).
+  const kind = rejection.kind;
+  const messages: Record<typeof kind, string> = {
+    empty: "Please enter an organization name",
+    too_short: "Organization name is too short",
+    too_long: "Organization name is too long",
+  };
+  return { org_validation_error: { kind, message: messages[kind] } };
+});
+const recordOrgNameTaken = updateContext(() => ({
+  org_validation_error: {
+    kind: "duplicate" as const,
+    message: "That name is already in use in your organization",
+  },
+}));
+const clearOrgValidationError = updateContext(() => ({
+  org_validation_error: null,
+}));
+// Parameterized: ONE "set the cause tag" action, configured per transition via
+// `params` (XState's recommended way to keep an action event-agnostic).
+// Replaces tagPartialSetup (constant) + assignForcedFailureTag (read event.tag).
+// Needs its OWN `assign` because its TParams is `{ tag }`, not the `undefined`
+// updateContext pins — the one axis where per-action types legitimately differ.
+const tagCause = assign<
+  SessionOnboardingContext,
+  SessionOnboardingEvent,
+  { tag: UnderlyingCauseTag },
+  SessionOnboardingEvent,
+  SessionOnboardingActor
+>((_, params) => ({ underlying_cause_tag: params.tag }));
 
-  /** needs_org → creating_org: preserve the submitted name across retries. The
-   *  guard (isOrgNameValid) already validated it, so brand the raw name directly
-   *  — re-running the constructor just to read `.value` would be redundant. */
-  assignPendingOrgName: updateContext(({ event }) => {
-    if (event.type !== "org_form_submitted") return {};
-    return { pending_org_name: event.org_name as OrgName };
-  }),
-  /** creating_org onDone: land the created Org on context. */
-  assignCreatedOrg: updateContext(({ event }) => {
-    const createdOrg = (event as unknown as { output: Org }).output;
-    return { org: { id: createdOrg.id, name: createdOrg.name } };
-  }),
+/** needs_org → creating_org: preserve the submitted name across retries. The
+ *  guard (isOrgNameValid) already validated it, so brand the raw name directly
+ *  — re-running the constructor just to read `.value` would be redundant. */
+const assignPendingOrgName = updateContext(({ event }) => {
+  if (event.type !== "org_form_submitted") return {};
+  return { pending_org_name: event.org_name as OrgName };
+});
+/** creating_org onDone: land the created Org on context. */
+const assignCreatedOrg = updateContext(({ event }) => {
+  const createdOrg = (event as unknown as { output: Org }).output;
+  return { org: { id: createdOrg.id, name: createdOrg.name } };
+});
+
+// name → action index (keys referenced by string in ../machine.ts).
+export const actions = {
+  assignVerifiedUser,
+  assignResolvedOrg,
+  tagSessionRejected,
+  recordOrgValidationError,
+  recordOrgNameTaken,
+  clearOrgValidationError,
+  tagCause,
+  assignPendingOrgName,
+  assignCreatedOrg,
 };

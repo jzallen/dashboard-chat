@@ -16,13 +16,20 @@ import type { VerifiedSession } from "./domain.ts";
 import { constructOrgName } from "./domain.ts";
 import type { GuardArgs } from "./types.ts";
 
+const hasOrg = ({ event }: GuardArgs) =>
+  Boolean((event as { output?: VerifiedSession }).output?.org?.id);
+
+const isOrgNameValid = ({ event }: GuardArgs) => {
+  if (event.type !== "org_form_submitted") return false;
+  return constructOrgName(event.org_name).isValid();
+};
+
+const isOrgNameTaken = ({ event }: GuardArgs) =>
+  Boolean((event as { error?: { name_taken?: boolean } }).error?.name_taken);
+
+// name → guard predicate index (keys referenced by string in ../machine.ts).
 export const guards = {
-  hasOrg: ({ event }: GuardArgs) =>
-    Boolean((event as { output?: VerifiedSession }).output?.org?.id),
-  isOrgNameValid: ({ event }: GuardArgs) => {
-    if (event.type !== "org_form_submitted") return false;
-    return constructOrgName(event.org_name).isValid();
-  },
-  isOrgNameTaken: ({ event }: GuardArgs) =>
-    Boolean((event as { error?: { name_taken?: boolean } }).error?.name_taken),
+  hasOrg,
+  isOrgNameValid,
+  isOrgNameTaken,
 };
