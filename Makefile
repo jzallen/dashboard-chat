@@ -6,7 +6,8 @@ images:
 
 # Load built images into Docker daemon
 load: images
-	bazel run //reverse-proxy:image_tar
+	bazel run //frontend:image_tar
+	bazel run //frontend:ssr_image_tar
 	bazel run //backend:image_tar
 	bazel run //agent:image_tar
 	bazel run //auth-proxy:image_tar
