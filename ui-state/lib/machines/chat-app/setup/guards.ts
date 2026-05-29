@@ -15,24 +15,11 @@
 // "not yet in chat" (advance), a different non-null id means "switch in place"
 // (re-forward). This keeps the guards pure functions of (context, event).
 
-import type {
-  GuardArgs,
-  OnboardingSnapshotView,
-  ProjectContextSnapshotView,
-} from "./types.ts";
-
-/** Read the onboarding child's snapshot off an onSnapshot event. */
-function onboardingSnapshot(event: GuardArgs["event"]): OnboardingSnapshotView {
-  return (event as unknown as { snapshot: OnboardingSnapshotView }).snapshot;
-}
-
-/** Read the project-context child's snapshot off an onSnapshot event. */
-function projectContextSnapshot(
-  event: GuardArgs["event"],
-): ProjectContextSnapshotView {
-  return (event as unknown as { snapshot: ProjectContextSnapshotView })
-    .snapshot;
-}
+import {
+  onboardingSnapshot,
+  projectContextSnapshot,
+} from "./snapshot-readers.ts";
+import type { GuardArgs } from "./types.ts";
 
 export const guards = {
   /** The user is fully onboarded (identity verified, org resolved) → advance to

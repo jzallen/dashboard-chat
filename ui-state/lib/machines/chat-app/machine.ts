@@ -29,42 +29,33 @@
 // placeholders, swapped via `machine.provide({ actors })` (Phase 1 = fakes,
 // Phase 2 = the real machines). See ./README.md.
 //
-// `types` / `guards` / `actors` are extracted under ./setup/. The ACTIONS are
-// inline here: they mix context writers (`assign`) with parent→child forwarders
-// (`enqueueActions` → `sendTo`), and a pre-built mixed bundle is not assignable
-// to `setup({ actions })` (assign yields TEmitted = never, enqueueActions yields
-// EventObject — a heterogeneous object literal). Defining them inline lets setup
-// infer each action's actor/event generics directly, which is also where the
-// `sendTo` target ids and forwarded-event types are checked.
+// This file is MAPPING ONLY: it wires the setup pieces and lays out the state
+// transitions. The pieces live under ./setup/ —
+//   - actors.ts          — the child placeholder `actors` bundle + ChatAppActor
+//   - guards.ts          — the `guards` bundle (transition predicates)
+//   - actions.ts         — the `actions` bundle (context writers + forwarders)
+//   - snapshot-readers.ts — the shared onSnapshot readers (guards + actions)
+//   - types.ts           — context / event / input / snapshot-view types
+// so the statechart below reads as transitions, naming actors/guards/actions by
+// string without their definitions inline. The actions bundle — including the
+// `enqueueActions` → `sendTo` forwarders — is fully extractable: pinning each
+// action's generics to the chat-app Ctx/Evt/Actor (the same instantiation-
+// expression technique session-onboarding uses for its assigns) makes the
+// heterogeneous bundle assignable to `setup({ actions })`. See ./setup/actions.ts
+// for why the prior "sendTo target ids must be checked inline" claim does not
+// hold. (chat-app is a pure coordinator with no domain value objects, so there
+// is no setup/domain.ts.)
 
-import { assign, enqueueActions, setup } from "xstate";
+import { setup } from "xstate";
 
+import { actions } from "./setup/actions.ts";
 import { actors } from "./setup/actors.ts";
 import { guards } from "./setup/guards.ts";
 import type {
   ChatAppContext,
   ChatAppEvent,
-  ChatUserIntent,
-  OnboardingSnapshotView,
-  ProjectContextSnapshotView,
   SessionOnboardingInput,
 } from "./setup/types.ts";
-
-// ── snapshot readers — the parent watches children via onSnapshot; the snapshot
-// events are not members of ChatAppEvent, so read them through the narrow views
-// (./setup/types.ts), the same cast convention the guards + child machines use. ──
-function onboardingSnapshot(event: ChatAppEvent): OnboardingSnapshotView {
-  return (event as unknown as { snapshot: OnboardingSnapshotView }).snapshot;
-}
-function projectContextSnapshot(
-  event: ChatAppEvent,
-): ProjectContextSnapshotView {
-  return (event as unknown as { snapshot: ProjectContextSnapshotView })
-    .snapshot;
-}
-function intentOf(event: ChatAppEvent): ChatUserIntent {
-  return (event as { type: "user_intent"; intent: ChatUserIntent }).intent;
-}
 
 export function createChatAppMachine() {
   return setup({
@@ -75,150 +66,7 @@ export function createChatAppMachine() {
     },
     actors,
     guards,
-    actions: {
-      // ── active-child routing (re-pointed on each phase entry) ──
-      markOnboardingActive: assign({ active_child_id: "session-onboarding" }),
-      markProjectContextActive: assign({ active_child_id: "project-context" }),
-      markChatActive: assign({ active_child_id: "session-chat" }),
-
-      // ── hand-off capture (read the child snapshot, stage the payload) ──
-      /** onboarding → project_context: stage org + identity for `auth_ready` AND
-       *  retain the full onboarding outcome (ADR-044 §2). The onboarding child is
-       *  phase-scoped — it is stopped on this very advance — so its resolved
-       *  identity/org must survive into parent context for the derived
-       *  `login-and-org-setup` projection to reproduce `ready` byte-identically
-       *  once the child is gone. `auth_handoff` keeps its exact prior shape
-       *  (org_id + first_name); `onboarding_result` is the additive retention. */
-      captureAuthHandoff: assign(({ event }) => {
-        const snapshot = onboardingSnapshot(event);
-        return {
-          auth_handoff: {
-            org_id: snapshot.context.org.id ?? "",
-            user: { first_name: snapshot.context.user.first_name ?? "" },
-          },
-          onboarding_result: {
-            state: "ready" as const,
-            user: {
-              email: snapshot.context.user.email ?? null,
-              display_name: snapshot.context.user.display_name ?? null,
-              first_name: snapshot.context.user.first_name ?? null,
-            },
-            org: {
-              id: snapshot.context.org.id ?? null,
-              name: snapshot.context.org.name ?? null,
-            },
-            underlying_cause_tag: null,
-            org_validation_error: null,
-          },
-        };
-      }),
-      /** onboarding → user_rejected: retain the rejected outcome (cause + any
-       *  validation error) so the derived `login-and-org-setup` projection
-       *  reproduces `session_rejected` after the child is stopped. Mirrors
-       *  buildProjection's session_rejected fold (user/org stay null; only the
-       *  cause carries). The action name reflects the domain outcome (user
-       *  rejected); the inner `state` value stays `session_rejected` because
-       *  it is the FE/auth-proxy wire-contract string for this projection. */
-      captureUserRejected: assign(({ event }) => {
-        const snapshot = onboardingSnapshot(event);
-        return {
-          onboarding_result: {
-            state: "session_rejected" as const,
-            user: {
-              email: snapshot.context.user.email ?? null,
-              display_name: snapshot.context.user.display_name ?? null,
-              first_name: snapshot.context.user.first_name ?? null,
-            },
-            org: {
-              id: snapshot.context.org.id ?? null,
-              name: snapshot.context.org.name ?? null,
-            },
-            underlying_cause_tag:
-              snapshot.context.underlying_cause_tag ?? null,
-            org_validation_error: snapshot.context.org_validation_error ?? null,
-          },
-        };
-      }),
-      /** project_context → chat (and switch): stage the selected project for
-       *  `project_ready` and record it as the last-forwarded id (the
-       *  discriminator the guards use to tell first-selection from a switch). */
-      captureProjectHandoff: assign(({ context, event }) => {
-        const snapshot = projectContextSnapshot(event);
-        const projectId = snapshot.context.project.id ?? "";
-        return {
-          project_handoff: {
-            org_id: context.auth_handoff?.org_id ?? "",
-            project_id: projectId,
-            project_name: snapshot.context.project.name ?? "",
-            request_id: context.request_id,
-          },
-          last_forwarded_project_id: projectId,
-        };
-      }),
-
-      // ── forwarders (parent → child) ──
-      /** entry of the project-context-owning state: deliver staged auth_ready. */
-      forwardAuthReady: enqueueActions(({ context, enqueue }) => {
-        const handoff = context.auth_handoff;
-        if (handoff) {
-          enqueue.sendTo("project-context", {
-            type: "auth_ready",
-            org_id: handoff.org_id,
-            user: handoff.user,
-          });
-        }
-      }),
-      /** entry of chat AND the switch re-forward: deliver staged project_ready. */
-      forwardProjectReady: enqueueActions(({ context, enqueue }) => {
-        const handoff = context.project_handoff;
-        if (handoff) {
-          enqueue.sendTo("session-chat", {
-            type: "project_ready",
-            org_id: handoff.org_id,
-            project_id: handoff.project_id,
-            project_name: handoff.project_name,
-            request_id: handoff.request_id,
-          });
-        }
-      }),
-      /** PROJECT_SWITCH: drive project-context's switch by forwarding its intent. */
-      forwardSwitchToProjectContext: enqueueActions(({ event, enqueue }) => {
-        const switchEvent = event as {
-          type: "PROJECT_SWITCH";
-          new_project_id: string;
-        };
-        enqueue.sendTo("project-context", {
-          type: "switching_project_intent",
-          new_project_id: switchEvent.new_project_id,
-        });
-      }),
-      /** live user_intent: route to whichever child owns the current phase. */
-      forwardIntentToActiveChild: enqueueActions(
-        ({ context, event, enqueue }) => {
-          enqueue.sendTo(context.active_child_id, intentOf(event));
-        },
-      ),
-      /** live child_event: forward a raw domain event (the HTTP `/event`
-       *  transport, ADR-044 Phase 4) verbatim to whichever child owns the
-       *  current phase. The cast mirrors the orchestrator's retired
-       *  `actor.send({ type: event.type, ...event.payload } as never)` — the
-       *  child's own event union decides whether to handle or ignore it
-       *  (XState v5 ignores unknown events), so this stays a total forward. */
-      forwardChildEventToActiveChild: enqueueActions(
-        ({ context, event, enqueue }) => {
-          const raw = (
-            event as {
-              type: "child_event";
-              child_event: { type: string; payload?: Record<string, unknown> };
-            }
-          ).child_event;
-          enqueue.sendTo(context.active_child_id, {
-            type: raw.type,
-            ...(raw.payload ?? {}),
-          } as never);
-        },
-      ),
-    },
+    actions,
   }).createMachine({
     id: "chat-app",
     initial: "onboarding",

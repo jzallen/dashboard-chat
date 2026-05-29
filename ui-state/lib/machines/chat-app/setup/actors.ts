@@ -56,3 +56,25 @@ export type ChatAppProjectContextLogic = (typeof actors)["projectContext"];
 /** Cast target for a concrete session-chat machine provided over the
  *  `sessionChat` placeholder slot. */
 export type ChatAppSessionChatLogic = (typeof actors)["sessionChat"];
+
+/**
+ * The ProvidedActor union XState derives from `actors` when it types
+ * `setup({ actors })`. XState's own `ToProvidedActor` is internal (not exported),
+ * so we mirror its shape here — `{ src, logic, id }` per actor — DERIVED from
+ * `typeof actors`, so adding/removing a child slot updates it automatically. The
+ * extracted actions (./actions.ts) pin the `TActor` generic of both `assign` and
+ * `enqueueActions` to this so the actions bundle is assignable to
+ * `setup({ actions })`; without it the actions would carry the generic
+ * `ProvidedActor` and the bundle would be rejected. (No children map →
+ * `id: string | undefined`, matching XState.) Mirrors session-onboarding's
+ * `ProvidedActorOf` / `SessionOnboardingActor`.
+ */
+type ProvidedActorOf<TActors extends Record<string, unknown>> = {
+  [K in keyof TActors as K & string]: {
+    src: K & string;
+    logic: TActors[K];
+    id: string | undefined;
+  };
+}[keyof TActors & string];
+
+export type ChatAppActor = ProvidedActorOf<typeof actors>;
