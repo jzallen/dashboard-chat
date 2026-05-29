@@ -148,7 +148,6 @@ py_library(
         "@pip//pyyaml",
         "@pip//redis",
         "@pip//returns",
-        "@pip//stream_chat",
     ],
 )
 
