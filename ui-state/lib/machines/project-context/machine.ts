@@ -20,7 +20,9 @@
 //   scope_mismatch_terminal            ─→ resolving_initial_scope (back_to_projects_clicked)
 //   error_recoverable                  ─→ creating_project        (retry_clicked; preserves pending_project_name)
 //
-// MR-4 will add `switching_project`; MR-6 will add `freeze` + top-level FREEZE handler.
+// MR-4 added `switching_project`. (A `freeze`/FREEZE overlay existed briefly for
+// the orchestrator's token-expiry broadcast; it was retired with the orchestrator
+// in ADR-044 Phase 4 — auth-proxy owns the token lifecycle, ADR-043/ADR-016.)
 //
 // ADR-028:46-48 invariant: this file does NOT import from `session-chat.ts` or
 // `login-and-org-setup.ts`. The orchestrator mediates all cross-machine entry
@@ -42,8 +44,7 @@ export type ProjectContextState =
   | "project_selected"
   | "switching_project"
   | "scope_mismatch_terminal"
-  | "error_recoverable"
-  | "freeze";
+  | "error_recoverable";
 
 export interface ProjectSummary {
   id: string;
@@ -55,8 +56,7 @@ export type ProjectContextCauseTag =
   | "transient"
   | "project_not_found"
   | "cross_tenant"
-  | "access_revoked"
-  | "replay_abandoned";
+  | "access_revoked";
 
 export interface ProjectContextMachineContext {
   request_id: string;
@@ -86,7 +86,6 @@ export interface ProjectContextMachineContext {
 
   // Cross-state plumbing:
   underlying_cause_tag: ProjectContextCauseTag | null;
-  last_live_state: ProjectContextState | null;
   retries_count: number;
   /** Composer text preserved across creating_project ↔ error_recoverable. */
   pending_project_name: string;
@@ -137,12 +136,7 @@ export type ProjectContextEvent =
   // invalidation contract (session_id + resource_* cleared BEFORE the
   // new project's loading_session_list fires) is enforced at the
   // projection layer via the `switching_project_started` event handler.
-  | { type: "switching_project_intent"; new_project_id: string }
-  | { type: "FREEZE"; origin_request_id?: string }
-  | { type: "THAW" }
-  // Orchestrator-emitted on the 5s replay-buffer timeout (ADR-027 §5):
-  // silent re-auth never succeeded; freeze → error_recoverable.
-  | { type: "replay_abandoned" };
+  | { type: "switching_project_intent"; new_project_id: string };
 
 export type ResolveInitialScopeOutput =
   | {
@@ -258,14 +252,6 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           return event.org_name.trim();
         },
       }),
-      // MR-6 / US-210 — record the live state we froze from so on.THAW
-      // returns there (DWD-2/DWD-6: queryable context field, not an
-      // XState history node). FREEZE is top-level so the snapshot value
-      // is still the source state when this assigner runs.
-      captureFreezeOrigin: assign({
-        last_live_state: ({ self }) =>
-          self.getSnapshot().value as ProjectContextState,
-      }),
     },
   }).createMachine({
     id: "project-context",
@@ -276,16 +262,6 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
     // handler captures the URL wish into `deeplink_*` ctx and re-enters
     // resolving_initial_scope so the resolver re-runs with the new wish.
     on: {
-      // MR-6 / US-210 §2.2 — top-level FREEZE handler, inherited by every
-      // non-terminal state. project-context is a pure downstream consumer
-      // (ADR-028:46-48): it never emits FREEZE/THAW, only reacts to the
-      // orchestrator broadcast. `freeze` is a side-state with NO invoke;
-      // the in-flight switchProject of the state we left is stopped by
-      // XState so a mid-flight 401 is discarded with no transition.
-      FREEZE: {
-        target: ".freeze",
-        actions: "captureFreezeOrigin",
-      },
       open_deep_link: {
         actions: assign({
           deeplink_project_id: ({ event, context }) =>
@@ -311,7 +287,6 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       deeplink_project_id: input.deeplink_project_id ?? null,
       deeplink_session_id: null,
       underlying_cause_tag: null,
-      last_live_state: null,
       retries_count: 0,
       pending_project_name: "",
       project_validation_error: null,
@@ -541,36 +516,6 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
             actions: assign({
               underlying_cause_tag: () => null,
               retries_count: ({ context }) => context.retries_count + 1,
-            }),
-          },
-        },
-      },
-      // MR-6 / US-210 §2.3.A — the `freeze` side-state. Reached only via
-      // the top-level on.FREEZE. NO invoke (no outgoing mutations while
-      // frozen). on.THAW returns to `last_live_state` (one guarded arm per
-      // freezable state — DWD-2/DWD-6: context-driven history target, not
-      // an XState history node). The invoke-driven transients
-      // (resolving_initial_scope, creating_project, switching_project)
-      // re-enter so the invoke re-runs with the fresh post-re-auth JWT
-      // (US-210 scenario 2: "the project-load fires with the fresh JWT").
-      // on.replay_abandoned → error_recoverable (the 5s timeout).
-      freeze: {
-        on: {
-          THAW: [
-            { guard: ({ context }) => context.last_live_state === "resolving_initial_scope", target: "resolving_initial_scope", reenter: true },
-            { guard: ({ context }) => context.last_live_state === "no_projects", target: "no_projects" },
-            { guard: ({ context }) => context.last_live_state === "creating_project", target: "creating_project", reenter: true },
-            { guard: ({ context }) => context.last_live_state === "project_selected", target: "project_selected" },
-            { guard: ({ context }) => context.last_live_state === "switching_project", target: "switching_project", reenter: true },
-            { guard: ({ context }) => context.last_live_state === "scope_mismatch_terminal", target: "scope_mismatch_terminal" },
-            { guard: ({ context }) => context.last_live_state === "error_recoverable", target: "error_recoverable" },
-            // Defensive fallback — no recorded origin: re-resolve scope.
-            { target: "resolving_initial_scope", reenter: true },
-          ],
-          replay_abandoned: {
-            target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: () => "replay_abandoned" as const,
             }),
           },
         },

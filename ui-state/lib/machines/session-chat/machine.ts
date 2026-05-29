@@ -19,8 +19,10 @@
 //   session_active                (read-only path for MR-2; write path lands MR-3+)
 //   error_recoverable             ─→ last_live_state                  (retry_clicked)
 //
-// MR-3 will add `session_welcome` + `createSessionEagerly`; MR-5
-// adds `switching_dataset_context`; MR-6 adds top-level `on.FREEZE` + `freeze`.
+// MR-3 added `session_welcome` + `createSessionEagerly`; MR-5 added
+// `switching_dataset_context`. (A `freeze`/FREEZE overlay existed briefly for the
+// orchestrator's token-expiry broadcast; it was retired with the orchestrator in
+// ADR-044 Phase 4 — auth-proxy owns the token lifecycle, ADR-043/ADR-016.)
 //
 // ADR-028:46-48 invariant: this file does NOT import from `project-context.ts`
 // or `login-and-org-setup.ts`. The orchestrator mediates all cross-machine
@@ -41,8 +43,7 @@ export type SessionChatState =
   | "creating_session"
   | "session_active"
   | "switching_dataset_context"
-  | "error_recoverable"
-  | "freeze";
+  | "error_recoverable";
 
 export interface SessionSummary {
   id: string;
@@ -63,8 +64,7 @@ export type SessionChatCauseTag =
   | "list_sessions_degraded"
   | "session_not_found"
   | "dataset_not_found"
-  | "dataset_access_denied"
-  | "replay_abandoned";
+  | "dataset_access_denied";
 
 export interface SessionChatMachineContext {
   request_id: string;
@@ -163,13 +163,7 @@ export type SessionChatEvent =
       // open_deep_link follow-up MR that will rename them.
       intent_resource_id?: string | null;
       intent_resource_type?: ResourceType | null;
-    }
-  | { type: "FREEZE"; origin_request_id?: string }
-  | { type: "THAW" }
-  // Orchestrator-emitted on the 5s replay-buffer timeout (ADR-027 §5):
-  // silent re-auth never succeeded, the buffered intents are abandoned,
-  // and `freeze` falls through to `error_recoverable` (US-210 Example 3).
-  | { type: "replay_abandoned" };
+    };
 
 // ─────────────────────────── Actor input / output ───────────────────────────
 
@@ -371,17 +365,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       // `dataset_resolved_by_agent` / `dataset_picked_directly` so the
       // `switching_dataset_context` invoke can read it from ctx (XState
       // invoke input reads context, not the triggering event).
-      // MR-6 / US-210 — record the live state we froze from so on.THAW
-      // can return there (DWD-2 rejected XState history nodes precisely
-      // because the prior-state value must remain a queryable context
-      // field for `harness.j002.assert_no_stale_intents_dropped`). The
-      // FREEZE transition is top-level (inherited by every state) so the
-      // snapshot value is still the source state when this action runs.
-      captureFreezeOrigin: assign({
-        last_live_state: ({ self }) =>
-          self.getSnapshot().value as SessionChatState,
-      }),
-      // DWD-7 — a replayed-after-THAW intent whose target no longer
+      // DWD-7 — an intent whose target no longer
       // resolves in the post-THAW state is silent-dropped (observability
       // only, no UX surface). The count + last_stale_intent are harvested
       // by the orchestrator to emit `stale_intent_dropped_after_thaw`.
@@ -434,19 +418,6 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       stale_intents_dropped_count: 0,
       last_stale_intent: null,
     }),
-    // MR-6 / US-210 §2.2 — top-level FREEZE handler, inherited by every
-    // non-terminal state (XState v5 `on:` top-level semantics). J-002 is a
-    // pure downstream consumer: it never emits FREEZE/THAW (ADR-028:46-48),
-    // it only reacts to the orchestrator broadcast. `freeze` is a side-state
-    // with NO outgoing mutations (no invoke); the in-flight invoke of the
-    // state we left is stopped by XState, so a mid-flight 401 is discarded
-    // with no transition (US-210 Example 1).
-    on: {
-      FREEZE: {
-        target: ".freeze",
-        actions: "captureFreezeOrigin",
-      },
-    },
     states: {
       waiting_for_project: {
         on: {
@@ -940,39 +911,6 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               }),
             },
           ],
-        },
-      },
-      // MR-6 / US-210 §2.3.B — the `freeze` side-state. Reached only via
-      // the top-level on.FREEZE. NO invoke (no outgoing mutations while
-      // frozen). on.THAW returns to `last_live_state` (one guarded arm per
-      // freezable state — DWD-2 / DWD-6: history target realised via a
-      // context-driven conditional, not an XState history node, so the
-      // prior state stays a queryable field). Transient invoke states
-      // (loading_session_list, resuming_session, switching_dataset_context,
-      // creating_session) re-enter so their invoke re-runs with the fresh
-      // post-re-auth JWT (US-210 Example 1: "the transcript-load fires
-      // again"). on.replay_abandoned → error_recoverable (the 5s timeout).
-      freeze: {
-        on: {
-          THAW: [
-            { guard: ({ context }) => context.last_live_state === "waiting_for_project", target: "waiting_for_project" },
-            { guard: ({ context }) => context.last_live_state === "loading_session_list", target: "loading_session_list", reenter: true },
-            { guard: ({ context }) => context.last_live_state === "session_list_loaded", target: "session_list_loaded" },
-            { guard: ({ context }) => context.last_live_state === "resuming_session", target: "resuming_session", reenter: true },
-            { guard: ({ context }) => context.last_live_state === "session_active", target: "session_active" },
-            { guard: ({ context }) => context.last_live_state === "switching_dataset_context", target: "switching_dataset_context", reenter: true },
-            { guard: ({ context }) => context.last_live_state === "session_welcome", target: "session_welcome" },
-            { guard: ({ context }) => context.last_live_state === "creating_session", target: "creating_session", reenter: true },
-            { guard: ({ context }) => context.last_live_state === "error_recoverable", target: "error_recoverable" },
-            // Defensive fallback — no recorded origin: re-resolve the list.
-            { target: "loading_session_list", reenter: true },
-          ],
-          replay_abandoned: {
-            target: "error_recoverable",
-            actions: assign({
-              underlying_cause_tag: () => "replay_abandoned" as const,
-            }),
-          },
         },
       },
     },
