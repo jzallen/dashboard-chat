@@ -35,7 +35,7 @@ import {
   type ResolveInitialScopeOutput,
   type SwitchProjectActor,
   type SwitchProjectOutput,
-} from "./machine.ts";
+} from "./index.ts";
 
 function switchTo(output: SwitchProjectOutput): SwitchProjectActor {
   return fromPromise(async () => output);

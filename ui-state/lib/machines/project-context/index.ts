@@ -2,21 +2,23 @@
 //
 // Re-exports the public surface so callers (orchestrator.ts, ui-state/index.ts,
 // the acceptance harness) resolve `./machines/project-context` and pick up the
-// named exports through this barrel.
+// named exports through this barrel. The surface is stable; the source modules
+// behind it (machine.ts + ./setup/*) are an implementation detail.
 //
 // Public surface (alphabetical-by-export):
-//   - createProjectContextMachine + ProjectContextMachineDeps
+//   - createProjectContextMachine (machine.ts) + ProjectContextMachineDeps
 //   - createProjectActor, createProjectFn
 //   - resolveInitialScopeActor, resolveInitialScopeFn
 //   - switchProjectActor, switchProjectFn
-//   - validateProjectName + ProjectValidationError (from ./validation.ts)
+//   - validateProjectName + ProjectValidationError (from ./setup/domain.ts)
 //   - all context / event / state / actor I-O types
 //   - re-exported ActiveScope (for caller convenience)
+
+export { createProjectContextMachine } from "./machine.ts";
 
 export {
   createProjectActor,
   createProjectFn,
-  createProjectContextMachine,
   resolveInitialScopeActor,
   resolveInitialScopeFn,
   switchProjectActor,
@@ -24,21 +26,24 @@ export {
   type ActiveScope,
   type CreateProjectActor,
   type CreateProjectInput,
-  type ProjectContextCauseTag,
-  type ProjectContextEvent,
-  type ProjectContextMachineContext,
   type ProjectContextMachineDeps,
-  type ProjectContextState,
-  type ProjectSummary,
   type ResolveInitialScopeActor,
   type ResolveInitialScopeInput,
   type ResolveInitialScopeOutput,
   type SwitchProjectActor,
   type SwitchProjectInput,
   type SwitchProjectOutput,
-} from "./machine.ts";
+} from "./setup/actors.ts";
+
+export type {
+  ProjectContextCauseTag,
+  ProjectContextEvent,
+  ProjectContextMachineContext,
+  ProjectContextState,
+  ProjectSummary,
+} from "./setup/types.ts";
 
 export {
   validateProjectName,
   type ProjectValidationError,
-} from "./validation.ts";
+} from "./setup/domain.ts";

@@ -1,12 +1,14 @@
-// Project-name validation — the barrel re-exports a stable public surface
-// (`validateProjectName` + `ProjectValidationError`) so callers need not reach
-// into the machine module itself.
+// Project-name validation — the project-context domain primitive (analog of
+// onboarding's OrgName value object). The well-formedness check lives in
+// `setup/domain.ts`; the barrel (`../index.ts`) re-exports a stable public
+// surface (`validateProjectName` + `ProjectValidationError`) so callers need not
+// reach into the machine module itself.
 //
 // Internal handler state (transient composer + inline-error fields) lives on
 // machine context; the validation primitive itself is a pure function with no
 // XState dependency.
 //
-// Public surface (re-exported by `./index.ts`):
+// Public surface (re-exported by `../index.ts`):
 //   - ProjectValidationError    — discriminated union of failure kinds
 //   - validateProjectName(raw)  — returns null on success, error otherwise
 //

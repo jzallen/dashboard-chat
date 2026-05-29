@@ -133,10 +133,19 @@ The HTTP entry point is `POST /flow/:machine/open-deep-link`, which arrives via 
 
 The machine also emits projection events to the FlowEvent log: `no_projects_displayed`, `project_creation_started`, `project_validation_failed`, `project_selected`, `project_switched`, `switching_project_started`, `scope_mismatch_displayed`, `deep_link_opened`, `last_used_resolution_degraded`.
 
-## Files
+## Source layout
 
-- `machine.ts` — the XState v5 machine + types + actor factories (`resolveInitialScopeActor`, `createProjectActor`, `switchProjectActor`)
-- `validation.ts` — `validateProjectName`, `ProjectValidationError`
+The machine is split so `machine.ts` reads as state transitions; the XState
+wiring it references by name lives under `setup/`. The `setup/` modules form a
+one-way dependency chain — `domain` is the leaf → `types` → `actors` / `guards` /
+`actions` → `machine` — so there are no cycles.
+
+- `machine.ts` — the XState v5 statechart, **mapping only**: `setup({ actors, guards, actions }).createMachine(...)`. Names actors/guards/actions by string; no definitions inline, no inline `assign`. The five constant cause-tag writes collapse into one parameterized `tagCause` action
+- `setup/domain.ts` — the project-name **validation primitive** (`validateProjectName` → `ProjectValidationError | null`); a pure function with no XState dependency (the analog of onboarding's `OrgName` value object)
+- `setup/types.ts` — context / event / state / summary / cause-tag / input types + the `ActionArgs` / `GuardArgs` arg aliases the extracted guards + actions annotate their params with
+- `setup/actors.ts` — the external-service resolvers (`resolveInitialScope`, `createProject`, `switchProject`) + their `*Fn` / `*Actor` factories, the actor I/O contracts + `fromPromise` aliases, and `buildActors(deps)` (the deps-driven actor map threaded into `setup({ actors })`, with the `switchProject` fallback)
+- `setup/guards.ts` — the `guards` bundle (transition predicates: `projectNameValid` + the `onDone` branch readers `isCrossTenant`, `isProjectNotFound`, `isNoProjects`, `isAccessRevoked`, `isSwitchProjectNotFound`)
+- `setup/actions.ts` — the bare `assign` closures (every context write), wrapped `assign(...)` at the `setup()` call in `machine.ts`; includes the parameterized `tagCause`
 - `index.ts` — barrel; re-exports the public surface
 - `machine.test.ts` — vitest unit tests at the actor's `send` / snapshot boundary
 
