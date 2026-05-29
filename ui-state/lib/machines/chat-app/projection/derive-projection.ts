@@ -74,6 +74,22 @@ export class UnknownWireMachineError extends Error {
   }
 }
 
+/**
+ * Resolve a wire machine name (alias OR canonical) to the ChatApp child id whose
+ * slice backs it, or undefined for an unknown name. The live router uses this to
+ * key the RETAINED bookkeeping event-log by the canonical child — so the
+ * `login-and-org-setup` and `session-onboarding` aliases (and likewise
+ * `project-and-chat-session-management` / `project-context`) share ONE log and
+ * report a consistent `sequence_id`/`last_event_at`/`request_id` regardless of
+ * which alias path the read arrived on. The synthesized `flow_id` still keeps the
+ * alias verbatim (see `deriveProjection`); only the bookkeeping source is shared.
+ */
+export function childIdForWireMachine(
+  wireMachineName: string,
+): ChatAppChildId | undefined {
+  return WIRE_TO_CHILD[wireMachineName];
+}
+
 // ───────────────────────────── snapshot input shape ─────────────────────────────
 // The minimal shape deriveProjection reads off a LIVE ChatApp actor snapshot —
 // both `actor.getSnapshot()` and a rehydrated actor's `getSnapshot()` satisfy it

@@ -187,7 +187,20 @@ export type ChatAppEvent =
   | { type: "user_intent"; intent: ChatUserIntent }
   // Atomic project switch (forwarded to project-context as
   // switching_project_intent). Meaningful while engaged (project_context/chat).
-  | { type: "PROJECT_SWITCH"; new_project_id: string };
+  | { type: "PROJECT_SWITCH"; new_project_id: string }
+  // A raw domain event to forward verbatim to whichever child owns the current
+  // phase. This is the HTTP `/event` transport seam (ADR-044 Phase 4): the live
+  // app validates the inbound wire event at its boundary, then hands the
+  // `{type, payload}` to the parent, which forwards it to `active_child_id`
+  // (onboarding while onboarding, project-context while project_context,
+  // session-chat while chat). It is the declarative successor to the
+  // orchestrator's `actor.send({ type, ...payload })` dispatch — the parent
+  // stays the sole router (ADR-028); the child's own event union decides
+  // whether the event is handled or ignored (XState v5 ignores unknowns).
+  | {
+      type: "child_event";
+      child_event: { type: string; payload?: Record<string, unknown> };
+    };
 
 // ─────────────────── Per-child machine-input contracts ───────────────────
 // Each child slot pins its OWN input shape — what the parent's `invoke.input`

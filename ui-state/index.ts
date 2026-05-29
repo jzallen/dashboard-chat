@@ -1,76 +1,94 @@
+// UI-State Tier — Hono server entry point (ADR-044 Phase 4).
+//
+// The live ui-state app is now driven by the ChatApp coordinator actor (one per
+// principal) — the declarative successor to the imperative FlowOrchestrator. A
+// single router factory (lib/machines/chat-app/router.ts) is mounted under every
+// wire-machine path; each mount derives its own machine's FlowProjection from the
+// shared per-principal ChatApp snapshot (deriveProjection), so the frozen ADR-027
+// read contract holds byte-stable for all three machines:
+//
+//   GET  /flow/{session-onboarding,login-and-org-setup}/projection      → onboarding slice
+//   GET  /flow/{project-context,project-and-chat-session-management}/…   → project-context slice
+//   GET  /flow/session-chat/projection                                  → session-chat slice
+//   POST /flow/{…}/{begin,event,open-deep-link}                         → drive the ChatApp actor
+//   GET  /flow/{…}/projection/stream                                    → SSE substrate
+//   GET  /health
+//
+// Persistence is the ADR-044 §2 hybrid: the live actor is the state-of-record
+// (getPersistedSnapshot via ChatAppSnapshotStore, hot-restart recovery); the
+// append-only FlowEventLog is RETAINED but demoted to SSE/audit + projection
+// bookkeeping. There is NO /freeze + /thaw — ChatApp's freeze/reauth region was
+// retired (ADR-043 / ADR-044 amendment); auth-proxy owns the token lifecycle
+// (ADR-016).
+//
+// Auth: this tier trusts the X-User-Id / X-Org-Id / X-User-Email headers injected
+// by auth-proxy upstream (ADR-016). It does NOT re-verify JWTs except the
+// onboarding child's re-verify of the forwarded Bearer against WorkOS.
+
 import { serve } from "@hono/node-server";
-import { type Context, Hono } from "hono";
+import { Hono } from "hono";
 
 import { type Config, loadConfig } from "./config.ts";
-import { resolveActiveScope } from "./lib/domain/active-scope.ts";
+import type { ChatAppDeps } from "./lib/machines/chat-app/index.ts";
 import {
-  requestIdMiddleware,
-  resultToJson,
-} from "./lib/hexagonal-transport/flow-router.ts";
+  buildChatAppRouter,
+  ChatAppActorRegistry,
+  type ChatAppRuntime,
+} from "./lib/machines/chat-app/router.ts";
 import {
-  buildSessionOnboardingRouter,
-  type SessionOnboardingRouterContext,
-} from "./lib/machines/session-onboarding/router.ts";
+  createProjectActor,
+  resolveInitialScopeActor,
+  switchProjectActor,
+} from "./lib/machines/project-context/index.ts";
 import {
-  BeginFlowOrchestrator,
-  FlowActorRegistry,
-  FlowOrchestrator,
-} from "./lib/orchestrator.ts";
+  createSessionEagerlyActor,
+  loadSessionListActor,
+  resumeSessionActor,
+  switchDatasetContextActor,
+} from "./lib/machines/session-chat/index.ts";
+import type { RequestClient } from "./lib/machines/session-onboarding/index.ts";
+import {
+  type ChatAppSnapshotStore,
+  selectChatAppSnapshotStore,
+} from "./lib/persistence/chatapp-snapshot-store.ts";
 import { type FlowEventLog, selectFlowEventLog } from "./lib/persistence/redis.ts";
 
-/**
- * Best-effort JSON body deserialization for the boundary middleware. Returns
- * undefined for body-less requests (GET/HEAD) and for malformed JSON — inner
- * handlers validate the parsed value and surface their own 400.
- */
-async function readJsonBody(c: Context): Promise<unknown> {
-  if (c.req.method === "GET" || c.req.method === "HEAD") return undefined;
-  try {
-    return await c.req.json();
-  } catch {
-    return undefined;
-  }
-}
+/** The wire-machine paths the live app serves. Each pair mounts the SAME router
+ *  factory baked with that path's wire-machine name — so the alias paths resolve
+ *  to the right child slice + synthesize the right flow_id (ADR-040/041, derived
+ *  via deriveProjection's WIRE_TO_CHILD). */
+const WIRE_PATHS: ReadonlyArray<readonly [path: string, wireMachine: string]> = [
+  ["/flow/session-onboarding", "session-onboarding"],
+  ["/flow/login-and-org-setup", "login-and-org-setup"],
+  ["/flow/project-context", "project-context"],
+  [
+    "/flow/project-and-chat-session-management",
+    "project-and-chat-session-management",
+  ],
+  ["/flow/session-chat", "session-chat"],
+];
 
 /**
- * Extract the forwarded Bearer token from the Authorization header (L4).
- * auth-proxy forwards the verified Bearer; ui-state re-verifies it. Empty
- * string when absent (the re-verify call then fails -> session_rejected).
+ * Compose the live ChatApp-backed app onto a fresh Hono instance. This is the
+ * composition seam: production calls it with the real stores + child resolver
+ * actors built from config; the in-process tests inject a noop event-log + noop
+ * snapshot store + `fromPromise` child fakes + a mock `fetch` (the onboarding
+ * I/O port).
  */
-function readBearerToken(c: Context): string {
-  const header = c.req.header("authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match?.[1] ?? "";
-}
-
-/**
- * Compose the `/flow/session-onboarding` router into a fresh Hono app.
- *
- * This is the composition seam: the production entry point calls it with
- * config + the real `globalThis.fetch` (the default) + the selected event-log;
- * the in-process tests call it with placeholder config + a mock `fetch` (the
- * `requestClient` opt) + a noop event-log. A single shared `FlowActorRegistry`
- * backs BOTH the `BeginFlowOrchestrator` (drives `/begin`) and the
- * `FlowOrchestrator` (drives `/event`, `/freeze`, `/thaw`, `/projection`), so
- * an actor begun via `/begin` is reachable by subsequent `/event` posts.
- */
-export function buildSessionOnboardingApp(opts: {
+export function buildChatAppApp(opts: {
   eventLog: FlowEventLog;
-  logTransition?: (record: Record<string, unknown>) => void;
-  /** Env config threaded into the machine input so the `getWorkOSUserInfo`
-   *  re-verify resolver + the `getOrg` org-create resolver read their URLs
-   *  (workosUrl/backendUrl) from input (not a closure). The in-process tests
-   *  carry placeholder URLs because the injected mock `fetch` decides the
-   *  responses. */
+  snapshotStore: ChatAppSnapshotStore;
+  /** The project-context + session-chat resolver actors (construction-time DI).
+   *  Production builds these from config; tests pass `fromPromise` fakes. */
+  chatAppDeps: ChatAppDeps;
+  /** Env config threaded into the onboarding child's invoke input (its re-verify
+   *  + org-create resolvers read workosUrl/backendUrl from input). */
   config?: Config | null;
-  /** The I/O port (the `fetch` library) the re-verify + org-create resolvers
-   *  call directly, threaded into the machine input as `deps.request_client`.
-   *  Defaults to `globalThis.fetch` so production needs no extra wiring; the
-   *  in-process tests inject a mock `fetch`. */
-  requestClient?: typeof fetch;
+  /** The fetch I/O port the onboarding child's resolvers call. Defaults to
+   *  globalThis.fetch so production needs no extra wiring; tests inject a mock. */
+  requestClient?: RequestClient;
+  logTransition?: (record: Record<string, unknown>) => void;
 }): Hono {
-  const { eventLog } = opts;
-  const requestClient = opts.requestClient ?? globalThis.fetch;
   const logTransition =
     opts.logTransition ??
     ((record: Record<string, unknown>): void => {
@@ -79,79 +97,105 @@ export function buildSessionOnboardingApp(opts: {
       );
     });
 
-  const registry = new FlowActorRegistry();
-  const flowOrchestrator = new FlowOrchestrator(
-    { eventLog, log: (r) => logTransition(r) },
-    registry,
-  );
-  const beginOrchestrator = new BeginFlowOrchestrator(eventLog, registry);
-
-  const router = new Hono<SessionOnboardingRouterContext>();
-  // Centralized request-id minting (research: hono-request-id-middleware.md):
-  // honor an inbound X-Request-Id, mint otherwise. Registered first so the
-  // boundary middleware below — and every handler — reads one consistent id
-  // via c.get("requestId"). The support-facing `referenceCode` is now just
-  // that id under its user-facing name.
-  router.use("*", requestIdMiddleware);
-  router.use("*", async (c, next) => {
-    c.set("referenceCode", c.get("requestId"));
-    c.set("userId", c.req.header("X-User-Id") ?? "");
-    c.set("bearerToken", readBearerToken(c));
-    // The verified org claim auth-proxy injects (FIX D1). Empty string when
-    // absent → "no org" (new user) downstream.
-    c.set("orgId", c.req.header("X-Org-Id") ?? "");
-    c.set("body", await readJsonBody(c));
-    await next();
-  });
-
-  buildSessionOnboardingRouter(
-    router,
-    beginOrchestrator,
-    flowOrchestrator,
-    resolveActiveScope,
-    eventLog,
+  const runtime: ChatAppRuntime = {
+    chatAppDeps: opts.chatAppDeps,
+    eventLog: opts.eventLog,
+    snapshotStore: opts.snapshotStore,
+    config: opts.config ?? null,
+    requestClient: opts.requestClient ?? globalThis.fetch,
     logTransition,
-    resultToJson,
-    opts.config ?? null,
-    requestClient,
-  );
+    registry: new ChatAppActorRegistry(),
+  };
 
   const app = new Hono();
-  app.route("/flow/session-onboarding", router);
-  // LEAF-2 alias (transport half): the legacy `/flow/login-and-org-setup/*`
-  // path is still hit by the FE + auth-proxy + acceptance harness (all OUT of
-  // this feature's scope). Mount the same router under it so those paths do
-  // NOT 404 during the migration window. NOTE: the begin strategy keys flow_ids
-  // by the canonical `session-onboarding:<principal>` regardless of which path
-  // was used; the registry alias canonicalizes the legacy `machine` name on
-  // `/event`. Callers that read the projection by the legacy
-  // `login-and-org-setup:<principal>` flow_id are reconciled when the FE/harness
-  // ripple lands (LEAF-6 alias removal) — out of this feature's scope.
-  app.route("/flow/login-and-org-setup", router);
+  app.get("/health", (c) => c.json({ status: "ok" }));
+  for (const [path, wireMachine] of WIRE_PATHS) {
+    app.route(path, buildChatAppRouter(runtime, wireMachine));
+  }
   return app;
 }
 
 /**
- * Production entry point: validate the environment (`loadConfig` throws at
- * startup if a required var is missing) and build the app with real config.
- *
- * The only injected I/O port is `request_client` (= the `fetch` library);
- * production relies on the `globalThis.fetch` default, so no extra wiring is
- * needed. `getWorkOSUserInfo` + `getOrg` read their URLs from the config
- * threaded into the machine input and perform their network calls through
- * `deps.request_client`.
+ * Build the project-context + session-chat resolver actors from env config. The
+ * onboarding child needs NO construction deps — its WorkOS/backend URLs + fetch
+ * port arrive per-instance on the begin envelope. These two children inject their
+ * I/O ports as construction-time actors (ADR-044 §1); ui-state acts on behalf of
+ * a flow's principal via the identity headers below (dev user in AUTH_MODE=dev;
+ * a service M2M token in production).
  */
-function buildProductionApp(): Hono {
-  const config = loadConfig();
-  const eventLog = selectFlowEventLog(config.redisUrl);
-  return buildSessionOnboardingApp({ eventLog, config });
+function buildChatAppDeps(config: Config): ChatAppDeps {
+  const backendUrl = config.backendUrl;
+  const headers = config.devUserHeadersFixture;
+  return {
+    projectContext: {
+      resolveInitialScope: resolveInitialScopeActor(backendUrl, headers),
+      createProject: createProjectActor(backendUrl, headers),
+      switchProject: switchProjectActor(backendUrl, headers),
+    },
+    sessionChat: {
+      loadSessionList: loadSessionListActor(backendUrl, headers),
+      resumeSession: resumeSessionActor(backendUrl, headers),
+      createSessionEagerly: createSessionEagerlyActor(backendUrl, headers),
+      switchDatasetContext: switchDatasetContextActor(backendUrl, headers),
+    },
+  };
 }
 
-const app =
-  process.env.UI_STATE_AUTOSTART === "false" ? new Hono() : buildProductionApp();
+/**
+ * Production entry point: validate the environment (`loadConfig` throws at
+ * startup if a required var is missing) and build the app with real stores +
+ * resolver actors. The onboarding I/O port relies on the `globalThis.fetch`
+ * default, so no extra wiring is needed.
+ */
+function buildProductionApp(): {
+  app: Hono;
+  eventLog: FlowEventLog;
+  snapshotStore: ChatAppSnapshotStore;
+} {
+  const config = loadConfig();
+  const eventLog = selectFlowEventLog(config.redisUrl);
+  const snapshotStore = selectChatAppSnapshotStore(config.redisUrl);
+  const app = buildChatAppApp({
+    eventLog,
+    snapshotStore,
+    chatAppDeps: buildChatAppDeps(config),
+    config,
+  });
+  return { app, eventLog, snapshotStore };
+}
 
-if (process.env.UI_STATE_AUTOSTART !== "false") {
-  serve({ fetch: app.fetch, port: parseInt(process.env.PORT ?? "8788", 10) });
+const autostart = process.env.UI_STATE_AUTOSTART !== "false";
+
+// In autostart (production) mode build the real app once + probe its stores; in
+// test mode (UI_STATE_AUTOSTART=false) export an inert app — the tests build
+// their own scenario-scoped app via buildChatAppApp.
+const production = autostart
+  ? buildProductionApp()
+  : { app: new Hono(), eventLog: null, snapshotStore: null };
+
+const app = production.app;
+
+if (autostart && production.eventLog && production.snapshotStore) {
+  const { eventLog, snapshotStore } = production;
+  // Probe both backing stores early so the container hard-fails per ADR-030 §SD3
+  // if REDIS_URL is set but a store cannot round-trip.
+  Promise.all([eventLog.probe(), snapshotStore.probe()])
+    .then(() => {
+      const port = parseInt(process.env.PORT ?? "8788", 10);
+      serve({ fetch: app.fetch, port });
+      process.stdout.write(
+        `${JSON.stringify({ event: "flow.startup", port })}\n`,
+      );
+    })
+    .catch((err) => {
+      process.stderr.write(
+        `${JSON.stringify({
+          event: "flow.startup.fatal",
+          error: (err as Error).message,
+        })}\n`,
+      );
+      process.exit(1);
+    });
 }
 
 export { app };

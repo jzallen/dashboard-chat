@@ -198,6 +198,26 @@ export function createChatAppMachine() {
           enqueue.sendTo(context.active_child_id, intentOf(event));
         },
       ),
+      /** live child_event: forward a raw domain event (the HTTP `/event`
+       *  transport, ADR-044 Phase 4) verbatim to whichever child owns the
+       *  current phase. The cast mirrors the orchestrator's retired
+       *  `actor.send({ type: event.type, ...event.payload } as never)` — the
+       *  child's own event union decides whether to handle or ignore it
+       *  (XState v5 ignores unknown events), so this stays a total forward. */
+      forwardChildEventToActiveChild: enqueueActions(
+        ({ context, event, enqueue }) => {
+          const raw = (
+            event as {
+              type: "child_event";
+              child_event: { type: string; payload?: Record<string, unknown> };
+            }
+          ).child_event;
+          enqueue.sendTo(context.active_child_id, {
+            type: raw.type,
+            ...(raw.payload ?? {}),
+          } as never);
+        },
+      ),
     },
   }).createMachine({
     id: "chat-app",
@@ -220,6 +240,7 @@ export function createChatAppMachine() {
     // freeze/reauth region is retired (ADR-043); intents are never held.
     on: {
       user_intent: { actions: "forwardIntentToActiveChild" },
+      child_event: { actions: "forwardChildEventToActiveChild" },
     },
     states: {
       onboarding: {
