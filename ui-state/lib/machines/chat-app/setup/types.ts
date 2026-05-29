@@ -155,9 +155,6 @@ export interface ChatAppContext {
   /** The fetch I/O port (request_client) the onboarding child's resolvers call.
    *  Mirrors `config`'s nullable + fail-fast pattern. Null in stubbed tests. */
   deps: SessionOnboardingDeps | null;
-  /** Failure-simulation budget for the onboarding child's createOrgAndReissue.
-   *  Null ⇒ no forced failures. */
-  force_reissue_failures: number | null;
 
   /** Which child currently receives forwarded user intents — re-pointed on each
    *  lifecycle phase entry. The single intent router (ADR-028) needs this

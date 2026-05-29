@@ -17,11 +17,6 @@ import type { VerifiedSession } from "./domain.ts";
 import { constructOrgName } from "./domain.ts";
 import type { GuardArgs } from "./types.ts";
 
-const REISSUE_BUDGET = 3;
-/** User-retry budget on error_recoverable. The 4th total attempt at the
- *  same underlying_cause_tag (= 3 user retries) escalates to error_terminal. */
-const USER_RETRY_BUDGET = 3;
-
 export const guards = {
   hasOrg: ({ event }: GuardArgs) =>
     Boolean((event as { output?: VerifiedSession }).output?.org?.id),
@@ -31,8 +26,4 @@ export const guards = {
   },
   isOrgNameTaken: ({ event }: GuardArgs) =>
     Boolean((event as { error?: { name_taken?: boolean } }).error?.name_taken),
-  isReissueBudgetExhausted: ({ context }: GuardArgs) =>
-    context.reissue_attempts_count + 1 >= REISSUE_BUDGET,
-  isUserRetryBudgetExhausted: ({ context }: GuardArgs) =>
-    context.retry_budget_used_count + 1 >= USER_RETRY_BUDGET,
 };

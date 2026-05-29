@@ -102,13 +102,6 @@ export const actions = {
     },
   })),
   clearOrgValidationError: updateContext(() => ({ org_validation_error: null })),
-  incrementReissueAttempts: updateContext(({ context }) => ({
-    reissue_attempts_count: context.reissue_attempts_count + 1,
-  })),
-  incrementUserRetryBudget: updateContext(({ context }) => ({
-    retry_budget_used_count: context.retry_budget_used_count + 1,
-  })),
-  resetReissueAttempts: updateContext(() => ({ reissue_attempts_count: 0 })),
   // Parameterized: ONE "set the cause tag" action, configured per transition via
   // `params` (XState's recommended way to keep an action event-agnostic).
   // Replaces tagPartialSetup (constant) + assignForcedFailureTag (read event.tag).

@@ -7,7 +7,7 @@ The flow that brings an **already-authenticated** principal to an org-scoped, ap
 ## What this machine does
 
 1. **Re-verify (defense in depth).** Re-check the forwarded Bearer against WorkOS `/oauth/userinfo` (`workosUserInfo` invoke, ADR-041 L3). It is NOT the authenticator — it independently validates user + token in case a deployment misconfig exposed `ui-state` to the open web. The verified profile (`email`, `display_name`, ADR-041 L5) and any existing org binding seed the opening `session_started` event.
-2. **Bootstrap an org (new user).** A user with no org binding collects a name, then atomically creates the org row and reissues the org-scoped token.
+2. **Bootstrap an org (new user).** A user with no org binding collects a name, then creates the org row. The org-scoped token is minted by **auth-proxy** on the org-create response (`X-New-Access-Token`, [ADR-043](../../../../docs/decisions/adr-043-retire-ui-state-token-lifecycle-modeling.md) amendment) — this machine no longer reissues, so the create-retry/budget subgraph was dissolved (stage 3a).
 
 A **returning user** whose re-verify carries an org binding takes the `[hasOrg]` shortcut straight to `ready`. The orchestrator broadcasts `auth_ready` to the sibling [`project-context`](../project-context/) machine on first `ready` via EITHER path (`creating_org → ready` for new users, `verifying → ready` for returning users — ADR-041 D5).
 
@@ -15,9 +15,8 @@ A **returning user** whose re-verify carries an org binding takes the `[hasOrg]`
 
 ```mermaid
 stateDiagram-v2
-  %% Two error landing zones:
-  %%   error_recoverable  = user can click "Try again"; bounded retry budget
-  %%   error_terminal     = contact-support page; budget exhausted
+  %% Error landing zones:
+  %%   error_recoverable  = org-setup error surface (terminal — no retry transition)
   %%   session_rejected   = terminal: re-verify failed (token/user invalid)
 
   [*] --> verifying
@@ -30,14 +29,11 @@ stateDiagram-v2
   needs_org --> needs_org: org_form_submitted [invalid]
   needs_org --> error_recoverable: __force_failure__
 
-  creating_org --> ready: createOrgAndReissue onDone
-  creating_org --> creating_org: createOrgAndReissue onError [budget remaining]
-  creating_org --> error_recoverable: createOrgAndReissue onError [budget exhausted]
+  creating_org --> ready: createOrg onDone
+  creating_org --> needs_org: createOrg onError [name_taken]
+  creating_org --> error_recoverable: createOrg onError [other failure]
 
-  error_recoverable --> creating_org: retry_clicked [budget remaining]
-  error_recoverable --> error_terminal: retry_clicked [budget exhausted]
-
-  error_terminal --> [*]
+  error_recoverable --> [*]
   session_rejected --> [*]
 ```
 
@@ -49,10 +45,9 @@ stateDiagram-v2
 |---|---|---|---|
 | `verifying` | Invokes the WorkOS `/oauth/userinfo` re-verify with the forwarded Bearer. On success `user.{email, display_name, first_name}` + the org binding populate | spawn / begin | `workosUserInfo` settles |
 | `needs_org` | Verified, no org binding yet. Waiting for the user to type an org name. Invalid submissions self-loop with `org_validation_error` set in context | `workosUserInfo` `onDone` [no org] | valid submit / invalid submit / failure-sim side channel |
-| `creating_org` | POST `/api/orgs` (+ reissue, one idempotent invoke). Retries up to **3 attempts** before falling through to `error_recoverable`. On success `org.{id, name}` populate | valid `org_form_submitted`, `retry_clicked` from recoverable, or self-loop on transient error | actor settles or budget exhausts |
-| `ready` | Signed in with org. The orchestrator broadcasts `auth_ready` on first entry | `workosUserInfo onDone` [hasOrg], `createOrgAndReissue` settles | none |
-| `error_recoverable` | Shows a "Try again" CTA. User has **3 retries** at the same `underlying_cause_tag` before escalating | any org-setup actor error, or `__force_failure__` | `retry_clicked` |
-| `error_terminal` | Contact-support surface. The FE doesn't render an exit; the user must reload | `retry_clicked` with budget exhausted | none |
+| `creating_org` | POST `/api/orgs` (idempotent: a 500 "already belongs" is reconciled via `GET /api/orgs/me`). On success `org.{id, name}` populate; auth-proxy mints the org-scoped token on the response | valid `org_form_submitted` | actor settles |
+| `ready` | Signed in with org. The orchestrator broadcasts `auth_ready` on first entry | `workosUserInfo onDone` [hasOrg], `createOrg` settles | none |
+| `error_recoverable` | Org-setup error surface — a genuine create failure (tagged `partial-setup`) or the `__force_failure__` harness jump. Terminal: the create-retry loop was dissolved (auth-proxy owns issuance, ADR-043 3a) | genuine `createOrg` error, or `__force_failure__` | none |
 | `session_rejected` | Terminal: re-verification failed (token/user invalid). No user state advanced; the FE renders a "sign in again" surface | `workosUserInfo onError` | none |
 
 ## Events
@@ -62,7 +57,6 @@ stateDiagram-v2
 | Event | Payload | What it does |
 |---|---|---|
 | `org_form_submitted` | `{ org_name }` | Submit the org name. Guarded — invalid input self-loops with an inline `org_validation_error` |
-| `retry_clicked` | (none) | Resume from `error_recoverable`. Either re-enters `creating_org` or escalates to `error_terminal` based on the retry budget |
 
 ### Cross-machine (from orchestrator)
 
@@ -86,9 +80,9 @@ The double-underscore prefix is the project-wide convention for "this event must
 | Actor | Input | Output | Invoked in |
 |---|---|---|---|
 | `workosUserInfo` | `{ bearer_token }` | `WorkOSProfile` = `{ email, display_name, org? }` | `verifying` |
-| `createOrgAndReissue` | `{ org_name, principal_id, request_id, attempt }` | `{ org_id, org_name }` | `creating_org` (each attempt within the 3-retry budget) |
+| `createOrg` | `{ org_name, principal_id, request_id }` | `Org` = `{ id, name }` | `creating_org` |
 
-`createOrgAndReissue` is idempotent on `(org_name, principal_id)`: org creation always runs first, and a retry after a failed reissue re-creates nothing — `createOrgFn` reuses the existing org via `GET /api/orgs/me`. See [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md).
+`createOrg` is idempotent on `(org_name, principal_id)`: a 500 "user already belongs to an org" is reconciled by `createOrgFn` via `GET /api/orgs/me`, so a re-submission returns the same org. The org-scoped JWT reissue that used to chain here was retired — auth-proxy mints it on the org-create response ([ADR-043](../../../../docs/decisions/adr-043-retire-ui-state-token-lifecycle-modeling.md) amendment; the original [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md) reissue site is superseded).
 
 ## FlowEvents emitted
 
@@ -134,11 +128,11 @@ one-way dependency chain — `domain` is the leaf → `actors` → `types` → `
 `actions` → `machine` — so there are no cycles.
 
 - `machine.ts` — the XState v5 statechart, **mapping only**: `setup({ actors, guards, actions }).createMachine(...)`. Names actors/guards/actions by string; no definitions inline, no inline `assign`
-- `setup/domain.ts` — the OnboardSession **domain model**: branded primitives (`PrincipalId`, `OrgId`, `OrgName`) + the value objects (`VerifiedUser`, `Org`, `VerifiedSession`) that replace anemic, provenance-named data shapes (e.g. `CreateOrgAndReissueOutput` → `Org`). The `OrgName` value object owns its invariant via `constructOrgName(raw)` → `{ value, isValid(), getError() }`. Also owns the **failure-cause vocabulary**: the closed `UnderlyingCauseTag` union plus `failWithCause` (an actor brands a thrown Error with its cause at the seam that knows it) / `causeOf` (a downstream action reads it back, defaulting untagged or foreign throws to `transient`) — the structured replacement for downstream message-sniffing. Stored forms are plain serializable shapes (branded strings + `readonly` records, never class instances) so they survive the Redis context round-trip; the value object's methods are transient (used at the guard/action boundary)
+- `setup/domain.ts` — the OnboardSession **domain model**: branded primitives (`PrincipalId`, `OrgId`, `OrgName`) + the value objects (`VerifiedUser`, `Org`, `VerifiedSession`) that replace anemic, provenance-named data shapes (e.g. a create-org output DTO → `Org`). The `OrgName` value object owns its invariant via `constructOrgName(raw)` → `{ value, isValid(), getError() }`. Also owns the **failure-cause vocabulary**: the closed `UnderlyingCauseTag` union plus `failWithCause` (an actor brands a thrown Error with its cause at the seam that knows it) / `causeOf` (a downstream action reads it back, defaulting untagged or foreign throws to `transient`) — the structured replacement for downstream message-sniffing. Stored forms are plain serializable shapes (branded strings + `readonly` records, never class instances) so they survive the Redis context round-trip; the value object's methods are transient (used at the guard/action boundary)
 - `setup/types.ts` — context / event / state / input types + the `ActionArgs` / `GuardArgs` arg aliases the extracted guards + actions annotate their params with
-- `setup/actors.ts` — the external-service resolvers (WorkOS re-verify, backend org SSOT, org-create/reissue) that return the domain model (`VerifiedSession`, `Org`), their transport DTOs, the `fromPromise` actor aliases, and the wired `actors` bundle threaded into `setup({ actors })`
-- `setup/guards.ts` — the `guards` bundle (transition predicates + the reissue/user-retry budgets)
-- `setup/actions.ts` — the `actions` bundle (every `assign`, including the two formerly inline in the statechart, `assignPendingOrgName` + `assignCreatedOrg`, and the parameterized `tagCause` that records the cause tag on both the `__force_failure__` and budget-exhausted arms)
+- `setup/actors.ts` — the external-service resolvers (WorkOS re-verify, backend org SSOT, org-create) that return the domain model (`VerifiedSession`, `Org`), their transport DTOs, the `fromPromise` actor aliases, and the wired `actors` bundle threaded into `setup({ actors })`
+- `setup/guards.ts` — the `guards` bundle (transition predicates: `hasOrg`, `isOrgNameValid`, `isOrgNameTaken`)
+- `setup/actions.ts` — the `actions` bundle (every `assign`, including the two formerly inline in the statechart, `assignPendingOrgName` + `assignCreatedOrg`, and the parameterized `tagCause` that records the cause tag on both the `__force_failure__` jump and a genuine org-create failure)
 - `strategy.ts` — the `FlowStrategy` impl (`sessionOnboardingStrategy`) + the per-request `SessionOnboardingBeginStrategy`
 - `router.ts` — the ACL HTTP transport (`buildSessionOnboardingRouter`); identity from the verified header + forwarded Bearer, never a client body claim (ADR-041 D4)
 - `index.ts` — barrel; exports the **minimal** public surface only: `createSessionOnboardingMachine` plus the `RequestClient` / `SessionOnboardingDeps` wiring types a composition root needs
@@ -150,6 +144,6 @@ one-way dependency chain — `domain` is the leaf → `actors` → `types` → `
 - [ADR-041](../../../../docs/decisions/adr-041-session-onboarding-domain-realignment.md) — the domain realignment this machine implements
 - [ADR-027](../../../../docs/decisions/adr-027-flow-state-tier-and-framework.md) — why ui-state runs XState v5 in a Hono BFF
 - [ADR-028](../../../../docs/decisions/adr-028-xstate-v5-actor-model.md) — the actor model; "machines own transitions, the log owns state"
-- [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md) — why `createOrgAndReissue` is one atomic invoke
+- [ADR-029](../../../../docs/decisions/adr-029-jwt-reissue-on-org-create.md) — the original org-bind JWT reissue (issuance now lives in auth-proxy per ADR-043 amendment)
 - [ADR-030](../../../../docs/decisions/adr-030-flow-state-topology-and-scaling.md) — orchestrator pattern and projection-as-read-model
 - [ADR-039](../../../../docs/decisions/adr-039-ui-state-naming-conventions.md) — naming conventions for states, events, fields, counters

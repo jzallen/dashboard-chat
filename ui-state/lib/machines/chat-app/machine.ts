@@ -209,7 +209,6 @@ export function createChatAppMachine() {
       bearer_token: input.bearer_token ?? "",
       config: input.config ?? null,
       deps: input.deps ?? null,
-      force_reissue_failures: input.force_reissue_failures ?? null,
       active_child_id: "session-onboarding",
       auth_handoff: null,
       project_handoff: null,
@@ -230,9 +229,8 @@ export function createChatAppMachine() {
           systemId: "session-onboarding",
           src: "onboarding",
           // Begin envelope → the onboarding child's Input. Its resolvers read
-          // the WorkOS/backend URLs + fetch port from `config`/`deps`, the
-          // re-verify Bearer from `bearer_token`, and the forced-failure
-          // budget from `force_reissue_failures` (session-onboarding/setup/
+          // the WorkOS/backend URLs + fetch port from `config`/`deps` and the
+          // re-verify Bearer from `bearer_token` (session-onboarding/setup/
           // types.ts SessionOnboardingInput).
           input: ({ context }) => ({
             request_id: context.request_id,
@@ -240,7 +238,6 @@ export function createChatAppMachine() {
             bearer_token: context.bearer_token,
             config: context.config,
             deps: context.deps,
-            force_reissue_failures: context.force_reissue_failures,
           }),
           // Watch the onboarding child; advance on its own state value.
           onSnapshot: [

@@ -58,9 +58,9 @@ export function buildSessionOnboardingApp(opts: {
   eventLog: FlowEventLog;
   logTransition?: (record: Record<string, unknown>) => void;
   /** Env config threaded into the machine input so the `getWorkOSUserInfo`
-   *  re-verify resolver + the `getOrgAndReissue` org-create resolver read their
-   *  URLs (workosUrl/backendUrl) from input (not a closure). The in-process
-   *  tests carry placeholder URLs because the injected mock `fetch` decides the
+   *  re-verify resolver + the `getOrg` org-create resolver read their URLs
+   *  (workosUrl/backendUrl) from input (not a closure). The in-process tests
+   *  carry placeholder URLs because the injected mock `fetch` decides the
    *  responses. */
   config?: Config | null;
   /** The I/O port (the `fetch` library) the re-verify + org-create resolvers
@@ -137,11 +137,9 @@ export function buildSessionOnboardingApp(opts: {
  *
  * The only injected I/O port is `request_client` (= the `fetch` library);
  * production relies on the `globalThis.fetch` default, so no extra wiring is
- * needed. `getWorkOSUserInfo` + `getOrgAndReissue` read their URLs from the
- * config threaded into the machine input and perform their network calls through
- * `deps.request_client`; the forced-failure harness knob (already gated at the
- * router edge) is threaded as `force_reissue_failures` and folded into
- * `getOrgAndReissue` via attempt-vs-budget.
+ * needed. `getWorkOSUserInfo` + `getOrg` read their URLs from the config
+ * threaded into the machine input and perform their network calls through
+ * `deps.request_client`.
  */
 function buildProductionApp(): Hono {
   const config = loadConfig();

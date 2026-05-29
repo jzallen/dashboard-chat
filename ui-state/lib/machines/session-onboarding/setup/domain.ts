@@ -1,7 +1,7 @@
 // The OnboardSession domain model (ADR-041): the value objects that give this
 // bounded context a ubiquitous-language DSL, replacing anemic, provenance-named
-// data shapes (e.g. `CreateOrgAndReissueOutput` — which named where data crossed,
-// not what it IS — becomes `Org`). It also owns the bounded context's FAILURE
+// data shapes (e.g. a `CreateOrgOutput`-style DTO — which named where data
+// crossed, not what it IS — becomes `Org`). It also owns the bounded context's FAILURE
 // VOCABULARY (the `UnderlyingCauseTag` union + `failWithCause` / `causeOf`) — see
 // the "Failure cause" section at the foot of the file.
 //
@@ -115,8 +115,7 @@ export interface VerifiedUser {
 }
 
 /** An org binding the principal belongs to — what the create-org resolver and
- *  the backend org lookup yield. Replaces the provenance-named
- *  `CreateOrgAndReissueOutput`. */
+ *  the backend org lookup yield. Replaces a provenance-named create-org DTO. */
 export interface Org {
   readonly id: OrgId;
   readonly name: string;

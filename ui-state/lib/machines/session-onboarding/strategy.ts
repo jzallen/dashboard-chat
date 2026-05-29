@@ -97,7 +97,7 @@ export const sessionOnboardingStrategy: FlowStrategy = {
     const { stateValue, prior } = ctx;
 
     if (stateValue === "ready" && isSessionOnboarding(machine)) {
-      // The org is set on the machine snapshot by the createOrgAndReissue
+      // The org is set on the machine snapshot by the createOrg
       // actor's onDone (new user) or by assignVerifiedUser (returning user);
       // the `org_created` event we are about to emit is what populates it in
       // the projection. Source the values from the sanctioned harvester.
@@ -136,9 +136,9 @@ export const sessionOnboardingStrategy: FlowStrategy = {
       return { authReady: null };
     } else if (stateValue === "error_recoverable") {
       // underlying_cause_tag is set on the machine by the `tagCause` action (the
-      // __force_failure__ jump, or the budget-exhausted partial-setup arm); the
-      // `reissue_failed_partial` event we emit is what populates it in the
-      // projection. Source the values from the sanctioned harvester.
+      // __force_failure__ harness jump, or a genuine org-create failure tagged
+      // partial-setup); the `reissue_failed_partial` event we emit is what
+      // populates it in the projection. Source the values from the harvester.
       const harvested = harvestSettledLoginState(actor);
       await pump.deps.eventLog.append(
         flow_id,
@@ -265,7 +265,7 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
     this.flowId = input.flowId;
     this.requestId = input.request_id;
     // Every actor is config/input-driven (no `.provide(...)`): the fetch-driven
-    // actors (loadSession / createOrgAndReissue) read their I/O port from
+    // actors (loadSession / createOrg) read their I/O port from
     // input.deps.request_client (threaded into the machine input below).
     const machine = createSessionOnboardingMachine();
     this.actor = createActor(machine, {
@@ -281,9 +281,6 @@ export class SessionOnboardingBeginStrategy implements BeginStrategy {
         // threaded the same path as config: composition root → BeginFlowInput
         // → here → machine input → context → invoke input → resolver.
         deps: input.deps ?? null,
-        // Failure-simulation budget (already gated at the HTTP edge); folded
-        // into getOrgAndReissue via attempt-vs-budget.
-        force_reissue_failures: input.force_reissue_failures ?? null,
       },
     });
   }

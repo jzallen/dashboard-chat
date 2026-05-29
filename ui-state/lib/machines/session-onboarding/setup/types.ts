@@ -21,7 +21,6 @@ export type SessionOnboardingState =
   | "creating_org"
   | "ready"
   | "error_recoverable"
-  | "error_terminal"
   | "session_rejected";
 
 export interface OrgValidationInlineError {
@@ -50,9 +49,6 @@ export interface SessionOnboardingParams {
   /** The I/O port (the `fetch` library) the resolvers call directly. Mirrors
    *  `config`'s nullable + fail-fast pattern — null in tests that stub the actor. */
   deps: SessionOnboardingDeps | null;
-  /** Failure-simulation budget the `creating_org` invoke input passes to
-   *  `getOrgAndReissue` (stateless attempt-vs-budget). Null ⇒ no forced failures. */
-  force_reissue_failures: number | null;
 }
 
 export interface SessionOnboardingContext {
@@ -69,17 +65,11 @@ export interface SessionOnboardingContext {
    *  as the first attempt. Null until the first valid submission. */
   pending_org_name: OrgName | null;
   underlying_cause_tag: UnderlyingCauseTag | null;
-  reissue_attempts_count: number;
-  /** Counts USER-initiated retries from error_recoverable. The 4th total
-   *  attempt at the same underlying_cause_tag escalates to error_terminal
-   *  (3 user retries from the user's POV including the original failure). */
-  retry_budget_used_count: number;
   org_validation_error: OrgValidationInlineError | null;
 }
 
 export type SessionOnboardingEvent =
   | { type: "org_form_submitted"; org_name: string }
-  | { type: "retry_clicked" }
   | { type: "__force_failure__"; tag: UnderlyingCauseTag };
 
 /** The raw machine input (the begin envelope before the context factory
@@ -90,7 +80,6 @@ export interface SessionOnboardingInput {
   bearer_token?: string;
   config?: Config | null;
   deps?: SessionOnboardingDeps | null;
-  force_reissue_failures?: number | null;
 }
 
 /**

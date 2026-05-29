@@ -300,21 +300,16 @@ export interface BeginFlowInput {
   bearer_token: string;
   request_id: string;
   /** Env config (provides `workosUrl` + `backendUrl`) seeded into the machine
-   *  input so the `getWorkOSUserInfo` re-verify resolver + the
-   *  `getOrgAndReissue` org-create resolver read their URLs from input rather
-   *  than a closure. Supplied by the composition root; in tests it carries
-   *  placeholder URLs because the injected mock `fetch` decides the responses. */
+   *  input so the `getWorkOSUserInfo` re-verify resolver + the `getOrg`
+   *  org-create resolver read their URLs from input rather than a closure.
+   *  Supplied by the composition root; in tests it carries placeholder URLs
+   *  because the injected mock `fetch` decides the responses. */
   config?: Config | null;
   /** The I/O port (the `fetch` library) bundle, threaded the SAME PATH as
    *  `config`: composition root → here → machine input → context → invoke input
    *  → resolver. The resolvers call `deps.request_client(url, init)` directly. In
    *  tests it carries a mock `fetch`. */
   deps?: SessionOnboardingDeps | null;
-  /** Failure-simulation budget (ADR-035): the count of synthetic reissue
-   *  failures `getOrgAndReissue` injects (attempt-vs-budget) before succeeding.
-   *  Already gated at the HTTP edge by the router; threaded into the machine
-   *  input. Null/absent ⇒ no forced failures. */
-  force_reissue_failures?: number | null;
 }
 
 /**

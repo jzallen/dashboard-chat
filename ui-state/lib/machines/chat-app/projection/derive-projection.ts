@@ -160,10 +160,6 @@ const ONBOARDING_STATE_MAP: Readonly<Record<string, string>> = {
   creating_org: "creating_org",
   ready: "ready",
   error_recoverable: "error_recoverable",
-  // `error_terminal` is a child-only state: NO buildProjection handler emits it,
-  // so it has no log-fold equivalent. Off-contract (no FE/auth-proxy read);
-  // passed through verbatim if ever reached. Not a Phase-3 contract state.
-  error_terminal: "error_terminal",
   session_rejected: "session_rejected",
 };
 

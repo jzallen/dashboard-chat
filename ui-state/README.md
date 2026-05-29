@@ -33,7 +33,7 @@ flowchart LR
 
     AP -->|"/ui-state/*<br/>X-User-Id, X-Org-Id, X-User-Email"| H
     ORCH -->|"XADD / XRANGE"| R
-    M1 -->|"invoke createOrgAndReissue"| BE
+    M1 -->|"invoke createOrg"| BE
     M1 -->|"invoke workosUserInfo (re-verify)"| WOS
 ```
 
@@ -141,7 +141,7 @@ Environment read at startup. `config.ts` validates the service config via zod (f
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `FAKE_WORKOS_URL` | yes | — | WorkOS `/oauth/userinfo` endpoint the re-verify resolver calls (the in-process fake in dev/tests; the real WorkOS in prod). |
-| `BACKEND_URL` | yes | — | Backend the `createOrgAndReissue` actor calls on the principal's behalf. |
+| `BACKEND_URL` | yes | — | Backend the `createOrg` actor calls on the principal's behalf. |
 | `REDIS_URL` | no | unset | Flow event-log backing. Unset → in-memory **noop** log (single-process dev); set → durable cross-restart log per ADR-030 §SD3. |
 | `PORT` | no | `8788` | HTTP listen port. |
 | `UI_STATE_AUTOSTART` | no | unset | Set to `"false"` in tests to skip the `serve()` call and the production composition root. |

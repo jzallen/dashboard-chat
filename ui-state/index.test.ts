@@ -107,30 +107,6 @@ async function begin(
 }
 
 /**
- * Like `begin`, but carries an org-setup body — used to thread the
- * `force_reissue_failures` harness side-channel (gated by the failure-simulation
- * switch) so a scenario can drive the org-create reissue budget to exhaustion.
- */
-async function beginWithBody(
-  app: Scenario["app"],
-  opts: { userId: string; bearer: string; body: Record<string, unknown> },
-): Promise<BeginResult> {
-  const res = await app.fetch(
-    new Request("http://t/flow/session-onboarding/begin", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "X-User-Id": opts.userId,
-        authorization: `Bearer ${opts.bearer}`,
-      },
-      body: JSON.stringify(opts.body),
-    }),
-  );
-  expect(res.status).toBe(200);
-  return (await res.json()) as BeginResult;
-}
-
-/**
  * Post an event through the `/event` driving port (the ACL router) and return
  * the HTTP status + parsed projection. Mirrors the inline `app.fetch(...)` the
  * existing Specs use for `/event`, lifted to a helper so the `/event`-parity
@@ -183,7 +159,7 @@ async function readProjection(
 
 /**
  * Enable / disable the failure-simulation gate for the `__force_failure__`
- * and `force_reissue_failures` harness side-channels (ADR-035).
+ * harness side-channel (ADR-035).
  *
  * The gate verdict is a MODULE-SCOPED cache populated by `probe(env, service)`;
  * `shouldInject` (in the router) reads the cache, never re-parses env per
@@ -478,75 +454,6 @@ describe("Slice 1: a malformed event missing its event type is refused", () => {
 
     expect(status).toBe(200);
     expect(body.state).toBe("ready");
-  });
-});
-
-// ── Slice 2 — Retrying after a recoverable org-setup failure over /event ──
-// CHARACTERIZATION (green): retry_clicked is exercised at the machine +
-// orchestrator levels but NEVER through the /event HTTP transport. Drive a real
-// recoverable failure (the org-create reissue budget is exhausted via the
-// force_reissue_failures side-channel — the realistic "partial-setup" driver),
-// then retry through /event.
-//
-// OBSERVABLE TRUTH (pinned empirically, not the seed's wish): the projection
-// surfaces `error_recoverable` with the `partial-setup` cause; each retry over
-// /event is ACCEPTED (200) and the flow REMAINS in the recoverable-error state.
-// It does NOT surface `error_terminal` at the projection: there is no
-// error_terminal reducer and no terminal event is emitted when the actor
-// escalates, so the projection fold cannot reach it (see distill/upstream-issues
-// .md — observability gap, not a contradiction). Pin what the user actually
-// observes, per the Iron Rule.
-describe("Slice 2: retrying after a recoverable org-setup failure keeps the recoverable-error screen", () => {
-  it("lands on the recoverable-error screen when the org-setup reissue budget is exhausted", async () => {
-    enableFailureSimulation();
-    active = buildScenario({ requestClient: okFetch() });
-    // Begin carrying the forced-reissue-failure budget so org-create exhausts
-    // its internal reissue attempts and settles recoverable.
-    const beginProj = await beginWithBody(active.app, {
-      userId: "u2",
-      bearer: "tok-2",
-      body: { force_reissue_failures: 99 },
-    });
-    expect(beginProj.state).toBe("needs_org");
-
-    const submitted = await postEvent(
-      active.app,
-      { type: "org_form_submitted", payload: { org_name: "Acme Data" } },
-      { "X-User-Id": "u2" },
-    );
-
-    expect(submitted.status).toBe(200);
-    expect(submitted.body.state).toBe("error_recoverable");
-    expect((submitted.body.context as Record<string, unknown>).underlying_cause_tag).toBe(
-      "partial-setup",
-    );
-  });
-
-  it("accepts each retry over /event and keeps the user on the recoverable-error screen", async () => {
-    enableFailureSimulation();
-    active = buildScenario({ requestClient: okFetch() });
-    await beginWithBody(active.app, {
-      userId: "u2",
-      bearer: "tok-2",
-      body: { force_reissue_failures: 99 },
-    });
-    await postEvent(
-      active.app,
-      { type: "org_form_submitted", payload: { org_name: "Acme Data" } },
-      { "X-User-Id": "u2" },
-    );
-
-    // Three user retries — each accepted over the HTTP transport, each leaving
-    // the user on the recoverable-error screen (the budget keeps re-exhausting).
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const retried = await postEvent(
-        active.app,
-        { type: "retry_clicked", payload: {} },
-        { "X-User-Id": "u2" },
-      );
-      expect(retried.status).toBe(200);
-      expect(retried.body.state).toBe("error_recoverable");
-    }
   });
 });
 

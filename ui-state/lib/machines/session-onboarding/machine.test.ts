@@ -5,8 +5,7 @@
 // config-driven default whose network I/O runs through `deps.request_client`
 // (= the `fetch` library). Tests inject a mock `fetch` (makeMockFetch) via the
 // machine input `deps: { request_client: mockFetch }`, threaded into context →
-// invoke input → resolver. The forced-failure path is driven by the
-// `force_reissue_failures` input.
+// invoke input → resolver.
 //
 // Entry assumes an already-authenticated principal: the machine starts in
 // `verifying`, auto-invokes the `loadSession` resolver (WorkOS re-verify +
@@ -72,55 +71,14 @@ function returningFetch(
 }
 
 /**
- * A mock fetch that records the `x-request-id` header from every POST
- * /api/orgs call into `sink`, then delegates the response shaping to the
- * standard ok mock. Org-create always succeeds; the reissue forced-failure is
- * driven by the machine's force_reissue_failures input.
- */
-function makeRecordingFetch(sink: string[]): RequestClient {
-  const base = okFetch();
-  const impl = async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    const url = typeof input === "string" ? input : input.toString();
-    if (url.includes("/api/orgs") && (init?.method ?? "GET") === "POST") {
-      const headers = init?.headers as Record<string, string> | undefined;
-      const cid = headers?.["x-request-id"] ?? "";
-      sink.push(cid);
-    }
-    return base(input, init);
-  };
-  return impl as unknown as RequestClient;
-}
-
-/**
  * Build the machine input with a mock `fetch` injected as the I/O port. Extra
- * input fields (e.g. force_reissue_failures) merge over MAYA_INPUT.
+ * input fields merge over MAYA_INPUT.
  */
 function inputWith(
   requestClient: RequestClient,
   extra: Record<string, unknown> = {},
 ) {
   return { ...MAYA_INPUT, deps: { request_client: requestClient }, ...extra };
-}
-
-/**
- * Drive Maya from verifying → error_recoverable. Re-verify succeeds (no org),
- * Maya submits a valid org name, the internal reissue budget (3 attempts) is
- * exhausted via a high `force_reissue_failures`, leaving her at
- * error_recoverable with the partial-setup tag.
- */
-async function driveToFirstRecoverableError(requestClient: RequestClient) {
-  const machine = createSessionOnboardingMachine();
-  const actor = createActor(machine, {
-    input: inputWith(requestClient, { force_reissue_failures: 99 }),
-  });
-  actor.start();
-  await waitFor(actor, (s) => s.value === "needs_org");
-  actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
-  await waitFor(actor, (snapshot) => snapshot.value === "error_recoverable");
-  return actor;
 }
 
 /** Resolve when the predicate returns true for the latest snapshot. */
@@ -266,7 +224,7 @@ describe("when a user submits an organization name that is already taken", () =>
     // New user (no org → needs_org); the backend POST /api/orgs answers 409
     // (the name is globally taken). The org-create actor throws name_taken →
     // creating_org's onError routes to needs_org with the duplicate error —
-    // NOT error_recoverable, and the reissue budget is untouched.
+    // NOT error_recoverable.
     const nameTakenFetch = makeMockFetch({
       profile: { email: MAYA_PROFILE.email, name: MAYA_PROFILE.display_name },
       orgNameTaken: true,
@@ -288,63 +246,10 @@ describe("when a user submits an organization name that is already taken", () =>
     });
     // It is an inline-name error, not a transient/partial failure.
     expect(snap.context.underlying_cause_tag).toBeNull();
-    expect(snap.context.reissue_attempts_count).toBe(0);
   });
 });
 
-describe("when org setup keeps failing and the user keeps retrying", () => {
-  it("they reach an unrecoverable error after exhausting their retries", async () => {
-    const actor = await driveToFirstRecoverableError(okFetch());
-    expect(actor.getSnapshot().value).toBe("error_recoverable");
-    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
-      "partial-setup",
-    );
-
-    for (let i = 0; i < 3; i += 1) {
-      actor.send({ type: "retry_clicked" });
-      await waitFor(
-        actor,
-        (s) =>
-          s.value === "error_recoverable" || s.value === "error_terminal",
-      );
-    }
-
-    expect(actor.getSnapshot().value).toBe("error_terminal");
-    expect(actor.getSnapshot().context.retry_budget_used_count).toBe(3);
-  });
-});
-
-describe("when a user retries after a recoverable failure", () => {
-  it("the retry continues the same onboarding session rather than starting a new one", async () => {
-    // Observe the request_id the resolver threads upstream: createOrgFn
-    // sends it as the `x-request-id` header on POST /api/orgs. Every
-    // internal create attempt (each failing via force_reissue_failures) and
-    // every user retry must carry the SAME original request_id.
-    const seenRequestIds: string[] = [];
-    const recordingFetch = makeRecordingFetch(seenRequestIds);
-    const machine = createSessionOnboardingMachine();
-    const actor = createActor(machine, {
-      input: inputWith(recordingFetch, { force_reissue_failures: 99 }),
-    });
-    actor.start();
-    await waitFor(actor, (s) => s.value === "needs_org");
-    actor.send({ type: "org_form_submitted", org_name: "Acme Data" });
-    await waitFor(actor, (s) => s.value === "error_recoverable");
-    const internalAttempts = seenRequestIds.length;
-    expect(internalAttempts).toBeGreaterThan(0);
-    actor.send({ type: "retry_clicked" });
-    await waitFor(
-      actor,
-      (s) =>
-        seenRequestIds.length > internalAttempts &&
-        (s.value === "error_recoverable" || s.value === "error_terminal"),
-    );
-    const unique = Array.from(new Set(seenRequestIds));
-    expect(unique).toEqual([MAYA_INPUT.request_id]);
-  });
-});
-
-describe("when a failure is surfaced before the user retries (via the test harness)", () => {
+describe("when a failure is surfaced (via the test harness)", () => {
   it("the user is moved to the recoverable error screen carrying the failure reason", async () => {
     const machine = createSessionOnboardingMachine();
     const actor = createActor(machine, { input: inputWith(okFetch()) });

@@ -12,11 +12,15 @@
 //                      retired `anonymous` + `authenticating` states.
 //   - needs_org      — verified, no org binding yet (renamed from
 //                      authenticated_no_org). Awaits org_form_submitted.
-//   - creating_org   — POST /api/orgs (+ reissue). Retries within budget.
+//   - creating_org   — POST /api/orgs. The org-scoped JWT is minted by
+//                      auth-proxy on the org-create response (X-New-Access-Token,
+//                      ADR-043 amendment); onboarding no longer reissues, so the
+//                      retry/budget subgraph was dissolved (ADR-043 stage 3a).
 //   - ready          — signed in with an org. Reached directly from verifying
 //                      on the [hasOrg] returning-user shortcut, or from
 //                      creating_org for a new user.
-//   - error_recoverable / error_terminal — org-setup error landing zones.
+//   - error_recoverable — org-setup error landing zone (genuine create failure
+//                      or the __force_failure__ harness jump).
 //   - session_rejected — terminal: re-verify failed (token/user invalid).
 //
 // This file is MAPPING ONLY: it wires the setup pieces and lays out the state
@@ -66,14 +70,11 @@ export function createSessionOnboardingMachine() {
         bearer_token: input.bearer_token ?? "",
         config: input.config ?? null,
         deps: input.deps ?? null,
-        force_reissue_failures: input.force_reissue_failures ?? null,
       },
       user: { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
       pending_org_name: null,
       underlying_cause_tag: null,
-      reissue_attempts_count: 0,
-      retry_budget_used_count: 0,
       org_validation_error: null,
     }),
     states: {
@@ -135,16 +136,14 @@ export function createSessionOnboardingMachine() {
         // already holds a WorkOS handle (the re-verify call) and is event-driven,
         // so org create/membership transitions can fan out to WorkOS.
         invoke: {
-          src: "createOrgAndReissue",
+          src: "createOrg",
           input: ({ context }) => {
             return {
               org_name: context.pending_org_name,
               principal_id: context.params.principal_id,
               request_id: context.params.request_id,
-              attempt: context.reissue_attempts_count + 1,
               config: context.params.config,
               deps: context.params.deps,
-              force_reissue_failures: context.params.force_reissue_failures,
             };
           },
           onDone: {
@@ -157,39 +156,22 @@ export function createSessionOnboardingMachine() {
               target: "needs_org",
               actions: "recordOrgNameTaken",
             },
+            // A genuine org-create failure (not a duplicate name) is an ordinary
+            // upstream error — surface it on the recoverable-error screen. The
+            // retry/budget loop was dissolved (ADR-043 stage 3a): auth-proxy now
+            // mints the org-scoped token on the org-create response, so there is
+            // no reissue step to retry.
             {
-              guard: "isReissueBudgetExhausted",
               target: "error_recoverable",
-              actions: [
-                "incrementReissueAttempts",
-                { type: "tagCause", params: { tag: "partial-setup" } },
-              ],
-            },
-            {
-              target: "creating_org",
-              actions: "incrementReissueAttempts",
-              reenter: true,
+              actions: { type: "tagCause", params: { tag: "partial-setup" } },
             },
           ],
         },
       },
       ready: {},
-      error_recoverable: {
-        on: {
-          retry_clicked: [
-            {
-              guard: "isUserRetryBudgetExhausted",
-              target: "error_terminal",
-              actions: "incrementUserRetryBudget",
-            },
-            {
-              target: "creating_org",
-              actions: ["incrementUserRetryBudget", "resetReissueAttempts"],
-            },
-          ],
-        },
-      },
-      error_terminal: {},
+      // Terminal-ish error landing: reached by a genuine org-create failure or
+      // the __force_failure__ harness jump. No retry transition (ADR-043 3a).
+      error_recoverable: {},
       session_rejected: {},
     },
   });

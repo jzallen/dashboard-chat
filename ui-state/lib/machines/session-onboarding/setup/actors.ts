@@ -82,7 +82,7 @@ export interface LoadSessionInput {
   deps: SessionOnboardingDeps | null;
 }
 
-export interface CreateOrgAndReissueInput {
+export interface CreateOrgInput {
   /** The validated org name to create. `OrgName` (branded) makes "this passed
    *  the submission rule" a type fact, threaded from `pending_org_name`. Null
    *  only when the machine is stubbed without a pending name — createOrgFn fails
@@ -90,24 +90,16 @@ export interface CreateOrgAndReissueInput {
   org_name: OrgName | null;
   principal_id: PrincipalId;
   request_id: string;
-  attempt: number;
   /** Env config (provides `backendUrl` + the dev-user header fixture) threaded
-   *  composition root → machine input → context → invoke input so the
-   *  `getOrgAndReissue` resolver stays config-agnostic — no factory closure.
-   *  Null only when the machine is created without config (the resolver then
-   *  throws a clear "config missing" error). */
+   *  composition root → machine input → context → invoke input so the `getOrg`
+   *  resolver stays config-agnostic — no factory closure. Null only when the
+   *  machine is created without config (the resolver then throws a clear
+   *  "config missing" error). */
   config: Config | null;
-  /** The I/O port (the `fetch` library) the resolver passes into `createOrgFn`
-   *  + `reissueOrgJwtFn`. Threaded the same path as `config`. Null only in tests
-   *  that stub `createOrgAndReissue` (the resolver then throws a clear
-   *  "request_client missing" error). */
+  /** The I/O port (the `fetch` library) the resolver passes into `createOrgFn`.
+   *  Threaded the same path as `config`. Null only in tests that stub `createOrg`
+   *  (the resolver then throws a clear "request_client missing" error). */
   deps: SessionOnboardingDeps | null;
-  /** Failure-simulation budget (ADR-035): when set, `getOrgAndReissue` throws a
-   *  partial-setup error for attempts 1..N (org is ALWAYS created first, so the
-   *  "org row exists even when reissue fails" invariant holds), then succeeds.
-   *  Folds the old closure-counter harness into a stateless attempt-vs-budget
-   *  check. Null/0/absent ⇒ no forced failures. */
-  force_reissue_failures?: number | null;
 }
 
 /**
@@ -314,16 +306,17 @@ const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
 
 /**
  * Pure async function form of the org-create step (a POST to `/api/orgs`),
- * exported so the create+reissue resolver can sequence it with the reissue step
- * (and inject forced failures only at reissue). Dispatches on the response
+ * exported so the `getOrg` resolver can call it. Dispatches on the response
  * status via CREATE_ORG_STATUS_RULES. Network I/O runs through the injected
  * `requestClient` (= the `fetch` library); `backendUrl` is the auth-proxy URL,
- * so the same identity headers flow through (ADR-029).
+ * so the same identity headers flow through (ADR-029). The org-scoped JWT is
+ * now minted by auth-proxy on the org-create response (X-New-Access-Token,
+ * ADR-043 amendment) — this resolver no longer chains a reissue call.
  */
 export function createOrgFn(
   config: Config,
   requestClient: RequestClient,
-): (input: CreateOrgAndReissueInput) => Promise<Org> {
+): (input: CreateOrgInput) => Promise<Org> {
   const { backendUrl, devUserHeadersFixture } = config;
   return async (input) => {
     if (input.org_name === null) {
@@ -365,58 +358,23 @@ export function createOrgFn(
 }
 
 /**
- * Pure async function form of the JWT reissue step. Companion to
- * `createOrgFn` — together they form the full create-org-and-reissue
- * sequence. Separated so the harness knob can fail reissue while still
- * letting org-create run, modelling the @jwt_reissue_failed_after_org_create
- * AC semantics.
- */
-export function reissueOrgJwtFn(
-  config: Config,
-  requestClient: RequestClient,
-): (input: { org_id: string; request_id: string }) => Promise<void> {
-  const { backendUrl, devUserHeadersFixture } = config;
-  return async ({ org_id, request_id }) => {
-    const reissueResp = await requestClient(`${backendUrl}/api/auth/reissue`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-request-id": request_id,
-        ...devUserHeadersFixture,
-      },
-      body: JSON.stringify({ org_id }),
-    });
-    if (!reissueResp.ok) {
-      throw new Error(`reissue failed: ${reissueResp.status}`);
-    }
-  };
-}
-
-/**
- * The config-driven `createOrgAndReissue` actor RESOLVER (an
- * `async ({ input }) => Org`), wrapped once as the machine's default
- * `createOrgAndReissue` actor (`fromPromise(getOrgAndReissue)`).
- * Its env config (`backendUrl` + the dev-user header fixture) arrives on
- * `input.config` — threaded composition root → machine input → context → invoke
- * input — so it stays config-agnostic and the composition root never imports it
- * just to inject env.
+ * The config-driven `createOrg` actor RESOLVER (an `async ({ input }) => Org`),
+ * wrapped once as the machine's default `createOrg` actor
+ * (`fromPromise(getOrg)`). Its env config (`backendUrl` + the dev-user header
+ * fixture) arrives on `input.config` — threaded composition root → machine
+ * input → context → invoke input — so it stays config-agnostic and the
+ * composition root never imports it just to inject env.
  *
- * It folds the forced-failure harness in STATELESSLY via attempt-vs-budget:
- *   1. ALWAYS create the org first (idempotent — preserves the "org row exists
- *      even when reissue fails" invariant; a retry re-creates nothing because
- *      createOrgFn reuses the existing org via /api/orgs/me).
- *   2. If `force_reissue_failures` is set AND `attempt <= force_reissue_failures`,
- *      throw a reissue failure (failure simulation), so the machine retries
- *      within budget and then lands in error_recoverable tagged partial-setup.
- *      (Verified: N=2 → fail,fail,succeed→ready; N=3 → fail,fail,budget-
- *      exhausted→error_recoverable, because isReissueBudgetExhausted checks
- *      reissue_attempts_count+1 >= REISSUE_BUDGET (3) pre-increment.)
- *   3. Otherwise reissue the JWT and return the created org.
+ * Creates the org and returns it. The org-scoped JWT reissue that used to chain
+ * here (the now-deleted backend reissue endpoint) was retired: auth-proxy now
+ * mints the org-scoped token on the org-create response itself
+ * (X-New-Access-Token, ADR-043 amendment), so onboarding no longer
+ * participates in token issuance.
  */
-export async function getOrgAndReissue({
+export async function getOrg({
   input,
 }: {
-  input: CreateOrgAndReissueInput;
+  input: CreateOrgInput;
 }): Promise<Org> {
   if (!input.config) {
     throw new Error(
@@ -429,22 +387,9 @@ export async function getOrgAndReissue({
     );
   }
   const requestClient = input.deps.request_client;
-  // ALWAYS create the org first — preserves the "org row exists even when
-  // reissue fails" invariant. Idempotent: subsequent retries hit /api/orgs/me
-  // and return the same org.
-  const created = await createOrgFn(input.config, requestClient)(input);
-
-  if (input.force_reissue_failures && input.attempt <= input.force_reissue_failures) {
-    throw new Error(
-      `reissue forced-failure (attempt=${input.attempt}, budget=${input.force_reissue_failures})`,
-    );
-  }
-
-  await reissueOrgJwtFn(input.config, requestClient)({
-    org_id: created.id,
-    request_id: input.request_id,
-  });
-  return created;
+  // Idempotent: a 500 "already belongs to an org" is reconciled by createOrgFn
+  // via /api/orgs/me, so a re-submission returns the same org.
+  return createOrgFn(input.config, requestClient)(input);
 }
 
 // Actor-type ALIASES bound to XState's `fromPromise`. They live here, next to
@@ -454,8 +399,8 @@ export type LoadSessionActor = ReturnType<
   typeof fromPromise<VerifiedSession, LoadSessionInput>
 >;
 
-export type CreateOrgAndReissueActor = ReturnType<
-  typeof fromPromise<Org, CreateOrgAndReissueInput>
+export type CreateOrgActor = ReturnType<
+  typeof fromPromise<Org, CreateOrgInput>
 >;
 
 /**
@@ -469,9 +414,7 @@ export const actors = {
   loadSession: fromPromise<VerifiedSession, LoadSessionInput>(
     loadVerifiedSession,
   ),
-  createOrgAndReissue: fromPromise<Org, CreateOrgAndReissueInput>(
-    getOrgAndReissue,
-  ),
+  createOrg: fromPromise<Org, CreateOrgInput>(getOrg),
 };
 
 /**

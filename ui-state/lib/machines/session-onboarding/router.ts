@@ -11,7 +11,7 @@
  *   POST /begin            — re-verify the forwarded Bearer + seed the
  *                            projection from session_started (session-onboarding
  *                            is the only `beginsDirectly` machine).
- *   POST /event            — accepts org_form_submitted, retry_clicked, and the
+ *   POST /event            — accepts org_form_submitted and the
  *                            `__force_failure__` wire event under the
  *                            failure-simulation gate.
  *   POST /open-deep-link   — legacy ScopeResolver path.
@@ -91,11 +91,7 @@ const beginRequestSchema = z.object({
   // The verified org claim (X-Org-Id). Empty string when absent — treated as
   // "no org" (new user) downstream.
   orgId: z.string(),
-  body: z
-    .object({
-      force_reissue_failures: z.number().optional(),
-    })
-    .passthrough(),
+  body: z.object({}).passthrough(),
 });
 
 export type SessionOnboardingRequest = z.infer<typeof beginRequestSchema>;
@@ -124,10 +120,6 @@ const eventRequestSchema = z.discriminatedUnion("type", [
     payload: z.object({ org_name: z.string() }).passthrough(),
   }),
   z.object({
-    type: z.literal("retry_clicked"),
-    payload: z.record(z.unknown()).optional(),
-  }),
-  z.object({
     type: z.literal("__force_failure__"),
     payload: z.object({ tag: causeTag }).passthrough(),
   }),
@@ -148,10 +140,7 @@ const eventRequestSchema = z.discriminatedUnion("type", [
  * `request_client` I/O port. The `[hasOrg]` org binding is NOT taken from the
  * `X-Org-Id` header — that cached JWT claim is logged for audit only; the
  * authoritative org is loaded from the backend (`GET /api/orgs/me`, the org
- * SSOT) during `verifying`. The force-reissue-failures harness knob is gated by
- * `shouldInject` (closed-by-default in production, ENVIRONMENT × flag, ADR-035);
- * its verdict decides whether the body's `force_reissue_failures` count is
- * threaded through to drive `getOrgAndReissue`'s attempt-vs-budget path.
+ * SSOT) during `verifying`.
  *
  * `/open-deep-link` is the HTTP edge where route params meet the JWT:
  * `resolveActiveScope` runs here (identity from the auth-proxy headers — in dev
@@ -201,13 +190,6 @@ export function buildSessionOnboardingRouter(
       claimed_org_id: request.orgId || null,
     });
 
-    const reissueFailuresAllowed = shouldInject(KNOB.forceReissueFailures, {
-      body: (rawBody ?? {}) as Record<string, unknown>,
-      // `correlationId` is the shared failure-simulation audit-envelope arg
-      // (ADR-037); we feed it the request id.
-      correlationId: request.referenceCode,
-      serviceName: "ui-state",
-    });
     const strategy = new SessionOnboardingBeginStrategy(
       {
         flowId: FlowId.of(SESSION_ONBOARDING_MACHINE, request.userId),
@@ -215,9 +197,6 @@ export function buildSessionOnboardingRouter(
         request_id: request.referenceCode,
         config,
         deps: { request_client: requestClient },
-        force_reissue_failures: reissueFailuresAllowed
-          ? (request.body.force_reissue_failures ?? null)
-          : null,
       },
       eventLog,
       logTransition,

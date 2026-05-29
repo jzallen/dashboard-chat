@@ -103,9 +103,9 @@ parent's begin envelope IS the onboarding child's input.
 
 - **session-onboarding** is config/input-driven — no construction deps. Its
   WorkOS/backend URLs + `fetch` port + re-verify Bearer arrive per-instance on
-  `SessionOnboardingInput` (`config` / `deps` / `bearer_token` /
-  `force_reissue_failures`), seeded write-once into `ChatAppContext` and
-  projected into the child by the **onboarding invoke `input:` mapper**.
+  `SessionOnboardingInput` (`config` / `deps` / `bearer_token`), seeded
+  write-once into `ChatAppContext` and projected into the child by the
+  **onboarding invoke `input:` mapper**.
 - **project-context** + **session-chat** inject their resolver actors at
   construction (`ChatAppDeps.projectContext` / `.sessionChat`). Their invoke
   `input:` mappers (typed against `ProjectContextInput` / `SessionChatInput`)

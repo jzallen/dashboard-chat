@@ -13,11 +13,10 @@
 //                              200 {id,name} when `existingOrg` is set (returning
 //                              user); 404 otherwise (new user → needs_org).
 //   - POST /api/orgs         — backend org-create. 201 {id,name}.
-//   - POST /api/auth/reissue — backend JWT reissue. 200.
 //
-// The backend endpoints ALWAYS succeed: the forced-reissue-failure path is
-// driven by the `force_reissue_failures` INPUT (the `getOrgAndReissue` resolver
-// throws an attempt-vs-budget error), not by the mock failing.
+// The backend endpoints ALWAYS succeed. (The org-scoped JWT reissue that used
+// to chain after org-create was retired — auth-proxy now mints it on the
+// org-create response, ADR-043 stage 3a — so there is no reissue-endpoint mock.)
 
 import { vi } from "vitest";
 
@@ -134,12 +133,6 @@ export function makeMockFetch(options: MockFetchOptions = {}): RequestClient {
         ? (JSON.parse(init.body as string) as { name?: string })
         : {};
       return jsonResponse({ id: orgId, name: body.name ?? "" }, 201);
-    }
-
-    // Backend JWT reissue — ALWAYS succeeds. The forced-failure path is driven
-    // by force_reissue_failures, not by this endpoint failing.
-    if (url.includes("/api/auth/reissue") && method === "POST") {
-      return jsonResponse({ ok: true }, 200);
     }
 
     return jsonResponse({ error: "unexpected_request", url, method }, 404);
