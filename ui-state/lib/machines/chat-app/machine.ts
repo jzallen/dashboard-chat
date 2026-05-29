@@ -93,7 +93,6 @@ export function createChatAppMachine() {
         entry: "markLoginActive",
         invoke: {
           id: "onboarding",
-          systemId: "onboarding",
           src: "onboarding",
           // Begin envelope → the onboarding child's Input. Its resolvers read
           // the WorkOS/backend URLs + fetch port from `config`/`deps` and the
@@ -131,7 +130,6 @@ export function createChatAppMachine() {
         entry: "forwardAuthReady",
         invoke: {
           id: "project-context",
-          systemId: "project-context",
           src: "projectContext",
           // Static ids → the project-context child's Input. The dynamic
           // org_id + identity arrive via the `auth_ready` hand-off (forwarded
@@ -170,7 +168,6 @@ export function createChatAppMachine() {
             entry: ["markChatActive", "forwardProjectReady"],
             invoke: {
               id: "session-chat",
-              systemId: "session-chat",
               src: "sessionChat",
               // Static ids → the session-chat child's Input. The dynamic
               // org_id + project arrive via the `project_ready` hand-off

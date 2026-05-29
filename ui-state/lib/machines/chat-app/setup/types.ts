@@ -48,9 +48,10 @@ export type ChatAppLifecycle =
   | "chat"
   | "user_rejected";
 
-/** Stable child identities. These are the parent's `invoke` ids / `systemId`s —
- *  the parent's own observability + sendTo handles, NEVER child-to-child
- *  references. */
+/** Stable child identities. These are the parent's `invoke` ids — the parent's
+ *  own observability + sendTo handles (resolved via `snapshot.children[id]`),
+ *  NEVER child-to-child references. (`systemId` is unused: it only matters for
+ *  cross-hierarchy `system.get(systemId)`, which this design does not use.) */
 export type ChatAppChildId =
   | "onboarding"
   | "project-context"
