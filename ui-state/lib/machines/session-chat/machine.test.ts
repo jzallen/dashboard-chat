@@ -43,7 +43,7 @@ const MAYA_INPUT = {
 function stubLoadSessionList(
   output: Omit<LoadSessionListOutput, "resume_target">,
 ): LoadSessionListActor {
-  // ADR-030 LEAF-C: the production actor echoes
+  // LEAF-C: the production actor echoes
   // `input.pending_resume_session_id` through `output.resume_target` so
   // the onDone guard can branch on event.output rather than ctx. The
   // stub mirrors that contract — tests that supply a resume target via
@@ -101,15 +101,11 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
     expect(ctx.session_list).toEqual([]);
     expect(ctx.session_id).toBeNull();
     expect(ctx.pending_resume_session_id).toBeNull();
-    // intent_resource_id / intent_resource_type previously asserted here.
-    // Removed in the L3 SRP refactor — see
-    // docs/refactoring/session-chat-context-srp/refactoring-log.md.
-    // Those fields were captured in context but never read by the machine;
-    // the dataset-switching events (MR-5) carry resource id/type directly
-    // in their event payload, so context capture was pure scope leak.
-    // MR-D split the prior `intent_session_id` into
-    // `pending_resume_session_id` (this ctx, click- or deeplink-captured)
-    // and the URL-level `deeplink_session_id` on project-context.
+    // intent_resource_id / intent_resource_type are not on this ctx: the
+    // dataset-switching events carry resource id/type directly in their event
+    // payload. The session-resume target is split into
+    // `pending_resume_session_id` (this ctx, click- or deeplink-captured) and
+    // the URL-level `deeplink_session_id` on project-context.
   });
 
   it("S2: project_ready event populates org_id, project_id, project_name", async () => {
@@ -158,11 +154,10 @@ describe("SessionChatMachine — MR-1.5 stub", () => {
       project_id: "proj-q4",
       project_name: "Q4 Analytics",
       request_id: "R-broadcast-1",
-      // The URL-level deep-link wish flows in via the renamed key
-      // (audit §5 / MR-D). intent_resource_id / intent_resource_type
-      // remain on the event surface (forward-compat) but are no
-      // longer materialized into ctx — the orchestrator routes them
-      // through the projection directly.
+      // The URL-level deep-link wish flows in via the `deeplink_session_id`
+      // key. intent_resource_id / intent_resource_type remain on the event
+      // surface but are not materialized into ctx — the orchestrator routes
+      // them through the projection directly.
       deeplink_session_id: "sess-1",
       intent_resource_id: "ds-1",
       intent_resource_type: "dataset",
@@ -273,11 +268,10 @@ describe("SessionChatMachine — MR-2 session list + resume", () => {
   });
 
   it("S6b (ADR-030 LEAF-C): loadSessionList input echoes pending_resume_session_id through output.resume_target", async () => {
-    // Direct actor-level assertion: per ADR-028 Direction F / ADR-030 §254,
-    // branch-relevant data flows out via event.output, not via a context
-    // field set before the invoke. The actor receives
-    // pending_resume_session_id on its input and echoes it as
-    // output.resume_target.
+    // Direct actor-level assertion (Direction F): branch-relevant data flows
+    // out via event.output, not via a context field set before the invoke.
+    // The actor receives pending_resume_session_id on its input and echoes it
+    // as output.resume_target.
     // Closure-captured probes (array-wrapped to sidestep TS narrowing
     // of `let foo: T | null = null` through async closures).
     const observedInputs: LoadSessionListInput[] = [];
@@ -1064,8 +1058,8 @@ describe("SessionChatMachine — MR-5 dataset context switching (US-209)", () =>
 // The orchestrator broadcasts FREEZE/THAW; the machine declares a top-level
 // on.FREEZE reachable from every non-terminal state, a `freeze` side-state
 // that records `last_live_state`, an on.THAW that returns there (guarded on
-// context.last_live_state — DWD-2 rejected XState history nodes because the
-// prior-state value must stay queryable for the harness), and an
+// context.last_live_state — the prior-state value is held in context rather
+// than an XState history node so it stays queryable for the harness), and an
 // on.replay_abandoned → error_recoverable arm (cause `replay_abandoned`)
 // for the 5s replay-buffer timeout. Plus the DWD-7 session_clicked
 // stale-intent guard (drop + count when the target is not in the post-THAW

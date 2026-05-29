@@ -1,12 +1,11 @@
 // SessionChatMachine — XState v5 statechart for J-002's session-chat half.
 //
-// Per `docs/feature/project-and-chat-session-management/design/application-architecture.md`
-// §2B (post-DWD-13 SRP amendment) this machine owns "What's happening in my
-// current session?" — session list visibility, resume, new-session lifecycle,
-// dataset attachment within the session, and the chat-turn-emitting states.
-// It owns the `resource_*` half of `active_scope`.
+// This machine owns "What's happening in my current session?" — session list
+// visibility, resume, new-session lifecycle, dataset attachment within the
+// session, and the chat-turn-emitting states. It owns the `resource_*` half of
+// `active_scope`.
 //
-// MR-2 surface (THIS MR — DWD-13 §"MR-to-machine implementation guidance"):
+// State surface:
 //   waiting_for_project (initial) ─→ loading_session_list           (project_ready)
 //   loading_session_list (invoke)  ─┬─→ session_list_loaded        (onDone, no pending_resume_session_id)
 //                                    ├─→ resuming_session            (onDone, pending_resume_session_id present)
@@ -16,19 +15,25 @@
 //   resuming_session (invoke)     ─┬─→ session_active                (onDone, found)
 //                                    ├─→ session_list_loaded         (onDone, session_not_found — silent)
 //                                    └─→ error_recoverable            (onError, transient)
-//   session_active                (read-only path for MR-2; write path lands MR-3+)
+//   session_active                (active session)
+//   session_welcome               (new-session lifecycle via createSessionEagerly)
+//   switching_dataset_context     (dataset attachment within the session)
 //   error_recoverable             ─→ last_live_state                  (retry_clicked)
 //
-// MR-3 added `session_welcome` + `createSessionEagerly`; MR-5 added
-// `switching_dataset_context`. (A `freeze`/FREEZE overlay existed briefly for the
-// orchestrator's token-expiry broadcast; it was retired with the orchestrator in
-// ADR-044 Phase 4 — auth-proxy owns the token lifecycle, ADR-043/ADR-016.)
+// Cross-machine isolation invariant: this file does NOT import from
+// `project-context.ts` or `login-and-org-setup.ts`. The orchestrator mediates
+// all cross-machine entry (`project_ready` from project-context arrives via
+// orchestrator broadcast on entry into `project_selected`, carrying org_id +
+// project_id + project_name + forwarded intent fields).
 //
-// ADR-028:46-48 invariant: this file does NOT import from `project-context.ts`
-// or `login-and-org-setup.ts`. The orchestrator mediates all cross-machine
-// entry (`project_ready` from project-context arrives via orchestrator broadcast
-// on entry into `project_selected`, carrying org_id + project_id + project_name
-// + forwarded intent fields).
+// References:
+//   docs/decisions/adr-014-*.md  — UI directives filtered from visible transcript
+//   docs/decisions/adr-028-*.md  — machines own transitions; parent-ignorant children
+//   docs/decisions/adr-029-*.md  — ActiveScope invariants / cross-tenant rejection
+//   docs/decisions/adr-030-*.md  — flow_id key form / branch-relevant data flow
+//   docs/feature/project-and-chat-session-management/design/application-architecture.md
+//                                — machine SRP split (app-arch §2B)
+//   docs/discussion/ui-state-vocabulary-audit/findings.md — vocabulary audit
 
 import { assign, fromPromise, setup } from "xstate";
 
@@ -80,19 +85,19 @@ export interface SessionChatMachineContext {
   session_list_next_cursor: string | null;
   session_list_has_more: boolean;
 
-  // Active session — populated on session_active entry (MR-2 read path; MR-3 write path):
+  // Active session — populated on session_active entry:
   session_id: string | null;
   transcript: TranscriptMessage[];
 
   // Active resource (dataset) — populated on session_active entry from
-  // `session.active_dataset_id` (MR-2 read path); switching_dataset_context exit (MR-5):
+  // `session.active_dataset_id`; also on switching_dataset_context exit:
   resource: { type: ResourceType | null; id: string | null };
 
   // The dataset pick captured from a `dataset_resolved_by_agent` /
   // `dataset_picked_directly` event in `session_active`, carried into the
-  // `switching_dataset_context` invoke's input (US-209 / MR-5). XState
-  // invoke `input` reads ctx, not the triggering event, so the pick MUST
-  // be captured here on the transition. Cleared on settle (success OR
+  // `switching_dataset_context` invoke's input (US-209). XState invoke
+  // `input` reads ctx, not the triggering event, so the pick MUST be
+  // captured here on the transition. Cleared on settle (success OR
   // dataset_access_denied) so a stale pick can't bleed into a later
   // switch.
   intended_resource_id: string | null;
@@ -100,30 +105,28 @@ export interface SessionChatMachineContext {
 
   // Pending session-resume target — populated EITHER by the inbound
   // `project_ready` payload's `deeplink_session_id` key (URL-level wish
-  // forwarded by project-context per audit §5 / MR-D) OR by a
-  // `session_clicked` event (capturePendingResumeIntent action). Both
-  // paths feed the same downstream consumer: the `loading_session_list →
-  // resuming_session` branch reads the actor output's `resume_target`
-  // (which echoes `input.pending_resume_session_id`) and the
-  // `resuming_session.invoke.input` reads ctx directly for the session
-  // id to resume. Cleared by the resume actor's onDone.
+  // forwarded by project-context) OR by a `session_clicked` event
+  // (capturePendingResumeIntent action). Both paths feed the same downstream
+  // consumer: the `loading_session_list → resuming_session` branch reads the
+  // actor output's `resume_target` (which echoes
+  // `input.pending_resume_session_id`) and the `resuming_session.invoke.input`
+  // reads ctx directly for the session id to resume. Cleared by the resume
+  // actor's onDone.
   //
-  // `intent_resource_id` / `intent_resource_type` were previously
-  // captured here but the session-chat machine never read them after
-  // capture (the MR-5+ dataset-switching events carry the resource id/
-  // type directly in their payload — see SessionChatEvent's
-  // `dataset_resolved_by_agent` and `dataset_picked_directly` variants).
-  // Per app-arch §3.4 they no longer touch this ctx — the orchestrator
-  // forwards them directly from the `open_deep_link` event payload into
-  // the `project_ready` broadcast, and the session-chat input/event
-  // surface still accepts them as no-op forward-compat slots.
+  // `intent_resource_id` / `intent_resource_type` are not captured here — the
+  // dataset-switching events carry the resource id/type directly in their
+  // payload (see SessionChatEvent's `dataset_resolved_by_agent` and
+  // `dataset_picked_directly` variants). The orchestrator forwards them
+  // directly from the `open_deep_link` event payload into the `project_ready`
+  // broadcast; the session-chat input/event surface accepts them as no-op
+  // slots.
   pending_resume_session_id: string | null;
 
   // Cross-state plumbing:
   underlying_cause_tag: SessionChatCauseTag | null;
   last_live_state: SessionChatState | null;
   retries_count: number;
-  /** Composer text preserved across session_welcome ↔ error_recoverable (MR-3). */
+  /** Composer text preserved across session_welcome ↔ error_recoverable. */
   pending_first_message: string;
 
   // Observability counters:
@@ -131,12 +134,12 @@ export interface SessionChatMachineContext {
   // The most recent stale intent the DWD-7 guard dropped after THAW.
   // The orchestrator harvests this on the replay-settle path to emit the
   // `stale_intent_dropped_after_thaw` FlowEvent (the projection/harness
-  // SSOT — machines never write FlowEvents per ADR-028/ADR-030).
+  // SSOT — machines never write FlowEvents).
   last_stale_intent: { intent_type: string; target_id: string } | null;
 }
 
 export type SessionChatEvent =
-  // External (MR-2..MR-5):
+  // External (FE-emitted):
   | { type: "session_clicked"; session_id: string }
   | { type: "new_session_clicked" }
   | { type: "first_message_sent"; content: string }
@@ -153,14 +156,11 @@ export type SessionChatEvent =
       project_id: string;
       project_name: string;
       request_id: string;
-      // The URL-level deep-link session wish (renamed from
-      // intent_session_id in MR-D). Captured into
+      // The URL-level deep-link session wish. Captured into
       // pending_resume_session_id on entry.
       deeplink_session_id?: string | null;
-      // Forward-compat slots — accepted but no longer stored on ctx
-      // (the orchestrator routes them through the wire/projection
-      // directly per MR-D). Kept on the event surface for the
-      // open_deep_link follow-up MR that will rename them.
+      // Accepted but not stored on ctx — the orchestrator routes them
+      // through the wire/projection directly. Kept on the event surface.
       intent_resource_id?: string | null;
       intent_resource_type?: ResourceType | null;
     };
@@ -175,10 +175,9 @@ export interface LoadSessionListInput {
    *  this through `resume_target` on its output so the
    *  `loading_session_list → resuming_session` branch can guard on
    *  `event.output.resume_target` instead of reading
-   *  `ctx.pending_resume_session_id` (ADR-030 §"Migration sequencing"
-   *  LEAF-C; ADR-028 Direction F — branch-relevant data MUST flow
-   *  through `event.output`, never through context set before the
-   *  invoke). */
+   *  `ctx.pending_resume_session_id` (LEAF-C / Direction F: branch-relevant
+   *  data MUST flow through `event.output`, never through context set before
+   *  the invoke). */
   pending_resume_session_id?: string | null;
 }
 
@@ -188,9 +187,8 @@ export interface LoadSessionListOutput {
   has_more: boolean;
   /** Echoes `input.pending_resume_session_id` so the `onDone` branch can
    *  pick between `session_list_loaded` and `resuming_session` without
-   *  reading `ctx.pending_resume_session_id` (ADR-030 §254 / ADR-028
-   *  Amendment 2026-05-15 Direction F). Null when no resume target was
-   *  carried in. */
+   *  reading `ctx.pending_resume_session_id` (LEAF-C / Direction F). Null when
+   *  no resume target was carried in. */
   resume_target: string | null;
 }
 
@@ -239,16 +237,16 @@ export type CreateSessionEagerlyActor = ReturnType<
 >;
 
 /**
- * MR-5 (US-209) — switchDatasetContext actor. Given the intended dataset
+ * US-209 — switchDatasetContext actor. Given the intended dataset
  * pick (from `dataset_resolved_by_agent` / `dataset_picked_directly`),
  * validates access via ScopeResolver invariant 4 (cross-tenant AND
- * cross-project rejection per ADR-029 §1) by calling `GET /api/datasets/:id`
- * and comparing the dataset's `project_id` against the active project; on
- * pass it persists `session.active_dataset_id` via `update_session`
+ * cross-project rejection) by calling `GET /api/datasets/:id` and comparing
+ * the dataset's `project_id` against the active project; on pass it persists
+ * `session.active_dataset_id` via `update_session`
  * (`PATCH /api/projects/:pid/sessions/:sid`). On 403/404/cross-project the
  * pick is rejected with `{ dataset_access_denied: true }` and the prior
  * resource is preserved (US-209 Example 3/4). Mirrors the `switchProject`
- * actor's error-variant discipline (project-context MR-4).
+ * actor's error-variant discipline.
  */
 export type SwitchDatasetContextOutput =
   | { resource_type: ResourceType; resource_id: string; persisted: true }
@@ -274,17 +272,16 @@ export type SwitchDatasetContextActor = ReturnType<
 >;
 
 export interface SessionChatMachineDeps {
-  /** Optional in MR-1.5; MR-2+ provides the real actor implementation. When
-   *  absent, the machine still spawns into `waiting_for_project` cleanly —
-   *  the project_ready transition fires but loadSessionList throws when
-   *  invoked, surfacing as error_recoverable. */
+  /** Optional. When absent, the machine still spawns into
+   *  `waiting_for_project` cleanly — the project_ready transition fires but
+   *  loadSessionList throws when invoked, surfacing as error_recoverable. */
   loadSessionList?: LoadSessionListActor;
   resumeSession?: ResumeSessionActor;
-  /** MR-3 (US-206): invoked on `first_message_sent` from the welcome state.
+  /** US-206: invoked on `first_message_sent` from the welcome state.
    *  Absent → first_message_sent surfaces error_recoverable (consistent with
    *  the noop-actor pattern used for loadSessionList / resumeSession). */
   createSessionEagerly?: CreateSessionEagerlyActor;
-  /** MR-5 (US-209): invoked on `dataset_resolved_by_agent` /
+  /** US-209: invoked on `dataset_resolved_by_agent` /
    *  `dataset_picked_directly` from `session_active`. Absent → the pick
    *  surfaces error_recoverable (same noop-actor pattern). */
   switchDatasetContext?: SwitchDatasetContextActor;
@@ -333,11 +330,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         project_id?: string;
         project_name?: string;
         // URL-level wish at spawn time — captured into
-        // pending_resume_session_id. Renamed from intent_session_id in
-        // MR-D to disambiguate it from the click-captured resume target
-        // (audit §5 / §7 Tier-1 #2).
+        // pending_resume_session_id. Distinct from the click-captured resume
+        // target.
         deeplink_session_id?: string | null;
-        // Forward-compat — no longer stored on ctx (audit §7 Tier-1 #2).
+        // Accepted but not stored on ctx.
         intent_resource_id?: string | null;
         intent_resource_type?: ResourceType | null;
       },
@@ -361,7 +357,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             ? event.content
             : context.pending_first_message,
       }),
-      // US-209 / MR-5 — capture the dataset pick from
+      // US-209 — capture the dataset pick from
       // `dataset_resolved_by_agent` / `dataset_picked_directly` so the
       // `switching_dataset_context` invoke can read it from ctx (XState
       // invoke input reads context, not the triggering event).
@@ -448,9 +444,9 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       },
       loading_session_list: {
         on: {
-          // Re-broadcast from the orchestrator on project switch (MR-4).
-          // For MR-2 the only project_ready path is the initial spawn — but
-          // declaring the handler keeps the contract stable.
+          // Re-broadcast from the orchestrator on project switch. Declaring
+          // the handler here keeps the contract stable even when the only
+          // project_ready path is the initial spawn.
           project_ready: {
             target: "loading_session_list",
             reenter: true,
@@ -473,12 +469,11 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         },
         invoke: {
           src: "loadSessionList",
-          // ADR-030 LEAF-C: `pending_resume_session_id` rides INTO the
-          // actor's input so the actor can echo it OUT as `resume_target`.
-          // The onDone branch then reads from `event.output.resume_target`
-          // — branch data flows through the actor's output channel, not
-          // via a context field set before the invoke (ADR-028 Amendment
-          // 2026-05-15 Direction F, ADR-030 §254).
+          // LEAF-C: `pending_resume_session_id` rides INTO the actor's input
+          // so the actor can echo it OUT as `resume_target`. The onDone branch
+          // then reads from `event.output.resume_target` — branch data flows
+          // through the actor's output channel, not via a context field set
+          // before the invoke (Direction F).
           input: ({ context }) => ({
             project_id: context.project?.id ?? "",
             principal_id: context.principal_id,
@@ -492,9 +487,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               // loads (so the FE renders the sidebar) but the machine
               // settles in resuming_session. `resuming_session.invoke.input`
               // reads `context.pending_resume_session_id` (still populated
-              // by the `project_ready` handler) — that context field is
-              // the per-MR-D split for the resume half (audit §7 Tier-1
-              // #2).
+              // by the `project_ready` handler).
               guard: ({ event }) => event.output.resume_target !== null,
               target: "resuming_session",
               actions: assign({
@@ -572,7 +565,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               }),
             },
             // Same project_id — idempotent no-op (the existing actor ignores
-            // the re-emission per DESIGN §3.2.B).
+            // the re-emission).
           ],
         },
       },
@@ -667,7 +660,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             target: "loading_session_list",
             reenter: true,
           },
-          // US-209 / MR-5 — a dataset pick (via the agent's resolve_dataset
+          // US-209 — a dataset pick (via the agent's resolve_dataset
           // tool-return path OR direct UI selection) moves the machine into
           // `switching_dataset_context`. Same payload shape for both; the
           // capture action records the pick for the invoke input.
@@ -703,11 +696,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       switching_dataset_context: {
         // Entry — orchestrator-side emission of
         // `switching_dataset_context_started` happens in orchestrator.ts
-        // (the pre-settle branch, mirroring D-MR4-06's
-        // `switching_project_started`). The `switchDatasetContext` invoke
-        // performs GET /api/datasets/:id (ScopeResolver invariant 4 —
-        // cross-tenant + cross-project) then, on pass,
-        // PATCH /api/projects/:pid/sessions/:sid { active_dataset_id }
+        // (the pre-settle branch, mirroring `switching_project_started`). The
+        // `switchDatasetContext` invoke performs GET /api/datasets/:id
+        // (ScopeResolver invariant 4 — cross-tenant + cross-project) then, on
+        // pass, PATCH /api/projects/:pid/sessions/:sid { active_dataset_id }
         // (DWD-2 persist via the existing update_session allowlist).
         invoke: {
           src: "switchDatasetContext",
@@ -770,8 +762,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       },
       session_welcome: {
         // US-206: the welcome state. Composer text lives in component-local
-        // state on the FE per app-arch §6.4 AND in `pending_first_message`
-        // on the machine for the error_recoverable → retry boundary.
+        // state on the FE AND in `pending_first_message` on the machine for
+        // the error_recoverable → retry boundary.
         on: {
           // Idempotent — clicking "+ New Session" again from the welcome
           // state is a no-op (the FE button is the same; the machine
@@ -878,8 +870,8 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             },
             {
               // US-206: retry from a failed eager-create returns to the
-              // welcome state with `pending_first_message` intact (app-arch
-              // §6.4 composer-state preservation contract).
+              // welcome state with `pending_first_message` intact (the
+              // composer-state preservation contract).
               guard: ({ context }) =>
                 context.last_live_state === "session_welcome",
               target: "session_welcome",
@@ -890,8 +882,7 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             },
             {
               // US-209: retry from a transient switchDatasetContext failure
-              // re-enters the switch with the captured pick still in ctx
-              // (app-arch §"error_recoverable retry targets").
+              // re-enters the switch with the captured pick still in ctx.
               guard: ({ context }) =>
                 context.last_live_state === "switching_dataset_context",
               target: "switching_dataset_context",
@@ -1034,10 +1025,10 @@ export function loadSessionListActor(
  * `GET /api/sessions/:id/messages` (transcript) and (when active_dataset_id
  * is set) `GET /api/datasets/:id` to detect deletion (US-205 Example 3).
  *
- * Per DESIGN §2.3.B, the atomicity guarantee is delivered at the XState assign
- * boundary in the machine — this actor just gathers all three reads before
- * resolving. The machine's onDone assign populates transcript+resource in a
- * single transaction.
+ * The atomicity guarantee is delivered at the XState assign boundary in the
+ * machine — this actor just gathers all three reads before resolving. The
+ * machine's onDone assign populates transcript+resource in a single
+ * transaction.
  */
 export function resumeSessionFn(
   backendUrl: string,
@@ -1060,7 +1051,7 @@ export function resumeSessionFn(
     if (!sessionResp.ok) {
       throw new Error(`get_session failed: ${sessionResp.status}`);
     }
-    // Backend get_session route (J-002 MR-2 / DWD-2) returns JSON:API shape:
+    // Backend get_session route (DWD-2) returns JSON:API shape:
     //   { data: { id, attributes: { active_dataset_id, ... } } }
     // Tolerate the flat {id, active_dataset_id} shape for forward-compat.
     const sessionBody = (await sessionResp.json()) as
@@ -1085,11 +1076,10 @@ export function resumeSessionFn(
       null;
 
     // Fetch transcript via the session-replay events endpoint. The
-    // /api/sessions/:id/events route returns persisted DomainEvents per
-    // dc-x3y.3.2 — for MR-2 we surface only the user/assistant message
-    // events (UI directives are filtered server-side per ADR-014). A
-    // brand-new session has no events; an empty transcript is a valid
-    // first-paint state per US-205 Example 1.
+    // /api/sessions/:id/events route returns persisted DomainEvents; we
+    // surface only the user/assistant message events (UI directives are
+    // filtered server-side). A brand-new session has no events; an empty
+    // transcript is a valid first-paint state per US-205 Example 1.
     let transcript: TranscriptMessage[] = [];
     try {
       const eventsResp = await fetch(
@@ -1114,7 +1104,7 @@ export function resumeSessionFn(
         const events = eventsBody.events ?? [];
         // Pull the user/assistant message events out of the DomainEvent
         // stream; everything else (tool turns, audit events) is dropped
-        // from the visible transcript per ADR-014.
+        // from the visible transcript.
         transcript = events
           .filter((e) => {
             const t = e.event_type ?? "";
@@ -1197,10 +1187,10 @@ export function resumeSessionActor(
 }
 
 /**
- * MR-5 (US-209) — switchDatasetContextFn implementation. The session-chat
+ * US-209 — switchDatasetContextFn implementation. The session-chat
  * `switchDatasetContext` actor. Enforces ScopeResolver invariant 4
- * (cross-tenant AND cross-project rejection per ADR-029 §1) as defense in
- * depth at the ui-state tier (app-arch §"defense in depth"):
+ * (cross-tenant AND cross-project rejection) as defense in depth at the
+ * ui-state tier:
  *
  *   1. `GET /api/datasets/:id` — the backend's `authorize_dataset_access`
  *      dep returns 403 for cross-tenant (dataset's project belongs to a
@@ -1214,7 +1204,7 @@ export function resumeSessionActor(
  *      persists the pick via the existing `update_session` allowlist
  *      (DWD-2). A non-2xx persist throws → transient → error_recoverable.
  *
- * Mirrors `switchProjectFn`'s status-discrimination discipline (MR-4).
+ * Mirrors `switchProjectFn`'s status-discrimination discipline.
  */
 export function switchDatasetContextFn(
   backendUrl: string,
@@ -1318,9 +1308,9 @@ export function switchDatasetContextActor(
  *   1. POST /api/projects/:id/sessions     → creates the session row (title null)
  *   2. PATCH /api/projects/:id/sessions/:sid {title: first_message[:80]}
  *
- * Per app-arch §2.3 + US-206 Scenario 2: the title is materialized before
- * the machine settles in session_active so the test can observe the row
- * with title === first_message[:80] without races.
+ * US-206 Scenario 2: the title is materialized before the machine settles in
+ * session_active so the test can observe the row with
+ * title === first_message[:80] without races.
  *
  * `shouldFailNext` is the harness knob (consumed once per call) that lets
  * the US-206 transient-failure scenario simulate a 503 without coupling
