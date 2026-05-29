@@ -1,4 +1,4 @@
-// Types for the ChatApp coordinator statechart (ADR-044): the parent machine's
+// Types for the ChatApp coordinator statechart: the parent machine's
 // context / event / input shapes, the child hand-off payloads, the events the
 // parent FORWARDS into its children, and the typed-arg + snapshot-view aliases
 // the extracted guards (./guards.ts) and actions (./actions.ts) annotate with.
@@ -6,25 +6,29 @@
 // ChatApp is a PARENT coordinator with a SINGLE lifecycle region:
 //   - lifecycle : onboarding → project_context → chat (with user_rejected)
 //
-// The parent-level token-lifecycle (freeze/reauth) region was RETIRED (ADR-043):
-// auth-proxy owns the token lifecycle (ADR-016), so ui-state never participates
-// in token management — a backend-401 is an ordinary upstream error, not a
-// ui-state "reauth" event.
+// auth-proxy owns the token lifecycle, so ui-state never participates in token
+// management — a backend-401 is an ordinary upstream error, not a ui-state
+// "reauth" event.
 //
-// The children are INVOKED (not spawned), phase-scoped, and parent-ignorant
-// (ADR-028): no child references another; only the parent watches each via
-// `onSnapshot` and forwards hand-offs. This file is type-only and imports
-// nothing from machine.ts, so there is no machine ↔ types cycle.
+// The children are INVOKED (not spawned), phase-scoped, and parent-ignorant: no
+// child references another; only the parent watches each via `onSnapshot` and
+// forwards hand-offs. This file is type-only and imports nothing from
+// machine.ts, so there is no machine ↔ types cycle.
 //
-// Phase 2 wires the REAL children, so this file now also imports the three
-// I/O-contract types the onboarding child publishes for its composition root —
-// the env `Config`, the `SessionOnboardingDeps` fetch-port bundle, and
-// `SessionOnboardingInput` (the begin envelope the parent's `types.input` pins
-// against, because the parent's only cold-start path bootstraps into
-// onboarding). project-context + session-chat take their I/O ports as
-// construction-time actors instead (wired in ../index.ts). These are type-only
-// imports of a child's public contract, not a machine importing another machine
-// (ADR-028 stands — the parent is the composition root for its children).
+// It imports the three I/O-contract types the onboarding child publishes for its
+// composition root — the env `Config`, the `SessionOnboardingDeps` fetch-port
+// bundle, and `SessionOnboardingInput` (the begin envelope the parent's
+// `types.input` pins against, because the parent's only cold-start path
+// bootstraps into onboarding). project-context + session-chat take their I/O
+// ports as construction-time actors instead (wired in ../index.ts). These are
+// type-only imports of a child's public contract, not a machine importing
+// another machine — the parent is the composition root for its children.
+//
+// References:
+//   docs/decisions/adr-044-*.md  — coordinator statechart
+//   docs/decisions/adr-028-*.md  — parent-ignorant children
+//   docs/decisions/adr-043-*.md  — token-lifecycle modeling retired from ui-state
+//   docs/decisions/adr-016-*.md  — auth-proxy owns the token lifecycle
 
 import type { Config } from "../../../../config.ts";
 import type {
@@ -46,7 +50,7 @@ export type ChatAppLifecycle =
 
 /** Stable child identities. These are the parent's `invoke` ids / `systemId`s —
  *  the parent's own observability + sendTo handles, NEVER child-to-child
- *  references (ADR-028). */
+ *  references. */
 export type ChatAppChildId =
   | "session-onboarding"
   | "project-context"
@@ -54,9 +58,7 @@ export type ChatAppChildId =
 
 // ─────────────────────────── Hand-off payloads ───────────────────────────
 // Captured from a child's snapshot when it reaches its readiness state, then
-// forwarded into the NEXT child on the parent's entry into the next phase. This
-// is the declarative form of the orchestrator's imperative authReady→begin /
-// projectReady pump callbacks.
+// forwarded into the NEXT child on the parent's entry into the next phase.
 
 /** onboarding → project_context: the resolved org + identity. Mirrors the
  *  `auth_ready` event the real project-context child consumes. */
@@ -75,11 +77,11 @@ export interface ProjectHandoff {
 }
 
 /**
- * The RETAINED onboarding outcome (ADR-044 §2 — make the actor the
- * state-of-record). The onboarding child is phase-scoped: its invoke lives on
- * the `onboarding` lifecycle state, so XState STOPS it the moment the parent
- * advances to `engaged` (or `user_rejected`) and it disappears from the snapshot
- * (Phase-2 finding). But the FE root loader reads the `login-and-org-setup`
+ * The RETAINED onboarding outcome — the actor is the state-of-record. The
+ * onboarding child is phase-scoped: its invoke lives on the `onboarding`
+ * lifecycle state, so XState STOPS it the moment the parent advances to
+ * `engaged` (or `user_rejected`) and it disappears from the snapshot. But the FE
+ * root loader reads the `login-and-org-setup`
  * projection on EVERY request — including deep in chat — so its resolved
  * identity/org (and, on the reject path, the cause) must survive the child's
  * stop. The parent captures it here on the SAME onSnapshot transition that
@@ -107,16 +109,15 @@ export interface OnboardingResult {
 // ─────────────────────── Events the parent FORWARDS ───────────────────────
 
 /** A user intent the parent routes to whichever child is active for the current
- *  phase. Kept deliberately small for Phase 1; the real children's full intent
- *  surface lands when they are wired in Phase 2. */
+ *  phase. */
 export type ChatUserIntent =
   | { type: "session_clicked"; session_id: string }
   | { type: "new_session_clicked" }
   | { type: "refresh_session_list" };
 
 /** The full set of events the parent ever `sendTo`s a child. The child
- *  placeholders (./actors.ts) and the Phase-1 fakes both accept this union so
- *  the parent's static `sendTo` targets type-check. */
+ *  placeholders (./actors.ts) and the test fakes both accept this union so the
+ *  parent's static `sendTo` targets type-check. */
 export type ChatAppChildEvent =
   | { type: "auth_ready"; org_id: string; user: { first_name: string } }
   | {
@@ -157,8 +158,8 @@ export interface ChatAppContext {
   deps: SessionOnboardingDeps | null;
 
   /** Which child currently receives forwarded user intents — re-pointed on each
-   *  lifecycle phase entry. The single intent router (ADR-028) needs this
-   *  because forwarding is phase-scoped: onboarding while onboarding, etc. */
+   *  lifecycle phase entry. The single intent router needs this because
+   *  forwarding is phase-scoped: onboarding while onboarding, etc. */
   active_child_id: ChatAppChildId;
   /** Captured onboarding hand-off; forwarded as `auth_ready` on entry to the
    *  project-context-owning state. Null until onboarding reaches `ready`. */
@@ -189,14 +190,12 @@ export type ChatAppEvent =
   // switching_project_intent). Meaningful while engaged (project_context/chat).
   | { type: "PROJECT_SWITCH"; new_project_id: string }
   // A raw domain event to forward verbatim to whichever child owns the current
-  // phase. This is the HTTP `/event` transport seam (ADR-044 Phase 4): the live
-  // app validates the inbound wire event at its boundary, then hands the
-  // `{type, payload}` to the parent, which forwards it to `active_child_id`
-  // (onboarding while onboarding, project-context while project_context,
-  // session-chat while chat). It is the declarative successor to the
-  // orchestrator's `actor.send({ type, ...payload })` dispatch — the parent
-  // stays the sole router (ADR-028); the child's own event union decides
-  // whether the event is handled or ignored (XState v5 ignores unknowns).
+  // phase. This is the HTTP `/event` transport seam: the live app validates the
+  // inbound wire event at its boundary, then hands the `{type, payload}` to the
+  // parent, which forwards it to `active_child_id` (onboarding while onboarding,
+  // project-context while project_context, session-chat while chat). The parent
+  // stays the sole router; the child's own event union decides whether the event
+  // is handled or ignored (XState v5 ignores unknowns).
   | {
       type: "child_event";
       child_event: { type: string; payload?: Record<string, unknown> };
@@ -250,12 +249,12 @@ export interface SessionChatInput {
 // (./actors.ts) carry a minimal type, so the guards/actions cast the snapshot
 // to the narrow slice they read — the same cast convention the child machines
 // use for actor-result events. These views name ONLY what the parent reads;
-// the real children (Phase 2) are structurally wider but compatible here.
+// the real children are structurally wider but compatible here.
 
 export interface OnboardingSnapshotView {
   value: string;
   context: {
-    // Widened (Phase 3) beyond the hand-off's org.id + user.first_name so the
+    // Names more than the hand-off's org.id + user.first_name so the
     // onboarding-outcome capture (machine.ts captureAuthHandoff /
     // captureUserRejected) can RETAIN the full slice the derived
     // login-and-org-setup projection reproduces (org name, full user, the

@@ -1,28 +1,34 @@
-// ChatApp HTTP transport — the LIVE wire surface for the ui-state tier
-// (ADR-044 Phase 4). This is the declarative successor to the per-machine
-// orchestrator routers: ONE ChatApp actor per principal serves ALL THREE wire
-// machines' projections (login-and-org-setup / project-and-chat-session-management
-// / session-chat) as DERIVED VIEWS of the single coordinator actor.
+// ChatApp HTTP transport — the LIVE wire surface for the ui-state tier. ONE
+// ChatApp actor per principal serves ALL THREE wire machines' projections
+// (login-and-org-setup / project-and-chat-session-management / session-chat) as
+// DERIVED VIEWS of the single coordinator actor.
 //
 // Why one router factory, mounted under five wire paths:
 //   - The live FE + auth-proxy READ all three machines' projections (the frozen
-//     ADR-027 wire contract). Each mount bakes its own `wireMachineName`, so
+//     wire contract). Each mount bakes its own `wireMachineName`, so
 //     `deriveProjection(snapshot, wireMachineName, …)` synthesizes the right
 //     `flow_id` + child slice (the alias names resolve via WIRE_TO_CHILD).
 //   - WRITES (`/begin`, `/event`, `/open-deep-link`) all target the SAME
 //     per-principal ChatApp actor: cold-start bootstraps onboarding; the parent
-//     cascades to project-context + session-chat internally (ADR-028 onSnapshot
+//     cascades to project-context + session-chat internally (onSnapshot
 //     hand-offs) — no separate project/session begin is needed.
 //
-// Persistence (ADR-044 §2 hybrid): the live ChatApp actor is the STATE-of-record
+// Persistence (hybrid): the live ChatApp actor is the STATE-of-record
 // (getPersistedSnapshot via ChatAppSnapshotStore, for hot restart recovery). The
-// append-only FlowEventLog is RETAINED but DEMOTED to SSE/audit + projection
-// bookkeeping (sequence_id/last_event_at/request_id) — keyed by the CANONICAL
-// child so the alias paths share one log and report consistent bookkeeping.
+// append-only FlowEventLog carries SSE/audit + projection bookkeeping
+// (sequence_id/last_event_at/request_id) — keyed by the CANONICAL child so the
+// alias paths share one log and report consistent bookkeeping.
 //
-// No `/freeze` + `/thaw`: ChatApp's connectivity/freeze region was retired
-// (ADR-043 / ADR-044 amendment 2026-05-28); auth-proxy owns the token lifecycle
-// (ADR-016), so ui-state is never a token-management participant.
+// No `/freeze` + `/thaw`: auth-proxy owns the token lifecycle, so ui-state is
+// never a token-management participant.
+//
+// References:
+//   docs/decisions/adr-044-*.md  — hybrid log/derived-view projection
+//   docs/decisions/adr-027-*.md  — per-machine projection wire contract
+//   docs/decisions/adr-028-*.md  — parent-ignorant children, onSnapshot hand-offs
+//   docs/decisions/adr-030-*.md  — single-replica in-process actors
+//   docs/decisions/adr-035-*.md  — failure-simulation authorization gate
+//   docs/decisions/adr-016-*.md  — auth-proxy owns the token lifecycle
 
 import { KNOB, shouldInject } from "@dashboard-chat/shared-failure-simulation";
 import { type Context, Hono } from "hono";
@@ -64,17 +70,16 @@ const CANONICAL_CHILDREN: readonly ChatAppChildId[] = [
 ];
 
 /** Bounded settle timeout — the longest a write handler awaits the actor's
- *  invoke cascade before reading the projection (defensive cap mirroring the
- *  retired waitForSettledState; on timeout the projection reflects whatever
- *  state the actor reached). */
+ *  invoke cascade before reading the projection (defensive cap; on timeout the
+ *  projection reflects whatever state the actor reached). */
 const SETTLE_TIMEOUT_MS = 10_000;
 
 // ───────────────────────── per-principal actor registry ─────────────────────────
 
 /**
- * Per-principal ChatApp actor map. ui-state is single-replica (ADR-030 §SD2 —
- * XState v5 actors are in-process), so an in-memory map is the live actor store;
- * the ChatAppSnapshotStore backs hot-restart recovery across process restarts.
+ * Per-principal ChatApp actor map. ui-state is single-replica (XState v5 actors
+ * are in-process), so an in-memory map is the live actor store; the
+ * ChatAppSnapshotStore backs hot-restart recovery across process restarts.
  */
 export class ChatAppActorRegistry {
   private readonly actors = new Map<string, AnyActorRef>();
@@ -204,14 +209,14 @@ async function persist(
       actor as unknown as Parameters<typeof saveChatAppSnapshot>[2],
     );
   } catch {
-    // Persistence is best-effort (ADR-044 §2 — the live actor is the truth; a
-    // missed save only forfeits hot-restart recovery, never the live response).
+    // Persistence is best-effort — the live actor is the truth; a missed save
+    // only forfeits hot-restart recovery, never the live response.
   }
 }
 
-/** Append a bookkeeping marker to the canonical child's RETAINED log so the
- *  derived projection's sequence_id/last_event_at/request_id stay monotonic for
- *  SSE/audit. Best-effort (a missed append only delays an SSE push, ADR-044 §2). */
+/** Append a bookkeeping marker to the canonical child's log so the derived
+ *  projection's sequence_id/last_event_at/request_id stay monotonic for
+ *  SSE/audit. Best-effort (a missed append only delays an SSE push). */
 async function appendBookkeeping(
   runtime: ChatAppRuntime,
   wireMachine: string,
@@ -253,8 +258,8 @@ function viewOf(actor: AnyActorRef): ChatAppSnapshotView {
 
 /** The anonymous view for a principal with no flow — folds to the zero-event
  *  projection (state `verifying`, initialContext) for every wire machine, exactly
- *  as `buildProjection([])` did on the orchestrator path, but derived purely
- *  through the mapper (no log-fold on the live read path). */
+ *  as `buildProjection([])` yields, but derived purely through the mapper (no
+ *  log-fold on the live read path). */
 function emptyView(principal_id: string): ChatAppSnapshotView {
   return {
     value: "onboarding",
@@ -277,10 +282,10 @@ async function projectionResponse(
 }
 
 // ───────────────────────── onboarding /event ACL schema ─────────────────────────
-// Preserved verbatim from the retired session-onboarding router: the onboarding
-// wire's /event vocabulary is CLOSED (an unmodeled type → 400) and each arm
-// validates only payload WELL-FORMEDNESS (org_name string-ness; a known cause
-// tag). Domain rules (is the org name valid?) stay on the value object.
+// The onboarding wire's /event vocabulary is CLOSED (an unmodeled type → 400)
+// and each arm validates only payload WELL-FORMEDNESS (org_name string-ness; a
+// known cause tag). Domain rules (is the org name valid?) stay on the value
+// object.
 
 const causeTag = z.string().refine(isUnderlyingCauseTag, {
   message: "tag must be a known UnderlyingCauseTag",
@@ -392,9 +397,9 @@ export function buildChatAppRouter(
       event_type: type,
     });
 
-    // ADR-035 failure-simulation AUTHORIZATION gate — a policy check kept distinct
-    // from shape validation: production cannot drive the forced-failure
-    // side-channel even with a well-formed event.
+    // Failure-simulation AUTHORIZATION gate — a policy check kept distinct from
+    // shape validation: production cannot drive the forced-failure side-channel
+    // even with a well-formed event.
     if (
       type === "__force_failure__" &&
       !shouldInject(KNOB.forceFailureOnAuthRetry, {
@@ -429,7 +434,7 @@ export function buildChatAppRouter(
   // the derived projection reflects it. The legacy route-shaped branch
   // (resolveActiveScope at the HTTP edge) appends an audit event; the derived
   // view sources scope from child context, so route-shaped scope is
-  // acceptance-only (ADR-044 §gap #6).
+  // acceptance-only.
   router.post("/open-deep-link", async (c) => {
     const request_id = c.get("requestId");
     let body: {
@@ -509,8 +514,8 @@ export function buildChatAppRouter(
     return projectionResponse(c, runtime, wireMachine, principal_id);
   });
 
-  // GET /projection — the frozen ADR-027 read contract, derived byte-stable from
-  // the principal's ChatApp snapshot for this wire machine.
+  // GET /projection — the frozen read contract, derived byte-stable from the
+  // principal's ChatApp snapshot for this wire machine.
   router.get("/projection", async (c) => {
     const principal_id = c.req.header("X-User-Id") ?? "";
     return projectionResponse(c, runtime, wireMachine, principal_id);

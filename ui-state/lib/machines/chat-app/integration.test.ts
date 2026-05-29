@@ -1,21 +1,18 @@
-// In-process INTEGRATION tests for the ChatApp coordinator (ADR-044, Phase 2).
+// In-process INTEGRATION tests for the ChatApp coordinator.
 //
 // These create + start a REAL wired ChatApp actor via the composition root
 // (createChatApp, ./index.ts) with the THREE REAL child machines provided over
 // the placeholder slots, and drive it end-to-end. The ONLY mocks are at the
-// children's PORT boundaries (ADR-028): the onboarding child's `fetch` (injected
-// via the begin envelope's `deps.request_client`, the same makeMockFetch the
-// onboarding unit tests use), and the project-context / session-chat resolver
-// ACTORS (injected as `fromPromise` fakes at construction, the same fixture
-// style their own machine.test.ts files use). No HTTP, no Redis, no persistence
-// (Phases 3-4).
+// children's PORT boundaries: the onboarding child's `fetch` (injected via the
+// begin envelope's `deps.request_client`, the same makeMockFetch the onboarding
+// unit tests use), and the project-context / session-chat resolver ACTORS
+// (injected as `fromPromise` fakes at construction, the same fixture style their
+// own machine.test.ts files use). No HTTP, no Redis, no persistence.
 //
-// The orchestrator tests are the behavioral reference for the SAME observable
-// sequences (orchestrator.test.ts, orchestrator-switching-project.test.ts):
-// happy login→project→chat, project switch (idempotent on same id), and
-// session_rejected. We assert the SAME behavior against the wired ChatApp, read
-// at the parent's lifecycle value + the invoked children's own state/context +
-// the recorded port calls.
+// The covered observable sequences: happy login→project→chat, project switch
+// (idempotent on same id), and session_rejected — asserted against the wired
+// ChatApp, read at the parent's lifecycle value + the invoked children's own
+// state/context + the recorded port calls.
 
 import { describe, expect, it } from "vitest";
 import { type AnyActorRef, createActor, fromPromise } from "xstate";

@@ -1,18 +1,15 @@
-// deriveProjection — the DERIVED-VIEW projection mapper (ADR-044 §2, review §4).
+// deriveProjection — the DERIVED-VIEW projection mapper.
 //
-// Produces the EXISTING per-machine `FlowProjection` (ADR-027 wire contract)
-// from a ChatApp actor snapshot — BYTE-IDENTICAL to today's log-folded
-// `buildProjection` output, sourced from actor STATE instead of an event log.
-//
-// This is the bridge that lets ChatApp become the internal state-of-record
-// (Phase 3) WITHOUT touching the external `GET /flow/{machine}/projection`
-// envelope the FE root loader + route loaders + auth-proxy KPI sniffer read.
-// The wire bytes do not change; only their SOURCE does. The contract is FROZEN
-// — we DERIVE it, we do not redesign it (ADR-044 §D).
+// Produces the per-machine `FlowProjection` (the frozen wire contract) from a
+// ChatApp actor snapshot — BYTE-IDENTICAL to the log-folded `buildProjection`
+// output, sourced from actor STATE instead of an event log. ChatApp is the
+// internal state-of-record; the external `GET /flow/{machine}/projection`
+// envelope the FE root loader + route loaders + auth-proxy KPI sniffer read is
+// unchanged. The wire bytes do not change; only their SOURCE does.
 //
 // How byte-identity is held:
 //   - state/context/active_scope come from the relevant CHILD slice of the
-//     snapshot (the child machines were named to the projection's state
+//     snapshot (the child machines are named to the projection's state
 //     vocabulary, so child.value → projection `state` is a documented, tested
 //     mapping — mostly identity).
 //   - `context` is built from `initialContext()` (the SAME zero-event defaults
@@ -20,19 +17,27 @@
 //     handlers would have written are overridden — so every field this mapper
 //     does NOT touch matches the log fold's default byte-for-byte.
 //   - `active_scope` reuses the SAME tiered `deriveActiveScope` buildProjection
-//     uses (not duplicated divergently — ADR-044 §C1).
+//     uses (not duplicated divergently).
 //   - `sequence_id` / `last_event_at` / `request_id` are bookkeeping the
-//     RETAINED append-only log supplies (still appended for SSE/audit, ADR-044
-//     §2); the caller passes them in via `bookkeepingFromLog(events)`. Sourcing
-//     them from the log (not the snapshot) keeps the SSE cursor coherent while
-//     STATE has no "forgot-to-emit" gap (the snapshot is the truth for state).
+//     append-only log supplies (appended for SSE/audit); the caller passes them
+//     in via `bookkeepingFromLog(events)`. Sourcing them from the log (not the
+//     snapshot) keeps the SSE cursor coherent while STATE has no "forgot-to-emit"
+//     gap (the snapshot is the truth for state).
 //
-// No freeze overlay: ChatApp's parent-level token-lifecycle (freeze/reauth)
-// region was retired (ADR-043 — auth-proxy owns the token lifecycle, ADR-016),
-// so there is no `connectivity:frozen` state to read and no `freeze` /
-// `expired_token` projection mapping. State derives purely from the child slice.
+// No freeze overlay: auth-proxy owns the token lifecycle, so there is no
+// `connectivity:frozen` state to read and no `freeze` / `expired_token`
+// projection mapping. State derives purely from the child slice.
 //
 // Pure: same (snapshot, wireMachineName, bookkeeping) ⇒ same FlowProjection.
+//
+// References:
+//   docs/decisions/adr-044-*.md  — hybrid log/derived-view projection
+//   docs/decisions/adr-027-*.md  — per-machine projection wire contract
+//   docs/decisions/adr-028-*.md  — parent-ignorant children
+//   docs/decisions/adr-043-*.md  — token-lifecycle modeling retired from ui-state
+//   docs/decisions/adr-016-*.md  — auth-proxy owns the token lifecycle
+//   docs/decisions/adr-040-*.md  — legacy machine-name aliases
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
 import type { ResourceType } from "../../../domain/active-scope.ts";
 import type { FlowEvent } from "../../../domain/flow-event.ts";
@@ -46,10 +51,10 @@ import type { ChatAppChildId, OnboardingResult } from "../setup/types.ts";
 
 // ───────────────────────────── wire machine names ─────────────────────────────
 // The THREE wire machine names the FE + auth-proxy + acceptance harness hit at
-// `GET /ui-state/flow/{machine}/projection` (ADR-040/041 aliases preserved —
-// review R7). `flow_id` is synthesized `{wireMachineName}:{principal}` verbatim,
-// exactly as `FlowId.of(machine, principal).toKey()` mints it today (the alias
-// segment is NOT canonicalized into the key — see flow-id.test.ts).
+// `GET /ui-state/flow/{machine}/projection` (alias names preserved). `flow_id`
+// is synthesized `{wireMachineName}:{principal}` verbatim, exactly as
+// `FlowId.of(machine, principal).toKey()` mints it (the alias segment is NOT
+// canonicalized into the key — see flow-id.test.ts).
 
 export const LOGIN_AND_ORG_SETUP = "login-and-org-setup";
 export const PROJECT_AND_CHAT_SESSION_MANAGEMENT =
@@ -77,7 +82,7 @@ export class UnknownWireMachineError extends Error {
 /**
  * Resolve a wire machine name (alias OR canonical) to the ChatApp child id whose
  * slice backs it, or undefined for an unknown name. The live router uses this to
- * key the RETAINED bookkeeping event-log by the canonical child — so the
+ * key the bookkeeping event-log by the canonical child — so the
  * `login-and-org-setup` and `session-onboarding` aliases (and likewise
  * `project-and-chat-session-management` / `project-context`) share ONE log and
  * report a consistent `sequence_id`/`last_event_at`/`request_id` regardless of
@@ -107,8 +112,8 @@ interface ChildActorLike {
 
 export interface ChatAppSnapshotView {
   // The collapsed lifecycle value (single region; no parallel connectivity
-  // overlay since the freeze/reauth region was retired — ADR-043). The mapper
-  // derives state from the child slice, not the parent value.
+  // overlay). The mapper derives state from the child slice, not the parent
+  // value.
   value: unknown;
   context: { principal_id: string; onboarding_result: OnboardingResult | null };
   children: Partial<Record<ChatAppChildId, ChildActorLike | undefined>>;
@@ -163,12 +168,11 @@ interface SessionChatChildContext {
 }
 
 // ─────────────────────── child.value → projection state (the tested map) ───────────────────────
-// The children were NAMED to the projection's ~21-state vocabulary (ADR-044),
-// so the map is overwhelmingly identity. Each table is explicit (per the task's
-// "build an explicit, tested mapping table — do NOT assume") so a future child
-// rename surfaces here as a miss rather than silently passing an off-contract
-// value through. Two child-only states have NO log-fold equivalent and are
-// flagged below; they are transient and never the persisted (settled) state.
+// The children are NAMED to the projection's ~21-state vocabulary, so the map is
+// overwhelmingly identity. Each table is explicit so a future child rename
+// surfaces here as a miss rather than silently passing an off-contract value
+// through. Two child-only states have NO log-fold equivalent and are flagged
+// below; they are transient and never the persisted (settled) state.
 
 const ONBOARDING_STATE_MAP: Readonly<Record<string, string>> = {
   verifying: "verifying",
@@ -237,7 +241,7 @@ function deriveOnboarding(
   }
 
   // Child stopped (advanced past onboarding) → the retained outcome IS the
-  // state-of-record for this slice (ADR-044 §2).
+  // state-of-record for this slice.
   const result = snapshot.context.onboarding_result;
   if (result) {
     context.user = {
@@ -350,8 +354,8 @@ export interface ProjectionBookkeeping {
  * The bookkeeping fields exactly as `buildProjection` derives them from the
  * per-machine event log: `sequence_id` = event count, `last_event_at` /
  * `request_id` = the last event's (or "" when empty). The hybrid design keeps
- * these log-sourced (the log is RETAINED for SSE/audit, ADR-044 §2) while
- * state/context/active_scope come from the snapshot.
+ * these log-sourced (the log carries SSE/audit) while state/context/active_scope
+ * come from the snapshot.
  */
 export function bookkeepingFromLog(events: FlowEvent[]): ProjectionBookkeeping {
   let last_event_at = "";

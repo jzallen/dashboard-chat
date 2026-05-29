@@ -4,9 +4,8 @@
 // members of `ChatAppEvent` (../setup/types.ts), so both the guards (./guards.ts)
 // and the context-writer actions (./actions.ts) must read the child snapshot off
 // the event through the narrow views in ../setup/types.ts — the same cast
-// convention the guards and the child machines use. These readers were defined
-// TWICE (inline in machine.ts and again in guards.ts); they live here once so
-// both consumers import the single definition (RPP L2 — DRY).
+// convention the guards and the child machines use. These readers live here so
+// both consumers import the single definition.
 
 import type {
   ChatAppEvent,

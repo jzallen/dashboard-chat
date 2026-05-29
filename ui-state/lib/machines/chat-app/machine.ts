@@ -1,8 +1,6 @@
-// ChatAppMachine — the XState v5 PARENT coordinator that cycles
-// onboarding → project-context → chat (ADR-044). It supersedes the imperative
-// FlowOrchestrator's coordination role (spawn hand-offs, child choreography)
-// with a declarative statechart — the first faithful implementation of
-// ADR-028's "one root orchestrator actor mediating parent-ignorant children."
+// ChatAppMachine — the XState v5 PARENT coordinator that declaratively cycles
+// onboarding → project-context → chat: one root orchestrator actor mediating
+// parent-ignorant children.
 //
 // SINGLE lifecycle region (one active state at a time):
 //
@@ -14,20 +12,16 @@
 //     Inbound user intents route to whichever child owns the current phase via a
 //     top-level `user_intent` handler (forwardIntentToActiveChild).
 //
-// The parent-level token-lifecycle (freeze/reauth) region was RETIRED (ADR-043):
-// auth-proxy owns the token lifecycle (ADR-016), so ui-state is never a
-// token-management participant — a backend-401 is an ordinary upstream error,
-// not a ui-state "reauth" event. ADR-044 §5 Open Question #2 is hereby resolved
-// TOWARD REMOVAL.
+// auth-proxy owns the token lifecycle, so ui-state is never a token-management
+// participant — a backend-401 is an ordinary upstream error, not a ui-state
+// "reauth" event.
 //
-// COORDINATION (children stay parent-ignorant, ADR-028): the parent watches each
-// child via `onSnapshot` and advances on the child's OWN state value; hand-offs
-// are parent `entry` actions that `sendTo` the next child (the declarative form
-// of the orchestrator's authReady→begin / projectReady pump callbacks).
+// COORDINATION (children stay parent-ignorant): the parent watches each child via
+// `onSnapshot` and advances on the child's OWN state value; hand-offs are parent
+// `entry` actions that `sendTo` the next child.
 //
 // Children are dependency-injected: the logical actors (./setup/actors.ts) are
-// placeholders, swapped via `machine.provide({ actors })` (Phase 1 = fakes,
-// Phase 2 = the real machines). See ./README.md.
+// placeholders, swapped via `machine.provide({ actors })`.
 //
 // This file is MAPPING ONLY: it wires the setup pieces and lays out the state
 // transitions. The pieces live under ./setup/ —
@@ -41,10 +35,15 @@
 // `enqueueActions` → `sendTo` forwarders — is fully extractable: pinning each
 // action's generics to the chat-app Ctx/Evt/Actor (the same instantiation-
 // expression technique session-onboarding uses for its assigns) makes the
-// heterogeneous bundle assignable to `setup({ actions })`. See ./setup/actions.ts
-// for why the prior "sendTo target ids must be checked inline" claim does not
-// hold. (chat-app is a pure coordinator with no domain value objects, so there
-// is no setup/domain.ts.)
+// heterogeneous bundle assignable to `setup({ actions })`. (chat-app is a pure
+// coordinator with no domain value objects, so there is no setup/domain.ts.)
+//
+// References:
+//   docs/decisions/adr-044-*.md  — root orchestrator statechart
+//   docs/decisions/adr-028-*.md  — one root actor mediating parent-ignorant children
+//   docs/decisions/adr-043-*.md  — token-lifecycle modeling retired from ui-state
+//   docs/decisions/adr-016-*.md  — auth-proxy owns the token lifecycle
+//   ./README.md                  — state diagram, full ADR list
 
 import { setup } from "xstate";
 
@@ -84,8 +83,7 @@ export function createChatAppMachine() {
       onboarding_result: null,
     }),
     // Live user intent: route to whichever child owns the current phase. This is
-    // the single intent router (ADR-028) — a top-level handler now that the
-    // freeze/reauth region is retired (ADR-043); intents are never held.
+    // the single intent router — a top-level handler; intents are never held.
     on: {
       user_intent: { actions: "forwardIntentToActiveChild" },
       child_event: { actions: "forwardChildEventToActiveChild" },

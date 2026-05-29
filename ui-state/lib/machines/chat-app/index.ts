@@ -1,16 +1,14 @@
 // Barrel + COMPOSITION ROOT for the ChatApp coordinator machine directory.
 //
 // Public surface:
-//   - createChatApp — the Phase-2 composition root (ADR-044 §4 Phase 2): it
-//     constructs the THREE REAL child machines (session-onboarding,
-//     project-context, session-chat) and swaps them over the placeholder DI slots
-//     via `machine.provide({ actors })`. This is the one place that knows all
-//     three children — the faithful "one root actor mediating parent-ignorant
-//     children" of ADR-028. (It is NOT the live ui-state/index.ts app bootstrap;
-//     wiring ChatApp into HTTP routing is Phase 4.)
+//   - createChatApp — the composition root: it constructs the THREE REAL child
+//     machines (session-onboarding, project-context, session-chat) and swaps
+//     them over the placeholder DI slots via `machine.provide({ actors })`. This
+//     is the one place that knows all three children — the "one root actor
+//     mediating parent-ignorant children".
 //   - createChatAppMachine — the bare parent-coordinator statechart factory
-//     (children left as inert placeholders). Phase-1 tests provide FAKES over it
-//     (the fakes are inline in machine.test.ts); createChatApp provides the REAL
+//     (children left as inert placeholders). Tests provide FAKES over it (the
+//     fakes are inline in machine.test.ts); createChatApp provides the REAL
 //     machines.
 //   - ChatAppOnboardingLogic / ChatAppProjectContextLogic /
 //     ChatAppSessionChatLogic — the three per-slot actor-logic types a caller
@@ -21,6 +19,10 @@
 //
 // The internal context/guards/actions live under ./machine.ts + ./setup/ and are
 // deliberately NOT re-exported.
+//
+// References:
+//   docs/decisions/adr-044-*.md  — root orchestrator statechart
+//   docs/decisions/adr-028-*.md  — one root actor mediating parent-ignorant children
 
 import type { ProjectContextMachineDeps } from "../project-context/index.ts";
 import { createProjectContextMachine } from "../project-context/index.ts";
@@ -54,7 +56,7 @@ export interface ChatAppDeps {
 }
 
 /**
- * Phase-2 composition root: build a ChatApp machine wired to the REAL children.
+ * Composition root: build a ChatApp machine wired to the REAL children.
  *
  * Constructs each real child machine and swaps it over the corresponding
  * placeholder slot via `machine.provide({ actors })`. Each cast to its per-slot

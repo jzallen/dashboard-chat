@@ -1,4 +1,4 @@
-// Actions for the ChatApp coordinator statechart (ADR-044).
+// Actions for the ChatApp coordinator statechart.
 //
 // ROLE — actions are the ONLY writers of machine context AND the parent→child
 // forwarders. Two kinds live here:
@@ -7,8 +7,6 @@
 //   - forwarders (`enqueueActions` → `sendTo`): deliver a staged hand-off, or
 //     route a live intent / raw child-event to whichever child owns the phase.
 //
-// Extracted from the machine's `setup({ actions })` block (previously defined
-// INLINE in the statechart) so machine.ts now only ever names actions by string.
 // Both kinds are pinned to the chat-app generics so the heterogeneous bundle is
 // assignable to `setup({ actions })`:
 //   - the `assign`s share `updateContext` — `assign` with its five generics
@@ -20,20 +18,16 @@
 //     lets the pre-built bundle type-check inside `setup`; without it the
 //     entries would carry the generic `ProvidedActor` and be rejected.
 //
-// NOTE on `sendTo` target ids: the inline-only docstring previously claimed
-// extraction would lose `sendTo` target-id checking. That claim does not hold —
-// XState types `sendTo`'s target as `string | ActorRef | (() => …)` (see
-// node_modules/xstate .../actions/send.d.ts `SendToActionTarget`), so a string
-// literal target like `"project-context"` is accepted identically whether the
-// action is defined inline or extracted; it is never matched against the actor
-// map. Extraction therefore preserves the exact type safety the inline form had.
+// `sendTo` target ids: XState types `sendTo`'s target as
+// `string | ActorRef | (() => …)` (see node_modules/xstate
+// .../actions/send.d.ts `SendToActionTarget`), so a string literal target like
+// `"project-context"` is accepted whether the action is defined inline or in
+// this bundle; it is never matched against the actor map.
 //
 // `event` is the FULL declared `ChatAppEvent` union for EVERY action in this
 // bundle: `setup` types each named action's expression-event as the whole
 // `TEvent`, regardless of which transition references it. So the snapshot/intent
-// readers cast `event` to reach the onSnapshot snapshot or the intent payload —
-// that is the documented cost of EXTRACTING actions out of `setup` (same as
-// session-onboarding), not a behavior change.
+// readers cast `event` to reach the onSnapshot snapshot or the intent payload.
 
 import { assign, enqueueActions } from "xstate";
 
@@ -93,7 +87,7 @@ export const actions = {
 
   // ── hand-off capture (read the child snapshot, stage the payload) ──
   /** onboarding → project_context: stage org + identity for `auth_ready` AND
-   *  retain the full onboarding outcome (ADR-044 §2). The onboarding child is
+   *  retain the full onboarding outcome. The onboarding child is
    *  phase-scoped — it is stopped on this very advance — so its resolved
    *  identity/org must survive into parent context for the derived
    *  `login-and-org-setup` projection to reproduce `ready` byte-identically
@@ -205,12 +199,10 @@ export const actions = {
   forwardIntentToActiveChild: forward(({ context, event, enqueue }) => {
     enqueue.sendTo(context.active_child_id, intentOf(event));
   }),
-  /** live child_event: forward a raw domain event (the HTTP `/event`
-   *  transport, ADR-044 Phase 4) verbatim to whichever child owns the
-   *  current phase. The cast mirrors the orchestrator's retired
-   *  `actor.send({ type: event.type, ...event.payload } as never)` — the
-   *  child's own event union decides whether to handle or ignore it
-   *  (XState v5 ignores unknown events), so this stays a total forward. */
+  /** live child_event: forward a raw domain event (the HTTP `/event` transport)
+   *  verbatim to whichever child owns the current phase. The child's own event
+   *  union decides whether to handle or ignore it (XState v5 ignores unknown
+   *  events), so this stays a total forward. */
   forwardChildEventToActiveChild: forward(({ context, event, enqueue }) => {
     const raw = (
       event as {

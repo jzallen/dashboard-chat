@@ -1,4 +1,4 @@
-// Snapshot restart-recovery tests on the REAL wired ChatApp (ADR-044 §C3).
+// Snapshot restart-recovery tests on the REAL wired ChatApp.
 //
 // These drive a real wired ChatApp actor through the ChatAppSnapshotStore
 // (noop tier — exercises the JSON round-trip) and rehydrate a FRESH wired
@@ -6,8 +6,7 @@
 //   - settled-state round-trip restores the lifecycle value + child states
 //     (the happy hot-restart), with NO spurious re-fire of settled reads;
 //   - the R3 self-heal: a snapshot taken MID-INVOKE rehydrates and re-fires the
-//     in-flight child invoke automatically, settling without recovery code —
-//     reproduced here on the real wired ChatApp (the spike used a minimal shape);
+//     in-flight child invoke automatically, settling without recovery code;
 //   - the saveChatAppSnapshot settled-state guard SKIPS a mid-transient save.
 
 import { describe, expect, it } from "vitest";

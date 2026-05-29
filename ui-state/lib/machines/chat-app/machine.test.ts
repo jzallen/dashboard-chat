@@ -1,7 +1,7 @@
-// Parent-only choreography tests for the ChatApp coordinator (ADR-044). These
-// drive the parent via a created actor with FAKE children provided over the
-// placeholder slots (the fakes are defined inline below — they are fixtures for
-// THIS test only). No network, no Redis, no boundaries.
+// Parent-only choreography tests for the ChatApp coordinator. These drive the
+// parent via a created actor with FAKE children provided over the placeholder
+// slots (the fakes are defined inline below — they are fixtures for THIS test
+// only). No network, no Redis, no boundaries.
 //
 // The unique surface covered HERE (not redundantly with integration.test.ts):
 //   - drivable parking of children at specific values (`verifying`,
@@ -13,8 +13,8 @@
 // children. The two suites are complementary — choreography lives here,
 // production-like behavior there.
 //
-// Children stay parent-ignorant (ADR-028): the test drives a child directly via
-// its actor ref, and the parent only ever watches + forwards.
+// Children stay parent-ignorant: the test drives a child directly via its actor
+// ref, and the parent only ever watches + forwards.
 
 import { describe, expect, it } from "vitest";
 import { type AnyActorRef, assign, createActor, setup } from "xstate";

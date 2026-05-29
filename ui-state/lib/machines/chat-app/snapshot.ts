@@ -1,4 +1,4 @@
-// ChatApp snapshot restart-recovery helpers (ADR-044 §2, Phase 3).
+// ChatApp snapshot restart-recovery helpers.
 //
 // Make the ChatApp actor's getPersistedSnapshot() the internal state-of-record
 // for hot restart. This module is the thin seam between the live actor and the
@@ -10,17 +10,15 @@
 //   - saveChatAppSnapshot(...)      → persist via the store, ONLY when settled
 //   - loadChatAppSnapshot(...)      → read + (caller) rehydrate
 //
-// R3 spike finding (r3-invoked-child-rehydration.spike.test.ts): on xstate
-// 5.31.1, rehydrating a snapshot taken mid-invoke RE-FIRES the in-flight invoke
-// (self-heals) and survives a JSON round-trip — so no re-enter/kick recovery is
-// needed. The ONE discipline that replaces it: snapshot at SETTLED control
-// states so the non-idempotent create* invokes (createProject /
-// createSessionEagerly) are never the persisted state and can never double-fire
-// on restart. isSettledForSnapshot enforces that; the re-fire is then a pure
-// safety net.
+// R3 invariant: on xstate 5.31.1, rehydrating a snapshot taken mid-invoke
+// RE-FIRES the in-flight invoke (self-heals) and survives a JSON round-trip. The
+// discipline that backs this: snapshot at SETTLED control states so the
+// non-idempotent create* invokes (createProject / createSessionEagerly) are
+// never the persisted state and can never double-fire on restart.
+// isSettledForSnapshot enforces that; the re-fire is then a pure safety net.
 //
-// This module is NOT wired into the live HTTP app or routing (that is Phase 4).
-// It is a tested capability built on ChatApp in isolation.
+// References:
+//   docs/decisions/adr-044-*.md  — hybrid log/snapshot state-of-record
 
 import { type AnyActorRef, type AnyStateMachine, createActor, type Snapshot } from "xstate";
 

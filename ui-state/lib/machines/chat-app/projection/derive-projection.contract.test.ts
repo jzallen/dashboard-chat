@@ -1,19 +1,19 @@
 // R1 GOLDEN / CONTRACT tests — the byte-stability gate for the derived-view
-// projection mapper (ADR-044 §C2, review §6 R1 — the HIGHEST risk).
+// projection mapper.
 //
 // For each scenario the integration suite already exercises, we:
-//   1. drive a REAL wired ChatApp (Phase-2 composition root, mocked child ports)
-//      to the target state,
+//   1. drive a REAL wired ChatApp (composition root, mocked child ports) to the
+//      target state,
 //   2. snapshot it (actor.getSnapshot()),
 //   3. run deriveProjection() for each affected wire machine, and
 //   4. assert the resulting FlowProjection EQUALS, field-by-field, what
 //      buildProjection() folds from the EQUIVALENT per-machine event log.
 //
-// This is what prevents a silent break of the ADR-027 wire contract. The
-// equivalent log is the event sequence the orchestrator appends today for that
-// machine in that state (verified against projection.ts's handlers). Bookkeeping
+// This is what prevents a silent break of the projection wire contract. The
+// equivalent log is the event sequence appended for that machine in that state
+// (verified against projection.ts's handlers). Bookkeeping
 // (sequence_id/last_event_at/request_id) is sourced from that log via
-// bookkeepingFromLog — the hybrid design keeps it log-sourced (ADR-044 §2).
+// bookkeepingFromLog — the hybrid design keeps it log-sourced.
 //
 // Specifically pinned (the load-bearing reads):
 //   - auth-proxy KPI sniffer literals: state ∈ {"ready","error_recoverable"},
@@ -94,7 +94,7 @@ function deferredSwitch(projectId: string): Deferred {
 }
 
 /** ChatAppDeps with fromPromise fakes at every child port (mocks ONLY at the
- *  port boundary, ADR-028). `slowSwitch`, when given, parks project-context in
+ *  port boundary). `slowSwitch`, when given, parks project-context in
  *  switching_project until its promise is resolved by hand. */
 function makeDeps(
   rec: Recorder,
