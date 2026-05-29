@@ -1,26 +1,28 @@
 // ChatAppSnapshotStore — the restart-recovery persistence port for the ChatApp
-// coordinator (ADR-044 §2: the live actor's getPersistedSnapshot() is the
-// internal state-of-record for hot restart). Mirrors the FlowEventLog tier
-// pattern in redis.ts: a port + a Redis adapter + a noop in-memory fallback,
-// selected by capability-presence (REDIS_URL present → Redis; absent → noop).
+// coordinator: the live actor's getPersistedSnapshot() is the internal
+// state-of-record for hot restart. Mirrors the FlowEventLog tier pattern in
+// redis.ts: a port + a Redis adapter + a noop in-memory fallback, selected by
+// capability-presence (REDIS_URL present → Redis; absent → noop).
 //
-// Persistence UNIT: ONE record per principal — `ui-state:chatapp:{principal}:snapshot`
-// — the "unify the persistence unit" internal win (review §4). This is distinct
-// from (and additive to) the per-`flow_id` event-log keyspace
-// (`ui-state:{machine}:{principal}:events`), which is RETAINED untouched for SSE
-// + audit. The snapshot store never reads or writes the event-log keys.
+// Persistence UNIT: ONE record per principal — `ui-state:chatapp:{principal}:snapshot`.
+// This is distinct from the per-`flow_id` event-log keyspace
+// (`ui-state:{machine}:{principal}:events`) used for SSE + audit. The snapshot
+// store never reads or writes the event-log keys.
 //
 // The stored value is the OPAQUE XState persisted-snapshot structure
 // (getPersistedSnapshot() → parent + invoked children). The store treats it as
-// a JSON blob — it never inspects its shape. Per ADR-044, the FE projection is
-// NEVER derived from raw snapshot internals; it is derived through the
-// contract-tested mapper (derive-projection.ts). The snapshot is for actor
-// rehydration only.
+// a JSON blob — it never inspects its shape. The FE projection is NEVER derived
+// from raw snapshot internals; it is derived through the contract-tested mapper
+// (derive-projection.ts). The snapshot is for actor rehydration only.
 //
-// Per the R3 spike, rehydrating a snapshot taken mid-invoke RE-FIRES the
-// in-flight invoke (self-heals) and survives a JSON round-trip, so this store's
+// Rehydrating a snapshot taken mid-invoke RE-FIRES the in-flight invoke
+// (self-heals) and survives a JSON round-trip, so this store's
 // JSON.stringify → bytes → JSON.parse path is safe for hot restart provided the
 // caller snapshots at SETTLED control states (snapshot.ts isSettledForSnapshot).
+//
+// References:
+//   docs/decisions/adr-018-*.md  — capability-presence dispatch
+//   docs/decisions/adr-044-*.md  — hybrid snapshot/log persistence, derived projection
 
 import { Redis } from "ioredis";
 
@@ -128,8 +130,8 @@ export function createNoopChatAppSnapshotStore(): ChatAppSnapshotStore {
 }
 
 /**
- * Capability-presence dispatch (ADR-018 inheritance, mirroring
- * selectFlowEventLog): REDIS_URL present → Redis tier; absent → noop fallback.
+ * Capability-presence dispatch (mirroring selectFlowEventLog): REDIS_URL
+ * present → Redis tier; absent → noop fallback.
  */
 export function selectChatAppSnapshotStore(
   redisUrl: string | undefined,

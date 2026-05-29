@@ -1,10 +1,15 @@
 // RedisFlowEventLog — capability-presence-dispatched adapter satisfying the
 // FlowEventLog port. Key prefix: `ui-state:{flow_id}:events` where
-// flow_id = "<machine-name>:<principal_id>" per ADR-030 §SD3.
+// flow_id = "<machine-name>:<principal_id>".
 //
 // Probe contract: XADD/XRANGE/DEL round-trip on a probe key. HARD-fail at
 // startup if any step fails when REDIS_URL is set. When REDIS_URL is unset,
-// the noop fallback is used (matches ADR-018 capability-presence dispatch).
+// the noop fallback is used (capability-presence dispatch).
+//
+// References:
+//   docs/decisions/adr-018-*.md  — capability-presence dispatch
+//   docs/decisions/adr-027-*.md  — byte-stable persistence/wire record contract
+//   docs/decisions/adr-030-*.md  — flow_id key form / single-replica
 
 import { Redis } from "ioredis";
 
@@ -43,7 +48,7 @@ function streamKey(flow_id: string): string {
 // as the 4-field Redis hash. On read the adapter decodes the record and
 // rehydrates a domain FlowEvent via `FlowEvent.fromCache(flow_id, record)` —
 // reconstructing the flow identity from the STREAM KEY. The 4-field encoding
-// is BYTE-STABLE (ADR-027); changing it breaks persisted bytes + the
+// is BYTE-STABLE; changing it breaks persisted bytes + the
 // projection contract.
 
 function serialize(record: FlowEventRecord): string[] {
@@ -161,7 +166,7 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
 
 export function createNoopFlowEventLog(): FlowEventLog {
   // In-memory map for single-process testing/dev when REDIS_URL is absent.
-  // Per ADR-018, this is the noop fallback — NOT a Redis substitute for
+  // This is the noop fallback — NOT a Redis substitute for
   // multi-replica scenarios. It mirrors the Redis tier's record round-trip:
   // append stores the plain FlowEventRecord and read rehydrates a domain
   // FlowEvent via fromCache, so the same (de)serialization seam is exercised
@@ -256,8 +261,8 @@ export function createNoopFlowEventLog(): FlowEventLog {
 }
 
 /**
- * Capability-presence dispatch (ADR-018 inheritance): REDIS_URL present →
- * Redis tier; absent → noop fallback.
+ * Capability-presence dispatch: REDIS_URL present → Redis tier; absent → noop
+ * fallback.
  */
 export function selectFlowEventLog(redisUrl: string | undefined): FlowEventLog {
   if (redisUrl && redisUrl.length > 0) {

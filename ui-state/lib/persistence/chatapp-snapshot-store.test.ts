@@ -1,4 +1,4 @@
-// Unit tests for the ChatAppSnapshotStore adapter (ADR-044 §2). The Redis tier
+// Unit tests for the ChatAppSnapshotStore adapter. The Redis tier
 // needs a live server, so these exercise the noop adapter — which mirrors the
 // Redis tier's JSON round-trip in-process (save serializes, load deserializes),
 // so the same serialization seam is covered without a Redis dep.

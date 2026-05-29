@@ -5,7 +5,7 @@
 // the contract that survives the FlowEvent-class refactor:
 //
 //   1. append → read preserves the byte-stable record fields
-//      (ts, type, payload, request_id) — the ADR-027 persistence contract.
+//      (ts, type, payload, request_id) — the persistence contract.
 //   2. read returns DOMAIN objects (FlowEvent instances), and their identity
 //      (machine / flowKey) is reconstructed from the STREAM KEY the adapter
 //      read from — `read(flow_id)` keys off `flow_id`. So getMachine() is
