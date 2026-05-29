@@ -1,92 +1,32 @@
-// Actions for the ChatApp coordinator statechart.
+// Actions for the ChatApp coordinator statechart — the ONLY writers of machine
+// context (`assign` closures) and the parent→child forwarders (`enqueueActions`
+// closures). Each is a bare, param-annotated closure; the `assign(...)` /
+// `enqueueActions(...)` wrap happens at the `setup()` call in ../machine.ts,
+// where inference flows from `setup`'s `types`. The closures annotate their param
+// with the shared `ActionArgs` / `ForwardArgs` aliases (./types.ts) — no xstate
+// generics are pinned here.
 //
-// ROLE — actions are the ONLY writers of machine context AND the parent→child
-// forwarders. Two kinds live here:
-//   - context writers (`assign`): re-point the active child, and capture a
-//     child's hand-off / retained outcome off its snapshot.
-//   - forwarders (`enqueueActions` → `sendTo`): deliver a staged hand-off, or
-//     route a live intent / raw child-event to whichever child owns the phase.
-//
-// Both kinds are pinned to the chat-app generics so the heterogeneous bundle is
-// assignable to `setup({ actions })`:
-//   - the `assign`s share `updateContext` — `assign` with its five generics
-//     pinned once via an instantiation expression (no defaults, so all five must
-//     be supplied; `TExpressionEvent` and `TEvent` are the same union here),
-//     mirroring onboarding/setup/actions.ts.
-//   - the forwarders share `forward` — `enqueueActions` with the same generics
-//     pinned. Pinning `TActor` to `ChatAppActor` (../setup/actors.ts) is what
-//     lets the pre-built bundle type-check inside `setup`; without it the
-//     entries would carry the generic `ProvidedActor` and be rejected.
-//
-// `sendTo` target ids: XState types `sendTo`'s target as
-// `string | ActorRef | (() => …)` (see node_modules/xstate
-// .../actions/send.d.ts `SendToActionTarget`), so a string literal target like
-// `"project-context"` is accepted whether the action is defined inline or in
-// this bundle; it is never matched against the actor map.
-//
-// `event` is the FULL declared `ChatAppEvent` union for EVERY action in this
-// bundle: `setup` types each named action's expression-event as the whole
-// `TEvent`, regardless of which transition references it. So the snapshot/intent
-// readers cast `event` to reach the onSnapshot snapshot or the intent payload.
+// `event` is the FULL declared `ChatAppEvent` union for EVERY action: `setup`
+// types each named action's expression-event as the whole `TEvent`, regardless of
+// which transition references it. The onSnapshot snapshot events are not members
+// of that union, so the snapshot/intent readers cast `event` to reach the
+// onSnapshot snapshot or the intent payload.
 
-import { assign, enqueueActions } from "xstate";
-
-import type { ChatAppActor } from "./actors.ts";
 import {
   onboardingSnapshot,
   projectContextSnapshot,
 } from "./snapshot-readers.ts";
 import type {
-  ChatAppContext,
+  ActionArgs,
   ChatAppEvent,
   ChatUserIntent,
+  ForwardArgs,
 } from "./types.ts";
 
 /** A user_intent's payload, read off the live `user_intent` event. */
 function intentOf(event: ChatAppEvent): ChatUserIntent {
   return (event as { type: "user_intent"; intent: ChatUserIntent }).intent;
 }
-
-const updateContext = assign<
-  ChatAppContext,
-  ChatAppEvent,
-  undefined,
-  ChatAppEvent,
-  ChatAppActor
->;
-
-// The forwarders pin the SAME leading generics as `updateContext`, plus the four
-// trailing generics (TAction / TGuard / TDelay / TEmitted) to `never` — exactly
-// what `assign` hardcodes in its return `ActionFunction<…, never, never, never,
-// never>`. This is the one extra step the `enqueueActions` half needs over the
-// `assign` half: `assign` fixes those four for you, whereas `enqueueActions`
-// defaults TAction/TGuard to the wide `ParameterizedObject` and TEmitted to
-// `EventObject`. Left at the defaults, each forwarder's `_out_TAction` would be
-// the wide `ParameterizedObject`, which is NOT assignable to the self-referential
-// `ToParameterizedObject<typeof actions>` that `setup({ actions })` derives from
-// this bundle's own keys. Pinning them to `never` (the forwarders enqueue no
-// named actions, raise no delays, emit nothing) makes the bundle assignable —
-// the precise, narrow reason the forwarders are extractable after all.
-const forward = enqueueActions<
-  ChatAppContext,
-  ChatAppEvent,
-  undefined,
-  ChatAppEvent,
-  ChatAppActor,
-  never,
-  never,
-  never,
-  never
->;
-
-// ── active-child routing (re-pointed on each phase entry) ──
-const markLoginActive = updateContext({
-  active_child_id: "onboarding",
-});
-const markProjectContextActive = updateContext({
-  active_child_id: "project-context",
-});
-const markChatActive = updateContext({ active_child_id: "session-chat" });
 
 // ── hand-off capture (read the child snapshot, stage the payload) ──
 /** onboarding → project_context: stage org + identity for `auth_ready` AND
@@ -96,7 +36,7 @@ const markChatActive = updateContext({ active_child_id: "session-chat" });
  *  `login-and-org-setup` projection to reproduce `ready` byte-identically
  *  once the child is gone. `auth_handoff` keeps its exact prior shape
  *  (org_id + first_name); `onboarding_result` is the additive retention. */
-const captureAuthHandoff = updateContext(({ event }) => {
+export const captureAuthHandoff = ({ event }: ActionArgs) => {
   const snapshot = onboardingSnapshot(event);
   return {
     auth_handoff: {
@@ -118,7 +58,7 @@ const captureAuthHandoff = updateContext(({ event }) => {
       org_validation_error: null,
     },
   };
-});
+};
 /** onboarding → user_rejected: retain the rejected outcome (cause + any
  *  validation error) so the derived `login-and-org-setup` projection
  *  reproduces `session_rejected` after the child is stopped. Mirrors
@@ -126,7 +66,7 @@ const captureAuthHandoff = updateContext(({ event }) => {
  *  cause carries). The action name reflects the domain outcome (user
  *  rejected); the inner `state` value stays `session_rejected` because
  *  it is the FE/auth-proxy wire-contract string for this projection. */
-const captureUserRejected = updateContext(({ event }) => {
+export const captureUserRejected = ({ event }: ActionArgs) => {
   const snapshot = onboardingSnapshot(event);
   return {
     onboarding_result: {
@@ -144,11 +84,11 @@ const captureUserRejected = updateContext(({ event }) => {
       org_validation_error: snapshot.context.org_validation_error ?? null,
     },
   };
-});
+};
 /** project_context → chat (and switch): stage the selected project for
  *  `project_ready` and record it as the last-forwarded id (the
  *  discriminator the guards use to tell first-selection from a switch). */
-const captureProjectHandoff = updateContext(({ context, event }) => {
+export const captureProjectHandoff = ({ context, event }: ActionArgs) => {
   const snapshot = projectContextSnapshot(event);
   const projectId = snapshot.context.project.id ?? "";
   return {
@@ -160,11 +100,11 @@ const captureProjectHandoff = updateContext(({ context, event }) => {
     },
     last_forwarded_project_id: projectId,
   };
-});
+};
 
 // ── forwarders (parent → child) ──
 /** entry of the project-context-owning state: deliver staged auth_ready. */
-const forwardAuthReady = forward(({ context, enqueue }) => {
+export const forwardAuthReady = ({ context, enqueue }: ForwardArgs) => {
   const handoff = context.auth_handoff;
   if (handoff) {
     enqueue.sendTo("project-context", {
@@ -173,9 +113,9 @@ const forwardAuthReady = forward(({ context, enqueue }) => {
       user: handoff.user,
     });
   }
-});
+};
 /** entry of chat AND the switch re-forward: deliver staged project_ready. */
-const forwardProjectReady = forward(({ context, enqueue }) => {
+export const forwardProjectReady = ({ context, enqueue }: ForwardArgs) => {
   const handoff = context.project_handoff;
   if (handoff) {
     enqueue.sendTo("session-chat", {
@@ -186,9 +126,9 @@ const forwardProjectReady = forward(({ context, enqueue }) => {
       request_id: handoff.request_id,
     });
   }
-});
+};
 /** PROJECT_SWITCH: drive project-context's switch by forwarding its intent. */
-const forwardSwitchToProjectContext = forward(({ event, enqueue }) => {
+export const forwardSwitchToProjectContext = ({ event, enqueue }: ForwardArgs) => {
   const switchEvent = event as {
     type: "PROJECT_SWITCH";
     new_project_id: string;
@@ -197,16 +137,24 @@ const forwardSwitchToProjectContext = forward(({ event, enqueue }) => {
     type: "switching_project_intent",
     new_project_id: switchEvent.new_project_id,
   });
-});
+};
 /** live user_intent: route to whichever child owns the current phase. */
-const forwardIntentToActiveChild = forward(({ context, event, enqueue }) => {
+export const forwardIntentToActiveChild = ({
+  context,
+  event,
+  enqueue,
+}: ForwardArgs) => {
   enqueue.sendTo(context.active_child_id, intentOf(event));
-});
+};
 /** live child_event: forward a raw domain event (the HTTP `/event` transport)
  *  verbatim to whichever child owns the current phase. The child's own event
  *  union decides whether to handle or ignore it (XState v5 ignores unknown
  *  events), so this stays a total forward. */
-const forwardChildEventToActiveChild = forward(({ context, event, enqueue }) => {
+export const forwardChildEventToActiveChild = ({
+  context,
+  event,
+  enqueue,
+}: ForwardArgs) => {
   const raw = (
     event as {
       type: "child_event";
@@ -216,22 +164,5 @@ const forwardChildEventToActiveChild = forward(({ context, event, enqueue }) => 
   enqueue.sendTo(context.active_child_id, {
     type: raw.type,
     ...(raw.payload ?? {}),
-  } as never);
-});
-
-// name → action index (keys referenced by string in ../machine.ts).
-export const actions = {
-  markLoginActive,
-  markProjectContextActive,
-  markChatActive,
-
-  captureAuthHandoff,
-  captureUserRejected,
-  captureProjectHandoff,
-
-  forwardAuthReady,
-  forwardProjectReady,
-  forwardSwitchToProjectContext,
-  forwardIntentToActiveChild,
-  forwardChildEventToActiveChild,
+  });
 };

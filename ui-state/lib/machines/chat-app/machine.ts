@@ -10,9 +10,18 @@
 //   docs/decisions/adr-016-*.md  — auth-proxy owns the token lifecycle
 //   ./README.md                  — state diagram, full ADR list
 
-import { setup } from "xstate";
+import { assign, enqueueActions, setup } from "xstate";
 
-import { actions } from "./setup/actions.ts";
+import {
+  captureAuthHandoff,
+  captureProjectHandoff,
+  captureUserRejected,
+  forwardAuthReady,
+  forwardChildEventToActiveChild,
+  forwardIntentToActiveChild,
+  forwardProjectReady,
+  forwardSwitchToProjectContext,
+} from "./setup/actions.ts";
 import { actors } from "./setup/actors.ts";
 import { guards } from "./setup/guards.ts";
 import type {
@@ -30,7 +39,21 @@ export function createChatAppMachine() {
     },
     actors,
     guards,
-    actions,
+    actions: {
+      markLoginActive: assign({ active_child_id: "onboarding" }),
+      markProjectContextActive: assign({ active_child_id: "project-context" }),
+      markChatActive: assign({ active_child_id: "session-chat" }),
+
+      captureAuthHandoff: assign(captureAuthHandoff),
+      captureUserRejected: assign(captureUserRejected),
+      captureProjectHandoff: assign(captureProjectHandoff),
+
+      forwardAuthReady: enqueueActions(forwardAuthReady),
+      forwardProjectReady: enqueueActions(forwardProjectReady),
+      forwardSwitchToProjectContext: enqueueActions(forwardSwitchToProjectContext),
+      forwardIntentToActiveChild: enqueueActions(forwardIntentToActiveChild),
+      forwardChildEventToActiveChild: enqueueActions(forwardChildEventToActiveChild),
+    },
   }).createMachine({
     id: "chat-app",
     initial: "login",

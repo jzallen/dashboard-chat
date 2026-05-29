@@ -289,3 +289,13 @@ export interface ActionArgs {
   event: ChatAppEvent;
 }
 export type GuardArgs = ActionArgs;
+
+/** Arg shape for the parent→child forwarders. Extends `ActionArgs` with a
+ *  STRUCTURAL `enqueue` — just the `sendTo` the forwarders call — so the
+ *  closures need no xstate generics; `enqueueActions(...)` at the `setup()` site
+ *  (../machine.ts) supplies the real, fully-typed `enqueue`. The forwarded event
+ *  is typed `unknown` (each child's own event union decides handling), the same
+ *  effect the inline forwarders had with `as never`. */
+export interface ForwardArgs extends ActionArgs {
+  enqueue: { sendTo: (target: string, ev: unknown) => void };
+}
