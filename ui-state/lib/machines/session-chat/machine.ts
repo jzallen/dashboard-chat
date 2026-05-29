@@ -391,6 +391,15 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
             : context.intended_resource_type,
       }),
     },
+    guards: {
+      /** True when a session_clicked targets a session absent from the current
+       *  session_list — a stale/replayed click (e.g. post-THAW muscle-memory
+       *  after the user switched projects during freeze). Silent-dropped via
+       *  recordStaleSessionClicked (observability only); no transition. */
+      isStaleSessionClick: ({ context, event }) =>
+        event.type === "session_clicked" &&
+        !context.session_list.some((s) => s.id === event.session_id),
+    },
   }).createMachine({
     id: "session-chat",
     initial: "waiting_for_project",
@@ -516,16 +525,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         on: {
           session_clicked: [
             {
-              // DWD-7 stale-intent guard (US-210 / OQ-J002-6): a
-              // session_clicked whose target is absent from the current
-              // session_list — typically a replayed post-THAW muscle-
-              // memory click after the user switched projects during
-              // freeze — is silent-dropped. Observability only (count +
-              // last_stale_intent harvested by the orchestrator); no UX
-              // surface, no error, no transition.
-              guard: ({ context, event }) =>
-                event.type === "session_clicked" &&
-                !context.session_list.some((s) => s.id === event.session_id),
+              // DWD-7 stale-intent: a session_clicked targeting a session
+              // absent from the current list (e.g. a replayed post-THAW click)
+              // is silent-dropped — observability only. See isStaleSessionClick.
+              guard: "isStaleSessionClick",
               actions: "recordStaleSessionClicked",
             },
             {
@@ -649,16 +652,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
         on: {
           session_clicked: [
             {
-              // DWD-7 stale-intent guard (US-210 / OQ-J002-6): a
-              // session_clicked whose target is absent from the current
-              // session_list — typically a replayed post-THAW muscle-
-              // memory click after the user switched projects during
-              // freeze — is silent-dropped. Observability only (count +
-              // last_stale_intent harvested by the orchestrator); no UX
-              // surface, no error, no transition.
-              guard: ({ context, event }) =>
-                event.type === "session_clicked" &&
-                !context.session_list.some((s) => s.id === event.session_id),
+              // DWD-7 stale-intent: a session_clicked targeting a session
+              // absent from the current list (e.g. a replayed post-THAW click)
+              // is silent-dropped — observability only. See isStaleSessionClick.
+              guard: "isStaleSessionClick",
               actions: "recordStaleSessionClicked",
             },
             {
@@ -787,16 +784,10 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
           // the new-session intent and resumes the clicked session.
           session_clicked: [
             {
-              // DWD-7 stale-intent guard (US-210 / OQ-J002-6): a
-              // session_clicked whose target is absent from the current
-              // session_list — typically a replayed post-THAW muscle-
-              // memory click after the user switched projects during
-              // freeze — is silent-dropped. Observability only (count +
-              // last_stale_intent harvested by the orchestrator); no UX
-              // surface, no error, no transition.
-              guard: ({ context, event }) =>
-                event.type === "session_clicked" &&
-                !context.session_list.some((s) => s.id === event.session_id),
+              // DWD-7 stale-intent: a session_clicked targeting a session
+              // absent from the current list (e.g. a replayed post-THAW click)
+              // is silent-dropped — observability only. See isStaleSessionClick.
+              guard: "isStaleSessionClick",
               actions: "recordStaleSessionClicked",
             },
             {
