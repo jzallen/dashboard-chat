@@ -1,6 +1,6 @@
 # ADR-046: StateProxy — a Single Server-Resident-Actor `/state` HTTP Surface (Proxy Model)
 
-**Status:** Proposed (DESIGN, propose-mode — options presented with a recommendation; awaiting user ratification before DELIVER). **Supersedes ADR-045.**
+**Status:** Accepted (ratified by user 2026-05-29; DELIVER in progress). **Supersedes ADR-045.**
 **Date:** 2026-05-29
 **Originating wave:** DESIGN — completes ADR-044 §5 OQ#3 with the proxy model the surveyor research named
 **Author:** Morgan (nw-solution-architect), propose-mode; grounded in `docs/research/xstate-react-backend-integration.md` (Nova, RESEARCH) and the live `ui-state` source
