@@ -1,11 +1,11 @@
-// UI-State Tier — Hono server entry point (ADR-044 Phase 4).
+// UI-State Tier — Hono server entry point.
 //
-// The live ui-state app is now driven by the ChatApp coordinator actor (one per
-// principal) — the declarative successor to the imperative FlowOrchestrator. A
-// single router factory (lib/machines/chat-app/router.ts) is mounted under every
-// wire-machine path; each mount derives its own machine's FlowProjection from the
-// shared per-principal ChatApp snapshot (deriveProjection), so the frozen ADR-027
-// read contract holds byte-stable for all three machines:
+// The live ui-state app is driven by the ChatApp coordinator actor (one per
+// principal). A single router factory (lib/machines/chat-app/router.ts) is
+// mounted under every wire-machine path; each mount derives its own machine's
+// FlowProjection from the shared per-principal ChatApp snapshot
+// (deriveProjection), so the read contract holds byte-stable for all three
+// machines:
 //
 //   GET  /flow/{session-onboarding,login-and-org-setup}/projection      → onboarding slice
 //   GET  /flow/{project-context,project-and-chat-session-management}/…   → project-context slice
@@ -14,16 +14,22 @@
 //   GET  /flow/{…}/projection/stream                                    → SSE substrate
 //   GET  /health
 //
-// Persistence is the ADR-044 §2 hybrid: the live actor is the state-of-record
+// Persistence is a hybrid: the live actor is the state-of-record
 // (getPersistedSnapshot via ChatAppSnapshotStore, hot-restart recovery); the
-// append-only FlowEventLog is RETAINED but demoted to SSE/audit + projection
-// bookkeeping. There is NO /freeze + /thaw — ChatApp's freeze/reauth region was
-// retired (ADR-043 / ADR-044 amendment); auth-proxy owns the token lifecycle
-// (ADR-016).
+// append-only FlowEventLog serves SSE/audit + projection bookkeeping. There is
+// NO /freeze + /thaw — auth-proxy owns the token lifecycle.
 //
 // Auth: this tier trusts the X-User-Id / X-Org-Id / X-User-Email headers injected
-// by auth-proxy upstream (ADR-016). It does NOT re-verify JWTs except the
-// onboarding child's re-verify of the forwarded Bearer against WorkOS.
+// by auth-proxy upstream. It does NOT re-verify JWTs except the onboarding
+// child's re-verify of the forwarded Bearer against WorkOS.
+//
+// References:
+//   docs/decisions/adr-016-*.md  — auth-proxy owns token lifecycle, injects identity headers
+//   docs/decisions/adr-027-*.md  — byte-stable per-machine projection read contract
+//   docs/decisions/adr-030-*.md  — flow_id key form / single-replica startup probe
+//   docs/decisions/adr-040-*.md  — wire-machine name aliases
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
+//   docs/decisions/adr-044-*.md  — hybrid snapshot/log persistence, derived projection, I/O ports as actors
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -55,7 +61,7 @@ import { type FlowEventLog, selectFlowEventLog } from "./lib/persistence/redis.t
 
 /** The wire-machine paths the live app serves. Each pair mounts the SAME router
  *  factory baked with that path's wire-machine name — so the alias paths resolve
- *  to the right child slice + synthesize the right flow_id (ADR-040/041, derived
+ *  to the right child slice + synthesize the right flow_id (derived
  *  via deriveProjection's WIRE_TO_CHILD). */
 const WIRE_PATHS: ReadonlyArray<readonly [path: string, wireMachine: string]> = [
   ["/flow/session-onboarding", "session-onboarding"],
@@ -119,7 +125,7 @@ export function buildChatAppApp(opts: {
  * Build the project-context + session-chat resolver actors from env config. The
  * onboarding child needs NO construction deps — its WorkOS/backend URLs + fetch
  * port arrive per-instance on the begin envelope. These two children inject their
- * I/O ports as construction-time actors (ADR-044 §1); ui-state acts on behalf of
+ * I/O ports as construction-time actors; ui-state acts on behalf of
  * a flow's principal via the identity headers below (dev user in AUTH_MODE=dev;
  * a service M2M token in production).
  */
@@ -177,7 +183,7 @@ const app = production.app;
 
 if (autostart && production.eventLog && production.snapshotStore) {
   const { eventLog, snapshotStore } = production;
-  // Probe both backing stores early so the container hard-fails per ADR-030 §SD3
+  // Probe both backing stores early so the container hard-fails
   // if REDIS_URL is set but a store cannot round-trip.
   Promise.all([eventLog.probe(), snapshotStore.probe()])
     .then(() => {

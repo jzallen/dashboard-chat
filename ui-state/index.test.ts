@@ -1,19 +1,22 @@
-// Acceptance / integration tests for the LIVE ui-state HTTP tier — now driven by
-// the ChatApp coordinator actor (ADR-044 Phase 4).
+// Acceptance / integration tests for the LIVE ui-state HTTP tier — driven by
+// the ChatApp coordinator actor.
 //
 // These drive the in-process Hono app via `app.fetch` (no live socket, no compose
 // stack). They inject a MOCK `fetch` as the onboarding child's I/O port
 // (deps.request_client) so its re-verify + org-create resolvers exercise their
 // real code paths against canned `Response`s, and `fromPromise` fakes for the
 // project-context + session-chat child resolver actors (mocks ONLY at the child
-// port boundaries, ADR-028). They assert on the public projection — the single
-// read contract (ADR-027), now DERIVED from the ChatApp snapshot
-// (deriveProjection) instead of an event-log fold.
+// port boundaries). They assert on the public projection — the single read
+// contract, DERIVED from the ChatApp snapshot (deriveProjection).
 //
-// Persistence note (ADR-044 §2): the live ChatApp actor is the state-of-record;
-// the append-only FlowEventLog is demoted to SSE/audit + projection bookkeeping.
-// So these tests assert the PROJECTION (the contract) rather than event-log
-// CONTENT (the retired event-sourcing mechanism).
+// Persistence: the live ChatApp actor is the state-of-record; the append-only
+// FlowEventLog serves SSE/audit + projection bookkeeping. So these tests assert
+// the PROJECTION (the contract) rather than event-log content.
+//
+// References:
+//   docs/decisions/adr-027-*.md  — public projection read contract
+//   docs/decisions/adr-028-*.md  — mocks only at child port boundaries
+//   docs/decisions/adr-044-*.md  — hybrid persistence, derived projection
 
 import { probe } from "@dashboard-chat/shared-failure-simulation";
 import { afterEach, describe, expect, it } from "vitest";
@@ -218,7 +221,7 @@ describe("Spec 1: returning user with an org lands ready", () => {
   it("retains the ready login projection after the cascade advances past onboarding", async () => {
     // The onboarding child is phase-scoped — stopped on the advance to engaged.
     // The derived login-and-org-setup projection reads the RETAINED outcome, so
-    // a later read still reports ready with the resolved org (ADR-044 §2).
+    // a later read still reports ready with the resolved org.
     active = buildScenario({ requestClient: returningFetch() });
     await begin(active.app, { userId: "u1", bearer: "tok-1", orgId: "org-1" });
 
@@ -522,7 +525,7 @@ describe("Vocabulary closed: an unknown event type is refused at the ACL (400, n
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ChatApp wiring (ADR-044 Phase 4) — one actor serves all three machines'
+// ChatApp wiring — one actor serves all three machines'
 // projections as byte-stable derived views.
 // ═══════════════════════════════════════════════════════════════════════════
 describe("ChatApp wiring: one coordinator actor serves all three machine projections", () => {

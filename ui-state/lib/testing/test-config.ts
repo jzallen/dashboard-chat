@@ -1,7 +1,6 @@
 // Test helpers for the session-onboarding suites.
 //
-// The fake HTTP server (lib/testing/fake-upstream.ts) was superseded: the
-// machine now injects `deps.request_client` (= the `fetch` library) as its I/O
+// The machine injects `deps.request_client` (= the `fetch` library) as its I/O
 // port, so tests drive the upstream side-effects with a MOCK `fetch` (a
 // `vi.fn()` typed as `typeof fetch`) returning canned `Response`s, keyed on the
 // request URL/method. No live socket, no ephemeral port.
@@ -14,9 +13,8 @@
 //                              user); 404 otherwise (new user → needs_org).
 //   - POST /api/orgs         — backend org-create. 201 {id,name}.
 //
-// The backend endpoints ALWAYS succeed. (The org-scoped JWT reissue that used
-// to chain after org-create was retired — auth-proxy now mints it on the
-// org-create response, ADR-043 stage 3a — so there is no reissue-endpoint mock.)
+// The backend endpoints ALWAYS succeed. Auth-proxy mints the org-scoped JWT on
+// the org-create response, so there is no reissue-endpoint mock.
 
 import { vi } from "vitest";
 
