@@ -219,8 +219,12 @@ function mapState(
 // ─────────────────────────────── per-machine derivation ───────────────────────────────
 
 /** login-and-org-setup ← onboarding child (or the retained outcome once
- *  the phase-scoped child is stopped on the advance to engaged/rejected). */
-function deriveOnboarding(
+ *  the phase-scoped child is stopped on the advance to engaged/rejected).
+ *
+ *  Exported so the ADR-046 whole-actor mapper (`derive-state-document.ts`)
+ *  REUSES this exact slice derivation for `regions.onboarding` — the migration
+ *  gate is true by construction (no parallel derivation). */
+export function deriveOnboarding(
   snapshot: ChatAppSnapshotView,
 ): { state: string; context: ReducedContext } {
   const context = initialContext();
@@ -261,8 +265,9 @@ function deriveOnboarding(
   return { state: "verifying", context };
 }
 
-/** project-and-chat-session-management ← project-context child. */
-function deriveProjectContext(
+/** project-and-chat-session-management ← project-context child.
+ *  Exported for reuse by the ADR-046 whole-actor mapper (`regions.projectContext`). */
+export function deriveProjectContext(
   snapshot: ChatAppSnapshotView,
 ): { state: string; context: ReducedContext } {
   const context = initialContext();
@@ -305,8 +310,9 @@ function deriveProjectContext(
   return { state: mapState(PROJECT_CONTEXT_STATE_MAP, rawValue), context };
 }
 
-/** session-chat ← session-chat child. */
-function deriveSessionChat(
+/** session-chat ← session-chat child.
+ *  Exported for reuse by the ADR-046 whole-actor mapper (`regions.sessionChat`). */
+export function deriveSessionChat(
   snapshot: ChatAppSnapshotView,
 ): { state: string; context: ReducedContext } {
   const context = initialContext();
