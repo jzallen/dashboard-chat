@@ -4,21 +4,28 @@
 // without standing up the full compose stack. The Cucumber @us-004 scenarios
 // remain @skip per DI-1; these vitest tests are the verification surface.
 //
+// ADR-046 MR-6 — the harness now reads ONE `/state` document and writes ONE
+// event surface, so the stubs match `GET /ui-state/state` and
+// `POST /ui-state/state/events` instead of the three former per-machine mounts.
+// The canned responses are `ChatAppStateDocument`s; each behavior reads its
+// region slice exactly as the harness does.
+//
 // Behavior budget (Step 02-02): 7 distinct behaviors × 2 = 14 test ceiling.
 // Distinct behaviors verified here:
-//   B1 — begin_auth captures jwt from projection.context.access_token
-//   B2 — submit_org captures jwt when projection transitions to ready
-//   B3 — force_transient_failure routes harness event; harness reports
-//        error_recoverable
-//   B4 — expire_token routes harness event; harness reports expired_token
-//   B5 — assert_jwt_carries_org_claim matches decoded org_id to projection
+//   B1 — begin_auth captures jwt from regions.onboarding.context.access_token
+//   B2 — submit_org captures jwt when the onboarding region transitions to ready
+//   B3 — force_transient_failure routes the __force_failure__ event; harness
+//        reports error_recoverable
+//   B4 — expire_token routes the __expire_token__ event; harness reports
+//        expired_token
+//   B5 — assert_jwt_carries_org_claim matches decoded org_id to the document
 //   B6 — assert_scope produces named-column diff with "expected:" / "actual:"
-//        on each diverged dim
+//        on each diverged dim (reads the single top-level active_scope)
 //   B7 — assert_chat_turn_invokable_for_active_project surfaces
 //        "agent invocation missing scope: missing project_id" diagnostic when
-//        active scope has no project_id
-//   B8 — composition: a second harness with the same config + same flow_id
-//        observes the existing ready state without re-running begin_auth
+//        the document's active scope has no project_id
+//   B8 — composition: a second harness with the same config observes the
+//        existing document without re-running begin_auth (session_begin)
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,7 +39,7 @@ vi.mock("undici", async () => {
 });
 
 import { UserFlowHarness } from "./user-flow-harness.ts";
-import type { FlowProjection } from "./types.ts";
+import type { ActiveScope, ChatAppStateDocument, RegionView } from "./types.ts";
 
 const PROXY = "http://auth-proxy.test:1042";
 const FAKEWORKOS = "http://fake-workos.test:14299";
@@ -60,11 +67,6 @@ interface StubResponse {
   body: unknown;
 }
 
-/**
- * Install a stub for `undici.request`. Each call's URL+method is matched
- * against the script; the harness sees the canned response. Returns the
- * stub for inspection.
- */
 /**
  * Install a stub script onto the hoisted __requestStub. Each call's URL+method
  * is matched against the script; the harness sees the canned response.
@@ -104,43 +106,67 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function authNoOrgProjection(flow_id: string, accessToken: string | null): FlowProjection {
+const EMPTY_SCOPE: ActiveScope = {
+  org_id: "",
+  project_id: null,
+  resource_type: null,
+  resource_id: null,
+};
+
+const VERIFYING: RegionView = { state: "verifying", context: {} };
+
+/** Assemble a ChatAppStateDocument from an onboarding region slice + the
+ *  single top-level active_scope. The projectContext / sessionChat regions are
+ *  filled with their initial slice (irrelevant to the J-001 onboarding tests). */
+function makeDoc(opts: {
+  onboarding: RegionView;
+  active_scope?: ActiveScope;
+  request_id?: string;
+}): ChatAppStateDocument {
   return {
-    flow_id,
-    state: "authenticated_no_org",
-    context: {
-      user: { email: MAYA.email, display_name: MAYA.display_name },
-      org: { id: null, name: null },
-      ...(accessToken ? { access_token: accessToken } : {}),
+    phase: "onboarding",
+    active_scope: opts.active_scope ?? { ...EMPTY_SCOPE },
+    sequence_id: 4,
+    last_event_at: "2026-05-12T00:00:01.000Z",
+    request_id: opts.request_id ?? "R-7a4f-901c",
+    regions: {
+      onboarding: opts.onboarding,
+      projectContext: VERIFYING,
+      sessionChat: VERIFYING,
     },
-    active_scope: {
-      org_id: "",
-      project_id: null,
-      resource_type: null,
-      resource_id: null,
-    },
-    sequence_id: 2,
-    last_event_at: "2026-05-12T00:00:00.000Z",
-    correlation_id: "R-7a4f-901c",
   };
 }
 
-function readyProjection(
-  flow_id: string,
+function authNoOrgDoc(accessToken: string | null): ChatAppStateDocument {
+  return makeDoc({
+    onboarding: {
+      state: "authenticated_no_org",
+      context: {
+        user: { email: MAYA.email, display_name: MAYA.display_name },
+        org: { id: null, name: null },
+        ...(accessToken ? { access_token: accessToken } : {}),
+      },
+    },
+    active_scope: { ...EMPTY_SCOPE },
+  });
+}
+
+function readyDoc(
   orgId: string,
   accessToken: string,
   projectId: string | null = null,
-): FlowProjection {
-  return {
-    flow_id,
-    state: "ready",
-    context: {
-      user: { email: MAYA.email, display_name: MAYA.display_name },
-      org: { id: orgId, name: "Acme Data" },
-      access_token: accessToken,
-      ...(projectId
-        ? { project: { id: projectId, name: "Q4 Analytics" } }
-        : {}),
+): ChatAppStateDocument {
+  return makeDoc({
+    onboarding: {
+      state: "ready",
+      context: {
+        user: { email: MAYA.email, display_name: MAYA.display_name },
+        org: { id: orgId, name: "Acme Data" },
+        access_token: accessToken,
+        ...(projectId
+          ? { project: { id: projectId, name: "Q4 Analytics" } }
+          : {}),
+      },
     },
     active_scope: {
       org_id: orgId,
@@ -148,24 +174,29 @@ function readyProjection(
       resource_type: null,
       resource_id: null,
     },
-    sequence_id: 4,
-    last_event_at: "2026-05-12T00:00:01.000Z",
-    correlation_id: "R-7a4f-901c",
+  });
+}
+
+/** Parse the JSON body of a POST /ui-state/state/events stub call. */
+function eventBody(args: unknown[]): { type: string; payload?: Record<string, unknown> } {
+  const init = (args[1] ?? {}) as { body?: string };
+  return JSON.parse(String(init.body)) as {
+    type: string;
+    payload?: Record<string, unknown>;
   };
 }
 
-describe("B1 — begin_auth captures jwt from projection.context.access_token", () => {
+describe("B1 — begin_auth captures jwt from regions.onboarding.context.access_token", () => {
   it("stores the access_token returned by the ui-state tier on this.jwt", async () => {
-    const flow_id = "login-and-org-setup:user_maya";
     const accessToken = jwtWithOrgId("org-acme-data");
     installStub([
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/begin"),
-        reply: { status: 200, body: authNoOrgProjection(flow_id, accessToken) },
+        match: (u, i) => i?.method === "POST" && u.endsWith("/state/events"),
+        reply: { status: 200, body: authNoOrgDoc(accessToken) },
       },
       {
-        match: (u, i) => i?.method === "GET" && u.includes("/projection?"),
-        reply: { status: 200, body: authNoOrgProjection(flow_id, accessToken) },
+        match: (u, i) => i?.method === "GET" && u.endsWith("/ui-state/state"),
+        reply: { status: 200, body: authNoOrgDoc(accessToken) },
       },
     ]);
     const harness = new UserFlowHarness(
@@ -173,13 +204,14 @@ describe("B1 — begin_auth captures jwt from projection.context.access_token", 
       MAYA,
     );
     await harness.begin_auth("maya");
-    // Re-stub GET /projection to include org.id so claim+state can match.
-    const reply = authNoOrgProjection(flow_id, accessToken);
-    (reply.context as { org: { id: string | null } }).org.id = "org-acme-data";
+    // Re-stub GET /state to include org.id so claim+state can match.
+    const doc = authNoOrgDoc(accessToken);
+    (doc.regions.onboarding.context as { org: { id: string | null } }).org.id =
+      "org-acme-data";
     installStub([
       {
-        match: (u, i) => i?.method === "GET" && u.includes("/projection?"),
-        reply: { status: 200, body: reply },
+        match: (u, i) => i?.method === "GET" && u.endsWith("/ui-state/state"),
+        reply: { status: 200, body: doc },
       },
     ]);
     await expect(harness.assert_jwt_carries_org_claim()).resolves.toBeUndefined();
@@ -187,28 +219,23 @@ describe("B1 — begin_auth captures jwt from projection.context.access_token", 
 });
 
 describe("B2 — submit_org captures jwt on transition to ready", () => {
-  it("stores access_token from the ready projection so subsequent assertions can use it", async () => {
-    const flow_id = "login-and-org-setup:user_maya";
+  it("stores access_token from the ready document so subsequent assertions can use it", async () => {
     const beginToken = jwtWithOrgId("");
     const readyToken = jwtWithOrgId("org-acme-data");
     installStub([
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/begin"),
-        reply: { status: 200, body: authNoOrgProjection(flow_id, beginToken) },
-      },
-      {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/event"),
-        reply: {
-          status: 200,
-          body: readyProjection(flow_id, "org-acme-data", readyToken),
+        match: (u, i) => i?.method === "POST" && u.endsWith("/state/events"),
+        reply: (_u, i) => {
+          const body = JSON.parse(String(i?.body ?? "{}")) as { type?: string };
+          if (body.type === "session_begin") {
+            return { status: 200, body: authNoOrgDoc(beginToken) };
+          }
+          return { status: 200, body: readyDoc("org-acme-data", readyToken) };
         },
       },
       {
-        match: (u, i) => i?.method === "GET" && u.includes("/projection?"),
-        reply: {
-          status: 200,
-          body: readyProjection(flow_id, "org-acme-data", readyToken),
-        },
+        match: (u, i) => i?.method === "GET" && u.endsWith("/ui-state/state"),
+        reply: { status: 200, body: readyDoc("org-acme-data", readyToken) },
       },
     ]);
     const harness = new UserFlowHarness(
@@ -223,25 +250,23 @@ describe("B2 — submit_org captures jwt on transition to ready", () => {
 
 describe("B3 — force_transient_failure drives into error_recoverable", () => {
   it("POSTs the __force_failure__ event and reports the recoverable-error state", async () => {
-    const flow_id = "login-and-org-setup:user_maya";
     installStub([
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/begin"),
-        reply: { status: 200, body: authNoOrgProjection(flow_id, jwtWithOrgId("")) },
-      },
-      {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/event"),
-        reply: {
-          status: 200,
-          body: {
-            flow_id,
-            state: "error_recoverable",
-            context: { underlying_cause_tag: "transient" },
-            active_scope: { org_id: "", project_id: null, resource_type: null, resource_id: null },
-            sequence_id: 3,
-            last_event_at: "2026-05-12T00:00:02.000Z",
-            correlation_id: "R-7a4f-901c",
-          },
+        match: (u, i) => i?.method === "POST" && u.endsWith("/state/events"),
+        reply: (_u, i) => {
+          const body = JSON.parse(String(i?.body ?? "{}")) as { type?: string };
+          if (body.type === "session_begin") {
+            return { status: 200, body: authNoOrgDoc(jwtWithOrgId("")) };
+          }
+          return {
+            status: 200,
+            body: makeDoc({
+              onboarding: {
+                state: "error_recoverable",
+                context: { underlying_cause_tag: "transient" },
+              },
+            }),
+          };
         },
       },
     ]);
@@ -252,41 +277,37 @@ describe("B3 — force_transient_failure drives into error_recoverable", () => {
     await harness.begin_auth("maya");
     const proj = await harness.force_transient_failure("transient");
     expect(proj.state).toBe("error_recoverable");
-    // Verify the harness sent the correct event type to /event.
-    const eventCalls = __requestStub.mock.calls.filter((args: unknown[]) => {
+    // Verify the harness sent the correct event type to /state/events.
+    const failureCalls = __requestStub.mock.calls.filter((args: unknown[]) => {
       const init = (args[1] ?? {}) as { method?: string; body?: string };
-      return init.method === "POST" && String(args[0]).endsWith("/event");
+      if (init.method !== "POST" || !String(args[0]).endsWith("/state/events")) {
+        return false;
+      }
+      return eventBody(args).type === "__force_failure__";
     });
-    expect(eventCalls.length).toBeGreaterThan(0);
-    const body = JSON.parse(
-      String((eventCalls[0][1] as { body: string }).body),
-    ) as { type: string; payload: { tag: string } };
+    expect(failureCalls.length).toBe(1);
+    const body = eventBody(failureCalls[0]);
     expect(body.type).toBe("__force_failure__");
-    expect(body.payload.tag).toBe("transient");
+    expect(body.payload?.tag).toBe("transient");
   });
 });
 
 describe("B4 — expire_token drives into expired_token", () => {
   it("POSTs the __expire_token__ event and reports the expired_token state", async () => {
-    const flow_id = "login-and-org-setup:user_maya";
     installStub([
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/begin"),
-        reply: { status: 200, body: authNoOrgProjection(flow_id, jwtWithOrgId("")) },
-      },
-      {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/event"),
-        reply: {
-          status: 200,
-          body: {
-            flow_id,
-            state: "expired_token",
-            context: {},
-            active_scope: { org_id: "", project_id: null, resource_type: null, resource_id: null },
-            sequence_id: 3,
-            last_event_at: "2026-05-12T00:00:02.000Z",
-            correlation_id: "R-7a4f-901c",
-          },
+        match: (u, i) => i?.method === "POST" && u.endsWith("/state/events"),
+        reply: (_u, i) => {
+          const body = JSON.parse(String(i?.body ?? "{}")) as { type?: string };
+          if (body.type === "session_begin") {
+            return { status: 200, body: authNoOrgDoc(jwtWithOrgId("")) };
+          }
+          return {
+            status: 200,
+            body: makeDoc({
+              onboarding: { state: "expired_token", context: {} },
+            }),
+          };
         },
       },
     ]);
@@ -297,31 +318,30 @@ describe("B4 — expire_token drives into expired_token", () => {
     await harness.begin_auth("maya");
     const proj = await harness.expire_token();
     expect(proj.state).toBe("expired_token");
-    const eventCalls = __requestStub.mock.calls.filter((args: unknown[]) => {
+    const expireCalls = __requestStub.mock.calls.filter((args: unknown[]) => {
       const init = (args[1] ?? {}) as { method?: string; body?: string };
-      return init.method === "POST" && String(args[0]).endsWith("/event");
+      if (init.method !== "POST" || !String(args[0]).endsWith("/state/events")) {
+        return false;
+      }
+      return eventBody(args).type === "__expire_token__";
     });
-    const body = JSON.parse(
-      String((eventCalls[0][1] as { body: string }).body),
-    ) as { type: string };
-    expect(body.type).toBe("__expire_token__");
+    expect(expireCalls.length).toBe(1);
   });
 });
 
 describe("B6 — assert_scope produces named-column diff", () => {
-  it("names diverged dimensions with 'expected:' and 'actual:' on separate lines", async () => {
-    const flow_id = "login-and-org-setup:user_maya";
+  it("names diverged dimensions with 'expected:' and 'actual:' over the top-level active_scope", async () => {
     const readyToken = jwtWithOrgId("org-acme-data");
     installStub([
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/begin"),
-        reply: { status: 200, body: authNoOrgProjection(flow_id, readyToken) },
+        match: (u, i) => i?.method === "POST" && u.endsWith("/state/events"),
+        reply: { status: 200, body: authNoOrgDoc(readyToken) },
       },
       {
-        match: (u, i) => i?.method === "GET" && u.includes("/projection?"),
+        match: (u, i) => i?.method === "GET" && u.endsWith("/ui-state/state"),
         reply: {
           status: 200,
-          body: readyProjection(flow_id, "org-acme-data", readyToken, "proj-q4"),
+          body: readyDoc("org-acme-data", readyToken, "proj-q4"),
         },
       },
     ]);
@@ -340,8 +360,6 @@ describe("B6 — assert_scope produces named-column diff", () => {
     } catch (e) {
       captured = (e as Error).message;
     }
-    // Named column format: dim name padded, "expected: …" then "actual: …" on
-    // the SAME line per harness convention (matches DatasetLayerHarness).
     expect(captured).toContain("project_id");
     expect(captured).toContain("expected:");
     expect(captured).toContain("actual:");
@@ -356,19 +374,18 @@ describe("B6 — assert_scope produces named-column diff", () => {
 
 describe("B7 — assert_chat_turn_invokable_for_active_project surfaces missing-scope diagnostic", () => {
   it("throws a test failure naming 'agent invocation missing scope: missing project_id' when active scope has no project_id", async () => {
-    const flow_id = "login-and-org-setup:user_maya";
     const readyToken = jwtWithOrgId("org-acme-data");
     installStub([
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/begin"),
-        reply: { status: 200, body: authNoOrgProjection(flow_id, readyToken) },
+        match: (u, i) => i?.method === "POST" && u.endsWith("/state/events"),
+        reply: { status: 200, body: authNoOrgDoc(readyToken) },
       },
       {
-        match: (u, i) => i?.method === "GET" && u.includes("/projection?"),
+        match: (u, i) => i?.method === "GET" && u.endsWith("/ui-state/state"),
         reply: {
-          // No project_id in active_scope.
+          // No project_id in the document's top-level active_scope.
           status: 200,
-          body: readyProjection(flow_id, "org-acme-data", readyToken, null),
+          body: readyDoc("org-acme-data", readyToken, null),
         },
       },
       {
@@ -399,26 +416,24 @@ describe("B7 — assert_chat_turn_invokable_for_active_project surfaces missing-
   });
 });
 
-describe("B8 — composition: sibling harness reads existing flow without re-running begin_auth", () => {
-  it("a second harness with the same world reads the projection of the first", async () => {
-    const flow_id = "login-and-org-setup:user_maya";
+describe("B8 — composition: sibling harness reads existing document without re-running begin_auth", () => {
+  it("a second harness with the same world reads the document of the first", async () => {
     const readyToken = jwtWithOrgId("org-acme-data");
-    const ready = readyProjection(flow_id, "org-acme-data", readyToken);
+    const ready = readyDoc("org-acme-data", readyToken);
     let beginCount = 0;
     installStub([
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/begin"),
-        reply: () => {
-          beginCount += 1;
+        match: (u, i) => i?.method === "POST" && u.endsWith("/state/events"),
+        reply: (_u, i) => {
+          const body = JSON.parse(String(i?.body ?? "{}")) as { type?: string };
+          if (body.type === "session_begin") {
+            beginCount += 1;
+          }
           return { status: 200, body: ready };
         },
       },
       {
-        match: (u, i) => i?.method === "POST" && u.endsWith("/event"),
-        reply: { status: 200, body: ready },
-      },
-      {
-        match: (u, i) => i?.method === "GET" && u.includes("/projection?"),
+        match: (u, i) => i?.method === "GET" && u.endsWith("/ui-state/state"),
         reply: { status: 200, body: ready },
       },
     ]);
@@ -430,16 +445,17 @@ describe("B8 — composition: sibling harness reads existing flow without re-run
     await primary.submit_org("Acme Data");
     expect(beginCount).toBe(1);
 
-    // Sibling: same persona, same proxy, but constructed AFTER. Attach the
-    // existing flow via attach_to_flow so it can read the projection without
-    // a second begin_auth. Verifies composition primitive from US-004.
+    // Sibling: same persona, same proxy, but constructed AFTER. Attach to the
+    // existing per-principal document via attach_to_flow so it can read the
+    // document without a second begin_auth (session_begin). Verifies the
+    // composition primitive from US-004.
     const sibling = new UserFlowHarness(
       { authProxyUrl: PROXY, fakeWorkOSUrl: FAKEWORKOS },
       MAYA,
     );
-    sibling.attach_to_flow(flow_id, primary.get_last_correlation_id() ?? "");
+    sibling.attach_to_flow(primary.get_last_correlation_id() ?? "");
     const proj = await sibling.get_projection();
     expect(proj.state).toBe("ready");
-    expect(beginCount).toBe(1); // sibling did NOT call begin_auth
+    expect(beginCount).toBe(1); // sibling did NOT begin a new session
   });
 });

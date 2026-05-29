@@ -7,25 +7,35 @@ flow integration** (per DISCUSS `wave-decisions.md` D3) and is a
 first-class deliverable of US-004 — meaning its public surface is
 itself an acceptance-test target (`harness-drives-every-sign-in-and-org-setup-transition.feature`).
 
-## The four-piece contract
+## The wire contract (ADR-046 MR-6 — the single `/state` surface)
 
-Every harness method drives the ui-state tier via these four wire
-contracts (from `docs/feature/user-flow-state-machines/design/handoff-design-to-distill.md`):
+Post ADR-046, the three former per-machine mounts collapse into ONE document
+surface. Every harness method drives the ui-state tier via these contracts
+(reached through `auth-proxy:1042/ui-state/*`):
 
-1. **Endpoints** — reached through `auth-proxy:1042/ui-state/*`:
-   - `POST /flow/<machine>/begin` → starts a machine; returns `{ correlation_id, projection }`
-   - `POST /flow/<machine>/event` → sends an event; returns `{ projection }`
-   - `GET  /flow/<machine>/projection?flow_id=<machine>:<principal>` → reads current projection
-   - `POST /flow/<machine>/freeze` and `/thaw` — cross-machine FREEZE (US-005)
-   - `GET  /flow/<machine>/projection/stream` — SSE deltas (Slice 3)
+1. **Endpoints**:
+   - `GET  /state` → the current `ChatAppStateDocument` (`.getSnapshot`)
+   - `POST /state/events` → body `{ type, payload }`; the response IS the new
+     document (`.send`). `begin` is the reserved `session_begin` event and
+     `open-deep-link` is the `open_deep_link` event (ADR-046 Decision 3).
+   - `GET  /state/stream` → SSE; the document on every change (`.subscribe`)
+   - `POST /flow/session-chat/freeze` and `/thaw` — cross-machine FREEZE
+     (US-005). These remain a separate gated test-wire substrate, NOT part of
+     the `/state` triad.
 
 2. **ActiveScope schema** (`{ org_id, project_id, resource_type?, resource_id? }`
-   per ADR-029) — invariants I1-I5 enforced server-side by `ScopeResolver`.
+   per ADR-029) — now a SINGLE authoritative top-level field on the document
+   (deepest-resolved region wins); invariants I1-I5 enforced server-side.
 
-3. **Flow events** — Redis Streams shape `{ ts, type, payload, correlation_id }`;
-   `flow_id = <machine-name>:<principal_id>` per ADR-030 §SD3.
+3. **Identity** is header-derived (`X-User-Id`, injected by auth-proxy). There
+   is no `flow_id` on the wire — the document carries no id (ADR-046 Dec. 1B).
 
-4. **Projection shape** — `{ flow_id, state, context, active_scope, sequence_id, last_event_at, correlation_id }`.
+4. **`ChatAppStateDocument` shape** — `{ phase, active_scope, sequence_id,
+   last_event_at, request_id, regions: { onboarding, projectContext,
+   sessionChat } }` where each region is a `{ state, context }` slice. The
+   harness exposes a region slice (its `{state, context}` + the top-level
+   `active_scope`/bookkeeping) to callers; `correlation_id` is sourced from the
+   document's `request_id` (the reference-code handle of the last transition).
 
 ## Public surface
 

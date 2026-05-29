@@ -29,20 +29,20 @@ const AUTH_PROXY_URL = process.env.AUTH_PROXY_URL ?? "http://localhost:1042";
  *
  * The harness's `send_event` is private (the directive forbids modifying
  * its public surface in this step), so we go through the same HTTP path
- * the harness would — same driving port, same routing rule (ADR-030
- * §SD1). Reads the flow_id by inspecting the harness's most recent
- * projection.
+ * the harness would — the single event surface `POST /ui-state/state/events`
+ * (ADR-046 MR-6). Identity is header-derived (no `flow_id` on the wire). The
+ * onboarding region of the resulting document is returned via the harness's
+ * own reader so callers keep their FlowProjection-shaped assertions.
  */
 async function retry_via_harness(harness: UserFlowHarness): Promise<FlowProjection> {
-  const projection = await harness.get_projection();
   const res = await request(
-    `${AUTH_PROXY_URL}/ui-state/flow/login-and-org-setup/event`,
+    `${AUTH_PROXY_URL}/ui-state/state/events`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        flow_id: projection.flow_id,
         type: "retry_clicked",
+        payload: {},
       }),
     },
   );
@@ -52,7 +52,7 @@ async function retry_via_harness(harness: UserFlowHarness): Promise<FlowProjecti
       `retry_via_harness expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
     );
   }
-  return body as FlowProjection;
+  return harness.get_projection();
 }
 
 // --------------------------------------------------------------------------

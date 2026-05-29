@@ -96,10 +96,10 @@ def test_resolution_picks_project_carrying_most_recent_session(
     _create_session(q4_id, "Q4 latest chat")
 
     # Spawn J-002 → resolver picks Q4 (most-recent session).
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200
 
@@ -129,7 +129,7 @@ def test_resolution_picks_project_carrying_most_recent_session(
     )
     # context.most_recent_session_per_project is populated by the resolver
     # with per-project last_active_at timestamps (OQ-J002-5).
-    most_recent = body["context"].get("most_recent_session_per_project") or {}
+    most_recent = body["regions"]["projectContext"]["context"].get("most_recent_session_per_project") or {}
     assert q4_id in most_recent, (
         f"context.most_recent_session_per_project must include Q4's id; "
         f"got keys={list(most_recent.keys())!r}"
@@ -177,10 +177,10 @@ def test_projects_with_no_sessions_fall_back_to_lexicographic_smallest_name(
     p3_id, _ = _create_project("Q4 Analytics")
 
     # Spawn J-002 → resolver picks lex-smallest by NAME.
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200
 
@@ -199,7 +199,8 @@ def test_projects_with_no_sessions_fall_back_to_lexicographic_smallest_name(
 
     body = json.loads(last_probe.body)
     # Marketing 2026 is the lex-smallest name across {Q3 Sales, Marketing 2026, Q4 Analytics}.
-    ctx_project = body["context"].get("project") or {}
+    pc_context = body["regions"]["projectContext"]["context"]
+    ctx_project = pc_context.get("project") or {}
     assert ctx_project.get("name") == "Marketing 2026", (
         f"US-202: lex-smallest by name fallback → expected 'Marketing 2026', "
         f"got {ctx_project.get('name')!r}"
@@ -211,7 +212,7 @@ def test_projects_with_no_sessions_fall_back_to_lexicographic_smallest_name(
         f"({p2_id!r}); got {ctx_project.get('id')!r}"
     )
     # No sessions across any project → most_recent_session_per_project is empty.
-    most_recent = body["context"].get("most_recent_session_per_project") or {}
+    most_recent = pc_context.get("most_recent_session_per_project") or {}
     assert most_recent == {}, (
         f"US-202: no-sessions case must have empty most_recent_session_per_project; "
         f"got {most_recent!r}"
@@ -294,10 +295,10 @@ def test_tie_broken_last_active_picks_lexicographic_smaller_project_id_determini
     expected_pick = min(pa_id, pb_id)
 
     def _spawn_and_assert() -> str:
-        begin = driver.post(
-            "/ui-state/flow/project-and-chat-session-management/begin",
+        begin = driver.begin_session(
+            force_restart=True,
+            persona_display_name="Maya Chen",
             base=driver.auth_proxy_url,
-            json_body={"persona_display_name": "Maya Chen"},
         )
         assert begin.status == 200
         deadline = time.monotonic() + 5.0
@@ -383,11 +384,11 @@ def test_transient_list_sessions_failure_during_last_used_resolution_emits_degra
     # Force Q4's list_sessions to fail → resolver should pick Q3 from the
     # partial-result set AND emit `last_used_resolution_degraded` carrying Q4's id.
     t0 = time.monotonic()
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.post_state_event(
+        event_type="session_begin",
+        payload={"force_restart": True, "persona_display_name": "Maya Chen"},
         base=driver.auth_proxy_url,
         extra_headers={"X-Force-List-Sessions-Failure": q4_id},
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200
 
@@ -413,7 +414,7 @@ def test_transient_list_sessions_failure_during_last_used_resolution_emits_degra
         f"got {body['active_scope']['project_id']!r}"
     )
     # Projection context carries last_used_resolution_degraded with Q4's id.
-    degraded = body["context"].get("last_used_resolution_degraded")
+    degraded = body["regions"]["projectContext"]["context"].get("last_used_resolution_degraded")
     assert degraded is not None, (
         f"degraded path: projection.context.last_used_resolution_degraded must "
         f"be populated; got {degraded!r}"

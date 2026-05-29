@@ -84,35 +84,46 @@ def _create_dataset(project_id: str, name: str) -> str:
 # ───────────────────────────── flow helpers ─────────────────────────────
 
 
+def _region(driver: J002Driver, region: str) -> dict:
+    """Read one region of the state document, surfacing its `state`/`context`
+    alongside the document-level `active_scope` / `sequence_id` so callers can
+    read both. The former per-machine projection `correlation_id` is now the
+    document-level `request_id` (ADR-046 — the correlation reference paired
+    with the latest event)."""
+    probe = driver.get_state_document(base=driver.auth_proxy_url)
+    if probe.status != 200:
+        return {}
+    doc = json.loads(probe.body)
+    region_doc = doc.get("regions", {}).get(region, {})
+    return {
+        **region_doc,
+        "active_scope": doc.get("active_scope"),
+        "correlation_id": doc.get("request_id"),
+        "sequence_id": doc.get("sequence_id"),
+    }
+
+
 def _sc(driver: J002Driver) -> dict:
-    probe = driver.get(
-        f"/ui-state/flow/session-chat/projection?flow_id={SC_FLOW_ID}",
-        base=driver.auth_proxy_url,
-    )
-    return json.loads(probe.body) if probe.status == 200 else {}
+    return _region(driver, "sessionChat")
 
 
 def _pc(driver: J002Driver) -> dict:
-    probe = driver.get(
-        f"/ui-state/flow/project-and-chat-session-management/projection?flow_id={PC_FLOW_ID}",
-        base=driver.auth_proxy_url,
-    )
-    return json.loads(probe.body) if probe.status == 200 else {}
+    return _region(driver, "projectContext")
 
 
 def _spawn_to_session_list(driver: J002Driver) -> dict:
     """Reset both J-002 flows then spawn project-context → session-chat;
     settle session-chat in session_list_loaded. Hermetic per scenario
     (the shared dev-user-001 principal would otherwise bleed state)."""
-    driver.post(
-        "/ui-state/flow/session-chat/begin",
+    driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=False,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
     assert begin.status == 200, f"begin {begin.status}: {begin.body[:300]}"
     deadline = time.monotonic() + 8.0
@@ -123,12 +134,12 @@ def _spawn_to_session_list(driver: J002Driver) -> dict:
     pytest.fail(f"session-chat never reached session_list_loaded; last={_sc(driver)!r}")
 
 
-def _post_event(driver: J002Driver, machine: str, flow_id: str, type_: str,
+def _post_event(driver: J002Driver, machine: str, flow_id: str, type_: str,  # noqa: ARG001 — machine/flow_id are header-derived now; kept for call-site compat
                  payload: dict, extra_headers: dict | None = None) -> None:
-    driver.post(
-        f"/ui-state/flow/{machine}/event",
+    driver.post_state_event(
+        event_type=type_,
+        payload=payload,
         base=driver.auth_proxy_url,
-        json_body={"flow_id": flow_id, "type": type_, "payload": payload},
         extra_headers=extra_headers,
     )
 

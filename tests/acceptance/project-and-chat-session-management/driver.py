@@ -111,42 +111,99 @@ class J002Driver:
             headers={k.lower(): v for k, v in response.headers.items()},
         )
 
-    # ───────────────────────── J-002 endpoint helpers ─────────────────────────
+    # ───────────────────────── /state surface helpers ─────────────────────────
+    #
+    # ADR-046 MR-6 — the three former per-machine mounts
+    # (`/ui-state/flow/<machine>/{projection,event,begin,open-deep-link}`) are
+    # replaced by ONE document surface:
+    #   - reads  : GET  /ui-state/state         → ChatAppStateDocument
+    #   - writes : POST /ui-state/state/events   → {type, payload} ⇒ new document
+    # Each former per-machine projection is now a `regions.<region>` slice of
+    # the one document; the single authoritative `active_scope` and bookkeeping
+    # are hoisted to the top level. Identity is header-derived (no `flow_id`).
+    # Region keys: `onboarding`, `projectContext`, `sessionChat`.
+
+    def get_state_document(
+        self,
+        *,
+        bearer: str | None = None,
+        base: str | None = None,
+    ) -> HTTPProbe:
+        """GET /ui-state/state — the single per-principal ChatAppStateDocument."""
+        return self.get("/ui-state/state", base=base, bearer=bearer)
+
+    def post_state_event(
+        self,
+        *,
+        event_type: str,
+        payload: dict[str, Any] | None = None,
+        bearer: str | None = None,
+        base: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> HTTPProbe:
+        """POST /ui-state/state/events — submit one event; the response IS the
+        new document."""
+        return self.post(
+            "/ui-state/state/events",
+            base=base,
+            bearer=bearer,
+            extra_headers=extra_headers,
+            json_body={"type": event_type, "payload": payload or {}},
+        )
+
+    def begin_session(
+        self,
+        *,
+        force_restart: bool = True,
+        persona_display_name: str | None = None,
+        principal_id: str | None = None,  # noqa: ARG002 — header-derived now; kept for call-site compat
+        bearer: str | None = None,
+        base: str | None = None,
+    ) -> HTTPProbe:
+        """Spawn / reset the per-principal actor. Begin is the reserved
+        `session_begin` event now (ADR-046 Decision 3a); `force_restart=True`
+        cold-starts (wiping the prior event log)."""
+        payload: dict[str, Any] = {"force_restart": force_restart}
+        if persona_display_name is not None:
+            payload["persona_display_name"] = persona_display_name
+        return self.post_state_event(
+            event_type="session_begin", payload=payload, bearer=bearer, base=base
+        )
 
     def get_j002_projection(
         self,
         *,
-        flow_id: str,
+        flow_id: str | None = None,  # noqa: ARG002 — header-derived now; kept for call-site compat
         bearer: str | None = None,
         base: str | None = None,
     ) -> HTTPProbe:
-        """GET the J-002 projection. The endpoint contract is fixed by DESIGN
-        (handoff-design-to-distill.md §"Endpoints to assert against")."""
-        return self.get(
-            f"/ui-state/flow/project-and-chat-session-management/projection?flow_id={flow_id}",
-            base=base,
-            bearer=bearer,
-        )
+        """GET the single `/state` document. The former per-machine projection
+        is now its `regions.projectContext` slice; read it via
+        `projection_state(probe)` / `projection_context(probe)`. `flow_id` is
+        ignored (identity is header-derived) and retained only for call-site
+        compatibility."""
+        return self.get_state_document(bearer=bearer, base=base)
 
     def post_j002_event(
         self,
         *,
-        flow_id: str,
+        flow_id: str | None = None,  # noqa: ARG002 — header-derived now; kept for call-site compat
         event: dict[str, Any],
         bearer: str | None = None,
         base: str | None = None,
     ) -> HTTPProbe:
-        return self.post(
-            "/ui-state/flow/project-and-chat-session-management/event",
-            base=base,
+        """Submit a `{type, payload}` event to the single event surface."""
+        return self.post_state_event(
+            event_type=str(event.get("type")),
+            payload=event.get("payload"),
             bearer=bearer,
-            json_body={"flow_id": flow_id, "event": event},
+            base=base,
         )
 
     def open_j002_deep_link(
         self,
         *,
-        principal_id: str,
+        principal_id: str | None = None,  # noqa: ARG002 — header-derived now; kept for call-site compat
         intent_project_id: str | None = None,
         intent_session_id: str | None = None,
         intent_resource_id: str | None = None,
@@ -154,7 +211,9 @@ class J002Driver:
         bearer: str | None = None,
         base: str | None = None,
     ) -> HTTPProbe:
-        payload: dict[str, Any] = {"principal_id": principal_id}
+        """Open a deep link — now the ordinary `open_deep_link` event on the one
+        event surface (ADR-046 Decision 3)."""
+        payload: dict[str, Any] = {}
         if intent_project_id is not None:
             payload["intent_project_id"] = intent_project_id
         if intent_session_id is not None:
@@ -163,11 +222,8 @@ class J002Driver:
             payload["intent_resource_id"] = intent_resource_id
         if intent_resource_type is not None:
             payload["intent_resource_type"] = intent_resource_type
-        return self.post(
-            "/ui-state/flow/project-and-chat-session-management/open-deep-link",
-            base=base,
-            bearer=bearer,
-            json_body=payload,
+        return self.post_state_event(
+            event_type="open_deep_link", payload=payload, bearer=bearer, base=base
         )
 
     def post_agent_chat(
@@ -350,18 +406,40 @@ class J002Driver:
 
     # ───────────────────────────── Convenience predicates ─────────────────────────────
 
-    def projection_state(self, probe: HTTPProbe) -> str | None:
-        """Extract `state` from a J-002 projection response (if JSON parseable)."""
+    def projection_state(
+        self, probe: HTTPProbe, region: str = "projectContext"
+    ) -> str | None:
+        """Extract `regions.<region>.state` from a `/state` document response.
+
+        Defaults to the `projectContext` region (the former J-002 project-context
+        projection). Pass `region="sessionChat"` for the session-chat slice or
+        `region="onboarding"` for the J-001 slice."""
         if "json" not in probe.content_type.lower():
             return None
         try:
             data = json.loads(probe.body)
         except json.JSONDecodeError:
             return None
-        value = data.get("state")
+        slice_ = (data.get("regions") or {}).get(region) or {}
+        value = slice_.get("state")
         return value if isinstance(value, str) else None
 
+    def projection_context(
+        self, probe: HTTPProbe, region: str = "projectContext"
+    ) -> dict[str, Any] | None:
+        """Extract `regions.<region>.context` from a `/state` document response."""
+        if "json" not in probe.content_type.lower():
+            return None
+        try:
+            data = json.loads(probe.body)
+        except json.JSONDecodeError:
+            return None
+        slice_ = (data.get("regions") or {}).get(region) or {}
+        ctx = slice_.get("context")
+        return ctx if isinstance(ctx, dict) else None
+
     def projection_active_scope(self, probe: HTTPProbe) -> dict[str, Any] | None:
+        """The single authoritative top-level `active_scope` of the document."""
         if "json" not in probe.content_type.lower():
             return None
         try:

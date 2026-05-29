@@ -79,10 +79,10 @@ def test_ic_j002_1_entry_from_auth_ready_reads_org_id_from_j001_projection(
     # is structurally true because ui-state never calls /api/orgs/me — the
     # org_id flows from headers → orchestrator → J-002 context directly.
     t_before = time.monotonic()
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200, (
         f"begin expected 200; got {begin.status} body={begin.body[:300]!r}"
@@ -107,7 +107,7 @@ def test_ic_j002_1_entry_from_auth_ready_reads_org_id_from_j001_projection(
         f"broadcast value {EXPECTED_ORG_ID!r} from auth-proxy headers"
     )
     # The reduced context.org.id MUST match.
-    ctx_org_id = j002["context"].get("org", {}).get("id")
+    ctx_org_id = j002["regions"]["projectContext"]["context"].get("org", {}).get("id")
     assert ctx_org_id == EXPECTED_ORG_ID, (
         f"IC-J002-1 #1: J-002.context.org.id={ctx_org_id!r} != "
         f"broadcast value {EXPECTED_ORG_ID!r}"
@@ -172,10 +172,10 @@ def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
     # Spawn J-002 directly — same orchestrator method the auth_ready
     # broadcast hook calls in production (see DWD-6 + the orchestrator's
     # `auth_ready_hook` block).
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200, (
         f"J-002 begin expected 200; got {begin.status} body={begin.body[:200]!r}"
@@ -204,14 +204,10 @@ def test_ic_j002_2_project_selected_entry_has_non_null_authorized_project_id(
     # Create a project — this drives the machine through `creating_project`
     # to `project_selected`.
     project_name = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
-    create = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    create = driver.post_state_event(
+        event_type="create_project_submitted",
+        payload={"org_name": project_name},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": J002_FLOW_ID,
-            "type": "create_project_submitted",
-            "payload": {"org_name": project_name},
-        },
     )
     assert create.status == 200
 
@@ -267,8 +263,6 @@ def test_ic_j002_3_resuming_session_to_session_active_materializes_atomically(
     import subprocess
     import time
     import uuid
-
-    SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
 
     def _create_project(name: str) -> str:
         proc = subprocess.run(
@@ -335,34 +329,28 @@ def test_ic_j002_3_resuming_session_to_session_active_materializes_atomically(
     )
 
     # Spawn J-002 + wait for session-chat to reach session_list_loaded.
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        probe = driver.get(
-            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-            base=driver.auth_proxy_url,
-        )
+        probe = driver.get_state_document(base=driver.auth_proxy_url)
         data = json.loads(probe.body) if probe.status == 200 else {}
-        if data.get("state") == "session_list_loaded":
+        sc = data.get("regions", {}).get("sessionChat", {})
+        if sc.get("state") == "session_list_loaded":
             break
         time.sleep(0.05)
     else:
         pytest.fail("session-chat never reached session_list_loaded")
 
     # Drive resume.
-    driver.post(
-        "/ui-state/flow/session-chat/event",
+    driver.post_state_event(
+        event_type="session_clicked",
+        payload={"session_id": session_id},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": SESSION_CHAT_FLOW_ID,
-            "type": "session_clicked",
-            "payload": {"session_id": session_id},
-        },
     )
 
     # IC-J002-3 atomicity probe: poll the projection AS FAST AS POSSIBLE
@@ -374,16 +362,14 @@ def test_ic_j002_3_resuming_session_to_session_active_materializes_atomically(
     saw_session_active = False
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        probe = driver.get(
-            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-            base=driver.auth_proxy_url,
-        )
+        probe = driver.get_state_document(base=driver.auth_proxy_url)
         if probe.status != 200:
             continue
         data = json.loads(probe.body)
-        if data.get("state") == "session_active":
+        sc = data.get("regions", {}).get("sessionChat", {})
+        if sc.get("state") == "session_active":
             saw_session_active = True
-            ctx = data["context"]
+            ctx = sc["context"]
             sid = ctx.get("session_id")
             resource = ctx.get("resource") or {}
             transcript_present = isinstance(ctx.get("transcript"), list)
@@ -470,20 +456,16 @@ def test_ic_j002_4_switching_project_invalidates_session_and_resource_before_new
     )
     assert target, "ic4-B project bootstrap failed"
 
-    driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    driver.begin_session(
+        force_restart=True,
+        persona_display_name="Dev User",
         bearer=bearer,
-        json_body={"principal_id": dev_user, "persona_display_name": "Dev User"},
     )
     # Drive the switch.
-    switch_probe = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    switch_probe = driver.post_state_event(
+        event_type="switching_project_intent",
+        payload={"new_project_id": target},
         bearer=bearer,
-        json_body={
-            "flow_id": flow_id,
-            "type": "switching_project_intent",
-            "payload": {"new_project_id": target},
-        },
     )
     assert switch_probe.status == 200, f"switch returned {switch_probe.status}"
 
@@ -494,8 +476,9 @@ def test_ic_j002_4_switching_project_invalidates_session_and_resource_before_new
     for _ in range(40):
         proj_probe = driver.get_j002_projection(flow_id=flow_id, bearer=bearer)
         body = _json.loads(proj_probe.body)
-        ctx = body.get("context", {})
-        if body.get("state") == "switching_project":
+        pc = body.get("regions", {}).get("projectContext", {})
+        ctx = pc.get("context", {})
+        if pc.get("state") == "switching_project":
             observed_switching = True
             assert ctx.get("session_id") is None, (
                 f"IC-J002-4 violated: session_id={ctx.get('session_id')!r} during switching_project"
@@ -504,7 +487,7 @@ def test_ic_j002_4_switching_project_invalidates_session_and_resource_before_new
             assert resource.get("id") is None and resource.get("type") is None, (
                 f"IC-J002-4 violated: resource_*={resource!r} during switching_project"
             )
-        if body.get("state") == "project_selected":
+        if pc.get("state") == "project_selected":
             break
         _t.sleep(0.01)
     # Whether we caught switching_project in flight depends on backend speed.
@@ -533,8 +516,6 @@ def test_ic_j002_5_dataset_resolved_by_agent_produces_exactly_one_scope_update(
     import subprocess
     import time
     import uuid
-
-    SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
 
     def _api(method: str, path: str, body: dict | None = None) -> str:
         args = [
@@ -568,35 +549,35 @@ def test_ic_j002_5_dataset_resolved_by_agent_produces_exactly_one_scope_update(
     # Hermetic: reset the session-chat flow first (shared dev-user-001
     # principal — a prior scenario's settled session-chat state would
     # otherwise bleed across; project-context /begin only resets ITS log).
-    driver.post(
-        "/ui-state/flow/session-chat/begin",
+    driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=False,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
     assert begin.status == 200
 
     def _sc() -> dict:
-        p = driver.get(
-            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-            base=driver.auth_proxy_url,
-        )
-        return json.loads(p.body) if p.status == 200 else {}
+        p = driver.get_state_document(base=driver.auth_proxy_url)
+        if p.status != 200:
+            return {}
+        doc = json.loads(p.body)
+        sc = doc.get("regions", {}).get("sessionChat", {})
+        return {**sc, "active_scope": doc.get("active_scope")}
 
     deadline = time.monotonic() + 8.0
     while time.monotonic() < deadline:
         if _sc().get("state") == "session_list_loaded":
             break
         time.sleep(0.05)
-    driver.post(
-        "/ui-state/flow/session-chat/event",
+    driver.post_state_event(
+        event_type="session_clicked",
+        payload={"session_id": session_id},
         base=driver.auth_proxy_url,
-        json_body={"flow_id": SESSION_CHAT_FLOW_ID, "type": "session_clicked",
-                   "payload": {"session_id": session_id}},
     )
     deadline = time.monotonic() + 8.0
     while time.monotonic() < deadline:
@@ -610,11 +591,10 @@ def test_ic_j002_5_dataset_resolved_by_agent_produces_exactly_one_scope_update(
     )
 
     # The single dataset_resolved_by_agent event.
-    driver.post(
-        "/ui-state/flow/session-chat/event",
+    driver.post_state_event(
+        event_type="dataset_resolved_by_agent",
+        payload={"resource_id": dataset_id, "resource_type": "dataset"},
         base=driver.auth_proxy_url,
-        json_body={"flow_id": SESSION_CHAT_FLOW_ID, "type": "dataset_resolved_by_agent",
-                   "payload": {"resource_id": dataset_id, "resource_type": "dataset"}},
     )
 
     # Sample the projection across the settle window. resource_id must move
@@ -684,7 +664,6 @@ def test_ic_j002_6_freeze_pauses_outgoing_mutations_intents_queue_replay_on_thaw
     import time
 
     DEV_PRINCIPAL_ID = "dev-user-001"
-    SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
 
     def _api(method: str, path: str, body: dict | None = None) -> str:
         args = [
@@ -705,24 +684,25 @@ def test_ic_j002_6_freeze_pauses_outgoing_mutations_intents_queue_replay_on_thaw
         _api("POST", f"/api/projects/{project_id}/sessions", {"title": "IC6"})
     )["data"]["id"]
 
-    driver.post(
-        "/ui-state/flow/session-chat/begin",
+    driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=False,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
     assert begin.status == 200
 
     def _sc() -> dict:
-        p = driver.get(
-            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-            base=driver.auth_proxy_url,
-        )
-        return json.loads(p.body) if p.status == 200 else {}
+        p = driver.get_state_document(base=driver.auth_proxy_url)
+        if p.status != 200:
+            return {}
+        doc = json.loads(p.body)
+        sc = doc.get("regions", {}).get("sessionChat", {})
+        return {**sc, "sequence_id": doc.get("sequence_id")}
 
     def _wait(want: str, timeout: float = 8.0) -> dict:
         deadline = time.monotonic() + timeout
@@ -751,11 +731,10 @@ def test_ic_j002_6_freeze_pauses_outgoing_mutations_intents_queue_replay_on_thaw
     # replay buffer with its original correlation ref — it does NOT drive
     # the machine: no resuming_session, no backend resume POST, no
     # projection state change away from freeze (the pause contract).
-    driver.post(
-        "/ui-state/flow/session-chat/event",
+    driver.post_state_event(
+        event_type="session_clicked",
+        payload={"session_id": session_id},
         base=driver.auth_proxy_url,
-        json_body={"flow_id": SESSION_CHAT_FLOW_ID, "type": "session_clicked",
-                   "payload": {"session_id": session_id}},
     )
     time.sleep(0.6)
     paused = _sc()

@@ -123,9 +123,12 @@ Then(
     if (!harness) throw new Error("harness not initialized");
     const watcher_projection = await harness.get_projection();
     const initial_projection = this.bag.welcome_projection as
-      | { context: { user?: { email?: string } }; flow_id: string }
+      | { context: { user?: { email?: string } } }
       | undefined;
-    expect(watcher_projection.flow_id).toBe(initial_projection?.flow_id);
+    // The SSOT promise: the watcher reads the SAME per-principal `/state`
+    // document the harness wrote to (no `flow_id` on the wire any more —
+    // identity is header-derived). Equal user context proves both observe the
+    // one onboarding region.
     expect(watcher_projection.context.user).toEqual(
       initial_projection?.context.user,
     );

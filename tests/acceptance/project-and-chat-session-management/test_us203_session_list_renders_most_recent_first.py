@@ -27,7 +27,6 @@ pytestmark = [
 
 DEV_PRINCIPAL_ID = "dev-user-001"
 PROJECT_FLOW_ID = f"project-and-chat-session-management:{DEV_PRINCIPAL_ID}"
-SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
 
 
 # ─────────────────────────── Helper: dev backend seeding ───────────────────────────
@@ -88,10 +87,10 @@ def _update_session_last_active(session_id: str, last_active_at: str) -> None:
 def _spawn_j002(driver: J002Driver) -> dict:
     """Begin J-002 and wait for project-context to settle in project_selected.
     Returns the project-context projection body."""
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200
     deadline = time.monotonic() + 5.0
@@ -106,13 +105,10 @@ def _spawn_j002(driver: J002Driver) -> dict:
 
 
 def _read_session_chat(driver: J002Driver) -> dict:
-    """Read the session-chat projection (via the parameterised :machine route)."""
-    probe = driver.get(
-        f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-        base=driver.auth_proxy_url,
-    )
+    """Read the session-chat region of the state document."""
+    probe = driver.get_state_document(base=driver.auth_proxy_url)
     assert probe.status == 200, f"session-chat projection: {probe.status} {probe.body[:300]}"
-    return json.loads(probe.body)
+    return json.loads(probe.body)["regions"]["sessionChat"]
 
 
 def _wait_for_session_chat_state(
@@ -253,8 +249,8 @@ def test_session_created_in_other_tab_refreshes_list_within_one_second(
     refreshes session-chat → Tab A receives the new list <1s.
 
     Mechanism (per DWD-9 + RD2):
-      1. Tab A opens GET /ui-state/flow/session-chat/projection/stream
-      2. The handler emits the current projection as the first frame.
+      1. Tab A opens GET /ui-state/state/stream
+      2. The handler emits the current document as the first frame.
       3. Tab B creates a session via backend + dispatches `refresh_session_list`
          to session-chat (so the orchestrator appends new events to the log).
       4. Tab A's SSE subscriber observes a second frame within the 1s budget.
@@ -267,8 +263,8 @@ def test_session_created_in_other_tab_refreshes_list_within_one_second(
 
     # Tab A opens the SSE stream with a 3s budget.
     sse_url = (
-        f"{driver.auth_proxy_url}/ui-state/flow/session-chat/projection/stream"
-        f"?flow_id={SESSION_CHAT_FLOW_ID}&budget_ms=3000"
+        f"{driver.auth_proxy_url}/ui-state/state/stream"
+        f"?budget_ms=3000"
     )
     received_frames: list[str] = []
     sse_start = time.monotonic()
@@ -277,14 +273,10 @@ def test_session_created_in_other_tab_refreshes_list_within_one_second(
         time.sleep(0.2)  # let Tab A connect
         _create_session(proj_id, "Just-created chat (Tab B)")
         # Drive Tab B's session-chat to re-load.
-        driver.post(
-            "/ui-state/flow/session-chat/event",
+        driver.post_state_event(
+            event_type="refresh_session_list",
+            payload={},
             base=driver.auth_proxy_url,
-            json_body={
-                "flow_id": SESSION_CHAT_FLOW_ID,
-                "type": "refresh_session_list",
-                "payload": {},
-            },
         )
 
     import threading
@@ -305,7 +297,8 @@ def test_session_created_in_other_tab_refreshes_list_within_one_second(
             payload = json.loads(data_line[len("data:") :].strip())
         except json.JSONDecodeError:
             return -1
-        return len(payload.get("context", {}).get("session_list") or [])
+        session_chat = payload.get("regions", {}).get("sessionChat", {})
+        return len(session_chat.get("context", {}).get("session_list") or [])
 
     with httpx.stream(
         "GET",

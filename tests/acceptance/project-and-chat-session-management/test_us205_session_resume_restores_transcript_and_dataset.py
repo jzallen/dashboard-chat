@@ -27,8 +27,6 @@ pytestmark = [
 ]
 
 DEV_PRINCIPAL_ID = "dev-user-001"
-PROJECT_FLOW_ID = f"project-and-chat-session-management:{DEV_PRINCIPAL_ID}"
-SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
 
 
 # ─────────────────────────── Helper: dev backend seeding ───────────────────────────
@@ -109,44 +107,35 @@ def _set_session_dataset(project_id: str, session_id: str, dataset_id: str | Non
 
 def _spawn_j002_and_wait_session_list(driver: J002Driver) -> None:
     """Spawn J-002 + wait for session-chat to reach session_list_loaded."""
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
     assert begin.status == 200
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        probe = driver.get(
-            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-            base=driver.auth_proxy_url,
-        )
+        probe = driver.get_state_document(base=driver.auth_proxy_url)
         data = json.loads(probe.body) if probe.status == 200 else {}
-        if data.get("state") == "session_list_loaded":
+        sc = data.get("regions", {}).get("sessionChat", {})
+        if sc.get("state") == "session_list_loaded":
             return
         time.sleep(0.05)
     pytest.fail("session-chat never reached session_list_loaded")
 
 
 def _resume_session(driver: J002Driver, session_id: str) -> dict:
-    """Send session_clicked to session-chat. Returns the final projection."""
-    driver.post(
-        "/ui-state/flow/session-chat/event",
+    """Send session_clicked to session-chat. Returns the final state document."""
+    driver.post_state_event(
+        event_type="session_clicked",
+        payload={"session_id": session_id},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": SESSION_CHAT_FLOW_ID,
-            "type": "session_clicked",
-            "payload": {"session_id": session_id},
-        },
     )
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        probe = driver.get(
-            f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-            base=driver.auth_proxy_url,
-        )
+        probe = driver.get_state_document(base=driver.auth_proxy_url)
         data = json.loads(probe.body) if probe.status == 200 else {}
-        state = data.get("state")
+        state = data.get("regions", {}).get("sessionChat", {}).get("state")
         # Settle in session_active OR back to session_list_loaded (silent-not-found).
         if state in ("session_active", "session_list_loaded"):
             return data
@@ -179,10 +168,11 @@ def test_resuming_session_restores_transcript_and_dataset_chip_on_same_first_pai
     _spawn_j002_and_wait_session_list(driver)
     final = _resume_session(driver, session_id)
 
-    assert final["state"] == "session_active", (
-        f"US-205 #1: expected session_active; got {final['state']!r}"
+    sc = final["regions"]["sessionChat"]
+    assert sc["state"] == "session_active", (
+        f"US-205 #1: expected session_active; got {sc['state']!r}"
     )
-    ctx = final["context"]
+    ctx = sc["context"]
     assert ctx.get("session_id") == session_id, (
         f"session_id mismatch: expected {session_id!r}, got {ctx.get('session_id')!r}"
     )
@@ -215,8 +205,9 @@ def test_resuming_session_with_null_dataset_enters_conversational_mode(
     _spawn_j002_and_wait_session_list(driver)
     final = _resume_session(driver, session_id)
 
-    assert final["state"] == "session_active"
-    ctx = final["context"]
+    sc = final["regions"]["sessionChat"]
+    assert sc["state"] == "session_active"
+    ctx = sc["context"]
     assert ctx.get("session_id") == session_id
     resource = ctx.get("resource") or {}
     assert resource.get("type") is None and resource.get("id") is None, (
@@ -246,10 +237,11 @@ def test_resuming_session_with_deleted_dataset_degrades_gracefully_to_conversati
     _spawn_j002_and_wait_session_list(driver)
     final = _resume_session(driver, session_id)
 
-    assert final["state"] == "session_active", (
-        f"US-205 #3: even a deleted dataset → session_active (graceful); got {final['state']!r}"
+    sc = final["regions"]["sessionChat"]
+    assert sc["state"] == "session_active", (
+        f"US-205 #3: even a deleted dataset → session_active (graceful); got {sc['state']!r}"
     )
-    ctx = final["context"]
+    ctx = sc["context"]
     resource = ctx.get("resource") or {}
     assert resource.get("type") is None and resource.get("id") is None, (
         f"US-205 #3: deleted dataset → resource_* null; got {resource!r}"
@@ -280,11 +272,12 @@ def test_resuming_nonexistent_session_returns_silently_to_session_list_loaded(
     _spawn_j002_and_wait_session_list(driver)
     final = _resume_session(driver, ghost_id)
 
-    assert final["state"] == "session_list_loaded", (
+    sc = final["regions"]["sessionChat"]
+    assert sc["state"] == "session_list_loaded", (
         f"US-205 #4: nonexistent session → silent return to session_list_loaded; "
-        f"got {final['state']!r}"
+        f"got {sc['state']!r}"
     )
-    ctx = final["context"]
+    ctx = sc["context"]
     # Silent — no underlying_cause_tag surfaced; intent cleared.
     assert ctx.get("underlying_cause_tag") is None, (
         f"US-205 #4: silent return must NOT surface a cause tag; "

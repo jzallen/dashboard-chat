@@ -8,8 +8,9 @@ MR-5. Validates IC-J002-5. Depends on MR-2's Migration 012 + MR-4's
 X-Active-Scope writer contract.
 
 Port-to-port: every scenario drives the real local compose stack through
-the user-facing ingress (auth-proxy `/ui-state/flow/session-chat/event`)
-and observes via the session-chat projection — the same SSOT the FE reads.
+the user-facing ingress (auth-proxy `/ui-state/state/events`)
+and observes via the session-chat region of the `/state` document — the same
+SSOT the FE reads.
 The dataset pick flows `session_active --dataset_resolved_by_agent /
 dataset_picked_directly--> switching_dataset_context --> session_active`.
 """
@@ -33,7 +34,6 @@ pytestmark = [
 
 DEV_PRINCIPAL_ID = "dev-user-001"
 DEV_ORG_ID = "dev-org-001"
-SESSION_CHAT_FLOW_ID = f"session-chat:{DEV_PRINCIPAL_ID}"
 
 
 # ───────────────────────────── dev backend seeding ─────────────────────────────
@@ -131,11 +131,14 @@ def _persisted_active_dataset_id(session_id: str) -> str | None:
 
 
 def _sc_projection(driver: J002Driver) -> dict:
-    probe = driver.get(
-        f"/ui-state/flow/session-chat/projection?flow_id={SESSION_CHAT_FLOW_ID}",
-        base=driver.auth_proxy_url,
-    )
-    return json.loads(probe.body) if probe.status == 200 else {}
+    probe = driver.get_state_document(base=driver.auth_proxy_url)
+    if probe.status != 200:
+        return {}
+    doc = json.loads(probe.body)
+    sc = doc.get("regions", {}).get("sessionChat", {})
+    # Surface the top-level active_scope alongside the session-chat region so
+    # callers can read both `state`/`context` and the authoritative scope.
+    return {**sc, "active_scope": doc.get("active_scope")}
 
 
 def _spawn_and_reach_session_active(driver: J002Driver, session_id: str) -> dict:
@@ -148,16 +151,16 @@ def _spawn_and_reach_session_active(driver: J002Driver, session_id: str) -> dict
     state would otherwise bleed across (the project-context `/begin`
     force_restart only resets ITS own flow log, not session-chat's).
     """
-    sc_reset = driver.post(
-        "/ui-state/flow/session-chat/begin",
+    sc_reset = driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
     assert sc_reset.status == 200, f"sc begin {sc_reset.status}: {sc_reset.body[:200]}"
-    begin = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    begin = driver.begin_session(
+        force_restart=False,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen", "principal_id": DEV_PRINCIPAL_ID},
     )
     assert begin.status == 200, f"begin returned {begin.status}: {begin.body[:300]}"
     deadline = time.monotonic() + 8.0
@@ -167,14 +170,10 @@ def _spawn_and_reach_session_active(driver: J002Driver, session_id: str) -> dict
         time.sleep(0.05)
     else:
         pytest.fail("session-chat never reached session_list_loaded")
-    driver.post(
-        "/ui-state/flow/session-chat/event",
+    driver.post_state_event(
+        event_type="session_clicked",
+        payload={"session_id": session_id},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": SESSION_CHAT_FLOW_ID,
-            "type": "session_clicked",
-            "payload": {"session_id": session_id},
-        },
     )
     deadline = time.monotonic() + 8.0
     while time.monotonic() < deadline:
@@ -191,14 +190,10 @@ def _send_dataset_event(
     """Send a dataset pick event to session-chat; poll until it re-settles
     (XState single-event-at-a-time means `send()` awaits the
     switchDatasetContext invoke — the projection it returns is settled)."""
-    driver.post(
-        "/ui-state/flow/session-chat/event",
+    driver.post_state_event(
+        event_type=event_type,
+        payload={"resource_id": dataset_id, "resource_type": "dataset"},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": SESSION_CHAT_FLOW_ID,
-            "type": event_type,
-            "payload": {"resource_id": dataset_id, "resource_type": "dataset"},
-        },
     )
     deadline = time.monotonic() + 8.0
     while time.monotonic() < deadline:
@@ -372,14 +367,10 @@ def test_concurrent_dataset_picks_serialize_via_xstate_semantics_most_recent_win
     # each `send()` by awaiting waitForSettledState (switching_dataset_context
     # is transient), so the most-recent pick is the final resource.
     for ds in (ds_first, ds_second):
-        driver.post(
-            "/ui-state/flow/session-chat/event",
+        driver.post_state_event(
+            event_type="dataset_resolved_by_agent",
+            payload={"resource_id": ds, "resource_type": "dataset"},
             base=driver.auth_proxy_url,
-            json_body={
-                "flow_id": SESSION_CHAT_FLOW_ID,
-                "type": "dataset_resolved_by_agent",
-                "payload": {"resource_id": ds, "resource_type": "dataset"},
-            },
         )
 
     deadline = time.monotonic() + 8.0

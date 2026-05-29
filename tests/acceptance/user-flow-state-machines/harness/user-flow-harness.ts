@@ -1,9 +1,20 @@
-// UserFlowHarness — TS acceptance harness for J-001 (login-and-org-setup).
+// UserFlowHarness — TS acceptance harness for J-001 (login-and-org-setup) and
+// J-002 (project-and-chat-session-management).
 //
 // First-class deliverable of US-004. The harness is itself a test target:
 // the @us-004 scenarios in `harness-drives-every-sign-in-and-org-setup-transition.feature`
 // drive THROUGH this harness to verify its public surface matches the
 // contract Maya-shaped + Rajesh-shaped tests need.
+//
+// ADR-046 MR-6 — the harness reads ONE `/state` document and writes ONE event
+// surface, instead of the three former per-machine projection/event mounts:
+//   - reads   : `GET  /ui-state/state`         → ChatAppStateDocument
+//   - writes  : `POST /ui-state/state/events`  → {type, payload} ⇒ new document
+// Each public method maps the document down to ITS region slice (onboarding /
+// projectContext / sessionChat) + the single top-level `active_scope`, so the
+// journey assertions callers make are unchanged — only the wire shape the
+// harness reads/writes moved. Identity is header-derived (auth-proxy injects
+// `X-User-Id`); there is no `flow_id` on the wire (ADR-046 Decision 1B).
 //
 // All harness methods route through auth-proxy (CM-A: driving port only).
 // No method imports from ui-state/lib/**.
@@ -12,7 +23,9 @@ import { request } from "undici";
 
 import type {
   ActiveScope,
+  ChatAppStateDocument,
   FlowProjection,
+  RegionKey,
   UnderlyingCauseTag,
 } from "./types.ts";
 
@@ -25,12 +38,69 @@ export interface PersonaConfig {
 export interface HarnessConfig {
   authProxyUrl: string; // e.g. http://localhost:1042
   fakeWorkOSUrl: string; // e.g. http://localhost:14299
-  defaultMachine?: string; // "login-and-org-setup"
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Shared `/state` transport. Both J-001 and J-002 harnesses observe the SAME
+// per-principal document; each slices the region it owns.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** GET /ui-state/state — the current ChatAppStateDocument (`.getSnapshot`). */
+async function fetchStateDocument(
+  authProxyUrl: string,
+): Promise<ChatAppStateDocument> {
+  const res = await request(`${authProxyUrl}/ui-state/state`, { method: "GET" });
+  const body = (await res.body.json()) as unknown;
+  if (res.statusCode !== 200) {
+    throw new Error(
+      `GET /ui-state/state expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+    );
+  }
+  return body as ChatAppStateDocument;
+}
+
+/** POST /ui-state/state/events — submit one event (`.send`); the response IS
+ *  the new document. */
+async function postStateEvent(
+  authProxyUrl: string,
+  type: string,
+  payload: Record<string, unknown>,
+): Promise<ChatAppStateDocument> {
+  const res = await request(`${authProxyUrl}/ui-state/state/events`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type, payload }),
+  });
+  const body = (await res.body.json()) as unknown;
+  if (res.statusCode !== 200) {
+    throw new Error(
+      `POST /ui-state/state/events (${type}) expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
+    );
+  }
+  return body as ChatAppStateDocument;
+}
+
+/** Flatten a region slice of the document into the FlowProjection shape the
+ *  harness exposes: the region's `{state, context}` + the document's single
+ *  top-level `active_scope`/bookkeeping (`correlation_id` ← `request_id`). */
+function regionProjection(
+  doc: ChatAppStateDocument,
+  region: RegionKey,
+): FlowProjection {
+  const slice = doc.regions[region];
+  return {
+    state: slice.state,
+    context: slice.context,
+    active_scope: doc.active_scope,
+    sequence_id: doc.sequence_id,
+    last_event_at: doc.last_event_at,
+    correlation_id: doc.request_id,
+  };
 }
 
 export class UserFlowHarness {
   private correlationId: string | null = null;
-  private flowId: string | null = null;
+  private started = false;
   private jwt: string | null = null;
   private lastProjection: FlowProjection | null = null;
 
@@ -46,29 +116,25 @@ export class UserFlowHarness {
       force_reissue_failures?: number;
     } = {},
   ): Promise<FlowProjection> {
-    const machine = this.config.defaultMachine ?? "login-and-org-setup";
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${machine}/begin`,
+    // Begin is no longer a standalone route — it is the reserved `session_begin`
+    // event on the one event surface (ADR-046 Decision 3a). `force_restart`
+    // cold-starts the per-principal actor into onboarding; the persona +
+    // simulation knobs ride the event payload exactly as the old /begin body
+    // carried them.
+    const doc = await postStateEvent(
+      this.config.authProxyUrl,
+      "session_begin",
       {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          persona_email: this.persona.email,
-          persona_display_name: this.persona.display_name,
-          existing_org_names: options.existing_org_names,
-          force_reissue_failures: options.force_reissue_failures,
-        }),
+        force_restart: true,
+        persona_email: this.persona.email,
+        persona_display_name: this.persona.display_name,
+        existing_org_names: options.existing_org_names,
+        force_reissue_failures: options.force_reissue_failures,
       },
     );
-    const body = (await res.body.json()) as unknown;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `begin_auth expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    const projection = body as FlowProjection;
-    this.correlationId = projection.correlation_id;
-    this.flowId = projection.flow_id;
+    this.started = true;
+    this.correlationId = doc.request_id;
+    const projection = regionProjection(doc, "onboarding");
     this.lastProjection = projection;
     this.capture_jwt_from(projection);
     return projection;
@@ -86,23 +152,22 @@ export class UserFlowHarness {
   }
 
   /**
-   * Attach this harness to an existing flow without driving begin_auth.
-   * Used by US-004's composition scenario: a sibling harness reads the
-   * existing user-flow projection rather than re-running sign-in. The
-   * sibling owns its own assertion surface (e.g. dataset operations) but
-   * shares the auth+org context the primary harness established.
+   * Attach this harness to the existing per-principal document without driving
+   * begin_auth. Used by US-004's composition scenario: a sibling harness reads
+   * the existing onboarding region rather than re-running sign-in. Since the
+   * `/state` actor is addressed by header identity (no `flow_id`), attaching is
+   * just "treat the flow as already started" — the sibling reads the same
+   * document the primary established.
    */
-  attach_to_flow(flow_id: string, correlation_id: string): void {
-    this.flowId = flow_id;
+  attach_to_flow(correlation_id: string): void {
+    this.started = true;
     this.correlationId = correlation_id;
   }
 
   /**
-   * Read the access_token out of the projection's context (the ui-state
+   * Read the access_token out of the onboarding region's context (the ui-state
    * tier mints one on the org_created_and_jwt_reissued transition). Idempotent
-   * and tolerant of projections that don't yet carry one — leaves `this.jwt`
-   * unchanged in that case so assert_jwt_carries_org_claim can surface the
-   * canonical "harness has no JWT" diagnostic.
+   * and tolerant of projections that don't yet carry one.
    */
   private capture_jwt_from(projection: FlowProjection): void {
     const ctx = projection.context as { access_token?: string };
@@ -121,10 +186,10 @@ export class UserFlowHarness {
 
   /**
    * Open a deep link with the given route params, optionally supplying the
-   * server-known current project name and a (possibly stale) bookmarked
-   * name. Routes through auth-proxy → ui-state /open-deep-link, which
-   * runs the ScopeResolver and appends a deep_link_opened (or
-   * scope_access_denied) event to the flow.
+   * server-known current project name and a (possibly stale) bookmarked name.
+   * Deep-link is now the ordinary `open_deep_link` event (ADR-046 Decision 3);
+   * it re-enters scope resolution in the project-context region, so the result
+   * is read off that region's slice.
    */
   async open_deep_link(input: {
     route: {
@@ -136,45 +201,41 @@ export class UserFlowHarness {
     project_name?: string;
     bookmarked_project_name?: string;
   }): Promise<FlowProjection> {
-    if (!this.flowId) {
+    if (!this.started) {
       throw new Error("No active flow; call begin_auth() first");
     }
-    const machine = this.config.defaultMachine ?? "login-and-org-setup";
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${machine}/open-deep-link`,
+    const doc = await postStateEvent(
+      this.config.authProxyUrl,
+      "open_deep_link",
       {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: this.flowId,
-          route: input.route,
-          project_name: input.project_name,
-          bookmarked_project_name: input.bookmarked_project_name,
-        }),
+        intent_project_id: input.route.project,
+        intent_resource_id: input.route.resource_id,
+        intent_resource_type: input.route.resource_type,
+        // The legacy route carried org + (current/bookmarked) names that the
+        // new event envelope does not model; forwarded verbatim — the server
+        // ignores unmodeled payload fields (research Finding 4).
+        intent_org_id: input.route.org,
+        project_name: input.project_name,
+        bookmarked_project_name: input.bookmarked_project_name,
       },
     );
-    const body = (await res.body.json()) as unknown;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `open_deep_link expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    this.lastProjection = body as FlowProjection;
+    this.lastProjection = regionProjection(doc, "projectContext");
     return this.lastProjection;
   }
 
   /**
    * Assert that the most recent deep-link resolution emitted a
-   * scope_reconciled signal (I5 from ADR-029). Reads context.scope_reconciled
-   * from the projection, which the reducer sets when a deep_link_opened
-   * event carried `reconciled: true`.
+   * scope_reconciled signal (I5 from ADR-029). Reads
+   * regions.projectContext.context.scope_reconciled from the document.
    */
   async assert_scope_reconciled(): Promise<void> {
-    const projection = await this.get_projection();
-    const ctx = projection.context as { scope_reconciled?: boolean };
+    const doc = await this.get_document();
+    const ctx = doc.regions.projectContext.context as {
+      scope_reconciled?: boolean;
+    };
     if (!ctx.scope_reconciled) {
       throw new Error(
-        `assert_scope_reconciled failed: context.scope_reconciled is ${ctx.scope_reconciled}, expected true`,
+        `assert_scope_reconciled failed: regions.projectContext.context.scope_reconciled is ${ctx.scope_reconciled}, expected true`,
       );
     }
   }
@@ -214,11 +275,11 @@ export class UserFlowHarness {
    * points at the scope contract, not at the chat agent's internals.
    */
   async assert_chat_turn_invokable_for_active_project(): Promise<void> {
-    if (!this.flowId) {
+    if (!this.started) {
       throw new Error("No active flow; call begin_auth() first");
     }
-    const projection = await this.get_projection();
-    const scope = projection.active_scope;
+    const doc = await this.get_document();
+    const scope = doc.active_scope;
     const res = await request(
       `${this.config.authProxyUrl}/agent/chat-turn`,
       {
@@ -227,7 +288,7 @@ export class UserFlowHarness {
           "content-type": "application/json",
           "x-active-scope": JSON.stringify(scope),
         },
-        body: JSON.stringify({ flow_id: this.flowId }),
+        body: JSON.stringify({}),
       },
     );
     const body = (await res.body.json()) as { error?: string };
@@ -259,22 +320,18 @@ export class UserFlowHarness {
     }
   }
 
-  async get_projection(): Promise<FlowProjection> {
-    if (!this.flowId) {
+  /** The current document. */
+  private async get_document(): Promise<ChatAppStateDocument> {
+    if (!this.started) {
       throw new Error("No active flow; call begin_auth() first");
     }
-    const machine = this.config.defaultMachine ?? "login-and-org-setup";
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${machine}/projection?flow_id=${encodeURIComponent(this.flowId)}`,
-      { method: "GET" },
-    );
-    const body = (await res.body.json()) as unknown;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `get_projection expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    this.lastProjection = body as FlowProjection;
+    return fetchStateDocument(this.config.authProxyUrl);
+  }
+
+  /** The onboarding region slice — the J-001 harness's home view. */
+  async get_projection(): Promise<FlowProjection> {
+    const doc = await this.get_document();
+    this.lastProjection = regionProjection(doc, "onboarding");
     return this.lastProjection;
   }
 
@@ -286,30 +343,12 @@ export class UserFlowHarness {
     type: string,
     payload: Record<string, unknown>,
   ): Promise<FlowProjection> {
-    if (!this.flowId) {
+    if (!this.started) {
       throw new Error("No active flow; call begin_auth() first");
     }
-    const machine = this.config.defaultMachine ?? "login-and-org-setup";
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${machine}/event`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: this.flowId,
-          type,
-          payload,
-          correlation_id: this.correlationId,
-        }),
-      },
-    );
-    const body = (await res.body.json()) as unknown;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `send_event(${type}) expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    this.lastProjection = body as FlowProjection;
+    const doc = await postStateEvent(this.config.authProxyUrl, type, payload);
+    this.correlationId = doc.request_id;
+    this.lastProjection = regionProjection(doc, "onboarding");
     return this.lastProjection;
   }
 }
@@ -331,18 +370,21 @@ function decodeJwtOrgIdUnchecked(jwt: string): string | null {
 
 // ────────────────────────────────────────────────────────────────────────────
 // harness.j002 namespace — J-002 (project-and-chat-session-management).
-// Added by MR-1 sub-step 01-02. The namespace mirrors the J-001
-// UserFlowHarness shape: an object exposing ops that drive the J-002 surface
-// (via the auth-proxy → ui-state HTTP path, never via ui-state imports).
 //
-// Per DD-3 + DWD-3: the harness routes all traffic through auth-proxy. The
-// J-002 surface is the orchestrator's J-002 flow_id namespace:
-//   `project-and-chat-session-management:<principal_id>`
+// Post ADR-046 MR-6 the J-002 harness reads the SAME `/state` document as
+// J-001, slicing the `projectContext` region (project switching, deep links,
+// scope mismatch) and the `sessionChat` region (session list, resume,
+// transcript, dataset context). There is no per-machine `flow_id` on the wire
+// any more; the single top-level `active_scope` carries org + project +
+// resource (deepest-resolved wins), so resource_* reads come straight off it.
+//
+// FREEZE/THAW remain on their own gated test-wire endpoints (index.ts
+// §/freeze + /thaw, keyed by principal_id) — they are not part of the `/state`
+// read/write/stream triad and are out of MR-6's scope.
 //
 // REC-2 decision: this harness is INVOKED via inline ESM scripts (Option B).
 // driver.py's `run_ts_harness` constructs an inline ESM string that
-// `import { j002Harness } from ...` + drives the ops + emits JSON on stdout.
-// See `docs/feature/project-and-chat-session-management/deliver/wave-decisions.md`.
+// `import { userFlowHarness } from ...` + drives the ops + emits JSON on stdout.
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface J002HarnessConfig {
@@ -358,92 +400,64 @@ export interface J002OpenDeepLinkIntent {
 }
 
 export class J002Harness {
-  private readonly flowId: string;
-  private readonly machine = "project-and-chat-session-management";
+  constructor(private readonly config: J002HarnessConfig) {}
 
-  constructor(private readonly config: J002HarnessConfig) {
-    this.flowId = `${this.machine}:${this.config.principalId}`;
+  // ──────────────── transport over the one `/state` surface ────────────────
+
+  private async getDocument(): Promise<ChatAppStateDocument> {
+    return fetchStateDocument(this.config.authProxyUrl);
   }
 
-  /** Spawn / re-attach J-002 for this principal. Returns the projection. */
+  private async sendEvent(
+    type: string,
+    payload: Record<string, unknown>,
+  ): Promise<ChatAppStateDocument> {
+    return postStateEvent(this.config.authProxyUrl, type, payload);
+  }
+
+  /** Spawn / re-attach J-002 for this principal. Begin is the reserved
+   *  `session_begin` event now; returns the project-context region slice. */
   async begin(personaDisplayName: string = "Maya Chen"): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/begin`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          persona_display_name: personaDisplayName,
-          principal_id: this.config.principalId,
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.begin expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    const doc = await this.sendEvent("session_begin", {
+      force_restart: true,
+      persona_display_name: personaDisplayName,
+    });
+    return regionProjection(doc, "projectContext");
   }
 
   /** Submit `switching_project_intent` for the named project. */
   async open_project(project_id: string): Promise<FlowProjection> {
-    return this.sendEvent("switching_project_intent", { new_project_id: project_id });
+    return this.sendProjectContextEvent("switching_project_intent", {
+      new_project_id: project_id,
+    });
   }
 
   /** Open a deep link with the given intent. */
   async open_deep_link(intent: J002OpenDeepLinkIntent): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/open-deep-link`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: this.flowId,
-          principal_id: this.config.principalId,
-          intent_project_id: intent.project_id,
-          intent_session_id: intent.session_id,
-          intent_resource_id: intent.resource_id,
-          intent_resource_type: intent.resource_type,
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.open_deep_link expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    const doc = await this.sendEvent("open_deep_link", {
+      intent_project_id: intent.project_id,
+      intent_session_id: intent.session_id,
+      intent_resource_id: intent.resource_id,
+      intent_resource_type: intent.resource_type,
+    });
+    return regionProjection(doc, "projectContext");
   }
 
   /** Submit `create_project_submitted` with the given name. Assumes the
    *  machine is currently in `no_projects`. */
   async create_first_project(name: string): Promise<FlowProjection> {
-    return this.sendEvent("create_project_submitted", { org_name: name });
+    return this.sendProjectContextEvent("create_project_submitted", {
+      org_name: name,
+    });
   }
 
-  /** Read the current J-002 projection. */
+  /** Read the current J-002 project-context region slice. */
   async get_projection(): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/projection?flow_id=${encodeURIComponent(this.flowId)}`,
-      { method: "GET" },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.get_projection expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    return regionProjection(await this.getDocument(), "projectContext");
   }
 
   /** Assert that the resolver picked the project with the given id OR name.
-   *  Accepts either an id (UUID-shaped) or a name (free-text); resolution
-   *  rule: if `expected` matches `context.project.id` OR `context.project.name`,
-   *  the assertion succeeds. Reads from the projection — never queries the
-   *  backend directly.  */
+   *  Reads from the project-context region — never queries the backend. */
   async assert_initial_project(expected: string): Promise<void> {
     const projection = await this.get_projection();
     const project = (projection.context as { project?: { id: string | null; name: string | null } }).project ?? {
@@ -461,26 +475,11 @@ export class J002Harness {
 
   /** Assert that the active_scope matches the expected (partial) shape.
    *
-   *  Per DWD-13 `active_scope` is split across the two J-002 machines:
-   *  project-context owns `org_id` + `project_id`; session-chat owns the
-   *  `resource_*` half (set by `session_resumed` / `dataset_attached`).
-   *  So when the caller asserts `resource_type` / `resource_id` (US-209)
-   *  the authoritative value is on the session-chat projection — read it
-   *  and overlay it onto the project-context scope before comparing. The
-   *  project/org-only callers (US-207 / US-208) are unaffected. */
+   *  Post ADR-046 the document carries ONE authoritative top-level
+   *  `active_scope` (deepest-resolved region wins), so org/project AND
+   *  resource_* are all read from it directly — no per-machine overlay. */
   async assert_scope(expected: Partial<ActiveScope>): Promise<void> {
-    const projection = await this.get_projection();
-    const actual: ActiveScope = { ...projection.active_scope };
-    if ("resource_type" in expected || "resource_id" in expected) {
-      try {
-        const sc = await this.get_session_chat_projection();
-        actual.resource_type = sc.active_scope.resource_type;
-        actual.resource_id = sc.active_scope.resource_id;
-      } catch {
-        // session-chat projection unavailable — fall back to the
-        // project-context scope (resource_* will be null there).
-      }
-    }
+    const actual: ActiveScope = (await this.getDocument()).active_scope;
     const diffs: string[] = [];
     for (const key of Object.keys(expected) as (keyof ActiveScope)[]) {
       if (actual[key] !== expected[key]) {
@@ -494,36 +493,24 @@ export class J002Harness {
     }
   }
 
-  // ──────────────── MR-2 session-chat ops (DWD-13 §2B) ────────────────
+  // ──────────────── session-chat region ops (DWD-13 §2B) ────────────────
   //
-  // Per DWD-13 the J-002 session-chat machine has its own flow_id namespace
-  // (`session-chat:<principal>`) and its own projection URL family. The
-  // harness ops below read/drive that surface via the SAME auth-proxy →
-  // ui-state HTTP path (CM-A holds: no ui-state/lib imports).
+  // The session-chat data is now the `sessionChat` region slice of the one
+  // document (was `session-chat:<principal>` per-machine projection). The
+  // orchestrator's `project_ready` broadcast still auto-materializes it on the
+  // project-context `project_selected` entry.
 
-  /** Read the session-chat projection. The orchestrator's `project_ready`
-   *  broadcast hook auto-spawns the session-chat actor on project-context's
-   *  `project_selected` entry, so the projection is available once the
-   *  project-context machine has settled in `project_selected`. */
+  /** Read the session-chat region slice. */
   async get_session_chat_projection(): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/session-chat/projection?flow_id=${encodeURIComponent("session-chat:" + this.config.principalId)}`,
-      { method: "GET" },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.get_session_chat_projection expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    return regionProjection(await this.getDocument(), "sessionChat");
   }
 
   // ───────────────── MR-6 / US-210 cross-machine FREEZE/THAW ──────────────
-  // The harness simulates the orchestrator broadcast J-001's expired_token
-  // → silent-reauth lifecycle drives (the test wire of the existing
-  // broadcastFreeze/broadcastThaw substrate — index.ts §/freeze + /thaw,
-  // gated). J-002 is a pure downstream consumer (ADR-028:46-48).
+  // FREEZE/THAW remain on their own gated test-wire endpoints (index.ts
+  // §/freeze + /thaw, keyed by principal_id). They simulate J-001's
+  // expired_token → silent-reauth lifecycle drives and are NOT part of the
+  // `/state` read/write/stream surface (ADR-046 MR-6 scope). J-002 is a pure
+  // downstream consumer (ADR-028:46-48).
 
   /** Broadcast FREEZE to this principal's J-002 flows. */
   async freeze(): Promise<void> {
@@ -566,8 +553,8 @@ export class J002Harness {
   }
 
   /** Assert the DWD-7 stale-intent filter dropped the named intent
-   *  (observability-only — reads the session-chat projection's
-   *  last_stale_intent, the SSOT the orchestrator wrote at replay). */
+   *  (observability-only — reads the session-chat region's last_stale_intent,
+   *  the SSOT the orchestrator wrote at replay). */
   async assert_stale_intent_dropped(
     intent_type: string,
     target_id: string,
@@ -609,7 +596,7 @@ export class J002Harness {
   }
 
   /** Read the current session list (sorted DESC by last_active_at, capped
-   *  at 30 per page). Calls into the session-chat projection. */
+   *  at 30 per page). Calls into the session-chat region. */
   async get_session_list(_project_id?: string): Promise<
     Array<{
       id: string;
@@ -630,31 +617,14 @@ export class J002Harness {
     return ctx.session_list ?? [];
   }
 
-  /** Resume the given session — drives `session_clicked` against the
-   *  session-chat flow. Returns the projection after settle. */
+  /** Resume the given session — drives `session_clicked`. Returns the
+   *  session-chat region slice after settle. */
   async resume_session(session_id: string): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: `session-chat:${this.config.principalId}`,
-          type: "session_clicked",
-          payload: { session_id },
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.resume_session expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    const doc = await this.sendEvent("session_clicked", { session_id });
+    return regionProjection(doc, "sessionChat");
   }
 
-  /** Read the current transcript from the session-chat projection. */
+  /** Read the current transcript from the session-chat region. */
   async get_transcript(): Promise<
     Array<{ id: string; role: string; content: string; ts: string }>
   > {
@@ -670,9 +640,8 @@ export class J002Harness {
     return ctx.transcript ?? [];
   }
 
-  /** Assert that the session-chat projection is in `session_active` with the
-   *  given session_id, and that BOTH transcript and resource_* are populated
-   *  atomically (no partial materialization). */
+  /** Assert that the session-chat region is in `session_active` with the
+   *  given session_id. */
   async assert_session_active(session_id: string): Promise<void> {
     const projection = await this.get_session_chat_projection();
     if (projection.state !== "session_active") {
@@ -711,86 +680,33 @@ export class J002Harness {
   /** US-206 — drive the session-chat machine into `session_welcome`.
    *  Pure machine event; no backend write fires (DWD-10 lazy-create). */
   async start_new_session(): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: `session-chat:${this.config.principalId}`,
-          type: "new_session_clicked",
-          payload: {},
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.start_new_session expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    const doc = await this.sendEvent("new_session_clicked", {});
+    return regionProjection(doc, "sessionChat");
   }
 
   /** US-206 — send the first message; eagerly creates the session row and
-   *  PATCHes title = `content[:80]`. Returns the projection after settle. */
+   *  PATCHes title = `content[:80]`. Returns the session-chat slice. */
   async send_first_message(content: string): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: `session-chat:${this.config.principalId}`,
-          type: "first_message_sent",
-          payload: { content },
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.send_first_message expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    const doc = await this.sendEvent("first_message_sent", { content });
+    return regionProjection(doc, "sessionChat");
   }
 
-  /** Drive `refresh_session_list` against session-chat — re-reads the
-   *  backend list and re-emits the session_list_loaded event. Used by the
-   *  US-206 harness scenario to surface the newly created row in the list. */
+  /** Drive `refresh_session_list` — re-reads the backend list and re-emits
+   *  the session_list_loaded event. */
   async refresh_session_list(): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: `session-chat:${this.config.principalId}`,
-          type: "refresh_session_list",
-          payload: {},
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.refresh_session_list expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    const doc = await this.sendEvent("refresh_session_list", {});
+    return regionProjection(doc, "sessionChat");
   }
 
   // ──────────────── MR-4 ops (US-207 + US-208 + IC-J002-4/7) ────────────
   //
-  // The new ops live in `j002.*` per the DESIGN handoff §"TS UserFlowHarness
-  // extensions". `switch_project` drives the project-context machine's
-  // `switching_project_intent` event; the agent-related assertions read
-  // the agent's request log via the harness debug endpoint.
+  // `switch_project` drives the project-context machine's
+  // `switching_project_intent` event; the agent-related assertions read the
+  // agent's request log via the harness debug endpoint.
 
   /** US-207 — drive `switching_project_intent` for the named project. */
   async switch_project(target_project_id: string): Promise<FlowProjection> {
-    return this.sendEvent("switching_project_intent", {
+    return this.sendProjectContextEvent("switching_project_intent", {
       new_project_id: target_project_id,
     });
   }
@@ -798,15 +714,7 @@ export class J002Harness {
   /** US-208 — verify the agent's most recent chat-turn received an
    *  `X-Active-Scope` header matching the expected shape. Reads via the
    *  agent's harness-only `/debug/request-log` endpoint, which is enabled
-   *  by `NWAVE_HARNESS_KNOBS=true`. Throws when the agent did not receive
-   *  any chat turn yet, when the most recent turn lacked the header, or
-   *  when any of the expected fields disagree.
-   *
-   *  The endpoint contract (provisional; pending agent debug-endpoint
-   *  wiring): GET /agent/debug/last-request-scope → 200 with body
-   *  `{ scope: ActiveScope } | { scope: null, reason: string }`. When
-   *  the endpoint is not yet wired, the harness throws with a named
-   *  diagnostic so the failing test points at the missing seam. */
+   *  by `NWAVE_HARNESS_KNOBS=true`. */
   async assert_agent_received_scope(
     expected: Partial<ActiveScope>,
   ): Promise<void> {
@@ -851,12 +759,7 @@ export class J002Harness {
   }
 
   /** US-207 / IC-J002-4 — verify the agent never received a chat turn
-   *  carrying a mismatched (project_id, session_id) pair. The agent's
-   *  request log carries every turn; the harness reads it and walks the
-   *  rows asserting that no row pairs an old project_id with a new
-   *  session_id (or vice versa) during a switch window.
-   *
-   *  Returns silently on success. */
+   *  carrying a mismatched (project_id, session_id) pair. */
   async assert_agent_request_log_no_mismatched(): Promise<void> {
     const res = await request(
       `${this.config.authProxyUrl}/agent/debug/request-log`,
@@ -879,9 +782,9 @@ export class J002Harness {
       }>;
     };
     const entries = body.entries ?? [];
-    // For each project_id we've seen, the set of session_ids paired with
-    // that project_id should not overlap with the set paired with any
-    // other project_id. A mismatched pair surfaces as an overlap.
+    // For each project_id we've seen, the set of session_ids paired with that
+    // project_id should not overlap with the set paired with any other
+    // project_id. A mismatched pair surfaces as an overlap.
     const seen: Record<string, Set<string>> = {};
     for (const entry of entries) {
       const projectId = entry.scope?.project_id;
@@ -909,7 +812,7 @@ export class J002Harness {
   }
 
   /** Assert state === "scope_mismatch_terminal" AND
-   *  context.underlying_cause_tag === expected_cause. */
+   *  context.underlying_cause_tag === expected_cause (project-context region). */
   async assert_scope_mismatch(expected_cause: string): Promise<void> {
     const projection = await this.get_projection();
     if (projection.state !== "scope_mismatch_terminal") {
@@ -929,9 +832,8 @@ export class J002Harness {
 
   /** Simulate the agent's `resolve_dataset` tool-return path end to end:
    *  resolve `dataset_name` → id within the active project, then emit
-   *  `dataset_resolved_by_agent` to session-chat and wait for the
-   *  `switching_dataset_context → session_active` settle. Returns the
-   *  settled session-chat projection. */
+   *  `dataset_resolved_by_agent` and wait for the
+   *  `switching_dataset_context → session_active` settle. */
   async attach_dataset_via_agent(
     dataset_name: string,
   ): Promise<FlowProjection> {
@@ -942,8 +844,7 @@ export class J002Harness {
     );
   }
 
-  /** Direct UI selection path: emit `dataset_picked_directly` for the
-   *  given dataset id and wait for the settle. */
+  /** Direct UI selection path: emit `dataset_picked_directly`. */
   async attach_dataset_directly(
     dataset_id: string,
   ): Promise<FlowProjection> {
@@ -953,33 +854,16 @@ export class J002Harness {
     );
   }
 
-  /** POST a dataset pick event to the session-chat flow and poll the
-   *  projection until it re-settles in `session_active` (the
-   *  switchDatasetContext invoke is awaited by the orchestrator, but the
-   *  HTTP response races the projection write under the in-memory log —
-   *  poll to be deterministic across log tiers). */
+  /** POST a dataset pick event and poll the session-chat region until it
+   *  re-settles in `session_active`. */
   private async sendSessionChatDatasetEvent(
     type: "dataset_resolved_by_agent" | "dataset_picked_directly",
     dataset_id: string,
   ): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/session-chat/event`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: `session-chat:${this.config.principalId}`,
-          type,
-          payload: { resource_id: dataset_id, resource_type: "dataset" },
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.${type} expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
+    await this.sendEvent(type, {
+      resource_id: dataset_id,
+      resource_type: "dataset",
+    });
     for (let i = 0; i < 80; i++) {
       const sc = await this.get_session_chat_projection();
       if (sc.state === "session_active") return sc;
@@ -990,11 +874,9 @@ export class J002Harness {
     );
   }
 
-  /** Mint a dev JWT via auth-proxy's public `/api/auth/callback` (the
-   *  same flow `driver.mint_dev_jwt` uses) and list the active project's
-   *  datasets to map a dataset NAME → id. The agent's resolve_dataset
-   *  tool returns a name; the FE renders the inline list; the user's pick
-   *  is an id — this resolver stands in for that name→id lookup. */
+  /** Mint a dev JWT via auth-proxy's public `/api/auth/callback` and list the
+   *  active project's datasets to map a dataset NAME → id. The project id is
+   *  read off the session-chat region's context. */
   private async resolveDatasetIdByName(name: string): Promise<string> {
     const sc = await this.get_session_chat_projection();
     const projectId = (sc.context as { project?: { id?: string | null } })
@@ -1031,7 +913,7 @@ export class J002Harness {
         name?: string;
         attributes?: { name?: string };
       }>;
-      items?: Array<{ id?: string; name?: string }>;
+      items?: Array<{ id?: string; name?: string; attributes?: { name?: string } }>;
     };
     const rows = dsBody.data ?? dsBody.items ?? [];
     for (const row of rows) {
@@ -1043,29 +925,13 @@ export class J002Harness {
     );
   }
 
-  private async sendEvent(
+  /** Post a project-context event and return the project-context region slice. */
+  private async sendProjectContextEvent(
     type: string,
     payload: Record<string, unknown>,
   ): Promise<FlowProjection> {
-    const res = await request(
-      `${this.config.authProxyUrl}/ui-state/flow/${this.machine}/event`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          flow_id: this.flowId,
-          type,
-          payload,
-        }),
-      },
-    );
-    const body = (await res.body.json()) as FlowProjection;
-    if (res.statusCode !== 200) {
-      throw new Error(
-        `j002.${type} expected 200, got ${res.statusCode}: ${JSON.stringify(body)}`,
-      );
-    }
-    return body;
+    const doc = await this.sendEvent(type, payload);
+    return regionProjection(doc, "projectContext");
   }
 }
 

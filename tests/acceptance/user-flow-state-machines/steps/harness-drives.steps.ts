@@ -225,8 +225,10 @@ When("a sibling flow harness for transforms is initialized", function (
   this: UserFlowWorld,
 ) {
   if (!this.harness) throw new Error("primary harness not initialized");
-  // Build a sibling that shares the SAME flow_id by attach_to_flow. No
-  // begin_auth is issued — that's the composition contract.
+  // Build a sibling that reads the SAME per-principal `/state` document via
+  // attach_to_flow. No begin_auth is issued — that's the composition contract.
+  // Identity is header-derived (no `flow_id` on the wire), so attaching just
+  // marks the flow started and shares the reference code.
   const persona = this.get_persona("maya");
   const sibling = new UserFlowHarness(
     {
@@ -235,16 +237,12 @@ When("a sibling flow harness for transforms is initialized", function (
     },
     persona,
   );
-  // Surface the primary's flow handle so the sibling can read the projection.
-  // We re-read the primary's flow_id via its projection rather than reaching
-  // into private fields (CM-A: driving-port only).
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
   this.bag.sibling_init = (async () => {
-    const primaryProjection = await this.harness!.get_projection();
-    sibling.attach_to_flow(
-      primaryProjection.flow_id,
-      this.harness!.get_last_correlation_id() ?? "",
-    );
+    // Touch the primary's document so the read path is exercised, then share
+    // the reference code with the sibling (CM-A: driving-port only).
+    await this.harness!.get_projection();
+    sibling.attach_to_flow(this.harness!.get_last_correlation_id() ?? "");
     this.bag.sibling_harness = sibling;
     this.bag.primary_sign_in_calls = 1;
   })();

@@ -62,10 +62,10 @@ def _create_project_for_org(name: str, *, org_id: str = DEV_ORG_ID, user_id: str
 
 def _spawn_j002(driver: J002Driver) -> HTTPProbe:
     """Spawn J-002 via its direct `/begin` route (same pattern as US-201)."""
-    return driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    return driver.begin_session(
+        force_restart=True,
+        persona_display_name="Maya Chen",
         base=driver.auth_proxy_url,
-        json_body={"persona_display_name": "Maya Chen"},
     )
 
 
@@ -144,8 +144,8 @@ def test_cold_deep_link_to_project_resolves_active_scope_before_paint(
         flow_id=J002_FLOW_ID, base=driver.auth_proxy_url
     )
     proj = json.loads(projection_probe.body)
-    assert proj["state"] == "project_selected", (
-        f"expected project_selected, got {proj['state']!r}"
+    assert proj["regions"]["projectContext"]["state"] == "project_selected", (
+        f"expected project_selected, got {proj['regions']['projectContext']['state']!r}"
     )
     assert proj["active_scope"]["project_id"] == project_id
 
@@ -198,10 +198,11 @@ def test_cross_tenant_deep_link_lands_in_scope_mismatch_terminal(
     # Assert — projection settled at scope_mismatch_terminal with cross_tenant cause.
     settled = _wait_for_j002_state(driver, target_state="scope_mismatch_terminal")
     body = json.loads(settled.body)
-    assert body["state"] == "scope_mismatch_terminal"
-    assert body["context"].get("underlying_cause_tag") == "cross_tenant", (
+    pc = body["regions"]["projectContext"]
+    assert pc["state"] == "scope_mismatch_terminal"
+    assert pc["context"].get("underlying_cause_tag") == "cross_tenant", (
         f"expected underlying_cause_tag='cross_tenant'; "
-        f"got {body['context'].get('underlying_cause_tag')!r}"
+        f"got {pc['context'].get('underlying_cause_tag')!r}"
     )
 
 
@@ -235,10 +236,11 @@ def test_deep_link_to_deleted_project_surfaces_same_panel_with_project_not_found
     # Assert — scope_mismatch_terminal with project_not_found cause.
     settled = _wait_for_j002_state(driver, target_state="scope_mismatch_terminal")
     body = json.loads(settled.body)
-    assert body["state"] == "scope_mismatch_terminal"
-    assert body["context"].get("underlying_cause_tag") == "project_not_found", (
+    pc = body["regions"]["projectContext"]
+    assert pc["state"] == "scope_mismatch_terminal"
+    assert pc["context"].get("underlying_cause_tag") == "project_not_found", (
         f"expected underlying_cause_tag='project_not_found'; "
-        f"got {body['context'].get('underlying_cause_tag')!r}"
+        f"got {pc['context'].get('underlying_cause_tag')!r}"
     )
 
 
@@ -278,14 +280,10 @@ def test_back_to_projects_cta_re_enters_resolving_initial_scope_with_intent_clea
     # — what matters is the post-clear assertion below.
 
     # Act — click "Back to projects".
-    back = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    back = driver.post_state_event(
+        event_type="back_to_projects_clicked",
+        payload={},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": J002_FLOW_ID,
-            "type": "back_to_projects_clicked",
-            "payload": {},
-        },
     )
     assert back.status == 200, (
         f"back_to_projects_clicked expected 200; got {back.status} "
@@ -298,13 +296,14 @@ def test_back_to_projects_cta_re_enters_resolving_initial_scope_with_intent_clea
         driver, target_state="no_projects"
     )
     body = json.loads(settled.body)
-    assert body["state"] == "no_projects", (
+    pc = body["regions"]["projectContext"]
+    assert pc["state"] == "no_projects", (
         f"expected to re-resolve from scope_mismatch_terminal; "
-        f"got state={body['state']!r}"
+        f"got state={pc['state']!r}"
     )
     # Underlying cause tag should be reset for the resolving_initial_scope re-entry.
     # (After settling at no_projects it'll be 'no_projects' again.)
-    assert body["context"].get("underlying_cause_tag") == "no_projects"
+    assert pc["context"].get("underlying_cause_tag") == "no_projects"
 
 
 @pytest.mark.happy_path
@@ -345,10 +344,10 @@ def test_deep_link_with_intent_resource_carries_through_to_session_active(
         flow_id=J002_FLOW_ID, base=driver.auth_proxy_url
     )
     proj = json.loads(projection_probe.body)
-    assert proj["state"] == "project_selected"
+    assert proj["regions"]["projectContext"]["state"] == "project_selected"
     assert proj["active_scope"]["project_id"] == project_id
     # Intent fields carry through into context for MR-2 consumers.
-    ctx = proj["context"]
+    ctx = proj["regions"]["projectContext"]["context"]
     # The intent_resource_id may be reflected in projection.context under a
     # named key by the deep_link_opened reducer extension.
     intent_resource_in_ctx = (

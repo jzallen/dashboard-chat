@@ -92,10 +92,9 @@ def _spawn_j002(driver: J002Driver) -> HTTPProbe:
     orchestrator method (`beginIfNotStarted`) the auth_ready hook calls,
     without requiring the J-001 WorkOS fixture to be running locally.
     """
-    return driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
-        base=driver.auth_proxy_url,
-        json_body={"persona_display_name": MAYA_DISPLAY_NAME},
+    return driver.begin_session(
+        force_restart=True,
+        persona_display_name=MAYA_DISPLAY_NAME,
     )
 
 
@@ -156,7 +155,7 @@ def test_first_sign_in_foregrounds_the_no_projects_welcome_panel(
         driver, target_state="no_projects"
     )
     j002 = json.loads(j002_probe.body)
-    assert j002["state"] == "no_projects"
+    assert j002["regions"]["projectContext"]["state"] == "no_projects"
     assert j002["active_scope"]["org_id"], (
         "J-002 active_scope.org_id must be populated from J-001 projection"
     )
@@ -225,14 +224,10 @@ def test_creating_first_project_lands_in_project_selected(
     project_name = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
 
     # Act — submit a valid project name to J-002.
-    submit = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    submit = driver.post_state_event(
+        event_type="create_project_submitted",
+        payload={"org_name": project_name},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": J002_FLOW_ID,
-            "type": "create_project_submitted",
-            "payload": {"org_name": project_name},
-        },
     )
     assert submit.status == 200, (
         f"create_project_submitted expected 200; got {submit.status} "
@@ -242,12 +237,12 @@ def test_creating_first_project_lands_in_project_selected(
     # Wait for J-002 to settle in `project_selected`.
     settled = _wait_for_j002_state(driver, target_state="project_selected")
     body = json.loads(settled.body)
-    assert body["state"] == "project_selected"
+    assert body["regions"]["projectContext"]["state"] == "project_selected"
     assert body["active_scope"]["project_id"] is not None, (
         "project_selected must have non-null active_scope.project_id (IC-J002-2)"
     )
     # Context.project carries the authoritative name + id.
-    ctx_project = body["context"].get("project") or {}
+    ctx_project = body["regions"]["projectContext"]["context"].get("project") or {}
     assert ctx_project.get("id") == body["active_scope"]["project_id"]
     assert ctx_project.get("name") == project_name
 
@@ -270,14 +265,10 @@ def test_empty_project_name_keeps_machine_in_no_projects(
     _wait_for_j002_state(driver, target_state="no_projects")
 
     # Act — submit an empty/whitespace-only project name.
-    submit = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    submit = driver.post_state_event(
+        event_type="create_project_submitted",
+        payload={"org_name": "   "},
         base=driver.auth_proxy_url,
-        json_body={
-            "flow_id": J002_FLOW_ID,
-            "type": "create_project_submitted",
-            "payload": {"org_name": "   "},
-        },
     )
     assert submit.status == 200, (
         f"event expected 200; got {submit.status} body={submit.body[:300]!r}"
@@ -287,11 +278,12 @@ def test_empty_project_name_keeps_machine_in_no_projects(
     # error recorded in context. The empty name is rejected client-side
     # (machine guard); no backend POST fires.
     body = json.loads(submit.body)
-    assert body["state"] == "no_projects", (
+    pc = body["regions"]["projectContext"]
+    assert pc["state"] == "no_projects", (
         f"empty name must keep state in no_projects; "
-        f"got {body['state']!r}"
+        f"got {pc['state']!r}"
     )
-    validation_err = body["context"].get("project_validation_error")
+    validation_err = pc["context"].get("project_validation_error")
     assert validation_err is not None, (
         "expected inline validation error in projection context"
     )
@@ -321,15 +313,11 @@ def test_transient_create_project_failure_lands_in_error_recoverable_with_compos
     project_name = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
     # Set pending_project_name first by submitting the create-project event,
     # then force-fail the invocation.
-    forced = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    forced = driver.post_state_event(
+        event_type="create_project_submitted",
+        payload={"org_name": project_name},
         base=driver.auth_proxy_url,
         extra_headers={"X-Force-Create-Project-Failure": "transient"},
-        json_body={
-            "flow_id": J002_FLOW_ID,
-            "type": "create_project_submitted",
-            "payload": {"org_name": project_name},
-        },
     )
     assert forced.status == 200, (
         f"forced-failure event expected 200; got {forced.status} "
@@ -339,10 +327,11 @@ def test_transient_create_project_failure_lands_in_error_recoverable_with_compos
     # Wait for the failure to settle the projection in error_recoverable.
     settled = _wait_for_j002_state(driver, target_state="error_recoverable")
     body = json.loads(settled.body)
-    assert body["state"] == "error_recoverable"
-    assert body["context"].get("underlying_cause_tag") == "transient"
+    pc = body["regions"]["projectContext"]
+    assert pc["state"] == "error_recoverable"
+    assert pc["context"].get("underlying_cause_tag") == "transient"
     # Composer text preserved.
-    assert body["context"].get("pending_project_name") == project_name
+    assert pc["context"].get("pending_project_name") == project_name
 
 
 @pytest.mark.harness

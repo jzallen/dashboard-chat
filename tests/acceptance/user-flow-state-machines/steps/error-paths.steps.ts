@@ -99,20 +99,20 @@ Then(
     // is in flight. The poll runs at most 100ms.
     let observed: string | null = null;
     const deadline = startedAt + 100;
-    // In dev mode auth-proxy injects X-User-Id=dev-user-001; ui-state
-    // keys flows by `<machine>:<principal_id>`. The walking skeleton's
-    // initial sign-in writes the begin event before workos returns, so the
-    // projection is readable during the slow window.
-    const flowId = `login-and-org-setup:dev-user-001`;
+    // In dev mode auth-proxy injects X-User-Id=dev-user-001; the `/state`
+    // document is the single per-principal SSOT (ADR-046 MR-6). The walking
+    // skeleton's initial sign-in writes the begin event before workos returns,
+    // so the onboarding region is readable as `authenticating` during the slow
+    // window.
     while (Date.now() < deadline) {
       try {
-        const res = await fetch(
-          `${AUTH_PROXY_URL}/ui-state/flow/login-and-org-setup/projection?flow_id=${encodeURIComponent(flowId)}`,
-        );
+        const res = await fetch(`${AUTH_PROXY_URL}/ui-state/state`);
         if (res.ok) {
-          const body = (await res.json()) as { state?: string };
-          if (body.state === "authenticating") {
-            observed = body.state;
+          const body = (await res.json()) as {
+            regions?: { onboarding?: { state?: string } };
+          };
+          if (body.regions?.onboarding?.state === "authenticating") {
+            observed = body.regions.onboarding.state;
             break;
           }
         }
@@ -479,9 +479,9 @@ Then(
     // surgically, not by replacing the whole upstream.
     const legacyPath = this.bag.legacy_route_path as string;
     const res = await fetch(`${AUTH_PROXY_URL}${legacyPath}`);
-    // The legacy path SHOULD NOT return a ui-state projection envelope.
+    // The legacy path SHOULD NOT return a ui-state `/state` document envelope.
     const text = await res.text();
-    expect(text).not.toMatch(/"flow_id"/);
+    expect(text).not.toMatch(/"regions"/);
     expect(text).not.toMatch(/"active_scope"/);
   },
 );

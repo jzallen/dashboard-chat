@@ -75,10 +75,10 @@ def _ensure_two_projects(driver: J002Driver) -> tuple[dict[str, Any], dict[str, 
 
 def _begin_j002_flow(driver: J002Driver) -> None:
     """Spawn / re-attach the J-002 project-context flow for dev-user-001."""
-    driver.post(
-        "/ui-state/flow/project-and-chat-session-management/begin",
+    driver.begin_session(
+        force_restart=True,
+        persona_display_name="Dev User",
         bearer=DEV_BEARER,
-        json_body={"principal_id": DEV_USER_ID, "persona_display_name": "Dev User"},
     )
 
 
@@ -96,14 +96,10 @@ def test_switching_projects_atomically_retargets_active_scope_within_300ms_p95(
     for i in range(5):
         target = project_a if i % 2 == 0 else project_b
         start = time.perf_counter()
-        probe = driver.post(
-            "/ui-state/flow/project-and-chat-session-management/event",
+        probe = driver.post_state_event(
+            event_type="switching_project_intent",
+            payload={"new_project_id": target["id"]},
             bearer=DEV_BEARER,
-            json_body={
-                "flow_id": FLOW_ID,
-                "type": "switching_project_intent",
-                "payload": {"new_project_id": target["id"]},
-            },
         )
         assert probe.status == 200, f"switch returned {probe.status}: {probe.body[:300]}"
         # Poll for project_selected settle (the switch invokes switchProject
@@ -218,14 +214,10 @@ def test_deep_link_mid_session_switches_projects_via_loader(
     )
     assert deep_link_a.status == 200, f"deep-link A returned {deep_link_a.status}"
     # Now drive a mid-flow switch via switching_project_intent to project_b.
-    switch_probe = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    switch_probe = driver.post_state_event(
+        event_type="switching_project_intent",
+        payload={"new_project_id": project_b["id"]},
         bearer=DEV_BEARER,
-        json_body={
-            "flow_id": FLOW_ID,
-            "type": "switching_project_intent",
-            "payload": {"new_project_id": project_b["id"]},
-        },
     )
     assert switch_probe.status == 200, f"switch returned {switch_probe.status}"
     # Settle and assert the projection's active_scope.project_id is now project_b.
@@ -253,14 +245,10 @@ def test_switching_to_access_revoked_project_surfaces_named_diagnostic(
     # returns 403 for cross-tenant / 404 for non-existent. We use a clearly
     # non-existent id; the actor's onDone branches will route to
     # scope_mismatch_terminal with cause=project_not_found OR access_revoked.
-    switch_probe = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    switch_probe = driver.post_state_event(
+        event_type="switching_project_intent",
+        payload={"new_project_id": "p-revoked-doesnt-exist-99"},
         bearer=DEV_BEARER,
-        json_body={
-            "flow_id": FLOW_ID,
-            "type": "switching_project_intent",
-            "payload": {"new_project_id": "p-revoked-doesnt-exist-99"},
-        },
     )
     assert switch_probe.status == 200, f"switch returned {switch_probe.status}"
 
@@ -269,7 +257,7 @@ def test_switching_to_access_revoked_project_surfaces_named_diagnostic(
         state = driver.projection_state(proj_probe)
         if state == "scope_mismatch_terminal":
             body = json.loads(proj_probe.body)
-            cause = body.get("context", {}).get("underlying_cause_tag")
+            cause = body.get("regions", {}).get("projectContext", {}).get("context", {}).get("underlying_cause_tag")
             assert cause in ("access_revoked", "project_not_found"), (
                 f"expected named diagnostic, got {cause!r}"
             )
@@ -311,14 +299,10 @@ def test_ts_harness_asserts_atomic_switching_and_sse_cancellation(
 
     # Drive a switch through the ui-state HTTP surface (the same surface
     # the TS harness routes through) and assert atomicity at the projection.
-    switch_probe = driver.post(
-        "/ui-state/flow/project-and-chat-session-management/event",
+    switch_probe = driver.post_state_event(
+        event_type="switching_project_intent",
+        payload={"new_project_id": project_a["id"]},
         bearer=DEV_BEARER,
-        json_body={
-            "flow_id": FLOW_ID,
-            "type": "switching_project_intent",
-            "payload": {"new_project_id": project_a["id"]},
-        },
     )
     assert switch_probe.status == 200
     # Atomic invariant: at NO settle point does the projection carry an
@@ -327,14 +311,15 @@ def test_ts_harness_asserts_atomic_switching_and_sse_cancellation(
     for _ in range(20):
         proj_probe = driver.get_j002_projection(flow_id=FLOW_ID, bearer=DEV_BEARER)
         body = json.loads(proj_probe.body)
-        ctx = body.get("context", {})
+        pc = body.get("regions", {}).get("projectContext", {})
+        ctx = pc.get("context", {})
         scope = body.get("active_scope", {})
         # If we're in switching_project, session_id MUST be null (atomic).
-        if body.get("state") == "switching_project":
+        if pc.get("state") == "switching_project":
             assert ctx.get("session_id") is None, (
                 f"IC-J002-4 violated: session_id={ctx.get('session_id')!r} during switching_project"
             )
-        if body.get("state") == "project_selected" and scope.get("project_id") == project_a["id"]:
+        if pc.get("state") == "project_selected" and scope.get("project_id") == project_a["id"]:
             return
         time.sleep(0.02)
     pytest.fail("switch did not settle to project_selected")
