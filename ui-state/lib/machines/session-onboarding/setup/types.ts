@@ -1,14 +1,17 @@
-// Domain types for the session-onboarding statechart (ADR-041): the machine's
+// Domain types for the session-onboarding statechart: the machine's
 // context / event / state / input shapes, plus the typed-arg aliases the
-// extracted guards (./guards.ts) and actions (./actions.ts) annotate their
-// params with. setup() infers those args for INLINE definitions; once the
-// definitions move out of machine.ts they must spell the type out, so they all
-// share `ActionArgs`/`GuardArgs` from here.
+// guards (./guards.ts) and actions (./actions.ts) annotate their params with.
+// Named-action and named-guard definitions must spell their arg type out (only
+// inline definitions get it inferred), so they all share `ActionArgs`/`GuardArgs`
+// from here.
 //
 // Imports are type-only and one-way: types.ts → actors.ts (for Config + the deps
 // bundle the params envelope carries) and types.ts → domain.ts (for OrgName,
 // PrincipalId, and the UnderlyingCauseTag failure vocabulary). Nothing here
 // imports machine.ts, so there is no machine ↔ types cycle.
+//
+// References:
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
 import type { Config, SessionOnboardingDeps } from "./actors.ts";
 import type { OrgName, PrincipalId, UnderlyingCauseTag } from "./domain.ts";

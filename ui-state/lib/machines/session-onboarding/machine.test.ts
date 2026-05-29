@@ -1,5 +1,5 @@
 // Unit tests for the SessionOnboardingMachine — drives the state machine
-// through `createActor` injecting a MOCK `fetch` as the I/O port (ADR-041).
+// through `createActor` injecting a MOCK `fetch` as the I/O port.
 //
 // The machine takes NO constructor params: every external actor is a
 // config-driven default whose network I/O runs through `deps.request_client`
@@ -17,6 +17,9 @@
 // `describe` sets up a user situation and each `it` states the outcome the
 // caller observes — phrased as behavior the user experiences, not machine
 // internals.
+//
+// References:
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
 import { describe, expect, it } from "vitest";
 import { createActor } from "xstate";
@@ -53,7 +56,7 @@ const MAYA_USER = {
 const NO_USER = { email: null, display_name: null, first_name: null };
 
 /** Mock fetch for a NEW user — re-verify OK, backend /api/orgs/me 404 (no org),
- *  create/reissue OK. */
+ *  org-create OK. */
 function okFetch(): RequestClient {
   return makeMockFetch({
     profile: { email: MAYA_PROFILE.email, name: MAYA_PROFILE.display_name },

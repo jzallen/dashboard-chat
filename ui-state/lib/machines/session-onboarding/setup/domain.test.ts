@@ -1,4 +1,4 @@
-// Unit tests for the OnboardSession domain model (ADR-041): the `OrgName` value
+// Unit tests for the OnboardSession domain model: the `OrgName` value
 // object (`constructOrgName`) and the failure-cause pair (`failWithCause` /
 // `causeOf`).
 //
@@ -9,6 +9,9 @@
 //      detection is backend-side, not here.
 //   2. failWithCause brands a thrown Error with a cause; causeOf reads it back,
 //      defaulting untagged / foreign / out-of-union failures to "transient".
+//
+// References:
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
 import { describe, expect, it } from "vitest";
 

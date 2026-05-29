@@ -10,11 +10,10 @@
 // context. The value object evaluates, guards route, actions write. (See the
 // docstring atop ./domain.ts for the full split.)
 //
-// Extracted from the machine's `setup({ actions })` block — including the assigns
-// that previously sat INLINE in the statechart (assignPendingOrgName,
-// assignCreatedOrg, and the forced-failure tag, now folded into the parameterized
-// `tagCause`), so machine.ts now only ever names actions (with `params` where they
-// vary). Exported as one `actions` bundle threaded into `setup({ actions })`.
+// Every `assign` lives here, including assignPendingOrgName, assignCreatedOrg,
+// and the parameterized `tagCause`, so machine.ts only ever names actions (with
+// `params` where they vary). Exported as one `actions` bundle threaded into
+// `setup({ actions })`.
 //
 // Most actions are no-param `assign`s sharing `updateContext` — `assign` with its
 // five generics pinned once via an instantiation expression (the generics have no
@@ -25,10 +24,10 @@
 // `setup` types each named action's expression-event as the whole `TEvent`,
 // regardless of which transition references it (a named action may be attached to
 // any transition). So the actor-result readers must cast `event` to reach
-// `.output` — that is the documented cost of EXTRACTING actions out of `setup`,
-// NOT a side effect of `updateContext`. (An inline `onDone` action would receive
-// `DoneActorEvent<output>` and need no cast; we trade that for a mapping-only
-// machine.ts.) `tagCause` is the exception that proves the rule — it takes
+// `.output` — that is the cost of defining named actions in this bundle rather
+// than inline, NOT a side effect of `updateContext`. (An inline `onDone` action
+// would receive `DoneActorEvent<output>` and need no cast; the trade buys a
+// mapping-only machine.ts.) `tagCause` is the exception that proves the rule — it takes
 // `params`, so it needs its own `assign` with `TParams = { tag }`.
 
 import { assign } from "xstate";
@@ -114,8 +113,6 @@ export const actions = {
     SessionOnboardingEvent,
     SessionOnboardingActor
   >((_, params) => ({ underlying_cause_tag: params.tag })),
-
-  // --- formerly inline in the statechart ---
 
   /** needs_org → creating_org: preserve the submitted name across retries. The
    *  guard (isOrgNameValid) already validated it, so brand the raw name directly

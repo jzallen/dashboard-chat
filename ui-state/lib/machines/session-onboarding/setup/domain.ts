@@ -1,9 +1,8 @@
-// The OnboardSession domain model (ADR-041): the value objects that give this
-// bounded context a ubiquitous-language DSL, replacing anemic, provenance-named
-// data shapes (e.g. a `CreateOrgOutput`-style DTO — which named where data
-// crossed, not what it IS — becomes `Org`). It also owns the bounded context's FAILURE
-// VOCABULARY (the `UnderlyingCauseTag` union + `failWithCause` / `causeOf`) — see
-// the "Failure cause" section at the foot of the file.
+// The OnboardSession domain model: the value objects that give this bounded
+// context a ubiquitous-language DSL named for what data IS, not where it crossed
+// (an `Org`, not a `CreateOrgOutput`-style DTO). It also owns the bounded
+// context's FAILURE VOCABULARY (the `UnderlyingCauseTag` union + `failWithCause`
+// / `causeOf`) — see the "Failure cause" section at the foot of the file.
 //
 // VALUE OBJECTS WITH BEHAVIOR, not just types: `OrgName` owns its own shape
 // invariant via the `constructOrgName` smart constructor and the `isValid()` /
@@ -26,6 +25,9 @@
 // methods) used only at the guard/action boundary; what gets stored is its
 // branded `.value` string. Brands are compile-time only (erased at runtime), so
 // JSON round-trips are lossless; rehydrated values are a trust boundary.
+//
+// References:
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
 /** Branded id of the already-authenticated principal (the verified X-User-Id) —
  *  the OnboardSession aggregate root id. Opaque; branding asserts only "this is
@@ -105,7 +107,7 @@ export function constructOrgName(raw: string): OrgNameValue {
   };
 }
 
-/** The re-verified identity (ADR-041 L5) — what the WorkOS `/oauth/userinfo`
+/** The re-verified identity — what the WorkOS `/oauth/userinfo`
  *  call yields once refined at the boundary. Identity ONLY; carries no org
  *  binding. `first_name` is derived once, at that boundary, from `display_name`. */
 export interface VerifiedUser {

@@ -8,10 +8,9 @@
 // action's job, ./actions.ts). The value object evaluates; guards just route on
 // the result. (See the docstring atop ./domain.ts for the full split.)
 //
-// Extracted from the machine's `setup({ guards })` block so machine.ts reads as
-// transitions. Each predicate annotates its arg with `GuardArgs` (the inference
-// setup() gave them inline) and is exported as one `guards` bundle the machine
-// threads into `setup({ guards })`.
+// Defined in this bundle so machine.ts reads as transitions. Each predicate
+// annotates its arg with `GuardArgs` and is exported as one `guards` bundle the
+// machine threads into `setup({ guards })`.
 
 import type { VerifiedSession } from "./domain.ts";
 import { constructOrgName } from "./domain.ts";

@@ -1,7 +1,7 @@
 // session-onboarding/setup/actors.ts — the external-service request layer for
-// the OnboardSession aggregate (ADR-041). Houses every actor RESOLVER that
-// performs network I/O (WorkOS re-verify, the backend org SSOT, and
-// org-create/reissue), the I/O contracts they exchange with the machine, the
+// the OnboardSession aggregate. Houses every actor RESOLVER that
+// performs network I/O (WorkOS re-verify and the backend org SSOT), the I/O
+// contracts they exchange with the machine, the
 // `fromPromise`-bound actor-type aliases, and the wired `actors` bundle that
 // machine.ts threads straight into `setup({ actors })`. It imports from `xstate`
 // and the domain model (./domain.ts) ONLY — never machine.ts or the other setup
@@ -12,6 +12,11 @@
 // and performs network I/O through `input.deps.request_client` (= the `fetch`
 // library), both threaded composition root → machine input → context → invoke
 // input. Tests inject a mock `fetch` as `request_client`.
+//
+// References:
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment; config-driven actor injection
+//   docs/decisions/adr-043-*.md  — auth-proxy owns token lifecycle (no reissue)
+//   docs/decisions/adr-029-*.md  — identity-header propagation
 
 import { fromPromise } from "xstate";
 
@@ -309,9 +314,9 @@ const CREATE_ORG_STATUS_RULES: readonly CreateOrgStatusRule[] = [
  * exported so the `getOrg` resolver can call it. Dispatches on the response
  * status via CREATE_ORG_STATUS_RULES. Network I/O runs through the injected
  * `requestClient` (= the `fetch` library); `backendUrl` is the auth-proxy URL,
- * so the same identity headers flow through (ADR-029). The org-scoped JWT is
- * now minted by auth-proxy on the org-create response (X-New-Access-Token,
- * ADR-043 amendment) — this resolver no longer chains a reissue call.
+ * so the same identity headers flow through. The org-scoped JWT is minted by
+ * auth-proxy on the org-create response (X-New-Access-Token); this resolver
+ * returns the org directly and does not chain a reissue call.
  */
 export function createOrgFn(
   config: Config,
@@ -365,11 +370,9 @@ export function createOrgFn(
  * input → context → invoke input — so it stays config-agnostic and the
  * composition root never imports it just to inject env.
  *
- * Creates the org and returns it. The org-scoped JWT reissue that used to chain
- * here (the now-deleted backend reissue endpoint) was retired: auth-proxy now
- * mints the org-scoped token on the org-create response itself
- * (X-New-Access-Token, ADR-043 amendment), so onboarding no longer
- * participates in token issuance.
+ * Creates the org and returns it. auth-proxy mints the org-scoped token on the
+ * org-create response itself (X-New-Access-Token); onboarding does not
+ * participate in token issuance.
  */
 export async function getOrg({
   input,
@@ -407,8 +410,8 @@ export type CreateOrgActor = ReturnType<
  * The machine's default actor map — the resolvers wrapped once as `fromPromise`
  * actors. machine.ts threads this straight into `setup({ actors })` so the
  * statechart only names actors (`src: "loadSession"`), never wires them. These
- * are config-driven DEFAULTS (ADR-041 inversion): there is no `.provide(...)`;
- * tests drive behavior by injecting a mock `fetch` as `deps.request_client`.
+ * are config-driven DEFAULTS: there is no `.provide(...)`; tests drive behavior
+ * by injecting a mock `fetch` as `deps.request_client`.
  */
 export const actors = {
   loadSession: fromPromise<VerifiedSession, LoadSessionInput>(

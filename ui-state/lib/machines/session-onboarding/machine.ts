@@ -1,21 +1,18 @@
 // SessionOnboardingMachine — XState v5 statechart for the OnboardSession
-// aggregate (ADR-041).
+// aggregate.
 //
 // Entry assumes an ALREADY-AUTHENTICATED principal (auth-proxy verified the
 // user upstream and injected X-User-Id + forwarded the Bearer). The machine
 // does not re-enact a sign-in handshake; it brings the verified principal to
 // an org-scoped, app-ready state.
 //
-// States (L6):
+// States:
 //   - verifying      — re-verify the forwarded Bearer against WorkOS
-//                      /oauth/userinfo (defense-in-depth, L3). Collapses the
-//                      retired `anonymous` + `authenticating` states.
-//   - needs_org      — verified, no org binding yet (renamed from
-//                      authenticated_no_org). Awaits org_form_submitted.
+//                      /oauth/userinfo (defense-in-depth).
+//   - needs_org      — verified, no org binding yet. Awaits org_form_submitted.
 //   - creating_org   — POST /api/orgs. The org-scoped JWT is minted by
-//                      auth-proxy on the org-create response (X-New-Access-Token,
-//                      ADR-043 amendment); onboarding no longer reissues, so the
-//                      retry/budget subgraph was dissolved (ADR-043 stage 3a).
+//                      auth-proxy on the org-create response (X-New-Access-Token);
+//                      this machine does not reissue tokens.
 //   - ready          — signed in with an org. Reached directly from verifying
 //                      on the [hasOrg] returning-user shortcut, or from
 //                      creating_org for a new user.
@@ -29,14 +26,15 @@
 //                     failure-cause vocabulary (UnderlyingCauseTag, failWithCause/causeOf)
 //   - actors.ts     — the resolvers + the `actors` bundle (external-service I/O)
 //   - guards.ts     — the `guards` bundle (transition predicates)
-//   - actions.ts    — the `actions` bundle (every assign, incl. former inlines)
+//   - actions.ts    — the `actions` bundle (every assign)
 //   - types.ts      — context / event / state / input types
 // so the statechart below reads as transitions, naming actors/guards/actions by
 // string without their definitions inline.
 //
-// References: ./README.md (overview, state diagram, full ADR list) and
-// ../../../../docs/decisions/adr-041-session-onboarding-domain-realignment.md
-// (the domain realignment + config-driven actor-injection inversion built here).
+// References:
+//   docs/decisions/adr-041-*.md  — session-onboarding domain realignment; config-driven actor injection
+//   docs/decisions/adr-043-*.md  — auth-proxy owns token lifecycle (no reissue)
+//   ./README.md                  — overview, state diagram, full ADR list
 
 import { setup } from "xstate";
 
@@ -157,10 +155,9 @@ export function createSessionOnboardingMachine() {
               actions: "recordOrgNameTaken",
             },
             // A genuine org-create failure (not a duplicate name) is an ordinary
-            // upstream error — surface it on the recoverable-error screen. The
-            // retry/budget loop was dissolved (ADR-043 stage 3a): auth-proxy now
-            // mints the org-scoped token on the org-create response, so there is
-            // no reissue step to retry.
+            // upstream error — surface it on the recoverable-error screen. There
+            // is no retry loop: auth-proxy mints the org-scoped token on the
+            // org-create response, so there is no reissue step to retry.
             {
               target: "error_recoverable",
               actions: { type: "tagCause", params: { tag: "partial-setup" } },
@@ -170,7 +167,7 @@ export function createSessionOnboardingMachine() {
       },
       ready: {},
       // Terminal-ish error landing: reached by a genuine org-create failure or
-      // the __force_failure__ harness jump. No retry transition (ADR-043 3a).
+      // the __force_failure__ harness jump. No retry transition.
       error_recoverable: {},
       session_rejected: {},
     },
