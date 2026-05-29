@@ -82,15 +82,15 @@ export interface ProjectHandoff {
  * onboarding child is phase-scoped: its invoke lives on the `onboarding`
  * lifecycle state, so XState STOPS it the moment the parent advances to
  * `engaged` (or `user_rejected`) and it disappears from the snapshot. But the FE
- * root loader reads the `login-and-org-setup`
- * projection on EVERY request — including deep in chat — so its resolved
- * identity/org (and, on the reject path, the cause) must survive the child's
- * stop. The parent captures it here on the SAME onSnapshot transition that
- * advances/rejects, so the derived-view mapper can reproduce the
- * `login-and-org-setup` FlowProjection byte-identically once the child is gone.
+ * root loader reads the `/state` document's `regions.onboarding` slice on EVERY
+ * request — including deep in chat — so its resolved identity/org (and, on the
+ * reject path, the cause) must survive the child's stop. The parent captures it
+ * here on the SAME onSnapshot transition that advances/rejects, so
+ * `deriveOnboarding` can reproduce the onboarding region byte-identically once
+ * the child is gone.
  *
  * The field shapes mirror what `buildProjection` folds into the onboarding
- * projection's `context` (user / org / underlying_cause_tag / org_validation_error),
+ * region's `context` (user / org / underlying_cause_tag / org_validation_error),
  * so the derived view matches the log fold.
  */
 export interface OnboardingResult {

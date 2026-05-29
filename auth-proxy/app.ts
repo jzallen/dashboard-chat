@@ -400,7 +400,7 @@ app.delete("/api/auth/pats/:id", async (c) => {
 // in production this branch verifies the token and forwards identity headers
 // just like the backend branch. The `/ui-state` path prefix is stripped
 // before forwarding so the upstream sees its own routes (`/health`,
-// `/flow/:machine/begin`, etc.).
+// `/state`, `/state/events`, `/state/stream`).
 app.all("/ui-state/*", async (c) => {
   // SLOW_MODE_DELAY_MS — frontend-coexistence Slice-4 / MR-3 induction
   // mechanism (DD-18). When set AND AUTH_MODE !== "production", the
@@ -488,10 +488,10 @@ app.all("/ui-state/*", async (c) => {
 
 /**
  * Read the inbound JSON body (if any) and return the event `type` for
- * `/ui-state/flow/*\/event` requests. Returns null for `begin` (which
- * has no type) or non-JSON bodies. Cloning is necessary because Hono's
- * downstream `proxyToUpstream` reads `c.req.raw.body` too — a stream can
- * only be consumed once. We tee via `Request.clone()`.
+ * `POST /ui-state/state/events` requests. Returns null for non-JSON or
+ * type-less bodies. Cloning is necessary because Hono's downstream
+ * `proxyToUpstream` reads `c.req.raw.body` too — a stream can only be consumed
+ * once. We tee via `Request.clone()`.
  */
 async function peekInboundEventType(req: Request): Promise<string | null> {
   try {
@@ -510,10 +510,8 @@ async function peekInboundEventType(req: Request): Promise<string | null> {
  * stdout as JSON lines. Reads the onboarding lifecycle from the ADR-046
  * `/state` document, whose onboarding region lives at
  * `regions.onboarding.{state, context.underlying_cause_tag}` with `request_id`
- * hoisted to the document top level. A transitional fallback reads the legacy
- * per-machine projection envelope (`{ state, context: { underlying_cause_tag } }`)
- * — that surface still answers until ADR-046 MR-7 retires it, so the fallback
- * keeps this MR independent of the per-machine-mount cutover's ordering.
+ * hoisted to the document top level. (`/state` is the sole read surface since
+ * ADR-046 MR-7 retired the per-machine projection envelope.)
  * Events:
  *   - onboarding state === "error_recoverable"  → auth_recoverable_error_shown
  *   - onboarding state === "ready"              → ready_reached
@@ -556,12 +554,11 @@ async function emitKpiEventsForResponse(
 }
 
 /**
- * Resolve the onboarding lifecycle signal the KPI sniffer keys off, from
- * either the ADR-046 `/state` document or the legacy per-machine projection
- * envelope. `request_id` is top-level in BOTH shapes; the onboarding `state`
- * + `underlying_cause_tag` live under `regions.onboarding` in the document and
- * flat in the legacy envelope. The document shape is preferred; the flat
- * envelope is the transitional fallback (retired at MR-7).
+ * Resolve the onboarding lifecycle signal the KPI sniffer keys off, from the
+ * ADR-046 `/state` document. `request_id` is hoisted to the document top level;
+ * the onboarding `state` + `underlying_cause_tag` live under
+ * `regions.onboarding`. (The legacy flat per-machine envelope was retired at
+ * ADR-046 MR-7 — `/state` is the sole read surface.)
  */
 function readOnboardingSignal(body: unknown): {
   requestId?: string;
@@ -570,8 +567,6 @@ function readOnboardingSignal(body: unknown): {
 } {
   const doc = (body ?? {}) as {
     request_id?: unknown;
-    state?: unknown;
-    context?: { underlying_cause_tag?: unknown };
     regions?: {
       onboarding?: { state?: unknown; context?: { underlying_cause_tag?: unknown } };
     };
@@ -580,26 +575,16 @@ function readOnboardingSignal(body: unknown): {
   const requestId =
     typeof doc.request_id === "string" ? doc.request_id : undefined;
 
-  // ADR-046 /state document — onboarding lifecycle lives at regions.onboarding.
   const onboarding = doc.regions?.onboarding;
-  if (onboarding && typeof onboarding === "object") {
-    return {
-      requestId,
-      state: typeof onboarding.state === "string" ? onboarding.state : undefined,
-      tag:
-        typeof onboarding.context?.underlying_cause_tag === "string"
-          ? onboarding.context.underlying_cause_tag
-          : undefined,
-    };
-  }
-
-  // Legacy per-machine projection envelope (flat). Retired at ADR-046 MR-7.
   return {
     requestId,
-    state: typeof doc.state === "string" ? doc.state : undefined,
+    state:
+      onboarding && typeof onboarding.state === "string"
+        ? onboarding.state
+        : undefined,
     tag:
-      typeof doc.context?.underlying_cause_tag === "string"
-        ? doc.context.underlying_cause_tag
+      onboarding && typeof onboarding.context?.underlying_cause_tag === "string"
+        ? onboarding.context.underlying_cause_tag
         : undefined,
   };
 }

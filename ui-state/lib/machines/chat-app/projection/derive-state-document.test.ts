@@ -1,25 +1,24 @@
-// Pure unit tests for the derived-view projection mapper. Hand-built snapshot
-// views drive each branch in isolation (no wired actor, no I/O) — the contract
-// (byte-identity vs buildProjection across the real scenarios) is pinned
-// separately in derive-projection.contract.test.ts. These pin the mapper's
-// internal logic: the child.value→state map, the phase-scoped no-child
-// fallbacks, the full-ReducedContext shape, active_scope tiers per machine, and
-// bookkeeping.
+// Pure unit tests for the per-region slice derivations + bookkeeping that back
+// the whole-actor `deriveStateDocument` mapper. Hand-built snapshot views drive
+// each branch in isolation (no wired actor, no I/O). The byte-equivalence
+// contract (each region equals the `buildProjection` log fold across the real
+// scenarios) is pinned separately in derive-state-document.contract.test.ts.
+// These pin the mapper's internal logic: the child.value→state map, the
+// phase-scoped no-child fallbacks, the full-ReducedContext shape, and per-region
+// active_scope tiers.
 
 import { describe, expect, it } from "vitest";
 
 import { FlowEvent } from "../../../domain/flow-event.ts";
-import { initialContext } from "../../../domain/projection.ts";
+import { deriveActiveScope, initialContext } from "../../../domain/projection.ts";
 import type { OnboardingResult } from "../setup/types.ts";
 import {
   bookkeepingFromLog,
   type ChatAppSnapshotView,
-  deriveProjection,
-  LOGIN_AND_ORG_SETUP,
-  PROJECT_AND_CHAT_SESSION_MANAGEMENT,
-  SESSION_CHAT,
-  UnknownWireMachineError,
-} from "./derive-projection.ts";
+  deriveOnboarding,
+  deriveProjectContext,
+  deriveSessionChat,
+} from "./derive-state-document.ts";
 
 // ── hand-built snapshot views ──
 
@@ -41,9 +40,6 @@ function snap(opts: {
   };
 }
 
-const BK = { sequence_id: 0, last_event_at: "", request_id: "" };
-const NOOP = (m: string, s: ChatAppSnapshotView) => deriveProjection(s, m, BK);
-
 // ───────────────────────────── bookkeeping ─────────────────────────────
 
 describe("bookkeepingFromLog (the log-sourced envelope fields)", () => {
@@ -64,29 +60,25 @@ describe("bookkeepingFromLog (the log-sourced envelope fields)", () => {
   });
 });
 
-// ───────────────────────────── login-and-org-setup ─────────────────────────────
+// ───────────────────────────── onboarding region ─────────────────────────────
 
-describe("deriveProjection — login-and-org-setup", () => {
+describe("deriveOnboarding (regions.onboarding slice)", () => {
   it("yields the full zero-event ReducedContext + verifying when neither child nor outcome exist", () => {
-    const out = NOOP(LOGIN_AND_ORG_SETUP, snap({}));
+    const out = deriveOnboarding(snap({}));
     expect(out.state).toBe("verifying");
     // The context is the COMPLETE ReducedContext shape with every default — so
     // any field the mapper does not populate matches the log fold byte-for-byte.
-    expect(out.context).toEqual(
-      initialContext() as unknown as Record<string, unknown>,
-    );
-    expect(out.active_scope).toEqual({
+    expect(out.context).toEqual(initialContext());
+    expect(deriveActiveScope(out.context)).toEqual({
       org_id: "",
       project_id: null,
       resource_type: null,
       resource_id: null,
     });
-    expect(out.flow_id).toBe("login-and-org-setup:p1");
   });
 
   it("maps a live onboarding child's state (needs_org) and reads its user/org", () => {
-    const out = NOOP(
-      LOGIN_AND_ORG_SETUP,
+    const out = deriveOnboarding(
       snap({
         children: {
           "onboarding": child("needs_org", {
@@ -104,12 +96,11 @@ describe("deriveProjection — login-and-org-setup", () => {
       display_name: "M X",
       first_name: "M",
     });
-    expect(out.active_scope.org_id).toBe(""); // no org yet → empty scope
+    expect(deriveActiveScope(out.context).org_id).toBe(""); // no org yet → empty scope
   });
 
   it("uses the retained outcome (ready) once the phase-scoped child is gone", () => {
-    const out = NOOP(
-      LOGIN_AND_ORG_SETUP,
+    const out = deriveOnboarding(
       snap({
         onboarding_result: {
           state: "ready",
@@ -122,7 +113,7 @@ describe("deriveProjection — login-and-org-setup", () => {
     );
     expect(out.state).toBe("ready");
     expect(out.context.org).toEqual({ id: "o1", name: "Org One" });
-    expect(out.active_scope).toEqual({
+    expect(deriveActiveScope(out.context)).toEqual({
       org_id: "o1",
       project_id: null,
       resource_type: null,
@@ -131,9 +122,9 @@ describe("deriveProjection — login-and-org-setup", () => {
   });
 });
 
-// ───────────────────────── project-and-chat-session-management ─────────────────────────
+// ───────────────────────── project-context region ─────────────────────────
 
-describe("deriveProjection — project-and-chat-session-management", () => {
+describe("deriveProjectContext (regions.projectContext slice)", () => {
   const pcChild = (value: string, over: Record<string, unknown> = {}) =>
     child(value, {
       org_id: "o1",
@@ -149,20 +140,17 @@ describe("deriveProjection — project-and-chat-session-management", () => {
     });
 
   it("falls back to verifying (empty-log equivalent) before the child is invoked", () => {
-    expect(NOOP(PROJECT_AND_CHAT_SESSION_MANAGEMENT, snap({})).state).toBe(
-      "verifying",
-    );
+    expect(deriveProjectContext(snap({})).state).toBe("verifying");
   });
 
   it("maps project_selected with project+org scope and a NULL org name (log never carries it)", () => {
-    const out = NOOP(
-      PROJECT_AND_CHAT_SESSION_MANAGEMENT,
+    const out = deriveProjectContext(
       snap({ children: { "project-context": pcChild("project_selected") } }),
     );
     expect(out.state).toBe("project_selected");
     expect(out.context.org).toEqual({ id: "o1", name: null });
     expect(out.context.project).toEqual({ id: "p-A", name: "Proj A" });
-    expect(out.active_scope).toEqual({
+    expect(deriveActiveScope(out.context)).toEqual({
       org_id: "o1",
       project_id: "p-A",
       resource_type: null,
@@ -171,8 +159,7 @@ describe("deriveProjection — project-and-chat-session-management", () => {
   });
 
   it("surfaces last_used_resolution_degraded from the degraded project ids", () => {
-    const out = NOOP(
-      PROJECT_AND_CHAT_SESSION_MANAGEMENT,
+    const out = deriveProjectContext(
       snap({
         children: {
           "project-context": pcChild("project_selected", {
@@ -188,9 +175,9 @@ describe("deriveProjection — project-and-chat-session-management", () => {
   });
 });
 
-// ───────────────────────────── session-chat ─────────────────────────────
+// ───────────────────────────── session-chat region ─────────────────────────────
 
-describe("deriveProjection — session-chat", () => {
+describe("deriveSessionChat (regions.sessionChat slice)", () => {
   const scChild = (value: string, over: Record<string, unknown> = {}) =>
     child(value, {
       org_id: "o1",
@@ -208,12 +195,11 @@ describe("deriveProjection — session-chat", () => {
     });
 
   it("falls back to verifying before chat is entered", () => {
-    expect(NOOP(SESSION_CHAT, snap({})).state).toBe("verifying");
+    expect(deriveSessionChat(snap({})).state).toBe("verifying");
   });
 
   it("maps session_active with a dataset resource into active_scope", () => {
-    const out = NOOP(
-      SESSION_CHAT,
+    const out = deriveSessionChat(
       snap({
         children: {
           "session-chat": scChild("session_active", {
@@ -225,7 +211,7 @@ describe("deriveProjection — session-chat", () => {
     );
     expect(out.state).toBe("session_active");
     expect(out.context.session_id).toBe("s1");
-    expect(out.active_scope).toEqual({
+    expect(deriveActiveScope(out.context)).toEqual({
       org_id: "o1",
       project_id: "p-A",
       resource_type: "dataset",
@@ -234,8 +220,7 @@ describe("deriveProjection — session-chat", () => {
   });
 
   it("derives session_dataset_unavailable from the dataset_not_found cause", () => {
-    const out = NOOP(
-      SESSION_CHAT,
+    const out = deriveSessionChat(
       snap({
         children: {
           "session-chat": scChild("session_active", {
@@ -247,13 +232,5 @@ describe("deriveProjection — session-chat", () => {
     );
     expect(out.context.session_dataset_unavailable).toBe(true);
     expect(out.context.underlying_cause_tag).toBe("dataset_not_found");
-  });
-});
-
-// ───────────────────────────── routing ─────────────────────────────
-
-describe("deriveProjection — wire-name routing", () => {
-  it("throws UnknownWireMachineError on an unknown machine name", () => {
-    expect(() => NOOP("bogus", snap({}))).toThrow(UnknownWireMachineError);
   });
 });

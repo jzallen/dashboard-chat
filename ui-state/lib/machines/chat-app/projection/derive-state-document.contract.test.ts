@@ -1,30 +1,30 @@
-// MIGRATION-EQUIVALENCE GATE (ADR-046 MR-1) — the whole-actor state document
-// must be byte-equivalent, region-by-region, to the live per-machine derivation.
+// CONTRACT / BYTE-STABILITY GATE (ADR-046) — the whole-actor state document
+// must be byte-equivalent, region-by-region, to the canonical log-fold model.
 //
 // ADR-046 Decision 1 adopts ONE `ChatAppStateDocument` (option 1B) with a
-// `regions: { onboarding, projectContext, sessionChat }` map. §9 / the MR-1 row
-// states that because each `regions.<r>` is LITERALLY the existing slice
-// function's output, the migration gate is mechanical: it holds by construction.
-// This test pins that property over the SAME J-001/J-002 scenario set the
-// per-machine contract gate (derive-projection.contract.test.ts) exercises:
-//
-//   for every scenario, drive a REAL wired ChatApp to the target state, then
-//   assert that `deriveStateDocument(view, aggregatedBookkeeping)`:
-//     - regions.<r> deep-equals the { state, context } half of the live
-//       `deriveProjection(view, <wire-alias>, bk)` for ALL THREE regions;
+// `regions: { onboarding, projectContext, sessionChat }` map, each region a
+// derived `{ state, context }` slice. This is the direct contract test the §9
+// MR-7 row prescribes — it pins each region against `buildProjection` (the
+// independent ADR-027 event-log fold, NOT the retired per-machine
+// `deriveProjection` wrapper), so a snapshot-derived region byte-matches the
+// log-sourced read model. For every scenario, drive a REAL wired ChatApp to the
+// target state, then assert that `deriveStateDocument(view, aggregatedBookkeeping)`:
+//     - regions.<r> deep-equals the { state, context } half of the
+//       `buildProjection(<flowKey>, equivalentLog)` fold for ALL THREE regions;
 //     - phase  equals the parent ChatApp lifecycle state value (independently
 //       mapped here from actor.getSnapshot().value);
 //     - active_scope equals the DEEPEST-RESOLVED region's active_scope
 //       (session-chat > project-context > onboarding; "resolved" = org_id set);
 //     - sequence_id aggregates the three per-region logs (sum of lengths).
 //
-// The harness below mirrors derive-projection.contract.test.ts (real composition
-// root, fromPromise fakes at every child port — mocks ONLY at the port boundary).
+// The harness below drives a real composition root with fromPromise fakes at
+// every child port — mocks ONLY at the port boundary.
 
 import { describe, expect, it } from "vitest";
 import { type AnyActorRef, createActor, fromPromise } from "xstate";
 
 import { FlowEvent } from "../../../domain/flow-event.ts";
+import { buildProjection } from "../../../domain/projection.ts";
 import { makeMockFetch, makeTestConfig } from "../../../testing/test-config.ts";
 import type {
   CreateProjectInput,
@@ -44,15 +44,9 @@ import type {
 import { createChatApp } from "../index.ts";
 import type { OnboardingInput, ChatUserIntent } from "../setup/types.ts";
 import {
+  aggregateBookkeeping,
   bookkeepingFromLog,
   type ChatAppSnapshotView,
-  deriveProjection,
-  LOGIN_AND_ORG_SETUP,
-  PROJECT_AND_CHAT_SESSION_MANAGEMENT,
-  SESSION_CHAT,
-} from "./derive-projection.ts";
-import {
-  aggregateBookkeeping,
   deriveStateDocument,
 } from "./derive-state-document.ts";
 
@@ -216,9 +210,11 @@ async function arriveAtChat(
   return { actor, rec };
 }
 
-const LOGIN_LOG = LOGIN_AND_ORG_SETUP + ":" + PRINCIPAL;
-const PC_LOG = PROJECT_AND_CHAT_SESSION_MANAGEMENT + ":" + PRINCIPAL;
-const SC_LOG = SESSION_CHAT + ":" + PRINCIPAL;
+// Log keys are opaque to buildProjection (the fold dispatches on event.type, not
+// the key) — keyed by the canonical child id for readability.
+const LOGIN_LOG = "onboarding:" + PRINCIPAL;
+const PC_LOG = "project-context:" + PRINCIPAL;
+const SC_LOG = "session-chat:" + PRINCIPAL;
 
 const loginReadyEvents = () => [
   ev(LOGIN_LOG, "session_started", {
@@ -276,9 +272,9 @@ interface RegionLogs {
   sessionChat?: FlowEvent[];
 }
 
-/** Assert the whole-actor document is migration-equivalent to the three live
- *  per-machine derivations for the actor's CURRENT state. Returns the document
- *  so callers can pin individual fields. */
+/** Assert the whole-actor document is byte-equivalent, region-by-region, to the
+ *  canonical `buildProjection` log fold for the actor's CURRENT state. Returns
+ *  the document so callers can pin individual fields. */
 function assertEquivalence(actor: ChatActor, logs: RegionLogs) {
   const v = view(actor);
   const onbBk = bookkeepingFromLog(logs.onboarding ?? []);
@@ -287,33 +283,35 @@ function assertEquivalence(actor: ChatActor, logs: RegionLogs) {
 
   const doc = deriveStateDocument(v, aggregateBookkeeping([onbBk, pcBk, scBk]));
 
-  const legacyOnb = deriveProjection(v, LOGIN_AND_ORG_SETUP, onbBk);
-  const legacyPc = deriveProjection(v, PROJECT_AND_CHAT_SESSION_MANAGEMENT, pcBk);
-  const legacySc = deriveProjection(v, SESSION_CHAT, scBk);
+  // The independent log-fold golden for each region (NOT the retired per-machine
+  // deriveProjection): same logical state, sourced from the equivalent event log.
+  const goldenOnb = buildProjection(LOGIN_LOG, logs.onboarding ?? []);
+  const goldenPc = buildProjection(PC_LOG, logs.projectContext ?? []);
+  const goldenSc = buildProjection(SC_LOG, logs.sessionChat ?? []);
 
-  // 1. Each region byte-equals the { state, context } half of the live derivation.
+  // 1. Each region byte-equals the { state, context } half of the log fold.
   expect(doc.regions.onboarding).toEqual({
-    state: legacyOnb.state,
-    context: legacyOnb.context,
+    state: goldenOnb.state,
+    context: goldenOnb.context,
   });
   expect(doc.regions.projectContext).toEqual({
-    state: legacyPc.state,
-    context: legacyPc.context,
+    state: goldenPc.state,
+    context: goldenPc.context,
   });
   expect(doc.regions.sessionChat).toEqual({
-    state: legacySc.state,
-    context: legacySc.context,
+    state: goldenSc.state,
+    context: goldenSc.context,
   });
 
   // 2. phase equals the parent lifecycle value (independently mapped).
   expect(doc.phase).toBe(expectedPhase(lifecycle(actor)));
 
   // 3. active_scope equals the deepest-resolved region's active_scope.
-  const deepest = legacySc.active_scope.org_id
-    ? legacySc.active_scope
-    : legacyPc.active_scope.org_id
-      ? legacyPc.active_scope
-      : legacyOnb.active_scope;
+  const deepest = goldenSc.active_scope.org_id
+    ? goldenSc.active_scope
+    : goldenPc.active_scope.org_id
+      ? goldenPc.active_scope
+      : goldenOnb.active_scope;
   expect(doc.active_scope).toEqual(deepest);
 
   // 4. sequence_id aggregates the three per-region logs.

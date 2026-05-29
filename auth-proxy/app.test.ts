@@ -98,65 +98,11 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
     process.env.AUTH_MODE = "dev";
   });
 
-  it.each<[string, Record<string, unknown>, string, string | undefined]>([
-    [
-      "auth_recoverable_error_shown",
-      {
-        state: "error_recoverable",
-        request_id: "R-7a4f-901c",
-        context: { underlying_cause_tag: "partial-setup" },
-      },
-      "/ui-state/flow/login-and-org-setup/begin",
-      "partial-setup",
-    ],
-    [
-      "ready_reached",
-      {
-        state: "ready",
-        request_id: "R-7a4f-901c",
-        context: {},
-      },
-      "/ui-state/flow/login-and-org-setup/event",
-      undefined,
-    ],
-  ])(
-    "emits %s on matching upstream response",
-    async (expectedEventName, upstreamBody, path, expectedTag) => {
-      mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(upstreamBody), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-
-      const capture = captureStdout();
-      try {
-        const res = await makeRequest(path, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ persona_email: "maya@x" }),
-        });
-        expect(res.status).toBe(200);
-      } finally {
-        capture.restore();
-      }
-
-      const matching = capture.events.find(
-        (e) => e.event === expectedEventName,
-      );
-      expect(matching).toBeDefined();
-      expect(matching?.request_id).toBe("R-7a4f-901c");
-      if (expectedTag) {
-        expect(matching?.underlying_cause_tag).toBe(expectedTag);
-      }
-    },
-  );
-
-  // ADR-046 MR-5: the KPI sniffer reads the ChatApp `/state` document, whose
+  // ADR-046: the KPI sniffer reads the ChatApp `/state` document, whose
   // onboarding lifecycle lives at `regions.onboarding.state` (and the cause tag
   // at `regions.onboarding.context.underlying_cause_tag`), with `request_id`
-  // hoisted to the document's top level. The legacy per-machine flat envelope
-  // (asserted above) still exists until MR-7; this block pins the new shape.
+  // hoisted to the document's top level. (The legacy per-machine flat envelope
+  // was retired at MR-7 — `/state` is the sole read surface.)
   it.each<[string, Record<string, unknown>, string, string | undefined]>([
     [
       "auth_recoverable_error_shown",
@@ -226,9 +172,13 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
     mockFetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          state: "creating_org",
+          phase: "onboarding",
           request_id: "R-7a4f-901c",
-          context: {},
+          regions: {
+            onboarding: { state: "creating_org", context: {} },
+            projectContext: { state: "verifying", context: {} },
+            sessionChat: { state: "verifying", context: {} },
+          },
         }),
         {
           status: 200,
@@ -239,17 +189,11 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
 
     const capture = captureStdout();
     try {
-      const res = await makeRequest(
-        "/ui-state/flow/login-and-org-setup/event",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            flow_id: "f-1",
-            type: "retry_clicked",
-          }),
-        },
-      );
+      const res = await makeRequest("/ui-state/state/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "retry_clicked" }),
+      });
       expect(res.status).toBe(200);
     } finally {
       capture.restore();
@@ -309,13 +253,13 @@ describe("test-mirror endpoint /test/last-seen-authorization (B7, B8)", () => {
     // earlier tests in the module-scoped cell.
     const marker = "Bearer probe-02-01-capture-marker-9b2a4c";
 
-    const proxied = await makeRequest("/ui-state/flow/login-and-org-setup/begin", {
+    const proxied = await makeRequest("/ui-state/state/events", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         Authorization: marker,
       },
-      body: JSON.stringify({ persona_email: "maya@x" }),
+      body: JSON.stringify({ type: "session_begin" }),
     });
     expect(proxied.status).toBe(200);
 
@@ -383,7 +327,7 @@ describe("SLOW_MODE_DELAY_MS on /ui-state/* (frontend-coexistence Slice-4)", () 
     const start = Date.now();
     const res = await freshApp.fetch(
       new Request(
-        "http://localhost/ui-state/flow/login-and-org-setup/projection",
+        "http://localhost/ui-state/state",
         { method: "GET" },
       ),
     );
@@ -399,7 +343,7 @@ describe("SLOW_MODE_DELAY_MS on /ui-state/* (frontend-coexistence Slice-4)", () 
     const start = Date.now();
     const res = await freshApp.fetch(
       new Request(
-        "http://localhost/ui-state/flow/login-and-org-setup/projection",
+        "http://localhost/ui-state/state",
         { method: "GET" },
       ),
     );
@@ -430,7 +374,7 @@ describe("SLOW_MODE_DELAY_MS on /ui-state/* (frontend-coexistence Slice-4)", () 
     const start = Date.now();
     const res = await freshApp.fetch(
       new Request(
-        "http://localhost/ui-state/flow/login-and-org-setup/projection",
+        "http://localhost/ui-state/state",
         {
           method: "GET",
           headers: { Authorization: `Bearer ${token}` },

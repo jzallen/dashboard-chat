@@ -1,18 +1,19 @@
 // UI-State Tier — Hono server entry point.
 //
 // The live ui-state app is driven by the ChatApp coordinator actor (one per
-// principal). A single router factory (lib/machines/chat-app/router.ts) is
-// mounted under every wire-machine path; each mount derives its own machine's
-// FlowProjection from the shared per-principal ChatApp snapshot
-// (deriveProjection), so the read contract holds byte-stable for all three
-// machines:
+// principal), published through a SINGLE `/state` actor surface
+// (lib/machines/chat-app/router.ts → buildStateRouter) that emits ONE whole-actor
+// `ChatAppStateDocument` derived from the per-principal snapshot
+// (deriveStateDocument):
 //
-//   GET  /flow/{session-onboarding,login-and-org-setup}/projection      → onboarding slice
-//   GET  /flow/{project-context,project-and-chat-session-management}/…   → project-context slice
-//   GET  /flow/session-chat/projection                                  → session-chat slice
-//   POST /flow/{…}/{begin,event,open-deep-link}                         → drive the ChatApp actor
-//   GET  /flow/{…}/projection/stream                                    → SSE substrate
+//   GET  /state          → the whole-actor ChatAppStateDocument (.getSnapshot)
+//   POST /state/events    → apply ONE event, return the new document (.send)
+//   GET  /state/stream    → SSE; the document pushed on every change (.subscribe)
 //   GET  /health
+//
+// The per-machine `/flow/<wire>/{projection,event,begin,open-deep-link,…}`
+// surface (the frozen ADR-027 wire + its alias map) was RETIRED at ADR-046 MR-7
+// once every consumer moved to `/state`.
 //
 // Persistence is a hybrid: the live actor is the state-of-record
 // (getPersistedSnapshot via ChatAppSnapshotStore, hot-restart recovery); the
@@ -25,9 +26,8 @@
 //
 // References:
 //   docs/decisions/adr-016-*.md  — auth-proxy owns token lifecycle, injects identity headers
-//   docs/decisions/adr-027-*.md  — byte-stable per-machine projection read contract
+//   docs/decisions/adr-046-*.md  — StateProxy /state actor surface (MR-7 retires per-machine)
 //   docs/decisions/adr-030-*.md  — flow_id key form / single-replica startup probe
-//   docs/decisions/adr-040-*.md  — wire-machine name aliases
 //   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 //   docs/decisions/adr-044-*.md  — hybrid snapshot/log persistence, derived projection, I/O ports as actors
 
@@ -37,7 +37,6 @@ import { Hono } from "hono";
 import { type Config, loadConfig } from "./config.ts";
 import type { ChatAppDeps } from "./lib/machines/chat-app/index.ts";
 import {
-  buildChatAppRouter,
   buildStateRouter,
   ChatAppActorRegistry,
   type ChatAppRuntime,
@@ -59,21 +58,6 @@ import {
   selectChatAppSnapshotStore,
 } from "./lib/persistence/chatapp-snapshot-store.ts";
 import { type FlowEventLog, selectFlowEventLog } from "./lib/persistence/redis.ts";
-
-/** The wire-machine paths the live app serves. Each pair mounts the SAME router
- *  factory baked with that path's wire-machine name — so the alias paths resolve
- *  to the right child slice + synthesize the right flow_id (derived
- *  via deriveProjection's WIRE_TO_CHILD). */
-const WIRE_PATHS: ReadonlyArray<readonly [path: string, wireMachine: string]> = [
-  ["/flow/session-onboarding", "session-onboarding"],
-  ["/flow/login-and-org-setup", "login-and-org-setup"],
-  ["/flow/project-context", "project-context"],
-  [
-    "/flow/project-and-chat-session-management",
-    "project-and-chat-session-management",
-  ],
-  ["/flow/session-chat", "session-chat"],
-];
 
 /**
  * Compose the live ChatApp-backed app onto a fresh Hono instance. This is the
@@ -116,11 +100,8 @@ export function buildChatAppApp(opts: {
 
   const app = new Hono();
   app.get("/health", (c) => c.json({ status: "ok" }));
-  for (const [path, wireMachine] of WIRE_PATHS) {
-    app.route(path, buildChatAppRouter(runtime, wireMachine));
-  }
-  // ADR-046 MR-2: the single `/state` actor surface, mounted ADDITIVELY alongside
-  // the per-machine wire (the latter is retired at MR-7). Same runtime, same actor.
+  // ADR-046: the single `/state` actor surface is the SOLE read/write surface
+  // (the per-machine `/flow/<wire>` mounts were retired at MR-7).
   app.route("/", buildStateRouter(runtime));
   return app;
 }

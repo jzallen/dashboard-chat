@@ -1,26 +1,26 @@
-// In-process INTEGRATION tests for the ADR-046 `/state` actor surface (MR-2).
+// In-process INTEGRATION tests for the ADR-046 `/state` actor surface — the SOLE
+// read/write surface of the ui-state tier (the per-machine `/flow/<wire>` mounts
+// were retired at MR-7).
 //
-// These drive the LIVE ui-state HTTP tier via `app.fetch` (no socket, no Redis),
-// exactly as index.test.ts drives the per-machine wire. The `/state` surface is
-// ADDITIVE: it shares the SAME `ChatAppRuntime` (one registry, one event log, one
-// snapshot store) as the five per-machine mounts, so a document derived from
-// `GET /state` reads the SAME per-principal actor the `/flow/<m>/projection`
-// reads do. Mocks are ONLY at the child port boundaries (the onboarding child's
-// `fetch`; `fromPromise` fakes for project-context + session-chat resolvers).
+// These drive the LIVE ui-state HTTP tier via `app.fetch` (no socket, no Redis):
+//   - GET  /state          → the whole-actor ChatAppStateDocument (.getSnapshot)
+//   - POST /state/events    → apply ONE event, return the new document (.send)
+//   - GET  /state/stream    → SSE; the document pushed on every change (.subscribe)
+// Mocks are ONLY at the child port boundaries (the onboarding child's `fetch`;
+// `fromPromise` fakes for project-context + session-chat resolvers).
 //
-// The three behaviours pinned (the ADR-046 §9 MR-2 acceptance row):
-//   1. begin→event via POST /state/events; the returned document's regions equal
-//      the three per-machine reads for the SAME actor (the MR-1 equivalence gate,
-//      now over the live route);
-//   2. GET /state pre-bootstrap folds to the anonymous document and does NOT
-//      cold-start; post-bootstrap returns the live document (Decision 3a);
-//   3. GET /state/stream emits a first document frame and a FRESH document frame
-//      after a child-log event.
+// Coverage: the /state surface shape + bootstrap (Decision 3a) + stream, PLUS the
+// onboarding-behavior, failure-simulation authorization gate, request-id minting,
+// and principal-isolation behaviors the retired per-machine wire used to host —
+// now exercised over `POST /state/events` (the byte-equivalence of each region to
+// the log fold is pinned separately in derive-state-document.contract.test.ts).
 //
 // References:
-//   docs/decisions/adr-046-*.md  — StateProxy actor surface; Decision 3/3a; §9 MR-2
+//   docs/decisions/adr-046-*.md  — StateProxy actor surface; Decision 3/3a; §9 MR-7
+//   docs/decisions/adr-035-*.md  — failure-simulation authorization gate
 
-import { describe, expect, it } from "vitest";
+import { probe } from "@dashboard-chat/shared-failure-simulation";
+import { afterEach, describe, expect, it } from "vitest";
 import { fromPromise } from "xstate";
 
 import { buildChatAppApp } from "../../../index.ts";
@@ -47,6 +47,12 @@ function returningFetch(
 /** New user — re-verify OK, backend 404 (no org), create OK (org id "org-1"). */
 function okFetch(): RequestClient {
   return makeMockFetch({ profile: MAYA_PROFILE, orgId: "org-1" });
+}
+
+/** Mock fetch that answers 401 for the designated bad bearer at /oauth/userinfo,
+ *  driving the session_rejected path. */
+function rejectingFetch(badToken: string): RequestClient {
+  return makeMockFetch({ profile: MAYA_PROFILE, orgId: "org-1", badToken });
 }
 
 function fakeChatAppDeps(): ChatAppDeps {
@@ -95,6 +101,34 @@ function buildScenario(opts: { requestClient: RequestClient }): Scenario {
   return { app, eventLog };
 }
 
+/** A scenario that captures `logTransition` records, for the request-id assertions. */
+function buildSpyScenario(): {
+  app: ReturnType<typeof buildChatAppApp>;
+  records: Record<string, unknown>[];
+} {
+  const records: Record<string, unknown>[] = [];
+  const app = buildChatAppApp({
+    eventLog: createNoopFlowEventLog(),
+    snapshotStore: createNoopChatAppSnapshotStore(),
+    chatAppDeps: fakeChatAppDeps(),
+    config: makeTestConfig(),
+    requestClient: okFetch(),
+    logTransition: (r) => records.push(r),
+  });
+  return { app, records };
+}
+
+function enableFailureSimulation(): void {
+  probe({ ENVIRONMENT: "ci", FAILURE_SIMULATION_ENABLED: "true" }, "ui-state");
+}
+function disableFailureSimulation(): void {
+  probe({}, "ui-state");
+}
+
+afterEach(() => {
+  disableFailureSimulation();
+});
+
 // ───────────────────────────── transport helpers ─────────────────────────────
 
 /** GET /state for a principal — returns the parsed state document. */
@@ -112,15 +146,17 @@ async function getState(
   return (await res.json()) as ChatAppStateDocument;
 }
 
-/** POST /state/events — apply ONE event, return { status, document }. */
+/** POST /state/events — apply ONE event, return { status, document }. The
+ *  document is undefined-shaped on a non-200 (the body is the error envelope). */
 async function postStateEvent(
   app: Scenario["app"],
   body: Record<string, unknown>,
-  opts: { userId: string; bearer?: string },
-): Promise<{ status: number; document: ChatAppStateDocument }> {
+  opts: { userId: string; bearer?: string; headers?: Record<string, string> },
+): Promise<{ status: number; document: ChatAppStateDocument; raw: Record<string, unknown> }> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "X-User-Id": opts.userId,
+    ...(opts.headers ?? {}),
   };
   if (opts.bearer !== undefined) headers.authorization = `Bearer ${opts.bearer}`;
   const res = await app.fetch(
@@ -130,26 +166,8 @@ async function postStateEvent(
       body: JSON.stringify(body),
     }),
   );
-  return { status: res.status, document: (await res.json()) as ChatAppStateDocument };
-}
-
-/** Read ONE per-machine projection slice ({ state, context }) for the actor. */
-async function readSlice(
-  app: Scenario["app"],
-  userId: string,
-  machine: string,
-): Promise<{ state: string; context: unknown; active_scope: unknown }> {
-  const res = await app.fetch(
-    new Request(`http://t/flow/${machine}/projection`, {
-      method: "GET",
-      headers: { "X-User-Id": userId },
-    }),
-  );
-  return (await res.json()) as {
-    state: string;
-    context: unknown;
-    active_scope: unknown;
-  };
+  const raw = (await res.json()) as Record<string, unknown>;
+  return { status: res.status, document: raw as unknown as ChatAppStateDocument, raw };
 }
 
 /** A pull-based SSE frame reader over the streaming Response: each call yields
@@ -183,10 +201,10 @@ function frameReader(res: Response) {
   };
 }
 
-// ═════════════════ 1 — begin→event document equals the three per-machine reads ═════════════════
+// ═════════════════ 1 — POST /state/events returns the whole-actor document ═════════════════
 
-describe("ADR-046 MR-2: POST /state/events returns the whole-actor document", () => {
-  it("the post-bootstrap document's regions equal the three per-machine slice reads for the same actor", async () => {
+describe("ADR-046: POST /state/events returns the whole-actor document", () => {
+  it("a returning user cascades onboarding→project→chat; the document carries all three regions", async () => {
     const { app } = buildScenario({ requestClient: returningFetch() });
 
     // begin: the reserved session_begin event cold-starts + cascades the actor.
@@ -197,43 +215,27 @@ describe("ADR-046 MR-2: POST /state/events returns the whole-actor document", ()
     );
     expect(status).toBe(200);
 
-    // The SAME actor, read through the legacy per-machine wire.
-    const login = await readSlice(app, "u1", "login-and-org-setup");
-    const project = await readSlice(
-      app,
-      "u1",
-      "project-and-chat-session-management",
-    );
-    const chat = await readSlice(app, "u1", "session-chat");
-
-    // Region-by-region equivalence (the MR-1 gate, now over the live route).
-    expect(document.regions.onboarding).toEqual({
-      state: login.state,
-      context: login.context,
-    });
-    expect(document.regions.projectContext).toEqual({
-      state: project.state,
-      context: project.context,
-    });
-    expect(document.regions.sessionChat).toEqual({
-      state: chat.state,
-      context: chat.context,
-    });
-
-    // active_scope is the deepest-resolved region's scope.
-    const deepest =
-      (chat.active_scope as { org_id?: string }).org_id
-        ? chat.active_scope
-        : (project.active_scope as { org_id?: string }).org_id
-          ? project.active_scope
-          : login.active_scope;
-    expect(document.active_scope).toEqual(deepest);
-
-    // The returning user cascaded all the way to chat.
+    // The returning user cascaded all the way to chat; each region is present.
     expect(document.phase).toBe("chat");
     expect(document.regions.onboarding.state).toBe("ready");
+    expect(document.regions.onboarding.context.org).toEqual({
+      id: "org-1",
+      name: "Acme Data",
+    });
     expect(document.regions.projectContext.state).toBe("project_selected");
+    expect(document.regions.projectContext.context.project).toEqual({
+      id: "proj-A",
+      name: "Project A",
+    });
     expect(document.regions.sessionChat.state).toBe("session_list_loaded");
+
+    // active_scope is the deepest-resolved region's scope (org + project).
+    expect(document.active_scope).toEqual({
+      org_id: "org-1",
+      project_id: "proj-A",
+      resource_type: null,
+      resource_id: null,
+    });
 
     // The POST response IS the new state document — a follow-up GET /state agrees.
     const reread = await getState(app, "u1");
@@ -244,7 +246,6 @@ describe("ADR-046 MR-2: POST /state/events returns the whole-actor document", ()
   it("an org submission applied via POST /state/events drives onboarding needs_org → ready", async () => {
     const { app } = buildScenario({ requestClient: okFetch() });
 
-    // Implicit bootstrap (no prior session_begin): first contact cold-starts.
     const bootstrap = await postStateEvent(
       app,
       { type: "session_begin" },
@@ -262,7 +263,38 @@ describe("ADR-046 MR-2: POST /state/events returns the whole-actor document", ()
     expect(document.regions.onboarding.context.org.id).toBe("org-1");
   });
 
-  it("refuses an unmodeled onboarding event at the phase-dispatched ACL (400, no-op)", async () => {
+  it("a new user with no org bootstraps to needs_org with identity populated", async () => {
+    const { app } = buildScenario({ requestClient: okFetch() });
+    const { document } = await postStateEvent(
+      app,
+      { type: "session_begin" },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(document.regions.onboarding.state).toBe("needs_org");
+    expect(document.regions.onboarding.context.org.id).toBeNull();
+    expect(document.regions.onboarding.context.user.email).toBe("maya@acme");
+    expect(document.regions.onboarding.context.user.display_name).toBe("Maya Chen");
+  });
+
+  it("a re-verification failure rejects the session over HTTP 200 (phase=rejected)", async () => {
+    const { app } = buildScenario({ requestClient: rejectingFetch("tok-bad") });
+    const { status, document } = await postStateEvent(
+      app,
+      { type: "session_begin" },
+      { userId: "u3", bearer: "tok-bad" },
+    );
+    expect(status).toBe(200);
+    expect(document.phase).toBe("rejected");
+    expect(document.regions.onboarding.state).toBe("session_rejected");
+    expect(document.regions.onboarding.context.underlying_cause_tag).toBeTruthy();
+    expect(document.regions.onboarding.context.user.email).toBeNull();
+  });
+});
+
+// ═════════════════ 2 — onboarding ACL (phase-dispatched, closed vocabulary) ═════════════════
+
+describe("ADR-046: the onboarding ACL is enforced on POST /state/events while onboarding is active", () => {
+  it("refuses an unmodeled onboarding event (400, no-op)", async () => {
     const { app } = buildScenario({ requestClient: okFetch() });
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
 
@@ -277,11 +309,157 @@ describe("ADR-046 MR-2: POST /state/events returns the whole-actor document", ()
     const doc = await getState(app, "u2");
     expect(doc.regions.onboarding.state).toBe("needs_org");
   });
+
+  it("refuses an event that names no event type (400)", async () => {
+    const { app } = buildScenario({ requestClient: okFetch() });
+    await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
+
+    const { status, raw } = await postStateEvent(
+      app,
+      { payload: { org_name: "Acme Data" } } as Record<string, unknown>,
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(400);
+    expect(raw.error).toBeTruthy();
+  });
+
+  it("refuses an org submission carrying no organization name (400)", async () => {
+    const { app } = buildScenario({ requestClient: okFetch() });
+    await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
+
+    const { status, raw } = await postStateEvent(
+      app,
+      { type: "org_form_submitted", payload: {} },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(400);
+    expect(String(raw.error)).toMatch(/invalid_request/);
+  });
+
+  it("surfaces the empty-name validation error for an empty organization name (200, needs_org)", async () => {
+    const { app } = buildScenario({ requestClient: okFetch() });
+    await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
+
+    const { status, document } = await postStateEvent(
+      app,
+      { type: "org_form_submitted", payload: { org_name: "" } },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(200);
+    expect(document.regions.onboarding.state).toBe("needs_org");
+    expect(
+      (document.regions.onboarding.context.org_validation_error as { kind?: string } | null)
+        ?.kind,
+    ).toBe("empty");
+  });
+
+  it("maps a globally-duplicate org name to an inline duplicate error (200, needs_org)", async () => {
+    const { app } = buildScenario({
+      requestClient: makeMockFetch({ profile: MAYA_PROFILE, orgNameTaken: true }),
+    });
+    await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
+
+    const { status, document } = await postStateEvent(
+      app,
+      { type: "org_form_submitted", payload: { org_name: "Acme Data" } },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(200);
+    expect(document.regions.onboarding.state).toBe("needs_org");
+    expect(
+      (document.regions.onboarding.context.org_validation_error as { kind?: string } | null)
+        ?.kind,
+    ).toBe("duplicate");
+  });
 });
 
-// ═════════════════ 2 — GET /state pre/post bootstrap (Decision 3a) ═════════════════
+// ═════════════════ 3 — failure-simulation authorization gate (ADR-035) ═════════════════
 
-describe("ADR-046 MR-2: GET /state folds to the anonymous document pre-bootstrap", () => {
+describe("ADR-046: the forced-failure side-channel is gated on POST /state/events", () => {
+  it("refuses a forced failure when the failure-simulation switch is off (403, no-op)", async () => {
+    const { app } = buildScenario({ requestClient: okFetch() });
+    await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
+
+    const { status, raw } = await postStateEvent(
+      app,
+      { type: "__force_failure__", payload: { tag: "transient" } },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(403);
+    expect(String(raw.error)).toMatch(/failure-simulation/i);
+
+    const doc = await getState(app, "u2");
+    expect(doc.regions.onboarding.state).toBe("needs_org");
+  });
+
+  it("routes a forced failure into error_recoverable when the switch is on", async () => {
+    enableFailureSimulation();
+    const { app } = buildScenario({ requestClient: okFetch() });
+    const bootstrap = await postStateEvent(
+      app,
+      { type: "session_begin" },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(bootstrap.document.regions.onboarding.state).toBe("needs_org");
+
+    const { status, document } = await postStateEvent(
+      app,
+      { type: "__force_failure__", payload: { tag: "transient" } },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(200);
+    expect(document.regions.onboarding.state).toBe("error_recoverable");
+    expect(document.regions.onboarding.context.underlying_cause_tag).toBe("transient");
+  });
+
+  it("refuses a forced failure naming an unrecognized cause at the boundary (400)", async () => {
+    enableFailureSimulation();
+    const { app } = buildScenario({ requestClient: okFetch() });
+    await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
+
+    const { status, raw } = await postStateEvent(
+      app,
+      { type: "__force_failure__", payload: { tag: "not-a-cause" } },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(400);
+    expect(String(raw.error)).toMatch(/invalid_request/);
+
+    const doc = await getState(app, "u2");
+    expect(doc.regions.onboarding.state).toBe("needs_org");
+    expect(doc.regions.onboarding.context.underlying_cause_tag).toBeNull();
+  });
+});
+
+// ═════════════════ 4 — an event always targets the verified principal's own actor ═════════════════
+
+describe("ADR-046: an event targets the verified principal's own actor", () => {
+  it("ignores a stray flow_id in the body and targets the caller's own actor", async () => {
+    const { app } = buildScenario({ requestClient: okFetch() });
+    await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
+
+    const { status, document } = await postStateEvent(
+      app,
+      {
+        flow_id: "session-onboarding:u9",
+        type: "org_form_submitted",
+        payload: { org_name: "Acme Data" },
+      },
+      { userId: "u2", bearer: "tok-2" },
+    );
+    expect(status).toBe(200);
+    expect(document.regions.onboarding.state).toBe("ready");
+
+    // u9's actor was never touched — reading as u9 yields the anonymous document.
+    const u9 = await getState(app, "u9");
+    expect(u9.regions.onboarding.state).toBe("verifying");
+    expect(u9.regions.onboarding.context.org.id).toBeNull();
+  });
+});
+
+// ═════════════════ 5 — GET /state pre/post bootstrap (Decision 3a) ═════════════════
+
+describe("ADR-046: GET /state folds to the anonymous document pre-bootstrap", () => {
   it("returns the anonymous document and does NOT cold-start", async () => {
     const { app } = buildScenario({ requestClient: returningFetch() });
 
@@ -311,9 +489,9 @@ describe("ADR-046 MR-2: GET /state folds to the anonymous document pre-bootstrap
   });
 });
 
-// ═════════════════ 3 — GET /state/stream first frame + fresh frame on a child-log event ═════════════════
+// ═════════════════ 6 — GET /state/stream first frame + fresh frame on a child-log event ═════════════════
 
-describe("ADR-046 MR-2: GET /state/stream emits documents", () => {
+describe("ADR-046: GET /state/stream emits documents", () => {
   it("emits a first document frame, then a fresh document after a child-log event", async () => {
     const { app } = buildScenario({ requestClient: okFetch() });
 
@@ -348,5 +526,75 @@ describe("ADR-046 MR-2: GET /state/stream emits documents", () => {
     } finally {
       await frames.cancel();
     }
+  });
+});
+
+// ═════════════════ 7 — centralized request-id minting (requestId middleware) ═════════════════
+
+describe("ADR-046: request-id minting via requestId() middleware on /state/events", () => {
+  it("honors an inbound X-Request-Id across both session_begin and a forwarded event", async () => {
+    const { app, records } = buildSpyScenario();
+    const inbound = "inbound-req-id-123";
+
+    const beginRes = await app.fetch(
+      new Request("http://t/state/events", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-User-Id": "u2",
+          "X-Request-Id": inbound,
+          authorization: "Bearer tok-2",
+        },
+        body: JSON.stringify({ type: "session_begin" }),
+      }),
+    );
+    expect(beginRes.status).toBe(200);
+    expect(beginRes.headers.get("x-request-id")).toBe(inbound);
+
+    const eventRes = await app.fetch(
+      new Request("http://t/state/events", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-User-Id": "u2",
+          "X-Request-Id": inbound,
+        },
+        body: JSON.stringify({
+          type: "org_form_submitted",
+          payload: { org_name: "Acme Data" },
+        }),
+      }),
+    );
+    expect(eventRes.status).toBe(200);
+    expect(eventRes.headers.get("x-request-id")).toBe(inbound);
+
+    const begin = records.find((r) => r.event === "chat_app.session_begin");
+    const eventReceived = records.find((r) => r.event === "chat_app.event_received");
+    expect(begin?.request_id).toBe(inbound);
+    expect(eventReceived?.request_id).toBe(inbound);
+  });
+
+  it("mints a request id when no inbound header is present", async () => {
+    const { app, records } = buildSpyScenario();
+
+    const res = await app.fetch(
+      new Request("http://t/state/events", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-User-Id": "u2",
+          authorization: "Bearer tok-2",
+        },
+        body: JSON.stringify({ type: "session_begin" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const minted = res.headers.get("x-request-id");
+    expect(minted).toBeTruthy();
+    expect(minted).not.toBe("");
+
+    const begin = records.find((r) => r.event === "chat_app.session_begin");
+    expect(begin?.request_id).toBe(minted);
   });
 });

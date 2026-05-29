@@ -679,9 +679,11 @@ function emitDatasetPickToJ002(
       return;
     }
     // The principal gate above keeps this a no-op until the SSR shell wires the
-    // identity; the flow_id itself is DERIVED server-side from the verified
-    // principal (ADR-040), so the client no longer constructs or sends it.
-    void fetch("/ui-state/flow/session-chat/event", {
+    // identity; the actor is DERIVED server-side from the verified principal
+    // (ADR-040), so the client no longer constructs or sends a flow_id. The event
+    // posts to the single `/state/events` surface (ADR-046) — the parent ChatApp
+    // actor forwards it verbatim to the active child (session-chat while in chat).
+    void fetch("/ui-state/state/events", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
