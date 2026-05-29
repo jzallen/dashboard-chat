@@ -9,7 +9,8 @@
     "agent",
     "auth-proxy",
     "shared/chat",
-    "shared/failure-simulation"
+    "shared/failure-simulation",
+    "shared/ui-state-wire"
   ],
   "scripts": {
     "dev:agent": "npm run dev -w agent",

@@ -81,6 +81,9 @@ importers:
       '@dashboard-chat/shared-chat':
         specifier: '*'
         version: link:../shared/chat
+      '@dashboard-chat/shared-failure-simulation':
+        specifier: '*'
+        version: link:../shared/failure-simulation
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.12(hono@4.12.9)
@@ -130,6 +133,9 @@ importers:
       '@dashboard-chat/shared-chat':
         specifier: '*'
         version: link:../shared/chat
+      '@dashboard-chat/ui-state-wire':
+        specifier: '*'
+        version: link:../shared/ui-state-wire
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.12(hono@4.12.9)
@@ -142,6 +148,9 @@ importers:
       '@tanstack/react-table':
         specifier: ^8.20.5
         version: 8.21.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@xstate/react':
+        specifier: ^6.1.0
+        version: 6.1.0(@types/react@18.3.28)(react@18.3.1)(xstate@5.32.0)
       ai:
         specifier: 6.0.141
         version: 6.0.141(zod@3.25.76)
@@ -169,6 +178,9 @@ importers:
       stream-chat-react:
         specifier: ^13.14.1
         version: 13.14.1(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(stream-chat@9.35.1)(typescript@5.9.3)
+      xstate:
+        specifier: ^5.28.0
+        version: 5.32.0
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -224,6 +236,9 @@ importers:
       zod:
         specifier: ^3.24.2
         version: 3.25.76
+
+  shared/ui-state-wire:
+    dependencies: {}
 
 packages:
 
@@ -1430,6 +1445,15 @@ packages:
 
   '@vitest/utils@4.0.18':
     resolution: {integrity: sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==}
+
+  '@xstate/react@6.1.0':
+    resolution: {integrity: sha512-ep9F0jGTI63B/jE8GHdMpUqtuz7yRebNaKv8EMUaiSi29NOglywc2X2YSOV/ygbIK+LtmgZ0q9anoEA2iBSEOw==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      xstate: ^5.28.0
+    peerDependenciesMeta:
+      xstate:
+        optional: true
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -4189,6 +4213,9 @@ packages:
       utf-8-validate:
         optional: true
 
+  xstate@5.32.0:
+    resolution: {integrity: sha512-zsk73aWGmxn9z34P0kbiod5JwTvdYRW3+IDxITq8sd9+VWwMyW7BUzpplnYy9mIEXa6V8IMDv7Hy4m0mhT5+2Q==}
+
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
     engines: {node: '>=0.4'}
@@ -5466,6 +5493,16 @@ snapshots:
     dependencies:
       '@vitest/pretty-format': 4.0.18
       tinyrainbow: 3.0.3
+
+  '@xstate/react@6.1.0(@types/react@18.3.28)(react@18.3.1)(xstate@5.32.0)':
+    dependencies:
+      react: 18.3.1
+      use-isomorphic-layout-effect: 1.2.1(@types/react@18.3.28)(react@18.3.1)
+      use-sync-external-store: 1.6.0(react@18.3.1)
+    optionalDependencies:
+      xstate: 5.32.0
+    transitivePeerDependencies:
+      - '@types/react'
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
@@ -8340,6 +8377,8 @@ snapshots:
       strip-ansi: 7.2.0
 
   ws@8.19.0: {}
+
+  xstate@5.32.0: {}
 
   xtend@4.0.2: {}
 

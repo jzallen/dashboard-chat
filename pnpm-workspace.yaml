@@ -4,5 +4,6 @@ packages:
   - auth-proxy
   - shared/chat
   - shared/failure-simulation
+  - shared/ui-state-wire
 
 onlyBuiltDependencies: []

@@ -1,0 +1,13 @@
+{
+  "name": "@dashboard-chat/ui-state-wire",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./state-document": "./state-document.ts",
+    "./wire-event": "./wire-event.ts"
+  }
+}

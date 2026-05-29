@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "@dashboard-chat/shared-chat": "*",
+    "@dashboard-chat/ui-state-wire": "*",
     "@hono/node-server": "^1.14.0",
     "@react-router/node": "^7.13.0",
     "@tanstack/react-query": "^5.90.20",
     "@tanstack/react-table": "^8.20.5",
+    "@xstate/react": "^6.1.0",
     "ai": "6.0.141",
     "clsx": "^2.1.1",
     "hono": "^4.7.0",
@@ -25,6 +27,7 @@
     "react-router-dom": "^7.13.0",
     "stream-chat": "^9.35.1",
     "stream-chat-react": "^13.14.1",
+    "xstate": "^5.28.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

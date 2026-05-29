@@ -1,0 +1,232 @@
+// The ui-state `/state` wire contract — the SINGLE SOURCE OF TRUTH for the one
+// `ChatAppStateDocument` the StateProxy surface publishes (ADR-046 Decision 1,
+// option 1B + Decision 2 placement 2-i).
+//
+// This module is imported by BOTH sides of the wire:
+//   - ui-state (the ORIGIN) — `deriveStateDocument` emits exactly this shape.
+//   - frontend (the PROXY)  — `createStateProxy` caches + slices exactly this
+//                             shape via `useSelector`.
+//
+// It mirrors `shared/chat/` (the cross-package chat-event schema shared by
+// `agent/` + `frontend/`): a workspace package that owns the wire types so they
+// have ONE owner and cannot drift between producer and consumer.
+//
+// These types are LIFTED VERBATIM from the shapes MR-1 (`deriveStateDocument`)
+// established and MR-2 (`buildStateRouter`) serves — they are NOT new shapes.
+// They are plain, serializable data types only: NO machine internals, NO XState,
+// NO `getPersistedSnapshot` coupling (that is precisely the mirror-model coupling
+// ADR-046 rejected). The document is a STABLE DERIVED VIEW of the one
+// per-principal ChatApp actor.
+//
+// References:
+//   docs/decisions/adr-046-*.md — StateProxy actor surface; Decision 1 (1B), Decision 2 (2-i)
+//   ui-state/lib/machines/chat-app/projection/derive-state-document.ts — MR-1 origin (the shape this mirrors)
+//   ui-state/lib/domain/projection.ts      — ReducedContext + initialContext (the region context shape)
+//   ui-state/lib/domain/active-scope.ts    — ActiveScope + ResourceType
+//   shared/chat/                           — the cross-package wire-type precedent
+
+// ───────────────────────────── active scope (← ui-state/lib/domain/active-scope.ts) ─────────────────────────────
+
+/** The single resource literal today. The alias name lets call sites read
+ *  structurally; the `resource_type` field stays polymorphism-ready for the day
+ *  a second resource type ships. */
+export type ResourceType = "dataset";
+
+/** The authoritative scope a request resolves to. Carried at the document's top
+ *  level (`active_scope`) — the deepest-resolved region wins. */
+export interface ActiveScope {
+  org_id: string;
+  project_id: string | null;
+  resource_type: ResourceType | null;
+  resource_id: string | null;
+}
+
+// ───────────────────────────── reduced context (← ui-state/lib/domain/projection.ts) ─────────────────────────────
+
+/**
+ * The reduced read-model context each region slice exposes — the SAME shape the
+ * per-machine projection's `context` carried, minus the wire envelope. Plain
+ * serializable data: the FE's `useSelector` selectors read these fields directly
+ * (`d.regions.projectContext.context.project`, etc.).
+ *
+ * Lifted verbatim from ui-state's `ReducedContext` (the producer); kept here as
+ * the wire SSOT so the proxy is typed without importing ui-state internals.
+ */
+export interface ReducedContext {
+  user: {
+    email: string | null;
+    display_name: string | null;
+    first_name: string | null;
+  };
+  org: { id: string | null; name: string | null };
+  /** The authoritative (current) project name as known to the user's machine. */
+  project: { id: string | null; name: string | null };
+  underlying_cause_tag: string | null;
+  retries_count: number;
+  org_validation_error: { kind: string; message: string } | null;
+  /** I5: true when last deep-link reconciliation rewrote the bookmarked name. */
+  scope_reconciled: boolean;
+  /** I4: surfaced when a deep link to a foreign tenant's resource is rejected. */
+  scope_resolution_error: { reason: string } | null;
+  /** The resolved scope from the most recent deep_link_opened event. */
+  resolved_scope: ActiveScope | null;
+  /** Invariant 4: the non-security org-claim echo composed at the org_created
+   *  boundary. NOT a real credential. */
+  access_token: string | null;
+  /** project-context: the in-flight create's pending name. */
+  pending_project_name: string;
+  project_validation_error: { kind: string; message: string } | null;
+  /** Per-project last_active_at map captured by resolveInitialScope. */
+  most_recent_session_per_project: Record<string, string>;
+  /** Degraded path: ids of projects whose list_sessions 5xx-failed. */
+  last_used_resolution_degraded: {
+    failed_project_ids: string[];
+    partial_result: boolean;
+  } | null;
+  /** J-002 deep-link WISH payload (URL-level user wish, not yet confirmed). */
+  deeplink_project_id: string | null;
+  deeplink_session_id: string | null;
+  /** Resource fields kept on the polymorphic `intent_resource_*` prefix for
+   *  forward-compat with the `open_deep_link` event payload. */
+  intent_resource_id: string | null;
+  intent_resource_type: ResourceType | null;
+  /** Click-captured resume target (session-chat half — MR-D split). */
+  pending_resume_session_id: string | null;
+  // ── session-chat context ───────────────────────────────────────────────
+  /** Sessions visible in the current project; sorted DESC by last_active_at. */
+  session_list: Array<{
+    id: string;
+    title: string | null;
+    last_active_at: string;
+    active_dataset_id: string | null;
+  }>;
+  session_list_next_cursor: string | null;
+  session_list_has_more: boolean;
+  /** Active session: populated on session_resumed. */
+  session_id: string | null;
+  transcript: Array<{
+    id: string;
+    role: "user" | "assistant" | "tool";
+    content: string;
+    ts: string;
+  }>;
+  /** Active resource (dataset). Populated on session_resumed when resolved. */
+  resource: { type: ResourceType | null; id: string | null };
+  /** Surfaced when a resumed session's active_dataset_id 404s. */
+  session_dataset_unavailable: boolean;
+  /** US-206 composer-state preservation: the welcome-state's pending first message. */
+  pending_first_message: string;
+  // ── cross-machine FREEZE/THAW ────────────────────────────────────────
+  /** The live state the machine froze from; restored on THAW. */
+  last_live_state: string | null;
+  /** Cumulative stale-intent drop counter (observability only). */
+  stale_intents_dropped_count: number;
+  /** The most recent stale-dropped intent. */
+  last_stale_intent: { intent_type: string; target_id: string } | null;
+}
+
+/**
+ * The zero-event reduced context (every field at its initial value) — the SSOT
+ * zero-value, mirroring ui-state's `initialContext()`. Used to build the
+ * anonymous document the proxy returns before the first server frame resolves.
+ */
+export function initialReducedContext(): ReducedContext {
+  return {
+    user: { email: null, display_name: null, first_name: null },
+    org: { id: null, name: null },
+    project: { id: null, name: null },
+    underlying_cause_tag: null,
+    retries_count: 0,
+    org_validation_error: null,
+    scope_reconciled: false,
+    scope_resolution_error: null,
+    resolved_scope: null,
+    access_token: null,
+    pending_project_name: "",
+    project_validation_error: null,
+    most_recent_session_per_project: {},
+    last_used_resolution_degraded: null,
+    deeplink_project_id: null,
+    deeplink_session_id: null,
+    intent_resource_id: null,
+    intent_resource_type: null,
+    pending_resume_session_id: null,
+    session_list: [],
+    session_list_next_cursor: null,
+    session_list_has_more: false,
+    session_id: null,
+    transcript: [],
+    resource: { type: null, id: null },
+    session_dataset_unavailable: false,
+    pending_first_message: "",
+    last_live_state: null,
+    stale_intents_dropped_count: 0,
+    last_stale_intent: null,
+  };
+}
+
+// ───────────────────────────── the state document (← MR-1 derive-state-document.ts) ─────────────────────────────
+
+/** Coarse lifecycle phase — the parent ChatApp region value, for routing /
+ *  first-paint dispatch. NOT a region's state-of-record (consumers dispatch on
+ *  `regions.<r>.state`). */
+export type ChatAppPhase = "onboarding" | "project_context" | "chat" | "rejected";
+
+/** A derived slice of one lifecycle region — the discriminated state + its
+ *  reduced context (the exact shape the per-machine projection exposed). */
+export interface RegionView {
+  state: string;
+  context: ReducedContext;
+}
+
+/**
+ * The single JSON document `GET /state` and `/state/stream` emit and
+ * `POST /state/events` returns — a STABLE DERIVED VIEW of the one per-principal
+ * ChatApp actor (never the raw, version-coupled persisted snapshot).
+ */
+export interface ChatAppStateDocument {
+  /** Lifecycle phase — routing/first-paint convenience, not a state-of-record. */
+  phase: ChatAppPhase;
+  /** The single authoritative active scope (deepest-resolved region wins). */
+  active_scope: ActiveScope;
+  /** Monotonic per-actor change marker (aggregated over the region logs). */
+  sequence_id: number;
+  /** Timestamp of the last settled transition. */
+  last_event_at: string;
+  request_id: string;
+  /** Every lifecycle region, always present, each a derived slice of the snapshot. */
+  regions: {
+    onboarding: RegionView;
+    projectContext: RegionView;
+    sessionChat: RegionView;
+  };
+}
+
+/**
+ * The anonymous document — the zero-state document the server's `emptyView`
+ * produces (every region in its initial `verifying` state, the empty scope, zero
+ * bookkeeping). Byte-equal to `deriveStateDocument(emptyView, { sequence_id: 0,
+ * last_event_at: "", request_id: "" })` on the origin.
+ *
+ * The proxy's `getSnapshot()` returns this for pure CSR (no SSR seed) until the
+ * first GET/SSE frame resolves, so `useSelector` NEVER sees `undefined`.
+ */
+export function anonymousStateDocument(): ChatAppStateDocument {
+  return {
+    phase: "onboarding",
+    active_scope: {
+      org_id: "",
+      project_id: null,
+      resource_type: null,
+      resource_id: null,
+    },
+    sequence_id: 0,
+    last_event_at: "",
+    request_id: "",
+    regions: {
+      onboarding: { state: "verifying", context: initialReducedContext() },
+      projectContext: { state: "verifying", context: initialReducedContext() },
+      sessionChat: { state: "verifying", context: initialReducedContext() },
+    },
+  };
+}
