@@ -8,7 +8,7 @@ import { UnifiedNav } from "../UnifiedNav";
 const mockNavigate = vi.fn();
 const mockPathname = { current: "/" };
 
-vi.mock("react-router-dom", () => ({
+vi.mock("react-router", () => ({
   useNavigate: () => mockNavigate,
   useLocation: () => ({ pathname: mockPathname.current }),
 }));

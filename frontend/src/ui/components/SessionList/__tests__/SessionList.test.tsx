@@ -29,7 +29,7 @@ vi.mock("@/dataCatalog", async (importOriginal) => {
 
 const mockNavigate = vi.fn();
 
-vi.mock("react-router-dom", () => ({
+vi.mock("react-router", () => ({
   useOutletContext: () => ({ orgId: "org-1", orgName: "Test Org", project: null, projects: [{ id: "proj-1" }] }),
   useNavigate: () => mockNavigate,
   useParams: () => ({}),

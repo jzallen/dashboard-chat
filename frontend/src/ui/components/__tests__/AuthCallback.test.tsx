@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 import { AuthCallback } from "../../../ui/components/AuthCallback";
 
@@ -12,8 +12,8 @@ vi.mock("../../../ui/context/AuthContext", () => ({
   }),
 }));
 
-vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+vi.mock("react-router", async () => {
+  const actual = await vi.importActual<typeof import("react-router")>("react-router");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -38,7 +38,7 @@ describe("AuthCallback", () => {
     );
 
     await waitFor(() => {
-      expect(mockHandleCallback).toHaveBeenCalledWith("test-auth-code");
+      expect(mockHandleCallback).toHaveBeenCalledWith("test-auth-code", "test-state-123");
     });
   });
 
@@ -124,7 +124,7 @@ describe("AuthCallback", () => {
       );
 
       await waitFor(() => {
-        expect(mockHandleCallback).toHaveBeenCalledWith("auth-code");
+        expect(mockHandleCallback).toHaveBeenCalledWith("auth-code", "abc-state-xyz");
       });
       expect(sessionStorage.getItem("oauth_state")).toBeNull();
     });

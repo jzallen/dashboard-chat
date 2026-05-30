@@ -9,7 +9,7 @@ const mockNavigate = vi.fn();
 const mockChannelId = { current: undefined as string | undefined };
 const mockOrgId = { current: "org-1" as string | null };
 
-vi.mock("react-router-dom", () => ({
+vi.mock("react-router", () => ({
   useParams: () => ({ channelId: mockChannelId.current }),
   useOutletContext: () => ({ orgId: mockOrgId.current, orgName: "Test Org", project: null, projects: null }),
   useNavigate: () => mockNavigate,
