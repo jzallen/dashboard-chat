@@ -440,7 +440,7 @@ genrule(
     cmd = """
         set -a && . .env && set +a && \
         cd frontend && \
-        NODE_ENV=production npx react-router build && \
+        VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx react-router build && \
         npx esbuild ssr.ts --bundle --platform=node --format=esm \
             --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" \
             --outfile=../$$TMPDIR/app/frontend/ssr.mjs && \
