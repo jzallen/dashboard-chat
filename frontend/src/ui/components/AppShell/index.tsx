@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { Outlet, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Outlet, useParams } from "react-router";
 
 import { StreamProvider } from "@/stream/StreamProvider";
 
-import { ChatProvider } from "../../context/ChatContext";
+import { ChatProvider, useChatContext } from "../../context/ChatContext";
 import { useOrgProjectsQuery, useOrgQuery } from "../../hooks/useOrgQuery";
 import { useProjectQuery } from "../../hooks/useProjectQuery";
 import { SideNav } from "../SideNav";
@@ -16,6 +16,22 @@ export interface AppShellContext {
   orgName: string | null;
   project: import("@/dataCatalog").Project | null;
   projects: import("@/dataCatalog").Project[] | null;
+}
+
+/**
+ * Keeps the chat engine's active project in sync with the shell's current
+ * project so chat invocations carry a project_id (the agent's scope resolver
+ * requires it). Uses the same fallback as the nav: the route's project when a
+ * projectId is in the URL, else the first org project — the standalone
+ * /chat/:channelId route has no projectId param. Renders nothing; lives inside
+ * ChatProvider so it can reach the context.
+ */
+function ActiveProjectSync({ projectId }: { projectId: string | null }) {
+  const { registerProjectId } = useChatContext();
+  useEffect(() => {
+    registerProjectId(projectId);
+  }, [projectId, registerProjectId]);
+  return null;
 }
 
 function AppShellInner() {
@@ -38,6 +54,7 @@ function AppShellInner() {
   return (
     <StreamProvider>
     <ChatProvider>
+      <ActiveProjectSync projectId={project?.id ?? projects?.[0]?.id ?? null} />
       <div className={styles.shell}>
         <SideNav orgName={orgName} collapsed={navCollapsed} onToggleCollapse={() => setNavCollapsed((v) => !v)}>
           <UnifiedNav orgId={orgId} collapsed={navCollapsed} projectId={project?.id ?? projects?.[0]?.id ?? null} />

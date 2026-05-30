@@ -493,6 +493,7 @@ function useChatEngine(): ChatContextValue {
           tableSchema,
           contextType,
           contextId,
+          { project_id: projectIdRef.current },
         );
 
         await readSSEStream(response.body!, {
