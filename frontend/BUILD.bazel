@@ -416,15 +416,25 @@ genrule(
     # `--banner:js` polyfills CommonJS `require` inside the ESM bundle so any
     # transitively-bundled CJS deps can still load Node built-ins at runtime —
     # same rationale as agent/BUILD.bazel:69-75.
+    #
+    # The staging tree ($$TMPDIR/app) is wiped at the top of every run. Bazel
+    # reuses $$TMPDIR across no-sandbox genrule executions, so without this the
+    # `cp -r build/server <dir>` lines nest into an existing dir (server/server)
+    # and a prior run's content-hashed assets persist alongside the new ones —
+    # producing a tar whose SSR HTML references client hashes the served
+    # build/client no longer contains (the /assets/* 404 class). One clean
+    # `react-router build` is internally consistent; the corruption came purely
+    # from staging-dir accumulation.
     cmd = """
         set -a && . .env && set +a && \
         cd frontend && \
         rm -rf build && \
         VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx react-router build && \
+        rm -rf ../$$TMPDIR/app && \
+        mkdir -p ../$$TMPDIR/app/frontend/build && \
         npx esbuild ssr.ts --bundle --platform=node --format=esm \
             --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" \
             --outfile=../$$TMPDIR/app/frontend/ssr.mjs && \
-        mkdir -p ../$$TMPDIR/app/frontend/build && \
         cp -r build/server ../$$TMPDIR/app/frontend/build/server && \
         cp -r build/client ../$$TMPDIR/app/frontend/build/client && \
         tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
