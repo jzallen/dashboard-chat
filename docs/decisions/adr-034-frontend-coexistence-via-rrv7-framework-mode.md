@@ -1,9 +1,10 @@
 # ADR-034: Frontend coexistence via React Router v7 framework mode (supersedes ADR-031 §1, §3, §4)
 
-**Status:** Accepted (2026-05-12) · execution deferred (separate PRs to follow)
+**Status:** Accepted (2026-05-12) · §"Build pipeline" + §Topology asset-serving amended by [ADR-047](adr-047-ssr-single-source-of-frontend-assets.md) (2026-05-30)
 **Date:** 2026-05-12
 **Originating wave:** ad-hoc review of ADR-031's strangler-fig framing
 **Companion artifacts:**
+- Amended by: [ADR-047](adr-047-ssr-single-source-of-frontend-assets.md) — the SSR build becomes the single source of frontend assets; the dual `vite build` / nginx-static-assets layer this ADR's §"Build pipeline" assumed is replaced by one build served from web-ssr.
 - Supersedes: [ADR-031](adr-031-frontend-tier-transition-remix-alongside-nginx.md) §1 (topology), §3 (what Remix owns), §4 (migration sequence), §"Considered options" R1/R2/R3
 - Inherits unchanged: ADR-031 §2 (what stays in nginx), §7 (auth path)
 - Related: [ADR-033](adr-033-source-tree-topology-separation.md) (source-tree/topology layer separation — applied here)
