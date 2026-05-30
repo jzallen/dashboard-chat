@@ -1,6 +1,6 @@
 import { PencilIcon } from "@heroicons/react/24/outline";
 import { useState } from "react";
-import { useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useParams } from "react-router";
 
 import type { Session } from "@/dataCatalog";
 

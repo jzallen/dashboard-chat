@@ -1,6 +1,6 @@
 import type { ColumnFiltersState, SortingState, VisibilityState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 
 /** Module-level cache for table state across navigations, keyed by datasetId. */
 const tableStateCache = new Map<string, { columnFilters: ColumnFiltersState; sorting: SortingState; columnVisibility: VisibilityState }>();

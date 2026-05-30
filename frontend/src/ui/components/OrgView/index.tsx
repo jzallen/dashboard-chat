@@ -1,4 +1,4 @@
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router";
 
 import type { AppShellContext } from "../AppShell";
 import styles from "./OrgView.module.css";
