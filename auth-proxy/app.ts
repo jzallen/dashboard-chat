@@ -38,6 +38,10 @@ import {
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
 const UI_STATE_URL = process.env.UI_STATE_URL || "http://ui-state:8788";
+// Chat worker (agent) upstream for the `/worker/*` + presentation-state proxy
+// rules. The agent trusts the X-User-Id/X-Org-Id/X-User-Email this proxy
+// injects (TRUST_PROXY_HEADERS) instead of verifying the bearer itself.
+const WORKER_URL = process.env.WORKER_URL || "http://agent:8787";
 
 // Reissue headers that ONLY auth-proxy may set (Stage 2 of
 // auth-proxy-mints-user-tokens). Mirrors the inbound IDENTITY_HEADERS strip:
@@ -95,8 +99,13 @@ app.get("/api/auth/login", async (c) => {
     provider: "authkit",
     state,
   });
+  // `state` is returned alongside `url` so the SPA can stash it in
+  // sessionStorage and compare it against the value WorkOS echoes to
+  // /auth/callback (client-side CSRF check). Without it the SPA stores no
+  // oauth_state, the callback's state check fails, and login loops.
   return c.json({
     url: `https://api.workos.com/user_management/authorize?${params.toString()}`,
+    state,
   });
 });
 
@@ -392,6 +401,73 @@ app.delete("/api/auth/pats/:id", async (c) => {
   const ok = revokePat(id, user.identity.userId);
   if (!ok) return c.json({ error: "not_found" }, 404);
   return c.body(null, 204);
+});
+
+/**
+ * Build the upstream header set for a worker/agent proxy hop: copy inbound
+ * headers minus any client-supplied identity headers, then inject the verified
+ * tenant identity (DEV_USER in dev mode; the verified token's claims in
+ * production). Returns the headers, or a 401 Response when the bearer is
+ * missing/invalid. Mirrors the `/ui-state/*` and catch-all backend branches so
+ * the agent can trust X-User-Id/X-Org-Id/X-User-Email exactly like the backend.
+ */
+async function buildAgentIdentityHeaders(
+  c: { req: { raw: Request; header: (name: string) => string | undefined } },
+): Promise<{ headers: Headers } | { error: Response }> {
+  const headers = new Headers();
+  c.req.raw.headers.forEach((value, key) => {
+    if (!IDENTITY_HEADERS.includes(key.toLowerCase())) {
+      headers.set(key, value);
+    }
+  });
+
+  if ((process.env.AUTH_MODE || "dev") === "dev") {
+    headers.set("X-User-Id", "dev-user-001");
+    headers.set("X-Org-Id", "dev-org-001");
+    headers.set("X-User-Email", "dev@localhost");
+    return { headers };
+  }
+
+  const authHeader = c.req.header("Authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return {
+      error: Response.json(
+        { error: "Missing or invalid Authorization header" },
+        { status: 401 },
+      ),
+    };
+  }
+  try {
+    const identity = await verifyToken(authHeader.slice(7));
+    headers.set("X-User-Id", identity.userId);
+    headers.set("X-Org-Id", identity.orgId);
+    headers.set("X-User-Email", identity.email);
+    return { headers };
+  } catch {
+    return { error: Response.json({ error: "Invalid or expired token" }, { status: 401 }) };
+  }
+}
+
+// Chat worker (agent) tier. Routed BEFORE the catch-all backend proxy. nginx
+// sends `/worker/*` here so the agent sits behind auth-proxy: this branch
+// verifies the bearer and injects identity headers, then strips the `/worker`
+// prefix so the agent sees its own routes (`/chat`, …). SSE bodies stream
+// through unbuffered (same as `/ui-state/state/stream`).
+app.all("/worker/*", async (c) => {
+  const result = await buildAgentIdentityHeaders(c);
+  if ("error" in result) return result.error;
+  const strippedPath = c.req.path.replace(/^\/worker/, "") || "/";
+  return proxyToUpstream(c, WORKER_URL, strippedPath, result.headers);
+});
+
+// Presentation-state reads are served from the agent's in-process/Redis store
+// (ADR-015), not the backend. Routed through auth-proxy (BEFORE the catch-all
+// `/api/*` → backend rule) so the agent receives injected identity. Path is
+// preserved verbatim — the agent serves `/api/channels/:id/presentation-state`.
+app.all("/api/channels/:id/presentation-state", async (c) => {
+  const result = await buildAgentIdentityHeaders(c);
+  if ("error" in result) return result.error;
+  return proxyToUpstream(c, WORKER_URL, c.req.path, result.headers);
 });
 
 // UI-state tier — multi-upstream routing per ADR-030 §SD1.

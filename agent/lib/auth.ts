@@ -5,6 +5,13 @@ const AUTH_MODE = process.env.AUTH_MODE || "dev";
 const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID || "";
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 const JWKS_URL = process.env.JWKS_URL;
+// When the agent is deployed behind auth-proxy (production /worker path),
+// auth-proxy verifies the bearer and injects the verified tenant identity as
+// X-User-Id / X-Org-Id / X-User-Email. The agent then trusts those headers
+// instead of verifying the token locally — auth-proxy mints user tokens with
+// its own keypair/kid/issuer, which the JWKS path below cannot verify. Mirrors
+// the backend's TRUST_PROXY_HEADERS contract.
+const TRUST_PROXY_HEADERS = process.env.TRUST_PROXY_HEADERS === "true";
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
@@ -37,6 +44,21 @@ const PUBLIC_PATHS = new Set(["/health", "/openapi.json"]);
 
 export async function authMiddleware(c: Context, next: Next) {
   if (PUBLIC_PATHS.has(c.req.path)) {
+    return next();
+  }
+
+  // Behind auth-proxy: trust the injected identity and skip local JWT
+  // verification. nginx routes /worker and the presentation-state path
+  // exclusively through auth-proxy, which strips any client-supplied identity
+  // headers before injecting the verified ones — so X-User-Id is authoritative
+  // here. Downstream scope.ts reads X-Org-Id / X-User-Id off the request, which
+  // are already present from auth-proxy's injection.
+  if (TRUST_PROXY_HEADERS) {
+    const userId =
+      c.req.header("X-User-Id") || c.req.header("x-user-id") || "";
+    if (!userId) {
+      return c.json({ error: "Missing identity headers" }, 401);
+    }
     return next();
   }
 

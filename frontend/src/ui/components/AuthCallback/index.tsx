@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { useAuth } from "../../context/AuthContext";
 
@@ -32,7 +32,7 @@ export function AuthCallback() {
     }
 
     calledRef.current = true;
-    handleCallback(code)
+    handleCallback(code, urlState)
       .then((result) => {
         if (result.org_id) {
           navigate("/", { replace: true });

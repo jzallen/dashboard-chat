@@ -35,6 +35,12 @@ services:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       JWKS_URL: ${JWKS_URL:-}
+      # The agent sits behind auth-proxy (nginx routes /worker + the
+      # presentation-state path through it). auth-proxy verifies the bearer and
+      # injects X-User-Id/X-Org-Id/X-User-Email; the agent trusts those instead
+      # of verifying the auth-proxy-minted token itself (which it cannot — wrong
+      # kid/issuer/keypair). Same contract as the backend's TRUST_PROXY_HEADERS.
+      TRUST_PROXY_HEADERS: "true"
       # Tool dispatchers fetch backend endpoints via the auth-proxy. The
       # service name resolves on the compose network; localhost is unreachable
       # from inside the container. Hardcoded so a host-side .env (used by
@@ -212,7 +218,17 @@ services:
     environment:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      # WorkOS code-exchange secret (clientSecret) + OAuth redirect target, read
+      # by the /api/auth/login and /api/auth/callback handlers (app.ts). Without
+      # them workos mode mints an authorize URL with an empty redirect_uri and
+      # cannot exchange the returned code.
+      WORKOS_API_KEY: ${WORKOS_API_KEY:-}
+      WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
       BACKEND_URL: http://api:8000
+      # Chat-worker (agent) upstream for the /worker/* + presentation-state
+      # proxy rules. Container-internal; the agent trusts the identity headers
+      # this proxy injects.
+      WORKER_URL: http://agent:8787
       # Upstream for the /ui-state/* multi-upstream rule (ADR-030 §SD1).
       # Container-internal; .env host-port overrides do not leak in.
       UI_STATE_URL: http://ui-state:8788

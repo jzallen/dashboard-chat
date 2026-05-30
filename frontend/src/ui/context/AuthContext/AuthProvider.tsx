@@ -3,7 +3,6 @@ import { createContext, type ReactNode, useCallback, useContext } from "react";
 import {
   clearAll,
   getToken,
-  setRefreshToken,
   setToken,
   setTokenExpiry,
   setUser,
@@ -20,10 +19,31 @@ import { useTokenState } from "./hooks/useTokenState";
 // Auth bootstrap client uses plain fetch (no auth wrapper — these are pre-auth endpoints)
 const authClient = new ApiClient(DATA_CATALOG_BASE_URL, { unwrapData: true });
 
+// Identity claims carried by the auth-proxy-minted JWT access token.
+interface UserClaims {
+  sub?: string;
+  email?: string;
+  org_id?: string;
+  name?: string;
+}
+
+// Read (not verify) the JWT payload. The auth-proxy already signed and verified
+// it; the client only needs the identity claims it carries. Client-only — runs
+// in the /auth/callback effect, never during SSR.
+function decodeJwtPayload(token: string): UserClaims {
+  try {
+    const part = token.split(".")[1] ?? "";
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json) as UserClaims;
+  } catch {
+    return {};
+  }
+}
+
 interface AuthContextValue extends AuthState {
   login: (organizationId?: string) => Promise<void>;
   logout: () => void;
-  handleCallback: (code: string) => Promise<AuthUser>;
+  handleCallback: (code: string, state?: string) => Promise<AuthUser>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -45,27 +65,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleCallback = useCallback(
-    async (code: string): Promise<AuthUser> => {
-      const data = await authClient.post<{
-        user: AuthUser;
-        token: string;
-        refresh_token: string;
+    async (code: string, state?: string): Promise<AuthUser> => {
+      // The auth-proxy mints a JWT access token whose claims (sub/email/org_id)
+      // ARE the user identity; the WorkOS refresh token is held server-side and
+      // never returned (session/sid model — see auth-proxy app.ts). The CSRF
+      // `state` is echoed back so the proxy can consume the value it remembered
+      // at /api/auth/login.
+      const { access_token, expires_in } = await authClient.post<{
+        access_token: string;
         expires_in: number;
-      }>("/api/auth/callback", { code });
-      setToken(data.token);
-      setUser(data.user);
-      setRefreshToken(data.refresh_token);
-      const expiresAt = Date.now() + data.expires_in * 1000;
+      }>("/api/auth/callback", { code, state });
+      const claims = decodeJwtPayload(access_token);
+      const user: AuthUser = {
+        id: claims.sub ?? "",
+        email: claims.email ?? "",
+        org_id: claims.org_id ? claims.org_id : null,
+        name: claims.name ?? null,
+      };
+      const expiresAt = Date.now() + expires_in * 1000;
+      setToken(access_token);
+      setUser(user);
       setTokenExpiry(expiresAt);
       setState({
-        user: data.user,
-        token: data.token,
-        refreshToken: data.refresh_token,
+        user,
+        token: access_token,
+        refreshToken: null,
         tokenExpiresAt: expiresAt,
         isAuthenticated: true,
         isLoading: false,
       });
-      return data.user;
+      return user;
     },
     [setState],
   );
