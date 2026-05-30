@@ -1,6 +1,8 @@
 services:
-  # Reverse-Proxy - nginx serving Vite build + routing /api, /worker,
-  # /api/channels/:id/presentation-state, /ui-state/* (post-ADR-032).
+  # Reverse-Proxy - nginx ingress/routing only (ADR-047). Routes /api, /worker,
+  # /api/channels/:id/presentation-state, /ui-state/*, serves its own /_meta.json,
+  # and proxies /assets/* + the catch-all to web-ssr. It no longer serves frontend
+  # assets statically — web-ssr is the single source/owner of build/client.
   reverse-proxy:
     image: dashboard-chat/reverse-proxy:bazel
     pull_policy: never

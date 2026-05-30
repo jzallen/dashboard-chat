@@ -107,11 +107,11 @@ def _bazel_image_load(target: str) -> None:
 
 
 def _ensure_repo_root_env(root: Path) -> None:
-    """Frontend's `:dist` genrule sources `//:.env` at vite-build time. The
-    file is gitignored and absent on a fresh worktree; an empty stub is
-    sufficient for the identity test (we only need vite to finish, not for
-    WorkOS env to be populated). Idempotent — never overwrites an existing
-    file.
+    """Frontend's `:ssr_dist` genrule sources `//:.env` at react-router-build
+    time (ADR-047 collapsed the build to one genrule). The file is gitignored
+    and absent on a fresh worktree; an empty stub is sufficient for the identity
+    test (we only need the build to finish, not for WorkOS env to be populated).
+    Idempotent — never overwrites an existing file.
     """
     env_path = root / ".env"
     if not env_path.exists():

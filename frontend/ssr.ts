@@ -4,6 +4,7 @@
 // the Vite-generated bundle (RRv7 plugin output) — it does not exist at TS-compile
 // time, hence the @ts-expect-error.
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { createRequestHandler } from "react-router";
 
@@ -19,6 +20,15 @@ const reactRouterHandler = createRequestHandler(build, NODE_ENV);
 
 // Liveness — matches the agent's /health convention.
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// Frontend assets — web-ssr is the SINGLE source/owner of build/client (ADR-047).
+// The same build that produced the SSR server bundle (and therefore the
+// content-hashed asset URLs in the rendered document) serves the asset files,
+// so the hashes can never diverge. `root` is relative to the container cwd
+// (`/app`, the image workdir); the client bundle lives at
+// `/app/frontend/build/client`. serveStatic falls through to next() on a miss,
+// so a non-asset path under /assets/* still reaches the RRv7 handler.
+app.use("/assets/*", serveStatic({ root: "./frontend/build/client" }));
 
 // Everything else is the RRv7 handler.
 app.all("*", async (c) => reactRouterHandler(c.req.raw, {}));

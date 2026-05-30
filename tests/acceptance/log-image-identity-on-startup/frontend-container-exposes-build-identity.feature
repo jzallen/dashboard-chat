@@ -1,9 +1,11 @@
 # Milestone 2 — frontend container identity (AC2.1, AC2.2, AC2.3).
 #
-# The frontend is an nginx-served static SPA: no native application
+# The reverse-proxy is an nginx ingress/router (ADR-047: frontend assets
+# are served by web-ssr, not statically by nginx): no native application
 # startup log. Its identity surface is the entrypoint-shim stdout line
 # AND a machine-readable HTTP endpoint at /_meta.json (DESIGN §6:
-# `reverse-proxy/docker-entrypoint.sh` writes both surfaces).
+# `frontend/docker-entrypoint.sh` writes both surfaces), served from the
+# nginx static root via an exact-match location.
 
 @real-io @slow
 Feature: Frontend container exposes build identity via stdout and HTTP

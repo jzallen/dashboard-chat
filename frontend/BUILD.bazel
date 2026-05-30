@@ -147,33 +147,14 @@ js_library(
     ],
 )
 
-# ─── Vite Build ──────────────────────────────────────────────────────────────
-
-# RRv7 framework mode (ADR-034) requires `react-router build` to trigger
-# the plugin's multi-environment build (client + ssr). Plain `vite build`
-# only emits the client environment and skips build/server/. Output goes to
-# frontend/build/{client,server} regardless of --outDir (the plugin
-# overrides it). Stage build/client into dist/ to preserve the
-# assets_layer contract (untars dist/ into /usr/share/nginx/html/).
-genrule(
-    name = "dist",
-    srcs = [
-        ":sources",
-        ":app_framework",
-        "//:.env",
-    ],
-    outs = ["dist.tar"],
-    cmd = """
-        set -a && . .env && set +a && \
-        cd frontend && \
-        VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx react-router build && \
-        mkdir -p ../$$TMPDIR/dist && \
-        cp -r build/client/. ../$$TMPDIR/dist/ && \
-        tar -cf - -C ../$$TMPDIR dist > ../$(OUTS)
-    """,
-    tags = ["no-sandbox", "manual"],
-    visibility = ["//visibility:public"],
-)
+# ─── Vite / RRv7 Build ───────────────────────────────────────────────────────
+#
+# There is exactly ONE `react-router build` in this file (ADR-047). It lives in
+# the `:ssr_dist` genrule below. The relic `:dist` genrule + nginx `:assets_layer`
+# (which produced a second, independently-hashed copy of build/client for the
+# reverse-proxy to serve statically) are GONE: a second build could never be
+# guaranteed to agree with web-ssr's content hashes, which is the root cause of
+# the `/assets/*` 404 class (ADR-047). web-ssr now owns and serves build/client.
 
 # ─── Per-Module Test Targets ─────────────────────────────────────────────────
 
@@ -352,19 +333,6 @@ genrule(
     tags = ["no-sandbox", "manual"],
 )
 
-genrule(
-    name = "assets_layer",
-    srcs = [":dist"],
-    outs = ["assets.tar"],
-    cmd = """
-        mkdir -p $$TMPDIR/usr/share/nginx/html && \
-        tar -xf $(location :dist) -C $$TMPDIR && \
-        cp -r $$TMPDIR/dist/* $$TMPDIR/usr/share/nginx/html/ && \
-        tar -cf $(OUTS) -C $$TMPDIR usr
-    """,
-    tags = ["no-sandbox", "manual"],
-)
-
 version_layer(
     name = "version_layer",
     image_tag = "dashboard-chat/reverse-proxy:bazel",
@@ -385,12 +353,15 @@ genrule(
     tags = ["no-sandbox", "manual"],
 )
 
+# reverse-proxy is a pure routing/coordination image (ADR-047): nginx conf +
+# build identity + entrypoint. It carries NO frontend assets — web-ssr owns and
+# serves build/client. The entrypoint still writes /usr/share/nginx/html/_meta.json
+# (its own build identity, dc-1k8); nginx serves that one file from its static root.
 oci_image(
     name = "image",
     base = "@nginx_alpine",
     tars = [
         ":nginx_conf_layer",
-        ":assets_layer",
         ":version_layer",
         ":entrypoint_layer",
     ],
@@ -419,9 +390,17 @@ oci_load(
 # Layer layout inside ssr_dist.tar:
 #   /app/frontend/ssr.mjs           — esbuild output (Hono entry)
 #   /app/frontend/build/server/...  — vite build SSR output (RRv7 plugin)
-#   /app/frontend/build/client/...  — vite build client output (included for completeness;
-#                                     the reverse-proxy image is the primary serving surface
-#                                     but the SSR runtime needs the manifest for asset URLs)
+#   /app/frontend/build/client/...  — vite build client output; web-ssr serves these
+#                                     statically at /assets/* (ADR-047). This is now the
+#                                     SINGLE source of frontend assets — the reverse-proxy
+#                                     image no longer carries a copy.
+#
+# This is the ONLY `react-router build` in the repo (ADR-047). `rm -rf build`
+# runs first so the output contains EXACTLY one set of content-hashed assets:
+# the `no-sandbox` tag means the genrule shares the source `frontend/build/`
+# dir across runs, so without the clean it would accumulate stale hashed
+# chunks (e.g. multiple AuthContext-*.js) and Bazel's disk cache could then
+# tar up ghost variants — the determinism half of the 404 root cause.
 #
 # Per DWD-5 (frontend-coexistence). Per DESIGN application-architecture.md §6.2.
 
@@ -440,6 +419,7 @@ genrule(
     cmd = """
         set -a && . .env && set +a && \
         cd frontend && \
+        rm -rf build && \
         VITE_CHAT_URL=/worker VITE_STREAM_API_KEY=$${STREAM_API_KEY:-} NODE_ENV=production npx react-router build && \
         npx esbuild ssr.ts --bundle --platform=node --format=esm \
             --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" \
