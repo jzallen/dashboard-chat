@@ -1,0 +1,111 @@
+{
+  "schema_version": "3.0",
+  "feature_id": "pipeline-layers-ui-redesign-mr6",
+  "events": [
+    {
+      "sid": "06-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS: read backend touch points (DatasetRecord ORM, domain Dataset, DatasetUpdate/DatasetResponse schemas, update path router->controller->use case->repo generic setattr), alembic head f3a4b5c6d7e8, alembic-migration + backend-use-case skills",
+      "t": "2026-05-31T20:08:51Z"
+    },
+    {
+      "sid": "06-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: 2 pytest cases RED (assert None == 'Sales Snapshot'/'Renamed Source'); 5 existing update_dataset cases pass; verified in DISTILL (BE 7 collected/2 failed/5 passed, clean AssertionError not BROKEN)",
+      "t": "2026-05-31T20:08:51Z"
+    },
+    {
+      "sid": "06-01",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the use-case test IS the unit/acceptance spec for the additive column; repo/use-case need no change (generic passthrough)",
+      "t": "2026-05-31T20:12:20Z"
+    },
+    {
+      "sid": "06-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: 2 new display_name cases green + 1350 backend pass (test extra), 0 fail/0 err; migration 014 round-trips upgrade head->downgrade -1->upgrade head clean on sqlite; ruff clean. ORM column + domain from_record/serialize + DatasetUpdate/DatasetResponse wired; use case/repo unchanged",
+      "t": "2026-05-31T20:12:20Z"
+    },
+    {
+      "sid": "06-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: e9f604a feat(backend): add additive display_name column to datasets (MR-6 step 06-01)",
+      "t": "2026-05-31T20:12:41Z"
+    },
+    {
+      "sid": "06-02",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS: useRenameDataset is the optimistic template; display_name TS fields landed in the DISTILL RED commit; useUpdateDatasetDisplayName scaffold throws",
+      "t": "2026-05-31T20:12:41Z"
+    },
+    {
+      "sid": "06-02",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: 5 useUpdateDatasetDisplayName cases RED (scaffold throw); existing useRenameDataset cases green (verified in DISTILL)",
+      "t": "2026-05-31T20:12:42Z"
+    },
+    {
+      "sid": "06-02",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the DISTILL cache cases ARE the spec; mirrors the useRenameDataset structure",
+      "t": "2026-05-31T20:13:10Z"
+    },
+    {
+      "sid": "06-02",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: useDatasetMutations.test 12/12 (7 useRenameDataset + 5 useUpdateDatasetDisplayName: detail+list optimistic, rollback, settle-invalidate, calls updateDataset with only {display_name}); scaffold throw removed",
+      "t": "2026-05-31T20:13:10Z"
+    },
+    {
+      "sid": "06-02",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: 20cffee feat(frontend): useUpdateDatasetDisplayName optimistic mutation (MR-6 step 06-02)",
+      "t": "2026-05-31T20:15:09Z"
+    },
+    {
+      "sid": "06-03",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS: read ActivityCheckModal (overlay/focus-trap/Esc), UploadWidget (uploadFile call shape), TableView/ModelDetailLayout (editor mount), Pipeline canvas/FlowView (additive onNodeActivate), MR-1 tokens",
+      "t": "2026-05-31T20:15:09Z"
+    },
+    {
+      "sid": "06-03",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: UploadModal/DisplayNameEditor/PipelineUploadReopen/TableView.displayName cases RED (scaffold throws + missing testids); verified in DISTILL",
+      "t": "2026-05-31T20:15:10Z"
+    },
+    {
+      "sid": "06-03",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the DISTILL component/integration cases ARE the spec; presentational + thin wiring",
+      "t": "2026-05-31T20:19:27Z"
+    },
+    {
+      "sid": "06-03",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: UploadModal 11 + DisplayNameEditor 3 + PipelineUploadReopen 2 + TableView.displayName 1 green; existing PipelineViews 13 + PipelineLanding 3 + TableView.detail 9 + TableView 5 still green (additive onNodeActivate, no MR-2 regression). FULL frontend suite 94 files / 765 passed (up from 743). No __SCAFFOLD__/RED-scaffold-throw in MR-6 files.",
+      "t": "2026-05-31T20:19:27Z"
+    },
+    {
+      "sid": "06-03",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: 941dd05 feat(frontend): standalone upload modal + source-node reopen + display-name editor (MR-6 step 06-03)",
+      "t": "2026-05-31T20:19:47Z"
+    }
+  ]
+}
