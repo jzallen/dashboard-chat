@@ -1,0 +1,111 @@
+{
+  "schema_version": "3.0",
+  "feature_id": "pipeline-layers-ui-redesign-mr7",
+  "events": [
+    {
+      "sid": "07-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS: read backend touch points (DatasetRecord ORM, domain Dataset from_record/serialize, _sparse_dict, list_datasets repo query + abstract, DatasetResponse/DatasetSparse schemas, dataset_controller/http_controller, datasets/projects routers, update_dataset generic setattr path), alembic head a4b5c6d7e8f9 (runs from backend/migrations), alembic-migration + backend-use-case skills",
+      "t": "2026-05-31T23:30:07Z"
+    },
+    {
+      "sid": "07-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: 9 backend cases RED in DISTILL (archive/restore scaffolds raise AssertionError; 4 list-filter cases fail on counts with no-op archived param); 10 existing list cases pass; verified RED not BROKEN (19 collected, 0 import/collection errors)",
+      "t": "2026-05-31T23:30:14Z"
+    },
+    {
+      "sid": "07-01",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the use-case + list-filter tests ARE the unit/acceptance spec for this slice; archive/restore reuse the generic update path, the filter pushes into the existing repo query",
+      "t": "2026-05-31T23:30:14Z"
+    },
+    {
+      "sid": "07-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: 132/132 dataset use-case tests green (incl 9 MR-7: archive 90d retention, restore clears, default-exclude + archived-only on full + sparse lists); FULL backend 1378 passed/22 skipped (2 pre-existing tests/integration failures \u2014 FHIR multi-result + auth-proxy m2m context \u2014 reproduce on base 38ba4a3, unrelated, excluded from --backend gate); migration 015 round-trips upgrade head->downgrade -1->upgrade head clean on SQLite; ruff check + format clean. Updated 1 controller char test for the additive archived forwarding.",
+      "t": "2026-05-31T23:37:43Z"
+    },
+    {
+      "sid": "07-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: c958125 feat(backend): cold-storage columns + archive/restore endpoints + list filtering (MR-7 step 07-01)",
+      "t": "2026-05-31T23:37:47Z"
+    },
+    {
+      "sid": "07-02",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS: useRenameDataset/useUpdateDatasetDisplayName are the optimistic template; TS types (archived_at/retention_until) + client archiveDataset/restoreDataset + listDatasetsForProject archived option + datasetKeys.archived landed real in the DISTILL RED commit; daysLeft + the two mutation scaffolds throw",
+      "t": "2026-05-31T23:37:59Z"
+    },
+    {
+      "sid": "07-02",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: daysLeft (5) + useArchiveDataset (4) + useRestoreDataset (3) cases RED via scaffold throw; existing useRenameDataset/useUpdateDatasetDisplayName cases green (verified in DISTILL)",
+      "t": "2026-05-31T23:37:59Z"
+    },
+    {
+      "sid": "07-02",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the DISTILL helper + cache-move cases ARE the spec; mirrors the useRenameDataset/useUpdateDatasetDisplayName structure",
+      "t": "2026-05-31T23:37:59Z"
+    },
+    {
+      "sid": "07-02",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: daysLeft 5/5 + useDatasetMutations 19/19 (7 new archive/restore: live/archived cache moves, rollback, settle-invalidate, no body; 12 existing rename/display-name still green); no __SCAFFOLD__/RED-scaffold throw in daysLeft.ts/useDatasetMutations.ts; eslint clean (0 errors)",
+      "t": "2026-05-31T23:39:00Z"
+    },
+    {
+      "sid": "07-02",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: c1c8039 feat(frontend): days-left helper + archive/restore optimistic mutations (MR-7 step 07-02)",
+      "t": "2026-05-31T23:39:00Z"
+    },
+    {
+      "sid": "07-03",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS: read ActivityCheckModal overlay/Esc pattern, UploadModal source step, Pipeline toolbar + buildGraph call (empty set today), useDatasetQuery useDatasets template, MR-1 tokens; identified PipelineLanding.test + PipelineUploadReopen.test mocks needing an additive useArchivedDatasets entry",
+      "t": "2026-05-31T23:40:14Z"
+    },
+    {
+      "sid": "07-03",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: ColdStorageDrawer (6) + PipelineColdStorage (3) + UploadModalArchive (4) RED via scaffold throws + missing testids; verified in DISTILL",
+      "t": "2026-05-31T23:40:14Z"
+    },
+    {
+      "sid": "07-03",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the DISTILL component/integration cases ARE the spec; presentational drawer/dialog + thin additive wiring",
+      "t": "2026-05-31T23:40:14Z"
+    },
+    {
+      "sid": "07-03",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: ColdStorageDrawer 5 + PipelineColdStorage 3 + UploadModalArchive 4 green; existing PipelineViews 13 + PipelineLanding 3 + PipelineUploadReopen 2 + UploadModal 11 + DisplayNameEditor 3 still green (additive useArchivedDatasets mock added). FULL frontend suite 98 files / 789 passed (up from 765). No __SCAFFOLD__/RED-scaffold throw in MR-7 frontend files. buildGraph unchanged (live archived set fed in); ui-state wire untouched.",
+      "t": "2026-05-31T23:44:14Z"
+    },
+    {
+      "sid": "07-03",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: f68f4d0 feat(frontend): cold-storage fridge drawer + snowflake archive + live orphan wiring (MR-7 step 07-03) (+ style lint follow-up)",
+      "t": "2026-05-31T23:44:14Z"
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "roadmap": "pipeline-layers-ui-redesign / MR-7 — Cold storage / retention (the redesign's LAST and heaviest backend touch: TWO additive nullable columns archived_at + retention_until, ONE migration 015, TWO thin endpoints archive/restore, and default-exclude / ?archived=true list filtering)",
+  "scope": "Add cold-storage / retention as a thin additive extension of the existing dataset record (NOT a new aggregate). Backend: TWO additive nullable timestamp columns archived_at + retention_until on DatasetRecord; domain Dataset gains both (mapped in from_record as ISO strings, emitted in serialize) and the sparse projection (_sparse_dict) gains both; DatasetResponse + DatasetSparse schemas gain both on reads; TWO thin use cases archive_dataset (sets archived_at = now, retention_until = now + RETENTION_WINDOW where RETENTION_WINDOW = timedelta(days=90), a hardcoded module constant per DWD-M7-4) and restore_dataset (clears both to None), both reusing the EXISTING generic MetadataRepository.update_dataset(**kwargs) (NO new repo write method); POST /api/datasets/{id}/archive + POST /api/datasets/{id}/restore wired via DatasetController; list filtering — the repository list_datasets gains an archived: bool | None filter (None/False => default EXCLUDE archived_at IS NOT NULL; True => ONLY archived) threaded through the list_datasets / list_datasets_for_project use cases and the GET /api/datasets / GET /api/projects/{id}/datasets routers via ?archived=true; ONE Alembic migration 015 revising from head a4b5c6d7e8f9 adding the two nullable columns with a real downgrade (SQLite/PostgreSQL-portable, plain nullable add_column, no org_id index — datasets has no org_id column). On the frontend: a pure days-left helper (frontend/src/core/coldStorage/daysLeft.ts — null when retention_until null, ceil((retention_until - now)/day) with INJECTED now); useArchiveDataset + useRestoreDataset optimistic mutations (mirror MR-6 useUpdateDatasetDisplayName; archive removes from the live list cache + invalidates live/archived/detail, restore removes from the archived list cache + invalidates) calling new catalog.archiveDataset/restoreDataset; Dataset/DatasetSparse TS types + the new client methods + an archived list option + a datasetKeys.archived factory entry; the live archived set FED into the EXISTING buildGraph archived seam (PipelineLanding fetches the default archived-excluded dataset list for the live graph + a new useArchivedDatasets for the archived id set => archived source LEAVES the live graph and its downstream goes orphaned via existing buildGraph logic — NO buildGraph change, NO orphan logic reimplemented); a fridge toolbar entry + ColdStorageDrawer (archived list with retired-at / retention-end / days-left badge / restore + a deterministic random-food empty state) + a snowflake archive button + ConfirmDialog in the MR-6 UploadModal existing-source step (reuses the ActivityCheckModal overlay/Esc pattern). Style with MR-1 tokens; dark mode via .dark; no aesthetic switcher. NO ui-state wire / chat transport / agent contract touch; NO new table. Drive the RED backend pytest + frontend vitest suites to GREEN while keeping ALL existing tests green.",
+  "design_ratified_as": "docs/feature/pipeline-layers-ui-redesign/path-forward.md §2.7 (cold storage / fridge), §3.1 (archived_at + retention_until additive backend surface; default-exclude + ?archived=true; two thin endpoints; days-left frontend-derived; retention window read-only org default), §3.5 (orphan = derived in the lineage builder, never persisted), §5 (MR-7), §9 (single Neobrutalist + Solarized .dark)",
+  "distill_roadmap": "docs/feature/pipeline-layers-ui-redesign/distill/walking-skeleton-mr7.md",
+  "distill_wave_decisions": "docs/feature/pipeline-layers-ui-redesign/distill/wave-decisions-mr7.md",
+  "dispatch_policy": "SEQUENTIAL — dispatch ONE crafter step at a time and verify commit + integrity (its scenarios GREEN, no testing-theater, no __SCAFFOLD__/`RED scaffold` throw left in its files, migration round-trips where applicable, and no previously-passing test regressed) before the next (saved-feedback constraint). Backend FIRST (07-01) so the frontend builds on the REAL persisted columns + endpoints + filter. The FULL backend pytest + ruff and FULL frontend vitest are verified after the final step and again pre-submit; the migration round-trip (upgrade head -> downgrade -1 -> upgrade head) is verified in 07-01 and again pre-submit. Iron Rule: after 3 failed attempts on a step, revert and escalate — do not thrash.",
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Backend cold-storage surface (the real persisted columns + endpoints + filter)",
+      "steps": [
+        {
+          "id": "07-01",
+          "name": "Add archived_at + retention_until columns end-to-end, the archive/restore use cases + endpoints, and the default-exclude / ?archived=true list filter; prove archive sets retention 90d and restore clears both",
+          "criteria": "GREEN for: backend tests/use_cases/dataset/test_archive_dataset.py (archive sets archived_at to a non-null timestamp AND retention_until == archived_at + 90 days; archiving a missing dataset returns Failure(DatasetNotFound); a repo DB error returns Failure), test_restore_dataset.py (restore clears archived_at AND retention_until to None; restoring a missing dataset returns Failure), test_list_datasets.py default-exclude (seed one archived + one live dataset -> list_datasets(project_id) returns ONLY the live one) and archived-only (list_datasets(project_id, archived=True) returns ONLY the archived one), test_list_datasets_for_project.py same default-exclude + archived-only on the sparse projection AND the sparse rows carry archived_at/retention_until. DatasetRecord gains archived_at + retention_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True); domain Dataset gains both (mapped in from_record via _iso, emitted in serialize); _sparse_dict gains both; DatasetUpdate is NOT touched (archive/restore are dedicated endpoints, not PATCH fields); DatasetResponse + DatasetSparse gain archived_at: datetime | None + retention_until: datetime | None. archive_dataset / restore_dataset use cases follow the decorator stack (@handle_returns / @with_repositories), raise DatasetNotFound when absent, write via the existing MetadataRepository.update_dataset(**kwargs), and return DatasetService(repositories).fetch_dataset(dataset_id); RETENTION_WINDOW = timedelta(days=90) is a documented module constant. POST /api/datasets/{id}/archive + /restore wired via DatasetController.archive_dataset / restore_dataset (registered on HTTPController). The repository list_datasets gains archived: bool | None (None/False default-excludes archived_at IS NOT NULL; True returns only archived), threaded through both list use cases + the GET /api/datasets and GET /api/projects/{id}/datasets routers via ?archived=true. Alembic migration 015 revises from a4b5c6d7e8f9, op.add_column('datasets', sa.Column('archived_at', sa.DateTime(), nullable=True)) + retention_until, with a real downgrade dropping both in reverse order; SQLite/PostgreSQL-portable (no alter_column, no batch op, no org_id index — datasets has no org_id column). Migration round-trips: cd backend/migrations && uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head all clean. FULL backend pytest GREEN + ruff clean. No previously-passing backend test regresses (existing Dataset(...)-equality tests keep passing — default None on both sides; existing list tests keep passing — default archived=None preserves current behavior). No __SCAFFOLD__ / 'RED scaffold' raise remains in archive_dataset.py / restore_dataset.py.",
+          "test_file": "backend/tests/use_cases/dataset/test_archive_dataset.py",
+          "scenario_name": "Archive sets archived_at + retention_until (90d); restore clears both; list default-excludes archived and ?archived=true returns the cold-storage list",
+          "estimate_minutes": 150,
+          "depends_on": [],
+          "files_to_modify": [
+            "backend/app/repositories/metadata/dataset_record.py",
+            "backend/app/models/dataset.py",
+            "backend/app/routers/schemas/dataset.py",
+            "backend/app/use_cases/dataset/archive_dataset.py",
+            "backend/app/use_cases/dataset/restore_dataset.py",
+            "backend/app/use_cases/dataset/__init__.py",
+            "backend/app/use_cases/dataset/list_datasets.py",
+            "backend/app/use_cases/dataset/list_datasets_for_project.py",
+            "backend/app/repositories/metadata/repository.py",
+            "backend/app/repositories/metadata/__init__.py",
+            "backend/app/controllers/dataset_controller.py",
+            "backend/app/controllers/http_controller.py",
+            "backend/app/routers/datasets.py",
+            "backend/app/routers/projects.py",
+            "backend/migrations/versions/015_add_dataset_cold_storage.py"
+          ]
+        }
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "Frontend types + days-left helper + archive/restore mutations",
+      "steps": [
+        {
+          "id": "07-02",
+          "name": "Add the cold-storage TS types + client methods, the pure days-left helper, and the useArchiveDataset / useRestoreDataset optimistic mutations",
+          "criteria": "GREEN for: core/coldStorage/__tests__/daysLeft.test.ts (null when retention_until is null; positive count for a future end with injected now; <=0 once elapsed; deterministic with the injected clock), and the useArchiveDataset / useRestoreDataset blocks in frontend/src/ui/hooks/__tests__/useDatasetMutations.test.tsx (archive optimistically removes the dataset from the live list cache, invalidates live + archived + detail on settle, calls catalog.archiveDataset(datasetId) with no body; restore optimistically removes from the archived list cache, invalidates, calls catalog.restoreDataset(datasetId); both roll back on error). Dataset / DatasetSparse (frontend/src/core/dataCatalog/datasets.ts) gain archived_at?: string | null + retention_until?: string | null. client.ts gains archiveDataset(id) + restoreDataset(id) POST calls and an archived?: boolean option on listDatasetsForProject (-> ?archived=true). datasetKeys gains archived(projectId) = [...lists(), projectId, 'archived']. daysLeft (frontend/src/core/coldStorage/daysLeft.ts) is a pure clock-injected helper. useArchiveDataset / useRestoreDataset live in useDatasetMutations.ts beside useRenameDataset / useUpdateDatasetDisplayName. The existing useRenameDataset + useUpdateDatasetDisplayName cases stay GREEN. No __SCAFFOLD__ / 'RED scaffold' throw remains in daysLeft.ts or useDatasetMutations.ts. No previously-passing frontend test regresses.",
+          "test_file": "frontend/src/ui/hooks/__tests__/useDatasetMutations.test.tsx",
+          "scenario_name": "days-left pure helper + archive/restore optimistic mutations (live/archived cache moves, rollback, settle-invalidate, no body)",
+          "estimate_minutes": 75,
+          "depends_on": ["07-01"],
+          "files_to_modify": [
+            "frontend/src/core/dataCatalog/datasets.ts",
+            "frontend/src/core/dataCatalog/client.ts",
+            "frontend/src/core/coldStorage/daysLeft.ts",
+            "frontend/src/lib/queryKeys.ts",
+            "frontend/src/ui/hooks/useDatasetMutations.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Cold-storage UI: fridge drawer, snowflake archive + confirm, live orphan wiring",
+      "steps": [
+        {
+          "id": "07-03",
+          "name": "Build the ColdStorageDrawer + ConfirmDialog, wire the fridge toolbar + archived query + live archived set into buildGraph, and add the snowflake archive action to the upload modal",
+          "criteria": "GREEN for: ColdStorageDrawer.test.tsx (closed -> renders nothing; open -> lists archived sources with retired-at (archived_at), retention-end (retention_until), a days-left badge, and a Restore button that fires the restore mutation; label falls back to name when display_name null; empty archived list -> the random-food cold-storage-empty empty-state), PipelineColdStorage.test.tsx (the fridge-toolbar-button opens the drawer; an archived source is ABSENT from the live graph and its downstream view renders orphaned aria-disabled; restoring re-adds it; plus the @walking_skeleton archive->orphan->restore round trip), UploadModalArchive.test.tsx (the existing-source step shows a snowflake archive button; clicking opens a ConfirmDialog; confirm fires useArchiveDataset + closes the modal; cancel dismisses the dialog WITHOUT archiving). PipelineLanding fetches the default (archived-excluded) sparse dataset list for the live graph AND a new useArchivedDatasets(projectId) for the archived id Set fed into buildGraph (replacing MR-2's new Set()) — NO buildGraph change, NO orphan logic reimplemented (DWD-M7-6). The drawer + dialog consume MR-1 tokens, respect dark mode via .dark, and are detached from the assistant. The snowflake archive action lives in the MR-6 UploadModal existing-source step and does NOT add a node prop (MR-2 Pipeline view tests stay GREEN; the existing UploadModal.test.tsx is untouched — new behavior is in UploadModalArchive.test.tsx). NO @dashboard-chat/ui-state-wire / lib/ui-state-client import; NO chat/stream client; NO backend endpoint beyond 07-01. No __SCAFFOLD__ / 'RED scaffold' throw remains anywhere under the MR-7 files. The FULL frontend suite (cd frontend && npx vitest run) is GREEN.",
+          "test_file": "frontend/src/ui/components/Pipeline/PipelineColdStorage.test.tsx",
+          "scenario_name": "Fridge drawer + days-left + restore; snowflake archive + confirm; archived source leaves the live lineage with downstream orphaned (live archived set fed into buildGraph)",
+          "estimate_minutes": 210,
+          "depends_on": ["07-02"],
+          "files_to_modify": [
+            "frontend/src/ui/components/ColdStorage/ColdStorageDrawer.tsx",
+            "frontend/src/ui/components/ColdStorage/index.ts",
+            "frontend/src/ui/components/ColdStorage/ColdStorage.module.css",
+            "frontend/src/ui/components/ConfirmDialog/index.tsx",
+            "frontend/src/ui/components/ConfirmDialog/ConfirmDialog.module.css",
+            "frontend/src/ui/hooks/useDatasetQuery.ts",
+            "frontend/src/ui/components/Pipeline/index.tsx",
+            "frontend/src/ui/components/Pipeline/Pipeline.module.css",
+            "frontend/src/ui/components/UploadModal/UploadModal.tsx"
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    "Adversarial review (nw-software-crafter-reviewer) after GREEN",
+    "Deferred per-feature gates (Python acceptance suite / Elevator-Pitch demos / mutation / evolution finalize) — N/A or deferred for this per-MR slice; see deliver/wave-decisions-mr7.md"
+  ],
+  "deliver_dispatch_notes": "Three sequential standard crafter steps (verify each before the next per saved-feedback). Backend FIRST (07-01) so the FE builds on the real persisted columns + endpoints + filter; 07-02 adds the TS types + client + days-left helper + optimistic mutations; 07-03 builds the fridge drawer + confirm dialog + snowflake archive + the live archived-set buildGraph wiring. RED authored in DISTILL (backend: archive/restore use-case scaffolds raise AssertionError + list-filter tests fail on counts with the no-op archived param + the real ORM columns so archived rows can be seeded; frontend: daysLeft + ColdStorageDrawer + ConfirmDialog scaffolds throw, useArchiveDataset/useRestoreDataset throw, with real TS types + client methods + queryKeys that cannot throw). Acceptance gate is the standard backend pytest + frontend vitest suites (no Python acceptance suite exists for this feature). Run real DES instrumentation (init_log, per-step log_phase, verify_deliver_integrity) under DES-PROJECT-ID pipeline-layers-ui-redesign-mr7, consolidating the committed record under deliver/mr7/ (headless-deliver path quirk: log_phase writes to docs/feature/<id>/deliver). Skip Phase-3.5 Elevator-Pitch (N/A — no DISCUSS stories; vitest/pytest is the gate) and Phase-5 mutation (low value on this thin additive surface); log skips in deliver/wave-decisions-mr7.md. Do NOT run Phase 7 finalize — MR-7 is 7 of 8; finalize after MR-8. PRE-SUBMIT (mixed FE+BE): run FULL backend pytest + ruff AND FULL frontend vitest AND the migration round-trip AND python3 tools/check_workspace_consistency.py, then ./tools/test/test.sh --auto, all green before gt mq submit."
+}
