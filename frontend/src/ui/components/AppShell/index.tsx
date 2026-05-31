@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
-import { Outlet, useParams } from "react-router";
+import { useEffect } from "react";
+import { Outlet, useParams, useSearchParams } from "react-router";
 
 import { StreamProvider } from "@/stream/StreamProvider";
 
 import { ChatProvider, useChatContext } from "../../context/ChatContext";
 import { useOrgProjectsQuery, useOrgQuery } from "../../hooks/useOrgQuery";
 import { useProjectQuery } from "../../hooks/useProjectQuery";
-import { SideNav } from "../SideNav";
-import { UnifiedNav } from "../SideNav/UnifiedNav";
+import { Breadcrumb } from "../Breadcrumb";
+import { OrgSheet } from "../OrgView/OrgSheet";
 import styles from "./AppShell.module.css";
 import { RequireAuth, RequireOrg } from "./guards";
 
@@ -36,7 +36,7 @@ function ActiveProjectSync({ projectId }: { projectId: string | null }) {
 
 function AppShellInner() {
   const { projectId } = useParams<{ projectId?: string }>();
-  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Always fetch org info
   const { data: org } = useOrgQuery();
@@ -51,20 +51,27 @@ function AppShellInner() {
 
   const outletContext: AppShellContext = { orgId, orgName, project, projects };
 
+  const orgSheetOpen = searchParams.get("org") === "1";
+  const closeOrgSheet = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("org");
+      return next;
+    });
+  };
+
   return (
     <StreamProvider>
     <ChatProvider>
       <ActiveProjectSync projectId={project?.id ?? projects?.[0]?.id ?? null} />
       <div className={styles.shell}>
-        <SideNav orgName={orgName} collapsed={navCollapsed} onToggleCollapse={() => setNavCollapsed((v) => !v)}>
-          <UnifiedNav orgId={orgId} collapsed={navCollapsed} projectId={project?.id ?? projects?.[0]?.id ?? null} />
-        </SideNav>
+        <Breadcrumb />
         <main className={styles.viewWindow}>
-          <nav className={styles.breadcrumb} aria-label="Breadcrumb">
-            {orgName ?? "Dashboard Chat"}
-          </nav>
           <Outlet context={outletContext} />
         </main>
+        {orgSheetOpen ? (
+          <OrgSheet projects={projects ?? []} orgName={orgName} onClose={closeOrgSheet} />
+        ) : null}
       </div>
     </ChatProvider>
     </StreamProvider>
