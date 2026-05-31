@@ -27,7 +27,8 @@
 }
 
 .emptyState {
-  @apply text-gray-500 text-sm py-8 text-center;
+  @apply text-sm py-8 text-center;
+  color: var(--color-muted);
 }
 
 /* Org settings sheet — darker inset backdrop hosting the org surface */
@@ -51,25 +52,32 @@
   color: var(--color-muted);
 }
 
-/* Card — mirrors CompactDatasetCard 120x120 pattern */
+/* Card — mirrors CompactDatasetCard 120x120 pattern; consumes MR-1 tokens so the
+ * org sheet's project cards reskin with the breadcrumb chrome in Solarized dark. */
 .card {
-  @apply flex flex-col items-center justify-center flex-shrink-0 rounded-lg bg-white border border-gray-200 p-3 cursor-pointer transition-all text-center;
+  @apply flex flex-col items-center justify-center flex-shrink-0 rounded-lg p-3 cursor-pointer transition-all text-center;
   width: 120px;
   height: 120px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
 }
 
 .card:hover {
-  @apply shadow-md border-gray-300;
+  @apply shadow-md;
+  border-color: var(--color-ink);
 }
 
 .cardName {
-  @apply text-sm font-medium text-gray-900 truncate w-full;
+  @apply text-sm font-medium truncate w-full;
+  color: var(--color-ink);
 }
 
 .cardDescription {
-  @apply text-xs text-gray-500 truncate w-full;
+  @apply text-xs truncate w-full;
+  color: var(--color-muted);
 }
 
 .cardMeta {
-  @apply text-xs text-gray-400 mt-1;
+  @apply text-xs mt-1;
+  color: var(--color-muted);
 }
