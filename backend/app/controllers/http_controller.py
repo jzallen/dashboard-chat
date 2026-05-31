@@ -69,6 +69,8 @@ class HTTPController:
     list_project_datasets = staticmethod(DatasetController.list_project_datasets)
     get_dataset = staticmethod(DatasetController.get_dataset)
     patch_dataset = staticmethod(DatasetController.patch_dataset)
+    archive_dataset = staticmethod(DatasetController.archive_dataset)
+    restore_dataset = staticmethod(DatasetController.restore_dataset)
     post_dataset = staticmethod(DatasetController.post_dataset)
     post_upload = staticmethod(DatasetController.post_upload)
     post_transforms = staticmethod(DatasetController.post_transforms)

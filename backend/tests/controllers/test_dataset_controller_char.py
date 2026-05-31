@@ -167,7 +167,8 @@ class TestListDatasetsEnvelopeDetail:
         assert body["meta"]["page"] == {"size": 25, "has_more": True}
         # links should include pagination; self is always present
         assert "self" in body["links"]
-        mock_uc.list_datasets.assert_awaited_once_with("p1", cursor="IN", page_size=25)
+        # MR-7: the controller additively forwards the cold-storage filter (default None).
+        mock_uc.list_datasets.assert_awaited_once_with("p1", cursor="IN", page_size=25, archived=None)
 
 
 class TestListProjectDatasetsUrl:

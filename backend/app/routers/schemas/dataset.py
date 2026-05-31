@@ -29,6 +29,9 @@ class DatasetSparse(BaseModel):
     link: str
     description: str | None = None
     schema_config: dict[str, Any]
+    display_name: str | None = None  # MR-6: editable source display name (falls back to ``name``)
+    archived_at: datetime | None = None  # MR-7: cold-storage timestamp (None when live)
+    retention_until: datetime | None = None  # MR-7: retention end = archived_at + 90d (None when live)
 
 
 class DatasetBase(BaseModel):
@@ -83,6 +86,8 @@ class DatasetResponse(DatasetBase):
     schema_config: dict[str, Any]
     partition_fields: list[str] = []  # Hive-style partition field names
     display_name: str | None = None  # MR-6: editable source display name (falls back to ``name``)
+    archived_at: datetime | None = None  # MR-7: cold-storage timestamp (None when live)
+    retention_until: datetime | None = None  # MR-7: retention end = archived_at + 90d (None when live)
     created_at: datetime
     updated_at: datetime
 

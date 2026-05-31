@@ -1,7 +1,6 @@
-"""Restore a dataset (bring a source back from cold storage) — RED scaffold (created by DISTILL, MR-7).
+"""Restore a dataset (bring a source back from cold storage) — MR-7.
 
-DELIVER 07-01 replaces the scaffold body with the real implementation:
-clears ``archived_at`` and ``retention_until`` (both ``None``) via the existing generic
+Clears ``archived_at`` and ``retention_until`` (both ``None``) via the existing generic
 ``MetadataRepository.update_dataset(**kwargs)`` and returns the refreshed domain ``Dataset``.
 """
 
@@ -12,11 +11,11 @@ from returns.result import Result
 from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
+from app.use_cases.dataset.dataset_service import DatasetService
+from app.use_cases.dataset.exceptions import DatasetNotFound
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
-
-__SCAFFOLD__ = True
 
 
 @handle_returns
@@ -32,4 +31,11 @@ async def restore_dataset(
         DatasetNotFound: If dataset with given ID does not exist.
         MetadataRepositoryError: If database operation fails.
     """
-    raise AssertionError("Not yet implemented — RED scaffold (restore_dataset, MR-7)")
+    metadata_repo = repositories.metadata
+
+    if not await metadata_repo.dataset_exists(dataset_id):
+        raise DatasetNotFound(dataset_id)
+
+    await metadata_repo.update_dataset(dataset_id, archived_at=None, retention_until=None)
+
+    return await DatasetService(repositories).fetch_dataset(dataset_id)

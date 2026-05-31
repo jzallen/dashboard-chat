@@ -108,12 +108,15 @@ class MetadataRepositoryProtocol(Protocol):
         self,
         project_id: str | None = None,
         include_transforms: bool = True,
+        archived: bool | None = None,
     ) -> "list[DatasetRecord]":
         """List datasets, optionally filtered by project.
 
         Args:
             project_id: Optional project UUID to filter by
             include_transforms: Whether to eagerly load transforms (default True)
+            archived: Cold-storage filter (MR-7). None/False excludes archived rows
+                (the live view); True returns only archived rows (the cold-storage list).
 
         Returns:
             List of DatasetRecord ORM objects.

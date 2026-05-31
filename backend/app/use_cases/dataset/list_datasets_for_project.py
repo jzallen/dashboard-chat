@@ -13,6 +13,11 @@ if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
 
 
+def _iso_or_none(value) -> str | None:
+    """ISO-8601 string for a datetime, or None (MR-7 cold-storage timestamps)."""
+    return value.isoformat() if value is not None else None
+
+
 def _sparse_dict(record) -> dict:
     """Convert a DatasetRecord to a sparse dict for API responses."""
     return {
@@ -21,6 +26,11 @@ def _sparse_dict(record) -> dict:
         "link": f"/api/datasets/{record.id}",
         "description": record.description,
         "schema_config": record.schema_config,
+        # MR-6/MR-7: the cold-storage list reads these to render the label + retired-at /
+        # retention-end / days-left; days-left is derived frontend-side from retention_until.
+        "display_name": record.display_name,
+        "archived_at": _iso_or_none(record.archived_at),
+        "retention_until": _iso_or_none(record.retention_until),
     }
 
 
@@ -50,11 +60,8 @@ async def list_datasets_for_project(
     if not await metadata_repo.project_exists(project_id):
         raise ProjectNotFound(project_id)
 
-    # NOTE (DISTILL RED, MR-7): ``archived`` is accepted but NOT yet threaded into the
-    # repository query — DELIVER 07-01 pushes the filter down. Until then the filter
-    # tests are RED (archived rows are still returned).
     records, next_cursor, has_more = await metadata_repo.list_datasets(
-        project_id, include_transforms=False, cursor=cursor, limit=page_size
+        project_id, include_transforms=False, cursor=cursor, limit=page_size, archived=archived
     )
 
     items = [_sparse_dict(r) for r in records]

@@ -43,11 +43,18 @@ async def list_project_datasets(
     project_id: str,
     page_after: str | None = Query(default=None, alias="page[after]"),
     page_size: int = Query(default=50, ge=1, le=100, alias="page[size]"),
+    archived: bool = Query(default=False, description="Return only archived (cold-storage) datasets"),
     auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
 ):
-    """List sparse datasets for a project with cursor-based pagination."""
+    """List sparse datasets for a project with cursor-based pagination.
+
+    By default archived (cold-storage) datasets are excluded; pass ``?archived=true`` to
+    return ONLY the cold-storage list (MR-7).
+    """
     _user, _ = auth
-    body, status_code = await HTTPController.list_project_datasets(project_id, cursor=page_after, page_size=page_size)
+    body, status_code = await HTTPController.list_project_datasets(
+        project_id, cursor=page_after, page_size=page_size, archived=archived
+    )
     return JSONResponse(content=body, status_code=status_code)
 
 

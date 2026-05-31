@@ -18,6 +18,17 @@ from .transform import Transform
 _CUSTOM_CASE_MODES = frozenset({"title", "snake", "kebab"})
 
 
+def _iso_or_none(value: Any) -> str | None:
+    """ISO-8601 string for a datetime, the value unchanged if already a string, else None.
+
+    MR-7: cold-storage timestamps (``archived_at``/``retention_until``) ride the wire as ISO
+    strings; the days-left countdown is derived frontend-side from ``retention_until``.
+    """
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
 def _transform_from_dict(payload: dict[str, Any]) -> Transform:
     """Build a ``Transform`` from a plain JSON-shaped dict payload."""
     from ..types import QueryBuilderJSON
@@ -94,6 +105,8 @@ class Dataset:
     display_name: str | None = (
         None  # MR-6: editable source display name; UI falls back to ``name`` (filename untouched)
     )
+    archived_at: str | None = None  # MR-7: cold-storage timestamp (ISO); None when live
+    retention_until: str | None = None  # MR-7: retention end (ISO) = archived_at + 90d; None when live
 
     @classmethod
     def from_record(
@@ -117,6 +130,8 @@ class Dataset:
             format_context=getattr(record, "format_context", None),
             row_count=getattr(record, "row_count", None),
             display_name=getattr(record, "display_name", None),
+            archived_at=_iso_or_none(getattr(record, "archived_at", None)),
+            retention_until=_iso_or_none(getattr(record, "retention_until", None)),
         )
 
     @property
@@ -251,6 +266,8 @@ class Dataset:
             "format_context": self.format_context,
             "row_count": self.row_count,
             "display_name": self.display_name,
+            "archived_at": self.archived_at,
+            "retention_until": self.retention_until,
             "staging_sql": self.display_sql,
         }
 

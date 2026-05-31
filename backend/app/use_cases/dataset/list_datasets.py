@@ -43,11 +43,8 @@ async def list_datasets(
     if not await metadata_repo.project_exists(project_id=project_id):
         raise ProjectNotFound(project_id)
 
-    # NOTE (DISTILL RED, MR-7): ``archived`` is accepted but NOT yet threaded into the
-    # repository query — DELIVER 07-01 pushes the filter down. Until then the filter
-    # tests are RED (archived rows are still returned).
     dataset_records, next_cursor, has_more = await metadata_repo.list_datasets(
-        project_id=project_id, cursor=cursor, limit=page_size
+        project_id=project_id, cursor=cursor, limit=page_size, archived=archived
     )
 
     items = [Dataset.from_record(r) for r in dataset_records]

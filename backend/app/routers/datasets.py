@@ -18,11 +18,18 @@ async def list_datasets(
     project_id: str | None = None,
     page_after: str | None = Query(default=None, alias="page[after]"),
     page_size: int = Query(default=50, ge=1, le=100, alias="page[size]"),
+    archived: bool = Query(default=False, description="Return only archived (cold-storage) datasets"),
     user: AuthUser = Depends(get_current_user),
     _: AsyncSession = Depends(use_db_context),
 ):
-    """List all datasets with cursor-based pagination, optionally filtered by project."""
-    body, status_code = await HTTPController.list_datasets(project_id, cursor=page_after, page_size=page_size)
+    """List all datasets with cursor-based pagination, optionally filtered by project.
+
+    By default archived (cold-storage) datasets are excluded; pass ``?archived=true`` to
+    return ONLY the cold-storage list (MR-7).
+    """
+    body, status_code = await HTTPController.list_datasets(
+        project_id, cursor=page_after, page_size=page_size, archived=archived
+    )
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -64,6 +71,26 @@ async def update_dataset(
     _user, dataset = auth
     dataset_kwargs = update_data.model_dump(exclude_unset=True)
     body, status_code = await HTTPController.patch_dataset(dataset["id"], **dataset_kwargs)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.post("/{dataset_id}/archive")
+async def archive_dataset(
+    auth: tuple[AuthUser, dict] = Depends(authorize_dataset_access),
+):
+    """Move a source to cold storage — sets archived_at + retention_until (MR-7)."""
+    _user, dataset = auth
+    body, status_code = await HTTPController.archive_dataset(dataset["id"])
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.post("/{dataset_id}/restore")
+async def restore_dataset(
+    auth: tuple[AuthUser, dict] = Depends(authorize_dataset_access),
+):
+    """Bring a source back from cold storage — clears archived_at + retention_until (MR-7)."""
+    _user, dataset = auth
+    body, status_code = await HTTPController.restore_dataset(dataset["id"])
     return JSONResponse(content=body, status_code=status_code)
 
 

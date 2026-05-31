@@ -1,13 +1,12 @@
-"""Archive a dataset (move a source to cold storage) — RED scaffold (created by DISTILL, MR-7).
+"""Archive a dataset (move a source to cold storage) — MR-7.
 
-DELIVER 07-01 replaces the scaffold body with the real implementation:
-sets ``archived_at = now`` and ``retention_until = now + RETENTION_WINDOW`` via the
+Sets ``archived_at = now`` and ``retention_until = now + RETENTION_WINDOW`` via the
 existing generic ``MetadataRepository.update_dataset(**kwargs)`` and returns the refreshed
 domain ``Dataset``. The 90-day retention window is a hardcoded module constant
 (org settings are display-only / not functional — DWD-M7-4).
 """
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from returns.result import Result
@@ -15,11 +14,11 @@ from returns.result import Result
 from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
+from app.use_cases.dataset.dataset_service import DatasetService
+from app.use_cases.dataset.exceptions import DatasetNotFound
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
-
-__SCAFFOLD__ = True
 
 # DWD-M7-4: hardcoded 90-day retention window (org-configurable retention is deferred (c)).
 RETENTION_WINDOW = timedelta(days=90)
@@ -38,4 +37,16 @@ async def archive_dataset(
         DatasetNotFound: If dataset with given ID does not exist.
         MetadataRepositoryError: If database operation fails.
     """
-    raise AssertionError("Not yet implemented — RED scaffold (archive_dataset, MR-7)")
+    metadata_repo = repositories.metadata
+
+    if not await metadata_repo.dataset_exists(dataset_id):
+        raise DatasetNotFound(dataset_id)
+
+    archived_at = datetime.now(UTC)
+    await metadata_repo.update_dataset(
+        dataset_id,
+        archived_at=archived_at,
+        retention_until=archived_at + RETENTION_WINDOW,
+    )
+
+    return await DatasetService(repositories).fetch_dataset(dataset_id)

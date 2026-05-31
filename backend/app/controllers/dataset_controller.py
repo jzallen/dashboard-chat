@@ -49,8 +49,9 @@ class DatasetController:
         cursor: str | None = None,
         page_size: int = 50,
         base_url: str = "/api/datasets",
+        archived: bool | None = None,
     ) -> tuple[dict, int]:
-        result = await _dataset_uc().list_datasets(project_id, cursor=cursor, page_size=page_size)
+        result = await _dataset_uc().list_datasets(project_id, cursor=cursor, page_size=page_size, archived=archived)
         match result:
             case Success(data):
                 items = [serialize(i) for i in data["items"]]
@@ -67,8 +68,11 @@ class DatasetController:
         cursor: str | None = None,
         page_size: int = 50,
         base_url: str = "/api/projects",
+        archived: bool | None = None,
     ) -> tuple[dict, int]:
-        result = await _dataset_uc().list_datasets_for_project(project_id, cursor=cursor, page_size=page_size)
+        result = await _dataset_uc().list_datasets_for_project(
+            project_id, cursor=cursor, page_size=page_size, archived=archived
+        )
         match result:
             case Success(data):
                 items = data["items"]
@@ -97,6 +101,26 @@ class DatasetController:
     @staticmethod
     async def patch_dataset(dataset_id: str, **kwargs) -> tuple[dict, int]:
         result = await _dataset_uc().update_dataset(dataset_id, kwargs)
+        match result:
+            case Success(data):
+                return wrap_jsonapi_single("datasets", serialize(data), f"/api/datasets/{dataset_id}"), 200
+            case Failure(error):
+                return error_response(error)
+
+    @staticmethod
+    async def archive_dataset(dataset_id: str) -> tuple[dict, int]:
+        """Move a dataset to cold storage (MR-7)."""
+        result = await _dataset_uc().archive_dataset(dataset_id)
+        match result:
+            case Success(data):
+                return wrap_jsonapi_single("datasets", serialize(data), f"/api/datasets/{dataset_id}"), 200
+            case Failure(error):
+                return error_response(error)
+
+    @staticmethod
+    async def restore_dataset(dataset_id: str) -> tuple[dict, int]:
+        """Bring a dataset back from cold storage (MR-7)."""
+        result = await _dataset_uc().restore_dataset(dataset_id)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("datasets", serialize(data), f"/api/datasets/{dataset_id}"), 200

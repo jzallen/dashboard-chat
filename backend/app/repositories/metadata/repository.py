@@ -332,13 +332,25 @@ class MetadataRepository:
         include_transforms: bool = True,
         cursor: str | None = None,
         limit: int | None = None,
+        archived: bool | None = None,
     ) -> tuple[list[DatasetRecord], str | None, bool]:
         """List datasets, optionally filtered by project.
+
+        ``archived`` filters by cold-storage state (MR-7): ``None``/``False`` excludes
+        archived rows (``archived_at IS NOT NULL``) — the default live view; ``True``
+        returns ONLY archived rows — the cold-storage list. Org scoping is transitive via
+        ``project_id`` (the projects table carries ``org_id``), so the filter rides on the
+        existing ``project_id``-scoped query.
 
         Always returns (records, next_cursor, has_more) tuple.
         When limit is None, returns all records with next_cursor=None, has_more=False.
         """
         query = select(DatasetRecord).where(DatasetRecord.project_id == project_id)
+
+        if archived:
+            query = query.where(DatasetRecord.archived_at.is_not(None))
+        else:
+            query = query.where(DatasetRecord.archived_at.is_(None))
 
         if include_transforms:
             query = query.options(selectinload(DatasetRecord.transforms.and_(TransformRecord.status != "deleted")))
