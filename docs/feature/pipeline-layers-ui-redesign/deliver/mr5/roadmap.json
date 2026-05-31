@@ -1,0 +1,66 @@
+{
+  "roadmap": "pipeline-layers-ui-redesign / MR-5 — Single-page model-detail recomposition (dependency strip + Assistant-changes audit + data preview + columns/measures + compiled SQL) across dataset / view / report detail views",
+  "scope": "Recompose the three model-detail surfaces (TableView = dataset @ /table/:id, ViewDetailView @ /view/:id, ReportDetailView @ /report/:id) into ONE consistent single-page layout (shared ModelDetailLayout) that surfaces, in order: (1) a dependency strip linking upstream producers + downstream consumers to their detail routes (derived from the existing model fields via the MR-2 lineage builder through a new useModelDependencies hook), (2) a prominent 'Assistant changes' audit panel (fed by the live chat session's assistant tool-calls via a pure deriveAssistantChanges helper — the only per-model provenance available client-side today; DWD-M5-5), (3) a data preview section (dataset: the existing interactive TablePanel; view/report: a documented 'preview not yet available' empty-state — deferred (c), DWD-M5-6), (4) a columns/measures table (dataset: new DatasetColumnsTable from schema_config; view: existing ViewSchemaTable; report: existing ColumnsMetadataTable), and (5) a collapsible compiled-SQL panel showing the model's SQL with ref() wiring (Dataset.staging_sql / View.sql_definition / Report.sql_definition). REUSE existing detail components/hooks and the existing chat affordances (ChatInput + ActivityLog + setContext + tool handlers + report layerContext); recompose, do NOT rewrite. The ui-state wire / chat transport / agent contract are NOT touched and NO backend endpoint is added — model data comes from the existing dataCatalog TanStack Query hooks. Drive the RED vitest suite (61 MR-5 cases across 11 files) to GREEN while keeping ALL existing frontend tests green.",
+  "design_ratified_as": "docs/feature/pipeline-layers-ui-redesign/path-forward.md §2.5 (model detail: deps strip, Assistant-changes audit, data preview, columns/measures, compiled SQL — pure-frontend (a) recomposition; (c) decision points), §5 (MR-5), open questions 1/2/5/6, §9 (single Neobrutalist + Solarized .dark)",
+  "distill_roadmap": "docs/feature/pipeline-layers-ui-redesign/distill/walking-skeleton-mr5.md",
+  "distill_wave_decisions": "docs/feature/pipeline-layers-ui-redesign/distill/wave-decisions-mr5.md",
+  "dispatch_policy": "SEQUENTIAL — dispatch ONE crafter step at a time and verify commit + integrity (its scenarios GREEN, no testing-theater, no __SCAFFOLD__ left in its files, and no previously-passing test regressed) before the next (saved-feedback constraint). The DISTILL-authored re-spec RED cases for the detail views (steps 05-02/05-03) stay RED until their step; the FULL frontend suite green is verified after the final step (05-03) and again pre-submit.",
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Model-detail recomposition",
+      "steps": [
+        {
+          "id": "05-01",
+          "name": "Build the shared ModelDetail primitives — deps derivation, assistant-changes derivation, useModelDependencies hook, and the presentational sections",
+          "criteria": "All cases GREEN for: src/core/lineage/dependencies.test.ts (5), src/core/chat/assistantChanges.test.ts (4), src/ui/hooks/useModelDependencies.test.tsx (2), src/ui/components/ModelDetail/{DependencyStrip,AssistantChangesPanel,DataPreviewGrid,CompiledSqlPanel,DatasetColumnsTable}.test.tsx (6+2+4+3+2). deriveModelDependencies(modelId, graph) returns the model's immediate upstream (edges to it) + downstream (edges from it) nodes from the MR-2 LineageGraph, full node objects, graph-node order, empty for unknown ids. deriveAssistantChanges(messages) maps each assistant tool-call to {id, tool, summary} (summary = humanized JSON args, raw string on parse failure), preserving order, ignoring user/no-tool-call messages. useModelDependencies(projectId, modelId) wraps the EXISTING useDatasets/useViewsQuery/useReportsQuery hooks + buildGraph + deriveModelDependencies and reports isLoading. DependencyStrip renders dependency-strip with dependency-upstream/dependency-downstream groups, dep-link-<id> links routing dataset→/table/:id, view→/view/:id, report→/report/:id (the @walking_skeleton case proves a real link navigates via createRoutesStub), plus dependency-strip-empty / dependency-strip-loading states. AssistantChangesPanel renders assistant-changes-panel with assistant-change-<i> entries or assistant-changes-empty. DataPreviewGrid renders data-preview with either data-preview-grid (capped at maxRows) / data-preview-empty / data-preview-unavailable. CompiledSqlPanel renders compiled-sql with a collapsible compiled-sql-toggle/compiled-sql-content or compiled-sql-empty. DatasetColumnsTable renders dataset-columns-table from schema_config.fields or dataset-columns-empty. All consume MR-1 tokens via ModelDetail.module.css (no hardcoded palette). No __SCAFFOLD__ markers remain in the ModelDetail dir, src/core/lineage/dependencies.ts, src/core/chat/assistantChanges.ts, or src/ui/hooks/useModelDependencies.ts. No previously-passing frontend test regresses (these are new modules — nothing imports them yet).",
+          "test_file": "frontend/src/ui/components/ModelDetail/DependencyStrip.test.tsx",
+          "scenario_name": "ModelDetail shared primitives — deps strip (navigates), audit panel, preview grid, compiled SQL, dataset columns",
+          "estimate_minutes": 150,
+          "depends_on": [],
+          "files_to_modify": [
+            "frontend/src/core/lineage/dependencies.ts",
+            "frontend/src/core/chat/assistantChanges.ts",
+            "frontend/src/ui/hooks/useModelDependencies.ts",
+            "frontend/src/ui/components/ModelDetail/DependencyStrip.tsx",
+            "frontend/src/ui/components/ModelDetail/AssistantChangesPanel.tsx",
+            "frontend/src/ui/components/ModelDetail/DataPreviewGrid.tsx",
+            "frontend/src/ui/components/ModelDetail/CompiledSqlPanel.tsx",
+            "frontend/src/ui/components/ModelDetail/DatasetColumnsTable.tsx",
+            "frontend/src/ui/components/ModelDetail/ModelDetailLayout.tsx"
+          ]
+        },
+        {
+          "id": "05-02",
+          "name": "Recompose ViewDetailView + ReportDetailView onto the shared single-page layout",
+          "criteria": "All cases GREEN in src/ui/components/ViewDetailView/__tests__/ViewDetailView.test.tsx (13) and src/ui/components/ReportDetailView/__tests__/ReportDetailView.test.tsx (13); ReportDetailView.integration.test.tsx stays GREEN. Each view renders inside ModelDetailLayout (model-detail + model-detail-title), a DependencyStrip fed by useModelDependencies (dep-link hrefs correct; a link click navigates to the target detail route via createRoutesStub), an AssistantChangesPanel fed by deriveAssistantChanges(messages), a DataPreviewGrid with available={false} (data-preview + data-preview-unavailable — view/report preview is a deferred (c)), the EXISTING columns/measures table (view-schema-table / columns-metadata-table retained), and a CompiledSqlPanel over the model's sql_definition (compiled-sql; toggle reveals the ref()-wired SQL). The existing chat affordances are preserved: setContext on mount/unmount, tool-handler register/unregister, ChatInput (chat-input), ActivityLog, and the report's registerTableSchema layerContext. Superseded markup (the old source-dependency-list + sql-preview-* panels) is re-specified — RED authored FIRST in DISTILL, NOT an Iron-Rule violation. No __SCAFFOLD__ markers introduced. No previously-passing frontend test regresses.",
+          "test_file": "frontend/src/ui/components/ViewDetailView/__tests__/ViewDetailView.test.tsx",
+          "scenario_name": "View + Report detail pages recomposed onto the single-page model-detail layout",
+          "estimate_minutes": 90,
+          "depends_on": ["05-01"],
+          "files_to_modify": [
+            "frontend/src/ui/components/ViewDetailView/index.tsx",
+            "frontend/src/ui/components/ReportDetailView/index.tsx"
+          ]
+        },
+        {
+          "id": "05-03",
+          "name": "Recompose TableView (dataset detail) onto the shared single-page layout",
+          "criteria": "All cases GREEN in src/ui/components/TableView/__tests__/TableView.detail.test.tsx (8); the existing src/ui/components/TableView/__tests__/TableView.test.tsx (ActivityLog) stays GREEN. TableView renders inside ModelDetailLayout (model-detail + model-detail-title = dataset name), a DependencyStrip fed by useModelDependencies (a downstream consumer link navigates), an AssistantChangesPanel, a data-preview section wrapping the EXISTING interactive TablePanel (data-table preserved — the dataset's data preview), a DatasetColumnsTable from schema_config (dataset-columns-table), and a CompiledSqlPanel over staging_sql (compiled-sql; toggle reveals the SQL). ALL existing TableView wiring is preserved: useTableConfig/useTransforms, registerTableApi/registerTableSchema, table-state cache, setContext on mount/unmount, ChatInput (chat-input), ActivityLog. No __SCAFFOLD__ marker remains anywhere under the MR-5 files. The FULL frontend suite (cd frontend && npx vitest run) is GREEN.",
+          "test_file": "frontend/src/ui/components/TableView/__tests__/TableView.detail.test.tsx",
+          "scenario_name": "Dataset detail (TableView) recomposed onto the single-page model-detail layout",
+          "estimate_minutes": 75,
+          "depends_on": ["05-02"],
+          "files_to_modify": [
+            "frontend/src/ui/components/TableView/index.tsx"
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    "Adversarial review (nw-software-crafter-reviewer) after GREEN",
+    "Deferred per-feature gates (Python acceptance / Elevator-Pitch demos / mutation / evolution finalize) — N/A or deferred for this per-MR frontend slice; see deliver/wave-decisions-mr5.md"
+  ],
+  "deliver_dispatch_notes": "Three standard crafter steps dispatched SEQUENTIALLY (verify each before the next per saved-feedback). RED authored in DISTILL (61 MR-5 cases across 11 files, verified RED not BROKEN — 47 failed / 14 still-true passes, all 61 collected, 0 import/resolve errors). Step 05-01 builds the new shared primitives (no existing test depends on them). Steps 05-02/05-03 turn the DISTILL-authored re-spec RED cases GREEN — superseded detail markup (source-dependency-list + sql-preview-* panels) is re-specified, NOT an Iron-Rule violation (RED authored first, DWD-M5-7). Acceptance gate is the vitest suite, not a Python acceptance suite (none exists for MR-5). Run real DES instrumentation (init_log, per-step log_phase, verify_deliver_integrity) under DES-PROJECT-ID pipeline-layers-ui-redesign-mr5, consolidating the committed record under deliver/mr5/ (DWD-M3-D6 / headless-deliver path quirk). Skip Phase-3.5 Python-acceptance + Elevator-Pitch (N/A — no DISCUSS stories; vitest is the gate) and Phase-5 mutation (low value on this presentational recomposition); log skips in deliver/wave-decisions-mr5.md. Do NOT run Phase 7 finalize — MR-5 is 5 of 8; finalize after MR-8."
+}

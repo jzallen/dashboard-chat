@@ -1,0 +1,111 @@
+{
+  "schema_version": "3.0",
+  "feature_id": "pipeline-layers-ui-redesign-mr5",
+  "events": [
+    {
+      "sid": "05-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-31T19:05:00Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: 28 ModelDetail/helpers/hook cases RED against scaffolds (verified in DISTILL: 61 collected, 47 RED, 0 BROKEN)",
+      "t": "2026-05-31T19:05:00Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: 28/28 green (dependencies 5 + assistantChanges 4 + useModelDependencies 2 + DependencyStrip 6 + AssistantChangesPanel 2 + DataPreviewGrid 4 + CompiledSqlPanel 3 + DatasetColumnsTable 2)",
+      "t": "2026-05-31T19:06:00Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the DISTILL acceptance/unit cases are the spec for these pure helpers + presentational primitives; no additional internal seam needs a micro-test",
+      "t": "2026-05-31T19:06:00Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: ed96cd8",
+      "t": "2026-05-31T19:06:00Z"
+    },
+    {
+      "sid": "05-02",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-31T19:20:00Z"
+    },
+    {
+      "sid": "05-02",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: ViewDetailView + ReportDetailView re-spec cases RED against un-recomposed views (verified in DISTILL baseline)",
+      "t": "2026-05-31T19:20:00Z"
+    },
+    {
+      "sid": "05-02",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: ViewDetailView 12 + ReportDetailView 12 + ReportDetailView.integration 6 = 30 green (integration gained a useModelDependencies double per DWD-M5-7)",
+      "t": "2026-05-31T19:21:00Z"
+    },
+    {
+      "sid": "05-02",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the re-spec acceptance cases are the spec for this recomposition; shared primitives unit-tested in 05-01",
+      "t": "2026-05-31T19:21:00Z"
+    },
+    {
+      "sid": "05-02",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: d6e1d33",
+      "t": "2026-05-31T19:21:00Z"
+    },
+    {
+      "sid": "05-03",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-31T19:30:00Z"
+    },
+    {
+      "sid": "05-03",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: TableView.detail 8 cases RED against un-recomposed TableView (verified in DISTILL baseline)",
+      "t": "2026-05-31T19:30:00Z"
+    },
+    {
+      "sid": "05-03",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: TableView.detail 8 + TableView(ActivityLog) 6 green; FULL frontend suite 743/743 across 90 files, 0 scaffolds remaining",
+      "t": "2026-05-31T19:31:00Z"
+    },
+    {
+      "sid": "05-03",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the TableView.detail acceptance cases are the spec for this recomposition; shared primitives unit-tested in 05-01",
+      "t": "2026-05-31T19:31:00Z"
+    },
+    {
+      "sid": "05-03",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: edbef6c",
+      "t": "2026-05-31T19:31:00Z"
+    }
+  ]
+}
