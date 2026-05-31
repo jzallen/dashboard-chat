@@ -1,0 +1,54 @@
+/* Breadcrumb nav shell styles — consumes the MR-1 design tokens (app/theme/tokens.css).
+ * Transparent floating bar over the centered content frame; the org sheet darkens
+ * an inset backdrop. happy-dom does not apply stylesheets, so the MR-3 tests assert
+ * structure/testids/navigation, not computed colors (DWD-M3-3). Filled in at GREEN. */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.orgIcon {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.picker {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+}
+
+.search {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.group {
+  color: var(--color-muted);
+}
+
+.utility {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
