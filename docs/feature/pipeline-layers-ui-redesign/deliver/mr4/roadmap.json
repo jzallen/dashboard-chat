@@ -1,0 +1,65 @@
+{
+  "roadmap": "pipeline-layers-ui-redesign / MR-4 — Assistant FAB / glass overlay (light) + docked TUI terminal (dark); `/` index swap to the Pipeline landing",
+  "scope": "Add a shell-level Assistant feature module (frontend/src/ui/components/Assistant/) mounted in AppShell as a sibling of <Outlet/> so it floats over every view. A bottom-right FAB toggles it open/closed; open state branches `dark ? <TerminalAssistant/> : <GlassOverlay/>` off a reactive dark flag (useIsDark, reading the authoritative `.dark` root class MR-1 applies) — BOTH render the SAME chat feed from the EXISTING ChatProvider/StreamProvider context (the ui-state wire / agent contract / transport are NOT touched — pure presentation reshell). Overlay-internal controls: New Session (resets the session + returns to `/`), history (→ /sessions = All Chats), recent-chat chips from the existing useSessions hook (deep-link to /chat/:id). The FAB hides while the org sheet is open (?org=1). Swap the `/` index from chat to a new routes/home.tsx (HomeRedirect) that resolves the org's default project off the AppShell outlet context and redirects to projects/:projectId/pipeline (zero projects → /projects; loading → resolving placeholder); chat is no longer a top-level page — /chat/:channelId + /sessions + all detail + query-engines routes stay registered (no stranded deep-links). The breadcrumb's MR-3 interim utility menu is reduced to Query Engines (New Session + All Chats absorbed into the assistant). Single Neobrutalist + Solarized .dark tokens (MR-1); no aesthetic switcher. Drives the RED vitest suite (13 MR-4 cases) to GREEN while keeping ALL existing frontend tests green.",
+  "design_ratified_as": "docs/feature/pipeline-layers-ui-redesign/path-forward.md §2.4 (assistant reshell), §4.2 (routes; `/` index → Pipeline; chat-as-overlay), §4.4 (Assistant mounts at shell level), §5 (MR-4), §9 (single Neobrutalist + Solarized .dark; comic light / TUI dark assistant)",
+  "distill_roadmap": "docs/feature/pipeline-layers-ui-redesign/distill/walking-skeleton-mr4.md",
+  "distill_wave_decisions": "docs/feature/pipeline-layers-ui-redesign/distill/wave-decisions-mr4.md",
+  "dispatch_policy": "SEQUENTIAL — dispatch ONE crafter step at a time and verify commit + integrity (its scenarios GREEN, no testing-theater, no __SCAFFOLD__ left in its files, and no previously-passing test regressed) before the next (saved-feedback constraint). The DISTILL-authored RED cases for not-yet-reached steps stay RED until their step (mirrors MR-3 DWD-M3-7); the FULL frontend suite green is verified after the final step (04-03) and again pre-submit.",
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Assistant reshell + index swap",
+      "steps": [
+        {
+          "id": "04-01",
+          "name": "Implement the Assistant module — FAB + glass overlay / TUI terminal over the existing chat feed",
+          "criteria": "All 8 cases in frontend/src/ui/components/Assistant/Assistant.test.tsx are GREEN (cd frontend && npx vitest run src/ui/components/Assistant/Assistant.test.tsx). Assistant({projects}) renders a bottom-right assistant-fab that toggles an open state; open state renders `dark ? <TerminalAssistant/> : <GlassOverlay/>` (assistant-terminal vs assistant-glass) off useIsDark(); both surfaces render assistant-feed = the EXISTING chat context's MessageList (messages from useChatContext) + the real ChatInput (chat-input) plus a close control (assistant-close). AssistantControls renders assistant-new-session (calls resetSession), assistant-history (navigates /sessions), and recent-chat chips assistant-recent-<id> from useSessions(projectId where projectId = useParams().projectId ?? projects?.[0]?.id) that navigate to /chat/<id>. The FAB is hidden when the ?org=1 search param is present. useIsDark() reads document.documentElement's `dark` class via useSyncExternalStore + MutationObserver (SSR-safe getServerSnapshot → false); NO second useTheme() call. NO @dashboard-chat/ui-state-wire / lib/ui-state-client import; NO new chat/stream client instantiated (consume useChatContext/useSessions only — DWD-M4-3). Components consume MR-1 tokens via Assistant.module.css (no hardcoded palette). No __SCAFFOLD__ markers remain in Assistant/{index,GlassOverlay,TerminalAssistant,AssistantControls,AssistantFeed}.tsx or useIsDark.ts. No previously-passing frontend test regresses.",
+          "test_file": "frontend/src/ui/components/Assistant/Assistant.test.tsx",
+          "scenario_name": "Assistant — FAB / glass overlay / TUI terminal over the existing chat feed",
+          "estimate_minutes": 120,
+          "depends_on": [],
+          "files_to_modify": [
+            "frontend/src/ui/components/Assistant/index.tsx",
+            "frontend/src/ui/components/Assistant/GlassOverlay.tsx",
+            "frontend/src/ui/components/Assistant/TerminalAssistant.tsx",
+            "frontend/src/ui/components/Assistant/AssistantControls.tsx",
+            "frontend/src/ui/components/Assistant/AssistantFeed.tsx",
+            "frontend/src/ui/components/Assistant/useIsDark.ts",
+            "frontend/src/ui/components/Assistant/Assistant.module.css"
+          ]
+        },
+        {
+          "id": "04-02",
+          "name": "Mount the Assistant in AppShell; reduce the breadcrumb utility menu to Query Engines",
+          "criteria": "All 4 cases in frontend/src/ui/components/AppShell/AppShell.test.tsx AND all cases in frontend/src/ui/components/Breadcrumb/Breadcrumb.test.tsx are GREEN (cd frontend && npx vitest run src/ui/components/AppShell/AppShell.test.tsx src/ui/components/Breadcrumb/Breadcrumb.test.tsx). AppShell renders <Assistant projects={projects} /> as a sibling of <main><Outlet/></main> inside the existing StreamProvider+ChatProvider wrap (the assistant testid mounts). The Breadcrumb's interim utility menu is reduced to Query Engines only: the utility-new-session and utility-sessions controls are REMOVED (absorbed into the assistant overlay — DWD-M4-6), utility-query-engines stays; the breadcrumb drops its useChatContext import (no longer owns New Session). No __SCAFFOLD__ markers introduced. No previously-passing frontend test regresses (the chat `/` index, root.tsx welcome panel, /sessions, /query-engines stay reachable).",
+          "test_file": "frontend/src/ui/components/AppShell/AppShell.test.tsx",
+          "scenario_name": "AppShell mounts the Assistant; breadcrumb menu reduced to Query Engines",
+          "estimate_minutes": 45,
+          "depends_on": ["04-01"],
+          "files_to_modify": [
+            "frontend/src/ui/components/AppShell/index.tsx",
+            "frontend/src/ui/components/Breadcrumb/index.tsx"
+          ]
+        },
+        {
+          "id": "04-03",
+          "name": "Swap the `/` index to the Pipeline landing (HomeRedirect) without stranding deep-links",
+          "criteria": "All 3 cases in frontend/app/routes/home.test.tsx are GREEN (cd frontend && npx vitest run app/routes/home.test.tsx). HomeRedirect reads the AppShell outlet context: projects present → <Navigate to=`/projects/<first>/pipeline` replace />; projects === [] → <Navigate to='/projects' replace />; projects === null (loading) → a home-resolving placeholder. routes.ts repoints the index(...) entry from routes/chat.tsx to routes/home.tsx; chat/:channelId STILL maps to routes/chat.tsx (its loader + ChatView retained for deep-links), and sessions / projects / project-detail / pipeline / table / view / report / query-engines routes are unchanged. No __SCAFFOLD__ marker remains in routes/home.tsx. The chat loader test (app/routes/chat.test.ts), root.test.tsx welcome-panel + SSR tests, and the FULL frontend suite (cd frontend && npx vitest run) are GREEN.",
+          "test_file": "frontend/app/routes/home.test.tsx",
+          "scenario_name": "Home index — `/` swaps to the Pipeline landing",
+          "estimate_minutes": 45,
+          "depends_on": ["04-02"],
+          "files_to_modify": [
+            "frontend/app/routes/home.tsx",
+            "frontend/app/routes.ts"
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    "Adversarial review (nw-software-crafter-reviewer) after GREEN",
+    "Deferred per-feature gates (Python acceptance / Elevator-Pitch demos / mutation / evolution finalize) — N/A or deferred for this per-MR frontend slice; see deliver/wave-decisions-mr4.md"
+  ],
+  "deliver_dispatch_notes": "Three standard crafter steps dispatched SEQUENTIALLY (verify each before the next per saved-feedback). RED authored in DISTILL (13 MR-4 cases, verified RED not BROKEN — 13 failed / 11 passed across the 4 touched files). Step 04-02 and 04-03 turn the DISTILL-authored re-spec RED cases (AppShell mount, Breadcrumb absence, home redirects) GREEN — superseded interim behavior (the MR-3 breadcrumb session controls) is re-specified, NOT an Iron-Rule violation (RED authored first, DWD-M4-6/7). Acceptance gate is the vitest suite, not a Python acceptance suite (none exists for MR-4). Run real DES instrumentation (init_log, per-step log_phase, verify_deliver_integrity) under DES-PROJECT-ID pipeline-layers-ui-redesign-mr4, consolidating the committed record under deliver/mr4/ (DWD-M3-D6 path quirk). Skip Phase-3.5 Python-acceptance + Elevator-Pitch (N/A — no DISCUSS stories; vitest is the gate) and Phase-5 mutation (low value on this presentational slice); log skips in deliver/wave-decisions-mr4.md. Do NOT run Phase 7 finalize — MR-4 is 4 of 8; finalize after MR-8."
+}

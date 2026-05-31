@@ -1,0 +1,111 @@
+{
+  "schema_version": "3.0",
+  "feature_id": "pipeline-layers-ui-redesign-mr4",
+  "events": [
+    {
+      "sid": "04-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-31T17:55:01Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: 8 Assistant.test cases RED against scaffolds (verified in DISTILL)",
+      "t": "2026-05-31T17:55:01Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: 9 Assistant.test cases green; full suite 699 pass / 5 expected-RED (later steps)",
+      "t": "2026-05-31T17:57:33Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the 8 DISTILL acceptance cases serve as the unit spec for this presentational module; no additional seam needs a micro-test",
+      "t": "2026-05-31T17:57:33Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: c22c4a0",
+      "t": "2026-05-31T17:57:33Z"
+    },
+    {
+      "sid": "04-02",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-31T17:57:45Z"
+    },
+    {
+      "sid": "04-02",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: AppShell mount case + Breadcrumb absence case RED (verified in baseline run)",
+      "t": "2026-05-31T17:57:45Z"
+    },
+    {
+      "sid": "04-02",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: AppShell 4 + Breadcrumb 8 green; full suite 701 pass / 3 expected-RED (home, step 04-03)",
+      "t": "2026-05-31T17:59:28Z"
+    },
+    {
+      "sid": "04-02",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: thin shell glue + a button removal; the AppShell mount + Breadcrumb absence acceptance cases are the spec",
+      "t": "2026-05-31T17:59:28Z"
+    },
+    {
+      "sid": "04-02",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: ae6d4c8",
+      "t": "2026-05-31T17:59:28Z"
+    },
+    {
+      "sid": "04-03",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-05-31T17:59:47Z"
+    },
+    {
+      "sid": "04-03",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: 3 home.test cases RED against the scaffold (verified in baseline)",
+      "t": "2026-05-31T17:59:47Z"
+    },
+    {
+      "sid": "04-03",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: home 3 + chat-loader 3 + root 5 green; FULL frontend suite 704/704 green",
+      "t": "2026-05-31T18:01:07Z"
+    },
+    {
+      "sid": "04-03",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: the 3 home.test cases (branch coverage: projects/empty/loading) are the spec for this redirect resolver",
+      "t": "2026-05-31T18:01:08Z"
+    },
+    {
+      "sid": "04-03",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: f170d62",
+      "t": "2026-05-31T18:01:08Z"
+    }
+  ]
+}
