@@ -1,0 +1,79 @@
+{
+  "roadmap": "pipeline-layers-ui-redesign / MR-3 — breadcrumb navigation shell replacing the SideNav (org-icon toggle)",
+  "scope": "Replace AppShell's <SideNav>/<UnifiedNav> with a transparent floating <Breadcrumb> over the centered content. The breadcrumb is route-context-aware: list/pipeline → OrgIcon / Project ▾ (searchable project picker → MR-2 Pipeline landing projects/:projectId/pipeline); model detail (dataset/view/report) → OrgIcon / Project (plain link) / Model ▾ (searchable picker grouped Datasets/Views/Reports → the chosen model's detail route). The org icon toggles the Org Settings sheet via a linkable ?org=1 search param (morphs to ×, hides project-scoped affordances while open); AppShell renders <OrgSheet> over a darker inset backdrop hosting the MR-1 Appearance/dark-mode ThemeToggle + the project grid. A minimal interim utility menu keeps New Session, All Chats (/sessions), and Query Engines (/query-engines) reachable until MR-4 moves session controls into the assistant overlay. SideNav/UnifiedNav + their tests are deleted as superseded. Picker data via the existing dataCatalog TanStack Query hooks; the ui-state wire is NOT touched. Single Neobrutalist + Solarized .dark tokens (MR-1); no aesthetic switcher. Drives the RED vitest suite (22 cases) to GREEN.",
+  "design_ratified_as": "docs/feature/pipeline-layers-ui-redesign/path-forward.md §4.1 (shell: breadcrumb replaces sidebar), §4.2 (routes; ?org=1 overlay), §5 (MR-3), §9 (single Neobrutalist + Solarized .dark)",
+  "distill_roadmap": "docs/feature/pipeline-layers-ui-redesign/distill/walking-skeleton-mr3.md",
+  "distill_wave_decisions": "docs/feature/pipeline-layers-ui-redesign/distill/wave-decisions-mr3.md",
+  "dispatch_policy": "SEQUENTIAL — dispatch ONE crafter step at a time and verify commit + integrity (its scenarios green, full FE suite green, no testing-theater, no __SCAFFOLD__ left in its files) before the next (saved-feedback constraint).",
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Breadcrumb navigation shell + org-icon toggle",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Implement the pure breadcrumb route-context resolver",
+          "criteria": "All 6 cases in frontend/src/ui/components/Breadcrumb/breadcrumbContext.test.ts are GREEN (cd frontend && npx vitest run src/ui/components/Breadcrumb/breadcrumbContext.test.ts). resolveBreadcrumbContext(params) returns {kind:'model', modelKind, modelId} when a viewId/reportId/datasetId is present (precedence view → report → dataset; a dataset-within-project route with both projectId+datasetId is still a model context), and {kind:'list'} otherwise (projectId-only or empty). The module is framework-free (no React/react-router/DOM import). No __SCAFFOLD__ marker remains in breadcrumbContext.ts. Existing frontend tests stay green.",
+          "test_file": "frontend/src/ui/components/Breadcrumb/breadcrumbContext.test.ts",
+          "scenario_name": "resolveBreadcrumbContext — route → breadcrumb context",
+          "estimate_minutes": 25,
+          "depends_on": [],
+          "files_to_modify": [
+            "frontend/src/ui/components/Breadcrumb/breadcrumbContext.ts"
+          ]
+        },
+        {
+          "id": "03-02",
+          "name": "Implement the Breadcrumb shell + project/model pickers + org toggle + utility menu",
+          "criteria": "All 9 cases in frontend/src/ui/components/Breadcrumb/Breadcrumb.test.tsx are GREEN (cd frontend && npx vitest run src/ui/components/Breadcrumb/Breadcrumb.test.tsx). The Breadcrumb renders breadcrumb-org-icon always; on a list/pipeline route renders project-crumb (current project name from useOrgProjectsQuery, via resolveBreadcrumbContext) and NO model-crumb; on a model route renders project-crumb-link (project resolved from the model's project_id via useViewQuery/useReportQuery/useDatasetQuery — DWD-M3-5) plus model-crumb (current model name). Clicking project-crumb opens a ProjectPicker (project-picker-search + project-option-<id>) that filters projects by name (case-insensitive) and on select navigates to projects/:projectId/pipeline (verified by re-render in the new context) and closes. Clicking model-crumb opens a ModelPicker with model-group-datasets/-views/-reports (from useDatasets/useViewsQuery/useReportsQuery for the active project) and model-option-<id>; a single search filters across all groups; selecting navigates dataset→table/:id, view→view/:id, report→report/:id (DWD-M3-9). The org icon derives its open state from the ?org=1 search param (useSearchParams): open → aria-label 'Close org settings', project/model crumbs hidden; closed → aria-label 'Open org settings'; clicking toggles the param. A breadcrumb-utility control opens a menu exposing utility-new-session (resets chat session via useChatContext + navigates '/'), utility-sessions (→ /sessions), utility-query-engines (→ /query-engines). Picker data comes ONLY from the dataCatalog hooks — no @dashboard-chat/ui-state-wire or lib/ui-state-client import (DWD-M3-6). Components consume MR-1 tokens via the CSS module (no hardcoded palette). No __SCAFFOLD__ markers remain in index.tsx, ProjectPicker.tsx, ModelPicker.tsx. Existing frontend tests stay green.",
+          "test_file": "frontend/src/ui/components/Breadcrumb/Breadcrumb.test.tsx",
+          "scenario_name": "Breadcrumb — crumbs / project picker / model picker / org toggle / utility menu",
+          "estimate_minutes": 110,
+          "depends_on": ["03-01"],
+          "files_to_modify": [
+            "frontend/src/ui/components/Breadcrumb/index.tsx",
+            "frontend/src/ui/components/Breadcrumb/ProjectPicker.tsx",
+            "frontend/src/ui/components/Breadcrumb/ModelPicker.tsx",
+            "frontend/src/ui/components/Breadcrumb/Breadcrumb.module.css"
+          ]
+        },
+        {
+          "id": "03-03",
+          "name": "Implement the Org Settings sheet (Appearance + project grid over an inset backdrop)",
+          "criteria": "All 4 cases in frontend/src/ui/components/OrgView/OrgSheet.test.tsx are GREEN (cd frontend && npx vitest run src/ui/components/OrgView/OrgSheet.test.tsx). OrgSheet({projects, orgName, onClose}) renders org-sheet over an org-sheet-backdrop (darker inset), an Appearance section containing the existing ThemeToggle (dark-mode-toggle), and the existing ProjectGrid (project cards). Clicking org-sheet-backdrop or org-sheet-close calls onClose. Selecting a project navigates to projects/:projectId/pipeline (MR-2 landing) and calls onClose. The sheet reuses ThemeToggle (app/theme/ThemeToggle) + ProjectGrid (OrgView) — no duplicated controls. No __SCAFFOLD__ marker remains in OrgSheet.tsx. Existing frontend tests stay green.",
+          "test_file": "frontend/src/ui/components/OrgView/OrgSheet.test.tsx",
+          "scenario_name": "OrgSheet — org settings overlay",
+          "estimate_minutes": 45,
+          "depends_on": ["03-01"],
+          "files_to_modify": [
+            "frontend/src/ui/components/OrgView/OrgSheet.tsx"
+          ]
+        },
+        {
+          "id": "03-04",
+          "name": "Swap AppShell to the Breadcrumb + ?org=1 OrgSheet; delete the superseded SideNav",
+          "criteria": "All 3 cases in frontend/src/ui/components/AppShell/AppShell.test.tsx are GREEN (cd frontend && npx vitest run src/ui/components/AppShell/AppShell.test.tsx). AppShell renders <Breadcrumb> over the centered <main><Outlet/></main> (no SideNav/UnifiedNav); it reads ?org=1 (useSearchParams) and renders <OrgSheet projects orgName onClose> over the inset backdrop only when present, with onClose clearing the param. The SideNav directory (index.tsx, UnifiedNav.tsx, ProjectNav.tsx, ProjectNavItem.tsx, DatasetNavItem.tsx, SideNav.module.css) and SideNav/__tests__/UnifiedNav.test.tsx are DELETED as superseded (DWD-M3-2) — verified no remaining importer (grep -rn 'SideNav\\|UnifiedNav' frontend/src frontend/app → empty). The chat '/' index, root.tsx welcome panel, /sessions, /query-engines, and all existing routes stay registered and reachable; root.test.tsx + SSR tests stay green. No __SCAFFOLD__ markers remain anywhere under frontend/src/ui/components/Breadcrumb or OrgView/OrgSheet.tsx. The FULL frontend suite (cd frontend && npx vitest run) is GREEN.",
+          "test_file": "frontend/src/ui/components/AppShell/AppShell.test.tsx",
+          "scenario_name": "AppShell — breadcrumb shell replaces the SideNav",
+          "estimate_minutes": 50,
+          "depends_on": ["03-02", "03-03"],
+          "files_to_modify": [
+            "frontend/src/ui/components/AppShell/index.tsx",
+            "frontend/src/ui/components/SideNav/index.tsx",
+            "frontend/src/ui/components/SideNav/UnifiedNav.tsx",
+            "frontend/src/ui/components/SideNav/ProjectNav.tsx",
+            "frontend/src/ui/components/SideNav/ProjectNavItem.tsx",
+            "frontend/src/ui/components/SideNav/DatasetNavItem.tsx",
+            "frontend/src/ui/components/SideNav/SideNav.module.css",
+            "frontend/src/ui/components/SideNav/__tests__/UnifiedNav.test.tsx"
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    "Adversarial review (nw-software-crafter-reviewer) after GREEN",
+    "Deferred per-feature gates (Python acceptance / Elevator-Pitch demos / mutation / evolution finalize) — N/A or deferred for this per-MR frontend slice; see deliver/wave-decisions-mr3.md"
+  ],
+  "deliver_dispatch_notes": "Four OOP/standard crafter steps dispatched SEQUENTIALLY (verify each before the next per saved-feedback). RED authored in DISTILL (22 cases, verified RED not BROKEN); each crafter performs GREEN + COMMIT for its step's files only. Step 03-04 also DELETES the superseded SideNav (not an Iron-Rule violation — superseded code must be deleted, DWD-M3-2). Acceptance gate is the vitest suite, not a Python acceptance suite (none exists for MR-3). Run real DES instrumentation (init_log, per-step log_phase, verify_deliver_integrity) under DES-PROJECT-ID pipeline-layers-ui-redesign-mr3, consolidating the committed record under deliver/mr3/ (DWD-M2-D6 path quirk). Skip Phase-3.5 Python-acceptance + Elevator-Pitch (N/A — no DISCUSS stories; vitest is the gate) and Phase-5 mutation (low value on this slice); log skips in deliver/wave-decisions-mr3.md. Do NOT run Phase 7 finalize — MR-3 is 3 of 8; finalize after MR-8."
+}
