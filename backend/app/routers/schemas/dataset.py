@@ -65,6 +65,8 @@ class DatasetUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     schema_config: dict[str, Any] | None = None
+    # MR-6: editable source display name (the underlying filename/``name`` stays unchanged).
+    display_name: str | None = None
 
 
 class DatasetResponse(DatasetBase):
@@ -80,6 +82,7 @@ class DatasetResponse(DatasetBase):
     project_id: str
     schema_config: dict[str, Any]
     partition_fields: list[str] = []  # Hive-style partition field names
+    display_name: str | None = None  # MR-6: editable source display name (falls back to ``name``)
     created_at: datetime
     updated_at: datetime
 

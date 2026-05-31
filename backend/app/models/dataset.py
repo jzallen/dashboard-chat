@@ -116,6 +116,7 @@ class Dataset:
             column_profiles=record.column_profiles,
             format_context=getattr(record, "format_context", None),
             row_count=getattr(record, "row_count", None),
+            display_name=getattr(record, "display_name", None),
         )
 
     @property
@@ -249,6 +250,7 @@ class Dataset:
             "column_profiles": self.column_profiles,
             "format_context": self.format_context,
             "row_count": self.row_count,
+            "display_name": self.display_name,
             "staging_sql": self.display_sql,
         }
 

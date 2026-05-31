@@ -48,6 +48,10 @@ class DatasetRecord(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # MR-6: editable source display name. Nullable; the UI falls back to ``name``
+    # when unset, and the underlying filename/``name`` is never mutated by an edit.
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Column names + types for query builder (RAQB), table UI, and SQL generation
     # Format: { "fields": { "column_name": { "type": "text|number|boolean|select", ... } } }
     schema_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
