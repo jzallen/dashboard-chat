@@ -163,23 +163,112 @@ export function useUpdateDatasetDisplayName(projectId: string) {
 }
 
 /**
- * MR-7 — RED scaffold. Moves a source to cold storage with optimistic updates: removes
- * the dataset from the live list cache, and on settle invalidates the live list, the
- * archived (cold-storage) list, and the detail so the lineage recomputes (the archived
- * source leaves the live graph, its downstream goes orphaned). DELIVER 07-02 replaces this.
+ * MR-7 — moves a source to cold storage with optimistic updates: removes the dataset from
+ * the live list cache, and on settle invalidates the live list, the archived (cold-storage)
+ * list, and the detail so the lineage recomputes (the archived source leaves the live graph,
+ * its downstream goes orphaned) and the fridge refreshes.
  */
 export function useArchiveDataset(projectId: string) {
-  void projectId;
-  throw new Error("Not yet implemented — RED scaffold (useArchiveDataset, MR-7)");
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ datasetId }: { datasetId: string }) =>
+      catalog.archiveDataset(datasetId),
+
+    onMutate: async ({ datasetId }) => {
+      await queryClient.cancelQueries({ queryKey: datasetKeys.list(projectId) });
+
+      const prevDatasets = queryClient.getQueryData<DatasetSparse[]>(
+        datasetKeys.list(projectId),
+      );
+
+      // Optimistically drop the source from the live list so the lineage recomputes.
+      queryClient.setQueryData<DatasetSparse[]>(
+        datasetKeys.list(projectId),
+        (old) => old?.filter((ds) => ds.id !== datasetId),
+      );
+
+      return { prevDatasets };
+    },
+
+    onError: (_err, _vars, context) => {
+      if (context?.prevDatasets) {
+        queryClient.setQueryData(
+          datasetKeys.list(projectId),
+          context.prevDatasets,
+        );
+      }
+    },
+
+    onSettled: (_data, _err, { datasetId }) => {
+      queryClient.invalidateQueries({
+        queryKey: datasetKeys.list(projectId),
+        exact: true,
+      });
+      queryClient.invalidateQueries({
+        queryKey: datasetKeys.archived(projectId),
+        exact: true,
+      });
+      queryClient.invalidateQueries({
+        queryKey: datasetKeys.detail(datasetId),
+        exact: true,
+      });
+    },
+  });
 }
 
 /**
- * MR-7 — RED scaffold. Brings a source back from cold storage with optimistic updates:
- * removes the dataset from the archived list cache, and on settle invalidates the live
- * list, the archived list, and the detail so it reappears in the lineage. DELIVER 07-02
- * replaces this.
+ * MR-7 — brings a source back from cold storage with optimistic updates: removes the dataset
+ * from the archived list cache, and on settle invalidates the live list, the archived list,
+ * and the detail so it reappears in the lineage and leaves the fridge.
  */
 export function useRestoreDataset(projectId: string) {
-  void projectId;
-  throw new Error("Not yet implemented — RED scaffold (useRestoreDataset, MR-7)");
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ datasetId }: { datasetId: string }) =>
+      catalog.restoreDataset(datasetId),
+
+    onMutate: async ({ datasetId }) => {
+      await queryClient.cancelQueries({
+        queryKey: datasetKeys.archived(projectId),
+      });
+
+      const prevArchived = queryClient.getQueryData<DatasetSparse[]>(
+        datasetKeys.archived(projectId),
+      );
+
+      // Optimistically drop the source from the cold-storage list.
+      queryClient.setQueryData<DatasetSparse[]>(
+        datasetKeys.archived(projectId),
+        (old) => old?.filter((ds) => ds.id !== datasetId),
+      );
+
+      return { prevArchived };
+    },
+
+    onError: (_err, _vars, context) => {
+      if (context?.prevArchived) {
+        queryClient.setQueryData(
+          datasetKeys.archived(projectId),
+          context.prevArchived,
+        );
+      }
+    },
+
+    onSettled: (_data, _err, { datasetId }) => {
+      queryClient.invalidateQueries({
+        queryKey: datasetKeys.list(projectId),
+        exact: true,
+      });
+      queryClient.invalidateQueries({
+        queryKey: datasetKeys.archived(projectId),
+        exact: true,
+      });
+      queryClient.invalidateQueries({
+        queryKey: datasetKeys.detail(datasetId),
+        exact: true,
+      });
+    },
+  });
 }
