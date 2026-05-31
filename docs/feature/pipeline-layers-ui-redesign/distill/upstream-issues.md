@@ -75,3 +75,17 @@ record exists server-side but is not exposed as a queryable per-dataset history.
 **NOT built in MR-6**: the only backend touch is the single additive nullable `display_name`
 column (archive/retention + any new read endpoints stay reserved for MR-7 / a later MR).
 Revisit when an upload-history backend surface is in scope. Not blocking.
+
+## UI-8 — Org-configurable retention window is not functional (MR-7, §3.3) — deferred (c)
+**Finding:** The MR-7 cold-storage design (§3.1) treats the 90-day retention window as an
+"org default" that would live in the org-settings surface. Per §3.3 the org-settings page
+is **display-only / not functional** in this redesign — `getOrgInfo` returns only
+`{id, name}` and there is no `GET/PATCH /api/orgs/me/settings` surface to persist a per-org
+retention window.
+**Resolution (MR-7, DWD-M7-4):** The retention window is **hardcoded to 90 days** as a
+documented module constant `RETENTION_WINDOW = timedelta(days=90)` in
+`backend/app/use_cases/dataset/archive_dataset.py`; `retention_until` is computed server-side
+at archive time (`archived_at + RETENTION_WINDOW`). Making the window org-configurable
+requires the deferred functional org-settings surface (§3.3) — a deferred **(c)**, NOT built
+in MR-7. days-left remains a pure frontend derivation off the server `retention_until`
+(DWD-M7-5). Not blocking.
