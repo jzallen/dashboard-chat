@@ -11,6 +11,8 @@ import styles from "./Pipeline.module.css";
 
 export interface FlowViewProps {
   graph: LineageGraph;
+  /** MR-6: when provided, nodes become activatable (e.g. open the upload modal for a source). */
+  onNodeActivate?: (node: LineageNode) => void;
 }
 
 // Left→right column order. `source` is reserved for MR-6 (no nodes in MR-2) but
@@ -20,13 +22,18 @@ const LAYER_ORDER: readonly LineageLayer[] = ["source", "staging", "intermediate
 const layerAccent = (layer: LineageLayer): CSSProperties =>
   ({ ["--layerAccent" as string]: `var(--layer-${layer})` }) as CSSProperties;
 
-export function FlowView({ graph }: FlowViewProps): JSX.Element {
+export function FlowView({ graph, onNodeActivate }: FlowViewProps): JSX.Element {
   return (
     <div data-testid="flow-view" className={styles.flow}>
       {LAYER_ORDER.map((layer) => nodesInLayer(graph.nodes, layer)).map(
         (nodes, index) =>
           nodes.length > 0 ? (
-            <FlowLayerColumn key={LAYER_ORDER[index]} layer={LAYER_ORDER[index]} nodes={nodes} />
+            <FlowLayerColumn
+              key={LAYER_ORDER[index]}
+              layer={LAYER_ORDER[index]}
+              nodes={nodes}
+              onNodeActivate={onNodeActivate}
+            />
           ) : null,
       )}
       <ul data-testid="flow-edges" className={styles.edges}>
@@ -47,9 +54,11 @@ export function FlowView({ graph }: FlowViewProps): JSX.Element {
 function FlowLayerColumn({
   layer,
   nodes,
+  onNodeActivate,
 }: {
   layer: LineageLayer;
   nodes: LineageNode[];
+  onNodeActivate?: (node: LineageNode) => void;
 }): JSX.Element {
   return (
     <div
@@ -59,18 +68,38 @@ function FlowLayerColumn({
     >
       <span className={styles.flowLayerHeading}>{layer}</span>
       {nodes.map((node) => (
-        <FlowNode key={node.id} node={node} />
+        <FlowNode key={node.id} node={node} onNodeActivate={onNodeActivate} />
       ))}
     </div>
   );
 }
 
-function FlowNode({ node }: { node: LineageNode }): JSX.Element {
+function FlowNode({
+  node,
+  onNodeActivate,
+}: {
+  node: LineageNode;
+  onNodeActivate?: (node: LineageNode) => void;
+}): JSX.Element {
+  const activatable = Boolean(onNodeActivate);
   return (
     <div
       data-testid={`flow-node-${node.id}`}
       className={clsx(styles.node, node.orphan && styles.nodeOrphan)}
       aria-disabled={node.orphan ? "true" : undefined}
+      role={activatable ? "button" : undefined}
+      tabIndex={activatable ? 0 : undefined}
+      onClick={activatable ? () => onNodeActivate!(node) : undefined}
+      onKeyDown={
+        activatable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onNodeActivate!(node);
+              }
+            }
+          : undefined
+      }
     >
       <span className={styles.nodeName}>{node.name}</span>
       <span className={styles.nodeKind}>{node.kind}</span>

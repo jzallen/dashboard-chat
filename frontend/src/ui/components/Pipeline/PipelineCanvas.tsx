@@ -7,7 +7,7 @@
 import clsx from "clsx";
 import { useState } from "react";
 
-import type { LineageGraph } from "../../../core/lineage/buildGraph";
+import type { LineageGraph, LineageNode } from "../../../core/lineage/buildGraph";
 import { AuditView } from "./AuditView";
 import { FlowView } from "./FlowView";
 import { LanesView } from "./LanesView";
@@ -19,6 +19,8 @@ export interface PipelineCanvasProps {
   graph: LineageGraph;
   /** Optional initial style override (defaults to "flow"). */
   initialStyle?: PipelineStyle;
+  /** MR-6: when provided, nodes become activatable across all styles. */
+  onNodeActivate?: (node: LineageNode) => void;
 }
 
 const STYLE_LABELS: ReadonlyArray<{ style: PipelineStyle; label: string }> = [
@@ -27,7 +29,11 @@ const STYLE_LABELS: ReadonlyArray<{ style: PipelineStyle; label: string }> = [
   { style: "audit", label: "Audit" },
 ];
 
-export function PipelineCanvas({ graph, initialStyle = "flow" }: PipelineCanvasProps): JSX.Element {
+export function PipelineCanvas({
+  graph,
+  initialStyle = "flow",
+  onNodeActivate,
+}: PipelineCanvasProps): JSX.Element {
   const [style, setStyle] = useState<PipelineStyle>(initialStyle);
 
   return (
@@ -47,9 +53,9 @@ export function PipelineCanvas({ graph, initialStyle = "flow" }: PipelineCanvasP
           </button>
         ))}
       </div>
-      {style === "flow" ? <FlowView graph={graph} /> : null}
-      {style === "lanes" ? <LanesView graph={graph} /> : null}
-      {style === "audit" ? <AuditView graph={graph} /> : null}
+      {style === "flow" ? <FlowView graph={graph} onNodeActivate={onNodeActivate} /> : null}
+      {style === "lanes" ? <LanesView graph={graph} onNodeActivate={onNodeActivate} /> : null}
+      {style === "audit" ? <AuditView graph={graph} onNodeActivate={onNodeActivate} /> : null}
     </div>
   );
 }

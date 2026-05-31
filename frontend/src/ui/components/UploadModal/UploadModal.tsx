@@ -10,12 +10,15 @@
 // modal directly at the schema/display-name step (source-node reopen; DWD-M6-9). The
 // per-source file history is NOT served today → documented empty-state (deferred c, UI-7).
 // The ui-state wire / chat transport / agent contract are NOT touched (DWD-M6-3).
-//
-// RED scaffold (DISTILL) — a closed modal renders nothing (so hosts that mount it stay
-// green); opening it throws until DELIVER step 06-03 implements the flow.
-import type { Dataset, DatasetSparse } from "@/dataCatalog";
+import { useEffect, useRef, useState } from "react";
 
-export const __SCAFFOLD__ = true;
+import { withAuth } from "@/auth";
+import { createDataCatalog, type Dataset, type DatasetSparse } from "@/dataCatalog";
+
+import { DisplayNameEditor } from "./DisplayNameEditor";
+import styles from "./UploadModal.module.css";
+
+const catalog = createDataCatalog(withAuth(fetch));
 
 /** Minimal shape needed to reopen the modal into an existing source. */
 export type UploadSource = Dataset | DatasetSparse;
@@ -31,7 +34,191 @@ export interface UploadModalProps {
   existingSource?: UploadSource | null;
 }
 
-export function UploadModal({ open }: UploadModalProps): JSX.Element | null {
+type Step = "browse" | "uploading" | "source" | "error";
+
+export function UploadModal({
+  open,
+  projectId,
+  onClose,
+  onSourceCreated,
+  existingSource,
+}: UploadModalProps): JSX.Element | null {
+  const [step, setStep] = useState<Step>(existingSource ? "source" : "browse");
+  const [source, setSource] = useState<UploadSource | null>(existingSource ?? null);
+  const [errorMsg, setErrorMsg] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset to the correct entry step whenever the modal (re)opens or its source changes.
+  useEffect(() => {
+    if (!open) return;
+    if (existingSource) {
+      setSource(existingSource);
+      setStep("source");
+    } else {
+      setSource(null);
+      setStep("browse");
+    }
+    setErrorMsg("");
+  }, [open, existingSource]);
+
   if (!open) return null;
-  throw new Error("Not yet implemented — RED scaffold UploadModal");
+
+  const uploadSelected = async (file: File): Promise<void> => {
+    setStep("uploading");
+    setErrorMsg("");
+    // "Upload another to same schema" reuses the existing dataset via dataset_id.
+    const fields = source
+      ? { project_id: projectId, dataset_id: source.id }
+      : { project_id: projectId };
+    try {
+      const result = await catalog.uploadFile<Dataset>("/api/uploads", file, fields);
+      setSource(result);
+      setStep("source");
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Upload failed");
+      setStep("error");
+    }
+  };
+
+  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    if (file) void uploadSelected(file);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent): void => {
+    if (e.key === "Escape") onClose();
+  };
+
+  const fields = source?.schema_config?.fields ?? {};
+
+  return (
+    <div className={styles.overlay} data-testid="upload-modal-overlay">
+      <div
+        className={styles.card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="upload-modal-title"
+        data-testid="upload-modal"
+        onKeyDown={handleKeyDown}
+      >
+        <div className={styles.header}>
+          <h2 id="upload-modal-title" className={styles.title}>
+            Upload a source
+          </h2>
+          <button
+            type="button"
+            className={styles.closeButton}
+            data-testid="upload-close"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        {step === "browse" && (
+          <div className={styles.dropzone} data-testid="upload-dropzone">
+            <input
+              ref={inputRef}
+              type="file"
+              className={styles.hiddenInput}
+              data-testid="upload-file-input"
+              accept=".csv,.tsv,.xlsx,.xls,.parquet"
+              onChange={onInputChange}
+            />
+            <p>Drop a file here, or</p>
+            <button
+              type="button"
+              className={styles.browseButton}
+              data-testid="upload-browse-button"
+              onClick={() => inputRef.current?.click()}
+            >
+              Choose a file to upload
+            </button>
+          </div>
+        )}
+
+        {step === "uploading" && (
+          <div className={styles.progress} data-testid="upload-progress" aria-label="Uploading">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                data-testid={`upload-leg-${i}`}
+                className={styles.leg}
+                style={{ animationDelay: `${i * 0.2}s` }}
+              />
+            ))}
+          </div>
+        )}
+
+        {step === "error" && (
+          <div>
+            <p className={styles.error} data-testid="upload-error">
+              {errorMsg}
+            </p>
+            <button
+              type="button"
+              className={styles.retryButton}
+              data-testid="upload-retry"
+              onClick={() => setStep("browse")}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {step === "source" && source && (
+          <>
+            <section className={styles.schema} data-testid="upload-schema">
+              <h3>Parsed schema</h3>
+              {Object.entries(fields).map(([name, field]) => (
+                <div
+                  key={name}
+                  className={styles.schemaField}
+                  data-testid={`upload-schema-field-${name}`}
+                >
+                  <span>{name}</span>
+                  <span className={styles.schemaFieldType}>{field.type}</span>
+                </div>
+              ))}
+            </section>
+
+            <DisplayNameEditor
+              datasetId={source.id}
+              projectId={projectId}
+              name={source.name}
+              displayName={source.display_name ?? null}
+            />
+
+            {/* Per-source upload history is not served by the API today (deferred c, UI-7). */}
+            <p className={styles.historyEmpty} data-testid="upload-history-empty">
+              No upload history available yet for this source.
+            </p>
+
+            <div className={styles.actions}>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                data-testid="upload-another"
+                onClick={() => setStep("browse")}
+              >
+                Upload another to same schema
+              </button>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                data-testid="upload-create-source"
+                onClick={() => {
+                  onSourceCreated?.(source as Dataset);
+                  onClose();
+                }}
+              >
+                Create source
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }

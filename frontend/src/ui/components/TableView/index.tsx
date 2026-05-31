@@ -21,6 +21,7 @@ import {
   ModelDetailLayout,
 } from "../ModelDetail";
 import TablePanel from "../TablePanel";
+import { DisplayNameEditor } from "../UploadModal";
 import { ActivityLog } from "./ActivityLog";
 import styles from "./TableView.module.css";
 
@@ -222,6 +223,12 @@ export function TableView() {
         </div>
       }
     >
+      <DisplayNameEditor
+        datasetId={dataset.id}
+        projectId={dataset.project_id}
+        name={dataset.name}
+        displayName={dataset.display_name ?? null}
+      />
       <DependencyStrip
         upstream={dependencies.upstream}
         downstream={dependencies.downstream}

@@ -110,10 +110,17 @@
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-bg);
+  animation: dialup-leg 1.2s ease-in-out infinite;
 }
 
-.legActive {
-  background: var(--color-accent);
+@keyframes dialup-leg {
+  0%,
+  100% {
+    background: var(--color-bg);
+  }
+  50% {
+    background: var(--color-accent);
+  }
 }
 
 .schema {

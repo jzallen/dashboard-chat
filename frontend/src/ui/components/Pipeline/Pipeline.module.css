@@ -176,3 +176,26 @@
   color: var(--color-muted);
   margin-top: 0.5rem;
 }
+
+/* MR-6 — landing toolbar hosting the standalone upload trigger. */
+.landing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.toolbarButton {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  box-shadow: var(--shadow);
+  padding: 0.5rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}

@@ -12,6 +12,8 @@ import styles from "./Pipeline.module.css";
 
 export interface AuditViewProps {
   graph: LineageGraph;
+  /** MR-6: when provided, rows become activatable (e.g. open the upload modal for a source). */
+  onNodeActivate?: (node: LineageNode) => void;
 }
 
 const LAYER_ORDER: readonly LineageLayer[] = ["source", "staging", "intermediate", "mart"];
@@ -20,7 +22,7 @@ const LAYER_RANK = new Map<LineageLayer, number>(LAYER_ORDER.map((layer, index) 
 const layerAccent = (layer: LineageLayer): CSSProperties =>
   ({ ["--layerAccent" as string]: `var(--layer-${layer})` }) as CSSProperties;
 
-export function AuditView({ graph }: AuditViewProps): JSX.Element {
+export function AuditView({ graph, onNodeActivate }: AuditViewProps): JSX.Element {
   const orderedNodes = [...graph.nodes].sort(
     (a, b) => (LAYER_RANK.get(a.layer) ?? 0) - (LAYER_RANK.get(b.layer) ?? 0),
   );
@@ -28,18 +30,45 @@ export function AuditView({ graph }: AuditViewProps): JSX.Element {
   return (
     <div data-testid="audit-view" className={styles.audit}>
       {orderedNodes.map((node) => (
-        <AuditRow key={node.id} node={node} upstreams={upstreamNamesOf(node.id, graph)} />
+        <AuditRow
+          key={node.id}
+          node={node}
+          upstreams={upstreamNamesOf(node.id, graph)}
+          onNodeActivate={onNodeActivate}
+        />
       ))}
     </div>
   );
 }
 
-function AuditRow({ node, upstreams }: { node: LineageNode; upstreams: string[] }): JSX.Element {
+function AuditRow({
+  node,
+  upstreams,
+  onNodeActivate,
+}: {
+  node: LineageNode;
+  upstreams: string[];
+  onNodeActivate?: (node: LineageNode) => void;
+}): JSX.Element {
+  const activatable = Boolean(onNodeActivate);
   return (
     <article
       data-testid={`audit-row-${node.id}`}
       className={clsx(styles.auditRow, node.orphan && styles.nodeOrphan)}
       style={layerAccent(node.layer)}
+      role={activatable ? "button" : undefined}
+      tabIndex={activatable ? 0 : undefined}
+      onClick={activatable ? () => onNodeActivate!(node) : undefined}
+      onKeyDown={
+        activatable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onNodeActivate!(node);
+              }
+            }
+          : undefined
+      }
     >
       <div className={styles.auditHeader}>
         <span className={styles.nodeName}>{node.name}</span>
