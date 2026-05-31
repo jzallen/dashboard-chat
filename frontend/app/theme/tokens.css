@@ -1,0 +1,57 @@
+/* Design-token layer (MR-1).
+ *
+ * ONE production aesthetic — Neobrutalist (light) — on :root / .theme-neobrutalist.
+ * The orthogonal `.dark` class stacks Solarized-dark overrides on top (see theme.ts).
+ *
+ * Structure:
+ *   :root / .theme-neobrutalist  -> light (default) palette + geometry tokens
+ *   .dark                        -> Solarized-dark palette overrides
+ *
+ * happy-dom does not apply this stylesheet, so the acceptance tests assert the
+ * gating root class rather than computed values (wave-decisions DWD-3). The
+ * values below are nonetheless real + coherent (verified visually / by a future
+ * Playwright pass, MR-8).
+ */
+
+:root,
+.theme-neobrutalist {
+  /* surfaces & ink — Neobrutalist light: paper-white surfaces, hard ink */
+  --color-bg: #f5f3e7;
+  --color-surface: #ffffff;
+  --color-ink: #0a0a0a;
+  --color-muted: #5b5b5b;
+  --color-accent: #ffe600; /* electric yellow */
+  --color-accent-ink: #0a0a0a;
+  --color-border: #0a0a0a;
+
+  /* geometry — Neobrutalist: thick borders, hard 0 radius, hard offset shadow */
+  --border-width: 3px;
+  --radius: 0px;
+  --shadow-offset-x: 6px;
+  --shadow-offset-y: 6px;
+  --shadow: var(--shadow-offset-x) var(--shadow-offset-y) 0 0 var(--color-border);
+
+  /* pipeline layer accents (source / staging / intermediate / mart) */
+  --layer-source: #2d7dd2; /* electric blue */
+  --layer-staging: #f45d01; /* electric orange */
+  --layer-intermediate: #97cc04; /* electric lime */
+  --layer-mart: #e71d73; /* electric magenta */
+}
+
+.dark {
+  /* Solarized-dark palette overrides — stacked on the aesthetic class */
+  --color-bg: #002b36; /* base03 */
+  --color-surface: #073642; /* base02 */
+  --color-ink: #93a1a1; /* base1 */
+  --color-muted: #586e75; /* base01 */
+  --color-accent: #b58900; /* yellow */
+  --color-accent-ink: #002b36;
+  --color-border: #586e75; /* base01 */
+  --shadow: var(--shadow-offset-x) var(--shadow-offset-y) 0 0 var(--color-border);
+
+  /* Solarized accents for the pipeline layers */
+  --layer-source: #268bd2; /* blue */
+  --layer-staging: #cb4b16; /* orange */
+  --layer-intermediate: #859900; /* green */
+  --layer-mart: #d33682; /* magenta */
+}

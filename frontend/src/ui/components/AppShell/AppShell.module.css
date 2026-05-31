@@ -1,9 +1,24 @@
-/* AppShell layout styles */
+/* AppShell layout styles — frame consumes the MR-1 design tokens (tokens.css). */
 
 .shell {
-  @apply flex h-screen bg-surface-secondary;
+  @apply flex h-screen;
+  background: var(--color-bg);
+  color: var(--color-ink);
 }
 
 .viewWindow {
   @apply flex-1 flex flex-col overflow-hidden;
+  background: var(--color-surface);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+/* Lightweight breadcrumb proof — a visible element styled entirely from the
+   token layer so the shell demonstrably reads the new CSS variables (MR-1). */
+.breadcrumb {
+  @apply flex items-center text-sm;
+  padding: 0.5rem 1rem;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border-bottom: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
 }

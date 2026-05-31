@@ -4,8 +4,22 @@
   @apply flex-1 overflow-y-auto p-6;
 }
 
+.header {
+  @apply flex items-center justify-between mb-4;
+}
+
 .heading {
-  @apply text-lg font-medium text-gray-500 mb-4;
+  @apply text-lg font-medium;
+  color: var(--color-ink);
+}
+
+.appearance {
+  @apply flex items-center gap-2 text-sm;
+  color: var(--color-muted);
+}
+
+.appearanceLabel {
+  @apply font-medium;
 }
 
 .grid {

@@ -60,6 +60,9 @@ function AppShellInner() {
           <UnifiedNav orgId={orgId} collapsed={navCollapsed} projectId={project?.id ?? projects?.[0]?.id ?? null} />
         </SideNav>
         <main className={styles.viewWindow}>
+          <nav className={styles.breadcrumb} aria-label="Breadcrumb">
+            {orgName ?? "Dashboard Chat"}
+          </nav>
           <Outlet context={outletContext} />
         </main>
       </div>

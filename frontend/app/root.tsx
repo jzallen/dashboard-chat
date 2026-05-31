@@ -40,6 +40,7 @@ import {
 import { AuthProvider } from "../src/ui/context/AuthContext";
 import { createStateProxy } from "./lib/state-proxy";
 import { fetchStateDocument } from "./lib/ui-state-client";
+import { AESTHETIC_CLASS, themeInitScript } from "./theme/theme";
 
 interface RootLoaderData {
   /** The SSR seed — the single `/state` document serialized into the hydration
@@ -63,10 +64,15 @@ function selectFirstName(d: ChatAppStateDocument): string | null {
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={AESTHETIC_CLASS}>
       <head>
         <meta charSet="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        {/* No-flash seam: apply the persisted/default theme class to
+            documentElement BEFORE paint and BEFORE <Links/> loads the token
+            sheet. The script body is a static serialized call — no runtime
+            interpolation, no injection surface (theme.ts themeInitScript). */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript() }} />
         <Meta />
         <Links />
         <title>Dashboard Chat</title>
