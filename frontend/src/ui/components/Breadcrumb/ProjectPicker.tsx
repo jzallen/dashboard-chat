@@ -1,12 +1,14 @@
-// Searchable project picker popover — RED scaffold (created by DISTILL, MR-3).
+// Searchable project picker popover (MR-3, path-forward §4.1).
 //
 // Opened from the breadcrumb's `Project ▾` crumb. Renders a search box that
 // filters the org's projects by name (case-insensitive); selecting a project
 // navigates to the MR-2 Pipeline landing (`projects/:projectId/pipeline`). Data
-// comes from the existing org-projects query hook (NOT ui-state). path-forward §4.1.
+// comes from the existing org-projects query hook (NOT ui-state).
+import { useState } from "react";
+
 import type { Project } from "@/dataCatalog";
 
-export const __SCAFFOLD__ = true;
+import styles from "./Breadcrumb.module.css";
 
 export interface ProjectPickerProps {
   projects: Project[];
@@ -14,8 +16,43 @@ export interface ProjectPickerProps {
   onSelect: (projectId: string) => void;
 }
 
-export function ProjectPicker(_props: ProjectPickerProps): JSX.Element {
-  throw new Error("Not yet implemented — RED scaffold (breadcrumb MR-3)");
+export function ProjectPicker({
+  projects,
+  currentProjectId,
+  onSelect,
+}: ProjectPickerProps): JSX.Element {
+  const [query, setQuery] = useState("");
+
+  const filtered = projects.filter((project) =>
+    project.name.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  return (
+    <div className={styles.picker} role="dialog">
+      <input
+        data-testid="project-picker-search"
+        className={styles.search}
+        placeholder="Search projects…"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {filtered.map((project) => (
+        <button
+          key={project.id}
+          type="button"
+          data-testid={`project-option-${project.id}`}
+          className={
+            project.id === currentProjectId
+              ? `${styles.option} ${styles.optionActive}`
+              : styles.option
+          }
+          onClick={() => onSelect(project.id)}
+        >
+          {project.name}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default ProjectPicker;
