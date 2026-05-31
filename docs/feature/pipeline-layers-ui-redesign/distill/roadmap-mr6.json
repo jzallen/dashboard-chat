@@ -1,0 +1,82 @@
+{
+  "roadmap": "pipeline-layers-ui-redesign / MR-6 — Standalone upload modal + editable source display_name (the redesign's FIRST backend touch: ONE additive nullable display_name column)",
+  "scope": "Add an editable source display name as a thin extension of the existing dataset record (NOT a new aggregate): the redesign's first and only MR-6 backend touch is ONE additive nullable display_name column threaded through the existing additive surface (DatasetRecord ORM, domain Dataset + from_record + serialize, DatasetUpdate + DatasetResponse schemas, ONE Alembic migration 014 from head f3a4b5c6d7e8). The use case + repository need NO change (generic update_dict + generic setattr already support new fields). On the frontend, add a standalone upload modal (toolbar-triggered on the Pipeline landing surface, detached from the assistant): browse/drop -> a COSMETIC 3-leg dial-up progress animation wrapped around the in-flight EXISTING uploadFile('/api/uploads') promise (no streaming-upload backend) -> a parsed schema view from the returned dataset's existing schema_config -> an editable display name persisted via the EXISTING updateDataset client through a new useUpdateDatasetDisplayName optimistic mutation (UI shows display_name ?? name; the underlying filename/name is never mutated) -> 'upload another to same schema' (re-uploads with { project_id, dataset_id }) + 'create source' (the created dataset already appears as a staging node in the MR-2 lineage) -> clicking a source node reopens the modal in existingSource mode (additive optional onNodeActivate, no MR-2 regression). The same reusable DisplayNameEditor also mounts on the MR-5 dataset-detail surface (TableView) as an additive control. Per-source upload history is NOT served today -> documented empty-state, deferred (c) UI-7. NO ui-state wire / chat transport / agent contract touch; NO new backend endpoint or table beyond the one nullable column. Drive the RED backend pytest + frontend vitest suites to GREEN while keeping ALL existing tests green.",
+  "design_ratified_as": "docs/feature/pipeline-layers-ui-redesign/path-forward.md §2.6 (upload flow), §3.1 (Source display_name — additive backend surface; THIS MR adds ONLY display_name), §3.2 (schema already served; per-source file list deferred), §5 (MR-6), open question 6, §9 (single Neobrutalist + Solarized .dark)",
+  "distill_roadmap": "docs/feature/pipeline-layers-ui-redesign/distill/walking-skeleton-mr6.md",
+  "distill_wave_decisions": "docs/feature/pipeline-layers-ui-redesign/distill/wave-decisions-mr6.md",
+  "dispatch_policy": "SEQUENTIAL — dispatch ONE crafter step at a time and verify commit + integrity (its scenarios GREEN, no testing-theater, no __SCAFFOLD__/`RED scaffold` throw left in its files, migration round-trips where applicable, and no previously-passing test regressed) before the next (saved-feedback constraint). Backend FIRST (06-01) so the frontend builds on a REAL persisted field. The FULL backend pytest + ruff and FULL frontend vitest are verified after the final step and again pre-submit; the migration round-trip (upgrade head -> downgrade -1 -> upgrade head) is verified in 06-01 and again pre-submit.",
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Backend display_name field (the real persisted surface)",
+      "steps": [
+        {
+          "id": "06-01",
+          "name": "Add the additive nullable display_name column end-to-end (ORM + domain + schemas + migration) and prove it persists",
+          "criteria": "GREEN for backend tests/use_cases/dataset/test_update_dataset.py::test_update_dataset_when_display_name_provided_persists (update_dict={'display_name': 'Sales Snapshot'} round-trips: Success(dataset) with dataset.display_name == 'Sales Snapshot' AND dataset.name == 'Dataset One' unchanged) and ::test_update_dataset_display_name_does_not_overwrite_name (sending only display_name leaves name intact). DatasetRecord gains display_name: Mapped[str | None] = mapped_column(String(255), nullable=True); domain Dataset gains display_name: str | None = None mapped in from_record and emitted in serialize; DatasetUpdate gains display_name: str | None = None and DatasetResponse gains display_name: str | None = None. NO change to update_dataset use case or MetadataRepository.update_dataset (generic passthrough verified). Alembic migration 014 revises from f3a4b5c6d7e8, op.add_column('datasets', sa.Column('display_name', sa.String(length=255), nullable=True)) with a real downgrade op.drop_column('datasets', 'display_name'); SQLite/PostgreSQL-portable (no alter_column). Migration round-trips: cd backend/migrations && uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head all clean. FULL backend pytest GREEN + ruff clean. No previously-passing backend test regresses (existing Dataset(...)-equality tests keep passing — default None on both sides).",
+          "test_file": "backend/tests/use_cases/dataset/test_update_dataset.py",
+          "scenario_name": "Editable source display name persists via the existing update path; filename/name unchanged",
+          "estimate_minutes": 75,
+          "depends_on": [],
+          "files_to_modify": [
+            "backend/app/repositories/metadata/dataset_record.py",
+            "backend/app/models/dataset.py",
+            "backend/app/routers/schemas/dataset.py",
+            "backend/migrations/versions/014_add_dataset_display_name.py"
+          ]
+        }
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "Frontend types + display-name mutation",
+      "steps": [
+        {
+          "id": "06-02",
+          "name": "Add display_name to the dataCatalog TS types and the useUpdateDatasetDisplayName optimistic mutation",
+          "criteria": "GREEN for the useUpdateDatasetDisplayName cases in frontend/src/ui/hooks/__tests__/useDatasetMutations.test.tsx: optimistically updates display_name in the detail cache and the list cache; rolls back both on error; invalidates detail + list on settle; calls catalog.updateDataset(datasetId, { display_name }) — ONLY display_name, never name. Dataset / DatasetSparse / DatasetUpdate (frontend/src/core/dataCatalog/datasets.ts) gain display_name?: string | null (Dataset/DatasetSparse) and display_name?: string (DatasetUpdate). useUpdateDatasetDisplayName lives in useDatasetMutations.ts beside useRenameDataset (same optimistic structure: cancelQueries, snapshot, setQueryData detail+list, onError restore, onSettled invalidate exact). The existing useRenameDataset cases stay GREEN. No __SCAFFOLD__ / 'RED scaffold' throw remains in useDatasetMutations.ts. No previously-passing frontend test regresses.",
+          "test_file": "frontend/src/ui/hooks/__tests__/useDatasetMutations.test.tsx",
+          "scenario_name": "Display-name optimistic mutation (detail + list caches, rollback, settle-invalidate, sends only display_name)",
+          "estimate_minutes": 45,
+          "depends_on": ["06-01"],
+          "files_to_modify": [
+            "frontend/src/core/dataCatalog/datasets.ts",
+            "frontend/src/ui/hooks/useDatasetMutations.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Standalone upload modal + source-node reopen + detail-surface editor",
+      "steps": [
+        {
+          "id": "06-03",
+          "name": "Build the standalone UploadModal + reusable DisplayNameEditor, wire the Pipeline toolbar + source-node reopen, mount the editor on the dataset-detail surface",
+          "criteria": "GREEN for: DisplayNameEditor.test.tsx (input defaults to name when display_name null; shows display_name when set; save fires the mutation with ONLY { datasetId, displayName }; name never sent), UploadModal.test.tsx (closed -> renders nothing; open -> role=dialog aria-modal with browse/drop; file pick + upload -> cosmetic 3-leg dial-up progress (upload-progress + 3 upload-leg-* present while the upload promise is in flight); resolve -> schema view renders the schema_config fields (upload-schema-field-*); editable display name persists via the mutation; 'upload another to same schema' re-uploads with { project_id, dataset_id }; 'create source' hands off the created dataset + closes; Esc / overlay / close-button close; upload error -> retry; per-source file-history -> upload-history-empty empty-state (deferred c); plus @walking_skeleton happy path), PipelineUploadReopen.test.tsx (toolbar upload button opens a fresh modal; activating a source node reopens the modal in existingSource mode), TableView.displayName.test.tsx (the dataset-detail surface mounts DisplayNameEditor with initial value display_name ?? name). The modal reuses the ActivityCheckModal overlay/focus-trap/Esc pattern, consumes MR-1 tokens via UploadModal.module.css (no hardcoded palette), respects dark mode via .dark, and is detached from the assistant. onNodeActivate is an ADDITIVE optional prop (PipelineLanding -> PipelineCanvas -> Flow/Lanes/Audit) — existing MR-2 Pipeline tests stay GREEN. NO @dashboard-chat/ui-state-wire / lib/ui-state-client import; NO chat/stream client; NO backend endpoint. No __SCAFFOLD__ / 'RED scaffold' throw remains anywhere under the MR-6 files. The FULL frontend suite (cd frontend && npx vitest run) is GREEN.",
+          "test_file": "frontend/src/ui/components/UploadModal/UploadModal.test.tsx",
+          "scenario_name": "Standalone upload modal: dial-up over the existing upload, schema view, editable display name, upload-another/create-source, source-node reopen",
+          "estimate_minutes": 180,
+          "depends_on": ["06-02"],
+          "files_to_modify": [
+            "frontend/src/ui/components/UploadModal/UploadModal.tsx",
+            "frontend/src/ui/components/UploadModal/DisplayNameEditor.tsx",
+            "frontend/src/ui/components/UploadModal/index.ts",
+            "frontend/src/ui/components/UploadModal/UploadModal.module.css",
+            "frontend/src/ui/components/Pipeline/index.tsx",
+            "frontend/src/ui/components/Pipeline/PipelineCanvas.tsx",
+            "frontend/src/ui/components/Pipeline/FlowView.tsx",
+            "frontend/src/ui/components/Pipeline/LanesView.tsx",
+            "frontend/src/ui/components/Pipeline/AuditView.tsx",
+            "frontend/src/ui/components/TableView/index.tsx"
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    "Adversarial review (nw-software-crafter-reviewer) after GREEN",
+    "Deferred per-feature gates (Python acceptance suite / Elevator-Pitch demos / mutation / evolution finalize) — N/A or deferred for this per-MR slice; see deliver/wave-decisions-mr6.md"
+  ],
+  "deliver_dispatch_notes": "Three sequential standard crafter steps (verify each before the next per saved-feedback). Backend FIRST (06-01) so the FE builds on a real persisted field; 06-02 adds the TS types + optimistic mutation; 06-03 builds the modal/editor + wiring. RED authored in DISTILL (backend: 2 pytest cases RED via assertion — display_name None until wired; frontend: 5 files RED via __SCAFFOLD__ throw + the useUpdateDatasetDisplayName throw, with real TS type fields + real CSS that cannot throw). Acceptance gate is the standard backend pytest + frontend vitest suites (no Python acceptance suite exists for this feature). Run real DES instrumentation (init_log, per-step log_phase, verify_deliver_integrity) under DES-PROJECT-ID pipeline-layers-ui-redesign-mr6, consolidating the committed record under deliver/mr6/ (headless-deliver path quirk: log_phase writes to docs/feature/<id>/deliver). Skip Phase-3.5 Elevator-Pitch (N/A — no DISCUSS stories; vitest/pytest is the gate) and Phase-5 mutation (low value on this thin additive surface); log skips in deliver/wave-decisions-mr6.md. Do NOT run Phase 7 finalize — MR-6 is 6 of 8; finalize after MR-8. PRE-SUBMIT (mixed FE+BE): run FULL backend pytest + ruff AND FULL frontend vitest AND the migration round-trip AND python3 tools/check_workspace_consistency.py, then ./tools/test/test.sh --auto, all green before gt mq submit."
+}

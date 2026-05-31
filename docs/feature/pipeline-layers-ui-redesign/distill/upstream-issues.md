@@ -1,7 +1,7 @@
 # DISTILL Upstream Issues — pipeline-layers-ui-redesign
 
 Gaps/contradictions in prior-wave inputs surfaced while writing acceptance tests.
-MR-1 findings (UI-1..UI-3) below; MR-5 findings (UI-5..UI-6) at the end.
+MR-1 findings (UI-1..UI-3) below; MR-5 findings (UI-5..UI-6); MR-6 finding (UI-7) at the end.
 
 ## UI-1 — SSR ingress currently blocked (affects the true port-to-port WS)
 **Finding:** The no-flash guarantee is most truthfully verified by fetching
@@ -59,3 +59,19 @@ render a documented "preview not yet available" empty-state (`data-preview-unava
 Materializing a view/report sample requires the query engine — a deferred **(c)**
 (query-engine sampling + a preview read option on `getView`/`getReport`). No backend
 sample endpoint invented in MR-5. Not blocking.
+
+## UI-7 — Per-source upload history is not served by the API (MR-6, open q6) — deferred (c)
+**Finding:** The MR-6 upload-modal design wants a per-source file list (names + rows +
+when uploaded) when reopening a source. Inspection of the uploads router
+(`backend/app/routers/uploads.py`) shows it exposes only `POST ""` (file -> dataset,
+single step), `POST /{upload_id}/process` (sheet choices), and `GET /formats` — there is
+**no list-uploads-by-dataset / per-source upload-history endpoint**, and no `listUploads`
+client function exists in `frontend/src/core/dataCatalog/client.ts`. The `UploadEvent`
+record exists server-side but is not exposed as a queryable per-dataset history.
+**Resolution (MR-6, DWD-M6-6):** Ship the modal's per-source file list as a documented
+**empty-state** (`upload-history-empty`) — best-effort from what is available client-side
+(none today). A queryable upload-history feed requires a NEW backend read endpoint
+(`GET /api/datasets/{id}/uploads` or `GET /api/uploads?dataset_id=`) — a deferred **(c)**.
+**NOT built in MR-6**: the only backend touch is the single additive nullable `display_name`
+column (archive/retention + any new read endpoints stay reserved for MR-7 / a later MR).
+Revisit when an upload-history backend surface is in scope. Not blocking.
