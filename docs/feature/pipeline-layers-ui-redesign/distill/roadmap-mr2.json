@@ -1,0 +1,63 @@
+{
+  "roadmap": "pipeline-layers-ui-redesign / MR-2 — lineage Pipeline view (Flow/Lanes/Audit) + landing swap",
+  "scope": "Derive a layered lineage graph (source/staging/intermediate/mart) from the dataCatalog REST data via a pure buildGraph(datasets, views, reports, archived) with orphan detection (archived set empty for MR-2 — cold storage is MR-7). Render three presentational views over the same graph — FlowView (left→right DAG, orphan disabled), LanesView (layer swimlanes, orphan 'Orphaned' badge), AuditView (lineage stream with per-model audit, orphan flagged) — with an in-canvas style switch consuming MR-1 --layer-* tokens. Wire the Pipeline as the landing surface for a selected project at projects/:projectId/pipeline (additive; chat / index + welcome panel + existing routes untouched; full index swap + chat-as-overlay is MR-4). Data via existing dataCatalog TanStack Query hooks; the ui-state wire is NOT touched. Drives the RED vitest suite (30 cases) to GREEN.",
+  "design_ratified_as": "docs/feature/pipeline-layers-ui-redesign/path-forward.md §2.1 (lineage feature), §4.2 (routes / landing), §4.5 (lineage module), §5 (MR-2)",
+  "distill_roadmap": "docs/feature/pipeline-layers-ui-redesign/distill/walking-skeleton-mr2.md",
+  "distill_wave_decisions": "docs/feature/pipeline-layers-ui-redesign/distill/wave-decisions-mr2.md",
+  "dispatch_policy": "SEQUENTIAL — dispatch ONE crafter step at a time and verify commit + integrity (its scenarios green, full FE suite green, no testing-theater) before the next, even though the steps' files do not overlap (saved-feedback constraint).",
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Lineage Pipeline view + landing swap",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Implement the pure buildGraph lineage builder (layers + live edges + orphan detection)",
+          "criteria": "All 14 cases in frontend/src/core/lineage/buildGraph.test.ts are GREEN (cd frontend && npx vitest run src/core/lineage). buildGraph maps dataset→staging / view→intermediate / report→mart with a node per catalog item and NO source-layer nodes; emits a LIVE upstream→downstream edge per source_ref only when the upstream is present AND not archived (dedup identical edges; no dangling edge to an absent upstream); orphan = a non-dataset node with zero live incoming edges (every source_ref absent-or-archived, or none); datasets are roots and never orphan; archived nodes carry archived=true; empty inputs yield an empty graph without throwing. The module is framework-free (no React/DOM import). No __SCAFFOLD__ marker remains in frontend/src/core/lineage. Existing frontend tests stay green.",
+          "test_file": "frontend/src/core/lineage/buildGraph.test.ts",
+          "scenario_name": "buildGraph — layer + kind mapping / edge derivation / orphan detection",
+          "estimate_minutes": 45,
+          "depends_on": [],
+          "files_to_modify": [
+            "frontend/src/core/lineage/buildGraph.ts"
+          ]
+        },
+        {
+          "id": "02-02",
+          "name": "Implement the three presentational views + in-canvas style switch",
+          "criteria": "All 13 cases in frontend/src/ui/components/Pipeline/PipelineViews.test.tsx are GREEN (cd frontend && npx vitest run src/ui/components/Pipeline/PipelineViews.test.tsx). FlowView renders flow-view + a flow-node-<id> per node, layer columns ordered staging→intermediate→mart (data-testid flow-layer-<layer>), a flow-edge-<from>-<to> per edge, and orphan nodes with aria-disabled=\"true\" (live nodes without). LanesView renders lanes-view + a lane-<layer> per present layer with lanes-node-<id> inside its layer's lane and an 'Orphaned' badge on orphan nodes only. AuditView renders audit-view + audit-row-<id> and audit-detail-<id> per node (upstream→downstream order) and flags orphan rows with 'Orphaned'. PipelineCanvas defaults to Flow, exposes pipeline-style-flow|lanes|audit controls, switches the rendered view on click, and honours initialStyle. Components consume the MR-1 --layer-* / border / shadow tokens (via CSS module or inline var()), no hardcoded palette. No __SCAFFOLD__ markers remain in those component files. Existing frontend tests stay green.",
+          "test_file": "frontend/src/ui/components/Pipeline/PipelineViews.test.tsx",
+          "scenario_name": "FlowView / LanesView / AuditView / PipelineCanvas",
+          "estimate_minutes": 90,
+          "depends_on": ["02-01"],
+          "files_to_modify": [
+            "frontend/src/ui/components/Pipeline/FlowView.tsx",
+            "frontend/src/ui/components/Pipeline/LanesView.tsx",
+            "frontend/src/ui/components/Pipeline/AuditView.tsx",
+            "frontend/src/ui/components/Pipeline/PipelineCanvas.tsx",
+            "frontend/src/ui/components/Pipeline/Pipeline.module.css"
+          ]
+        },
+        {
+          "id": "02-03",
+          "name": "Wire the data-connected Pipeline landing route for a selected project",
+          "criteria": "All 3 cases in frontend/src/ui/components/Pipeline/PipelineLanding.test.tsx are GREEN (cd frontend && npx vitest run src/ui/components/Pipeline/PipelineLanding.test.tsx). PipelineLanding reads projectId from the route params (useParams), pulls datasets/views/reports from useDatasets/useViewsQuery/useReportsQuery, builds the graph with an EMPTY archived set, and renders PipelineCanvas (pipeline-canvas) with a node per catalog item; shows pipeline-loading while any query is loading and pipeline-empty when the project has no models. The route is registered at projects/:projectId/pipeline (routes.ts) → routes/pipeline.tsx default-exporting PipelineLanding; library-mode (no loader); the ui-state wire is NOT imported/touched. No __SCAFFOLD__ markers remain in frontend/src/ui/components/Pipeline/index.tsx or frontend/app/routes/pipeline.tsx. The chat `/` index, root.tsx welcome panel, and all existing routes stay green; the FULL frontend suite (cd frontend && npx vitest run) is GREEN.",
+          "test_file": "frontend/src/ui/components/Pipeline/PipelineLanding.test.tsx",
+          "scenario_name": "PipelineLanding — project landing surface",
+          "estimate_minutes": 45,
+          "depends_on": ["02-02"],
+          "files_to_modify": [
+            "frontend/src/ui/components/Pipeline/index.tsx",
+            "frontend/app/routes/pipeline.tsx",
+            "frontend/app/routes.ts"
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    "Adversarial review (nw-software-crafter-reviewer) after GREEN",
+    "Deferred per-feature gates (Python acceptance / Elevator-Pitch demos / mutation / evolution finalize) — N/A or deferred for this per-MR frontend slice; see deliver/wave-decisions-mr2.md"
+  ],
+  "deliver_dispatch_notes": "Three OOP/standard crafter steps dispatched SEQUENTIALLY (verify each before the next per saved-feedback). RED authored in DISTILL; each crafter performs GREEN + COMMIT for its step's files only. Acceptance gate is the vitest suite, not a Python acceptance suite (none exists for MR-2). Run real DES instrumentation (init_log, per-step log_phase, verify_deliver_integrity). Skip Phase-3.5 Python-acceptance + Elevator-Pitch (N/A — no DISCUSS stories; vitest is the gate) and Phase-5 mutation (low value on this slice); log skips. Do NOT run Phase 7 finalize — MR-2 is 2 of 8; finalize after MR-8."
+}
