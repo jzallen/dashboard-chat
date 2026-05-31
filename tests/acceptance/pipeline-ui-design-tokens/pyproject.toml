@@ -1,0 +1,25 @@
+[project]
+name = "dashboard-chat-acceptance-pipeline-ui-design-tokens"
+version = "0.0.1"
+description = "Acceptance tests for pipeline-layers-ui-redesign MR-1 — design-token foundation + dark-mode plumbing (SSR no-flash, deferred behind the SSR asset-hash issue)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "httpx>=0.27.0,<1.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+markers = [
+    "real_io: scenario uses real adapters (the local compose stack + real HTTP)",
+    "adapter_integration: exercises a driving adapter (the SSR ingress) over its protocol",
+    "requires_external: needs the running compose stack; skipped if absent",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
