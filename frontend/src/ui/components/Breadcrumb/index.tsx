@@ -5,16 +5,15 @@
 //   • model views:            OrgIcon / Project (link) / Model ▾  (model picker)
 // The org icon is a toggle that opens the Org Settings sheet via the `?org=1`
 // search param and morphs to an × while open; project-scoped affordances are
-// hidden while the org sheet is open. A minimal utility menu keeps New Session,
-// All Chats (/sessions), and Query Engines (/query-engines) reachable until the
-// assistant overlay (MR-4) absorbs the session controls.
+// hidden while the org sheet is open. MR-4 moved New Session / Recents / All Chats
+// into the assistant overlay, so the interim utility menu is now reduced to Query
+// Engines (/query-engines) — which still needs a path until a later MR (DWD-M4-6).
 //
 // Picker data comes from the existing dataCatalog TanStack Query hooks — the
 // ui-state wire is NOT touched (saved-feedback constraint).
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
-import { useChatContext } from "../../context/ChatContext";
 import { useDatasetQuery, useDatasets } from "../../hooks/useDatasetQuery";
 import { useOrgProjectsQuery } from "../../hooks/useOrgQuery";
 import { useReportQuery, useReportsQuery } from "../../hooks/useReportQuery";
@@ -44,7 +43,6 @@ export function Breadcrumb(): JSX.Element {
   const params = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { resetSession } = useChatContext();
   const [openPopover, setOpenPopover] = useState<Popover>(null);
 
   const context = resolveBreadcrumbContext(params);
@@ -104,12 +102,6 @@ export function Breadcrumb(): JSX.Element {
   function goToUtility(path: string) {
     setOpenPopover(null);
     navigate(path);
-  }
-
-  function newSession() {
-    setOpenPopover(null);
-    resetSession();
-    navigate("/");
   }
 
   return (
@@ -201,22 +193,8 @@ export function Breadcrumb(): JSX.Element {
         </button>
         {openPopover === "utility" && (
           <div className={styles.picker} role="menu">
-            <button
-              type="button"
-              data-testid="utility-new-session"
-              className={styles.option}
-              onClick={newSession}
-            >
-              New Session
-            </button>
-            <button
-              type="button"
-              data-testid="utility-sessions"
-              className={styles.option}
-              onClick={() => goToUtility("/sessions")}
-            >
-              All Chats
-            </button>
+            {/* New Session / Recents / All Chats moved into the assistant overlay
+                (MR-4, DWD-M4-6); Query Engines stays until a later MR. */}
             <button
               type="button"
               data-testid="utility-query-engines"

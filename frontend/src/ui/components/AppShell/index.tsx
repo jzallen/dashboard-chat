@@ -6,6 +6,7 @@ import { StreamProvider } from "@/stream/StreamProvider";
 import { ChatProvider, useChatContext } from "../../context/ChatContext";
 import { useOrgProjectsQuery, useOrgQuery } from "../../hooks/useOrgQuery";
 import { useProjectQuery } from "../../hooks/useProjectQuery";
+import { Assistant } from "../Assistant";
 import { Breadcrumb } from "../Breadcrumb";
 import { OrgSheet } from "../OrgView/OrgSheet";
 import styles from "./AppShell.module.css";
@@ -72,6 +73,10 @@ function AppShellInner() {
         {orgSheetOpen ? (
           <OrgSheet projects={projects ?? []} orgName={orgName} onClose={closeOrgSheet} />
         ) : null}
+        {/* MR-4: the assistant floats over every view as a sibling of the Outlet
+            (path-forward §4.4). It consumes the existing ChatProvider context and
+            hides itself while the org sheet is open. */}
+        <Assistant projects={projects} />
       </div>
     </ChatProvider>
     </StreamProvider>
