@@ -9,6 +9,9 @@ export const datasetKeys = {
   all: ["datasets"] as const,
   lists: () => [...datasetKeys.all, "list"] as const,
   list: (projectId: string) => [...datasetKeys.lists(), projectId] as const,
+  /** MR-7: the cold-storage (archived-only) list for a project. */
+  archived: (projectId: string) =>
+    [...datasetKeys.lists(), projectId, "archived"] as const,
   detail: (id: string) => ["datasets", id] as const,
 };
 

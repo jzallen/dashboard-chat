@@ -52,6 +52,14 @@ class DatasetRecord(Base):
     # when unset, and the underlying filename/``name`` is never mutated by an edit.
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # MR-7: cold-storage / retention. Both nullable and UTC-valued (mirrors
+    # ``created_at``/``updated_at``). ``archived_at`` is set when the source is moved
+    # to cold storage; ``retention_until`` = ``archived_at`` + the 90-day retention
+    # window (computed server-side at archive time). Both are cleared on restore.
+    # List endpoints default-exclude rows where ``archived_at IS NOT NULL``.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
     # Column names + types for query builder (RAQB), table UI, and SQL generation
     # Format: { "fields": { "column_name": { "type": "text|number|boolean|select", ... } } }
     schema_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

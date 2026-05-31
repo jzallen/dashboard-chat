@@ -161,3 +161,25 @@ export function useUpdateDatasetDisplayName(projectId: string) {
     },
   });
 }
+
+/**
+ * MR-7 — RED scaffold. Moves a source to cold storage with optimistic updates: removes
+ * the dataset from the live list cache, and on settle invalidates the live list, the
+ * archived (cold-storage) list, and the detail so the lineage recomputes (the archived
+ * source leaves the live graph, its downstream goes orphaned). DELIVER 07-02 replaces this.
+ */
+export function useArchiveDataset(projectId: string) {
+  void projectId;
+  throw new Error("Not yet implemented — RED scaffold (useArchiveDataset, MR-7)");
+}
+
+/**
+ * MR-7 — RED scaffold. Brings a source back from cold storage with optimistic updates:
+ * removes the dataset from the archived list cache, and on settle invalidates the live
+ * list, the archived list, and the detail so it reappears in the lineage. DELIVER 07-02
+ * replaces this.
+ */
+export function useRestoreDataset(projectId: string) {
+  void projectId;
+  throw new Error("Not yet implemented — RED scaffold (useRestoreDataset, MR-7)");
+}

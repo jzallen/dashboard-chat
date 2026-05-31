@@ -167,3 +167,54 @@ class TestListDatasets:
                 pytest.fail("list_datasets should fail when database error occurs")
 
     # NOTE: org mismatch test removed — authorization moved to router layer (authorize_project_access)
+
+
+class TestListDatasetsColdStorageFilter:
+    """MR-7 — the ``archived`` filter on list_datasets (cold storage).
+
+    Default (``archived=None``/``False``) excludes archived datasets (the live view);
+    ``archived=True`` returns ONLY archived datasets (the cold-storage list). RED until
+    DELIVER 07-01 pushes the filter into the repository query.
+    """
+
+    @staticmethod
+    async def _archive(db: AsyncSession, dataset_id: str) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import select
+
+        from app.repositories.metadata import DatasetRecord
+
+        record = (await db.execute(select(DatasetRecord).where(DatasetRecord.id == dataset_id))).scalar_one()
+        now = datetime.now(UTC)
+        record.archived_at = now
+        record.retention_until = now + timedelta(days=90)
+        await db.commit()
+
+    async def test_default_list_excludes_archived_datasets(self, seeded_db: AsyncSession):
+        """With one archived + one live dataset, the default list returns only the live one."""
+        set_session(seeded_db)
+        await self._archive(seeded_db, DATASET_1)
+
+        result = await list_datasets(project_id=PROJECT_1)
+
+        match result:
+            case Success(data):
+                ids = {ds.id for ds in data["items"]}
+                assert ids == {DATASET_2}, "default list must exclude archived datasets"
+            case Failure(error):
+                pytest.fail(f"list_datasets should succeed, got: {error}")
+
+    async def test_archived_true_returns_only_archived_datasets(self, seeded_db: AsyncSession):
+        """``archived=True`` returns ONLY archived datasets (the cold-storage list)."""
+        set_session(seeded_db)
+        await self._archive(seeded_db, DATASET_1)
+
+        result = await list_datasets(project_id=PROJECT_1, archived=True)
+
+        match result:
+            case Success(data):
+                ids = {ds.id for ds in data["items"]}
+                assert ids == {DATASET_1}, "archived=True must return only archived datasets"
+            case Failure(error):
+                pytest.fail(f"list_datasets should succeed, got: {error}")

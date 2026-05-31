@@ -1,0 +1,68 @@
+/* ConfirmDialog — generic confirm/cancel surface (MR-7).
+ *
+ * Single Neobrutalist aesthetic via the MR-1 token layer; dark mode via the orthogonal
+ * `.dark` root class. happy-dom does not apply this stylesheet, so the MR-7 vitest cases
+ * assert structure/values, never these computed styles (DWD-M7-2). */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-ink) 45%, transparent);
+  padding: 1.5rem;
+  z-index: 60;
+}
+
+.card {
+  width: min(420px, 100%);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+.message {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9375rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.confirmButton {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  box-shadow: var(--shadow);
+  padding: 0.5rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cancelButton {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  padding: 0.5rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}

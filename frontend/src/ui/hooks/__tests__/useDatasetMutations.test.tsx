@@ -7,9 +7,13 @@ import type { Dataset, DatasetSparse } from "@/dataCatalog";
 
 // --- Mocks ---
 
-const { mockUpdateDataset } = vi.hoisted(() => ({
-  mockUpdateDataset: vi.fn(),
-}));
+const { mockUpdateDataset, mockArchiveDataset, mockRestoreDataset } = vi.hoisted(
+  () => ({
+    mockUpdateDataset: vi.fn(),
+    mockArchiveDataset: vi.fn(),
+    mockRestoreDataset: vi.fn(),
+  }),
+);
 
 vi.mock("@/auth", () => ({
   withAuth: (f: typeof fetch) => f,
@@ -21,12 +25,19 @@ vi.mock("@/dataCatalog", async (importOriginal) => {
     ...actual,
     createDataCatalog: () => ({
       updateDataset: mockUpdateDataset,
+      archiveDataset: mockArchiveDataset,
+      restoreDataset: mockRestoreDataset,
     }),
   };
 });
 
 import { datasetKeys } from "../queryKeys";
-import { useRenameDataset, useUpdateDatasetDisplayName } from "../useDatasetMutations";
+import {
+  useArchiveDataset,
+  useRenameDataset,
+  useRestoreDataset,
+  useUpdateDatasetDisplayName,
+} from "../useDatasetMutations";
 
 // --- Helpers ---
 
@@ -329,6 +340,159 @@ describe("useUpdateDatasetDisplayName", () => {
       );
       expect(invalidateSpy).toHaveBeenCalledWith(
         expect.objectContaining({ queryKey: datasetKeys.list("p-1") }),
+      );
+    });
+  });
+});
+
+describe("useArchiveDataset", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("optimistically removes the dataset from the live list cache", async () => {
+    const wrapper = createWrapper();
+    const live1 = makeDatasetSparse({ id: "ds-1", name: "One" });
+    const live2 = makeDatasetSparse({ id: "ds-2", name: "Two" });
+    queryClient.setQueryData(datasetKeys.list("p-1"), [live1, live2]);
+
+    mockArchiveDataset.mockResolvedValue({ ...live1, archived_at: "2026-06-01T00:00:00Z" });
+
+    const { result } = renderHook(() => useArchiveDataset("p-1"), { wrapper });
+
+    await act(async () => {
+      result.current.mutate({ datasetId: "ds-1" });
+    });
+
+    const cached = queryClient.getQueryData<DatasetSparse[]>(datasetKeys.list("p-1"));
+    expect(cached?.map((d) => d.id)).toEqual(["ds-2"]);
+  });
+
+  it("calls the API with the dataset id", async () => {
+    const wrapper = createWrapper();
+    mockArchiveDataset.mockResolvedValue({ id: "ds-1" });
+
+    const { result } = renderHook(() => useArchiveDataset("p-1"), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ datasetId: "ds-1" });
+    });
+
+    expect(mockArchiveDataset).toHaveBeenCalledWith("ds-1");
+  });
+
+  it("rolls back the live list cache on error", async () => {
+    const wrapper = createWrapper();
+    const live1 = makeDatasetSparse({ id: "ds-1", name: "One" });
+    queryClient.setQueryData(datasetKeys.list("p-1"), [live1]);
+
+    mockArchiveDataset.mockRejectedValue(new Error("fail"));
+
+    const { result } = renderHook(() => useArchiveDataset("p-1"), { wrapper });
+
+    await act(async () => {
+      try {
+        await result.current.mutateAsync({ datasetId: "ds-1" });
+      } catch {
+        // expected
+      }
+    });
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<DatasetSparse[]>(datasetKeys.list("p-1"));
+      expect(cached?.map((d) => d.id)).toEqual(["ds-1"]);
+    });
+  });
+
+  it("invalidates the live list, the archived list, and the detail on settle", async () => {
+    const wrapper = createWrapper();
+    queryClient.setQueryData(datasetKeys.list("p-1"), [makeDatasetSparse()]);
+    mockArchiveDataset.mockResolvedValue({ id: "ds-1" });
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useArchiveDataset("p-1"), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ datasetId: "ds-1" });
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: datasetKeys.list("p-1") }),
+      );
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: datasetKeys.archived("p-1") }),
+      );
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: datasetKeys.detail("ds-1") }),
+      );
+    });
+  });
+});
+
+describe("useRestoreDataset", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("optimistically removes the dataset from the archived list cache", async () => {
+    const wrapper = createWrapper();
+    const archived1 = makeDatasetSparse({
+      id: "ds-1",
+      name: "One",
+      archived_at: "2026-06-01T00:00:00Z",
+    });
+    queryClient.setQueryData(datasetKeys.archived("p-1"), [archived1]);
+
+    mockRestoreDataset.mockResolvedValue({ ...archived1, archived_at: null });
+
+    const { result } = renderHook(() => useRestoreDataset("p-1"), { wrapper });
+
+    await act(async () => {
+      result.current.mutate({ datasetId: "ds-1" });
+    });
+
+    const cached = queryClient.getQueryData<DatasetSparse[]>(
+      datasetKeys.archived("p-1"),
+    );
+    expect(cached?.map((d) => d.id)).toEqual([]);
+  });
+
+  it("calls the API with the dataset id", async () => {
+    const wrapper = createWrapper();
+    mockRestoreDataset.mockResolvedValue({ id: "ds-1" });
+
+    const { result } = renderHook(() => useRestoreDataset("p-1"), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ datasetId: "ds-1" });
+    });
+
+    expect(mockRestoreDataset).toHaveBeenCalledWith("ds-1");
+  });
+
+  it("invalidates the live list, the archived list, and the detail on settle", async () => {
+    const wrapper = createWrapper();
+    queryClient.setQueryData(datasetKeys.archived("p-1"), [
+      makeDatasetSparse({ archived_at: "2026-06-01T00:00:00Z" }),
+    ]);
+    mockRestoreDataset.mockResolvedValue({ id: "ds-1" });
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useRestoreDataset("p-1"), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ datasetId: "ds-1" });
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: datasetKeys.list("p-1") }),
+      );
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: datasetKeys.archived("p-1") }),
       );
     });
   });

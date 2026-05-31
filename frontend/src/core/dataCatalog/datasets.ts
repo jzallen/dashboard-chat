@@ -15,6 +15,10 @@ export interface DatasetSparse {
   schema_config: SchemaConfig;
   /** MR-6: editable source display name; UI falls back to `name` when null. */
   display_name?: string | null;
+  /** MR-7: cold-storage timestamp (ISO); null when the source is live. */
+  archived_at?: string | null;
+  /** MR-7: retention end (ISO) = archived_at + 90d; null when the source is live. */
+  retention_until?: string | null;
 }
 
 export interface FieldConfig {
@@ -76,6 +80,10 @@ export interface Dataset {
   format_context?: string | null;
   /** MR-6: editable source display name; UI falls back to `name` when null. */
   display_name?: string | null;
+  /** MR-7: cold-storage timestamp (ISO); null when the source is live. */
+  archived_at?: string | null;
+  /** MR-7: retention end (ISO) = archived_at + 90d; null when the source is live. */
+  retention_until?: string | null;
 }
 
 export interface DatasetUpdate {
