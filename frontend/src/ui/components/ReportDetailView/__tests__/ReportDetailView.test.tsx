@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Report } from "@/dataCatalog";
@@ -11,7 +11,7 @@ const mockReport: Report = {
   org_id: "org-1",
   name: "Monthly Revenue",
   description: "Monthly revenue fact table",
-  sql_definition: "SELECT month, SUM(amount) AS revenue FROM view_2 GROUP BY month",
+  sql_definition: "SELECT month, SUM(amount) AS revenue FROM ref('int_orders') GROUP BY month",
   report_type: "fact",
   source_refs: [
     { id: "view-2", type: "view" },
@@ -55,31 +55,41 @@ vi.mock("../../../hooks/useReportQuery", () => ({
   }),
 }));
 
+// MR-5: the dependency strip data comes from useModelDependencies (doubled here).
+vi.mock("../../../hooks/useModelDependencies", () => ({
+  useModelDependencies: () => ({
+    upstream: [{ id: "view-2", name: "Order View", kind: "view" }],
+    downstream: [],
+    isLoading: false,
+  }),
+}));
+
+import { ReportDetailView } from "..";
+
 function renderWithRouter(reportId: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const Stub = createRoutesStub([
+    { path: "/report/:reportId", Component: () => <ReportDetailView /> },
+    { path: "/view/:viewId", Component: () => <div data-testid="view-destination">view detail</div> },
+  ]);
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/report/${reportId}`]}>
-        <Routes>
-          <Route path="report/:reportId" element={<ReportDetailView />} />
-        </Routes>
-      </MemoryRouter>
+      <Stub initialEntries={[`/report/${reportId}`]} />
     </QueryClientProvider>,
   );
 }
 
-import { ReportDetailView } from "..";
-
-describe("ReportDetailView", () => {
+describe("ReportDetailView (MR-5 single-page model detail)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("renders report name and badges", () => {
+  it("renders inside the shared model-detail layout with name and badges", () => {
     renderWithRouter("report-1");
-    expect(screen.getByText("Monthly Revenue")).toBeInTheDocument();
+    expect(screen.getByTestId("model-detail")).toBeInTheDocument();
+    expect(screen.getByTestId("model-detail-title")).toHaveTextContent("Monthly Revenue");
     expect(screen.getByText("fact")).toBeInTheDocument();
     expect(screen.getByText("Finance")).toBeInTheDocument();
   });
@@ -89,7 +99,30 @@ describe("ReportDetailView", () => {
     expect(screen.getByText("Monthly revenue fact table")).toBeInTheDocument();
   });
 
-  it("renders columns metadata table with role and type", () => {
+  it("renders the dependency strip with a link to the upstream view", () => {
+    renderWithRouter("report-1");
+    expect(screen.getByTestId("dependency-strip")).toBeInTheDocument();
+    expect(screen.getByTestId("dep-link-view-2")).toHaveAttribute("href", "/view/view-2");
+  });
+
+  it("navigates to a dependency's detail route when its link is clicked", async () => {
+    renderWithRouter("report-1");
+    fireEvent.click(screen.getByTestId("dep-link-view-2"));
+    expect(await screen.findByTestId("view-destination")).toBeInTheDocument();
+  });
+
+  it("renders the Assistant-changes audit panel", () => {
+    renderWithRouter("report-1");
+    expect(screen.getByTestId("assistant-changes-panel")).toBeInTheDocument();
+  });
+
+  it("renders the data preview section with a documented empty-state for reports", () => {
+    renderWithRouter("report-1");
+    expect(screen.getByTestId("data-preview")).toBeInTheDocument();
+    expect(screen.getByTestId("data-preview-unavailable")).toBeInTheDocument();
+  });
+
+  it("renders the columns metadata table with role and type", () => {
     renderWithRouter("report-1");
     expect(screen.getByTestId("columns-metadata-table")).toBeInTheDocument();
     expect(screen.getByText("month")).toBeInTheDocument();
@@ -97,20 +130,11 @@ describe("ReportDetailView", () => {
     expect(screen.getByText("sum")).toBeInTheDocument();
   });
 
-  it("renders source dependency links with correct hrefs", () => {
+  it("renders the compiled SQL panel and reveals the SQL with ref() wiring on toggle", () => {
     renderWithRouter("report-1");
-    const list = screen.getByTestId("source-dependency-list");
-    const links = list.querySelectorAll("a");
-    expect(links).toHaveLength(2);
-    expect(links[0]).toHaveAttribute("href", "/view/view-2");
-    expect(links[1]).toHaveAttribute("href", "/table/ds-1");
-  });
-
-  it("SQL preview panel toggles on click", () => {
-    renderWithRouter("report-1");
-    expect(screen.queryByTestId("sql-preview-content")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("sql-preview-toggle"));
-    expect(screen.getByTestId("sql-preview-content")).toBeInTheDocument();
+    expect(screen.getByTestId("compiled-sql")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("compiled-sql-toggle"));
+    expect(screen.getByTestId("compiled-sql-content").textContent).toContain("ref('int_orders')");
   });
 
   it("shows error state for unknown report", () => {
@@ -146,12 +170,5 @@ describe("ReportDetailView", () => {
         }),
       }),
     );
-  });
-
-  it("clears tableSchema on unmount", () => {
-    const { unmount } = renderWithRouter("report-1");
-    mockRegisterTableSchema.mockClear();
-    unmount();
-    expect(mockRegisterTableSchema).toHaveBeenCalledWith(null);
   });
 });
