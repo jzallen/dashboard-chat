@@ -1,6 +1,7 @@
-# DISTILL Upstream Issues — pipeline-layers-ui-redesign / MR-1
+# DISTILL Upstream Issues — pipeline-layers-ui-redesign
 
-Gaps/contradictions in prior-wave inputs surfaced while writing MR-1 acceptance tests.
+Gaps/contradictions in prior-wave inputs surfaced while writing acceptance tests.
+MR-1 findings (UI-1..UI-3) below; MR-5 findings (UI-5..UI-6) at the end.
 
 ## UI-1 — SSR ingress currently blocked (affects the true port-to-port WS)
 **Finding:** The no-flash guarantee is most truthfully verified by fetching
@@ -27,3 +28,34 @@ traceability was skipped. Not blocking. If MR-2+ grows, consider a light
 driving-port handoff section.
 **Resolution:** Driving ports derived from path-forward §4.3 + repo precedent
 (`frontend/app/root.test.tsx`, `tests/acceptance/frontend-coexistence/`). Non-blocking.
+
+## UI-5 — Per-model "Assistant changes" audit is not persisted/served (MR-5, open q5) — deferred (c)
+**Finding:** The MR-5 model-detail "Assistant changes" audit panel needs a per-model
+provenance source. Inspection of the existing data layer shows there is NONE served
+today: `Session` (`frontend/src/core/dataCatalog/sessions.ts`) is project-scoped, and
+the chat `Message` / `ToolCall` shapes (`frontend/src/core/chat/types.ts`) carry **no
+model id** — the model context set via `setContext("view"|"report"|"dataset", id)` is
+runtime-only and is not persisted onto messages. There is no `GET .../audit` or
+per-model tool-call-history endpoint.
+**Resolution (MR-5, DWD-M5-5):** Ship the audit panel as a presentational shell fed by
+the **only per-model provenance available client-side** — the live chat session bound to
+the current model (`deriveAssistantChanges(useChatContext().messages)`), with an explicit
+empty-state. The **persisted, cross-session per-model audit feed** is a deferred **(c)**:
+it requires either (a) the agent to persist per-model tool-call provenance and a backend
+read endpoint to query it by model id, or (b) deriving it from full session-history
+transcripts (also a new read surface). NOT built in MR-5 — backend touches are reserved
+for MR-6 (`display_name`) and MR-7 (archive/retention). Revisit when a per-model audit
+backend surface is in scope. Not blocking.
+
+## UI-6 — View/report data preview is not served by the API (MR-5, open q6) — deferred (c)
+**Finding:** The MR-5 model-detail design wants a data-preview grid on every layer.
+Only `Dataset` carries sample rows (`preview_rows`, `frontend/src/core/dataCatalog/datasets.ts`)
+and only `getDataset` accepts `{ includePreview }`. `getView` / `getReport` return
+`View` / `Report` shapes (`views.ts` / `reports.ts`) with **no** sample-rows field —
+view/report preview is not served today.
+**Resolution (MR-5, DWD-M5-6):** Ship the **dataset** layer's preview now (the existing
+interactive `TablePanel`, the dataset's real preview grid). The **view/report** layers
+render a documented "preview not yet available" empty-state (`data-preview-unavailable`).
+Materializing a view/report sample requires the query engine — a deferred **(c)**
+(query-engine sampling + a preview read option on `getView`/`getReport`). No backend
+sample endpoint invented in MR-5. Not blocking.
