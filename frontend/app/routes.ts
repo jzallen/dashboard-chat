@@ -22,6 +22,10 @@ export default [
     route("chat/:channelId", "routes/chat.tsx", { id: "chat-with-channel" }),
     route("projects", "routes/projects.tsx"),
     route("projects/:projectId", "routes/project-detail.tsx"),
+    // MR-2: lineage Pipeline as the landing surface for a selected project
+    // (path-forward §4.2). Additive — the chat `/` index + existing detail
+    // routes are unchanged; the full index swap + chat-as-overlay is MR-4.
+    route("projects/:projectId/pipeline", "routes/pipeline.tsx"),
     route(
       "projects/:projectId/datasets/:datasetId",
       "routes/project-detail.tsx",
