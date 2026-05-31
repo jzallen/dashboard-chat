@@ -94,6 +94,15 @@ vi.mock("../../../hooks/useReportQuery", () => ({
     isLoading: false,
     isError: reportId !== "report-1",
   }),
+  // MR-5: the recomposed view's dependency strip pulls useReportsQuery via
+  // useModelDependencies; this integration test asserts tool-call flow, not
+  // markup, so the dependency strip is doubled out below (test-infra only).
+  useReportsQuery: () => ({ data: [], isLoading: false }),
+}));
+
+// MR-5: short-circuit the dependency strip's data hook (no detail markup asserted here).
+vi.mock("../../../hooks/useModelDependencies", () => ({
+  useModelDependencies: () => ({ upstream: [], downstream: [], isLoading: false }),
 }));
 
 const { ReportDetailView } = await import("..");
