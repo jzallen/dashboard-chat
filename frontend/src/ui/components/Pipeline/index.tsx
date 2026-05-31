@@ -17,9 +17,10 @@ import type { DatasetSparse } from "@/dataCatalog";
 
 import type { LineageNode } from "../../../core/lineage/buildGraph";
 import { buildGraph } from "../../../core/lineage/buildGraph";
-import { useDatasets } from "../../hooks/useDatasetQuery";
+import { useArchivedDatasets, useDatasets } from "../../hooks/useDatasetQuery";
 import { useReportsQuery } from "../../hooks/useReportQuery";
 import { useViewsQuery } from "../../hooks/useViewQuery";
+import { ColdStorageDrawer } from "../ColdStorage";
 import { UploadModal } from "../UploadModal";
 import styles from "./Pipeline.module.css";
 import { PipelineCanvas } from "./PipelineCanvas";
@@ -28,21 +29,28 @@ export function PipelineLanding(): JSX.Element {
   const { projectId } = useParams();
 
   const datasets = useDatasets(projectId);
+  const archivedDatasets = useArchivedDatasets(projectId);
   const views = useViewsQuery(projectId);
   const reports = useReportsQuery(projectId);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [reopenSource, setReopenSource] = useState<DatasetSparse | null>(null);
+  const [fridgeOpen, setFridgeOpen] = useState(false);
 
   if (datasets.isLoading || views.isLoading || reports.isLoading) {
     return <div data-testid="pipeline-loading" className={styles.state} />;
   }
 
+  // MR-7: feed the live archived id set into the EXISTING buildGraph archived seam — an
+  // archived source leaves the live graph (it is absent from the default list) and its
+  // downstream goes orphaned. The default `datasets` list already excludes archived rows.
+  const archivedIds = new Set((archivedDatasets.data ?? []).map((ds) => ds.id));
+
   const graph = buildGraph(
     datasets.data ?? [],
     views.data ?? [],
     reports.data ?? [],
-    new Set(),
+    archivedIds,
   );
 
   if (graph.nodes.length === 0) {
@@ -74,6 +82,15 @@ export function PipelineLanding(): JSX.Element {
         >
           Upload source
         </button>
+        <button
+          type="button"
+          className={styles.toolbarButton}
+          data-testid="fridge-toolbar-button"
+          aria-label="Open cold storage"
+          onClick={() => setFridgeOpen(true)}
+        >
+          🧊 Cold storage
+        </button>
       </div>
       <PipelineCanvas graph={graph} onNodeActivate={handleNodeActivate} />
       <UploadModal
@@ -82,6 +99,11 @@ export function PipelineLanding(): JSX.Element {
         existingSource={reopenSource}
         onClose={() => setModalOpen(false)}
         onSourceCreated={() => setModalOpen(false)}
+      />
+      <ColdStorageDrawer
+        open={fridgeOpen}
+        projectId={projectId ?? ""}
+        onClose={() => setFridgeOpen(false)}
       />
     </div>
   );

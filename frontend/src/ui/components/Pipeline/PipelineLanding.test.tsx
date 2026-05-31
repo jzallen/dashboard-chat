@@ -81,6 +81,9 @@ vi.mock("../../hooks/useDatasetQuery", () => ({
     data: state.empty ? [] : (datasetsForProject[projectId ?? ""] ?? []),
     isLoading: state.loading,
   }),
+  // MR-7: PipelineLanding now also reads the archived set (cold storage). No archived
+  // sources in these MR-2 scenarios.
+  useArchivedDatasets: () => ({ data: [], isLoading: false }),
 }));
 
 vi.mock("../../hooks/useViewQuery", () => ({

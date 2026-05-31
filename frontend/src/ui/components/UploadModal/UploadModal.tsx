@@ -15,6 +15,8 @@ import { useEffect, useRef, useState } from "react";
 import { withAuth } from "@/auth";
 import { createDataCatalog, type Dataset, type DatasetSparse } from "@/dataCatalog";
 
+import { useArchiveDataset } from "../../hooks/useDatasetMutations";
+import { ConfirmDialog } from "../ConfirmDialog";
 import { DisplayNameEditor } from "./DisplayNameEditor";
 import styles from "./UploadModal.module.css";
 
@@ -46,7 +48,11 @@ export function UploadModal({
   const [step, setStep] = useState<Step>(existingSource ? "source" : "browse");
   const [source, setSource] = useState<UploadSource | null>(existingSource ?? null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // MR-7: archive (move to cold storage) the source being managed in this modal.
+  const archiveDataset = useArchiveDataset(projectId);
 
   // Reset to the correct entry step whenever the modal (re)opens or its source changes.
   useEffect(() => {
@@ -199,6 +205,14 @@ export function UploadModal({
               <button
                 type="button"
                 className={styles.secondaryButton}
+                data-testid="archive-source-button"
+                onClick={() => setConfirmArchiveOpen(true)}
+              >
+                ❄ Move to cold storage
+              </button>
+              <button
+                type="button"
+                className={styles.secondaryButton}
                 data-testid="upload-another"
                 onClick={() => setStep("browse")}
               >
@@ -219,6 +233,21 @@ export function UploadModal({
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmArchiveOpen}
+        testIdBase="archive"
+        title="Move to cold storage?"
+        message="This source leaves the live pipeline and any downstream models become orphaned. You can restore it from cold storage within the retention window."
+        confirmLabel="Move to cold storage"
+        cancelLabel="Cancel"
+        onCancel={() => setConfirmArchiveOpen(false)}
+        onConfirm={() => {
+          if (source) archiveDataset.mutate({ datasetId: source.id });
+          setConfirmArchiveOpen(false);
+          onClose();
+        }}
+      />
     </div>
   );
 }
