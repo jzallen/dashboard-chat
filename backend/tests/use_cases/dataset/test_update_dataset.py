@@ -110,6 +110,42 @@ class TestUpdateDataset:
             case Failure(error):
                 pytest.fail(f"update_dataset should succeed, got: {error}")
 
+    async def test_update_dataset_when_display_name_provided_persists(self, seeded_db: AsyncSession):
+        """MR-6: an editable source display_name round-trips through the existing
+        update path while the underlying name/filename is left unchanged
+        (the display name is a presentation overlay — UI falls back to ``name``)."""
+        set_session(seeded_db)
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"display_name": "Sales Snapshot"},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.display_name == "Sales Snapshot"
+                # The underlying filename/name is untouched by a display-name edit.
+                assert dataset.name == "Dataset One"
+            case Failure(error):
+                pytest.fail(f"update_dataset should succeed, got: {error}")
+
+    async def test_update_dataset_display_name_is_independent_of_name(self, seeded_db: AsyncSession):
+        """MR-6: display_name and name are independent additive fields — updating
+        both in one call applies both without conflict."""
+        set_session(seeded_db)
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"name": "renamed_dataset", "display_name": "Renamed Source"},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.name == "renamed_dataset"
+                assert dataset.display_name == "Renamed Source"
+            case Failure(error):
+                pytest.fail(f"update_dataset should succeed, got: {error}")
+
     async def test_update_dataset_when_dataset_not_found_returns_failure(self, seeded_db: AsyncSession):
         """update_dataset should return Failure when dataset not found."""
         set_session(seeded_db)

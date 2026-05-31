@@ -91,6 +91,9 @@ class Dataset:
     )
     format_context: str | None = None  # Plugin-provided context for LLM (e.g., HL7v2 column conventions)
     row_count: int | None = None  # Total row count snapshotted at ingestion (None for legacy datasets)
+    display_name: str | None = (
+        None  # MR-6: editable source display name; UI falls back to ``name`` (filename untouched)
+    )
 
     @classmethod
     def from_record(

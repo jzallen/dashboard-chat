@@ -80,3 +80,16 @@ export function useRenameDataset(projectId: string) {
     },
   });
 }
+
+/**
+ * MR-6 — sets a dataset's editable source display name with optimistic updates to
+ * both the detail and list caches. The underlying filename/`name` is never sent;
+ * the UI falls back to `name` when `display_name` is null.
+ *
+ * RED scaffold (DISTILL) — body throws until DELIVER step 06-02 implements it.
+ */
+export function useUpdateDatasetDisplayName(_projectId: string) {
+  throw new Error(
+    "Not yet implemented — RED scaffold useUpdateDatasetDisplayName",
+  );
+}

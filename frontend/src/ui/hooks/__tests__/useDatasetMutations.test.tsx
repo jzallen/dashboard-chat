@@ -26,7 +26,7 @@ vi.mock("@/dataCatalog", async (importOriginal) => {
 });
 
 import { datasetKeys } from "../queryKeys";
-import { useRenameDataset } from "../useDatasetMutations";
+import { useRenameDataset, useUpdateDatasetDisplayName } from "../useDatasetMutations";
 
 // --- Helpers ---
 
@@ -203,6 +203,124 @@ describe("useRenameDataset", () => {
 
     await act(async () => {
       await result.current.mutateAsync({ datasetId: "ds-1", name: "New" });
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: datasetKeys.detail("ds-1") }),
+      );
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: datasetKeys.list("p-1") }),
+      );
+    });
+  });
+});
+
+describe("useUpdateDatasetDisplayName", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("optimistically updates the display name in the detail cache", async () => {
+    const wrapper = createWrapper();
+    const dataset = makeDataset({ display_name: null });
+    queryClient.setQueryData(datasetKeys.detail("ds-1"), dataset);
+
+    mockUpdateDataset.mockResolvedValue({ ...dataset, display_name: "Pretty" });
+
+    const { result } = renderHook(() => useUpdateDatasetDisplayName("p-1"), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.mutate({ datasetId: "ds-1", displayName: "Pretty" });
+    });
+
+    const cached = queryClient.getQueryData<Dataset>(datasetKeys.detail("ds-1"));
+    expect(cached?.display_name).toBe("Pretty");
+    // The underlying name is left untouched by a display-name edit.
+    expect(cached?.name).toBe("Original Name");
+  });
+
+  it("optimistically updates the display name in the list cache", async () => {
+    const wrapper = createWrapper();
+    const sparse = makeDatasetSparse({ display_name: null });
+    queryClient.setQueryData(datasetKeys.list("p-1"), [sparse]);
+
+    mockUpdateDataset.mockResolvedValue({ display_name: "Pretty" });
+
+    const { result } = renderHook(() => useUpdateDatasetDisplayName("p-1"), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.mutate({ datasetId: "ds-1", displayName: "Pretty" });
+    });
+
+    const cached = queryClient.getQueryData<DatasetSparse[]>(
+      datasetKeys.list("p-1"),
+    );
+    expect(cached?.[0].display_name).toBe("Pretty");
+  });
+
+  it("rolls back the detail cache on error", async () => {
+    const wrapper = createWrapper();
+    const dataset = makeDataset({ display_name: "Before" });
+    queryClient.setQueryData(datasetKeys.detail("ds-1"), dataset);
+
+    mockUpdateDataset.mockRejectedValue(new Error("fail"));
+
+    const { result } = renderHook(() => useUpdateDatasetDisplayName("p-1"), {
+      wrapper,
+    });
+
+    await act(async () => {
+      try {
+        await result.current.mutateAsync({ datasetId: "ds-1", displayName: "After" });
+      } catch {
+        // expected
+      }
+    });
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<Dataset>(datasetKeys.detail("ds-1"));
+      expect(cached?.display_name).toBe("Before");
+    });
+  });
+
+  it("calls the API with only the display_name", async () => {
+    const wrapper = createWrapper();
+    mockUpdateDataset.mockResolvedValue({ display_name: "Pretty" });
+
+    const { result } = renderHook(() => useUpdateDatasetDisplayName("p-1"), {
+      wrapper,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ datasetId: "ds-1", displayName: "Pretty" });
+    });
+
+    expect(mockUpdateDataset).toHaveBeenCalledWith("ds-1", {
+      display_name: "Pretty",
+    });
+  });
+
+  it("invalidates detail and list queries on settle", async () => {
+    const wrapper = createWrapper();
+    const dataset = makeDataset();
+    queryClient.setQueryData(datasetKeys.detail("ds-1"), dataset);
+    queryClient.setQueryData(datasetKeys.list("p-1"), [makeDatasetSparse()]);
+
+    mockUpdateDataset.mockResolvedValue({ ...dataset, display_name: "Pretty" });
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useUpdateDatasetDisplayName("p-1"), {
+      wrapper,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ datasetId: "ds-1", displayName: "Pretty" });
     });
 
     await waitFor(() => {
