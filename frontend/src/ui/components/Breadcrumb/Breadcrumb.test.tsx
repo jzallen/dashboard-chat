@@ -225,16 +225,7 @@ describe("Breadcrumb — org settings toggle (?org=1)", () => {
   });
 });
 
-describe("Breadcrumb — utility menu keeps non-breadcrumb routes reachable (anti-strand, interim until MR-4)", () => {
-  it("navigates to All Chats (/sessions) from the utility menu", async () => {
-    renderBreadcrumbAt("/projects/p1/pipeline");
-
-    fireEvent.click(await screen.findByTestId("breadcrumb-utility"));
-    fireEvent.click(await screen.findByTestId("utility-sessions"));
-
-    expect(await screen.findByTestId("dest-sessions")).toBeInTheDocument();
-  });
-
+describe("Breadcrumb — utility menu keeps Query Engines reachable (MR-4: session controls moved to the assistant)", () => {
   it("navigates to Query Engines (/query-engines) from the utility menu", async () => {
     renderBreadcrumbAt("/projects/p1/pipeline");
 
@@ -244,12 +235,14 @@ describe("Breadcrumb — utility menu keeps non-breadcrumb routes reachable (ant
     expect(await screen.findByTestId("dest-query-engines")).toBeInTheDocument();
   });
 
-  it("resets the chat session and returns to the index on New Session", async () => {
+  it("no longer exposes New Session / All Chats — those moved into the assistant overlay (MR-4)", async () => {
     renderBreadcrumbAt("/projects/p1/pipeline");
 
     fireEvent.click(await screen.findByTestId("breadcrumb-utility"));
-    fireEvent.click(await screen.findByTestId("utility-new-session"));
 
-    expect(resetSession).toHaveBeenCalledTimes(1);
+    // The assistant overlay (MR-4) now owns New Session + recents + All Chats
+    // (DWD-M4-4); the breadcrumb's interim menu is reduced to Query Engines.
+    expect(screen.queryByTestId("utility-new-session")).toBeNull();
+    expect(screen.queryByTestId("utility-sessions")).toBeNull();
   });
 });

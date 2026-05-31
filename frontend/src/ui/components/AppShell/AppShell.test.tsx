@@ -39,6 +39,12 @@ vi.mock("../Breadcrumb", () => ({
 vi.mock("../OrgView/OrgSheet", () => ({
   OrgSheet: () => <div data-testid="org-sheet" />,
 }));
+// MR-4: the assistant FAB/overlay mounts at shell level as a sibling of the Outlet
+// (path-forward §4.4). Its own behavior is covered by Assistant.test; here we only
+// assert the shell mounts it.
+vi.mock("../Assistant", () => ({
+  Assistant: () => <div data-testid="assistant" />,
+}));
 
 afterEach(() => cleanup());
 
@@ -75,5 +81,13 @@ describe("AppShell — breadcrumb shell replaces the SideNav", () => {
     renderShellAt("/?org=1");
 
     expect(await screen.findByTestId("org-sheet")).toBeInTheDocument();
+  });
+
+  it("mounts the shell-level Assistant as a sibling of the outlet (MR-4)", async () => {
+    renderShellAt("/");
+
+    expect(await screen.findByTestId("assistant")).toBeInTheDocument();
+    // It floats over the routed content, not inside it.
+    expect(screen.getByTestId("outlet")).toBeInTheDocument();
   });
 });
