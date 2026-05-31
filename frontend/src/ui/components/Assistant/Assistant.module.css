@@ -61,6 +61,14 @@
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
+/* New Session / history control row. */
+.controls {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--color-border);
+}
+
 .title {
   font-weight: 700;
   margin-right: auto;
