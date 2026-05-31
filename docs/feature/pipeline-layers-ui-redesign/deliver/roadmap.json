@@ -1,0 +1,39 @@
+{
+  "roadmap": "pipeline-layers-ui-redesign / MR-1 — design-token foundation + dark-mode plumbing",
+  "scope": "Walking skeleton: establish the global design-token layer (single Neobrutalist aesthetic, light) + an orthogonal Solarized .dark class, with a localStorage-persisted dark-mode preference applied before hydration (no flash). Refactor one visible surface (app-shell frame + breadcrumb stub) onto tokens and mount the dark-mode toggle in the org-view appearance panel. NO multi-aesthetic switcher (path-forward §9). Drives the RED vitest suite at frontend/app/theme/theme.test.tsx (9 cases) to GREEN.",
+  "design_ratified_as": "docs/feature/pipeline-layers-ui-redesign/path-forward.md §5 (MR-1) + §9 (DECISION LOCKED — single Neobrutalist aesthetic + Solarized dark)",
+  "distill_roadmap": "docs/feature/pipeline-layers-ui-redesign/distill/walking-skeleton.md",
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Walking skeleton — token layer + dark-mode plumbing",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Implement theme token layer + dark-mode plumbing and wire it into the shell",
+          "criteria": "All 9 cases in frontend/app/theme/theme.test.tsx are GREEN (cd frontend && npx vitest run app/theme). readStoredMode/applyThemeClass/initThemeFromStorage/themeInitScript/useTheme implemented in frontend/app/theme/theme.ts; ThemeToggle renders a working switch; tokens.css carries real Neobrutalist-light values under :root/.theme-neobrutalist and Solarized-dark overrides under .dark. The pre-hydration init script is wired into Layout (frontend/app/root.tsx <head>) and the token sheet imported so first paint applies the default with no flash; the app-shell frame + a breadcrumb stub consume tokens; ThemeToggle is mounted in the org-view appearance panel (production call sites exist, not only tests). No __SCAFFOLD__ markers remain in frontend/app/theme (grep -r __SCAFFOLD__ frontend/app/theme is empty). Existing frontend tests stay green.",
+          "test_file": "frontend/app/theme/theme.test.tsx",
+          "scenario_name": "AC1 first-paint default theme (walking skeleton)",
+          "estimate_minutes": 90,
+          "depends_on": [],
+          "files_to_modify": [
+            "frontend/app/theme/theme.ts",
+            "frontend/app/theme/ThemeToggle.tsx",
+            "frontend/app/theme/tokens.css",
+            "frontend/app/root.tsx",
+            "frontend/index.css",
+            "frontend/src/ui/components/AppShell/index.tsx",
+            "frontend/src/ui/components/AppShell/AppShell.module.css",
+            "frontend/src/ui/components/OrgView/index.tsx",
+            "frontend/src/ui/components/OrgView/OrgView.module.css"
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review_gates": [
+    "Adversarial review (nw-software-crafter-reviewer) after GREEN",
+    "Deferred per-feature gates (Python acceptance / Elevator-Pitch demos / mutation / evolution finalize) — N/A or deferred for this per-MR frontend slice; see deliver/wave-decisions.md"
+  ],
+  "deliver_dispatch_notes": "Single OOP/standard crafter step. RED already authored in DISTILL; crafter performs GREEN + wiring + COMMIT. Acceptance gate is vitest (app/theme), not the deliberately-skipped Python SSR suite (UI-1). Do not run Phase 7 finalize — MR-1 is 1 of 8; finalize after MR-8."
+}
