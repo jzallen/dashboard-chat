@@ -5,7 +5,6 @@
 // a "model" view (dataset / view / report detail) shows
 // `OrgIcon / Project (link) / Model ▾`; any other route is a "list" context
 // showing `OrgIcon / Project ▾`. See path-forward.md §4.1.
-export const __SCAFFOLD__ = true;
 
 export type ModelKind = "dataset" | "view" | "report";
 
@@ -21,7 +20,16 @@ export interface BreadcrumbParams {
 }
 
 export function resolveBreadcrumbContext(
-  _params: BreadcrumbParams,
+  params: BreadcrumbParams,
 ): BreadcrumbContext {
-  throw new Error("Not yet implemented — RED scaffold (breadcrumb MR-3)");
+  if (params.viewId) {
+    return { kind: "model", modelKind: "view", modelId: params.viewId };
+  }
+  if (params.reportId) {
+    return { kind: "model", modelKind: "report", modelId: params.reportId };
+  }
+  if (params.datasetId) {
+    return { kind: "model", modelKind: "dataset", modelId: params.datasetId };
+  }
+  return { kind: "list" };
 }
