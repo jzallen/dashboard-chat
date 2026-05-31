@@ -31,7 +31,7 @@ export function PipelineCanvas({ graph, initialStyle = "flow" }: PipelineCanvasP
   const [style, setStyle] = useState<PipelineStyle>(initialStyle);
 
   return (
-    <div className={styles.canvas}>
+    <div data-testid="pipeline-canvas" className={styles.canvas}>
       <div className={styles.switch} role="tablist" aria-label="Pipeline style">
         {STYLE_LABELS.map(({ style: candidate, label }) => (
           <button
