@@ -239,4 +239,39 @@ sequenceDiagram
 
 ---
 
+## Addendum — Decision refinement: restoration-only + command-carries-context (2026-05-31)
+
+Discussion after the review sharpened the options above into a committed direction. It does not overturn the analysis; it narrows it.
+
+### The purpose of ui-state, succinctly
+
+**ui-state owns state that must be coordinated or durable *outside* a single live page — true before any message and surviving a cold start. It has exactly two jobs:**
+
+1. **Complex / multi-step transitions** — flows with real intermediate states and gating that must be coordinated server-side: onboarding / org-create and the `login → engaged` switch. "What step am I allowed into next" is genuine logic here, not just a route.
+2. **Prior-state restoration** — the cold-start reader: drop the user back where they were (last scope, last session) on a new login/device, seeded once at SSR (`root.tsx` `fetchStateDocument`).
+
+Everything that is merely "where am I *right now*" stays **FE-authoritative** (routes + `useEntityContext`). If a piece of state has no reader outside the live page and need not survive a cold start, it does not belong in ui-state.
+
+### Why the agent must NOT read scope from ui-state (the race condition)
+
+The tempting MVVM loop — UI pushes scope to ui-state, agent reads "current context" from ui-state at prompt-handling time — has an **inherent race**: between send and handle the user can navigate, the projection moves, and the agent binds to a scope that is neither what the user saw when typing nor where they now are. This is not fixable by making the projection faster or authoritative; it is a shared-mutable-state race.
+
+The codebase already avoids it via **command-carries-context**: `useChatEngine.tsx:344` reads `projectIdRef.current` **at submit time** and binds `project_id` (plus the in-frame entity via `useEntityContext`) into the outgoing agent request. The prompt is a self-contained command; later navigation is irrelevant to that in-flight request. **Therefore the agent must never read ui-state for scope** — doing so would reintroduce the very race that message-passing already eliminates. This rules out the agent-reads-the-VM variant of 3A.
+
+### Consequence for Points 3 & 4: the live mirror has no reader *yet*
+
+With the breadcrumb route-authoritative, the assistant using `useEntityContext`, and the agent on command-carries-context, **no live surface reads `active_scope` / `project_context`.** Building the mirror now (3B) for its own sake is a **write-only projection** — a smell, and speculative coupling against a wire still in flux (R1).
+
+The single legitimate reader is **restoration** (the cold-start seed). That reframes the emit-on-interaction events (`switching_project_intent`, `open_deep_link`, `session_begin`) as a **fire-and-forget restore/audit trail, not a control plane**: lag-tolerant by definition, and **race-free because nothing reads them live** — they are consumed once, at the next login's SSR seed. `session_begin` (4B) is the same: ui-state records "active session in project Y" for a *resume* affordance while the transcript stays on the agent.
+
+### What this means for sequencing (supersedes Point 6's framing)
+
+- **Build now:** only Job 1 — the `login → engaged` / org-create gate (Recommendation 2C / ADR-PROPOSED-C). It is load-bearing today.
+- **Defer (dormant, not rejected):** Job 2 — the scope/session mirror (3B / 4B). It is real but has **no consumer until "restore me where I was" / "resume my last chat" becomes a committed feature.** When it is, it is cheap (the SSR-seed seam + the existing event vocabulary already exist) and safe (restoration reads tolerate lag; no race).
+- Net: the three open questions collapse to **gate = real and now; project-context / active-scope / chat-session = a restoration feature parked behind a seam that already exists.**
+
+This refinement keeps ADR-PROPOSED-A/B as the *eventual* shape for Job 2 but adds the gating condition "**only once a restoration consumer exists**," and adds the hard rule "**the agent never reads ui-state for scope; scope rides with the prompt.**"
+
+---
+
 **Reviewer grade:** **PASS — A−** (nw-solution-architect-reviewer gate, 2026-05-31). All file:line citations spot-verified against the repo; all 7 points covered; Reuse Analysis present with zero unjustified CREATE-NEW; ADR candidates correctly PROPOSED; every `frontend/`/`auth-proxy/`-touching proposal flagged CONFIRM-FIRST. Three MEDIUM non-blocking notes raised — two already captured in the risk table (R4 ADR-027 stale `Status: Accepted`; R5 post-org-create principal derivation), and the third (4B↔3C interdependence) folded into Point 4's *Dependency note* above. No blocking issues.
