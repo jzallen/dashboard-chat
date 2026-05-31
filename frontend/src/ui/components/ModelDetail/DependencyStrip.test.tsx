@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { createRoutesStub, MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { DependencyStrip, type DependencyNode } from "./DependencyStrip";
+import { type DependencyNode,DependencyStrip } from "./DependencyStrip";
 
 // MR-5 — DependencyStrip: upstream/downstream links to model detail routes.
 const upstream: DependencyNode[] = [
