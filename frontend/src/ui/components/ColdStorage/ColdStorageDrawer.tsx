@@ -7,8 +7,8 @@
 // Returns null while closed. Detached from the assistant; consumes MR-1 tokens; dark mode via
 // the orthogonal `.dark` root class. happy-dom asserts structure/values, never colors.
 import { daysLeft } from "../../../core/coldStorage/daysLeft";
-import { useArchivedDatasets } from "../../hooks/useDatasetQuery";
 import { useRestoreDataset } from "../../hooks/useDatasetMutations";
+import { useArchivedDatasets } from "../../hooks/useDatasetQuery";
 import styles from "./ColdStorage.module.css";
 
 export interface ColdStorageDrawerProps {
