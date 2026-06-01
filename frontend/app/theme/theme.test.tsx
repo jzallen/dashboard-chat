@@ -68,13 +68,24 @@ describe("AC1 first-paint default theme (walking skeleton)", () => {
 // ─── AC1b — the no-flash seam exists (inline pre-hydration script) ────────────
 // The Layout must inject an inline <head> script so the class is set BEFORE
 // paint (a client-effect-applied class would flash). Assert the seam without
-// evaluating it: the script body references the persisted-preference key.
+// evaluating it: the script body references the persisted-preference key AND the
+// theme class constants it must apply (containment assertions — deferred MR-1
+// nit, applied MR-8). These are happy-dom-honorable string checks, not color.
 describe("AC1b no-flash inline script seam", () => {
   it("exposes a non-empty pre-hydration script body that reads the stored preference", () => {
     const body = themeInitScript();
     expect(typeof body).toBe("string");
     expect(body.length).toBeGreaterThan(0);
     expect(body).toContain(THEME_STORAGE_KEY);
+  });
+
+  it("wires the aesthetic + dark class constants into the script body", () => {
+    const body = themeInitScript();
+    // The script always applies the single aesthetic class and conditionally the
+    // dark class — both constants must appear in the serialized body so the seam
+    // cannot silently drift from the source constants.
+    expect(body).toContain(AESTHETIC_CLASS);
+    expect(body).toContain(DARK_CLASS);
   });
 });
 

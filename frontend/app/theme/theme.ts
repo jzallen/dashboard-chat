@@ -97,7 +97,15 @@ export interface ThemeController {
 }
 
 /** Client hook backing the org-view appearance toggle. Seeds from the stored
- *  preference, applies the class, and persists on change. */
+ *  preference, applies the class, and persists on change.
+ *
+ *  SSR initial state (deferred MR-1 nit, documented MR-8): during server render
+ *  `window` is undefined, so the initial `mode` is seeded as the light DEFAULT_MODE
+ *  (storage is unavailable server-side). That matches the SSR-safe default the
+ *  inline `themeInitScript()` paints, so the first client commit reconciles to the
+ *  real stored preference via the effect below without a flash for default (light)
+ *  visitors; a stored-dark visitor's class is already applied pre-hydration by the
+ *  init script, so the effect only re-asserts it. */
 export function useTheme(): ThemeController {
   const [mode, setMode] = useState<ThemeMode>(() =>
     readStoredMode(typeof window === "undefined" ? undefined : window.localStorage),
