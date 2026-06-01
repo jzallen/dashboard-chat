@@ -1,3 +1,9 @@
+/* TablePanel styles — color consumed from the MR-1 design tokens
+ * (frontend/app/theme/tokens.css) so the data grid + operations log reskin under
+ * Solarized `.dark`. Row/section dividers use explicit token borders (replacing
+ * the fixed-gray Tailwind `divide-*` utilities, which do not adapt to dark).
+ * Layout stays on Tailwind `@apply`; only color moved to tokens (MR-8). */
+
 /* Panel container */
 .panel {
   @apply flex-1 p-6 overflow-auto;
@@ -5,25 +11,27 @@
 
 /* Table container */
 .tableContainer {
-  @apply bg-white rounded-lg shadow overflow-x-auto;
+  @apply rounded-lg shadow overflow-x-auto;
+  background-color: var(--color-surface);
 }
 
 .table {
-  @apply min-w-full divide-y divide-gray-200;
+  @apply min-w-full;
 }
 
 /* TableHead */
 .thead {
-  background-color: #f9fafb;
+  background-color: var(--color-bg);
 }
 
 .th {
   @apply px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer select-none;
-  color: #6b7280;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .th:hover {
-  background-color: #f3f4f6;
+  background-color: var(--color-bg);
 }
 
 .thContent {
@@ -32,56 +40,70 @@
 
 /* TableBody */
 .tbody {
-  @apply bg-white divide-y divide-gray-200;
+  background-color: var(--color-surface);
 }
 
-.tr {
+.tr + .tr {
+  border-top: 1px solid var(--color-border);
 }
 
 .tr:hover {
-  background-color: #f9fafb;
+  background-color: var(--color-bg);
 }
 
 .td {
   @apply px-6 py-4 whitespace-nowrap text-sm;
-  color: #111827;
+  color: var(--color-ink);
 }
 
 /* Empty state */
 .emptyRow {
   @apply px-6 py-8 text-center;
-  color: #6b7280;
+  color: var(--color-muted);
 }
 
 /* Operations Log */
 .opsLog {
-  @apply mt-4 bg-white rounded-lg shadow;
+  @apply mt-4 rounded-lg shadow;
+  background-color: var(--color-surface);
 }
 
 .opsLogToggle {
-  @apply w-full text-left px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-t-lg;
+  @apply w-full text-left px-4 py-2 text-sm font-medium rounded-t-lg;
+  color: var(--color-muted);
+}
+
+.opsLogToggle:hover {
+  background-color: var(--color-bg);
 }
 
 .opsLogEntries {
-  @apply divide-y divide-gray-100 max-h-48 overflow-auto;
+  @apply max-h-48 overflow-auto;
 }
 
 .opsLogEntry {
   @apply px-4 py-2 flex items-center gap-3 text-xs;
 }
 
+.opsLogEntry + .opsLogEntry {
+  border-top: 1px solid var(--color-border);
+}
+
 .opsLogTool {
-  @apply font-medium text-blue-600;
+  @apply font-medium;
+  color: var(--color-primary);
 }
 
 .opsLogArgs {
-  @apply text-gray-500 truncate flex-1;
+  @apply truncate flex-1;
+  color: var(--color-muted);
 }
 
 .opsLogResult {
-  @apply text-green-600;
+  color: var(--color-success);
 }
 
 .opsLogTime {
-  @apply text-gray-400 flex-shrink-0;
+  @apply flex-shrink-0;
+  color: var(--color-muted);
 }

@@ -1,3 +1,7 @@
+/* ActiveFilters styles — color from the MR-1 design tokens (tokens.css) so the
+ * filter chips reskin under Solarized `.dark`. The chip uses a primary-tinted
+ * fill + primary ink, AA-legible in both modes. Layout stays on `@apply`. */
+
 /* Active filters container */
 .filtersContainer {
   @apply mb-4 flex flex-wrap gap-2;
@@ -5,8 +9,8 @@
 
 .filterBadge {
   @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm;
-  background-color: #dbeafe;
-  color: #1e40af;
+  background-color: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-primary);
 }
 
 .removeButton {
@@ -14,14 +18,14 @@
 }
 
 .removeButton:hover {
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .clearAllButton {
   @apply px-3 py-1 text-sm;
-  color: #4b5563;
+  color: var(--color-muted);
 }
 
 .clearAllButton:hover {
-  color: #1f2937;
+  color: var(--color-ink);
 }

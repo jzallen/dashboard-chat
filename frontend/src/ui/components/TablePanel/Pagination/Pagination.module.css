@@ -1,3 +1,6 @@
+/* Pagination styles — color from the MR-1 design tokens (tokens.css) so the
+ * pager reskins under Solarized `.dark`. Layout stays on Tailwind `@apply`. */
+
 /* Container */
 .container {
   @apply flex items-center justify-between mt-4;
@@ -6,23 +9,25 @@
 /* RowCount */
 .rowCount {
   @apply text-sm;
-  color: #4b5563;
+  color: var(--color-muted);
 }
 
 /* PageButton */
 .pageButton {
-  @apply px-3 py-1 border rounded text-sm;
+  @apply px-3 py-1 rounded text-sm;
   @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  border: 1px solid var(--color-border);
+  color: var(--color-ink);
 }
 
 .pageButton:hover:not(:disabled) {
-  background-color: #f3f4f6;
+  background-color: var(--color-bg);
 }
 
 /* PageIndicator */
 .pageIndicator {
   @apply text-sm;
-  color: #4b5563;
+  color: var(--color-muted);
 }
 
 /* Navigation controls wrapper */
