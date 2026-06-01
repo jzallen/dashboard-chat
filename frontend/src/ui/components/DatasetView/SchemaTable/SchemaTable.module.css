@@ -1,7 +1,12 @@
-/* SchemaTable styles */
+/* SchemaTable styles — color consumed from the MR-1 design tokens
+ * (frontend/app/theme/tokens.css) so the schema grid + categorical type badges
+ * reskin under Solarized `.dark`. Layout stays on Tailwind `@apply`; only color
+ * moved to `var(--…)` tokens (MR-8). Type badges keep their per-type hue via the
+ * layer/semantic accent tokens, each AA-legible as text in both modes. */
 
 .container {
-  @apply flex-1 overflow-auto bg-white rounded-lg shadow;
+  @apply flex-1 overflow-auto rounded-lg shadow;
+  background-color: var(--color-surface);
 }
 
 .table {
@@ -10,24 +15,27 @@
 
 /* Header */
 .headerRow {
-  @apply bg-gray-50;
+  background-color: var(--color-bg);
 }
 
 .headerCell {
-  @apply text-left text-xs font-medium text-gray-500 uppercase tracking-wide py-3 px-4;
+  @apply text-left text-xs font-medium uppercase tracking-wide py-3 px-4;
+  color: var(--color-muted);
 }
 
 /* Body rows */
 .row {
-  @apply border-t border-gray-100;
+  @apply border-t;
+  border-color: var(--color-border);
 }
 
 .row:hover {
-  background-color: #fafafa;
+  background-color: var(--color-bg);
 }
 
 .cellName {
-  @apply py-3 px-4 text-gray-900 font-medium;
+  @apply py-3 px-4 font-medium;
+  color: var(--color-ink);
 }
 
 .cellType {
@@ -35,39 +43,53 @@
 }
 
 .cellDescription {
-  @apply py-3 px-4 text-gray-400;
+  @apply py-3 px-4;
+  color: var(--color-muted);
 }
 
 .cellNullable {
-  @apply py-3 px-4 text-gray-500;
+  @apply py-3 px-4;
+  color: var(--color-muted);
 }
 
-/* Type badges */
+/* Type badges — per-type accent on a faint same-hue tint. */
 .typeBadge {
   @apply inline-block px-2 py-0.5 rounded-full text-xs font-medium;
+  border: 1px solid;
 }
 
 .badgeText {
-  @apply bg-primary-light text-primary;
+  color: var(--layer-source);
+  border-color: var(--layer-source);
+  background-color: color-mix(in srgb, var(--layer-source) 14%, transparent);
 }
 
 .badgeNumber {
-  @apply bg-accent-lighter text-accent-dark;
+  color: var(--color-success);
+  border-color: var(--color-success);
+  background-color: color-mix(in srgb, var(--color-success) 14%, transparent);
 }
 
 .badgeBoolean {
-  @apply bg-blue-50 text-blue-700;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background-color: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .badgeDatetime {
-  @apply bg-purple-50 text-purple-700;
+  color: var(--layer-mart);
+  border-color: var(--layer-mart);
+  background-color: color-mix(in srgb, var(--layer-mart) 14%, transparent);
 }
 
 .badgeSelect {
-  @apply bg-amber-50 text-amber-700;
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+  background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
 }
 
 /* Empty state */
 .emptyState {
-  @apply text-center py-12 text-gray-500;
+  @apply text-center py-12;
+  color: var(--color-muted);
 }
