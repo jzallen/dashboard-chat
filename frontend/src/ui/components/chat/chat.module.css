@@ -1,4 +1,9 @@
-/* Shared chat component styles */
+/* Shared chat component styles.
+ * Color is consumed from the MR-1 design tokens (frontend/app/theme/tokens.css)
+ * so the light Neobrutalist skin and the Solarized `.dark` skin both apply with
+ * no per-component palette. Layout/spacing stay on Tailwind `@apply`; only color
+ * moved to `var(--…)` tokens (MR-8 token migration). happy-dom does not apply
+ * stylesheets — tests assert structure/testids, not computed colors. */
 
 /* MessageBubble */
 .messageRow {
@@ -18,13 +23,13 @@
 }
 
 .messageBubbleUser {
-  background-color: #2563eb;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .messageBubbleAssistant {
-  background-color: #f3f4f6;
-  color: #1f2937;
+  background-color: var(--color-bg);
+  color: var(--color-ink);
 }
 
 .messageContent {
@@ -32,8 +37,9 @@
 }
 
 .toolCalls {
-  @apply mt-2 pt-2 border-t border-gray-200 text-xs;
-  color: #4b5563;
+  @apply mt-2 pt-2 border-t text-xs;
+  border-color: var(--color-border);
+  color: var(--color-muted);
 }
 
 .toolCall {
@@ -41,12 +47,12 @@
 }
 
 .toolCallIcon {
-  color: #16a34a;
+  color: var(--color-success);
 }
 
 .streamingCursor {
   @apply inline-block w-2 h-4 animate-pulse ml-1;
-  background-color: #9ca3af;
+  background-color: var(--color-muted);
 }
 
 /* MessageList */
@@ -56,7 +62,8 @@
 
 /* ChatInput */
 .chatInputForm {
-  @apply p-4 border-t border-gray-200;
+  @apply p-4 border-t;
+  border-color: var(--color-border);
 }
 
 .chatInputWrapper {
@@ -64,20 +71,29 @@
 }
 
 .chatTextarea {
-  @apply flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none;
-  @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  @apply flex-1 px-3 py-2 rounded-lg text-sm resize-none;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
   min-height: 38px;
   max-height: 160px;
 }
 
+.chatTextarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
 .chatSubmitButton {
-  @apply px-4 py-2 text-white rounded-lg text-sm font-medium;
+  @apply px-4 py-2 rounded-lg text-sm font-medium;
   @apply disabled:opacity-50 disabled:cursor-not-allowed;
-  background-color: #2563eb;
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .chatSubmitButton:hover:not(:disabled) {
-  background-color: #1d4ed8;
+  filter: brightness(0.93);
 }
 
 .chatInputGutter {
@@ -85,7 +101,8 @@
 }
 
 .chatInputDatasetName {
-  @apply text-xs text-gray-400;
+  @apply text-xs;
+  color: var(--color-muted);
 }
 
 .chatInputClearDataset {
@@ -107,11 +124,13 @@
 }
 
 .welcomeTitle {
-  @apply text-xl font-semibold text-gray-800 mb-2;
+  @apply text-xl font-semibold mb-2;
+  color: var(--color-ink);
 }
 
 .welcomeSubtitle {
-  @apply text-sm text-gray-500 mb-6 max-w-md;
+  @apply text-sm mb-6 max-w-md;
+  color: var(--color-muted);
 }
 
 .suggestionChips {
@@ -119,17 +138,23 @@
 }
 
 .chip {
-  @apply px-4 py-2 text-sm font-medium rounded-full border border-gray-300 text-gray-700;
-  @apply hover:bg-gray-50 hover:border-gray-400 transition-colors cursor-pointer;
+  @apply px-4 py-2 text-sm font-medium rounded-full transition-colors cursor-pointer;
+  border: 1px solid var(--color-border);
+  color: var(--color-ink);
+}
+.chip:hover {
+  background-color: var(--color-bg);
 }
 
 /* DatasetPicker / ProjectPicker */
 .pickerContainer {
-  @apply bg-gray-50 rounded-lg p-3 mt-2;
+  @apply rounded-lg p-3 mt-2;
+  background-color: var(--color-bg);
 }
 
 .pickerLabel {
-  @apply text-sm text-gray-600 mb-2;
+  @apply text-sm mb-2;
+  color: var(--color-muted);
 }
 
 .pickerList {
@@ -138,11 +163,15 @@
 
 .pickerItem {
   @apply w-full text-left px-3 py-2 text-sm rounded-md;
-  @apply hover:bg-white hover:shadow-sm transition-all cursor-pointer;
+  @apply hover:shadow-sm transition-all cursor-pointer;
+}
+.pickerItem:hover {
+  background-color: var(--color-surface);
 }
 
 .pickerItemName {
-  @apply font-medium text-gray-800;
+  @apply font-medium;
+  color: var(--color-ink);
 }
 
 .pickerItemProject {
@@ -152,11 +181,13 @@
 }
 
 .pickerLoading {
-  @apply text-sm text-gray-400 py-2;
+  @apply text-sm py-2;
+  color: var(--color-muted);
 }
 
 .pickerEmpty {
-  @apply text-sm text-gray-400 py-2;
+  @apply text-sm py-2;
+  color: var(--color-muted);
 }
 
 /* UploadWidget */
@@ -169,8 +200,13 @@
 }
 
 .uploadBrowseButton {
-  @apply px-3 py-2 text-sm font-medium rounded-md border border-gray-300 text-gray-700;
-  @apply hover:bg-white hover:shadow-sm transition-all cursor-pointer;
+  @apply px-3 py-2 text-sm font-medium rounded-md;
+  @apply hover:shadow-sm transition-all cursor-pointer;
+  border: 1px solid var(--color-border);
+  color: var(--color-ink);
+}
+.uploadBrowseButton:hover {
+  background-color: var(--color-surface);
 }
 
 .uploadSelected {
@@ -178,11 +214,13 @@
 }
 
 .uploadFileName {
-  @apply font-medium text-gray-800;
+  @apply font-medium;
+  color: var(--color-ink);
 }
 
 .uploadFileSize {
-  @apply text-gray-400 text-xs;
+  @apply text-xs;
+  color: var(--color-muted);
 }
 
 .uploadActions {
@@ -190,36 +228,48 @@
 }
 
 .uploadSendButton {
-  @apply px-3 py-1 text-sm text-white rounded-md font-medium;
-  background-color: #2563eb;
+  @apply px-3 py-1 text-sm rounded-md font-medium;
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .uploadSendButton:hover {
-  background-color: #1d4ed8;
+  filter: brightness(0.93);
 }
 
 .uploadRemoveButton {
-  @apply px-3 py-1 text-sm text-gray-500 rounded-md;
-  @apply hover:text-gray-700 cursor-pointer;
+  @apply px-3 py-1 text-sm rounded-md cursor-pointer;
+  color: var(--color-muted);
+}
+.uploadRemoveButton:hover {
+  color: var(--color-ink);
 }
 
 .uploadUploading {
-  @apply flex items-center gap-2 text-gray-500;
+  @apply flex items-center gap-2;
+  color: var(--color-muted);
 }
 
 .uploadSpinner {
-  @apply inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin;
+  @apply inline-block w-4 h-4 border-2 rounded-full animate-spin;
+  border-color: var(--color-border);
+  border-top-color: var(--color-primary);
 }
 
 .uploadUploaded {
-  @apply text-green-700;
+  color: var(--color-success);
 }
 
 .uploadError {
-  @apply flex items-center gap-2 text-red-600;
+  @apply flex items-center gap-2;
+  color: var(--color-danger);
 }
 
 .uploadRetryButton {
-  @apply px-2 py-1 text-xs text-red-600 border border-red-300 rounded;
-  @apply hover:bg-red-50 cursor-pointer;
+  @apply px-2 py-1 text-xs rounded cursor-pointer;
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+}
+.uploadRetryButton:hover {
+  background-color: var(--color-bg);
 }
