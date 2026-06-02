@@ -9,8 +9,9 @@ build --stamp
 # Disk-cache + install-base + action-cache GC: cap unbounded growth that has
 # caused inode exhaustion under multi-polecat concurrency (see dc-99b).
 # Size cap (15G) bumped above the conservative 5G after 2026-05-20 disk audit:
-# layered above BuildBuddy remote cache, so misses are cheap; the larger cap
-# trades disk for fewer cold rebuilds. Adjust down if disk pressure returns.
+# this disk cache is now the only build cache (BuildBuddy remote removed below),
+# so the larger cap trades disk for fewer cold rebuilds. Adjust down if disk
+# pressure returns.
 # Stale per-workspace output_bases (~/.cache/bazel/_bazel_*/<hash>/) are NOT
 # GC'd by these flags — clean orphans manually. rules_oci writes blobs with
 # read-only perms (OCI integrity), so plain `rm -rf` fails; chmod first:
@@ -56,19 +57,21 @@ build:linux --platforms=@platforms//os:linux
 # ─── Platform: macOS ─────────────────────────────────────────────────────────
 build:macos --platforms=@platforms//os:macos
 
-# ─── Remote cache (BuildBuddy free tier) ──────────────────────────────────────
-# Layered with the local --disk_cache above: bazel checks disk first, then
-# remote on miss. Sharing the cache across all clones (mayor + polecats + crew
-# + refinery) eliminates duplicate work in this Gitpod environment.
+# ─── Remote cache (BuildBuddy) — DISABLED ─────────────────────────────────────
+# Removed: on the anonymous free tier the cross-clone sharing only amounted to
+# the node-deps cache (marginal vs. the local --disk_cache above), and anonymous
+# access is being deprecated (builds emitted a FAILED_PRECONDITION banner). The
+# local --disk_cache carries day-to-day incremental builds on its own.
 #
-# Auth: API key lives in .bazelrc.user (gitignored, see try-import below).
-# Get a key at https://app.buildbuddy.io/settings/api-keys (free tier).
-build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpcs://remote.buildbuddy.io
-build --remote_cache=grpcs://remote.buildbuddy.io
-build --remote_timeout=3600
-# Don't fail builds if BuildBuddy is unreachable (e.g. offline laptop)
-build --remote_local_fallback
+# To re-enable (worth it only if concurrent gastown clones do redundant cold
+# builds — and only with an API key, not anonymously): get a free key at
+# https://app.buildbuddy.io/settings/api-keys, put it in .bazelrc.user
+# (gitignored, try-import below), and restore:
+#   build --bes_results_url=https://app.buildbuddy.io/invocation/
+#   build --bes_backend=grpcs://remote.buildbuddy.io
+#   build --remote_cache=grpcs://remote.buildbuddy.io
+#   build --remote_timeout=3600
+#   build --remote_local_fallback   # don't fail builds if unreachable
 
 # ─── Local user overrides (gitignored) ───────────────────────────────────────
 # Put secrets and per-machine tweaks here. See .bazelrc.user.example.
