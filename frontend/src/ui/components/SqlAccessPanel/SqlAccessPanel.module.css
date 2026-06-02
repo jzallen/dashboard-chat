@@ -1,7 +1,7 @@
 /* SqlAccessPanel styles — color consumed from the MR-1 design tokens
  * (frontend/app/theme/tokens.css) so the query-engine access panel reskins under
- * Solarized `.dark`. The fixed-value Tailwind theme colors (surface-*/primary/
- * accent-*/semantic-*) and raw hex were swapped for var(--…) tokens; status/state
+ * Solarized `.dark`. The fixed-value Tailwind theme colors (surface, primary,
+ * accent, semantic families) and raw hex were swapped for var(--…) tokens; status/state
  * chips use same-hue tints via color-mix. Layout stays on Tailwind `@apply`;
  * focus rings use token outlines (MR-8 token migration). */
 
