@@ -1,0 +1,227 @@
+/* ============================================================
+   THEMES — bold alternative skins.
+   Each is a class on .app that re-defines the design tokens
+   (and a few structural flourishes). Behaviour is untouched.
+   Loaded AFTER theme.css so these win the cascade.
+   Sans-serif throughout; layout never changes.
+   ============================================================ */
+
+/* shared: shut off the frosted glass for the solid (light) themes,
+   square-ish chrome + hard ink borders via one :is() group each */
+.app.theme-neon .assistant-overlay,
+.app.theme-neon .proj-pop,
+.app.theme-macintosh .assistant-overlay,
+.app.theme-macintosh .proj-pop,
+.app.theme-macintosh .assistant-fab,
+.app.theme-neobrutalist .assistant-overlay,
+.app.theme-neobrutalist .proj-pop,
+.app.theme-neobrutalist .assistant-fab,
+.app.theme-comic .assistant-overlay,
+.app.theme-comic .proj-pop,
+.app.theme-comic .assistant-fab {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+
+/* ════════════════════ NEON ════════════════════ */
+.app.theme-neon {
+  --surface: #14141f; --surface-2: #0b0b14; --surface-3: #1e1e2e;
+  --border: #2c2c44; --muted: #6f6f95; --emphasis: #f0f0ff;
+  --text-900: #f1f1ff; --text-700: #c7c7ea; --text-500: #9a9ac6; --text-400: #6f6f95;
+  --primary: #19e6ff; --primary-hover: #5ff0ff; --primary-light: rgba(25,230,255,.16); --primary-dark: #aef6ff;
+  --accent: #c6ff3b; --accent-light: rgba(198,255,59,.16); --accent-dark: #e2ff8e;
+  --layer-source: #6f6f95; --layer-source-bg: rgba(120,120,160,.14);
+  --layer-staging: #19e6ff; --layer-staging-bg: rgba(25,230,255,.13);
+  --layer-intermediate: #b14bff; --layer-intermediate-bg: rgba(177,75,255,.15);
+  --layer-mart: #c6ff3b; --layer-mart-bg: rgba(198,255,59,.13);
+  --grid-dot: rgba(120,150,255,.20);
+  --glass-bg: rgba(16,16,28,.74); --glass-edge: rgba(120,160,255,.28); --glass-line: rgba(140,160,255,.20); --glass-chip: rgba(255,255,255,.06);
+  --sheet-bg: #10101c;
+  --shadow-sm: 0 0 0 1px rgba(120,160,255,.16); --shadow-md: 0 8px 30px rgba(25,230,255,.16); --shadow-lg: 0 14px 44px rgba(177,75,255,.26);
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Space Grotesk", ui-sans-serif, sans-serif;
+}
+.app.theme-neon .ln-node, .app.theme-neon .lane-card, .app.theme-neon .stream-card { box-shadow: 0 0 0 1px var(--ln-soft), 0 0 16px -4px var(--ln); }
+.app.theme-neon .ln-node:hover { box-shadow: 0 0 0 1px var(--ln), 0 0 22px -2px var(--ln); }
+.app.theme-neon .ln-edge { stroke: #38384f; }
+.app.theme-neon .assistant-fab { color: var(--primary); box-shadow: 0 0 18px -2px var(--primary); }
+.app.theme-neon .assistant-fab:hover { background: var(--primary); color: #04121a; box-shadow: 0 0 28px 0 var(--primary); }
+.app.theme-neon .sql-block { background: #07070f; }
+.app.theme-neon .sql-kw { color: #5ff0ff; } .app.theme-neon .sql-ref { color: #d08bff; } .app.theme-neon .sql-str { color: #c6ff3b; }
+.app.theme-neon .org-badge-btn.on { background: var(--primary); color: #04121a; }
+.app.theme-neon .send-btn, .app.theme-neon .btn.primary { box-shadow: 0 0 14px -2px var(--primary); }
+.app.theme-neon .ai-mark, .app.theme-neon .ao-mark { box-shadow: 0 0 14px -2px var(--primary); }
+
+/* ════════════════════ MACINTOSH (Susan Kare) ════════════════════ */
+.app.theme-macintosh {
+  --surface: #ffffff; --surface-2: #b9b9b9; --surface-3: #e9e9e9;
+  --border: #000000; --muted: #555; --emphasis: #000;
+  --text-900: #000; --text-700: #1a1a1a; --text-500: #333; --text-400: #666;
+  --primary: #2a2ac8; --primary-hover: #0000aa; --primary-light: #d4d4ff; --primary-dark: #00007a;
+  --accent: #007a2f; --accent-light: #c9f0d3; --accent-dark: #005a22;
+  --layer-source: #555; --layer-source-bg: #e2e2e2;
+  --layer-staging: #0000aa; --layer-staging-bg: #d6d6ff;
+  --layer-intermediate: #9000a0; --layer-intermediate-bg: #f0d6f6;
+  --layer-mart: #006622; --layer-mart-bg: #cdeed6;
+  --grid-dot: rgba(0,0,0,.26);
+  --glass-bg: #ffffff; --glass-edge: #000; --glass-line: #000; --glass-chip: #ededed;
+  --sheet-bg: #c2c2c2;
+  --shadow-sm: 1px 1px 0 rgba(0,0,0,.9); --shadow-md: 2px 2px 0 rgba(0,0,0,.9); --shadow-lg: 4px 4px 0 rgba(0,0,0,.85);
+  --font-sans: "Hanken Grotesk", "Geneva", "Helvetica Neue", sans-serif;
+  --font-serif: "Space Grotesk", "Helvetica Neue", sans-serif;
+}
+.app.theme-macintosh :is(.ln-node,.lane,.lane-card,.stream-card,.panel,.card,.proj-pop,.assistant-overlay,.chat-row,.ao-recent,.tool-card,.suggest button,.sql-block,.kv,.dep-chip,.org-badge-btn,.btn,.icon-btn,.send-btn,.ao-input textarea,.proj-search input,.chats-search input,.badge,.seg,.ao-iconbtn,.avatar,.assistant-fab,.bubble,.cr-ic,.proj-ic,.aud-ico,.ai-mark,.ao-mark,.tc-ico,.org-badge-btn) {
+  border-radius: 2px; border-width: 1px; border-style: solid; border-color: #000;
+}
+.app.theme-macintosh .ln-edge { stroke: #000; stroke-width: 1.6; }
+.app.theme-macintosh .ln-edge.hot { stroke: var(--primary); }
+/* classic pinstripe title bars */
+.app.theme-macintosh :is(.panel-hd,.ao-head,.drawer-hd,.sql-bar) {
+  background-image: repeating-linear-gradient(0deg, #000 0 1px, transparent 1px 3px);
+  background-clip: padding-box;
+}
+.app.theme-macintosh :is(.panel-hd,.ao-head,.sql-bar) > * { background: var(--surface); padding-left: 4px; padding-right: 4px; }
+.app.theme-macintosh .panel-hd .pt, .app.theme-macintosh .ao-head .ct { background: var(--surface); }
+.app.theme-macintosh .assistant-fab { box-shadow: 2px 2px 0 rgba(0,0,0,.9); }
+.app.theme-macintosh .assistant-overlay { box-shadow: 4px 4px 0 rgba(0,0,0,.85); }
+.app.theme-macintosh .proj-pop { box-shadow: 3px 3px 0 rgba(0,0,0,.85); }
+
+/* ════════════════════ NEOBRUTALIST ════════════════════ */
+.app.theme-neobrutalist {
+  --surface: #ffffff; --surface-2: #fdf6e3; --surface-3: #f1ead2;
+  --border: #111111; --muted: #555; --emphasis: #111;
+  --text-900: #111; --text-700: #222; --text-500: #444; --text-400: #777;
+  --primary: #2b6fff; --primary-hover: #1550e6; --primary-light: #d6e4ff; --primary-dark: #0e2f9c;
+  --accent: #00b341; --accent-light: #c7f6d6; --accent-dark: #058034;
+  --layer-source: #555; --layer-source-bg: #ececec;
+  --layer-staging: #2b6fff; --layer-staging-bg: #d6e4ff;
+  --layer-intermediate: #b14bff; --layer-intermediate-bg: #ecd9ff;
+  --layer-mart: #00a83e; --layer-mart-bg: #c7f6d6;
+  --grid-dot: rgba(17,17,17,.16);
+  --glass-bg: #fffdf5; --glass-edge: #111; --glass-line: #111; --glass-chip: #fff6da;
+  --sheet-bg: #ffd84d;
+  --shadow-sm: 2px 2px 0 #111; --shadow-md: 4px 4px 0 #111; --shadow-lg: 8px 8px 0 #111;
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Archivo", ui-sans-serif, sans-serif;
+}
+.app.theme-neobrutalist :is(.ln-node,.lane,.lane-card,.stream-card,.panel,.card,.proj-pop,.assistant-overlay,.chat-row,.ao-recent,.tool-card,.suggest button,.sql-block,.kv,.dep-chip,.btn,.icon-btn,.send-btn,.ao-input textarea,.proj-search input,.chats-search input,.badge,.seg,.avatar,.assistant-fab,.bubble,.cr-ic,.proj-ic,.aud-ico,.ai-mark,.ao-mark,.tc-ico,.org-badge-btn,.ao-iconbtn) {
+  border-radius: 3px; border-width: 2.5px; border-style: solid; border-color: #111;
+}
+.app.theme-neobrutalist .serif, .app.theme-neobrutalist .lin-title, .app.theme-neobrutalist .org-title, .app.theme-neobrutalist .chats-title { font-weight: 800; letter-spacing: -.01em; }
+.app.theme-neobrutalist .ln-edge { stroke: #111; stroke-width: 2.4; }
+.app.theme-neobrutalist .badge { font-weight: 700; }
+.app.theme-neobrutalist .assistant-fab { box-shadow: 4px 4px 0 #111; }
+.app.theme-neobrutalist .assistant-fab:hover { transform: translate(-2px,-2px); box-shadow: 6px 6px 0 #111; }
+.app.theme-neobrutalist .assistant-overlay { box-shadow: 8px 8px 0 #111; }
+.app.theme-neobrutalist .proj-pop { box-shadow: 6px 6px 0 #111; }
+.app.theme-neobrutalist .ai-chip { border: 2px solid #111; }
+
+/* ════════════════════ COMICBOOK ════════════════════ */
+.app.theme-comic {
+  --surface: #fffdf6; --surface-2: #fef0c9; --surface-3: #fde3a6;
+  --border: #1a1a1a; --muted: #555; --emphasis: #111;
+  --text-900: #141414; --text-700: #242424; --text-500: #454545; --text-400: #777;
+  --primary: #1565ff; --primary-hover: #0d4fd6; --primary-light: #d3e2ff; --primary-dark: #0a3aa8;
+  --accent: #e8352e; --accent-light: #ffd6d3; --accent-dark: #b51f19;
+  --layer-source: #555; --layer-source-bg: #ececec;
+  --layer-staging: #1565ff; --layer-staging-bg: #d3e2ff;
+  --layer-intermediate: #e8352e; --layer-intermediate-bg: #ffd6d3;
+  --layer-mart: #00a651; --layer-mart-bg: #c7f1d8;
+  --grid-dot: rgba(20,20,20,.2);
+  --glass-bg: #fffdf6; --glass-edge: #1a1a1a; --glass-line: #1a1a1a; --glass-chip: #fff7e0;
+  --sheet-bg: #bfe0ff;
+  --shadow-sm: 2px 2px 0 #141414; --shadow-md: 4px 4px 0 #141414; --shadow-lg: 7px 7px 0 #141414;
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Baloo 2", ui-sans-serif, sans-serif;
+}
+.app.theme-comic :is(.ln-node,.lane,.lane-card,.stream-card,.panel,.card,.proj-pop,.assistant-overlay,.chat-row,.ao-recent,.tool-card,.suggest button,.sql-block,.kv,.dep-chip,.btn,.icon-btn,.send-btn,.ao-input textarea,.proj-search input,.chats-search input,.badge,.seg,.avatar,.assistant-fab,.bubble,.cr-ic,.proj-ic,.aud-ico,.ai-mark,.ao-mark,.tc-ico,.org-badge-btn,.ao-iconbtn) {
+  border-width: 2.5px; border-style: solid; border-color: #1a1a1a;
+}
+.app.theme-comic .serif, .app.theme-comic .lin-title, .app.theme-comic .org-title, .app.theme-comic .chats-title, .app.theme-comic .ao-head .ct { font-weight: 700; }
+.app.theme-comic .ln-edge { stroke: #1a1a1a; stroke-width: 2.4; }
+/* ben-day halftone behind the pipeline */
+.app.theme-comic .lin-scroll {
+  background-image:
+    radial-gradient(var(--grid-dot) 2px, transparent 2px),
+    radial-gradient(rgba(21,101,255,.10) 2px, transparent 2px);
+  background-size: 20px 20px, 20px 20px;
+  background-position: 0 0, 10px 10px;
+}
+.app.theme-comic .assistant-fab { box-shadow: 3px 3px 0 #1a1a1a; }
+.app.theme-comic .assistant-fab:hover { transform: translate(-1px,-1px); box-shadow: 5px 5px 0 #1a1a1a; }
+.app.theme-comic .assistant-overlay { box-shadow: 6px 6px 0 #1a1a1a; }
+.app.theme-comic .proj-pop { box-shadow: 5px 5px 0 #1a1a1a; }
+.app.theme-comic .ai-chip { border: 2px solid #1a1a1a; font-weight: 700; }
+
+/* ════════════════════ NEOBRUTALIST × COMIC ASSISTANT ════════════════════
+   neobrutalist base app, but the Assistant overlay + FAB borrow the comic look:
+   rounded ink panel, halftone body, Baloo heading, comic-red/blue accents. */
+.app.theme-neobrutalist .assistant-overlay {
+  border-radius: 18px; border: 2.5px solid #1a1a1a; background: #fffdf6;
+  box-shadow: 6px 6px 0 #1a1a1a;
+}
+.app.theme-neobrutalist .assistant-overlay .ao-body {
+  background-image:
+    radial-gradient(rgba(21,101,255,.10) 2px, transparent 2px),
+    radial-gradient(rgba(232,53,46,.08) 2px, transparent 2px);
+  background-size: 18px 18px, 18px 18px; background-position: 0 0, 9px 9px;
+}
+.app.theme-neobrutalist .assistant-overlay .ct { font-family: "Baloo 2", sans-serif; font-weight: 700; }
+.app.theme-neobrutalist .ao-mark { background: #1565ff; border: 2.5px solid #1a1a1a; border-radius: 9px; }
+.app.theme-neobrutalist .assistant-overlay .send-btn { background: #e8352e; border: 2.5px solid #1a1a1a; border-radius: 10px; }
+.app.theme-neobrutalist .assistant-overlay .suggest button:hover { background: #d3e2ff; border-color: #1a1a1a; color: #0a3aa8; }
+.app.theme-neobrutalist .assistant-overlay :is(.ao-recent,.tool-card,.bubble,.ao-input textarea,.suggest button) { border-radius: 12px; }
+.app.theme-neobrutalist .assistant-fab {
+  border-radius: 16px; border: 2.5px solid #1a1a1a; background: #ffd84d; color: #1a1a1a; box-shadow: 4px 4px 0 #1a1a1a;
+}
+.app.theme-neobrutalist .assistant-fab:hover { background: #1565ff; color: #fffdf6; transform: translate(-2px,-2px); box-shadow: 6px 6px 0 #1a1a1a; }
+
+/* ════════════════════ DARK MODE (Solarized-dark, brightened) ════════════════════
+   Toggled from the org view. Stacks on top of any aesthetic: keeps the
+   structural character (borders/fonts) but swaps to dark Solarized surfaces
+   with brighter neon-leaning accents. */
+.app.dark {
+  --surface: #073642; --surface-2: #002630; --surface-3: #0d4654;
+  --border: #1c5765; --muted: #6a8a92; --emphasis: #fdf6e3;
+  --text-900: #fdf6e3; --text-700: #93a1a1; --text-500: #839496; --text-400: #5f7a82;
+  --primary: #38b6ff; --primary-hover: #6fccff; --primary-light: rgba(56,182,255,.18); --primary-dark: #aee4ff;
+  --accent: #b6dd00; --accent-light: rgba(182,221,0,.16); --accent-dark: #d6f25a;
+  --layer-source: #6a8a92; --layer-source-bg: rgba(120,150,160,.14);
+  --layer-staging: #38b6ff; --layer-staging-bg: rgba(56,182,255,.15);
+  --layer-intermediate: #f25ba0; --layer-intermediate-bg: rgba(242,91,160,.16);
+  --layer-mart: #b6dd00; --layer-mart-bg: rgba(182,221,0,.14);
+  --grid-dot: rgba(88,170,200,.20);
+  --glass-bg: rgba(0,33,43,.80); --glass-edge: rgba(120,200,220,.22); --glass-line: rgba(120,200,220,.18); --glass-chip: rgba(255,255,255,.05);
+  --sheet-bg: #00313d;
+  --shadow-sm: 0 0 0 1px rgba(120,200,220,.14); --shadow-md: 0 8px 26px rgba(0,0,0,.5); --shadow-lg: 0 16px 44px rgba(0,0,0,.6);
+}
+/* in dark mode the hard black ink borders/shadows from brutalist & comic
+   would vanish on a dark ground — re-point them to the bright teal line */
+.app.dark.theme-neobrutalist :is(.ln-node,.lane,.lane-card,.stream-card,.panel,.card,.proj-pop,.assistant-overlay,.chat-row,.ao-recent,.tool-card,.suggest button,.sql-block,.kv,.dep-chip,.btn,.icon-btn,.send-btn,.ao-input textarea,.proj-search input,.chats-search input,.badge,.seg,.avatar,.assistant-fab,.bubble,.cr-ic,.proj-ic,.aud-ico,.ai-mark,.ao-mark,.tc-ico,.org-badge-btn,.ao-iconbtn),
+.app.dark.theme-comic :is(.ln-node,.lane,.lane-card,.stream-card,.panel,.card,.proj-pop,.assistant-overlay,.chat-row,.ao-recent,.tool-card,.suggest button,.sql-block,.kv,.dep-chip,.btn,.icon-btn,.send-btn,.ao-input textarea,.proj-search input,.chats-search input,.badge,.seg,.avatar,.assistant-fab,.bubble,.cr-ic,.proj-ic,.aud-ico,.ai-mark,.ao-mark,.tc-ico,.org-badge-btn,.ao-iconbtn) {
+  border-color: var(--border);
+}
+.app.dark .ln-edge { stroke: #2f6776; }
+.app.dark .ln-edge.hot { stroke: var(--primary); }
+.app.dark .sql-block { background: #001b22; }
+.app.dark .sql-kw { color: #6fccff; } .app.dark .sql-ref { color: #f48fbf; } .app.dark .sql-str { color: #c8e85a; }
+/* soften the brutalist/comic hard offset shadows on dark so depth still reads */
+.app.dark.theme-neobrutalist .assistant-overlay,
+.app.dark.theme-comic .assistant-overlay { box-shadow: 0 16px 44px rgba(0,0,0,.55); }
+.app.dark.theme-neobrutalist .assistant-fab,
+.app.dark.theme-comic .assistant-fab { box-shadow: 0 8px 22px rgba(0,0,0,.5); }
+.app.dark.theme-neobrutalist .proj-pop,
+.app.dark.theme-comic .proj-pop { box-shadow: 0 14px 36px rgba(0,0,0,.5); }
+/* keep the comic assistant readable on dark: lift its panel + halftone */
+.app.dark.theme-neobrutalist .assistant-overlay { background: #06303b; }
+.app.dark.theme-neobrutalist .assistant-overlay .suggest button:hover { background: rgba(56,182,255,.16); color: var(--primary-hover); }
+/* pinstripe title bars need a light ink on dark for Macintosh */
+.app.dark.theme-macintosh :is(.panel-hd,.ao-head,.drawer-hd,.sql-bar) {
+  background-image: repeating-linear-gradient(0deg, #1c5765 0 1px, transparent 1px 3px);
+}
+.app.dark.theme-macintosh :is(.panel-hd,.ao-head,.sql-bar) > *,
+.app.dark.theme-macintosh .panel-hd .pt, .app.dark.theme-macintosh .ao-head .ct { background: var(--surface); }
+/* org-icon close (X) state: keep the light X, darken its background for contrast */
+.app.dark .org-badge-btn.on { background: #001a21; }
+/* "Assistant changes" header stays light (inverted card) — darken its text for contrast */
+.app.dark .panel.audit .panel-hd .pt { color: #1b2433; }
+.app.dark .panel.audit .panel-hd .pcount { color: #5b667a; }

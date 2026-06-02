@@ -1,0 +1,18 @@
+{
+  "name": "dashboard-chat-ui",
+  "private": true,
+  "type": "module",
+  "description": "Vite harness around the Claude Design 'dashboard-chat-layers' prototype. Temporary: the prototype scripts run as one concatenated module today; refactor them into real ESM components incrementally.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
+  }
+}
