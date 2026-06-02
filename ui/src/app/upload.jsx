@@ -205,7 +205,7 @@ const fmtDate = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short
 const FOODS = [
   { icon: "donut", line: "Nothing in here but a day-old donut" },
   { icon: "egg", line: "Nothing in here but a single egg" },
-  { icon: "pickles", line: "Nothing in here but a jar of pickles" },
+  { icon: "carrot", line: "Nothing in here but a lonely carrot" },
   { icon: "icecream", line: "Nothing in here but melting ice cream" },
   { icon: "cookie", line: "Nothing in here but one last cookie" },
   { icon: "pizza", line: "Nothing in here but a cold slice of pizza" },

@@ -1,0 +1,34 @@
+/* Layer-aware primitives (LayerDot, LayerBadge).
+
+   A `layer` prop selects styling: each layer class sets two custom properties
+   (--layer-color, --layer-bg) off the global theme tokens, and the .dot / .badge
+   classes consume them differently. So one `styles[layer]` class drives both
+   components — add a layer here to support it wherever these primitives render. */
+
+.source       { --layer-color: var(--layer-source);       --layer-bg: var(--layer-source-bg); }
+.staging      { --layer-color: var(--layer-staging);      --layer-bg: var(--layer-staging-bg); }
+.intermediate { --layer-color: var(--layer-intermediate); --layer-bg: var(--layer-intermediate-bg); }
+.mart         { --layer-color: var(--layer-mart);         --layer-bg: var(--layer-mart-bg); }
+
+.dot {
+  display: inline-block;
+  width: var(--dot-size, 9px);
+  height: var(--dot-size, 9px);
+  flex: 0 0 var(--dot-size, 9px);
+  border-radius: 999px;
+  background: var(--layer-color, var(--muted));
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-transform: capitalize;
+  background: var(--layer-bg);
+  color: var(--layer-color);
+}

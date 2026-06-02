@@ -1,0 +1,27 @@
+{
+  // Mirrors frontend/tsconfig.json (this harness is headed there). Progressive
+  // migration: only .ts/.tsx files are type-checked; the prototype's remaining
+  // .js/.jsx files are still allowed as imports (allowJs) but not checked
+  // (checkJs:false) until each is converted. Add files to `include` as they move.
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

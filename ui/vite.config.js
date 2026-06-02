@@ -16,17 +16,22 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 // So we reproduce the original execution model: concatenate the files in the
 // exact order the prototype's HTML loaded them into a SINGLE module (one shared
 // scope), prepend the React/ReactDOM globals the scripts assume, and let esbuild
-// transpile the JSX. `data.js` assigns `window.DC`, so bare `DC` resolves; app.jsx
-// ends with `ReactDOM.createRoot(...).render(<App/>)`, so importing the bundle
-// mounts the app.
+// transpile the JSX. app.jsx ends with `ReactDOM.createRoot(...).render(<App/>)`,
+// so importing the bundle mounts the app.
+//
+// Extraction in progress (inside-out): `data.js` (`export const DC`) and
+// `primitives.jsx` (Icon/LayerDot/LayerBadge/SqlBlock + the React hooks it used
+// to publish) are already real ESM modules. The preamble imports them and re-publishes
+// their symbols onto `globalThis` so the still-bundled classic files' bare
+// references keep resolving — the same global-bridge pattern used for
+// React/ReactDOM, and the template each subsequent extraction follows until
+// PROTO_FILES is empty and this plugin can be deleted.
 //
 // This is deliberately a TEMPORARY harness. As we refactor the prototype into
 // real ESM modules (proper imports/exports), files drop out of PROTO_FILES and
 // this plugin shrinks until it can be deleted.
 const PROTO_FILES = [
-  "data.js",
   "tweaks-panel.jsx",
-  "ui.jsx",
   "lineage.jsx",
   "detail.jsx",
   "chat.jsx",
@@ -45,11 +50,23 @@ function prototypeBundle() {
     },
     async load(id) {
       if (id !== RESOLVED_ID) return;
-      const preamble =
-        "import React from 'react';\n" +
-        "import * as ReactDOM from 'react-dom/client';\n" +
-        "globalThis.React = React;\n" +
-        "globalThis.ReactDOM = ReactDOM;\n";
+      // Bridge every already-extracted ESM module back onto globalThis so the
+      // still-bundled classic files keep resolving their bare references. The
+      // React hooks were previously published by primitives.jsx; now that it is
+      // a module, the preamble re-publishes them (the bundled files use bare
+      // `useState` etc.). Each future extraction adds its exports to this list.
+      const preamble = `
+import React from 'react';
+import * as ReactDOM from 'react-dom/client';
+import { DC } from '/src/app/data.js';
+import { Icon, LayerDot, LayerBadge, SqlBlock } from '/src/app/primitives.tsx';
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+Object.assign(globalThis, {
+  React, ReactDOM, DC,
+  useState, useEffect, useRef, useMemo, useCallback,
+  Icon, LayerDot, LayerBadge, SqlBlock,
+});
+`;
       const body = PROTO_FILES.map(
         (f) =>
           `\n/* ───────── ${f} ───────── */\n` +
