@@ -1,14 +1,13 @@
-import { useEffect } from "react";
-import { Outlet, useParams, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Outlet, useParams } from "react-router";
 
 import { StreamProvider } from "@/stream/StreamProvider";
 
 import { ChatProvider, useChatContext } from "../../context/ChatContext";
 import { useOrgProjectsQuery, useOrgQuery } from "../../hooks/useOrgQuery";
 import { useProjectQuery } from "../../hooks/useProjectQuery";
-import { Assistant } from "../Assistant";
-import { Breadcrumb } from "../Breadcrumb";
-import { OrgSheet } from "../OrgView/OrgSheet";
+import { SideNav } from "../SideNav";
+import { UnifiedNav } from "../SideNav/UnifiedNav";
 import styles from "./AppShell.module.css";
 import { RequireAuth, RequireOrg } from "./guards";
 
@@ -37,7 +36,7 @@ function ActiveProjectSync({ projectId }: { projectId: string | null }) {
 
 function AppShellInner() {
   const { projectId } = useParams<{ projectId?: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [navCollapsed, setNavCollapsed] = useState(false);
 
   // Always fetch org info
   const { data: org } = useOrgQuery();
@@ -52,31 +51,17 @@ function AppShellInner() {
 
   const outletContext: AppShellContext = { orgId, orgName, project, projects };
 
-  const orgSheetOpen = searchParams.get("org") === "1";
-  const closeOrgSheet = () => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("org");
-      return next;
-    });
-  };
-
   return (
     <StreamProvider>
     <ChatProvider>
       <ActiveProjectSync projectId={project?.id ?? projects?.[0]?.id ?? null} />
       <div className={styles.shell}>
-        <Breadcrumb />
+        <SideNav orgName={orgName} collapsed={navCollapsed} onToggleCollapse={() => setNavCollapsed((v) => !v)}>
+          <UnifiedNav orgId={orgId} collapsed={navCollapsed} projectId={project?.id ?? projects?.[0]?.id ?? null} />
+        </SideNav>
         <main className={styles.viewWindow}>
           <Outlet context={outletContext} />
         </main>
-        {orgSheetOpen ? (
-          <OrgSheet projects={projects ?? []} orgName={orgName} onClose={closeOrgSheet} />
-        ) : null}
-        {/* MR-4: the assistant floats over every view as a sibling of the Outlet
-            (path-forward §4.4). It consumes the existing ChatProvider context and
-            hides itself while the org sheet is open. */}
-        <Assistant projects={projects} />
       </div>
     </ChatProvider>
     </StreamProvider>

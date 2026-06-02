@@ -18,18 +18,10 @@ export default [
   route("/auth/callback", "routes/auth-callback.tsx"),
   route("/org/create", "routes/create-org.tsx"),
   layout("routes/app-shell.tsx", [
-    // MR-4: the `/` index swaps from chat to the Pipeline landing (path-forward
-    // §4.2). HomeRedirect resolves the org's default project and redirects to its
-    // pipeline; chat is no longer a top-level page — it is the assistant overlay.
-    // The standalone /chat/:channelId deep-link still maps to routes/chat.tsx.
-    index("routes/home.tsx"),
+    index("routes/chat.tsx"),
     route("chat/:channelId", "routes/chat.tsx", { id: "chat-with-channel" }),
     route("projects", "routes/projects.tsx"),
     route("projects/:projectId", "routes/project-detail.tsx"),
-    // MR-2: lineage Pipeline as the landing surface for a selected project
-    // (path-forward §4.2). Additive — the chat `/` index + existing detail
-    // routes are unchanged; the full index swap + chat-as-overlay is MR-4.
-    route("projects/:projectId/pipeline", "routes/pipeline.tsx"),
     route(
       "projects/:projectId/datasets/:datasetId",
       "routes/project-detail.tsx",

@@ -13,12 +13,6 @@ export interface DatasetSparse {
   link: string;
   description: string | null;
   schema_config: SchemaConfig;
-  /** MR-6: editable source display name; UI falls back to `name` when null. */
-  display_name?: string | null;
-  /** MR-7: cold-storage timestamp (ISO); null when the source is live. */
-  archived_at?: string | null;
-  /** MR-7: retention end (ISO) = archived_at + 90d; null when the source is live. */
-  retention_until?: string | null;
 }
 
 export interface FieldConfig {
@@ -78,19 +72,11 @@ export interface Dataset {
   staging_sql?: string | null;
   column_profiles: Record<string, ColumnProfile> | null;
   format_context?: string | null;
-  /** MR-6: editable source display name; UI falls back to `name` when null. */
-  display_name?: string | null;
-  /** MR-7: cold-storage timestamp (ISO); null when the source is live. */
-  archived_at?: string | null;
-  /** MR-7: retention end (ISO) = archived_at + 90d; null when the source is live. */
-  retention_until?: string | null;
 }
 
 export interface DatasetUpdate {
   name?: string;
   description?: string;
-  /** MR-6: editable source display name (the filename/`name` stays unchanged). */
-  display_name?: string;
 }
 
 export interface TransformCreate {

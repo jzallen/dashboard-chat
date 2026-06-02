@@ -71,17 +71,6 @@ export function createDataCatalog(fetchFn: typeof fetch = fetch) {
       return client.patch<Dataset>(`/api/datasets/${datasetId}`, data);
     },
 
-    // MR-7: cold storage / retention. Thin POSTs (no body) over the existing
-    // dataset record — archive moves a source to cold storage (sets archived_at +
-    // retention_until server-side), restore brings it back (clears both).
-    archiveDataset(datasetId: string): Promise<Dataset> {
-      return client.post<Dataset>(`/api/datasets/${datasetId}/archive`, {});
-    },
-
-    restoreDataset(datasetId: string): Promise<Dataset> {
-      return client.post<Dataset>(`/api/datasets/${datasetId}/restore`, {});
-    },
-
     createTransform(datasetId: string, data: TransformCreate): Promise<void> {
       return client.post(`/api/datasets/${datasetId}/transforms`, {
         transforms: [data],
@@ -135,16 +124,8 @@ export function createDataCatalog(fetchFn: typeof fetch = fetch) {
       });
     },
 
-    listDatasetsForProject(
-      projectId: string,
-      options?: { archived?: boolean },
-    ): Promise<DatasetSparse[]> {
-      // MR-7: ?archived=true returns ONLY archived sources (the cold-storage list);
-      // omitted/false returns the live datasets (archived excluded server-side).
-      const query = options?.archived ? "?archived=true" : "";
-      return client.get<DatasetSparse[]>(
-        `/api/projects/${projectId}/datasets${query}`,
-      );
+    listDatasetsForProject(projectId: string): Promise<DatasetSparse[]> {
+      return client.get<DatasetSparse[]>(`/api/projects/${projectId}/datasets`);
     },
 
     // Projects

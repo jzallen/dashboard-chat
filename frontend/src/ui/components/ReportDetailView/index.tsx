@@ -1,22 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
 
-import { type ColumnMetadata } from "@/dataCatalog";
+import { type ColumnMetadata, type Report } from "@/dataCatalog";
 
-import { deriveAssistantChanges } from "../../../core/chat/assistantChanges";
 import { executeReportToolCall } from "../../../core/toolCalls/reportTools";
 import { useChatContext } from "../../context/ChatContext";
-import { useModelDependencies } from "../../hooks/useModelDependencies";
 import { useReportQuery } from "../../hooks/useReportQuery";
 import { ChatInput } from "../chat";
-import {
-  AssistantChangesPanel,
-  CompiledSqlPanel,
-  DataPreviewGrid,
-  DependencyStrip,
-  ModelDetailLayout,
-} from "../ModelDetail";
 import { ActivityLog } from "../TableView/ActivityLog";
 import styles from "./ReportDetailView.module.css";
 
@@ -47,7 +38,61 @@ function ColumnsMetadataTable({ columns }: { columns: ColumnMetadata[] }) {
   );
 }
 
-/** Full report detail page — single-page model-detail layout (MR-5). */
+/** Collapsible SQL preview panel. */
+function SqlPreviewPanel({ sqlDefinition }: { sqlDefinition?: string }) {
+  const [open, setOpen] = useState(false);
+
+  if (!sqlDefinition) return null;
+
+  return (
+    <div className={styles.section}>
+      <button
+        className={styles.sqlToggle}
+        onClick={() => setOpen((v) => !v)}
+        data-testid="sql-preview-toggle"
+      >
+        SQL Definition {open ? "\u25B2" : "\u25BC"}
+      </button>
+      {open && (
+        <pre className={styles.sqlPreview} data-testid="sql-preview-content">
+          <code>{sqlDefinition}</code>
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/** Source dependency list with links to datasets/views. */
+function SourceDependencyList({
+  sourceRefs,
+}: {
+  sourceRefs: Array<{ id: string; type: "dataset" | "view" }>;
+}) {
+  if (sourceRefs.length === 0) return null;
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Sources</div>
+      <ul className={styles.sourceList} data-testid="source-dependency-list">
+        {sourceRefs.map((ref) => (
+          <li key={ref.id}>
+            <Link
+              to={ref.type === "dataset" ? `/table/${ref.id}` : `/view/${ref.id}`}
+              className={styles.sourceLink}
+            >
+              {ref.id}
+              <span className={styles.sourceType}>
+                ({ref.type === "dataset" ? "Dataset" : "View"})
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Full report detail page with inline chat input and activity log. */
 export function ReportDetailView() {
   const { reportId } = useParams<{ reportId: string }>();
   const queryClient = useQueryClient();
@@ -68,7 +113,6 @@ export function ReportDetailView() {
   } = useChatContext();
 
   const { data: report, isLoading, isError } = useReportQuery(reportId);
-  const dependencies = useModelDependencies(report?.project_id, reportId);
 
   // Set context when reportId changes
   useEffect(() => {
@@ -141,48 +185,43 @@ export function ReportDetailView() {
   }
 
   return (
-    <ModelDetailLayout
-      title={report.name}
-      badges={
-        <>
-          <span className={styles.badge}>{report.report_type}</span>{" "}
-          <span className={styles.badge}>{report.materialization}</span>{" "}
-          <span className={styles.badge}>{report.domain}</span>
-        </>
-      }
-      description={report.description}
-      activityLog={
-        <ActivityLog
-          messages={messages}
-          isStreaming={isStreaming}
-          streamingContent={streamingContent}
-        />
-      }
-      inputBar={
-        <div className={styles.inputBar}>
-          <ChatInput
-            input={input}
-            setInput={setInput}
-            onSubmit={handleSubmit}
-            isLoading={chatLoading}
-            contextType="report"
-            contextLabel={report.name}
-          />
+    <div className={styles.container}>
+      <div className={styles.content}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>{report.name}</h1>
+          <div>
+            <span className={styles.badge}>{report.report_type}</span>{" "}
+            <span className={styles.badge}>{report.materialization}</span>{" "}
+            <span className={styles.badge}>{report.domain}</span>
+          </div>
         </div>
-      }
-    >
-      <DependencyStrip
-        upstream={dependencies.upstream}
-        downstream={dependencies.downstream}
-        isLoading={dependencies.isLoading}
+        {report.description && <p className={styles.description}>{report.description}</p>}
+
+        {report.columns_metadata.length > 0 && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Columns Metadata</div>
+            <ColumnsMetadataTable columns={report.columns_metadata} />
+          </div>
+        )}
+
+        <SqlPreviewPanel sqlDefinition={report.sql_definition} />
+        <SourceDependencyList sourceRefs={report.source_refs} />
+      </div>
+      <ActivityLog
+        messages={messages}
+        isStreaming={isStreaming}
+        streamingContent={streamingContent}
       />
-      <AssistantChangesPanel changes={deriveAssistantChanges(messages)} />
-      <DataPreviewGrid available={false} />
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>Columns / Measures</div>
-        <ColumnsMetadataTable columns={report.columns_metadata} />
-      </section>
-      <CompiledSqlPanel sql={report.sql_definition} title="Compiled SQL" />
-    </ModelDetailLayout>
+      <div className={styles.inputBar}>
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          onSubmit={handleSubmit}
+          isLoading={chatLoading}
+          contextType="report"
+          contextLabel={report.name}
+        />
+      </div>
+    </div>
   );
 }

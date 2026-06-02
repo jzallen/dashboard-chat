@@ -1,22 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { type View } from "@/dataCatalog";
 
-import { deriveAssistantChanges } from "../../../core/chat/assistantChanges";
 import { executeViewToolCall } from "../../../core/toolCalls/viewTools";
 import { useChatContext } from "../../context/ChatContext";
-import { useModelDependencies } from "../../hooks/useModelDependencies";
 import { useViewQuery } from "../../hooks/useViewQuery";
 import { ChatInput } from "../chat";
-import {
-  AssistantChangesPanel,
-  CompiledSqlPanel,
-  DataPreviewGrid,
-  DependencyStrip,
-  ModelDetailLayout,
-} from "../ModelDetail";
 import { ActivityLog } from "../TableView/ActivityLog";
 import styles from "./ViewDetailView.module.css";
 
@@ -48,7 +39,61 @@ function ViewSchemaTable({ view }: { view: View }) {
   );
 }
 
-/** Full view detail page — single-page model-detail layout (MR-5). */
+/** Collapsible SQL preview panel — shows display_sql (display types, for reference only). */
+function SqlPreviewPanel({ displaySql }: { displaySql?: string }) {
+  const [open, setOpen] = useState(false);
+
+  if (!displaySql) return null;
+
+  return (
+    <div className={styles.section}>
+      <button
+        className={styles.sqlToggle}
+        onClick={() => setOpen((v) => !v)}
+        data-testid="sql-preview-toggle"
+      >
+        SQL Preview — for reference only {open ? "\u25B2" : "\u25BC"}
+      </button>
+      {open && (
+        <pre className={styles.sqlPreview} data-testid="sql-preview-content">
+          <code>{displaySql}</code>
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/** Source dependency list with links to datasets/views. */
+function SourceDependencyList({
+  sourceRefs,
+}: {
+  sourceRefs: Array<{ id: string; type: "dataset" | "view" }>;
+}) {
+  if (sourceRefs.length === 0) return null;
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Sources</div>
+      <ul className={styles.sourceList} data-testid="source-dependency-list">
+        {sourceRefs.map((ref) => (
+          <li key={ref.id}>
+            <Link
+              to={ref.type === "dataset" ? `/table/${ref.id}` : `/view/${ref.id}`}
+              className={styles.sourceLink}
+            >
+              {ref.id}
+              <span className={styles.sourceType}>
+                ({ref.type === "dataset" ? "Dataset" : "View"})
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Full view detail page with inline chat input and activity log. */
 export function ViewDetailView() {
   const { viewId } = useParams<{ viewId: string }>();
   const queryClient = useQueryClient();
@@ -68,7 +113,6 @@ export function ViewDetailView() {
   } = useChatContext();
 
   const { data: view, isLoading, isError } = useViewQuery(viewId);
-  const dependencies = useModelDependencies(view?.project_id, viewId);
 
   // Set context when viewId changes
   useEffect(() => {
@@ -122,42 +166,39 @@ export function ViewDetailView() {
   }
 
   return (
-    <ModelDetailLayout
-      title={view.name}
-      badges={<span className={styles.materialization}>{view.materialization}</span>}
-      description={view.description}
-      activityLog={
-        <ActivityLog
-          messages={messages}
-          isStreaming={isStreaming}
-          streamingContent={streamingContent}
-        />
-      }
-      inputBar={
-        <div className={styles.inputBar}>
-          <ChatInput
-            input={input}
-            setInput={setInput}
-            onSubmit={handleSubmit}
-            isLoading={chatLoading}
-            contextType="view"
-            contextLabel={view.name}
-          />
+    <div className={styles.container}>
+      <div className={styles.content}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>{view.name}</h1>
+          <span className={styles.materialization}>{view.materialization}</span>
         </div>
-      }
-    >
-      <DependencyStrip
-        upstream={dependencies.upstream}
-        downstream={dependencies.downstream}
-        isLoading={dependencies.isLoading}
+        {view.description && <p className={styles.description}>{view.description}</p>}
+
+        {view.columns.length > 0 && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Columns</div>
+            <ViewSchemaTable view={view} />
+          </div>
+        )}
+
+        <SqlPreviewPanel displaySql={view.display_sql} />
+        <SourceDependencyList sourceRefs={view.source_refs} />
+      </div>
+      <ActivityLog
+        messages={messages}
+        isStreaming={isStreaming}
+        streamingContent={streamingContent}
       />
-      <AssistantChangesPanel changes={deriveAssistantChanges(messages)} />
-      <DataPreviewGrid available={false} />
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>Columns / Measures</div>
-        <ViewSchemaTable view={view} />
-      </section>
-      <CompiledSqlPanel sql={view.sql_definition} title="Compiled SQL" />
-    </ModelDetailLayout>
+      <div className={styles.inputBar}>
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          onSubmit={handleSubmit}
+          isLoading={chatLoading}
+          contextType="view"
+          contextLabel={view.name}
+        />
+      </div>
+    </div>
   );
 }

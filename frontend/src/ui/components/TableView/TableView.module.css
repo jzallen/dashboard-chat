@@ -1,6 +1,4 @@
-/* TableView styles — color consumed from the MR-1 design tokens
- * (frontend/app/theme/tokens.css) so the table chrome reskins under Solarized
- * `.dark`. Layout stays on Tailwind `@apply`; only color moved to tokens (MR-8). */
+/* TableView styles */
 
 .container {
   @apply flex-1 flex flex-col overflow-hidden relative;
@@ -11,15 +9,13 @@
 }
 
 .inputBar {
-  @apply border-t;
-  border-color: var(--color-border);
-  background-color: var(--color-surface);
+  @apply border-t border-gray-200 bg-white;
 }
 
 /* Activity Log overlay */
 .activityLog {
   @apply absolute right-4 bottom-20 w-80 max-h-60 overflow-auto rounded-lg shadow-lg p-3 space-y-2 z-10;
-  background-color: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  background-color: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(4px);
 }
 
@@ -28,12 +24,11 @@
 }
 
 .activityRole {
-  @apply font-medium mr-1;
-  color: var(--color-muted);
+  @apply font-medium text-gray-500 mr-1;
 }
 
 .activityContent {
-  color: var(--color-ink);
+  @apply text-gray-700;
 }
 
 .activityTimestamp {
@@ -44,12 +39,11 @@
 
 .streamingDot {
   @apply inline-block w-1.5 h-1.5 rounded-full animate-pulse ml-1;
-  background-color: var(--color-primary);
+  background-color: #2563eb;
   vertical-align: middle;
 }
 
 /* Loading state */
 .loading {
-  @apply flex-1 flex items-center justify-center;
-  color: var(--color-muted);
+  @apply flex-1 flex items-center justify-center text-gray-500;
 }

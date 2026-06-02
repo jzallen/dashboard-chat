@@ -4,22 +4,8 @@
   @apply flex-1 overflow-y-auto p-6;
 }
 
-.header {
-  @apply flex items-center justify-between mb-4;
-}
-
 .heading {
-  @apply text-lg font-medium;
-  color: var(--color-ink);
-}
-
-.appearance {
-  @apply flex items-center gap-2 text-sm;
-  color: var(--color-muted);
-}
-
-.appearanceLabel {
-  @apply font-medium;
+  @apply text-lg font-medium text-gray-500 mb-4;
 }
 
 .grid {
@@ -27,57 +13,28 @@
 }
 
 .emptyState {
-  @apply text-sm py-8 text-center;
-  color: var(--color-muted);
+  @apply text-gray-500 text-sm py-8 text-center;
 }
 
-/* Org settings sheet — darker inset backdrop hosting the org surface */
-.sheetBackdrop {
-  @apply absolute inset-0 z-20 flex items-start justify-center overflow-y-auto p-6;
-  background: color-mix(in srgb, var(--color-ink) 55%, transparent);
-}
-
-.sheet {
-  @apply w-full max-w-3xl rounded-lg p-6;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-}
-
-.sheetHeader {
-  @apply flex items-center justify-between mb-4;
-}
-
-.sheetClose {
-  @apply text-sm font-medium px-3 py-1 rounded;
-  color: var(--color-muted);
-}
-
-/* Card — mirrors CompactDatasetCard 120x120 pattern; consumes MR-1 tokens so the
- * org sheet's project cards reskin with the breadcrumb chrome in Solarized dark. */
+/* Card — mirrors CompactDatasetCard 120x120 pattern */
 .card {
-  @apply flex flex-col items-center justify-center flex-shrink-0 rounded-lg p-3 cursor-pointer transition-all text-center;
+  @apply flex flex-col items-center justify-center flex-shrink-0 rounded-lg bg-white border border-gray-200 p-3 cursor-pointer transition-all text-center;
   width: 120px;
   height: 120px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
 }
 
 .card:hover {
-  @apply shadow-md;
-  border-color: var(--color-ink);
+  @apply shadow-md border-gray-300;
 }
 
 .cardName {
-  @apply text-sm font-medium truncate w-full;
-  color: var(--color-ink);
+  @apply text-sm font-medium text-gray-900 truncate w-full;
 }
 
 .cardDescription {
-  @apply text-xs truncate w-full;
-  color: var(--color-muted);
+  @apply text-xs text-gray-500 truncate w-full;
 }
 
 .cardMeta {
-  @apply text-xs mt-1;
-  color: var(--color-muted);
+  @apply text-xs text-gray-400 mt-1;
 }

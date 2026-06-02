@@ -1,6 +1,5 @@
 import { useNavigate, useOutletContext } from "react-router";
 
-import { ThemeToggle } from "../../../../app/theme/ThemeToggle";
 import type { AppShellContext } from "../AppShell";
 import styles from "./OrgView.module.css";
 import { ProjectGrid } from "./ProjectGrid";
@@ -12,13 +11,7 @@ export function ProjectsPage() {
 
   return (
     <div className={styles.container}>
-      <header className={styles.header}>
-        <h2 className={styles.heading}>Projects</h2>
-        <div className={styles.appearance}>
-          <span className={styles.appearanceLabel}>Appearance</span>
-          <ThemeToggle />
-        </div>
-      </header>
+      <h2 className={styles.heading}>Projects</h2>
       <ProjectGrid
         projects={projects ?? []}
         onSelect={(id) => navigate(`/projects/${id}`)}

@@ -45,21 +45,6 @@ export function useDatasets(projectId: string | undefined) {
 }
 
 /**
- * MR-7 — fetches the ARCHIVED (cold-storage) sparse dataset list for a project. Feeds both
- * the cold-storage drawer and the live archived set wired into `buildGraph` (so archived
- * sources leave the live lineage and their downstream goes orphaned).
- */
-export function useArchivedDatasets(projectId: string | undefined) {
-  return useQuery<DatasetSparse[], ApiError>({
-    queryKey: datasetKeys.archived(projectId ?? ""),
-    queryFn: () => catalog.listDatasetsForProject(projectId!, { archived: true }),
-    enabled: Boolean(projectId),
-    staleTime: QUERY_STALE_TIMES.DATASET_LIST,
-    placeholderData: keepPreviousData,
-  });
-}
-
-/**
  * Returns a function that prefetches a dataset into the query cache.
  * Call on card selection so table-mode data is ready before the user toggles.
  */

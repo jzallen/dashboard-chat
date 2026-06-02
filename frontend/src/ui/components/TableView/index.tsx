@@ -5,27 +5,17 @@ import { useParams } from "react-router";
 /** Module-level cache for table state across navigations, keyed by datasetId. */
 const tableStateCache = new Map<string, { columnFilters: ColumnFiltersState; sorting: SortingState; columnVisibility: VisibilityState }>();
 
-import { deriveAssistantChanges } from "../../../core/chat/assistantChanges";
 import { useChatContext } from "../../context/ChatContext";
 import { toConditions } from "../../hooks/filterUtils";
 import { useDatasetQuery } from "../../hooks/useDatasetQuery";
-import { useModelDependencies } from "../../hooks/useModelDependencies";
 import { useTableConfig } from "../../hooks/useTableConfig";
 import { useTransforms } from "../../hooks/useTransforms";
 import { ChatInput } from "../chat";
-import {
-  AssistantChangesPanel,
-  CompiledSqlPanel,
-  DatasetColumnsTable,
-  DependencyStrip,
-  ModelDetailLayout,
-} from "../ModelDetail";
 import TablePanel from "../TablePanel";
-import { DisplayNameEditor } from "../UploadModal";
 import { ActivityLog } from "./ActivityLog";
 import styles from "./TableView.module.css";
 
-/** Dataset detail page — single-page model-detail layout (MR-5). */
+/** Full-width table view with inline chat input and activity log overlay. */
 export function TableView() {
   const { datasetId } = useParams<{ datasetId: string }>();
 
@@ -44,7 +34,6 @@ export function TableView() {
   } = useChatContext();
 
   const { data: dataset, isLoading } = useDatasetQuery(datasetId);
-  const dependencies = useModelDependencies(dataset?.project_id, datasetId);
 
   const {
     table,
@@ -201,41 +190,8 @@ export function TableView() {
   }
 
   return (
-    <ModelDetailLayout
-      title={dataset.name}
-      description={dataset.description}
-      activityLog={
-        <ActivityLog
-          messages={messages}
-          isStreaming={isStreaming}
-          streamingContent={streamingContent}
-        />
-      }
-      inputBar={
-        <div className={styles.inputBar}>
-          <ChatInput
-            input={input}
-            setInput={setInput}
-            onSubmit={handleSubmit}
-            isLoading={chatLoading}
-            datasetName={dataset.name}
-          />
-        </div>
-      }
-    >
-      <DisplayNameEditor
-        datasetId={dataset.id}
-        projectId={dataset.project_id}
-        name={dataset.name}
-        displayName={dataset.display_name ?? null}
-      />
-      <DependencyStrip
-        upstream={dependencies.upstream}
-        downstream={dependencies.downstream}
-        isLoading={dependencies.isLoading}
-      />
-      <AssistantChangesPanel changes={deriveAssistantChanges(messages)} />
-      <section className={styles.tableArea} data-testid="data-preview">
+    <div className={styles.container}>
+      <div className={styles.tableArea}>
         <TablePanel
           table={table}
           columnFilters={columnFilters}
@@ -243,12 +199,21 @@ export function TableView() {
           totalRows={data.length}
           onToggleTransform={toggleTransform}
         />
-      </section>
-      <DatasetColumnsTable
-        schema={dataset.schema_config}
-        profiles={dataset.column_profiles}
+      </div>
+      <ActivityLog
+        messages={messages}
+        isStreaming={isStreaming}
+        streamingContent={streamingContent}
       />
-      <CompiledSqlPanel sql={dataset.staging_sql} title="Compiled SQL (staging)" />
-    </ModelDetailLayout>
+      <div className={styles.inputBar}>
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          onSubmit={handleSubmit}
+          isLoading={chatLoading}
+          datasetName={dataset.name}
+        />
+      </div>
+    </div>
   );
 }
