@@ -115,10 +115,10 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
 }
 
 /* ---------- dbt export drawer ---------- */
-function ExportDrawer({ onClose, extraNodes }) {
+function ExportDrawer({ onClose }) {
   const files = catalog.listDbtFiles().slice();
   // inject any live-created marts
-  (extraNodes || []).forEach((n) => {
+  catalog.listAddedNodes().forEach((n) => {
     if (n.layer === "mart") files.push({ path: `models/marts/${n.label}.sql`, layer: "mart", ref: n.id, live: true });
   });
   const groups = [
