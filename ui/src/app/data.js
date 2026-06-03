@@ -302,13 +302,6 @@ const DBT_FILES = [
   { path: "models/marts/_marts.yml", layer: "mart" },
 ];
 
-const LAYERS = {
-  source: { key: "source", name: "Sources", dbt: "seeds / sources", color: "var(--layer-source)", bg: "var(--layer-source-bg)", desc: "Raw uploaded CSVs" },
-  staging: { key: "staging", name: "Datasets", dbt: "staging · stg_", color: "var(--layer-staging)", bg: "var(--layer-staging-bg)", desc: "Cleaned one-to-one with each upload" },
-  intermediate: { key: "intermediate", name: "Views", dbt: "intermediate · int_", color: "var(--layer-intermediate)", bg: "var(--layer-intermediate-bg)", desc: "Joins & reshaping across datasets" },
-  mart: { key: "mart", name: "Reports", dbt: "marts · fct_ / dim_", color: "var(--layer-mart)", bg: "var(--layer-mart-bg)", desc: "Aggregations ready for consumption" },
-};
-
 const ORG = {
   name: "Demo Org", slug: "demo-org", region: "us-east-1", plan: "Team",
   seats: 8, usedSeats: 4, created: "Jan 2025",
@@ -341,7 +334,7 @@ const ALL_CHATS = [
 ];
 
 export const DC = {
-  PROJECT, PROJECTS, ORG, LAYERS, RECENTS, ALL_CHATS,
+  PROJECT, PROJECTS, ORG, RECENTS, ALL_CHATS,
   datasets: [customers, ecommerce],
   views: [customerOrders],
   reports: [fctOrders, dimCustomers],

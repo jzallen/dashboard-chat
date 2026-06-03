@@ -10,8 +10,8 @@ function Legend() {
   return (
     <div className="legend">
       {["source", "staging", "intermediate", "mart"].map((ly) => (
-        <span className="lg" key={ly}><LayerDot layer={ly} />{DC.LAYERS[ly].name}
-          <span className="mono" style={{ fontSize: 10, color: "var(--text-400)" }}>{DC.LAYERS[ly].dbt}</span></span>
+        <span className="lg" key={ly}><LayerDot layer={ly} />{LAYER_META[ly].name}
+          <span className="mono" style={{ fontSize: 10, color: "var(--text-400)" }}>{LAYER_META[ly].dbt}</span></span>
       ))}
     </div>
   );
@@ -209,7 +209,7 @@ function ModelPicker({ current, models, onSelect }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ql = q.trim().toLowerCase();
-  const list = models.filter((m) => (m.label + " " + m.sub + " " + (DC.LAYERS[m.layer]?.name || "")).toLowerCase().includes(ql));
+  const list = models.filter((m) => (m.label + " " + m.sub + " " + (LAYER_META[m.layer]?.name || "")).toLowerCase().includes(ql));
   const groups = [["staging", "database"], ["intermediate", "join"], ["mart", "layers"]];
   return (
     <div className="proj-picker">
@@ -226,7 +226,7 @@ function ModelPicker({ current, models, onSelect }) {
                 if (!items.length) return null;
                 return (
                   <React.Fragment key={ly}>
-                    <div className="pick-group"><LayerDot layer={ly} size={7} />{DC.LAYERS[ly].name}</div>
+                    <div className="pick-group"><LayerDot layer={ly} size={7} />{LAYER_META[ly].name}</div>
                     {items.map((m) => (
                       <button key={m.id} className={"proj-row" + (m.id === current.id ? " on" : "")} style={layerVars(m.layer)}
                         onClick={() => { onSelect(m); setOpen(false); setQ(""); }}>

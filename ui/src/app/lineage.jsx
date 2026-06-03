@@ -11,7 +11,7 @@ function cx(...parts) {
 
 /** Inline CSS custom properties (layer color + soft bg) for a pipeline layer. */
 function layerVars(layer) {
-  const layerMeta = DC.LAYERS[layer] || {};
+  const layerMeta = LAYER_META[layer] || {};
   return { "--ln": layerMeta.color, "--ln-soft": layerMeta.bg };
 }
 
@@ -98,7 +98,7 @@ function SwimView({ graph, sel, onOpen, justAdded }) {
   return (
     <div className="lanes">
       {LAYER_ORDER.map((ly) => {
-        const layerMeta = DC.LAYERS[ly];
+        const layerMeta = LAYER_META[ly];
         const items = nodesInLayer(graph, ly);
         return (
           <div className="lane" key={ly} style={layerVars(ly)}>
@@ -140,7 +140,7 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
   return (
     <div className="stream">
       {STREAM_LAYERS.map((ly) => {
-        const layerMeta = DC.LAYERS[ly];
+        const layerMeta = LAYER_META[ly];
         const items = nodesInLayer(graph, ly);
         return (
           <div className="stream-group" key={ly} style={layerVars(ly)}>
