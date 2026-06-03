@@ -32,7 +32,6 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 // this plugin shrinks until it can be deleted.
 const PROTO_FILES = [
   "tweaks-panel.jsx",
-  "lineage.jsx",
   "detail.jsx",
   "chat.jsx",
   "upload.jsx",
@@ -62,13 +61,14 @@ import { catalog } from '/src/app/fixtureSource.ts';
 import { useCatalog } from '/src/app/useCatalog.ts';
 import { LAYER_META } from '/src/app/layerMeta.ts';
 import { Icon, LayerDot, LayerBadge, SqlBlock } from '/src/app/primitives.tsx';
-import { LAYER_ORDER, STREAM_LAYERS, DagDimensionConfig, computeDagLayout, bezierPath } from '/src/app/lineageLayout.ts';
+import { LineageCanvas } from '/src/app/lineageCanvas/index.js';
+import { TAG_ICON } from '/src/app/tagIcon.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
   React, ReactDOM, catalog, useCatalog,
   useState, useEffect, useRef, useMemo, useCallback,
   Icon, LayerDot, LayerBadge, SqlBlock,
-  LAYER_ORDER, STREAM_LAYERS, DagDimensionConfig, computeDagLayout, bezierPath,
+  LineageCanvas, TAG_ICON,
 });
 `;
       const body = PROTO_FILES.map(
