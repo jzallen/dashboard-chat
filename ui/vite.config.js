@@ -58,13 +58,13 @@ function prototypeBundle() {
       const preamble = `
 import React from 'react';
 import * as ReactDOM from 'react-dom/client';
-import { catalog, DC } from '/src/app/fixtureSource.ts';
+import { catalog } from '/src/app/fixtureSource.ts';
 import { LAYER_META } from '/src/app/layerMeta.ts';
 import { Icon, LayerDot, LayerBadge, SqlBlock } from '/src/app/primitives.tsx';
 import { LAYER_ORDER, STREAM_LAYERS, DAG, nodesInLayer, orphanSet, isAdjacent, computeDagLayout, bezierPath } from '/src/app/lineageLayout.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
-  React, ReactDOM, DC, catalog, LAYER_META,
+  React, ReactDOM, catalog, LAYER_META,
   useState, useEffect, useRef, useMemo, useCallback,
   Icon, LayerDot, LayerBadge, SqlBlock,
   LAYER_ORDER, STREAM_LAYERS, DAG, nodesInLayer, orphanSet, isAdjacent, computeDagLayout, bezierPath,

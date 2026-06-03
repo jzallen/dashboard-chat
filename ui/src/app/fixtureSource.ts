@@ -37,11 +37,3 @@ const fixtureSource: CatalogSource = {
 
 /** The application catalog, backed by the data.js fixture. */
 export const catalog = createDataCatalog(fixtureSource);
-
-/**
- * Temporary bridge: the composition root still publishes `DC` as a global for
- * the not-yet-migrated prototype reads (app/chat/detail). Re-export it here so
- * fixtureSource stays the only module that imports data.js during the
- * transition. Removed once those reads move onto `catalog` (Stage B).
- */
-export { DC };
