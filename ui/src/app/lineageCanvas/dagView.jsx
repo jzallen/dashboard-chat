@@ -56,12 +56,14 @@ export function DagView({ version, sel, onOpen, justAdded }) {
     [version],
   );
 
-  const focus = hover || sel;
+  const inFocusNodeId = hover || sel;
   const orphans = catalog.orphans();
-  const litEdges = new Set();
-  if (focus) {
+  const inFocusEdges = new Set();
+  if (inFocusNodeId) {
     catalog.listEdges().forEach(([sourceId, targetId], index) => {
-      if (sourceId === focus || targetId === focus) litEdges.add(index);
+      const isAdjacent =
+        sourceId === inFocusNodeId || targetId === inFocusNodeId;
+      if (isAdjacent) inFocusEdges.add(index);
     });
   }
 
@@ -76,8 +78,8 @@ export function DagView({ version, sel, onOpen, justAdded }) {
             key={index}
             sourcePos={layout.pos[sourceId]}
             targetPos={layout.pos[targetId]}
-            hot={litEdges.has(index)}
-            dim={!litEdges.has(index) && !!focus}
+            hot={inFocusEdges.has(index)}
+            dim={!inFocusEdges.has(index) && !!inFocusNodeId}
           />
         ))}
       </svg>
@@ -91,7 +93,9 @@ export function DagView({ version, sel, onOpen, justAdded }) {
             data-selected={sel === n.id || undefined}
             data-orphan={orphans.has(n.id) || undefined}
             data-dim={
-              (focus && focus !== n.id && !catalog.isAdjacent(focus, n.id)) ||
+              (inFocusNodeId &&
+                inFocusNodeId !== n.id &&
+                !catalog.isAdjacent(inFocusNodeId, n.id)) ||
               undefined
             }
             data-just-added={n.id === justAdded || undefined}
