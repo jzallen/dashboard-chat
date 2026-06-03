@@ -1,9 +1,9 @@
 /* Lineage canvas with 3 visualization styles: dag · swimlanes · audit-stream.
-   Pure layout logic lives in src/lib/graph.ts (LAYER_ORDER, STREAM_LAYERS, DAG,
-   nodesInLayer, orphanSet, isAdjacent, computeDagLayout, bezierPath); the data
-   projection (lineageGraph, auditCount, auditFor) comes off the `catalog` —
-   all bridged in as globals. This file is the presentational layer: views,
-   chips, and the layer→CSS-vars / tag→icon maps. */
+   Pure layout logic lives in src/app/lineageLayout.ts (LAYER_ORDER, STREAM_LAYERS,
+   DAG, nodesInLayer, orphanSet, isAdjacent, computeDagLayout, bezierPath) over the
+   catalog's lineage types; the data projection (lineageGraph, auditCount, auditFor)
+   comes off the `catalog` — all bridged in as globals. This file is the
+   presentational layer: views, chips, and the layer→CSS-vars / tag→icon maps. */
 
 /** Join class-name parts, dropping falsy ones, into a single space-separated string. */
 function cx(...parts) {
