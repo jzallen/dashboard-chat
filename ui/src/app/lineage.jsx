@@ -78,10 +78,11 @@ function DagView({ graph, sel, onOpen, justAdded }) {
           orphans.has(n.id) && "orphan",
           focus && focus !== n.id && !isAdjacent(graph, focus, n.id) && "dim",
           n.id === justAdded && "pop",
+          `layer-${n.layer}`,
         );
         return (
           <div key={n.id} className={nodeClass}
-            style={{ left: p.x, top: p.y, width: DAG.NW, height: DAG.NH, ...layerVars(n.layer) }}
+            style={{ left: p.x, top: p.y, width: DAG.NW, height: DAG.NH }}
             onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)}
             onClick={() => onOpen(n)}>
             <NodeInner n={n} />
@@ -102,7 +103,7 @@ function SwimView({ graph, sel, onOpen, justAdded }) {
         const layerMeta = LAYER_META[ly];
         const items = nodesInLayer(graph, ly);
         return (
-          <div className="lane" key={ly} style={layerVars(ly)}>
+          <div className={`lane layer-${ly}`} key={ly}>
             <div className="lane-head">
               <LayerDot layer={ly} />
               <span className="lh-name">{layerMeta.name}</span>
@@ -114,8 +115,8 @@ function SwimView({ graph, sel, onOpen, justAdded }) {
                 const parentLabels = parentsOf(n.id);
                 const edits = catalog.auditCount(n.id);
                 return (
-                  <div key={n.id} className={cx("lane-card", sel === n.id && "sel", orphans.has(n.id) && "orphan", n.id === justAdded && "pop")}
-                    style={layerVars(ly)} onClick={() => onOpen(n)}>
+                  <div key={n.id} className={cx("lane-card", sel === n.id && "sel", orphans.has(n.id) && "orphan", n.id === justAdded && "pop", `layer-${ly}`)}
+                    onClick={() => onOpen(n)}>
                     <div className="ln-row"><span className="ln-name">{n.label}</span></div>
                     <div className="ln-sub">{n.sub}</div>
                     <div className="ln-meta">
@@ -144,15 +145,15 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
         const layerMeta = LAYER_META[ly];
         const items = nodesInLayer(graph, ly);
         return (
-          <div className="stream-group" key={ly} style={layerVars(ly)}>
+          <div className={`stream-group layer-${ly}`} key={ly}>
             <div className="stream-rail" />
             <div className="stream-dot" />
             <div className="stream-layer"><LayerDot layer={ly} />{layerMeta.name}<span className="stream-dbt">{layerMeta.dbt}</span></div>
             {items.map((n) => {
               const audit = catalog.auditFor(n.id) || (n.audit || []);
               return (
-                <div key={n.id} className={cx("stream-card", sel === n.id && "sel", n.id === justAdded && "pop")}
-                  style={layerVars(ly)} onClick={() => n.ref && onOpen(n)}>
+                <div key={n.id} className={cx("stream-card", sel === n.id && "sel", n.id === justAdded && "pop", `layer-${ly}`)}
+                  onClick={() => n.ref && onOpen(n)}>
                   <div className="sc-head">
                     <span className="sc-name">{n.label} <span className="lite">· {n.sub}</span></span>
                     <AiEditChip count={audit.length} label="AI edits" style={{ marginLeft: "auto" }} />
