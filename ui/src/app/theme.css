@@ -65,6 +65,13 @@
   --gutter: 28px;
 }
 
+/* per-layer color handles — map each pipeline layer to the --ln/--ln-soft
+   custom properties the lineage/detail/chat CSS reads (was layerVars inline). */
+.layer-source       { --ln: var(--layer-source);       --ln-soft: var(--layer-source-bg); }
+.layer-staging      { --ln: var(--layer-staging);      --ln-soft: var(--layer-staging-bg); }
+.layer-intermediate { --ln: var(--layer-intermediate); --ln-soft: var(--layer-intermediate-bg); }
+.layer-mart         { --ln: var(--layer-mart);         --ln-soft: var(--layer-mart-bg); }
+
 /* cool surface variant (Tweak: Surface = Cool) */
 .app.cool {
   --surface: #ffffff;
