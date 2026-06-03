@@ -8,13 +8,13 @@ function DepStrip({ node, onOpen }) {
     <div className="dep-strip">
       {parents.map((p) => (
         <React.Fragment key={p.id}>
-          <div className="dep-chip" style={layerVars(p.layer)} onClick={() => p.ref && onOpen(p)}>
+          <div className={"dep-chip layer-" + p.layer} onClick={() => p.ref && onOpen(p)}>
             <LayerDot layer={p.layer} size={7} />{p.label}
           </div>
         </React.Fragment>
       ))}
       {parents.length > 0 && <Icon name="arrow" size={16} style={{ color: "var(--text-400)" }} />}
-      <div className="dep-chip here" style={layerVars(node.layer)}>
+      <div className={"dep-chip here layer-" + node.layer}>
         <LayerDot layer={node.layer} size={7} />{node.label}
       </div>
     </div>
@@ -136,7 +136,7 @@ function DataPreview({ node }) {
 function ModelDetail({ node, onOpen }) {
   const m = node.ref;
   return (
-    <div className="det" style={layerVars(node.layer)}>
+    <div className={"det layer-" + node.layer}>
       <div className="det-hd">
         <div>
           <div className="det-name">{node.label}</div>

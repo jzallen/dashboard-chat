@@ -78,9 +78,8 @@ function AllChats({ go }) {
       <div className="chats-list">
         {list.map((c, i) => {
           const node = c.nodeId ? catalog.getNode(c.nodeId) : null;
-          const lv = node ? layerVars(node.layer) : {};
           return (
-            <button key={i} className="chat-row" style={lv}
+            <button key={i} className={"chat-row" + (node ? " layer-" + node.layer : "")}
               onClick={() => go(c.nodeId ? { name: "openRecent", nodeId: c.nodeId } : { name: "chat" })}>
               <span className={"cr-ic" + (node ? " ctx" : "")}><Icon name={node ? "layers" : "chat"} size={17} /></span>
               <span className="cr-main">
@@ -229,7 +228,7 @@ function ModelPicker({ current, models, onSelect }) {
                   <React.Fragment key={ly}>
                     <div className="pick-group"><LayerDot layer={ly} size={7} />{LAYER_META[ly].name}</div>
                     {items.map((m) => (
-                      <button key={m.id} className={"proj-row" + (m.id === current.id ? " on" : "")} style={layerVars(m.layer)}
+                      <button key={m.id} className={"proj-row" + (m.id === current.id ? " on" : "") + " layer-" + m.layer}
                         onClick={() => { onSelect(m); setOpen(false); setQ(""); }}>
                         <span className="proj-ic lyr"><Icon name={ic} size={15} /></span>
                         <span className="proj-meta"><span className="proj-nm mono">{m.label}</span><span className="proj-ds">{m.sub}</span></span>

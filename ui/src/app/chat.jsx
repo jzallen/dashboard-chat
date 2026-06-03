@@ -65,7 +65,7 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
               {catalog.listRecents().map((r, i) => {
                 const node = catalog.getNode(r.nodeId);
                 return (
-                  <button key={i} className="ao-recent" style={node ? layerVars(node.layer) : {}}
+                  <button key={i} className={"ao-recent" + (node ? " layer-" + node.layer : "")}
                     onClick={() => go({ name: "openRecent", nodeId: r.nodeId })}>
                     <span className="ao-rec-dot">{node ? <LayerDot layer={node.layer} size={7} /> : <Icon name="chat" size={13} />}</span>
                     <span className="ao-rec-title">{r.title}</span>
@@ -142,11 +142,11 @@ function ExportDrawer({ onClose, extraNodes }) {
             const fs = files.filter((f) => f.layer === g.key);
             const L = LAYER_META[g.key] || { color: "var(--muted)", bg: "var(--surface-3)" };
             return (
-              <div key={g.key} style={layerVars(g.key)}>
+              <div key={g.key} className={"layer-" + g.key}>
                 <div className="layer-head"><LayerDot layer={g.key === "config" ? "source" : g.key} /><span className="lhn">{g.name}</span><span className="lhc">{g.dbt}</span></div>
                 <div className="tree">
                   {fs.map((f, i) => (
-                    <div className="tree-file" key={i} style={layerVars(f.layer)}>
+                    <div className={"tree-file layer-" + f.layer} key={i}>
                       <span className="fl" />{f.path.split("/").pop()}
                       {f.ref && <span className="fmodel">{f.live ? "✨ new" : catalog.getNode(f.ref)?.label || ""}</span>}
                     </div>
