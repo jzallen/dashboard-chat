@@ -171,8 +171,9 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
   );
 }
 
-function LineageCanvas({ mode, onOpen, sel, extraNodes, extraEdges, justAdded, archived, nameOverrides }) {
-  const graph = useMemo(() => catalog.lineageGraph({ extraNodes, extraEdges, archived, nameOverrides }), [extraNodes, extraEdges, archived, nameOverrides]);
+function LineageCanvas({ mode, onOpen, sel, justAdded }) {
+  // Subscribe to catalog mutations; recompute the visible graph on any change.
+  const graph = useMemo(() => catalog.lineageGraph(), [useCatalog()]);
   return (
     <div className="lin-scroll" style={{ overflowX: "auto" }}>
       {mode === "dag" && <DagView graph={graph} sel={sel} onOpen={onOpen} justAdded={justAdded} />}

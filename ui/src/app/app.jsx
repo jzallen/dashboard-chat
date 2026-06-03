@@ -17,7 +17,7 @@ function Legend() {
   );
 }
 
-function Workspace({ mode, setMode, onOpen, extraNodes, extraEdges, justAdded, archived, nameOverrides }) {
+function Workspace({ mode, setMode, onOpen, justAdded }) {
   return (
     <div className="lin-wrap">
       <div className="lin-head">
@@ -34,7 +34,7 @@ function Workspace({ mode, setMode, onOpen, extraNodes, extraEdges, justAdded, a
         </div>
       </div>
       <div style={{ marginBottom: 16 }}><Legend /></div>
-      <LineageCanvas mode={mode} sel={null} onOpen={onOpen} extraNodes={extraNodes} extraEdges={extraEdges} justAdded={justAdded} archived={archived} nameOverrides={nameOverrides} />
+      <LineageCanvas mode={mode} sel={null} onOpen={onOpen} justAdded={justAdded} />
     </div>
   );
 }
