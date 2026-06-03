@@ -59,6 +59,19 @@ export interface LineageNode {
 /** A directed edge `[from, to]` between two node ids. */
 export type Edge = [string, string];
 
+/**
+ * An archived source held in cold storage: enough of the retired node to list
+ * and restore it, plus the retirement timestamp and retention window.
+ */
+export interface ColdStorageItem {
+  id: string;
+  name: string;
+  schema?: FieldDef[];
+  files?: { name: string; rows: number; when: string }[];
+  retiredAt: number;
+  retentionDays: number;
+}
+
 /** The assembled lineage graph: nodes keyed by id, plus directed edges. */
 export interface Graph {
   nodes: Record<string, LineageNode>;

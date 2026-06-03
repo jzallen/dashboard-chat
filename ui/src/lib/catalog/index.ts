@@ -5,7 +5,7 @@
  * Pure (like the rest of src/lib): no data source is imported here. The fixture
  * adapter that wires a concrete source lives in src/app/fixtureSource.ts.
  */
-export type { DataCatalog, LineageGraphOptions } from "./client";
+export type { DataCatalog } from "./client";
 export { createDataCatalog } from "./client";
 export type * from "./lineage";
 export { LAYER_ORDER } from "./lineage";
