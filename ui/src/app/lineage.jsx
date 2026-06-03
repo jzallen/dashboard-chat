@@ -1,8 +1,9 @@
 /* Lineage canvas with 3 visualization styles: dag · swimlanes · audit-stream.
-   Graph + layout logic lives in src/lib/graph.ts (LAYER_ORDER, STREAM_LAYERS,
-   DAG, buildGraph, auditCount, nodesInLayer, orphanSet, isAdjacent,
-   computeDagLayout, bezierPath — all bridged in as globals). This file is the
-   presentational layer: views, chips, and the layer→CSS-vars / tag→icon maps. */
+   Pure layout logic lives in src/lib/graph.ts (LAYER_ORDER, STREAM_LAYERS, DAG,
+   nodesInLayer, orphanSet, isAdjacent, computeDagLayout, bezierPath); the data
+   projection (lineageGraph, auditCount, auditFor) comes off the `catalog` —
+   all bridged in as globals. This file is the presentational layer: views,
+   chips, and the layer→CSS-vars / tag→icon maps. */
 
 /** Join class-name parts, dropping falsy ones, into a single space-separated string. */
 function cx(...parts) {
@@ -26,7 +27,7 @@ function AiEditChip({ count, label, style }) {
 }
 
 function NodeInner({ n }) {
-  const auditEditCount = auditCount(n.id);
+  const auditEditCount = catalog.auditCount(n.id);
   const fields = n.ref ? (n.ref.fields?.length || n.ref.columns?.length || n.ref.columns_metadata?.length) : null;
   return (
     <React.Fragment>
@@ -111,7 +112,7 @@ function SwimView({ graph, sel, onOpen, justAdded }) {
             <div className="lane-body">
               {items.map((n) => {
                 const parentLabels = parentsOf(n.id);
-                const edits = auditCount(n.id);
+                const edits = catalog.auditCount(n.id);
                 return (
                   <div key={n.id} className={cx("lane-card", sel === n.id && "sel", orphans.has(n.id) && "orphan", n.id === justAdded && "pop")}
                     style={layerVars(ly)} onClick={() => onOpen(n)}>
@@ -148,7 +149,7 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
             <div className="stream-dot" />
             <div className="stream-layer"><LayerDot layer={ly} />{layerMeta.name}<span className="stream-dbt">{layerMeta.dbt}</span></div>
             {items.map((n) => {
-              const audit = DC.AUDIT[n.id] || (n.audit || []);
+              const audit = catalog.auditFor(n.id) || (n.audit || []);
               return (
                 <div key={n.id} className={cx("stream-card", sel === n.id && "sel", n.id === justAdded && "pop")}
                   style={layerVars(ly)} onClick={() => n.ref && onOpen(n)}>
@@ -176,7 +177,7 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
 }
 
 function LineageCanvas({ mode, onOpen, sel, extraNodes, extraEdges, justAdded, archived, nameOverrides }) {
-  const graph = useMemo(() => buildGraph(extraNodes, extraEdges, archived, nameOverrides), [extraNodes, extraEdges, archived, nameOverrides]);
+  const graph = useMemo(() => catalog.lineageGraph({ extraNodes, extraEdges, archived, nameOverrides }), [extraNodes, extraEdges, archived, nameOverrides]);
   return (
     <div className="lin-scroll" style={{ overflowX: "auto" }}>
       {mode === "dag" && <DagView graph={graph} sel={sel} onOpen={onOpen} justAdded={justAdded} />}
