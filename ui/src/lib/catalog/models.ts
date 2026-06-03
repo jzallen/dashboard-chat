@@ -7,10 +7,10 @@
  * Leaf types (column/join/filter/grain descriptors, semantic roles) are adapted
  * from the real frontend dataCatalog types (frontend/src/core/dataCatalog/*),
  * trimmed to the fields the fixture actually carries. Graph-shaped types
- * (nodes, edges, audit) are reused from ../graph — the inward-pointing
- * dependency; graph.ts itself imports nothing.
+ * (nodes, edges, audit) are reused from ./lineage — the inward-pointing
+ * dependency; lineage.ts itself imports nothing.
  */
-import type { Edge, FieldDef, Layer, LineageNode } from "../graph";
+import type { Edge, FieldDef, Layer, LineageNode } from "./lineage";
 
 /* ─── leaf descriptors (adapted from frontend/src/core/dataCatalog) ─────────── */
 

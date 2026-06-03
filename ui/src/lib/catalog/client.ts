@@ -4,10 +4,10 @@
  * returns; the source supplies the raw payloads and this factory adds the
  * projections (lineage graph assembly, audit counts, model filtering).
  *
- * Pure: depends only on the graph library and the source port — never on a
+ * Pure: depends only on the lineage types and the source port — never on a
  * concrete data module. Swap the source to repoint the catalog at a backend.
  */
-import type { Edge, Graph, LineageNode } from "../graph";
+import type { Edge, Graph, LineageNode } from "./lineage";
 import type { CatalogSource } from "./source";
 
 /** Options for {@link DataCatalog.lineageGraph}: live additions + overrides. */

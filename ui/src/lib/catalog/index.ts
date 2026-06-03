@@ -7,5 +7,7 @@
  */
 export type { DataCatalog, LineageGraphOptions } from "./client";
 export { createDataCatalog } from "./client";
+export type * from "./lineage";
+export { LAYER_ORDER } from "./lineage";
 export type * from "./models";
-export type { CatalogSource } from "./source";
+export type { CatalogSource, RawCatalog } from "./source";
