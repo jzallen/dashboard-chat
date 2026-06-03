@@ -11,7 +11,7 @@ import {
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 
-function NodeInner({ n }) {
+function Node({ n, style, selected, orphan, dim, justAdded, onHover, onOpen }) {
   const auditEditCount = catalog.auditCount(n.id);
   const fields = n.ref
     ? n.ref.fields?.length ||
@@ -19,7 +19,17 @@ function NodeInner({ n }) {
       n.ref.columns_metadata?.length
     : null;
   return (
-    <>
+    <div
+      className={`${styles.lnNode} layer-${n.layer}`}
+      data-selected={selected || undefined}
+      data-orphan={orphan || undefined}
+      data-dim={dim || undefined}
+      data-just-added={justAdded || undefined}
+      style={style}
+      onMouseEnter={() => onHover(n.id)}
+      onMouseLeave={() => onHover(null)}
+      onClick={() => onOpen(n)}
+    >
       <div className={styles.lnRow}>
         <LayerDot layer={n.layer} size={8} />
         <span className={styles.lnName}>{n.label}</span>
@@ -33,24 +43,6 @@ function NodeInner({ n }) {
           <span className={styles.fieldsChip}>{fields} cols</span>
         ) : null}
       </div>
-    </>
-  );
-}
-
-function Node({ n, style, selected, orphan, dim, justAdded, onHover, onOpen }) {
-  return (
-    <div
-      className={`${styles.lnNode} layer-${n.layer}`}
-      data-selected={selected || undefined}
-      data-orphan={orphan || undefined}
-      data-dim={dim || undefined}
-      data-just-added={justAdded || undefined}
-      style={style}
-      onMouseEnter={() => onHover(n.id)}
-      onMouseLeave={() => onHover(null)}
-      onClick={() => onOpen(n)}
-    >
-      <NodeInner n={n} />
     </div>
   );
 }
