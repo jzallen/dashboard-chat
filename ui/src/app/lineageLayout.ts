@@ -2,7 +2,7 @@
  * Lineage layout GEOMETRY — the lineage view's render compute. A dependency-free
  * library of pure layout math over the catalog: DAG node positions
  * (computeDagLayout) and edge Bézier paths (bezierPath), plus the layout
- * constants (DAG, STREAM_LAYERS) and the re-exported LAYER_ORDER. No React, no
+ * constants (DagDimensionConfig, STREAM_LAYERS) and the re-exported LAYER_ORDER. No React, no
  * JSX, no styling.
  *
  * It reads layer membership through the catalog's getNodesByLayer — the catalog
@@ -18,21 +18,21 @@ export { LAYER_ORDER };
 export const STREAM_LAYERS: Layer[] = LAYER_ORDER.slice(1);
 
 /** DAG layout geometry (px): node width/height, column/row gaps, canvas padding. */
-export interface DagDims {
-  NW: number;
-  NH: number;
-  COLGAP: number;
-  ROWGAP: number;
-  PADX: number;
-  PADY: number;
+export interface DagDimensions {
+  nodeWidth: number;
+  nodeHeight: number;
+  columnGap: number;
+  rowGap: number;
+  paddingX: number;
+  paddingY: number;
 }
-export const DAG: DagDims = {
-  NW: 186,
-  NH: 96,
-  COLGAP: 54,
-  ROWGAP: 28,
-  PADX: 16,
-  PADY: 16,
+export const DagDimensionConfig: DagDimensions = {
+  nodeWidth: 186,
+  nodeHeight: 96,
+  columnGap: 54,
+  rowGap: 28,
+  paddingX: 16,
+  paddingY: 16,
 };
 
 /** A laid-out node position (top-left corner, absolute within the canvas). */
@@ -56,26 +56,29 @@ export interface DagLayout {
  */
 export function computeDagLayout(
   catalog: DataCatalog,
-  dims: DagDims,
+  dims: DagDimensions,
 ): DagLayout {
   const cols = LAYER_ORDER.map((layer: Layer) => catalog.getNodesByLayer(layer));
   const maxRows = Math.max(...cols.map((c) => c.length), 1);
-  const contentH = maxRows * (dims.NH + dims.ROWGAP) - dims.ROWGAP;
+  const contentH = maxRows * (dims.nodeHeight + dims.rowGap) - dims.rowGap;
   const pos: Record<string, Point> = {};
   cols.forEach((col, colIndex) => {
-    const stackH = col.length * (dims.NH + dims.ROWGAP) - dims.ROWGAP;
-    const startY = dims.PADY + (contentH - stackH) / 2;
+    const stackH = col.length * (dims.nodeHeight + dims.rowGap) - dims.rowGap;
+    const startY = dims.paddingY + (contentH - stackH) / 2;
     col.forEach((n, rowIndex) => {
       pos[n.id] = {
-        x: dims.PADX + colIndex * (dims.NW + dims.COLGAP),
-        y: startY + rowIndex * (dims.NH + dims.ROWGAP),
+        x: dims.paddingX + colIndex * (dims.nodeWidth + dims.columnGap),
+        y: startY + rowIndex * (dims.nodeHeight + dims.rowGap),
       };
     });
   });
   return {
     pos,
-    w: dims.PADX * 2 + LAYER_ORDER.length * (dims.NW + dims.COLGAP) - dims.COLGAP,
-    h: dims.PADY * 2 + contentH,
+    w:
+      dims.paddingX * 2 +
+      LAYER_ORDER.length * (dims.nodeWidth + dims.columnGap) -
+      dims.columnGap,
+    h: dims.paddingY * 2 + contentH,
   };
 }
 
@@ -87,12 +90,12 @@ export function computeDagLayout(
 export function bezierPath(
   sourcePos: Point,
   targetPos: Point,
-  dims: DagDims,
+  dims: DagDimensions,
 ): string {
-  const x1 = sourcePos.x + dims.NW;
-  const y1 = sourcePos.y + dims.NH / 2;
+  const x1 = sourcePos.x + dims.nodeWidth;
+  const y1 = sourcePos.y + dims.nodeHeight / 2;
   const x2 = targetPos.x;
-  const y2 = targetPos.y + dims.NH / 2;
+  const y2 = targetPos.y + dims.nodeHeight / 2;
   const midX = (x1 + x2) / 2;
   return `M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`;
 }

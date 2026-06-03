@@ -1,6 +1,6 @@
 /* Lineage canvas with 3 visualization styles: dag · swimlanes · audit-stream.
    Pure layout GEOMETRY lives in src/app/lineageLayout.ts (LAYER_ORDER,
-   STREAM_LAYERS, DAG, computeDagLayout, bezierPath, bridged in as globals). The
+   STREAM_LAYERS, DagDimensionConfig, computeDagLayout, bezierPath, bridged in as globals). The
    lineage graph itself — topology queries (parents, models, orphans, adjacency,
    layer membership) and folded audit (auditFor/auditCount) — comes off the
    catalog (subscribed via useCatalog). This file is the presentational layer:
@@ -42,7 +42,7 @@ function NodeInner({ n }) {
 /* ---------- DAG (horizontal flow) ---------- */
 function DagView({ version, sel, onOpen, justAdded }) {
   const [hover, setHover] = useState(null);
-  const layout = useMemo(() => computeDagLayout(catalog, DAG), [version]);
+  const layout = useMemo(() => computeDagLayout(catalog, DagDimensionConfig), [version]);
 
   const focus = hover || sel;
   const orphans = catalog.orphans();
@@ -61,7 +61,7 @@ function DagView({ version, sel, onOpen, justAdded }) {
           const targetPos = layout.pos[b];
           if (!sourcePos || !targetPos) return null;
           const edgeClass = litEdges.has(i) ? "ln-edge hot" : focus ? "ln-edge dim" : "ln-edge";
-          return <path key={i} className={edgeClass} d={bezierPath(sourcePos, targetPos, DAG)} />;
+          return <path key={i} className={edgeClass} d={bezierPath(sourcePos, targetPos, DagDimensionConfig)} />;
         })}
       </svg>
       {catalog.listNodes().map((n) => {
@@ -77,7 +77,7 @@ function DagView({ version, sel, onOpen, justAdded }) {
         );
         return (
           <div key={n.id} className={nodeClass}
-            style={{ left: p.x, top: p.y, width: DAG.NW, height: DAG.NH }}
+            style={{ left: p.x, top: p.y, width: DagDimensionConfig.nodeWidth, height: DagDimensionConfig.nodeHeight }}
             onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)}
             onClick={() => onOpen(n)}>
             <NodeInner n={n} />
