@@ -77,7 +77,7 @@ function AllChats({ go }) {
       </div>
       <div className="chats-list">
         {list.map((c, i) => {
-          const node = c.nodeId ? catalog.getNode(c.nodeId) : null;
+          const node = c.nodeId ? catalog.getSnapshot().getNode(c.nodeId) : null;
           return (
             <button key={i} className={"chat-row" + (node ? " layer-" + node.layer : "")}
               onClick={() => go(c.nodeId ? { name: "openRecent", nodeId: c.nodeId } : { name: "chat" })}>
@@ -263,7 +263,7 @@ function App() {
 
   const go = useCallback((r) => {
     if (r.name === "openRecent") {
-      const node = catalog.getNode(r.nodeId);
+      const node = catalog.getSnapshot().getNode(r.nodeId);
       if (node && node.ref) { setRoute({ name: "model", node }); setChatOpen(true); return; }
       setRoute({ name: "workspace" }); setChatOpen(true); return;
     }

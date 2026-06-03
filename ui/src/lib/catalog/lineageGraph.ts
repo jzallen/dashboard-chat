@@ -37,10 +37,10 @@ export interface CatalogBase {
 /**
  * Every node — base plus live-added — with renames applied (id → label) and the
  * source audit folded onto each node (`node.audit = audit[id] ?? node.audit`).
- * Does NOT exclude archived nodes: this is the working state the catalog exposes
- * through `getNode`, which stays archived-inclusive.
+ * Does NOT exclude archived nodes; {@link build} drops those after this step.
+ * Private to this module: the only consumer is `build`.
  */
-export function buildWorkingNodes(
+function buildWorkingNodes(
   base: CatalogBase,
   overlay: CatalogOverlay,
 ): Record<string, LineageNode> {

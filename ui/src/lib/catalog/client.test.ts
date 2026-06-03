@@ -51,9 +51,11 @@ describe("createDataCatalog — write side", () => {
     catalog = createDataCatalog(makeSource());
   });
 
-  it("renameSource propagates to getNode and the snapshot graph", () => {
+  it("renameSource propagates to the snapshot graph", () => {
     catalog.renameSource("src.orders", "raw_orders");
-    expect(catalog.getNode("src.orders")?.label).toBe("raw_orders");
+    expect(catalog.getSnapshot().getNode("src.orders")?.label).toBe(
+      "raw_orders",
+    );
     expect(catalog.getSnapshot().nodes["src.orders"].label).toBe("raw_orders");
   });
 
@@ -101,7 +103,7 @@ describe("createDataCatalog — write side", () => {
   });
 
   it("archiveSource removes the node + its edges from the graph and records cold storage", () => {
-    const src = catalog.getNode("src.orders")!;
+    const src = catalog.getSnapshot().getNode("src.orders")!;
     catalog.archiveSource(src);
 
     const graph = catalog.getSnapshot();
@@ -116,7 +118,7 @@ describe("createDataCatalog — write side", () => {
   });
 
   it("restoreSource reverses archive (graph + cold storage)", () => {
-    const src = catalog.getNode("src.orders")!;
+    const src = catalog.getSnapshot().getNode("src.orders")!;
     catalog.archiveSource(src);
     catalog.restoreSource("src.orders");
 
@@ -126,11 +128,11 @@ describe("createDataCatalog — write side", () => {
     expect(catalog.listColdStorage()).toHaveLength(0);
   });
 
-  it("getNode stays archived-inclusive (the visible graph excludes archived)", () => {
-    const src = catalog.getNode("src.orders")!;
+  it("getNode is scoped to the visible graph — archived nodes resolve to undefined", () => {
+    const src = catalog.getSnapshot().getNode("src.orders")!;
     catalog.archiveSource(src);
-    // Working state still knows the node; the projected graph hides it.
-    expect(catalog.getNode("src.orders")).toBeDefined();
+    // The only node lookup is the graph's, which excludes archived nodes.
+    expect(catalog.getSnapshot().getNode("src.orders")).toBeUndefined();
     expect(catalog.getSnapshot().nodes["src.orders"]).toBeUndefined();
   });
 

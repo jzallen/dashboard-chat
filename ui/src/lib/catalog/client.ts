@@ -8,8 +8,9 @@
  *
  * The lineage query surface lives on the {@link LineageGraph} the catalog
  * hands out via {@link getSnapshot}; this factory keeps only the non-lineage
- * pass-throughs (projects, org, chats, dbt files, cold storage), the
- * archived-inclusive {@link getNode}, the mutations, and the reactivity surface.
+ * pass-throughs (projects, org, chats, dbt files, cold storage), the mutations,
+ * and the reactivity surface. Node lookups go through the graph
+ * (`getSnapshot().getNode`), which is scoped to the visible (non-archived) graph.
  *
  * Reactivity: mutations rebuild + cache a fresh LineageGraph and notify
  * subscribers, so React consumers `useSyncExternalStore(subscribe, getSnapshot)`
@@ -28,7 +29,6 @@
 import type { ColdStorageItem, Edge, LineageNode } from "./lineage";
 import {
   build,
-  buildWorkingNodes,
   type CatalogBase,
   type CatalogOverlay,
   LineageGraph,
@@ -69,12 +69,6 @@ export function createDataCatalog(source: CatalogSource) {
     listRecents: () => source.getRecents(),
     listChats: () => source.getAllChats(),
 
-    /**
-     * A node from the working state, INCLUDING archived ones (renames applied,
-     * live-added merged, audit folded). The visible graph excludes archived
-     * nodes; this read intentionally does not.
-     */
-    getNode: (id: string) => buildWorkingNodes(base, overlay)[id],
     /** Nodes added live at runtime (e.g. a mart built by chat). */
     listAddedNodes: () => overlay.addedNodes,
     /** Sources currently retired to cold storage, newest first. */
