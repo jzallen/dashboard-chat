@@ -66,8 +66,11 @@ export function createDataCatalog(source: CatalogSource) {
     childrenOf: (id: string) => graph.childrenOf(id),
     /** Ids of non-source nodes with no incoming edge. */
     orphans: () => graph.orphans(),
-    /** True if a direct edge connects `a` and `b` in either direction. */
-    isAdjacent: (a: string, b: string) => graph.isAdjacent(a, b),
+    /** True if a direct edge connects nodes `a` and `b` in either direction. */
+    isNodeAdjacent: (a: string, b: string) => graph.isNodeAdjacent(a, b),
+    /** True if `edge` is incident to `nodeId` (the node is one of its endpoints). */
+    isEdgeAdjacent: (edge: Edge, nodeId: string) =>
+      graph.isEdgeAdjacent(edge, nodeId),
     /** The folded AI audit trail for a node; [] when none recorded. */
     auditFor: (id: string) => graph.auditFor(id),
     /** Number of AI audit entries recorded against a node. */

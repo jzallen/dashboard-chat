@@ -66,7 +66,11 @@ describe("LineageGraph — topology + audit", () => {
   });
 
   it("models() returns non-source ref-bearing nodes and excludes archived", () => {
-    expect(makeGraph().models().map((m) => m.id)).toEqual(["mart.revenue"]);
+    expect(
+      makeGraph()
+        .models()
+        .map((m) => m.id),
+    ).toEqual(["mart.revenue"]);
     expect(makeGraph().archive("mart.revenue", 0).models()).toEqual([]);
   });
 
@@ -82,18 +86,30 @@ describe("LineageGraph — topology + audit", () => {
   });
 
   it("orphans: a connected mart is not an orphan; an added mart with no incoming edge is; sources never are", () => {
-    const orphanMart: LineageNode = { ...churn, id: "mart.lonely", label: "lonely" };
+    const orphanMart: LineageNode = {
+      ...churn,
+      id: "mart.lonely",
+      label: "lonely",
+    };
     const orphans = makeGraph().addSource(orphanMart).orphans();
     expect(orphans.has("mart.lonely")).toBe(true);
     expect(orphans.has("mart.revenue")).toBe(false);
     expect(orphans.has("src.orders")).toBe(false);
   });
 
-  it("isAdjacent is true for a real edge in either direction, false otherwise", () => {
+  it("isNodeAdjacent is true for a real edge in either direction, false otherwise", () => {
     const graph = makeGraph();
-    expect(graph.isAdjacent("src.orders", "mart.revenue")).toBe(true);
-    expect(graph.isAdjacent("mart.revenue", "src.orders")).toBe(true);
-    expect(graph.isAdjacent("src.orders", "mart.nope")).toBe(false);
+    expect(graph.isNodeAdjacent("src.orders", "mart.revenue")).toBe(true);
+    expect(graph.isNodeAdjacent("mart.revenue", "src.orders")).toBe(true);
+    expect(graph.isNodeAdjacent("src.orders", "mart.nope")).toBe(false);
+  });
+
+  it("isEdgeAdjacent is true when the node is an endpoint of the edge", () => {
+    const graph = makeGraph();
+    const edge: Edge = ["src.orders", "mart.revenue"];
+    expect(graph.isEdgeAdjacent(edge, "src.orders")).toBe(true);
+    expect(graph.isEdgeAdjacent(edge, "mart.revenue")).toBe(true);
+    expect(graph.isEdgeAdjacent(edge, "mart.other")).toBe(false);
   });
 
   it("auditFor / auditCount return the folded audit, and [] / 0 when none", () => {
@@ -129,7 +145,9 @@ describe("LineageGraph — archive / restore", () => {
   });
 
   it("restore brings the node + stashed edges back and clears cold storage", () => {
-    const restored = makeGraph().archive("src.orders", 1000).restore("src.orders");
+    const restored = makeGraph()
+      .archive("src.orders", 1000)
+      .restore("src.orders");
 
     expect(restored.getNode("src.orders")?.label).toBe("orders");
     expect(restored.allEdges()).toContainEqual(["src.orders", "mart.revenue"]);

@@ -104,7 +104,12 @@ export class LineageGraph {
     for (const n of Object.values(nodes)) {
       folded.set(n.id, { ...n, audit: audit[n.id] ?? n.audit });
     }
-    return new LineageGraph(folded, [...source.getEdges()], new Map(), new Set());
+    return new LineageGraph(
+      folded,
+      [...source.getEdges()],
+      new Map(),
+      new Set(),
+    );
   }
 
   /* ─── reads (active DAG only — archived nodes are structurally invisible) ── */
@@ -159,12 +164,17 @@ export class LineageGraph {
     return orphans;
   }
 
-  /** True if a direct edge connects `a` and `b` in either direction. */
-  isAdjacent(a: string, b: string): boolean {
+  /** True if a direct edge connects nodes `a` and `b` in either direction. */
+  isNodeAdjacent(a: string, b: string): boolean {
     return (
       (this.children.get(a)?.includes(b) ?? false) ||
       (this.children.get(b)?.includes(a) ?? false)
     );
+  }
+
+  /** True if `edge` is incident to `nodeId` (the node is one of its endpoints). */
+  isEdgeAdjacent(edge: Edge, nodeId: string): boolean {
+    return edge[0] === nodeId || edge[1] === nodeId;
   }
 
   /** The folded AI audit trail for a node; [] when none recorded. */
