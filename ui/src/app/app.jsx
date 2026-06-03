@@ -258,8 +258,8 @@ function App() {
   const [confirmArchive, setConfirmArchive] = useState(null);
   const [justAdded, setJustAdded] = useState(null);
   // Subscribe App to catalog mutations: any rename/archive/restore/live-add
-  // bumps the version and re-renders the tree. Used as a memo dep below.
-  const catalogVersion = useCatalog();
+  // hands back a fresh LineageGraph and re-renders the tree. Used as a memo dep below.
+  const graph = useCatalog();
 
   const go = useCallback((r) => {
     if (r.name === "openRecent") {
@@ -308,7 +308,7 @@ function App() {
   }, []);
 
   const [p0, p1, p2] = t.layerPalette;
-  const allModels = useMemo(() => catalog.listModels(), [catalogVersion]);
+  const allModels = useMemo(() => graph.models(), [graph]);
   const curProjectName = (projects.find((p) => p.id === projectId) || projects[0]).name;
   const studioStyle = {
     "--primary": t.accent, "--primary-hover": t.accent, "--primary-light": `color-mix(in srgb, ${t.accent} 16%, white)`,

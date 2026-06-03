@@ -1,9 +1,11 @@
 /* Lineage canvas with 3 visualization styles: dag · swimlanes · audit-stream.
-   Pure layout logic lives in src/app/lineageLayout.ts (LAYER_ORDER, STREAM_LAYERS,
-   DAG, nodesInLayer, orphanSet, isAdjacent, computeDagLayout, bezierPath) over the
-   catalog's lineage types; the data projection (lineageGraph, auditCount, auditFor)
-   comes off the `catalog` — all bridged in as globals. This file is the
-   presentational layer: views, chips, and the layer→CSS-vars / tag→icon maps. */
+   Pure layout GEOMETRY lives in src/app/lineageLayout.ts (LAYER_ORDER,
+   STREAM_LAYERS, DAG, nodesInLayer, orphanSet, isAdjacent, computeDagLayout,
+   bezierPath, bridged in as globals). The lineage graph itself — topology
+   queries (parents, models, orphans, adjacency, layer membership) and folded
+   audit (auditFor/auditCount) — comes off the LineageGraph that useCatalog()
+   returns. This file is the presentational layer: views, chips, and the
+   layer→CSS-vars / tag→icon maps. */
 
 /** Join class-name parts, dropping falsy ones, into a single space-separated string. */
 function cx(...parts) {
@@ -20,8 +22,8 @@ function AiEditChip({ count, label, style }) {
   );
 }
 
-function NodeInner({ n }) {
-  const auditEditCount = catalog.auditCount(n.id);
+function NodeInner({ graph, n }) {
+  const auditEditCount = graph.auditCount(n.id);
   const fields = n.ref ? (n.ref.fields?.length || n.ref.columns?.length || n.ref.columns_metadata?.length) : null;
   return (
     <React.Fragment>
@@ -79,7 +81,7 @@ function DagView({ graph, sel, onOpen, justAdded }) {
             style={{ left: p.x, top: p.y, width: DAG.NW, height: DAG.NH }}
             onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)}
             onClick={() => onOpen(n)}>
-            <NodeInner n={n} />
+            <NodeInner graph={graph} n={n} />
           </div>
         );
       })}
@@ -89,7 +91,6 @@ function DagView({ graph, sel, onOpen, justAdded }) {
 
 /* ---------- Swimlanes (layer bands) ---------- */
 function SwimView({ graph, sel, onOpen, justAdded }) {
-  const parentsOf = (id) => graph.edges.filter(([, b]) => b === id).map(([a]) => graph.nodes[a]?.label).filter(Boolean);
   const orphans = orphanSet(graph);
   return (
     <div className="lanes">
@@ -106,8 +107,8 @@ function SwimView({ graph, sel, onOpen, justAdded }) {
             </div>
             <div className="lane-body">
               {items.map((n) => {
-                const parentLabels = parentsOf(n.id);
-                const edits = catalog.auditCount(n.id);
+                const parentLabels = graph.parentsOf(n.id).map((p) => p.label);
+                const edits = graph.auditCount(n.id);
                 return (
                   <div key={n.id} className={cx("lane-card", sel === n.id && "sel", orphans.has(n.id) && "orphan", n.id === justAdded && "pop", `layer-${ly}`)}
                     onClick={() => onOpen(n)}>
@@ -144,7 +145,7 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
             <div className="stream-dot" />
             <div className="stream-layer"><LayerDot layer={ly} />{layerMeta.name}<span className="stream-dbt">{layerMeta.dbt}</span></div>
             {items.map((n) => {
-              const audit = catalog.auditFor(n.id) || (n.audit || []);
+              const audit = graph.auditFor(n.id);
               return (
                 <div key={n.id} className={cx("stream-card", sel === n.id && "sel", n.id === justAdded && "pop", `layer-${ly}`)}
                   onClick={() => n.ref && onOpen(n)}>
@@ -172,8 +173,8 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
 }
 
 function LineageCanvas({ mode, onOpen, sel, justAdded }) {
-  // Subscribe to catalog mutations; recompute the visible graph on any change.
-  const graph = useMemo(() => catalog.lineageGraph(), [useCatalog()]);
+  // The catalog hands back a fresh LineageGraph on every mutation; subscribe to it.
+  const graph = useCatalog();
   return (
     <div className="lin-scroll" style={{ overflowX: "auto" }}>
       {mode === "dag" && <DagView graph={graph} sel={sel} onOpen={onOpen} justAdded={justAdded} />}

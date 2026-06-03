@@ -1,9 +1,8 @@
 /* Model detail view — header, dependency strip, AI audit, columns, SQL */
 function MatBadge({ m }) { return m ? <span className="badge neutral up">{m}</span> : null; }
 
-function DepStrip({ node, onOpen }) {
-  const parents = catalog.parentsOf(node.id);
-  // include live extras parents if any are attached on node
+function DepStrip({ graph, node, onOpen }) {
+  const parents = graph.parentsOf(node.id);
   return (
     <div className="dep-strip">
       {parents.map((p) => (
@@ -30,9 +29,9 @@ function CopyBtn({ text }) {
   );
 }
 
-function AuditPanel({ node }) {
+function AuditPanel({ graph, node }) {
   const m = node.ref;
-  const audit = catalog.auditFor(node.id) || node.ref.audit || [];
+  const audit = graph.auditFor(node.id);
   // map transform before/after samples onto matching audit lines for datasets
   const samples = (m.transforms || []).map((t) => t.sample);
   return (
@@ -135,6 +134,7 @@ function DataPreview({ node }) {
 
 function ModelDetail({ node, onOpen }) {
   const m = node.ref;
+  const graph = useCatalog();
   return (
     <div className={"det layer-" + node.layer}>
       <div className="det-hd">
@@ -148,11 +148,11 @@ function ModelDetail({ node, onOpen }) {
           <MatBadge m={m.materialization} />
         </div>
       </div>
-      <DepStrip node={node} onOpen={onOpen} />
+      <DepStrip graph={graph} node={node} onOpen={onOpen} />
       <SummaryRow node={node} />
       <div className="det-grid" style={{ marginTop: 16 }}>
         <DataPreview node={node} />
-        <AuditPanel node={node} />
+        <AuditPanel graph={graph} node={node} />
         <ColumnsPanel node={node} />
         <div className="panel spanfull">
           <div className="sql-bar"><Icon name="database" size={14} style={{ color: "var(--text-500)" }} /><span className="st">Compiled SQL</span><CopyBtn text={m.sql} /></div>
