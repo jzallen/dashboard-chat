@@ -38,34 +38,34 @@ function NodeInner({ n }) {
 }
 
 function Node({
-  node,
-  pos,
-  selected,
-  orphan,
-  dim,
+  n,
+  style,
+  sel,
+  orphans,
+  inFocusNodeId,
   justAdded,
   onHover,
   onOpen,
 }) {
-  if (!pos) return null;
+  const selected = sel === n.id;
+  const orphan = orphans.has(n.id);
+  const dim =
+    !!inFocusNodeId &&
+    inFocusNodeId !== n.id &&
+    !catalog.isNodeAdjacent(inFocusNodeId, n.id);
   return (
     <div
-      className={`${styles.lnNode} layer-${node.layer}`}
+      className={`${styles.lnNode} layer-${n.layer}`}
       data-selected={selected || undefined}
       data-orphan={orphan || undefined}
       data-dim={dim || undefined}
-      data-just-added={justAdded || undefined}
-      style={{
-        left: pos.x,
-        top: pos.y,
-        width: DagDimensionConfig.nodeWidth,
-        height: DagDimensionConfig.nodeHeight,
-      }}
-      onMouseEnter={() => onHover(node.id)}
+      data-just-added={n.id === justAdded || undefined}
+      style={style}
+      onMouseEnter={() => onHover(n.id)}
       onMouseLeave={() => onHover(null)}
-      onClick={() => onOpen(node)}
+      onClick={() => onOpen(n)}
     >
-      <NodeInner n={node} />
+      <NodeInner n={n} />
     </div>
   );
 }
@@ -114,23 +114,29 @@ export function DagView({ version, sel, onOpen, justAdded }) {
           />
         ))}
       </svg>
-      {catalog.listNodes().map((n) => (
-        <Node
-          key={n.id}
-          node={n}
-          pos={layout.pos[n.id]}
-          selected={sel === n.id}
-          orphan={orphans.has(n.id)}
-          dim={
-            !!inFocusNodeId &&
-            inFocusNodeId !== n.id &&
-            !catalog.isNodeAdjacent(inFocusNodeId, n.id)
-          }
-          justAdded={n.id === justAdded}
-          onHover={setHover}
-          onOpen={onOpen}
-        />
-      ))}
+      {catalog.listNodes().map((n) => {
+        const pos = layout.pos[n.id];
+        if (!pos) return null;
+        const nodeStyle = {
+          left: pos.x,
+          top: pos.y,
+          width: DagDimensionConfig.nodeWidth,
+          height: DagDimensionConfig.nodeHeight,
+        };
+        return (
+          <Node
+            key={n.id}
+            n={n}
+            style={nodeStyle}
+            sel={sel}
+            orphans={orphans}
+            inFocusNodeId={inFocusNodeId}
+            justAdded={justAdded}
+            onHover={setHover}
+            onOpen={onOpen}
+          />
+        );
+      })}
     </div>
   );
 }
