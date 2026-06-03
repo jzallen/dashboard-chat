@@ -4,6 +4,7 @@ import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
 import { TAG_ICON } from "../tagIcon";
+import styles from "./lineageCanvas.module.css";
 import { AiEditChip, cx } from "./shared";
 
 /** Audit stream skips the source layer — sources have no transforms. */
@@ -11,18 +12,18 @@ const STREAM_LAYERS = LAYER_ORDER.slice(1);
 
 export function StreamView({ sel, onOpen, justAdded }) {
   return (
-    <div className="stream">
+    <div className={styles.stream}>
       {STREAM_LAYERS.map((ly) => {
         const layerMeta = LAYER_META[ly];
         const items = catalog.getNodesByLayer(ly);
         return (
-          <div className={`stream-group layer-${ly}`} key={ly}>
-            <div className="stream-rail" />
-            <div className="stream-dot" />
-            <div className="stream-layer">
+          <div className={cx(styles.streamGroup, `layer-${ly}`)} key={ly}>
+            <div className={styles.streamRail} />
+            <div className={styles.streamDot} />
+            <div className={styles.streamLayer}>
               <LayerDot layer={ly} />
               {layerMeta.name}
-              <span className="stream-dbt">{layerMeta.dbt}</span>
+              <span className={styles.streamDbt}>{layerMeta.dbt}</span>
             </div>
             {items.map((n) => {
               const audit = catalog.auditFor(n.id);
@@ -30,16 +31,16 @@ export function StreamView({ sel, onOpen, justAdded }) {
                 <div
                   key={n.id}
                   className={cx(
-                    "stream-card",
-                    sel === n.id && "sel",
+                    styles.streamCard,
+                    sel === n.id && styles.sel,
                     n.id === justAdded && "pop",
                     `layer-${ly}`,
                   )}
                   onClick={() => n.ref && onOpen(n)}
                 >
-                  <div className="sc-head">
-                    <span className="sc-name">
-                      {n.label} <span className="lite">· {n.sub}</span>
+                  <div className={styles.scHead}>
+                    <span className={styles.scName}>
+                      {n.label} <span className={styles.lite}>· {n.sub}</span>
                     </span>
                     <AiEditChip
                       count={audit.length}
@@ -47,19 +48,19 @@ export function StreamView({ sel, onOpen, justAdded }) {
                       style={{ marginLeft: "auto" }}
                     />
                   </div>
-                  <div className="sc-audit">
+                  <div className={styles.scAudit}>
                     {audit.length === 0 && (
-                      <div className="empty-src">
+                      <div className={styles.emptySrc}>
                         Raw upload — no transforms.
                       </div>
                     )}
                     {audit.map((a, i) => (
-                      <div className="audit-line" key={i}>
-                        <span className="ico">
+                      <div className={styles.auditLine} key={i}>
+                        <span className={styles.ico}>
                           <Icon name={TAG_ICON[a.tag] || TAG_ICON.default} />
                         </span>
                         <span>{a.say}</span>
-                        <span className="tag">{a.tag}</span>
+                        <span className={styles.tag}>{a.tag}</span>
                       </div>
                     ))}
                   </div>

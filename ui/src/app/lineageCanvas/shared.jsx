@@ -1,5 +1,6 @@
 /* Shared bits for the lineage views: a classNames helper and the AI-edit chip. */
 import { Icon } from "../primitives";
+import styles from "./lineageCanvas.module.css";
 
 /** Join class-name parts, dropping falsy ones, into a single space-separated string. */
 export function cx(...parts) {
@@ -9,7 +10,7 @@ export function cx(...parts) {
 /** Sparkle chip showing an AI-edit count, with an optional trailing label. */
 export function AiEditChip({ count, label, style }) {
   return (
-    <span className="ai-chip" style={style}>
+    <span className={styles.aiChip} style={style}>
       <Icon name="sparkle" />
       {count}
       {label ? ` ${label}` : ""}

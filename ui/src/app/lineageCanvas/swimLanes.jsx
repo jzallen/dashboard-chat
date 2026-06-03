@@ -3,24 +3,25 @@ import { LAYER_ORDER } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
+import styles from "./lineageCanvas.module.css";
 import { AiEditChip, cx } from "./shared";
 
 export function SwimView({ sel, onOpen, justAdded }) {
   const orphans = catalog.orphans();
   return (
-    <div className="lanes">
+    <div className={styles.lanes}>
       {LAYER_ORDER.map((ly) => {
         const layerMeta = LAYER_META[ly];
         const items = catalog.getNodesByLayer(ly);
         return (
-          <div className={`lane layer-${ly}`} key={ly}>
-            <div className="lane-head">
+          <div className={cx(styles.lane, `layer-${ly}`)} key={ly}>
+            <div className={styles.laneHead}>
               <LayerDot layer={ly} />
-              <span className="lh-name">{layerMeta.name}</span>
-              <span className="lh-dbt">{layerMeta.dbt}</span>
-              <span className="lh-desc">{layerMeta.desc}</span>
+              <span className={styles.lhName}>{layerMeta.name}</span>
+              <span className={styles.lhDbt}>{layerMeta.dbt}</span>
+              <span className={styles.lhDesc}>{layerMeta.desc}</span>
             </div>
-            <div className="lane-body">
+            <div className={styles.laneBody}>
               {items.map((n) => {
                 const parentLabels = catalog
                   .parentsOf(n.id)
@@ -30,21 +31,21 @@ export function SwimView({ sel, onOpen, justAdded }) {
                   <div
                     key={n.id}
                     className={cx(
-                      "lane-card",
-                      sel === n.id && "sel",
-                      orphans.has(n.id) && "orphan",
+                      styles.laneCard,
+                      sel === n.id && styles.sel,
+                      orphans.has(n.id) && styles.orphan,
                       n.id === justAdded && "pop",
                       `layer-${ly}`,
                     )}
                     onClick={() => onOpen(n)}
                   >
-                    <div className="ln-row">
-                      <span className="ln-name">{n.label}</span>
+                    <div className={styles.lnRow}>
+                      <span className={styles.lnName}>{n.label}</span>
                     </div>
-                    <div className="ln-sub">{n.sub}</div>
-                    <div className="ln-meta">
+                    <div className={styles.lnSub}>{n.sub}</div>
+                    <div className={styles.lnMeta}>
                       {orphans.has(n.id) && (
-                        <span className="orphan-tag">
+                        <span className={styles.orphanTag}>
                           <Icon name="x" size={10} />
                           Orphaned
                         </span>
@@ -52,7 +53,7 @@ export function SwimView({ sel, onOpen, justAdded }) {
                       {edits > 0 && <AiEditChip count={edits} />}
                     </div>
                     {parentLabels.length > 0 && (
-                      <div className="lane-src">
+                      <div className={styles.laneSrc}>
                         <Icon name="arrow" size={12} />
                         {parentLabels.join(" · ")}
                       </div>

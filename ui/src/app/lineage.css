@@ -1,98 +1,69 @@
-/* Lineage canvas styles (DAG · swimlanes · audit-stream) */
-.lin-wrap { padding: 22px 26px 26px; flex: 1; display: flex; flex-direction: column; }
-.lin-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
-.lin-title { font-family: var(--font-serif); font-size: 22px; font-weight: 700; color: var(--text-900); }
-.lin-sub { font-size: 13px; color: var(--text-500); margin-top: 3px; }
+/* Lineage page chrome — the header, mode toggle, and legend rendered by the
+   workspace (app.jsx). The view styles (dag · swimlanes · audit-stream) are
+   scoped in lineageCanvas/lineageCanvas.module.css inside the lineage package. */
+.lin-wrap {
+  padding: 22px 26px 26px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.lin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.lin-title {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-900);
+}
+.lin-sub {
+  font-size: 13px;
+  color: var(--text-500);
+  margin-top: 3px;
+}
 
-.seg { display: inline-flex; background: var(--surface-3); border-radius: 9px; padding: 3px; gap: 2px; }
+.seg {
+  display: inline-flex;
+  background: var(--surface-3);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 2px;
+}
 .seg button {
-  display: inline-flex; align-items: center; gap: 7px; border: none; background: transparent; cursor: pointer;
-  font-size: 13px; color: var(--text-500); padding: 7px 13px; border-radius: 7px; transition: all .14s; font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-500);
+  padding: 7px 13px;
+  border-radius: 7px;
+  transition: all 0.14s;
+  font-weight: 500;
 }
-.seg button.on { background: var(--surface); color: var(--text-900); box-shadow: var(--shadow-sm); }
-
-.legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
-.legend .lg { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-500); }
-
-/* canvas */
-.lin-scroll {
-  flex: 1; min-height: 0;
-  background-image: radial-gradient(var(--grid-dot) 1.6px, transparent 1.6px);
-  background-size: 22px 22px; background-position: -2px -2px;
-  border-radius: 16px; padding: 10px; margin: -10px;
+.seg button.on {
+  background: var(--surface);
+  color: var(--text-900);
+  box-shadow: var(--shadow-sm);
 }
-.app.no-grid .lin-scroll { background-image: none; }
-.canvas { position: relative; }
-.canvas svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 0; }
-.ln-edge { fill: none; stroke: #cbd5e1; stroke-width: 1.8; transition: stroke .18s, stroke-width .18s; }
-.ln-edge.hot { stroke: var(--primary); stroke-width: 2.6; stroke-dasharray: 7 6; animation: dashFlow .7s linear infinite; }
-.ln-edge.dim { stroke: #e7ebf0; }
 
-.ln-node {
-  position: absolute; z-index: 1; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 11px; padding: 12px 13px 14px 15px; box-shadow: var(--shadow-sm); cursor: pointer;
-  overflow: hidden; transition: box-shadow .16s, border-color .16s, transform .16s;
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
 }
-.ln-node::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--ln); }
-.ln-node::after { content: ""; position: absolute; inset: 0; background: var(--ln); opacity: 0; transition: opacity .16s; pointer-events: none; }
-.ln-node:hover::after { opacity: .04; }
-.ln-node:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: #d4dae3; }
-.ln-node.sel { border-color: var(--ln); box-shadow: 0 0 0 3px var(--ln-soft), var(--shadow-md); }
-.ln-node.dim { opacity: .4; }
-/* orphaned (no inputs) — shown disabled in Flow */
-.ln-node.orphan { opacity: .5; border-style: dashed; background:
-  repeating-linear-gradient(135deg, var(--surface) 0 9px, var(--surface-2) 9px 18px); }
-.ln-node.orphan .ln-name { color: var(--text-500); }
-.ln-node.orphan::before { opacity: .4; }
-.lane-card.orphan { opacity: .62; border-style: dashed; }
-.orphan-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600;
-  color: var(--text-500); background: var(--surface-3); border: 1px solid var(--border); padding: 1px 7px 1px 5px; border-radius: 99px; }
-.orphan-tag svg { width: 10px; height: 10px; }
-.ln-row { display: flex; align-items: center; gap: 8px; }
-.ln-name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ln-sub { font-size: 11.5px; color: var(--text-500); margin-top: 3px; }
-.ln-meta { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.ai-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; color: var(--primary-hover); background: var(--primary-light); padding: 1px 7px; border-radius: 99px; }
-.ai-chip svg { width: 11px; height: 11px; }
-.fields-chip { font-size: 10.5px; color: var(--text-400); }
-
-/* swimlanes */
-.lanes { display: flex; flex-direction: column; gap: 14px; }
-.lane { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
-.lane-head { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--border); }
-.lane-head .lh-name { font-weight: 700; font-size: 14px; color: var(--text-900); }
-.lane-head .lh-dbt { font-family: var(--font-mono); font-size: 11px; color: var(--text-400); }
-.lane-head .lh-desc { font-size: 12px; color: var(--text-500); margin-left: auto; }
-.lane-body { display: flex; gap: 16px; padding: 16px; overflow-x: auto; align-items: stretch; min-height: 96px; }
-.lane-card {
-  flex: 0 0 auto; min-width: 188px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 11px; padding: 12px 14px; cursor: pointer; position: relative; overflow: hidden;
-  transition: box-shadow .16s, transform .16s, border-color .16s;
+.legend .lg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-500);
 }
-.lane-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--ln); }
-.lane-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.lane-card.sel { border-color: var(--ln); box-shadow: 0 0 0 3px var(--ln-soft); }
-.lane-src { font-size: 11px; color: var(--text-400); margin-top: 7px; display: flex; align-items: center; gap: 5px; }
-
-/* audit stream */
-.stream { display: flex; flex-direction: column; gap: 0; max-width: 860px; }
-.stream-group { position: relative; padding-left: 30px; }
-.stream-rail { position: absolute; left: 9px; top: 4px; bottom: 0; width: 2px; background: var(--border); }
-.stream-dot { position: absolute; left: 3px; top: 6px; width: 14px; height: 14px; border-radius: 99px; background: var(--surface); border: 3px solid var(--ln); z-index: 1; }
-.stream-layer { font-weight: 700; font-size: 13px; color: var(--text-900); display: flex; align-items: center; gap: 8px; }
-.stream-dbt { font-family: var(--font-mono); font-size: 11px; color: var(--text-400); font-weight: 400; }
-.stream-card {
-  margin: 10px 0 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
-  box-shadow: var(--shadow-sm); overflow: hidden; cursor: pointer; transition: box-shadow .16s, border-color .16s;
-}
-.stream-card:hover { box-shadow: var(--shadow-md); }
-.stream-card.sel { border-color: var(--ln); box-shadow: 0 0 0 3px var(--ln-soft); }
-.sc-head { display: flex; align-items: center; gap: 10px; padding: 12px 15px; border-bottom: 1px solid var(--border); }
-.sc-name { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; color: var(--text-900); }
-.sc-name .lite { color: var(--text-400); font-weight: 400; }
-.sc-audit { padding: 6px 15px 12px; }
-.audit-line { display: flex; align-items: flex-start; gap: 9px; padding: 6px 0; font-size: 12.5px; color: var(--text-700); }
-.audit-line .ico { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--primary-light); color: var(--primary-hover); margin-top: 1px; }
-.audit-line .ico svg { width: 12px; height: 12px; }
-.tag { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-400); margin-left: auto; flex: 0 0 auto; padding-top: 2px; }
-.empty-src { font-size: 12px; color: var(--text-400); padding: 14px 15px; }

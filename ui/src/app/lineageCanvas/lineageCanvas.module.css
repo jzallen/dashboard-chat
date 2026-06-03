@@ -1,0 +1,385 @@
+/* Scoped styles for the lineage views (dag · swimlanes · audit-stream).
+   Layer color comes from the global .layer-* classes (theme.css) via the
+   --ln / --ln-soft custom properties carried on the same elements; the `pop`
+   add animation and the dashFlow keyframe are global (theme.css) too. */
+
+/* ── canvas (DAG) ───────────────────────────────────────────────────────── */
+.linScroll {
+  flex: 1;
+  min-height: 0;
+  background-image: radial-gradient(var(--grid-dot) 1.6px, transparent 1.6px);
+  background-size: 22px 22px;
+  background-position: -2px -2px;
+  border-radius: 16px;
+  padding: 10px;
+  margin: -10px;
+}
+:global(.app.no-grid) .linScroll {
+  background-image: none;
+}
+.canvas {
+  position: relative;
+}
+.canvas svg.edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 0;
+}
+.lnEdge {
+  fill: none;
+  stroke: #cbd5e1;
+  stroke-width: 1.8;
+  transition:
+    stroke 0.18s,
+    stroke-width 0.18s;
+}
+.lnEdge.hot {
+  stroke: var(--primary);
+  stroke-width: 2.6;
+  stroke-dasharray: 7 6;
+  animation: dashFlow 0.7s linear infinite;
+}
+.lnEdge.dim {
+  stroke: #e7ebf0;
+}
+
+.lnNode {
+  position: absolute;
+  z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 12px 13px 14px 15px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    box-shadow 0.16s,
+    border-color 0.16s,
+    transform 0.16s;
+}
+.lnNode::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--ln);
+}
+.lnNode::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ln);
+  opacity: 0;
+  transition: opacity 0.16s;
+  pointer-events: none;
+}
+.lnNode:hover::after {
+  opacity: 0.04;
+}
+.lnNode:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  border-color: #d4dae3;
+}
+.lnNode.sel {
+  border-color: var(--ln);
+  box-shadow:
+    0 0 0 3px var(--ln-soft),
+    var(--shadow-md);
+}
+.lnNode.dim {
+  opacity: 0.4;
+}
+/* orphaned (no inputs) — shown disabled in Flow */
+.lnNode.orphan {
+  opacity: 0.5;
+  border-style: dashed;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--surface) 0 9px,
+    var(--surface-2) 9px 18px
+  );
+}
+.lnNode.orphan .lnName {
+  color: var(--text-500);
+}
+.lnNode.orphan::before {
+  opacity: 0.4;
+}
+.laneCard.orphan {
+  opacity: 0.62;
+  border-style: dashed;
+}
+.orphanTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-500);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  padding: 1px 7px 1px 5px;
+  border-radius: 99px;
+}
+.orphanTag svg {
+  width: 10px;
+  height: 10px;
+}
+.lnRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lnName {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lnSub {
+  font-size: 11.5px;
+  color: var(--text-500);
+  margin-top: 3px;
+}
+.lnMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.aiChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--primary-hover);
+  background: var(--primary-light);
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+.aiChip svg {
+  width: 11px;
+  height: 11px;
+}
+.fieldsChip {
+  font-size: 10.5px;
+  color: var(--text-400);
+}
+
+/* ── swimlanes ──────────────────────────────────────────────────────────── */
+.lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.lane {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.laneHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.laneHead .lhName {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-900);
+}
+.laneHead .lhDbt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-400);
+}
+.laneHead .lhDesc {
+  font-size: 12px;
+  color: var(--text-500);
+  margin-left: auto;
+}
+.laneBody {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  overflow-x: auto;
+  align-items: stretch;
+  min-height: 96px;
+}
+.laneCard {
+  flex: 0 0 auto;
+  min-width: 188px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 12px 14px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition:
+    box-shadow 0.16s,
+    transform 0.16s,
+    border-color 0.16s;
+}
+.laneCard::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--ln);
+}
+.laneCard:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.laneCard.sel {
+  border-color: var(--ln);
+  box-shadow: 0 0 0 3px var(--ln-soft);
+}
+.laneSrc {
+  font-size: 11px;
+  color: var(--text-400);
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── audit stream ───────────────────────────────────────────────────────── */
+.stream {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 860px;
+}
+.streamGroup {
+  position: relative;
+  padding-left: 30px;
+}
+.streamRail {
+  position: absolute;
+  left: 9px;
+  top: 4px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.streamDot {
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 99px;
+  background: var(--surface);
+  border: 3px solid var(--ln);
+  z-index: 1;
+}
+.streamLayer {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-900);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.streamDbt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-400);
+  font-weight: 400;
+}
+.streamCard {
+  margin: 10px 0 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    box-shadow 0.16s,
+    border-color 0.16s;
+}
+.streamCard:hover {
+  box-shadow: var(--shadow-md);
+}
+.streamCard.sel {
+  border-color: var(--ln);
+  box-shadow: 0 0 0 3px var(--ln-soft);
+}
+.scHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border);
+}
+.scName {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-900);
+}
+.scName .lite {
+  color: var(--text-400);
+  font-weight: 400;
+}
+.scAudit {
+  padding: 6px 15px 12px;
+}
+.auditLine {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 0;
+  font-size: 12.5px;
+  color: var(--text-700);
+}
+.auditLine .ico {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-light);
+  color: var(--primary-hover);
+  margin-top: 1px;
+}
+.auditLine .ico svg {
+  width: 12px;
+  height: 12px;
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-400);
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+.emptySrc {
+  font-size: 12px;
+  color: var(--text-400);
+  padding: 14px 15px;
+}

@@ -3,13 +3,14 @@
 import { useCatalog } from "../useCatalog";
 import { StreamView } from "./auditStreamView";
 import { DagView } from "./dagView";
+import styles from "./lineageCanvas.module.css";
 import { SwimView } from "./swimLanes";
 
 export function LineageCanvas({ mode, onOpen, sel, justAdded }) {
   // Subscribe to catalog mutations; the version is a re-render / memo token.
   const version = useCatalog();
   return (
-    <div className="lin-scroll" style={{ overflowX: "auto" }}>
+    <div className={styles.linScroll} style={{ overflowX: "auto" }}>
       {mode === "dag" && (
         <DagView
           version={version}

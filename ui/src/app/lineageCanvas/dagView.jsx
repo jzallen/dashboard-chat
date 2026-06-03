@@ -8,6 +8,7 @@ import {
   computeDagLayout,
   DagDimensionConfig,
 } from "./lineageLayout";
+import styles from "./lineageCanvas.module.css";
 import { AiEditChip, cx } from "./shared";
 
 function NodeInner({ n }) {
@@ -19,16 +20,18 @@ function NodeInner({ n }) {
     : null;
   return (
     <>
-      <div className="ln-row">
+      <div className={styles.lnRow}>
         <LayerDot layer={n.layer} size={8} />
-        <span className="ln-name">{n.label}</span>
+        <span className={styles.lnName}>{n.label}</span>
       </div>
-      <div className="ln-sub">{n.sub}</div>
-      <div className="ln-meta">
+      <div className={styles.lnSub}>{n.sub}</div>
+      <div className={styles.lnMeta}>
         {auditEditCount > 0 && (
           <AiEditChip count={auditEditCount} label="edits" />
         )}
-        {fields ? <span className="fields-chip">{fields} cols</span> : null}
+        {fields ? (
+          <span className={styles.fieldsChip}>{fields} cols</span>
+        ) : null}
       </div>
     </>
   );
@@ -52,19 +55,19 @@ export function DagView({ version, sel, onOpen, justAdded }) {
 
   return (
     <div
-      className="canvas"
+      className={styles.canvas}
       style={{ width: layout.w, height: layout.h, minWidth: layout.w }}
     >
-      <svg className="edges">
+      <svg className={styles.edges}>
         {catalog.listEdges().map(([a, b], i) => {
           const sourcePos = layout.pos[a];
           const targetPos = layout.pos[b];
           if (!sourcePos || !targetPos) return null;
-          const edgeClass = litEdges.has(i)
-            ? "ln-edge hot"
-            : focus
-              ? "ln-edge dim"
-              : "ln-edge";
+          const edgeClass = cx(
+            styles.lnEdge,
+            litEdges.has(i) && styles.hot,
+            !litEdges.has(i) && focus && styles.dim,
+          );
           return (
             <path
               key={i}
@@ -78,10 +81,13 @@ export function DagView({ version, sel, onOpen, justAdded }) {
         const p = layout.pos[n.id];
         if (!p) return null;
         const nodeClass = cx(
-          "ln-node",
-          sel === n.id && "sel",
-          orphans.has(n.id) && "orphan",
-          focus && focus !== n.id && !catalog.isAdjacent(focus, n.id) && "dim",
+          styles.lnNode,
+          sel === n.id && styles.sel,
+          orphans.has(n.id) && styles.orphan,
+          focus &&
+            focus !== n.id &&
+            !catalog.isAdjacent(focus, n.id) &&
+            styles.dim,
           n.id === justAdded && "pop",
           `layer-${n.layer}`,
         );
