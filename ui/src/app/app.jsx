@@ -254,19 +254,16 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [upload, setUpload] = useState({ open: false, source: null });
-  const [nameOverrides, setNameOverrides] = useState({});
-  const [archived, setArchived] = useState([]);
-  const [coldStorage, setColdStorage] = useState([]);
   const [coldOpen, setColdOpen] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(null);
-  const [extraNodes, setExtraNodes] = useState([]);
-  const [extraEdges, setExtraEdges] = useState([]);
   const [justAdded, setJustAdded] = useState(null);
-  const liveRef = useRef({});
+  // Subscribe App to catalog mutations: any rename/archive/restore/live-add
+  // bumps the version and re-renders the tree. Used as a memo dep below.
+  const catalogVersion = useCatalog();
 
   const go = useCallback((r) => {
     if (r.name === "openRecent") {
-      const node = catalog.getNode(r.nodeId) || liveRef.current[r.nodeId];
+      const node = catalog.getNode(r.nodeId);
       if (node && node.ref) { setRoute({ name: "model", node }); setChatOpen(true); return; }
       setRoute({ name: "workspace" }); setChatOpen(true); return;
     }
@@ -284,40 +281,34 @@ function App() {
   const openModel = useCallback((node) => setRoute({ name: "model", node }), []);
   const onOpenNode = useCallback((node) => {
     if (node.layer === "source") {
-      setUpload({ open: true, source: { ...node, label: nameOverrides[node.id] || node.label } });
+      // The node already carries any rename via the graph projection.
+      setUpload({ open: true, source: node });
       return;
     }
     setRoute({ name: "model", node });
-  }, [nameOverrides]);
-  const renameSource = useCallback((id, name) => setNameOverrides((o) => ({ ...o, [id]: name })), []);
+  }, []);
+  const renameSource = useCallback((id, name) => catalog.renameSource(id, name), []);
   const archiveSource = useCallback((src) => {
-    setArchived((a) => a.includes(src.id) ? a : [...a, src.id]);
-    setColdStorage((c) => [{ id: src.id, name: src.label, schema: src.schema, files: src.files, retiredAt: Date.now(), retentionDays: 90 }, ...c.filter((x) => x.id !== src.id)]);
+    catalog.archiveSource(src);
     setConfirmArchive(null);
     setUpload({ open: false, source: null });
   }, []);
-  const restoreSource = useCallback((id) => {
-    setArchived((a) => a.filter((x) => x !== id));
-    setColdStorage((c) => c.filter((s) => s.id !== id));
-  }, []);
+  const restoreSource = useCallback((id) => catalog.restoreSource(id), []);
   const handleCreateSource = useCallback((src) => {
     const id = "src." + (src.name || "source").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") + "_" + Math.random().toString(36).slice(2, 5);
     const node = { id, label: src.name, sub: "source", layer: "source", schema: src.schema, files: src.files, ref: null };
-    liveRef.current[id] = node;
-    setExtraNodes((n) => [...n, node]);
+    catalog.addSource(node);
     setJustAdded(id); setTimeout(() => setJustAdded(null), 1600);
   }, []);
 
   const handleCreate = useCallback((node, edge) => {
-    liveRef.current[node.id] = node;
-    setExtraNodes((n) => n.some((x) => x.id === node.id) ? n : [...n, node]);
-    setExtraEdges((e) => e.some(([a, b]) => a === edge[0] && b === edge[1]) ? e : [...e, edge]);
+    catalog.addModel(node, edge);
     setJustAdded(node.id);
     setTimeout(() => setJustAdded(null), 1600);
   }, []);
 
   const [p0, p1, p2] = t.layerPalette;
-  const allModels = useMemo(() => [...catalog.listModels(), ...extraNodes], [extraNodes]);
+  const allModels = useMemo(() => catalog.listModels(), [catalogVersion]);
   const curProjectName = (projects.find((p) => p.id === projectId) || projects[0]).name;
   const studioStyle = {
     "--primary": t.accent, "--primary-hover": t.accent, "--primary-light": `color-mix(in srgb, ${t.accent} 16%, white)`,
@@ -367,7 +358,7 @@ function App() {
                 <button className="icon-btn" title="Query engines" onClick={() => setRoute({ name: "engines" })}><Icon name="database" /></button>
                 <button className="icon-btn cold-btn-toolbar" title="Cold storage" onClick={() => setColdOpen(true)}>
                   <Icon name="fridge" />
-                  {coldStorage.length > 0 && <span className="cold-count">{coldStorage.length}</span>}
+                  {catalog.listColdStorage().length > 0 && <span className="cold-count">{catalog.listColdStorage().length}</span>}
                 </button>
               </div>
             </div>
@@ -376,8 +367,7 @@ function App() {
         <div className="content">
           <div className="frame">
             {route.name === "workspace" && <Workspace mode={t.lineageMode} setMode={(m) => setTweak("lineageMode", m)}
-              onOpen={onOpenNode} extraNodes={extraNodes} extraEdges={extraEdges} justAdded={justAdded}
-              archived={archived} nameOverrides={nameOverrides} />}
+              onOpen={onOpenNode} justAdded={justAdded} />}
             {route.name === "model" && <ModelDetail node={route.node} onOpen={openModel} />}
             {route.name === "engines" && <Stub title="Query Engines" sub="DuckDB · connected. Manage compute for previews and exports." />}
             {route.name === "chats" && <AllChats go={go} />}
@@ -398,10 +388,10 @@ function App() {
         : <AssistantOverlay context={route.name === "model" ? route.node : null}
             onCreate={handleCreate} onClose={() => setChatOpen(false)} onOpenNode={openModel} go={go} />
       )}
-      {exportOpen && <ExportDrawer onClose={() => setExportOpen(false)} extraNodes={extraNodes} />}
+      {exportOpen && <ExportDrawer onClose={() => setExportOpen(false)} />}
       {upload.open && <UploadModal key={upload.source ? upload.source.id : "new-upload"} source={upload.source} onClose={() => setUpload({ open: false, source: null })} onCreateSource={handleCreateSource} onRename={renameSource} onArchive={(src) => setConfirmArchive(src)} />}
       {confirmArchive && <ConfirmArchive source={confirmArchive} onCancel={() => setConfirmArchive(null)} onConfirm={archiveSource} />}
-      {coldOpen && <ColdStorageModal items={coldStorage} onRestore={restoreSource} onClose={() => setColdOpen(false)} />}
+      {coldOpen && <ColdStorageModal items={catalog.listColdStorage()} onRestore={restoreSource} onClose={() => setColdOpen(false)} />}
 
       <TweaksPanel title="Tweaks">
         <TweakSection label="Theme" />
