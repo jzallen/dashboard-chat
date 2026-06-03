@@ -2,7 +2,7 @@
 function MatBadge({ m }) { return m ? <span className="badge neutral up">{m}</span> : null; }
 
 function DepStrip({ node, onOpen }) {
-  const parents = DC.EDGES.filter(([, b]) => b === node.id).map(([a]) => DC.NODES[a]).filter(Boolean);
+  const parents = catalog.parentsOf(node.id);
   // include live extras parents if any are attached on node
   return (
     <div className="dep-strip">
@@ -32,7 +32,7 @@ function CopyBtn({ text }) {
 
 function AuditPanel({ node }) {
   const m = node.ref;
-  const audit = DC.AUDIT[node.id] || node.ref.audit || [];
+  const audit = catalog.auditFor(node.id) || node.ref.audit || [];
   // map transform before/after samples onto matching audit lines for datasets
   const samples = (m.transforms || []).map((t) => t.sample);
   return (
