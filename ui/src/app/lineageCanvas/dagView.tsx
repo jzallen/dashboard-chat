@@ -1,17 +1,37 @@
 /* DAG view (horizontal flow): nodes laid out in layer columns, edges as Béziers. */
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 
+import type { LineageNode } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { LayerDot } from "../primitives";
 import {
   bezierPath,
   computeDagLayout,
   DagDimensionConfig,
+  type Point,
 } from "./lineageLayout";
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 
-function Node({ n, style, selected, orphan, dim, justAdded, onHover, onOpen }) {
+function Node({
+  n,
+  style,
+  selected,
+  orphan,
+  dim,
+  justAdded,
+  onHover,
+  onOpen,
+}: {
+  n: LineageNode;
+  style: CSSProperties;
+  selected: boolean;
+  orphan: boolean;
+  dim: boolean;
+  justAdded: boolean;
+  onHover: (id: string | null) => void;
+  onOpen: (node: LineageNode) => void;
+}) {
   const auditEditCount = catalog.auditCount(n.id);
   const fields = n.ref
     ? n.ref.fields?.length ||
@@ -47,7 +67,17 @@ function Node({ n, style, selected, orphan, dim, justAdded, onHover, onOpen }) {
   );
 }
 
-function Edge({ sourcePos, targetPos, hot, dim }) {
+function Edge({
+  sourcePos,
+  targetPos,
+  hot,
+  dim,
+}: {
+  sourcePos: Point | undefined;
+  targetPos: Point | undefined;
+  hot: boolean;
+  dim: boolean;
+}) {
   if (!sourcePos || !targetPos) return null;
   return (
     <path
@@ -59,8 +89,18 @@ function Edge({ sourcePos, targetPos, hot, dim }) {
   );
 }
 
-export function DagView({ version, sel, onOpen, justAdded }) {
-  const [hover, setHover] = useState(null);
+export function DagView({
+  version,
+  sel,
+  onOpen,
+  justAdded,
+}: {
+  version: number;
+  sel: string | null;
+  onOpen: (node: LineageNode) => void;
+  justAdded: string | null;
+}) {
+  const [hover, setHover] = useState<string | null>(null);
   const layout = useMemo(
     () => computeDagLayout(catalog, DagDimensionConfig),
     [version],
@@ -68,7 +108,7 @@ export function DagView({ version, sel, onOpen, justAdded }) {
 
   const inFocusNodeId = hover || sel;
   const orphans = catalog.orphans();
-  const inFocusEdges = new Set();
+  const inFocusEdges = new Set<number>();
   if (inFocusNodeId) {
     catalog.listEdges().forEach((edge, index) => {
       if (catalog.isEdgeAdjacent(edge, inFocusNodeId)) inFocusEdges.add(index);
@@ -94,7 +134,7 @@ export function DagView({ version, sel, onOpen, justAdded }) {
       {catalog.listNodes().map((n) => {
         const pos = layout.pos[n.id];
         if (!pos) return null;
-        const nodeStyle = {
+        const nodeStyle: CSSProperties = {
           left: pos.x,
           top: pos.y,
           width: DagDimensionConfig.nodeWidth,
