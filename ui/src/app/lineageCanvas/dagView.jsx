@@ -9,7 +9,7 @@ import {
   DagDimensionConfig,
 } from "./lineageLayout";
 import styles from "./lineageCanvas.module.css";
-import { AiEditChip, cx } from "./shared";
+import { AiEditChip } from "./shared";
 
 function NodeInner({ n }) {
   const auditEditCount = catalog.auditCount(n.id);
@@ -63,15 +63,12 @@ export function DagView({ version, sel, onOpen, justAdded }) {
           const sourcePos = layout.pos[a];
           const targetPos = layout.pos[b];
           if (!sourcePos || !targetPos) return null;
-          const edgeClass = cx(
-            styles.lnEdge,
-            litEdges.has(i) && styles.hot,
-            !litEdges.has(i) && focus && styles.dim,
-          );
           return (
             <path
               key={i}
-              className={edgeClass}
+              className={styles.lnEdge}
+              data-hot={litEdges.has(i) || undefined}
+              data-dim={(!litEdges.has(i) && focus) || undefined}
               d={bezierPath(sourcePos, targetPos, DagDimensionConfig)}
             />
           );
@@ -80,21 +77,17 @@ export function DagView({ version, sel, onOpen, justAdded }) {
       {catalog.listNodes().map((n) => {
         const p = layout.pos[n.id];
         if (!p) return null;
-        const nodeClass = cx(
-          styles.lnNode,
-          sel === n.id && styles.sel,
-          orphans.has(n.id) && styles.orphan,
-          focus &&
-            focus !== n.id &&
-            !catalog.isAdjacent(focus, n.id) &&
-            styles.dim,
-          n.id === justAdded && "pop",
-          `layer-${n.layer}`,
-        );
         return (
           <div
             key={n.id}
-            className={nodeClass}
+            className={`${styles.lnNode} layer-${n.layer}`}
+            data-selected={sel === n.id || undefined}
+            data-orphan={orphans.has(n.id) || undefined}
+            data-dim={
+              (focus && focus !== n.id && !catalog.isAdjacent(focus, n.id)) ||
+              undefined
+            }
+            data-just-added={n.id === justAdded || undefined}
             style={{
               left: p.x,
               top: p.y,

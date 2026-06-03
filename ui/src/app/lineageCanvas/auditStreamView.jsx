@@ -5,7 +5,7 @@ import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
 import { TAG_ICON } from "../tagIcon";
 import styles from "./lineageCanvas.module.css";
-import { AiEditChip, cx } from "./shared";
+import { AiEditChip } from "./shared";
 
 /** Audit stream skips the source layer — sources have no transforms. */
 const STREAM_LAYERS = LAYER_ORDER.slice(1);
@@ -17,7 +17,7 @@ export function StreamView({ sel, onOpen, justAdded }) {
         const layerMeta = LAYER_META[ly];
         const items = catalog.getNodesByLayer(ly);
         return (
-          <div className={cx(styles.streamGroup, `layer-${ly}`)} key={ly}>
+          <div className={`${styles.streamGroup} layer-${ly}`} key={ly}>
             <div className={styles.streamRail} />
             <div className={styles.streamDot} />
             <div className={styles.streamLayer}>
@@ -30,12 +30,9 @@ export function StreamView({ sel, onOpen, justAdded }) {
               return (
                 <div
                   key={n.id}
-                  className={cx(
-                    styles.streamCard,
-                    sel === n.id && styles.sel,
-                    n.id === justAdded && "pop",
-                    `layer-${ly}`,
-                  )}
+                  className={`${styles.streamCard} layer-${ly}`}
+                  data-selected={sel === n.id || undefined}
+                  data-just-added={n.id === justAdded || undefined}
                   onClick={() => n.ref && onOpen(n)}
                 >
                   <div className={styles.scHead}>

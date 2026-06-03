@@ -37,13 +37,13 @@
     stroke 0.18s,
     stroke-width 0.18s;
 }
-.lnEdge.hot {
+.lnEdge[data-hot] {
   stroke: var(--primary);
   stroke-width: 2.6;
   stroke-dasharray: 7 6;
   animation: dashFlow 0.7s linear infinite;
 }
-.lnEdge.dim {
+.lnEdge[data-dim] {
   stroke: #e7ebf0;
 }
 
@@ -88,17 +88,17 @@
   transform: translateY(-2px);
   border-color: #d4dae3;
 }
-.lnNode.sel {
+.lnNode[data-selected] {
   border-color: var(--ln);
   box-shadow:
     0 0 0 3px var(--ln-soft),
     var(--shadow-md);
 }
-.lnNode.dim {
+.lnNode[data-dim] {
   opacity: 0.4;
 }
 /* orphaned (no inputs) — shown disabled in Flow */
-.lnNode.orphan {
+.lnNode[data-orphan] {
   opacity: 0.5;
   border-style: dashed;
   background: repeating-linear-gradient(
@@ -107,15 +107,22 @@
     var(--surface-2) 9px 18px
   );
 }
-.lnNode.orphan .lnName {
+.lnNode[data-orphan] .lnName {
   color: var(--text-500);
 }
-.lnNode.orphan::before {
+.lnNode[data-orphan]::before {
   opacity: 0.4;
 }
-.laneCard.orphan {
+.laneCard[data-orphan] {
   opacity: 0.62;
   border-style: dashed;
+}
+
+/* one-shot pop when a node/card is freshly added (justAdded) */
+.lnNode[data-just-added],
+.laneCard[data-just-added],
+.streamCard[data-just-added] {
+  animation: popScale 0.5s cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 .orphanTag {
   display: inline-flex;
@@ -248,7 +255,7 @@
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
 }
-.laneCard.sel {
+.laneCard[data-selected] {
   border-color: var(--ln);
   box-shadow: 0 0 0 3px var(--ln-soft);
 }
@@ -320,7 +327,7 @@
 .streamCard:hover {
   box-shadow: var(--shadow-md);
 }
-.streamCard.sel {
+.streamCard[data-selected] {
   border-color: var(--ln);
   box-shadow: 0 0 0 3px var(--ln-soft);
 }

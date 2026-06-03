@@ -4,7 +4,7 @@ import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
 import styles from "./lineageCanvas.module.css";
-import { AiEditChip, cx } from "./shared";
+import { AiEditChip } from "./shared";
 
 export function SwimView({ sel, onOpen, justAdded }) {
   const orphans = catalog.orphans();
@@ -14,7 +14,7 @@ export function SwimView({ sel, onOpen, justAdded }) {
         const layerMeta = LAYER_META[ly];
         const items = catalog.getNodesByLayer(ly);
         return (
-          <div className={cx(styles.lane, `layer-${ly}`)} key={ly}>
+          <div className={`${styles.lane} layer-${ly}`} key={ly}>
             <div className={styles.laneHead}>
               <LayerDot layer={ly} />
               <span className={styles.lhName}>{layerMeta.name}</span>
@@ -30,13 +30,10 @@ export function SwimView({ sel, onOpen, justAdded }) {
                 return (
                   <div
                     key={n.id}
-                    className={cx(
-                      styles.laneCard,
-                      sel === n.id && styles.sel,
-                      orphans.has(n.id) && styles.orphan,
-                      n.id === justAdded && "pop",
-                      `layer-${ly}`,
-                    )}
+                    className={`${styles.laneCard} layer-${ly}`}
+                    data-selected={sel === n.id || undefined}
+                    data-orphan={orphans.has(n.id) || undefined}
+                    data-just-added={n.id === justAdded || undefined}
                     onClick={() => onOpen(n)}
                   >
                     <div className={styles.lnRow}>
