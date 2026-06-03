@@ -21,7 +21,7 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
     if (busy) return;
     setBusy(true);
     setMsgs((m) => [...m, { role: "user", text: promptText }]);
-    const S = DC.CHAT_SCRIPT;
+    const S = catalog.getChatScript();
     await sleep(450); setTyping(true); await sleep(700); setTyping(false);
     for (const turn of S.turns) {
       if (turn.type === "text") {
@@ -38,7 +38,7 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
 
   const newSession = () => { if (busy) return; setMsgs([]); setInput(""); };
   const suggestions = [
-    { t: DC.CHAT_SCRIPT.prompt, ic: "sparkle" },
+    { t: catalog.getChatScript().prompt, ic: "sparkle" },
     { t: "Join customers with their orders", ic: "join" },
     { t: "Roll up lifetime revenue per customer", ic: "layers" },
   ];
@@ -62,8 +62,8 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
               <span className="ao-sec-label">Recent</span>
             </div>
             <div className="ao-recents">
-              {DC.RECENTS.map((r, i) => {
-                const node = DC.NODES[r.nodeId];
+              {catalog.listRecents().map((r, i) => {
+                const node = catalog.getNode(r.nodeId);
                 return (
                   <button key={i} className="ao-recent" style={node ? layerVars(node.layer) : {}}
                     onClick={() => go({ name: "openRecent", nodeId: r.nodeId })}>
@@ -97,7 +97,7 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
         })}
         {typing && <div className="msg bot"><div className="bubble" style={{ padding: 0 }}><div className="typing"><span /><span /><span /></div></div></div>}
         {msgs.some((m) => m.role === "tool") && !busy && (
-          <button className="btn sq" style={{ alignSelf: "flex-start", fontSize: 13 }} onClick={() => onOpenNode(DC.CHAT_SCRIPT.newNode)}>
+          <button className="btn sq" style={{ alignSelf: "flex-start", fontSize: 13 }} onClick={() => onOpenNode(catalog.getChatScript().newNode)}>
             <Icon name="eye" size={14} />Open fct_revenue_by_region
           </button>
         )}
@@ -116,7 +116,7 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
 
 /* ---------- dbt export drawer ---------- */
 function ExportDrawer({ onClose, extraNodes }) {
-  const files = DC.DBT_FILES.slice();
+  const files = catalog.listDbtFiles().slice();
   // inject any live-created marts
   (extraNodes || []).forEach((n) => {
     if (n.layer === "mart") files.push({ path: `models/marts/${n.label}.sql`, layer: "mart", ref: n.id, live: true });
@@ -148,7 +148,7 @@ function ExportDrawer({ onClose, extraNodes }) {
                   {fs.map((f, i) => (
                     <div className="tree-file" key={i} style={layerVars(f.layer)}>
                       <span className="fl" />{f.path.split("/").pop()}
-                      {f.ref && <span className="fmodel">{f.live ? "✨ new" : DC.NODES[f.ref]?.label || ""}</span>}
+                      {f.ref && <span className="fmodel">{f.live ? "✨ new" : catalog.getNode(f.ref)?.label || ""}</span>}
                     </div>
                   ))}
                 </div>
@@ -157,7 +157,7 @@ function ExportDrawer({ onClose, extraNodes }) {
           })}
         </div>
         <div className="drawer-ft">
-          <span className="ds">{files.length} files · {DC.PROJECT.name.toLowerCase().replace(/\s+/g, "_")}.zip</span>
+          <span className="ds">{files.length} files · {catalog.getCurrentProject().name.toLowerCase().replace(/\s+/g, "_")}.zip</span>
           <button className="btn primary sq" style={{ marginLeft: "auto" }} onClick={onClose}><Icon name="download" size={15} />Download .zip</button>
         </div>
       </div>
@@ -181,7 +181,7 @@ function TerminalAssistant({ context, onCreate, onClose, onOpenNode, go }) {
     if (busy) return;
     setBusy(true);
     setLines((l) => [...l, { kind: "user", text: promptText }]);
-    const S = DC.CHAT_SCRIPT;
+    const S = catalog.getChatScript();
     setCursor(true); await sleep(620); setCursor(false);
     for (const turn of S.turns) {
       if (turn.type === "text") {
@@ -217,11 +217,11 @@ function TerminalAssistant({ context, onCreate, onClose, onOpenNode, go }) {
         </div>
       </div>
       <div className="term-body" ref={bodyRef}>
-        <div className="tl tl-banner">dashboard-chat <b>assistant</b> v1.0 · duckdb shell · type a request, or <span className="tl-link" onClick={() => runScript(DC.CHAT_SCRIPT.prompt)}>try a demo</span></div>
+        <div className="tl tl-banner">dashboard-chat <b>assistant</b> v1.0 · duckdb shell · type a request, or <span className="tl-link" onClick={() => runScript(catalog.getChatScript().prompt)}>try a demo</span></div>
         {lines.length === 0 && (
           <React.Fragment>
             <div className="tl tl-dim" style={{ marginTop: 6 }}>recent sessions —</div>
-            {DC.RECENTS.map((r, i) => (
+            {catalog.listRecents().map((r, i) => (
               <div className="tl term-rec" key={i} onClick={() => closeWith(() => go({ name: "openRecent", nodeId: r.nodeId }))}>
                 <span className="n">[{i + 1}]</span> {r.title}
               </div>
