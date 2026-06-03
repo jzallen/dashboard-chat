@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { type CSSProperties, type ReactNode, useMemo } from "react";
 
-import { type Layer } from "../lib/graph";
+import { type Layer } from "../lib/catalog";
 import styles from "./primitives.module.css";
 
 /* ---- app-wide icons ----

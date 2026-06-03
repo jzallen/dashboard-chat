@@ -1,14 +1,14 @@
 /**
  * Per-layer display configuration — the human-facing name, dbt folder hint,
  * description, and the CSS custom-property handles each pipeline layer renders
- * with. Keyed off the {@link Layer} vocabulary owned by src/lib/graph.ts.
+ * with. Keyed off the {@link Layer} vocabulary owned by the catalog.
  *
  * This is presentation metadata, not catalog data, so it lives beside the app
  * rather than inside data.js (the fixture data source). Components read it
  * directly; the composition root bridges it onto globalThis for the still-bundled
  * prototype scripts.
  */
-import type { Layer } from "../lib/graph";
+import type { Layer } from "../lib/catalog";
 
 /** Display metadata for one pipeline layer. */
 export type LayerMeta = {

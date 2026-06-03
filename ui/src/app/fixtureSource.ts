@@ -10,15 +10,9 @@
  */
 import {
   type CatalogSource,
-  type ChatHistoryItem,
-  type ChatScript,
   createDataCatalog,
-  type CurrentProject,
-  type DbtFile,
-  type OrgSettings,
-  type ProjectSummary,
+  type RawCatalog,
 } from "../lib/catalog";
-import type { AuditEntry, Edge, LineageNode } from "../lib/graph";
 import { DC } from "./data.js";
 
 /**
@@ -26,18 +20,7 @@ import { DC } from "./data.js";
  * itself is a later extraction — until then this `as unknown as` is the single
  * boundary where the fixture's structure is pinned down.
  */
-const fixture = DC as unknown as {
-  PROJECTS: ProjectSummary[];
-  PROJECT: CurrentProject;
-  ORG: OrgSettings;
-  RECENTS: ChatHistoryItem[];
-  ALL_CHATS: ChatHistoryItem[];
-  NODES: Record<string, LineageNode>;
-  EDGES: Edge[];
-  AUDIT: Record<string, AuditEntry[]>;
-  CHAT_SCRIPT: ChatScript;
-  DBT_FILES: DbtFile[];
-};
+const fixture = DC as unknown as RawCatalog;
 
 const fixtureSource: CatalogSource = {
   getProjects: () => fixture.PROJECTS,
