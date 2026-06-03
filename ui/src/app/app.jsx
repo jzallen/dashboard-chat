@@ -77,7 +77,7 @@ function AllChats({ go }) {
       </div>
       <div className="chats-list">
         {list.map((c, i) => {
-          const node = c.nodeId ? catalog.getSnapshot().getNode(c.nodeId) : null;
+          const node = c.nodeId ? catalog.getNode(c.nodeId) : null;
           return (
             <button key={i} className={"chat-row" + (node ? " layer-" + node.layer : "")}
               onClick={() => go(c.nodeId ? { name: "openRecent", nodeId: c.nodeId } : { name: "chat" })}>
@@ -258,12 +258,12 @@ function App() {
   const [confirmArchive, setConfirmArchive] = useState(null);
   const [justAdded, setJustAdded] = useState(null);
   // Subscribe App to catalog mutations: any rename/archive/restore/live-add
-  // hands back a fresh LineageGraph and re-renders the tree. Used as a memo dep below.
-  const graph = useCatalog();
+  // bumps the version and re-renders the tree. Used as a memo dep below.
+  const catalogVersion = useCatalog();
 
   const go = useCallback((r) => {
     if (r.name === "openRecent") {
-      const node = catalog.getSnapshot().getNode(r.nodeId);
+      const node = catalog.getNode(r.nodeId);
       if (node && node.ref) { setRoute({ name: "model", node }); setChatOpen(true); return; }
       setRoute({ name: "workspace" }); setChatOpen(true); return;
     }
@@ -308,7 +308,7 @@ function App() {
   }, []);
 
   const [p0, p1, p2] = t.layerPalette;
-  const allModels = useMemo(() => graph.models(), [graph]);
+  const allModels = useMemo(() => catalog.listModels(), [catalogVersion]);
   const curProjectName = (projects.find((p) => p.id === projectId) || projects[0]).name;
   const studioStyle = {
     "--primary": t.accent, "--primary-hover": t.accent, "--primary-light": `color-mix(in srgb, ${t.accent} 16%, white)`,

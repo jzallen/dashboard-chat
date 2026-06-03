@@ -1,16 +1,15 @@
 /**
  * Lineage layout GEOMETRY — the lineage view's render compute. A dependency-free
- * library of pure layout math over a {@link LineageGraph}: DAG node positions
+ * library of pure layout math over the catalog: DAG node positions
  * (computeDagLayout) and edge Bézier paths (bezierPath), plus the layout
  * constants (DAG, STREAM_LAYERS) and the re-exported LAYER_ORDER. No React, no
- * JSX, no styling. The topology queries (nodesInLayer/orphans/isAdjacent) now
- * live on the LineageGraph itself; this module just consumes them.
+ * JSX, no styling.
  *
- * The graph it operates on is owned by the catalog (src/lib/catalog); this
- * module imports it and adds the view-side layout math. Dependencies point
- * inward: lineageLayout → catalog, never the reverse.
+ * It reads layer membership through the catalog's getNodesByLayer — the catalog
+ * is the only model this view-side math knows about; its internal graph stays
+ * private. Dependencies point inward: lineageLayout → catalog, never the reverse.
  */
-import { type Layer, LAYER_ORDER, type LineageGraph } from "../lib/catalog";
+import { type DataCatalog, type Layer, LAYER_ORDER } from "../lib/catalog";
 
 /** Re-exported so the lineage view can source all its ops from one module. */
 export { LAYER_ORDER };
@@ -55,8 +54,11 @@ export interface DagLayout {
  * center each shorter column within that height. Width spans LAYER_ORDER.length
  * columns. Returns absolute node positions plus the canvas width/height.
  */
-export function computeDagLayout(graph: LineageGraph, dims: DagDims): DagLayout {
-  const cols = LAYER_ORDER.map((layer: Layer) => graph.nodesInLayer(layer));
+export function computeDagLayout(
+  catalog: DataCatalog,
+  dims: DagDims,
+): DagLayout {
+  const cols = LAYER_ORDER.map((layer: Layer) => catalog.getNodesByLayer(layer));
   const maxRows = Math.max(...cols.map((c) => c.length), 1);
   const contentH = maxRows * (dims.NH + dims.ROWGAP) - dims.ROWGAP;
   const pos: Record<string, Point> = {};

@@ -6,8 +6,8 @@ import type { CatalogSource } from "./source";
 
 /**
  * A tiny in-memory CatalogSource: one source node, one mart-with-ref, one edge
- * between them, and empty everything else. Enough to exercise the write side and
- * the LineageGraph it projects without dragging in the data.js fixture.
+ * between them, and empty everything else. Enough to exercise the catalog's
+ * write side and delegated reads without dragging in the data.js fixture.
  */
 function makeSource(): CatalogSource {
   const nodes: Record<string, LineageNode> = {
@@ -51,17 +51,14 @@ describe("createDataCatalog — write side", () => {
     catalog = createDataCatalog(makeSource());
   });
 
-  it("renameSource propagates to the snapshot graph", () => {
+  it("renameSource propagates to the catalog's node reads", () => {
     catalog.renameSource("src.orders", "raw_orders");
-    expect(catalog.getSnapshot().getNode("src.orders")?.label).toBe(
-      "raw_orders",
-    );
-    expect(catalog.getSnapshot().nodes["src.orders"].label).toBe("raw_orders");
+    expect(catalog.getNode("src.orders")?.label).toBe("raw_orders");
   });
 
   it("parentsOf reflects renames (over the working state, not raw source)", () => {
     catalog.renameSource("src.orders", "raw_orders");
-    const parents = catalog.getSnapshot().parentsOf("mart.revenue");
+    const parents = catalog.parentsOf("mart.revenue");
     expect(parents.map((p) => p.label)).toContain("raw_orders");
   });
 
@@ -76,10 +73,9 @@ describe("createDataCatalog — write side", () => {
     const edge: Edge = ["mart.revenue", "mart.churn"];
     catalog.addModel(node, edge);
 
-    const graph = catalog.getSnapshot();
-    expect(graph.nodes["mart.churn"]).toBeDefined();
-    expect(graph.edges).toContainEqual(edge);
-    expect(graph.models().map((m) => m.id)).toContain("mart.churn");
+    expect(catalog.getNode("mart.churn")).toBeDefined();
+    expect(catalog.listEdges()).toContainEqual(edge);
+    expect(catalog.listModels().map((m) => m.id)).toContain("mart.churn");
   });
 
   it("addModel dedups repeated node + edge", () => {
@@ -96,19 +92,20 @@ describe("createDataCatalog — write side", () => {
 
     expect(catalog.listAddedNodes()).toHaveLength(1);
     expect(
-      catalog
-        .getSnapshot()
-        .edges.filter(([a, b]) => a === edge[0] && b === edge[1]),
+      catalog.listEdges().filter(([a, b]) => a === edge[0] && b === edge[1]),
     ).toHaveLength(1);
   });
 
   it("archiveSource removes the node + its edges from the graph and records cold storage", () => {
-    const src = catalog.getSnapshot().getNode("src.orders")!;
+    const src = catalog.getNode("src.orders")!;
     catalog.archiveSource(src);
 
-    const graph = catalog.getSnapshot();
-    expect(graph.nodes["src.orders"]).toBeUndefined();
-    expect(graph.edges.some(([a, b]) => a === "src.orders" || b === "src.orders")).toBe(false);
+    expect(catalog.getNode("src.orders")).toBeUndefined();
+    expect(
+      catalog
+        .listEdges()
+        .some(([a, b]) => a === "src.orders" || b === "src.orders"),
+    ).toBe(false);
 
     const cold = catalog.listColdStorage();
     expect(cold).toHaveLength(1);
@@ -118,25 +115,22 @@ describe("createDataCatalog — write side", () => {
   });
 
   it("restoreSource reverses archive (graph + cold storage)", () => {
-    const src = catalog.getSnapshot().getNode("src.orders")!;
+    const src = catalog.getNode("src.orders")!;
     catalog.archiveSource(src);
     catalog.restoreSource("src.orders");
 
-    const graph = catalog.getSnapshot();
-    expect(graph.nodes["src.orders"]).toBeDefined();
-    expect(graph.edges).toContainEqual(["src.orders", "mart.revenue"]);
+    expect(catalog.getNode("src.orders")).toBeDefined();
+    expect(catalog.listEdges()).toContainEqual(["src.orders", "mart.revenue"]);
     expect(catalog.listColdStorage()).toHaveLength(0);
   });
 
   it("getNode is scoped to the visible graph — archived nodes resolve to undefined", () => {
-    const src = catalog.getSnapshot().getNode("src.orders")!;
+    const src = catalog.getNode("src.orders")!;
     catalog.archiveSource(src);
-    // The only node lookup is the graph's, which excludes archived nodes.
-    expect(catalog.getSnapshot().getNode("src.orders")).toBeUndefined();
-    expect(catalog.getSnapshot().nodes["src.orders"]).toBeUndefined();
+    expect(catalog.getNode("src.orders")).toBeUndefined();
   });
 
-  it("getSnapshot is referentially stable across no-mutation reads, fresh after a mutation", () => {
+  it("getSnapshot returns a stable version that bumps only on mutation", () => {
     const before = catalog.getSnapshot();
     expect(catalog.getSnapshot()).toBe(before);
 
@@ -146,7 +140,7 @@ describe("createDataCatalog — write side", () => {
     expect(catalog.getSnapshot()).toBe(after);
   });
 
-  it("subscribe is called on each mutation; getSnapshot yields a new instance; unsubscribe stops calls", () => {
+  it("subscribe fires on each mutation; getSnapshot bumps; unsubscribe stops calls", () => {
     const fn = vi.fn();
     const v0 = catalog.getSnapshot();
     const unsubscribe = catalog.subscribe(fn);

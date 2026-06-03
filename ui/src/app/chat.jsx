@@ -63,7 +63,7 @@ function AssistantOverlay({ context, onCreate, onClose, onOpenNode, go }) {
             </div>
             <div className="ao-recents">
               {catalog.listRecents().map((r, i) => {
-                const node = catalog.getSnapshot().getNode(r.nodeId);
+                const node = catalog.getNode(r.nodeId);
                 return (
                   <button key={i} className={"ao-recent" + (node ? " layer-" + node.layer : "")}
                     onClick={() => go({ name: "openRecent", nodeId: r.nodeId })}>
@@ -148,7 +148,7 @@ function ExportDrawer({ onClose }) {
                   {fs.map((f, i) => (
                     <div className={"tree-file layer-" + f.layer} key={i}>
                       <span className="fl" />{f.path.split("/").pop()}
-                      {f.ref && <span className="fmodel">{f.live ? "✨ new" : catalog.getSnapshot().getNode(f.ref)?.label || ""}</span>}
+                      {f.ref && <span className="fmodel">{f.live ? "✨ new" : catalog.getNode(f.ref)?.label || ""}</span>}
                     </div>
                   ))}
                 </div>
