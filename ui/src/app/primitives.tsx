@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { type CSSProperties, type ReactNode, useMemo } from "react";
 
+import { type Layer } from "../lib/graph";
 import styles from "./primitives.module.css";
 
 /* ---- app-wide icons ----
@@ -101,9 +102,6 @@ function Icon({
   if (!Glyph) return null;
   return <Glyph size={size} strokeWidth={1.7} style={style} />;
 }
-
-/** Data-pipeline layer; selects styling in primitives.module.css. */
-type Layer = "source" | "staging" | "intermediate" | "mart";
 
 /* Layer-aware primitives. `layer` selects styling via primitives.module.css
    (no DC dependency); `size` feeds the --dot-size custom property. */
@@ -207,4 +205,4 @@ function SqlBlock({ sql, isDense }: { sql: string; isDense?: boolean }) {
 }
 
 export { Icon, LayerBadge, LayerDot, SqlBlock };
-export type { IconName, Layer };
+export type { IconName };
