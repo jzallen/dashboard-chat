@@ -7,7 +7,7 @@ import type { CatalogSource } from "./source";
 /**
  * A tiny in-memory CatalogSource: one source node, one mart-with-ref, one edge
  * between them, and empty everything else. Enough to exercise the write side and
- * its projections without dragging in the data.js fixture.
+ * the LineageGraph it projects without dragging in the data.js fixture.
  */
 function makeSource(): CatalogSource {
   const nodes: Record<string, LineageNode> = {
@@ -51,15 +51,15 @@ describe("createDataCatalog — write side", () => {
     catalog = createDataCatalog(makeSource());
   });
 
-  it("renameSource propagates to getNode and lineageGraph", () => {
+  it("renameSource propagates to getNode and the snapshot graph", () => {
     catalog.renameSource("src.orders", "raw_orders");
     expect(catalog.getNode("src.orders")?.label).toBe("raw_orders");
-    expect(catalog.lineageGraph().nodes["src.orders"].label).toBe("raw_orders");
+    expect(catalog.getSnapshot().nodes["src.orders"].label).toBe("raw_orders");
   });
 
   it("parentsOf reflects renames (over the working state, not raw source)", () => {
     catalog.renameSource("src.orders", "raw_orders");
-    const parents = catalog.parentsOf("mart.revenue");
+    const parents = catalog.getSnapshot().parentsOf("mart.revenue");
     expect(parents.map((p) => p.label)).toContain("raw_orders");
   });
 
@@ -74,10 +74,10 @@ describe("createDataCatalog — write side", () => {
     const edge: Edge = ["mart.revenue", "mart.churn"];
     catalog.addModel(node, edge);
 
-    const graph = catalog.lineageGraph();
+    const graph = catalog.getSnapshot();
     expect(graph.nodes["mart.churn"]).toBeDefined();
     expect(graph.edges).toContainEqual(edge);
-    expect(catalog.listModels().map((m) => m.id)).toContain("mart.churn");
+    expect(graph.models().map((m) => m.id)).toContain("mart.churn");
   });
 
   it("addModel dedups repeated node + edge", () => {
@@ -94,15 +94,17 @@ describe("createDataCatalog — write side", () => {
 
     expect(catalog.listAddedNodes()).toHaveLength(1);
     expect(
-      catalog.lineageGraph().edges.filter(([a, b]) => a === edge[0] && b === edge[1]),
+      catalog
+        .getSnapshot()
+        .edges.filter(([a, b]) => a === edge[0] && b === edge[1]),
     ).toHaveLength(1);
   });
 
-  it("archiveSource removes the node + its edges and records cold storage", () => {
+  it("archiveSource removes the node + its edges from the graph and records cold storage", () => {
     const src = catalog.getNode("src.orders")!;
     catalog.archiveSource(src);
 
-    const graph = catalog.lineageGraph();
+    const graph = catalog.getSnapshot();
     expect(graph.nodes["src.orders"]).toBeUndefined();
     expect(graph.edges.some(([a, b]) => a === "src.orders" || b === "src.orders")).toBe(false);
 
@@ -118,25 +120,43 @@ describe("createDataCatalog — write side", () => {
     catalog.archiveSource(src);
     catalog.restoreSource("src.orders");
 
-    const graph = catalog.lineageGraph();
+    const graph = catalog.getSnapshot();
     expect(graph.nodes["src.orders"]).toBeDefined();
     expect(graph.edges).toContainEqual(["src.orders", "mart.revenue"]);
     expect(catalog.listColdStorage()).toHaveLength(0);
   });
 
-  it("subscribe is called on each mutation; getSnapshot increases; unsubscribe stops calls", () => {
+  it("getNode stays archived-inclusive (the visible graph excludes archived)", () => {
+    const src = catalog.getNode("src.orders")!;
+    catalog.archiveSource(src);
+    // Working state still knows the node; the projected graph hides it.
+    expect(catalog.getNode("src.orders")).toBeDefined();
+    expect(catalog.getSnapshot().nodes["src.orders"]).toBeUndefined();
+  });
+
+  it("getSnapshot is referentially stable across no-mutation reads, fresh after a mutation", () => {
+    const before = catalog.getSnapshot();
+    expect(catalog.getSnapshot()).toBe(before);
+
+    catalog.renameSource("src.orders", "raw_orders");
+    const after = catalog.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(catalog.getSnapshot()).toBe(after);
+  });
+
+  it("subscribe is called on each mutation; getSnapshot yields a new instance; unsubscribe stops calls", () => {
     const fn = vi.fn();
     const v0 = catalog.getSnapshot();
     const unsubscribe = catalog.subscribe(fn);
 
     catalog.renameSource("src.orders", "a");
     expect(fn).toHaveBeenCalledTimes(1);
-    expect(catalog.getSnapshot()).toBeGreaterThan(v0);
-
     const v1 = catalog.getSnapshot();
+    expect(v1).not.toBe(v0);
+
     catalog.renameSource("src.orders", "b");
     expect(fn).toHaveBeenCalledTimes(2);
-    expect(catalog.getSnapshot()).toBeGreaterThan(v1);
+    expect(catalog.getSnapshot()).not.toBe(v1);
 
     unsubscribe();
     catalog.renameSource("src.orders", "c");
