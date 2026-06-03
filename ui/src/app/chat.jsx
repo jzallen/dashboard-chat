@@ -140,7 +140,6 @@ function ExportDrawer({ onClose }) {
           <p className="exp-intro">Every layer maps to a dbt model folder. Datasets compile to <code>staging</code>, Views to <code>intermediate</code>, and Reports to <code>marts</code> — with <code>ref()</code> wiring the lineage and an auto-generated <code>schema.yml</code>.</p>
           {groups.map((g) => {
             const fs = files.filter((f) => f.layer === g.key);
-            const L = LAYER_META[g.key] || { color: "var(--muted)", bg: "var(--surface-3)" };
             return (
               <div key={g.key} className={"layer-" + g.key}>
                 <div className="layer-head"><LayerDot layer={g.key === "config" ? "source" : g.key} /><span className="lhn">{g.name}</span><span className="lhc">{g.dbt}</span></div>
