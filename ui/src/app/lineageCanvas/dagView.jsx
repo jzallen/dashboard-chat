@@ -37,29 +37,14 @@ function NodeInner({ n }) {
   );
 }
 
-function Node({
-  n,
-  style,
-  sel,
-  orphans,
-  inFocusNodeId,
-  justAdded,
-  onHover,
-  onOpen,
-}) {
-  const selected = sel === n.id;
-  const orphan = orphans.has(n.id);
-  const dim =
-    !!inFocusNodeId &&
-    inFocusNodeId !== n.id &&
-    !catalog.isNodeAdjacent(inFocusNodeId, n.id);
+function Node({ n, style, selected, orphan, dim, justAdded, onHover, onOpen }) {
   return (
     <div
       className={`${styles.lnNode} layer-${n.layer}`}
       data-selected={selected || undefined}
       data-orphan={orphan || undefined}
       data-dim={dim || undefined}
-      data-just-added={n.id === justAdded || undefined}
+      data-just-added={justAdded || undefined}
       style={style}
       onMouseEnter={() => onHover(n.id)}
       onMouseLeave={() => onHover(null)}
@@ -123,15 +108,21 @@ export function DagView({ version, sel, onOpen, justAdded }) {
           width: DagDimensionConfig.nodeWidth,
           height: DagDimensionConfig.nodeHeight,
         };
+        const selected = sel === n.id;
+        const orphan = orphans.has(n.id);
+        const dim =
+          !!inFocusNodeId &&
+          inFocusNodeId !== n.id &&
+          !catalog.isNodeAdjacent(inFocusNodeId, n.id);
         return (
           <Node
             key={n.id}
             n={n}
             style={nodeStyle}
-            sel={sel}
-            orphans={orphans}
-            inFocusNodeId={inFocusNodeId}
-            justAdded={justAdded}
+            selected={selected}
+            orphan={orphan}
+            dim={dim}
+            justAdded={n.id === justAdded}
             onHover={setHover}
             onOpen={onOpen}
           />
