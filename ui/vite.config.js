@@ -65,7 +65,7 @@ import { Icon, LayerDot, LayerBadge, SqlBlock } from '/src/app/primitives.tsx';
 import { LAYER_ORDER, STREAM_LAYERS, DagDimensionConfig, computeDagLayout, bezierPath } from '/src/app/lineageLayout.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
-  React, ReactDOM, catalog, useCatalog, LAYER_META,
+  React, ReactDOM, catalog, useCatalog,
   useState, useEffect, useRef, useMemo, useCallback,
   Icon, LayerDot, LayerBadge, SqlBlock,
   LAYER_ORDER, STREAM_LAYERS, DagDimensionConfig, computeDagLayout, bezierPath,
