@@ -82,11 +82,14 @@ export function createDataCatalog(source: CatalogSource) {
     listAddedNodes: () => addedNodes,
     /** Sources currently retired to cold storage, newest first. */
     listColdStorage: () => coldStorage,
-    /** Upstream nodes feeding `id`, in edge order. */
+    /**
+     * Upstream nodes feeding `id`, in edge order — resolved over the working
+     * state so renames and live-added edges propagate here too (not just the
+     * static source).
+     */
     parentsOf: (id: string): LineageNode[] => {
-      const nodes = source.getNodes();
-      return source
-        .getEdges()
+      const nodes = allNodes();
+      return [...source.getEdges(), ...addedEdges]
         .filter(([, b]) => b === id)
         .map(([a]) => nodes[a])
         .filter(Boolean);

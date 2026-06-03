@@ -57,6 +57,12 @@ describe("createDataCatalog — write side", () => {
     expect(catalog.lineageGraph().nodes["src.orders"].label).toBe("raw_orders");
   });
 
+  it("parentsOf reflects renames (over the working state, not raw source)", () => {
+    catalog.renameSource("src.orders", "raw_orders");
+    const parents = catalog.parentsOf("mart.revenue");
+    expect(parents.map((p) => p.label)).toContain("raw_orders");
+  });
+
   it("addModel adds the node + edge and lists it as a model", () => {
     const node: LineageNode = {
       id: "mart.churn",
