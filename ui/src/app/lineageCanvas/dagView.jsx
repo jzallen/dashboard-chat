@@ -37,6 +37,18 @@ function NodeInner({ n }) {
   );
 }
 
+function Edge({ sourcePos, targetPos, hot, dim }) {
+  if (!sourcePos || !targetPos) return null;
+  return (
+    <path
+      className={styles.lnEdge}
+      data-hot={hot || undefined}
+      data-dim={dim || undefined}
+      d={bezierPath(sourcePos, targetPos, DagDimensionConfig)}
+    />
+  );
+}
+
 export function DagView({ version, sel, onOpen, justAdded }) {
   const [hover, setHover] = useState(null);
   const layout = useMemo(
@@ -48,8 +60,8 @@ export function DagView({ version, sel, onOpen, justAdded }) {
   const orphans = catalog.orphans();
   const litEdges = new Set();
   if (focus) {
-    catalog.listEdges().forEach(([a, b], i) => {
-      if (a === focus || b === focus) litEdges.add(i);
+    catalog.listEdges().forEach(([sourceId, targetId], index) => {
+      if (sourceId === focus || targetId === focus) litEdges.add(index);
     });
   }
 
@@ -59,20 +71,15 @@ export function DagView({ version, sel, onOpen, justAdded }) {
       style={{ width: layout.w, height: layout.h, minWidth: layout.w }}
     >
       <svg className={styles.edges}>
-        {catalog.listEdges().map(([a, b], i) => {
-          const sourcePos = layout.pos[a];
-          const targetPos = layout.pos[b];
-          if (!sourcePos || !targetPos) return null;
-          return (
-            <path
-              key={i}
-              className={styles.lnEdge}
-              data-hot={litEdges.has(i) || undefined}
-              data-dim={(!litEdges.has(i) && focus) || undefined}
-              d={bezierPath(sourcePos, targetPos, DagDimensionConfig)}
-            />
-          );
-        })}
+        {catalog.listEdges().map(([sourceId, targetId], index) => (
+          <Edge
+            key={index}
+            sourcePos={layout.pos[sourceId]}
+            targetPos={layout.pos[targetId]}
+            hot={litEdges.has(index)}
+            dim={!litEdges.has(index) && !!focus}
+          />
+        ))}
       </svg>
       {catalog.listNodes().map((n) => {
         const p = layout.pos[n.id];
