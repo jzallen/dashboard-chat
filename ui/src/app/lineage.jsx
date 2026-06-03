@@ -10,12 +10,6 @@ function cx(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
-/** Inline CSS custom properties (layer color + soft bg) for a pipeline layer. */
-function layerVars(layer) {
-  const layerMeta = LAYER_META[layer] || {};
-  return { "--ln": layerMeta.color, "--ln-soft": layerMeta.bg };
-}
-
 /** Sparkle chip showing an AI-edit count, with an optional trailing label. */
 function AiEditChip({ count, label, style }) {
   return (
@@ -188,4 +182,4 @@ function LineageCanvas({ mode, onOpen, sel, extraNodes, extraEdges, justAdded, a
   );
 }
 
-Object.assign(window, { LineageCanvas, layerVars, TAG_ICON });
+Object.assign(window, { LineageCanvas, TAG_ICON });
