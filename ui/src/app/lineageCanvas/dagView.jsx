@@ -37,6 +37,39 @@ function NodeInner({ n }) {
   );
 }
 
+function Node({
+  node,
+  pos,
+  selected,
+  orphan,
+  dim,
+  justAdded,
+  onHover,
+  onOpen,
+}) {
+  if (!pos) return null;
+  return (
+    <div
+      className={`${styles.lnNode} layer-${node.layer}`}
+      data-selected={selected || undefined}
+      data-orphan={orphan || undefined}
+      data-dim={dim || undefined}
+      data-just-added={justAdded || undefined}
+      style={{
+        left: pos.x,
+        top: pos.y,
+        width: DagDimensionConfig.nodeWidth,
+        height: DagDimensionConfig.nodeHeight,
+      }}
+      onMouseEnter={() => onHover(node.id)}
+      onMouseLeave={() => onHover(null)}
+      onClick={() => onOpen(node)}
+    >
+      <NodeInner n={node} />
+    </div>
+  );
+}
+
 function Edge({ sourcePos, targetPos, hot, dim }) {
   if (!sourcePos || !targetPos) return null;
   return (
@@ -81,36 +114,23 @@ export function DagView({ version, sel, onOpen, justAdded }) {
           />
         ))}
       </svg>
-      {catalog.listNodes().map((n) => {
-        const p = layout.pos[n.id];
-        if (!p) return null;
-        return (
-          <div
-            key={n.id}
-            className={`${styles.lnNode} layer-${n.layer}`}
-            data-selected={sel === n.id || undefined}
-            data-orphan={orphans.has(n.id) || undefined}
-            data-dim={
-              (inFocusNodeId &&
-                inFocusNodeId !== n.id &&
-                !catalog.isNodeAdjacent(inFocusNodeId, n.id)) ||
-              undefined
-            }
-            data-just-added={n.id === justAdded || undefined}
-            style={{
-              left: p.x,
-              top: p.y,
-              width: DagDimensionConfig.nodeWidth,
-              height: DagDimensionConfig.nodeHeight,
-            }}
-            onMouseEnter={() => setHover(n.id)}
-            onMouseLeave={() => setHover(null)}
-            onClick={() => onOpen(n)}
-          >
-            <NodeInner n={n} />
-          </div>
-        );
-      })}
+      {catalog.listNodes().map((n) => (
+        <Node
+          key={n.id}
+          node={n}
+          pos={layout.pos[n.id]}
+          selected={sel === n.id}
+          orphan={orphans.has(n.id)}
+          dim={
+            !!inFocusNodeId &&
+            inFocusNodeId !== n.id &&
+            !catalog.isNodeAdjacent(inFocusNodeId, n.id)
+          }
+          justAdded={n.id === justAdded}
+          onHover={setHover}
+          onOpen={onOpen}
+        />
+      ))}
     </div>
   );
 }
