@@ -1,19 +1,16 @@
 /**
- * Lineage layout geometry + graph queries — the lineage view's render compute.
- * A dependency-free library of pure operations over a {@link Graph} and its
- * {@link LineageNode}s: no React, no JSX, no styling. Callers assemble a Graph
- * (via the catalog) and pass it in.
+ * Lineage layout GEOMETRY — the lineage view's render compute. A dependency-free
+ * library of pure layout math over a {@link LineageGraph}: DAG node positions
+ * (computeDagLayout) and edge Bézier paths (bezierPath), plus the layout
+ * constants (DAG, STREAM_LAYERS) and the re-exported LAYER_ORDER. No React, no
+ * JSX, no styling. The topology queries (nodesInLayer/orphans/isAdjacent) now
+ * live on the LineageGraph itself; this module just consumes them.
  *
- * The entity types it operates on are owned by the catalog (src/lib/catalog);
- * this module imports them and adds the view-side layout math. Dependencies
- * point inward: lineageLayout → catalog, never the reverse.
+ * The graph it operates on is owned by the catalog (src/lib/catalog); this
+ * module imports it and adds the view-side layout math. Dependencies point
+ * inward: lineageLayout → catalog, never the reverse.
  */
-import {
-  type Graph,
-  type Layer,
-  LAYER_ORDER,
-  type LineageNode,
-} from "../lib/catalog";
+import { type Layer, LAYER_ORDER, type LineageGraph } from "../lib/catalog";
 
 /** Re-exported so the lineage view can source all its ops from one module. */
 export { LAYER_ORDER };
@@ -52,36 +49,14 @@ export interface DagLayout {
   h: number;
 }
 
-/** All nodes in `graph` belonging to the given pipeline `layer`. */
-export function nodesInLayer(graph: Graph, layer: Layer): LineageNode[] {
-  return Object.values(graph.nodes).filter((n) => n.layer === layer);
-}
-
-/** Ids of non-source nodes with no incoming edge — dangling, unconnected models. */
-export function orphanSet(graph: Graph): Set<string> {
-  const hasIncoming = new Set(graph.edges.map(([, b]) => b));
-  const orphans = new Set<string>();
-  Object.values(graph.nodes).forEach((n) => {
-    if (n.layer !== "source" && !hasIncoming.has(n.id)) orphans.add(n.id);
-  });
-  return orphans;
-}
-
-/** True if a direct edge connects `focus` and `id` in either direction. */
-export function isAdjacent(graph: Graph, focus: string, id: string): boolean {
-  return graph.edges.some(
-    ([a, b]) => (a === focus && b === id) || (b === focus && a === id),
-  );
-}
-
 /**
  * Lay out the DAG: bucket nodes into one column per layer (in LAYER_ORDER),
  * find the tallest column (maxRows) to size the content height, then vertically
  * center each shorter column within that height. Width spans LAYER_ORDER.length
  * columns. Returns absolute node positions plus the canvas width/height.
  */
-export function computeDagLayout(graph: Graph, dims: DagDims): DagLayout {
-  const cols = LAYER_ORDER.map((layer) => nodesInLayer(graph, layer));
+export function computeDagLayout(graph: LineageGraph, dims: DagDims): DagLayout {
+  const cols = LAYER_ORDER.map((layer: Layer) => graph.nodesInLayer(layer));
   const maxRows = Math.max(...cols.map((c) => c.length), 1);
   const contentH = maxRows * (dims.NH + dims.ROWGAP) - dims.ROWGAP;
   const pos: Record<string, Point> = {};

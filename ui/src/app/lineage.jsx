@@ -1,11 +1,10 @@
 /* Lineage canvas with 3 visualization styles: dag · swimlanes · audit-stream.
    Pure layout GEOMETRY lives in src/app/lineageLayout.ts (LAYER_ORDER,
-   STREAM_LAYERS, DAG, nodesInLayer, orphanSet, isAdjacent, computeDagLayout,
-   bezierPath, bridged in as globals). The lineage graph itself — topology
-   queries (parents, models, orphans, adjacency, layer membership) and folded
-   audit (auditFor/auditCount) — comes off the LineageGraph that useCatalog()
-   returns. This file is the presentational layer: views, chips, and the
-   layer→CSS-vars / tag→icon maps. */
+   STREAM_LAYERS, DAG, computeDagLayout, bezierPath, bridged in as globals). The
+   lineage graph itself — topology queries (parents, models, orphans, adjacency,
+   layer membership) and folded audit (auditFor/auditCount) — comes off the
+   LineageGraph that useCatalog() returns. This file is the presentational layer:
+   views, chips, and the layer→CSS-vars / tag→icon maps. */
 
 /** Join class-name parts, dropping falsy ones, into a single space-separated string. */
 function cx(...parts) {
@@ -46,7 +45,7 @@ function DagView({ graph, sel, onOpen, justAdded }) {
   const layout = useMemo(() => computeDagLayout(graph, DAG), [graph]);
 
   const focus = hover || sel;
-  const orphans = orphanSet(graph);
+  const orphans = graph.orphans();
   const litEdges = new Set();
   if (focus) {
     graph.edges.forEach(([a, b], i) => {
@@ -72,7 +71,7 @@ function DagView({ graph, sel, onOpen, justAdded }) {
           "ln-node",
           sel === n.id && "sel",
           orphans.has(n.id) && "orphan",
-          focus && focus !== n.id && !isAdjacent(graph, focus, n.id) && "dim",
+          focus && focus !== n.id && !graph.isAdjacent(focus, n.id) && "dim",
           n.id === justAdded && "pop",
           `layer-${n.layer}`,
         );
@@ -91,12 +90,12 @@ function DagView({ graph, sel, onOpen, justAdded }) {
 
 /* ---------- Swimlanes (layer bands) ---------- */
 function SwimView({ graph, sel, onOpen, justAdded }) {
-  const orphans = orphanSet(graph);
+  const orphans = graph.orphans();
   return (
     <div className="lanes">
       {LAYER_ORDER.map((ly) => {
         const layerMeta = LAYER_META[ly];
-        const items = nodesInLayer(graph, ly);
+        const items = graph.nodesInLayer(ly);
         return (
           <div className={`lane layer-${ly}`} key={ly}>
             <div className="lane-head">
@@ -138,7 +137,7 @@ function StreamView({ graph, sel, onOpen, justAdded }) {
     <div className="stream">
       {STREAM_LAYERS.map((ly) => {
         const layerMeta = LAYER_META[ly];
-        const items = nodesInLayer(graph, ly);
+        const items = graph.nodesInLayer(ly);
         return (
           <div className={`stream-group layer-${ly}`} key={ly}>
             <div className="stream-rail" />
