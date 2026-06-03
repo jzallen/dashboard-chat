@@ -65,7 +65,7 @@ function Stub({ title, sub }) {
 
 function AllChats({ go }) {
   const [q, setQ] = useState("");
-  const list = DC.ALL_CHATS.filter((c) =>
+  const list = catalog.listChats().filter((c) =>
     (c.title + " " + c.snippet).toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <div className="chats-page">
@@ -77,7 +77,7 @@ function AllChats({ go }) {
       </div>
       <div className="chats-list">
         {list.map((c, i) => {
-          const node = c.nodeId ? DC.NODES[c.nodeId] : null;
+          const node = c.nodeId ? catalog.getNode(c.nodeId) : null;
           const lv = node ? layerVars(node.layer) : {};
           return (
             <button key={i} className="chat-row" style={lv}
@@ -101,7 +101,7 @@ function Field({ l, v, mono }) {
   return <div className="field"><span className="fl">{l}</span><span className={"fv" + (mono ? " mono" : "")}>{v}</span></div>;
 }
 function OrgSettings({ dark, onToggleDark }) {
-  const o = DC.ORG;
+  const o = catalog.getOrg();
   const initials = (n) => n.split(" ").map((w) => w[0]).slice(0, 2).join("");
   return (
     <div className="org-page">
@@ -176,8 +176,9 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 function ProjectPicker({ projectId, onSelect }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const cur = DC.PROJECTS.find((p) => p.id === projectId) || DC.PROJECTS[0];
-  const list = DC.PROJECTS.filter((p) => (p.name + " " + p.desc).toLowerCase().includes(q.trim().toLowerCase()));
+  const projects = catalog.listProjects();
+  const cur = projects.find((p) => p.id === projectId) || projects[0];
+  const list = projects.filter((p) => (p.name + " " + p.desc).toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <div className="proj-picker">
       <button className="proj-btn" onClick={() => setOpen((o) => !o)}>{cur.name}<Icon name="chevD" size={15} /></button>
@@ -247,9 +248,10 @@ function ModelPicker({ current, models, onSelect }) {
 }
 
 function App() {
+  const projects = catalog.listProjects();
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [route, setRoute] = useState({ name: "workspace" });
-  const [projectId, setProjectId] = useState(DC.PROJECTS[0].id);
+  const [projectId, setProjectId] = useState(projects[0].id);
   const [chatOpen, setChatOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [upload, setUpload] = useState({ open: false, source: null });
@@ -265,7 +267,7 @@ function App() {
 
   const go = useCallback((r) => {
     if (r.name === "openRecent") {
-      const node = DC.NODES[r.nodeId] || liveRef.current[r.nodeId];
+      const node = catalog.getNode(r.nodeId) || liveRef.current[r.nodeId];
       if (node && node.ref) { setRoute({ name: "model", node }); setChatOpen(true); return; }
       setRoute({ name: "workspace" }); setChatOpen(true); return;
     }
@@ -316,8 +318,8 @@ function App() {
   }, []);
 
   const [p0, p1, p2] = t.layerPalette;
-  const allModels = useMemo(() => [...Object.values(DC.NODES).filter((n) => n.layer !== "source" && n.ref), ...extraNodes], [extraNodes]);
-  const curProjectName = (DC.PROJECTS.find((p) => p.id === projectId) || DC.PROJECTS[0]).name;
+  const allModels = useMemo(() => [...catalog.listModels(), ...extraNodes], [extraNodes]);
+  const curProjectName = (projects.find((p) => p.id === projectId) || projects[0]).name;
   const studioStyle = {
     "--primary": t.accent, "--primary-hover": t.accent, "--primary-light": `color-mix(in srgb, ${t.accent} 16%, white)`,
     "--primary-dark": `color-mix(in srgb, ${t.accent} 70%, black)`,
@@ -339,7 +341,7 @@ function App() {
             <div className="breadcrumb">
               <button className={"org-badge-btn" + (route.name === "org" ? " on" : "")} onClick={toggleOrg}
                 title={route.name === "org" ? "Close organization" : "Organization settings"}>
-                <span className="bd-face bd-d">{DC.ORG.name[0]}</span>
+                <span className="bd-face bd-d">{catalog.getOrg().name[0]}</span>
                 <span className="bd-face bd-x"><Icon name="x" size={17} /></span>
               </button>
               <div className="bc-rest">
