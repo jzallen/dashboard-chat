@@ -2,16 +2,8 @@
    until its retention ends. */
 import { useState } from "react";
 
+import type { ColdStorageItem } from "../../lib/catalog";
 import { Icon, type IconName } from "../primitives";
-
-/** A retired source as listed by catalog.listColdStorage(). */
-interface ColdStorageItem {
-  id: string;
-  name: string;
-  retiredAt: number;
-  retentionDays: number;
-  files?: unknown[];
-}
 
 const DAY_MS = 86400000;
 const fmtDate = (ms: number) =>
