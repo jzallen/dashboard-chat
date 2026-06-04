@@ -1,12 +1,24 @@
 /* Swimlanes view: one horizontal band per pipeline layer, cards within each. */
-import { LAYER_ORDER } from "../../lib/catalog";
+import { type Layer, LAYER_ORDER, type LineageNode } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 
-function LaneCard({ n, selected, orphan, justAdded, onOpen }) {
+function LaneCard({
+  n,
+  selected,
+  orphan,
+  justAdded,
+  onOpen,
+}: {
+  n: LineageNode;
+  selected: boolean;
+  orphan: boolean;
+  justAdded: boolean;
+  onOpen: (node: LineageNode) => void;
+}) {
   const parentLabels = catalog.parentsOf(n.id).map((p) => p.label);
   const edits = catalog.auditCount(n.id);
   return (
@@ -40,7 +52,19 @@ function LaneCard({ n, selected, orphan, justAdded, onOpen }) {
   );
 }
 
-function Lane({ layer, isSelected, isOrphaned, wasJustAdded, onOpen }) {
+function Lane({
+  layer,
+  isSelected,
+  isOrphaned,
+  wasJustAdded,
+  onOpen,
+}: {
+  layer: Layer;
+  isSelected: (id: string) => boolean;
+  isOrphaned: (id: string) => boolean;
+  wasJustAdded: (id: string) => boolean;
+  onOpen: (node: LineageNode) => void;
+}) {
   const layerMeta = LAYER_META[layer];
   const items = catalog.getNodesByLayer(layer);
   return (
@@ -67,11 +91,19 @@ function Lane({ layer, isSelected, isOrphaned, wasJustAdded, onOpen }) {
   );
 }
 
-export function SwimView({ sel: selectedId, onOpen, justAdded: justAddedId }) {
+export function SwimView({
+  sel: selectedId,
+  onOpen,
+  justAdded: justAddedId,
+}: {
+  sel: string | null;
+  onOpen: (node: LineageNode) => void;
+  justAdded: string | null;
+}) {
   const orphans = catalog.orphans();
-  const isSelected = (id) => selectedId === id;
-  const isOrphaned = (id) => orphans.has(id);
-  const wasJustAdded = (id) => id === justAddedId;
+  const isSelected = (id: string) => selectedId === id;
+  const isOrphaned = (id: string) => orphans.has(id);
+  const wasJustAdded = (id: string) => id === justAddedId;
   return (
     <div className={styles.lanes}>
       {LAYER_ORDER.map((ly) => (
