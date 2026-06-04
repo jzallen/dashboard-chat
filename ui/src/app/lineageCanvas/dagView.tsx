@@ -4,13 +4,13 @@ import { type CSSProperties, useMemo, useState } from "react";
 import type { LineageNode } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { LayerDot } from "../primitives";
+import styles from "./lineageCanvas.module.css";
 import {
   bezierPath,
   computeDagLayout,
   DagDimensionConfig,
   type Point,
 } from "./lineageLayout";
-import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 
 function Node({
