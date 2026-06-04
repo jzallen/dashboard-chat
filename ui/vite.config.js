@@ -65,6 +65,7 @@ import { AssistantOverlay, TerminalAssistant } from '/src/app/Chat/index.ts';
 import { UploadModal, ConfirmArchive } from '/src/app/Upload/index.ts';
 import { ProjectPicker, ModelPicker } from '/src/app/Breadcrumb/index.ts';
 import { AllChats } from '/src/app/AllChats/index.ts';
+import { OrgSettings } from '/src/app/OrgSettings/index.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
   React, ReactDOM, catalog, useCatalog,
@@ -76,7 +77,7 @@ Object.assign(globalThis, {
   ColdStorageModal, ExportDrawer, ModelDetail,
   AssistantOverlay, TerminalAssistant,
   UploadModal, ConfirmArchive,
-  ProjectPicker, ModelPicker, AllChats,
+  ProjectPicker, ModelPicker, AllChats, OrgSettings,
 });
 `;
       const body = PROTO_FILES.map(
