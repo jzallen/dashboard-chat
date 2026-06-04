@@ -6,7 +6,6 @@
 import "./app/theme.css";
 import "./app/detail.css";
 import "./app/chat.css";
-import "./app/upload.css";
 import "./app/themes.css";
 
 import "./app/app.tsx";
