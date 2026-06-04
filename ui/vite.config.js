@@ -30,7 +30,7 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 // This is deliberately a TEMPORARY harness. As we refactor the prototype into
 // real ESM modules (proper imports/exports), files drop out of PROTO_FILES and
 // this plugin shrinks until it can be deleted.
-const PROTO_FILES = ["upload.jsx", "app.jsx"];
+const PROTO_FILES = ["app.jsx"];
 const VIRTUAL_ID = "virtual:prototype";
 const RESOLVED_ID = "\0" + VIRTUAL_ID;
 const PROTO_DIR = path.join(here, "src", "app");
@@ -62,6 +62,7 @@ import { ColdStorageModal } from '/src/app/ColdStorage/index.ts';
 import { ExportDrawer } from '/src/app/Export/index.ts';
 import { ModelDetail } from '/src/app/ModelDetail/index.ts';
 import { AssistantOverlay, TerminalAssistant } from '/src/app/Chat/index.ts';
+import { UploadModal, ConfirmArchive } from '/src/app/Upload/index.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
   React, ReactDOM, catalog, useCatalog,
@@ -72,6 +73,7 @@ Object.assign(globalThis, {
   TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton,
   ColdStorageModal, ExportDrawer, ModelDetail,
   AssistantOverlay, TerminalAssistant,
+  UploadModal, ConfirmArchive,
 });
 `;
       const body = PROTO_FILES.map(
