@@ -107,6 +107,16 @@ export default [
     files: ["shared/**/*.ts"],
   },
 
+  // ── ui/ prototype browser-context plain JS ─────────────────────────
+  // The ui/ entry (src/main.js) and fixture data are plain .js in a browser
+  // context. Unlike .ts/.tsx (where typescript-eslint disables no-undef), .js
+  // keeps no-undef on, so declare the browser globals. Scoped to src/ so the
+  // Node-context vite.config.js is unaffected.
+  {
+    files: ["ui/src/**/*.js"],
+    languageOptions: { globals: globals.browser },
+  },
+
   // ── DWD-3 single-writer guard for X-Active-Scope ────────────────────
   // The X-Active-Scope header is the agent's authoritative scope contract
   // (ADR-029 §4 + DWD-3). It MUST be set exclusively by
