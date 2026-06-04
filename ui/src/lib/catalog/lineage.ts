@@ -25,11 +25,34 @@ export interface FieldDef {
   type: string;
 }
 
+/**
+ * Transform categories the assistant tags its edits with — the vocabulary
+ * shared by audit trails ({@link AuditEntry}) and scripted chat tool-turns.
+ * The single source of truth: the presentation layer's tag→icon map is keyed
+ * by this type, so every tag is guaranteed a glyph (no runtime fallback).
+ */
+export const AUDIT_TAGS = [
+  "create",
+  "source",
+  "join",
+  "filter",
+  "grain",
+  "measure",
+  "config",
+  "clean",
+  "fix",
+  "cast",
+  "shape",
+] as const;
+
+/** A single assistant transform category. Derived from {@link AUDIT_TAGS}. */
+export type AuditTag = (typeof AUDIT_TAGS)[number];
+
 /** One assistant audit entry: which tool ran and the human-readable summary. */
 export interface AuditEntry {
   tool: string;
   say: string;
-  tag: string;
+  tag: AuditTag;
 }
 
 /**

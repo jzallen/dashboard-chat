@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { type CSSProperties, type ReactNode, useMemo } from "react";
 
-import { type Layer } from "../lib/catalog";
+import { type AuditTag, type Layer } from "../lib/catalog";
 import styles from "./primitives.module.css";
 
 /* ---- app-wide icons ----
@@ -88,6 +88,24 @@ const ICON = {
 
 /** Name of an icon registered in {@link ICON}. */
 type IconName = keyof typeof ICON;
+
+/** Audit-tag → icon map for rendering AI-edit / transform tags. Presentation
+    metadata read by the chat / detail / audit-log views; not catalog data.
+    Keyed by {@link AuditTag} so it is exhaustive — every tag has a glyph and
+    callers need no runtime fallback. */
+const TAG_ICON: Record<AuditTag, IconName> = {
+  create: "plus",
+  join: "join",
+  filter: "filter",
+  grain: "clock",
+  measure: "sparkle",
+  config: "gear",
+  clean: "check",
+  fix: "check",
+  cast: "refresh",
+  shape: "table",
+  source: "database",
+};
 
 function Icon({
   name,
@@ -204,5 +222,5 @@ function SqlBlock({ sql, isDense }: { sql: string; isDense?: boolean }) {
   );
 }
 
-export { Icon, LayerBadge, LayerDot, SqlBlock };
+export { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON };
 export type { IconName };

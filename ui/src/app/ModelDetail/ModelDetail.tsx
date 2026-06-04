@@ -6,8 +6,7 @@ import { Fragment, type ReactNode, useState } from "react";
 
 import type { LineageNode, Model } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
-import { Icon, LayerBadge, LayerDot, SqlBlock } from "../primitives";
-import { TAG_ICON } from "../tagIcon";
+import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
 import { useCatalog } from "../useCatalog";
 import styles from "./ModelDetail.module.css";
 
@@ -93,7 +92,7 @@ function AuditPanel({ node }: { node: LineageNode }) {
         {audit.map((a, i) => (
           <div className={styles.audItem} key={i}>
             <span className={styles.audIco}>
-              <Icon name={TAG_ICON[a.tag] || TAG_ICON.default} />
+              <Icon name={TAG_ICON[a.tag]} />
             </span>
             <div style={{ flex: 1 }}>
               <div className={styles.audSay}>{a.say}</div>

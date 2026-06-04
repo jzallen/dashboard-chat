@@ -10,7 +10,7 @@
  * (nodes, edges, audit) are reused from ./lineage — the inward-pointing
  * dependency; lineage.ts itself imports nothing.
  */
-import type { Edge, FieldDef, Layer, LineageNode } from "./lineage";
+import type { AuditTag, Edge, FieldDef, Layer, LineageNode } from "./lineage";
 
 /* ─── leaf descriptors (adapted from frontend/src/core/dataCatalog) ─────────── */
 
@@ -206,7 +206,7 @@ export interface ChatHistoryItem {
 /** One streamed turn of the scripted chat: assistant prose or a tool action. */
 export type ChatTurn =
   | { type: "text"; text: string }
-  | { type: "tool"; tool: string; say: string; tag: string };
+  | { type: "tool"; tool: string; say: string; tag: AuditTag };
 
 /** The scripted "build a new mart" chat: the prompt, what it creates, the turns. */
 export interface ChatScript {

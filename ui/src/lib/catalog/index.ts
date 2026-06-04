@@ -8,6 +8,6 @@
 export type { DataCatalog } from "./client";
 export { createDataCatalog } from "./client";
 export type * from "./lineage";
-export { LAYER_ORDER } from "./lineage";
+export { AUDIT_TAGS, LAYER_ORDER } from "./lineage";
 export type * from "./models";
 export type { CatalogSource, RawCatalog } from "./source";

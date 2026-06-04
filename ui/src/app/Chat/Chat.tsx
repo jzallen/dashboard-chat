@@ -1,10 +1,9 @@
 /* Chat dock (scripted creation): the assistant overlay and its terminal variant. */
 import { useEffect, useRef, useState } from "react";
 
-import type { Edge, LineageNode } from "../../lib/catalog";
+import type { AuditTag, Edge, LineageNode } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
-import { Icon, type IconName, LayerDot } from "../primitives";
-import { TAG_ICON } from "../tagIcon";
+import { Icon, type IconName, LayerDot, TAG_ICON } from "../primitives";
 
 /** A nav request handed back to the app shell (e.g. open history or a recent). */
 type ChatRoute = { name: string; nodeId?: string | null };
@@ -20,12 +19,12 @@ type ChatDockProps = {
 /** A message in the overlay transcript: prose bubbles or a tool-action card. */
 type ChatMsg =
   | { role: "user" | "bot"; text: string }
-  | { role: "tool"; say: string; tag: string };
+  | { role: "tool"; say: string; tag: AuditTag };
 
 /** A line in the terminal transcript. */
 type TermLine =
   | { kind: "user" | "out"; text: string }
-  | { kind: "tool"; text: string; tag: string }
+  | { kind: "tool"; text: string; tag: AuditTag }
   | { kind: "wrote"; text: string; node: LineageNode };
 
 // Minimal markdown → HTML for chat bubbles. Escapes first (the only XSS guard
@@ -184,7 +183,7 @@ export function AssistantOverlay({
             return (
               <div className="tool-card" key={i}>
                 <span className="tc-ico">
-                  <Icon name={TAG_ICON[m.tag] || "check"} />
+                  <Icon name={TAG_ICON[m.tag]} />
                 </span>
                 <span>{m.say}</span>
                 <span className="tc-tag">{m.tag}</span>

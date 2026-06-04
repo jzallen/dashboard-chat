@@ -2,8 +2,7 @@
 import { type Layer, LAYER_ORDER, type LineageNode } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
-import { Icon, LayerDot } from "../primitives";
-import { TAG_ICON } from "../tagIcon";
+import { Icon, LayerDot, TAG_ICON } from "../primitives";
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 
@@ -46,7 +45,7 @@ function ModelTrailCard({
         {audit.map((a, i) => (
           <div className={styles.auditLine} key={i}>
             <span className={styles.ico}>
-              <Icon name={TAG_ICON[a.tag] || TAG_ICON.default} />
+              <Icon name={TAG_ICON[a.tag]} />
             </span>
             <span>{a.say}</span>
             <span className={styles.tag}>{a.tag}</span>
