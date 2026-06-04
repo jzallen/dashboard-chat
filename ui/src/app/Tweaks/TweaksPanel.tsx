@@ -166,6 +166,43 @@ const __TWEAKS_STYLE = `
 // The close button posts __edit_mode_dismissed so the host's toolbar toggle
 // flips off in lockstep; the host echoes __deactivate_edit_mode back which
 // is what actually hides the panel.
+//
+// Parked example — the Dashboard Chat design panel. This was the live controls
+// panel wired into the app shell while the UI was prototyped in Claude Design;
+// it's intentionally not mounted today. Revive it (drop into a component's
+// render alongside `const [t, setTweak] = useTweaks(TWEAK_DEFAULTS)`) once the
+// layout planner is scoped to let users try design themes for the charts they
+// create:
+//
+//   <TweaksPanel title="Tweaks">
+//     <TweakSection label="Theme" />
+//     <TweakSelect label="Aesthetic" value={t.theme}
+//       options={["Studio", "Neon", "Macintosh", "Neobrutalist", "Comic"]}
+//       onChange={(v) => setTweak("theme", v)} />
+//     <TweakSection label="Atmosphere" />
+//     <TweakRadio label="Surface" value={t.surface} options={["warm", "cool"]}
+//       onChange={(v) => setTweak("surface", v)} />
+//     <TweakSelect label="Headings" value={t.headingFont}
+//       options={["Bricolage Grotesque", "Instrument Serif", "System"]}
+//       onChange={(v) => setTweak("headingFont", v)} />
+//     <TweakToggle label="Canvas grid" value={t.canvasGrid}
+//       onChange={(v) => setTweak("canvasGrid", v)} />
+//     <TweakSection label="Lineage" />
+//     <TweakRadio label="Visualization" value={t.lineageMode}
+//       options={["dag", "swimlanes", "audit"]}
+//       onChange={(v) => setTweak("lineageMode", v)} />
+//     <TweakToggle label="AI-edit badges" value={t.auditBadges}
+//       onChange={(v) => setTweak("auditBadges", v)} />
+//     <TweakSection label="Studio tuning" />
+//     <TweakColor label="Accent" value={t.accent}
+//       options={["#3b82f6", "#4f46e5", "#0d9488", "#db2777"]}
+//       onChange={(v) => setTweak("accent", v)} />
+//     <TweakColor label="Layer colors" value={t.layerPalette}
+//       options={[["#2563eb", "#7c3aed", "#047857"],
+//                 ["#0ea5e9", "#f59e0b", "#10b981"],
+//                 ["#475569", "#6366f1", "#0d9488"]]}
+//       onChange={(v) => setTweak("layerPalette", v)} />
+//   </TweaksPanel>
 export function TweaksPanel({
   title = "Tweaks",
   children,
