@@ -1,20 +1,29 @@
 /* Overlay layer: assistant dock + the data-workspace modals. */
+import type { Edge, LineageNode } from "../../lib/catalog";
 import { AssistantOverlay, TerminalAssistant } from "../Chat";
+import type { ColdStorageApi } from "../ColdStorage";
 import { ColdStorageModal } from "../ColdStorage";
+import type { ExportApi } from "../Export";
 import { ExportDrawer } from "../Export";
 import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
+import type { UploadApi } from "../Upload";
 import { ConfirmArchive, UploadModal } from "../Upload";
 import { useTheme } from "./ThemeProvider";
 import type { NavApi } from "./useNavigation";
-import type { SourceApi } from "./useSourceActions";
 
 export function Overlays({
   nav,
-  sources,
+  upload,
+  exporter,
+  cold,
+  createModel,
 }: {
   nav: NavApi;
-  sources: SourceApi;
+  upload: UploadApi;
+  exporter: ExportApi;
+  cold: ColdStorageApi;
+  createModel: (node: LineageNode, edge: Edge) => void;
 }) {
   const { route } = nav;
   const { dark } = useTheme();
@@ -35,7 +44,7 @@ export function Overlays({
         (dark ? (
           <TerminalAssistant
             context={chatContext}
-            onCreate={sources.createModel}
+            onCreate={createModel}
             onClose={nav.closeChat}
             onOpenNode={nav.openModel}
             go={nav.go}
@@ -43,35 +52,35 @@ export function Overlays({
         ) : (
           <AssistantOverlay
             context={chatContext}
-            onCreate={sources.createModel}
+            onCreate={createModel}
             onClose={nav.closeChat}
             onOpenNode={nav.openModel}
             go={nav.go}
           />
         ))}
-      {sources.exportOpen && <ExportDrawer onClose={sources.closeExport} />}
-      {sources.upload.open && (
+      {exporter.open && <ExportDrawer onClose={exporter.closeExport} />}
+      {upload.modal.open && (
         <UploadModal
-          key={sources.upload.source ? sources.upload.source.id : "new-upload"}
-          source={sources.upload.source}
-          onClose={sources.closeUpload}
-          onCreateSource={sources.createSource}
-          onRename={sources.renameSource}
-          onArchive={sources.requestArchive}
+          key={upload.modal.source ? upload.modal.source.id : "new-upload"}
+          source={upload.modal.source}
+          onClose={upload.closeUpload}
+          onCreateSource={upload.createSource}
+          onRename={upload.renameSource}
+          onArchive={upload.requestArchive}
         />
       )}
-      {sources.confirmArchive && (
+      {upload.confirmArchive && (
         <ConfirmArchive
-          source={sources.confirmArchive}
-          onCancel={sources.cancelArchive}
-          onConfirm={sources.archiveSource}
+          source={upload.confirmArchive}
+          onCancel={upload.cancelArchive}
+          onConfirm={upload.archiveSource}
         />
       )}
-      {sources.coldOpen && (
+      {cold.open && (
         <ColdStorageModal
           items={catalog.listColdStorage()}
-          onRestore={sources.restoreSource}
-          onClose={sources.closeCold}
+          onRestore={cold.restore}
+          onClose={cold.closeCold}
         />
       )}
     </>

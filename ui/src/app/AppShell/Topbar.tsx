@@ -1,18 +1,24 @@
 /* Topbar: org badge + breadcrumb + data-action buttons. */
 import type { LineageNode } from "../../lib/catalog";
 import { ModelPicker, ProjectPicker } from "../Breadcrumb";
+import type { ColdStorageApi } from "../ColdStorage";
+import type { ExportApi } from "../Export";
 import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
+import type { UploadApi } from "../Upload";
 import type { NavApi } from "./useNavigation";
-import type { SourceApi } from "./useSourceActions";
 
 export function Topbar({
   nav,
-  sources,
+  upload,
+  exporter,
+  cold,
   models,
 }: {
   nav: NavApi;
-  sources: SourceApi;
+  upload: UploadApi;
+  exporter: ExportApi;
+  cold: ColdStorageApi;
   models: LineageNode[];
 }) {
   const { route } = nav;
@@ -79,14 +85,14 @@ export function Topbar({
             <button
               className="icon-btn"
               title="Upload a source"
-              onClick={() => sources.openUpload(null)}
+              onClick={() => upload.openUpload(null)}
             >
               <Icon name="upload" />
             </button>
             <button
               className="icon-btn"
               title="Export dbt project"
-              onClick={sources.openExport}
+              onClick={exporter.openExport}
             >
               <Icon name="download" />
             </button>
@@ -100,7 +106,7 @@ export function Topbar({
             <button
               className="icon-btn cold-btn-toolbar"
               title="Cold storage"
-              onClick={sources.openCold}
+              onClick={cold.openCold}
             >
               <Icon name="fridge" />
               {coldCount > 0 && <span className="cold-count">{coldCount}</span>}
