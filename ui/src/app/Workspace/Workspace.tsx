@@ -1,5 +1,8 @@
 /* Pipeline workspace: the lineage home view — layer legend, visualization-mode
-   toggle, and the lineage canvas. */
+   toggle, and the lineage canvas. Owns its own visualization mode (the only
+   place it's read). */
+import { useState } from "react";
+
 import type { Layer, LineageNode } from "../../lib/catalog";
 import { LAYER_META } from "../layerMeta";
 import { LineageCanvas } from "../LineageCanvas";
@@ -35,16 +38,13 @@ function Legend() {
 }
 
 export function Workspace({
-  mode,
-  setMode,
   onOpen,
   justAdded,
 }: {
-  mode: LineageMode;
-  setMode: (mode: LineageMode) => void;
   onOpen: (node: LineageNode) => void;
   justAdded: string | null;
 }) {
+  const [mode, setMode] = useState<LineageMode>("dag");
   return (
     <div className="lin-wrap">
       <div className="lin-head">

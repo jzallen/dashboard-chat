@@ -1,15 +1,8 @@
-/* App root — the composition shell. Reads top-down: types, the persisted tweak
-   defaults, the three behavioral hooks (tweaks / navigation / source actions),
-   a pure theming helper, then App wiring them into a Topbar + routed frame +
-   overlay layer. Every concrete view lives in its own feature package. */
-import {
-  type CSSProperties,
-  type ReactNode,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+/* App root — the composition shell. Reads top-down: types, the two behavioral
+   hooks (navigation / source actions), then App wiring them into a Topbar +
+   routed frame + overlay layer under the ThemeProvider. Every concrete view
+   lives in its own feature package. */
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import type {
@@ -19,6 +12,7 @@ import type {
   ProjectSummary,
 } from "../lib/catalog";
 import { AllChats } from "./AllChats";
+import { ThemeProvider, useTheme } from "./AppShell/ThemeProvider";
 import { ModelPicker, ProjectPicker } from "./Breadcrumb";
 import { AssistantOverlay, TerminalAssistant } from "./Chat";
 import { ColdStorageModal } from "./ColdStorage";
@@ -27,29 +21,13 @@ import { catalog } from "./fixtureSource";
 import { ModelDetail } from "./ModelDetail";
 import { OrgSettings } from "./OrgSettings";
 import { Icon } from "./primitives";
-import { useTweaks } from "./Tweaks";
 import { ConfirmArchive, UploadModal } from "./Upload";
 import { useCatalog } from "./useCatalog";
 import { Workspace } from "./Workspace";
 
-type LineageMode = "dag" | "swimlanes" | "audit";
-
 /** A route, plus the optional payload some routes carry. Kept deliberately loose
     so go()/setRoute share one shape; model routes carry a node. */
 type Route = { name: string; node?: LineageNode; nodeId?: string | null };
-
-/** The persisted tweak values (the shape of TWEAK_DEFAULTS). */
-type TweakSettings = {
-  lineageMode: LineageMode;
-  theme: string;
-  dark: boolean;
-  accent: string;
-  layerPalette: string[];
-  auditBadges: boolean;
-  surface: string;
-  canvasGrid: boolean;
-  headingFont: string;
-};
 
 /** The payload the upload modal emits when a brand-new source is created. */
 type NewSource = {
@@ -57,31 +35,6 @@ type NewSource = {
   schema: FieldDef[] | null;
   files: { name: string; rows: number; when: string }[];
 };
-
-// The host's edit-mode tooling rewrites the JSON between the EDITMODE markers
-// on disk, so this literal must stay JSON-shaped (quoted keys, no trailing
-// semicolon inside the markers) — prettier-ignore keeps the formatter off it.
-// prettier-ignore
-const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "lineageMode": "dag",
-  "theme": "Neobrutalist",
-  "dark": false,
-  "accent": "#3b82f6",
-  "layerPalette": ["#2563eb", "#7c3aed", "#047857"],
-  "auditBadges": true,
-  "surface": "warm",
-  "canvasGrid": true,
-  "headingFont": "Bricolage Grotesque"
-} /*EDITMODE-END*/
-
-// ── tweak settings ───────────────────────────────────────────────────────────
-// The persisted design knobs. The standalone TweaksPanel is parked (see its
-// docstring); today only the Workspace mode toggle and the OrgSettings dark
-// switch write to it, the rest stay at their defaults.
-function useTweakSettings() {
-  const [raw, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  return { t: raw as TweakSettings, setTweak };
-}
 
 // ── navigation ───────────────────────────────────────────────────────────────
 // Where you are (route + current project) and the assistant dock. go() is the
@@ -258,54 +211,14 @@ function useSourceActions() {
 }
 type SourceApi = ReturnType<typeof useSourceActions>;
 
-// ── theming ──────────────────────────────────────────────────────────────────
-// Pure: derives the root element's class string + custom-property style from the
-// tweak settings (and the current route, which adds the org-open modifier).
-function studioTheme(t: TweakSettings, route: Route) {
-  const [p0, p1, p2] = t.layerPalette;
-  const isStudio = t.theme === "Studio";
-  const style = isStudio
-    ? {
-        "--primary": t.accent,
-        "--primary-hover": t.accent,
-        "--primary-light": `color-mix(in srgb, ${t.accent} 16%, white)`,
-        "--primary-dark": `color-mix(in srgb, ${t.accent} 70%, black)`,
-        "--layer-staging": p0,
-        "--layer-staging-bg": `color-mix(in srgb, ${p0} 12%, white)`,
-        "--layer-intermediate": p1,
-        "--layer-intermediate-bg": `color-mix(in srgb, ${p1} 12%, white)`,
-        "--layer-mart": p2,
-        "--layer-mart-bg": `color-mix(in srgb, ${p2} 12%, white)`,
-        "--font-serif":
-          t.headingFont === "System"
-            ? "var(--font-sans)"
-            : `"${t.headingFont}", Georgia, serif`,
-      }
-    : {};
-  const className =
-    "app" +
-    (t.auditBadges ? "" : " no-ai") +
-    (isStudio
-      ? t.surface === "cool"
-        ? " cool"
-        : ""
-      : ` theme-${t.theme.toLowerCase()}`) +
-    (t.dark ? " dark" : "") +
-    (t.canvasGrid ? "" : " no-grid") +
-    (route.name === "org" ? " org-open" : "");
-  // The custom `--*` props are valid at runtime but aren't in CSSProperties'
-  // key set, so narrow through the type here rather than at the call site.
-  return { className, style: style as CSSProperties };
-}
-
 // ── App (composition root) ───────────────────────────────────────────────────
 function App() {
-  const { t, setTweak } = useTweakSettings();
   const nav = useNavigation();
   const sources = useSourceActions();
   // Re-render the shell on any catalog mutation (rename/archive/restore/add).
   const catalogVersion = useCatalog();
   const models = useMemo(() => catalog.listModels(), [catalogVersion]);
+  const { rootClassName } = useTheme();
 
   // Opening a lineage node bridges the two domains: a source opens its upload
   // window, anything else routes to the model detail view.
@@ -314,21 +227,19 @@ function App() {
     else nav.openModel(node);
   };
 
-  const theme = studioTheme(t, nav.route);
-
   return (
-    <div className={theme.className} style={theme.style}>
+    <div
+      className={rootClassName + (nav.route.name === "org" ? " org-open" : "")}
+    >
       <div className="main">
         <Topbar nav={nav} sources={sources} models={models} />
         <RouteFrame
           nav={nav}
-          t={t}
-          setTweak={setTweak}
           onOpenNode={onOpenNode}
           justAdded={sources.justAdded}
         />
       </div>
-      <Overlays nav={nav} sources={sources} dark={t.dark} />
+      <Overlays nav={nav} sources={sources} />
     </div>
   );
 }
@@ -443,27 +354,17 @@ function Topbar({
 // ── routed content: one view per route ───────────────────────────────────────
 function RouteFrame({
   nav,
-  t,
-  setTweak,
   onOpenNode,
   justAdded,
 }: {
   nav: NavApi;
-  t: TweakSettings;
-  setTweak: (key: string, value: unknown) => void;
   onOpenNode: (node: LineageNode) => void;
   justAdded: string | null;
 }) {
   const { route } = nav;
+  const { dark, toggleDark } = useTheme();
   const views: Record<string, () => ReactNode> = {
-    workspace: () => (
-      <Workspace
-        mode={t.lineageMode}
-        setMode={(m) => setTweak("lineageMode", m)}
-        onOpen={onOpenNode}
-        justAdded={justAdded}
-      />
-    ),
+    workspace: () => <Workspace onOpen={onOpenNode} justAdded={justAdded} />,
     model: () => <ModelDetail node={route.node!} onOpen={nav.openModel} />,
     engines: () => (
       <Stub
@@ -472,12 +373,7 @@ function RouteFrame({
       />
     ),
     chats: () => <AllChats go={nav.go} />,
-    org: () => (
-      <OrgSettings
-        dark={t.dark}
-        onToggleDark={() => setTweak("dark", !t.dark)}
-      />
-    ),
+    org: () => <OrgSettings dark={dark} onToggleDark={toggleDark} />,
   };
   return (
     <div className="content">
@@ -487,16 +383,9 @@ function RouteFrame({
 }
 
 // ── overlay layer: assistant dock + the data-workspace modals ────────────────
-function Overlays({
-  nav,
-  sources,
-  dark,
-}: {
-  nav: NavApi;
-  sources: SourceApi;
-  dark: boolean;
-}) {
+function Overlays({ nav, sources }: { nav: NavApi; sources: SourceApi }) {
   const { route } = nav;
+  const { dark } = useTheme();
   const chatContext = route.name === "model" ? (route.node ?? null) : null;
   return (
     <>
@@ -569,4 +458,9 @@ function Stub({ title, sub }: { title: string; sub: string }) {
 }
 
 const rootEl = document.getElementById("root");
-if (rootEl) createRoot(rootEl).render(<App />);
+if (rootEl)
+  createRoot(rootEl).render(
+    <ThemeProvider>
+      <App />
+    </ThemeProvider>,
+  );
