@@ -1,6 +1,6 @@
 /* Workspace chrome — the pipeline header, visualization-mode toggle, and layer
    legend. The Neobrutalist border/weight (formerly applied globally via the
-   themes.css :is() rule) is baked in here with var(--border), so it reads in
+   theme.neobrutalist.css :is() rule) is baked in here with var(--border), so it reads in
    both light and dark. */
 .linWrap {
   padding: 22px 26px 26px;
