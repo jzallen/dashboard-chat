@@ -10,7 +10,21 @@
  */
 import { type DataCatalog, type Layer, LAYER_ORDER } from "../../lib/catalog";
 
-/** DAG layout geometry (px): node width/height, column/row gaps, canvas padding. */
+/**
+ * DAG layout geometry (px): node box size, the gaps between boxes, and the
+ * canvas padding around the whole grid.
+ *
+ *     paddingX                      columnGap
+ *    ├────────┤                    ├─────────┤
+ *             ┌──────────┐         ┌──────────┐ ─┐
+ *             │          │         │          │  │ nodeHeight
+ *             └──────────┘         └──────────┘ ─┘
+ *             ├ nodeWidth┤
+ *                   ┊ rowGap  (vertical gap to the node stacked below)
+ *             ┌──────────┐         ┌──────────┐
+ *             │          │         │          │
+ *             └──────────┘         └──────────┘
+ */
 export interface DagDimensions {
   nodeWidth: number;
   nodeHeight: number;
@@ -46,6 +60,19 @@ export interface DagLayout {
  * size the content to the tallest column, then vertically center each shorter
  * column within that height. Returns absolute node positions (top-left corners)
  * plus the overall canvas width/height.
+ *
+ *      col 0       col 1       col 2       col 3
+ *    (sources)   (staging)    (inter.)    (marts)
+ *
+ *                ┌───────┐                            ─┐
+ *    ┌───────┐   │  stg  │   ┌───────┐   ┌───────┐     │
+ *    │  src  │   ├───────┤   │  int  │   │ mart  │     │ contentHeight
+ *    ├───────┤   │  stg  │   ├───────┤   ├───────┤     │ (= the tallest
+ *    │  src  │   ├───────┤   │  int  │   │ mart  │     │   column, col 1)
+ *    └───────┘   │  stg  │   └───────┘   └───────┘     │
+ *                └───────┘                            ─┘
+ *    └ shorter columns are centered against the tallest one
+ *    ├ columnPitch ┤
  */
 export function computeDagLayout(
   catalog: DataCatalog,
@@ -92,6 +119,19 @@ export function computeDagLayout(
  * SVG path `d` for an edge between two laid-out nodes: a horizontal S-curve that
  * starts at the source's right-middle, ends at the target's left-middle, and
  * places both Bézier control points at the horizontal midpoint between them.
+ *
+ *    source
+ *   ┌───────┐
+ *   │ src  ●│━━━━━━━━━━━┓  ◀ ctrl₁ = (midX, y1)
+ *   └───────┘ (x1,y1)   ┃
+ *                       ┃    both control points sit on
+ *                       ┃    the vertical line x = midX
+ *   ctrl₂ = (midX, y2)  ┗━━━━━━━━●┌───────┐
+ *                         (x2,y2) │  tgt  │
+ *                                 └───────┘
+ *
+ *   Sharing x = midX makes the curve leave the source and enter the target
+ *   horizontally (flat tangents) regardless of the vertical gap between them.
  */
 export function bezierPath(
   sourcePos: Point,
