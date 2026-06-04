@@ -75,7 +75,6 @@
     .proj-search input,
     .chats-search input,
     .badge,
-    .avatar,
     .assistant-fab,
     .bubble,
     .cr-ic,
@@ -91,7 +90,6 @@
   border-color: #111;
 }
 .app.theme-neobrutalist .serif,
-.app.theme-neobrutalist .org-title,
 .app.theme-neobrutalist .chats-title {
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -239,7 +237,6 @@
     .proj-search input,
     .chats-search input,
     .badge,
-    .avatar,
     .assistant-fab,
     .bubble,
     .cr-ic,

@@ -1,0 +1,175 @@
+/* Org-settings view (its exclusive classes). Shared .panel/.panel-hd/.spanfull
+   stay global. The Neobrutalist border the :is() rule forced onto .avatar, and
+   the 800 weight on .org-title, are baked in here. */
+.orgPage {
+  padding: 40px 30px 60px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.orgHead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+.orgBadge {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  border-radius: 14px;
+  background: var(--primary);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 22px;
+  box-shadow: var(--shadow-sm);
+}
+.orgTitle {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-900);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.orgSub {
+  font-size: 13px;
+  color: var(--text-500);
+  margin: 2px 0 0;
+}
+.orgGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .orgGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.field:last-child {
+  border-bottom: none;
+}
+.fl {
+  font-size: 13px;
+  color: var(--text-500);
+  white-space: nowrap;
+}
+.fv {
+  font-size: 13.5px;
+  color: var(--text-900);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.fv:global(.mono) {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.member {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.member:last-child {
+  border-bottom: none;
+}
+.avatar {
+  width: 33px;
+  height: 33px;
+  border: 2.5px solid var(--border);
+  border-radius: 3px;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex: 0 0 33px;
+}
+.mMain {
+  flex: 1;
+  min-width: 0;
+}
+.mName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-900);
+}
+.mEmail {
+  font-size: 12px;
+  color: var(--text-500);
+}
+.mRole {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  color: var(--text-700);
+}
+.appearanceRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+}
+.apTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-900);
+}
+.apSub {
+  font-size: 12px;
+  color: var(--text-500);
+  margin-top: 2px;
+}
+.switch {
+  position: relative;
+  width: 50px;
+  height: 28px;
+  flex: 0 0 50px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    border-color 0.18s;
+  padding: 0;
+}
+.switch.on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.switchKnob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 99px;
+  background: #fff;
+  transform: translateY(-50%);
+  transition: left 0.2s cubic-bezier(0.3, 1.3, 0.5, 1);
+  box-shadow: var(--shadow-sm);
+}
+.switch.on .switchKnob {
+  left: 25px;
+}

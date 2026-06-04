@@ -1,15 +1,17 @@
 /* Organization settings route page: identity, pipeline defaults, members,
-   appearance. */
+   appearance. Exclusive styles scoped here; shared .panel/.panel-hd/.spanfull
+   primitives stay global. */
 import type { ReactNode } from "react";
 
 import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
+import styles from "./OrgSettings.module.css";
 
 function Field({ l, v, mono }: { l: ReactNode; v: ReactNode; mono?: boolean }) {
   return (
-    <div className="field">
-      <span className="fl">{l}</span>
-      <span className={"fv" + (mono ? " mono" : "")}>{v}</span>
+    <div className={styles.field}>
+      <span className={styles.fl}>{l}</span>
+      <span className={`${styles.fv}${mono ? " mono" : ""}`}>{v}</span>
     </div>
   );
 }
@@ -29,18 +31,18 @@ export function OrgSettings({
       .slice(0, 2)
       .join("");
   return (
-    <div className="org-page">
-      <div className="org-head">
-        <span className="org-badge">{o.name[0]}</span>
+    <div className={styles.orgPage}>
+      <div className={styles.orgHead}>
+        <span className={styles.orgBadge}>{o.name[0]}</span>
         <div>
-          <h1 className="org-title">{o.name}</h1>
-          <p className="org-sub">
+          <h1 className={styles.orgTitle}>{o.name}</h1>
+          <p className={styles.orgSub}>
             {o.plan} plan · {o.usedSeats} of {o.seats} seats used · since{" "}
             {o.created}
           </p>
         </div>
       </div>
-      <div className="org-grid">
+      <div className={styles.orgGrid}>
         <div className="panel">
           <div className="panel-hd">
             <Icon name="gear" size={15} style={{ color: "var(--text-500)" }} />
@@ -82,13 +84,13 @@ export function OrgSettings({
           </div>
           <div className="panel-body">
             {o.members.map((m, i) => (
-              <div className="member" key={i}>
-                <span className="avatar">{initials(m.name)}</span>
-                <div className="m-main">
-                  <div className="m-name">{m.name}</div>
-                  <div className="m-email">{m.email}</div>
+              <div className={styles.member} key={i}>
+                <span className={styles.avatar}>{initials(m.name)}</span>
+                <div className={styles.mMain}>
+                  <div className={styles.mName}>{m.name}</div>
+                  <div className={styles.mEmail}>{m.email}</div>
                 </div>
-                <span className="m-role">{m.role}</span>
+                <span className={styles.mRole}>{m.role}</span>
               </div>
             ))}
           </div>
@@ -103,20 +105,20 @@ export function OrgSettings({
             <span className="pt">Appearance</span>
           </div>
           <div className="panel-body">
-            <div className="appearance-row">
+            <div className={styles.appearanceRow}>
               <div>
-                <div className="ap-title">Dark mode</div>
-                <div className="ap-sub">
+                <div className={styles.apTitle}>Dark mode</div>
+                <div className={styles.apSub}>
                   Solarized-dark surfaces with brighter, neon-leaning accents.
                 </div>
               </div>
               <button
-                className={"switch" + (dark ? " on" : "")}
+                className={`${styles.switch}${dark ? " " + styles.on : ""}`}
                 onClick={onToggleDark}
                 role="switch"
                 aria-checked={dark}
               >
-                <span className="switch-knob" />
+                <span className={styles.switchKnob} />
               </button>
             </div>
           </div>
