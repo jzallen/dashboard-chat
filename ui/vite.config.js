@@ -61,7 +61,7 @@ import { catalog } from '/src/app/fixtureSource.ts';
 import { useCatalog } from '/src/app/useCatalog.ts';
 import { LAYER_META } from '/src/app/layerMeta.ts';
 import { Icon, LayerDot, LayerBadge, SqlBlock } from '/src/app/primitives.tsx';
-import { LineageCanvas } from '/src/app/lineageCanvas/index.ts';
+import { LineageCanvas } from '/src/app/LineageCanvas/index.ts';
 import { TAG_ICON } from '/src/app/tagIcon.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
