@@ -1,0 +1,325 @@
+/* Model-detail view styles (the classes exclusive to ModelDetail). Shared
+   surfaces (.panel/.panel-hd/.sql-block/.spanfull) stay global; the Neobrutalist
+   border that the global :is() rule forced onto .kv/.dep-chip/.aud-ico/.ai-mark
+   is baked in here via var(--border) so it reads in light and dark. */
+.det {
+  padding: 22px 26px 60px;
+  max-width: 1080px;
+}
+.detHd {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.detName {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-900);
+}
+.detFriendly {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--text-500);
+  margin-top: 2px;
+}
+.detBadges {
+  display: flex;
+  gap: 7px;
+  margin-left: auto;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.depStrip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin: 16px 0 22px;
+}
+.depChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 2.5px solid var(--border);
+  background: var(--surface);
+  border-radius: 3px;
+  padding: 7px 11px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-700);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition:
+    box-shadow 0.14s,
+    transform 0.14s;
+}
+.depChip::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--ln);
+}
+.depChip:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+.depChip.here {
+  border-color: var(--ln);
+  box-shadow: 0 0 0 2px var(--ln-soft);
+  cursor: default;
+}
+.depArrow {
+  color: var(--text-400);
+}
+
+.detGrid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .detGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auditNote {
+  font-size: 12px;
+  color: var(--text-500);
+  padding: 10px 16px 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.aiMark {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid var(--border);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+}
+.aiMark svg {
+  width: 13px;
+  height: 13px;
+}
+
+.audItem {
+  display: flex;
+  gap: 11px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.audItem:last-child {
+  border-bottom: none;
+}
+.audIco {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid var(--border);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-light);
+  color: var(--primary-hover);
+  margin-top: 1px;
+}
+.audIco svg {
+  width: 14px;
+  height: 14px;
+}
+.audSay {
+  font-size: 13px;
+  color: var(--text-700);
+  line-height: 1.45;
+}
+.audTag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-400);
+  margin-top: 3px;
+}
+.ba {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.ba .b {
+  background: var(--error-bg);
+  color: #b42318;
+  padding: 1px 7px;
+  border-radius: 5px;
+  text-decoration: line-through;
+  text-decoration-color: #e8a3a3;
+}
+.ba .a {
+  background: var(--accent-light);
+  color: var(--accent-dark);
+  padding: 1px 7px;
+  border-radius: 5px;
+}
+.ba .ar {
+  color: var(--text-400);
+}
+
+.colsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.colsTable th {
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.colsTable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--surface-3);
+  color: var(--text-700);
+  vertical-align: middle;
+}
+.colsTable tr:last-child td {
+  border-bottom: none;
+}
+.colsTable .cn {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-900);
+}
+.role {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 99px;
+}
+.role.entity {
+  background: #eef2ff;
+  color: #4338ca;
+}
+.role.dimension {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+}
+.role.measure {
+  background: var(--accent-light);
+  color: var(--accent-dark);
+}
+.role.time,
+.role.Time {
+  background: #fef3c7;
+  color: #92400e;
+}
+.expr {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-500);
+}
+
+.sqlBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.sqlBar .st {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.copyBtn {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-500);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.copyBtn:hover {
+  background: var(--surface-3);
+}
+.summaryRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px 2px;
+}
+.kv {
+  font-size: 12px;
+  color: var(--text-500);
+  background: var(--surface-2);
+  border: 2.5px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 10px;
+}
+.kv b {
+  color: var(--text-900);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.prevWrap {
+  overflow-x: auto;
+}
+.prevTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.prevTable th {
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  position: sticky;
+  top: 0;
+}
+.prevTable td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--surface-3);
+  color: var(--text-700);
+}
+.prevTable tr:last-child td {
+  border-bottom: none;
+}
+.prevTable tbody tr:hover {
+  background: var(--surface-2);
+}

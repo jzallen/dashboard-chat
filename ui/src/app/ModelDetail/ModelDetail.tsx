@@ -1,4 +1,7 @@
-/* Model detail view — header, dependency strip, AI audit, columns, SQL. */
+/* Model detail view — header, dependency strip, AI audit, columns, SQL.
+   Exclusive styles are scoped (ModelDetail.module.css); the shared .panel /
+   .panel-hd / .badge / .sql-block primitives and the layer-* helpers stay
+   global. */
 import { Fragment, type ReactNode, useState } from "react";
 
 import type { LineageNode, Model } from "../../lib/catalog";
@@ -6,6 +9,7 @@ import { catalog } from "../fixtureSource";
 import { Icon, LayerBadge, LayerDot, SqlBlock } from "../primitives";
 import { TAG_ICON } from "../tagIcon";
 import { useCatalog } from "../useCatalog";
+import styles from "./ModelDetail.module.css";
 
 // node.ref is typed as the loose ModelRef (an index-signature bag); the detail
 // panels are written against the full discriminated Model, which is the actual
@@ -25,11 +29,11 @@ function DepStrip({
 }) {
   const parents = catalog.parentsOf(node.id);
   return (
-    <div className="dep-strip">
+    <div className={styles.depStrip}>
       {parents.map((p) => (
         <Fragment key={p.id}>
           <div
-            className={"dep-chip layer-" + p.layer}
+            className={`${styles.depChip} layer-${p.layer}`}
             onClick={() => p.ref && onOpen(p)}
           >
             <LayerDot layer={p.layer} size={7} />
@@ -40,7 +44,7 @@ function DepStrip({
       {parents.length > 0 && (
         <Icon name="arrow" size={16} style={{ color: "var(--text-400)" }} />
       )}
-      <div className={"dep-chip here layer-" + node.layer}>
+      <div className={`${styles.depChip} ${styles.here} layer-${node.layer}`}>
         <LayerDot layer={node.layer} size={7} />
         {node.label}
       </div>
@@ -52,7 +56,7 @@ function CopyBtn({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
-      className="copy-btn"
+      className={styles.copyBtn}
       onClick={() => {
         navigator.clipboard?.writeText(text);
         setDone(true);
@@ -75,33 +79,33 @@ function AuditPanel({ node }: { node: LineageNode }) {
   return (
     <div className="panel audit">
       <div className="panel-hd">
-        <span className="ai-mark">
+        <span className={styles.aiMark}>
           <Icon name="sparkle" />
         </span>
         <span className="pt">Assistant changes</span>
         <span className="pcount">{audit.length} edits</span>
       </div>
-      <div className="audit-note">
+      <div className={styles.auditNote}>
         <Icon name="chat" size={13} style={{ color: "var(--text-400)" }} />
         Generated from chat — review before exporting to dbt.
       </div>
       <div className="panel-body">
         {audit.map((a, i) => (
-          <div className="aud-item" key={i}>
-            <span className="aud-ico">
+          <div className={styles.audItem} key={i}>
+            <span className={styles.audIco}>
               <Icon name={TAG_ICON[a.tag] || TAG_ICON.default} />
             </span>
             <div style={{ flex: 1 }}>
-              <div className="aud-say">{a.say}</div>
+              <div className={styles.audSay}>{a.say}</div>
               {m.kind === "dataset" && samples[i] && (
-                <div className="ba">
-                  <span className="b">{String(samples[i].before)}</span>
-                  <span className="ar">→</span>
-                  <span className="a">{String(samples[i].after)}</span>
+                <div className={styles.ba}>
+                  <span className={styles.b}>{String(samples[i].before)}</span>
+                  <span className={styles.ar}>→</span>
+                  <span className={styles.a}>{String(samples[i].after)}</span>
                 </div>
               )}
             </div>
-            <span className="aud-tag">{a.tag}</span>
+            <span className={styles.audTag}>{a.tag}</span>
           </div>
         ))}
       </div>
@@ -116,7 +120,7 @@ function ColumnsPanel({ node }: { node: LineageNode }) {
   if (m.kind === "dataset") {
     head = ["Field", "Type"];
     rows = m.fields.map((f) => [
-      <span className="cn">{f.name}</span>,
+      <span className={styles.cn}>{f.name}</span>,
       <span className={"badge " + (f.type === "number" ? "number" : "text")}>
         {f.type}
       </span>,
@@ -124,7 +128,7 @@ function ColumnsPanel({ node }: { node: LineageNode }) {
   } else if (m.kind === "view") {
     head = ["Column", "Type", "Role", "Source"];
     rows = m.columns.map((c) => [
-      <span className="cn">{c.name}</span>,
+      <span className={styles.cn}>{c.name}</span>,
       <span
         className={
           "badge " +
@@ -134,26 +138,30 @@ function ColumnsPanel({ node }: { node: LineageNode }) {
         {c.display_type}
       </span>,
       c.grain_role ? (
-        <span className={"role " + c.grain_role.toLowerCase()}>
+        <span
+          className={`${styles.role} ${styles[c.grain_role.toLowerCase()] ?? ""}`}
+        >
           {c.grain_role}
         </span>
       ) : (
         "—"
       ),
-      <span className="expr">
+      <span className={styles.expr}>
         {c.source_ref}.{c.source_column}
       </span>,
     ]);
   } else {
     head = ["Column", "Role", "Type", "Expression"];
     rows = m.columns_metadata.map((c) => [
-      <span className="cn">{c.name}</span>,
-      <span className={"role " + c.semantic_role}>{c.semantic_role}</span>,
-      <span className="expr">
+      <span className={styles.cn}>{c.name}</span>,
+      <span className={`${styles.role} ${styles[c.semantic_role] ?? ""}`}>
+        {c.semantic_role}
+      </span>,
+      <span className={styles.expr}>
         {c.semantic_type}
         {c.time_granularity ? ` · ${c.time_granularity}` : ""}
       </span>,
-      c.expr ? <span className="expr">{c.expr}</span> : "—",
+      c.expr ? <span className={styles.expr}>{c.expr}</span> : "—",
     ]);
   }
   return (
@@ -163,7 +171,7 @@ function ColumnsPanel({ node }: { node: LineageNode }) {
         <span className="pt">Columns</span>
         <span className="pcount">{rows.length}</span>
       </div>
-      <table className="cols-table">
+      <table className={styles.colsTable}>
         <thead>
           <tr>
             {head.map((h, i) => (
@@ -213,9 +221,9 @@ function SummaryRow({ node }: { node: LineageNode }) {
     );
   }
   return (
-    <div className="summary-row">
+    <div className={styles.summaryRow}>
       {kvs.map(([k, v], i) => (
-        <span className="kv" key={i}>
+        <span className={styles.kv} key={i}>
           {k} <b>{v}</b>
         </span>
       ))}
@@ -247,9 +255,9 @@ function DataPreview({ node }: { node: LineageNode }) {
   if (rows.length === 0) return null;
   return (
     <div className="panel spanfull">
-      <div className="sql-bar">
+      <div className={styles.sqlBar}>
         <Icon name="grid" size={14} style={{ color: "var(--text-500)" }} />
-        <span className="st">Data preview</span>
+        <span className={styles.st}>Data preview</span>
         <span
           style={{
             marginLeft: "auto",
@@ -260,8 +268,8 @@ function DataPreview({ node }: { node: LineageNode }) {
           {rows.length} of {m.rows.toLocaleString()} rows
         </span>
       </div>
-      <div className="prev-wrap">
-        <table className="prev-table">
+      <div className={styles.prevWrap}>
+        <table className={styles.prevTable}>
           <thead>
             <tr>
               {cols.map((c) => (
@@ -294,13 +302,13 @@ export function ModelDetail({
   const m = modelOf(node);
   useCatalog(); // subscribe: re-render when the catalog mutates
   return (
-    <div className={"det layer-" + node.layer}>
-      <div className="det-hd">
+    <div className={`${styles.det} layer-${node.layer}`}>
+      <div className={styles.detHd}>
         <div>
-          <div className="det-name">{node.label}</div>
-          <div className="det-friendly">{m.name}</div>
+          <div className={styles.detName}>{node.label}</div>
+          <div className={styles.detFriendly}>{m.name}</div>
         </div>
-        <div className="det-badges">
+        <div className={styles.detBadges}>
           <LayerBadge layer={node.layer} />
           {m.kind === "report" && <MatBadge m={m.report_type} />}
           <MatBadge
@@ -310,18 +318,18 @@ export function ModelDetail({
       </div>
       <DepStrip node={node} onOpen={onOpen} />
       <SummaryRow node={node} />
-      <div className="det-grid" style={{ marginTop: 16 }}>
+      <div className={styles.detGrid} style={{ marginTop: 16 }}>
         <DataPreview node={node} />
         <AuditPanel node={node} />
         <ColumnsPanel node={node} />
         <div className="panel spanfull">
-          <div className="sql-bar">
+          <div className={styles.sqlBar}>
             <Icon
               name="database"
               size={14}
               style={{ color: "var(--text-500)" }}
             />
-            <span className="st">Compiled SQL</span>
+            <span className={styles.st}>Compiled SQL</span>
             <CopyBtn text={m.sql} />
           </div>
           <SqlBlock sql={m.sql} />
