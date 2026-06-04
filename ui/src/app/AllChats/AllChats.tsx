@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
+import styles from "./AllChats.module.css";
 
 /** A nav request handed back to the app shell. */
 type ChatRoute = { name: string; nodeId?: string | null };
@@ -18,13 +19,13 @@ export function AllChats({ go }: { go: (route: ChatRoute) => void }) {
         .includes(q.trim().toLowerCase()),
     );
   return (
-    <div className="chats-page">
-      <h1 className="chats-title">All Chats</h1>
-      <p className="chats-subtitle">
+    <div className={styles.chatsPage}>
+      <h1 className={styles.chatsTitle}>All Chats</h1>
+      <p className={styles.chatsSubtitle}>
         Every session across this project — jump back into the model it was
         shaping.
       </p>
-      <div className="chats-search">
+      <div className={styles.chatsSearch}>
         <Icon name="search" size={16} />
         <input
           placeholder="Search chats…"
@@ -32,13 +33,13 @@ export function AllChats({ go }: { go: (route: ChatRoute) => void }) {
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
-      <div className="chats-list">
+      <div className={styles.chatsList}>
         {list.map((c, i) => {
           const node = c.nodeId ? catalog.getNode(c.nodeId) : null;
           return (
             <button
               key={i}
-              className={"chat-row" + (node ? " layer-" + node.layer : "")}
+              className={`${styles.chatRow}${node ? " layer-" + node.layer : ""}`}
               onClick={() =>
                 go(
                   c.nodeId
@@ -47,22 +48,22 @@ export function AllChats({ go }: { go: (route: ChatRoute) => void }) {
                 )
               }
             >
-              <span className={"cr-ic" + (node ? " ctx" : "")}>
+              <span className={`${styles.crIc}${node ? " " + styles.ctx : ""}`}>
                 <Icon name={node ? "layers" : "chat"} size={17} />
               </span>
-              <span className="cr-main">
-                <span className="cr-title">
+              <span className={styles.crMain}>
+                <span className={styles.crTitle}>
                   {c.title}
-                  {node && <span className="cr-model">{node.label}</span>}
+                  {node && <span className={styles.crModel}>{node.label}</span>}
                 </span>
-                <span className="cr-snip">{c.snippet}</span>
+                <span className={styles.crSnip}>{c.snippet}</span>
               </span>
-              <span className="cr-when">{c.when}</span>
+              <span className={styles.crWhen}>{c.when}</span>
             </button>
           );
         })}
         {list.length === 0 && (
-          <div className="chats-empty">No chats match “{q}”.</div>
+          <div className={styles.chatsEmpty}>No chats match “{q}”.</div>
         )}
       </div>
     </div>

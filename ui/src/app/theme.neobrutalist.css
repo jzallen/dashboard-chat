@@ -63,7 +63,6 @@
     .card,
     .proj-pop,
     .assistant-overlay,
-    .chat-row,
     .ao-recent,
     .tool-card,
     .suggest button,
@@ -73,12 +72,9 @@
     .send-btn,
     .ao-input textarea,
     .proj-search input,
-    .chats-search input,
     .badge,
     .assistant-fab,
     .bubble,
-    .cr-ic,
-    .proj-ic,
     .ao-mark,
     .tc-ico,
     .org-badge-btn,
@@ -89,8 +85,7 @@
   border-style: solid;
   border-color: #111;
 }
-.app.theme-neobrutalist .serif,
-.app.theme-neobrutalist .chats-title {
+.app.theme-neobrutalist .serif {
   font-weight: 800;
   letter-spacing: -0.01em;
 }
@@ -225,7 +220,6 @@
     .card,
     .proj-pop,
     .assistant-overlay,
-    .chat-row,
     .ao-recent,
     .tool-card,
     .suggest button,
@@ -235,12 +229,9 @@
     .send-btn,
     .ao-input textarea,
     .proj-search input,
-    .chats-search input,
     .badge,
     .assistant-fab,
     .bubble,
-    .cr-ic,
-    .proj-ic,
     .ao-mark,
     .tc-ico,
     .org-badge-btn,
