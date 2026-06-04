@@ -166,6 +166,7 @@ body {
 .icon-btn.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary-hover); }
 .icon-btn svg { width: 18px; height: 18px; }
 .icon-group { display: flex; gap: 8px; padding-left: 8px; margin-left: 4px; border-left: 1px solid var(--border); }
+.icon-group.nolead { border-left: none; padding-left: 0; margin-left: 0; }
 
 .content { flex: 1; overflow: auto; display: flex; flex-direction: column; }
 

@@ -7,9 +7,7 @@
    ============================================================ */
 
 /* solid theme: shut off the frosted glass on the floating chrome */
-.app.theme-neobrutalist .assistant-overlay,
-.app.theme-neobrutalist .proj-pop,
-.app.theme-neobrutalist .assistant-fab {
+.app.theme-neobrutalist .proj-pop {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -62,23 +60,12 @@
     .panel,
     .card,
     .proj-pop,
-    .assistant-overlay,
-    .ao-recent,
-    .tool-card,
-    .suggest button,
     .sql-block,
     .btn,
     .icon-btn,
-    .send-btn,
-    .ao-input textarea,
     .proj-search input,
     .badge,
-    .assistant-fab,
-    .bubble,
-    .ao-mark,
-    .tc-ico,
-    .org-badge-btn,
-    .ao-iconbtn
+    .org-badge-btn
   ) {
   border-radius: 3px;
   border-width: 2.5px;
@@ -96,78 +83,11 @@
 .app.theme-neobrutalist .badge {
   font-weight: 700;
 }
-.app.theme-neobrutalist .assistant-fab {
-  box-shadow: 4px 4px 0 #111;
-}
-.app.theme-neobrutalist .assistant-fab:hover {
-  transform: translate(-2px, -2px);
-  box-shadow: 6px 6px 0 #111;
-}
-.app.theme-neobrutalist .assistant-overlay {
-  box-shadow: 8px 8px 0 #111;
-}
 .app.theme-neobrutalist .proj-pop {
   box-shadow: 6px 6px 0 #111;
 }
 .app.theme-neobrutalist .ai-chip {
   border: 2px solid #111;
-}
-
-/* the Assistant overlay + FAB borrow a softer "comic" panel on the brutalist base:
-   rounded ink panel, halftone body, Baloo heading, comic-red/blue accents */
-.app.theme-neobrutalist .assistant-overlay {
-  border-radius: 18px;
-  border: 2.5px solid #1a1a1a;
-  background: #fffdf6;
-  box-shadow: 6px 6px 0 #1a1a1a;
-}
-.app.theme-neobrutalist .assistant-overlay .ao-body {
-  background-image:
-    radial-gradient(rgba(21, 101, 255, 0.1) 2px, transparent 2px),
-    radial-gradient(rgba(232, 53, 46, 0.08) 2px, transparent 2px);
-  background-size:
-    18px 18px,
-    18px 18px;
-  background-position:
-    0 0,
-    9px 9px;
-}
-.app.theme-neobrutalist .assistant-overlay .ct {
-  font-family: "Baloo 2", sans-serif;
-  font-weight: 700;
-}
-.app.theme-neobrutalist .ao-mark {
-  background: #1565ff;
-  border: 2.5px solid #1a1a1a;
-  border-radius: 9px;
-}
-.app.theme-neobrutalist .assistant-overlay .send-btn {
-  background: #e8352e;
-  border: 2.5px solid #1a1a1a;
-  border-radius: 10px;
-}
-.app.theme-neobrutalist .assistant-overlay .suggest button:hover {
-  background: #d3e2ff;
-  border-color: #1a1a1a;
-  color: #0a3aa8;
-}
-.app.theme-neobrutalist
-  .assistant-overlay
-  :is(.ao-recent, .tool-card, .bubble, .ao-input textarea, .suggest button) {
-  border-radius: 12px;
-}
-.app.theme-neobrutalist .assistant-fab {
-  border-radius: 16px;
-  border: 2.5px solid #1a1a1a;
-  background: #ffd84d;
-  color: #1a1a1a;
-  box-shadow: 4px 4px 0 #1a1a1a;
-}
-.app.theme-neobrutalist .assistant-fab:hover {
-  background: #1565ff;
-  color: #fffdf6;
-  transform: translate(-2px, -2px);
-  box-shadow: 6px 6px 0 #1a1a1a;
 }
 
 /* ════════════════════ DARK MODE (Solarized-dark, brightened) ════════════════════
@@ -219,23 +139,12 @@
     .panel,
     .card,
     .proj-pop,
-    .assistant-overlay,
-    .ao-recent,
-    .tool-card,
-    .suggest button,
     .sql-block,
     .btn,
     .icon-btn,
-    .send-btn,
-    .ao-input textarea,
     .proj-search input,
     .badge,
-    .assistant-fab,
-    .bubble,
-    .ao-mark,
-    .tc-ico,
-    .org-badge-btn,
-    .ao-iconbtn
+    .org-badge-btn
   ) {
   border-color: var(--border);
 }
@@ -257,20 +166,9 @@
 .app.dark .sql-str {
   color: #c8e85a;
 }
-/* soften the brutalist hard offset shadows on dark so depth still reads, and lift the panel */
-.app.dark.theme-neobrutalist .assistant-overlay {
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
-  background: #06303b;
-}
-.app.dark.theme-neobrutalist .assistant-fab {
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
-}
+/* soften the brutalist hard offset shadow on dark so depth still reads */
 .app.dark.theme-neobrutalist .proj-pop {
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
-}
-.app.dark.theme-neobrutalist .assistant-overlay .suggest button:hover {
-  background: rgba(56, 182, 255, 0.16);
-  color: var(--primary-hover);
 }
 /* org-icon close (X) state: darken its background for contrast */
 .app.dark .org-badge-btn.on {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AuditTag, Edge, LineageNode } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { Icon, type IconName, LayerDot, TAG_ICON } from "../primitives";
+import styles from "./Chat.module.css";
 
 /** A nav request handed back to the app shell (e.g. open history or a recent). */
 type ChatRoute = { name: string; nodeId?: string | null };
@@ -101,61 +102,61 @@ export function AssistantOverlay({
   ];
 
   return (
-    <div className={"assistant-overlay" + (closing ? " ao-out" : "")}>
-      <div className="ao-head">
-        <span className="ao-mark">
+    <div
+      className={`${styles.assistantOverlay}${closing ? " " + styles.aoOut : ""}`}
+    >
+      <div className={styles.aoHead}>
+        <span className={styles.aoMark}>
           <Icon name="sparkle" size={15} />
         </span>
-        <span className="ct">Assistant</span>
+        <span className={styles.ct}>Assistant</span>
         {context && (
-          <span className="chat-ctx">
+          <span className={styles.chatCtx}>
             <LayerDot layer={context.layer} size={6} />
             {context.label}
           </span>
         )}
-        <div className="ao-actions">
-          <button className="ao-iconbtn" onClick={newSession}>
+        <div className={styles.aoActions}>
+          <button className={styles.aoIconbtn} onClick={newSession}>
             <Icon name="plus" size={16} />
-            <span className="tip">New session</span>
+            <span className={styles.tip}>New session</span>
           </button>
           <button
-            className="ao-iconbtn"
+            className={styles.aoIconbtn}
             onClick={() => closeWith(() => go({ name: "chats" }))}
           >
             <Icon name="clock" size={16} />
-            <span className="tip">History &amp; search</span>
+            <span className={styles.tip}>History &amp; search</span>
           </button>
-          <button className="ao-iconbtn" onClick={() => closeWith()}>
+          <button className={styles.aoIconbtn} onClick={() => closeWith()}>
             <Icon name="x" size={16} />
-            <span className="tip">Close</span>
+            <span className={styles.tip}>Close</span>
           </button>
         </div>
       </div>
-      <div className="ao-body" ref={bodyRef}>
+      <div className={styles.aoBody} ref={bodyRef}>
         {msgs.length === 0 && (
           <>
-            <div className="ao-section">
-              <span className="ao-sec-label">Recent</span>
+            <div className={styles.aoSection}>
+              <span className={styles.aoSecLabel}>Recent</span>
             </div>
-            <div className="ao-recents">
+            <div className={styles.aoRecents}>
               {catalog.listRecents().map((r, i) => {
                 const node = r.nodeId ? catalog.getNode(r.nodeId) : null;
                 return (
                   <button
                     key={i}
-                    className={
-                      "ao-recent" + (node ? " layer-" + node.layer : "")
-                    }
+                    className={`${styles.aoRecent}${node ? " layer-" + node.layer : ""}`}
                     onClick={() => go({ name: "openRecent", nodeId: r.nodeId })}
                   >
-                    <span className="ao-rec-dot">
+                    <span className={styles.aoRecDot}>
                       {node ? (
                         <LayerDot layer={node.layer} size={7} />
                       ) : (
                         <Icon name="chat" size={13} />
                       )}
                     </span>
-                    <span className="ao-rec-title">{r.title}</span>
+                    <span className={styles.aoRecTitle}>{r.title}</span>
                     <Icon
                       name="arrow"
                       size={14}
@@ -165,10 +166,10 @@ export function AssistantOverlay({
                 );
               })}
             </div>
-            <div className="ao-divider">
+            <div className={styles.aoDivider}>
               <span>or start something new</span>
             </div>
-            <div className="suggest">
+            <div className={styles.suggest}>
               {suggestions.map((s, i) => (
                 <button key={i} onClick={() => runScript(s.t)}>
                   <Icon name={s.ic} size={16} />
@@ -181,30 +182,30 @@ export function AssistantOverlay({
         {msgs.map((m, i) => {
           if (m.role === "tool")
             return (
-              <div className="tool-card" key={i}>
-                <span className="tc-ico">
+              <div className={styles.toolCard} key={i}>
+                <span className={styles.tcIco}>
                   <Icon name={TAG_ICON[m.tag]} />
                 </span>
                 <span>{m.say}</span>
-                <span className="tc-tag">{m.tag}</span>
+                <span className={styles.tcTag}>{m.tag}</span>
               </div>
             );
           return (
             <div
-              className={"msg " + (m.role === "user" ? "user" : "bot")}
+              className={`${styles.msg} ${m.role === "user" ? styles.user : styles.bot}`}
               key={i}
             >
               <div
-                className="bubble"
+                className={styles.bubble}
                 dangerouslySetInnerHTML={{ __html: fmt(m.text) }}
               />
             </div>
           );
         })}
         {typing && (
-          <div className="msg bot">
-            <div className="bubble" style={{ padding: 0 }}>
-              <div className="typing">
+          <div className={`${styles.msg} ${styles.bot}`}>
+            <div className={styles.bubble} style={{ padding: 0 }}>
+              <div className={styles.typing}>
                 <span />
                 <span />
                 <span />
@@ -223,7 +224,7 @@ export function AssistantOverlay({
           </button>
         )}
       </div>
-      <div className="ao-input">
+      <div className={styles.aoInput}>
         <textarea
           placeholder="Describe a transform, join or metric…"
           value={input}
@@ -239,7 +240,7 @@ export function AssistantOverlay({
           }}
         />
         <button
-          className="send-btn"
+          className={styles.sendBtn}
           disabled={busy || !input.trim()}
           onClick={() => {
             if (input.trim()) {
@@ -339,31 +340,36 @@ export function TerminalAssistant({
 
   return (
     <div
-      className={"term-dock" + (closing ? " out" : "")}
+      className={`${styles.termDock}${closing ? " " + styles.out : ""}`}
       onClick={() => inRef.current && inRef.current.focus()}
     >
-      <div className="term-bar">
-        <div className="term-lights">
+      <div className={styles.termBar}>
+        <div className={styles.termLights}>
           <i />
           <i />
           <i />
         </div>
-        <span className="term-where">
-          assistant@duckdb <b>—</b> <span className="term-ctx">{where}</span>
+        <span className={styles.termWhere}>
+          assistant@duckdb <b>—</b>{" "}
+          <span className={styles.termCtx}>{where}</span>
         </span>
-        <div className="term-acts">
-          <button className="term-btn" title="New session" onClick={newSession}>
+        <div className={styles.termActs}>
+          <button
+            className={styles.termBtn}
+            title="New session"
+            onClick={newSession}
+          >
             +
           </button>
           <button
-            className="term-btn"
+            className={styles.termBtn}
             title="History"
             onClick={() => closeWith(() => go({ name: "chats" }))}
           >
             ⌁
           </button>
           <button
-            className="term-btn"
+            className={styles.termBtn}
             title="Close"
             onClick={() => closeWith()}
           >
@@ -371,12 +377,12 @@ export function TerminalAssistant({
           </button>
         </div>
       </div>
-      <div className="term-body" ref={bodyRef}>
-        <div className="tl tl-banner">
+      <div className={styles.termBody} ref={bodyRef}>
+        <div className={`${styles.tl} ${styles.tlBanner}`}>
           dashboard-chat <b>assistant</b> v1.0 · duckdb shell · type a request,
           or{" "}
           <span
-            className="tl-link"
+            className={styles.tlLink}
             onClick={() => runScript(catalog.getChatScript().prompt)}
           >
             try a demo
@@ -384,21 +390,24 @@ export function TerminalAssistant({
         </div>
         {lines.length === 0 && (
           <>
-            <div className="tl tl-dim" style={{ marginTop: 6 }}>
+            <div className={`${styles.tl} ${styles.tlDim}`} style={{ marginTop: 6 }}>
               recent sessions —
             </div>
             {catalog.listRecents().map((r, i) => (
               <div
-                className="tl term-rec"
+                className={`${styles.tl} ${styles.termRec}`}
                 key={i}
                 onClick={() =>
                   closeWith(() => go({ name: "openRecent", nodeId: r.nodeId }))
                 }
               >
-                <span className="n">[{i + 1}]</span> {r.title}
+                <span className={styles.n}>[{i + 1}]</span> {r.title}
               </div>
             ))}
-            <div className="tl tl-dim" style={{ margin: "6px 0 2px" }}>
+            <div
+              className={`${styles.tl} ${styles.tlDim}`}
+              style={{ margin: "6px 0 2px" }}
+            >
               type a request below, or run a number above ↑
             </div>
           </>
@@ -406,28 +415,31 @@ export function TerminalAssistant({
         {lines.map((ln, i) => {
           if (ln.kind === "user")
             return (
-              <div className="tl tl-user" key={i}>
-                <span className="tp">analyst</span>
-                <span className="tc">@</span>
-                <span className="th">demo</span>
-                <span className="tc">:~$</span> {ln.text}
+              <div className={`${styles.tl} ${styles.tlUser}`} key={i}>
+                <span className={styles.tp}>analyst</span>
+                <span className={styles.tc}>@</span>
+                <span className={styles.th}>demo</span>
+                <span className={styles.tc}>:~$</span> {ln.text}
               </div>
             );
           if (ln.kind === "tool")
             return (
-              <div className="tl tl-tool" key={i}>
-                <span className="ok">[✓]</span>
+              <div className={`${styles.tl} ${styles.tlTool}`} key={i}>
+                <span className={styles.ok}>[✓]</span>
                 <span>{ln.text}</span>
-                <span className="tg">{ln.tag}</span>
+                <span className={styles.tg}>{ln.tag}</span>
               </div>
             );
           if (ln.kind === "wrote")
             return (
-              <div className="tl tl-tool" key={i}>
-                <span className="ok">→</span>
+              <div className={`${styles.tl} ${styles.tlTool}`} key={i}>
+                <span className={styles.ok}>→</span>
                 <span>
                   wrote{" "}
-                  <span className="tl-link" onClick={() => onOpenNode(ln.node)}>
+                  <span
+                    className={styles.tlLink}
+                    onClick={() => onOpenNode(ln.node)}
+                  >
                     {ln.text}
                   </span>
                 </span>
@@ -435,28 +447,29 @@ export function TerminalAssistant({
             );
           return (
             <div
-              className="tl tl-out"
+              className={`${styles.tl} ${styles.tlOut}`}
               key={i}
               dangerouslySetInnerHTML={{ __html: fmt(ln.text) }}
             />
           );
         })}
         {cursor && (
-          <div className="tl tl-out">
-            <span className="tl-dim">…</span> <span className="term-cursor" />
+          <div className={`${styles.tl} ${styles.tlOut}`}>
+            <span className={styles.tlDim}>…</span>{" "}
+            <span className={styles.termCursor} />
           </div>
         )}
       </div>
-      <div className="term-input-row">
-        <span className="term-prompt">
-          <span className="tp">analyst</span>
-          <span className="tc">@</span>
-          <span className="th">demo</span>
-          <span className="tc">:~$</span>
+      <div className={styles.termInputRow}>
+        <span className={styles.termPrompt}>
+          <span className={styles.tp}>analyst</span>
+          <span className={styles.tc}>@</span>
+          <span className={styles.th}>demo</span>
+          <span className={styles.tc}>:~$</span>
         </span>
         <input
           ref={inRef}
-          className="term-input"
+          className={styles.termInput}
           value={input}
           placeholder={
             busy ? "running…" : "describe a transform, join or metric"
@@ -470,7 +483,7 @@ export function TerminalAssistant({
             }
           }}
         />
-        {!busy && !input && <span className="term-cursor" />}
+        {!busy && !input && <span className={styles.termCursor} />}
       </div>
     </div>
   );

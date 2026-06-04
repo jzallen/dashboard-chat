@@ -1,6 +1,7 @@
 /* Overlay layer: assistant dock + the data-workspace modals. */
 import type { Edge, LineageNode } from "../../lib/catalog";
 import { AssistantOverlay, TerminalAssistant } from "../Chat";
+import chat from "../Chat/Chat.module.css";
 import type { ColdStorageApi } from "../ColdStorage";
 import { ColdStorageModal } from "../ColdStorage";
 import type { ExportApi } from "../Export";
@@ -32,14 +33,14 @@ export function Overlays({
     <>
       {!nav.chatOpen && route.name !== "org" && (
         <button
-          className="assistant-fab"
+          className={chat.assistantFab}
           onClick={nav.openChat}
           aria-label="Assistant"
         >
           <Icon name="sparkle" size={23} />
         </button>
       )}
-      {nav.chatOpen && <div className="ao-scrim" onClick={nav.closeChat} />}
+      {nav.chatOpen && <div className={chat.aoScrim} onClick={nav.closeChat} />}
       {nav.chatOpen &&
         (dark ? (
           <TerminalAssistant
