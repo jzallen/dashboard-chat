@@ -3,6 +3,7 @@
 import type { DbtFile, Layer } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { Icon, LayerDot } from "../primitives";
+import styles from "./Export.module.css";
 
 /** A dbt file, plus a flag marking marts created live in this session. */
 type ExportFile = DbtFile & { live?: boolean };
@@ -31,11 +32,11 @@ export function ExportDrawer({ onClose }: { onClose: () => void }) {
   ];
   return (
     <>
-      <div className="drawer-scrim" onClick={onClose} />
-      <div className="drawer">
-        <div className="drawer-hd">
+      <div className={styles.drawerScrim} onClick={onClose} />
+      <div className={styles.drawer}>
+        <div className={styles.drawerHd}>
           <Icon name="download" size={20} style={{ color: "var(--primary)" }} />
-          <span className="dt">Export dbt project</span>
+          <span className={styles.dt}>Export dbt project</span>
           <button
             className="icon-btn"
             style={{ marginLeft: "auto" }}
@@ -44,8 +45,8 @@ export function ExportDrawer({ onClose }: { onClose: () => void }) {
             <Icon name="x" size={16} />
           </button>
         </div>
-        <div className="drawer-body">
-          <p className="exp-intro">
+        <div className={styles.drawerBody}>
+          <p className={styles.expIntro}>
             Every layer maps to a dbt model folder. Datasets compile to{" "}
             <code>staging</code>, Views to <code>intermediate</code>, and
             Reports to <code>marts</code> — with <code>ref()</code> wiring the
@@ -55,18 +56,18 @@ export function ExportDrawer({ onClose }: { onClose: () => void }) {
             const fs = files.filter((f) => f.layer === g.key);
             return (
               <div key={g.key} className={"layer-" + g.key}>
-                <div className="layer-head">
+                <div className={styles.layerHead}>
                   <LayerDot layer={g.key === "config" ? "source" : g.key} />
-                  <span className="lhn">{g.name}</span>
-                  <span className="lhc">{g.dbt}</span>
+                  <span className={styles.lhn}>{g.name}</span>
+                  <span className={styles.lhc}>{g.dbt}</span>
                 </div>
-                <div className="tree">
+                <div className={styles.tree}>
                   {fs.map((f, i) => (
-                    <div className={"tree-file layer-" + f.layer} key={i}>
-                      <span className="fl" />
+                    <div className={`${styles.treeFile} layer-${f.layer}`} key={i}>
+                      <span className={styles.fl} />
                       {f.path.split("/").pop()}
                       {f.ref && (
-                        <span className="fmodel">
+                        <span className={styles.fmodel}>
                           {f.live
                             ? "✨ new"
                             : catalog.getNode(f.ref)?.label || ""}
@@ -79,8 +80,8 @@ export function ExportDrawer({ onClose }: { onClose: () => void }) {
             );
           })}
         </div>
-        <div className="drawer-ft">
-          <span className="ds">
+        <div className={styles.drawerFt}>
+          <span className={styles.ds}>
             {files.length} files ·{" "}
             {catalog
               .getCurrentProject()
