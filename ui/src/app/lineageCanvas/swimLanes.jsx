@@ -40,7 +40,7 @@ function LaneCard({ n, selected, orphan, justAdded, onOpen }) {
   );
 }
 
-function Lane({ layer, sel, isOrphaned, justAdded, onOpen }) {
+function Lane({ layer, isSelected, isOrphaned, wasJustAdded, onOpen }) {
   const layerMeta = LAYER_META[layer];
   const items = catalog.getNodesByLayer(layer);
   return (
@@ -56,9 +56,9 @@ function Lane({ layer, sel, isOrphaned, justAdded, onOpen }) {
           <LaneCard
             key={n.id}
             n={n}
-            selected={sel === n.id}
+            selected={isSelected(n.id)}
             orphan={isOrphaned(n.id)}
-            justAdded={n.id === justAdded}
+            justAdded={wasJustAdded(n.id)}
             onOpen={onOpen}
           />
         ))}
@@ -69,16 +69,18 @@ function Lane({ layer, sel, isOrphaned, justAdded, onOpen }) {
 
 export function SwimView({ sel, onOpen, justAdded }) {
   const orphans = catalog.orphans();
+  const isSelected = (id) => sel === id;
   const isOrphaned = (id) => orphans.has(id);
+  const wasJustAdded = (id) => id === justAdded;
   return (
     <div className={styles.lanes}>
       {LAYER_ORDER.map((ly) => (
         <Lane
           key={ly}
           layer={ly}
-          sel={sel}
+          isSelected={isSelected}
           isOrphaned={isOrphaned}
-          justAdded={justAdded}
+          wasJustAdded={wasJustAdded}
           onOpen={onOpen}
         />
       ))}
