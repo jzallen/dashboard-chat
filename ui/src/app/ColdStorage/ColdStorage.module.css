@@ -1,0 +1,75 @@
+/* Cold-storage list styles (exclusive to ColdStorageModal). The modal shell
+   (.up-modal/.up-head/.up-mark/.up-x/.up-body), the empty-state dropzone text
+   (.dz-ic/.dz-title/.dz-sub), and the .cold-mark/.food modifiers stay global —
+   shared with the upload modal. */
+.coldEmpty {
+  text-align: center;
+  padding: 30px 16px;
+}
+.coldRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 13px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  margin-bottom: 9px;
+}
+.coldIc {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--layer-staging);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.coldMain {
+  flex: 1;
+  min-width: 0;
+}
+.coldName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-900);
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+}
+.coldMeta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-500);
+  margin-top: 3px;
+}
+.coldMeta .cdot {
+  color: var(--text-400);
+}
+.coldLeft {
+  flex: 0 0 auto;
+  text-align: center;
+  padding: 0 6px;
+}
+.coldLeft b {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-900);
+  line-height: 1;
+}
+.coldLeft span {
+  font-size: 10px;
+  color: var(--text-400);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.coldLeft.soon b {
+  color: var(--error);
+}

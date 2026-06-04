@@ -4,6 +4,7 @@ import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 
 import type { FieldDef, LineageNode } from "../../lib/catalog";
 import { Icon } from "../primitives";
+import styles from "./Upload.module.css";
 
 type UploadView = "browse" | "uploading" | "schema";
 type UploadFile = { name: string; rows: number; when: string; fresh?: boolean };
@@ -177,7 +178,7 @@ export function UploadModal({
         <div className="up-body">
           {view === "browse" && (
             <div
-              className={"dropzone" + (drag ? " drag" : "")}
+              className={`${styles.dropzone}${drag ? " " + styles.drag : ""}`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDrag(true);
@@ -215,27 +216,33 @@ export function UploadModal({
           )}
 
           {view === "uploading" && (
-            <div className="legs">
-              <div className="leg-status">
+            <div className={styles.legs}>
+              <div className={styles.legStatus}>
                 Connecting to query engine — <b>{overallPct}%</b>
               </div>
               {LEG_DEFS.map((L, i) => {
                 const state = leg > i ? "done" : leg === i ? "active" : "";
                 const w = leg > i ? 100 : leg === i ? pct : 0;
                 return (
-                  <div className={"leg " + state} key={L.key}>
-                    <span className="leg-name">
-                      <span className="leg-dot" />
+                  <div
+                    className={`${styles.leg} ${styles[state] ?? ""}`}
+                    key={L.key}
+                  >
+                    <span className={styles.legName}>
+                      <span className={styles.legDot} />
                       {L.name}
                     </span>
-                    <span className="leg-track">
-                      <span className="leg-fill" style={{ width: w + "%" }} />
+                    <span className={styles.legTrack}>
+                      <span
+                        className={styles.legFill}
+                        style={{ width: w + "%" }}
+                      />
                     </span>
-                    <span className="leg-pct">{w}%</span>
+                    <span className={styles.legPct}>{w}%</span>
                   </div>
                 );
               })}
-              <div className="legs-foot">
+              <div className={styles.legsFoot}>
                 <Icon name="database" size={12} />
                 duckdb · local engine
               </div>
@@ -244,10 +251,10 @@ export function UploadModal({
 
           {view === "schema" && (
             <>
-              <div className="up-name-row">
-                <div className="up-name-label">Display name</div>
+              <div className={styles.upNameRow}>
+                <div className={styles.upNameLabel}>Display name</div>
                 <input
-                  className="up-name-input"
+                  className={styles.upNameInput}
                   value={name}
                   placeholder="Name this source…"
                   onChange={(e) => {
@@ -257,45 +264,50 @@ export function UploadModal({
                   autoFocus={!existing}
                 />
               </div>
-              <div className="up-section-h">
+              <div className={styles.upSectionH}>
                 <Icon
                   name="file"
                   size={14}
                   style={{ color: "var(--text-500)" }}
                 />
-                <span className="sh-t">Files</span>
-                <span className="sh-c">
+                <span className={styles.shT}>Files</span>
+                <span className={styles.shC}>
                   {files.length} · {totalRows.toLocaleString()} rows
                 </span>
               </div>
               {files.map((f, i) => (
-                <div className={"file-row" + (f.fresh ? " fresh" : "")} key={i}>
-                  <span className="fr-ic">
+                <div
+                  className={`${styles.fileRow}${f.fresh ? " " + styles.fresh : ""}`}
+                  key={i}
+                >
+                  <span className={styles.frIc}>
                     <Icon name="file" size={14} />
                   </span>
-                  <span className="fr-name">{f.name}</span>
-                  <span className="fr-rows">
+                  <span className={styles.frName}>{f.name}</span>
+                  <span className={styles.frRows}>
                     {(f.rows || 0).toLocaleString()} rows
                   </span>
-                  <span className="fr-when">{f.when}</span>
+                  <span className={styles.frWhen}>{f.when}</span>
                 </div>
               ))}
-              <div className="up-section-h">
+              <div className={styles.upSectionH}>
                 <Icon
                   name="table"
                   size={14}
                   style={{ color: "var(--text-500)" }}
                 />
-                <span className="sh-t">Schema</span>
-                <span className="sh-c">{(schema || []).length} columns</span>
+                <span className={styles.shT}>Schema</span>
+                <span className={styles.shC}>
+                  {(schema || []).length} columns
+                </span>
               </div>
-              <div className="schema-grid">
+              <div className={styles.schemaGrid}>
                 {(schema || []).map((c, i) => (
-                  <div className="schema-col" key={i}>
-                    <span className="sc-idx">
+                  <div className={styles.schemaCol} key={i}>
+                    <span className={styles.scIdx}>
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <span className="sc-name">{c.name}</span>
+                    <span className={styles.scName}>{c.name}</span>
                     <span
                       className={
                         "badge " + (c.type === "number" ? "number" : "text")
@@ -311,7 +323,7 @@ export function UploadModal({
         </div>
 
         {view === "schema" && (
-          <div className="up-foot">
+          <div className={styles.upFoot}>
             {source && (
               <button
                 className="btn sq cold-ghost"
@@ -328,7 +340,7 @@ export function UploadModal({
               <Icon name="upload" size={15} />
               Upload another file
             </button>
-            <span className="spacer" />
+            <span className={styles.spacer} />
             <button className="btn ok sq" onClick={commit}>
               <Icon name="check" size={15} />
               {existing ? "Done" : "Create source"}
@@ -353,18 +365,18 @@ export function ConfirmArchive({
   return (
     <>
       <div className="up-scrim" style={{ zIndex: 46 }} onClick={onCancel} />
-      <div className="confirm-dialog" role="dialog">
-        <div className="cd-ic">
+      <div className={styles.confirmDialog} role="dialog">
+        <div className={styles.cdIc}>
           <Icon name="snow" size={24} />
         </div>
-        <div className="cd-title">Move to cold storage?</div>
-        <div className="cd-body">
+        <div className={styles.cdTitle}>Move to cold storage?</div>
+        <div className={styles.cdBody}>
           <b>{source.label}</b>
           {n ? ` and its ${n} file${n > 1 ? "s" : ""}` : ""} will be moved to
           cold storage and kept for <b>90 days</b> before permanent deletion.
           You can restore it any time before then.
         </div>
-        <div className="cd-actions">
+        <div className={styles.cdActions}>
           <button className="btn sq" onClick={onCancel}>
             Cancel
           </button>

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ColdStorageItem } from "../../lib/catalog";
 import { Icon, type IconName } from "../primitives";
+import styles from "./ColdStorage.module.css";
 
 const DAY_MS = 86400000;
 const fmtDate = (ms: number) =>
@@ -59,7 +60,7 @@ export function ColdStorageModal({
         </div>
         <div className="up-body">
           {items.length === 0 && (
-            <div className="cold-empty">
+            <div className={styles.coldEmpty}>
               <div className="dz-ic food">
                 <Icon name={food.icon} size={28} />
               </div>
@@ -77,24 +78,26 @@ export function ColdStorageModal({
               Math.ceil((end - Date.now()) / DAY_MS),
             );
             return (
-              <div className="cold-row" key={it.id}>
-                <span className="cold-ic">
+              <div className={styles.coldRow} key={it.id}>
+                <span className={styles.coldIc}>
                   <Icon name="database" size={15} />
                 </span>
-                <div className="cold-main">
-                  <div className="cold-name">{it.name}</div>
-                  <div className="cold-meta">
+                <div className={styles.coldMain}>
+                  <div className={styles.coldName}>{it.name}</div>
+                  <div className={styles.coldMeta}>
                     <span>Retired {fmtDate(it.retiredAt)}</span>
-                    <span className="cdot">·</span>
+                    <span className={styles.cdot}>·</span>
                     <span>Deletes {fmtDate(end)}</span>
-                    <span className="cdot">·</span>
+                    <span className={styles.cdot}>·</span>
                     <span>
                       {(it.files || []).length} file
                       {(it.files || []).length !== 1 ? "s" : ""}
                     </span>
                   </div>
                 </div>
-                <div className={"cold-left" + (daysLeft <= 7 ? " soon" : "")}>
+                <div
+                  className={`${styles.coldLeft}${daysLeft <= 7 ? " " + styles.soon : ""}`}
+                >
                   <b>{daysLeft}</b>
                   <span>days left</span>
                 </div>
