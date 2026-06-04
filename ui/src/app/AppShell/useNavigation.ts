@@ -4,7 +4,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import type { LineageNode, ProjectSummary } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
+import { catalog } from "../useCatalog";
 
 /** A route, plus the optional payload some routes carry. Kept deliberately loose
     so go()/setRoute share one shape; model routes carry a node. */

@@ -5,8 +5,8 @@
 import { Fragment, type ReactNode, useState } from "react";
 
 import type { LineageNode, Model } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
+import { catalog } from "../useCatalog";
 import { useCatalog } from "../useCatalog";
 import styles from "./ModelDetail.module.css";
 

@@ -1,7 +1,7 @@
 /* Cold-storage drawer open/close + restore. */
 import { useCallback, useState } from "react";
 
-import { catalog } from "../fixtureSource";
+import { catalog } from "../useCatalog";
 
 export function useColdStorage() {
   const [open, setOpen] = useState(false);

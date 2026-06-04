@@ -8,9 +8,7 @@
  * `className`. This file is now pure display text.
  *
  * This is presentation metadata, not catalog data, so it lives beside the app
- * rather than inside data.js (the fixture data source). Components read it
- * directly; the composition root bridges it onto globalThis for the still-bundled
- * prototype scripts.
+ * rather than inside the catalog's fixtureData.js. Components read it directly.
  */
 import type { Layer } from "../lib/catalog";
 

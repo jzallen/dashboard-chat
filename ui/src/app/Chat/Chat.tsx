@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { AuditTag, Edge, LineageNode } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
 import { Icon, type IconName, LayerDot, TAG_ICON } from "../primitives";
+import { catalog } from "../useCatalog";
 import styles from "./Chat.module.css";
 
 /** A nav request handed back to the app shell (e.g. open history or a recent). */

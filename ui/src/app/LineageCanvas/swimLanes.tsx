@@ -1,8 +1,8 @@
 /* Swimlanes view: one horizontal band per pipeline layer, cards within each. */
 import { type Layer, LAYER_ORDER, type LineageNode } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
+import { catalog } from "../useCatalog";
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 

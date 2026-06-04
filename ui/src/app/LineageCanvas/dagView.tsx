@@ -2,8 +2,8 @@
 import { type CSSProperties, useMemo, useState } from "react";
 
 import type { LineageNode } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
 import { LayerDot } from "../primitives";
+import { catalog } from "../useCatalog";
 import styles from "./lineageCanvas.module.css";
 import {
   bezierPath,

@@ -1,8 +1,8 @@
 /* Audit-log view: per-layer audit trails of the AI's transforms, one card per model. */
 import { type Layer, LAYER_ORDER, type LineageNode } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot, TAG_ICON } from "../primitives";
+import { catalog } from "../useCatalog";
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 

@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createDataCatalog } from "./client";
+import type { CatalogSource } from "./dataSources/source";
 import type { Edge, LineageNode } from "./lineage";
-import type { CatalogSource } from "./source";
 
 /**
  * A tiny in-memory CatalogSource: one source node, one mart-with-ref, one edge
  * between them, and empty everything else. Enough to exercise the catalog's
- * write side and delegated reads without dragging in the data.js fixture.
+ * write side and delegated reads without dragging in the fixtureData.js fixture.
  */
 function makeSource(): CatalogSource {
   const nodes: Record<string, LineageNode> = {

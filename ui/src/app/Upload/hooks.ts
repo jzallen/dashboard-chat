@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 
 import type { FieldDef, LineageNode } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
+import { catalog } from "../useCatalog";
 
 /** The payload the upload modal emits when a brand-new source is created. */
 export type NewSource = {

@@ -3,9 +3,9 @@ import type { LineageNode } from "../../lib/catalog";
 import { ModelPicker, ProjectPicker } from "../Breadcrumb";
 import type { ColdStorageApi } from "../ColdStorage";
 import type { ExportApi } from "../Export";
-import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
+import { catalog } from "../useCatalog";
 import type { NavApi } from "./useNavigation";
 
 export function Topbar({

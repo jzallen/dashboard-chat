@@ -2,8 +2,8 @@
    linking back to the model it was shaping. */
 import { useState } from "react";
 
-import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
+import { catalog } from "../useCatalog";
 import styles from "./AllChats.module.css";
 
 /** A nav request handed back to the app shell. */

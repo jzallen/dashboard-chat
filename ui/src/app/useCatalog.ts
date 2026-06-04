@@ -1,4 +1,9 @@
 /**
+ * The catalog composition point — this is where the app decides which
+ * CatalogSource backs the catalog. Today it pairs the bundled `fixtureSource`
+ * with `createDataCatalog`; swap that one argument for an HTTP source to point
+ * the whole app at the backend, with nothing else changing.
+ *
  * useCatalog — subscribe a React component to the catalog's mutations. The
  * catalog owns the rename/archive/restore/live-add working state and bumps a
  * version counter after every mutation; this hook bridges that store into React
@@ -11,7 +16,10 @@
  */
 import { useSyncExternalStore } from "react";
 
-import { catalog } from "./fixtureSource";
+import { createDataCatalog, fixtureSource } from "../lib/catalog";
+
+/** The application catalog, backed by the bundled fixture source. */
+export const catalog = createDataCatalog(fixtureSource);
 
 /** Subscribe a component to catalog mutations; returns the store version. */
 export function useCatalog(): number {

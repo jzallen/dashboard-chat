@@ -23,9 +23,9 @@
  * Pure core: the graph and its reducers depend only on the lineage types and
  * the source port. Swap the source to repoint the catalog at a backend.
  */
+import type { CatalogSource } from "./dataSources/source";
 import type { Edge, Layer, LineageNode } from "./lineage";
 import { LineageGraph } from "./lineageGraph";
-import type { CatalogSource } from "./source";
 
 export function createDataCatalog(source: CatalogSource) {
   let graph = LineageGraph.fromSource(source);

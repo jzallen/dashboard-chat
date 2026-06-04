@@ -1,8 +1,8 @@
 /* dbt export drawer: the project's dbt model tree grouped by layer, with any
    live-created marts injected. */
 import type { DbtFile, Layer } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
 import { Icon, LayerDot } from "../primitives";
+import { catalog } from "../useCatalog";
 import styles from "./Export.module.css";
 
 /** A dbt file, plus a flag marking marts created live in this session. */

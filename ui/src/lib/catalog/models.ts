@@ -1,6 +1,6 @@
 /**
  * Catalog model types — fixture-faithful shapes for the data the app reads from
- * its catalog (src/app/data.js today, a backend later). These are the domain
+ * its catalog (the bundled fixtureData.js today, a backend later). These are the domain
  * vocabulary the {@link createDataCatalog} factory returns and components
  * consume.
  *

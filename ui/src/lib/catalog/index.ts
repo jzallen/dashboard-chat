@@ -1,13 +1,17 @@
 /**
  * Catalog library barrel — the public surface of src/lib/catalog. Import the
- * factory and types from here rather than reaching into individual modules.
+ * factory, the {@link CatalogSource} port, and its bundled implementations from
+ * here rather than reaching into individual modules.
  *
- * Pure (like the rest of src/lib): no data source is imported here. The fixture
- * adapter that wires a concrete source lives in src/app/fixtureSource.ts.
+ * The catalog is an interface over a source, so the two are packaged together:
+ * dataSources/ owns the port (source.ts) and its implementations (fixtureSource
+ * today, an HTTP source later). Which source to use is a composition decision
+ * left to the app — src/app/useCatalog.ts pairs one with createDataCatalog.
  */
 export type { DataCatalog } from "./client";
 export { createDataCatalog } from "./client";
+export { fixtureSource } from "./dataSources/fixtureSource";
+export type { CatalogSource, RawCatalog } from "./dataSources/source";
 export type * from "./lineage";
 export { AUDIT_TAGS, LAYER_ORDER } from "./lineage";
 export type * from "./models";
-export type { CatalogSource, RawCatalog } from "./source";

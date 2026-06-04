@@ -2,8 +2,8 @@
 import { useState } from "react";
 
 import type { ProjectSummary } from "../../lib/catalog";
-import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
+import { catalog } from "../useCatalog";
 
 export function ProjectPicker({
   projectId,

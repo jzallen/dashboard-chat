@@ -3,8 +3,8 @@
    primitives stay global. */
 import type { ReactNode } from "react";
 
-import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
+import { catalog } from "../useCatalog";
 import styles from "./OrgSettings.module.css";
 
 function Field({ l, v, mono }: { l: ReactNode; v: ReactNode; mono?: boolean }) {

@@ -6,10 +6,10 @@ import type { ColdStorageApi } from "../ColdStorage";
 import { ColdStorageModal } from "../ColdStorage";
 import type { ExportApi } from "../Export";
 import { ExportDrawer } from "../Export";
-import { catalog } from "../fixtureSource";
 import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
 import { ConfirmArchive, UploadModal } from "../Upload";
+import { catalog } from "../useCatalog";
 import { useTheme } from "./ThemeProvider";
 import type { NavApi } from "./useNavigation";
 
