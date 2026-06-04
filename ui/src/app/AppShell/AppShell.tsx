@@ -7,7 +7,7 @@ import type { Edge, LineageNode } from "../../lib/catalog";
 import { useColdStorage } from "../ColdStorage";
 import { useExport } from "../Export";
 import { catalog } from "../fixtureSource";
-import { useJustAdded } from "../JustAddedProvider";
+import { useFlashedNode } from "../FlashedNodeProvider";
 import { useUpload } from "../Upload";
 import { useCatalog } from "../useCatalog";
 import { Overlays } from "./Overlays";
@@ -18,7 +18,7 @@ import { useNavigation } from "./useNavigation";
 
 export function AppShell() {
   const nav = useNavigation();
-  const { flash } = useJustAdded();
+  const { flash } = useFlashedNode();
   const upload = useUpload(flash);
   const exporter = useExport();
   const cold = useColdStorage();

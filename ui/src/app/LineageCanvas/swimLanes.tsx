@@ -94,16 +94,16 @@ function Lane({
 export function SwimView({
   sel: selectedId,
   onOpen,
-  justAddedId,
+  flashedNodeId,
 }: {
   sel: string | null;
   onOpen: (node: LineageNode) => void;
-  justAddedId: string | null;
+  flashedNodeId: string | null;
 }) {
   const orphans = catalog.orphans();
   const isSelected = (id: string) => selectedId === id;
   const isOrphaned = (id: string) => orphans.has(id);
-  const wasJustAdded = (id: string) => id === justAddedId;
+  const wasJustAdded = (id: string) => id === flashedNodeId;
   return (
     <div className={styles.lanes}>
       {LAYER_ORDER.map((ly) => (

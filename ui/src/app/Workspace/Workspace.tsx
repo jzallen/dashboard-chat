@@ -4,7 +4,7 @@
 import { useState } from "react";
 
 import type { Layer, LineageNode } from "../../lib/catalog";
-import { useJustAdded } from "../JustAddedProvider";
+import { useFlashedNode } from "../FlashedNodeProvider";
 import { LAYER_META } from "../layerMeta";
 import { LineageCanvas } from "../LineageCanvas";
 import { Icon, type IconName, LayerDot } from "../primitives";
@@ -40,7 +40,7 @@ function Legend() {
 
 export function Workspace({ onOpen }: { onOpen: (node: LineageNode) => void }) {
   const [mode, setMode] = useState<LineageMode>("dag");
-  const { justAddedId } = useJustAdded();
+  const { flashedNodeId } = useFlashedNode();
   return (
     <div className="lin-wrap">
       <div className="lin-head">
@@ -71,7 +71,7 @@ export function Workspace({ onOpen }: { onOpen: (node: LineageNode) => void }) {
         mode={mode}
         sel={null}
         onOpen={onOpen}
-        justAddedId={justAddedId}
+        flashedNodeId={flashedNodeId}
       />
     </div>
   );

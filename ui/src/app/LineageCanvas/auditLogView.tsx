@@ -95,14 +95,14 @@ function LayerAuditTrail({
 export function AuditLogView({
   sel: selectedId,
   onOpen,
-  justAddedId,
+  flashedNodeId,
 }: {
   sel: string | null;
   onOpen: (node: LineageNode) => void;
-  justAddedId: string | null;
+  flashedNodeId: string | null;
 }) {
   const isSelected = (id: string) => selectedId === id;
-  const wasJustAdded = (id: string) => id === justAddedId;
+  const wasJustAdded = (id: string) => id === flashedNodeId;
   return (
     <div className={styles.stream}>
       {AUDITED_LAYERS.map((ly) => (

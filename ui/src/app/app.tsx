@@ -3,14 +3,14 @@
 import { createRoot } from "react-dom/client";
 
 import { AppShell, ThemeProvider } from "./AppShell";
-import { JustAddedProvider } from "./JustAddedProvider";
+import { FlashedNodeProvider } from "./FlashedNodeProvider";
 
 const rootEl = document.getElementById("root");
 if (rootEl)
   createRoot(rootEl).render(
     <ThemeProvider>
-      <JustAddedProvider>
+      <FlashedNodeProvider>
         <AppShell />
-      </JustAddedProvider>
+      </FlashedNodeProvider>
     </ThemeProvider>,
   );
