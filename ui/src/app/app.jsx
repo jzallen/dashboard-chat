@@ -1,20 +1,5 @@
 /* App root — routing, workspace (layered lineage home), tweaks, chat, export */
 
-function WelcomeScreen({ go, openChat }) {
-  return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 24 }}>
-      <h1 className="serif" style={{ fontSize: 26, margin: "0 0 10px", color: "var(--text-900)" }}>Welcome to Dashboard Chat</h1>
-      <p style={{ color: "var(--text-500)", maxWidth: 440, lineHeight: 1.55, margin: "0 0 22px" }}>
-        Start a conversation to clean, join and aggregate your data using natural language — organized into dbt staging, intermediate and mart layers.
-      </p>
-      <div style={{ display: "flex", gap: 12 }}>
-        <button className="btn" onClick={openChat}><Icon name="plus" size={15} />Upload a CSV</button>
-        <button className="btn" onClick={() => go({ name: "workspace" })}><Icon name="folder" size={15} />Browse Projects</button>
-      </div>
-    </div>
-  );
-}
-
 function Stub({ title, sub }) {
   return (
     <div style={{ padding: 40 }}>
