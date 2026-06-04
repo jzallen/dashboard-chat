@@ -30,7 +30,7 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 // This is deliberately a TEMPORARY harness. As we refactor the prototype into
 // real ESM modules (proper imports/exports), files drop out of PROTO_FILES and
 // this plugin shrinks until it can be deleted.
-const PROTO_FILES = ["detail.jsx", "chat.jsx", "upload.jsx", "app.jsx"];
+const PROTO_FILES = ["chat.jsx", "upload.jsx", "app.jsx"];
 const VIRTUAL_ID = "virtual:prototype";
 const RESOLVED_ID = "\0" + VIRTUAL_ID;
 const PROTO_DIR = path.join(here, "src", "app");
@@ -60,6 +60,7 @@ import { TAG_ICON } from '/src/app/tagIcon.ts';
 import { useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider, TweakToggle, TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton } from '/src/app/Tweaks/index.ts';
 import { ColdStorageModal } from '/src/app/ColdStorage/index.ts';
 import { ExportDrawer } from '/src/app/Export/index.ts';
+import { ModelDetail } from '/src/app/ModelDetail/index.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
   React, ReactDOM, catalog, useCatalog,
@@ -68,7 +69,7 @@ Object.assign(globalThis, {
   LineageCanvas, TAG_ICON,
   useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider, TweakToggle,
   TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton,
-  ColdStorageModal, ExportDrawer,
+  ColdStorageModal, ExportDrawer, ModelDetail,
 });
 `;
       const body = PROTO_FILES.map(
