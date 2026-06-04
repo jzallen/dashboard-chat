@@ -67,11 +67,11 @@ function Lane({ layer, isSelected, isOrphaned, wasJustAdded, onOpen }) {
   );
 }
 
-export function SwimView({ sel, onOpen, justAdded }) {
+export function SwimView({ sel: selectedId, onOpen, justAdded: justAddedId }) {
   const orphans = catalog.orphans();
-  const isSelected = (id) => sel === id;
+  const isSelected = (id) => selectedId === id;
   const isOrphaned = (id) => orphans.has(id);
-  const wasJustAdded = (id) => id === justAdded;
+  const wasJustAdded = (id) => id === justAddedId;
   return (
     <div className={styles.lanes}>
       {LAYER_ORDER.map((ly) => (
