@@ -63,6 +63,7 @@ import { ExportDrawer } from '/src/app/Export/index.ts';
 import { ModelDetail } from '/src/app/ModelDetail/index.ts';
 import { AssistantOverlay, TerminalAssistant } from '/src/app/Chat/index.ts';
 import { UploadModal, ConfirmArchive } from '/src/app/Upload/index.ts';
+import { ProjectPicker, ModelPicker } from '/src/app/Breadcrumb/index.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
   React, ReactDOM, catalog, useCatalog,
@@ -74,6 +75,7 @@ Object.assign(globalThis, {
   ColdStorageModal, ExportDrawer, ModelDetail,
   AssistantOverlay, TerminalAssistant,
   UploadModal, ConfirmArchive,
+  ProjectPicker, ModelPicker,
 });
 `;
       const body = PROTO_FILES.map(
