@@ -11,12 +11,12 @@ export function LineageCanvas({
   mode,
   onOpen,
   sel,
-  justAdded,
+  justAddedId,
 }: {
   mode: "dag" | "swimlanes" | "audit";
   onOpen: (node: LineageNode) => void;
   sel: string | null;
-  justAdded: string | null;
+  justAddedId: string | null;
 }) {
   // Subscribe to catalog mutations; the version is a re-render / memo token.
   const version = useCatalog();
@@ -27,14 +27,14 @@ export function LineageCanvas({
           version={version}
           sel={sel}
           onOpen={onOpen}
-          justAdded={justAdded}
+          justAddedId={justAddedId}
         />
       )}
       {mode === "swimlanes" && (
-        <SwimView sel={sel} onOpen={onOpen} justAdded={justAdded} />
+        <SwimView sel={sel} onOpen={onOpen} justAddedId={justAddedId} />
       )}
       {mode === "audit" && (
-        <AuditLogView sel={sel} onOpen={onOpen} justAdded={justAdded} />
+        <AuditLogView sel={sel} onOpen={onOpen} justAddedId={justAddedId} />
       )}
     </div>
   );

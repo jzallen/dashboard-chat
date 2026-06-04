@@ -7,18 +7,18 @@ import type { Edge, LineageNode } from "../../lib/catalog";
 import { useColdStorage } from "../ColdStorage";
 import { useExport } from "../Export";
 import { catalog } from "../fixtureSource";
+import { useJustAdded } from "../JustAddedProvider";
 import { useUpload } from "../Upload";
 import { useCatalog } from "../useCatalog";
 import { Overlays } from "./Overlays";
 import { RouteFrame } from "./RouteFrame";
 import { useTheme } from "./ThemeProvider";
 import { Topbar } from "./Topbar";
-import { useJustAdded } from "./useJustAdded";
 import { useNavigation } from "./useNavigation";
 
 export function AppShell() {
   const nav = useNavigation();
-  const { justAdded, flash } = useJustAdded();
+  const { flash } = useJustAdded();
   const upload = useUpload(flash);
   const exporter = useExport();
   const cold = useColdStorage();
@@ -55,7 +55,7 @@ export function AppShell() {
           cold={cold}
           models={models}
         />
-        <RouteFrame nav={nav} onOpenNode={onOpenNode} justAdded={justAdded} />
+        <RouteFrame nav={nav} onOpenNode={onOpenNode} />
       </div>
       <Overlays
         nav={nav}

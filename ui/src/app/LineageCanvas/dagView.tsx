@@ -93,12 +93,12 @@ export function DagView({
   version,
   sel,
   onOpen,
-  justAdded,
+  justAddedId,
 }: {
   version: number;
   sel: string | null;
   onOpen: (node: LineageNode) => void;
-  justAdded: string | null;
+  justAddedId: string | null;
 }) {
   const [hover, setHover] = useState<string | null>(null);
   const layout = useMemo(
@@ -158,7 +158,7 @@ export function DagView({
             selected={selected}
             orphan={orphan}
             dim={dim}
-            justAdded={n.id === justAdded}
+            justAdded={n.id === justAddedId}
             onHover={setHover}
             onOpen={onOpen}
           />

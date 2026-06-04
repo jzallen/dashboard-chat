@@ -94,11 +94,11 @@ function Lane({
 export function SwimView({
   sel: selectedId,
   onOpen,
-  justAdded: justAddedId,
+  justAddedId,
 }: {
   sel: string | null;
   onOpen: (node: LineageNode) => void;
-  justAdded: string | null;
+  justAddedId: string | null;
 }) {
   const orphans = catalog.orphans();
   const isSelected = (id: string) => selectedId === id;

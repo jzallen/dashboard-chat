@@ -12,16 +12,14 @@ import type { NavApi } from "./useNavigation";
 export function RouteFrame({
   nav,
   onOpenNode,
-  justAdded,
 }: {
   nav: NavApi;
   onOpenNode: (node: LineageNode) => void;
-  justAdded: string | null;
 }) {
   const { route } = nav;
   const { dark, toggleDark } = useTheme();
   const views: Record<string, () => ReactNode> = {
-    workspace: () => <Workspace onOpen={onOpenNode} justAdded={justAdded} />,
+    workspace: () => <Workspace onOpen={onOpenNode} />,
     model: () => <ModelDetail node={route.node!} onOpen={nav.openModel} />,
     engines: () => (
       <Stub

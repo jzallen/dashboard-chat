@@ -4,6 +4,7 @@
 import { useState } from "react";
 
 import type { Layer, LineageNode } from "../../lib/catalog";
+import { useJustAdded } from "../JustAddedProvider";
 import { LAYER_META } from "../layerMeta";
 import { LineageCanvas } from "../LineageCanvas";
 import { Icon, type IconName, LayerDot } from "../primitives";
@@ -37,14 +38,9 @@ function Legend() {
   );
 }
 
-export function Workspace({
-  onOpen,
-  justAdded,
-}: {
-  onOpen: (node: LineageNode) => void;
-  justAdded: string | null;
-}) {
+export function Workspace({ onOpen }: { onOpen: (node: LineageNode) => void }) {
   const [mode, setMode] = useState<LineageMode>("dag");
+  const { justAddedId } = useJustAdded();
   return (
     <div className="lin-wrap">
       <div className="lin-head">
@@ -75,7 +71,7 @@ export function Workspace({
         mode={mode}
         sel={null}
         onOpen={onOpen}
-        justAdded={justAdded}
+        justAddedId={justAddedId}
       />
     </div>
   );
