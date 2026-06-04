@@ -1,9 +1,11 @@
 /**
  * Audit-tag → icon-name map for rendering AI-edit / transform tags. Shared
- * display metadata (like layerMeta.ts): read by the lineage audit stream and by
+ * display metadata (like layerMeta.ts): read by the lineage audit log and by
  * the chat/detail audit views. Presentation copy, not catalog data.
  */
-export const TAG_ICON: Record<string, string> = {
+import type { IconName } from "./primitives";
+
+export const TAG_ICON: Record<string, IconName> = {
   create: "plus",
   join: "join",
   filter: "filter",

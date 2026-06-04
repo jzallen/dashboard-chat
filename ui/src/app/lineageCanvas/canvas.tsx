@@ -1,12 +1,23 @@
 /* LineageCanvas — the lineage view shell: picks one of three visualizations
    (dag · swimlanes · audit-log) and subscribes to catalog mutations. */
+import type { LineageNode } from "../../lib/catalog";
 import { useCatalog } from "../useCatalog";
 import { AuditLogView } from "./auditLogView";
 import { DagView } from "./dagView";
 import styles from "./lineageCanvas.module.css";
 import { SwimView } from "./swimLanes";
 
-export function LineageCanvas({ mode, onOpen, sel, justAdded }) {
+export function LineageCanvas({
+  mode,
+  onOpen,
+  sel,
+  justAdded,
+}: {
+  mode: "dag" | "swimlanes" | "audit";
+  onOpen: (node: LineageNode) => void;
+  sel: string | null;
+  justAdded: string | null;
+}) {
   // Subscribe to catalog mutations; the version is a re-render / memo token.
   const version = useCatalog();
   return (

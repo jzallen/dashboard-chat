@@ -1,5 +1,5 @@
 /* Audit-log view: per-layer audit trails of the AI's transforms, one card per model. */
-import { LAYER_ORDER } from "../../lib/catalog";
+import { type Layer, LAYER_ORDER, type LineageNode } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
@@ -10,7 +10,17 @@ import { AiEditChip } from "./shared";
 /** The audit log skips the source layer — sources have no transforms. */
 const AUDITED_LAYERS = LAYER_ORDER.slice(1);
 
-function ModelTrailCard({ n, selected, justAdded, onOpen }) {
+function ModelTrailCard({
+  n,
+  selected,
+  justAdded,
+  onOpen,
+}: {
+  n: LineageNode;
+  selected: boolean;
+  justAdded: boolean;
+  onOpen: (node: LineageNode) => void;
+}) {
   const audit = catalog.auditFor(n.id);
   return (
     <div
@@ -47,7 +57,17 @@ function ModelTrailCard({ n, selected, justAdded, onOpen }) {
   );
 }
 
-function LayerAuditTrail({ layer, isSelected, wasJustAdded, onOpen }) {
+function LayerAuditTrail({
+  layer,
+  isSelected,
+  wasJustAdded,
+  onOpen,
+}: {
+  layer: Layer;
+  isSelected: (id: string) => boolean;
+  wasJustAdded: (id: string) => boolean;
+  onOpen: (node: LineageNode) => void;
+}) {
   const layerMeta = LAYER_META[layer];
   const items = catalog.getNodesByLayer(layer);
   return (
@@ -76,9 +96,13 @@ export function AuditLogView({
   sel: selectedId,
   onOpen,
   justAdded: justAddedId,
+}: {
+  sel: string | null;
+  onOpen: (node: LineageNode) => void;
+  justAdded: string | null;
 }) {
-  const isSelected = (id) => selectedId === id;
-  const wasJustAdded = (id) => id === justAddedId;
+  const isSelected = (id: string) => selectedId === id;
+  const wasJustAdded = (id: string) => id === justAddedId;
   return (
     <div className={styles.stream}>
       {AUDITED_LAYERS.map((ly) => (
