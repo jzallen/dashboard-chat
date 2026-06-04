@@ -58,6 +58,7 @@ import { Icon, LayerDot, LayerBadge, SqlBlock } from '/src/app/primitives.tsx';
 import { LineageCanvas } from '/src/app/LineageCanvas/index.ts';
 import { TAG_ICON } from '/src/app/tagIcon.ts';
 import { useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider, TweakToggle, TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton } from '/src/app/Tweaks/index.ts';
+import { ColdStorageModal } from '/src/app/ColdStorage/index.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
   React, ReactDOM, catalog, useCatalog,
@@ -66,6 +67,7 @@ Object.assign(globalThis, {
   LineageCanvas, TAG_ICON,
   useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider, TweakToggle,
   TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton,
+  ColdStorageModal,
 });
 `;
       const body = PROTO_FILES.map(
