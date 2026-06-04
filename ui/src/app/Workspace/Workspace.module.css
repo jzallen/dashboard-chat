@@ -1,13 +1,14 @@
-/* Lineage page chrome — the header, mode toggle, and legend rendered by the
-   workspace (app.jsx). The view styles (dag · swimlanes · audit-stream) are
-   scoped in lineageCanvas/lineageCanvas.module.css inside the lineage package. */
-.lin-wrap {
+/* Workspace chrome — the pipeline header, visualization-mode toggle, and layer
+   legend. The Neobrutalist border/weight (formerly applied globally via the
+   themes.css :is() rule) is baked in here with var(--border), so it reads in
+   both light and dark. */
+.linWrap {
   padding: 22px 26px 26px;
   flex: 1;
   display: flex;
   flex-direction: column;
 }
-.lin-head {
+.linHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -15,13 +16,14 @@
   gap: 14px;
   margin-bottom: 18px;
 }
-.lin-title {
+.linTitle {
   font-family: var(--font-serif);
   font-size: 22px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   color: var(--text-900);
 }
-.lin-sub {
+.linSub {
   font-size: 13px;
   color: var(--text-500);
   margin-top: 3px;
@@ -30,7 +32,8 @@
 .seg {
   display: inline-flex;
   background: var(--surface-3);
-  border-radius: 9px;
+  border: 2.5px solid var(--border);
+  border-radius: 3px;
   padding: 3px;
   gap: 2px;
 }
@@ -60,7 +63,7 @@
   flex-wrap: wrap;
   align-items: center;
 }
-.legend .lg {
+.lg {
   display: flex;
   align-items: center;
   gap: 7px;

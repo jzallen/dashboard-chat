@@ -8,6 +8,7 @@ import { useFlashedNode } from "../FlashedNodeProvider";
 import { LAYER_META } from "../layerMeta";
 import { LineageCanvas } from "../LineageCanvas";
 import { Icon, type IconName, LayerDot } from "../primitives";
+import styles from "./Workspace.module.css";
 
 type LineageMode = "dag" | "swimlanes" | "audit";
 
@@ -21,9 +22,9 @@ const LEGEND_LAYERS: Layer[] = ["source", "staging", "intermediate", "mart"];
 
 function Legend() {
   return (
-    <div className="legend">
+    <div className={styles.legend}>
       {LEGEND_LAYERS.map((ly) => (
-        <span className="lg" key={ly}>
+        <span className={styles.lg} key={ly}>
           <LayerDot layer={ly} />
           {LAYER_META[ly].name}
           <span
@@ -42,20 +43,20 @@ export function Workspace({ onOpen }: { onOpen: (node: LineageNode) => void }) {
   const [mode, setMode] = useState<LineageMode>("dag");
   const { flashedNodeId } = useFlashedNode();
   return (
-    <div className="lin-wrap">
-      <div className="lin-head">
+    <div className={styles.linWrap}>
+      <div className={styles.linHead}>
         <div>
-          <div className="lin-title">Pipeline</div>
-          <div className="lin-sub">
+          <div className={styles.linTitle}>Pipeline</div>
+          <div className={styles.linSub}>
             Every model the assistant built, across your three dbt layers — raw
             uploads through marts.
           </div>
         </div>
-        <div className="seg">
+        <div className={styles.seg}>
           {MODE_OPTS.map((o) => (
             <button
               key={o.key}
-              className={mode === o.key ? "on" : ""}
+              className={mode === o.key ? styles.on : undefined}
               onClick={() => setMode(o.key)}
             >
               <Icon name={o.icon} size={15} />

@@ -10,94 +10,296 @@
 .app.theme-neobrutalist .assistant-overlay,
 .app.theme-neobrutalist .proj-pop,
 .app.theme-neobrutalist .assistant-fab {
-  -webkit-backdrop-filter: none; backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* ════════════════════ NEOBRUTALIST ════════════════════ */
 .app.theme-neobrutalist {
-  --surface: #ffffff; --surface-2: #fdf6e3; --surface-3: #f1ead2;
-  --border: #111111; --muted: #555; --emphasis: #111;
-  --text-900: #111; --text-700: #222; --text-500: #444; --text-400: #777;
-  --primary: #2b6fff; --primary-hover: #1550e6; --primary-light: #d6e4ff; --primary-dark: #0e2f9c;
-  --accent: #00b341; --accent-light: #c7f6d6; --accent-dark: #058034;
-  --layer-source: #555; --layer-source-bg: #ececec;
-  --layer-staging: #2b6fff; --layer-staging-bg: #d6e4ff;
-  --layer-intermediate: #b14bff; --layer-intermediate-bg: #ecd9ff;
-  --layer-mart: #00a83e; --layer-mart-bg: #c7f6d6;
-  --grid-dot: rgba(17,17,17,.16);
-  --glass-bg: #fffdf5; --glass-edge: #111; --glass-line: #111; --glass-chip: #fff6da;
+  --surface: #ffffff;
+  --surface-2: #fdf6e3;
+  --surface-3: #f1ead2;
+  --border: #111111;
+  --muted: #555;
+  --emphasis: #111;
+  --text-900: #111;
+  --text-700: #222;
+  --text-500: #444;
+  --text-400: #777;
+  --primary: #2b6fff;
+  --primary-hover: #1550e6;
+  --primary-light: #d6e4ff;
+  --primary-dark: #0e2f9c;
+  --accent: #00b341;
+  --accent-light: #c7f6d6;
+  --accent-dark: #058034;
+  --layer-source: #555;
+  --layer-source-bg: #ececec;
+  --layer-staging: #2b6fff;
+  --layer-staging-bg: #d6e4ff;
+  --layer-intermediate: #b14bff;
+  --layer-intermediate-bg: #ecd9ff;
+  --layer-mart: #00a83e;
+  --layer-mart-bg: #c7f6d6;
+  --grid-dot: rgba(17, 17, 17, 0.16);
+  --glass-bg: #fffdf5;
+  --glass-edge: #111;
+  --glass-line: #111;
+  --glass-chip: #fff6da;
   --sheet-bg: #ffd84d;
-  --shadow-sm: 2px 2px 0 #111; --shadow-md: 4px 4px 0 #111; --shadow-lg: 8px 8px 0 #111;
+  --shadow-sm: 2px 2px 0 #111;
+  --shadow-md: 4px 4px 0 #111;
+  --shadow-lg: 8px 8px 0 #111;
   --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Archivo", ui-sans-serif, sans-serif;
 }
-.app.theme-neobrutalist :is(.ln-node,.lane,.lane-card,.stream-card,.panel,.card,.proj-pop,.assistant-overlay,.chat-row,.ao-recent,.tool-card,.suggest button,.sql-block,.kv,.dep-chip,.btn,.icon-btn,.send-btn,.ao-input textarea,.proj-search input,.chats-search input,.badge,.seg,.avatar,.assistant-fab,.bubble,.cr-ic,.proj-ic,.aud-ico,.ai-mark,.ao-mark,.tc-ico,.org-badge-btn,.ao-iconbtn) {
-  border-radius: 3px; border-width: 2.5px; border-style: solid; border-color: #111;
+.app.theme-neobrutalist
+  :is(
+    .ln-node,
+    .lane,
+    .lane-card,
+    .stream-card,
+    .panel,
+    .card,
+    .proj-pop,
+    .assistant-overlay,
+    .chat-row,
+    .ao-recent,
+    .tool-card,
+    .suggest button,
+    .sql-block,
+    .kv,
+    .dep-chip,
+    .btn,
+    .icon-btn,
+    .send-btn,
+    .ao-input textarea,
+    .proj-search input,
+    .chats-search input,
+    .badge,
+    .avatar,
+    .assistant-fab,
+    .bubble,
+    .cr-ic,
+    .proj-ic,
+    .aud-ico,
+    .ai-mark,
+    .ao-mark,
+    .tc-ico,
+    .org-badge-btn,
+    .ao-iconbtn
+  ) {
+  border-radius: 3px;
+  border-width: 2.5px;
+  border-style: solid;
+  border-color: #111;
 }
-.app.theme-neobrutalist .serif, .app.theme-neobrutalist .lin-title, .app.theme-neobrutalist .org-title, .app.theme-neobrutalist .chats-title { font-weight: 800; letter-spacing: -.01em; }
-.app.theme-neobrutalist .ln-edge { stroke: #111; stroke-width: 2.4; }
-.app.theme-neobrutalist .badge { font-weight: 700; }
-.app.theme-neobrutalist .assistant-fab { box-shadow: 4px 4px 0 #111; }
-.app.theme-neobrutalist .assistant-fab:hover { transform: translate(-2px,-2px); box-shadow: 6px 6px 0 #111; }
-.app.theme-neobrutalist .assistant-overlay { box-shadow: 8px 8px 0 #111; }
-.app.theme-neobrutalist .proj-pop { box-shadow: 6px 6px 0 #111; }
-.app.theme-neobrutalist .ai-chip { border: 2px solid #111; }
+.app.theme-neobrutalist .serif,
+.app.theme-neobrutalist .org-title,
+.app.theme-neobrutalist .chats-title {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.app.theme-neobrutalist .ln-edge {
+  stroke: #111;
+  stroke-width: 2.4;
+}
+.app.theme-neobrutalist .badge {
+  font-weight: 700;
+}
+.app.theme-neobrutalist .assistant-fab {
+  box-shadow: 4px 4px 0 #111;
+}
+.app.theme-neobrutalist .assistant-fab:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 #111;
+}
+.app.theme-neobrutalist .assistant-overlay {
+  box-shadow: 8px 8px 0 #111;
+}
+.app.theme-neobrutalist .proj-pop {
+  box-shadow: 6px 6px 0 #111;
+}
+.app.theme-neobrutalist .ai-chip {
+  border: 2px solid #111;
+}
 
 /* the Assistant overlay + FAB borrow a softer "comic" panel on the brutalist base:
    rounded ink panel, halftone body, Baloo heading, comic-red/blue accents */
 .app.theme-neobrutalist .assistant-overlay {
-  border-radius: 18px; border: 2.5px solid #1a1a1a; background: #fffdf6;
+  border-radius: 18px;
+  border: 2.5px solid #1a1a1a;
+  background: #fffdf6;
   box-shadow: 6px 6px 0 #1a1a1a;
 }
 .app.theme-neobrutalist .assistant-overlay .ao-body {
   background-image:
-    radial-gradient(rgba(21,101,255,.10) 2px, transparent 2px),
-    radial-gradient(rgba(232,53,46,.08) 2px, transparent 2px);
-  background-size: 18px 18px, 18px 18px; background-position: 0 0, 9px 9px;
+    radial-gradient(rgba(21, 101, 255, 0.1) 2px, transparent 2px),
+    radial-gradient(rgba(232, 53, 46, 0.08) 2px, transparent 2px);
+  background-size:
+    18px 18px,
+    18px 18px;
+  background-position:
+    0 0,
+    9px 9px;
 }
-.app.theme-neobrutalist .assistant-overlay .ct { font-family: "Baloo 2", sans-serif; font-weight: 700; }
-.app.theme-neobrutalist .ao-mark { background: #1565ff; border: 2.5px solid #1a1a1a; border-radius: 9px; }
-.app.theme-neobrutalist .assistant-overlay .send-btn { background: #e8352e; border: 2.5px solid #1a1a1a; border-radius: 10px; }
-.app.theme-neobrutalist .assistant-overlay .suggest button:hover { background: #d3e2ff; border-color: #1a1a1a; color: #0a3aa8; }
-.app.theme-neobrutalist .assistant-overlay :is(.ao-recent,.tool-card,.bubble,.ao-input textarea,.suggest button) { border-radius: 12px; }
+.app.theme-neobrutalist .assistant-overlay .ct {
+  font-family: "Baloo 2", sans-serif;
+  font-weight: 700;
+}
+.app.theme-neobrutalist .ao-mark {
+  background: #1565ff;
+  border: 2.5px solid #1a1a1a;
+  border-radius: 9px;
+}
+.app.theme-neobrutalist .assistant-overlay .send-btn {
+  background: #e8352e;
+  border: 2.5px solid #1a1a1a;
+  border-radius: 10px;
+}
+.app.theme-neobrutalist .assistant-overlay .suggest button:hover {
+  background: #d3e2ff;
+  border-color: #1a1a1a;
+  color: #0a3aa8;
+}
+.app.theme-neobrutalist
+  .assistant-overlay
+  :is(.ao-recent, .tool-card, .bubble, .ao-input textarea, .suggest button) {
+  border-radius: 12px;
+}
 .app.theme-neobrutalist .assistant-fab {
-  border-radius: 16px; border: 2.5px solid #1a1a1a; background: #ffd84d; color: #1a1a1a; box-shadow: 4px 4px 0 #1a1a1a;
+  border-radius: 16px;
+  border: 2.5px solid #1a1a1a;
+  background: #ffd84d;
+  color: #1a1a1a;
+  box-shadow: 4px 4px 0 #1a1a1a;
 }
-.app.theme-neobrutalist .assistant-fab:hover { background: #1565ff; color: #fffdf6; transform: translate(-2px,-2px); box-shadow: 6px 6px 0 #1a1a1a; }
+.app.theme-neobrutalist .assistant-fab:hover {
+  background: #1565ff;
+  color: #fffdf6;
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 #1a1a1a;
+}
 
 /* ════════════════════ DARK MODE (Solarized-dark, brightened) ════════════════════
    Toggled from the org view: keeps the brutalist structure (borders/fonts) but
    swaps to dark Solarized surfaces with brighter, neon-leaning accents. */
 .app.dark {
-  --surface: #073642; --surface-2: #002630; --surface-3: #0d4654;
-  --border: #1c5765; --muted: #6a8a92; --emphasis: #fdf6e3;
-  --text-900: #fdf6e3; --text-700: #93a1a1; --text-500: #839496; --text-400: #5f7a82;
-  --primary: #38b6ff; --primary-hover: #6fccff; --primary-light: rgba(56,182,255,.18); --primary-dark: #aee4ff;
-  --accent: #b6dd00; --accent-light: rgba(182,221,0,.16); --accent-dark: #d6f25a;
-  --layer-source: #6a8a92; --layer-source-bg: rgba(120,150,160,.14);
-  --layer-staging: #38b6ff; --layer-staging-bg: rgba(56,182,255,.15);
-  --layer-intermediate: #f25ba0; --layer-intermediate-bg: rgba(242,91,160,.16);
-  --layer-mart: #b6dd00; --layer-mart-bg: rgba(182,221,0,.14);
-  --grid-dot: rgba(88,170,200,.20);
-  --glass-bg: rgba(0,33,43,.80); --glass-edge: rgba(120,200,220,.22); --glass-line: rgba(120,200,220,.18); --glass-chip: rgba(255,255,255,.05);
+  --surface: #073642;
+  --surface-2: #002630;
+  --surface-3: #0d4654;
+  --border: #1c5765;
+  --muted: #6a8a92;
+  --emphasis: #fdf6e3;
+  --text-900: #fdf6e3;
+  --text-700: #93a1a1;
+  --text-500: #839496;
+  --text-400: #5f7a82;
+  --primary: #38b6ff;
+  --primary-hover: #6fccff;
+  --primary-light: rgba(56, 182, 255, 0.18);
+  --primary-dark: #aee4ff;
+  --accent: #b6dd00;
+  --accent-light: rgba(182, 221, 0, 0.16);
+  --accent-dark: #d6f25a;
+  --layer-source: #6a8a92;
+  --layer-source-bg: rgba(120, 150, 160, 0.14);
+  --layer-staging: #38b6ff;
+  --layer-staging-bg: rgba(56, 182, 255, 0.15);
+  --layer-intermediate: #f25ba0;
+  --layer-intermediate-bg: rgba(242, 91, 160, 0.16);
+  --layer-mart: #b6dd00;
+  --layer-mart-bg: rgba(182, 221, 0, 0.14);
+  --grid-dot: rgba(88, 170, 200, 0.2);
+  --glass-bg: rgba(0, 33, 43, 0.8);
+  --glass-edge: rgba(120, 200, 220, 0.22);
+  --glass-line: rgba(120, 200, 220, 0.18);
+  --glass-chip: rgba(255, 255, 255, 0.05);
   --sheet-bg: #00313d;
-  --shadow-sm: 0 0 0 1px rgba(120,200,220,.14); --shadow-md: 0 8px 26px rgba(0,0,0,.5); --shadow-lg: 0 16px 44px rgba(0,0,0,.6);
+  --shadow-sm: 0 0 0 1px rgba(120, 200, 220, 0.14);
+  --shadow-md: 0 8px 26px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 44px rgba(0, 0, 0, 0.6);
 }
 /* the hard black ink borders would vanish on a dark ground — re-point to the teal line */
-.app.dark.theme-neobrutalist :is(.ln-node,.lane,.lane-card,.stream-card,.panel,.card,.proj-pop,.assistant-overlay,.chat-row,.ao-recent,.tool-card,.suggest button,.sql-block,.kv,.dep-chip,.btn,.icon-btn,.send-btn,.ao-input textarea,.proj-search input,.chats-search input,.badge,.seg,.avatar,.assistant-fab,.bubble,.cr-ic,.proj-ic,.aud-ico,.ai-mark,.ao-mark,.tc-ico,.org-badge-btn,.ao-iconbtn) {
+.app.dark.theme-neobrutalist
+  :is(
+    .ln-node,
+    .lane,
+    .lane-card,
+    .stream-card,
+    .panel,
+    .card,
+    .proj-pop,
+    .assistant-overlay,
+    .chat-row,
+    .ao-recent,
+    .tool-card,
+    .suggest button,
+    .sql-block,
+    .kv,
+    .dep-chip,
+    .btn,
+    .icon-btn,
+    .send-btn,
+    .ao-input textarea,
+    .proj-search input,
+    .chats-search input,
+    .badge,
+    .avatar,
+    .assistant-fab,
+    .bubble,
+    .cr-ic,
+    .proj-ic,
+    .aud-ico,
+    .ai-mark,
+    .ao-mark,
+    .tc-ico,
+    .org-badge-btn,
+    .ao-iconbtn
+  ) {
   border-color: var(--border);
 }
-.app.dark .ln-edge { stroke: #2f6776; }
-.app.dark .ln-edge.hot { stroke: var(--primary); }
-.app.dark .sql-block { background: #001b22; }
-.app.dark .sql-kw { color: #6fccff; } .app.dark .sql-ref { color: #f48fbf; } .app.dark .sql-str { color: #c8e85a; }
+.app.dark .ln-edge {
+  stroke: #2f6776;
+}
+.app.dark .ln-edge.hot {
+  stroke: var(--primary);
+}
+.app.dark .sql-block {
+  background: #001b22;
+}
+.app.dark .sql-kw {
+  color: #6fccff;
+}
+.app.dark .sql-ref {
+  color: #f48fbf;
+}
+.app.dark .sql-str {
+  color: #c8e85a;
+}
 /* soften the brutalist hard offset shadows on dark so depth still reads, and lift the panel */
-.app.dark.theme-neobrutalist .assistant-overlay { box-shadow: 0 16px 44px rgba(0,0,0,.55); background: #06303b; }
-.app.dark.theme-neobrutalist .assistant-fab { box-shadow: 0 8px 22px rgba(0,0,0,.5); }
-.app.dark.theme-neobrutalist .proj-pop { box-shadow: 0 14px 36px rgba(0,0,0,.5); }
-.app.dark.theme-neobrutalist .assistant-overlay .suggest button:hover { background: rgba(56,182,255,.16); color: var(--primary-hover); }
+.app.dark.theme-neobrutalist .assistant-overlay {
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+  background: #06303b;
+}
+.app.dark.theme-neobrutalist .assistant-fab {
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+.app.dark.theme-neobrutalist .proj-pop {
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+}
+.app.dark.theme-neobrutalist .assistant-overlay .suggest button:hover {
+  background: rgba(56, 182, 255, 0.16);
+  color: var(--primary-hover);
+}
 /* org-icon close (X) state: darken its background for contrast */
-.app.dark .org-badge-btn.on { background: #001a21; }
+.app.dark .org-badge-btn.on {
+  background: #001a21;
+}
 /* "Assistant changes" header stays light (inverted card) — darken its text for contrast */
-.app.dark .panel.audit .panel-hd .pt { color: #1b2433; }
-.app.dark .panel.audit .panel-hd .pcount { color: #5b667a; }
+.app.dark .panel.audit .panel-hd .pt {
+  color: #1b2433;
+}
+.app.dark .panel.audit .panel-hd .pcount {
+  color: #5b667a;
+}
