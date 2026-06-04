@@ -4,7 +4,6 @@
 // first so later sheets can override), then the app module — whose top-level
 // createRoot(...).render(<App/>) mounts into <div id="root"> from index.html.
 import "./app/theme.css";
-import "./app/detail.css";
 import "./app/chat.css";
 import "./app/theme.neobrutalist.css";
 
