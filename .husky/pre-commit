@@ -8,7 +8,7 @@ set -euo pipefail
 npx eslint --fix frontend/src agent/
 
 # Verify nothing unfixable remains (same commands as //reverse-proxy:lint, //agent:lint, //backend:lint)
-npx eslint frontend/src agent/
+npx eslint frontend/src agent/ ui/src
 (cd backend && uv run ruff check . && uv run ruff format --check .)
 
 # Report auto-fixes WITHOUT staging them. The previous hook ran `git add -u`, which
