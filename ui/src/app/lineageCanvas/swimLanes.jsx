@@ -6,62 +6,81 @@ import { Icon, LayerDot } from "../primitives";
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 
+function LaneCard({ n, selected, orphan, justAdded, onOpen }) {
+  const parentLabels = catalog.parentsOf(n.id).map((p) => p.label);
+  const edits = catalog.auditCount(n.id);
+  return (
+    <div
+      className={`${styles.laneCard} layer-${n.layer}`}
+      data-selected={selected || undefined}
+      data-orphan={orphan || undefined}
+      data-just-added={justAdded || undefined}
+      onClick={() => onOpen(n)}
+    >
+      <div className={styles.lnRow}>
+        <span className={styles.lnName}>{n.label}</span>
+      </div>
+      <div className={styles.lnSub}>{n.sub}</div>
+      <div className={styles.lnMeta}>
+        {orphan && (
+          <span className={styles.orphanTag}>
+            <Icon name="x" size={10} />
+            Orphaned
+          </span>
+        )}
+        {edits > 0 && <AiEditChip count={edits} />}
+      </div>
+      {parentLabels.length > 0 && (
+        <div className={styles.laneSrc}>
+          <Icon name="arrow" size={12} />
+          {parentLabels.join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Lane({ layer, sel, orphans, justAdded, onOpen }) {
+  const layerMeta = LAYER_META[layer];
+  const items = catalog.getNodesByLayer(layer);
+  return (
+    <div className={`${styles.lane} layer-${layer}`}>
+      <div className={styles.laneHead}>
+        <LayerDot layer={layer} />
+        <span className={styles.lhName}>{layerMeta.name}</span>
+        <span className={styles.lhDbt}>{layerMeta.dbt}</span>
+        <span className={styles.lhDesc}>{layerMeta.desc}</span>
+      </div>
+      <div className={styles.laneBody}>
+        {items.map((n) => (
+          <LaneCard
+            key={n.id}
+            n={n}
+            selected={sel === n.id}
+            orphan={orphans.has(n.id)}
+            justAdded={n.id === justAdded}
+            onOpen={onOpen}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SwimView({ sel, onOpen, justAdded }) {
   const orphans = catalog.orphans();
   return (
     <div className={styles.lanes}>
-      {LAYER_ORDER.map((ly) => {
-        const layerMeta = LAYER_META[ly];
-        const items = catalog.getNodesByLayer(ly);
-        return (
-          <div className={`${styles.lane} layer-${ly}`} key={ly}>
-            <div className={styles.laneHead}>
-              <LayerDot layer={ly} />
-              <span className={styles.lhName}>{layerMeta.name}</span>
-              <span className={styles.lhDbt}>{layerMeta.dbt}</span>
-              <span className={styles.lhDesc}>{layerMeta.desc}</span>
-            </div>
-            <div className={styles.laneBody}>
-              {items.map((n) => {
-                const parentLabels = catalog
-                  .parentsOf(n.id)
-                  .map((p) => p.label);
-                const edits = catalog.auditCount(n.id);
-                return (
-                  <div
-                    key={n.id}
-                    className={`${styles.laneCard} layer-${ly}`}
-                    data-selected={sel === n.id || undefined}
-                    data-orphan={orphans.has(n.id) || undefined}
-                    data-just-added={n.id === justAdded || undefined}
-                    onClick={() => onOpen(n)}
-                  >
-                    <div className={styles.lnRow}>
-                      <span className={styles.lnName}>{n.label}</span>
-                    </div>
-                    <div className={styles.lnSub}>{n.sub}</div>
-                    <div className={styles.lnMeta}>
-                      {orphans.has(n.id) && (
-                        <span className={styles.orphanTag}>
-                          <Icon name="x" size={10} />
-                          Orphaned
-                        </span>
-                      )}
-                      {edits > 0 && <AiEditChip count={edits} />}
-                    </div>
-                    {parentLabels.length > 0 && (
-                      <div className={styles.laneSrc}>
-                        <Icon name="arrow" size={12} />
-                        {parentLabels.join(" · ")}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+      {LAYER_ORDER.map((ly) => (
+        <Lane
+          key={ly}
+          layer={ly}
+          sel={sel}
+          orphans={orphans}
+          justAdded={justAdded}
+          onOpen={onOpen}
+        />
+      ))}
     </div>
   );
 }
