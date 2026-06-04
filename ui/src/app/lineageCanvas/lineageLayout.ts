@@ -34,46 +34,57 @@ export interface Point {
   y: number;
 }
 
-/** Result of {@link computeDagLayout}: node positions plus canvas dimensions. */
+/** Result of {@link computeDagLayout}: where each node sits, plus the canvas size. */
 export interface DagLayout {
-  pos: Record<string, Point>;
-  w: number;
-  h: number;
+  nodePositions: Record<string, Point>;
+  width: number;
+  height: number;
 }
 
 /**
  * Lay out the DAG: bucket nodes into one column per layer (in LAYER_ORDER),
- * find the tallest column (maxRows) to size the content height, then vertically
- * center each shorter column within that height. Width spans LAYER_ORDER.length
- * columns. Returns absolute node positions plus the canvas width/height.
+ * size the content to the tallest column, then vertically center each shorter
+ * column within that height. Returns absolute node positions (top-left corners)
+ * plus the overall canvas width/height.
  */
 export function computeDagLayout(
   catalog: DataCatalog,
   dims: DagDimensions,
 ): DagLayout {
-  const cols = LAYER_ORDER.map((layer: Layer) =>
+  // Stride from one node/column to the next: the node's own size plus the gap
+  // that follows it. A run of N items therefore spans `N * pitch - gap` (the
+  // last item has no trailing gap).
+  const rowPitch = dims.nodeHeight + dims.rowGap;
+  const columnPitch = dims.nodeWidth + dims.columnGap;
+
+  // One column per layer, in pipeline order (sources → … → marts).
+  const columns = LAYER_ORDER.map((layer: Layer) =>
     catalog.getNodesByLayer(layer),
   );
-  const maxRows = Math.max(...cols.map((c) => c.length), 1);
-  const contentH = maxRows * (dims.nodeHeight + dims.rowGap) - dims.rowGap;
-  const pos: Record<string, Point> = {};
-  cols.forEach((col, colIndex) => {
-    const stackH = col.length * (dims.nodeHeight + dims.rowGap) - dims.rowGap;
-    const startY = dims.paddingY + (contentH - stackH) / 2;
-    col.forEach((n, rowIndex) => {
-      pos[n.id] = {
-        x: dims.paddingX + colIndex * (dims.nodeWidth + dims.columnGap),
-        y: startY + rowIndex * (dims.nodeHeight + dims.rowGap),
+
+  // The tallest column sets the content height; shorter columns are centered
+  // within it.
+  const tallestColumnCount = Math.max(...columns.map((c) => c.length), 1);
+  const contentHeight = tallestColumnCount * rowPitch - dims.rowGap;
+
+  const nodePositions: Record<string, Point> = {};
+  columns.forEach((column, columnIndex) => {
+    const columnHeight = column.length * rowPitch - dims.rowGap;
+    const columnTop = dims.paddingY + (contentHeight - columnHeight) / 2;
+    const columnX = dims.paddingX + columnIndex * columnPitch;
+    column.forEach((node, rowIndex) => {
+      nodePositions[node.id] = {
+        x: columnX,
+        y: columnTop + rowIndex * rowPitch,
       };
     });
   });
+
   return {
-    pos,
-    w:
-      dims.paddingX * 2 +
-      LAYER_ORDER.length * (dims.nodeWidth + dims.columnGap) -
-      dims.columnGap,
-    h: dims.paddingY * 2 + contentH,
+    nodePositions,
+    width:
+      dims.paddingX * 2 + LAYER_ORDER.length * columnPitch - dims.columnGap,
+    height: dims.paddingY * 2 + contentHeight,
   };
 }
 

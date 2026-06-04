@@ -118,21 +118,25 @@ export function DagView({
   return (
     <div
       className={styles.canvas}
-      style={{ width: layout.w, height: layout.h, minWidth: layout.w }}
+      style={{
+        width: layout.width,
+        height: layout.height,
+        minWidth: layout.width,
+      }}
     >
       <svg className={styles.edges}>
         {catalog.listEdges().map(([sourceId, targetId], index) => (
           <Edge
             key={index}
-            sourcePos={layout.pos[sourceId]}
-            targetPos={layout.pos[targetId]}
+            sourcePos={layout.nodePositions[sourceId]}
+            targetPos={layout.nodePositions[targetId]}
             hot={inFocusEdges.has(index)}
             dim={!inFocusEdges.has(index) && !!inFocusNodeId}
           />
         ))}
       </svg>
       {catalog.listNodes().map((n) => {
-        const pos = layout.pos[n.id];
+        const pos = layout.nodePositions[n.id];
         if (!pos) return null;
         const nodeStyle: CSSProperties = {
           left: pos.x,
