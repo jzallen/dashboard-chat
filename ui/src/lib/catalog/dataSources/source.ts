@@ -19,17 +19,26 @@ import type {
 } from "../models";
 
 export interface CatalogSource {
-  getProjects(): ProjectSummary[];
-  getCurrentProject(): CurrentProject;
-  getOrg(): OrgSettings;
-  getRecents(): ChatHistoryItem[];
-  getAllChats(): ChatHistoryItem[];
-  getNodes(): Record<string, LineageNode>;
-  getEdges(): Edge[];
-  getAudit(): Record<string, AuditEntry[]>;
-  getChatScript(): ChatScript;
-  getDbtFiles(): DbtFile[];
+  getProjects(): Promise<ProjectSummary[]>;
+  getCurrentProject(): Promise<CurrentProject>;
+  getOrg(): Promise<OrgSettings>;
+  getRecents(): Promise<ChatHistoryItem[]>;
+  getAllChats(): Promise<ChatHistoryItem[]>;
+  getNodes(): Promise<Record<string, LineageNode>>;
+  getEdges(): Promise<Edge[]>;
+  getAudit(): Promise<Record<string, AuditEntry[]>>;
+  getChatScript(): Promise<ChatScript>;
+  getDbtFiles(): Promise<DbtFile[]>;
 }
+
+/**
+ * A primary source need only implement the getters it actually backs. The rest
+ * are filled from the complete fallback in {@link createDataCatalog}. The fixture
+ * source is a complete {@link CatalogSource}; a backend source (e.g.
+ * metadataApiSource) is a `PartialCatalogSource` — it implements only what the
+ * API can answer and never references the fallback.
+ */
+export type PartialCatalogSource = Partial<CatalogSource>;
 
 /**
  * The raw catalog payload shape — the ten top-level collections a concrete

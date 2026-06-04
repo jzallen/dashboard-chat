@@ -93,22 +93,34 @@ export class LineageGraph {
   }
 
   /**
-   * Build the initial graph from a {@link LineageSource}'s payloads. Folds the
-   * audit trail onto each node; starts with empty cold storage and no
-   * runtime-added ids.
+   * Build the initial graph from already-resolved payloads (the synchronous
+   * core). Folds the audit trail onto each node; starts with empty cold storage
+   * and no runtime-added ids. {@link createDataCatalog} awaits the async source
+   * getters once and feeds the resolved data here, keeping the graph itself
+   * fully synchronous and free of any data-source/promise dependency.
    */
-  static fromSource(source: LineageSource): LineageGraph {
-    const nodes = source.getNodes();
-    const audit = source.getAudit();
+  static from(
+    nodes: Record<string, LineageNode>,
+    edges: Edge[],
+    audit: Record<string, AuditEntry[]>,
+  ): LineageGraph {
     const folded = new Map<string, LineageNode>();
     for (const n of Object.values(nodes)) {
       folded.set(n.id, { ...n, audit: audit[n.id] ?? n.audit });
     }
-    return new LineageGraph(
-      folded,
-      [...source.getEdges()],
-      new Map(),
-      new Set(),
+    return new LineageGraph(folded, [...edges], new Map(), new Set());
+  }
+
+  /**
+   * Build the initial graph from a synchronous {@link LineageSource}'s payloads.
+   * A thin convenience over {@link LineageGraph.from} for sources whose getters
+   * are still synchronous (e.g. unit-test fixtures).
+   */
+  static fromSource(source: LineageSource): LineageGraph {
+    return LineageGraph.from(
+      source.getNodes(),
+      source.getEdges(),
+      source.getAudit(),
     );
   }
 

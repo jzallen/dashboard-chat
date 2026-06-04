@@ -10,8 +10,15 @@
  */
 export type { DataCatalog } from "./client";
 export { createDataCatalog } from "./client";
+export { apiGet } from "./dataSources/backendClient";
 export { fixtureSource } from "./dataSources/fixtureSource";
-export type { CatalogSource, RawCatalog } from "./dataSources/source";
+export type { MetadataApiSourceDeps } from "./dataSources/metadataApiSource";
+export { metadataApiSource } from "./dataSources/metadataApiSource";
+export type {
+  CatalogSource,
+  PartialCatalogSource,
+  RawCatalog,
+} from "./dataSources/source";
 export type * from "./lineage";
 export { AUDIT_TAGS, LAYER_ORDER } from "./lineage";
 export type * from "./models";

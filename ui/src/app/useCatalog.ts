@@ -16,10 +16,35 @@
  */
 import { useSyncExternalStore } from "react";
 
-import { createDataCatalog, fixtureSource } from "../lib/catalog";
+import { getToken } from "../auth/tokenStorage";
+import {
+  createDataCatalog,
+  type DataCatalog,
+  fixtureSource,
+  metadataApiSource,
+} from "../lib/catalog";
 
-/** The application catalog, backed by the bundled fixture source. */
-export const catalog = createDataCatalog(fixtureSource);
+/**
+ * The application catalog — a live ESM binding, assigned by {@link initCatalog}
+ * before the app mounts. The catalog composes the backend `metadataApiSource`
+ * (primary, project reads) over the bundled `fixtureSource` (complete fallback),
+ * so the app renders instantly on fixtures and the project picker updates to real
+ * backend projects a beat later. No module-scope code reads `catalog`, so the
+ * deferred assignment is safe.
+ */
+export let catalog: DataCatalog;
+
+/**
+ * Construct and install the application catalog. `main.js` awaits this in the
+ * authenticated paths BEFORE `mount()`, guaranteeing `catalog` is set before any
+ * component reads it. Token is injected (lib/catalog stays auth-decoupled).
+ */
+export async function initCatalog(): Promise<void> {
+  catalog = await createDataCatalog(
+    metadataApiSource({ getToken }),
+    fixtureSource,
+  );
+}
 
 /** Subscribe a component to catalog mutations; returns the store version. */
 export function useCatalog(): number {

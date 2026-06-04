@@ -8,6 +8,7 @@ import { handleCallback, extractCode, login } from "../src/auth/bootstrap.ts";
 import { getToken } from "../src/auth/tokenStorage.ts";
 
 import { mount } from "./app/app.tsx";
+import { initCatalog } from "./app/useCatalog.ts";
 import "./app/theme.css";
 import "./app/theme.neobrutalist.css";
 
@@ -51,6 +52,10 @@ async function bootstrap() {
       try {
         await handleCallback(code);
         window.history.replaceState({}, "", "/");
+        // Compose the catalog (backend project reads over the fixture fallback)
+        // before mounting, so the project picker can reactively update once the
+        // backend resolves. The app still mounts instantly on fixtures.
+        await initCatalog();
         mount();
         return;
       } catch (err) {
@@ -67,7 +72,8 @@ async function bootstrap() {
     return;
   }
 
-  // (c) Already authenticated: mount the app exactly as before.
+  // (c) Already authenticated: compose the catalog, then mount.
+  await initCatalog();
   mount();
 }
 

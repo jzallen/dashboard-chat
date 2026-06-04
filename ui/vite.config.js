@@ -26,12 +26,11 @@ export default defineConfig({
       // reachable from inside this devcontainer at http://localhost:1042
       // (verified with curl). Run it in dev mode so the login url points back
       // at this app: `AUTH_MODE=dev docker compose up -d auth-proxy api redis`.
-      "/api/auth": { target: "http://localhost:1042", changeOrigin: true },
-      // Future backend-data step: proxy the rest of /api to the same gateway so
-      // authenticated fetches replay the Bearer token through auth-proxy. Left
-      // commented until the ui/ app actually fetches real data (out of scope
-      // here — the app still renders on fixtures after login).
-      // "/api": { target: "http://localhost:1042", changeOrigin: true },
+      // Broadened from /api/auth to all of /api so authenticated data fetches
+      // (e.g. GET /api/projects from metadataApiSource) replay the Bearer token
+      // through the auth-proxy alongside the dev-login handshake. NOTE: changing
+      // this requires a dev-server restart (not HMR).
+      "/api": { target: "http://localhost:1042", changeOrigin: true },
     },
   },
 });

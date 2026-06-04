@@ -18,16 +18,21 @@ import type { CatalogSource, RawCatalog } from "./source";
  */
 const fixture = DC as unknown as RawCatalog;
 
-/** The bundled fixture source — serves the mock catalog through the port. */
+/**
+ * The bundled fixture source — serves the mock catalog through the port. The
+ * data is local and synchronous; each getter wraps it in `Promise.resolve(...)`
+ * to satisfy the async {@link CatalogSource} contract (resolves instantly, so
+ * seeding the catalog from this fallback is effectively synchronous).
+ */
 export const fixtureSource: CatalogSource = {
-  getProjects: () => fixture.PROJECTS,
-  getCurrentProject: () => fixture.PROJECT,
-  getOrg: () => fixture.ORG,
-  getRecents: () => fixture.RECENTS,
-  getAllChats: () => fixture.ALL_CHATS,
-  getNodes: () => fixture.NODES,
-  getEdges: () => fixture.EDGES,
-  getAudit: () => fixture.AUDIT,
-  getChatScript: () => fixture.CHAT_SCRIPT,
-  getDbtFiles: () => fixture.DBT_FILES,
+  getProjects: () => Promise.resolve(fixture.PROJECTS),
+  getCurrentProject: () => Promise.resolve(fixture.PROJECT),
+  getOrg: () => Promise.resolve(fixture.ORG),
+  getRecents: () => Promise.resolve(fixture.RECENTS),
+  getAllChats: () => Promise.resolve(fixture.ALL_CHATS),
+  getNodes: () => Promise.resolve(fixture.NODES),
+  getEdges: () => Promise.resolve(fixture.EDGES),
+  getAudit: () => Promise.resolve(fixture.AUDIT),
+  getChatScript: () => Promise.resolve(fixture.CHAT_SCRIPT),
+  getDbtFiles: () => Promise.resolve(fixture.DBT_FILES),
 };
