@@ -1,4 +1,4 @@
-/* Audit-stream view: lineage layers with the AI's transform audit shown inline. */
+/* Audit-log view: per-layer audit trails of the AI's transforms, one card per model. */
 import { LAYER_ORDER } from "../../lib/catalog";
 import { catalog } from "../fixtureSource";
 import { LAYER_META } from "../layerMeta";
@@ -7,10 +7,10 @@ import { TAG_ICON } from "../tagIcon";
 import styles from "./lineageCanvas.module.css";
 import { AiEditChip } from "./shared";
 
-/** Audit stream skips the source layer — sources have no transforms. */
-const STREAM_LAYERS = LAYER_ORDER.slice(1);
+/** The audit log skips the source layer — sources have no transforms. */
+const AUDITED_LAYERS = LAYER_ORDER.slice(1);
 
-function StreamCard({ n, selected, justAdded, onOpen }) {
+function ModelTrailCard({ n, selected, justAdded, onOpen }) {
   const audit = catalog.auditFor(n.id);
   return (
     <div
@@ -47,7 +47,7 @@ function StreamCard({ n, selected, justAdded, onOpen }) {
   );
 }
 
-function StreamGroup({ layer, isSelected, wasJustAdded, onOpen }) {
+function LayerAuditTrail({ layer, isSelected, wasJustAdded, onOpen }) {
   const layerMeta = LAYER_META[layer];
   const items = catalog.getNodesByLayer(layer);
   return (
@@ -60,7 +60,7 @@ function StreamGroup({ layer, isSelected, wasJustAdded, onOpen }) {
         <span className={styles.streamDbt}>{layerMeta.dbt}</span>
       </div>
       {items.map((n) => (
-        <StreamCard
+        <ModelTrailCard
           key={n.id}
           n={n}
           selected={isSelected(n.id)}
@@ -72,7 +72,7 @@ function StreamGroup({ layer, isSelected, wasJustAdded, onOpen }) {
   );
 }
 
-export function StreamView({
+export function AuditLogView({
   sel: selectedId,
   onOpen,
   justAdded: justAddedId,
@@ -81,8 +81,8 @@ export function StreamView({
   const wasJustAdded = (id) => id === justAddedId;
   return (
     <div className={styles.stream}>
-      {STREAM_LAYERS.map((ly) => (
-        <StreamGroup
+      {AUDITED_LAYERS.map((ly) => (
+        <LayerAuditTrail
           key={ly}
           layer={ly}
           isSelected={isSelected}
