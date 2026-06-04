@@ -13,7 +13,8 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   root: here,
   server: {
-    port: 5174,
+    // 5173 is the port the devcontainer forwards (.devcontainer/devcontainer.json).
+    port: 5173,
     host: true,
     // react / react-dom are resolved from the monorepo root node_modules
     // (one level up), so allow Vite to serve from there.
