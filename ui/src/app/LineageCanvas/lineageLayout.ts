@@ -6,7 +6,7 @@
  *
  * It reads layer membership through the catalog's getNodesByLayer — the catalog
  * is the only model this view-side math knows about; its internal graph stays
- * private. Dependencies point inward: lineageCanvas → catalog, never the reverse.
+ * private. Dependencies point inward: LineageCanvas → catalog, never the reverse.
  */
 import { type DataCatalog, type Layer, LAYER_ORDER } from "../../lib/catalog";
 

@@ -30,13 +30,7 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 // This is deliberately a TEMPORARY harness. As we refactor the prototype into
 // real ESM modules (proper imports/exports), files drop out of PROTO_FILES and
 // this plugin shrinks until it can be deleted.
-const PROTO_FILES = [
-  "tweaks-panel.jsx",
-  "detail.jsx",
-  "chat.jsx",
-  "upload.jsx",
-  "app.jsx",
-];
+const PROTO_FILES = ["detail.jsx", "chat.jsx", "upload.jsx", "app.jsx"];
 const VIRTUAL_ID = "virtual:prototype";
 const RESOLVED_ID = "\0" + VIRTUAL_ID;
 const PROTO_DIR = path.join(here, "src", "app");
@@ -63,12 +57,15 @@ import { LAYER_META } from '/src/app/layerMeta.ts';
 import { Icon, LayerDot, LayerBadge, SqlBlock } from '/src/app/primitives.tsx';
 import { LineageCanvas } from '/src/app/LineageCanvas/index.ts';
 import { TAG_ICON } from '/src/app/tagIcon.ts';
+import { useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider, TweakToggle, TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton } from '/src/app/Tweaks/index.ts';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 Object.assign(globalThis, {
   React, ReactDOM, catalog, useCatalog,
   useState, useEffect, useRef, useMemo, useCallback,
   Icon, LayerDot, LayerBadge, SqlBlock,
   LineageCanvas, TAG_ICON,
+  useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider, TweakToggle,
+  TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton,
 });
 `;
       const body = PROTO_FILES.map(
