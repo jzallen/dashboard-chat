@@ -11,6 +11,12 @@ services:
     build: ./auth-proxy
     image: dashboard-chat/auth-proxy:ui-state-dev
     pull_policy: build
+    # Local dev uses the frictionless dev login (the ui/ one-button "Sign in
+    # (dev)" + the dev-auth-code exchange) instead of WorkOS. `.env` keeps
+    # AUTH_MODE=workos for production-like local builds; this override flips the
+    # local compose stack to dev so a plain `docker compose up` just works.
+    environment:
+      AUTH_MODE: dev
 
   # Rebuild backend from source so DELIVER step 01-02 ships
   # POST /api/auth/reissue without waiting for the Bazel image refresh.
