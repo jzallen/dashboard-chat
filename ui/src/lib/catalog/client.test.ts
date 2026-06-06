@@ -300,3 +300,186 @@ describe("createDataCatalog — stale-while-revalidate (lineage graph)", () => {
     ]);
   });
 });
+
+describe("createDataCatalog — selectProject (per-project re-scope)", () => {
+  /**
+   * A primary whose lineage + currentProject reads are scoped by a mutable
+   * `scopedPid` (the holder the source closes over). Each project resolves a
+   * distinct one-node graph and a distinct currentProject. Org-global getters are
+   * spied so we can assert they are NOT re-run on re-scope.
+   */
+  function scopedPrimary(getPid: () => string) {
+    const graphs: Record<string, { nodes: Record<string, LineageNode>; edges: Edge[] }> = {
+      p1: {
+        nodes: {
+          "p1.node": {
+            id: "p1.node",
+            label: "p1_view",
+            sub: "intermediate",
+            layer: "intermediate",
+            ref: { kind: "view", columns: [] },
+          },
+        },
+        edges: [],
+      },
+      p2: {
+        nodes: {
+          "p2.node": {
+            id: "p2.node",
+            label: "p2_view",
+            sub: "intermediate",
+            layer: "intermediate",
+            ref: { kind: "view", columns: [] },
+          },
+        },
+        edges: [],
+      },
+    };
+    const projectsSpy = vi.fn(() =>
+      Promise.resolve([] as unknown as ProjectSummary[]),
+    );
+    const orgSpy = vi.fn(() => Promise.resolve({} as never));
+    const primary: PartialCatalogSource = {
+      getProjects: projectsSpy,
+      getOrg: orgSpy,
+      getCurrentProject: () =>
+        Promise.resolve({
+          id: getPid(),
+          name: getPid().toUpperCase(),
+          description: "",
+        }),
+      getNodes: () =>
+        new Promise((resolve) => setTimeout(() => resolve(graphs[getPid()].nodes), 0)),
+      getEdges: () =>
+        new Promise((resolve) => setTimeout(() => resolve(graphs[getPid()].edges), 0)),
+      getAudit: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
+    };
+    return { primary, projectsSpy, orgSpy };
+  }
+
+  it("re-derives the lineage graph + currentProject for the newly scoped project", async () => {
+    let pid = "p1";
+    const { primary } = scopedPrimary(() => pid);
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush(); // p1 lands
+
+    expect(catalog.listNodes().map((n) => n.id)).toEqual(["p1.node"]);
+    expect(catalog.getCurrentProject().id).toBe("p1");
+
+    // Re-scope to p2: the source now reads p2, selectProject re-runs the scoped
+    // getters and commits the new graph + currentProject.
+    pid = "p2";
+    await catalog.selectProject("p2");
+    await flush();
+
+    expect(catalog.listNodes().map((n) => n.id)).toEqual(["p2.node"]);
+    expect(catalog.getCurrentProject().id).toBe("p2");
+  });
+
+  it("bumps the version and notifies subscribers on re-scope", async () => {
+    let pid = "p1";
+    const { primary } = scopedPrimary(() => pid);
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+
+    const fired = vi.fn();
+    catalog.subscribe(fired);
+    const before = catalog.getSnapshot();
+
+    pid = "p2";
+    await catalog.selectProject("p2");
+    await flush();
+
+    expect(fired).toHaveBeenCalled();
+    expect(catalog.getSnapshot()).not.toBe(before);
+  });
+
+  it("resets per-project working mutations on switch (a rename does not leak)", async () => {
+    let pid = "p1";
+    const { primary } = scopedPrimary(() => pid);
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+
+    catalog.renameSource("p1.node", "renamed_in_p1");
+    expect(catalog.getNode("p1.node")?.label).toBe("renamed_in_p1");
+
+    pid = "p2";
+    await catalog.selectProject("p2");
+    await flush();
+
+    // p1's node (and its rename) is gone; p2's graph is fresh.
+    expect(catalog.getNode("p1.node")).toBeUndefined();
+    expect(catalog.getNode("p2.node")?.label).toBe("p2_view");
+  });
+
+  it("does NOT re-run org-global getters (getProjects/getOrg) on re-scope", async () => {
+    let pid = "p1";
+    const { primary, projectsSpy, orgSpy } = scopedPrimary(() => pid);
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+
+    // Construction ran each org-global getter once.
+    expect(projectsSpy).toHaveBeenCalledTimes(1);
+    expect(orgSpy).toHaveBeenCalledTimes(1);
+
+    pid = "p2";
+    await catalog.selectProject("p2");
+    await flush();
+
+    // Re-scope re-runs only the scoped getters — org-global counts unchanged.
+    expect(projectsSpy).toHaveBeenCalledTimes(1);
+    expect(orgSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a stale commit from a fast A→B→A switch (captured-pid guard)", async () => {
+    // A primary whose getNodes resolves on a per-pid delay: p2 is SLOW, p1 fast.
+    // A→B→A must land A's graph, never B's late one.
+    const graphs: Record<string, Record<string, LineageNode>> = {
+      p1: {
+        "p1.node": {
+          id: "p1.node",
+          label: "p1_view",
+          sub: "intermediate",
+          layer: "intermediate",
+          ref: { kind: "view", columns: [] },
+        },
+      },
+      p2: {
+        "p2.node": {
+          id: "p2.node",
+          label: "p2_view",
+          sub: "intermediate",
+          layer: "intermediate",
+          ref: { kind: "view", columns: [] },
+        },
+      },
+    };
+    let pid = "p1";
+    const delays: Record<string, number> = { p1: 0, p2: 50 };
+    const primary: PartialCatalogSource = {
+      getCurrentProject: () =>
+        Promise.resolve({ id: pid, name: pid, description: "" }),
+      getNodes: () => {
+        const captured = pid;
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(graphs[captured]), delays[captured]),
+        );
+      },
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+    };
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+
+    // Fast A→B→A: kick B (slow), then immediately back to A (fast).
+    pid = "p2";
+    const bSwitch = catalog.selectProject("p2");
+    pid = "p1";
+    const aSwitch = catalog.selectProject("p1");
+    await Promise.all([bSwitch, aSwitch]);
+    await new Promise((r) => setTimeout(r, 80)); // outlast p2's 50ms delay
+
+    // The late p2 commit must have been dropped — A's graph stands.
+    expect(catalog.listNodes().map((n) => n.id)).toEqual(["p1.node"]);
+  });
+});

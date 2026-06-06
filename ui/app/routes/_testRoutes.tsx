@@ -11,28 +11,40 @@ import { FlashedNodeProvider } from "../../src/app/FlashedNodeProvider";
 import AppShell from "./app-shell";
 import AuthCallbackRoute from "./auth-callback";
 import ChatsRoute from "./chats";
+import DatasetDetailRoute from "./dataset-detail";
+import HomeRedirect from "./home-redirect";
 import LoginRoute from "./login";
 import OrgRoute from "./org";
+import ProjectLayout, { clientLoader as projectLoader } from "./project-layout";
 import QueryEnginesRoute from "./query-engines";
 import ReportDetailRoute from "./report-detail";
-import TableRoute from "./table";
 import ViewDetailRoute from "./view-detail";
 import WorkspaceRoute from "./workspace";
 
-/** The runtime equivalent of app/routes.ts, for createMemoryRouter. */
+/** The runtime equivalent of app/routes.ts, for createMemoryRouter. The
+ *  project layout's loader re-scopes the catalog, exercising the real seam. */
 export const testRouteTree: RouteObject[] = [
   { path: "/login", element: <LoginRoute /> },
   { path: "/auth/callback", element: <AuthCallbackRoute /> },
   {
     element: <AppShell />,
     children: [
-      { index: true, element: <WorkspaceRoute /> },
-      { path: "table/:datasetId", element: <TableRoute /> },
-      { path: "view/:viewId", element: <ViewDetailRoute /> },
-      { path: "report/:reportId", element: <ReportDetailRoute /> },
-      { path: "query-engines", element: <QueryEnginesRoute /> },
-      { path: "chats", element: <ChatsRoute /> },
+      { index: true, element: <HomeRedirect /> },
       { path: "org", element: <OrgRoute /> },
+      { path: "query-engines", element: <QueryEnginesRoute /> },
+      {
+        path: "project/:projectId",
+        element: <ProjectLayout />,
+        loader: ({ params }) =>
+          projectLoader({ params: params as { projectId?: string } }),
+        children: [
+          { index: true, element: <WorkspaceRoute /> },
+          { path: "dataset/:datasetId", element: <DatasetDetailRoute /> },
+          { path: "view/:viewId", element: <ViewDetailRoute /> },
+          { path: "report/:reportId", element: <ReportDetailRoute /> },
+          { path: "chats", element: <ChatsRoute /> },
+        ],
+      },
     ],
   },
 ];

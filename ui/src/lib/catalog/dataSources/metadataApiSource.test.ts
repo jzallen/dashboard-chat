@@ -10,10 +10,16 @@ import { metadataApiSource } from "./metadataApiSource";
  */
 function stubFetch(routes: Record<string, unknown>, ok = true) {
   const fetchMock = vi.fn(async (url: string) => {
+    // Prefer an exact full-URL match (so query-scoped routes like
+    // `/api/datasets?project_id=p2` are distinguishable); fall back to a
+    // path-only match for routes registered without a query string.
     const path = url.split("?")[0];
-    const match = Object.keys(routes).find(
-      (route) => path === route.split("?")[0],
-    );
+    const exact = Object.keys(routes).find((route) => route === url);
+    const match =
+      exact ??
+      Object.keys(routes).find(
+        (route) => !route.includes("?") && path === route.split("?")[0],
+      );
     if (!ok) {
       return { ok: false, status: 500, json: async () => ({ detail: "boom" }) };
     }
@@ -138,7 +144,7 @@ describe("metadataApiSource — backend project reads", () => {
     await expect(source.getProjects!()).rejects.toThrow();
   });
 
-  it("getCurrentProject derives identity from the first project", async () => {
+  it("getCurrentProject falls back to the first project when no scope is injected", async () => {
     stubProjects({
       data: [
         { id: "p1", name: "Acme", description: "first" },
@@ -148,6 +154,21 @@ describe("metadataApiSource — backend project reads", () => {
     const source = metadataApiSource({ getToken: () => "tok" });
     const current = await source.getCurrentProject!();
     expect(current).toEqual({ id: "p1", name: "Acme", description: "first" });
+  });
+
+  it("getCurrentProject returns the SCOPED project, not the first", async () => {
+    stubProjects({
+      data: [
+        { id: "p1", name: "Acme", description: "first" },
+        { id: "p2", name: "Other", description: "second" },
+      ],
+    });
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p2",
+    });
+    const current = await source.getCurrentProject!();
+    expect(current).toEqual({ id: "p2", name: "Other", description: "second" });
   });
 
   it("getCurrentProject throws when there is no first project", async () => {
@@ -254,5 +275,93 @@ describe("metadataApiSource — lineage core (getNodes/getEdges/getAudit)", () =
     expect((datasetCall[1].headers as Record<string, string>).Authorization).toBe(
       "Bearer secret-token",
     );
+  });
+});
+
+describe("metadataApiSource — project-scoped lineage (project-in-path)", () => {
+  const countPaths = (fetchMock: ReturnType<typeof vi.fn>) => {
+    const counts: Record<string, number> = {};
+    for (const call of fetchMock.mock.calls) {
+      const path = (call[0] as string).split("?")[0];
+      counts[path] = (counts[path] ?? 0) + 1;
+    }
+    return counts;
+  };
+
+  /** Lineage routes for two coexisting projects, p1 and p2. */
+  const TWO_PROJECT_ROUTES = {
+    [PROJECTS]: { data: [{ id: "p1", name: "Acme" }, { id: "p2", name: "Beta" }] },
+    "/api/datasets?project_id=p1": {
+      data: [
+        {
+          id: "d1",
+          name: "customers",
+          schema_config: { fields: {} },
+          staging_sql: "SELECT 1",
+          row_count: 1,
+        },
+      ],
+    },
+    "/api/projects/p1/views": { data: [] },
+    "/api/projects/p1/reports": { data: [] },
+    "/api/datasets?project_id=p2": {
+      data: [
+        {
+          id: "d2",
+          name: "orders",
+          schema_config: { fields: {} },
+          staging_sql: "SELECT 1",
+          row_count: 1,
+        },
+      ],
+    },
+    "/api/projects/p2/views": {
+      data: [
+        {
+          id: "v2",
+          name: "active_orders",
+          sql_definition: "SELECT 1",
+          source_refs: [{ id: "d2", type: "dataset" }],
+        },
+      ],
+    },
+    "/api/projects/p2/reports": { data: [] },
+  };
+
+  it("scopes the lineage bundle to the injected project id (targets p2's URLs)", async () => {
+    const fetchMock = stubFetch(TWO_PROJECT_ROUTES);
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p2",
+    });
+    const nodes = await source.getNodes!();
+
+    const urls = fetchMock.mock.calls.map((c) => c[0] as string);
+    expect(urls).toContain("/api/datasets?project_id=p2");
+    expect(urls).toContain("/api/projects/p2/views");
+    expect(urls).toContain("/api/projects/p2/reports");
+    // …and NOT p1's lineage URLs.
+    expect(urls).not.toContain("/api/datasets?project_id=p1");
+
+    // p2's graph: dataset d2 + view v2 (p1's d1 is absent).
+    expect(Object.keys(nodes).sort()).toEqual(["d2", "v2"]);
+  });
+
+  it("memoizes per pid: scope p1 → p2 → p1 fetches p1's datasets only once", async () => {
+    let pid: string | undefined = "p1";
+    const fetchMock = stubFetch(TWO_PROJECT_ROUTES);
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => pid,
+    });
+
+    await source.getNodes!(); // p1
+    pid = "p2";
+    await source.getNodes!(); // p2
+    pid = "p1";
+    await source.getNodes!(); // p1 again — must reuse the memoized bundle
+
+    const counts = countPaths(fetchMock);
+    expect(counts["/api/datasets"]).toBe(2); // p1 once + p2 once, not 3
   });
 });

@@ -22,7 +22,8 @@ export function ProjectPicker({
   return (
     <div className="proj-picker">
       <button className="proj-btn" onClick={() => setOpen((o) => !o)}>
-        {cur.name}
+        {/* Empty-org: no current project yet (onboarding state). */}
+        {cur?.name ?? "No project"}
         <Icon name="chevD" size={15} />
       </button>
       {open && (

@@ -37,26 +37,57 @@ import {
 export let catalog: DataCatalog;
 
 /**
+ * The currently scoped project id (the `/project/:projectId` path segment). The
+ * backend source reads it via the injected `getProjectId` getter, so the catalog
+ * stays router-free. {@link selectProject} sets it and re-scopes the catalog; the
+ * `/project/:projectId` layout loader is the single caller. `undefined` before
+ * the first paint (the source falls back to the first project until then).
+ */
+let scopedProjectId: string | undefined;
+
+/**
  * Construct and install the application catalog. `main.js` awaits this in the
  * authenticated paths BEFORE `mount()`, guaranteeing `catalog` is set before any
- * component reads it. Token is injected (lib/catalog stays auth-decoupled).
+ * component reads it. Token + scoped-project getters are injected (lib/catalog
+ * stays auth- and router-decoupled).
  */
 export async function initCatalog(): Promise<void> {
   catalog = await createDataCatalog(
-    metadataApiSource({ getToken }),
+    metadataApiSource({ getToken, getProjectId: () => scopedProjectId }),
     fixtureSource,
   );
 }
 
 /**
+ * Re-scope the session catalog to a project: set the module-level scoped pid
+ * (so the backend source's next reads target it) THEN delegate to the catalog's
+ * own re-scope command. Called by the `/project/:projectId` layout clientLoader
+ * on every project change. The single `catalog` instance is preserved (Approach
+ * A) so the persistent chrome's subscriptions stay valid.
+ */
+export function selectProject(projectId: string): Promise<void> {
+  scopedProjectId = projectId;
+  return catalog.selectProject(projectId);
+}
+
+/** The scoped pid the test seam exposes so a primary can read it (mirrors the
+ * production `getProjectId` injection). Tests that drive `selectProject` will
+ * have this updated; primaries that ignore scope can disregard it. */
+export function currentScopedProjectIdForTest(): string | undefined {
+  return scopedProjectId;
+}
+
+/**
  * Install a catalog composed from explicit sources — the seam route/nav tests
  * use to seed a known fixture catalog (and exercise the async deep-link
- * resolver) without the real backend `metadataApiSource`. Not used by the app.
+ * resolver) without the real backend `metadataApiSource`. Resets the scoped-pid
+ * holder so each test starts unscoped. Not used by the app.
  */
 export async function installCatalogForTest(
   primary: PartialCatalogSource,
   fallback: CatalogSource,
 ): Promise<void> {
+  scopedProjectId = undefined;
   catalog = await createDataCatalog(primary, fallback);
 }
 

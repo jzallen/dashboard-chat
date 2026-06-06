@@ -1,14 +1,9 @@
-/* The current project id, read off the ?project= query with a fallback to the
-   catalog's first project. The URL is the source of truth (a project switch
-   replaces it); the fallback is the interim while backend projects revalidate —
-   keyed off the catalog version so it settles after the SWR commit. */
-import { useSearchParams } from "react-router";
-
-import { catalog, useCatalog } from "../../src/app/useCatalog";
+/* The current project id, read off the `/project/:projectId` path segment. The
+   URL is the source of truth (a project switch is a route change). Returns
+   undefined on the global routes (/, /org, /query-engines) — callers there
+   already tolerate it (the Topbar guards). */
+import { useParams } from "react-router";
 
 export function useProjectId(): string | undefined {
-  const [params] = useSearchParams();
-  // Re-read the fallback after every catalog commit (projects revalidate).
-  useCatalog();
-  return params.get("project") ?? catalog.listProjects()[0]?.id;
+  return useParams().projectId;
 }

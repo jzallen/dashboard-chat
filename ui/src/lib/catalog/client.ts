@@ -127,12 +127,6 @@ export async function createDataCatalog(
       .then((v) => commit({ projects: v }))
       .catch(() => {});
   }
-  if (primary.getCurrentProject) {
-    primary
-      .getCurrentProject()
-      .then((v) => commit({ currentProject: v }))
-      .catch(() => {});
-  }
   if (primary.getOrg) {
     primary
       .getOrg()
@@ -163,8 +157,64 @@ export async function createDataCatalog(
       .then((v) => commit({ dbtFiles: v }))
       .catch(() => {});
   }
-  // Lineage getters from the primary rebuild the graph together (so audit folds
-  // onto the new nodes). Revalidate only when the primary backs all three.
+  // The currently-scoped project id, used by the captured-pid guard so a fast
+  // A→B→A re-scope can't land a stale commit (a late B `.then` is dropped once
+  // the scope has moved on). `undefined` during construction (no path yet).
+  let currentScopedPid: string | undefined;
+
+  /**
+   * Re-run only the PROJECT-SCOPED primary getters (currentProject + the lineage
+   * triple) and commit their results, building a FRESH {@link LineageGraph}. The
+   * org-global getters (getProjects/getOrg/getRecents/getChatScript/getDbtFiles)
+   * are NOT re-run — they don't change with the scope. Each `.then` is guarded
+   * by a captured-pid check so a superseded switch's late resolution is dropped.
+   *
+   * Note: because this builds a fresh graph, per-project working mutations
+   * (rename/archive/live-add) and cold storage reset on switch — correct, since
+   * they're per-project.
+   */
+  const revalidateScoped = async (requestedPid: string): Promise<void> => {
+    const stillCurrent = () => requestedPid === currentScopedPid;
+    const tasks: Promise<void>[] = [];
+    if (primary.getCurrentProject) {
+      tasks.push(
+        primary
+          .getCurrentProject()
+          .then((currentProject) => {
+            if (!stillCurrent()) return;
+            commit({ currentProject });
+          })
+          .catch(() => {}),
+      );
+    }
+    if (primary.getNodes && primary.getEdges && primary.getAudit) {
+      tasks.push(
+        Promise.all([primary.getNodes(), primary.getEdges(), primary.getAudit()])
+          .then(([n, e, a]) => {
+            if (!stillCurrent()) return;
+            commit({ graph: LineageGraph.from(n, e, a) });
+          })
+          .catch(() => {}),
+      );
+    }
+    await Promise.all(tasks);
+  };
+
+  // Initial scoped revalidation at construction: pre-path, the primary resolves
+  // the scope from its own default (the first project). getCurrentProject seeds
+  // `currentScopedPid` so the guard has a baseline; if `selectProject` runs first
+  // (the layout loader), it overrides the pid synchronously and these unguarded
+  // construction commits still reflect the seed scope (the loader's guarded
+  // re-scope supersedes them via the version bump).
+  if (primary.getCurrentProject) {
+    primary
+      .getCurrentProject()
+      .then((currentProject) => {
+        currentScopedPid ??= currentProject.id;
+        commit({ currentProject });
+      })
+      .catch(() => {});
+  }
   if (primary.getNodes && primary.getEdges && primary.getAudit) {
     Promise.all([primary.getNodes(), primary.getEdges(), primary.getAudit()])
       .then(([n, e, a]) => commit({ graph: LineageGraph.from(n, e, a) }))
@@ -228,6 +278,23 @@ export async function createDataCatalog(
     /** Restore an archived source: bring it back and drop it from cold storage. */
     restoreSource: (id: string) =>
       commit({ graph: snapshot.graph.restore(id) }),
+
+    /* ─── project re-scope (project-in-path) ─────────────────────────────── */
+    /**
+     * Re-scope the catalog to a different project: set the scoped pid (the guard
+     * baseline), then re-run only the project-scoped primary getters
+     * (getCurrentProject + the lineage triple) and commit a FRESH graph +
+     * currentProject. Org-global payloads are untouched. Because a fresh graph is
+     * built, per-project working mutations and cold storage reset on switch
+     * (correct — they're per-project). The injected catalog source must already
+     * read the new scope (the app sets its scoped-pid holder before calling this;
+     * see useCatalog.selectProject). Safe to call rapidly: a superseded switch's
+     * late commit is dropped by the captured-pid guard.
+     */
+    selectProject: (projectId: string): Promise<void> => {
+      currentScopedPid = projectId;
+      return revalidateScoped(projectId);
+    },
 
     /* ─── reactivity surface (for useSyncExternalStore) ──────────────────── */
     /** Register a listener; returns an unsubscribe function. */

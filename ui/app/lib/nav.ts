@@ -1,11 +1,11 @@
 /* Navigation intents — the URL-emitting layer that replaces useNavigation.ts.
-   nodeToPath maps a lineage node to its resource URL (the kind lives on
-   node.ref.kind); useNavIntents wraps useNavigate/useLocation so leaf views
-   keep calling openNode / selectProject / toggleOrg / openRecent / go, now
-   resolved against the URL instead of the old two-atom state. Chat-open intents
-   reach the useChat() context, never navigation. */
+   nodeToPath maps a lineage node to its project-scoped resource URL (the kind
+   lives on node.ref.kind); useNavIntents wraps useNavigate/useParams so leaf
+   views keep calling openNode / selectProject / toggleOrg / openRecent / go, now
+   resolved against the project-in-path URL. Chat-open intents reach the
+   useChat() context, never navigation. */
 import { useCallback } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 
 import { catalog } from "../../src/app/useCatalog";
 import type { LineageNode, ProjectSummary } from "../../src/lib/catalog";
@@ -16,22 +16,23 @@ function kindOf(node: LineageNode): string | undefined {
   return node.ref?.kind as string | undefined;
 }
 
-/** The resource path prefix for a node's kind. */
+/** The resource path segment for a node's kind (bare singular). */
 const KIND_PREFIX: Record<string, string> = {
-  dataset: "/table",
-  view: "/view",
-  report: "/report",
+  dataset: "dataset",
+  view: "view",
+  report: "report",
 };
 
 /**
- * The deep-linkable URL for a lineage node: `/table|/view|/report` + `/:id`,
- * with `?project=<id>` appended when a project is supplied. Mirrors the split
- * resource routes in frontend/app/routes.ts so a later merge is mechanical.
+ * The deep-linkable URL for a lineage node, scoped to its project:
+ * `/project/:projectId/{dataset|view|report}/:id`. projectId is REQUIRED —
+ * project is part of a resource's identity at the API, so it lives in the path.
+ * Mirrors the nested resource routes so a later merge into frontend/ is
+ * mechanical (frontend uses plural/top-level; reconciled at merge).
  */
-export function nodeToPath(node: LineageNode, project?: string): string {
-  const prefix = KIND_PREFIX[kindOf(node) ?? ""] ?? "/table";
-  const base = `${prefix}/${node.id}`;
-  return project ? `${base}?project=${project}` : base;
+export function nodeToPath(node: LineageNode, projectId: string): string {
+  const prefix = KIND_PREFIX[kindOf(node) ?? ""] ?? "dataset";
+  return `/project/${projectId}/${prefix}/${node.id}`;
 }
 
 /** A nav request handed back from leaf views (Chat / ChatSessionList). */
@@ -44,30 +45,27 @@ export type NavIntent = { name: string; nodeId?: string | null };
 export function useNavIntents() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { projectId } = useParams();
   const { openChat } = useChat();
-
-  const currentProject = new URLSearchParams(location.search).get("project");
 
   const openNode = useCallback(
     (node: LineageNode) => {
-      navigate(nodeToPath(node, currentProject ?? undefined));
+      navigate(nodeToPath(node, projectId!));
     },
-    [navigate, currentProject],
+    [navigate, projectId],
   );
 
   const selectProject = useCallback(
     (project: ProjectSummary) => {
-      navigate(
-        { pathname: "/", search: `?project=${project.id}` },
-        { replace: true },
-      );
+      // Project is navigable identity now: PUSH so Back traverses projects.
+      navigate("/project/" + project.id);
     },
     [navigate],
   );
 
   const toggleOrg = useCallback(() => {
     if (location.pathname === "/org") {
-      // A direct /org deep-link has no prior entry; fall to the workspace.
+      // A direct /org deep-link has no prior entry; fall to the home redirect.
       if (location.key === "default") {
         navigate("/");
         return;
@@ -81,15 +79,15 @@ export function useNavIntents() {
   const openRecent = useCallback(
     (nodeId: string | null) => {
       const node = nodeId ? catalog.getNode(nodeId) : undefined;
-      if (node && node.ref) {
-        navigate(nodeToPath(node));
+      if (node && node.ref && projectId) {
+        navigate(nodeToPath(node, projectId));
         openChat();
         return;
       }
-      navigate("/");
+      navigate(projectId ? "/project/" + projectId : "/");
       openChat();
     },
-    [navigate, openChat],
+    [navigate, openChat, projectId],
   );
 
   /** Compatibility shim for the existing Chat / ChatSessionList call sites. */
@@ -104,16 +102,16 @@ export function useNavIntents() {
         return;
       }
       if (intent.name === "chats") {
-        navigate("/chats");
+        navigate(projectId ? "/project/" + projectId + "/chats" : "/");
         return;
       }
       if (intent.name === "chat") {
-        navigate("/");
+        navigate(projectId ? "/project/" + projectId : "/");
         return;
       }
-      navigate("/");
+      navigate(projectId ? "/project/" + projectId : "/");
     },
-    [navigate, openChat, openRecent],
+    [navigate, openChat, openRecent, projectId],
   );
 
   return { openNode, selectProject, toggleOrg, openRecent, go };

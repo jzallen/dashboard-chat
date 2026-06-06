@@ -15,14 +15,15 @@ import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
 import { catalog } from "../useCatalog";
 
-/** True when the pathname is one of the resource-detail routes. */
+/** The resource id when the pathname is one of the nested resource-detail
+ *  routes (/project/:projectId/{dataset|view|report}/:id), else undefined. */
 function modelIdFromPath(
   pathname: string,
   params: Record<string, string | undefined>,
 ): string | undefined {
-  if (pathname.startsWith("/table/")) return params.datasetId;
-  if (pathname.startsWith("/view/")) return params.viewId;
-  if (pathname.startsWith("/report/")) return params.reportId;
+  if (pathname.includes("/dataset/")) return params.datasetId;
+  if (pathname.includes("/view/")) return params.viewId;
+  if (pathname.includes("/report/")) return params.reportId;
   return undefined;
 }
 
@@ -49,7 +50,7 @@ export function Topbar({
   )?.name;
 
   const onOrg = location.pathname === "/org";
-  const onChats = location.pathname === "/chats";
+  const onChats = location.pathname.endsWith("/chats");
   const onEngines = location.pathname === "/query-engines";
   const modelId = modelIdFromPath(location.pathname, params);
   // Pending guard: the deep-linked node may not be in the catalog yet.
@@ -74,7 +75,12 @@ export function Topbar({
             <span className="brand-sep">/</span>
             {modelId && currentNode ? (
               <>
-                <button className="crumb-link" onClick={() => navigate("/")}>
+                <button
+                  className="crumb-link"
+                  onClick={() =>
+                    navigate(projectId ? "/project/" + projectId : "/")
+                  }
+                >
                   {projectName}
                 </button>
                 <span className="sep">/</span>

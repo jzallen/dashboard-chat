@@ -18,21 +18,21 @@ function nodeWithKind(
 }
 
 describe("nodeToPath", () => {
-  it("maps a dataset node to /table/:id", () => {
-    expect(nodeToPath(nodeWithKind("ds.1", "dataset"))).toBe("/table/ds.1");
+  it("maps a dataset node to /project/:pid/dataset/:id", () => {
+    expect(nodeToPath(nodeWithKind("ds.1", "dataset"), "p1")).toBe(
+      "/project/p1/dataset/ds.1",
+    );
   });
 
-  it("maps a view node to /view/:id", () => {
-    expect(nodeToPath(nodeWithKind("view.1", "view"))).toBe("/view/view.1");
+  it("maps a view node to /project/:pid/view/:id", () => {
+    expect(nodeToPath(nodeWithKind("view.1", "view"), "p1")).toBe(
+      "/project/p1/view/view.1",
+    );
   });
 
-  it("maps a report node to /report/:id", () => {
-    expect(nodeToPath(nodeWithKind("rep.1", "report"))).toBe("/report/rep.1");
-  });
-
-  it("appends ?project= when a project id is given", () => {
-    expect(nodeToPath(nodeWithKind("view.1", "view"), "proj-7")).toBe(
-      "/view/view.1?project=proj-7",
+  it("maps a report node to /project/:pid/report/:id", () => {
+    expect(nodeToPath(nodeWithKind("rep.1", "report"), "p1")).toBe(
+      "/project/p1/report/rep.1",
     );
   });
 });
