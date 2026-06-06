@@ -5,7 +5,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
-import { handleCallback } from "../../src/auth/bootstrap";
+import { handleCallback } from "../auth/bootstrap";
 
 export default function AuthCallbackRoute() {
   const [searchParams] = useSearchParams();

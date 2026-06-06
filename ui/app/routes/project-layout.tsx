@@ -7,7 +7,7 @@
    just <Outlet/> — the nested resource routes render under the re-scoped graph. */
 import { Outlet, useOutletContext } from "react-router";
 
-import { selectProject } from "../../src/app/useCatalog";
+import { selectProject } from "../components/useCatalog";
 
 export function clientLoader({ params }: { params: { projectId?: string } }) {
   // Re-scope synchronously so the route renders without a navigation-pending
@@ -18,6 +18,21 @@ export function clientLoader({ params }: { params: { projectId?: string } }) {
   // the project-scoped getters; the lineage commit lands a beat later.
   selectProject(params.projectId!);
   return null;
+}
+
+// Re-scope only when the path project changes. Without this, RRv7 revalidates
+// this loader on every navigation under the layout — including search-param-only
+// changes (e.g. the workspace's `?view=` toggle) and nested resource navigations
+// — needlessly re-kicking selectProject (a catalog re-fetch). selectProject's
+// only input is projectId, so projectId-equality is the precise revalidation key.
+export function shouldRevalidate({
+  currentParams,
+  nextParams,
+}: {
+  currentParams: { projectId?: string };
+  nextParams: { projectId?: string };
+}) {
+  return currentParams.projectId !== nextParams.projectId;
 }
 
 export default function ProjectLayout() {

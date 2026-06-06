@@ -6,8 +6,8 @@
 import type { ReactNode } from "react";
 import { type RouteObject } from "react-router";
 
-import { ThemeProvider } from "../../src/app/AppShell/ThemeProvider";
-import { FlashedNodeProvider } from "../../src/app/FlashedNodeProvider";
+import { ThemeProvider } from "../components/AppShell/ThemeProvider";
+import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
 import AppShell from "./app-shell";
 import AuthCallbackRoute from "./auth-callback";
 import ChatsRoute from "./chats";

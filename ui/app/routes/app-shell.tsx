@@ -10,16 +10,16 @@
 import { useCallback, useMemo } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 
-import { Overlays } from "../../src/app/AppShell/Overlays";
-import { useTheme } from "../../src/app/AppShell/ThemeProvider";
-import { Topbar } from "../../src/app/AppShell/Topbar";
-import { useColdStorage } from "../../src/app/ColdStorage";
-import { useExport } from "../../src/app/Export";
-import { useFlashedNode } from "../../src/app/FlashedNodeProvider";
-import { useUpload } from "../../src/app/Upload";
-import { catalog, useCatalog } from "../../src/app/useCatalog";
-import { getToken } from "../../src/auth/tokenStorage";
-import type { Edge, LineageNode } from "../../src/lib/catalog";
+import { getToken } from "../auth/tokenStorage";
+import type { Edge, LineageNode } from "../catalog";
+import { Overlays } from "../components/AppShell/Overlays";
+import { useTheme } from "../components/AppShell/ThemeProvider";
+import { Topbar } from "../components/AppShell/Topbar";
+import { useColdStorage } from "../components/ColdStorage";
+import { useExport } from "../components/Export";
+import { useFlashedNode } from "../components/FlashedNodeProvider";
+import { useUpload } from "../components/Upload";
+import { catalog, useCatalog } from "../components/useCatalog";
 import { ChatProvider } from "../lib/chatContext";
 import { useNavIntents } from "../lib/nav";
 

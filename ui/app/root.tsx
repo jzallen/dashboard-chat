@@ -5,21 +5,21 @@
 //
 // `clientLoader` awaits initCatalog() before the route tree renders, replacing the
 // old `await initCatalog(); mount()` ordering in main.js. RRv7 awaits clientLoader
-// before rendering, so `catalog` (the live ESM binding in src/app/useCatalog.ts) is
+// before rendering, so `catalog` (the live ESM binding in app/components/useCatalog.ts) is
 // defined before any component reads it. createDataCatalog seeds synchronously from
 // the fixtureSource fallback, so this resolves even with no auth token.
 // Global stylesheets — imported here in the order main.js linked them (theme first
 // so the neobrutalist sheet can override). The fonts/preconnect <link>s the old
 // index.html carried are dropped for Phase 0 (not load-bearing for the gate).
-import "../src/app/theme.css";
-import "../src/app/theme.neobrutalist.css";
+import "./components/theme.css";
+import "./components/theme.neobrutalist.css";
 
 import { type ReactNode } from "react";
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 
-import { ThemeProvider } from "../src/app/AppShell";
-import { FlashedNodeProvider } from "../src/app/FlashedNodeProvider";
-import { initCatalog } from "../src/app/useCatalog";
+import { ThemeProvider } from "./components/AppShell";
+import { FlashedNodeProvider } from "./components/FlashedNodeProvider";
+import { initCatalog } from "./components/useCatalog";
 
 export function Layout({ children }: { children: ReactNode }) {
   return (

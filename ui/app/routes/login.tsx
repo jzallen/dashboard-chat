@@ -5,8 +5,8 @@
 import { useState } from "react";
 import { Navigate } from "react-router";
 
-import { login } from "../../src/auth/bootstrap";
-import { getToken } from "../../src/auth/tokenStorage";
+import { login } from "../auth/bootstrap";
+import { getToken } from "../auth/tokenStorage";
 
 export default function LoginRoute() {
   const [busy, setBusy] = useState(false);

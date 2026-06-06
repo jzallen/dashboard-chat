@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { LineageNode } from "../../src/lib/catalog";
+import type { LineageNode } from "../catalog";
 import { nodeToPath } from "./nav";
 
 /** A non-source lineage node whose kind lives on node.ref.kind. */

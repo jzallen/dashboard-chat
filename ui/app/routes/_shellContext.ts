@@ -3,7 +3,7 @@
    its upload window, a model routes to its detail view) lives in the shell. */
 import { useOutletContext } from "react-router";
 
-import type { LineageNode } from "../../src/lib/catalog";
+import type { LineageNode } from "../catalog";
 
 export type ShellContext = {
   onOpenNode: (node: LineageNode) => void;

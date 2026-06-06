@@ -3,9 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { installCatalogForTest } from "../../src/app/useCatalog";
-import { clearAll, setToken } from "../../src/auth/tokenStorage";
-import type { Edge, LineageNode, PartialCatalogSource } from "../../src/lib/catalog";
+import { clearAll, setToken } from "../auth/tokenStorage";
+import type { Edge, LineageNode, PartialCatalogSource } from "../catalog";
+import { installCatalogForTest } from "../components/useCatalog";
 import {
   fixtureFallback,
   fixtureNodes,
@@ -143,7 +143,7 @@ describe("per-project working state", () => {
     await screen.findByText("Pipeline");
 
     // Wait for p1's graph to commit, then rename p1's dataset.
-    const { catalog } = await import("../../src/app/useCatalog");
+    const { catalog } = await import("../components/useCatalog");
     await waitFor(() => expect(catalog.getNode("p1.ds")).toBeDefined());
     catalog.renameSource("p1.ds", "renamed_in_p1");
     expect(catalog.getNode("p1.ds")?.label).toBe("renamed_in_p1");

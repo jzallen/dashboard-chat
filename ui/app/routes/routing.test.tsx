@@ -3,18 +3,18 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  currentScopedProjectIdForTest,
-  installCatalogForTest,
-} from "../../src/app/useCatalog";
-import { clearAll, setToken } from "../../src/auth/tokenStorage";
+import { clearAll, setToken } from "../auth/tokenStorage";
 import type {
   CatalogSource,
   Edge,
   LineageNode,
   PartialCatalogSource,
   ProjectSummary,
-} from "../../src/lib/catalog";
+} from "../catalog";
+import {
+  currentScopedProjectIdForTest,
+  installCatalogForTest,
+} from "../components/useCatalog";
 import {
   fixtureFallback,
   fixtureNodes,
@@ -242,6 +242,51 @@ describe("deep-link race (async node resolution)", () => {
     await waitFor(() => {
       expect(screen.getByText("Late View")).toBeTruthy();
     });
+  });
+});
+
+describe("workspace view mode (?view= in router history)", () => {
+  it("defaults to Flow with no view param", async () => {
+    const { router } = renderAt(["/project/proj-1"]);
+    await screen.findByText("Pipeline");
+    expect(router.state.location.search).toBe("");
+    // Flow (dag) is shown — the audit-view "AI edits" marker is absent.
+    expect(screen.queryByText(/AI edits/)).toBeNull();
+  });
+
+  it("renders the Audit view from a ?view=audit deep-link", async () => {
+    renderAt(["/project/proj-1?view=audit"]);
+    // The "AI edits" trail label is unique to the audit view.
+    expect((await screen.findAllByText(/AI edits/)).length).toBeGreaterThan(0);
+  });
+
+  it("toggling a mode pushes a history entry that back/forward restores", async () => {
+    const { router } = renderAt(["/project/proj-1"]);
+    await screen.findByText("Pipeline");
+
+    // Selecting Audit sets ?view=audit and switches the canvas.
+    await act(async () => {
+      screen.getByRole("button", { name: "Audit" }).click();
+    });
+    await waitFor(() =>
+      expect(router.state.location.search).toBe("?view=audit"),
+    );
+    expect((await screen.findAllByText(/AI edits/)).length).toBeGreaterThan(0);
+
+    // Selecting Flow (the default) drops the param for a clean URL.
+    await act(async () => {
+      screen.getByRole("button", { name: "Flow" }).click();
+    });
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+
+    // Back restores the audit view — the toggle is part of history.
+    await act(async () => {
+      await router.navigate(-1);
+    });
+    await waitFor(() =>
+      expect(router.state.location.search).toBe("?view=audit"),
+    );
+    expect((await screen.findAllByText(/AI edits/)).length).toBeGreaterThan(0);
   });
 });
 

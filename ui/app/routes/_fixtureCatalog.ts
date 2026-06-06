@@ -1,6 +1,6 @@
 /* A tiny in-memory CatalogSource for route/nav tests — one dataset (d1), one
    view (v1), one report (r1), and two projects, with model refs complete enough
-   for <ModelDetail> to render. Modelled on src/lib/catalog/client.test.ts's
+   for <ModelDetail> to render. Modelled on app/catalog/client.test.ts's
    makeSource; node refs carry the full discriminated Model shape ModelDetail
    casts to. */
 import type {
@@ -9,7 +9,7 @@ import type {
   LineageNode,
   PartialCatalogSource,
   ProjectSummary,
-} from "../../src/lib/catalog";
+} from "../catalog";
 
 export const FIXTURE_PROJECTS: ProjectSummary[] = [
   { id: "proj-1", name: "Primary Project", desc: "", datasets: 1, models: 2 },

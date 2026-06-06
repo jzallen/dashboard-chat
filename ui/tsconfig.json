@@ -23,5 +23,5 @@
     "checkJs": false,
     "types": ["vite/client", "node"]
   },
-  "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["app/**/*.ts", "app/**/*.tsx"]
 }

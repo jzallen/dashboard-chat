@@ -5,7 +5,7 @@
    flow is a later slice. */
 import { Navigate } from "react-router";
 
-import { catalog, useCatalog } from "../../src/app/useCatalog";
+import { catalog, useCatalog } from "../components/useCatalog";
 
 export default function HomeRedirect() {
   // Re-read after every catalog commit (backend projects revalidate a beat

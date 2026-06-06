@@ -2,7 +2,7 @@
    then render skeleton (pending) / not-found (missing) / ModelDetail (resolved,
    node guaranteed non-null). The three resource route modules (table / view /
    report) are thin wrappers that pass their kind + param. */
-import { ModelDetail } from "../../src/app/ModelDetail";
+import { ModelDetail } from "../components/ModelDetail";
 import { useResolvedNode } from "../lib/useResolvedNode";
 import { ModelDetailSkeleton, NodeNotFound } from "./_modelDetailStates";
 import { useShellContext } from "./_shellContext";

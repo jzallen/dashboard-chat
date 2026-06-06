@@ -7,8 +7,8 @@
 import { useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 
-import { catalog } from "../../src/app/useCatalog";
-import type { LineageNode, ProjectSummary } from "../../src/lib/catalog";
+import type { LineageNode, ProjectSummary } from "../catalog";
+import { catalog } from "../components/useCatalog";
 import { useChat } from "./chatContext";
 
 /** The node kind discriminant, read off the loose ModelRef bag. */

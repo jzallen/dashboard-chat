@@ -1,5 +1,5 @@
 /* index route `/` — the pipeline workspace (lineage home). */
-import { Workspace } from "../../src/app/Workspace";
+import { Workspace } from "../components/Workspace";
 import { useShellContext } from "./_shellContext";
 
 export default function WorkspaceRoute() {

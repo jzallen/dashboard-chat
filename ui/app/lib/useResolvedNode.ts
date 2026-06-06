@@ -7,8 +7,8 @@
    absent id surfaces a not-found panel instead of spinning forever. */
 import { useEffect, useMemo, useState } from "react";
 
-import { catalog, useCatalog } from "../../src/app/useCatalog";
-import type { LineageNode } from "../../src/lib/catalog";
+import type { LineageNode } from "../catalog";
+import { catalog, useCatalog } from "../components/useCatalog";
 
 /** How long to wait for a node to resolve before declaring it missing. */
 const RESOLVE_TIMEOUT_MS = 8000;

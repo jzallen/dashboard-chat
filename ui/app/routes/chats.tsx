@@ -1,5 +1,5 @@
 /* /chats — the session list (domain vocabulary: ChatSession). */
-import { ChatSessionList } from "../../src/app/ChatSessionList";
+import { ChatSessionList } from "../components/ChatSessionList";
 import { useNavIntents } from "../lib/nav";
 
 export default function ChatsRoute() {
